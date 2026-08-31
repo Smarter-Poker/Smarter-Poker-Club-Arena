@@ -11,6 +11,10 @@ const mocks = vi.hoisted(() => ({
     data: unknown[];
     error: unknown;
   }>,
+  unlockResult: Promise.resolve({ data: [], error: null }) as Promise<{
+    data: unknown[];
+    error: unknown;
+  }>,
   pricingResult: Promise.resolve({ data: [], error: null }) as Promise<{
     data: unknown[];
     error: unknown;
@@ -22,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   themeListeners: new Set<(event: { payload: unknown }) => void>(),
   entitlementInsert: null as null | ((payload: { new: Record<string, unknown> }) => void),
   entitlementStatus: null as null | ((status: string) => void),
+  autoEntitlementSubscribe: true,
   removeChannel: vi.fn(),
   loadDiamonds: vi.fn(),
   themeSelect: '',
@@ -125,7 +130,9 @@ vi.mock('../../src/lib/supabase', () => ({
           ? mocks.themeResult
           : table === 'feature_pricing'
             ? mocks.pricingResult
-            : mocks.purchaseResult;
+            : table === 'theme_asset_unlocks'
+              ? mocks.unlockResult
+              : mocks.purchaseResult;
       const builder: Record<string, unknown> = {};
       const chain = () => builder;
       builder.select = vi.fn((columns: string) => {
@@ -138,7 +145,8 @@ vi.mock('../../src/lib/supabase', () => ({
       return builder;
     }),
     rpc: mocks.rpc,
-    channel: vi.fn(() => {
+    channel: vi.fn((name: string) => {
+      const isEntitlementChannel = name.startsWith('table-studio-entitlements:');
       const channel = {
         on: vi.fn(
           (
@@ -146,13 +154,13 @@ vi.mock('../../src/lib/supabase', () => ({
             _filter: Record<string, unknown>,
             handler: (payload: { new: Record<string, unknown> }) => void
           ) => {
-            mocks.entitlementInsert = handler;
+            if (isEntitlementChannel) mocks.entitlementInsert = handler;
             return channel;
           }
         ),
         subscribe: vi.fn((listener: (status: string) => void) => {
-          mocks.entitlementStatus = listener;
-          listener('SUBSCRIBED');
+          if (isEntitlementChannel) mocks.entitlementStatus = listener;
+          if (!isEntitlementChannel || mocks.autoEntitlementSubscribe) listener('SUBSCRIBED');
           return channel;
         }),
       };
@@ -204,6 +212,7 @@ describe('ThemeSettingsModal hardening', () => {
   beforeEach(() => {
     mocks.themeResult = Promise.resolve({ data: [savedTheme], error: null });
     mocks.purchaseResult = Promise.resolve({ data: [], error: null });
+    mocks.unlockResult = Promise.resolve({ data: [], error: null });
     mocks.pricingResult = Promise.resolve({
       data: [
         { feature: 'studio:table_id:neon_city', diamond_cost: 350 },
@@ -220,6 +229,7 @@ describe('ThemeSettingsModal hardening', () => {
     mocks.navigate.mockReset();
     mocks.entitlementInsert = null;
     mocks.entitlementStatus = null;
+    mocks.autoEntitlementSubscribe = true;
     mocks.removeChannel.mockReset();
     mocks.loadDiamonds.mockReset();
     mocks.loadDiamonds.mockResolvedValue(undefined);
@@ -572,6 +582,30 @@ describe('ThemeSettingsModal hardening', () => {
     });
 
     expect(await screen.findByRole('button', { name: 'Neon City' })).toBeEnabled();
+  });
+
+  it('reconciles ownership after subscription before declaring Table Art live', async () => {
+    mocks.autoEntitlementSubscribe = false;
+    renderStudio();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+    );
+
+    expect(screen.getByText('Linking...')).toBeVisible();
+    expect(screen.queryByText('Table Art Live')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
+    expect(
+      screen.getByRole('button', { name: 'Neon City, purchase or VIP required' })
+    ).toBeEnabled();
+
+    mocks.unlockResult = Promise.resolve({
+      data: [{ category: 'table_id', asset_id: 'neon_city' }],
+      error: null,
+    });
+    act(() => mocks.entitlementStatus?.('SUBSCRIBED'));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Neon City' })).toBeEnabled());
+    expect(await screen.findByText('Table Art Live')).toBeVisible();
   });
 
   it('does not claim a completed purchase was applied when the appearance save fails', async () => {

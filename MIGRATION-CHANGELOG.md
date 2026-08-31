@@ -16386,3 +16386,12 @@ both sides, ui-text gate green.
 **Why:** Every escrow debit and closing credit needs an immutable, joinable audit contract.
 **Verified:** YES — cancel/redeem and their retries passed; each produced exactly one ticket-linked receipt and credited exactly one cent in a rolled-back production transaction.
 **TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #157 — Closed Leaderboard Periods Stay Closed And Reproducible
+
+**File:** `supabase/migrations/20260831002500_leaderboard_historical_period_contract.sql`, `src/services/LeaderboardService.ts`, `tests/unit/LeaderboardService.test.ts`, `tests/unit/leaderboardHistoricalPeriodContract.test.ts`
+**What existed:** Production had corrected historical club/global ranking and JSON personal-rank function bodies that were absent from migration history, so a clean replay restored an older personal-rank function that selected a nonexistent `score` column and broke tied ranks. The live date-range functions also used mutable totals when an exclusive period end equalled today, anonymous callers inherited execution on four `SECURITY DEFINER` readers, and strict page loads could silently replace failed period/server aggregates with all-time or known-truncated fallback rows.
+**What changed:** Recorded the complete historical ranking contract in a new forward-only migration, made every close-date decision explicitly UTC and end-exclusive, preserved tied ranks/active totals/pagination/movement/qualification, converged personal rank onto the JSON shape consumed by PostgREST, revoked anonymous execution, and made strict leaderboard and tournament reads fail closed rather than relabel fallback data.
+**Why:** A Sunday/month/day boundary cannot include play after its 00:00 UTC close, disaster recovery must rebuild the same functions production runs, and an error state is safer than a convincing board calculated from the wrong population or period.
+**Verified:** Targeted migration/service contracts cover UTC close semantics, function reproduction, personal-rank shape, tied ranks, privilege closure, and strict no-fallback behavior. Production dry run, full gates, deployment and live route re-verification are recorded by the Phase 1 release audit.
+**Money movement:** NONE — definitions, read privileges and client error handling only.

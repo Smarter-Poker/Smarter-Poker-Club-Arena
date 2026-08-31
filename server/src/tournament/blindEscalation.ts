@@ -74,9 +74,106 @@ export function lastPlayableIndex(structure: readonly BlindLevelLike[]): number 
  * `persistedLength` is the length of the structure AS STORED. Passing a mutated
  * length here is the entire defect above, so callers must never grow the array.
  */
-export function escalationFactor(index: number, persistedLength: number): number {
+export function escalationFactor(
+  index: number,
+  persistedLength: number,
+  /**
+   * THE RATIO IS NO LONGER 2 (2026-08-31).
+   *
+   * This function doubled the blinds once per level past the end of a
+   * structure, and 95.7% of MTTs measured on production ran past the end of
+   * theirs — so doubling was not an edge case, it was the late game of nearly
+   * every tournament on the platform. 38.1% of events finished with every chip
+   * in play worth under three big blinds.
+   *
+   * The ladder's OWN cadence is the right ratio, so callers pass what they
+   * observed (blindLadder.observedStepRatio), clamped there to [1.15, 1.6].
+   * The default is the middle of that range rather than 2, so a caller that has
+   * not been updated still gets a sane ladder instead of the defect.
+   *
+   * The anchoring contract above is unchanged, and is why this stays a pure
+   * function of (index, persistedLength): the same answer in every process,
+   * before and after a restart.
+   */
+  ratio: number = 1.4
+): number {
   const exponent = Math.min(Math.max(1, index - persistedLength + 1), MAX_ESCALATION_EXPONENT);
-  return Math.pow(2, exponent);
+  const r = Number.isFinite(ratio) && ratio > 1 ? ratio : 1.4;
+  return Math.pow(r, exponent);
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A BIG BLIND MAY NOT EXCEED THE TOURNAMENT (2026-08-31)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Chips are conserved: the sum of every stack is the starting stack times the
+ * number of entrants, plus rebuys and add-ons. That total is the entire supply
+ * of the game, and it is the number a blind has to be measured against.
+ *
+ * Deep ladders (blindLadder.ts) mean the overflow path is now rarely reached at
+ * all. This is the guard that makes the failure mode IMPOSSIBLE rather than
+ * merely unlikely — a tournament that runs for a week, a structure somebody
+ * authors badly, a restart loop that advances the level counter: none of them
+ * can produce a blind larger than the chips that exist.
+ *
+ * MIN_TOTAL_BB_IN_PLAY is the floor on how much poker is left. At 20, a
+ * heads-up finish has ~10 big blinds each, which is a decisive endgame that is
+ * still poker. Below about 3 it is a forced all-in lottery on the blind, which
+ * is what 221 of 579 events actually finished as.
+ */
+export const MIN_TOTAL_BB_IN_PLAY = 20;
+
+export interface CappedLevel {
+  smallBlind: number;
+  bigBlind: number;
+  ante: number;
+  /** True when the cap actually bit, so callers can log it once. */
+  capped: boolean;
+}
+
+/**
+ * Scale a level down so the whole tournament still holds MIN_TOTAL_BB_IN_PLAY
+ * big blinds. Ratios between small blind, big blind and ante are preserved — a
+ * capped level is the same shape of level, just smaller.
+ *
+ * An unknown or nonsensical chip total caps NOTHING. Guessing a total and then
+ * shrinking the blinds against it would be its own defect, and the blinds are
+ * already bounded by MAX_BLIND_VALUE.
+ */
+export function capLevelToChipsInPlay(
+  level: { smallBlind?: unknown; bigBlind?: unknown; ante?: unknown },
+  totalChipsInPlay: number | null | undefined,
+  minTotalBigBlinds: number = MIN_TOTAL_BB_IN_PLAY
+): CappedLevel {
+  const num = (v: unknown) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+  const smallBlind = num(level?.smallBlind);
+  const bigBlind = num(level?.bigBlind);
+  const ante = num(level?.ante);
+
+  const total = Number(totalChipsInPlay);
+  const minBB = Number(minTotalBigBlinds);
+  if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(minBB) || minBB <= 0) {
+    return { smallBlind, bigBlind, ante, capped: false };
+  }
+
+  const maxBigBlind = total / minBB;
+  if (!(bigBlind > maxBigBlind) || maxBigBlind < 2) {
+    return { smallBlind, bigBlind, ante, capped: false };
+  }
+
+  const scale = maxBigBlind / bigBlind;
+  return {
+    // Floor, never round up past the cap. Never below 2/1, or the table cannot
+    // post a blind at all.
+    bigBlind: Math.max(2, Math.floor(bigBlind * scale)),
+    smallBlind: Math.max(1, Math.floor(smallBlind * scale)),
+    ante: ante > 0 ? Math.max(1, Math.floor(ante * scale)) : 0,
+    capped: true,
+  };
 }
 
 /**
@@ -91,7 +188,10 @@ export function escalatedBlindLevel(
   lastPlayable: BlindLevelLike | undefined,
   index: number,
   persistedLength: number,
-  durationMinutes: number
+  durationMinutes: number,
+  /** The ladder's own observed cadence — see escalationFactor. Defaults to the
+   *  same sane 1.4x, never the old 2x. */
+  ratio?: number
 ): {
   level: number;
   smallBlind: number;
@@ -100,7 +200,7 @@ export function escalatedBlindLevel(
   durationMinutes: number;
   autoEscalated: true;
 } {
-  const factor = escalationFactor(index, persistedLength);
+  const factor = escalationFactor(index, persistedLength, ratio);
   const scale = (v: unknown) => {
     const n = Number(v);
     return Math.min((Number.isFinite(n) ? n : 0) * factor, MAX_BLIND_VALUE);

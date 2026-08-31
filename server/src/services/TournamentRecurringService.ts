@@ -19,6 +19,7 @@ import { reportError } from './errorReporter.js';
 import nodeCrypto from 'node:crypto';
 import { DEFAULT_RAKE_RATE, buyInFor, rakeRateFor, wholeChips } from '../config/buyIn.js';
 import { gameLaneFor, horseHash, isActiveNow } from './HorseBehavior.js';
+import { buildLadder } from '../tournament/blindLadder.js';
 
 /**
  * Derive the two buy-in columns from ONE whole-dollar total.
@@ -174,46 +175,61 @@ const JAQK_CLUB_ID = 'a0000000-0000-0000-0000-000000000001';
 // Club JAQK. Every scheduled game now names the union explicitly, at creation.
 const MIDWAY_UNION_ID = 'fade0000-0000-0000-0000-000000000001';
 
-const BLIND_STRUCTURES = {
-  TURBO: [
-    { level: 1, smallBlind: 25, bigBlind: 50, ante: 5, durationMinutes: 4 },
-    { level: 2, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 4 },
-    { level: 3, smallBlind: 100, bigBlind: 200, ante: 20, durationMinutes: 3 },
-    { level: 4, smallBlind: 150, bigBlind: 300, ante: 30, durationMinutes: 3 },
-    { level: 5, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 3 },
-    { level: 6, smallBlind: 300, bigBlind: 600, ante: 75, durationMinutes: 2 },
-    { level: 7, smallBlind: 500, bigBlind: 1000, ante: 100, durationMinutes: 2 },
-    { level: 8, smallBlind: 750, bigBlind: 1500, ante: 150, durationMinutes: 2 },
-  ],
-  STANDARD: [
-    { level: 1, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 10 },
-    { level: 2, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 10 },
-    { level: 3, smallBlind: 75, bigBlind: 150, ante: 15, durationMinutes: 10 },
-    { level: 4, smallBlind: 100, bigBlind: 200, ante: 25, durationMinutes: 8 },
-    { level: 5, smallBlind: 150, bigBlind: 300, ante: 30, durationMinutes: 8 },
-    { level: 6, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 8 },
-    { level: 7, smallBlind: 300, bigBlind: 600, ante: 60, durationMinutes: 6 },
-    { level: 8, smallBlind: 400, bigBlind: 800, ante: 80, durationMinutes: 6 },
-    { level: 9, smallBlind: 500, bigBlind: 1000, ante: 100, durationMinutes: 5 },
-    { level: 10, smallBlind: 750, bigBlind: 1500, ante: 150, durationMinutes: 5 },
-  ],
-  HYPER_TURBO: [
-    { level: 1, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 2 },
-    { level: 2, smallBlind: 100, bigBlind: 200, ante: 25, durationMinutes: 2 },
-    { level: 3, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 2 },
-    { level: 4, smallBlind: 400, bigBlind: 800, ante: 100, durationMinutes: 1 },
-    { level: 5, smallBlind: 800, bigBlind: 1600, ante: 200, durationMinutes: 1 },
-  ],
-  SNG_6MAX: [
-    { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 3 },
-    { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 3 },
-    { level: 3, smallBlind: 25, bigBlind: 50, ante: 5, durationMinutes: 3 },
-    { level: 4, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 3 },
-    { level: 5, smallBlind: 75, bigBlind: 150, ante: 15, durationMinutes: 3 },
-    { level: 6, smallBlind: 100, bigBlind: 200, ante: 25, durationMinutes: 2 },
-    { level: 7, smallBlind: 150, bigBlind: 300, ante: 30, durationMinutes: 2 },
-    { level: 8, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 2 },
-  ],
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE LADDERS ARE GENERATED NOW, AND THEY ARE DEEP (2026-08-31)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * These were hand-written arrays of 5-10 levels. Measured across 579 completed
+ * MTTs, the average event REACHED level 14 and the deepest reached 124 — so
+ * 95.7% of tournaments spent their entire late game on blindEscalation's
+ * overflow path, which doubled the blinds every level. 38.1% finished with
+ * every chip in play worth under three big blinds, and 41 events ended with the
+ * big blind pinned at the DECIMAL(10,2) ceiling of 10,000,000.
+ *
+ * buildLadder emits chip-friendly levels to any depth from a mantissa cycle, so
+ * the ladder now covers the tournament that is actually played instead of the
+ * first forty minutes of it. LEVEL 1 OF EACH IS UNCHANGED, so every lobby card,
+ * advertised structure and starting-stack-in-big-blinds figure still reads
+ * exactly as it did.
+ */
+export const BLIND_STRUCTURES = {
+  // A turbo reaches its own conclusion well inside 24 levels; deeper than that
+  // and the ladder's own 1.58x cadence walks past MAX_BLIND_VALUE, which is how
+  // the first draft of this generated a 25,000,000 big blind at level 30.
+  TURBO: buildLadder({
+    startBigBlind: 50,
+    speed: 'TURBO',
+    levels: 24,
+    openingMinutes: 4,
+    floorMinutes: 2,
+    anteFromLevel: 1,
+  }),
+  // 40 levels at ~1.33x — the reference MTT ladder.
+  STANDARD: buildLadder({
+    startBigBlind: 50,
+    speed: 'STANDARD',
+    levels: 40,
+    openingMinutes: 10,
+    floorMinutes: 5,
+    anteFromLevel: 2,
+  }),
+  HYPER_TURBO: buildLadder({
+    startBigBlind: 100,
+    speed: 'HYPER_TURBO',
+    levels: 16,
+    openingMinutes: 2,
+    floorMinutes: 1,
+    anteFromLevel: 1,
+  }),
+  SNG_6MAX: buildLadder({
+    startBigBlind: 20,
+    speed: 'TURBO',
+    levels: 20,
+    openingMinutes: 3,
+    floorMinutes: 2,
+    anteFromLevel: 3,
+  }),
   /**
    * HEADS-UP, three minutes a level (Dan 2026-08-25: "IT NEEDS TO DISPLAY THE
    * BLIND LEVELS (3 MINUTES) AND THE STARTING STACK 300 FOR TURBO AND 1000 FOR

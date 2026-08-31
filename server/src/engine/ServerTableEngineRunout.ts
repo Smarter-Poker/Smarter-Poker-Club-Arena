@@ -484,12 +484,12 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
        read the ADVANCE as the answer to "is the round over", which held only
        while the advance was synchronous. The last discard now buys a
        DISCARD_SETTLE_MS beat so the toss can finish before betting opens, and
-       during that beat the stage is still 'pineapple_discard' — so the old
+       during that beat the stage is still 'pineapple_discard' - so the old
        reading would have re-armed the fold sweep against a table where every
        seat had already acted, and folded them all when it fired. Ask the
        question the engine actually means. */
     if (this.handController.allPineappleDiscardsIn()) {
-      // Everyone is in — the beat, then the flop
+      // Everyone is in - the beat, then the flop
       if (this.pineappleDiscardTimer) {
         clearTimeout(this.pineappleDiscardTimer);
         this.pineappleDiscardTimer = null;

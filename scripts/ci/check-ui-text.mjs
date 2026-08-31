@@ -27,8 +27,22 @@ import { readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
 import { join, extname } from 'node:path';
 
 const ROOT = new URL('../../', import.meta.url).pathname;
-const SRC = join(ROOT, 'src');
-const EXTS = new Set(['.ts', '.tsx', '.css']);
+/**
+ * AUDIT 2026-08-31: this walked `src` and nothing else, so the APP SHELL was
+ * never scanned - and index.html is where the page title, the meta description
+ * and the Open Graph / Twitter cards live. Three em dashes were sitting in
+ * copy that every search result and every shared link renders:
+ *
+ *   <meta name="description"    content="Club Arena - Private online poker...">
+ *   <meta property="og:title"   content="Club Arena - Private Online Poker Clubs">
+ *   <meta name="twitter:title"  content="Club Arena - Private Online Poker Clubs">
+ *
+ * A gate that stops at src/ is a gate with a door beside it. `public/` is
+ * scanned for the same reason: the service worker and anything else served
+ * verbatim can carry copy too.
+ */
+const SCAN_ROOTS = [join(ROOT, 'src'), join(ROOT, 'public'), join(ROOT, 'index.html')];
+const EXTS = new Set(['.ts', '.tsx', '.css', '.js', '.jsx', '.html']);
 const SKIP_DIRS = new Set(['node_modules', 'dist', '_to_delete', '__tests__', 'test-results']);
 /**
  * The one file that is ALLOWED to contain these characters is the one whose job
@@ -42,9 +56,20 @@ const EM_DASHES = /[—–―‒]/;
 
 const fix = process.argv.includes('--fix');
 
-/** Strip comments so the scan only sees code and copy. */
-function stripComments(source, isCss) {
-  let out = source.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
+/**
+ * Strip comments so the scan only sees code and copy.
+ *
+ * `.html` needs its own arm: an HTML file's comments are <!-- --> and its
+ * inline <script> blocks carry ordinary JS comments, so both forms are blanked.
+ * Blanking preserves offsets, which is what lets --fix patch the ORIGINAL at
+ * the positions found in the stripped copy.
+ */
+function stripComments(source, isCss, isHtml) {
+  let out = source;
+  if (isHtml) {
+    out = out.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
+  }
+  out = out.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
   if (!isCss) {
     // Line comments, but not the // inside a URL like https://
     out = out.replace(/(^|[^:])\/\/[^\n]*/g, (m, p1) => p1 + ' '.repeat(m.length - p1.length));
@@ -53,27 +78,44 @@ function stripComments(source, isCss) {
 }
 
 function walk(dir, acc = []) {
+  let st;
+  try {
+    st = statSync(dir);
+  } catch {
+    return acc; // a root that does not exist in this checkout is not a failure
+  }
+  if (!st.isDirectory()) {
+    if (EXTS.has(extname(dir))) acc.push(dir);
+    return acc;
+  }
   for (const entry of readdirSync(dir)) {
     if (SKIP_DIRS.has(entry)) continue;
     const full = join(dir, entry);
-    const st = statSync(full);
-    if (st.isDirectory()) walk(full, acc);
+    const est = statSync(full);
+    if (est.isDirectory()) walk(full, acc);
     else if (EXTS.has(extname(entry))) acc.push(full);
   }
   return acc;
 }
 
+/** Every file under every scan root, de-duplicated. */
+function allFiles() {
+  const acc = [];
+  for (const root of SCAN_ROOTS) walk(root, acc);
+  return [...new Set(acc)];
+}
+
 const offenders = [];
 let fixedCount = 0;
 
-for (const file of walk(SRC)) {
+for (const file of allFiles()) {
   const rel = file.replace(ROOT, '');
   if (SKIP_FILES.has(rel)) continue;
   const original = readFileSync(file, 'utf8');
   if (!EM_DASHES.test(original)) continue;
 
-  const isCss = extname(file) === '.css';
-  const scannable = stripComments(original, isCss);
+  const ext = extname(file);
+  const scannable = stripComments(original, ext === '.css', ext === '.html');
   if (!EM_DASHES.test(scannable)) continue; // only in comments -> allowed
 
   if (fix) {

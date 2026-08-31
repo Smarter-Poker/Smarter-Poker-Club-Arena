@@ -42,11 +42,58 @@ const SKIP_DIRS = new Set(['node_modules', 'dist', '_to_delete', '__tests__', 't
 
 /** Initialisms that are shouted, not Title Cased. Mirrors src/utils/titleCase.ts. */
 const ACRONYMS = new Set([
-  'nlh', 'nlhe', 'plo', 'plo4', 'plo5', 'plo6', 'plo8', 'flh', 'flo', 'ofc',
-  'nl', 'pl', 'fl', 'sng', 'mtt', 'xmtt', 'pko', 'ko', 'gtd', 'hu', 'wsop',
-  'bbj', 'vip', 'id', 'utg', 'sb', 'bb', 'btn', 'co', 'mp', 'hj', 'lj',
-  'rit', 'gto', 'ev', 'roi', 'itm', 'usd', 'kyc', 'tos', 'faq', 'api', 'url',
-  'pc', 'ios', 'os', 'ui', 'ux', 'qr', 'sms', 'otp', '2fa',
+  'nlh',
+  'nlhe',
+  'plo',
+  'plo4',
+  'plo5',
+  'plo6',
+  'plo8',
+  'flh',
+  'flo',
+  'ofc',
+  'nl',
+  'pl',
+  'fl',
+  'sng',
+  'mtt',
+  'xmtt',
+  'pko',
+  'ko',
+  'gtd',
+  'hu',
+  'wsop',
+  'bbj',
+  'vip',
+  'id',
+  'utg',
+  'sb',
+  'bb',
+  'btn',
+  'co',
+  'mp',
+  'hj',
+  'lj',
+  'rit',
+  'gto',
+  'ev',
+  'roi',
+  'itm',
+  'usd',
+  'kyc',
+  'tos',
+  'faq',
+  'api',
+  'url',
+  'pc',
+  'ios',
+  'os',
+  'ui',
+  'ux',
+  'qr',
+  'sms',
+  'otp',
+  '2fa',
 ]);
 
 const fix = process.argv.includes('--fix');
@@ -158,13 +205,46 @@ const offenders = [];
 let fixedNodes = 0;
 let fixedFiles = 0;
 
-for (const file of walk(SRC)) {
-  const original = readFileSync(file, 'utf8');
+/**
+ * AUDIT 2026-08-31 - the app shell was outside this gate.
+ *
+ * This walks src/ for .tsx, which is every page of the SPA. It is not every
+ * page a PLAYER sees: index.html carries the boot-failure screen, and that
+ * screen shipped "Loading failed" and "Please clear your browser cache and
+ * reload." - sentence case, on the one page that is guaranteed to be read by
+ * somebody already having a bad time.
+ *
+ * index.html is not TSX, so the AST walk above cannot read it. It gets a
+ * narrow HTML pass instead: the text inside heading, paragraph, button and
+ * title elements, which is the same "prose a player reads" that jsxTextNodes
+ * selects for, and nothing that looks like markup, script or style.
+ */
+const HTML_TEXT = /<(h[1-6]|p|button|title)\b[^>]*>([^<]*[A-Za-z][^<]*)<\/\1>/g;
+
+function htmlTextNodes(source) {
+  const out = [];
+  for (const m of source.matchAll(HTML_TEXT)) {
+    const text = m[2];
+    // Skip anything that is plainly not prose: entities only, or a lone glyph.
+    if (!/[A-Za-z]{2}/.test(text)) continue;
+    const start = m.index + m[0].indexOf(text, m[0].indexOf('>'));
+    out.push({ start, end: start + text.length, text, suffix: false, prefix: false });
+  }
+  return out;
+}
+
+for (const file of [...walk(SRC), join(ROOT, 'index.html')]) {
+  let original;
+  try {
+    original = readFileSync(file, 'utf8');
+  } catch {
+    continue; // absent in this checkout is not a failure
+  }
   if (!original.includes('<')) continue;
 
   let nodes;
   try {
-    nodes = jsxTextNodes(file, original);
+    nodes = extname(file) === '.html' ? htmlTextNodes(original) : jsxTextNodes(file, original);
   } catch {
     continue; // a file the parser cannot read is not this gate's problem
   }
@@ -215,7 +295,7 @@ if (fix) {
 
 if (offenders.length > 0) {
   console.error('\ncheck-title-case FAILED: page copy is not Title Cased.\n');
-  console.error("Dan 2026-08-21: the first letter of every word is capitalized on every");
+  console.error('Dan 2026-08-21: the first letter of every word is capitalized on every');
   console.error('forward-facing page. Run: node scripts/ci/check-title-case.mjs --fix\n');
   offenders.slice(0, 60).forEach((o) => console.error('  ' + o));
   if (offenders.length > 60) console.error(`  ... and ${offenders.length - 60} more`);

@@ -165,6 +165,16 @@ const GESTURE_FOR_ACTION: Partial<
   all_in: { gesture: 'push', ms: 560 },
   check: { gesture: 'check', ms: 440 },
   fold: { gesture: 'fold', ms: 660 },
+  /* 'discard' is DELIBERATELY absent, and this note is here so nobody adds it
+     by pattern-matching. The library is push / check / fold / celebrate / lose
+     / alert, and none of them means "throws one card away and keeps playing".
+     `fold` is the tempting one and it is the worst: it is the slump that tells
+     the whole table a hand has DIED, played over a player who is still in the
+     pot - which is precisely the confusion Dan reported ("auto folded my hand,
+     even though it didn't"). The discard already has its own card animation
+     and its own cue; a wrong gesture would subtract from it, not add. If a
+     real throw-away gesture is ever rigged, wire it here.
+     Pinned in tests/animations-always-play.law.test.ts. */
 };
 
 /** Celebration window — must outlast spAvatarCelebrate (900ms) by a hair. */
@@ -1151,7 +1161,7 @@ export const SeatSlot = memo(
     }, [lastAction]);
 
     /**
-     * CRAZY PINEAPPLE PHASE 3 2026-08-31 — one card leaves the hand.
+     * CRAZY PINEAPPLE PHASE 3 2026-08-31 - one card leaves the hand.
      *
      * Deliberately its own effect, its own ref and its own timer, for the same
      * reason the avatar choreography below is: the all-in/fold effect above
@@ -1164,27 +1174,41 @@ export const SeatSlot = memo(
      * same PLAYER_ACTION event, on the same code path, at the horse's own
      * humanlike delay. There is no `is_horse` anywhere near this.
      *
-     * The window outlasts the CSS the way the fold's does — cardDiscardOut is
+     * The window outlasts the CSS the way the fold's does - cardDiscardOut is
      * 420ms and this is 500ms, both scaled by --animation-speed, so the ghost
      * is never unmounted mid-flight at any speed setting (ANIMATION AUDIT
      * 2026-08-19 found exactly that bug on the fold).
      *
      * NOT marked data-motion="keep", and that is deliberate: the length of
-     * this animation carries no information. What it MEANS — a card left this
-     * hand — is carried by its final frame and by the row that is now one card
+     * this animation carries no information. What it MEANS - a card left this
+     * hand - is carried by its final frame and by the row that is now one card
      * shorter, both of which reduced motion preserves (reducedMotion.css
      * collapses to 1ms rather than `animation: none` precisely so `forwards`
      * animations still land). Motion collapses; the meaning does not.
      */
     const [discardFlight, setDiscardFlight] = useState(false);
     const prevDiscardActionRef = React.useRef<LastAction>(null);
+    /* AUDIT 2026-08-31: belt to the engine's braces. The trigger is now durable
+       (HandController records the discard on state.actionHistory, so a snapshot
+       re-asserts it instead of erasing it), but a seat discards exactly ONCE
+       per hand, so a second flight is never correct however lastAction gets
+       there. This makes a fall-then-rise from any source - a dropped snapshot,
+       a resync, a re-mount - unable to throw the same card twice. */
+    const inFlightRef = React.useRef(false);
     useEffect(() => {
       const rising = lastAction === 'discard' && prevDiscardActionRef.current !== 'discard';
       prevDiscardActionRef.current = lastAction;
-      if (!rising) return;
+      if (!rising || inFlightRef.current) return;
+      inFlightRef.current = true;
       setDiscardFlight(true);
-      const timer = setTimeout(() => setDiscardFlight(false), 500 * getAnimationSpeed());
-      return () => clearTimeout(timer);
+      const timer = setTimeout(() => {
+        inFlightRef.current = false;
+        setDiscardFlight(false);
+      }, 500 * getAnimationSpeed());
+      return () => {
+        clearTimeout(timer);
+        inFlightRef.current = false;
+      };
     }, [lastAction]);
 
     /**

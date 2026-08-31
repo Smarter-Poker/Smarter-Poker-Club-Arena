@@ -9,18 +9,18 @@
   <link rel="apple-touch-icon" href="/hub/club-arena/poker-chip-logo.png" />
   <!-- PINCH-ZOOM RESTORED 2026-08-23 (Dan approved). This carried
        `maximum-scale=1.0, user-scalable=no`, which disabled pinch-zoom for
-       everyone — a WCAG 1.4.4 failure, and on iOS it is what was masking the
+       everyone - a WCAG 1.4.4 failure, and on iOS it is what was masking the
        real bug: any text field under 16px makes Safari auto-zoom on focus and
        never zoom back. The lock hid that symptom instead of fixing it.
 
        Every text field is now at least 16px at phone width (56 rules fixed at
        source across PRs #380/#391/#408), so the auto-zoom cannot fire and the
        lock has nothing left to hold back. tests/e2e/mobile-input-zoom.spec.ts
-       fails CI if a sub-16px field ever comes back — do not re-add the lock,
+       fails CI if a sub-16px field ever comes back - do not re-add the lock,
        fix the field. -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="description"
-    content="Club Arena — Private online poker clubs with real-time gameplay, tournaments, hand histories, player stats, leaderboards, and club management on Smarter.Poker." />
+    content="Club Arena - Private online poker clubs with real-time gameplay, tournaments, hand histories, player stats, leaderboards, and club management on Smarter.Poker." />
   <meta name="robots" content="noindex, nofollow" />
   <meta name="theme-color" content="#0a0a1a" />
   <meta name="mobile-web-app-capable" content="yes" />
@@ -31,7 +31,7 @@
   <!-- Open Graph / Social Sharing -->
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Smarter.Poker" />
-  <meta property="og:title" content="Club Arena — Private Online Poker Clubs | Smarter.Poker" />
+  <meta property="og:title" content="Club Arena - Private Online Poker Clubs | Smarter.Poker" />
   <meta property="og:description"
     content="Create and join private poker clubs. Real-time gameplay, tournaments, hand histories, player stats, and club management." />
   <meta property="og:image" content="https://smarter.poker/images/og-default.png" />
@@ -43,7 +43,7 @@
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:site" content="@SmarterPoker" />
-  <meta name="twitter:title" content="Club Arena — Private Online Poker Clubs | Smarter.Poker" />
+  <meta name="twitter:title" content="Club Arena - Private Online Poker Clubs | Smarter.Poker" />
   <meta name="twitter:description"
     content="Create and join private poker clubs. Real-time gameplay, tournaments, and club management." />
   <meta name="twitter:image" content="https://smarter.poker/images/og-default.png" />
@@ -51,7 +51,7 @@
   <title>♠ Club Arena | Smarter.Poker</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- PERF 2026-08-22: preconnect to Supabase — every boot's first real work is
+  <!-- PERF 2026-08-22: preconnect to Supabase - every boot's first real work is
        auth (getSession → token refresh) + data fetches against this origin.
        Warming DNS+TLS in parallel with JS download saves 100-300ms on mobile. -->
   <link rel="preconnect" href="https://kuklfnapbkmacvwxktbh.supabase.co" crossorigin>
@@ -92,7 +92,7 @@
        Dan 2026-04-17: Mobile cold boot with 100+ lazy chunks can take 5-8s. The
        old 2500ms check was triggering false-positive reloads every 20s on phones.
        Raised CHECK_DELAY to 10000ms. Also added a boot sentinel (window.__CLUB_ARENA_BOOTING__)
-       that main.tsx sets on import — if the sentinel is set, the self-heal stands
+       that main.tsx sets on import - if the sentinel is set, the self-heal stands
        down because React has started (even if mount hasn't finished yet). -->
   <script>
     (function() {
@@ -106,7 +106,7 @@
         var root = document.getElementById('root');
         // Only reload if: (a) #root is empty, AND (b) main.tsx never even imported.
         // The sentinel flips to true the moment main.tsx runs. If it's true, React
-        // is booting — just slow. Don't reload, or we'll thrash the chunk loader.
+        // is booting - just slow. Don't reload, or we'll thrash the chunk loader.
         var mainNeverStarted = !window.__CLUB_ARENA_BOOTING__;
         if (root && root.childNodes.length === 0 && mainNeverStarted && retryCount < MAX_RETRIES) {
           try { sessionStorage.setItem(RETRY_KEY, String(retryCount + 1)); } catch(e) {}
@@ -130,7 +130,7 @@
         } else if (retryCount >= MAX_RETRIES && root && root.childNodes.length === 0 && mainNeverStarted) {
           try { sessionStorage.removeItem(RETRY_KEY); } catch(e) {}
           // Last resort: show a visible error so the page isn't just blank
-          root.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0a1a;color:#fff;font-family:Inter,system-ui,sans-serif;text-align:center;padding:2rem"><div><h1 style="font-size:1.5rem;margin-bottom:1rem">Loading failed</h1><p style="color:rgba(255,255,255,0.6);margin-bottom:1.5rem">Please clear your browser cache and reload.</p><button onclick="caches.keys().then(function(k){k.forEach(function(n){caches.delete(n)})});location.reload()" style="padding:10px 24px;border:none;border-radius:8px;background:#3b82f6;color:#fff;font-size:1rem;cursor:pointer">Clear Cache & Reload</button></div></div>';
+          root.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0a1a;color:#fff;font-family:Inter,system-ui,sans-serif;text-align:center;padding:2rem"><div><h1 style="font-size:1.5rem;margin-bottom:1rem">Loading Failed</h1><p style="color:rgba(255,255,255,0.6);margin-bottom:1.5rem">Please Clear Your Browser Cache And Reload.</p><button onclick="caches.keys().then(function(k){k.forEach(function(n){caches.delete(n)})});location.reload()" style="padding:10px 24px;border:none;border-radius:8px;background:#3b82f6;color:#fff;font-size:1rem;cursor:pointer">Clear Cache & Reload</button></div></div>';
         }
       }, CHECK_DELAY);
 

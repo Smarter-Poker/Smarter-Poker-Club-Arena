@@ -2406,7 +2406,7 @@ export default function TablePage({
      pause was there and the thing it was hiding was not. CLAUDE.md 10.5 says
      timing is part of the treatment and the tell is the rhythm.
 
-     Two pieces of state, both hand-scoped and both cleared on HAND_STARTED:
+     Two pieces of state:
 
        heroDiscardFlight  the card hero threw, so their own seat can fly a
                           ghost of it after the row has already shrunk.
@@ -2414,12 +2414,28 @@ export default function TablePage({
                           villain's face-down fan drops from three backs to
                           two. Nothing else on the client knew a villain's
                           hand had changed size - holeCardCount is the
-                          variant's number and the variant never changes. */
+                          variant's number and the variant never changes.
+
+     AUDIT 2026-08-31: both are STAMPED with the hand they belong to and read
+     back only for that hand. HAND_STARTED still clears them and is the normal
+     route, but it is a single WS event, and a dropped one used to mean a seat
+     played the NEXT hand visibly one card short, or hero's ghost flew carrying
+     the previous hand's card. A stamp cannot be dropped. */
   const [heroDiscardFlight, setHeroDiscardFlight] = useState<{
     card: Card;
-    nonce: number;
+    hand: number;
   } | null>(null);
-  const [discardedSeats, setDiscardedSeats] = useState<readonly number[]>([]);
+  const [discardedSeats, setDiscardedSeats] = useState<{
+    hand: number;
+    seats: readonly number[];
+  }>({ hand: 0, seats: [] });
+
+  /** Has this seat already thrown its card in the hand being played right now? */
+  const seatHasDiscarded = useCallback(
+    (seat: number): boolean =>
+      discardedSeats.hand === (tableState.handNumber ?? 0) && discardedSeats.seats.includes(seat),
+    [discardedSeats, tableState.handNumber]
+  );
 
   const handlePineappleDiscard = useCallback(
     async (displayIndex: number): Promise<boolean> => {
@@ -2466,7 +2482,7 @@ export default function TablePage({
          in Crazy Pineapple, and hole cards do not ride the public broadcast at
          all (table_hole_cards, RLS - migration 20260312_secure_hole_cards_fix).
          A villain's ghost is a card BACK, from the same event everyone sees. */
-      setHeroDiscardFlight({ card: chosen, nonce: Date.now() });
+      setHeroDiscardFlight({ card: chosen, hand: tableStateRef.current.handNumber ?? 0 });
       setTableState((prev) => {
         const players = [...prev.players];
         const heroIdx = players.findIndex((pl) => pl && pl.id === userId);
@@ -12739,7 +12755,17 @@ export default function TablePage({
            10.5) - and NOTHING about which card it was, because this is the
            public broadcast. Cleared on HAND_STARTED below. */
         if (action === 'discard' && actionSeat > 0) {
-          setDiscardedSeats((prev) => (prev.includes(actionSeat) ? prev : [...prev, actionSeat]));
+          const actionHand =
+            Number((data as { hand_number?: number }).hand_number) ||
+            tableStateRef.current.handNumber ||
+            0;
+          setDiscardedSeats((prev) =>
+            prev.hand === actionHand
+              ? prev.seats.includes(actionSeat)
+                ? prev
+                : { hand: actionHand, seats: [...prev.seats, actionSeat] }
+              : { hand: actionHand, seats: [actionSeat] }
+          );
         }
         // Bible V8 §5.2: All-in dramatic mode activates on ANY player all-in.
         //
@@ -12790,7 +12816,7 @@ export default function TablePage({
         /* PHASE 3 2026-08-31: the discard belongs to the hand it was made in.
            Both of these shrink a card row, so carrying either into the next
            hand would deal a seat a hand that is visibly one card short. */
-        setDiscardedSeats((prev) => (prev.length === 0 ? prev : []));
+        setDiscardedSeats((prev) => (prev.seats.length === 0 ? prev : { hand: 0, seats: [] }));
         setHeroDiscardFlight(null);
         setBombPotActive(false);
         setBombPotHoldFlop(false);
@@ -20123,13 +20149,17 @@ export default function TablePage({
                      the felt for the whole hand after discarding one - the
                      table never showed that anybody's hand had got smaller.
                      Floored at one by SeatSlot's own sane-band clamp. */
-                  holeCardCount={seatHoleCardCount - (discardedSeats.includes(seatNumber) ? 1 : 0)}
+                  holeCardCount={seatHoleCardCount - (seatHasDiscarded(seatNumber) ? 1 : 0)}
                   /* Hero's own discarded card, for the ghost that flies to the
                      muck after the row has already shrunk. Never set for a
                      villain: their discard is not revealed in this variant, so
                      their ghost is a card back. */
                   discardFlightCard={
-                    player?.isHero && heroDiscardFlight ? heroDiscardFlight.card : null
+                    player?.isHero &&
+                    heroDiscardFlight &&
+                    heroDiscardFlight.hand === (tableState.handNumber ?? 0)
+                      ? heroDiscardFlight.card
+                      : null
                   }
                   /* Dan 2026-08-28: a Spin waiting on its third seat drew the
                      two seated players holding face-down hands. A villain's

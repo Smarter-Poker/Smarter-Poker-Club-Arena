@@ -139,6 +139,7 @@ const customizationHarnessEnabled =
 const FinancialAlertsPage = lazyWithRetry(() => import('./pages/FinancialAlertsPage'));
 const DisputeManagementPage = lazyWithRetry(() => import('./pages/DisputeManagementPage'));
 const FinancialHealthPage = lazyWithRetry(() => import('./pages/FinancialHealthPage'));
+const DriftIncidentsPage = lazyWithRetry(() => import('./pages/DriftIncidentsPage'));
 const FinancialAdminHub = lazyWithRetry(() => import('./pages/FinancialAdminHub'));
 const RateAuditPage = lazyWithRetry(() => import('./pages/RateAuditPage'));
 const SettlementDashboardPage = lazyWithRetry(() => import('./pages/SettlementDashboardPage'));
@@ -1514,6 +1515,16 @@ function FullApp() {
                     <AuthGuard>
                       <PageErrorBoundary pageName="Financial Alerts">
                         <FinancialAlertsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="financial-incidents"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Drift Incidents">
+                        <DriftIncidentsPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

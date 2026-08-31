@@ -46,6 +46,10 @@ describe('Stats evidence links to real hand history', () => {
 
 describe('Stats production certification', () => {
   it('runs the deep, mobile, and accessibility suite after every successful deploy', () => {
-    expect(POST_DEPLOY_WORKFLOW).toContain('tests/e2e/stats-deep.spec.ts');
+    const statsGate = POST_DEPLOY_WORKFLOW.indexOf('tests/e2e/stats-deep.spec.ts');
+    const broadSweep = POST_DEPLOY_WORKFLOW.indexOf('tests/e2e/smoke.spec.ts');
+    expect(statsGate).toBeGreaterThan(-1);
+    expect(broadSweep).toBeGreaterThan(statsGate);
+    expect(POST_DEPLOY_WORKFLOW.match(/tests\/e2e\/stats-deep\.spec\.ts/g)).toHaveLength(1);
   });
 });

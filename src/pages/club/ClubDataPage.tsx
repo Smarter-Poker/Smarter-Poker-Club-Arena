@@ -38,6 +38,7 @@ import { resolveClubUUID, isUUID } from '../../utils/clubIdResolver';
 import { isAuthzError } from '../../utils/clubDashboard';
 import { reportError } from '../../utils/errorReporter';
 import { downloadCsv, csvEscape } from '../../utils/downloadCsv';
+import { retryFetch } from '../../utils/retryFetch';
 import { useVirtualScroll } from '../../hooks/useVirtualScroll';
 import { EmptyState, LoadingState, PermissionState } from '../../components/common/EmptyState';
 import styles from './ClubDataPage.module.css';
@@ -196,6 +197,8 @@ const PLAYER_PAGE_SIZE = 100;
 const GAME_PAGE_SIZE = 100;
 const DATA_ROW_HEIGHT = 92;
 const DATA_VIEWPORT_HEIGHT = 736;
+const COLD_READ_ATTEMPT_TIMEOUT_MS = 12_000;
+const COLD_READ_RETRY_DELAY_MS = 350;
 
 /** What a money tile shows when there is no figure to show. Never "0.00". */
 const NO_VALUE = '-';
@@ -230,6 +233,20 @@ function withTimeout<T>(
     .finally(() => {
       if (timer) clearTimeout(timer);
     });
+}
+
+/**
+ * A newly scaled-to-zero database connection can cancel the first reporting
+ * statement while its identical retry completes in under five seconds. These
+ * RPCs are read-only, so retrying one transient PostgREST/transport failure is
+ * safe. Each attempt owns its AbortSignal and the pair still fits inside the
+ * page's existing 25-second loading budget.
+ */
+function coldRead<T>(request: () => AbortableRequest<T>, message: string): Promise<T> {
+  return retryFetch(() => withTimeout(request(), message, COLD_READ_ATTEMPT_TIMEOUT_MS), {
+    maxRetries: 1,
+    baseDelayMs: COLD_READ_RETRY_DELAY_MS,
+  });
 }
 
 /**
@@ -509,35 +526,35 @@ export default function ClubDataPage() {
       setGamesPageError(null);
       try {
         const [snapshotResult, pageResult] = await Promise.all([
-          withTimeout(
-            supabase.rpc('ca_club_data_snapshot', {
-              p_club_id: clubUuid,
-              p_start: startDate,
-              p_end: endDate,
-              p_game: game,
-              p_stakes: stakes,
-              p_search: search || null,
-              // Summary and rows are separate contracts now. Keep the legacy
-              // row field minimally populated for backward compatibility.
-              p_limit: 1,
-            }),
-            'Club data request timed out',
-            SNAPSHOT_REQUEST_TIMEOUT_MS
+          coldRead(
+            () =>
+              supabase.rpc('ca_club_data_snapshot', {
+                p_club_id: clubUuid,
+                p_start: startDate,
+                p_end: endDate,
+                p_game: game,
+                p_stakes: stakes,
+                p_search: search || null,
+                // Summary and rows are separate contracts now. Keep the legacy
+                // row field minimally populated for backward compatibility.
+                p_limit: 1,
+              }),
+            'Club data request timed out'
           ),
-          withTimeout(
-            supabase.rpc('ca_club_game_page', {
-              p_club_id: clubUuid,
-              p_start: startDate,
-              p_end: endDate,
-              p_game: game,
-              p_stakes: stakes,
-              p_search: search || null,
-              p_sort: gameSort,
-              p_cursor: null,
-              p_limit: GAME_PAGE_SIZE,
-            }),
-            'Club games request timed out',
-            SNAPSHOT_REQUEST_TIMEOUT_MS
+          coldRead(
+            () =>
+              supabase.rpc('ca_club_game_page', {
+                p_club_id: clubUuid,
+                p_start: startDate,
+                p_end: endDate,
+                p_game: game,
+                p_stakes: stakes,
+                p_search: search || null,
+                p_sort: gameSort,
+                p_cursor: null,
+                p_limit: GAME_PAGE_SIZE,
+              }),
+            'Club games request timed out'
           ),
         ]);
         if (stale()) return false;
@@ -608,28 +625,28 @@ export default function ClubDataPage() {
       setPlayersPageError(null);
       try {
         const [breakdownResult, pageResult] = await Promise.all([
-          withTimeout(
-            supabase.rpc('ca_club_player_breakdown', {
-              p_club_id: clubUuid,
-              p_start: startDate,
-              p_end: endDate,
-              p_limit: 1,
-            }),
-            'Player totals request timed out',
-            PLAYER_REQUEST_TIMEOUT_MS
+          coldRead(
+            () =>
+              supabase.rpc('ca_club_player_breakdown', {
+                p_club_id: clubUuid,
+                p_start: startDate,
+                p_end: endDate,
+                p_limit: 1,
+              }),
+            'Player totals request timed out'
           ),
-          withTimeout(
-            supabase.rpc('ca_club_player_page', {
-              p_club_id: clubUuid,
-              p_start: startDate,
-              p_end: endDate,
-              p_sort: playerSort,
-              p_search: null,
-              p_cursor: null,
-              p_limit: PLAYER_PAGE_SIZE,
-            }),
-            'Player data request timed out',
-            PLAYER_REQUEST_TIMEOUT_MS
+          coldRead(
+            () =>
+              supabase.rpc('ca_club_player_page', {
+                p_club_id: clubUuid,
+                p_start: startDate,
+                p_end: endDate,
+                p_sort: playerSort,
+                p_search: null,
+                p_cursor: null,
+                p_limit: PLAYER_PAGE_SIZE,
+              }),
+            'Player data request timed out'
           ),
         ]);
         if (stale()) return false;

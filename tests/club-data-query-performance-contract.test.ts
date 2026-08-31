@@ -135,9 +135,14 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
     expect(page).toContain('const PLAYER_PAGE_SIZE = 100;');
     expect(page).toContain('p_limit: PLAYER_PAGE_SIZE');
     expect(page).toContain('const SNAPSHOT_REQUEST_TIMEOUT_MS = 25_000;');
-    expect(page).toMatch(/'Club data request timed out',\s*SNAPSHOT_REQUEST_TIMEOUT_MS/);
     expect(page).toContain('const PLAYER_REQUEST_TIMEOUT_MS = 25_000;');
-    expect(page).toMatch(/'Player data request timed out',\s*PLAYER_REQUEST_TIMEOUT_MS/);
+    expect(page).toContain('const COLD_READ_ATTEMPT_TIMEOUT_MS = 12_000;');
+    expect(page).toContain('const COLD_READ_RETRY_DELAY_MS = 350;');
+    expect(page).toMatch(
+      /retryFetch\([\s\S]*maxRetries: 1,[\s\S]*baseDelayMs: COLD_READ_RETRY_DELAY_MS/
+    );
+    expect(page).toMatch(/coldRead\([\s\S]*'Club data request timed out'/);
+    expect(page).toMatch(/coldRead\([\s\S]*'Player data request timed out'/);
     expect(page).toMatch(/setPlayersLoading\(true\);\s*setPlayersError\(null\);/);
   });
 

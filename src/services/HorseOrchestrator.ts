@@ -1478,6 +1478,9 @@ class HorseOrchestrator {
           name: config.name,
           game_type: dbGameType,
           variant: config.type === 'mtt' ? 'freezeout' : config.type, // freezeout/bounty/progressive_bounty/mystery_bounty
+          // Written explicitly rather than left to the column default, so the
+          // row states its format instead of inheriting one.
+          tournament_type: 'MTT',
           ...buyInColumns(config.buyIn, {
             tournamentType: 'MTT',
             variant: config.type,
@@ -1520,13 +1523,27 @@ class HorseOrchestrator {
         }
       }
 
-      // Update tournament player count and prize pool (based on actual registrations)
+      /**
+       * THE REALISED POOL IS NOT A GUARANTEE (2026-08-31 audit).
+       *
+       * This wrote `Math.max(config.guarantee, registered * buyIn)` into
+       * `guaranteed_prize` after registration — turning however much happened
+       * to be collected into a HOUSE PROMISE. That column is not a display
+       * total: `trg_tournaments_guarantee_affordable` reads it to decide
+       * whether the funding bank can cover the event, and
+       * `fn_apply_prize_guarantee` reads it to top a short pool UP to it. So
+       * a well-attended tournament silently raised its own guarantee to the
+       * amount already in the pool, and a later shortfall would be topped up
+       * to a number nobody promised.
+       *
+       * The guarantee is what the config says and nothing else. The realised
+       * pool is derived from entries wherever it is displayed.
+       */
       const prizePool = Math.max(config.guarantee || 0, registered * config.buyIn);
       await supabase
         .from('tournaments')
         .update({
           current_players: registered,
-          guaranteed_prize: prizePool,
           status: 'REGISTERING',
         })
         .eq('id', tournament.id);
@@ -1593,6 +1610,11 @@ class HorseOrchestrator {
           // Lower case: every reader compares lower case (variant === 'satellite',
           // t.variant = 'spin'), and TournamentRecurringService writes 'sng'.
           variant: 'sng',
+          // 2026-08-31: never written, so every SNG this path created landed on
+          // the column default 'MTT' (20260308_tournament_schema_sync.sql). A
+          // 6-max Sit & Go typed as a multi-table tournament reads wrong to
+          // every consumer that switches on tournament_type.
+          tournament_type: 'SNG',
           ...buyInColumns(config.buyIn, {
             tournamentType: 'SNG',
             maxPlayers: config.maxPlayers,
@@ -1633,18 +1655,20 @@ class HorseOrchestrator {
         }
       }
 
-      const prizePool = registered * config.buyIn;
+      // An SNG has no guarantee at all — it inserts `guaranteed_prize: null`
+      // — so writing the realised pool here was strictly worse than the MTT
+      // case above: it INVENTED a house promise where the config had made
+      // none. See the note in launch() for what that column actually drives.
       await supabase
         .from('tournaments')
         .update({
           current_players: registered,
-          guaranteed_prize: prizePool,
           status: 'REGISTERING', // DealerPage discovers REGISTERING tournaments and starts them via TournamentEngine
         })
         .eq('id', sng.id);
 
       console.debug(
-        `[Orchestrator] SNG "${config.name}" created: ${sng.id} with ${registered} horses`
+        `[Orchestrator] SNG "${config.name}" created: ${sng.id} with ${registered} horses, pool ${registered * config.buyIn}`
       );
       return { tournamentId: sng.id, registered };
     } catch (err: any) {

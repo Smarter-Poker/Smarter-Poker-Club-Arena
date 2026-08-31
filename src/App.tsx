@@ -121,7 +121,6 @@ const ClubAnnouncementsPage = lazyWithRetry(() => import('./pages/ClubAnnounceme
 const VIPPage = lazyWithRetry(() => import('./pages/VIPPage'));
 const ClubFinancialsPage = lazyWithRetry(() => import('./pages/ClubFinancialsPage'));
 const BonusPage = lazyWithRetry(() => import('./pages/BonusPage'));
-const WaitlistPage = lazyWithRetry(() => import('./pages/WaitlistPage'));
 const ClubRulesPage = lazyWithRetry(() => import('./pages/ClubRulesPage'));
 const NotificationCenter = lazyWithRetry(() => import('./pages/NotificationCenter'));
 const BusDevToolsPage = lazyWithRetry(() => import('./pages/BusDevToolsPage'));
@@ -144,7 +143,6 @@ const FinancialAdminHub = lazyWithRetry(() => import('./pages/FinancialAdminHub'
 const RateAuditPage = lazyWithRetry(() => import('./pages/RateAuditPage'));
 const SettlementDashboardPage = lazyWithRetry(() => import('./pages/SettlementDashboardPage'));
 const AgentPortalPage = lazyWithRetry(() => import('./pages/AgentPortalPage'));
-const RakebackDashboard = lazyWithRetry(() => import('./pages/RakebackDashboard'));
 const CreditAdminPanel = lazyWithRetry(() => import('./pages/CreditAdminPanel'));
 const SettlementHistoryPage = lazyWithRetry(() => import('./pages/SettlementHistoryPage'));
 const FlashPoolPage = lazyWithRetry(() => import('./pages/FlashPoolPage'));
@@ -157,7 +155,6 @@ const XMTTPage = lazyWithRetry(() => import('./pages/XMTTPage'));
 const MarketplacePage = lazyWithRetry(() => import('./pages/MarketplacePage'));
 const UnionGamesPage = lazyWithRetry(() => import('./pages/UnionGamesPage'));
 const AdminDashboardPage = lazyWithRetry(() => import('./pages/AdminDashboardPage'));
-const PlayerSessionsPage = lazyWithRetry(() => import('./pages/PlayerSessionsPage'));
 const AgentDashboardPage = lazyWithRetry(() => import('./pages/AgentDashboardPage'));
 const UnionDashboardPage = lazyWithRetry(() => import('./pages/UnionDashboardPage'));
 const CommunityWorkspacePage = lazyWithRetry(() =>
@@ -710,15 +707,14 @@ function FullApp() {
                 />
                 <Route
                   path="clubs/:clubId/dashboard"
-                  element={
-                    <AuthGuard>
-                      <ClubMemberGuard>
-                        <PageErrorBoundary pageName="Club Data">
-                          <ClubDataPage />
-                        </PageErrorBoundary>
-                      </ClubMemberGuard>
-                    </AuthGuard>
-                  }
+                  /* TWO URLS, ONE PAGE (Phase 7).
+                     This rendered exactly the same ClubDataPage as
+                     clubs/:clubId/data, which the operations rail links. The
+                     allowlist called it "superseded by dashboard-full", which
+                     was never what it rendered. `relative="path"` resolves
+                     ../data against the current URL, so the club id follows
+                     without a component to carry it. */
+                  element={<Navigate to="../data" relative="path" replace />}
                 />
                 <Route
                   path="clubs/:clubId/operations"
@@ -1181,10 +1177,16 @@ function FullApp() {
                 />
                 <Route
                   path="player-sessions"
+                  /* CLUB PLAYER OPERATIONS ARE CLUB-SCOPED (Phase 7).
+                     PlayerSessionsPage was a global, unparameterised twin of
+                     clubs/:clubId/members with no door. It resolved a club for
+                     itself, which is exactly what LegacyClubToolRedirect does
+                     for the other four legacy operator URLs - so it joins them
+                     rather than keeping a second answer to the same question. */
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Players">
-                        <PlayerSessionsPage />
+                        <LegacyClubToolRedirect destination="members" toolName="Players" />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -1590,13 +1592,12 @@ function FullApp() {
                 />
                 <Route
                   path="rakeback-dashboard"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Rakeback">
-                        <RakebackDashboard />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
+                  /* ONE RAKEBACK DISPLAY (Phase 7, Dan 2026-08-31).
+                     RakebackDashboard was a second player-facing rakeback view
+                     beside /rakeback, reachable only by typing the URL. Same
+                     ruling as notification-center on 2026-08-25: one display
+                     per thing. Kept as a redirect so bookmarks still land. */
+                  element={<Navigate to="/rakeback" replace />}
                 />
                 <Route
                   path="credit-admin"
@@ -1650,13 +1651,13 @@ function FullApp() {
                 />
                 <Route
                   path="waitlist"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Waitlist">
-                        <WaitlistPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
+                  /* THE WAITLIST LIVES WHERE THE TABLES ARE (Phase 7).
+                     table_waitlist carries 10,055 rows, every one of them put
+                     there by the lobby and table flow. This standalone page was
+                     a second view of the same queue that nothing linked to.
+                     Redirected to the arena, where the tables and their queues
+                     actually are. */
+                  element={<Navigate to="/" replace />}
                 />
                 <Route
                   path="clubs/:clubId/blacklist"
@@ -1706,11 +1707,27 @@ function FullApp() {
                 {/* Q4: Backported Pages (Hub → Club Arena) */}
                 <Route
                   path="anti-cheat"
+                  /* The legacy global entrance. Anti-cheat is club-owned data,
+                     so it now has a club-scoped route below and a door on the
+                     operations rail. This one resolves a club and forwards,
+                     exactly as the four other legacy operator URLs do. */
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Anti-Cheat">
-                        <AntiCheatPage />
+                        <LegacyClubToolRedirect destination="anti-cheat" toolName="Anti-Cheat" />
                       </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/anti-cheat"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Anti-Cheat">
+                          <AntiCheatPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1726,13 +1743,12 @@ function FullApp() {
                 />
                 <Route
                   path="union-dashboard"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Union Dashboard">
-                        <UnionDashboardPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
+                  /* THE SAME PAGE, WITHOUT ITS UNION (Phase 7).
+                     UnionDashboardPage serves at /unions/:unionId/operations and
+                     is reachable there. This was the unparameterised twin: it
+                     guessed a union for itself and nothing linked to it. Its
+                     3,130 lines were never invisible - only this door was. */
+                  element={<Navigate to="/unions" replace />}
                 />
                 <Route
                   path="marketplace"
@@ -1756,13 +1772,11 @@ function FullApp() {
                 />
                 <Route
                   path="union-games"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Union Games">
-                        <UnionGamesPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
+                  /* THE SAME PAGE, WITHOUT ITS UNION (Phase 7).
+                     UnionGamesPage serves at /unions/:unionId/games and is
+                     reachable there. Same unparameterised twin as
+                     union-dashboard above. */
+                  element={<Navigate to="/unions" replace />}
                 />
 
                 {/* DevTools (admin diagnostics) */}

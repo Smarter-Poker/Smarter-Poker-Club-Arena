@@ -149,5 +149,12 @@ describe('authenticated production account preflight', () => {
     expect(mobile).toContain('routes outside Club Arena');
     expect(mobile).toContain('el.closest(\'[aria-hidden="true"]\')');
     expect(mobile).toContain("el.getAttribute('alt')");
+    expect(mobile).toContain('TRANSIENT_DOCUMENT_ERROR');
+    expect(mobile).toContain('attempt <= 3');
+    expect(mobile).toContain('document did not stabilize after navigation');
+    expect(mobile).toContain("scrollingStyle.scrollBehavior = 'auto'");
+    expect(mobile).toContain('did not reach its scroll boundary');
+    expect(mobile).toContain('clippedBottom <= clippedTop');
+    expect(mobile).toContain('DOMRect.fromRect');
   });
 });

@@ -2372,7 +2372,7 @@ export default function PlayerStatsPage() {
                     <h3 style={{ color: '#f59e0b' }}>Advanced Stats</h3>
                   </div>
                   <PanelBoundary name="Advanced Stats">
-                    <AdvancedStatsSummary userId={targetUserId} initialData={advancedInitialData} />
+                    <AdvancedStatsSummary initialData={advancedInitialData} />
                   </PanelBoundary>
                 </div>
 

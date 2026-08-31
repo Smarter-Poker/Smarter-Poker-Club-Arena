@@ -155,6 +155,8 @@ export interface CreateClubData {
   city?: string;
   country?: string;
   logoPreview?: string | null;
+  /** Stable published asset URL for a curated placeholder crest. */
+  logoUrl?: string | null;
 }
 
 export async function createClub(clubData: CreateClubData): Promise<Club> {
@@ -181,7 +183,7 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
   const requestId = clubData.request_id || crypto.randomUUID();
 
   // ── Step 1: Upload raw logo to storage ──────────────────────────────
-  let logoUrl: string | null = null;
+  let logoUrl: string | null = clubData.logoUrl || null;
   let uploadedLogoPath: string | null = null;
   if (clubData.logoPreview) {
     try {

@@ -1,16 +1,16 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CreateClubModal — High-Fidelity Club Creation Popup
+ *  CreateClubModal — Full-Page Club Creation Console
  * ═══════════════════════════════════════════════════════════════════════════════
  * Uses the sci-fi themed modal frame with:
  * - Club name input
- * - Logo upload or generation buttons
+ * - Ten curated placeholder crests or a custom upload
  * - Terms acceptance checkbox
  * - CREATE button
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { MEDIA_BASE } from '../../utils/mediaBase';
+import { mediaUrl } from '../../utils/mediaBase';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import { ClubsService } from '../../services/ClubsService';
@@ -24,9 +24,24 @@ import { safeErrorMessage } from '../../utils/safeErrorMessage';
 import { optimizeClubLogo } from '../../utils/clubLogoImage';
 import { useDialogEscape } from '../../hooks/useDialogEscape';
 import { ClubEntryTrustService } from '../../services/ClubEntryTrustService';
-import { titleCase } from '../../utils/titleCase';
 
 const CREATE_DRAFT_KEY = 'club-arena:create-draft:v1';
+
+export const DEFAULT_CLUB_LOGOS = [
+  { id: 'spade', name: 'Spade Society', file: 'club-logos/preset-01.webp' },
+  { id: 'club', name: 'Club Heritage', file: 'club-logos/preset-04.webp' },
+  { id: 'crown', name: 'Royal Crown', file: 'club-logos/preset-06.webp' },
+  { id: 'shield', name: 'Card Shield', file: 'club-logos/preset-08.webp' },
+  { id: 'wolf', name: 'Midnight Wolf', file: 'club-logos/preset-09.webp' },
+  { id: 'lion', name: 'Golden Lion', file: 'club-logos/preset-10.webp' },
+  { id: 'dragon', name: 'Silver Dragon', file: 'club-logos/preset-12.webp' },
+  { id: 'phoenix', name: 'Bronze Phoenix', file: 'club-logos/preset-14.webp' },
+  { id: 'chip', name: 'Cardroom Chip', file: 'club-logos/preset-19.webp' },
+  { id: 'aces', name: 'Four Aces', file: 'club-logos/preset-20.webp' },
+] as const;
+
+const DEFAULT_LOGO = DEFAULT_CLUB_LOGOS[8];
+const defaultLogoUrl = (file: string) => mediaUrl(file);
 
 interface CreateClubModalProps {
   isOpen: boolean;
@@ -46,10 +61,10 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
   const [description, setDescription] = useState('');
   const [isPublic, setIsPublic] = useState(true);
   const [requiresApproval, setRequiresApproval] = useState(false);
-  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string>(defaultLogoUrl(DEFAULT_LOGO.file));
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(DEFAULT_LOGO.id);
   const [hasAgreed, setHasAgreed] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
-  const [showLogoGenerator, setShowLogoGenerator] = useState(false);
   const [visibleFormElements, setVisibleFormElements] = useState<boolean[]>([]);
   const [nameStatus, setNameStatus] = useState<
     'idle' | 'checking' | 'available' | 'taken' | 'error'
@@ -64,7 +79,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
   const [allowanceRetry, setAllowanceRetry] = useState(0);
   const [isOptimizingLogo, setIsOptimizingLogo] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
-  const trapRef = useFocusTrap(isOpen && !showLogoGenerator);
+  const trapRef = useFocusTrap(isOpen);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const creationRequestIdRef = useRef<string>(crypto.randomUUID());
@@ -84,12 +99,18 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
           description?: string;
           isPublic?: boolean;
           requiresApproval?: boolean;
+          logoPresetId?: string;
           requestId?: string;
         };
         setClubName(draft.name || '');
         setDescription(draft.description || '');
         setIsPublic(draft.isPublic ?? true);
         setRequiresApproval(draft.requiresApproval ?? false);
+        const restoredLogo = DEFAULT_CLUB_LOGOS.find((logo) => logo.id === draft.logoPresetId);
+        if (restoredLogo) {
+          setSelectedPresetId(restoredLogo.id);
+          setLogoPreview(defaultLogoUrl(restoredLogo.file));
+        }
         if (/^[0-9a-f-]{36}$/i.test(draft.requestId || '')) {
           creationRequestIdRef.current = draft.requestId!;
         }
@@ -117,6 +138,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
       description,
       isPublic,
       requiresApproval,
+      logoPresetId: selectedPresetId,
       requestId: creationRequestIdRef.current,
     };
     try {
@@ -126,7 +148,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     } catch (error) {
       reportError(error, 'CreateClubModal.SaveDraft');
     }
-  }, [clubName, description, isPublic, requiresApproval, isOpen]);
+  }, [clubName, description, isPublic, requiresApproval, selectedPresetId, isOpen]);
 
   useEffect(() => {
     if (!isOpen || clubName.trim().length < 3) {
@@ -169,7 +191,8 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     setIsOptimizingLogo(true);
     try {
       setLogoPreview(await optimizeClubLogo(file));
-      toast.success('Logo optimized for Club Arena');
+      setSelectedPresetId(null);
+      toast.success('Custom Logo Ready');
     } catch (error) {
       toast.error(safeErrorMessage(error, 'Could not process that image'));
     } finally {
@@ -178,9 +201,11 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     }
   };
 
-  const handleLogoGenerated = (logoDataUrl: string) => {
-    setLogoPreview(logoDataUrl);
-    setShowLogoGenerator(false);
+  const handlePresetSelect = (logo: (typeof DEFAULT_CLUB_LOGOS)[number]) => {
+    haptic.selection();
+    setSelectedPresetId(logo.id);
+    setLogoPreview(defaultLogoUrl(logo.file));
+    toast.success(`${logo.name} Selected`);
   };
 
   const handleCreate = async () => {
@@ -195,7 +220,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     }
 
     if (!logoPreview) {
-      toast.error('Please upload or create a logo');
+      toast.error('Please Select Or Upload A Club Logo');
       return;
     }
 
@@ -234,7 +259,8 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
         description: description.trim(),
         is_public: isPublic,
         requires_approval: requiresApproval,
-        logoPreview: logoPreview,
+        logoPreview: selectedPresetId ? null : logoPreview,
+        logoUrl: selectedPresetId ? logoPreview : null,
       });
 
       if (!isMounted.current) return;
@@ -244,7 +270,8 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
 
       setClubName('');
       setDescription('');
-      setLogoPreview(null);
+      setLogoPreview(defaultLogoUrl(DEFAULT_LOGO.file));
+      setSelectedPresetId(DEFAULT_LOGO.id);
       setHasAgreed(false);
       setDraftRestored(false);
       window.localStorage.removeItem(CREATE_DRAFT_KEY);
@@ -273,7 +300,8 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     }
   };
 
-  const hasDraft = Boolean(clubName.trim() || description.trim() || logoPreview);
+  // A built-in placeholder is the pristine default, not unsaved work.
+  const hasDraft = Boolean(clubName.trim() || description.trim() || selectedPresetId === null);
   const requestClose = useCallback(() => {
     if (isCreating) return;
     if (
@@ -284,7 +312,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
     ClubEntryTrustService.track('create', 'closed', { outcome: 'cancelled' });
     onClose();
   }, [hasDraft, isCreating, onClose]);
-  useDialogEscape(isOpen, requestClose, showLogoGenerator);
+  useDialogEscape(isOpen, requestClose);
 
   if (!isOpen) return null;
 
@@ -379,38 +407,57 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
               placeholder="What Kind Of Room Are You Building?"
             />
 
-            <span className={styles.fieldLabel}>Club Identity</span>
-            <div className={styles.logoWorkspace}>
-              <div className={styles.logoPreview}>
-                {logoPreview ? (
+            <fieldset className={styles.crestVault}>
+              <legend>Club Crest Vault</legend>
+              <div className={styles.crestVaultHeader}>
+                <div className={styles.logoPreview}>
                   <img src={logoPreview} alt="Selected Club Logo" className={styles.logoThumb} />
-                ) : (
-                  <span aria-hidden="true">♣</span>
-                )}
+                  <span className={styles.previewStatus}>
+                    {selectedPresetId ? 'Placeholder Crest Selected' : 'Custom Logo Selected'}
+                  </span>
+                </div>
+                <div className={styles.identityCopy}>
+                  <strong>Choose A Starting Identity</strong>
+                  <p>
+                    Select One Of Ten Club Arena Crests Now. The Club Owner Can Replace It With A
+                    Custom Logo At Any Time.
+                  </p>
+                  <button
+                    type="button"
+                    className={styles.uploadLogoBtn}
+                    disabled={isOptimizingLogo}
+                    onClick={() => {
+                      haptic.medium();
+                      fileInputRef.current?.click();
+                    }}
+                  >
+                    <span>{isOptimizingLogo ? 'Optimizing Logo…' : 'Upload A Custom Logo'}</span>
+                    <small>PNG, JPG Or WEBP · 5MB Maximum</small>
+                  </button>
+                </div>
               </div>
-              <div className={styles.logoActions}>
-                <button
-                  className={styles.uploadLogoBtn}
-                  onClick={() => {
-                    haptic.medium();
-                    fileInputRef.current?.click();
-                  }}
-                >
-                  <span>{isOptimizingLogo ? 'Optimizing…' : 'Upload Image'}</span>
-                  <small>PNG, JPG Or WEBP · 5MB Max</small>
-                </button>
-                <button
-                  className={styles.createLogoBtn}
-                  onClick={() => {
-                    haptic.medium();
-                    setShowLogoGenerator(true);
-                  }}
-                >
-                  <span>Generate With AI</span>
-                  <small>Describe A Custom Club Mark</small>
-                </button>
+
+              <div className={styles.crestGrid} role="radiogroup" aria-label="Default Club Logos">
+                {DEFAULT_CLUB_LOGOS.map((logo) => {
+                  const selected = selectedPresetId === logo.id;
+                  return (
+                    <button
+                      key={logo.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      aria-label={logo.name}
+                      className={`${styles.crestOption} ${selected ? styles.crestOptionSelected : ''}`}
+                      onClick={() => handlePresetSelect(logo)}
+                    >
+                      <img src={defaultLogoUrl(logo.file)} alt="" loading="lazy" decoding="async" />
+                      <span>{logo.name}</span>
+                      {selected && <small>Selected</small>}
+                    </button>
+                  );
+                })}
               </div>
-            </div>
+            </fieldset>
 
             {/* Hidden file input */}
             <input
@@ -492,198 +539,6 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
             </button>
           </footer>
         </div>
-
-        {/* Logo Generator Modal */}
-        {showLogoGenerator && (
-          <LogoGeneratorModal
-            clubName={clubName.trim()}
-            onSelect={handleLogoGenerated}
-            onClose={() => setShowLogoGenerator(false)}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Logo Generator Modal — Powered by OpenAI DALL-E
-// ═══════════════════════════════════════════════════════════════════════════════
-
-interface LogoGeneratorModalProps {
-  onSelect: (logoDataUrl: string) => void;
-  onClose: () => void;
-  clubName?: string;
-}
-
-function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorModalProps) {
-  const isMounted = useIsMounted();
-  const trapRef = useFocusTrap(true);
-  const [logoDescription, setLogoDescription] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  useDialogEscape(true, onClose);
-
-  const handleGenerate = async () => {
-    if (!logoDescription.trim()) {
-      return;
-    }
-
-    setIsGenerating(true);
-    setError(null);
-    setPreviewUrl(null);
-
-    try {
-      // Import the service dynamically
-      const { generateClubLogo } = await import('../../services/LogoGeneratorService');
-
-      const result = await generateClubLogo({
-        clubName: clubName || 'Poker Club',
-        style: 'modern',
-        theme: logoDescription.trim(),
-      });
-
-      if (!isMounted.current) return;
-
-      if (result.success && result.logoUrl) {
-        setPreviewUrl(result.logoUrl);
-        ClubEntryTrustService.track('create', 'logo_generated', { outcome: 'succeeded' });
-      } else {
-        if (isMounted.current) setError(safeErrorMessage(result.error, 'Failed to generate logo'));
-      }
-    } catch (err) {
-      reportError(err, 'CreateClubModal.Failed_to_generate_logo');
-      if (isMounted.current) setError(safeErrorMessage(err, 'Unknown error'));
-    } finally {
-      if (isMounted.current) setIsGenerating(false);
-    }
-  };
-
-  const handleUsePreview = () => {
-    if (previewUrl) {
-      onSelect(previewUrl);
-    }
-  };
-
-  return (
-    <div className={styles.logoGeneratorOverlay} onClick={onClose}>
-      <div
-        ref={trapRef}
-        className={styles.logoGeneratorModalContainer}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Generate a club logo"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          backgroundColor: isGenerating || previewUrl ? 'rgba(10, 10, 26, 0.98)' : 'transparent',
-        }}
-      >
-        {/* Frame - explicitly hidden during generation/preview */}
-        <img
-          loading="lazy"
-          decoding="async"
-          src={`${MEDIA_BASE}images/logo-generator-frame.webp`}
-          alt="Frame"
-          className={styles.frameImage}
-          style={{ display: isGenerating || previewUrl ? 'none' : 'block' }}
-        />
-
-        {/* Close button positioned over X */}
-        <button
-          className={styles.closeButton}
-          onClick={() => {
-            haptic.light();
-            onClose();
-          }}
-          aria-label="Close"
-        />
-
-        {isGenerating ? (
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              height: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: 'rgba(10, 10, 26, 0.98)',
-              zIndex: 99999,
-            }}
-          >
-            <div
-              style={{
-                textAlign: 'center',
-                color: '#00d4ff',
-                fontFamily: 'Rajdhani, monospace',
-                fontSize: '24px',
-                fontWeight: 600,
-                textShadow: '0 0 20px rgba(0, 212, 255, 0.8)',
-              }}
-            >
-              <div className={styles.generatorSpinner} aria-hidden="true" />
-              <div>GENERATING LOGO...</div>
-              <div style={{ fontSize: '14px', marginTop: '10px', opacity: 0.7 }}>
-                Powered By Club Arena
-              </div>
-            </div>
-          </div>
-        ) : previewUrl ? (
-          <>
-            <div className={styles.previewContainer}>
-              <img
-                loading="lazy"
-                decoding="async"
-                src={previewUrl}
-                alt="Generated Logo"
-                className={styles.previewImage}
-              />
-            </div>
-
-            <div className={styles.logoGeneratorActions}>
-              <button className={styles.generateBtn} onClick={handleUsePreview}>
-                Use This Logo
-              </button>
-              <button
-                className={styles.cancelBtn}
-                onClick={() => {
-                  setPreviewUrl(null);
-                  setLogoDescription('');
-                }}
-              >
-                Try Another
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            {/* Textarea positioned over the grid area */}
-            <textarea
-              className={styles.descriptionTextarea}
-              placeholder="E.g., A Fierce Shark With Glowing Eyes, Cyberpunk Style..."
-              value={logoDescription}
-              onChange={(e) => setLogoDescription(e.target.value)}
-              style={{ display: isGenerating || previewUrl ? 'none' : 'block' }}
-            />
-
-            {/* Submit button positioned over SUBMIT button */}
-            <button
-              className={styles.submitButton}
-              onClick={() => {
-                haptic.success();
-                handleGenerate();
-              }}
-              disabled={!logoDescription.trim()}
-              aria-label="Submit"
-              style={{ display: isGenerating || previewUrl ? 'none' : 'flex' }}
-            />
-
-            {error && <div className={styles.errorMessage}>{titleCase(error)}</div>}
-          </>
-        )}
       </div>
     </div>
   );

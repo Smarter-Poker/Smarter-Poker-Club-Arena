@@ -14,43 +14,28 @@ import type { TournamentConfig } from '../services/TournamentService';
 import { payoutEngine } from '../services/PayoutEngine';
 import { rakeRateFor, splitBuyIn } from '../utils/buyIn';
 import { maxSeatsTheDeckAllows } from '../config/tableSeating';
+/* Value imports as well as the re-export below: `export … from` does not bind
+   the names locally, and buildTournamentConfig uses both. */
+import {
+  TOURNAMENT_GAME_VARIANTS as VARIANT_MAP,
+  canRunAsSpin as gameTypeCanRunAsSpin,
+} from '../config/tournamentVariants';
 
 /**
- * The route's :gameType -> the tournament engine's variant vocabulary.
- * Anything not listed cannot be run as a tournament, and hides the SNG/MTT tabs.
- *
- * 2026-08-24: THE KEYS WERE WRONG AND HAD ALWAYS BEEN WRONG. This map was keyed
- * `plo` and `shortdeck`; the create-table screen has only ever emitted `plo4`
- * and `short_deck`. Neither matched, so `canRunAsTournament` answered false for
- * every game except Hold'em and the SNG/MTT tabs were hidden on all of them —
- * while production was already running 3,100 PLO4, 1,548 PLO5, 945 PLO6, 41
- * PLO8 and a Short Deck tournament, created through the recurring service. The
- * platform ran the games; only this screen could not make one. (The identical
- * stale-key bug was in TableConfigPage's GAME_TYPE_LABELS, fixed in #594.)
- *
- * The value is written to `tournaments.game_type`, which
- * TournamentManagerBase lowercases into the table's `game_variant`, so each
- * entry must be a variant the engine genuinely deals — verified against
- * server/src/engine/VariantRules.ts and against the live rows above.
- *
- * Still absent, deliberately:
- *  • `pineapple` — its discard street has no tournament timing path, and no
- *    PINEAPPLE tournament has ever existed.
- *  • `flh` / `flo8` — a limit tournament raises stakes on a bet-size ladder,
- *    and every blind structure here is a no-limit/pot-limit blind ladder.
- *    Offering them would deal limit and escalate it like no-limit.
+ * THE VARIANT CATALOGUE MOVED (2026-08-31) to `src/config/tournamentVariants`,
+ * so the lobby's filter spec can read the same list without importing
+ * PayoutEngine and the blind ladders through this file. Re-exported here
+ * because `canRunAsTournament` is this module's published API — TableConfigPage
+ * and the tests both import it from this path.
  */
-const TOURNAMENT_GAME_VARIANTS: Record<
-  string,
-  'NLH' | 'PLO4' | 'PLO5' | 'PLO6' | 'PLO8' | 'SHORT_DECK'
-> = {
-  nlh: 'NLH',
-  plo4: 'PLO4',
-  plo5: 'PLO5',
-  plo6: 'PLO6',
-  plo8: 'PLO8',
-  short_deck: 'SHORT_DECK',
-};
+export {
+  TOURNAMENT_GAME_VARIANTS,
+  TOURNAMENT_VARIANT_KEYS,
+  SPIN_VARIANT_KEYS,
+  canRunAsTournament,
+  canRunAsSpin,
+  type TournamentGameVariant,
+} from '../config/tournamentVariants';
 
 /** The subset of the create-table form a tournament actually uses. */
 export interface TournamentFormInput {
@@ -107,10 +92,6 @@ export interface TournamentFormInput {
   satelliteSeats?: number;
 }
 
-export function canRunAsTournament(gameType: string | undefined): boolean {
-  return Boolean(TOURNAMENT_GAME_VARIANTS[gameType ?? 'nlh']);
-}
-
 /**
  * SNG / MTT tabs -> a real tournament.
  *
@@ -130,7 +111,14 @@ export function buildTournamentConfig(
   gameType: string | undefined
 ): TournamentConfig {
   const isSng = config.gameMode === 'sng';
-  const isSpins = isSng && config.isSpins;
+  /* THE SPIN CATALOGUE IS ENFORCED HERE, NOT ONLY IN THE FORM (2026-08-31).
+     The seat dropdown no longer offers "3 Players (Spins)" outside the
+     catalogue, but a restored draft or a saved template can carry
+     `isSpins: true` alongside any variant, and this function is what turns
+     that into a row. A variant outside the catalogue becomes an ordinary
+     three-handed SNG — the same game, sold as what it is — rather than a Spin
+     the Spins board has no chip for and the tier table was never tuned for. */
+  const isSpins = isSng && config.isSpins && gameTypeCanRunAsSpin(gameType);
 
   // Field size. For an SNG the engine starts the tournament only when it is
   // FULL (GameServer: isSngOrSpin ? maxReached : ...), so min must equal max
@@ -261,7 +249,7 @@ export function buildTournamentConfig(
     addOnLevels: 1,
     guaranteedPrize:
       isMtt && config.gtdPrizePool ? Math.max(0, Math.round(config.gtdPrizeAmount ?? 0)) : 0,
-    gameVariant: TOURNAMENT_GAME_VARIANTS[gameType ?? 'nlh'] ?? 'NLH',
+    gameVariant: VARIANT_MAP[String(gameType ?? 'nlh').toLowerCase()] ?? 'NLH',
     spinType: isSpins ? 'standard' : undefined,
     // Half the buy-in as the head, floored to a whole number so the bounty can
     // never be a decimal and can never exceed the prize half of the split.

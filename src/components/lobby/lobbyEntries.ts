@@ -259,6 +259,18 @@ const TOURNEY_VARIANT_KEYS: Record<string, string> = {
   OFC_PINEAPPLE: 'pineapple',
   SHORT_DECK: 'short_deck',
   PLO: 'plo4',
+  /* LIMIT (2026-08-31). Limit tournaments became creatable the day these were
+     added; without a key here `variantDisplay` falls through to its own
+     fallback and prints the raw enum as BOTH labels, so a Fixed Limit Hold'em
+     event would have read "FLH" / "FLH" on the card instead of
+     "FLH" / "Fixed Limit Hold'em" — the identical defect this map already
+     records for OFC_PINEAPPLE. The two legacy spellings are here for the same
+     reason `variantKey` still folds them: a row written before the `flh` /
+     `flo8` names settled must still be able to name its own game. */
+  FLH: 'flh',
+  FLO8: 'flo8',
+  LIMIT_HOLDEM: 'flh',
+  LIMIT_OMAHA: 'flo8',
 };
 
 /**

@@ -24,10 +24,20 @@
  */
 
 import { readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
-import { join, extname } from 'node:path';
+import { join, extname, resolve } from 'node:path';
 
 const ROOT = new URL('../../', import.meta.url).pathname;
-const SRC = join(ROOT, 'src');
+/**
+ * UI_TEXT_SOURCE_DIR points the scan at a throwaway tree, the same override
+ * check-title-case has carried since it was written. It exists so the --fix
+ * safety property can be proven by RUNNING the gate over a stripper-shaped file
+ * rather than by grepping this source for a filename: a regex over source
+ * passes on a line that is present and wrong.
+ */
+const SOURCE_OVERRIDE = process.env.UI_TEXT_SOURCE_DIR
+  ? resolve(process.env.UI_TEXT_SOURCE_DIR)
+  : null;
+const SRC = SOURCE_OVERRIDE ?? join(ROOT, 'src');
 const PUBLIC = join(ROOT, 'public');
 const EXTS = new Set(['.ts', '.tsx', '.css', '.html', '.js']);
 /**
@@ -159,12 +169,9 @@ function walk(dir, acc = []) {
 const offenders = [];
 let fixedCount = 0;
 
-for (const file of [
-  ...walk(SRC),
-  ...walk(PUBLIC),
-  ...HTML_FILES.map((f) => join(ROOT, f)),
-  ...walk(SERVER_SRC),
-]) {
+for (const file of SOURCE_OVERRIDE
+  ? walk(SRC)
+  : [...walk(SRC), ...walk(PUBLIC), ...HTML_FILES.map((f) => join(ROOT, f)), ...walk(SERVER_SRC)]) {
   const rel = file.replace(ROOT, '');
   if (SKIP_FILES.has(rel)) continue;
   const original = readFileSync(file, 'utf8');

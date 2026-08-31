@@ -56,6 +56,15 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
   /** userId -> epoch-ms deadline for an open rebuy decision. Self-clearing. */
   protected rebuyDecisionGraceUntil = new Map<string, number>();
 
+  /** SEATLESS-PHANTOM GUARD (2026-08-30): userId -> consecutive sweeps seen
+   *  'playing' with chips > 0 while holding NO open seat anywhere in the
+   *  tournament. See the block in the sweep for the full story. */
+  protected seatlessPlayingStrikes = new Map<string, number>();
+  /** ~2 minutes at the 5s sweep cadence — a live paid player is re-seated by
+   *  ensureLateRegSeated within one or two cycles; only a vacated bust whose
+   *  chips-zero write was lost stays seatless this long. */
+  protected static readonly SEATLESS_PHANTOM_STRIKES = 24;
+
   /**
    * One reveal queue per table (sections 22 and 61 — only the affected table
    * pauses). Keyed by table id; the empty string is the degenerate "knockout
@@ -341,6 +350,64 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             ),
             'Tournament.ambiguous_live_seat'
           );
+        }
+
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  A PHANTOM IS NOT A PLAYER (2026-08-30)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * The bust-vacates-the-seat rule (Dan 2026-08-30) created a state this
+         * sweep had never seen: a player 'playing' with STALE chips > 0 and no
+         * open seat anywhere in the event. The chip sync above reads OPEN
+         * seats, so it can never zero them; the bust query below reads
+         * `chips <= 0`, so it can never eliminate them; ensureLateRegSeated
+         * would seat them (chips > 0 looks live), except the seat rows that
+         * proved their bust were reused or gone. Ten of sixteen RUNNING MTTs
+         * hung exactly here, heads-up champion unseated-forever unpaid.
+         *
+         * The dealing engine now zeroes chips at the moment of the vacate;
+         * this block is the backstop for the write that fails, the process
+         * that restarts mid-bust, and the ten events already stranded.
+         * A player seatless for SEATLESS_PHANTOM_STRIKES consecutive sweeps
+         * (~2 minutes) while the self-heal seater runs every 5 seconds is not
+         * between seats — their seat is gone because they busted. Zero their
+         * chips through the same sync RPC so the ordinary elimination path
+         * (rebuy window included) takes them from there. Strikes reset the
+         * moment a player reappears in an open seat, and the map is
+         * per-manager so a restart merely restarts the two-minute clock.
+         */
+        try {
+          const { data: playingRows, error: playingRowsErr } = await supabase
+            .from('tournament_players')
+            .select('user_id, chips')
+            .eq('tournament_id', this.tournamentId)
+            .eq('status', 'playing')
+            .gt('chips', 0);
+          if (!playingRowsErr && playingRows) {
+            const seatless = playingRows.filter((p) => !bestSeat.has(p.user_id));
+            const seatlessIds = new Set(seatless.map((p) => p.user_id));
+            for (const uid of this.seatlessPlayingStrikes.keys()) {
+              if (!seatlessIds.has(uid)) this.seatlessPlayingStrikes.delete(uid);
+            }
+            for (const p of seatless) {
+              const strikes = (this.seatlessPlayingStrikes.get(p.user_id) ?? 0) + 1;
+              this.seatlessPlayingStrikes.set(p.user_id, strikes);
+              // `>=`, not `===`: if the sync write fails on the firing sweep,
+              // the next sweep must fire again. The zero is idempotent.
+              if (strikes >= TournamentManagerEliminations.SEATLESS_PHANTOM_STRIKES) {
+                chipUpdates.push({ user_id: p.user_id, chips: 0 });
+                reportError(
+                  new Error(
+                    `[Tournament:${this.tournamentId.slice(0, 8)}] ${p.user_id.slice(0, 8)} has been 'playing' with ${p.chips} stale chips and NO open seat for ${strikes} sweeps — treating as a vacated bust and zeroing chips so the elimination path can finish the event`
+                  ),
+                  'Tournament.seatless_phantom_zeroed'
+                );
+              }
+            }
+          }
+        } catch (phantomErr) {
+          reportError(phantomErr, 'Tournament.seatless_phantom_guard');
         }
 
         if (chipUpdates.length > 0) {

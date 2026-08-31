@@ -327,6 +327,44 @@ export async function recoverStuckCompletingTournaments(
           String((t as { tournament_type?: string }).tournament_type ?? '').toUpperCase() ===
             'SATELLITE'
         ) {
+          /**
+           * A STUCK SATELLITE MUST GO SOMEWHERE (2026-08-30).
+           *
+           * "Left COMPLETING for processSatelliteAwards" was a promise nobody
+           * kept: a COMPLETING tournament is not RUNNING, so discovery never
+           * resumes a manager for it, and processSatelliteAwards only runs
+           * inside a manager's finish path. Observed live: one satellite sat
+           * with 3 players still 'playing' and another with its ENTIRE
+           * 24-player field alive and zero hands dealt — both looping through
+           * this skip forever, no manager, no felt, no exit.
+           *
+           * The rule that resolves it: a satellite that is NOT decided is not
+           * completing. Two or more entrants alive means play remains — flip
+           * it back to RUNNING and discovery resumes a manager within a cycle;
+           * the event then finishes through the normal path, awards included.
+           * A DECIDED satellite (fewer than two alive) is left COMPLETING and
+           * reported, as before, for the awards pass its manager owes it —
+           * flipping that one would deal cards at a settled event.
+           */
+          const { count: aliveCount, error: aliveErr } = await supabase
+            .from('tournament_players')
+            .select('id', { count: 'exact', head: true })
+            .eq('tournament_id', t.id)
+            .in('status', ['playing', 'registered']);
+          if (!aliveErr && typeof aliveCount === 'number' && aliveCount >= 2) {
+            const { error: reviveErr } = await supabase
+              .from('tournaments')
+              .update({ status: 'RUNNING' })
+              .eq('id', t.id)
+              .eq('status', 'COMPLETING');
+            reportError(
+              new Error(
+                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is an UNDECIDED satellite (${aliveCount} alive) stuck in COMPLETING — ${reviveErr ? `revive failed: ${reviveErr.message}` : 'flipped back to RUNNING for discovery to resume'}`
+              ),
+              'GameServer.recoverStuckCompleting_satellite_revived'
+            );
+            continue;
+          }
           reportError(
             new Error(
               `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a SATELLITE — it awards seats, not structure cash. Left COMPLETING for processSatelliteAwards.`

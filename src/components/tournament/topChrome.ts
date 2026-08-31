@@ -42,11 +42,36 @@
 
 /**
  * The elements the ticker starts below: the global header, and nothing else.
- * The tab bar is deliberately NOT here — it is the thing that moves now.
- * Two selectors because the header is `#global-header` where it carries the
- * id and a bare `header` on the routes that predate it.
+ * The tab bar is deliberately NOT here - it is the thing that moves now.
+ *
+ * ── A BARE `header` USED TO BE IN THIS LIST, AND IT WAS A LOOSE CANNON ─────
+ *
+ * `document.querySelector('header')` returns the FIRST <header> in the
+ * document, not the top chrome, and this app renders more than twenty of them:
+ * game cards (`agc-premium-header`, `agc-mtt-header`), the lobby and filter
+ * panels, every BBJ panel, hand detail, hand replay, Club Buttons, the union
+ * and profile modals. The rule below takes the LOWEST bottom edge it finds, so
+ * a <header> anywhere down the page always won - open the BBJ panel on a table
+ * with an MTT five minutes out and the ticker relocated to the bottom of that
+ * panel, hundreds of pixels into the felt.
+ *
+ * It was there for "routes that predate the id". There are none:
+ * GlobalHeader.tsx sets `id="global-header"` unconditionally, and the only
+ * other candidate, `Shell.tsx`'s `.shell-header`, is imported by nothing. So
+ * the fallback covered no route and cost every route.
  */
-export const TOP_CHROME_SELECTORS = ['#global-header', 'header'] as const;
+export const TOP_CHROME_SELECTORS = ['#global-header'] as const;
+
+/**
+ * How far down the viewport something may start and still count as TOP chrome.
+ *
+ * Belt and braces for the hazard above: even a correctly-id'd header that some
+ * future layout pushes into the middle of the page must not drag the ticker
+ * down with it. Generous on purpose - a sticky header sits at y=0 and pays the
+ * notch as PADDING (so its own rect starts at 0), and 64px still leaves any
+ * plausible top bar inside while excluding content headers further down.
+ */
+export const TOP_CHROME_MAX_TOP_PX = 64;
 
 /**
  * The y-coordinate the ticker should start at.
@@ -69,6 +94,10 @@ export function measureTopChromeBottom(find: (selector: string) => Element | nul
 
     const rect = el.getBoundingClientRect();
     if (rect.height <= 0) continue;
+    // Top chrome starts at the top. Anything further down the page is content
+    // that happens to be a <header>, and following it puts the ticker in the
+    // middle of the felt. See TOP_CHROME_MAX_TOP_PX.
+    if (rect.top > TOP_CHROME_MAX_TOP_PX) continue;
     if (rect.bottom > bottom) bottom = rect.bottom;
   }
 

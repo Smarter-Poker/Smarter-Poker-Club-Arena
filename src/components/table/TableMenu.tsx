@@ -125,6 +125,8 @@ export function createDefaultMenuSections(
     onSettings?: () => void;
     onToggleSounds?: () => void;
     onToggleVibrations?: () => void;
+    /** Dan 2026-08-30: hamburger switch "Multi Table Profit Tracking" ON/OFF. */
+    onToggleProfitTracking?: () => void;
     onHandHistory?: () => void;
     onLeaderboard?: () => void;
     onHelp?: () => void;
@@ -141,6 +143,7 @@ export function createDefaultMenuSections(
     autoTopUpBadge?: string;
     soundsBadge?: string;
     vibrationsBadge?: string;
+    profitTrackingBadge?: string;
   }
 ): MenuSection[] {
   return [
@@ -220,6 +223,21 @@ export function createDefaultMenuSections(
           badge: state?.vibrationsBadge,
           onClick: handlers.onToggleVibrations || (() => {}),
         },
+        /* Dan 2026-08-30: "IT SHOULD ALSO BE AN ON OFF SWITCH IN THE
+           HAMBURGER MENU 'MULTI TABLE PROFIT TRACKING' ON / OFF." Only
+           rendered when a handler arrives (MultiTablePage owns the setting);
+           the profit chip is a cash-game-only feature either way. */
+        ...(handlers.onToggleProfitTracking
+          ? [
+              {
+                id: 'profit-tracking',
+                label: 'Multi Table Profit Tracking',
+                icon: <SettingsIcon />,
+                badge: state?.profitTrackingBadge,
+                onClick: handlers.onToggleProfitTracking,
+              },
+            ]
+          : []),
       ],
     },
     {

@@ -84,3 +84,13 @@ describe('the prize stamp is a checked write', () => {
     expect(MANAGER).toMatch(/satellite_prize_stamp_failed/);
   });
 });
+
+describe('a stuck satellite goes somewhere (2026-08-30)', () => {
+  it('an undecided COMPLETING satellite is flipped back to RUNNING, a decided one is not', () => {
+    const recovery = fs.readFileSync(path.join(HERE, 'tournamentRecovery.ts'), 'utf8');
+    expect(recovery).toMatch(/recoverStuckCompleting_satellite_revived/);
+    expect(recovery).toMatch(/aliveCount >= 2/);
+    // The decided branch still exists and still refuses structure cash.
+    expect(recovery).toMatch(/recoverStuckCompleting_satellite_skipped/);
+  });
+});

@@ -212,16 +212,18 @@ export function TournamentBreakScreen({
       <div className="break-screen__overlay"></div>
       <div className="break-screen__content">
         {/* Header */}
+        {/* Dan 2026-08-30: an X, not a "Minimize" button. Closing collapses
+            to the floating badge so the countdown stays reachable. */}
+        <button
+          className="break-screen__close"
+          onClick={() => setMinimized(true)}
+          aria-label="Close break screen"
+        >
+          X
+        </button>
         <div className="break-screen__header">
           <span className="break-screen__badge">Tournament On Break</span>
           <h1 className="break-screen__title">{tournamentName}</h1>
-          <button
-            className="break-screen__minimize-btn"
-            onClick={() => setMinimized(true)}
-            aria-label="Minimize break screen"
-          >
-            Minimize
-          </button>
         </div>
 
         {/* Timer */}

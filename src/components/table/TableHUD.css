@@ -276,28 +276,23 @@
    not in the header." On phones the upper-right HUD corner (MiniStatsCard)
    drops out of the header band onto the felt's upper right, under the tab
    bar + BBJ strip. Desktop keeps the corner where it was. */
-@media (max-width: 768px) {
-  .table-hud__corner--ur {
-    position: fixed;
-    /* Dan 2026-08-26 mobile pass, item 7: "move the messenger to the upper
-       right corner, and the stats bar to the upper left corner." This corner
-       (MiniStatsCard + TournamentHUD) hugs the LEFT edge now; the chat
-       button takes the right edge (TableChat.css, same breakpoint). The
-       54px = 42px tab bar + 12px clearance, unchanged from the 2026-08-25
-       derivation. */
-    top: calc(env(safe-area-inset-top, 0px) + 54px);
-    left: 6px;
-    right: auto;
-  }
+/* ── THE LEVEL BAR LIVES IN THE UPPER RIGHT, BELOW THE TOP CHROME ─────────────
+   Dan 2026-08-30: "DURING TOURNAMENTS, THE 'LEVEL' SHOULD BE IN THE UPPER
+   RIGHT CORNER OF THE LIVE TABLE PAGE, NOT OVERLAPPING THE ACTION BAR AREA
+   WITH THE + TABLE ADD BUTTON. BUT BELOW IT, LEAVING ENOUGH ROOM FOR THE
+   ACTION TICKER TO DISPLAY WITHOUT CUTTING THIS OFF."
 
-  /* The column right-aligned its children for the right corner; on the left
-     edge they left-align, and the tournament bar scales from its top-LEFT so
-     it hugs the corner instead of pushing off screen. */
-  .hud-ur-column {
-    align-items: flex-start;
-  }
-
-  .hud-ur-column > .tournament-hud-bar {
-    transform-origin: top left;
-  }
+   So the corner is FIXED, at every width, on the right edge, and its top is
+   the sum of everything that may legitimately stand above it:
+     - the safe-area inset,
+     - the action ticker's live height (--mtt-ticker-h, published on <html> by
+       TournamentStartingTicker; 0px when no ticker is up), and
+     - 54px = the 42px tab bar + 12px clearance (the 2026-08-25 derivation).
+   The 2026-08-26 left-edge placement this replaces is superseded by the
+   instruction above. */
+.table-hud__corner--ur {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + var(--mtt-ticker-h, 0px) + 54px);
+  right: 6px;
+  left: auto;
 }

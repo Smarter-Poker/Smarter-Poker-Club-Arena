@@ -1125,6 +1125,21 @@
       "sample_size",
       "computed_at"
     ],
+    "cashier_operations": [
+      "id",
+      "user_id",
+      "club_id",
+      "event",
+      "operation",
+      "duration_ms",
+      "item_count",
+      "page_number",
+      "success_count",
+      "failure_count",
+      "reason_code",
+      "sample_weight",
+      "created_at"
+    ],
     "cashout_requests": [
       "id",
       "club_id",
@@ -11788,6 +11803,27 @@
       "is_bomb",
       "hands",
       "avg_pot"
+    ],
+    "v_cashier_failures_daily": [
+      "day",
+      "club_id",
+      "operation",
+      "event",
+      "reason_code",
+      "failures",
+      "worst_duration_ms"
+    ],
+    "v_cashier_health_hourly": [
+      "hour",
+      "operation",
+      "estimated_events",
+      "failures",
+      "failure_pct",
+      "success_p50_ms",
+      "success_p95_ms",
+      "observed_items",
+      "observed_successes",
+      "observed_failures"
     ],
     "v_chip_ledger": [
       "id",

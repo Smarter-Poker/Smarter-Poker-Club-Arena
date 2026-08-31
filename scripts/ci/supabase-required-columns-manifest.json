@@ -387,6 +387,12 @@
       "metric",
       "sample_size"
     ],
+    "cashier_operations": [
+      "user_id",
+      "club_id",
+      "event",
+      "operation"
+    ],
     "cashout_requests": [
       "club_id",
       "player_id",
@@ -3427,6 +3433,10 @@
       "user_id",
       "level_id",
       "status"
+    ],
+    "user_lobby_filters": [
+      "user_id",
+      "club_id"
     ],
     "user_lucky_wheel_spins": [
       "user_id"

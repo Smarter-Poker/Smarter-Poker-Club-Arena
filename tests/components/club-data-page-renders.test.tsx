@@ -419,7 +419,7 @@ describe('ClubDataPage', () => {
     try {
       render(<ClubDataPage />);
       await screen.findByText('Shark Table One');
-      const refresh = screen.getByRole('button', { name: 'Refresh club ledger' });
+      const refresh = screen.getByRole('button', { name: 'Refresh Club Ledger' });
       await waitFor(() => expect(refresh).toBeEnabled());
 
       fireEvent.click(refresh);

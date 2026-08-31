@@ -398,7 +398,7 @@ export default function DriftIncidentsPage() {
       {filteredIncidents.length === 0 ? (
         <div className="di-empty-state">
           <span className="di-empty-icon">◉</span>
-          <p>No {formatEnum(filter)} incidents</p>
+          <p>No {formatEnum(filter)} Incidents</p>
         </div>
       ) : (
         <div className="di-list">
@@ -436,7 +436,7 @@ export default function DriftIncidentsPage() {
                       {formatEnum(incident.status)}
                     </span>
                     {incident.occurrences > 1 && (
-                      <span className="di-occurrences" title="Times this drift has recurred">
+                      <span className="di-occurrences" title="Times This Drift Has Recurred">
                         Seen {incident.occurrences.toLocaleString()} Times
                       </span>
                     )}

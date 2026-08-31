@@ -154,11 +154,25 @@ export interface ClaimResult {
   diamondBalance: number;
 }
 
+/** One replay-safe receipt for one or many completed mission contracts. */
+export interface ClaimBatchResult {
+  success: boolean;
+  replayed: boolean;
+  claimedIds: string[];
+  alreadyClaimedIds: string[];
+  chips: number;
+  diamonds: number;
+  diamondBalance: number;
+  stats: Pick<DailyChallengeStats, 'totalClaimed' | 'totalChipsEarned' | 'totalDiamondsEarned'>;
+  vault: DailyChallengeRewardVault;
+}
+
 /** What the atomic reroll RPC actually changed and charged. */
 export interface RerollResult {
   success: boolean;
   alreadyRerolled: boolean;
   challengeId?: string;
+  challenge?: TieredUserChallenge;
   diamondBalance?: number;
   error?: string;
 }
@@ -1212,6 +1226,7 @@ class DailyChallengeServiceClass {
         success?: boolean;
         alreadyRerolled?: boolean;
         challengeId?: string;
+        challenge?: any;
         diamondBalance?: number;
         error?: string;
       } | null;
@@ -1235,6 +1250,7 @@ class DailyChallengeServiceClass {
         success: true,
         alreadyRerolled: result.alreadyRerolled === true,
         challengeId: result.challengeId,
+        challenge: result.challenge ? this.mapServerChallenge(result.challenge, userId) : undefined,
         diamondBalance,
       };
     } catch (err: any) {
@@ -1477,7 +1493,90 @@ class DailyChallengeServiceClass {
   }
 
   /**
-   * Claim standard chip reward directly from UI
+   * Claim one or many completed contracts in one wallet transaction.
+   *
+   * The request UUID is stable across network retries and the database stores
+   * the complete receipt. If the commit succeeds but its response is lost, the
+   * retry gets the original payout and next vault page instead of reporting a
+   * zero-value duplicate.
+   */
+  async claimChallenges(userId: string, challengeRowIds: string[]): Promise<ClaimBatchResult> {
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const ids = [...new Set(challengeRowIds)];
+    if (ids.length === 0) throw new Error('Choose at least one completed challenge to claim.');
+    if (ids.length > 100) throw new Error('Claim up to 100 challenge rewards at a time.');
+    if (ids.some((id) => !uuidPattern.test(id))) {
+      throw new Error('One or more challenges are not ready to claim. Refresh and try again.');
+    }
+
+    const requestId = uuid();
+    const rpcResult = await retryAsync(async () => {
+      const result = await supabase.rpc('claim_daily_challenges', {
+        p_user_id: userId,
+        p_challenge_row_ids: ids,
+        p_request_id: requestId,
+      });
+      if (result.error) {
+        reportError(result.error, 'DailyChallengeService.RPC_claim_batch_error');
+        throw new Error(result.error.message || 'Challenge rewards could not be claimed');
+      }
+      return result;
+    }, 3);
+
+    const paid = (rpcResult as any)?.data as any;
+    if (!paid?.success || !paid.vault || !paid.stats) {
+      throw new Error('Daily Missions returned an incomplete claim receipt');
+    }
+
+    const claimedIds = Array.isArray(paid.claimedIds)
+      ? paid.claimedIds.filter((id: unknown): id is string => typeof id === 'string')
+      : [];
+    const alreadyClaimedIds = Array.isArray(paid.alreadyClaimedIds)
+      ? paid.alreadyClaimedIds.filter((id: unknown): id is string => typeof id === 'string')
+      : [];
+    const chips = Math.max(0, Number(paid.chips) || 0);
+    const diamonds = Math.max(0, Number(paid.diamonds) || 0);
+    const diamondBalance = Math.max(0, Number(paid.diamondBalance) || 0);
+
+    if (claimedIds.length > 0) {
+      masterBus.emit('BALANCE_UPDATED', { source: 'daily_challenge_claim', userId });
+      if (diamonds > 0) {
+        masterBus.emit('DIAMOND_BALANCE_CHANGED', {
+          newBalance: diamondBalance,
+          delta: diamonds,
+          source: 'daily_challenge_claim',
+        });
+      }
+    }
+
+    return {
+      success: true,
+      replayed: paid.replayed === true,
+      claimedIds,
+      alreadyClaimedIds,
+      chips,
+      diamonds,
+      diamondBalance,
+      stats: {
+        totalClaimed: Math.max(0, Number(paid.stats.totalClaimed) || 0),
+        totalChipsEarned: Math.max(0, Number(paid.stats.totalChipsEarned) || 0),
+        totalDiamondsEarned: Math.max(0, Number(paid.stats.totalDiamondsEarned) || 0),
+      },
+      vault: {
+        count: Math.max(0, Number(paid.vault.count) || 0),
+        chips: Math.max(0, Number(paid.vault.chips) || 0),
+        diamonds: Math.max(0, Number(paid.vault.diamonds) || 0),
+        items: (Array.isArray(paid.vault.items) ? paid.vault.items : []).map((row: any) =>
+          this.mapServerChallenge(row, userId)
+        ),
+        pageSize: Math.max(1, Number(paid.vault.pageSize) || 100),
+        hasMore: paid.vault.hasMore === true,
+      },
+    };
+  }
+
+  /**
+   * Legacy one-row wrapper retained for callers outside the dashboard.
    */
   async claimChallenge(
     userId: string,

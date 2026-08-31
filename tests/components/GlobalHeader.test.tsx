@@ -206,7 +206,7 @@ describe('GlobalHeader Component', () => {
     });
   });
 
-  it('acknowledges unread notifications before opening Notifications', async () => {
+  it('acknowledges Unread Notifications before opening Notifications', async () => {
     headerData.notificationCount = 5;
     render(
       <MemoryRouter>

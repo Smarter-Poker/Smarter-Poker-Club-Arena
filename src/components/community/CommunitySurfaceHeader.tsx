@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { mediaUrl } from '../../utils/mediaBase';
+import { formatPopupText } from '../../utils/popupStyle';
 import styles from './CommunitySurfaceHeader.module.css';
 
 export interface CommunityMetric {
@@ -26,11 +27,11 @@ export default function CommunitySurfaceHeader({
   return (
     <section className={styles.header} aria-labelledby="community-surface-title">
       <div className={styles.copy}>
-        <p className={styles.eyebrow}>{eyebrow}</p>
+        <p className={styles.eyebrow}>{formatPopupText(eyebrow)}</p>
         <h1 id="community-surface-title" className={styles.title}>
-          {title}
+          {formatPopupText(title)}
         </h1>
-        <p className={styles.description}>{description}</p>
+        <p className={styles.description}>{formatPopupText(description)}</p>
 
         {(metrics.length > 0 || actions) && (
           <div className={styles.commandRow}>
@@ -41,7 +42,7 @@ export default function CommunitySurfaceHeader({
                     className={`${styles.metric} ${styles[metric.tone || 'default']}`}
                     key={metric.label}
                   >
-                    <dt>{metric.label}</dt>
+                    <dt>{formatPopupText(metric.label)}</dt>
                     <dd>{metric.value}</dd>
                   </div>
                 ))}

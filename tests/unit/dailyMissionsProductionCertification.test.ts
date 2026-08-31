@@ -25,6 +25,7 @@ describe('Daily Missions production certification', () => {
       'get_daily_challenge_dashboard',
       'challenge_reroll:',
       'buy_streak_freeze',
+      'bump_challenge_progress',
       'record_daily_challenge_event',
       'daily_challenge_dashboard_revisions',
       "getByText('Live Now')",
@@ -41,7 +42,7 @@ describe('Daily Missions production certification', () => {
     // dashboard_loaded is intentionally sampled at 20%; certification proves
     // the actual receipt and only requires unsampled mutation operations.
     const operationGate = spec.slice(
-      spec.indexOf('const operations ='),
+      spec.indexOf('const requiredOperationEvents ='),
       spec.indexOf('report.operationEvents')
     );
     expect(operationGate).not.toContain("'dashboard_loaded'");
@@ -52,6 +53,9 @@ describe('Daily Missions production certification', () => {
     const helper = source('tests/e2e/support/temporaryCustomizationAccount.ts');
     for (const table of [
       'daily_mission_operations',
+      'daily_challenge_progress_events',
+      'daily_challenge_event_outbox',
+      'daily_challenge_milestone_claims',
       'daily_challenge_claim_batches',
       'daily_challenge_dashboard_revisions',
       'user_daily_challenges',
@@ -67,6 +71,10 @@ describe('Daily Missions production certification', () => {
       expect(helper).toContain(`'${table}'`);
     }
     expect(helper).toContain('reserved fixture residue remains after cleanup');
+    // Certification owns and removes the exact UUID it creates. Listing the
+    // entire Auth tenant first makes an unrelated damaged account capable of
+    // blocking every post-deploy verdict before a fixture even exists.
+    expect(helper).not.toContain('/auth/v1/admin/users?page=');
   });
 
   it('keeps decorative card chrome out of every mission control hit target', () => {

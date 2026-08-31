@@ -25,11 +25,27 @@ const SRC = process.env.TITLE_CASE_SOURCE_DIR
   : join(ROOT, 'src');
 const SKIP_DIRS = new Set(['node_modules', 'dist', '_to_delete', '__tests__', 'test-results']);
 const COPY_REGISTRY_FILES = new Set(['src/i18n/index.ts']);
+const COPY_TABLE_PROPERTIES = new Map([
+  ['src/components/support/FAQPanel.tsx', new Set(['category', 'question', 'answer'])],
+  ['src/pages/HelpPage.tsx', new Set(['category', 'question', 'answer'])],
+  ['src/pages/AchievementsPage.tsx', new Set(['name', 'description', 'requirement'])],
+  ['src/services/AchievementService.ts', new Set(['name', 'description'])],
+  ['src/components/moderation/ReportPlayerModal.tsx', new Set(['label', 'description'])],
+  ['src/services/PlayerStyleClassifier.ts', new Set(['label', 'tooltip'])],
+  ['src/services/ArenaTrainingController.ts', new Set(['name', 'description'])],
+  ['src/services/DailyChallengeService.ts', new Set(['name', 'description'])],
+  ['src/components/security/PasswordStrength.tsx', new Set(['label'])],
+  ['src/components/gamification/FinancialAchievementBadge.tsx', new Set(['title', 'description'])],
+  ['src/components/admin/AdminCommandPalette.tsx', new Set(['label', 'description'])],
+  ['src/pages/workspaces/ArenaWorkspacePages.tsx', new Set(['label', 'description'])],
+]);
+const HTML_FILES = ['index.html', 'public/offline.html'];
 
 const UI_ATTRIBUTE_NAMES = new Set([
   'alt',
   'aria-description',
   'aria-label',
+  'aria-valuetext',
   'caption',
   'description',
   'emptyLabel',
@@ -335,13 +351,30 @@ function staticCopyChanges(source, sf, file) {
   };
 
   const visit = (node) => {
+    const relativeFile = file.replace(ROOT, '');
+    const copyProperties = COPY_TABLE_PROPERTIES.get(relativeFile);
     if (
-      COPY_REGISTRY_FILES.has(file.replace(ROOT, '')) &&
+      COPY_REGISTRY_FILES.has(relativeFile) &&
       (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
       ts.isPropertyAssignment(node.parent) &&
       node.parent.initializer === node
     ) {
       add(stringChange(node, source, sf, 'copy registry'));
+    }
+
+    if (
+      copyProperties &&
+      ts.isPropertyAssignment(node) &&
+      copyProperties.has(propertyName(node.name))
+    ) {
+      for (const change of copyValueChanges(
+        node.initializer,
+        source,
+        sf,
+        `copy table ${propertyName(node.name)}`
+      )) {
+        add(change);
+      }
     }
 
     if (ts.isJsxAttribute(node)) {
@@ -392,8 +425,8 @@ function staticCopyChanges(source, sf, file) {
   return changes;
 }
 
-/** Static copy that ships before React: metadata and the fatal boot fallback. */
-function indexHtmlTextNodes(source) {
+/** Static copy that ships before React: metadata, fallbacks, and offline pages. */
+function htmlTextNodes(source) {
   const scannable = source.replace(/<!--[\s\S]*?-->/g, (match) => match.replace(/[^\n]/g, ' '));
   const out = [];
   const addGroup = (match, group) => {
@@ -415,6 +448,10 @@ function indexHtmlTextNodes(source) {
 
   const staticElementCopy = /<(title|h1|p|button)\b[^>]*>([^<]*)<\/\1>/gi;
   for (const match of scannable.matchAll(staticElementCopy)) addGroup(match, match[2]);
+
+  const attributeCopy =
+    /\b(?:placeholder|aria-label|aria-valuetext|alt|title)\s*=\s*(["'])([\s\S]*?)\1/gi;
+  for (const match of scannable.matchAll(attributeCopy)) addGroup(match, match[2]);
   return out.filter((change) => change.cased !== change.text);
 }
 
@@ -486,23 +523,33 @@ for (const file of walk(SRC)) {
   }
 }
 
-const indexFile = join(ROOT, 'index.html');
-const indexOriginal = readFileSync(indexFile, 'utf8');
-const indexChanges = indexHtmlTextNodes(indexOriginal);
-if (indexChanges.length > 0) {
-  if (fix) {
-    let out = indexOriginal;
-    for (let index = indexChanges.length - 1; index >= 0; index--) {
-      const change = indexChanges[index];
-      out = out.slice(0, change.start) + change.cased + out.slice(change.end);
-    }
-    writeFileSync(indexFile, out, 'utf8');
-    fixedNodes += indexChanges.length;
-    fixedFiles++;
-  } else {
-    for (const change of indexChanges) {
-      const line = indexOriginal.slice(0, change.start).split('\n').length;
-      offenders.push(`index.html:${line}: [${change.context}] ${change.text.trim().slice(0, 90)}`);
+for (const relativeFile of HTML_FILES) {
+  const htmlFile = join(ROOT, relativeFile);
+  let htmlOriginal;
+  try {
+    htmlOriginal = readFileSync(htmlFile, 'utf8');
+  } catch {
+    offenders.push(`${relativeFile}: configured HTML page is missing or unreadable`);
+    continue;
+  }
+  const htmlChanges = htmlTextNodes(htmlOriginal);
+  if (htmlChanges.length > 0) {
+    if (fix) {
+      let out = htmlOriginal;
+      for (let index = htmlChanges.length - 1; index >= 0; index--) {
+        const change = htmlChanges[index];
+        out = out.slice(0, change.start) + change.cased + out.slice(change.end);
+      }
+      writeFileSync(htmlFile, out, 'utf8');
+      fixedNodes += htmlChanges.length;
+      fixedFiles++;
+    } else {
+      for (const change of htmlChanges) {
+        const line = htmlOriginal.slice(0, change.start).split('\n').length;
+        offenders.push(
+          `${relativeFile}:${line}: [${change.context}] ${change.text.trim().slice(0, 90)}`
+        );
+      }
     }
   }
 }

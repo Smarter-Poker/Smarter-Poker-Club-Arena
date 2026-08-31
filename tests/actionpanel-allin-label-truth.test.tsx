@@ -95,6 +95,6 @@ describe('the bet-sizing panel does not offer a shove hero cannot make', () => {
   it('labels the shove with the real all-in amount', () => {
     render(<ActionPanel {...potLimit} canRaise onAction={vi.fn()} />);
     fireEvent.click(screen.getByLabelText('Open Raise Panel'));
-    expect(screen.getByRole('button', { name: /Bet All In for 300/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Bet All In For 300/i })).toBeInTheDocument();
   });
 });

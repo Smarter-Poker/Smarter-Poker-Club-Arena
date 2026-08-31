@@ -134,7 +134,7 @@ const Slider = ({
       onChange={(e) => onChange(Number(e.target.value))}
       disabled={disabled}
       aria-label={label}
-      aria-valuetext={`${value} percent`}
+      aria-valuetext={`${value} Percent`}
     />
     <span className={styles.sliderValue}>{value}%</span>
   </div>

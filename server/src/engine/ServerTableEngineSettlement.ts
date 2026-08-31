@@ -39,6 +39,7 @@ import { queueUnbankedFee } from '../services/FeeReconciler.js';
 import { selectRevealedShowdownResults } from './revealedShowdown.js';
 import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
 import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
+import { buildDailyMissionHandEvents } from './dailyMissionEvents.js';
 
 /**
  * How long a finished hand stays purchasable. A rabbit hunt is an impulse, and
@@ -1233,6 +1234,16 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               };
         });
 
+        const dailyMissionEvents = buildDailyMissionHandEvents({
+          dealtPlayerIds: this.currentHandHoleCards.keys(),
+          roster: players.map((player) => ({
+            userId: player.user_id,
+            isHorse: player.is_horse,
+          })),
+          winners: this.currentHandWinners,
+          showdownResults: this.currentHandShowdownResults,
+        });
+
         const result = await logHandHistory({
           tableId: this.tableId,
           nitGame: this.tableInfo.nit_game === true,
@@ -1290,6 +1301,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // the hand that proves it; without the second, it cannot compute a
           // positional leak at all.
           showdownResults: revealedShowdownResults,
+          dailyMissionEvents,
           buttonSeat: this.currentHandDealerSeat,
           showdownReveal,
         });

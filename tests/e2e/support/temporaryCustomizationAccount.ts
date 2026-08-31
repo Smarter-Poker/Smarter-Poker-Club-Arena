@@ -317,12 +317,19 @@ export async function createTemporaryCustomizationAccount(
     return { id: userId, email, password, client };
   } catch (error) {
     if (userId) {
-      await cleanupTemporaryCustomizationAccount(environment, {
-        id: userId,
-        email,
-        password,
-        client: createClient(environment.supabaseUrl, environment.publishableKey),
-      }).catch(() => undefined);
+      try {
+        await cleanupTemporaryCustomizationAccount(environment, {
+          id: userId,
+          email,
+          password,
+          client: createClient(environment.supabaseUrl, environment.publishableKey),
+        });
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          `Temporary account setup failed and cleanup was incomplete for ${userId}.`
+        );
+      }
     }
     throw error;
   }
@@ -369,7 +376,7 @@ async function authUserExists(
  * The prefix check is deliberately local and server-backed: a typo can never
  * turn this helper into a general account deletion primitive.
  */
-export async function cleanupTemporaryCustomizationAccount(
+async function cleanupTemporaryCustomizationAccountOnce(
   environment: CustomizationCertificationEnvironment,
   account: TemporaryCustomizationAccount
 ): Promise<void> {
@@ -384,6 +391,9 @@ export async function cleanupTemporaryCustomizationAccount(
     // their parent notification or account rows so cleanup remains explicit
     // even if a production FK temporarily loses ON DELETE CASCADE.
     'daily_mission_operations',
+    'daily_challenge_progress_events',
+    'daily_challenge_event_outbox',
+    'daily_challenge_milestone_claims',
     'daily_challenge_claim_batches',
     'user_daily_challenges',
     'challenge_streak_state',
@@ -413,9 +423,14 @@ export async function cleanupTemporaryCustomizationAccount(
     { table: 'audit_trail', column: 'actor_id' as const },
   ];
 
-  await callServiceRpc<JsonObject>(environment, 'cleanup_reserved_certification_account', {
-    p_user_id: account.id,
-  }).catch((error) => failures.push(`reserved identity: ${(error as Error).message}`));
+  await callServiceRpc<JsonObject>(
+    environment,
+    'cleanup_reserved_certification_account',
+    {
+      p_user_id: account.id,
+    },
+    true
+  ).catch((error) => failures.push(`reserved identity: ${(error as Error).message}`));
 
   for (const { table, column } of [
     ...relatedTables,
@@ -437,6 +452,13 @@ export async function cleanupTemporaryCustomizationAccount(
   if (failures.length) {
     throw new Error(`Temporary customization cleanup was incomplete: ${failures.join(' | ')}`);
   }
+}
+
+export async function cleanupTemporaryCustomizationAccount(
+  environment: CustomizationCertificationEnvironment,
+  account: TemporaryCustomizationAccount
+): Promise<void> {
+  return withCleanupRetries(() => cleanupTemporaryCustomizationAccountOnce(environment, account));
 }
 
 export function expectedUnlockForFeature(feature: string): string | null {

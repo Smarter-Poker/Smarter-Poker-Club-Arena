@@ -234,12 +234,21 @@ export default function PublicProfilePage() {
     if (!user?.id || !userId) return;
     setActionLoading(true);
     try {
-      const { error } = await supabase
+      const { data: pending, error: lookupError } = await supabase
         .from('friendships')
-        .update({ status: 'accepted' })
-        .or(`and(user_id.eq.${userId},friend_id.eq.${user.id})`)
-        .eq('status', 'pending');
+        .select('id')
+        .eq('user_id', userId)
+        .eq('friend_id', user.id)
+        .eq('status', 'pending')
+        .limit(1);
+      if (lookupError) throw lookupError;
+      const pendingId = pending?.[0]?.id;
+      if (!pendingId) throw new Error('Friend request is no longer pending');
+      const { data, error } = await supabase.rpc('accept_friendship', {
+        p_friendship_id: pendingId,
+      });
       if (error) throw error;
+      if (data?.success !== true) throw new Error(data?.error || 'Friend request was not accepted');
       if (!isMounted.current) return;
       setFriendStatus('friends');
       masterBus.emit('FRIEND_REQUEST_ACCEPTED', { userId: user.id, friendId: userId });

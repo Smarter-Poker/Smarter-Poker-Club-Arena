@@ -424,12 +424,11 @@ export default function FriendsPage() {
 
   const acceptRequest = async (friendshipId: string) => {
     try {
-      const { error } = await supabase
-        .from('friendships')
-        .update({ status: 'accepted' })
-        .eq('id', friendshipId)
-        .eq('friend_id', user?.id);
+      const { data, error } = await supabase.rpc('accept_friendship', {
+        p_friendship_id: friendshipId,
+      });
       if (error) throw error;
+      if (data?.success !== true) throw new Error(data?.error || 'Friend request was not accepted');
       masterBus.emit('FRIEND_REQUEST_ACCEPTED', { friendshipId });
       await loadFriends();
       toast.success('Friend request accepted!');

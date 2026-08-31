@@ -10,14 +10,16 @@ interface StandardContentLayoutProps {
   className?: string;
 }
 
-export default function StandardContentLayout({ children, title, className = '' }: StandardContentLayoutProps) {
+export default function StandardContentLayout({
+  children,
+  title,
+  className = '',
+}: StandardContentLayoutProps) {
   return (
     <div className={`${styles.pageContainer} ${className}`}>
       <div className={styles.contentColumn}>
         {title && <h1 className={styles.pageTitle}>{title}</h1>}
-        <div className={styles.feedLayout}>
-          {children}
-        </div>
+        <div className={styles.feedLayout}>{children}</div>
       </div>
     </div>
   );

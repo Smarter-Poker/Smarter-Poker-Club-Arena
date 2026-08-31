@@ -9,6 +9,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { readLocalSession } from '../lib/authUtils';
 import { blockService } from './BlockService';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
@@ -314,43 +315,12 @@ class FriendSuggestionServiceClass {
     otherUserId: string
   ): Promise<{ id: string; username: string; avatarUrl?: string }[]> {
     try {
-      // Get friends of userId
-      const { data: myFriends } = await supabase
-        .from('friendships')
-        .select('user_id, friend_id')
-        .or(`user_id.eq.${userId},friend_id.eq.${userId}`)
-        .eq('status', 'accepted');
-
-      const myFriendIds = new Set<string>();
-      (myFriends || []).forEach((row: any) => {
-        if (row.user_id && row.friend_id) {
-          myFriendIds.add(row.user_id === userId ? row.friend_id : row.user_id);
-        }
+      const session = readLocalSession();
+      if (session?.userId !== userId) return [];
+      const { data: profiles, error } = await supabase.rpc('get_mutual_friends', {
+        p_other_user_id: otherUserId,
       });
-
-      // Get friends of otherUserId
-      const { data: theirFriends } = await supabase
-        .from('friendships')
-        .select('user_id, friend_id')
-        .or(`user_id.eq.${otherUserId},friend_id.eq.${otherUserId}`)
-        .eq('status', 'accepted');
-
-      const theirFriendIds = new Set<string>();
-      (theirFriends || []).forEach((row: any) => {
-        if (row.user_id && row.friend_id) {
-          theirFriendIds.add(row.user_id === otherUserId ? row.friend_id : row.user_id);
-        }
-      });
-
-      // Intersection
-      const mutualIds = [...myFriendIds].filter((id) => theirFriendIds.has(id));
-      if (mutualIds.length === 0) return [];
-
-      // Fetch profiles
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, username, avatar_url')
-        .in('id', mutualIds);
+      if (error) throw error;
 
       return (profiles || []).map((p: any) => ({
         id: p.id as string,

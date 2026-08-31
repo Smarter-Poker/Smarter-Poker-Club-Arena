@@ -574,9 +574,9 @@ describe('ClubDataPage', () => {
 
     await screen.findByText('Shark Table One', {}, { timeout: 5_000 });
     // Four calls prove that three transient cancellations healed. A concurrent
-    // visibility/revalidation signal may legitimately start one more
+    // visibility/revalidation signal may legitimately start another
     // authoritative read after first paint, so the user contract is a lower
-    // bound rather than an exact transport-call count.
+    // bound rather than an arbitrary transport-call ceiling.
     expect(snapshotRequest).toBeGreaterThanOrEqual(4);
     expect(screen.queryByText('Could not load club data.')).not.toBeInTheDocument();
   });

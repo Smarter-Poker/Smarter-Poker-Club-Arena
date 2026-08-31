@@ -57,6 +57,7 @@ import styles from './CashierPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
 import { reportError } from '../utils/errorReporter';
+import { formatPopupText } from '../utils/popupStyle';
 
 type CashierAction = 'send' | 'distribute' | 'buyin' | 'cashout' | 'mint' | 'history';
 
@@ -2755,7 +2756,7 @@ export default function CashierPage() {
                             {CATEGORY_LABELS[tx.category] ||
                               (tx.category || tx.type || '').replace(/_/g, ' ').toUpperCase()}
                           </span>
-                          <span className={styles.txDesc}>{tx.description}</span>
+                          <span className={styles.txDesc}>{formatPopupText(tx.description)}</span>
                         </div>
                         <div className={styles.txAmounts}>
                           <span

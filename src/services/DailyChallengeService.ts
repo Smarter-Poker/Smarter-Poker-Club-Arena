@@ -12,6 +12,7 @@ import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { retryFetch } from '../utils/retryFetch';
 import { reportError } from '../utils/errorReporter';
+import { titleCase } from '../utils/titleCase';
 import { uuid } from '../utils/uuid';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -852,8 +853,11 @@ class DailyChallengeServiceClass {
       tier,
       challenge: {
         id: row.challenge_id,
-        name: row.name,
-        description: row.description,
+        // Catalog text is data, so static copy gates cannot inspect it. Keep
+        // the page rule true even while an older immutable assignment snapshot
+        // is still being served from production.
+        name: titleCase(row.name),
+        description: titleCase(row.description),
         type: row.challenge_type as ChallengeType,
         requirement: Number(row.requirement) || 0,
         chipReward: Number(row.chip_reward) || 0,

@@ -206,7 +206,7 @@ function ChallengeCard({
           aria-valuemin={0}
           aria-valuemax={c.requirement}
           aria-valuenow={Math.min(challenge.progress, c.requirement)}
-          aria-valuetext={`${Math.min(challenge.progress, c.requirement).toLocaleString()} of ${c.requirement.toLocaleString()} complete`}
+          aria-valuetext={`${Math.min(challenge.progress, c.requirement).toLocaleString()} Of ${c.requirement.toLocaleString()} Complete`}
         >
           <motion.div
             className={styles.progressFill}
@@ -615,6 +615,7 @@ export default function DailyChallengesPage() {
   const loadRequestRef = useRef(0);
   const lastSyncedAtRef = useRef(0);
   const lastResumeRefreshRef = useRef(0);
+  const initialLoadSettledRef = useRef(false);
   const realtimeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const realtimeStatusRef = useRef<'connecting' | 'live' | 'degraded'>('connecting');
 
@@ -695,6 +696,7 @@ export default function DailyChallengesPage() {
         }
         setUserId(authUser.id);
         await loadChallenges(authUser.id, 'initial');
+        if (!cancelled) initialLoadSettledRef.current = true;
       } catch (err) {
         reportError(err, 'DailyChallengesPage.auth_load_failed');
         if (!cancelled) {
@@ -752,6 +754,10 @@ export default function DailyChallengesPage() {
 
     const refreshAfterResume = () => {
       if (document.visibilityState !== 'visible') return;
+      // setUserId installs this listener before the first dashboard receipt
+      // settles. A focus event in that window used to see syncedAt=0 and start
+      // a duplicate cold-load request.
+      if (!initialLoadSettledRef.current) return;
       const resumedAt = Date.now();
       if (resumedAt - lastResumeRefreshRef.current < 1000) return;
 
@@ -787,18 +793,6 @@ export default function DailyChallengesPage() {
     },
     []
   );
-
-  // Same-tab completion events and the database revision stream share one
-  // trailing-edge window. A transaction that advances several missions still
-  // produces exactly one dashboard read and no visible loading flicker.
-  useEffect(() => {
-    const unsub = masterBus.subscribeDebounced(
-      'CHALLENGE_PROGRESS_UPDATED',
-      scheduleRealtimeRefresh,
-      250
-    );
-    return unsub;
-  }, [scheduleRealtimeRefresh]);
 
   useMasterBusChannel({
     channelName: userId ? `daily-mission-revision:${userId}` : null,
@@ -1346,7 +1340,7 @@ export default function DailyChallengesPage() {
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-valuenow={Math.round(stats?.milestoneProgressPercent ?? 0)}
-                aria-valuetext={`${(streak?.streak ?? stats?.currentStreak ?? 0).toLocaleString()} days, next reward at ${stats?.nextMilestone.toLocaleString() ?? 0}`}
+                aria-valuetext={`${(streak?.streak ?? stats?.currentStreak ?? 0).toLocaleString()} Days, Next Reward At ${stats?.nextMilestone.toLocaleString() ?? 0}`}
               >
                 <motion.div
                   className={styles.milestoneFill}

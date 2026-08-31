@@ -158,7 +158,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   // Financial
   {
     id: 'profit_1000',
-    name: 'In the Green',
+    name: 'In The Green',
     description: 'Profit 1,000 Chips',
     icon: '',
     category: 'financial',
@@ -242,7 +242,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   },
   {
     id: 'quads',
-    name: 'Four of a Kind',
+    name: 'Four Of A Kind',
     description: 'Hit Quads',
     icon: '4',
     category: 'special',

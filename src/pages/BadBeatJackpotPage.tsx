@@ -660,7 +660,7 @@ export default function BadBeatJackpotPage() {
             lineHeight: 1.5,
           }}
         >
-          Applied To The Stakes-Tiered Share Of The Pool Shown Above &mdash; Not The Whole Pool.
+          Applied To The Stakes-Tiered Share Of The Pool Shown Above - Not The Whole Pool.
         </p>
         <div className="payout-bars">
           <div className="payout-bar">

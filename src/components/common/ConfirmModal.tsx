@@ -11,6 +11,7 @@
  */
 
 import React, { useEffect, useCallback } from 'react';
+import { formatPopupText } from '../../utils/popupStyle';
 import './ConfirmModal.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -92,9 +93,9 @@ export function ConfirmModal({
 
         {/* Content */}
         <h2 id="confirm-modal-title" className="confirm-modal__title">
-          {title}
+          {formatPopupText(title)}
         </h2>
-        <p className="confirm-modal__message">{message}</p>
+        <p className="confirm-modal__message">{formatPopupText(message)}</p>
 
         {/* Actions */}
         <div className="confirm-modal__actions">
@@ -103,7 +104,7 @@ export function ConfirmModal({
             onClick={onCancel}
             disabled={loading}
           >
-            {cancelText}
+            {formatPopupText(cancelText)}
           </button>
           <button
             className={`confirm-modal__btn confirm-modal__btn--confirm ${
@@ -112,7 +113,7 @@ export function ConfirmModal({
             onClick={onConfirm}
             disabled={loading}
           >
-            {loading ? <span className="confirm-modal__spinner" /> : confirmText}
+            {loading ? <span className="confirm-modal__spinner" /> : formatPopupText(confirmText)}
           </button>
         </div>
       </div>

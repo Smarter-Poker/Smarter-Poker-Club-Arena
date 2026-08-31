@@ -305,11 +305,26 @@ test('no chrome covers reachable content at 375px', async ({ page }) => {
 
         // ── BOTTOM: only provable once the page cannot scroll further.
         if (bottomBar) {
-          await scrollInstantlyTo(scrollingElement.scrollHeight);
-          const maxScrollTop = scrollingElement.scrollHeight - scrollingElement.clientHeight;
-          if (Math.abs(scrollingElement.scrollTop - maxScrollTop) > SLACK) {
+          let stableBottomSamples = 0;
+          // Live sections can append an RPC-backed history after DOMContentLoaded.
+          // A single scroll then measures an obsolete maximum and can report a
+          // middle row as "unreachable" even though more page exists below it.
+          // Require two consecutive height/bottom samples; if live content
+          // never settles, fail as an indeterminate audit instead of passing.
+          for (let attempt = 1; attempt <= 6; attempt += 1) {
+            const heightBefore = scrollingElement.scrollHeight;
+            await scrollInstantlyTo(heightBefore);
+            await new Promise((r) => setTimeout(r, 350));
+            const heightAfter = scrollingElement.scrollHeight;
+            const maxScrollTop = Math.max(0, heightAfter - scrollingElement.clientHeight);
+            const reachedBottom = Math.abs(scrollingElement.scrollTop - maxScrollTop) <= SLACK;
+            stableBottomSamples =
+              reachedBottom && heightAfter === heightBefore ? stableBottomSamples + 1 : 0;
+            if (stableBottomSamples >= 2) break;
+          }
+          if (stableBottomSamples < 2) {
             throw new Error(
-              `Mobile chrome audit did not reach its scroll boundary: ${scrollingElement.scrollTop}/${maxScrollTop}`
+              'Club Arena document height did not settle at its reachable bottom; the mobile chrome audit did not reach its scroll boundary.'
             );
           }
           const navTop = bottomBar.getBoundingClientRect().top;

@@ -101,3 +101,46 @@ Verification: `tsc` clean both sides; client unit 483 files / 6,852 tests;
 client non-unit 249 / 3,446; the thirteen server rake and BBJ suites (203
 tests) green; `check-rake-schedule-parity`, `check-rakeconfig-parity` and
 `check-rake-bbj-collection-law` all pass.
+
+## Postscript: there are now THREE copies of the ladder, and one of them had holes
+
+Hours before this change, the rake-law alarm shipped `public.ca_rake_schedule`
+and `public.ca_rake_tier` — a SQL mirror of the same two tables, whose own
+comment says "Mirror of RAKE_SCHEDULE in src/config/RakeConfig.ts". A mirror
+that does not move when the thing it mirrors moves is worse than no mirror, so
+`20260831160000_the_rake_alarm_learns_the_new_schedule_rows.sql` adds the six
+rows there too and mirrors the proportional fallback into
+`fn_effective_rake_cap`, deriving the 15 BB bound from the table itself exactly
+as the TypeScript derives it from `RAKE_SCHEDULE`.
+
+That earlier migration also recorded, in passing, "25/50 has no schedule row
+and resolves through the nosebleeds tier. That is the design." Dan's ruling
+supersedes that. The cap does not move either way: 25/50 was charged $20 by the
+tier and is charged $20 by its new row, so its 139 audited hands are untouched.
+
+**Probing the mirror found a second defect, in the alarm rather than the rake.**
+`ca_rake_tier` carries `min_bb` and `max_bb` copied from each tier's
+documentation, and `fn_effective_rake_cap` resolved on BOTH bounds. But
+`getTierForBB` is an upper-bound cascade with no floor and no gaps. The seeded
+minimums leave a hole between every pair of tiers — nano ends at 0.2 and micro
+starts at 0.3, small ends at 3.0 and mid starts at 3.5, mid ends at 8.0 and
+high starts at 9.0, high ends at 40 and nosebleeds starts at 41 — plus
+everything below 0.1. A stake in any hole matched no tier and the function
+returned **NULL**.
+
+`fn_rake_law_violations` tests `over_cap` as `WHERE cap IS NOT NULL AND rake >
+cap`. A NULL cap is not a caught violation, it is a skipped one — so the alarm
+was reporting "no violations" for stakes it had never examined. Measured before
+the fix, big blinds 0.07, 0.25, 0.9, 3.2, 8.5 and 40.5 all resolved to NULL,
+and `getTierForBB` prices every one of them. No live table sits on those stakes
+today, which is why nothing had gone wrong yet.
+
+`20260831170000_the_rake_alarm_had_blind_spots_between_its_tiers.sql` resolves
+the tier the way the code does — the narrowest tier whose ceiling still covers
+the stake — and re-probes every hole. Both migrations are applied to production
+and verified.
+
+One process note worth keeping: the first version of that assertion used `<>`,
+and `NULL <> 1.05` is NULL, so the check passed on the very NULL it existed to
+catch. The assertions use `IS DISTINCT FROM` now. An assertion that cannot fail
+is the same class of bug as an alarm that cannot fire.

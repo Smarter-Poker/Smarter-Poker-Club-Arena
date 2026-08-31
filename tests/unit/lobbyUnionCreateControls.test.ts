@@ -7,23 +7,21 @@ const pageCss = readFileSync(resolve(__dirname, '../../src/pages/ClubHomePage.cs
 const table = readFileSync(resolve(__dirname, '../../src/components/lobby/LobbyTable.tsx'), 'utf8');
 const css = readFileSync(resolve(__dirname, '../../src/components/lobby/LobbyTable.css'), 'utf8');
 
-describe('union-owned lobby creation controls', () => {
-  it('shows creation only to staff on the union row itself', () => {
-    // Moved to the new mechanism in the same commit, per CLAUDE.md rule 8.
-    // The guard used to name a single role, which left a co-owner - the one
-    // role whose whole description is "everything an owner can do except
-    // appoint another co owner" - unable to create a game on a union club.
-    // isClubStaff() is owner, co_owner or admin, and the same file already
-    // used it a hundred and ninety lines further down.
-    expect(page).toContain('(isOwner || isClubStaff(userRole)) && club?.is_union === true');
+describe('club lobby creation controls', () => {
+  it('shows creation to authorized staff in standalone and union clubs', () => {
+    // `noticeEditable` is the shared owner/staff authority predicate. Game
+    // creation is a club capability, so standalone clubs must not be hidden
+    // behind the union-only condition that used to make a new club inert.
+    expect(page).toContain("noticeEditable && gameType !== 'ALL'");
+    expect(page).not.toContain('(isOwner || isClubStaff(userRole)) && club?.is_union === true');
     expect(page).not.toContain("userRole === 'admin') && club?.is_union");
     expect(page).not.toContain('(!isInUnion || club?.is_union)');
   });
 
   it('keeps cash and tournament creation on their existing flows', () => {
     expect(page).toContain('setShowCreateTournament(true)');
-    expect(page).toContain('navigate(`/clubs/${clubId}/create-table`)');
-    expect(page).toContain("? 'Tournament' : 'Cash Game'");
+    expect(page).toContain('navigate(`/clubs/${clubId}/create-table/${routeVariant}`)');
+    expect(page).toContain('CREATE_LABEL_FOR[gameType]');
   });
 
   it('retains union-scoped cash and tournament loading for attached clubs', () => {

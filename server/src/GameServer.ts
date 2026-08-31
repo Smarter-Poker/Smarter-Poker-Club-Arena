@@ -51,6 +51,7 @@ import {
   repairUnbankedBBJFees,
   auditRakeAttributionDrift,
   auditSatelliteConservation,
+  auditPrizeDisbursement,
 } from './services/FeeReconciler.js';
 import { reportError, initSentry, flushSentry } from './services/errorReporter.js';
 import { fetchAllRows } from './services/supabase/pagination.js';
@@ -1338,6 +1339,13 @@ export class GameServer {
           // neither) and disbursed no more than max(pool, awardable seats).
           // Files a critical financial_alert per violating event.
           await auditSatelliteConservation(24);
+          // Prize disbursement (2026-08-31): a completed event must not have
+          // paid out more than its pool plus any acknowledged overlay. This
+          // reads wallet_transactions, NOT tournament_players.prize — the
+          // Sunday $200 double payment (18,201.60) was invisible to every
+          // other check precisely because the outage reset overwrote that
+          // snapshot while the wallet ledger kept the truth.
+          await auditPrizeDisbursement(24);
         } catch (err) {
           reportError(err, 'GameServer.bbj_drift_audit_failed');
         }

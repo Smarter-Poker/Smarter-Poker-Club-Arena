@@ -2020,6 +2020,7 @@
     "fn_tournament_payout_reconcile",
     "fn_tournament_payout_sweep",
     "fn_tournament_primary_table",
+    "fn_tournament_prize_disbursement_audit",
     "fn_tournament_register_counter",
     "fn_tournament_unregister_counter",
     "fn_tournament_waitlist_position",

@@ -663,6 +663,20 @@ export async function auditRakeAttributionDrift(
  * The arithmetic lives in fn_satellite_conservation_audit so the check reads
  * the same ledgers the money moved through. Read-only: it reports, it never
  * repairs.
+ *
+ * CORRECTED 2026-08-31 (migration prize_disbursement_audit_and_three_false_alarms).
+ * Shape 1 as originally written produced a FALSE critical every hour on
+ * ccb686f8: pool 216, ticket 200, target already closed, so the whole 216
+ * went out as cash to the finisher and the money conserved exactly — but the
+ * check computed awardable = GREATEST(configured 2, floor(216/200)=1) = 2 and
+ * then demanded that position 2 be paid as well. A satellite whose pool funds
+ * one seat does not owe a second player anything, and how a cash fallback
+ * splits is the payout structure's business, not a conservation invariant.
+ * Shape 2's allowance, GREATEST(pool, awardable x ticket), was too generous
+ * the same way: it would have let that satellite pay 400 against a 216 pool
+ * in silence. The SQL now states conservation symmetrically —
+ *   disbursed = cash + seats x ticket, allowance = pool + acknowledged,
+ *   excess (minted) or undisbursed (kept back) — and needs no seat count.
  */
 export async function auditSatelliteConservation(
   windowHours = 24
@@ -708,6 +722,79 @@ export async function auditSatelliteConservation(
     return { violations: rows.length };
   } catch (err) {
     reportError(err, 'FeeReconciler.satellite_conservation_threw');
+    return null;
+  }
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  PRIZE DISBURSEMENT watchdog — read the LEDGER, not the snapshot
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * WHY THIS EXISTS. On 2026-08-30 "Sunday $200 Deep Stack" paid 62,841.60
+ * against a 44,640 prize pool — 18,201.60 of chips that came from nowhere. A
+ * recovery payout paid places 1-9 on the pre-reset 20,880 pool; the outage
+ * reset then re-opened the event, it was replayed, and the reconciler paid
+ * the NEW places 1-9 in full. Eight of the first-run recipients finished
+ * 62nd-109th on the replay and kept money for places they no longer hold.
+ *
+ * EVERY EXISTING CHECK STAYED GREEN, and the reason is the whole point of
+ * this function. TournamentSentinel.payout_conservation compares
+ * SUM(tournament_players.prize) against prize_pool — but the reset OVERWROTE
+ * tournament_players, so that sum read 44,640, exactly the pool. The
+ * double payment existed only in wallet_transactions, which a reset cannot
+ * rewrite. A conservation check that reads a mutable snapshot is measuring
+ * the wrong object; this one reads the ledger.
+ *
+ * ACKNOWLEDGED, NOT FORGIVEN. tournament_conservation_baseline carries the
+ * known historical excesses (including the 18,201.60, recorded with its
+ * cause and with Dan named as the decision owner for any clawback), so this
+ * speaks only for NEW drift. Read-only: it reports, it never repairs.
+ */
+export async function auditPrizeDisbursement(
+  windowHours = 24
+): Promise<{ violations: number; excess: number } | null> {
+  try {
+    const { data, error } = await supabase.rpc('fn_tournament_prize_disbursement_audit', {
+      p_hours: windowHours,
+    });
+    if (error) {
+      reportError(error, 'FeeReconciler.prize_disbursement_query_failed');
+      return null;
+    }
+    const rows = (data ?? []) as Array<{
+      tournament_id: string;
+      name: string;
+      variant: string;
+      prize_pool: number;
+      disbursed: number;
+      acknowledged: number;
+      excess: number;
+    }>;
+    if (rows.length === 0) return { violations: 0, excess: 0 };
+
+    const excess = rows.reduce((s, r) => s + (Number(r.excess) || 0), 0);
+    const detail =
+      `PRIZE_DISBURSEMENT: ${rows.length} completed tournament(s) in the last ${windowHours}h ` +
+      `paid out more than their prize pool (${excess.toFixed(2)} chips beyond pool + acknowledged): ` +
+      rows
+        .slice(0, 10)
+        .map(
+          (r) =>
+            `${r.tournament_id.slice(0, 8)} "${r.name}" (${r.variant}: pool ${r.prize_pool}, ` +
+            `disbursed ${r.disbursed}, excess ${r.excess})`
+        )
+        .join('; ');
+    reportError(new Error(detail), 'FeeReconciler.prize_disbursement');
+    await raiseFinancialAlert('critical', 'FeeReconciler.prize_disbursement', detail, {
+      windowHours,
+      violations: rows.length,
+      excessTotal: Number(excess.toFixed(2)),
+      rows: rows.slice(0, 50),
+    });
+    return { violations: rows.length, excess };
+  } catch (err) {
+    reportError(err, 'FeeReconciler.prize_disbursement_threw');
     return null;
   }
 }

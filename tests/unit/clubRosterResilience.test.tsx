@@ -225,6 +225,13 @@ describe('Player Command resilience wiring', () => {
     expect(PAGE).toContain("dataFreshness === 'failed'");
   });
 
+  it('recovers a cold first-page timeout without making the player retry manually', () => {
+    expect(PAGE).toContain('const recoveryScheduled = scheduleConnectionRecovery(2)');
+    expect(PAGE).toContain('setLoadError(!recoveryScheduled && !hasSavedRows)');
+    expect(PAGE).toContain("recoveryScheduled ? 'loading' : 'failed'");
+    expect(PAGE).toMatch(/recoveryAttemptRef\.current >= maxAttempts/);
+  });
+
   it('settles summary and directory reads independently', () => {
     expect(PAGE).toContain('settleRosterReadsIndependently');
     expect(POLICY).toContain('Promise.allSettled');

@@ -25,7 +25,7 @@ function sum(m: Map<string, number>): number {
   return [...m.values()].reduce((a, b) => a + b, 0);
 }
 
-describe('ChipRaceEngine — conservation', () => {
+describe('ChipRaceEngine - conservation', () => {
   it('never awards more chips than were collected', () => {
     for (let i = 0; i < 50; i++) {
       const { result } = race({ a: 5300, b: 4700, c: 2500, d: 1100 }, 25, 100);
@@ -58,7 +58,7 @@ describe('ChipRaceEngine — conservation', () => {
   });
 });
 
-describe('ChipRaceEngine — THE A9 BUG: the race is probabilistic, not a ranking', () => {
+describe('ChipRaceEngine - THE A9 BUG: the race is probabilistic, not a ranking', () => {
   it('a smaller fractional holding can still win', () => {
     // 99 vs 1 fractional chips, one chip to award. Under the old formula the
     // 99-holder won 100% of the time; a real race gives the 1-holder ~1%.

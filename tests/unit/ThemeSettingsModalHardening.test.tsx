@@ -366,7 +366,7 @@ describe('ThemeSettingsModal hardening', () => {
     );
     fireEvent.click(screen.getByRole('tab', { name: 'Cards' }));
 
-    expect(screen.getByRole('button', { name: 'Premium Gold, checking ownership' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Premium Gold, Checking Ownership' })).toBeDisabled();
     expect(screen.getByText('Checking Your Purchases And Rewards')).toBeVisible();
 
     await act(async () => {
@@ -391,7 +391,7 @@ describe('ThemeSettingsModal hardening', () => {
 
     expect(await screen.findByText('Purchases Could Not Be Verified')).toBeVisible();
     expect(
-      screen.getByRole('button', { name: 'Premium Gold, ownership unavailable' })
+      screen.getByRole('button', { name: 'Premium Gold, Ownership Unavailable' })
     ).toBeDisabled();
   });
 
@@ -441,7 +441,7 @@ describe('ThemeSettingsModal hardening', () => {
 
     const locked = screen
       .getAllByRole('button')
-      .find((button) => button.getAttribute('aria-label')?.includes('purchase or VIP required'));
+      .find((button) => button.getAttribute('aria-label')?.includes('Purchase Or VIP Required'));
     expect(locked).toBeDefined();
     fireEvent.click(locked!);
 
@@ -463,7 +463,7 @@ describe('ThemeSettingsModal hardening', () => {
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
     fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Neon City, Purchase Or VIP Required' }));
     fireEvent.click(await screen.findByRole('button', { name: /Buy For 350/ }));
 
     await waitFor(() =>
@@ -488,7 +488,7 @@ describe('ThemeSettingsModal hardening', () => {
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
     fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Neon City, Purchase Or VIP Required' }));
 
     const addDiamonds = await screen.findByRole('button', { name: 'Add 250 Diamonds' });
     expect(addDiamonds).toBeEnabled();
@@ -542,7 +542,7 @@ describe('ThemeSettingsModal hardening', () => {
     expect(readTableStudioCheckoutIntent('user-1')).not.toBeNull();
   });
 
-  it('keeps the pending design available after a canceled Stripe checkout', async () => {
+  it('keeps the Pending design available after a canceled Stripe checkout', async () => {
     rememberTableStudioCheckoutIntent({
       userId: 'user-1',
       tab: 'table',
@@ -569,7 +569,7 @@ describe('ThemeSettingsModal hardening', () => {
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
     fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Neon City, Purchase Or VIP Required' }));
     fireEvent.click(await screen.findByRole('button', { name: /Buy For 350/ }));
 
     expect(await screen.findByRole('dialog', { name: 'Diamond Store' })).toBeVisible();
@@ -583,7 +583,7 @@ describe('ThemeSettingsModal hardening', () => {
     );
     fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
     expect(
-      screen.getByRole('button', { name: 'Neon City, purchase or VIP required' })
+      screen.getByRole('button', { name: 'Neon City, Purchase Or VIP Required' })
     ).toBeEnabled();
 
     act(() => {
@@ -601,7 +601,7 @@ describe('ThemeSettingsModal hardening', () => {
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
     expect(
-      screen.getByRole('button', { name: 'Neon Ice, purchase or VIP required' })
+      screen.getByRole('button', { name: 'Neon Ice, Purchase Or VIP Required' })
     ).toBeEnabled();
 
     // Simulate a burst where Postgres Changes delivers one component row but
@@ -632,7 +632,7 @@ describe('ThemeSettingsModal hardening', () => {
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
     expect(
-      screen.getByRole('button', { name: 'Neon Ice, purchase or VIP required' })
+      screen.getByRole('button', { name: 'Neon Ice, Purchase Or VIP Required' })
     ).toBeEnabled();
 
     mocks.unlockResult = Promise.resolve({
@@ -690,7 +690,7 @@ describe('ThemeSettingsModal hardening', () => {
     expect(screen.queryByText('Table Art Live')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
     expect(
-      screen.getByRole('button', { name: 'Neon City, purchase or VIP required' })
+      screen.getByRole('button', { name: 'Neon City, Purchase Or VIP Required' })
     ).toBeEnabled();
 
     mocks.unlockResult = Promise.resolve({
@@ -744,7 +744,7 @@ describe('ThemeSettingsModal hardening', () => {
       expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
     );
     fireEvent.click(screen.getByRole('tab', { name: 'Tables' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Neon City, purchase or VIP required' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Neon City, Purchase Or VIP Required' }));
     fireEvent.click(await screen.findByRole('button', { name: /Buy For 350/ }));
 
     await waitFor(() => expect(mocks.toast.success).toHaveBeenCalledWith('Neon City Purchased'));
@@ -859,6 +859,52 @@ describe('ThemeSettingsModal hardening', () => {
       'royal_indigo'
     );
     expect(screen.getByText('Table Art Live')).toBeVisible();
+  });
+
+  it('keeps the authoritative repair active for an open studio on a hidden second device', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    try {
+      renderStudio();
+      await waitFor(() =>
+        expect(screen.getByRole('button', { name: 'House Classic' })).toBeEnabled()
+      );
+      expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+        'data-table-theme',
+        'classic_green'
+      );
+
+      // Model a Postgres Changes frame that the backgrounded device never
+      // received. The durable snapshot must still repair its open preview.
+      mocks.themeResult = Promise.resolve({
+        data: [
+          {
+            ...savedTheme,
+            theme_id: 'ocean-suite',
+            table_id: 'ocean_blue',
+            background_id: 'royal_indigo',
+            button_id: 'classic-white',
+            cards_id: 'classic_blue',
+            updated_at: '2026-08-31T13:30:00.000Z',
+          },
+        ],
+        error: null,
+      });
+
+      await waitFor(
+        () =>
+          expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+            'data-table-theme',
+            'ocean_blue'
+          ),
+        { timeout: 3_500 }
+      );
+      expect(screen.getByTestId('gameplay-preview')).toHaveAttribute(
+        'data-background-theme',
+        'royal_indigo'
+      );
+    } finally {
+      visibility.mockRestore();
+    }
   });
 
   it('does not let an in-flight appearance snapshot roll back a newer realtime change', async () => {

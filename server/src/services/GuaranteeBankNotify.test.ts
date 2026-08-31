@@ -60,7 +60,7 @@ const svc = readFileSync(
   'utf8'
 );
 
-describe('the pop-up wiring — a guarantee refusal must notify the owners', () => {
+describe('the pop-up wiring - a guarantee refusal must notify the owners', () => {
   it('the scheduled spawn failure path calls fn_notify_guarantee_bank_short on the guard signature', () => {
     // The call must live in the insert-failure branch and be keyed on the
     // guard's message, not fire for every failed insert.
@@ -72,7 +72,7 @@ describe('the pop-up wiring — a guarantee refusal must notify the owners', () 
     expect(notifyAt).toBeGreaterThan(failAt);
   });
 
-  it('the restart path notifies too — a manual club event deserves the same pop-up', () => {
+  it('the restart path notifies too - a manual club event deserves the same pop-up', () => {
     /* ROUND 10 (2026-08-29): this was `svc.slice(restartAt, restartAt +
        1500)` — the exact fixed-byte window noFixedSizeSourceWindows.test.ts
        forbids, and it went red on main the moment that scanner saw it. The

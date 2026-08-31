@@ -232,7 +232,7 @@ export async function syncStacks(
     reportError(
       new Error(
         `[DB] ${failures.length}/${players.length} stack syncs failed for table ${tableId} ` +
-          `after 3 attempts each — ${failures.join('; ')}`
+          `after 3 attempts each - ${failures.join('; ')}`
       ),
       'DB.sync_stacks_failed'
     );

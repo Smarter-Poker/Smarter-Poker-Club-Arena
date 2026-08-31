@@ -183,7 +183,7 @@ export class TableBreakEngine {
       // players seated at the broken table rather than deleting their seats.
       reportError(
         new Error(
-          `[TableBreakEngine] Table break of ${brokenTable.tableId} left ${plan.unplaced.length} player(s) unplaced — every remaining table is full. Their seats MUST be preserved: ${plan.unplaced.map((u) => u.playerId).join(', ')}`
+          `[TableBreakEngine] Table break of ${brokenTable.tableId} left ${plan.unplaced.length} player(s) unplaced - every remaining table is full. Their seats MUST be preserved: ${plan.unplaced.map((u) => u.playerId).join(', ')}`
         ),
         'TableBreakEngine.unplaced_players'
       );
@@ -235,7 +235,7 @@ export class TableBreakEngine {
     if (plan.unplaced.length > 0) {
       reportError(
         new Error(
-          `[TableBreakEngine] calculateRedistribution could not seat ${plan.unplaced.length} player(s) from ${brokenTable.tableId} — every remaining table is full. Use planRedistribution() to handle them; do NOT delete their seats.`
+          `[TableBreakEngine] calculateRedistribution could not seat ${plan.unplaced.length} player(s) from ${brokenTable.tableId} - every remaining table is full. Use planRedistribution() to handle them; do NOT delete their seats.`
         ),
         'TableBreakEngine.unplaced_players'
       );

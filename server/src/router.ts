@@ -131,7 +131,7 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown> |
 function verifyInternalKey(req: IncomingMessage): boolean {
   if (!INTERNAL_API_KEY) {
     // If the key is not configured, reject all requests to these routes.
-    console.warn('[Router] INTERNAL_API_KEY is not set — rejecting channel broadcast request');
+    console.warn('[Router] INTERNAL_API_KEY is not set - rejecting channel broadcast request');
     return false;
   }
   const auth = req.headers['authorization'];

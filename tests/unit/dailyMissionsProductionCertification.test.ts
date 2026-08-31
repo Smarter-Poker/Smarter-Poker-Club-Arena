@@ -26,11 +26,13 @@ describe('Daily Missions production certification', () => {
       'challenge_reroll:',
       'buy_streak_freeze',
       'bump_challenge_progress',
+      'record_daily_challenge_event',
       'daily_challenge_dashboard_revisions',
       "getByText('Live Now')",
       'claim_daily_challenges',
       'Preference On, Device Disconnected',
       'Mission Network Unavailable',
+      'firstRerollButton',
       'document.documentElement.scrollWidth',
       "dailyTab.press('ArrowRight')",
     ]) {
@@ -40,7 +42,7 @@ describe('Daily Missions production certification', () => {
     // dashboard_loaded is intentionally sampled at 20%; certification proves
     // the actual receipt and only requires unsampled mutation operations.
     const operationGate = spec.slice(
-      spec.indexOf('const operations ='),
+      spec.indexOf('const requiredOperationEvents ='),
       spec.indexOf('report.operationEvents')
     );
     expect(operationGate).not.toContain("'dashboard_loaded'");
@@ -51,6 +53,9 @@ describe('Daily Missions production certification', () => {
     const helper = source('tests/e2e/support/temporaryCustomizationAccount.ts');
     for (const table of [
       'daily_mission_operations',
+      'daily_challenge_progress_events',
+      'daily_challenge_event_outbox',
+      'daily_challenge_milestone_claims',
       'daily_challenge_claim_batches',
       'daily_challenge_dashboard_revisions',
       'user_daily_challenges',
@@ -61,10 +66,15 @@ describe('Daily Missions production certification', () => {
       'wallet_credit_idempotency',
       'wallets',
       'chip_transactions',
+      'audit_trail',
     ]) {
       expect(helper).toContain(`'${table}'`);
     }
     expect(helper).toContain('reserved fixture residue remains after cleanup');
+    // Certification owns and removes the exact UUID it creates. Listing the
+    // entire Auth tenant first makes an unrelated damaged account capable of
+    // blocking every post-deploy verdict before a fixture even exists.
+    expect(helper).not.toContain('/auth/v1/admin/users?page=');
   });
 
   it('keeps decorative card chrome out of every mission control hit target', () => {
@@ -80,10 +90,24 @@ describe('Daily Missions production certification', () => {
     expect(page).toContain("import { createPortal } from 'react-dom'");
     expect(page).toContain('document.body');
     const pageObject = source('tests/e2e/support/DailyMissionsPage.ts');
+    const spec = source('tests/e2e/production-daily-missions.spec.ts');
     expect(pageObject).toContain('placeControlInSafeViewport');
     expect(pageObject).toContain("block: 'center'");
     expect(pageObject).toContain("getByRole('navigation', { name: 'Club Arena' })");
     expect(pageObject).toContain('sp_firstrun_notif_v2_${userId}');
+    expect(pageObject).toContain('authenticatedUserId !== account.id');
+    expect(pageObject).toContain("for (const tier of ['Daily', 'Weekly', 'Monthly'] as const)");
+    expect(pageObject).toContain('/^Reroll .+ For 10 Diamonds$/');
+    expect(spec).toContain('/^Confirm Reroll For /');
+  });
+
+  it('targets the enforced title-case reroll accessibility contract', () => {
+    const page = source('src/pages/DailyChallengesPage.tsx');
+    const pageObject = source('tests/e2e/support/DailyMissionsPage.ts');
+    const certification = source('tests/e2e/production-daily-missions.spec.ts');
+    expect(page).toContain('aria-label={`Reroll ${c.name} For 10 Diamonds`}');
+    expect(pageObject).toContain('name: /^Reroll .+ For 10 Diamonds$/');
+    expect(certification).toContain('name: /^Confirm Reroll For /');
   });
 
   it('keeps every mission control above the fixed Club Arena footer', () => {
@@ -123,6 +147,16 @@ describe('Daily Missions production certification', () => {
     );
     expect(orderFix.indexOf('DELETE FROM public.daily_challenge_dashboard_revisions')).toBeLessThan(
       orderFix.indexOf('DELETE FROM auth.users')
+    );
+    const auditFix = source(
+      'supabase/migrations/20260901020200_reserved_certification_cleanup_audit_trail.sql'
+    );
+    expect(auditFix).toContain("v_email NOT LIKE 'ca-customization-cert-%@example.invalid'");
+    expect(auditFix.indexOf('DELETE FROM public.audit_trail')).toBeLessThan(
+      auditFix.indexOf('DELETE FROM auth.users')
+    );
+    expect(auditFix).toContain(
+      'REVOKE ALL ON FUNCTION public.cleanup_reserved_certification_account(uuid) FROM authenticated'
     );
   });
 });

@@ -91,7 +91,7 @@ function setPot(hc: HandController, pot: number): void {
   (hc as unknown as { state: { pot: number } }).state.pot = pot;
 }
 
-describe('LAW 1 — the BBJ drop is collected on every flop with 3+ dealt', () => {
+describe('LAW 1 - the BBJ drop is collected on every flop with 3+ dealt', () => {
   it('charges the drop in a pot far below the 10BB PAYOUT floor', () => {
     const hc = mkHC(3);
     setPot(hc, 15); // 1.5 BB
@@ -113,7 +113,7 @@ describe('LAW 1 — the BBJ drop is collected on every flop with 3+ dealt', () =
     expect(hc.priceDeductions(true, 500).bbjFee).toBe(0);
   });
 
-  it('the fee is a flat BB multiple — it does NOT scale with the pot', () => {
+  it('the fee is a flat BB multiple - it does NOT scale with the pot', () => {
     const hc = mkHC(4);
     const small = hc.priceDeductions(true, 30).bbjFee;
     const large = hc.priceDeductions(true, 5000).bbjFee;
@@ -121,7 +121,7 @@ describe('LAW 1 — the BBJ drop is collected on every flop with 3+ dealt', () =
   });
 });
 
-describe('LAW 2 — deductions can never exceed the pot, on EVERY path', () => {
+describe('LAW 2 - deductions can never exceed the pot, on EVERY path', () => {
   it('clamps when rake + drop would outrun a tiny pot', () => {
     const hc = mkHC(3);
     for (const pot of [0.5, 1, 2, 3, 5, 10, 25, 100]) {
@@ -147,7 +147,7 @@ describe('LAW 2 — deductions can never exceed the pot, on EVERY path', () => {
   });
 });
 
-describe('LAW 3 — one pricer; no path may hand-copy the arithmetic', () => {
+describe('LAW 3 - one pricer; no path may hand-copy the arithmetic', () => {
   const src = readFileSync(resolve(__dirname, 'HandController.ts'), 'utf8');
   const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
@@ -169,7 +169,7 @@ describe('LAW 3 — one pricer; no path may hand-copy the arithmetic', () => {
   });
 });
 
-describe('LAW 4 — the 10BB floor still gates the PAYOUT, untouched', () => {
+describe('LAW 4 - the 10BB floor still gates the PAYOUT, untouched', () => {
   it('BBJ_RULES keeps the published payout floor and dealt-in minimum', () => {
     expect(BBJ_RULES.minPotBB).toBe(10);
     expect(BBJ_RULES.minPlayersDealt).toBe(3);

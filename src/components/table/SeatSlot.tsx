@@ -1674,12 +1674,12 @@ export const SeatSlot = memo(
                Interaction model unchanged — no onClick, no tabIndex, no role:
                the seat is removed from the interaction model entirely. */
             aria-label={
-              isHeroReservedSeat ? `Seat ${seatNumber}: your seat` : `Seat ${seatNumber}: empty`
+              isHeroReservedSeat ? `Seat ${seatNumber}: Your Seat` : `Seat ${seatNumber}: Empty`
             }
           >
             <img
               src={`${import.meta.env.BASE_URL}images/icons/empty-button.png`}
-              alt={isHeroReservedSeat ? 'Your reserved seat' : 'Empty seat'}
+              alt={isHeroReservedSeat ? 'Your Reserved Seat' : 'Empty Seat'}
               className="seat__empty-img"
               draggable={false}
             />
@@ -1701,12 +1701,12 @@ export const SeatSlot = memo(
           }}
           role="button"
           tabIndex={0}
-          aria-label={`Seat ${seatNumber}: open - click to sit`}
+          aria-label={`Seat ${seatNumber}: Open - Click To Sit`}
         >
           {/* 2026-08-26: replaced +/SIT text stack with the SIT coin image. */}
           <img
             src={`${import.meta.env.BASE_URL}images/icons/sit-button.png`}
-            alt="Sit down"
+            alt="Sit Down"
             className="seat__empty-img seat__empty-img--sit"
             draggable={false}
           />
@@ -2047,7 +2047,7 @@ export const SeatSlot = memo(
         /* isActingNow: a screen reader must not keep announcing a folded seat
            as "acting now" for the round trip it takes the snapshot to move the
            turn along - the same stale-turn window the countdown ring had. */
-        aria-label={`Seat ${seatNumber}: ${player.name}${isActingNow ? ' (acting now)' : ''}${player.status === 'folded' ? ' (folded)' : ''}${player.status === 'all_in' ? ' (all in)' : ''}, stack ${player.stack}`}
+        aria-label={`Seat ${seatNumber}: ${player.name}${isActingNow ? ' (Acting Now)' : ''}${player.status === 'folded' ? ' (Folded)' : ''}${player.status === 'all_in' ? ' (All In)' : ''}, Stack ${player.stack}`}
         aria-live={isActingNow ? 'polite' : 'off'}
       >
         {/* Last Action Badge — floats ABOVE the seat (premium style) */}
@@ -2276,7 +2276,7 @@ export const SeatSlot = memo(
                hover ring for "clickable opponent avatars". */
             role={avatarClickable ? 'button' : undefined}
             tabIndex={avatarClickable ? 0 : undefined}
-            aria-label={avatarClickable ? `Player actions for ${player.name}` : undefined}
+            aria-label={avatarClickable ? `Player Actions For ${player.name}` : undefined}
             onKeyDown={
               avatarClickable
                 ? (e) => {
@@ -2404,7 +2404,7 @@ export const SeatSlot = memo(
           )}
           {/* FIX 186: Disconnected overlay — shows DISCONNECTED label + countdown */}
           {player.status === 'disconnected' && (
-            <div className="seat__disconnect-overlay" title="Player disconnected">
+            <div className="seat__disconnect-overlay" title="Player Disconnected">
               <span className="seat__disconnect-label">DISCONNECTED</span>
               {secondsLeft != null && secondsLeft > 0 && (
                 <span className="seat__disconnect-timer">{Math.ceil(secondsLeft)}s</span>
@@ -2549,7 +2549,7 @@ export const SeatSlot = memo(
             tabIndex={squeezeDown ? 0 : undefined}
             aria-label={
               squeezeDown
-                ? 'Your cards are face down. Drag up to squeeze them open, or press Enter.'
+                ? 'Your Cards Are Face Down. Drag Up To Squeeze Them Open, Or Press Enter.'
                 : undefined
             }
             {...(squeezeDown
@@ -2611,8 +2611,8 @@ export const SeatSlot = memo(
                 aria-label={
                   onToggleShowCard && !squeezeDown
                     ? showPickedCardIndexes?.includes(i)
-                      ? `Card ${i + 1} will be shown after the hand. Activate to keep it hidden.`
-                      : `Show card ${i + 1} after the hand`
+                      ? `Card ${i + 1} Will Be Shown After The Hand. Activate To Keep It Hidden.`
+                      : `Show Card ${i + 1} After The Hand`
                     : undefined
                 }
                 onClick={(e) => {
@@ -2815,7 +2815,7 @@ export const SeatSlot = memo(
             className="seat__bounty"
             aria-label={`Bounty ${bountyValue.toLocaleString('en-US', {
               maximumFractionDigits: 2,
-            })} chips`}
+            })} Chips`}
           >
             <span className="seat__bounty-target" aria-hidden="true">
               ◎

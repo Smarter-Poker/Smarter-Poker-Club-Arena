@@ -41,7 +41,7 @@ describe('shuffleChests', () => {
     expect(inventory.map((c) => `${c.tier}:${c.amountCents}`)).toEqual(snapshot);
   });
 
-  it('actually shuffles — the jackpot does not sit at position 1 every time', () => {
+  it('actually shuffles - the jackpot does not sit at position 1 every time', () => {
     // A no-op shuffle would pass every other test in this file. Over twenty
     // runs of a 120-chest inventory, the chance of the jackpot landing first
     // every time by luck is (1/120)^20.

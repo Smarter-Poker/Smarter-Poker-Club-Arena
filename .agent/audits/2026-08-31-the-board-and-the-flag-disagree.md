@@ -19,16 +19,16 @@ hands that never saw a flop.
 
 A worked example, PLO6 1/2, five players (`c72989a7`):
 
-| seat | action | amount |
-| --- | --- | --- |
-| 2 | small blind | 1 |
-| 3 | big blind | 2 |
-| 1 | fold | |
-| 2 | fold | |
-| 3 | raise | 4 |
-| 4 | fold | |
-| 6 | fold | |
-| 3 | return | 3 |
+| seat | action      | amount |
+| ---- | ----------- | ------ |
+| 2    | small blind | 1      |
+| 3    | big blind   | 2      |
+| 1    | fold        |        |
+| 2    | fold        |        |
+| 3    | raise       | 4      |
+| 4    | fold        |        |
+| 6    | fold        |        |
+| 3    | return      | 3      |
 
 Pot 2.00, **raked 0.20**. The big blind raised, everyone folded, and the winner
 paid rake on a hand nobody contested.
@@ -51,13 +51,13 @@ value carried over from the last one.
 
 ### Excluded by evidence — do not re-test these
 
-| Hypothesis | How it was excluded |
-| --- | --- |
-| Stale `currentHandRake` from the previous hand | Every rake is the exact correct percentage of *this* hand's pot. A carried-over value matching 20 times is not credible. |
-| The RIT path (`markFlopSeen()` — the only `sawFlop` writer that deals no cards) | All 20 hands: **0 `rit_boards`, 0 `community_cards2`, 0 all-in actions, 0 showdowns**. |
-| Mandatory RIT mode reaching `dealAndResolveRIT` without a real all-in | Every violation table is `run_it_mode = 'player_choice'`; **no table in production uses a mandatory mode** (921 `player_choice`, 51 `none`). |
-| A `HandController` bug | The fuzzer asserts `sawFlop === (board.length >= 3)` on every hand (`HandFuzzer` 837). **18,000 randomized hands pass.** |
-| Cross-hand state leaking | A fresh `HandController` is constructed per hand (`ServerTableEngineDealing` 1920) and its constructor unconditionally sets `sawFlop: false`, `communityCards: []`. There is no restore or rehydrate path. |
+| Hypothesis                                                                      | How it was excluded                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stale `currentHandRake` from the previous hand                                  | Every rake is the exact correct percentage of _this_ hand's pot. A carried-over value matching 20 times is not credible.                                                                                   |
+| The RIT path (`markFlopSeen()` — the only `sawFlop` writer that deals no cards) | All 20 hands: **0 `rit_boards`, 0 `community_cards2`, 0 all-in actions, 0 showdowns**.                                                                                                                     |
+| Mandatory RIT mode reaching `dealAndResolveRIT` without a real all-in           | Every violation table is `run_it_mode = 'player_choice'`; **no table in production uses a mandatory mode** (921 `player_choice`, 51 `none`).                                                               |
+| A `HandController` bug                                                          | The fuzzer asserts `sawFlop === (board.length >= 3)` on every hand (`HandFuzzer` 837). **18,000 randomized hands pass.**                                                                                   |
+| Cross-hand state leaking                                                        | A fresh `HandController` is constructed per hand (`ServerTableEngineDealing` 1920) and its constructor unconditionally sets `sawFlop: false`, `communityCards: []`. There is no restore or rehydrate path. |
 
 ### Where that leaves it
 
@@ -78,14 +78,14 @@ here; it would also have caught defect B.
 These are the mirror image of A: A has the flag without the board, B has the
 board without the record.
 
-| signal | count of 16 |
-| --- | --- |
-| all-in action present | 13 |
-| reached showdown | 11 |
-| **insurance enabled on the table** | **15** |
-| RIT enabled | 5 |
-| `rit_boards` populated | 0 |
-| pot range | 88.00 – 704.00 |
+| signal                             | count of 16    |
+| ---------------------------------- | -------------- |
+| all-in action present              | 13             |
+| reached showdown                   | 11             |
+| **insurance enabled on the table** | **15**         |
+| RIT enabled                        | 5              |
+| `rit_boards` populated             | 0              |
+| pot range                          | 88.00 – 704.00 |
 
 Fifteen of sixteen sit on insurance-enabled tables, and `HandController` 1355
 already names that path as one that behaves differently:

@@ -24,7 +24,7 @@ import { join } from 'node:path';
 const leagueSrc = readFileSync(join(__dirname, 'HorseLeague.ts'), 'utf8');
 const tunerSrc = readFileSync(join(__dirname, '..', 'services', 'HorseSelfTuner.ts'), 'utf8');
 
-describe('nightly jobs — a restart must trigger the run, not prevent it', () => {
+describe('nightly jobs - a restart must trigger the run, not prevent it', () => {
   it('the league checks at boot, not only on an interval', () => {
     const start = leagueSrc.slice(leagueSrc.indexOf('export function startHorseLeague'));
     const body = start.slice(0, start.indexOf('\n}\n') + 3);
@@ -65,7 +65,7 @@ describe('nightly jobs — a restart must trigger the run, not prevent it', () =
     expect(leagueSrc).toContain('rotateBy');
   });
 
-  it('a failed guard lookup fails OPEN — a skipped night is worse than a duplicate', () => {
+  it('a failed guard lookup fails OPEN - a skipped night is worse than a duplicate', () => {
     const fn = leagueSrc.slice(leagueSrc.indexOf('async function alreadyRanToday'));
     const body = fn.slice(0, fn.indexOf('\n}\n') + 3);
     expect(body).toContain('return false');

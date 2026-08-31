@@ -88,8 +88,8 @@ describe('GlobalHeader Component', () => {
     );
 
     expect(screen.getByRole('button', { name: /Open Menu/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Go back/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Go to the Hub/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Go Back/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Go To The Hub/i })).toBeInTheDocument();
 
     expect(screen.getByAltText('Menu')).toHaveAttribute(
       'src',
@@ -171,8 +171,8 @@ describe('GlobalHeader Component', () => {
     );
 
     expect(screen.getByRole('button', { name: /Open Menu/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Go back/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Go to the Hub/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Go Back/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Go To The Hub/i })).toBeInTheDocument();
   });
 
   it('keeps the notification count inside Notifications and out of Profile', () => {
@@ -185,11 +185,11 @@ describe('GlobalHeader Component', () => {
 
     const notifications = screen.getByRole('link', { name: /^Notifications$/i });
     const profile = screen.getByRole('button', { name: /My Profile/i });
-    const badge = within(notifications).getByLabelText('5 unread notifications');
+    const badge = within(notifications).getByLabelText('5 Unread Notifications');
 
     expect(badge).toHaveTextContent('5');
     expect(profile).not.toContainElement(badge);
-    expect(within(profile).queryByLabelText(/unread notifications/i)).not.toBeInTheDocument();
+    expect(within(profile).queryByLabelText(/Unread Notifications/i)).not.toBeInTheDocument();
   });
 
   it('acknowledges unread messages before leaving for Messenger', async () => {
@@ -206,7 +206,7 @@ describe('GlobalHeader Component', () => {
     });
   });
 
-  it('acknowledges unread notifications before opening Notifications', async () => {
+  it('acknowledges Unread Notifications before opening Notifications', async () => {
     headerData.notificationCount = 5;
     render(
       <MemoryRouter>

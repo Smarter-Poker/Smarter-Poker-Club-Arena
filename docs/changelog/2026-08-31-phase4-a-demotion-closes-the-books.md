@@ -98,3 +98,83 @@ corrected. The two files only failed to collide because their suffixes differ �
 exactly how this programme lost a migration on 2026-08-27. **Date-shaped
 migration numbers are being minted by several agents on the same day and they do
 collide.**
+
+---
+
+# Audit pass before phase 5 (same day)
+
+Probing the phase 4 migration rather than trusting it found **three defects in
+it**, one of them a live unhandled exception. Migration `20260901000009`,
+applied.
+
+## 1. The guard missed the people phase 2 gave wallets to
+
+`20260901000008` refused a stranding demotion only when the **old** role was one
+of the three agent tiers. But phase 2 exists precisely because a co-owner and an
+admin hold agent wallets. Demoting a co-owner holding float straight to player
+sailed past the guard and stranded the chips, which is the one thing phase 4 was
+written to prevent. Any role that is not already `player` can be holding a
+wallet, and the guard now says so.
+
+## 2. And that demotion raised, in production, on a real path
+
+Probed against production (rolled back), demoting a co-owner to player in a club
+under Midway Union answered:
+
+```
+agent commission 0.0000 is outside the union policy band (0.20 .. 0.70)
+```
+
+an unhandled `P0001`, not a refusal a client can read.
+
+**The cause was mine.** Phase 2 taught `fn_enforce_agent_commission_bounds` to
+stand aside for a rate of zero on a member the club records as **staff**. But
+`fn_club_set_member_role` updates `club_members` first and `agents` second, so
+by the time the trigger fires the member is already recorded as `player` and the
+exemption no longer applies. The rate was zeroed while they were staff, and 0 is
+outside a union band with a non-zero minimum.
+
+**The real bug is older than either.** `trg_agents_commission_bounds` is
+`BEFORE UPDATE OF commission_rate`, and Postgres fires that for any UPDATE whose
+SET list _names_ the column — even when the value is identical. So an unrelated
+write re-validates a rate nobody changed against a band the row may never have
+satisfied. That is also why **the 9 out-of-band rows Dan has not yet ruled on
+are a latent trap**: any write touching those rows could raise.
+
+A policy band governs a rate being **set**. It now returns early when the rate
+is unchanged, which fixes this demotion and every other write that happens to
+name the column, without weakening the band for anyone actually setting one.
+
+## 3. A demoted staff member kept an active agents row
+
+The suspension was keyed on the old role too, so a co-owner demoted to player
+left an **active** `agents` row behind and still read as an agent —
+`fn_player_rakeback_rate` joins that row on `status = 'active'`. It is now keyed
+on the role they are becoming: active while they can hold a wallet, suspended
+when they cannot.
+
+## Verification
+
+```
+1 demote co_owner holding 9,000 -> player   refused, needs_settlement=true
+                                            (previously: stranded AND raised)
+2 claim the 9,000 back                      success
+3 demote co_owner -> player after sweep     success, wallet 0, status suspended
+                                            (previously: P0001)
+4 set commission 0.05, band is 0.20-0.70    still refused, band intact
+5 status write naming commission_rate       accepted, as it should be
+```
+
+## Also in this pass: text on the pages
+
+- **`index.html` carried em dashes in the `<meta>` title, description,
+  `og:title` and `twitter:title`.** Those are the browser tab, the Google result
+  and every shared link. Removed, and the copy Title Cased.
+- **`check-ui-text` never scanned them.** It walked `src/` only, for
+  `.ts/.tsx/.css`; `index.html` sits at the repo root. It now scans `.html`,
+  strips `<!-- -->` comments, and reads the root `index.html` explicitly. Proved
+  by reintroducing an em dash and watching the gate fail, then removing it.
+
+Everything else in Club Arena was already clean: `check-title-case`,
+`check-nav-title-case` and `check-ui-text` all pass. The remaining em dashes in
+this repo are inside code comments and markdown, which no user ever sees.

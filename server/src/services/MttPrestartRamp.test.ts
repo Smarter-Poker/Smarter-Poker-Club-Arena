@@ -44,7 +44,7 @@ const curveOnly = (msUntilStart: number, maxPlayers = 60) => {
   return maxPlayers;
 };
 
-describe('mttPrestartHorseTarget — the window', () => {
+describe('mttPrestartHorseTarget - the window', () => {
   it('is silent outside the build window', () => {
     /* WAS "more than an hour out". The window is 72 hours since 2026-08-26,
        because at one hour the board was 36 empty events out of 37 and only
@@ -54,7 +54,7 @@ describe('mttPrestartHorseTarget — the window', () => {
     expect(mtt(7 * 24 * 60 * MIN)).toBe(0);
   });
 
-  it('is silent at or past the start time — that is the top-up’s job', () => {
+  it('is silent at or past the start time - that is the top-up’s job', () => {
     expect(mtt(0)).toBe(0);
     expect(mtt(-5 * MIN)).toBe(0);
   });
@@ -70,7 +70,7 @@ describe('mttPrestartHorseTarget — the window', () => {
   });
 });
 
-describe('mttPrestartHorseTarget — the curve', () => {
+describe('mttPrestartHorseTarget - the curve', () => {
   it('never goes backwards as the start approaches', () => {
     let prev = -1;
     for (let m = 60; m >= 1; m--) {
@@ -103,7 +103,7 @@ describe('mttPrestartHorseTarget — the curve', () => {
   });
 });
 
-describe('mttPrestartHorseTarget — safety', () => {
+describe('mttPrestartHorseTarget - safety', () => {
   it('ALWAYS leaves a seat, so it can never trip the maxReached start gate', () => {
     for (const seats of [3, 4, 6, 9, 18, 60, 200]) {
       for (let m = 60; m >= 0; m--) {
@@ -125,7 +125,7 @@ describe('mttPrestartHorseTarget — safety', () => {
     expect(curveOnly(1, 5000)).toBe(MTT_PRESTART_MAX_HORSES);
   });
 
-  it('leaves Spins alone — they start on seats bought, not registrations', () => {
+  it('leaves Spins alone - they start on seats bought, not registrations', () => {
     for (let m = 60; m >= 0; m--) {
       expect(
         mttPrestartHorseTarget({ msUntilStart: m * MIN, maxPlayers: 3, variant: 'spin' })
@@ -157,7 +157,7 @@ describe('mttPrestartHorseTarget — safety', () => {
   });
 });
 
-describe('mttPrestartHorseTarget — the per-tick step', () => {
+describe('mttPrestartHorseTarget - the per-tick step', () => {
   it('walks toward the curve instead of jumping to it', () => {
     // Two minutes out on a 60-seat field the curve is near the 24 cap, but a
     // single tick from an empty field may only ask for the step.

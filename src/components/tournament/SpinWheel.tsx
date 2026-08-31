@@ -664,13 +664,61 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
      can never disagree about how rare this moment was. */
   const celebration = spinCelebration(data.multiplier);
 
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  WHAT A PLAYER WHO CANNOT SEE THE DISC IS TOLD (2026-08-31 audit)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * This component is `role="dialog" aria-modal="true"`, so a screen reader
+   * announces "Spin Multiplier Draw, dialog" and then — because every moving
+   * part below is correctly `aria-hidden` decoration — says NOTHING for the
+   * 16.6 seconds the engine holds the deal. The multiplier, the prize pool
+   * and who actually cashes were all visual-only. The player was then dealt
+   * into a tournament without ever being told what they were playing for.
+   *
+   * `aria-modal` makes it worse rather than better: it tells assistive tech
+   * to ignore everything outside this dialog, so the silence is total.
+   *
+   * CLAUDE.md 10.6 says a reduced-motion player loses the MOTION and keeps
+   * the MEANING. This is the same law on a different channel, and the wheel
+   * was failing it completely. `BBJHitNotification` is the house precedent —
+   * `role="status"`, `aria-live="polite"`, one sentence — and the platform
+   * was announcing a Bad Beat Jackpot to a blind player while staying silent
+   * about the moment the Spin format exists for.
+   *
+   * Two announcements, not a running commentary: one when the draw begins so
+   * the dialog is not silent, and one carrying the result. `aria-live` is
+   * polite so it never interrupts, and the region is rendered from the first
+   * frame — a live region inserted at the same time as its text is missed by
+   * several screen readers.
+   */
+  const announcement = (() => {
+    /* `idle` never reaches here — the component returns null above — so the
+       only two states are "the draw is running" and "here is the result". */
+    if (phase !== 'result') return 'Drawing Your Multiplier.';
+    const splits = (spinTier(data.multiplier)?.payouts ?? [1])
+      .map((pct, i) => {
+        const place = ['First', 'Second', 'Third'][i] ?? `Place ${i + 1}`;
+        return `${place} ${currency}${(Math.round(prize * pct * 100) / 100).toLocaleString()}`;
+      })
+      .join(', ');
+    return `${data.multiplier} Times. Prize Pool ${currency}${prize.toLocaleString()}. Paying ${splits}.`;
+  })();
+
   return (
     <div
       className={`sw sw--${phase} ${tierClass(data.multiplier)}`}
       role="dialog"
       aria-modal="true"
-      aria-label="Spin multiplier draw"
+      aria-label="Spin Multiplier Draw"
     >
+      {/* Rendered from the first frame and never removed: a live region that
+          appears at the same moment as its text is missed by several screen
+          readers. See "WHAT A PLAYER WHO CANNOT SEE THE DISC IS TOLD". */}
+      <div className="sr-only" role="status" aria-live="polite">
+        {announcement}
+      </div>
+
       {/* The table stays visible: a vignette dims it and a spotlight beam
           falls from the top of the screen, exactly like the reference. */}
       <div className="sw__dim" />
@@ -765,9 +813,9 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
                       </text>
                       {unlocksAt ? (
                         <title>
-                          {`${tier.multiplier}x unlocks at a ${currency}${Number(
+                          {`${tier.multiplier}x Unlocks At A ${currency}${Number(
                             unlocksAt
-                          ).toLocaleString(undefined, { maximumFractionDigits: 0 })} reserve`}
+                          ).toLocaleString(undefined, { maximumFractionDigits: 0 })} Reserve`}
                         </title>
                       ) : null}
                     </g>

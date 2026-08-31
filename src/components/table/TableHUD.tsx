@@ -45,7 +45,7 @@ export function TableHUD({
   centerTop,
 }: TableHUDProps) {
   return (
-    <div className="table-hud" aria-label="Table HUD overlay">
+    <div className="table-hud" aria-label="Table HUD Overlay">
       {/* Upper row */}
       <div className="table-hud__upper">
         <div className="table-hud__corner table-hud__corner--ul">{upperLeft}</div>

@@ -679,7 +679,7 @@ export default function DetailOverviewTab({
     : `${shortDate(tournament.start_time)} - ${chips(field.entries)} Registered`;
 
   return (
-    <section className="dov" aria-label="Tournament overview">
+    <section className="dov" aria-label="Tournament Overview">
       {/* Owner-only whitelist manager. Renders null for everyone else. */}
       <RegistrationApprovalsPanel
         tournamentId={tournament.id}
@@ -720,7 +720,7 @@ export default function DetailOverviewTab({
               <span className="dov-finishers__label">In The Money Behind Them</span>
               <ul
                 className="dov-finishers tl-scroll"
-                aria-label="Finishing positions below the podium"
+                aria-label="Finishing Positions Below The Podium"
               >
                 {finishers.map((player) => (
                   <li key={player.user_id} className="dov-finisher">
@@ -802,7 +802,7 @@ export default function DetailOverviewTab({
 
       {/* ── BAND 3 — rule tags ── */}
       {tags.length > 0 && (
-        <div className="dov-tags" aria-label="Tournament rules">
+        <div className="dov-tags" aria-label="Tournament Rules">
           {tags.map((tag) => (
             <span
               key={tag.label}
@@ -834,7 +834,7 @@ export default function DetailOverviewTab({
                 className="dov-deal__btn"
                 onClick={handleVoteForDeal}
                 disabled={votingDeal}
-                aria-label="Vote to split the remaining prize pool"
+                aria-label="Vote To Split The Remaining Prize Pool"
               >
                 {votingDeal ? 'Voting...' : 'Vote For Deal'}
               </button>

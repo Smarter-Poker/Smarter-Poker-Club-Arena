@@ -20,15 +20,12 @@ import {
   DEFAULT_MAX_SEATS,
 } from '../config/tableSeating.js';
 
-const FLEET_SRC = readFileSync(
-  join(process.cwd(), 'src/services/HorseFleetManager.ts'),
-  'utf8'
-);
+const FLEET_SRC = readFileSync(join(process.cwd(), 'src/services/HorseFleetManager.ts'), 'utf8');
 
 /** Every { name, maxPlayers, gameVariant } in DEFAULT_TABLES, from the source. */
 function fleetConfigs(): Array<{ name: string; seats: number; variant: string }> {
   const block = /DEFAULT_TABLES:\s*TableConfig\[\]\s*=\s*\[([\s\S]*?)\n\];/.exec(FLEET_SRC);
-  if (!block) throw new Error('DEFAULT_TABLES not found — this test is measuring nothing');
+  if (!block) throw new Error('DEFAULT_TABLES not found - this test is measuring nothing');
   return [
     ...block[1].matchAll(
       /name:\s*'([^']+)'[\s\S]*?maxPlayers:\s*(\d+)[\s\S]*?gameVariant:\s*'([^']+)'/g
@@ -52,7 +49,7 @@ describe('the seat law', () => {
     expect(maxSeatsForVariant(undefined)).toBe(9);
   });
 
-  it('clamps down but never up — a ceiling, not a target', () => {
+  it('clamps down but never up - a ceiling, not a target', () => {
     expect(clampSeatsForVariant('plo6', 9)).toBe(6);
     expect(clampSeatsForVariant('plo5', 8)).toBe(7);
     expect(clampSeatsForVariant('plo6', 4)).toBe(4); // smaller table left alone
@@ -80,7 +77,9 @@ describe('HorseFleetManager cash table configs', () => {
   it('every config is within the law', () => {
     const illegal = configs
       .filter((c) => c.seats > maxSeatsForVariant(c.variant))
-      .map((c) => `${c.name}: ${c.seats} seats, ${c.variant} is ${maxSeatsForVariant(c.variant)}-max`);
+      .map(
+        (c) => `${c.name}: ${c.seats} seats, ${c.variant} is ${maxSeatsForVariant(c.variant)}-max`
+      );
     expect(illegal).toEqual([]);
   });
 
@@ -95,9 +94,7 @@ describe('HorseFleetManager cash table configs', () => {
 
   it('clamps at EVERY insert, so a future config edit cannot reach the database', () => {
     const inserts = [...FLEET_SRC.matchAll(/\.from\('tables'\)\s*\.insert\(/g)].length;
-    const clamped = [
-      ...FLEET_SRC.matchAll(/max_players:\s*clampSeatsForVariant\(/g),
-    ].length;
+    const clamped = [...FLEET_SRC.matchAll(/max_players:\s*clampSeatsForVariant\(/g)].length;
     expect(inserts).toBeGreaterThan(0);
     expect(clamped).toBe(inserts);
     // and no raw config value survives at an insert

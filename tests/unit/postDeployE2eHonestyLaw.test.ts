@@ -120,7 +120,7 @@ describe('the checker refuses a run that verified nothing', () => {
     expect(check([spec('tests/e2e/a.spec.ts', ['failed'])])).toBe(0);
   });
 
-  it('accepts a stated notRunReason alongside a real report', () => {
+  it('rejects a stated notRunReason even alongside a real report', () => {
     // The workflow writes this when it decides not to invoke Playwright for a
     // path at all, because the file does not exist at the deployed commit.
     expect(
@@ -128,7 +128,7 @@ describe('the checker refuses a run that verified nothing', () => {
         { notRunReason: 'absent at the deployed commit' },
         spec('tests/e2e/a.spec.ts', ['passed']),
       ])
-    ).toBe(0);
+    ).toBe(1);
   });
 
   it('refuses a run in which EVERY invocation was declined', () => {
@@ -175,6 +175,12 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
     expect(step(WORKFLOW, 'Did the suite actually verify production?')).toContain('if: always()');
   });
 
+  it('preserves the production report when GitHub cancels at the job timeout', () => {
+    const upload = step(WORKFLOW, 'Upload the report when something is wrong on production');
+    expect(upload).toContain('if: always()');
+    expect(upload).toContain('failure() || cancelled()');
+  });
+
   it('emits the JSON the honesty check reads, from every playwright invocation', () => {
     for (const report of ['cashier.json', 'stats.json', 'sweep.json']) {
       expect(WORKFLOW, `no PLAYWRIGHT_JSON_OUTPUT_NAME for ${report}`).toContain(
@@ -182,6 +188,7 @@ describe('the workflow cannot go back to reporting success dishonestly', () => {
       );
     }
     expect(WORKFLOW).toContain('--reporter=line,json');
+    expect(WORKFLOW).toContain('--output="test-results/$output_dir"');
     expect(WORKFLOW, 'a line-only reporter leaves the honesty check nothing to read').not.toMatch(
       /--reporter=line\s+--retries/
     );

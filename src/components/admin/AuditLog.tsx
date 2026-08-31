@@ -328,17 +328,17 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
             <span>▤</span>
             <p>
               {entries.length === 0
-                ? 'No admin actions recorded yet'
-                : 'No log entries match this filter'}
+                ? 'No Admin Actions Recorded Yet'
+                : 'No Log Entries Match This Filter'}
             </p>
           </div>
         ) : (
           <>
             <p className="audit-log__summary">
               Showing {filteredEntries.length}
-              {filteredEntries.length !== entries.length ? ` of ${entries.length}` : ''} Entr
+              {filteredEntries.length !== entries.length ? ` Of ${entries.length}` : ''} Entr
               {filteredEntries.length === 1 ? 'y' : 'ies'}
-              {hasMore ? ' (newest first)' : ''}
+              {hasMore ? ' (Newest First)' : ''}
             </p>
             {filteredEntries.map((entry, i) => (
               <div
@@ -382,7 +382,7 @@ export const AuditLog: React.FC<AuditLogProps> = ({ clubId }) => {
                   if (isMounted.current) setLoadingMore(false);
                 }}
               >
-                {loadingMore ? 'Loading...' : `Load ${AUDIT_PAGE_SIZE} older entries`}
+                {loadingMore ? 'Loading...' : `Load ${AUDIT_PAGE_SIZE} Older Entries`}
               </button>
             )}
           </>

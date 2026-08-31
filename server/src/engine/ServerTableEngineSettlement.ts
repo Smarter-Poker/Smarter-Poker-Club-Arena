@@ -39,6 +39,7 @@ import { queueUnbankedFee } from '../services/FeeReconciler.js';
 import { selectRevealedShowdownResults } from './revealedShowdown.js';
 import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
 import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
+import { buildDailyMissionHandEvents } from './dailyMissionEvents.js';
 
 /**
  * How long a finished hand stays purchasable. A rabbit hunt is an impulse, and
@@ -796,7 +797,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       if (this.currentHandShowdownResults.length >= 2 && bbjBoard.length < 5) {
         reportError(
           new Error(
-            `[BBJ] Board unavailable at settlement — jackpot detection will fail closed for ` +
+            `[BBJ] Board unavailable at settlement - jackpot detection will fail closed for ` +
               `table ${this.tableId} hand #${this.handCount}. ` +
               `raw=${JSON.stringify(this.currentHandCommunityCards)} parsed=${bbjBoard.length}. ` +
               `A qualifying hand cannot be verified without the board, so no payout is made; ` +
@@ -1233,6 +1234,16 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               };
         });
 
+        const dailyMissionEvents = buildDailyMissionHandEvents({
+          dealtPlayerIds: this.currentHandHoleCards.keys(),
+          roster: players.map((player) => ({
+            userId: player.user_id,
+            isHorse: player.is_horse,
+          })),
+          winners: this.currentHandWinners,
+          showdownResults: this.currentHandShowdownResults,
+        });
+
         const result = await logHandHistory({
           tableId: this.tableId,
           nitGame: this.tableInfo.nit_game === true,
@@ -1290,6 +1301,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // the hand that proves it; without the second, it cannot compute a
           // positional leak at all.
           showdownResults: revealedShowdownResults,
+          dailyMissionEvents,
           buttonSeat: this.currentHandDealerSeat,
           showdownReveal,
         });
@@ -1827,7 +1839,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             this.preActionEngine.removePlayer(this.tableId, horse.user_id);
             this.horseRebuys.delete(horse.user_id);
             console.log(
-              `[ServerTableEngine:${this.tableId}] Horse ${horse.username} left — insufficient funds`
+              `[ServerTableEngine:${this.tableId}] Horse ${horse.username} left - insufficient funds`
             );
           }
         }

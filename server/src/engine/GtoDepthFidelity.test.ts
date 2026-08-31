@@ -47,7 +47,7 @@ beforeEach(() => {
   _clearGtoPostflopV31();
 });
 
-describe('depthCandidates — nearest first, in log space', () => {
+describe('depthCandidates - nearest first, in log space', () => {
   it('THE REGRESSION: a deep stack never falls back to the 10bb cell', () => {
     expect(depthCandidates(150)).toEqual([150, 80]);
     expect(depthCandidates(200)).toEqual([150, 80]);
@@ -88,7 +88,7 @@ describe('depthCandidates — nearest first, in log space', () => {
     }
   });
 
-  it('garbage in, 40bb default out — matching snapDepthBucket', () => {
+  it('garbage in, 40bb default out - matching snapDepthBucket', () => {
     expect(depthCandidates(0)[0]).toBe(40);
     expect(depthCandidates(NaN)[0]).toBe(40);
   });
@@ -97,7 +97,7 @@ describe('depthCandidates — nearest first, in log space', () => {
 const BOARD = cards('Ks9d7c2h');
 
 describe('the fallback actually serves the neighbour now', () => {
-  it('a 150bb spot with only an 80 cell answers from 80 — and only-10 stays silent', () => {
+  it('a 150bb spot with only an 80 cell answers from 80 - and only-10 stays silent', () => {
     const tex = textureClass(BOARD)!;
     const mk = (depth: number) =>
       ({

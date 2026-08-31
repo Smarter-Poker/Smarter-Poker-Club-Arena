@@ -702,7 +702,7 @@ export default function UnionDashboardPage() {
 
     if (
       !(await confirmDialog({
-        title: 'Distribute weekly rakeback',
+        title: 'Distribute Weekly Rakeback',
         message: `Pay each club its share of last week's rake (${label}) from the union wallet? This is idempotent - it can't pay the same week twice.`,
         confirmText: 'Distribute',
         variant: 'default',
@@ -958,7 +958,7 @@ export default function UnionDashboardPage() {
             eyebrow="Union Permission Gate"
             tone="permission"
             title="No Union Workspace Is Available"
-            description="Union treasury, clubs, agents, and settlement controls are available only to a union owner or appointed administrator."
+            description="Union Treasury, Clubs, Agents, And Settlement Controls Are Available Only To A Union Owner Or Appointed Administrator."
             action={{ label: 'Browse Unions', onClick: () => navigate('/unions') }}
             secondaryAction={{ label: 'Return To Arena', onClick: () => navigate('/') }}
           />
@@ -980,7 +980,7 @@ export default function UnionDashboardPage() {
         <CasinoSurfaceHeader
           eyebrow="Union Network / Operations"
           title={union?.name || 'Union Operations'}
-          description="Govern member clubs, agents, treasury, applications, analytics, and network controls from one permission-backed command deck."
+          description="Govern Member Clubs, Agents, Treasury, Applications, Analytics, And Network Controls From One Permission-Backed Command Deck."
           artPath="assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp"
           status="UNION OPERATIONS // AUTHORIZED"
           metrics={[
@@ -1238,7 +1238,7 @@ export default function UnionDashboardPage() {
                       },
                       {
                         key: 'bbj',
-                        label: `BBJ Pool${bbjPool ? ` (${bbjPool.hit_count} hits)` : ''}`,
+                        label: `BBJ Pool${bbjPool ? ` (${bbjPool.hit_count} Hits)` : ''}`,
                         color: '#F7C52A',
                         value: bbjPool?.main_balance ?? 0,
                         detail: 'bbj',
@@ -1514,7 +1514,7 @@ export default function UnionDashboardPage() {
               {filteredClubs.length === 0 && (
                 <div className="admin-empty-state">
                   <span className="admin-empty-icon">◆</span>
-                  <span>{clubSearch ? 'No clubs match' : 'No clubs yet'}</span>
+                  <span>{clubSearch ? 'No Clubs Match' : 'No Clubs Yet'}</span>
                 </div>
               )}
             </div>
@@ -1602,7 +1602,7 @@ export default function UnionDashboardPage() {
               {filteredAgents.length === 0 && (
                 <div className="admin-empty-state">
                   <span className="admin-empty-icon">◉</span>
-                  <span>{agentSearch ? 'No agents match' : 'No agents found'}</span>
+                  <span>{agentSearch ? 'No Agents Match' : 'No Agents Found'}</span>
                 </div>
               )}
             </div>
@@ -1631,7 +1631,7 @@ export default function UnionDashboardPage() {
               ) : filteredRoster.length === 0 ? (
                 <div className="admin-empty">
                   <span className="admin-empty-icon">◉</span>
-                  <span>{rosterSearch ? 'No players match' : 'No players found'}</span>
+                  <span>{rosterSearch ? 'No Players Match' : 'No Players Found'}</span>
                 </div>
               ) : (
                 <div className="admin-table-wrap">
@@ -1671,7 +1671,7 @@ export default function UnionDashboardPage() {
                             </span>
                           </td>
                           <td>{r.member_status || ''}</td>
-                          <td>{r.currently_seated ? '● at table' : ''}</td>
+                          <td>{r.currently_seated ? '● At Table' : ''}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1877,7 +1877,7 @@ export default function UnionDashboardPage() {
                   </h3>
                   <p style={{ fontSize: '12px', color: '#888', margin: '0 0 8px' }}>
                     Move Chips Into The Wallet That Seeds Every Spin Bonus Pool This Union Owns.
-                    {wallets ? ` Reserve holds ${fmt(wallets.spin_reserve_wallet)}.` : ''}
+                    {wallets ? ` Reserve Holds ${fmt(wallets.spin_reserve_wallet)}.` : ''}
                   </p>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <select
@@ -1950,8 +1950,8 @@ export default function UnionDashboardPage() {
                     Move Chips From The Union Bank Into The Shared Bad Beat Jackpot. Split Across
                     Main/Backup/Promo Per Your Union BBJ Settings.
                     {bbjPool
-                      ? ` Current pool: ${fmt(bbjPool.main_balance)} main / ${fmt(bbjPool.backup_balance)} backup / ${fmt(bbjPool.promo_balance)} promo.`
-                      : ' No active pool found.'}
+                      ? ` Current Pool: ${fmt(bbjPool.main_balance)} Main / ${fmt(bbjPool.backup_balance)} Backup / ${fmt(bbjPool.promo_balance)} Promo.`
+                      : ' No Active Pool Found.'}
                   </p>
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     <input
@@ -2405,7 +2405,7 @@ export default function UnionDashboardPage() {
                                 }}
                                 title={
                                   review
-                                    ? 'Club nets did not balance to zero across the union - no chips were moved, pending review.'
+                                    ? 'Club Nets Did Not Balance To Zero Across The Union - No Chips Were Moved, Pending Review.'
                                     : undefined
                                 }
                               >
@@ -2959,7 +2959,7 @@ export default function UnionDashboardPage() {
                                   onClick={async () => {
                                     if (
                                       !(await confirmDialog({
-                                        title: 'Remove admin',
+                                        title: 'Remove Admin',
                                         message: 'Remove this admin?',
                                         confirmText: 'Remove',
                                         variant: 'danger',

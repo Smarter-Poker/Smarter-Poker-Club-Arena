@@ -142,8 +142,8 @@ export default function AgentBackOffice({ agentUserId, title }: Props) {
           </div>
           <div style={{ color: '#66787f', fontSize: '0.78rem' }}>
             {Number(statement.net_settlement_position) >= 0
-              ? 'due to you from the club'
-              : 'due from you to the club'}
+              ? 'Due To You From The Club'
+              : 'Due From You To The Club'}
           </div>
 
           <div
@@ -154,12 +154,12 @@ export default function AgentBackOffice({ agentUserId, title }: Props) {
               marginTop: 14,
             }}
           >
-            <Line label="Rake generated" value={money(statement.rake_generated)} />
-            <Line label="Commission earned" value={money(statement.commission_earned)} />
-            <Line label="Paid to players" value={money(statement.rakeback_passed_to_players)} />
-            <Line label="Commission kept" value={money(statement.commission_net_of_rakeback)} />
-            <Line label="Player net result" value={money(statement.player_net_result)} />
-            <Line label="Credit outstanding" value={money(statement.credit_outstanding)} />
+            <Line label="Rake Generated" value={money(statement.rake_generated)} />
+            <Line label="Commission Earned" value={money(statement.commission_earned)} />
+            <Line label="Paid To Players" value={money(statement.rakeback_passed_to_players)} />
+            <Line label="Commission Kept" value={money(statement.commission_net_of_rakeback)} />
+            <Line label="Player Net Result" value={money(statement.player_net_result)} />
+            <Line label="Credit Outstanding" value={money(statement.credit_outstanding)} />
           </div>
         </div>
       )}

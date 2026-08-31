@@ -192,9 +192,9 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId, playSou
       {phase === 'title' && (
         <div className="bpo-sr-only" role="status" aria-live="assertive" aria-hidden={false}>
           {`Bomb Pot. ${
-            boardCount >= 3 ? 'Triple board. ' : doubleBoard ? 'Double board. ' : ''
-          }${variantLabel ? `Played as ${variantLabel}. ` : ''}${
-            anteAmount > 0 ? `Everyone antes ${anteAmount.toLocaleString()}.` : ''
+            boardCount >= 3 ? 'Triple Board. ' : doubleBoard ? 'Double Board. ' : ''
+          }${variantLabel ? `Played As ${variantLabel}. ` : ''}${
+            anteAmount > 0 ? `Everyone Antes ${anteAmount.toLocaleString()}.` : ''
           }`}
         </div>
       )}

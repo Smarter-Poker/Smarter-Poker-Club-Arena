@@ -309,7 +309,7 @@ export const BlindStructureBuilder: React.FC<BlindStructureBuilderProps> = ({
                         type="button"
                         className="bsb-btn-remove"
                         onClick={() => removeLevel(index)}
-                        title="Remove break"
+                        title="Remove Break"
                       >
                         ✕
                       </button>
@@ -365,7 +365,7 @@ export const BlindStructureBuilder: React.FC<BlindStructureBuilderProps> = ({
                           className="bsb-btn-move"
                           onClick={() => moveLevel(index, 'up')}
                           disabled={index === 0}
-                          title="Move up"
+                          title="Move Up"
                         >
                           ↑
                         </button>
@@ -374,7 +374,7 @@ export const BlindStructureBuilder: React.FC<BlindStructureBuilderProps> = ({
                           className="bsb-btn-move"
                           onClick={() => moveLevel(index, 'down')}
                           disabled={index === levels.length - 1}
-                          title="Move down"
+                          title="Move Down"
                         >
                           ↓
                         </button>
@@ -382,7 +382,7 @@ export const BlindStructureBuilder: React.FC<BlindStructureBuilderProps> = ({
                           type="button"
                           className="bsb-btn-break"
                           onClick={() => insertBreak(index)}
-                          title="Insert break after"
+                          title="Insert Break After"
                         >
                           ◇
                         </button>
@@ -390,7 +390,7 @@ export const BlindStructureBuilder: React.FC<BlindStructureBuilderProps> = ({
                           type="button"
                           className="bsb-btn-remove"
                           onClick={() => removeLevel(index)}
-                          title="Remove level"
+                          title="Remove Level"
                         >
                           ✕
                         </button>

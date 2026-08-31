@@ -256,12 +256,19 @@ jobs:
       - name: UI copy — page copy is Title Cased
         run: node scripts/ci/check-title-case.mjs
 
-      # The other half of the same rule (Dan 2026-08-30: "AS WELL AS EVERY
-      # CLICKABLE PAGE AND SUBPAGE"). The gate above inspects JsxText only and
-      # documents that expression values are "cased at their source" — nothing
-      # enforced that. Navigation surfaces all render {item.label} from a config
-      # registry, so 55 menu strings across six surfaces were never checked by
-      # anything. Autofix: node scripts/ci/check-nav-title-case.mjs --fix
+      # The THIRD surface of the same rule (Dan 2026-08-31). check-title-case
+      # reads JsxText and check-nav-title-case reads the nav registry; neither
+      # can see text a browser paints from a string ATTRIBUTE or from a string
+      # literal inside a JSX EXPRESSION.
+      # Autofix locally with: node scripts/ci/check-painted-text-case.mjs --fix
+      - name: UI copy — painted attributes and expressions are Title Cased
+        run: node scripts/ci/check-painted-text-case.mjs
+
+      # Focused defense in depth for the same rule (Dan 2026-08-30: "AS WELL AS
+      # EVERY CLICKABLE PAGE AND SUBPAGE"). The general gate now covers static
+      # JSX, accessible names, conditional/template copy and known copy fields;
+      # this gate keeps every canonical navigation registry explicit.
+      # Autofix: node scripts/ci/check-nav-title-case.mjs --fix
       - name: UI copy — navigation labels are Title Cased at source
         run: node scripts/ci/check-nav-title-case.mjs
 
@@ -1303,6 +1310,12 @@ jobs:
         # mobile-chrome-occlusion, mobile-input-zoom, mobile-tap-targets,
         # club-lobby, tournament-buy-in-dialog) need a login or a deployed URL
         # and belong to the post-deploy tier, not this gate.
+        #
+        # club-mobile-wallet-reach.spec.ts (2026-08-31) is the deterministic
+        # reproduction of a post-deploy 375px failure: the tiny Share artwork
+        # lacked a thumb target and the collapsed wallet disclosure exposed
+        # fully clipped controls. It renders this commit's real lobby styles,
+        # needs no credentials, and must block the same regression pre-merge.
         run: |
           npx vite preview --host 127.0.0.1 --port 4173 > /tmp/arena-preview.log 2>&1 &
           preview_pid=$!
@@ -1311,7 +1324,7 @@ jobs:
             curl -sf http://127.0.0.1:4173/hub/club-arena/index.html > /dev/null && break
             sleep 0.5
           done
-          npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
+          npx playwright test tests/e2e/multi-table.spec.ts tests/e2e/live-animations.spec.ts tests/e2e/spin-wheel-on-a-phone.spec.ts tests/e2e/hero-card-row.spec.ts tests/e2e/table-proportions.spec.ts tests/e2e/top-rail-seat.spec.ts tests/e2e/pot-above-chips.spec.ts tests/e2e/flop-fan-open.spec.ts tests/e2e/hero-cards-no-glitch.spec.ts tests/e2e/raise-panel-covers-chat.spec.ts tests/e2e/customization-controls.spec.ts tests/e2e/diamond-checkout-mobile.spec.ts tests/e2e/tap-sweep-rules.spec.ts tests/e2e/club-mobile-wallet-reach.spec.ts tests/e2e/footer-visual-regression.spec.ts tests/e2e/footer-route.spec.ts --project=chromium --project=webkit-footer --reporter=line --retries=1
 
       # Unlike the CSS fixtures above, this mounts the production Studio and
       # drives its real Supabase client through a deterministic browser mock.

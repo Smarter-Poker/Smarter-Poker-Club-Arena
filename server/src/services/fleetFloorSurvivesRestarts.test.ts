@@ -56,7 +56,7 @@ describe('the startup grace must justify itself against the database', () => {
     expect(fn).toMatch(/STARTUP_GRACE_MS/);
   });
 
-  it('treats a failed query as NOT dark — could-not-ask is never evidence', () => {
+  it('treats a failed query as NOT dark - could-not-ask is never evidence', () => {
     // A flaky database must not manufacture a critical page.
     const fn = sliceMethod(SRC, 'private async fleetDarkAcrossRestarts');
     expect(fn).toMatch(/if \(error\) return false;/);
@@ -68,7 +68,7 @@ describe('the startup grace must justify itself against the database', () => {
     expect(fn).toMatch(/\(count \?\? 0\) === 0/);
   });
 
-  it('keeps the floor and its threshold — this widens the alarm, it does not weaken it', () => {
+  it('keeps the floor and its threshold - this widens the alarm, it does not weaken it', () => {
     expect(SRC).toMatch(/FLEET_FLOOR_TABLES = 3/);
     expect(SRC).toMatch(/CONSECUTIVE_BELOW_FLOOR = 3/);
     expect(SRC).toMatch(/belowFloorChecks\+\+/);

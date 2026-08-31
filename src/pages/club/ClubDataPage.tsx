@@ -51,6 +51,11 @@ import {
   removeClubDataCaches,
   writeClubDataCache,
 } from '../../lib/clubDataCache';
+import {
+  auditClubDataSnapshot,
+  formatClubDataAge,
+  preserveExpandedClubDataRows,
+} from '../../lib/clubDataIntegrity';
 import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import type { BusEventType } from '../../core/MasterBus';
@@ -197,10 +202,10 @@ const GAME_SORTS: Array<{ id: GameSort; label: string }> = [
 type PlayerSort = 'winners' | 'losers' | 'rake' | 'hands';
 
 const PLAYER_SORTS: Array<{ id: PlayerSort; label: string }> = [
-  { id: 'winners', label: 'Biggest winners' },
-  { id: 'losers', label: 'Biggest losers' },
-  { id: 'rake', label: 'Most rake' },
-  { id: 'hands', label: 'Most hands' },
+  { id: 'winners', label: 'Biggest Winners' },
+  { id: 'losers', label: 'Biggest Losers' },
+  { id: 'rake', label: 'Most Rake' },
+  { id: 'hands', label: 'Most Hands' },
 ];
 
 const REFRESH_MS = 60_000;
@@ -223,10 +228,25 @@ const CLUB_DATA_BUS_EVENTS: BusEventType[] = [
   'SETTLEMENT_CYCLE_COMPLETED',
   'MEMBER_ROLE_CHANGED',
 ];
+type RealtimeFeed = 'tables' | 'tournaments' | 'invoices' | 'members';
+type RealtimeFeedState = 'connecting' | 'live' | 'degraded';
+const INITIAL_REALTIME_FEEDS: Record<RealtimeFeed, RealtimeFeedState> = {
+  tables: 'connecting',
+  tournaments: 'connecting',
+  invoices: 'connecting',
+  members: 'connecting',
+};
 
 interface CachedGameLedger {
   snapshot: Snapshot;
   cursor: PageCursor | null;
+  hasMore: boolean;
+}
+
+interface PrefetchedGamePage {
+  key: string;
+  rows: SnapshotRow[];
+  nextCursor: PageCursor | null;
   hasMore: boolean;
 }
 
@@ -438,6 +458,11 @@ export default function ClubDataPage() {
   const [playersHasMore, setPlayersHasMore] = useState(false);
   const [playersLoadingMore, setPlayersLoadingMore] = useState(false);
   const [playersPageError, setPlayersPageError] = useState<string | null>(null);
+  const [lastVerifiedAt, setLastVerifiedAt] = useState<number | null>(null);
+  const [lastRequestMs, setLastRequestMs] = useState<number | null>(null);
+  const [telemetryClock, setTelemetryClock] = useState(() => Date.now());
+  const [realtimeFeeds, setRealtimeFeeds] =
+    useState<Record<RealtimeFeed, RealtimeFeedState>>(INITIAL_REALTIME_FEEDS);
 
   // cancelledRef guards UNMOUNT. It cannot tell a stale response from a fresh
   // one, and this page reloads on six different inputs plus a 60s poll plus
@@ -450,6 +475,11 @@ export default function ClubDataPage() {
   const resolveVersion = useRef(0);
   const clubNameVersion = useRef(0);
   const gamesMoreRef = useRef(false);
+  const snapshotRef = useRef<Snapshot | null>(null);
+  const gameCursorRef = useRef<PageCursor | null>(null);
+  const prefetchedGamePageRef = useRef<PrefetchedGamePage | null>(null);
+  const playersRef = useRef<PlayerBreakdown | null>(null);
+  const playerCursorRef = useRef<PageCursor | null>(null);
   const playersMoreRef = useRef(false);
   const exportControllerRef = useRef<AbortController | null>(null);
   const restoredGameKeyRef = useRef<string | null>(null);
@@ -469,6 +499,18 @@ export default function ClubDataPage() {
       if (eventRefreshTimerRef.current) clearTimeout(eventRefreshTimerRef.current);
     };
   }, []);
+  useEffect(() => {
+    snapshotRef.current = snapshot;
+  }, [snapshot]);
+  useEffect(() => {
+    gameCursorRef.current = gameCursor;
+  }, [gameCursor]);
+  useEffect(() => {
+    playersRef.current = players;
+  }, [players]);
+  useEffect(() => {
+    playerCursorRef.current = playerCursor;
+  }, [playerCursor]);
 
   // debounce the search box so typing does not fire an RPC per keystroke
   useEffect(() => {
@@ -515,13 +557,18 @@ export default function ClubDataPage() {
     setClubUuid(isUUID(clubParam) ? clubParam : null);
     setClubName('');
     setSnapshot(null);
+    snapshotRef.current = null;
     setGameCursor(null);
+    gameCursorRef.current = null;
+    prefetchedGamePageRef.current = null;
     setGamesHasMore(false);
     setGamesLoadingMore(false);
     setGamesPageError(null);
     setInvoices([]);
     setPlayers(null);
+    playersRef.current = null;
     setPlayerCursor(null);
+    playerCursorRef.current = null;
     setPlayersHasMore(false);
     setPlayersLoadingMore(false);
     setPlayersPageError(null);
@@ -531,6 +578,9 @@ export default function ClubDataPage() {
     setExportNote(null);
     setRefreshNote(null);
     setLedgerSource('cold');
+    setLastVerifiedAt(null);
+    setLastRequestMs(null);
+    setRealtimeFeeds(INITIAL_REALTIME_FEEDS);
     restoredGameKeyRef.current = null;
     restoredGameCacheHitRef.current = false;
     restoredPlayerKeyRef.current = null;
@@ -607,6 +657,7 @@ export default function ClubDataPage() {
   const load = useCallback(
     async (showSpinner: boolean, preserveOnError = false): Promise<boolean> => {
       if (!clubUuid || isHydrating || !user) return false;
+      const requestStartedAt = performance.now();
       const myVersion = ++loadVersion.current;
       const stale = () => cancelledRef.current || loadVersion.current !== myVersion;
       if (showSpinner) setLoading(true);
@@ -626,7 +677,10 @@ export default function ClubDataPage() {
               p_game: game,
               p_stakes: stakes,
               p_search: search || null,
-              p_limit: gameSort === 'recent' ? GAME_PAGE_SIZE : 1,
+              // Keep the first continuation inside the same bounded snapshot
+              // read. Only the first 100 rows paint; the verified remainder is
+              // held locally until the operator asks for it.
+              p_limit: gameSort === 'recent' ? GAME_PAGE_SIZE * 2 : 1,
             }),
           'Club data request timed out'
         );
@@ -644,7 +698,11 @@ export default function ClubDataPage() {
                     p_search: search || null,
                     p_sort: gameSort,
                     p_cursor: null,
-                    p_limit: GAME_PAGE_SIZE,
+                    // Metric ordering must aggregate Shark Club's 43k+ game
+                    // window before it can rank anything. Fetch the next
+                    // visible slice in the same pass so the first Load More
+                    // does not repeat that expensive sort in every open tab.
+                    p_limit: GAME_PAGE_SIZE * 2,
                   }),
                 'Club games request timed out'
               );
@@ -670,8 +728,7 @@ export default function ClubDataPage() {
           if (isAuthzError(rpcError) || !preserveOnError) setSnapshot(null);
           return false;
         } else if (
-          !data ||
-          !Array.isArray((data as Snapshot).rows) ||
+          !auditClubDataSnapshot(data).renderable ||
           (gameSort !== 'recent' && (!page || !Array.isArray(page.rows)))
         ) {
           // A null or shapeless payload used to be stored as success, leaving a
@@ -687,24 +744,51 @@ export default function ClubDataPage() {
           return false;
         } else {
           const snapshot = data as Snapshot;
-          const rows = gameSort === 'recent' ? snapshot.rows : page!.rows;
+          const currentRows = snapshotRef.current?.rows || [];
+          const sourceRows = gameSort === 'recent' ? snapshot.rows : page!.rows;
+          const keepExpandedSourceRows = preserveOnError && currentRows.length > GAME_PAGE_SIZE;
+          const refreshedRows = keepExpandedSourceRows
+            ? sourceRows
+            : sourceRows.slice(0, GAME_PAGE_SIZE);
+          const rows = preserveExpandedClubDataRows(currentRows, refreshedRows, preserveOnError);
           const nextSnapshot = {
             ...snapshot,
             rows,
             row_count: Number(page?.filtered_count ?? snapshot.row_count),
           };
-          const nextCursor = gameSort === 'recent' ? recentCursor(rows) : page!.next_cursor || null;
-          const nextHasMore =
-            gameSort === 'recent' ? snapshot.row_count > rows.length : Boolean(page!.has_more);
+          const keptExpandedRows = rows.length > refreshedRows.length;
+          const sourceCursor =
+            gameSort === 'recent' ? recentCursor(sourceRows) : page!.next_cursor || null;
+          const sourceHasMore =
+            gameSort === 'recent'
+              ? Number(snapshot.row_count) > sourceRows.length
+              : Boolean(page!.has_more);
+          const prefetchedRows = keepExpandedSourceRows ? [] : sourceRows.slice(GAME_PAGE_SIZE);
+          prefetchedGamePageRef.current = prefetchedRows.length
+            ? {
+                key: gameCacheKey,
+                rows: prefetchedRows,
+                nextCursor: sourceCursor,
+                hasMore: sourceHasMore,
+              }
+            : null;
+          const nextCursor = keptExpandedRows ? gameCursorRef.current : sourceCursor;
+          const nextHasMore = Number(nextSnapshot.row_count) > rows.length;
           setError(null);
           setSnapshot(nextSnapshot);
+          snapshotRef.current = nextSnapshot;
           setGameCursor(nextCursor);
+          gameCursorRef.current = nextCursor;
           setGamesHasMore(nextHasMore);
           setLedgerSource('live');
+          setLastVerifiedAt(Date.now());
+          const cachedSnapshot = prefetchedRows.length
+            ? { ...nextSnapshot, rows: [...rows, ...prefetchedRows] }
+            : nextSnapshot;
           writeClubDataCache<CachedGameLedger>(user.id, clubUuid, gameCacheKey, {
-            snapshot: nextSnapshot,
-            cursor: nextCursor,
-            hasMore: nextHasMore,
+            snapshot: cachedSnapshot,
+            cursor: prefetchedRows.length ? sourceCursor : nextCursor,
+            hasMore: prefetchedRows.length ? sourceHasMore : nextHasMore,
           });
           return true;
         }
@@ -723,7 +807,10 @@ export default function ClubDataPage() {
         // Only the newest request may clear the skeleton. A background poll that
         // finished first used to pull it out from under a load the user had just
         // started, leaving stale rows looking settled.
-        if (!stale()) setLoading(false);
+        if (!stale()) {
+          setLastRequestMs(Math.max(0, Math.round(performance.now() - requestStartedAt)));
+          setLoading(false);
+        }
       }
     },
     [clubUuid, startDate, endDate, game, stakes, search, gameSort, isHydrating, user, gameCacheKey]
@@ -736,15 +823,29 @@ export default function ClubDataPage() {
     restoredGameKeyRef.current = restoreKey;
     restoredGameCacheHitRef.current = false;
     const cached = readClubDataCache<CachedGameLedger>(user.id, clubUuid, gameCacheKey);
-    if (!cached?.snapshot || !Array.isArray(cached.snapshot.rows)) return;
+    if (!cached?.snapshot || !auditClubDataSnapshot(cached.snapshot).renderable) {
+      if (cached) removeClubDataCaches(user.id, clubUuid);
+      return;
+    }
     restoredGameCacheHitRef.current = true;
     setSnapshot(cached.snapshot);
+    snapshotRef.current = cached.snapshot;
     setGameCursor(cached.cursor);
+    gameCursorRef.current = cached.cursor;
     setGamesHasMore(cached.hasMore);
     setLoading(false);
     setError(null);
     setLedgerSource('cached');
+    const generatedAt = Date.parse(cached.snapshot.generated_at);
+    setLastVerifiedAt(Number.isFinite(generatedAt) ? generatedAt : Date.now());
   }, [clubUuid, gameCacheKey, isHydrating, user]);
+
+  useEffect(() => {
+    if (!snapshot) return;
+    setTelemetryClock(Date.now());
+    const id = setInterval(() => setTelemetryClock(Date.now()), 1_000);
+    return () => clearInterval(id);
+  }, [snapshot]);
 
   useEffect(() => {
     if (!clubUuid || isHydrating || !user) return;
@@ -757,6 +858,9 @@ export default function ClubDataPage() {
   const loadPlayers = useCallback(
     async (preserveOnError = false): Promise<boolean> => {
       if (!clubUuid || isHydrating || !user) return false;
+      // Pagination owns the cursor while it is in flight. A heartbeat is a
+      // recovery mechanism, not a reason to invalidate that user action.
+      if (preserveOnError && playersMoreRef.current) return true;
       const myVersion = ++playersVersion.current;
       const stale = () => cancelledRef.current || playersVersion.current !== myVersion;
       setPlayersLoading(true);
@@ -798,7 +902,7 @@ export default function ClubDataPage() {
             removeClubDataCaches(user.id, clubUuid);
           } else {
             reportError(rpcError, 'ClubDataPage.players_rpc');
-            setPlayersError('Could not load player data.');
+            setPlayersError(preserveOnError ? null : 'Could not load player data.');
           }
           if (isAuthzError(rpcError) || !preserveOnError) setPlayers(null);
           return false;
@@ -809,33 +913,40 @@ export default function ClubDataPage() {
           !Array.isArray(page.rows)
         ) {
           reportError(new Error('player payload was empty'), 'ClubDataPage.players_shape');
-          setPlayersError('Could not load player data.');
+          setPlayersError(preserveOnError ? null : 'Could not load player data.');
           if (!preserveOnError) setPlayers(null);
           return false;
         } else {
+          const breakdown = data as PlayerBreakdown;
+          const rows = preserveExpandedClubDataRows(
+            playersRef.current?.players || [],
+            page.rows,
+            preserveOnError
+          );
+          const playerCount = Number(page.filtered_count ?? breakdown.player_count);
+          const keptExpandedRows = rows.length > page.rows.length;
+          const nextPlayers = { ...breakdown, players: rows, player_count: playerCount };
+          const nextCursor = keptExpandedRows ? playerCursorRef.current : page.next_cursor || null;
+          const nextHasMore = playerCount > rows.length;
           setPlayersError(null);
-          setPlayers({
-            ...(data as PlayerBreakdown),
-            players: page.rows,
-            player_count: Number(page.filtered_count ?? (data as PlayerBreakdown).player_count),
-          });
-          setPlayerCursor(page.next_cursor || null);
-          setPlayersHasMore(Boolean(page.has_more));
+          setPlayers(nextPlayers);
+          playersRef.current = nextPlayers;
+          setPlayerCursor(nextCursor);
+          playerCursorRef.current = nextCursor;
+          setPlayersHasMore(nextHasMore);
           writeClubDataCache<CachedPlayerLedger>(user.id, clubUuid, playerCacheKey, {
-            players: {
-              ...(data as PlayerBreakdown),
-              players: page.rows,
-              player_count: Number(page.filtered_count ?? (data as PlayerBreakdown).player_count),
-            },
-            cursor: page.next_cursor || null,
-            hasMore: Boolean(page.has_more),
+            players: nextPlayers,
+            cursor: nextCursor,
+            hasMore: nextHasMore,
           });
           return true;
         }
       } catch (err) {
         if (stale()) return false;
         reportError(err, 'ClubDataPage.players_request');
-        setPlayersError('Player data took too long to respond. Try again.');
+        setPlayersError(
+          preserveOnError ? null : 'Player data took too long to respond. Try again.'
+        );
         if (!preserveOnError) setPlayers(null);
         return false;
       } finally {
@@ -849,23 +960,59 @@ export default function ClubDataPage() {
     if (tab !== 'players') return;
     if (!clubUuid || isHydrating || !user) return;
     const restoreKey = `${user.id}:${clubUuid}:${playerCacheKey}`;
+    let preserveExistingRows = true;
     if (restoredPlayerKeyRef.current !== restoreKey) {
       restoredPlayerKeyRef.current = restoreKey;
       const cached = readClubDataCache<CachedPlayerLedger>(user.id, clubUuid, playerCacheKey);
       if (cached?.players && Array.isArray(cached.players.players)) {
         setPlayers(cached.players);
+        playersRef.current = cached.players;
         setPlayerCursor(cached.cursor);
+        playerCursorRef.current = cached.cursor;
         setPlayersHasMore(cached.hasMore);
         setPlayersLoading(false);
         setPlayersError(null);
+      } else {
+        // A new range/sort is a different ledger. Do not mistake rows from the
+        // previous query for an expanded window that should survive refresh.
+        preserveExistingRows = false;
+        setPlayers(null);
+        playersRef.current = null;
+        setPlayerCursor(null);
+        playerCursorRef.current = null;
+        setPlayersHasMore(false);
       }
     }
-    void loadPlayers(true);
+    void loadPlayers(preserveExistingRows);
   }, [tab, loadPlayers, clubUuid, isHydrating, user, playerCacheKey]);
 
   const loadMoreGames = useCallback(async () => {
-    if (!clubUuid || !gameCursor || !gamesHasMore || gamesMoreRef.current || isHydrating || !user)
+    if (!clubUuid || gamesMoreRef.current || isHydrating || !user) return;
+    const prefetched = prefetchedGamePageRef.current;
+    const current = snapshotRef.current;
+    if (prefetched?.key === gameCacheKey && prefetched.rows.length && current) {
+      const known = new Set(current.rows.map((row) => `${row.kind}:${row.id}`));
+      const nextSnapshot = {
+        ...current,
+        rows: [
+          ...current.rows,
+          ...prefetched.rows.filter((row) => !known.has(`${row.kind}:${row.id}`)),
+        ],
+      };
+      prefetchedGamePageRef.current = null;
+      setSnapshot(nextSnapshot);
+      snapshotRef.current = nextSnapshot;
+      setGameCursor(prefetched.nextCursor);
+      gameCursorRef.current = prefetched.nextCursor;
+      setGamesHasMore(prefetched.hasMore);
+      writeClubDataCache<CachedGameLedger>(user.id, clubUuid, gameCacheKey, {
+        snapshot: nextSnapshot,
+        cursor: prefetched.nextCursor,
+        hasMore: prefetched.hasMore,
+      });
       return;
+    }
+    if (!gameCursor || !gamesHasMore) return;
     gamesMoreRef.current = true;
     setGamesLoadingMore(true);
     setGamesPageError(null);
@@ -909,18 +1056,21 @@ export default function ClubDataPage() {
         }
         return;
       }
-      setSnapshot((current) => {
-        if (!current) return current;
+      const current = snapshotRef.current;
+      if (current) {
         const known = new Set(current.rows.map((row) => `${row.kind}:${row.id}`));
-        return {
+        const nextSnapshot = {
           ...current,
           rows: [
             ...current.rows,
             ...page.rows.filter((row) => !known.has(`${row.kind}:${row.id}`)),
           ],
         };
-      });
+        setSnapshot(nextSnapshot);
+        snapshotRef.current = nextSnapshot;
+      }
       setGameCursor(page.next_cursor || null);
+      gameCursorRef.current = page.next_cursor || null;
       setGamesHasMore(Boolean(page.has_more));
     } catch (pageError) {
       if (stale()) return;
@@ -942,6 +1092,7 @@ export default function ClubDataPage() {
     stakes,
     search,
     gameSort,
+    gameCacheKey,
   ]);
 
   const loadMorePlayers = useCallback(async () => {
@@ -990,15 +1141,18 @@ export default function ClubDataPage() {
         }
         return;
       }
-      setPlayers((current) => {
-        if (!current) return current;
+      const current = playersRef.current;
+      if (current) {
         const known = new Set(current.players.map((row) => row.user_id));
-        return {
+        const nextPlayers = {
           ...current,
           players: [...current.players, ...page.rows.filter((row) => !known.has(row.user_id))],
         };
-      });
+        setPlayers(nextPlayers);
+        playersRef.current = nextPlayers;
+      }
       setPlayerCursor(page.next_cursor || null);
+      playerCursorRef.current = page.next_cursor || null;
       setPlayersHasMore(Boolean(page.has_more));
     } catch (pageError) {
       if (stale()) return;
@@ -1169,6 +1323,17 @@ export default function ClubDataPage() {
 
   const realtimeFilter = clubUuid ? `club_id=eq.${clubUuid}` : null;
   const realtimeEnabled = Boolean(clubUuid && user && !isHydrating);
+  const markRealtimeStatus = useCallback((feed: RealtimeFeed, status: string) => {
+    const next: RealtimeFeedState =
+      status === 'SUBSCRIBED'
+        ? 'live'
+        : status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED'
+          ? 'degraded'
+          : 'connecting';
+    setRealtimeFeeds((current) =>
+      current[feed] === next ? current : { ...current, [feed]: next }
+    );
+  }, []);
 
   useMasterBusChannel({
     channelName: clubUuid ? `club-data-tables-${clubUuid}` : null,
@@ -1176,7 +1341,11 @@ export default function ClubDataPage() {
     filter: realtimeFilter,
     event: '*',
     onPayload: () => queueEventRefresh('ledger'),
-    onSubscriptionError: () => queueEventRefresh('ledger'),
+    onSubscriptionError: (status) => {
+      markRealtimeStatus('tables', status);
+      queueEventRefresh('ledger');
+    },
+    onSubscriptionStatus: (status) => markRealtimeStatus('tables', status),
     enabled: realtimeEnabled,
   });
   useMasterBusChannel({
@@ -1185,7 +1354,11 @@ export default function ClubDataPage() {
     filter: realtimeFilter,
     event: '*',
     onPayload: () => queueEventRefresh('ledger'),
-    onSubscriptionError: () => queueEventRefresh('ledger'),
+    onSubscriptionError: (status) => {
+      markRealtimeStatus('tournaments', status);
+      queueEventRefresh('ledger');
+    },
+    onSubscriptionStatus: (status) => markRealtimeStatus('tournaments', status),
     enabled: realtimeEnabled,
   });
   useMasterBusChannel({
@@ -1194,7 +1367,11 @@ export default function ClubDataPage() {
     filter: realtimeFilter,
     event: '*',
     onPayload: () => queueEventRefresh('invoices'),
-    onSubscriptionError: () => queueEventRefresh('invoices'),
+    onSubscriptionError: (status) => {
+      markRealtimeStatus('invoices', status);
+      queueEventRefresh('invoices');
+    },
+    onSubscriptionStatus: (status) => markRealtimeStatus('invoices', status),
     enabled: realtimeEnabled,
   });
   useMasterBusChannel({
@@ -1203,7 +1380,11 @@ export default function ClubDataPage() {
     filter: realtimeFilter,
     event: '*',
     onPayload: () => queueEventRefresh('all'),
-    onSubscriptionError: () => queueEventRefresh('all'),
+    onSubscriptionError: (status) => {
+      markRealtimeStatus('members', status);
+      queueEventRefresh('all');
+    },
+    onSubscriptionStatus: (status) => markRealtimeStatus('members', status),
     enabled: realtimeEnabled,
   });
 
@@ -1218,6 +1399,18 @@ export default function ClubDataPage() {
       queueEventRefresh('all');
     },
     { debounce: 750 }
+  );
+
+  const integrity = useMemo(() => (snapshot ? auditClubDataSnapshot(snapshot) : null), [snapshot]);
+  const liveFeedCount = useMemo(
+    () => Object.values(realtimeFeeds).filter((state) => state === 'live').length,
+    [realtimeFeeds]
+  );
+  const integrityNeedsAttention = Boolean(
+    integrity &&
+    (integrity.level === 'attention' ||
+      ledgerSource === 'degraded' ||
+      (lastRequestMs !== null && lastRequestMs > COLD_READ_ATTEMPT_TIMEOUT_MS))
   );
 
   const shiftRange = useCallback(
@@ -1386,7 +1579,7 @@ export default function ClubDataPage() {
     return (
       <span
         className={`${styles.delta} ${cls}`}
-        title={prevRange ? `previous period ${prevRange.start} to ${prevRange.end}` : undefined}
+        title={prevRange ? `Previous Period ${prevRange.start} To ${prevRange.end}` : undefined}
       >
         {v > 0 ? '+' : ''}
         {/* prevRange, not `preset`: the preset flips the instant the button is
@@ -1404,7 +1597,7 @@ export default function ClubDataPage() {
     return (
       <span
         className={`${styles.delta} ${cls}`}
-        title={prevRange ? `previous period ${prevRange.start} to ${prevRange.end}` : undefined}
+        title={prevRange ? `Previous Period ${prevRange.start} To ${prevRange.end}` : undefined}
       >
         {v > 0 ? '+' : ''}
         {money(v)} Vs Prev {prevRange?.days ?? preset}d
@@ -1424,7 +1617,7 @@ export default function ClubDataPage() {
       <div className={styles.page}>
         <PermissionState
           title="Sign In To View Club Data"
-          description="Financial and player analytics are restricted to authenticated club operators."
+          description="Financial And Player Analytics Are Restricted To Authenticated Club Operators."
           onBack={() => navigate('/')}
         />
       </div>
@@ -1441,7 +1634,7 @@ export default function ClubDataPage() {
           eyebrow="Club Context Required"
           tone="permission"
           title="Choose A Club To View Its Data"
-          description="Revenue, rake, player results, and union invoices belong to a specific club. Open Club Data from that club's Operations menu."
+          description="Revenue, Rake, Player Results, And Union Invoices Belong To A Specific Club. Open Club Data From That Club's Operations Menu."
           action={{ label: 'Return To Arena', onClick: () => navigate('/') }}
           secondaryAction={{ label: 'Find Clubs', onClick: () => navigate('/search') }}
         />
@@ -1456,7 +1649,7 @@ export default function ClubDataPage() {
           type="button"
           className={`${styles.headerBtn} ${styles.backButton}`}
           onClick={() => navigate(-1)}
-          aria-label="Go back"
+          aria-label="Go Back"
         >
           <span aria-hidden="true">&#8592;</span>
           <span>Back</span>
@@ -1468,7 +1661,7 @@ export default function ClubDataPage() {
             className={styles.headerBtn}
             onClick={() => void refreshAll()}
             disabled={manualRefreshing || loading || playersLoading || invoicesLoading}
-            aria-label="Refresh club ledger"
+            aria-label="Refresh Club Ledger"
           >
             {manualRefreshing ? 'Refreshing' : 'Refresh'}
           </button>
@@ -1482,8 +1675,8 @@ export default function ClubDataPage() {
             disabled={
               !exporting && (tab === 'players' ? !sortedPlayers.length : !snapshot?.rows?.length)
             }
-            aria-label={exporting ? 'Cancel CSV export' : 'Export as CSV'}
-            title={exporting ? 'Cancel CSV export' : 'Export as CSV'}
+            aria-label={exporting ? 'Cancel CSV Export' : 'Export As CSV'}
+            title={exporting ? 'Cancel CSV Export' : 'Export As CSV'}
           >
             {exporting ? 'Cancel Export' : 'Export CSV'}
           </button>
@@ -1494,9 +1687,9 @@ export default function ClubDataPage() {
         {refreshNote ||
           exportNote ||
           (exportProgress?.stage === 'preparing'
-            ? 'Preparing complete export.'
+            ? 'Preparing Complete Export.'
             : exportProgress?.total !== null && exportProgress
-              ? `Exporting ${compactInt(exportProgress.loaded)} of ${compactInt(exportProgress.total)} rows.`
+              ? `Exporting ${compactInt(exportProgress.loaded)} Of ${compactInt(exportProgress.total)} Rows.`
               : '')}
       </div>
 
@@ -1550,20 +1743,69 @@ export default function ClubDataPage() {
         </div>
       )}
 
-      <section className={styles.controlDeck} aria-label="Reporting period">
+      <section
+        className={`${styles.integrityPanel} ${integrityNeedsAttention ? styles.integrityAttention : ''}`}
+        aria-labelledby="club-data-integrity-title"
+      >
+        <div className={styles.integrityHeading}>
+          <div>
+            <span>Operator Trust Layer</span>
+            <h2 id="club-data-integrity-title">Data Integrity</h2>
+          </div>
+          <span className={styles.integrityBadge} role="status" aria-live="polite">
+            {!snapshot ? 'Checking' : integrityNeedsAttention ? 'Recovery Active' : 'Verified'}
+          </span>
+        </div>
+        <dl className={styles.integrityGrid}>
+          <div>
+            <dt>Payload Checks</dt>
+            <dd>{integrity ? `${integrity.passed} / ${integrity.checks}` : NO_VALUE}</dd>
+          </div>
+          <div>
+            <dt>Live Feeds</dt>
+            <dd>{realtimeEnabled ? `${liveFeedCount} / 4` : 'Standby'}</dd>
+          </div>
+          <div>
+            <dt>Last Verified</dt>
+            <dd>
+              {lastVerifiedAt ? formatClubDataAge(telemetryClock - lastVerifiedAt) : 'Checking'}
+            </dd>
+          </div>
+          <div>
+            <dt>Ledger Read</dt>
+            <dd>{lastRequestMs === null ? 'Checking' : `${lastRequestMs.toLocaleString()}ms`}</dd>
+          </div>
+        </dl>
+        <p className={styles.integrityNote}>
+          {integrity?.issues.length
+            ? `${integrity.issues.length} Integrity Check${integrity.issues.length === 1 ? '' : 's'} Need Review. Verified Rows Stay Visible While Recovery Runs.`
+            : liveFeedCount < 4 && realtimeEnabled
+              ? 'The 60-Second Verified Poll Remains Active While Live Feeds Reconnect.'
+              : 'Internal Totals Reconcile. Live Invalidations And The 60-Second Verified Poll Are Active.'}
+        </p>
+        {integrity?.issues.length ? (
+          <ul className={styles.integrityIssues}>
+            {integrity.issues.map((issue) => (
+              <li key={issue}>{issue}</li>
+            ))}
+          </ul>
+        ) : null}
+      </section>
+
+      <section className={styles.controlDeck} aria-label="Reporting Period">
         <div className={styles.controlLabel}>Reporting Window</div>
         <div className={styles.rangeBar}>
           <button
             type="button"
             className={styles.arrow}
             onClick={() => shiftRange(-1)}
-            aria-label="Previous period"
+            aria-label="Previous Period"
           >
             &#8592;
           </button>
           <div className={styles.rangeChip}>
             <span>{startDate}</span>
-            <span className={styles.rangeDivider}>&mdash;</span>
+            <span className={styles.rangeDivider}>-</span>
             <span>{endDate}</span>
             <span className={styles.rangeTz}>UTC</span>
           </div>
@@ -1572,7 +1814,7 @@ export default function ClubDataPage() {
             className={styles.arrow}
             onClick={() => shiftRange(1)}
             disabled={isToday}
-            aria-label="Next period"
+            aria-label="Next Period"
           >
             &#8594;
           </button>
@@ -1591,7 +1833,7 @@ export default function ClubDataPage() {
               className={`${styles.preset} ${preset === p ? styles.active : ''}`}
               onClick={() => setPreset(p)}
             >
-              {p === 1 ? '1 day' : `${p} days`}
+              {p === 1 ? '1 Day' : `${p} Days`}
             </button>
           ))}
         </div>
@@ -1642,7 +1884,7 @@ export default function ClubDataPage() {
           Fee 0.00" in confident green with the real message buried in the list
           below. On the screen that answers "what do I owe the union", a zero
           has to mean zero. Dashes while there is no snapshot to read. */}
-      <dl className={styles.summary} aria-busy={loading} aria-label="Club performance summary">
+      <dl className={styles.summary} aria-busy={loading} aria-label="Club Performance Summary">
         <div className={styles.tile}>
           <dt className={styles.tileLabel}>Games</dt>
           <dd className={styles.tileValue}>{summary ? compactInt(summary.games) : NO_VALUE}</dd>
@@ -1769,8 +2011,8 @@ export default function ClubDataPage() {
           <div className={styles.invoiceTop}>
             <span className={styles.invoiceLabel}>
               {latestInvoice.direction === 'union owes club'
-                ? 'Union owes you'
-                : 'Weekly square-up'}
+                ? 'Union Owes You'
+                : 'Weekly Square-Up'}
             </span>
             <span className={styles.invoiceAmount}>
               {unionOwesClub ? '+' : Number(latestInvoice.amount) > 0 ? '-' : ''}
@@ -1790,7 +2032,7 @@ export default function ClubDataPage() {
                 // The figures come from the invoice; the percentages used to be
                 // literals, so any club on a non-standard deal got a label that
                 // contradicted its own numbers. Derive them or omit them.
-                ['Rake generated', latestInvoice.breakdown.rake_generated],
+                ['Rake Generated', latestInvoice.breakdown.rake_generated],
                 [
                   `Your rakeback${splitPct(latestInvoice.breakdown.rakeback_due, latestInvoice.breakdown.rake_generated)}`,
                   latestInvoice.breakdown.rakeback_due,
@@ -1799,10 +2041,10 @@ export default function ClubDataPage() {
                   `Union fee kept${splitPct(latestInvoice.breakdown.union_fee_kept, latestInvoice.breakdown.rake_generated)}`,
                   latestInvoice.breakdown.union_fee_kept,
                 ],
-                ['Player win/loss', latestInvoice.breakdown.players_won],
-                ['Settled in chips', latestInvoice.breakdown.settled_in_chips],
-                ['ECO adjustment', latestInvoice.breakdown.eco_amount],
-                ['Payments received', latestInvoice.breakdown.presettled],
+                ['Player Win/Loss', latestInvoice.breakdown.players_won],
+                ['Settled In Chips', latestInvoice.breakdown.settled_in_chips],
+                ['ECO Adjustment', latestInvoice.breakdown.eco_amount],
+                ['Payments Received', latestInvoice.breakdown.presettled],
               ].map(([label, value]) => (
                 <div className={styles.invoiceLine} key={String(label)}>
                   <span>{String(label)}</span>
@@ -1826,8 +2068,8 @@ export default function ClubDataPage() {
             {!latestInvoice.breakdown
               ? 'No Statement Detail'
               : showInvoiceDetail
-                ? 'Hide statement'
-                : 'View statement'}
+                ? 'Hide Statement'
+                : 'View Statement'}
           </button>
         </div>
       )}
@@ -1924,6 +2166,7 @@ export default function ClubDataPage() {
             role={snapshot?.rows.length ? 'list' : undefined}
             aria-busy={loading}
             aria-label="Games"
+            tabIndex={0}
           >
             {loading && !snapshot && !error && (
               <>
@@ -2129,6 +2372,7 @@ export default function ClubDataPage() {
             role={sortedPlayers.length ? 'list' : undefined}
             aria-busy={playersLoading}
             aria-label="Players"
+            tabIndex={0}
           >
             {playersLoading && !players && !playersError && (
               <>
@@ -2258,7 +2502,7 @@ export default function ClubDataPage() {
                   : '';
               })()}
               {players.player_count > sortedPlayers.length
-                ? ` Showing ${compactInt(sortedPlayers.length)} of ${compactInt(players.player_count)} players, ordered by ${PLAYER_SORTS.find((option) => option.id === playerSort)?.label.toLowerCase() || 'server rank'}.`
+                ? ` Showing ${compactInt(sortedPlayers.length)} Of ${compactInt(players.player_count)} Players, Ordered By ${PLAYER_SORTS.find((option) => option.id === playerSort)?.label || 'Server Rank'}.`
                 : ''}
             </div>
           )}
@@ -2274,7 +2518,7 @@ export default function ClubDataPage() {
       {exportProgress && (
         <div className={styles.footNote} role="status" aria-live="polite">
           {exportProgress.stage === 'preparing'
-            ? 'Preparing an exact snapshot for export...'
+            ? 'Preparing An Exact Snapshot For Export...'
             : `Downloading ${compactInt(exportProgress.loaded)} Of ${compactInt(exportProgress.total)} Rows...`}
         </div>
       )}

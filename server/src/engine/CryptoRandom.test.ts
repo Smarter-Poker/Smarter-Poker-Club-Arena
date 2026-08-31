@@ -112,7 +112,7 @@ describe('secureRandom', () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('secureShuffle', () => {
-  it('is a permutation — nothing added, dropped or duplicated', () => {
+  it('is a permutation - nothing added, dropped or duplicated', () => {
     for (let trial = 0; trial < 200; trial++) {
       const arr = Array.from({ length: 52 }, (_, i) => i);
       secureShuffle(arr);

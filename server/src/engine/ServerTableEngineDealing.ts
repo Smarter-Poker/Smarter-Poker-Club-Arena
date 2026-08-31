@@ -829,7 +829,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
               needsRebuyPause = await this.anyBustedPlayerCanAffordARebuy(justBustedPlayers);
               if (!needsRebuyPause) {
                 console.log(
-                  `[ServerTableEngine:${this.tableId}] No rebuy pause — none of ` +
+                  `[ServerTableEngine:${this.tableId}] No rebuy pause - none of ` +
                     `${justBustedPlayers.map((p) => p.username).join(', ')} can cover this ` +
                     `table's minimum buy-in`
                 );
@@ -909,7 +909,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                    */
                   if (windowOpen && poolOpen) {
                     console.log(
-                      `[ServerTableEngine:${this.tableId}] Tournament bust — rebuy window open, table does NOT pause (Dan 2026-08-30); elimination grace covers the decision`
+                      `[ServerTableEngine:${this.tableId}] Tournament bust - rebuy window open, table does NOT pause (Dan 2026-08-30); elimination grace covers the decision`
                     );
                   }
 
@@ -948,7 +948,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                       if (vacateErr) {
                         reportError(
                           new Error(
-                            `[ServerTableEngine:${this.tableId}] busted-seat vacate failed: ${vacateErr.message} — the seat lingers one sweep instead`
+                            `[ServerTableEngine:${this.tableId}] busted-seat vacate failed: ${vacateErr.message} - the seat lingers one sweep instead`
                           ),
                           'ServerTableEngine.busted_seat_vacate_failed'
                         );
@@ -984,7 +984,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                         if (zeroErr) {
                           reportError(
                             new Error(
-                              `[ServerTableEngine:${this.tableId}] busted-player chips-zero failed: ${zeroErr.message} — the seatless-phantom sweep guard will catch them`
+                              `[ServerTableEngine:${this.tableId}] busted-player chips-zero failed: ${zeroErr.message} - the seatless-phantom sweep guard will catch them`
                             ),
                             'ServerTableEngine.busted_chip_zero_failed'
                           );
@@ -1020,7 +1020,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                 // elimination-side grace is the fail-open that protects the
                 // player now.
                 console.error(
-                  `[ServerTableEngine:${this.tableId}] Rebuy-window read failed (tournament — no pause either way):`,
+                  `[ServerTableEngine:${this.tableId}] Rebuy-window read failed (tournament - no pause either way):`,
                   err
                 );
               }
@@ -1098,7 +1098,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
 
         if (this.consecutiveErrors >= 10) {
           reportError(
-            new Error(`[ServerTableEngine:${this.tableId}] Too many errors — stopping`),
+            new Error(`[ServerTableEngine:${this.tableId}] Too many errors - stopping`),
             'ServerTableEnginethistableId.Too_many_errors__stopping'
           );
           // FIX 2026-08-22: was `this.running = false` alone, which left a
@@ -1206,7 +1206,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     this.showHandCards = null;
 
     console.log(
-      `[ServerTableEngine:${this.tableId}] Hand #${handNumber} — ${players.length} players`
+      `[ServerTableEngine:${this.tableId}] Hand #${handNumber} - ${players.length} players`
     );
 
     // Convert to SeatPlayer format
@@ -1669,7 +1669,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           if (claimErr) {
             // Fail closed and KEEP the armed flag, so the next hand tries
             // again rather than dropping the host's request on one blip.
-            console.warn('[BombPot] manual claim failed — deferring:', claimErr.message);
+            console.warn('[BombPot] manual claim failed - deferring:', claimErr.message);
           } else if (claimed) {
             this.manualBombPushed = false;
             decision = { isBombPot: true, triggerReason: 'manual_next_hand' };
@@ -1770,12 +1770,12 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
           } else if (players.length > seatMax) {
             console.warn(
               `[BombPot] variant override ${resolved} skipped: ${players.length} players exceeds ` +
-                `its ${seatMax}-seat limit — dealing ${tableVariant}`
+                `its ${seatMax}-seat limit - dealing ${tableVariant}`
             );
           } else {
             console.warn(
               `[BombPot] variant override ${resolved} skipped: ${players.length} players need ` +
-                `${holeNeed} cards > ${deckSizeFor(resolved)}-card deck — dealing ${tableVariant}`
+                `${holeNeed} cards > ${deckSizeFor(resolved)}-card deck - dealing ${tableVariant}`
             );
           }
         }
@@ -2626,7 +2626,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         this.bustedSince.delete(player.user_id);
         removed.push(player.user_id);
         console.log(
-          `[ServerTableEngine:${this.tableId}] ${player.username} busted and did not rebuy — seat ${player.seat_number} released`
+          `[ServerTableEngine:${this.tableId}] ${player.username} busted and did not rebuy - seat ${player.seat_number} released`
         );
       } catch (err) {
         reportError(err, 'ServerTableEngine.' + this.tableId + '.busted_standup_cashout');
@@ -2693,7 +2693,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         this.horseRebuys.delete(horse.user_id);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
         console.log(
-          `[ServerTableEngine:${this.tableId}] Dead-table recovery: Horse ${horse.username} at stop-loss — removed.`
+          `[ServerTableEngine:${this.tableId}] Dead-table recovery: Horse ${horse.username} at stop-loss - removed.`
         );
         continue;
       }
@@ -2733,7 +2733,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         this.horseRebuys.delete(horse.user_id);
         this.bustRecoveryLastAttempt.delete(horse.user_id);
         console.log(
-          `[ServerTableEngine:${this.tableId}] Dead-table recovery: Horse ${horse.username} left — insufficient treasury funds`
+          `[ServerTableEngine:${this.tableId}] Dead-table recovery: Horse ${horse.username} left - insufficient treasury funds`
         );
       }
     }
@@ -2844,7 +2844,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         released.push(player.user_id);
         reportError(
           new Error(
-            `[ServerTableEngine:${this.tableId}] seat held by ${player.user_id.slice(0, 8)} who has no row in tournament ${tournamentId.slice(0, 8)} — released`
+            `[ServerTableEngine:${this.tableId}] seat held by ${player.user_id.slice(0, 8)} who has no row in tournament ${tournamentId.slice(0, 8)} - released`
           ),
           'ServerTableEngine.tournament_seat_without_entrant'
         );
@@ -2869,7 +2869,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
             new Error(
               `[ServerTableEngine:${this.tableId}] ${player.username} has held seat ${player.seat_number} at 0 chips for ${Math.round(
                 (now - firstSeen) / 1000
-              )}s in tournament ${tournamentId.slice(0, 8)} and is still 'playing' — the elimination sweep is not reaching this table`
+              )}s in tournament ${tournamentId.slice(0, 8)} and is still 'playing' - the elimination sweep is not reaching this table`
             ),
             'ServerTableEngine.tournament_ghost_seat'
           );

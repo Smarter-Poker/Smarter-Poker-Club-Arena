@@ -30,7 +30,7 @@ const c = (spec: string): Card => {
 
 const nlh = variantInfo('nlh');
 
-describe('HorseEval V12 — connectsBoard', () => {
+describe('HorseEval V12 - connectsBoard', () => {
   it('recognizes pairs, flush draws, and open straight draws as contact', () => {
     const board = [c('Ah'), c('Kd'), c('7c')];
     expect(connectsBoard([c('As'), c('2d')], board, false)).toBeGreaterThanOrEqual(2); // top pair
@@ -40,7 +40,7 @@ describe('HorseEval V12 — connectsBoard', () => {
   });
 });
 
-describe('HorseMind V12 — postflop read extraction', () => {
+describe('HorseMind V12 - postflop read extraction', () => {
   const hist = (extra: ActionRecord[]): ActionRecord[] =>
     [
       { seat: 5, userId: 'opp', action: 'raise', amount: 6, timestamp: 1, stage: 'preflop' },
@@ -83,7 +83,7 @@ describe('HorseMind V12 — postflop read extraction', () => {
   });
 });
 
-describe('HorseEval V12 — board-contact conditioning shifts equity the right way', () => {
+describe('HorseEval V12 - board-contact conditioning shifts equity the right way', () => {
   it('QQ on AK7 loses equity vs an AGGRESSOR (their range connects)', () => {
     const hole = [c('Qh'), c('Qd')];
     const board = [c('Ah'), c('Kd'), c('7c')];
@@ -129,7 +129,7 @@ describe('HorseEval V12 — board-contact conditioning shifts equity the right w
   });
 });
 
-describe('HorseLogic V12 — end to end', () => {
+describe('HorseLogic V12 - end to end', () => {
   const mkPlayer = (seat: number, over: Record<string, unknown> = {}) =>
     ({
       seat,

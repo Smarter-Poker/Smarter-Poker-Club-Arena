@@ -208,6 +208,8 @@ button.club-identity__line {
 }
 
 .club-identity__share {
+  position: relative;
+  z-index: 2;
   flex: 0 0 auto;
   width: 7.5cqw;
   height: 7.5cqw;
@@ -237,6 +239,25 @@ button.club-identity__line {
 button.club-identity__line:focus-visible {
   outline: 2px solid #64c6ff;
   outline-offset: 2px;
+}
+
+/* The icon is deliberately small inside the artwork, but its touch target
+   cannot be. Keep the approved icon footprint while giving a coarse pointer a
+   real 44px button box. The footer is absolutely positioned and the playing
+   count is already out of flex flow, so this does not reflow the card copy. */
+@media (pointer: coarse) {
+  .club-identity__share {
+    position: relative;
+    z-index: 2;
+    top: -3px;
+    width: 44px;
+    height: 44px;
+  }
+
+  .club-identity__share svg {
+    width: 3.75cqw;
+    height: 3.75cqw;
+  }
 }
 
 @media (max-width: 360px) {

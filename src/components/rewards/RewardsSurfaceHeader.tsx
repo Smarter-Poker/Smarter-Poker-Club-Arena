@@ -1,5 +1,6 @@
 import { useId, type ReactNode } from 'react';
 import { mediaUrl } from '../../utils/mediaBase';
+import { formatPopupText } from '../../utils/popupStyle';
 import styles from './RewardsSurfaceHeader.module.css';
 import './RewardsCircuitSurfaces.css';
 import './PlayCircuitSurfaces.css';
@@ -45,22 +46,22 @@ export default function RewardsSurfaceHeader({
   return (
     <section className={styles.header} aria-labelledby={titleId}>
       <div className={styles.copy}>
-        <p className={styles.eyebrow}>{eyebrow}</p>
+        <p className={styles.eyebrow}>{formatPopupText(eyebrow)}</p>
         <h1 id={titleId} className={styles.title}>
-          {title}
+          {formatPopupText(title)}
         </h1>
-        <p className={styles.description}>{description}</p>
+        <p className={styles.description}>{formatPopupText(description)}</p>
 
         {(metrics.length > 0 || actions) && (
           <div className={styles.commandRow}>
             {metrics.length > 0 && (
-              <dl className={styles.metrics} aria-label={`${title} live summary`}>
+              <dl className={styles.metrics} aria-label={`${title} Live Summary`}>
                 {metrics.map((metric) => (
                   <div
                     className={`${styles.metric} ${styles[metric.tone || 'default']}`}
                     key={metric.label}
                   >
-                    <dt>{metric.label}</dt>
+                    <dt>{formatPopupText(metric.label)}</dt>
                     <dd>{metric.value}</dd>
                   </div>
                 ))}
@@ -77,7 +78,7 @@ export default function RewardsSurfaceHeader({
         aria-hidden="true"
       >
         <div className={styles.conduit} />
-        <div className={styles.status}>{status}</div>
+        <div className={styles.status}>{formatPopupText(status)}</div>
       </div>
     </section>
   );

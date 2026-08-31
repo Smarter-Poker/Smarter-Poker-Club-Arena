@@ -30,7 +30,7 @@ const MIGRATIONS = join(__dirname, '..', '..', '..', 'supabase', 'migrations');
 
 const migration = (needle: string): string => {
   const file = readdirSync(MIGRATIONS).find((f) => f.includes(needle));
-  if (!file) throw new Error(`no migration matching "${needle}" — was it renamed?`);
+  if (!file) throw new Error(`no migration matching "${needle}" - was it renamed?`);
   return readFileSync(join(MIGRATIONS, file), 'utf8');
 };
 
@@ -76,12 +76,12 @@ describe('the payout record cannot be rewritten', () => {
     expect(table).toContain('trg_tournament_payouts_append_only');
   });
 
-  it('does not let a bare postgres session through — the bypass must be asked for', () => {
+  it('does not let a bare postgres session through - the bypass must be asked for', () => {
     // The first cut was `IF session_user = 'postgres' THEN <allow>`, which left
     // the guard off for every pg_cron job and every console query, and made it
     // impossible to test: a probe running as postgres could not tell a working
     // trigger from a broken one.
-    expect(guard).toContain("app.payout_record_correction");
+    expect(guard).toContain('app.payout_record_correction');
     expect(guard).toContain('i_am_correcting_the_record');
     expect(executable(guard)).not.toMatch(/IF session_user = 'postgres' THEN/);
   });
@@ -94,7 +94,7 @@ describe('the payout record cannot be rewritten', () => {
 describe('the deal path can live under an append-only table', () => {
   const deal = migration('the_deal_writes_its_record_once');
 
-  it('never UPDATEs tournament_payouts — the remainder rides in on the insert', () => {
+  it('never UPDATEs tournament_payouts - the remainder rides in on the insert', () => {
     expect(executable(deal)).not.toMatch(/UPDATE\s+public\.tournament_payouts/i);
   });
 
@@ -117,7 +117,7 @@ describe('every prize writes its evidence at ONE chokepoint', () => {
     expect(credit).toContain('fn_credit_and_log');
   });
 
-  it('writes it ONLY for a tournament prize — cash settlement is untouched', () => {
+  it('writes it ONLY for a tournament prize - cash settlement is untouched', () => {
     expect(credit).toMatch(
       /IF lower\(COALESCE\(p_category, ''\)\) = 'prize' AND p_related_entity_id IS NOT NULL THEN/
     );
@@ -130,7 +130,7 @@ describe('every prize writes its evidence at ONE chokepoint', () => {
     expect(insertIdx).toBeGreaterThan(guardIdx);
   });
 
-  it('fails OPEN on the record and LOUD — the credit commits, an alert is raised', () => {
+  it('fails OPEN on the record and LOUD - the credit commits, an alert is raised', () => {
     expect(credit).toContain('EXCEPTION WHEN OTHERS THEN');
     expect(credit).toContain('financial_alerts');
     expect(credit).toContain('tournament_payout_record');
@@ -141,14 +141,14 @@ describe('every prize writes its evidence at ONE chokepoint', () => {
     expect(credit).toContain('COALESCE(p_payout_position, v_shape_place)');
   });
 
-  it('drops the nine-argument overload — two would make every RPC ambiguous', () => {
+  it('drops the nine-argument overload - two would make every RPC ambiguous', () => {
     const added = migration('every_prize_writes_its_own_evidence');
     expect(added).toMatch(
       /DROP FUNCTION IF EXISTS public\.fn_credit_and_log\(uuid, numeric, text, text, text, uuid, text, uuid, uuid\)/
     );
   });
 
-  it('restores the ACL a DROP discards — this function mints money', () => {
+  it('restores the ACL a DROP discards - this function mints money', () => {
     const added = migration('every_prize_writes_its_own_evidence');
     expect(added).toContain('REVOKE ALL ON FUNCTION public.fn_credit_and_log');
     expect(added).toContain('FROM PUBLIC, anon, authenticated');
@@ -216,7 +216,9 @@ describe('the record does not leak what every player has ever won', () => {
 describe('one row per movement of money', () => {
   it('makes the idempotency key unique, which is what makes retries converge', () => {
     const table = migration('a_tournament_payout_is_a_record_not_a_column');
-    expect(table).toContain('CREATE UNIQUE INDEX IF NOT EXISTS uq_tournament_payouts_idempotency_key');
+    expect(table).toContain(
+      'CREATE UNIQUE INDEX IF NOT EXISTS uq_tournament_payouts_idempotency_key'
+    );
   });
 
   it('re-running the backfill inserts nothing', () => {

@@ -146,7 +146,7 @@ describe('V23 preflop-entry detectors', () => {
 });
 
 describe('V23 river_raise_paidoff', () => {
-  it('bet the river, called the raise, lost — tagged', () => {
+  it('bet the river, called the raise, lost - tagged', () => {
     const tags = detectLeaks(
       base({
         wentToShowdown: true,

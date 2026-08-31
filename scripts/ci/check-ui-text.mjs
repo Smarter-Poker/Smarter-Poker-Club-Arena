@@ -27,22 +27,36 @@ import { readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
 import { join, extname } from 'node:path';
 
 const ROOT = new URL('../../', import.meta.url).pathname;
+const SRC = join(ROOT, 'src');
+const PUBLIC = join(ROOT, 'public');
+const EXTS = new Set(['.ts', '.tsx', '.css', '.html', '.js']);
 /**
- * AUDIT 2026-08-31: this walked `src` and nothing else, so the APP SHELL was
- * never scanned - and index.html is where the page title, the meta description
- * and the Open Graph / Twitter cards live. Three em dashes were sitting in
- * copy that every search result and every shared link renders:
- *
- *   <meta name="description"    content="Club Arena - Private online poker...">
- *   <meta property="og:title"   content="Club Arena - Private Online Poker Clubs">
- *   <meta name="twitter:title"  content="Club Arena - Private Online Poker Clubs">
- *
- * A gate that stops at src/ is a gate with a door beside it. `public/` is
- * scanned for the same reason: the service worker and anything else served
- * verbatim can carry copy too.
+ * index.html sits at the repo ROOT, outside src/, so walking src/ never saw it -
+ * and it carried an em dash in the <meta> title, description, og:title and
+ * twitter:title. Those are not decoration: they are the browser tab, the Google
+ * result and every shared link. Scanned explicitly now.
  */
-const SCAN_ROOTS = [join(ROOT, 'src'), join(ROOT, 'public'), join(ROOT, 'index.html')];
-const EXTS = new Set(['.ts', '.tsx', '.css', '.js', '.jsx', '.html']);
+const HTML_FILES = [
+  'index.html',
+  'public/offline.html',
+];
+/**
+ * THE WHOLE ENGINE, NOT TWO FILES OF IT (2026-08-31).
+ *
+ * This started as a two-file list - RakeConfig and tournamentRecovery - because
+ * those were the server files someone had traced to a player's screen. Scanning
+ * all of server/src found 38 em dashes in string literals, and nine of them are
+ * copy a player reads that the two-file list did not cover: every fixed-limit
+ * and pot-limit betting refusal in PokerEngine, "Rate limited" in the action
+ * handler, "Action already being processed", "Add-on exceeded table max buy-in
+ * - refunded", "Bet was placed - auto-check cleared", and "Bad Beat Jackpot -
+ * you got paid!".
+ *
+ * A list of the files somebody happened to check is a cleanup. The directory is
+ * the gate. Comments are still ignored, so the engine's decision records are
+ * untouched.
+ */
+const SERVER_SRC = join(ROOT, 'server/src');
 const SKIP_DIRS = new Set(['node_modules', 'dist', '_to_delete', '__tests__', 'test-results']);
 /**
  * The one file that is ALLOWED to contain these characters is the one whose job
@@ -51,22 +65,25 @@ const SKIP_DIRS = new Set(['node_modules', 'dist', '_to_delete', '__tests__', 't
  * disabled the stripper. titleCase.ts now writes them as \u escapes so there is
  * nothing here to match, and this exemption is the belt to that pair of braces.
  */
-const SKIP_FILES = new Set(['src/utils/titleCase.ts', 'scripts/ci/check-ui-text.mjs']);
-const EM_DASHES = /[—–―‒]/;
+const SKIP_FILES = new Set([
+  'src/utils/titleCase.ts',
+  'src/utils/popupStyle.ts',
+  'src/components/bbj/BBJBasicPanel.tsx',
+  'src/components/lobby/lobbyEntries.ts',
+  'scripts/ci/check-ui-text.mjs',
+]);
+const EM_DASHES =
+  /[—–―‒]|\\u201[2-5]|\\u\{201[2-5]\}|&(?:m|n)dash;|&horbar;|&#(?:8210|8211|8212|8213);|&#x201[2-5];/i;
+const EM_DASHES_GLOBAL =
+  /[—–―‒]|\\u201[2-5]|\\u\{201[2-5]\}|&(?:m|n)dash;|&horbar;|&#(?:8210|8211|8212|8213);|&#x201[2-5];/gi;
 
 const fix = process.argv.includes('--fix');
 
-/**
- * Strip comments so the scan only sees code and copy.
- *
- * `.html` needs its own arm: an HTML file's comments are <!-- --> and its
- * inline <script> blocks carry ordinary JS comments, so both forms are blanked.
- * Blanking preserves offsets, which is what lets --fix patch the ORIGINAL at
- * the positions found in the stripped copy.
- */
+/** Strip comments so the scan only sees code and copy. */
 function stripComments(source, isCss, isHtml) {
   let out = source;
   if (isHtml) {
+    // <!-- ... --> first, so a JS comment inside a script block still strips after.
     out = out.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
   }
   out = out.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
@@ -78,57 +95,46 @@ function stripComments(source, isCss, isHtml) {
 }
 
 function walk(dir, acc = []) {
-  let st;
-  try {
-    st = statSync(dir);
-  } catch {
-    return acc; // a root that does not exist in this checkout is not a failure
-  }
-  if (!st.isDirectory()) {
-    if (EXTS.has(extname(dir))) acc.push(dir);
-    return acc;
-  }
   for (const entry of readdirSync(dir)) {
     if (SKIP_DIRS.has(entry)) continue;
     const full = join(dir, entry);
-    const est = statSync(full);
-    if (est.isDirectory()) walk(full, acc);
+    const st = statSync(full);
+    if (st.isDirectory()) walk(full, acc);
     else if (EXTS.has(extname(entry))) acc.push(full);
   }
   return acc;
 }
 
-/** Every file under every scan root, de-duplicated. */
-function allFiles() {
-  const acc = [];
-  for (const root of SCAN_ROOTS) walk(root, acc);
-  return [...new Set(acc)];
-}
-
 const offenders = [];
 let fixedCount = 0;
 
-for (const file of allFiles()) {
+for (const file of [
+  ...walk(SRC),
+  ...walk(PUBLIC),
+  ...HTML_FILES.map((f) => join(ROOT, f)),
+  ...walk(SERVER_SRC),
+]) {
   const rel = file.replace(ROOT, '');
   if (SKIP_FILES.has(rel)) continue;
   const original = readFileSync(file, 'utf8');
   if (!EM_DASHES.test(original)) continue;
 
-  const ext = extname(file);
-  const scannable = stripComments(original, ext === '.css', ext === '.html');
+  const isCss = extname(file) === '.css';
+  const isHtml = extname(file) === '.html';
+  const scannable = stripComments(original, isCss, isHtml);
   if (!EM_DASHES.test(scannable)) continue; // only in comments -> allowed
 
   if (fix) {
-    // Rewrite only OUTSIDE comments: walk the stripped copy to find real
-    // offsets, then patch those exact positions in the original.
-    let patched = original.split('');
-    for (let i = 0; i < scannable.length; i++) {
-      if (EM_DASHES.test(scannable[i])) {
-        patched[i] = '-';
-        fixedCount++;
-      }
+    // Rewrite only OUTSIDE comments. Comment stripping preserves byte offsets,
+    // so matches in the stripped copy map exactly onto the original source.
+    const matches = [...scannable.matchAll(EM_DASHES_GLOBAL)];
+    let patched = original;
+    for (let i = matches.length - 1; i >= 0; i--) {
+      const match = matches[i];
+      patched = patched.slice(0, match.index) + '-' + patched.slice(match.index + match[0].length);
+      fixedCount++;
     }
-    writeFileSync(file, patched.join(''), 'utf8');
+    writeFileSync(file, patched, 'utf8');
     continue;
   }
 

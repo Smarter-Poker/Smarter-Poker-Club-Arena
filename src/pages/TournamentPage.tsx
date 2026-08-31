@@ -1609,7 +1609,7 @@ export default function TournamentPage() {
                         now: `handleJoinTable` already falls back to the
                         tournament's own tables when the viewer holds no seat. */}
                     <button className="btn btn-primary btn-block" onClick={handleJoinTable}>
-                      {isRegistered ? 'Go to Table' : 'Watch'}
+                      {isRegistered ? 'Go To Table' : 'Watch'}
                     </button>
 
                     {/* Rebuy Button */}

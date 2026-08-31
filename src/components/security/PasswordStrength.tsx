@@ -12,11 +12,11 @@ interface Requirement {
 }
 
 const REQUIREMENTS: Requirement[] = [
-  { label: 'At least 8 characters', test: (p) => p.length >= 8 },
-  { label: 'Contains uppercase letter', test: (p) => /[A-Z]/.test(p) },
-  { label: 'Contains lowercase letter', test: (p) => /[a-z]/.test(p) },
-  { label: 'Contains number', test: (p) => /\d/.test(p) },
-  { label: 'Contains special character', test: (p) => /[!@#$%^&*(),.?":{}|<>]/.test(p) },
+  { label: 'At Least 8 Characters', test: (p) => p.length >= 8 },
+  { label: 'Contains Uppercase Letter', test: (p) => /[A-Z]/.test(p) },
+  { label: 'Contains Lowercase Letter', test: (p) => /[a-z]/.test(p) },
+  { label: 'Contains Number', test: (p) => /\d/.test(p) },
+  { label: 'Contains Special Character', test: (p) => /[!@#$%^&*(),.?":{}|<>]/.test(p) },
 ];
 
 export const PasswordStrength: React.FC<PasswordStrengthProps> = ({

@@ -70,7 +70,7 @@ describe('a standby must NOT promote itself when it cannot reach the database', 
     expect(await renewLeadership()).toBe('standby');
   });
 
-  it('does not exit when it merely cannot ask — it was never the leader', async () => {
+  it('does not exit when it merely cannot ask - it was never the leader', async () => {
     rpc.mockResolvedValue(refused);
     const { renewLeadership } = await load();
     await renewLeadership();
@@ -211,7 +211,7 @@ describe('election', () => {
     expect(isLeader()).toBe(true);
   });
 
-  it('a standby that never led does NOT exit — it is doing its job', async () => {
+  it('a standby that never led does NOT exit - it is doing its job', async () => {
     rpc.mockResolvedValue(refused);
     const { renewLeadership } = await load();
     await renewLeadership();
@@ -313,7 +313,7 @@ describe('a restarting standby hands the lease back on its way out', () => {
     expect(body).toMatch(/releaseLeadership\(\)\.finally\(/);
   });
 
-  it('still exits if the release hangs — a backstop timer exists', () => {
+  it('still exits if the release hangs - a backstop timer exists', () => {
     expect(body).toMatch(/setTimeout\(\(\) => process\.exit\(0\), 5000\)/);
   });
 });

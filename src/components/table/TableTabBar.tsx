@@ -603,7 +603,7 @@ export function TableTabBar({
         <div
           className="table-tab-bar__offline"
           role="status"
-          title="Reconnecting to the live feed - your seats and chips are safe on the server."
+          title="Reconnecting To The Live Feed - Your Seats And Chips Are Safe On The Server."
         >
           <span className="table-tab-bar__offline-dot" aria-hidden="true">
             ●
@@ -718,7 +718,7 @@ export function TableTabBar({
               // accessible name at all. Announce the table and its state; the
               // cards themselves are visual sugar a screen reader can live
               // without (the table view reads them properly).
-              aria-label={`${formatGameTitle(tab.name)}${isMyTurn ? ', your turn' : ''}`}
+              aria-label={`${formatGameTitle(tab.name)}${isMyTurn ? ', Your Turn' : ''}`}
               aria-current={isActive ? 'true' : undefined}
               style={
                 isDragging
@@ -851,7 +851,7 @@ export function TableTabBar({
               {/* Batch 3: muted marker (audio only; U+266A is a text symbol,
                   not emoji, and SeatSlot already uses suit glyphs). */}
               {isMuted && (
-                <span className="table-tab-bar__muted-dot" title="Table muted" aria-hidden="true">
+                <span className="table-tab-bar__muted-dot" title="Table Muted" aria-hidden="true">
                   ♪
                 </span>
               )}
@@ -881,13 +881,13 @@ export function TableTabBar({
             key={`add-${i}`}
             className="table-tab-bar__add"
             onClick={onAddTable}
-            title="Add table"
+            title="Add Table"
             // Dan 2026-08-20: the only accessible name these had was their
             // text content, "+". Screen readers announced a bare plus sign,
             // and nothing could address them by name. Matches the in-table
             // HUD control, which already carries aria-label="Open another
             // table", so both entry points announce the same thing.
-            aria-label="Open another table"
+            aria-label="Open Another Table"
           >
             {/* Dan 2026-08-28: the + is the metallic circled-plus from his
                 reference image — the real icon-addscreen asset (same one the
@@ -1002,7 +1002,7 @@ export function TableTabBar({
                 className="table-tab-bar__qmenu"
                 style={{ left: quickMenu.left, top: quickMenu.top }}
                 role="menu"
-                aria-label={`${tab.name} quick actions`}
+                aria-label={`${tab.name} Quick Actions`}
               >
                 <div className="table-tab-bar__qmenu-title">{formatGameTitle(tab.name)}</div>
                 {onQuickAction &&

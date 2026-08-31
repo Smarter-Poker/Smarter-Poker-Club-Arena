@@ -420,7 +420,7 @@ export function SettingsPanel({
                 value={settings.soundVolume}
                 onChange={(e) => handleSlider('soundVolume', parseInt(e.target.value))}
                 disabled={!settings.soundEnabled}
-                aria-label="Sound volume percent"
+                aria-label="Sound Volume Percent"
               />
             </div>
 

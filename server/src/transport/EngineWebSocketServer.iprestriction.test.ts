@@ -90,7 +90,7 @@ describe('isUsableClientIp', () => {
   });
 });
 
-describe('IP restriction — when it refuses', () => {
+describe('IP restriction - when it refuses', () => {
   let h: Harness;
   beforeEach(() => {
     h = harness();
@@ -115,7 +115,7 @@ describe('IP restriction — when it refuses', () => {
   });
 });
 
-describe('IP restriction — what must NEVER be refused', () => {
+describe('IP restriction - what must NEVER be refused', () => {
   let h: Harness;
   beforeEach(() => {
     h = harness();
@@ -175,7 +175,7 @@ describe('IP restriction — what must NEVER be refused', () => {
   });
 });
 
-describe('IP restriction — the switch itself', () => {
+describe('IP restriction - the switch itself', () => {
   it('does nothing at all when the table has the switch OFF', async () => {
     // Every table ships with it off; enforcement is opt-in.
     const h = harness();

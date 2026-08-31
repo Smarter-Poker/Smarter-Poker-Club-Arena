@@ -695,7 +695,7 @@ export default function PlayerSessionsPage() {
           title="No Managed Club Is Available"
           description={
             error ||
-            'Player sessions, retention, and chip flow are available to club operators from a club workspace.'
+            'Player Sessions, Retention, And Chip Flow Are Available To Club Operators From A Club Workspace.'
           }
           action={{ label: 'Return To Arena', onClick: () => navigate('/') }}
           secondaryAction={{ label: 'Find Clubs', onClick: () => navigate('/search') }}
@@ -1040,8 +1040,8 @@ export default function PlayerSessionsPage() {
                 <span className="admin-empty-icon">◉</span>
                 <span>
                   {searchQuery || statusFilter !== 'all'
-                    ? 'No players match your filters'
-                    : 'No members found'}
+                    ? 'No Players Match Your Filters'
+                    : 'No Members Found'}
                 </span>
               </div>
             ) : (
@@ -1138,7 +1138,7 @@ export default function PlayerSessionsPage() {
                           fontSize: '14px',
                           color: notes[p.userId] ? '#F7C52A' : '#6B7280',
                         }}
-                        title={notes[p.userId] ? 'Edit note' : 'Add note'}
+                        title={notes[p.userId] ? 'Edit Note' : 'Add Note'}
                       >
                         {notes[p.userId] ? '▤' : '✏'}
                       </button>

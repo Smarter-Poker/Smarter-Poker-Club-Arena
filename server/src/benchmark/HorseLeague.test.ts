@@ -23,7 +23,7 @@ import { playHand, runMatchup } from './HorseLeague.js';
    a global bump would also hide a genuine hang in the ~1,900 specs that
    legitimately finish in milliseconds. 60s is ~7x the measured solo cost, so
    it absorbs a loaded machine without ever masking a wedge. */
-describe('HorseLeague V12 — simulator integrity', { timeout: 60_000 }, () => {
+describe('HorseLeague V12 - simulator integrity', { timeout: 60_000 }, () => {
   it('conserves chips on every hand (side pots included)', async () => {
     for (let h = 0; h < 300; h++) {
       const net = playHand(1000 + h * 7919, (h % 6) + 1, () => ({}));

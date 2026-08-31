@@ -14,6 +14,7 @@ Each script targets one specific deferred check from the phase signoff docs in `
 | `04-engine-telemetry-snapshot.sh`        | G-2 #0          | Hetzner engine `/health` reports hands_dealt > 0, hands_per_hour > 0, broadcast_threshold_violations == 0                                                                                       |
 | `cashier-claim-back-cent-integrity.sql`  | Cashier Phase 1 | In one rolled-back transaction: rejects sub-cents, conserves a whole-cent reversal, replays the same intent, refuses a reused key for another source, and blocks a direct browser balance write |
 | `cashier-phase2-authorization-audit.sql` | Cashier Phase 2 | In one rolled-back transaction: proves mandatory retry keys, scoped roster/agent/ticket reads, distinct ticket closing receipts, replay safety, and exact escrow credits                        |
+| `cashier-phase3-performance.sql`         | Cashier Phase 3 | In one rolled-back transaction: proves keyset pages have no overlap, bounded send/ticket batches replay without duplicate movement, oversize batches refuse, and all hot indexes are valid      |
 
 ## Coming next
 

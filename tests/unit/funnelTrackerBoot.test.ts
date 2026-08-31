@@ -10,10 +10,12 @@ describe('activation telemetry never blocks the first paint', () => {
     expect(main).toContain("import('./lib/funnelTracker')");
   });
 
-  it('keeps lazy-load and tracker failures on the non-blocking error path', () => {
+  it('recovers stale tracker chunks before reporting a non-blocking error', () => {
     expect(main).toContain(
-      ".catch((err) => reportError(err, 'main.FunnelTracker_init_error_non_blocking'))"
+      ".catch((err) => handleBootImportError(err, 'main.FunnelTracker_init_error_non_blocking'))"
     );
+    expect(main).toContain('void recoverFromStaleChunk(error).then((recovering) => {');
+    expect(main).toContain('if (!recovering) reportError(error, context);');
   });
 });
 
@@ -24,9 +26,11 @@ describe('membership warming starts without entering the critical graph', () => 
     expect(main).toContain("import('./services/ClubsService')");
   });
 
-  it('keeps lazy-load and warm-start failures on the non-blocking error path', () => {
+  it('recovers stale membership chunks before reporting a non-blocking error', () => {
     expect(main).toContain(
-      ".catch((err) => reportError(err, 'main.Membership_warm_start_non_blocking'))"
+      ".catch((err) => handleBootImportError(err, 'main.Membership_warm_start_non_blocking'))"
     );
+    expect(main).toContain('void recoverFromStaleChunk(error).then((recovering) => {');
+    expect(main).toContain('if (!recovering) reportError(error, context);');
   });
 });

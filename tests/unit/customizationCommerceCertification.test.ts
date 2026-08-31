@@ -34,6 +34,9 @@ describe('customization commerce certification', () => {
     expect(helper).toContain('body: JSON.stringify({ should_soft_delete: false })');
     expect(helper).not.toContain('?should_soft_delete=false');
     expect(helper).toContain('reserved fixture still exists after hard delete');
+    expect(helper).toContain('withCleanupRetries');
+    expect(helper).toContain('PGRST00[0123]');
+    expect(helper).toContain('CLEANUP_RETRY_DELAYS_MS');
   });
 
   it('certifies all live SKUs, double-buy serialization, realtime delivery and RLS', () => {

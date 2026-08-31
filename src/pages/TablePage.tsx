@@ -504,7 +504,24 @@ interface TableState {
   blinds: string;
   minBuyIn: number;
   maxBuyIn: number;
-  maxPlayers: 6 | 9;
+  /**
+   * SEATS AT THIS TABLE. A PLAIN NUMBER, because that is what it is
+   * (Dan 2026-08-31, phase 1 of the seat-truth contract).
+   *
+   * This was typed `6 | 9`. The estate holds 102,664 tables and **43,226 of
+   * them are 2, 3, 7 or 8-max** — a third of the platform outside the type
+   * that claimed to describe it. Every assignment therefore had to be cast
+   * (`as 6 | 9`), and a cast is not a check: it is an instruction to the
+   * compiler to stop looking. So the one tool that could have caught a 9-max
+   * table being drawn with six seats had been told, at every single site, to
+   * ignore precisely that. The code already knew — see the heads-up guard
+   * below, which admits in a comment that the value "carries 2 at runtime".
+   *
+   * `SEAT_LAYOUTS` has always defined 2 through 9, so widening this removes
+   * casts without moving a pixel. What it buys is that the next wrong seat
+   * count is a compile error rather than a player erased from his own screen.
+   */
+  maxPlayers: number;
   pot: number;
   sidePots: SidePot[];
   communityCards: Card[];
@@ -2195,14 +2212,23 @@ export default function TablePage({
         ...prev,
         /* NEVER RENDER FEWER SEATS THAN THE ENGINE DEALS (Dan 2026-08-30).
            `maxPlayers` boots at 6 and a mount without navigation state keeps
-           that default until the table-row load lands. mapEngineSnapshot now
-           sizes its arrays to the highest seat the engine actually published,
-           so when the snapshot proves more seats exist, the ring must grow
-           with it — otherwise a hero in seat 7-9 has state but no rendered
-           seat, no cards, no action bar, and the engine times them out into
-           a forced sit-out and the five-minute eviction. Grow-only: a
-           snapshot between hands never shrinks the ring. */
-        maxPlayers: Math.max(prev.maxPlayers, mapped.players.length) as 6 | 9,
+           that default until the table-row load lands. mapEngineSnapshot
+           resolves the true count — the engine's published `max_seats` where
+           available, the highest occupied seat otherwise — and the ring adopts
+           it, because a hero in seat 7-9 with no rendered seat has no cards,
+           no action bar, and gets timed out into a forced sit-out and the
+           five-minute eviction.
+
+           PHASE 1 (2026-08-31): this now ADOPTS `mapped.maxSeats` rather than
+           growing monotonically toward it. Grow-only was the right shape while
+           the count was inferred from occupied seats — a shrink would then
+           just mean "the high seats emptied", and dropping them mid-hand would
+           re-create the bug. Now that the number comes from the engine, it is
+           a fact rather than a floor, and a table genuinely reconfigured from
+           9-max to 6-max must be allowed to shrink. `mapped.maxSeats` is
+           itself already clamped never to fall below an occupied seat, so this
+           still cannot erase a seated player. */
+        maxPlayers: mapped.maxSeats || prev.maxPlayers,
         pot: mapped.pot,
         communityCards: nextCards,
         communityCards2: nextCards2,
@@ -9279,8 +9305,8 @@ export default function TablePage({
                 : table.small_blind != null && table.big_blind != null
                   ? formatBlindPair(table.small_blind, table.big_blind)
                   : '?/?',
-          maxPlayers: (table.max_players || 6) as 6 | 9,
-          players: createEmptySeats((table.max_players || 6) as 6 | 9),
+          maxPlayers: table.max_players || 6,
+          players: createEmptySeats(table.max_players || 6),
           positions: Array(table.max_players || 6).fill(null),
           lastActions: Array(table.max_players || 6).fill(null),
           lastBetAmounts: Array(table.max_players || 6).fill(0),
@@ -11931,6 +11957,83 @@ export default function TablePage({
     });
   }, [tableState.players, tableState.heroSeat, userId]);
 
+  /* ═══════════════════════════════════════════════════════════════════════════
+     THE OTHER HALF OF THE INVARIANT: THE ENGINE SEATS YOU, THE CLIENT DOES NOT
+     (Dan 2026-08-31, phase 1 of the seat-truth contract)
+
+     The invariant directly above asserts ONE direction — `players[]` holds the
+     hero but `heroSeat` disagrees — and self-heals it. The opposite direction
+     was silent, and that is exactly the shape of the 2026-08-30 incident: the
+     engine's snapshot NAMED the hero at seat 7, the mapper dropped every seat
+     above the client's guessed six, so `players[]` had no hero row at all, and
+     the invariant above could not fire because it iterates the very array the
+     hero was missing from. Nothing anywhere noticed for ten minutes, while the
+     engine dealt him in, took his big blind, timed out his turns, force-sat
+     him out and finally evicted the seat.
+
+     The contradiction is cheap to state and impossible to argue with: the
+     server says this user occupies a seat at this table; the client is
+     rendering no such seat. One of the two is wrong, and it is never the
+     server. So: report it (this is the alarm that was missing), and heal it by
+     adopting the seat the engine named.
+
+     Deliberately NOT gated on the mapper, the transport, or any particular
+     cause. It is a statement about the OUTCOME, so it will fire for the next
+     bug of this class too — a mapping regression, a bad merge, a stale
+     reducer — none of which have been imagined yet. That is the whole point:
+     the 2026-08-30 fix stops one known cause; this notices any unknown one.
+
+     `reportErrorOnce` semantics via a ref: the effect re-runs on every
+     snapshot, and an alarm that fires sixty times a second is noise, not an
+     alarm. One report per (table, seat) per session is enough to find it. */
+  const engineSeatMismatchReportedRef = useRef<string>('');
+  useEffect(() => {
+    if (!USE_ENGINE_WS || !engineSnapshot || !userId || userId === 'guest') return;
+    const enginePlayers =
+      (engineSnapshot as unknown as { players?: Array<{ seat?: number; user_id?: string }> })
+        .players ?? [];
+    const mine = enginePlayers.find((p) => p?.user_id === userId);
+    if (!mine || !mine.seat || mine.seat < 1) return; // engine does not seat us — nothing to assert
+
+    const renderedHero = tableState.players.findIndex((p) => p && p.id === userId) + 1;
+    if (renderedHero === mine.seat) return; // the two agree; the common case
+
+    const key = `${tableState.tableId}:${mine.seat}`;
+    if (engineSeatMismatchReportedRef.current !== key) {
+      engineSeatMismatchReportedRef.current = key;
+      reportError(
+        new Error(
+          `engine seats hero at ${mine.seat} but client renders ` +
+            `${renderedHero || 'no seat'} (maxPlayers=${tableState.maxPlayers}, ` +
+            `rows=${tableState.players.length})`
+        ),
+        'TablePage.EngineHeroSeatNotRendered'
+      );
+    }
+
+    /* Heal, on the server's word. Growing the array is safe in a way that
+       trimming never is: a null row renders an empty seat, whereas dropping a
+       row erases a player. */
+    setTableState((prev) => {
+      if (prev.players[mine.seat! - 1]?.id === userId) return prev;
+      const players = [...prev.players];
+      while (players.length < mine.seat!) players.push(null);
+      return {
+        ...prev,
+        players,
+        maxPlayers: Math.max(prev.maxPlayers, mine.seat!),
+        heroSeat: prev.heroSeat > 0 ? prev.heroSeat : mine.seat!,
+      };
+    });
+  }, [
+    engineSnapshot,
+    USE_ENGINE_WS,
+    userId,
+    tableState.players,
+    tableState.tableId,
+    tableState.maxPlayers,
+  ]);
+
   // ═══════════════════════════════════════════════════════════════════════════
   //startNextHand removed — server manages the game loop
   // The entire HandController creation, event subscription, and hand lifecycle
@@ -12234,8 +12337,17 @@ export default function TablePage({
             boardStage: (syncData.stage || 'preflop') as BoardStage,
             dealerSeat: syncData.dealer_seat || 0,
             players: updatedPlayers,
-            // Grow-only ring size, same rule as the snapshot merge above.
-            maxPlayers: Math.max(prev.maxPlayers, updatedPlayers.length) as 6 | 9,
+            /* Ring size, same rule as the snapshot merge above: prefer the
+               engine's own `max_seats` when this resync payload carries it
+               (phase 1, 2026-08-31), never below a seat that actually holds a
+               player. GAME_START is the full-state resync fired on any
+               websocket sequence gap, so it must not be the one path that
+               reintroduces a six-seat view of a nine-seat table. */
+            maxPlayers:
+              Math.max(
+                Number((syncData as { max_seats?: number }).max_seats) || 0,
+                updatedPlayers.length
+              ) || prev.maxPlayers,
             // Only overwrite heroSeat when the snapshot actually located the
             // hero, so a partial/empty snapshot never falsely resets a seated
             // player to 0.

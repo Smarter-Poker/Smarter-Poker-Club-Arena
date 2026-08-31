@@ -4292,6 +4292,11 @@
       "result",
       "created_at"
     ],
+    "daily_challenge_dashboard_revisions": [
+      "user_id",
+      "revision",
+      "updated_at"
+    ],
     "daily_challenge_milestones": [
       "days",
       "reward_chips",
@@ -7872,6 +7877,18 @@
       "metadata",
       "rake_method",
       "returned_uncalled"
+    ],
+    "rakeback_daily_state": [
+      "club_id",
+      "day",
+      "rows_seen",
+      "computed_at"
+    ],
+    "rakeback_daily_user": [
+      "club_id",
+      "day",
+      "user_id",
+      "cents"
     ],
     "rakeback_distributions": [
       "id",

@@ -91,10 +91,59 @@ export const EMPTY_BUCKET_MS = 2 * 60 * 60_000;
 /** Fraction of cash tables held empty at any time. */
 export const CASH_EMPTY_FRACTION = 0.15;
 
+/**
+ * A REAL AVALANCHE, BECAUSE THE ROTATION DEPENDS ON IT (2026-08-30).
+ *
+ * `horseHash` is a weak multiply-add (`h * 31 + c`), and consecutive bucket
+ * numbers are the most structured input there is. Folding the bucket into the
+ * hashed string advanced the hash by roughly +1 per bucket, so `h % 100`
+ * WALKED through the held-empty band one step per two hours instead of
+ * re-rolling: a table that entered the <15 band stayed held for ~15
+ * consecutive buckets — about 30 hours — which is how a whole variant's room
+ * went dark for a day. seatFirstHeldEmpty in TournamentRecurringService hit
+ * the identical bug and fixed it the identical way: the murmur3 finalizer,
+ * so every output bit depends on every input bit and each bucket re-rolls
+ * independently.
+ */
+export function mix32(x: number): number {
+  let h = x >>> 0;
+  h = (h ^ (h >>> 16)) >>> 0;
+  h = Math.imul(h, 0x85ebca6b) >>> 0;
+  h = (h ^ (h >>> 13)) >>> 0;
+  h = Math.imul(h, 0xc2b2ae35) >>> 0;
+  h = (h ^ (h >>> 16)) >>> 0;
+  return h;
+}
+
+/**
+ * A VARIANT MUST NEVER GO FULLY DARK (2026-08-30). The 15% hold is a
+ * per-table decision, so when a variant config has exactly ONE open table, a
+ * held roll turns the entire variant off — nothing in the lobby, nothing for
+ * a human to join, which is the opposite of what the hold exists for. The
+ * fleet seeder knows the live table list, so each cycle it publishes the set
+ * of tables that are currently the only open one for their variant config,
+ * and the hold never applies to those. A registry rather than a query,
+ * because this module stays dependency-free so unit tests can import it
+ * without the supabase client (which fatals without env credentials).
+ */
+const soleOpenCashTables = new Set<string>();
+
+export function setSoleOpenCashTables(ids: Iterable<string>): number {
+  soleOpenCashTables.clear();
+  for (const id of ids) if (id) soleOpenCashTables.add(id);
+  return soleOpenCashTables.size;
+}
+
 export function cashTableHeldEmpty(tableId: string, nowMs: number = Date.now()): boolean {
+  // The only open table for its variant config is never held empty — a held
+  // sole table is a variant with no game at all. See setSoleOpenCashTables.
+  if (soleOpenCashTables.has(tableId)) return false;
   const bucket = Math.floor(nowMs / EMPTY_BUCKET_MS);
-  const h = horseHash(`${tableId}:empty:${bucket}`);
-  return h % 100 < CASH_EMPTY_FRACTION * 100;
+  // Golden-ratio odd constant spreads the bucket across the whole word before
+  // the finalizer mixes it into the id's hash — same scheme as
+  // seatFirstHeldEmpty, for the same reason (see mix32 above).
+  const seed = (horseHash(`${tableId}:empty`) ^ Math.imul(bucket, 0x9e3779b1)) >>> 0;
+  return mix32(seed) % 100 < CASH_EMPTY_FRACTION * 100;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

@@ -38,16 +38,27 @@ describe('pickFreeHorses — the fleet must not read as exhausted while idle', (
     ).toBeNull();
   });
 
-  it('sizes the fetch from the busy set WITH headroom for the post-filters', () => {
-    // V22 (2026-08-27): `count + busy.size` accounted for the busy exclusions
-    // but not the LANE filter below the fetch, which drops a third of any
-    // page (and the freeroll activity window up to 60%). Postgres returns
-    // the same arbitrary rows for the same unordered query, so a page that
-    // filtered to zero was re-examined every guard cycle forever — the
-    // 2026-08-27 overlay bleed ($8,832 across 10 events, freerolls starting
-    // 1/100). The pinned shape is now count*4 + busy.size: still scaled from
-    // the busy set, never a bare constant, with post-filter headroom.
-    expect(pickFreeHorsesBody()).toMatch(/\.limit\(\s*count \* 4 \+ busy\.size/);
+  it('reads the WHOLE fleet, keyset-paged, rather than any sized page', () => {
+    // V23 (2026-08-30): every sized fetch here — `.limit(400)`, then
+    // `count + busy.size`, then `count*4 + busy.size + 50` — was still a
+    // PAGE, and an unordered page is a STABLE page: Postgres served the same
+    // physical rows to every caller all day, the busy set drained them, and
+    // the filtered candidates shrank to zero while two-thirds of the fleet
+    // idled beyond the page (SNG board dead from 17:31 UTC on 2026-08-30).
+    // The pinned shape is now fetchAllRows with an ORDER BY id keyset — the
+    // whole fleet, then filter and shuffle in memory.
+    const body = pickFreeHorsesBody();
+    expect(body).toMatch(/fetchAllRows/);
+    expect(body).toMatch(/\.order\('id'/);
+    expect(body, 'an incomplete fleet read must fail closed').toMatch(/fleetPage\.complete/);
+  });
+
+  it('registerHorses (the sibling) also reads the whole fleet, paged', () => {
+    const start = SRC.indexOf('private async registerHorses(');
+    expect(start).toBeGreaterThan(-1);
+    const body = SRC.slice(start, SRC.indexOf('fn_register_horse_for_tournament', start));
+    expect(body).toMatch(/fetchAllRows/);
+    expect(body, 'an incomplete fleet read must fail closed').toMatch(/poolPage\.complete/);
   });
 
   it('shuffles candidates so concurrent callers do not claim the same horses', () => {

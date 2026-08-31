@@ -513,6 +513,23 @@ BEGIN
 END;
 $function$;
 
+-- A DROP takes the ACL with it, and CREATE puts back the Postgres default:
+-- EXECUTE to PUBLIC. The estate's autorevoke event trigger strips that on a
+-- plain CREATE OR REPLACE, but this path is a DROP followed by a CREATE and it
+-- did not fire, so granting the two roles alone left PUBLIC and anon holding
+-- EXECUTE as well. Caught by the Supabase security advisor
+-- (anon_security_definer_function_executable) during the phase 2 audit pass.
+--
+-- It was not exploitable: anon has no auth.uid(), and auth.role() is 'anon'
+-- rather than 'service_role', so the caller-supplied actor is refused and the
+-- function answers "actor identity required". It is closed anyway, because the
+-- signature this replaced never granted anon, and a door that is only shut by
+-- an argument check further in is still a door.
+--
+-- PUBLIC is named as well as the role: revoking anon while PUBLIC still holds
+-- the privilege reads as a fix and changes nothing.
+REVOKE ALL ON FUNCTION public.fn_club_set_member_role(uuid, uuid, text, uuid, numeric, numeric, boolean, numeric)
+  FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.fn_club_set_member_role(uuid, uuid, text, uuid, numeric, numeric, boolean, numeric)
   TO authenticated, service_role;
 
@@ -1381,6 +1398,14 @@ BEGIN
        'public.fn_club_set_member_role(uuid,uuid,text,uuid,numeric,numeric,boolean,numeric)'::regprocedure,
        'EXECUTE') THEN
     RAISE EXCEPTION 'the promote screen cannot call fn_club_set_member_role: EXECUTE was not re-granted after the DROP';
+  END IF;
+
+  -- The other half of that: a DROP resets the ACL to the PUBLIC default, and a
+  -- grant to two roles does not take it away again.
+  IF has_function_privilege('anon',
+       'public.fn_club_set_member_role(uuid,uuid,text,uuid,numeric,numeric,boolean,numeric)'::regprocedure,
+       'EXECUTE') THEN
+    RAISE EXCEPTION 'anon can still execute fn_club_set_member_role: the DROP restored the PUBLIC default';
   END IF;
 
   -- Dan: "OWNERS AND CO OWNERS CAN AND SHOULD HAVE AGENT WALLETS."

@@ -17,7 +17,14 @@ import { supabase } from './supabase.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
-import { bankrollBuyIn, bankrollPolicyFor, canSit, referenceBuyIn } from './HorseBankroll.js';
+import {
+  bankrollBuyIn,
+  bankrollPolicyFor,
+  canOpenAnotherTable,
+  canSit,
+  referenceBuyIn,
+} from './HorseBankroll.js';
+import { bankrollEvent, bankrollSummaryLine } from './HorseBankrollTelemetry.js';
 import {
   buyInBBFor,
   gameLaneFor,
@@ -616,6 +623,7 @@ export class HorseFleetManager {
         user_id: string;
         table_id: string;
         seat_number: number;
+        stack: number | null;
       }>(
         (cursor, want) => {
           // KEYSET, not OFFSET. `.range()` paging re-reads the table under a
@@ -626,7 +634,7 @@ export class HorseFleetManager {
           // constantly in a live room. `id > cursor` has no such window.
           let q = supabase
             .from('table_seats')
-            .select('id, user_id, table_id, seat_number')
+            .select('id, user_id, table_id, seat_number, stack')
             .is('left_at', null)
             .order('id', { ascending: true })
             .limit(want);
@@ -650,9 +658,27 @@ export class HorseFleetManager {
       const allActiveSeats = seatPage.rows;
 
       const horseTables = new Map<string, Set<string>>();
+      /**
+       * AGGREGATE EXPOSURE (2026-08-31). Chips this player has ON THE FELT
+       * right now, summed across every open seat.
+       *
+       * The per-table share is checked per table, so it answers identically
+       * for the first table and the fourth: four seats at five percent each is
+       * a fifth of the roll in play and no single check can see it. This map
+       * is what lets `canOpenAnotherTable` see it.
+       *
+       * The measure is the live STACK, not the original buy-in, because the
+       * question is "how much of my money is at risk", and a horse that bought
+       * in for 200 and ran it to 600 has 600 at risk.
+       */
+      const horseExposure = new Map<string, number>();
       for (const seat of allActiveSeats) {
         if (!horseTables.has(seat.user_id)) horseTables.set(seat.user_id, new Set());
         horseTables.get(seat.user_id)!.add(seat.table_id);
+        const st = Number(seat.stack);
+        if (Number.isFinite(st) && st > 0) {
+          horseExposure.set(seat.user_id, (horseExposure.get(seat.user_id) ?? 0) + st);
+        }
       }
 
       // Optimization: Fetch all horses once instead of querying per table
@@ -937,13 +963,19 @@ export class HorseFleetManager {
              */
             if (bankrollsLoaded) {
               const roll = bankrolls.get(`${table.club_id}:${h.id}`);
-              if (roll === undefined) return false; // no membership, no seat
+              if (roll === undefined) {
+                bankrollEvent('seat_refused_no_membership');
+                return false; // no membership, no seat
+              }
               const ref = referenceBuyIn(
                 table.big_blind,
                 Number((table as any).min_buy_in) || undefined,
                 Number((table as any).max_buy_in) || undefined
               );
-              if (!canSit(roll, ref, bankrollPolicyFor(h.id))) return false;
+              if (!canSit(roll, ref, bankrollPolicyFor(h.id))) {
+                bankrollEvent('seat_refused_underrolled');
+                return false;
+              }
             }
             const tablesForHorse = horseTables.get(h.id);
             if (!tablesForHorse) return true;
@@ -1031,10 +1063,36 @@ export class HorseFleetManager {
                 maxBuyIn: maxB,
                 policy: bankrollPolicyFor(horse.id),
               });
-              if (capped <= 0) continue;
+              if (capped <= 0) {
+                bankrollEvent('seat_refused_share_below_min');
+                continue;
+              }
               // keep the human-looking 5bb rounding after the cap
               const snapped = Math.round(capped / step) * step;
+              const beforeCap = buyIn;
               buyIn = Math.round(Math.max(minB, Math.min(capped, snapped)) * 100) / 100;
+              if (buyIn < beforeCap) bankrollEvent('buyin_capped');
+
+              /**
+               * THE AGGREGATE CEILING, and the reason it is a separate check.
+               * Everything above reasons about ONE table. `canOpenAnotherTable`
+               * is the only rule that can see the horse's whole position, and
+               * without it the per-table share silently multiplies by the table
+               * count. Three single-table shares is the ceiling: enough to
+               * multi-table normally, short of the point where one bad run
+               * across four seats is the bankroll.
+               */
+              if (
+                !canOpenAnotherTable({
+                  bankroll: roll,
+                  liveExposure: horseExposure.get(horse.id) ?? 0,
+                  nextBuyIn: buyIn,
+                  policy: bankrollPolicyFor(horse.id),
+                })
+              ) {
+                bankrollEvent('seat_refused_aggregate_exposure');
+                continue;
+              }
             }
 
             const success = await this.seatHorse(
@@ -1051,6 +1109,11 @@ export class HorseFleetManager {
               // Update our in-memory map so we don't assign them to another table if they hit 4
               if (!horseTables.has(horse.id)) horseTables.set(horse.id, new Set());
               horseTables.get(horse.id)!.add(table.id);
+              // The seat we just bought is exposure NOW, not next cycle: without
+              // this the aggregate ceiling only ever sees the position the cycle
+              // STARTED with, and a single pass could seat a horse at four
+              // tables while every check reads zero.
+              horseExposure.set(horse.id, (horseExposure.get(horse.id) ?? 0) + buyIn);
             }
           }
 
@@ -1070,6 +1133,52 @@ export class HorseFleetManager {
           reportError(err, 'HorseFleet.Error_seeding_table_tablename');
         }
       }
+
+      /**
+       * The bankroll line prints whether or not anything was seated, and that
+       * is the entire point: "seated 0" and "seated 0, and here is why" are
+       * different messages, and only the second one is actionable. Counters
+       * are cumulative for the process, so this reads as a running total.
+       */
+      /**
+       * DID THE LADDER RUN OUT?
+       *
+       * The move-down rule assumes there is a rung below. On 2026-08-31 the
+       * cheapest OPEN cash game was 1/2 — every micro table on the platform
+       * sat `closed` — which prices a standard horse's entry at 25 x 200 =
+       * 5,000. After the 10,000-chip reset that is one losing session from
+       * having no game at all, and the symptom would be a floor that quietly
+       * stopped filling with no error anywhere.
+       *
+       * So it is counted. This is the number that says whether the micro
+       * relaunch actually gave the fleet somewhere to step down TO.
+       */
+      if (bankrollsLoaded && bankrolls.size > 0) {
+        let cheapestRef = Infinity;
+        for (const t of tables) {
+          if (surplusTableIds.has(t.id)) continue;
+          const r = referenceBuyIn(
+            Number(t.big_blind),
+            Number((t as any).min_buy_in) || undefined,
+            Number((t as any).max_buy_in) || undefined
+          );
+          if (r > 0 && r < cheapestRef) cheapestRef = r;
+        }
+        if (Number.isFinite(cheapestRef)) {
+          let stranded = 0;
+          for (const [key, roll] of bankrolls) {
+            const horseId = key.slice(key.indexOf(':') + 1);
+            if (!canSit(roll, cheapestRef, bankrollPolicyFor(horseId))) stranded++;
+          }
+          // A GAUGE, not a count — see HorseBankrollTelemetry. Written every
+          // cycle including zero, so the line goes quiet the moment the micro
+          // relaunch gives the fleet somewhere to step down to.
+          bankrollEvent('ladder_exhausted', stranded);
+        }
+      }
+
+      const brLine = bankrollSummaryLine();
+      if (brLine) console.log(brLine);
 
       if (totalSeated > 0) {
         console.log(`[HorseFleet] Seated ${totalSeated} horses across tables`);

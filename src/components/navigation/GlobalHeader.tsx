@@ -53,6 +53,43 @@ export default function GlobalHeader() {
   } = useHeaderDataStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [isNavigatingAway, setIsNavigatingAway] = useState(false);
+  const [vipShimmerVisible, setVipShimmerVisible] = useState(false);
+
+  /*
+   * VIP is intentionally quiet most of the time. Members get one short sheen
+   * after a genuinely random five-to-ten-second pause, then a new random pause
+   * is selected. Non-members never schedule the effect.
+   */
+  useEffect(() => {
+    if (!isVipActive) {
+      setVipShimmerVisible(false);
+      return;
+    }
+
+    let pauseTimer: number | undefined;
+    let shimmerTimer: number | undefined;
+    let cancelled = false;
+
+    const scheduleNextShimmer = () => {
+      const randomDelayMs = 5_000 + Math.floor(Math.random() * 5_001);
+      pauseTimer = window.setTimeout(() => {
+        if (cancelled) return;
+        setVipShimmerVisible(true);
+        shimmerTimer = window.setTimeout(() => {
+          if (cancelled) return;
+          setVipShimmerVisible(false);
+          scheduleNextShimmer();
+        }, 1_000);
+      }, randomDelayMs);
+    };
+
+    scheduleNextShimmer();
+    return () => {
+      cancelled = true;
+      if (pauseTimer !== undefined) window.clearTimeout(pauseTimer);
+      if (shimmerTimer !== undefined) window.clearTimeout(shimmerTimer);
+    };
+  }, [isVipActive]);
 
   /*
    * The off-route table action bar is fixed, so CSS cannot discover the
@@ -253,6 +290,7 @@ export default function GlobalHeader() {
         className={styles.header}
         style={headerStyle}
         data-artwork="approved-global-header"
+        aria-label="Smarter.Poker Global Header"
       >
         {/* Desktop and landscape use the supplied artwork itself. This is a
             lossless crop: no redrawing, substitutions, filters, or resampling
@@ -315,16 +353,6 @@ export default function GlobalHeader() {
                   }}
                 />
               </span>
-              {/* The complete header raster supplies the frame's base pixels.
-                  Re-layer the exact approved crop above the live avatar, with
-                  its stock blue person masked out in CSS, so the user's image
-                  can never paint over the chrome rim. */}
-              <img
-                src={`${APPROVED_HEADER_ASSET}profile.png`}
-                alt=""
-                className={styles.profileFrameOverlay}
-                aria-hidden="true"
-              />
             </button>
 
             <button
@@ -337,7 +365,7 @@ export default function GlobalHeader() {
             </button>
 
             <button
-              className={`${styles.artButton} ${styles.vipBtn} ${isVipActive ? styles.vipActive : ''}`}
+              className={`${styles.artButton} ${styles.vipBtn} ${isVipActive ? styles.vipActive : ''} ${isVipActive && vipShimmerVisible ? styles.vipShimmer : ''}`}
               onClick={() => navigateToHub('/hub/vip-membership')}
               aria-label={isVipActive ? 'VIP Membership Active' : 'VIP Membership'}
               title={isVipActive ? 'VIP Membership Active' : 'VIP Membership'}
@@ -387,26 +415,6 @@ export default function GlobalHeader() {
                 </span>
               )}
             </Link>
-          </div>
-
-          {/* The old Smarter.Poker wordmark is baked into the approved header
-              raster. This live brand plate masks that center panel and makes
-              the Club Arena identity replaceable, responsive and accessible. */}
-          <div className={styles.headerCenter} aria-label="Club Arena by Smarter.Poker">
-            <img
-              src={`${BASE}images/club-arena/vault-iris-emblem-v1-320.webp`}
-              srcSet={`${BASE}images/club-arena/vault-iris-emblem-v1-320.webp 320w, ${BASE}images/club-arena/vault-iris-emblem-v1-640.webp 640w`}
-              sizes="64px"
-              alt=""
-              width={320}
-              height={296}
-              className={styles.brandArtwork}
-              aria-hidden="true"
-            />
-            <span className={styles.brandType}>
-              <span className={styles.brandName}>Club Arena</span>
-              <span className={styles.brandByline}>Smarter.Poker</span>
-            </span>
           </div>
         </div>
       </header>

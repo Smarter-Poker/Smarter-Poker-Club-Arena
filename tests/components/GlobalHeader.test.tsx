@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import GlobalHeader from '@/components/navigation/GlobalHeader';
 
@@ -54,18 +54,19 @@ describe('GlobalHeader Component', () => {
     headerData.clearUnreadMessages.mockClear();
   });
 
-  it('renders the live Club Arena identity', () => {
+  it('keeps the approved Smarter.Poker wordmark unobstructed', () => {
     render(
       <MemoryRouter>
         <GlobalHeader />
       </MemoryRouter>
     );
-    expect(screen.getByLabelText('Club Arena by Smarter.Poker')).toBeInTheDocument();
-    expect(screen.getByText('Club Arena')).toBeInTheDocument();
-    const brandImage = document.querySelector('img[src*="vault-iris-emblem-v1-320.webp"]');
-    expect(brandImage).toHaveAttribute(
+    expect(screen.getByLabelText('Smarter.Poker Global Header')).toBeInTheDocument();
+    expect(screen.queryByText('Club Arena')).not.toBeInTheDocument();
+    expect(document.querySelector('img[src*="vault-iris-emblem"]')).not.toBeInTheDocument();
+    const approvedArtwork = document.querySelector('img[src*="global-header-desktop.png"]');
+    expect(approvedArtwork).toHaveAttribute(
       'src',
-      expect.stringContaining('images/club-arena/vault-iris-emblem-v1-320.webp')
+      expect.stringContaining('images/global-header/global-header-desktop.png')
     );
   });
 
@@ -158,6 +159,35 @@ describe('GlobalHeader Component', () => {
       'data-vip-active',
       'true'
     );
+  });
+
+  it('shows one brief VIP shimmer only after the randomized pause', () => {
+    vi.useFakeTimers();
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+    headerData.isVipActive = true;
+
+    try {
+      render(
+        <MemoryRouter>
+          <GlobalHeader />
+        </MemoryRouter>
+      );
+
+      const vip = screen.getByRole('button', { name: 'VIP Membership Active' });
+      expect(vip.className).not.toContain('vipShimmer');
+
+      act(() => vi.advanceTimersByTime(4_999));
+      expect(vip.className).not.toContain('vipShimmer');
+
+      act(() => vi.advanceTimersByTime(1));
+      expect(vip.className).toContain('vipShimmer');
+
+      act(() => vi.advanceTimersByTime(1_000));
+      expect(vip.className).not.toContain('vipShimmer');
+    } finally {
+      random.mockRestore();
+      vi.useRealTimers();
+    }
   });
 
   it('renders the same left slot regardless of route depth', () => {

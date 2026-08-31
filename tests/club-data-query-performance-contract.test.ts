@@ -78,6 +78,13 @@ const snapshotCursorOrder = readFileSync(
   resolve(__dirname, '../supabase/migrations/20260831020001_club_data_snapshot_cursor_order.sql'),
   'utf8'
 );
+const defaultSnapshotFastPath = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20260831020002_club_data_default_snapshot_fast_path.sql'
+  ),
+  'utf8'
+);
 
 describe('Club Data reporting stays inside the authenticated query budget', () => {
   it('covers both high-volume tournament fact reads with partial indexes', () => {
@@ -227,6 +234,20 @@ describe('Club Data reporting stays inside the authenticated query budget', () =
     );
     expect(snapshotCursorOrder).toContain(
       'ORDER BY q.started_at DESC NULLS LAST,q.kind DESC,q.id DESC'
+    );
+  });
+
+  it('keeps concurrent default first paint off the complete filtered game plan', () => {
+    expect(defaultSnapshotFastPath).toContain('fn_ca_club_game_summary_filtered');
+    expect(defaultSnapshotFastPath).toContain('fn_ca_club_game_rows_filtered');
+    expect(defaultSnapshotFastPath).toMatch(/count\(DISTINCT d\.tournament_id\)::bigint games/);
+    expect(defaultSnapshotFastPath).toContain('recent_tournament_ids AS MATERIALIZED');
+    expect(defaultSnapshotFastPath).toContain('ORDER BY tr.start_time DESC NULLS LAST,tr.id DESC');
+    expect(defaultSnapshotFastPath).toContain(
+      'ORDER BY r.started_at DESC NULLS LAST,r.kind DESC,r.id DESC'
+    );
+    expect(defaultSnapshotFastPath).toContain(
+      "OR NULLIF(btrim(COALESCE(p_search,'')),'') IS NOT NULL THEN"
     );
   });
 

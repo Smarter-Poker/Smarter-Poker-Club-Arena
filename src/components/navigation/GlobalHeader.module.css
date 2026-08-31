@@ -47,37 +47,6 @@
   display: contents;
 }
 
-.headerCenter {
-  position: absolute;
-  z-index: 2;
-  top: 4%;
-  bottom: 5%;
-  left: 32.6%;
-  right: 33.7%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(5px, 1vw, 14px);
-  overflow: hidden;
-  background:
-    radial-gradient(ellipse at 50% 115%, rgba(0, 151, 232, 0.22), transparent 54%),
-    linear-gradient(180deg, #06080a, #000 76%);
-  border-block: 1px solid rgba(193, 213, 225, 0.18);
-  line-height: 1;
-  pointer-events: none;
-}
-
-.headerCenter::after {
-  content: '';
-  position: absolute;
-  right: 12%;
-  bottom: 0;
-  left: 12%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, #00a9ff, transparent);
-  box-shadow: 0 0 10px #008dd8;
-}
-
 .artButton {
   position: absolute;
   top: 13%;
@@ -139,8 +108,8 @@
 
 .profileBtn {
   /* Exact source-pixel bounds of profile.png within the approved 1648×168
-     header. Keeping the live portrait in this coordinate space makes its
-     centre identical to the chrome ring's centre at every viewport scale. */
+     header. The live image covers that complete region so the baked stock icon
+     and decorative ring cannot remain visible around it. */
   top: 19.642857%;
   left: 67.415049%;
   width: 5.946602%;
@@ -153,46 +122,17 @@
 
 .profileAvatarSlot {
   position: absolute !important;
-  top: 50% !important;
-  left: 50% !important;
+  inset: 0 !important;
   z-index: 1;
   display: block;
-  width: 54%;
-  height: 64%;
+  width: 100%;
+  height: 100%;
   aspect-ratio: auto;
-  transform: translate(-50%, -50%) !important;
   overflow: hidden;
-  border-radius: 50%;
-  background: #020305;
+  border: 0;
+  border-radius: 0;
+  background: #000;
   pointer-events: none;
-}
-
-/* The approved profile crop is repeated only as the chrome foreground ring.
-   Its center is transparent, so the stock blue profile person is removed; the
-   annulus remains pixel-for-pixel approved artwork above the user's avatar. */
-.profileFrameOverlay {
-  position: absolute !important;
-  inset: 0 !important;
-  z-index: 2;
-  display: block !important;
-  width: 100% !important;
-  height: 100% !important;
-  max-width: none !important;
-  object-fit: contain !important;
-  opacity: 1 !important;
-  pointer-events: none;
-  -webkit-mask-image: radial-gradient(
-    circle at 50% 50%,
-    transparent 0 35%,
-    #000 37% 49%,
-    transparent 51% 100%
-  );
-  mask-image: radial-gradient(
-    circle at 50% 50%,
-    transparent 0 35%,
-    #000 37% 49%,
-    transparent 51% 100%
-  );
 }
 
 .profileAvatarSlot > .profileAvatar {
@@ -204,9 +144,10 @@
   max-width: none !important;
   aspect-ratio: auto !important;
   transform: none !important;
-  border-radius: inherit !important;
-  background: #020305;
-  object-fit: cover !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #000;
+  object-fit: contain !important;
   object-position: center !important;
   opacity: 1 !important;
   pointer-events: none;
@@ -220,47 +161,61 @@
 .vipBtn {
   left: 79.9%;
   width: 6.5%;
+  isolation: isolate;
 }
 
-/* Non-members keep the untouched approved raster. Active members receive a
-   restrained blue/gold energy halo around the same VIP card artwork. */
-.vipActive::before {
+/* The card is deliberately subdued until membership is active. The approved
+   art remains beneath this neutral veil; no replacement graphic is used. */
+.vipBtn:not(.vipActive)::after {
   position: absolute;
-  z-index: 0;
-  inset: 15% 8%;
+  z-index: 2;
+  inset: 5% 4%;
+  border-radius: 18%;
+  background: rgba(0, 0, 0, 0.48);
+  content: '';
+  pointer-events: none;
+}
+
+/* Members receive one fast diagonal shimmer. React adds this class for one
+   second only after a newly selected random 5–10 second pause. */
+.vipShimmer::before {
+  position: absolute;
+  z-index: 2;
+  top: 7%;
+  bottom: 7%;
+  left: -85%;
+  width: 52%;
   border-radius: 50%;
-  background: radial-gradient(
-    ellipse at center,
-    rgba(255, 228, 124, 0.72) 0%,
-    rgba(0, 153, 255, 0.48) 42%,
-    rgba(0, 102, 255, 0) 76%
+  background: linear-gradient(
+    108deg,
+    transparent 0%,
+    rgba(112, 198, 255, 0.12) 28%,
+    rgba(255, 255, 255, 0.92) 49%,
+    rgba(255, 220, 112, 0.42) 60%,
+    transparent 100%
   );
   content: '';
-  filter: blur(7px);
+  filter: blur(1px);
   mix-blend-mode: screen;
-  opacity: 0.86;
-  pointer-events: none;
-  animation: vipHeaderGlow 2.4s ease-in-out infinite;
-}
-
-.vipActive > img {
-  position: relative;
-  z-index: 1;
-  /* The crop includes an opaque black rectangle, so revealing it would cover
-     the exact full-header pixels. The halo above is the only active overlay. */
   opacity: 0;
+  pointer-events: none;
+  animation: vipHeaderShimmer 1s ease-in-out 1;
 }
 
-@keyframes vipHeaderGlow {
-  0%,
-  100% {
-    opacity: 0.58;
-    transform: scale(0.94);
+@keyframes vipHeaderShimmer {
+  0% {
+    left: -85%;
+    opacity: 0;
   }
 
-  50% {
+  18%,
+  70% {
     opacity: 1;
-    transform: scale(1.06);
+  }
+
+  100% {
+    left: 135%;
+    opacity: 0;
   }
 }
 
@@ -303,62 +258,6 @@
   right: 8%;
 }
 
-.brandArtwork {
-  display: block;
-  width: auto;
-  height: 72%;
-  aspect-ratio: 1;
-  object-fit: contain;
-  filter: drop-shadow(0 0 8px rgba(0, 148, 229, 0.28));
-  user-select: none;
-  pointer-events: none;
-}
-
-.brandType {
-  display: grid;
-  min-width: 0;
-  justify-items: start;
-  gap: clamp(1px, 0.28vw, 5px);
-}
-
-.brandName {
-  color: #edf6fb;
-  font:
-    500 clamp(12px, 2.5vw, 38px)/0.9 'Rajdhani',
-    'Arial Narrow',
-    sans-serif;
-  letter-spacing: 0.055em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  text-shadow:
-    0 1px 0 #000,
-    0 0 14px rgba(0, 157, 236, 0.14);
-}
-
-.brandByline {
-  color: #758895;
-  font: 600 clamp(5px, 0.65vw, 10px)/1 var(--font-mono, monospace);
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-@media (max-width: 620px) {
-  .headerCenter {
-    gap: 3px;
-  }
-  .brandArtwork {
-    height: 64%;
-  }
-  .brandName {
-    font-size: clamp(9px, 2.65vw, 16px);
-    letter-spacing: 0.02em;
-  }
-  .brandByline {
-    display: none;
-  }
-}
-
 @media (display-mode: standalone), (display-mode: fullscreen) {
   .header {
     padding-top: max(env(safe-area-inset-top, 0px), 24px);
@@ -374,7 +273,7 @@
     scroll-behavior: auto;
   }
 
-  .vipActive::before {
+  .vipShimmer::before {
     animation: none;
   }
 }

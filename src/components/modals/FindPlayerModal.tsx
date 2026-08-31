@@ -47,6 +47,7 @@ export default function FindPlayerModal({
   const [sort, setSort] = useState<PlayerSearchSort>('relevance');
   const [showAccessRules, setShowAccessRules] = useState(false);
   const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set());
+  const [verifyingTableId, setVerifyingTableId] = useState<string | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
   const suggestionAbortRef = useRef<AbortController | null>(null);
   const suggestionTimerRef = useRef<number | null>(null);
@@ -163,35 +164,47 @@ export default function FindPlayerModal({
     runSearch(value);
   };
 
-  const handleTableClick = (table: PlayerSearchTable) => {
-    if (table.can_watch) {
-      haptic.success();
-      ClubEntryTrustService.track('find', 'watch_opened', {
-        outcome: 'succeeded',
-        metadata: { table_id: table.table_id, tournament_id: table.tournament_id || null },
-      });
-      onClose();
-      navigate(`/table/${table.table_id}?observer=1`);
-      return;
-    }
+  const handleTableClick = async (table: PlayerSearchTable) => {
+    if (verifyingTableId) return;
+    setVerifyingTableId(table.table_id);
+    setError(null);
+    try {
+      const access = await PlayerSearchService.getTableWatchAccess(table.table_id);
+      if (access.can_watch) {
+        haptic.success();
+        ClubEntryTrustService.track('find', 'watch_opened', {
+          outcome: 'succeeded',
+          metadata: { table_id: table.table_id, tournament_id: table.tournament_id || null },
+        });
+        onClose();
+        navigate(`/table/${table.table_id}?observer=1`);
+        return;
+      }
 
-    if (['join', 'request_join', 'pending'].includes(table.access_action)) {
-      const identifier = table.club_slug || String(table.club_id || '') || table.club_uuid;
-      haptic.selection();
-      ClubEntryTrustService.track('find', 'watch_membership_required', {
-        outcome: 'viewed',
-        metadata: { club_id: table.club_uuid, action: table.access_action },
-      });
-      onClose();
-      onMembershipRequired({ code: identifier, watchTableId: table.table_id });
-      return;
-    }
+      if (['join', 'request_join', 'pending'].includes(access.action)) {
+        const identifier =
+          access.club_slug || String(access.club_id || '') || access.club_uuid || table.club_uuid;
+        haptic.selection();
+        ClubEntryTrustService.track('find', 'watch_membership_required', {
+          outcome: 'viewed',
+          metadata: { club_id: access.club_uuid || table.club_uuid, action: access.action },
+        });
+        onClose();
+        onMembershipRequired({ code: identifier, watchTableId: table.table_id });
+        return;
+      }
 
-    setError(
-      table.access_action === 'observers_restricted'
-        ? 'This table does not allow observers.'
-        : 'This game is not available to watch.'
-    );
+      setError(
+        access.action === 'observers_restricted'
+          ? 'This table does not allow observers.'
+          : 'This game is not available to watch.'
+      );
+    } catch (accessError) {
+      reportError(accessError, 'FindPlayerModal.WatchAccess');
+      setError('Could not verify table access. Please try again.');
+    } finally {
+      setVerifyingTableId(null);
+    }
   };
 
   const handleProfileClick = (playerId: string) => {
@@ -322,7 +335,7 @@ export default function FindPlayerModal({
               )}
               {isSuggesting && (
                 <span className={styles.suggestLoading} aria-label="Loading suggestions">
-                  ⟳
+                  <span className={styles.suggestSpinner} aria-hidden="true" />
                 </span>
               )}
             </div>
@@ -470,7 +483,8 @@ export default function FindPlayerModal({
                           <button
                             key={table.id}
                             className={styles.tableCard}
-                            onClick={() => handleTableClick(table)}
+                            onClick={() => void handleTableClick(table)}
+                            disabled={verifyingTableId !== null}
                           >
                             <span className={styles.tableInfo}>
                               <span className={styles.tableName}>{table.name}</span>
@@ -479,7 +493,11 @@ export default function FindPlayerModal({
                                 {table.club_name && ` • ${table.club_name}`}
                               </span>
                             </span>
-                            <span className={styles.watchButton}>{watchLabel(table)}</span>
+                            <span className={styles.watchButton}>
+                              {verifyingTableId === table.table_id
+                                ? 'Verifying Access…'
+                                : watchLabel(table)}
+                            </span>
                           </button>
                         ))}
                       </div>

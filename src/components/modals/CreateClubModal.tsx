@@ -483,7 +483,7 @@ export default function CreateClubModal({ isOpen, onClose, onSuccess }: CreateCl
               transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
             }}
           >
-            {isCreating && <span className={styles.spinner}>⟳</span>}
+            {isCreating && <span className={styles.spinner} aria-hidden="true" />}
             {isCreating ? 'Creating Club…' : 'Create Club'}
           </button>
         </div>
@@ -619,7 +619,7 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
                 textShadow: '0 0 20px rgba(0, 212, 255, 0.8)',
               }}
             >
-              <div style={{ fontSize: '48px', marginBottom: '20px' }}>◷</div>
+              <div className={styles.generatorSpinner} aria-hidden="true" />
               <div>GENERATING LOGO...</div>
               <div style={{ fontSize: '14px', marginTop: '10px', opacity: 0.7 }}>
                 Powered By Club Arena
@@ -640,7 +640,7 @@ function LogoGeneratorModal({ onSelect, onClose, clubName = '' }: LogoGeneratorM
 
             <div className={styles.logoGeneratorActions}>
               <button className={styles.generateBtn} onClick={handleUsePreview}>
-                ✓ Use This Logo
+                Use This Logo
               </button>
               <button
                 className={styles.cancelBtn}

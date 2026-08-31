@@ -275,9 +275,15 @@
   transform: translateY(-50%);
   color: #42bfff;
 }
+
 .suggestSpinner {
-  display: inline-block;
-  animation: locatorSpin 1s linear infinite;
+  display: block;
+  width: 0.95rem;
+  height: 0.95rem;
+  border: 2px solid rgb(255 255 255 / 28%);
+  border-top-color: var(--club-entry-cyan, #45c8ff);
+  border-radius: 50%;
+  animation: locatorSpin 0.8s linear infinite;
 }
 .sortControls {
   display: flex;

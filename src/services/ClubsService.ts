@@ -278,7 +278,7 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
         }
       }
     } catch (cardErr) {
-      console.warn('[ClubsService] Baked card generation failed (non-blocking):', cardErr);
+      reportError(cardErr, 'ClubsService.createClub.CardGeneration');
     }
   }
 
@@ -291,7 +291,7 @@ export async function createClub(clubData: CreateClubData): Promise<Club> {
       action: 'member_joined',
     });
   } catch (eventError) {
-    console.warn('[ClubsService] createClub: bus emit failed (non-critical):', eventError);
+    reportError(eventError, 'ClubsService.createClub.BusEmit');
   }
 
   return data;

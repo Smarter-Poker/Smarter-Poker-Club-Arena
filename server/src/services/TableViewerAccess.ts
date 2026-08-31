@@ -4,6 +4,7 @@ export type TableViewerAccessReason =
   | 'seated'
   | 'club_member'
   | 'membership_required'
+  | 'observers_restricted'
   | 'table_not_found'
   | 'check_failed';
 
@@ -24,7 +25,7 @@ export async function authorizeTableViewer(
 ): Promise<TableViewerAccess> {
   const { data: table, error: tableError } = await supabase
     .from('tables')
-    .select('club_id')
+    .select('club_id, restrict_observers')
     .eq('id', tableId)
     .maybeSingle();
 
@@ -57,6 +58,9 @@ export async function authorizeTableViewer(
     return { allowed: false, reason: 'check_failed', clubId };
   }
   if (seatResult.data) return { allowed: true, reason: 'seated', clubId };
+  if (memberResult.data && table.restrict_observers === true) {
+    return { allowed: false, reason: 'observers_restricted', clubId };
+  }
   if (memberResult.data) return { allowed: true, reason: 'club_member', clubId };
   return { allowed: false, reason: 'membership_required', clubId };
 }

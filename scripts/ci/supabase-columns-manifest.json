@@ -9061,6 +9061,11 @@
       "seed_returned_amount",
       "required_seed_at_activation"
     ],
+    "spin_fill_policy": [
+      "id",
+      "unfilled_timeout_minutes",
+      "updated_at"
+    ],
     "spin_reserve_ledger": [
       "id",
       "club_id",
@@ -11959,6 +11964,17 @@
       "club_id",
       "can_draw_100x"
     ],
+    "v_spin_unfilled_waits": [
+      "tournament_id",
+      "club_id",
+      "name",
+      "buy_in_amount",
+      "max_players",
+      "live_seats",
+      "oldest_seat_at",
+      "longest_wait",
+      "chips_locked"
+    ],
     "v_spin_unpaid_settlements": [
       "tournament_id",
       "club_id",
@@ -12529,6 +12545,11 @@
       "lifetime_points",
       "updated_at"
     ],
+    "vip_points_carry": [
+      "user_id",
+      "carry",
+      "updated_at"
+    ],
     "vip_points_ledger": [
       "id",
       "user_id",
@@ -12536,7 +12557,8 @@
       "reason",
       "source_type",
       "source_id",
-      "created_at"
+      "created_at",
+      "credit"
     ],
     "vip_pricing": [
       "id",

@@ -46,15 +46,30 @@ closed on 2026-08-31 was additionally spot-checked by hand before closing -
 (a duplicate import of a line already two lines above it).
 
 USAGE
-    node/python3 scripts/dev/pr-supersession-scan.py <PR> [<PR> ...]
 
-    Requires a checkout of main at the path in W below, and appends
-    "<pr>\t<sampled>\t<hits>\t<percent>" to /tmp/sup.tsv.
+  1. Build the corpus ONCE, from a checkout of the branch you are comparing
+     against (normally main). It is the haystack, ~30MB, and takes seconds:
 
-Build the corpus first (30MB, a few seconds):
-    find src server tests scripts -type f \( -name '*.ts' -o -name '*.tsx' \
-      -o -name '*.css' -o -name '*.mjs' -o -name '*.sql' -o -name '*.js' \) \
-      -print0 | xargs -0 cat > /tmp/corpus.txt
+         find src server tests scripts -type f \\( -name '*.ts' -o -name '*.tsx' \\
+           -o -name '*.css' -o -name '*.mjs' -o -name '*.sql' -o -name '*.js' \\) \\
+           -print0 | xargs -0 cat > /tmp/corpus.txt
+
+     The corpus is the ONLY thing that defines "already shipped". Build it from
+     a stale checkout and every score is wrong, so rebuild it whenever main has
+     moved. This script deliberately does not build it for you: the comparison
+     branch is a decision, not a default.
+
+  2. Run it against one or more PR numbers:
+
+         python3 scripts/dev/pr-supersession-scan.py <PR> [<PR> ...]
+
+     It APPENDS "<pr>\\t<sampled>\\t<hits>\\t<percent>" to /tmp/sup.tsv, so
+     truncate that file first if you want a clean run. Needs `gh` authenticated
+     against the repo - the diffs are fetched with `gh pr diff`, because on a
+     private repo the plain .diff URL returns "Not Found".
+
+     Roughly one second per PR. macOS ships bash 3.2, so drive batches from
+     python or a for-loop, not `mapfile`.
 """
 
 import subprocess, sys

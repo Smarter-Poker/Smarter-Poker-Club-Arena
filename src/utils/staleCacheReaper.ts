@@ -26,6 +26,7 @@
  */
 
 import { ROSTER_CACHE_PREFIX, ROSTER_CACHE_TTL_MS, ROSTER_SEARCH_PREFIX } from '../lib/rosterCache';
+import { CLUB_DATA_CACHE_PREFIX } from '../lib/clubDataCache';
 
 /**
  * The canonical list of sessionStorage SWR cache prefixes.
@@ -52,6 +53,7 @@ export const SWR_CACHE_PREFIXES = [
   'club_home_cache_',
   ROSTER_CACHE_PREFIX,
   ROSTER_SEARCH_PREFIX,
+  CLUB_DATA_CACHE_PREFIX,
 ];
 
 /**

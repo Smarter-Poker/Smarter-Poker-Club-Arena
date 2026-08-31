@@ -34,13 +34,44 @@ export class DailyMissionsPage {
       { session: apiSession.session }
     );
     const page = await context.newPage();
-    await page.goto(baseURL, {
+    const notificationsURL = new URL('notifications', baseURL);
+    await page.goto(notificationsURL.toString(), {
       waitUntil: 'domcontentloaded',
       timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
     });
-    await page
-      .waitForURL((url) => url.pathname.includes('/auth'), { timeout: 20_000 })
-      .catch(() => undefined);
+    // Local certification already has the shared SSO session, while production
+    // redirects to the Hub login. Race those real outcomes instead of waiting
+    // a fixed auth timeout after loading the asset-heavy home route first.
+    const waitForEntrySurface = (timeout: number) =>
+      page
+        .waitForFunction(
+          () =>
+            window.location.pathname.includes('/auth') ||
+            Boolean(document.querySelector('[data-profile-gate-status]')),
+          undefined,
+          { timeout }
+        )
+        .then(() => true)
+        .catch(() => false);
+
+    if (!(await waitForEntrySurface(20_000))) {
+      // The application shell exposes this same bounded recovery when its main
+      // module never imports (most commonly a stale or starved preview cache).
+      // Recover before the measured Daily Missions cold load begins.
+      await page.evaluate(async () => {
+        sessionStorage.removeItem('__club_arena_recovery');
+        if ('caches' in window) {
+          await Promise.all((await caches.keys()).map((key) => caches.delete(key)));
+        }
+      });
+      await page.reload({
+        waitUntil: 'domcontentloaded',
+        timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+      });
+      if (!(await waitForEntrySurface(30_000))) {
+        throw new Error('Club Arena shell did not expose Auth or the profile gate after recovery.');
+      }
+    }
 
     if (page.url().includes('/auth')) {
       const appBasePath = new URL(baseURL).pathname;
@@ -69,10 +100,12 @@ export class DailyMissionsPage {
     }
 
     await page.evaluate(() => localStorage.setItem('club_arena_welcome_accepted', 'true'));
-    await page.goto(new URL('notifications', baseURL).toString(), {
-      waitUntil: 'domcontentloaded',
-      timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
-    });
+    if (new URL(page.url()).pathname !== notificationsURL.pathname) {
+      await page.goto(notificationsURL.toString(), {
+        waitUntil: 'domcontentloaded',
+        timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+      });
+    }
     if (page.url().includes('/auth')) {
       throw new Error(`Temporary Daily Missions account ${account.id} did not remain signed in.`);
     }

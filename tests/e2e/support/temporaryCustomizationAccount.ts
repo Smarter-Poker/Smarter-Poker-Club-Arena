@@ -57,7 +57,8 @@ async function serviceRequest<T>(
   path: string,
   init: RequestInit = {}
 ): Promise<T> {
-  for (let attempt = 1; attempt <= 4; attempt += 1) {
+  const maxAttempts = 6;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const response = await fetch(`${environment.supabaseUrl}${path}`, {
       ...init,
       headers: serverHeaders(environment.serviceRoleKey, {
@@ -66,21 +67,33 @@ async function serviceRequest<T>(
         ...((init.headers as Record<string, string> | undefined) || {}),
       }),
     });
-    const text = await response.text();
-    const body = text ? (JSON.parse(text) as T) : (undefined as T);
+    const responseText = await response.text();
+    let body = undefined as T;
+    if (responseText) {
+      try {
+        body = JSON.parse(responseText) as T;
+      } catch {
+        // Supabase's edge occasionally returns a plain-text upstream error.
+        // Preserve it for diagnostics and retry the response by status.
+        body = responseText as T;
+      }
+    }
     if (response.ok) return body;
 
-    const retryable = response.status === 429 || response.status >= 502;
-    if (!retryable || attempt === 4) {
+    const retryable =
+      response.status === 429 ||
+      response.status >= 502 ||
+      (response.status === 500 && responseText.includes('57014'));
+    if (!retryable || attempt === maxAttempts) {
       throw new Error(
         `Supabase service request ${init.method || 'GET'} ${path} failed ` +
-          `(${response.status}): ${text.slice(0, 400)}`
+          `(${response.status}): ${responseText.slice(0, 400)}`
       );
     }
     const retryAfterSeconds = Number(response.headers.get('retry-after'));
     const retryDelayMs = Number.isFinite(retryAfterSeconds)
       ? Math.max(250, retryAfterSeconds * 1_000)
-      : attempt * 250;
+      : Math.min(5_000, 500 * 2 ** (attempt - 1));
     await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
   }
   throw new Error(`Supabase service request ${init.method || 'GET'} ${path} exhausted retries.`);
@@ -351,16 +364,19 @@ export async function cleanupTemporaryCustomizationAccount(
   ];
 
   for (const { table, column } of relatedTables) {
-    await deleteRows(environment, table, column, account.id).catch((error) => {
-      failures.push(`${table}.${column}: ${(error as Error).message}`);
-    });
+    // These targeted deletes keep the final account cascade small. A transient
+    // edge failure is not itself residue: the guarded cleanup RPC below owns
+    // the authoritative deletion, and every surface is verified afterwards.
+    await deleteRows(environment, table, column, account.id).catch(() => undefined);
   }
 
   for (const table of userTables) {
-    await deleteRows(environment, table, 'user_id', account.id).catch((error) => {
-      failures.push(`${table}: ${(error as Error).message}`);
-    });
+    await deleteRows(environment, table, 'user_id', account.id).catch(() => undefined);
   }
+
+  await callServiceRpc<JsonObject>(environment, 'cleanup_reserved_certification_account', {
+    p_user_id: account.id,
+  }).catch((error) => failures.push(`reserved identity: ${(error as Error).message}`));
 
   for (const { table, column } of [
     ...relatedTables,
@@ -369,48 +385,6 @@ export async function cleanupTemporaryCustomizationAccount(
     await assertRowsRemoved(environment, table, column, account.id).catch((error) => {
       failures.push((error as Error).message);
     });
-  }
-
-  let firstAuthDeleteError: Error | null = null;
-  await serviceRequest<void>(
-    environment,
-    `/auth/v1/admin/users/${encodeURIComponent(account.id)}`,
-    {
-      method: 'DELETE',
-      // GoTrue reads should_soft_delete from the JSON body. A query-string
-      // value receives 2xx but does not guarantee the requested hard delete.
-      body: JSON.stringify({ should_soft_delete: false }),
-    }
-  ).catch((error) => {
-    firstAuthDeleteError = error as Error;
-  });
-
-  // The normal auth delete cascades these rows. The explicit cleanup also
-  // handles an interrupted historical trigger without touching any other id.
-  for (const table of ['profiles', 'users']) {
-    await deleteRows(environment, table, 'id', account.id).catch((error) => {
-      failures.push(`${table}: ${(error as Error).message}`);
-    });
-  }
-
-  // A historical trigger/FK can make Auth deletion fail until public rows are
-  // gone. A malformed/ignored request can also answer 2xx without removing the
-  // identity, so verify server state and retry exactly this reserved fixture.
-  let userStillExists = true;
-  try {
-    userStillExists = await authUserExists(environment, account.id);
-  } catch (error) {
-    failures.push(`auth.users verification: ${(error as Error).message}`);
-  }
-  if (firstAuthDeleteError || userStillExists) {
-    await serviceRequest<void>(
-      environment,
-      `/auth/v1/admin/users/${encodeURIComponent(account.id)}`,
-      {
-        method: 'DELETE',
-        body: JSON.stringify({ should_soft_delete: false }),
-      }
-    ).catch((error) => failures.push(`auth.users: ${(error as Error).message}`));
   }
 
   try {

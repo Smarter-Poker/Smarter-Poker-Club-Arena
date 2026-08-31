@@ -81,4 +81,18 @@ describe('Daily Missions production certification', () => {
     expect(migration).toContain('SET statement_timeout = 0');
     expect(migration).toContain('ON public.wallet_credit_idempotency (user_id)');
   });
+
+  it('hard-deletes only reserved certification identities through service_role', () => {
+    const migration = source(
+      'supabase/migrations/20260901020000_reserved_certification_account_cleanup.sql'
+    );
+    expect(migration).toContain("v_email NOT LIKE 'ca-customization-cert-%@example.invalid'");
+    expect(migration).toContain("SET statement_timeout = '10min'");
+    expect(migration).toContain(
+      'GRANT EXECUTE ON FUNCTION public.cleanup_reserved_certification_account(uuid) TO service_role'
+    );
+    expect(migration).toContain(
+      'REVOKE ALL ON FUNCTION public.cleanup_reserved_certification_account(uuid) FROM authenticated'
+    );
+  });
 });

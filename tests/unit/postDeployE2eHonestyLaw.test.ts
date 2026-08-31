@@ -1,0 +1,178 @@
+/**
+ * POST-DEPLOY E2E HONESTY LAW (Phase 6, 2026-08-31)
+ *
+ * The rule this pins: **the post-deploy run must not report success when it did
+ * not verify production.**
+ *
+ * It could, four different ways, and all four were live on `main`:
+ *
+ *   1. Playwright exits 0 when every test skips. Dozens of these specs skip
+ *      themselves on /auth or when a live fixture is missing, so a run in which
+ *      nothing executed was a green run.
+ *   2. `global-setup.ts` falls back to a signed-out session when a login fails.
+ *      Correct for a merge gate; fatal to the meaning of THIS job, whose entire
+ *      purpose is to look at production with a real session.
+ *   3. A failed Cashier step SKIPPED the broader sweep, so one money-surface red
+ *      hid thirteen spec files and all of tests/e2e/routes - the precise
+ *      opposite of the independence the workflow's own comment promises.
+ *   4. Inside that sweep, `set -e` let a red Stats invocation abort the route
+ *      invocation behind it. Same fault, one level down.
+ *
+ * Each assertion below is written against the shape that FIXED one of those.
+ * If someone reverts one, this test names which.
+ */
+import { describe, expect, it } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+
+const ROOT = resolve(__dirname, '../..');
+const WORKFLOW = readFileSync(join(ROOT, '.github/workflows/post-deploy-e2e.yml'), 'utf8');
+const GLOBAL_SETUP = readFileSync(join(ROOT, 'tests/e2e/global-setup.ts'), 'utf8');
+const CHECKER = join(ROOT, 'scripts/ci/assert-e2e-actually-ran.mjs');
+
+/** Run the checker over throwaway reports and return its exit code. */
+function check(reports: unknown[]): number {
+  const dir = mkdtempSync(join(tmpdir(), 'e2e-honesty-'));
+  const paths = reports.map((r, i) => {
+    const p = join(dir, `r${i}.json`);
+    writeFileSync(p, JSON.stringify(r));
+    return p;
+  });
+  try {
+    execFileSync(process.execPath, [CHECKER, ...paths], { stdio: 'pipe' });
+    return 0;
+  } catch (err) {
+    return (err as { status?: number }).status ?? -1;
+  }
+}
+
+const spec = (file: string, statuses: (string | null)[]) => ({
+  suites: [
+    {
+      title: file,
+      file,
+      specs: statuses.map((s, i) => ({
+        title: `t${i}`,
+        file,
+        tests: [{ results: [{ status: s ?? 'skipped' }] }],
+      })),
+    },
+  ],
+});
+
+describe('the checker refuses a run that verified nothing', () => {
+  it('fails when every test in a spec file skipped', () => {
+    expect(check([spec('tests/e2e/a.spec.ts', [null, null])])).toBe(1);
+  });
+
+  it('passes when the file executed at least one test', () => {
+    expect(check([spec('tests/e2e/a.spec.ts', ['passed', null])])).toBe(0);
+  });
+
+  it('still fails when only ONE of several files went silent', () => {
+    // The failure mode a pass-rate percentage hides: eleven healthy files can
+    // carry an entire money surface that verified nothing.
+    expect(
+      check([
+        spec('tests/e2e/a.spec.ts', ['passed']),
+        spec('tests/e2e/production-cashier.spec.ts', [null, null]),
+      ])
+    ).toBe(1);
+  });
+
+  it('treats a MISSING report as "it did not run", never as "nothing to check"', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'e2e-honesty-'));
+    let code = 0;
+    try {
+      execFileSync(process.execPath, [CHECKER, join(dir, 'never-written.json')], { stdio: 'pipe' });
+    } catch (err) {
+      code = (err as { status?: number }).status ?? -1;
+    }
+    expect(code).toBe(1);
+  });
+
+  it('fails an empty report rather than calling zero specs a success', () => {
+    expect(check([{ suites: [] }])).toBe(1);
+  });
+
+  it('counts a failed test as executed - a red run is honest, just red', () => {
+    expect(check([spec('tests/e2e/a.spec.ts', ['failed'])])).toBe(0);
+  });
+});
+
+describe('the allowlist is a ratchet, not an escape hatch', () => {
+  const allowlist = JSON.parse(
+    readFileSync(join(ROOT, 'scripts/ci/e2e-may-skip-entirely.json'), 'utf8')
+  ) as { allowed: { file: string; reason: string }[] };
+
+  it('every exemption carries a reason that says what is missing', () => {
+    for (const entry of allowlist.allowed) {
+      expect(entry.file, 'an exemption without a file').toBeTruthy();
+      expect(
+        (entry.reason ?? '').length,
+        `${entry.file} is exempt with no reason - say WHAT is missing`
+      ).toBeGreaterThan(20);
+    }
+  });
+
+  it('holds the number of specs allowed to verify nothing at or below its ceiling', () => {
+    // Lower this when a spec is made to run. Never raise it to make a run green.
+    expect(allowlist.allowed.length).toBeLessThanOrEqual(6);
+  });
+});
+
+describe('the workflow cannot go back to reporting success dishonestly', () => {
+  it('runs the honesty check, and runs it even when the suite went red', () => {
+    expect(WORKFLOW).toContain('assert-e2e-actually-ran.mjs');
+    const step = WORKFLOW.slice(WORKFLOW.indexOf('Did the suite actually verify production?'));
+    expect(step.slice(0, 200)).toContain('if: always()');
+  });
+
+  it('emits the JSON the honesty check reads, from every playwright invocation', () => {
+    for (const report of ['cashier.json', 'stats.json', 'sweep.json']) {
+      expect(WORKFLOW, `no PLAYWRIGHT_JSON_OUTPUT_NAME for ${report}`).toContain(
+        `e2e-report/${report}`
+      );
+    }
+    expect(WORKFLOW).toContain('--reporter=line,json');
+    expect(WORKFLOW, 'a line-only reporter leaves the honesty check nothing to read').not.toMatch(
+      /--reporter=line\s+--retries/
+    );
+  });
+
+  it('demands a real session, so a signed-out fallback cannot pass as a verdict', () => {
+    expect(WORKFLOW).toContain("E2E_REQUIRE_AUTH: '1'");
+    expect(GLOBAL_SETUP).toContain("process.env.E2E_REQUIRE_AUTH === '1'");
+    expect(
+      GLOBAL_SETUP.slice(
+        GLOBAL_SETUP.indexOf('function signedOut'),
+        GLOBAL_SETUP.indexOf('export default')
+      ),
+      'signedOut() must THROW under E2E_REQUIRE_AUTH, not merely log'
+    ).toMatch(/E2E_REQUIRE_AUTH === '1'[\s\S]{0,200}throw new Error/);
+  });
+
+  it('never lets one red step hide the rest of the production sweep', () => {
+    const sweep = WORKFLOW.slice(WORKFLOW.indexOf('Run the specs that need a deployed page'));
+    expect(sweep.slice(0, 200), 'a failed Cashier step used to skip this one entirely').toContain(
+      "if: always() && steps.live.outputs.ready == 'true'"
+    );
+    expect(
+      sweep,
+      'without set +e a red Stats invocation aborts the route invocation behind it'
+    ).toContain('set +e');
+    expect(sweep).toContain('sweep_rc=$?');
+  });
+
+  it('keeps the specs and the deployed bundle on the same commit', () => {
+    // Runs 33394046555 and 33394398578 failed on an element that existed on
+    // main and was simply not deployed yet. Nothing was broken.
+    expect(WORKFLOW).toContain('Take the specs from the commit production is actually serving');
+    expect(WORKFLOW).toContain('git merge-base --is-ancestor');
+    expect(WORKFLOW, 'the ancestor check needs history the shallow clone lacks').toContain(
+      'fetch-depth: 0'
+    );
+  });
+});

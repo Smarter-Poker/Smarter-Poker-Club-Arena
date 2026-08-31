@@ -53,27 +53,26 @@ test.describe('Cashier Page — Deep UX Tests', () => {
   });
 
   test('should support keyboard navigation between tabs', async ({ page }) => {
-    const firstTab = page.locator('[role="tab"]').first();
-    const tabCount = await page.locator('[role="tab"]').count();
+    const tablist = page.getByRole('tablist', { name: 'Cashier Actions' });
+    const tabCount = await tablist.getByRole('tab').count();
 
     if (tabCount > 1) {
-      await firstTab.focus();
+      const selectedTab = tablist.locator('[role="tab"][aria-selected="true"]');
+      await expect(selectedTab).toHaveCount(1);
+      const startingPanel = await selectedTab.getAttribute('aria-controls');
+      expect(startingPanel).toBeTruthy();
+      await selectedTab.focus();
 
-      // Press ArrowRight to move to next tab
       await page.keyboard.press('ArrowRight');
-      await page.waitForTimeout(200);
+      await expect(selectedTab).not.toHaveAttribute('aria-controls', startingPanel!);
+      await expect(selectedTab).toBeFocused();
+      const nextPanel = await selectedTab.getAttribute('aria-controls');
+      expect(nextPanel).toBeTruthy();
 
-      // The second tab should now be focused and selected
-      const secondTab = page.locator('[role="tab"]').nth(1);
-      const secondTabSelected = await secondTab.getAttribute('aria-selected');
-      expect(secondTabSelected).toBe('true');
-
-      // Press ArrowLeft to go back
       await page.keyboard.press('ArrowLeft');
-      await page.waitForTimeout(200);
-
-      const firstTabSelected = await firstTab.getAttribute('aria-selected');
-      expect(firstTabSelected).toBe('true');
+      await expect(selectedTab).not.toHaveAttribute('aria-controls', nextPanel!);
+      await expect(selectedTab).toHaveAttribute('aria-controls', startingPanel!);
+      await expect(selectedTab).toBeFocused();
     }
   });
 

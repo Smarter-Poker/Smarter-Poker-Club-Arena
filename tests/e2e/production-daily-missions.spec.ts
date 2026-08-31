@@ -8,6 +8,7 @@ import {
 } from '@playwright/test';
 
 import { DAILY_MISSIONS_RESPONSE_TIMEOUT, DailyMissionsPage } from './support/DailyMissionsPage';
+import { isDailyMissionRevisionFrame } from './support/dailyMissionRevisionFrame';
 import {
   callServiceRpc,
   cleanupTemporaryCustomizationAccount,
@@ -23,18 +24,6 @@ const LOAD_BUDGET_MS = 12_000;
 const DASHBOARD_RPC_BUDGET_MS = 8_000;
 
 type JsonObject = Record<string, unknown>;
-
-function isDailyMissionRevisionFrame(message: string | Buffer): boolean {
-  try {
-    const frame = JSON.parse(typeof message === 'string' ? message : message.toString('utf8'));
-    const event = Array.isArray(frame) ? frame[3] : frame?.event;
-    const payload = Array.isArray(frame) ? frame[4] : frame?.payload;
-    const change = payload?.data ?? payload;
-    return event === 'postgres_changes' && change?.table === 'daily_challenge_dashboard_revisions';
-  } catch {
-    return false;
-  }
-}
 
 function exactQuery(select: string, column: string, value: string): URLSearchParams {
   return new URLSearchParams({ select, [column]: `eq.${value}` });

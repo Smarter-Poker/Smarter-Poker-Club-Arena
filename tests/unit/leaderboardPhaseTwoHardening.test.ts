@@ -79,4 +79,20 @@ describe('leaderboard phase two operational hardening', () => {
     expect(page).toContain('setup={editingSettings}');
     expect(page).not.toContain('showSettings && settings?.can_manage');
   });
+
+  it('does not dismiss the prize wizard during a late auth hydration and wires setup deep links', () => {
+    const authRefresh = page.slice(
+      page.indexOf("// Load user's clubs on mount or when user auth changes"),
+      page.indexOf('// Keep activeTabRef in sync')
+    );
+    expect(authRefresh).not.toContain('setEditingSettings(null)');
+    expect(authRefresh).not.toContain('setShowSettings(false)');
+
+    const setupDeepLink = page.slice(
+      page.indexOf("if (params.get('setup') !== 'prizes'"),
+      page.indexOf('// 2026-08-24: a useMasterBusChannel')
+    );
+    expect(setupDeepLink).toContain('setEditingSettings(settings)');
+    expect(setupDeepLink).toContain('setShowSettings(true)');
+  });
 });

@@ -25,6 +25,7 @@ import {
   SEAT_FIRST_START_STALL_MS,
 } from './services/TournamentRecurringService.js';
 import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
+import { TournamentMetrics } from './services/TournamentMetrics.js';
 import {
   planTableReopens,
   freshHumanWindowMs,
@@ -305,6 +306,13 @@ export class GameServer {
   // Data-driven recurring schedules (tournament_schedules) — runs alongside the
   // hardcoded recurring blocks, acting only on rows written into the database.
   private scheduledTournaments = new ScheduledTournamentService();
+  /**
+   * TOURNAMENT OBSERVABILITY (2026-08-31). Until this existed, /metrics carried
+   * 895 poker_* series and not one mentioned a tournament, so no tournament
+   * alert rule could be written — which is why every tournament defect in the
+   * 2026-08-30/31 audit was found by a human running SQL by hand.
+   */
+  private tournamentMetrics = new TournamentMetrics();
   private lifecycle = new HorseLifecycleManager();
 
   /**
@@ -541,6 +549,13 @@ export class GameServer {
 
       // Step 3b: Start the data-driven scheduler (tournament_schedules rows)
       this.scheduledTournaments.start();
+
+      // Step 3c: Start the tournament metrics collector so /metrics can carry
+      // tournament gauges. Refreshes once immediately, then every 60s, and a
+      // failed read keeps the last good snapshot while
+      // poker_tournament_metrics_stale_seconds climbs — a blind collector must
+      // never read as a healthy platform.
+      this.tournamentMetrics.start();
 
       // Step 4: Start lifecycle manager (stuck horse detection, cleanup)
       this.lifecycle.start();
@@ -1155,6 +1170,13 @@ export class GameServer {
       '# HELP poker_lease_conflicts Tables this instance was refused because another engine holds them',
       '# TYPE poker_lease_conflicts gauge',
       `poker_lease_conflicts ${leaseDiagnostics().conflictCount}`,
+      // ── TOURNAMENT OBSERVABILITY (2026-08-31) ────────────────────────
+      // Every gauge above this line is about TABLES. A tournament that never
+      // started owns no table, so nothing above can see it — and that is the
+      // single most player-visible tournament failure there is. These come
+      // from the database because the database is the only thing that knows
+      // what SHOULD exist. See services/TournamentMetrics.ts.
+      ...this.tournamentMetrics.toPrometheus(),
     ];
 
     if (allLines.length === 0) {

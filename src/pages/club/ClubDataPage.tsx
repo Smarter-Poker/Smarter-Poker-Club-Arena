@@ -38,12 +38,14 @@ import { resolveClubUUID, isUUID } from '../../utils/clubIdResolver';
 import { isAuthzError } from '../../utils/clubDashboard';
 import { reportError } from '../../utils/errorReporter';
 import { downloadCsv, csvEscape } from '../../utils/downloadCsv';
+import { useVirtualScroll } from '../../hooks/useVirtualScroll';
 import { EmptyState, LoadingState, PermissionState } from '../../components/common/EmptyState';
 import styles from './ClubDataPage.module.css';
 
 type PresetId = 1 | 7 | 14;
 type GameFilter = 'ALL' | 'HOLDEM' | 'OMAHA' | 'MIXED' | 'MTT' | 'SNG';
 type StakesFilter = 'ALL' | 'MICRO' | 'SMALL' | 'MID' | 'HIGH';
+type GameSort = 'recent' | 'fee' | 'winnings' | 'hands';
 
 interface SnapshotRow {
   kind: string;
@@ -120,6 +122,26 @@ interface PlayerBreakdown {
   generated_at: string;
 }
 
+interface PageCursor {
+  [key: string]: string | number;
+}
+
+interface GamePage {
+  rows: SnapshotRow[];
+  next_cursor: PageCursor | null;
+  has_more: boolean;
+  filtered_count: number;
+  generated_at: string;
+}
+
+interface PlayerPage {
+  rows: PlayerRow[];
+  next_cursor: PageCursor | null;
+  has_more: boolean;
+  filtered_count: number;
+  generated_at: string;
+}
+
 interface InvoiceRow {
   invoice_id: string;
   status: string;
@@ -149,6 +171,13 @@ const STAKES_FILTERS: Array<{ id: StakesFilter; label: string }> = [
   { id: 'HIGH', label: 'High' },
 ];
 
+const GAME_SORTS: Array<{ id: GameSort; label: string }> = [
+  { id: 'recent', label: 'Most Recent' },
+  { id: 'fee', label: 'Highest Fee' },
+  { id: 'winnings', label: 'Highest Net' },
+  { id: 'hands', label: 'Most Hands' },
+];
+
 type PlayerSort = 'winners' | 'losers' | 'rake' | 'hands';
 
 const PLAYER_SORTS: Array<{ id: PlayerSort; label: string }> = [
@@ -164,6 +193,9 @@ const SNAPSHOT_REQUEST_TIMEOUT_MS = 25_000;
 const PLAYER_REQUEST_TIMEOUT_MS = 25_000;
 const EXPORT_REQUEST_TIMEOUT_MS = 30_000;
 const PLAYER_PAGE_SIZE = 100;
+const GAME_PAGE_SIZE = 100;
+const DATA_ROW_HEIGHT = 92;
+const DATA_VIEWPORT_HEIGHT = 736;
 
 /** What a money tile shows when there is no figure to show. Never "0.00". */
 const NO_VALUE = '-';
@@ -305,9 +337,14 @@ export default function ClubDataPage() {
   const [endDate, setEndDate] = useState<string>(() => toISODate(new Date()));
   const [game, setGame] = useState<GameFilter>('ALL');
   const [stakes, setStakes] = useState<StakesFilter>('ALL');
+  const [gameSort, setGameSort] = useState<GameSort>('recent');
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [gameCursor, setGameCursor] = useState<PageCursor | null>(null);
+  const [gamesHasMore, setGamesHasMore] = useState(false);
+  const [gamesLoadingMore, setGamesLoadingMore] = useState(false);
+  const [gamesPageError, setGamesPageError] = useState<string | null>(null);
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [showInvoiceDetail, setShowInvoiceDetail] = useState(false);
   const [showInvoiceHistory, setShowInvoiceHistory] = useState(false);
@@ -329,6 +366,10 @@ export default function ClubDataPage() {
   const [playersLoading, setPlayersLoading] = useState(false);
   const [playersError, setPlayersError] = useState<string | null>(null);
   const [playerSort, setPlayerSort] = useState<PlayerSort>('winners');
+  const [playerCursor, setPlayerCursor] = useState<PageCursor | null>(null);
+  const [playersHasMore, setPlayersHasMore] = useState(false);
+  const [playersLoadingMore, setPlayersLoadingMore] = useState(false);
+  const [playersPageError, setPlayersPageError] = useState<string | null>(null);
 
   // cancelledRef guards UNMOUNT. It cannot tell a stale response from a fresh
   // one, and this page reloads on six different inputs plus a 60s poll plus
@@ -340,6 +381,8 @@ export default function ClubDataPage() {
   const invoicesVersion = useRef(0);
   const resolveVersion = useRef(0);
   const clubNameVersion = useRef(0);
+  const gamesMoreRef = useRef(false);
+  const playersMoreRef = useRef(false);
   const cancelledRef = useRef(false);
   const gamesTabRef = useRef<HTMLButtonElement>(null);
   const playersTabRef = useRef<HTMLButtonElement>(null);
@@ -376,8 +419,16 @@ export default function ClubDataPage() {
     setClubUuid(isUUID(clubParam) ? clubParam : null);
     setClubName('');
     setSnapshot(null);
+    setGameCursor(null);
+    setGamesHasMore(false);
+    setGamesLoadingMore(false);
+    setGamesPageError(null);
     setInvoices([]);
     setPlayers(null);
+    setPlayerCursor(null);
+    setPlayersHasMore(false);
+    setPlayersLoadingMore(false);
+    setPlayersPageError(null);
     setError(null);
     setInvoicesError(null);
     setPlayersError(null);
@@ -455,21 +506,44 @@ export default function ClubDataPage() {
       const myVersion = ++loadVersion.current;
       const stale = () => cancelledRef.current || loadVersion.current !== myVersion;
       if (showSpinner) setLoading(true);
+      setGamesPageError(null);
       try {
-        const { data, error: rpcError } = await withTimeout(
-          supabase.rpc('ca_club_data_snapshot', {
-            p_club_id: clubUuid,
-            p_start: startDate,
-            p_end: endDate,
-            p_game: game,
-            p_stakes: stakes,
-            p_search: search || null,
-            p_limit: 200,
-          }),
-          'Club data request timed out',
-          SNAPSHOT_REQUEST_TIMEOUT_MS
-        );
+        const [snapshotResult, pageResult] = await Promise.all([
+          withTimeout(
+            supabase.rpc('ca_club_data_snapshot', {
+              p_club_id: clubUuid,
+              p_start: startDate,
+              p_end: endDate,
+              p_game: game,
+              p_stakes: stakes,
+              p_search: search || null,
+              // Summary and rows are separate contracts now. Keep the legacy
+              // row field minimally populated for backward compatibility.
+              p_limit: 1,
+            }),
+            'Club data request timed out',
+            SNAPSHOT_REQUEST_TIMEOUT_MS
+          ),
+          withTimeout(
+            supabase.rpc('ca_club_game_page', {
+              p_club_id: clubUuid,
+              p_start: startDate,
+              p_end: endDate,
+              p_game: game,
+              p_stakes: stakes,
+              p_search: search || null,
+              p_sort: gameSort,
+              p_cursor: null,
+              p_limit: GAME_PAGE_SIZE,
+            }),
+            'Club games request timed out',
+            SNAPSHOT_REQUEST_TIMEOUT_MS
+          ),
+        ]);
         if (stale()) return false;
+        const rpcError = snapshotResult.error || pageResult.error;
+        const data = snapshotResult.data;
+        const page = pageResult.data as GamePage | null;
         if (rpcError) {
           if (isAuthzError(rpcError)) {
             setError('You need to be an owner or admin of this club to see its data.');
@@ -479,7 +553,12 @@ export default function ClubDataPage() {
           }
           if (isAuthzError(rpcError) || !preserveOnError) setSnapshot(null);
           return false;
-        } else if (!data || !Array.isArray((data as Snapshot).rows)) {
+        } else if (
+          !data ||
+          !Array.isArray((data as Snapshot).rows) ||
+          !page ||
+          !Array.isArray(page.rows)
+        ) {
           // A null or shapeless payload used to be stored as success, leaving a
           // page with no data, no skeleton and no message.
           reportError(new Error('snapshot payload was empty'), 'ClubDataPage.snapshot_shape');
@@ -488,7 +567,13 @@ export default function ClubDataPage() {
           return false;
         } else {
           setError(null);
-          setSnapshot(data as Snapshot);
+          setSnapshot({
+            ...(data as Snapshot),
+            rows: page.rows,
+            row_count: Number(page.filtered_count ?? (data as Snapshot).row_count),
+          });
+          setGameCursor(page.next_cursor || null);
+          setGamesHasMore(Boolean(page.has_more));
           return true;
         }
       } catch (err) {
@@ -504,7 +589,7 @@ export default function ClubDataPage() {
         if (!stale()) setLoading(false);
       }
     },
-    [clubUuid, startDate, endDate, game, stakes, search, isHydrating, user]
+    [clubUuid, startDate, endDate, game, stakes, search, gameSort, isHydrating, user]
   );
 
   useEffect(() => {
@@ -520,18 +605,37 @@ export default function ClubDataPage() {
       const stale = () => cancelledRef.current || playersVersion.current !== myVersion;
       setPlayersLoading(true);
       setPlayersError(null);
+      setPlayersPageError(null);
       try {
-        const { data, error: rpcError } = await withTimeout(
-          supabase.rpc('ca_club_player_breakdown', {
-            p_club_id: clubUuid,
-            p_start: startDate,
-            p_end: endDate,
-            p_limit: PLAYER_PAGE_SIZE,
-          }),
-          'Player data request timed out',
-          PLAYER_REQUEST_TIMEOUT_MS
-        );
+        const [breakdownResult, pageResult] = await Promise.all([
+          withTimeout(
+            supabase.rpc('ca_club_player_breakdown', {
+              p_club_id: clubUuid,
+              p_start: startDate,
+              p_end: endDate,
+              p_limit: 1,
+            }),
+            'Player totals request timed out',
+            PLAYER_REQUEST_TIMEOUT_MS
+          ),
+          withTimeout(
+            supabase.rpc('ca_club_player_page', {
+              p_club_id: clubUuid,
+              p_start: startDate,
+              p_end: endDate,
+              p_sort: playerSort,
+              p_search: null,
+              p_cursor: null,
+              p_limit: PLAYER_PAGE_SIZE,
+            }),
+            'Player data request timed out',
+            PLAYER_REQUEST_TIMEOUT_MS
+          ),
+        ]);
         if (stale()) return false;
+        const rpcError = breakdownResult.error || pageResult.error;
+        const data = breakdownResult.data;
+        const page = pageResult.data as PlayerPage | null;
         if (rpcError) {
           if (isAuthzError(rpcError)) {
             setPlayersError('You need to be an owner or admin of this club to see player data.');
@@ -541,14 +645,25 @@ export default function ClubDataPage() {
           }
           if (isAuthzError(rpcError) || !preserveOnError) setPlayers(null);
           return false;
-        } else if (!data || !Array.isArray((data as PlayerBreakdown).players)) {
+        } else if (
+          !data ||
+          !Array.isArray((data as PlayerBreakdown).players) ||
+          !page ||
+          !Array.isArray(page.rows)
+        ) {
           reportError(new Error('player payload was empty'), 'ClubDataPage.players_shape');
           setPlayersError('Could not load player data.');
           if (!preserveOnError) setPlayers(null);
           return false;
         } else {
           setPlayersError(null);
-          setPlayers(data as PlayerBreakdown);
+          setPlayers({
+            ...(data as PlayerBreakdown),
+            players: page.rows,
+            player_count: Number(page.filtered_count ?? (data as PlayerBreakdown).player_count),
+          });
+          setPlayerCursor(page.next_cursor || null);
+          setPlayersHasMore(Boolean(page.has_more));
           return true;
         }
       } catch (err) {
@@ -561,7 +676,7 @@ export default function ClubDataPage() {
         if (!stale()) setPlayersLoading(false);
       }
     },
-    [clubUuid, startDate, endDate, isHydrating, user]
+    [clubUuid, startDate, endDate, playerSort, isHydrating, user]
   );
 
   useEffect(() => {
@@ -569,16 +684,183 @@ export default function ClubDataPage() {
     void loadPlayers();
   }, [tab, loadPlayers]);
 
-  // The RPC returns the top slice by net. Re-sorting client-side is honest for
-  // every order except "biggest losers", which reads from the far end of a list
-  // that was cut at the near end - so the foot note says when the list is cut.
+  const loadMoreGames = useCallback(async () => {
+    if (!clubUuid || !gameCursor || !gamesHasMore || gamesMoreRef.current || isHydrating || !user)
+      return;
+    gamesMoreRef.current = true;
+    setGamesLoadingMore(true);
+    setGamesPageError(null);
+    const myVersion = loadVersion.current;
+    const stale = () => cancelledRef.current || loadVersion.current !== myVersion;
+    try {
+      const { data, error: pageError } = await withTimeout(
+        supabase.rpc('ca_club_game_page', {
+          p_club_id: clubUuid,
+          p_start: startDate,
+          p_end: endDate,
+          p_game: game,
+          p_stakes: stakes,
+          p_search: search || null,
+          p_sort: gameSort,
+          p_cursor: gameCursor,
+          p_limit: GAME_PAGE_SIZE,
+        }),
+        'More games request timed out',
+        SNAPSHOT_REQUEST_TIMEOUT_MS
+      );
+      if (stale()) return;
+      const page = data as GamePage | null;
+      if (pageError || !page || !Array.isArray(page.rows)) {
+        if (pageError && !isAuthzError(pageError))
+          reportError(pageError, 'ClubDataPage.games_page_rpc');
+        setGamesPageError(
+          isAuthzError(pageError)
+            ? 'You No Longer Have Access To This Club\u2019s Data.'
+            : 'Could Not Load More Games.'
+        );
+        if (isAuthzError(pageError)) {
+          setSnapshot(null);
+          setGamesHasMore(false);
+        }
+        return;
+      }
+      setSnapshot((current) => {
+        if (!current) return current;
+        const known = new Set(current.rows.map((row) => `${row.kind}:${row.id}`));
+        return {
+          ...current,
+          rows: [
+            ...current.rows,
+            ...page.rows.filter((row) => !known.has(`${row.kind}:${row.id}`)),
+          ],
+        };
+      });
+      setGameCursor(page.next_cursor || null);
+      setGamesHasMore(Boolean(page.has_more));
+    } catch (pageError) {
+      if (stale()) return;
+      reportError(pageError, 'ClubDataPage.games_page_request');
+      setGamesPageError('Could Not Load More Games.');
+    } finally {
+      gamesMoreRef.current = false;
+      if (!stale()) setGamesLoadingMore(false);
+    }
+  }, [
+    clubUuid,
+    gameCursor,
+    gamesHasMore,
+    isHydrating,
+    user,
+    startDate,
+    endDate,
+    game,
+    stakes,
+    search,
+    gameSort,
+  ]);
+
+  const loadMorePlayers = useCallback(async () => {
+    if (
+      !clubUuid ||
+      !playerCursor ||
+      !playersHasMore ||
+      playersMoreRef.current ||
+      isHydrating ||
+      !user
+    )
+      return;
+    playersMoreRef.current = true;
+    setPlayersLoadingMore(true);
+    setPlayersPageError(null);
+    const myVersion = playersVersion.current;
+    const stale = () => cancelledRef.current || playersVersion.current !== myVersion;
+    try {
+      const { data, error: pageError } = await withTimeout(
+        supabase.rpc('ca_club_player_page', {
+          p_club_id: clubUuid,
+          p_start: startDate,
+          p_end: endDate,
+          p_sort: playerSort,
+          p_search: null,
+          p_cursor: playerCursor,
+          p_limit: PLAYER_PAGE_SIZE,
+        }),
+        'More players request timed out',
+        PLAYER_REQUEST_TIMEOUT_MS
+      );
+      if (stale()) return;
+      const page = data as PlayerPage | null;
+      if (pageError || !page || !Array.isArray(page.rows)) {
+        if (pageError && !isAuthzError(pageError))
+          reportError(pageError, 'ClubDataPage.players_page_rpc');
+        setPlayersPageError(
+          isAuthzError(pageError)
+            ? 'You No Longer Have Access To This Club\u2019s Player Data.'
+            : 'Could Not Load More Players.'
+        );
+        if (isAuthzError(pageError)) {
+          setPlayers(null);
+          setPlayersHasMore(false);
+        }
+        return;
+      }
+      setPlayers((current) => {
+        if (!current) return current;
+        const known = new Set(current.players.map((row) => row.user_id));
+        return {
+          ...current,
+          players: [...current.players, ...page.rows.filter((row) => !known.has(row.user_id))],
+        };
+      });
+      setPlayerCursor(page.next_cursor || null);
+      setPlayersHasMore(Boolean(page.has_more));
+    } catch (pageError) {
+      if (stale()) return;
+      reportError(pageError, 'ClubDataPage.players_page_request');
+      setPlayersPageError('Could Not Load More Players.');
+    } finally {
+      playersMoreRef.current = false;
+      if (!stale()) setPlayersLoadingMore(false);
+    }
+  }, [clubUuid, playerCursor, playersHasMore, isHydrating, user, startDate, endDate, playerSort]);
+
+  // ca_club_player_page owns ordering before it applies the keyset cursor. A
+  // client sort here would corrupt page boundaries (and was why "losers"
+  // previously meant the least-positive row from the top-winners slice).
   const sortedPlayers = useMemo(() => {
-    const list = players?.players ? [...players.players] : [];
-    if (playerSort === 'losers') return list.sort((a, b) => a.net - b.net);
-    if (playerSort === 'rake') return list.sort((a, b) => b.rake - a.rake);
-    if (playerSort === 'hands') return list.sort((a, b) => b.hands - a.hands);
-    return list.sort((a, b) => b.net - a.net);
-  }, [players, playerSort]);
+    return players?.players || [];
+  }, [players]);
+
+  const gameRows = snapshot?.rows || [];
+  const gameVirtual = useVirtualScroll(gameRows, {
+    itemHeight: DATA_ROW_HEIGHT,
+    viewportHeight: DATA_VIEWPORT_HEIGHT,
+    buffer: 6,
+  });
+  const playerVirtual = useVirtualScroll(sortedPlayers, {
+    itemHeight: DATA_ROW_HEIGHT,
+    viewportHeight: DATA_VIEWPORT_HEIGHT,
+    buffer: 6,
+  });
+  const resetGameVirtual = gameVirtual.reset;
+  const resetPlayerVirtual = playerVirtual.reset;
+
+  useEffect(() => {
+    resetGameVirtual();
+  }, [startDate, endDate, game, stakes, search, gameSort, resetGameVirtual]);
+  useEffect(() => {
+    resetPlayerVirtual();
+  }, [startDate, endDate, playerSort, resetPlayerVirtual]);
+  useEffect(() => {
+    if (tab === 'games' && gamesHasMore && gameVirtual.endIndex >= gameRows.length - 8) {
+      void loadMoreGames();
+    }
+  }, [tab, gamesHasMore, gameVirtual.endIndex, gameRows.length, loadMoreGames]);
+  useEffect(() => {
+    if (tab === 'players' && playersHasMore && playerVirtual.endIndex >= sortedPlayers.length - 8) {
+      void loadMorePlayers();
+    }
+  }, [tab, playersHasMore, playerVirtual.endIndex, sortedPlayers.length, loadMorePlayers]);
 
   // near-real-time: re-poll on an interval and whenever the tab regains focus
   useEffect(() => {
@@ -1296,6 +1578,20 @@ export default function ClubDataPage() {
             ))}
           </div>
 
+          <div className={styles.filterRow} role="group" aria-label="Sort Games">
+            {GAME_SORTS.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                aria-pressed={gameSort === option.id}
+                className={`${styles.chip} ${gameSort === option.id ? styles.active : ''}`}
+                onClick={() => setGameSort(option.id)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
           {filtersActive && (
             <div className={styles.filterUtility}>
               <span>
@@ -1317,7 +1613,8 @@ export default function ClubDataPage() {
           )}
 
           <div
-            className={styles.list}
+            ref={gameVirtual.containerRef}
+            className={`${styles.list} ${styles.virtualList}`}
             role={snapshot?.rows.length ? 'list' : undefined}
             aria-busy={loading}
             aria-label="Games"
@@ -1350,8 +1647,12 @@ export default function ClubDataPage() {
               <div className={styles.state}>No Games In This Period.</div>
             )}
 
+            {!error && gameVirtual.paddingTop > 0 && (
+              <div aria-hidden="true" style={{ height: gameVirtual.paddingTop }} />
+            )}
+
             {!error &&
-              snapshot?.rows.map((row) => {
+              gameVirtual.visibleItems.map((row, virtualIndex) => {
                 // Intl, not padStart (CLAUDE.md §5.5) - and padStart could not
                 // see an Invalid Date, so a malformed started_at rendered
                 // "NaN:NaN". en-GB + timeZone UTC gives the same 24h HH:MM and
@@ -1377,7 +1678,13 @@ export default function ClubDataPage() {
                   (row.creator_id ? row.creator_id.slice(0, 8) : row.id.slice(0, 8));
 
                 return (
-                  <div className={styles.row} key={`${row.kind}-${row.id}`} role="listitem">
+                  <div
+                    className={styles.row}
+                    key={`${row.kind}-${row.id}`}
+                    role="listitem"
+                    aria-posinset={gameVirtual.startIndex + virtualIndex + 1}
+                    aria-setsize={snapshot?.row_count}
+                  >
                     <div className={styles.rowTime}>
                       <div className={styles.rowTimeMain}>{hhmm}</div>
                       <div className={styles.rowTimeSub}>{ddmm}</div>
@@ -1442,7 +1749,38 @@ export default function ClubDataPage() {
                   </div>
                 );
               })}
+
+            {!error && gameVirtual.paddingBottom > 0 && (
+              <div aria-hidden="true" style={{ height: gameVirtual.paddingBottom }} />
+            )}
           </div>
+
+          {gamesPageError && (
+            <div className={`${styles.state} ${styles.error}`} role="alert">
+              <span>{gamesPageError}</span>
+              <button
+                type="button"
+                className={styles.retryButton}
+                onClick={() => void loadMoreGames()}
+                disabled={gamesLoadingMore}
+              >
+                {gamesLoadingMore ? 'Loading' : 'Try Again'}
+              </button>
+            </div>
+          )}
+
+          {snapshot && !error && (gamesHasMore || gamesLoadingMore) && (
+            <button
+              type="button"
+              className={styles.loadMore}
+              onClick={() => void loadMoreGames()}
+              disabled={gamesLoadingMore}
+            >
+              {gamesLoadingMore
+                ? 'Loading More Games'
+                : `Load More Games - ${compactInt(snapshot.rows.length)} Of ${compactInt(snapshot.row_count)}`}
+            </button>
+          )}
         </div>
       )}
 
@@ -1480,7 +1818,8 @@ export default function ClubDataPage() {
           )}
 
           <div
-            className={styles.list}
+            ref={playerVirtual.containerRef}
+            className={`${styles.list} ${styles.virtualList}`}
             role={sortedPlayers.length ? 'list' : undefined}
             aria-busy={playersLoading}
             aria-label="Players"
@@ -1513,10 +1852,20 @@ export default function ClubDataPage() {
               <div className={styles.state}>No Player Activity In This Period.</div>
             )}
 
+            {!playersError && playerVirtual.paddingTop > 0 && (
+              <div aria-hidden="true" style={{ height: playerVirtual.paddingTop }} />
+            )}
+
             {!playersError &&
-              sortedPlayers.map((pl, i) => (
-                <div className={styles.playerRow} key={pl.user_id} role="listitem">
-                  <div className={styles.playerRank}>{i + 1}</div>
+              playerVirtual.visibleItems.map((pl, i) => (
+                <div
+                  className={styles.playerRow}
+                  key={pl.user_id}
+                  role="listitem"
+                  aria-posinset={playerVirtual.startIndex + i + 1}
+                  aria-setsize={players?.player_count}
+                >
+                  <div className={styles.playerRank}>{playerVirtual.startIndex + i + 1}</div>
 
                   <div className={styles.avatarWrap}>
                     {pl.avatar_url ? (
@@ -1556,7 +1905,38 @@ export default function ClubDataPage() {
                   </div>
                 </div>
               ))}
+
+            {!playersError && playerVirtual.paddingBottom > 0 && (
+              <div aria-hidden="true" style={{ height: playerVirtual.paddingBottom }} />
+            )}
           </div>
+
+          {playersPageError && (
+            <div className={`${styles.state} ${styles.error}`} role="alert">
+              <span>{playersPageError}</span>
+              <button
+                type="button"
+                className={styles.retryButton}
+                onClick={() => void loadMorePlayers()}
+                disabled={playersLoadingMore}
+              >
+                {playersLoadingMore ? 'Loading' : 'Try Again'}
+              </button>
+            </div>
+          )}
+
+          {players && !playersError && (playersHasMore || playersLoadingMore) && (
+            <button
+              type="button"
+              className={styles.loadMore}
+              onClick={() => void loadMorePlayers()}
+              disabled={playersLoadingMore}
+            >
+              {playersLoadingMore
+                ? 'Loading More Players'
+                : `Load More Players - ${compactInt(sortedPlayers.length)} Of ${compactInt(players.player_count)}`}
+            </button>
+          )}
 
           {players && !playersError && (
             <div className={styles.footNote}>
@@ -1572,7 +1952,7 @@ export default function ClubDataPage() {
                   : '';
               })()}
               {players.player_count > sortedPlayers.length
-                ? ` Showing ${compactInt(sortedPlayers.length)} of ${compactInt(players.player_count)} players, taken from the top by net.`
+                ? ` Showing ${compactInt(sortedPlayers.length)} of ${compactInt(players.player_count)} players, ordered by ${PLAYER_SORTS.find((option) => option.id === playerSort)?.label.toLowerCase() || 'server rank'}.`
                 : ''}
             </div>
           )}

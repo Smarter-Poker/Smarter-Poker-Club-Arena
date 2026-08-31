@@ -4292,6 +4292,11 @@
       "result",
       "created_at"
     ],
+    "daily_challenge_dashboard_revisions": [
+      "user_id",
+      "revision",
+      "updated_at"
+    ],
     "daily_challenge_milestones": [
       "days",
       "reward_chips",
@@ -5387,29 +5392,29 @@
       "updated_at"
     ],
     "horse_mind_stats": [
+      "user_id",
+      "hands",
+      "vpip",
+      "pfr",
+      "three_bet",
       "aggr",
+      "passive",
+      "folds",
+      "faced_aggr",
+      "r_hands",
+      "r_folds",
+      "r_faced_aggr",
+      "r_aggr",
+      "r_passive",
+      "updated_at",
+      "cbet_opps",
+      "cbet_folds",
+      "f3b_opps",
+      "f3b_folds",
       "bigbet_sd",
       "bigbet_sd_strong",
-      "cbet_folds",
-      "cbet_opps",
-      "f3b_folds",
-      "f3b_opps",
-      "faced_aggr",
-      "folds",
-      "hands",
-      "passive",
-      "pfr",
       "post_aggr",
-      "post_passive",
-      "r_aggr",
-      "r_faced_aggr",
-      "r_folds",
-      "r_hands",
-      "r_passive",
-      "three_bet",
-      "updated_at",
-      "user_id",
-      "vpip"
+      "post_passive"
     ],
     "horse_opponent_journals": [
       "horse_id",
@@ -7872,6 +7877,18 @@
       "metadata",
       "rake_method",
       "returned_uncalled"
+    ],
+    "rakeback_daily_state": [
+      "club_id",
+      "day",
+      "rows_seen",
+      "computed_at"
+    ],
+    "rakeback_daily_user": [
+      "club_id",
+      "day",
+      "user_id",
+      "cents"
     ],
     "rakeback_distributions": [
       "id",
@@ -12529,6 +12546,11 @@
       "withholding_amount",
       "upload_date",
       "created_at"
+    ],
+    "waitlist_policy": [
+      "id",
+      "max_concurrent_holds",
+      "updated_at"
     ],
     "wallet_audit_backfill_log": [
       "id",

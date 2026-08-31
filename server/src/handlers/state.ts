@@ -12,6 +12,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { sendJSON } from '../http/respond.js';
 import { authenticateRequest } from '../http/auth.js';
+import { authorizeTableViewer } from '../services/TableViewerAccess.js';
 
 export interface StateDeps {
   gameServer: {
@@ -57,6 +58,22 @@ export async function handleGetState(
   const auth = await authenticateRequest(req);
   if (!auth) {
     return sendJSON(res, 401, { success: false, error: 'Authentication required' });
+  }
+
+  const access = await authorizeTableViewer(tableId, auth.userId);
+  if (!access.allowed) {
+    if (access.reason === 'table_not_found') {
+      return sendJSON(res, 404, { success: false, error: 'Table not found' });
+    }
+    if (access.reason === 'check_failed') {
+      return sendJSON(res, 503, { success: false, error: 'Unable to verify table access' });
+    }
+    return sendJSON(res, 403, {
+      success: false,
+      code: 'CLUB_MEMBERSHIP_REQUIRED',
+      error: 'Join this club before watching its live games',
+      club_id: access.clubId,
+    });
   }
 
   const engine = deps.gameServer.getTableEngine(tableId);

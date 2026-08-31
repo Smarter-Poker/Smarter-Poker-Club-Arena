@@ -1,17 +1,56 @@
 import { supabase } from '../lib/supabase';
 import { ClubEntryTrustService } from './ClubEntryTrustService';
 
-export type PlayerSearchScope = 'all' | 'friends' | 'clubs' | 'union';
+export type PlayerSearchScope = 'all' | 'friends' | 'clubs' | 'union' | 'managed';
 export type PlayerPresenceFilter = 'all' | 'online' | 'playing';
 export type PlayerSearchSort = 'relevance' | 'name';
 
 export interface PlayerSearchTable {
   id: string;
+  table_id: string;
+  tournament_id?: string | null;
   name: string;
   game_variant: string;
   stakes: string;
+  club_uuid: string;
+  club_id?: number | null;
+  club_slug?: string | null;
   club_name?: string;
   is_tournament?: boolean;
+  membership_status?: string | null;
+  can_watch: boolean;
+  access_action:
+    | 'play'
+    | 'watch'
+    | 'join'
+    | 'request_join'
+    | 'pending'
+    | 'observers_restricted'
+    | 'unavailable';
+}
+
+export interface PlayerSensitiveAccount {
+  club_uuid: string;
+  club_name: string;
+  role: string;
+  access: 'downline' | 'staff' | 'service';
+  wallets: {
+    chip_balance: number;
+    player_wallet: number;
+    agent_wallet: number;
+    promo_wallet: number;
+  };
+  downline: { downline_direct: number; downline_total: number } | null;
+  stats: {
+    hands: number;
+    mtt_hands: number;
+    total_fee: number;
+    mtt_fee: number;
+    total_winnings: number;
+    mtt_winnings: number;
+    claimed_back: number;
+    sent_out: number;
+  } | null;
 }
 
 export interface PlayerSearchResult {
@@ -19,9 +58,10 @@ export interface PlayerSearchResult {
   username: string;
   display_name: string | null;
   avatar_url: string | null;
-  relationship: 'self' | 'friend' | 'club' | 'union';
-  presence_status: 'online' | 'away' | 'playing' | 'offline' | 'hidden';
+  relationship: 'self' | 'friend' | 'club' | 'union' | 'managed' | 'public';
+  presence_status: 'online' | 'playing' | 'offline';
   tables: PlayerSearchTable[];
+  sensitive_accounts: PlayerSensitiveAccount[];
 }
 
 export interface PlayerSearchPage {
@@ -70,7 +110,15 @@ export async function searchPlayers(options: {
   }
   const page = (data || {}) as Record<string, unknown>;
   const result = {
-    items: Array.isArray(page.items) ? (page.items as PlayerSearchResult[]) : [],
+    items: Array.isArray(page.items)
+      ? (page.items as Array<Record<string, unknown>>).map((item) => ({
+          ...(item as unknown as PlayerSearchResult),
+          tables: Array.isArray(item.tables) ? (item.tables as PlayerSearchTable[]) : [],
+          sensitive_accounts: Array.isArray(item.sensitive_accounts)
+            ? (item.sensitive_accounts as PlayerSensitiveAccount[])
+            : [],
+        }))
+      : [],
     total: Number(page.total) || 0,
     hasMore: page.has_more === true,
     offset: Number(page.offset) || 0,

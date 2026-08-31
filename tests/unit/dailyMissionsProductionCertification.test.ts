@@ -83,6 +83,7 @@ describe('Daily Missions production certification', () => {
     expect(pageObject).toContain('placeControlInSafeViewport');
     expect(pageObject).toContain("block: 'center'");
     expect(pageObject).toContain("getByRole('navigation', { name: 'Club Arena' })");
+    expect(pageObject).toContain('sp_firstrun_notif_v2_${userId}');
   });
 
   it('keeps every mission control above the fixed Club Arena footer', () => {

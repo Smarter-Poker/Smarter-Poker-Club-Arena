@@ -13,6 +13,7 @@
 - Made the production journey center and geometry-check every page-level mission control above the fixed footer before activation, matching the scroll a player performs while preventing false navigation clicks.
 - Split realtime certification into explicit channel-ready, server-revision, and client-vault assertions so a lost event cannot be misdiagnosed as a progress-trigger failure.
 - Made the final telemetry gate require only unsampled mutation events; the cold-load receipt remains directly asserted while its intentionally 20%-sampled `dashboard_loaded` signal is treated as optional.
+- Isolated the mission-alert contract from the unrelated app-level first-run push sheet, preventing its delayed modal from covering Claim All or requesting browser permission during certification.
 - Wired the suite into the post-deploy production workflow so a spec that needs a real deployed page cannot silently become orphaned.
 
 ## Release Gate

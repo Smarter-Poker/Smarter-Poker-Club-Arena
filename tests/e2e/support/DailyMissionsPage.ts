@@ -30,14 +30,19 @@ export class DailyMissionsPage {
       ? await account.client.auth.getSession()
       : { data: { session: null } };
     await context.addInitScript(
-      ({ session }) => {
+      ({ session, userId }) => {
         localStorage.setItem('club_arena_welcome_accepted', 'true');
+        // This suite certifies the page-specific Daily Mission alert controls
+        // later in the journey. Mark the unrelated app-level first-run push
+        // question as already answered so its deliberate 20-second modal does
+        // not cover economy controls or invoke browser permission.
+        localStorage.setItem(`sp_firstrun_notif_v2_${userId}`, String(Date.now()));
         // The production Hub owns /auth/login. A standalone branch bundle has
         // no Hub process, so seed the same shared SSO key from the already
         // authenticated disposable-account client for local pre-publish UI.
         if (session) localStorage.setItem('smarter-poker-auth', JSON.stringify(session));
       },
-      { session: apiSession.session }
+      { session: apiSession.session, userId: account.id }
     );
     const page = await context.newPage();
     const notificationsURL = new URL('notifications', baseURL);

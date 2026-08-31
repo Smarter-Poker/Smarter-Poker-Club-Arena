@@ -556,18 +556,31 @@ test.describe('production Daily Missions certification', () => {
         );
       });
 
-      const operations = await serviceRows<{ event: string }>(
-        environment,
-        'daily_mission_operations',
-        account.id,
-        'event'
-      );
-      for (const event of ['reroll_succeeded', 'freeze_succeeded', 'claim_all_succeeded']) {
-        expect(
-          operations.some((row) => row.event === event),
-          `missing operation ${event}`
-        ).toBe(true);
-      }
+      const requiredOperationEvents = [
+        'reroll_succeeded',
+        'freeze_succeeded',
+        'claim_all_succeeded',
+      ];
+      let operations: Array<{ event: string }> = [];
+      // Product telemetry is deliberately fire-and-forget so it can never
+      // delay an action. The certification must therefore wait for the
+      // durable receipts instead of racing the final network microtask.
+      await expect
+        .poll(
+          async () => {
+            operations = await serviceRows<{ event: string }>(
+              environment,
+              'daily_mission_operations',
+              account!.id,
+              'event'
+            );
+            return requiredOperationEvents.filter(
+              (event) => !operations.some((row) => row.event === event)
+            );
+          },
+          { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
+        )
+        .toEqual([]);
       report.operationEvents = [...new Set(operations.map((row) => row.event))].sort();
       await test.info().attach('daily-missions-certification.json', {
         body: JSON.stringify(report, null, 2),

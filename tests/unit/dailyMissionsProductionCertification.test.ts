@@ -42,7 +42,7 @@ describe('Daily Missions production certification', () => {
     // dashboard_loaded is intentionally sampled at 20%; certification proves
     // the actual receipt and only requires unsampled mutation operations.
     const operationGate = spec.slice(
-      spec.indexOf('const operations ='),
+      spec.indexOf('const requiredOperationEvents ='),
       spec.indexOf('report.operationEvents')
     );
     expect(operationGate).not.toContain("'dashboard_loaded'");
@@ -71,7 +71,10 @@ describe('Daily Missions production certification', () => {
       expect(helper).toContain(`'${table}'`);
     }
     expect(helper).toContain('reserved fixture residue remains after cleanup');
-    expect(helper).toContain('cleanupStaleTemporaryCustomizationAccounts');
+    // Certification owns and removes the exact UUID it creates. Listing the
+    // entire Auth tenant first makes an unrelated damaged account capable of
+    // blocking every post-deploy verdict before a fixture even exists.
+    expect(helper).not.toContain('/auth/v1/admin/users?page=');
   });
 
   it('keeps decorative card chrome out of every mission control hit target', () => {

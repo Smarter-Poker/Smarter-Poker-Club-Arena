@@ -615,6 +615,7 @@ export default function DailyChallengesPage() {
   const loadRequestRef = useRef(0);
   const lastSyncedAtRef = useRef(0);
   const lastResumeRefreshRef = useRef(0);
+  const initialLoadSettledRef = useRef(false);
   const realtimeRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const realtimeStatusRef = useRef<'connecting' | 'live' | 'degraded'>('connecting');
 
@@ -695,6 +696,7 @@ export default function DailyChallengesPage() {
         }
         setUserId(authUser.id);
         await loadChallenges(authUser.id, 'initial');
+        if (!cancelled) initialLoadSettledRef.current = true;
       } catch (err) {
         reportError(err, 'DailyChallengesPage.auth_load_failed');
         if (!cancelled) {
@@ -752,6 +754,10 @@ export default function DailyChallengesPage() {
 
     const refreshAfterResume = () => {
       if (document.visibilityState !== 'visible') return;
+      // setUserId installs this listener before the first dashboard receipt
+      // settles. A focus event in that window used to see syncedAt=0 and start
+      // a duplicate cold-load request.
+      if (!initialLoadSettledRef.current) return;
       const resumedAt = Date.now();
       if (resumedAt - lastResumeRefreshRef.current < 1000) return;
 

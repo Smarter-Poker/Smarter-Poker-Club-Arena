@@ -27,7 +27,6 @@ type JsonObject = Record<string, unknown>;
 const CLEANUP_RETRY_DELAYS_MS = [250, 750, 1_500] as const;
 const SERVICE_REQUEST_MAX_ATTEMPTS = 5;
 const SERVICE_REQUEST_BASE_DELAY_MS = 500;
-let staleFixtureSweep: Promise<void> | null = null;
 
 function isTransientCleanupError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');
@@ -258,8 +257,6 @@ export async function createTemporaryCustomizationAccount(
   label: string,
   diamonds: number
 ): Promise<TemporaryCustomizationAccount> {
-  staleFixtureSweep ??= cleanupStaleTemporaryCustomizationAccounts(environment);
-  await staleFixtureSweep;
   const suffix = `${Date.now()}-${randomUUID()}`;
   const email = `${ACCOUNT_PREFIX}${label}-${suffix}@example.invalid`;
   const password = `Ca!${randomUUID()}aA7`;
@@ -462,40 +459,6 @@ export async function cleanupTemporaryCustomizationAccount(
   account: TemporaryCustomizationAccount
 ): Promise<void> {
   return withCleanupRetries(() => cleanupTemporaryCustomizationAccountOnce(environment, account));
-}
-
-/** Remove only abandoned reserved fixtures old enough not to belong to a live CI run. */
-export async function cleanupStaleTemporaryCustomizationAccounts(
-  environment: CustomizationCertificationEnvironment,
-  olderThanMs = 6 * 60 * 60 * 1000
-): Promise<void> {
-  const cutoff = Date.now() - olderThanMs;
-  for (let page = 1; page <= 20; page += 1) {
-    const response = await serviceRequest<{
-      users?: Array<{ id?: string; email?: string; created_at?: string }>;
-      next_page?: number | null;
-    }>(environment, `/auth/v1/admin/users?page=${page}&per_page=1000`);
-    const users = response.users || [];
-    for (const user of users) {
-      const createdAt = Date.parse(user.created_at || '');
-      if (
-        !user.id ||
-        !user.email?.startsWith(ACCOUNT_PREFIX) ||
-        !user.email.endsWith('@example.invalid') ||
-        !Number.isFinite(createdAt) ||
-        createdAt >= cutoff
-      ) {
-        continue;
-      }
-      await cleanupTemporaryCustomizationAccount(environment, {
-        id: user.id,
-        email: user.email,
-        password: '',
-        client: createClient(environment.supabaseUrl, environment.publishableKey),
-      });
-    }
-    if (!response.next_page || users.length === 0) break;
-  }
 }
 
 export function expectedUnlockForFeature(feature: string): string | null {

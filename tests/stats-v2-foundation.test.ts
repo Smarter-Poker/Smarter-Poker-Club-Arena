@@ -7,6 +7,10 @@ const MIGRATION = readFileSync(
   resolve(ROOT, 'supabase/migrations/20260831235995_stats_v2_foundation.sql'),
   'utf8'
 );
+const BOUNDED_MIGRATION = readFileSync(
+  resolve(ROOT, 'supabase/migrations/20260831235998_stats_v2_reads_bounded_rollup.sql'),
+  'utf8'
+);
 const PAGE = readFileSync(resolve(ROOT, 'src/pages/PlayerStatsPage.tsx'), 'utf8');
 const ROUTER = readFileSync(resolve(ROOT, 'server/src/router.ts'), 'utf8');
 const PUBLIC_PROFILE = readFileSync(resolve(ROOT, 'src/pages/PublicProfilePage.tsx'), 'utf8');
@@ -83,6 +87,10 @@ describe('Stats truth and reproducibility boundary', () => {
     expect(MIGRATION).toContain("'cash_money_exact', false");
     expect(MIGRATION).toContain("'historical_club_breakdown_available', false");
     expect(PAGE).toContain('Cash Result And BB/100 Use Reconstructed Hand Actions');
+    expect(BOUNDED_MIGRATION).toContain("'advanced_facts_source', 'ca_hand_player_stat'");
+    expect(BOUNDED_MIGRATION).toContain("'live_tail_included', false");
+    expect(BOUNDED_MIGRATION).toContain("'rollup_covered_through', to_jsonb(v_rollup_ceil)");
+    expect(PAGE).toContain('Newer Hands Appear After The Next Stats Rollup');
   });
 
   it('never substitutes legacy player_stats rows under a scoped range label', () => {

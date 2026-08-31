@@ -28,6 +28,10 @@ const VACUUM = readFileSync(
   'utf8'
 );
 const V2 = readFileSync(resolve(DIR, '20260831235995_stats_v2_foundation.sql'), 'utf8');
+const BOUNDED_V2 = readFileSync(
+  resolve(DIR, '20260831235998_stats_v2_reads_bounded_rollup.sql'),
+  'utf8'
+);
 
 describe('the read path does not touch hand_history for its window', () => {
   it('reads the analysis window from ca_hand_player_stat', () => {
@@ -44,8 +48,11 @@ describe('the read path does not touch hand_history for its window', () => {
     expect(RPC).not.toMatch(/\bFROM\s+hand_history\b/);
   });
 
-  it('still covers the not-yet-rolled tail, so new hands are never missing', () => {
-    expect(RPC).toMatch(/ca_hand_player_facts\(coalesce\(v_ceil, now\(\)\), now\(\), p_user\)/);
+  it('removes the unbounded live tail from the browser path', () => {
+    expect(BOUNDED_V2).toContain("v_source := replace(v_source, v_tail, '')");
+    expect(BOUNDED_V2).toContain('Stats page path can still open live hand history');
+    expect(BOUNDED_V2).toContain("'live_tail_included', false");
+    expect(BOUNDED_V2).toContain("'rollup_covered_through', to_jsonb(v_rollup_ceil)");
   });
 
   it('still reports lifetime from the index, not from the 750-hand window', () => {

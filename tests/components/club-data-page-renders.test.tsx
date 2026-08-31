@@ -450,6 +450,39 @@ describe('ClubDataPage', () => {
     }
   }, 15_000);
 
+  it('keeps verified player rows visible when a background refresh is transiently refused', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      render(<ClubDataPage />);
+      fireEvent.click(screen.getByRole('tab', { name: 'Players' }));
+      await screen.findByText('Table Regular');
+
+      rpcMock.mockImplementation(async (fn: string) => {
+        if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+        if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+        if (fn === 'ca_club_player_breakdown' || fn === 'ca_club_player_page') {
+          return { data: null, error: { code: '57014', message: 'statement timeout' } };
+        }
+        return { data: null, error: null };
+      });
+
+      const before = rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_player_breakdown').length;
+      act(() => realtimeState.busHandler?.({ clubId: CLUB_ID }));
+
+      await waitFor(
+        () =>
+          expect(
+            rpcMock.mock.calls.filter(([fn]) => fn === 'ca_club_player_breakdown').length
+          ).toBe(before + 1),
+        { timeout: 2_000 }
+      );
+      expect(screen.getByText('Table Regular')).toBeInTheDocument();
+      expect(screen.queryByText('Could not load player data.')).not.toBeInTheDocument();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it('keeps the last verified statement visible through a transient refresh failure', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     let invoiceRequest = 0;

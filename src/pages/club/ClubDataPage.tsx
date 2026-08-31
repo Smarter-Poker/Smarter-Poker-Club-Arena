@@ -51,7 +51,11 @@ import {
   removeClubDataCaches,
   writeClubDataCache,
 } from '../../lib/clubDataCache';
-import { auditClubDataSnapshot, formatClubDataAge } from '../../lib/clubDataIntegrity';
+import {
+  auditClubDataSnapshot,
+  formatClubDataAge,
+  preserveExpandedClubDataRows,
+} from '../../lib/clubDataIntegrity';
 import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import type { BusEventType } from '../../core/MasterBus';
@@ -464,6 +468,10 @@ export default function ClubDataPage() {
   const resolveVersion = useRef(0);
   const clubNameVersion = useRef(0);
   const gamesMoreRef = useRef(false);
+  const snapshotRef = useRef<Snapshot | null>(null);
+  const gameCursorRef = useRef<PageCursor | null>(null);
+  const playersRef = useRef<PlayerBreakdown | null>(null);
+  const playerCursorRef = useRef<PageCursor | null>(null);
   const playersMoreRef = useRef(false);
   const exportControllerRef = useRef<AbortController | null>(null);
   const restoredGameKeyRef = useRef<string | null>(null);
@@ -483,6 +491,18 @@ export default function ClubDataPage() {
       if (eventRefreshTimerRef.current) clearTimeout(eventRefreshTimerRef.current);
     };
   }, []);
+  useEffect(() => {
+    snapshotRef.current = snapshot;
+  }, [snapshot]);
+  useEffect(() => {
+    gameCursorRef.current = gameCursor;
+  }, [gameCursor]);
+  useEffect(() => {
+    playersRef.current = players;
+  }, [players]);
+  useEffect(() => {
+    playerCursorRef.current = playerCursor;
+  }, [playerCursor]);
 
   // debounce the search box so typing does not fire an RPC per keystroke
   useEffect(() => {
@@ -529,13 +549,17 @@ export default function ClubDataPage() {
     setClubUuid(isUUID(clubParam) ? clubParam : null);
     setClubName('');
     setSnapshot(null);
+    snapshotRef.current = null;
     setGameCursor(null);
+    gameCursorRef.current = null;
     setGamesHasMore(false);
     setGamesLoadingMore(false);
     setGamesPageError(null);
     setInvoices([]);
     setPlayers(null);
+    playersRef.current = null;
     setPlayerCursor(null);
+    playerCursorRef.current = null;
     setPlayersHasMore(false);
     setPlayersLoadingMore(false);
     setPlayersPageError(null);
@@ -704,18 +728,29 @@ export default function ClubDataPage() {
           return false;
         } else {
           const snapshot = data as Snapshot;
-          const rows = gameSort === 'recent' ? snapshot.rows : page!.rows;
+          const refreshedRows = gameSort === 'recent' ? snapshot.rows : page!.rows;
+          const rows = preserveExpandedClubDataRows(
+            snapshotRef.current?.rows || [],
+            refreshedRows,
+            preserveOnError
+          );
           const nextSnapshot = {
             ...snapshot,
             rows,
             row_count: Number(page?.filtered_count ?? snapshot.row_count),
           };
-          const nextCursor = gameSort === 'recent' ? recentCursor(rows) : page!.next_cursor || null;
-          const nextHasMore =
-            gameSort === 'recent' ? snapshot.row_count > rows.length : Boolean(page!.has_more);
+          const keptExpandedRows = rows.length > refreshedRows.length;
+          const nextCursor = keptExpandedRows
+            ? gameCursorRef.current
+            : gameSort === 'recent'
+              ? recentCursor(rows)
+              : page!.next_cursor || null;
+          const nextHasMore = Number(nextSnapshot.row_count) > rows.length;
           setError(null);
           setSnapshot(nextSnapshot);
+          snapshotRef.current = nextSnapshot;
           setGameCursor(nextCursor);
+          gameCursorRef.current = nextCursor;
           setGamesHasMore(nextHasMore);
           setLedgerSource('live');
           setLastVerifiedAt(Date.now());
@@ -763,7 +798,9 @@ export default function ClubDataPage() {
     }
     restoredGameCacheHitRef.current = true;
     setSnapshot(cached.snapshot);
+    snapshotRef.current = cached.snapshot;
     setGameCursor(cached.cursor);
+    gameCursorRef.current = cached.cursor;
     setGamesHasMore(cached.hasMore);
     setLoading(false);
     setError(null);
@@ -790,6 +827,9 @@ export default function ClubDataPage() {
   const loadPlayers = useCallback(
     async (preserveOnError = false): Promise<boolean> => {
       if (!clubUuid || isHydrating || !user) return false;
+      // Pagination owns the cursor while it is in flight. A heartbeat is a
+      // recovery mechanism, not a reason to invalidate that user action.
+      if (preserveOnError && playersMoreRef.current) return true;
       const myVersion = ++playersVersion.current;
       const stale = () => cancelledRef.current || playersVersion.current !== myVersion;
       setPlayersLoading(true);
@@ -831,7 +871,7 @@ export default function ClubDataPage() {
             removeClubDataCaches(user.id, clubUuid);
           } else {
             reportError(rpcError, 'ClubDataPage.players_rpc');
-            setPlayersError('Could not load player data.');
+            setPlayersError(preserveOnError ? null : 'Could not load player data.');
           }
           if (isAuthzError(rpcError) || !preserveOnError) setPlayers(null);
           return false;
@@ -842,33 +882,40 @@ export default function ClubDataPage() {
           !Array.isArray(page.rows)
         ) {
           reportError(new Error('player payload was empty'), 'ClubDataPage.players_shape');
-          setPlayersError('Could not load player data.');
+          setPlayersError(preserveOnError ? null : 'Could not load player data.');
           if (!preserveOnError) setPlayers(null);
           return false;
         } else {
+          const breakdown = data as PlayerBreakdown;
+          const rows = preserveExpandedClubDataRows(
+            playersRef.current?.players || [],
+            page.rows,
+            preserveOnError
+          );
+          const playerCount = Number(page.filtered_count ?? breakdown.player_count);
+          const keptExpandedRows = rows.length > page.rows.length;
+          const nextPlayers = { ...breakdown, players: rows, player_count: playerCount };
+          const nextCursor = keptExpandedRows ? playerCursorRef.current : page.next_cursor || null;
+          const nextHasMore = playerCount > rows.length;
           setPlayersError(null);
-          setPlayers({
-            ...(data as PlayerBreakdown),
-            players: page.rows,
-            player_count: Number(page.filtered_count ?? (data as PlayerBreakdown).player_count),
-          });
-          setPlayerCursor(page.next_cursor || null);
-          setPlayersHasMore(Boolean(page.has_more));
+          setPlayers(nextPlayers);
+          playersRef.current = nextPlayers;
+          setPlayerCursor(nextCursor);
+          playerCursorRef.current = nextCursor;
+          setPlayersHasMore(nextHasMore);
           writeClubDataCache<CachedPlayerLedger>(user.id, clubUuid, playerCacheKey, {
-            players: {
-              ...(data as PlayerBreakdown),
-              players: page.rows,
-              player_count: Number(page.filtered_count ?? (data as PlayerBreakdown).player_count),
-            },
-            cursor: page.next_cursor || null,
-            hasMore: Boolean(page.has_more),
+            players: nextPlayers,
+            cursor: nextCursor,
+            hasMore: nextHasMore,
           });
           return true;
         }
       } catch (err) {
         if (stale()) return false;
         reportError(err, 'ClubDataPage.players_request');
-        setPlayersError('Player data took too long to respond. Try again.');
+        setPlayersError(
+          preserveOnError ? null : 'Player data took too long to respond. Try again.'
+        );
         if (!preserveOnError) setPlayers(null);
         return false;
       } finally {
@@ -882,18 +929,30 @@ export default function ClubDataPage() {
     if (tab !== 'players') return;
     if (!clubUuid || isHydrating || !user) return;
     const restoreKey = `${user.id}:${clubUuid}:${playerCacheKey}`;
+    let preserveExistingRows = true;
     if (restoredPlayerKeyRef.current !== restoreKey) {
       restoredPlayerKeyRef.current = restoreKey;
       const cached = readClubDataCache<CachedPlayerLedger>(user.id, clubUuid, playerCacheKey);
       if (cached?.players && Array.isArray(cached.players.players)) {
         setPlayers(cached.players);
+        playersRef.current = cached.players;
         setPlayerCursor(cached.cursor);
+        playerCursorRef.current = cached.cursor;
         setPlayersHasMore(cached.hasMore);
         setPlayersLoading(false);
         setPlayersError(null);
+      } else {
+        // A new range/sort is a different ledger. Do not mistake rows from the
+        // previous query for an expanded window that should survive refresh.
+        preserveExistingRows = false;
+        setPlayers(null);
+        playersRef.current = null;
+        setPlayerCursor(null);
+        playerCursorRef.current = null;
+        setPlayersHasMore(false);
       }
     }
-    void loadPlayers(true);
+    void loadPlayers(preserveExistingRows);
   }, [tab, loadPlayers, clubUuid, isHydrating, user, playerCacheKey]);
 
   const loadMoreGames = useCallback(async () => {
@@ -942,18 +1001,21 @@ export default function ClubDataPage() {
         }
         return;
       }
-      setSnapshot((current) => {
-        if (!current) return current;
+      const current = snapshotRef.current;
+      if (current) {
         const known = new Set(current.rows.map((row) => `${row.kind}:${row.id}`));
-        return {
+        const nextSnapshot = {
           ...current,
           rows: [
             ...current.rows,
             ...page.rows.filter((row) => !known.has(`${row.kind}:${row.id}`)),
           ],
         };
-      });
+        setSnapshot(nextSnapshot);
+        snapshotRef.current = nextSnapshot;
+      }
       setGameCursor(page.next_cursor || null);
+      gameCursorRef.current = page.next_cursor || null;
       setGamesHasMore(Boolean(page.has_more));
     } catch (pageError) {
       if (stale()) return;
@@ -1023,15 +1085,18 @@ export default function ClubDataPage() {
         }
         return;
       }
-      setPlayers((current) => {
-        if (!current) return current;
+      const current = playersRef.current;
+      if (current) {
         const known = new Set(current.players.map((row) => row.user_id));
-        return {
+        const nextPlayers = {
           ...current,
           players: [...current.players, ...page.rows.filter((row) => !known.has(row.user_id))],
         };
-      });
+        setPlayers(nextPlayers);
+        playersRef.current = nextPlayers;
+      }
       setPlayerCursor(page.next_cursor || null);
+      playerCursorRef.current = page.next_cursor || null;
       setPlayersHasMore(Boolean(page.has_more));
     } catch (pageError) {
       if (stale()) return;

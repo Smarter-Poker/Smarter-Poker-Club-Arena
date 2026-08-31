@@ -145,3 +145,19 @@ export function formatClubDataAge(ageMs: number): string {
   if (minutes < 60) return `${minutes}m Ago`;
   return `${Math.floor(minutes / 60)}h Ago`;
 }
+
+/**
+ * A background revalidation only fetches the first bounded page. Replacing an
+ * already-expanded ledger with that page makes a 200/300-row investigation
+ * jump back to 100 every minute. Preserve the coherent expanded cursor window;
+ * summaries/counts still refresh, and a user-driven query change starts fresh.
+ */
+export function preserveExpandedClubDataRows<T>(
+  current: readonly T[],
+  refreshedFirstPage: readonly T[],
+  preserve: boolean
+): T[] {
+  return preserve && current.length > refreshedFirstPage.length
+    ? [...current]
+    : [...refreshedFirstPage];
+}

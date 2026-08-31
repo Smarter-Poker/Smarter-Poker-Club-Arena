@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { auditClubDataSnapshot, formatClubDataAge } from '../../src/lib/clubDataIntegrity';
+import {
+  auditClubDataSnapshot,
+  formatClubDataAge,
+  preserveExpandedClubDataRows,
+} from '../../src/lib/clubDataIntegrity';
 
 const snapshot = {
   range: { start: '2026-08-18', end: '2026-08-31', days: 14 },
@@ -59,5 +63,12 @@ describe('Club Data snapshot integrity', () => {
     expect(formatClubDataAge(42_000)).toBe('42s Ago');
     expect(formatClubDataAge(121_000)).toBe('2m Ago');
     expect(formatClubDataAge(7_300_000)).toBe('2h Ago');
+  });
+
+  it('does not collapse an expanded ledger during bounded background revalidation', () => {
+    const current = Array.from({ length: 200 }, (_, id) => ({ id }));
+    const refreshed = Array.from({ length: 100 }, (_, id) => ({ id, refreshed: true }));
+    expect(preserveExpandedClubDataRows(current, refreshed, true)).toHaveLength(200);
+    expect(preserveExpandedClubDataRows(current, refreshed, false)).toEqual(refreshed);
   });
 });

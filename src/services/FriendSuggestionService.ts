@@ -9,6 +9,7 @@
  */
 
 import { supabase } from '../lib/supabase';
+import { readLocalSession } from '../lib/authUtils';
 import { blockService } from './BlockService';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
@@ -314,8 +315,8 @@ class FriendSuggestionServiceClass {
     otherUserId: string
   ): Promise<{ id: string; username: string; avatarUrl?: string }[]> {
     try {
-      const { data: session } = await supabase.auth.getUser();
-      if (session.user?.id !== userId) return [];
+      const session = readLocalSession();
+      if (session?.userId !== userId) return [];
       const { data: profiles, error } = await supabase.rpc('get_mutual_friends', {
         p_other_user_id: otherUserId,
       });

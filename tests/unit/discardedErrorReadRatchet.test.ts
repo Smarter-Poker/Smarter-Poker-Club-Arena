@@ -94,7 +94,7 @@ const BASELINE = new Map<string, number>([
   ['src/pages/PlayerSessionsPage.tsx', 3],
   ['src/pages/NotificationsPage.tsx', 3],
   ['src/pages/ClubRulesPage.tsx', 3],
-  ['src/pages/CashierTradePage.tsx', 2],
+  ['src/pages/CashierTradePage.tsx', 0],
   ['src/pages/AntiCheatPage.tsx', 3],
   ['src/components/wallet/ChipMintModal.tsx', 3],
   ['src/components/agent/AgentCommissionDashboard.tsx', 3],

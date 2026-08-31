@@ -1329,6 +1329,9 @@ export default function TableConfigPage() {
      *                (COALESCE(t.game_mode,'') ILIKE '%mixed%').
      *   ante_bb      live readers use the authored BB value while the engine
      *                posts the derived chip value in `ante`.
+     * min_buy_in_bb / max_buy_in_bb are intentionally absent here: the schema
+     * now generates them from min_buy_in / max_buy_in (see the buy-in comment
+     * above), and Postgres refuses an explicit write to either mirror.
      * The rest that remain below have real readers on `tables` rows.
      */
     // SNG/MTT specific

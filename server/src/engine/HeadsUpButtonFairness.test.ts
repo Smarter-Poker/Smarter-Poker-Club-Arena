@@ -25,7 +25,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { drawFirstButtonSeat, headsUpButtonSeat, nextOccupiedSeat } from './headsUpButton.js';
 import { secureRandomInt } from './CryptoRandom.js';
-import { sliceEnclosingBlock, sliceMethod } from '../testHelpers/sourceWindow.js';
+import { sliceEnclosingBlock, sliceMethod, sliceStatement } from '../testHelpers/sourceWindow.js';
 
 const DEALING = readFileSync(join(__dirname, 'ServerTableEngineDealing.ts'), 'utf8');
 const BASE = readFileSync(join(__dirname, 'ServerTableEngineBase.ts'), 'utf8');
@@ -138,6 +138,30 @@ describe('the dealing loop is wired to both rules', () => {
   it('derives the heads-up button from the last big blind', () => {
     expect(DEALING).toMatch(/headsUpButtonSeat\(sortedSeats, this\.lastBigBlindSeat\)/);
     expect(DEALING).toMatch(/this\.lastBigBlindSeat = bbSeat;/);
+  });
+
+  it('never records a big blind on a bomb pot, where nobody posts one', () => {
+    /**
+     * A bomb pot antes; HandController returns before postBlinds(). Writing
+     * the anchor anyway walks it one seat too far, and the next hand hands the
+     * big blind back to the player who last actually paid it -- the very bug
+     * the rule removes, at a two-handed bomb-pot table. Shipped in the first
+     * Phase 2 commit, caught in its audit.
+     */
+    const block = sliceEnclosingBlock(DEALING, 'this.lastBigBlindSeat = bbSeat;');
+    expect(block).toMatch(/this\.lastBigBlindSeat = bbSeat;/);
+    // The guard is the block's own condition, so read the statement that owns it.
+    const stmt = sliceStatement(DEALING, 'if (!bombPotConfig) {');
+    expect(stmt).toMatch(/this\.lastBigBlindSeat = bbSeat;/);
+    // And it must not also be set beside the sb/bb computation, which runs on
+    // bomb hands too.
+    expect(DEALING.match(/this\.lastBigBlindSeat = bbSeat;/g)!.length).toBe(1);
+  });
+
+  it('persists the draw only where something reads it back', () => {
+    // TournamentManagerBase.restoreDrawnFirstButtons is the sole reader of
+    // tables.first_button_seat. A cash table re-draws on restart instead.
+    expect(DEALING).toMatch(/if \(headsUpFirstButton !== null && this\.isTournamentTable\(\)\) \{/);
   });
 
   it('keeps a newcomer out of the heads-up button seat', () => {

@@ -1,6 +1,6 @@
 # PHASE 2 OF 7 -- HEADS-UP FAIRNESS -- BUILT, TESTED, NOT SHIPPED
 
-Branch: `phase2/heads-up-fairness`  ·  commit `565c513023`  ·  base `origin/main` d3b91a2352
+Branch: `phase2/heads-up-fairness` · commit `565c513023` · base `origin/main` d3b91a2352
 Worktree: `~/Documents/club-arena/.agent-trees/phase2-hu-fairness`
 
 The session that built this had NO network egress: `github.com:22`, `api.github.com`
@@ -24,15 +24,15 @@ a `chore(club-arena): sync build <sha>` commit in the World Hub -> Vercel.
 
 ## What changed (7 files, +148 in the three engine files)
 
-| File | Change |
-|---|---|
-| `server/src/engine/headsUpButton.ts` | NEW. Pure seat arithmetic: `drawFirstButtonSeat`, `headsUpButtonSeat`, `nextOccupiedSeat`. |
-| `server/src/engine/ServerTableEngineDealing.ts` | Draws + persists the first heads-up button; derives the heads-up button from the last big blind; records `lastBigBlindSeat`. |
-| `server/src/engine/ServerTableEngineBase.ts` | New `lastBigBlindSeat` field, restored from `hand_history` in the same read that restores the button. |
-| `server/src/tournament/TournamentManagerBase.ts` | `resume()` reads the level through `resolveBlindLevel`. |
-| `server/src/engine/HeadsUpButtonFairness.test.ts` | NEW, 14 tests. |
-| `server/src/tournament/ResumeBlindClock.test.ts` | NEW, 3 tests. |
-| `server/src/engine/RestartFidelity.test.ts` | Existing select pin widened to `select('button_seat, players')`, deliberately, with the reason in the test. |
+| File                                              | Change                                                                                                                       |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `server/src/engine/headsUpButton.ts`              | NEW. Pure seat arithmetic: `drawFirstButtonSeat`, `headsUpButtonSeat`, `nextOccupiedSeat`.                                   |
+| `server/src/engine/ServerTableEngineDealing.ts`   | Draws + persists the first heads-up button; derives the heads-up button from the last big blind; records `lastBigBlindSeat`. |
+| `server/src/engine/ServerTableEngineBase.ts`      | New `lastBigBlindSeat` field, restored from `hand_history` in the same read that restores the button.                        |
+| `server/src/tournament/TournamentManagerBase.ts`  | `resume()` reads the level through `resolveBlindLevel`.                                                                      |
+| `server/src/engine/HeadsUpButtonFairness.test.ts` | NEW, 14 tests.                                                                                                               |
+| `server/src/tournament/ResumeBlindClock.test.ts`  | NEW, 3 tests.                                                                                                                |
+| `server/src/engine/RestartFidelity.test.ts`       | Existing select pin widened to `select('button_seat, players')`, deliberately, with the reason in the test.                  |
 
 ## The three defects, measured in production before the fix
 

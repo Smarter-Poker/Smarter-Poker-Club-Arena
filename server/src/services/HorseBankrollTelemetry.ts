@@ -41,14 +41,17 @@ export type BankrollEvent =
   /** Left the table down its stop-loss. */
   | 'session_stop_loss'
   /** Could not afford ANY open cash game - the move-down ladder ran out. */
+  /** Refused a tournament entry: the roll does not cover the event. */
+  | 'tournament_refused_underrolled'
+  /** Entered a freeroll while unable to afford any paid game. */
+  | 'freeroll_entered_broke'
   | 'ladder_exhausted';
 
 /**
  * WHAT IS DELIBERATELY NOT HERE YET.
  *
  * The reverted work also emitted `seat_refused_aggregate_exposure`,
- * `rebuy_refused_underrolled`, `rebuy_refused_stop_loss`,
- * `tournament_refused_underrolled` and `freeroll_entered_broke`. Those
+ * `rebuy_refused_underrolled` and `rebuy_refused_stop_loss`. Those
  * decisions do not exist in `main` right now, so naming them here would put
  * five reasons in the vocabulary that can never be counted - and a reason
  * that is always zero reads as a decision that never fires, which is exactly

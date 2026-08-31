@@ -2,7 +2,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  PUBLIC PROFILE PAGE — View Another Player's Profile
  * ═══════════════════════════════════════════════════════════════════════════════
- * Shows: avatar, username, bio, VIP tier, level, stats, achievements,
+ * Shows: avatar, username, bio, VIP tier, level, achievements,
  * mutual friends, and action buttons (Add Friend, Message, Block)
  */
 
@@ -10,7 +10,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useParams, useNavigate } from 'react-router-dom';
 import { profileService } from '../services/ProfileService';
-import type { UserProfile, ProfileStats } from '../services/ProfileService';
+import type { UserProfile } from '../services/ProfileService';
 import { friendSuggestionService } from '../services/FriendSuggestionService';
 import { blockService } from '../services/BlockService';
 import { messagingService } from '../services/MessagingService';
@@ -53,7 +53,6 @@ export default function PublicProfilePage() {
   const isMounted = useIsMounted();
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [stats, setStats] = useState<ProfileStats | null>(null);
   const [mutualFriends, setMutualFriends] = useState<
     { id: string; username: string; avatarUrl?: string }[]
   >([]);
@@ -88,9 +87,8 @@ export default function PublicProfilePage() {
     loadingRef.current = true;
     setLoading(true);
     try {
-      const [profileData, statsData, mutuals, blocked, friendship, status] = await Promise.all([
+      const [profileData, mutuals, blocked, friendship, status] = await Promise.all([
         profileService.getPublicProfile(userId),
-        profileService.getStats(userId),
         friendSuggestionService.getMutualFriends(user.id, userId),
         blockService.isBlocked(user.id, userId),
         checkFriendship(user.id, userId),
@@ -99,7 +97,6 @@ export default function PublicProfilePage() {
 
       if (!isMounted.current) return;
       setProfile(profileData);
-      setStats(statsData);
       setMutualFriends(mutuals);
       setIsBlocked(blocked);
       setFriendStatus(friendship);
@@ -431,36 +428,6 @@ export default function PublicProfilePage() {
           </>
         )}
       </div>
-
-      {/* Stats Grid */}
-      {stats && (
-        <div className="profile-stats-grid">
-          <div className="stat-card">
-            <span className="stat-value">{stats.totalHands.toLocaleString()}</span>
-            <span className="stat-label">Hands Played</span>
-          </div>
-          <div className="stat-card">
-            <span className="stat-value">{stats.winRate.toFixed(1)}%</span>
-            <span className="stat-label">Win Rate</span>
-          </div>
-          <div className="stat-card">
-            <span className="stat-value">{stats.biggestWin.toLocaleString()}</span>
-            <span className="stat-label">Biggest Win</span>
-          </div>
-          <div className="stat-card">
-            <span className="stat-value">{profile.tournamentsWon}</span>
-            <span className="stat-label">Tournaments Won</span>
-          </div>
-          <div className="stat-card">
-            <span className="stat-value">{profile.currentStreak}</span>
-            <span className="stat-label">Current Streak</span>
-          </div>
-          <div className="stat-card">
-            <span className="stat-value">{stats.favoriteVariant}</span>
-            <span className="stat-label">Favorite Game</span>
-          </div>
-        </div>
-      )}
 
       {/* Mutual Friends */}
       {mutualFriends.length > 0 && (

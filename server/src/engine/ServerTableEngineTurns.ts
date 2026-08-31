@@ -1014,12 +1014,29 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   /**
    * POST /heartbeat — Bible V8 §6.3: Reset disconnect timer for a player
    */
-  public heartbeat(userId: string): {
+  public heartbeat(
+    userId: string,
+    /**
+     * PHASE 2 (2026-08-31): the client reporting that it has actually DRAWN
+     * the action controls for this player. Optional - older clients omit it,
+     * and the silent-client canary falls back to its weaker signal rather
+     * than treating them as suspect.
+     *
+     * It rides the heartbeat instead of getting a route of its own because
+     * the heartbeat already runs on a timer, is already authenticated, and
+     * already resolves the table engine. A second endpoint would be a second
+     * thing to keep alive for the sake of one boolean.
+     */
+    opts?: { turnRendered?: boolean }
+  ): {
     success: boolean;
     connected: boolean;
     gracePeriodRemaining: number;
   } {
     this.disconnectEngine.heartbeat(this.tableId, userId);
+    if (opts?.turnRendered) {
+      this.disconnectEngine.noteTurnRendered(this.tableId, userId);
+    }
     const connected = this.disconnectEngine.isConnected(this.tableId, userId);
     return { success: true, connected, gracePeriodRemaining: 0 };
   }

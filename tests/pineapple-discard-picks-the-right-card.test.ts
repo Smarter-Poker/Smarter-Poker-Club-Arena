@@ -89,6 +89,40 @@ describe('TablePage wiring', () => {
   });
 });
 
+describe('a background table never puts a picker on your screen', () => {
+  const src = read('src/pages/TablePage.tsx');
+
+  it('gates the picker on isActive', () => {
+    const i = src.indexOf('<PineappleDiscard');
+    expect(i).toBeGreaterThan(-1);
+    expect(src.slice(i, i + 700)).toContain('isOpen={isActive && !!heroPineappleCards}');
+  });
+
+  it('still arms the tab-strip alarm on a background table', () => {
+    // The deadline must NOT be gated on isActive, or the notice that replaces
+    // the picker is silenced along with it. Dan 2026-08-28: a background table
+    // asks for attention, it never takes it.
+    const memo = src.slice(
+      src.indexOf('const heroPineappleCards = useMemo('),
+      src.indexOf('const actionTimeSecondsRef')
+    );
+    expect(memo).not.toContain('if (!isActive) return null;');
+    expect(src).toContain("setDecisionDeadline({ kind: 'discard', at: pineappleDeadline })");
+  });
+});
+
+describe('the recovery poll obeys the same index rule', () => {
+  const src = read('src/pages/TablePage.tsx');
+
+  it('records the engine order before cards_pre_sort, on the poll path too', () => {
+    const i = src.indexOf('heroEngineCardOrderRef.current = parsedCards');
+    const j = src.indexOf('if (cardsPreSortRef.current) parsedCards = sortCardsByRank');
+    expect(i).toBeGreaterThan(-1);
+    expect(j).toBeGreaterThan(-1);
+    expect(i).toBeLessThan(j);
+  });
+});
+
 describe('the picker does not cover the flop', () => {
   const css = read('src/components/table/PineappleDiscard.css');
 

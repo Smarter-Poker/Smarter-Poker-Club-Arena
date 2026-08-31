@@ -2201,6 +2201,7 @@
     "fn_tournament_payouts_are_append_only",
     "fn_tournament_primary_table",
     "fn_tournament_prize_disbursement_audit",
+    "fn_tournament_rake_settlement_check",
     "fn_tournament_register_counter",
     "fn_tournament_unregister_counter",
     "fn_tournament_waitlist_position",

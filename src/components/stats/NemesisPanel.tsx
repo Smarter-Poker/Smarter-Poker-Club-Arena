@@ -201,7 +201,7 @@ export default function NemesisPanel({ userId, days = null }: Props) {
                     key={r.opponent_id}
                     tabIndex={0}
                     role="link"
-                    aria-label={`View ${r.username ?? 'This Player'}'S Profile`}
+                    aria-label={`View ${r.username ?? 'This Player'}'s Profile`}
                     onClick={() => openProfile(r.opponent_id)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {

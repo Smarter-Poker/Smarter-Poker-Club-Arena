@@ -233,7 +233,7 @@ export default function FriendActivityFeed({ friends }: { friends: FeedFriend[] 
             <Link
               className="activity-avatar"
               to={`/profile/${item.userId}`}
-              aria-label={`Open ${item.username}'S Profile`}
+              aria-label={`Open ${item.username}'s Profile`}
             >
               {item.avatar ? (
                 <img loading="lazy" decoding="async" src={item.avatar} alt="" />

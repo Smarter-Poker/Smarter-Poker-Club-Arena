@@ -1233,6 +1233,24 @@
       "app_name",
       "occurred_at"
     ],
+    "ca_settlements": [
+      "id",
+      "settlement_type",
+      "external_ref",
+      "state",
+      "club_id",
+      "union_id",
+      "table_id",
+      "tournament_id",
+      "hand_id",
+      "idempotency_key",
+      "correlation_id",
+      "epoch_id",
+      "totals",
+      "error_detail",
+      "created_at",
+      "updated_at"
+    ],
     "ca_stat_distribution": [
       "cohort",
       "metric",
@@ -1243,6 +1261,25 @@
       "p90",
       "sample_size",
       "computed_at"
+    ],
+    "ca_supply_snapshots": [
+      "id",
+      "taken_at",
+      "member_wallets",
+      "member_promo",
+      "felt",
+      "treasuries",
+      "chip_pools",
+      "club_wallets",
+      "union_wallets",
+      "agent_wallets",
+      "bbj_pools",
+      "spin_pools",
+      "total",
+      "mint_since_prev",
+      "burn_since_prev",
+      "delta_vs_prev",
+      "unexplained"
     ],
     "ca_treasury_baseline": [
       "club_id",

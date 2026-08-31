@@ -248,6 +248,18 @@ Rules for every agent working this project:
    pre-execution 503s (PGRST001/002/003). Do not remove them, and do not
    "extend" them to retry other 5xx — replaying an executed write is a
    money-integrity hazard.
+7. A watchdog now enforces this policy: `fn_pgrst_reload_watchdog` (pg_cron,
+   every 15 min) logs every DDL statement to `ca_ddl_events` with role and
+   application attribution, and files breaches into
+   `pgrst_reload_watchdog_log` when reload-triggering DDL exceeds 60/hour,
+   when the authenticator timeout fix is reverted, or when the pgrst watch
+   triggers are disabled. Check that log when the API gets flaky.
+8. Do NOT move or drop public functions based on code greps. At least 14
+   product repos call this database; on 2026-08-31 a grep-based "unused"
+   analysis flagged functions created THAT DAY by an active agent. Dead
+   backup TABLES with zero scans, zero references and zero FKs may be moved
+   to `zz_archive` (see migration
+   20260831190500_archive_dead_backup_tables_out_of_api_surface.sql).
 
 ---
 

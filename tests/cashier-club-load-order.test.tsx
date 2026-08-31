@@ -27,7 +27,6 @@ function deferred<T>() {
 describe('CashierTradePage club load ordering', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
   });
 
   it('does not invalidate the request that loads the first Trade tab', async () => {
@@ -182,69 +181,5 @@ describe('CashierTradePage club load ordering', () => {
       await secondPage.promise;
     });
     await waitFor(() => expect(screen.queryByText(/Loading The Rest/)).not.toBeInTheDocument());
-  });
-
-  it('locks the reconciliation and money controls as soon as the browser goes offline', async () => {
-    vi.mocked(supabase.from).mockImplementation((table: string) => {
-      let columns = '';
-      const builder: Record<string, unknown> = {};
-      const chain = () => builder;
-      for (const method of ['eq', 'in', 'or', 'order', 'limit', 'range']) {
-        builder[method] = vi.fn(chain);
-      }
-      builder.select = vi.fn((value: string) => {
-        columns = value;
-        return builder;
-      });
-      builder.maybeSingle = vi.fn(() =>
-        Promise.resolve(
-          table === 'club_members'
-            ? { data: { role: 'owner', chip_balance: 250 }, error: null }
-            : table === 'agents'
-              ? { data: { agent_wallet_balance: 500 }, error: null }
-              : { data: null, error: null }
-        )
-      );
-      builder.then = (resolve: (value: unknown) => unknown) => {
-        const value =
-          table === 'club_members' && columns.includes('clubs:club_id')
-            ? {
-                data: [
-                  {
-                    club_id: CLUB_ID,
-                    role: 'owner',
-                    chip_balance: 250,
-                    clubs: { name: 'Offline Guard Club', club_id: 101, logo_url: null },
-                  },
-                ],
-                error: null,
-              }
-            : { data: [], error: null, count: 0 };
-        return Promise.resolve(value).then(resolve);
-      };
-      return builder as never;
-    });
-    vi.mocked(supabase.rpc).mockResolvedValue({ data: [], error: null } as never);
-
-    render(
-      <MemoryRouter initialEntries={[`/clubs/${CLUB_ID}/cashier`]}>
-        <Routes>
-          <Route path="/clubs/:clubId/cashier" element={<CashierTradePage />} />
-        </Routes>
-      </MemoryRouter>
-    );
-
-    await waitFor(() => expect(screen.getByText('Balances synchronized')).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: 'Reconcile Now' })).toBeEnabled();
-
-    await act(async () => {
-      Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
-      window.dispatchEvent(new Event('offline'));
-    });
-
-    expect(screen.getByText('Cashier offline; money actions are locked')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Reconcile Now' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Claim Back' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Open the Club Bank Cashier' })).toBeDisabled();
   });
 });

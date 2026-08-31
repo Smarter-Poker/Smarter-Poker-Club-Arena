@@ -711,6 +711,9 @@ export class HorseFleetManager {
        */
       const bankrolls = new Map<string, number>();
       let bankrollsLoaded = false;
+      // Horses the gate could not price this cycle. LOUD, because the silent
+      // version of this number is what cost the floor 40 minutes.
+      let rollUnknown = 0;
       try {
         /**
          * PAGED PER CLUB (2026-08-31). `club_members` has NO `id` column — its
@@ -734,8 +737,32 @@ export class HorseFleetManager {
          * from a half-loaded one, because a horse missing from the map reads as
          * a zero roll to the gate below.
          */
+        /**
+         * THE CLUBS THAT ACTUALLY OWN THE TABLES, not a hard-coded pair.
+         *
+         * `this.clubIds` is the round-robin used when CREATING tables. It is
+         * not the set of clubs that own the tables now on the floor, and on
+         * 2026-08-31 it shared not one entry with them: all 26 open cash
+         * tables belonged to `fade0000-…-0001` while the loader read
+         * `a41434bb-…` and `a0000000-…`, which own zero cash tables between
+         * them. Every gate lookup therefore missed.
+         *
+         * That was survivable only because a separate paging bug kept
+         * `bankrollsLoaded` false, so the gate never ran. #2101 fixed the
+         * paging, the gate ran for the first time, and the floor emptied
+         * inside one seeding cycle.
+         *
+         * Deriving the set from `tables` cannot drift: the clubs read are by
+         * construction the clubs whose seats are being decided.
+         */
+        const clubIdsToLoad = new Set<string>(this.clubIds);
+        for (const t of tables) {
+          const cid = (t as { club_id?: string | null }).club_id;
+          if (cid) clubIdsToLoad.add(cid);
+        }
+
         let allComplete = true;
-        for (const clubId of this.clubIds) {
+        for (const clubId of clubIdsToLoad) {
           const brPage = await fetchAllRows<{
             user_id: string;
             club_id: string;
@@ -945,8 +972,30 @@ export class HorseFleetManager {
              * and if nothing is left it goes to the freerolls.
              */
             if (bankrollsLoaded) {
+              /**
+               * AN UNKNOWN ROLL IS UNKNOWN, NOT ZERO — 2026-08-31, and this
+               * line emptied the entire cash floor for 40 minutes.
+               *
+               * It used to `return false`, which reads as "no membership, no
+               * seat" and is wrong twice over. The doctrine of this whole
+               * layer, stated in the comment above the loader, is that a
+               * bankroll we cannot read means NO BANKROLL OPINION — because
+               * `atomic_table_buyin` still refuses a seat the balance cannot
+               * cover, so this gate decides which games are SENSIBLE, never
+               * which are possible. A refusal here is the one failure mode
+               * the loader was carefully written to avoid, re-introduced one
+               * line below it.
+               *
+               * And it is not hypothetical. The map was keyed on two
+               * hard-coded club ids that own ZERO cash tables, so every
+               * lookup for a real table missed and every horse was refused,
+               * at every table, every cycle. See the loader for the rest.
+               */
               const roll = bankrolls.get(`${table.club_id}:${h.id}`);
-              if (roll === undefined) return false; // no membership, no seat
+              if (roll === undefined) {
+                rollUnknown++;
+                return true;
+              }
               const ref = referenceBuyIn(
                 table.big_blind,
                 Number((table as any).min_buy_in) || undefined,
@@ -1078,6 +1127,13 @@ export class HorseFleetManager {
         } catch (err: any) {
           reportError(err, 'HorseFleet.Error_seeding_table_tablename');
         }
+      }
+
+      if (rollUnknown > 0) {
+        console.warn(
+          `[HorseFleet] bankroll gate skipped for ${rollUnknown} horse/table pairs — ` +
+            `no membership row for that club. Seating proceeded (fail-open).`
+        );
       }
 
       if (totalSeated > 0) {

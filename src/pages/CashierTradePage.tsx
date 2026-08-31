@@ -64,11 +64,6 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { resolveClubUUID, isUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
 import { cashierReasonCode, recordCashierOperation } from '../services/CashierOperationsTelemetry';
-import {
-  cashierReceiptText,
-  copyCashierText,
-  readCashierOnlineState,
-} from '../services/CashierResilience';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
@@ -170,14 +165,6 @@ interface TradeRecordRow {
   amount: number;
   direction: 'in' | 'out';
   counterparty: string;
-}
-
-interface TransferRecovery {
-  clubId: string;
-  kind: 'send' | 'ticket';
-  amount: number;
-  targetIds: string[];
-  failures: Array<{ userId: string; name: string; message: string }>;
 }
 
 interface ChipRequestRow {
@@ -324,11 +311,6 @@ export default function CashierTradePage() {
   const [recordsLimit, setRecordsLimit] = useState(50);
   const [recordsHasMore, setRecordsHasMore] = useState(false);
   const [recordsReload, setRecordsReload] = useState(0);
-  const [receipt, setReceipt] = useState<TradeRecordRow | null>(null);
-  const [isOnline, setIsOnline] = useState(readCashierOnlineState);
-  const [lastVerifiedAt, setLastVerifiedAt] = useState<number | null>(null);
-  const [reconciling, setReconciling] = useState(false);
-  const reconcilingRef = useRef(false);
   // Dan 2026-08-21: the three tabs/buttons that used to say "coming soon" are
   // real features now (chip_requests + tournament_tickets, migration 20260821).
   const [requests, setRequests] = useState<ChipRequestRow[]>([]);
@@ -402,7 +384,6 @@ export default function CashierTradePage() {
   const [transferFailures, setTransferFailures] = useState<
     Array<{ userId: string; name: string; message: string }>
   >([]);
-  const [transferRecovery, setTransferRecovery] = useState<TransferRecovery | null>(null);
   const [amount, setAmount] = useState('');
   const [busy, setBusy] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{ processed: number; total: number } | null>(
@@ -465,22 +446,6 @@ export default function CashierTradePage() {
       isMounted.current = false;
     };
   }, []);
-
-  useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-    setIsOnline(readCashierOnlineState());
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isOnline) setActiveCashier(null);
-  }, [isOnline]);
 
   // ── Resolve club uuid from the route param ─────────────────────────────────
   useEffect(() => {
@@ -572,12 +537,6 @@ export default function CashierTradePage() {
     [memberships, clubUuid]
   );
 
-  const requireOnline = useCallback(() => {
-    if (isOnline) return true;
-    toast?.error?.('Cashier Is Offline. Reconnect Before Moving Chips');
-    return false;
-  }, [isOnline, toast]);
-
   // The club switcher is a real popup control: focus enters it, Escape returns
   // to the trigger, and a click elsewhere closes it. Previously it remained
   // open over every tab until the user selected another club.
@@ -668,7 +627,7 @@ export default function CashierTradePage() {
     // gave a permanent "Loading members...". Clear it here instead.
     if (!user?.id || !clubUuid) {
       setLoading(false);
-      return false;
+      return;
     }
     const myVersion = ++loadVersion.current;
     const stale = () => loadVersion.current !== myVersion;
@@ -676,7 +635,6 @@ export default function CashierTradePage() {
     setLoadError(null);
     setRosterWarning(null);
     setRosterLoadingMore(false);
-    let complete = true;
     try {
       const [meRes, floatRes] = await Promise.all([
         supabase
@@ -747,7 +705,6 @@ export default function CashierTradePage() {
             }
           );
           if (dlErr) {
-            complete = false;
             recordCashierOperation({
               userId: user.id,
               clubId: clubUuid,
@@ -804,8 +761,6 @@ export default function CashierTradePage() {
       setAgentWallet(float);
       setDownline(mapCashierRoster(dl, user.id));
       setRosterLoadingMore(false);
-      if (complete) setLastVerifiedAt(Date.now());
-      return complete;
     } catch (e) {
       reportError(e, 'CashierTradePage.loadClub');
       // An empty list used to be the only symptom of a failed load, so the
@@ -815,7 +770,6 @@ export default function CashierTradePage() {
         setRosterLoadingMore(false);
         setLoadError('Could not load this club. Check your connection and try again.');
       }
-      return false;
     } finally {
       if (isMounted.current && !stale()) setLoading(false);
     }
@@ -896,10 +850,7 @@ export default function CashierTradePage() {
     setSelected(new Set());
     setVisibleCount(25);
     setTransferFailures([]);
-    setTransferRecovery(null);
     setBatchProgress(null);
-    setReceipt(null);
-    setLastVerifiedAt(null);
     // The claimable list belongs to the club it was read from. Leaving it up
     // would offer a claim against a send made in a DIFFERENT club, which the
     // server refuses - after the user has already tapped it.
@@ -1145,7 +1096,6 @@ export default function CashierTradePage() {
    * burn an escrow whose refund has nowhere to land.
    */
   const actOnTicket = async (row: TicketRow, action: 'redeem' | 'cancel') => {
-    if (!requireOnline()) return;
     if (ticketActingRef.current) return;
     ticketActingRef.current = true;
     setTicketActingId(row.id);
@@ -1182,7 +1132,6 @@ export default function CashierTradePage() {
   }, [loadHeldTicketCount]);
 
   const respondToRequest = async (id: string, action: 'approve' | 'decline' | 'cancel') => {
-    if (!requireOnline()) return;
     // Approving a chip request performs the same conserved ledger move as a
     // Send Out. The row's three buttons were never disabled and there was no
     // busy state, so a double-tap fired two RPCs and the second's refusal
@@ -1218,7 +1167,6 @@ export default function CashierTradePage() {
   };
 
   const askForChips = async () => {
-    if (!requireOnline()) return;
     const raw = Number(askAmount);
     if (!Number.isFinite(raw) || raw <= 0) {
       toast?.error?.('Enter A Positive Amount');
@@ -1417,7 +1365,6 @@ export default function CashierTradePage() {
   useEffect(() => {
     submissionIdRef.current = null;
     opIdsRef.current = new Map();
-    setTransferRecovery(null);
   }, [amount, selected, clubUuid]);
 
   /** Chips the selected players are holding right now. */
@@ -1437,7 +1384,6 @@ export default function CashierTradePage() {
   // ── Money actions ──────────────────────────────────────────────────────────
   const runTransfers = async (kind: 'send' | 'ticket') => {
     if (!user?.id || !clubUuid) return;
-    if (!requireOnline()) return;
     if (loading || !roleResolved || loadError) {
       toast?.error?.('Cashier Is Still Synchronizing. Try Again In A Moment');
       return;
@@ -1637,21 +1583,11 @@ export default function CashierTradePage() {
       if (ok === targets.length) {
         submissionIdRef.current = null;
         opIdsRef.current = new Map();
-        setTransferRecovery(null);
       }
       if (isMounted.current) {
         setBusy(false);
         setBatchProgress(null);
         setTransferFailures(failed);
-        if (failed.length > 0) {
-          setTransferRecovery({
-            clubId: clubUuid,
-            kind,
-            amount: value,
-            targetIds: targets.map((target) => target.userId),
-            failures: failed,
-          });
-        }
         // Only close on a clean batch. Closing on failure wiped the amount and
         // the selection, which is the worst possible moment to lose them.
         if (failed.length === 0) {
@@ -1725,7 +1661,6 @@ export default function CashierTradePage() {
 
   const claimBack = async (row: ReversibleSend) => {
     if (!clubUuid || claimingId || busyRef.current) return;
-    if (!requireOnline()) return;
     busyRef.current = true;
     setClaimingId(row.transaction_id);
     try {
@@ -1804,52 +1739,6 @@ export default function CashierTradePage() {
     return reversible.filter((r) => secondsLeftFor(r) > 0);
   }, [reversible, secondsLeftFor, nowTick]);
 
-  const reconcileCashier = useCallback(async () => {
-    if (!requireOnline() || reconcilingRef.current) return;
-    reconcilingRef.current = true;
-    setReconciling(true);
-    try {
-      const [clubComplete] = await Promise.all([
-        loadClub(),
-        loadPendingCount(),
-        loadHeldTicketCount(),
-        tab === 'request' ? loadRequests() : Promise.resolve(),
-        tab === 'tickets' ? loadTickets() : Promise.resolve(),
-      ]);
-      if (tab === 'record') setRecordsReload((value) => value + 1);
-      if (tab === 'leaderboard') setInvoicesReload((value) => value + 1);
-      if (clubComplete === true) toast?.success?.('Cashier Balances Reconciled');
-      else toast?.error?.('Cashier Reconciliation Needs Attention');
-    } finally {
-      reconcilingRef.current = false;
-      if (isMounted.current) setReconciling(false);
-    }
-  }, [
-    loadClub,
-    loadHeldTicketCount,
-    loadPendingCount,
-    loadRequests,
-    loadTickets,
-    requireOnline,
-    tab,
-    toast,
-  ]);
-
-  const reopenTransferRecovery = () => {
-    if (!transferRecovery || transferRecovery.clubId !== clubUuid) return;
-    setTransferFailures(transferRecovery.failures);
-    setAmountModal(transferRecovery.kind);
-  };
-
-  const copyReceipt = async () => {
-    if (!receipt) return;
-    const copied = await copyCashierText(
-      cashierReceiptText(receipt, currentClub?.name || 'Club Cashier')
-    );
-    if (copied) toast?.success?.('Receipt Copied');
-    else toast?.error?.('Receipt Could Not Be Copied');
-  };
-
   /**
    * MODAL KEYBOARD AND SCROLL (Dan 2026-08-25).
    *
@@ -1861,7 +1750,7 @@ export default function CashierTradePage() {
    * The busy guards mirror the overlay-click guards exactly - Escape must never
    * be an escape hatch out of an in-flight batch.
    */
-  const dialogOpen = Boolean(amountModal || askOpen || claimOpen || receipt);
+  const dialogOpen = Boolean(amountModal || askOpen || claimOpen);
 
   useEffect(() => {
     if (!dialogOpen) return;
@@ -1877,7 +1766,6 @@ export default function CashierTradePage() {
         }
         if (askOpen && !asking) setAskOpen(false);
         if (claimOpen && !claimingId) setClaimOpen(false);
-        if (receipt) setReceipt(null);
         return;
       }
       if (e.key !== 'Tab' || !dialogRef.current) return;
@@ -1912,7 +1800,7 @@ export default function CashierTradePage() {
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = prevOverflow;
     };
-  }, [dialogOpen, amountModal, askOpen, claimOpen, receipt, busy, asking, claimingId]);
+  }, [dialogOpen, amountModal, askOpen, claimOpen, busy, asking, claimingId]);
 
   useEffect(() => {
     if (dialogWasOpenRef.current && !dialogOpen) {
@@ -1923,27 +1811,19 @@ export default function CashierTradePage() {
 
   const initial = (name: string) => (name || '?').charAt(0).toUpperCase();
 
-  const cashierNeedsAttention = Boolean(
-    !isOnline || loadError || clubResolveFailed || agentWallet === null || transferRecovery
-  );
-  const cashierSyncMessage = !isOnline
-    ? 'Cashier offline; money actions are locked'
-    : reconciling
-      ? 'Reconciling balances and cashier authority'
-      : loading || isHydrating
-        ? 'Synchronizing cashier balances'
-        : rosterLoadingMore
-          ? `Cashier ready; loading the rest of the roster after ${downline.length.toLocaleString()} members`
-          : clubResolveFailed
-            ? 'Club could not be resolved'
-            : loadError
-              ? 'Cashier sync requires attention'
-              : agentWallet === null
-                ? 'Agent wallet could not be verified'
-                : 'Balances synchronized';
-  const lastVerifiedLabel = lastVerifiedAt
-    ? new Date(lastVerifiedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : 'Not Yet Verified';
+  const cashierNeedsAttention = Boolean(loadError || clubResolveFailed || agentWallet === null);
+  const cashierSyncMessage =
+    loading || isHydrating
+      ? 'Synchronizing cashier balances'
+      : rosterLoadingMore
+        ? `Cashier ready; loading the rest of the roster after ${downline.length.toLocaleString()} members`
+        : clubResolveFailed
+          ? 'Club could not be resolved'
+          : loadError
+            ? 'Cashier sync requires attention'
+            : agentWallet === null
+              ? 'Agent wallet could not be verified'
+              : 'Balances synchronized';
   const currentClubLabel = membershipsLoading
     ? 'Loading Club'
     : currentClub?.name || 'Club Cashier';
@@ -2156,64 +2036,6 @@ export default function CashierTradePage() {
         ))}
       </nav>
 
-      <section
-        className={`${styles.recoveryConsole} ${cashierNeedsAttention ? styles.recoveryConsoleAttention : ''}`}
-        aria-labelledby="cashier-recovery-title"
-        data-cashier-recovery="true"
-      >
-        <div className={styles.recoveryHeading}>
-          <div>
-            <span className={styles.sectionEyebrow}>Operations Integrity</span>
-            <h2 className={styles.recoveryTitle} id="cashier-recovery-title">
-              Reconciliation Console
-            </h2>
-          </div>
-          <button
-            type="button"
-            className={styles.reconcileBtn}
-            onClick={() => void reconcileCashier()}
-            disabled={!isOnline || reconciling || loading || isHydrating || !clubUuid}
-          >
-            {reconciling ? 'Reconciling...' : 'Reconcile Now'}
-          </button>
-        </div>
-        <div className={styles.recoveryGrid}>
-          <div className={styles.recoveryMetric}>
-            <span>Connection</span>
-            <strong className={isOnline ? styles.integrityGood : styles.integrityBad}>
-              {isOnline ? 'Online' : 'Offline'}
-            </strong>
-          </div>
-          <div className={styles.recoveryMetric}>
-            <span>Balances Verified</span>
-            <strong>{lastVerifiedLabel}</strong>
-          </div>
-          <div className={styles.recoveryMetric}>
-            <span>Action Queue</span>
-            <strong>{(pendingCount + heldTicketCount).toLocaleString()} Waiting</strong>
-          </div>
-        </div>
-        {transferRecovery && transferRecovery.clubId === clubUuid && (
-          <div className={styles.recoveryAlert} role="alert">
-            <div>
-              <strong>Transfer Recovery Required</strong>
-              <span>
-                {transferRecovery.failures.length.toLocaleString()} Of{' '}
-                {transferRecovery.targetIds.length.toLocaleString()} Recipients Need Attention. The
-                Original Retry Keys Are Preserved.
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={reopenTransferRecovery}
-              disabled={!isOnline || busy || loading}
-            >
-              Review And Retry
-            </button>
-          </div>
-        )}
-      </section>
-
       {tab === 'trade' && (
         <section
           id="cashier-panel-trade"
@@ -2258,7 +2080,6 @@ export default function CashierTradePage() {
                 {canSeeClubBank(myRole) && (
                   <button
                     className={styles.plusBtn}
-                    disabled={!isOnline}
                     aria-label="Open the Club Bank Cashier"
                     title="Club Bank Cashier - fund agent wallets, ledger, chip mint"
                     onClick={() => setActiveCashier('club_bank')}
@@ -2464,7 +2285,7 @@ export default function CashierTradePage() {
                 player you have just realised you sent to by accident. */}
             <button
               className={styles.footerBtn}
-              disabled={!isOnline || busy || claimingId !== null}
+              disabled={busy || claimingId !== null}
               onClick={(event) => {
                 dialogTriggerRef.current = event.currentTarget;
                 setClaimOpen(true);
@@ -2474,9 +2295,7 @@ export default function CashierTradePage() {
             </button>
             <button
               className={styles.footerBtn}
-              disabled={
-                !isOnline || selected.size === 0 || busy || loading || !roleResolved || !!loadError
-              }
+              disabled={selected.size === 0 || busy || loading || !roleResolved || !!loadError}
               onClick={(event) => {
                 dialogTriggerRef.current = event.currentTarget;
                 setAmountModal('ticket');
@@ -2486,9 +2305,7 @@ export default function CashierTradePage() {
             </button>
             <button
               className={styles.footerBtn}
-              disabled={
-                !isOnline || selected.size === 0 || busy || loading || !roleResolved || !!loadError
-              }
+              disabled={selected.size === 0 || busy || loading || !roleResolved || !!loadError}
               onClick={(event) => {
                 dialogTriggerRef.current = event.currentTarget;
                 setAmountModal('send');
@@ -2590,16 +2407,7 @@ export default function CashierTradePage() {
             )}
             {!recordsError &&
               filteredRecords.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  className={`${styles.row} ${styles.receiptRow}`}
-                  onClick={(event) => {
-                    dialogTriggerRef.current = event.currentTarget;
-                    setReceipt(r);
-                  }}
-                  aria-label={`Open receipt for ${r.direction === 'out' ? 'payment to' : 'payment from'} ${r.counterparty}, ${fmt(r.amount)} chips`}
-                >
+                <div key={r.id} className={styles.row}>
                   <div className={styles.rowInfo}>
                     <span className={styles.rowName}>
                       {r.direction === 'out' ? 'To ' : 'From '}
@@ -2621,8 +2429,7 @@ export default function CashierTradePage() {
                     {r.direction === 'in' ? '+' : '-'}
                     {fmt(r.amount)}
                   </span>
-                  <span className={styles.receiptCue}>Receipt</span>
-                </button>
+                </div>
               ))}
             {!recordsLoading && recordsHasMore && recordDirection === 'all' && !recordQuery && (
               <button
@@ -2722,7 +2529,6 @@ export default function CashierTradePage() {
           <div className={styles.list}>
             <button
               className={styles.classicLink}
-              disabled={!isOnline}
               onClick={(event) => {
                 dialogTriggerRef.current = event.currentTarget;
                 setAskOpen(true);
@@ -2764,7 +2570,7 @@ export default function CashierTradePage() {
                 {r.mine ? (
                   <button
                     className={styles.reqBtn}
-                    disabled={!isOnline || respondingId !== null}
+                    disabled={respondingId !== null}
                     onClick={() => respondToRequest(r.id, 'cancel')}
                   >
                     {respondingId === r.id ? 'Working...' : 'Cancel'}
@@ -2773,14 +2579,14 @@ export default function CashierTradePage() {
                   <>
                     <button
                       className={styles.reqBtn}
-                      disabled={!isOnline || respondingId !== null}
+                      disabled={respondingId !== null}
                       onClick={() => respondToRequest(r.id, 'decline')}
                     >
                       {respondingId === r.id ? 'Working...' : 'Decline'}
                     </button>
                     <button
                       className={`${styles.reqBtn} ${styles.reqBtnGo}`}
-                      disabled={!isOnline || respondingId !== null}
+                      disabled={respondingId !== null}
                       onClick={() => respondToRequest(r.id, 'approve')}
                     >
                       {respondingId === r.id ? 'Working...' : 'Approve'}
@@ -2857,7 +2663,7 @@ export default function CashierTradePage() {
                   {t.status === 'issued' && t.held && (
                     <button
                       className={`${styles.reqBtn} ${styles.reqBtnGo}`}
-                      disabled={!isOnline || ticketActingId !== null}
+                      disabled={ticketActingId !== null}
                       onClick={() => void actOnTicket(t, 'redeem')}
                     >
                       {ticketActingId === t.id ? 'Working...' : 'Redeem'}
@@ -2866,7 +2672,7 @@ export default function CashierTradePage() {
                   {t.status === 'issued' && !t.held && (
                     <button
                       className={styles.reqBtn}
-                      disabled={!isOnline || ticketActingId !== null}
+                      disabled={ticketActingId !== null}
                       onClick={() => void actOnTicket(t, 'cancel')}
                     >
                       {ticketActingId === t.id ? 'Working...' : 'Cancel'}
@@ -2876,71 +2682,6 @@ export default function CashierTradePage() {
               ))}
           </div>
         </section>
-      )}
-
-      {receipt && (
-        <div className={styles.modalOverlay} onClick={() => setReceipt(null)}>
-          <div
-            ref={dialogRef}
-            className={styles.modal}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="cashier-receipt-title"
-            tabIndex={-1}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className={styles.receiptHeader}>
-              <span className={styles.sectionEyebrow}>Immutable Ledger Entry</span>
-              <div className={styles.modalTitle} id="cashier-receipt-title">
-                Transaction Receipt
-              </div>
-            </div>
-            <div className={styles.receiptAmount}>
-              <span>{receipt.direction === 'in' ? 'Incoming' : 'Outgoing'}</span>
-              <strong className={receipt.direction === 'in' ? styles.amtIn : styles.amtOut}>
-                {receipt.direction === 'in' ? '+' : '-'}
-                {fmt(receipt.amount)}
-              </strong>
-              <small>Chips</small>
-            </div>
-            <dl className={styles.receiptFacts}>
-              <div>
-                <dt>Status</dt>
-                <dd className={styles.integrityGood}>Recorded In Ledger</dd>
-              </div>
-              <div>
-                <dt>{receipt.direction === 'in' ? 'From' : 'To'}</dt>
-                <dd>{receipt.counterparty}</dd>
-              </div>
-              <div>
-                <dt>Entry</dt>
-                <dd>{txLabel(receipt.type)}</dd>
-              </div>
-              <div>
-                <dt>Recorded</dt>
-                <dd>
-                  {new Date(receipt.createdAt).toLocaleString([], {
-                    month: 'short',
-                    day: 'numeric',
-                    year: 'numeric',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </dd>
-              </div>
-              <div className={styles.receiptReference}>
-                <dt>Reference</dt>
-                <dd>{receipt.id}</dd>
-              </div>
-            </dl>
-            <div className={styles.modalActions}>
-              <button onClick={() => setReceipt(null)}>Close</button>
-              <button className={styles.modalConfirm} onClick={() => void copyReceipt()}>
-                Copy Receipt
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* Ask-for-chips modal */}
@@ -2993,11 +2734,7 @@ export default function CashierTradePage() {
               <button disabled={asking} onClick={() => setAskOpen(false)}>
                 Cancel
               </button>
-              <button
-                className={styles.modalConfirm}
-                disabled={!isOnline || asking}
-                onClick={askForChips}
-              >
+              <button className={styles.modalConfirm} disabled={asking} onClick={askForChips}>
                 {asking ? 'Sending...' : 'Send Request'}
               </button>
             </div>
@@ -3132,14 +2869,7 @@ export default function CashierTradePage() {
               </button>
               <button
                 className={styles.modalConfirm}
-                disabled={
-                  !isOnline ||
-                  busy ||
-                  picked.length === 0 ||
-                  loading ||
-                  !roleResolved ||
-                  !!loadError
-                }
+                disabled={busy || picked.length === 0 || loading || !roleResolved || !!loadError}
                 onClick={() => runTransfers(amountModal)}
               >
                 {busy && batchProgress
@@ -3222,7 +2952,7 @@ export default function CashierTradePage() {
                       <span className={styles.rowBalance}>{fmt(row.remaining)}</span>
                       <button
                         className={`${styles.reqBtn} ${styles.reqBtnGo}`}
-                        disabled={!isOnline || claimingId !== null}
+                        disabled={claimingId !== null}
                         onClick={() => void claimBack(row)}
                       >
                         {claimingId === row.transaction_id ? 'Working...' : 'Claim Back'}

@@ -22,6 +22,7 @@ import { parseBlindStructure, parsePayoutStructure } from '../utils/parseBlindSt
    despite living under components/lobby. */
 import { blindLevelMinutes } from '../components/lobby/tournamentFigures';
 import type { Tournament, TournamentPlayer } from '../types/database.types';
+import type { TournamentGameVariant } from '../config/tournamentVariants';
 import { reportError } from '../utils/errorReporter';
 import { computePlacePrize } from '../lib/payoutMath';
 
@@ -206,8 +207,18 @@ export interface TournamentConfig {
   spinConfig?: SpinConfig;
   spinType?: 'standard' | 'hyper';
 
-  // Game Variant (poker game type)
-  gameVariant?: 'NLH' | 'PLO4' | 'PLO5' | 'PLO8' | 'SHORT_DECK';
+  /**
+   * Game Variant (poker game type).
+   *
+   * ONE LIST, SHARED WITH THE MAP THAT PRODUCES IT (2026-08-31). This union was
+   * hand-written and had drifted: it omitted PLO6 while 6,028 PLO6 tournaments
+   * were live in production and `tournamentFromTableConfig` was already
+   * emitting 'PLO6' — it compiled only because that file ends in
+   * `as TournamentConfig`, which is exactly the cast that hides this class of
+   * mistake. It now names the same type the variant map is keyed to, so a
+   * variant cannot be creatable and untypeable at the same time.
+   */
+  gameVariant?: TournamentGameVariant;
 
   // Satellite Target
   satelliteTarget?: {

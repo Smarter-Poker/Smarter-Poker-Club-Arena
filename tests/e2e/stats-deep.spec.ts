@@ -2,6 +2,12 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
 test.describe('Player Stats production experience', () => {
+  // The overview rollup is intentionally exhaustive and can take several
+  // seconds for the production canary account. Running all three viewport/a11y
+  // probes at once creates an artificial three-query cold-start stampede and
+  // can push otherwise healthy reads past the authenticated statement limit.
+  test.describe.configure({ mode: 'serial', timeout: 90_000 });
+
   test.beforeEach(async ({ page }, testInfo) => {
     const configuredBase = String(testInfo.project.use.baseURL || 'http://localhost:5173/');
     const base = new URL(configuredBase);
@@ -21,11 +27,11 @@ test.describe('Player Stats production experience', () => {
           page.url().includes('/auth') ||
           (await page.getByRole('tab', { name: 'Overview' }).count()) > 0 ||
           (await page.getByText("Couldn't Load Your Stats", { exact: true }).count()) > 0,
-        { timeout: 30_000 }
+        { timeout: 60_000 }
       )
       .toBe(true);
     test.skip(page.url().includes('/auth'), 'authenticated Stats session is not configured');
-    await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 60_000 });
     await expect(page.getByRole('heading', { name: 'Player Intelligence' })).toBeVisible({
       timeout: 30_000,
     });

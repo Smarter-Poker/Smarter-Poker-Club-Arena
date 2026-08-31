@@ -15,6 +15,7 @@ const ADVANCED_SUMMARY = readFileSync(
   resolve(ROOT, 'src/components/stats/AdvancedStatsSummary.tsx'),
   'utf8'
 );
+const PRODUCTION_SPEC = readFileSync(resolve(ROOT, 'tests/e2e/stats-deep.spec.ts'), 'utf8');
 
 describe('Stats contract v2 security boundary', () => {
   it('makes the browser use only owner-asserting versioned RPCs', () => {
@@ -66,6 +67,12 @@ describe('Stats contract v2 security boundary', () => {
   it('contains no retained fake Stats dashboard stub', () => {
     expect(existsSync(resolve(ROOT, 'src/components/stats/PlayerStatsDashboard.tsx'))).toBe(false);
     expect(existsSync(resolve(ROOT, 'src/components/stats/PlayerStatsDashboard.css'))).toBe(false);
+  });
+
+  it('certifies the expensive production rollup without a parallel cold-start stampede', () => {
+    expect(PRODUCTION_SPEC).toContain("mode: 'serial'");
+    expect(PRODUCTION_SPEC).toContain('timeout: 90_000');
+    expect(PRODUCTION_SPEC).toContain("name: 'Overview'");
   });
 });
 

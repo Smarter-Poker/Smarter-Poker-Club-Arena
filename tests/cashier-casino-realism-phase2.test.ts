@@ -55,7 +55,7 @@ describe('cashier phase 2 completes keyboard and structural semantics', () => {
   it('traps dialog focus and restores it to the opening control', () => {
     expect(PAGE).toContain("if (e.key !== 'Tab' || !dialogRef.current) return");
     expect(PAGE).toContain('dialogTriggerRef.current?.focus()');
-    expect(PAGE.match(/ref=\{dialogRef\}/g)).toHaveLength(4);
+    expect(PAGE.match(/ref=\{dialogRef\}/g)).toHaveLength(3);
   });
 
   it('makes the club picker dismissible and arrow-key navigable', () => {

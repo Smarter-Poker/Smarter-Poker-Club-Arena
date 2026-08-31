@@ -25,6 +25,13 @@ import {
   SEAT_FIRST_START_STALL_MS,
 } from './services/TournamentRecurringService.js';
 import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
+import {
+  planTableReopens,
+  freshHumanWindowMs,
+  type LiveTournamentRow,
+  type TournamentTableRow,
+} from './services/liveTournamentTableRecovery.js';
+import { tablesASweepMayClose } from './services/tableCloseGuard.js';
 import { HorseLifecycleManager } from './services/HorseLifecycleManager.js';
 import { DealRateVerifier } from './services/DealRateVerifier.js';
 import {
@@ -257,6 +264,8 @@ export class GameServer {
   private lastRakeSweepAt = 0;
   /** One seat-first finish sweep per minute — see the call site for why. */
   private lastSeatFirstFinishSweepAt = 0;
+  /** One reopen sweep per minute for tables closed under a live tournament. */
+  private lastClosedTableReopenSweepAt = 0;
   /** Last fn_tournament_money_conservation pass (2026-08-27 phase 3). */
   private lastConservationAt = 0;
   /** Last fn_backpay_hu_winner_shortfalls pass (2026-08-27 phase 3d). */
@@ -2069,11 +2078,46 @@ export class GameServer {
                 .in('id', tourneyIds)
                 .in('status', ['COMPLETED', 'CANCELLED']);
               const finishedSet = new Set((finished ?? []).map((t) => t.id));
-              const orphanIds = openTourneyTables
+              const orphanRows = openTourneyTables
                 .filter((t) => finishedSet.has(t.tournament_id))
-                .map((t) => t.id);
-              for (let i = 0; i < orphanIds.length; i += 100) {
-                const batch = orphanIds.slice(i, i + 100);
+                .map((t) => ({ tableId: String(t.id), tournamentId: String(t.tournament_id) }));
+              let closedOrphans = 0;
+              for (let i = 0; i < orphanRows.length; i += 100) {
+                const batchRows = orphanRows.slice(i, i + 100);
+
+                /**
+                 * RE-READ THE TOURNAMENT IMMEDIATELY BEFORE THE WRITE
+                 * (2026-08-31). The finished set above was read once, before
+                 * the seat releases and the earlier batches; a tournament that
+                 * was re-opened, or a late-registration event that moved back
+                 * to RUNNING, would have been closed on the strength of a
+                 * stale read. `tablesASweepMayClose` is the rule in one place:
+                 * a SWEEP may only close a table whose tournament is already
+                 * COMPLETED or CANCELLED, and an unreadable status counts as
+                 * not-terminal, so the table is left open. See
+                 * services/tableCloseGuard.ts for the two outages behind it.
+                 */
+                const { data: freshStatuses, error: freshErr } = await supabase
+                  .from('tournaments')
+                  .select('id, status')
+                  .in('id', [...new Set(batchRows.map((r) => r.tournamentId))]);
+                if (freshErr) {
+                  reportError(
+                    new Error(
+                      `[GameServer] orphan sweep status re-read failed: ${freshErr.message}`
+                    ),
+                    'GameServer.orphan_status_reread_failed'
+                  );
+                  continue; // unreadable is UNKNOWN, and UNKNOWN never closes
+                }
+                const statusByTournament = new Map<string, string>(
+                  (freshStatuses ?? []).map((t) => [
+                    String((t as { id: string }).id),
+                    String((t as { status?: string }).status ?? ''),
+                  ])
+                );
+                const batch = tablesASweepMayClose(batchRows, statusByTournament);
+                if (batch.length === 0) continue;
 
                 /**
                  * RELEASE THE SEATS, not just the table (audit 2026-08-21).
@@ -2108,10 +2152,11 @@ export class GameServer {
                   .from('tables')
                   .update({ status: 'closed', current_players: 0 })
                   .in('id', batch);
+                closedOrphans += batch.length;
               }
-              if (orphanIds.length > 0) {
+              if (closedOrphans > 0) {
                 console.log(
-                  `[GameServer] Closed ${orphanIds.length} orphaned tournament tables and released their seats`
+                  `[GameServer] Closed ${closedOrphans} orphaned tournament tables and released their seats`
                 );
               }
             }
@@ -2996,6 +3041,22 @@ export class GameServer {
           );
         }
 
+        /**
+         * ── PUT BACK THE FELT SOMETHING ELSE TOOK AWAY (2026-08-31) ─────────
+         *
+         * See liveTournamentTableRecovery.ts for the two production outages
+         * this exists for. Same cadence and the same fire-and-forget shape as
+         * the finish sweep above: a minute is far faster than the hours these
+         * husks actually sat for, and the pass is three bounded reads on a
+         * healthy board.
+         */
+        if (Date.now() - this.lastClosedTableReopenSweepAt > 60 * 1000) {
+          this.lastClosedTableReopenSweepAt = Date.now();
+          void this.reopenTablesClosedUnderLiveTournaments().catch((err) =>
+            reportError(err, 'GameServer.closed_table_reopen_sweep_error')
+          );
+        }
+
         // ── TOURNAMENT RAKE SWEEP (2026-08-26) ──
         // The last line of the settlement-integrity fix: any terminal
         // tournament whose fee ledger has no tournament_rake_settlements row
@@ -3813,6 +3874,128 @@ export class GameServer {
       /* ONE SECOND, not five. See SEAT_FIRST_START_INTERVAL: Dan's rule is a
          number, and four fifths of the old floor was this line. */
       await this.sleep(SEAT_FIRST_START_INTERVAL);
+    }
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  REOPEN A TABLE THAT WAS CLOSED UNDER A LIVE TOURNAMENT
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The rules, and the two outages that wrote them, are in
+   * `services/liveTournamentTableRecovery.ts`. The planner there is pure; this
+   * method is the three reads and the two writes around it.
+   *
+   * Every read fails CLOSED: an unreadable board is UNKNOWN, never "reopen
+   * everything". The writes are per plan rather than batched so one bad row
+   * cannot stop the rest, and the status filter on the UPDATE makes the
+   * reopen a no-op if something opened the table in the meantime.
+   */
+  private async reopenTablesClosedUnderLiveTournaments(): Promise<void> {
+    const { data: liveRows, error: liveErr } = await supabase
+      .from('tournaments')
+      .select('id, status, start_time')
+      .in('status', ['REGISTERING', 'RUNNING'])
+      .limit(500);
+    if (liveErr) {
+      reportError(
+        new Error(`[GameServer] reopen sweep tournament read failed: ${liveErr.message}`),
+        'GameServer.reopen_sweep_tournament_read_failed'
+      );
+      return;
+    }
+    const tournaments = (liveRows ?? []) as LiveTournamentRow[];
+    if (tournaments.length === 0) return;
+
+    const { data: tableRows, error: tableErr } = await supabase
+      .from('tables')
+      .select('id, tournament_id, status, is_deleted, created_at')
+      .in(
+        'tournament_id',
+        tournaments.map((t) => String(t.id))
+      );
+    if (tableErr) {
+      reportError(
+        new Error(`[GameServer] reopen sweep table read failed: ${tableErr.message}`),
+        'GameServer.reopen_sweep_table_read_failed'
+      );
+      return;
+    }
+    const tables = (tableRows ?? []) as TournamentTableRow[];
+
+    /* Seat counts for the CLOSED candidates only. A seat row survives its
+       table being closed - that is exactly what stranded 411 of them on
+       2026-08-30 - so this is the count the reopened table gets back. */
+    const closedIds = tables
+      .filter((t) => t.is_deleted !== true && String(t.status ?? '').toLowerCase() === 'closed')
+      .map((t) => String(t.id));
+    const openSeatsByTable = new Map<string, number>();
+    if (closedIds.length > 0) {
+      const { data: seatRows, error: seatErr } = await supabase
+        .from('table_seats')
+        .select('table_id')
+        .in('table_id', closedIds)
+        .is('left_at', null);
+      if (seatErr) {
+        reportError(
+          new Error(`[GameServer] reopen sweep seat read failed: ${seatErr.message}`),
+          'GameServer.reopen_sweep_seat_read_failed'
+        );
+        return;
+      }
+      for (const row of seatRows ?? []) {
+        const id = String((row as { table_id?: string }).table_id ?? '');
+        if (!id) continue;
+        openSeatsByTable.set(id, (openSeatsByTable.get(id) ?? 0) + 1);
+      }
+    }
+
+    const plans = planTableReopens(tournaments, tables, openSeatsByTable);
+    if (plans.length === 0) return;
+
+    let reopened = 0;
+    for (const plan of plans) {
+      const { error: reopenErr } = await supabase
+        .from('tables')
+        .update({ status: plan.toStatus, current_players: plan.currentPlayers })
+        .eq('id', plan.tableId)
+        .eq('status', 'closed');
+      if (reopenErr) {
+        reportError(
+          new Error(
+            `[GameServer] reopen of ${plan.tableId.slice(0, 8)} failed: ${reopenErr.message}`
+          ),
+          'GameServer.reopen_sweep_update_failed'
+        );
+        continue;
+      }
+      reopened++;
+
+      if (plan.refreshHumanWindow) {
+        /* The window closed hours ago. Hand the board a fresh one rather than
+           straight to the past-start filler, so a repaired game is a game that
+           was open, not one that was filled the instant it came back. Same
+           rule as fn_repair_seat_first_games. */
+        const { error: windowErr } = await supabase
+          .from('tournaments')
+          .update({ start_time: new Date(Date.now() + freshHumanWindowMs()).toISOString() })
+          .eq('id', plan.tournamentId)
+          .eq('status', 'REGISTERING');
+        if (windowErr) {
+          reportError(
+            new Error(
+              `[GameServer] human window refresh for ${plan.tournamentId.slice(0, 8)} failed: ${windowErr.message}`
+            ),
+            'GameServer.reopen_sweep_window_refresh_failed'
+          );
+        }
+      }
+    }
+
+    if (reopened > 0) {
+      console.log(
+        `[GameServer] Reopened ${reopened} table(s) that were closed under a live tournament`
+      );
     }
   }
 

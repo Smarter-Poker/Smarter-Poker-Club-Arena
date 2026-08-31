@@ -52,6 +52,7 @@ import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { resolveLobbyClubId } from '../utils/clubQuickLink';
 import { useUserStore } from '../stores/useUserStore';
 import { TableErrorBoundary } from '../components/common/TableErrorBoundary';
+import { betSliderStep, sliderUnitFor } from '../components/table/ActionPanel';
 
 // Lazy-load TablePage for code splitting
 const TablePage = lazyWithRetry(() => import('./TablePage'));
@@ -106,6 +107,10 @@ interface TableInstance {
   /** Amount the hero must call right now (0 = check legal); set while it is
    *  the hero's turn. Drives the tile-view action strip. */
   toCall?: number;
+  /** Raise-TO bounds for the tile raise slider, "minTo:maxTo:bb" ('' or
+   *  undefined = no raise legal). Primitive string so updateTableInfo's
+   *  shallow !== bail-out keeps working (P1-2). */
+  raiseBounds?: string;
   /** Hero's current stack at this table. */
   heroStack?: number;
   /** Hero is sitting out at this table. */
@@ -883,7 +888,9 @@ export default function MultiTablePage() {
               const tabIds = tablesRef.current.filter((t) => !isLobbyTab(t)).map((t) => t.id);
               const { data: rows, error: rowsErr } = await supabase
                 .from('tables')
-                .select('id, name, game_variant, game_type, max_players, small_blind, big_blind, tournament_id')
+                .select(
+                  'id, name, game_variant, game_type, max_players, small_blind, big_blind, tournament_id'
+                )
                 .in('id', [newId, ...tabIds]);
               if (rowsErr) {
                 /* Cannot identify the move - the rebuild path re-reads server
@@ -1760,6 +1767,20 @@ export default function MultiTablePage() {
   // so a misclick can never throw away a free hand.
   const tileActionLockRef = useRef<Map<string, number>>(new Map());
   const [tilePending, setTilePending] = useState<Record<string, boolean>>({});
+  /**
+   * Variant A (Dan 2026-08-30): per-tile raise slider draft. A key present =
+   * the slider row is open on that tile, value = the raise-TO amount being
+   * dragged. Opened by the Raise key, closed by Confirm/any action/turn end.
+   */
+  const [tileRaiseDraft, setTileRaiseDraft] = useState<Record<string, number>>({});
+  const closeTileRaise = useCallback((tblId: string) => {
+    setTileRaiseDraft((p) => {
+      if (!(tblId in p)) return p;
+      const n = { ...p };
+      delete n[tblId];
+      return n;
+    });
+  }, []);
   const handleTileAction = useCallback(
     async (tblId: string, action: 'fold' | 'check' | 'call' | 'raise', amount?: number) => {
       const now = Date.now();
@@ -1782,10 +1803,30 @@ export default function MultiTablePage() {
           delete n[tblId];
           return n;
         });
+        closeTileRaise(tblId);
       }
     },
-    [user?.id, toast]
+    [user?.id, toast, closeTileRaise]
   );
+
+  // Close any open tile raise slider the moment that table's turn ends —
+  // the hand moved on, so a stale draft must not linger over the next turn.
+  useEffect(() => {
+    setTileRaiseDraft((p) => {
+      const openIds = Object.keys(p);
+      if (openIds.length === 0) return p;
+      let changed = false;
+      const n = { ...p };
+      for (const id of openIds) {
+        const t = tables.find((x) => x.id === id);
+        if (!t || !t.isMyTurn) {
+          delete n[id];
+          changed = true;
+        }
+      }
+      return changed ? n : p;
+    });
+  }, [tables]);
 
   // ─── Batch 3: drag-to-reorder tabs ────────────────────────────────────
   // The active TABLE follows the reorder (identity, not index).
@@ -3328,12 +3369,7 @@ export default function MultiTablePage() {
               }
               aria-label={isTileView ? 'Single view' : 'Tile view'}
             >
-              <img
-                className="tile-toggle-btn__img"
-                src={fourScreenIcon}
-                alt=""
-                draggable={false}
-              />
+              <img className="tile-toggle-btn__img" src={fourScreenIcon} alt="" draggable={false} />
             </button>
           </div>
         )}
@@ -3466,108 +3502,178 @@ export default function MultiTablePage() {
                   transition: 'box-shadow 0.3s ease',
                 }}
               >
-                <Suspense fallback={<div className="multi-table-loading">Loading...</div>}>
-                  {isLobbyTab(table) ? (
-                    renderLobbyTab(table)
-                  ) : (
-                    <TableErrorBoundary
-                      componentName={`TablePage(tile ${table.id})`}
-                      fallback={tableCrashFallback(table.name)}
-                    >
-                      <TablePage
-                        key={table.id}
-                        embeddedTableId={table.id}
-                        onTableInfoUpdate={getTableInfoCb(table.id)}
-                        isMultiTable={true}
-                        isActive={idx === activeIndex && !hidden}
-                        muted={mutedIds.includes(table.id)}
-                      />
-                    </TableErrorBoundary>
-                  )}
-                </Suspense>
-                {/* Batch 4: per-tile action strip - acts without focusing. */}
-                {!isLobbyTab(table) && table.isMyTurn && (
-                  <div className="multi-table-grid__actions" onClick={(e) => e.stopPropagation()}>
-                    {(table.toCall ?? 0) > 0 ? (
-                      <>
-                        <button
-                          type="button"
-                          className="multi-table-grid__action multi-table-grid__action--fold"
-                          disabled={!!tilePending[table.id]}
-                          onClick={() => handleTileAction(table.id, 'fold')}
-                        >
-                          Fold
-                        </button>
-                        <button
-                          type="button"
-                          className="multi-table-grid__action multi-table-grid__action--call"
-                          disabled={!!tilePending[table.id]}
-                          onClick={() => handleTileAction(table.id, 'call')}
-                        >
-                          Call {(table.toCall ?? 0).toLocaleString('en-US')}
-                        </button>
-                      </>
+                {/* Variant A (Dan 2026-08-30): the stage is the table's OWN
+                    flex row — when the band below is up, the stage shrinks and
+                    the felt rescales into it, so the hero's cards (their normal
+                    size, on the felt) are never covered by action chrome. */}
+                <div className="multi-table-grid__stage">
+                  <Suspense fallback={<div className="multi-table-loading">Loading...</div>}>
+                    {isLobbyTab(table) ? (
+                      renderLobbyTab(table)
                     ) : (
-                      <button
-                        type="button"
-                        className="multi-table-grid__action multi-table-grid__action--check"
-                        disabled={!!tilePending[table.id]}
-                        onClick={() => handleTileAction(table.id, 'check')}
+                      <TableErrorBoundary
+                        componentName={`TablePage(tile ${table.id})`}
+                        fallback={tableCrashFallback(table.name)}
                       >
-                        Check
-                      </button>
+                        <TablePage
+                          key={table.id}
+                          embeddedTableId={table.id}
+                          onTableInfoUpdate={getTableInfoCb(table.id)}
+                          isMultiTable={true}
+                          isActive={idx === activeIndex && !hidden}
+                          muted={mutedIds.includes(table.id)}
+                        />
+                      </TableErrorBoundary>
                     )}
-                    {secondsLeft(table) !== undefined && (
-                      <span className="multi-table-grid__action-clock">{secondsLeft(table)}s</span>
-                    )}
-                  </div>
-                )}
-                {/* Dan 2026-08-21: raise presets, so a 2x2 tile is genuinely
-                    playable instead of fold/call only. Sizes are computed from
-                    the pot the same way the full panel's presets are, and the
-                    server re-validates every one of them - a preset that is
-                    illegal (below min-raise, above stack) is simply refused,
-                    exactly as it would be from the table view. */}
-                {!isLobbyTab(table) && table.isMyTurn && (
-                  <div className="multi-table-grid__raises" onClick={(e) => e.stopPropagation()}>
-                    {(
-                      [
-                        ['½ Pot', 0.5],
-                        ['Pot', 1],
-                      ] as const
-                    ).map(([label, frac]) => {
-                      const pot = table.pot ?? 0;
-                      const toCall = table.toCall ?? 0;
-                      // Standard pot-raise size: call first, then raise the
-                      // pot that call creates.
-                      const size = Math.round(toCall + (pot + toCall * 2) * frac);
-                      const stack = table.heroStack ?? 0;
-                      const capped = stack > 0 ? Math.min(size, stack) : size;
-                      if (capped <= 0) return null;
-                      return (
-                        <button
-                          key={label}
-                          type="button"
-                          className="multi-table-grid__raise"
-                          disabled={!!tilePending[table.id]}
-                          onClick={() => handleTileAction(table.id, 'raise', capped)}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
-                    {(table.heroStack ?? 0) > 0 && (
-                      <button
-                        type="button"
-                        className="multi-table-grid__raise multi-table-grid__raise--allin"
-                        disabled={!!tilePending[table.id]}
-                        onClick={() => handleTileAction(table.id, 'raise', table.heroStack)}
-                      >
-                        All In
-                      </button>
-                    )}
-                  </div>
-                )}
+                  </Suspense>
+                </div>
+                {/* Batch 4 strip, rebuilt as a RESERVED in-flow band (Variant A)
+                    instead of an overlay: presets + Raise + slider on top,
+                    Fold / Check / Call + clock underneath. Every amount is
+                    still server re-validated exactly as before. */}
+                {!isLobbyTab(table) &&
+                  table.isMyTurn &&
+                  (() => {
+                    const pending = !!tilePending[table.id];
+                    const toCall = table.toCall ?? 0;
+                    const parts = (table.raiseBounds || '').split(':').map(Number);
+                    const hasBounds =
+                      parts.length === 3 &&
+                      parts.every((n) => Number.isFinite(n)) &&
+                      parts[1] >= parts[0] &&
+                      parts[0] > 0;
+                    const [minTo, maxTo, bb] = hasBounds ? parts : [0, 0, 1];
+                    const draft = tileRaiseDraft[table.id];
+                    const sliderOpen = hasBounds && draft !== undefined;
+                    const unit = sliderUnitFor(!!table.isTournament, bb, bb / 2 || 0.01);
+                    const step = betSliderStep(minTo, maxTo, unit);
+                    const fmt = (n: number) =>
+                      Number.isInteger(n) ? n.toLocaleString('en-US') : n.toFixed(2);
+                    return (
+                      <div className="multi-table-grid__band" onClick={(e) => e.stopPropagation()}>
+                        {sliderOpen && (
+                          <div className="multi-table-grid__slider-row">
+                            <input
+                              type="range"
+                              className="multi-table-grid__slider"
+                              min={minTo}
+                              max={maxTo}
+                              step={step}
+                              value={draft}
+                              aria-label="Raise amount"
+                              onChange={(e) =>
+                                setTileRaiseDraft((p) => ({
+                                  ...p,
+                                  [table.id]: Math.min(
+                                    maxTo,
+                                    Math.max(minTo, Number(e.target.value))
+                                  ),
+                                }))
+                              }
+                            />
+                            <span className="multi-table-grid__slider-amount">
+                              {fmt(draft ?? minTo)}
+                            </span>
+                            <button
+                              type="button"
+                              className="multi-table-grid__raise multi-table-grid__raise--confirm"
+                              disabled={pending}
+                              onClick={() => handleTileAction(table.id, 'raise', draft)}
+                            >
+                              Raise {fmt(draft ?? minTo)}
+                            </button>
+                          </div>
+                        )}
+                        <div className="multi-table-grid__raises">
+                          {(
+                            [
+                              ['½ Pot', 0.5],
+                              ['Pot', 1],
+                            ] as const
+                          ).map(([label, frac]) => {
+                            const pot = table.pot ?? 0;
+                            // Standard pot-raise size: call first, then raise
+                            // the pot that call creates (server re-validates).
+                            const size = Math.round(toCall + (pot + toCall * 2) * frac);
+                            const stack = table.heroStack ?? 0;
+                            const capped = stack > 0 ? Math.min(size, stack) : size;
+                            if (capped <= 0) return null;
+                            return (
+                              <button
+                                key={label}
+                                type="button"
+                                className="multi-table-grid__raise"
+                                disabled={pending}
+                                onClick={() => handleTileAction(table.id, 'raise', capped)}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                          {hasBounds && (
+                            <button
+                              type="button"
+                              className={`multi-table-grid__raise${sliderOpen ? ' multi-table-grid__raise--open' : ''}`}
+                              disabled={pending}
+                              onClick={() =>
+                                sliderOpen
+                                  ? closeTileRaise(table.id)
+                                  : setTileRaiseDraft((p) => ({ ...p, [table.id]: minTo }))
+                              }
+                            >
+                              Raise
+                            </button>
+                          )}
+                          {(table.heroStack ?? 0) > 0 && (
+                            <button
+                              type="button"
+                              className="multi-table-grid__raise multi-table-grid__raise--allin"
+                              disabled={pending}
+                              onClick={() => handleTileAction(table.id, 'raise', table.heroStack)}
+                            >
+                              All In
+                            </button>
+                          )}
+                        </div>
+                        <div className="multi-table-grid__actions">
+                          {toCall > 0 ? (
+                            <>
+                              <button
+                                type="button"
+                                className="multi-table-grid__action multi-table-grid__action--fold"
+                                disabled={pending}
+                                onClick={() => handleTileAction(table.id, 'fold')}
+                              >
+                                Fold
+                              </button>
+                              <button
+                                type="button"
+                                className="multi-table-grid__action multi-table-grid__action--call"
+                                disabled={pending}
+                                onClick={() => handleTileAction(table.id, 'call')}
+                              >
+                                Call {toCall.toLocaleString('en-US')}
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              className="multi-table-grid__action multi-table-grid__action--check"
+                              disabled={pending}
+                              onClick={() => handleTileAction(table.id, 'check')}
+                            >
+                              Check
+                            </button>
+                          )}
+                          {secondsLeft(table) !== undefined && (
+                            <span className="multi-table-grid__action-clock">
+                              {secondsLeft(table)}s
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
               </div>
             ))}
           </div>

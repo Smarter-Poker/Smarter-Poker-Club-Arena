@@ -3469,6 +3469,24 @@ export abstract class ServerTableEngineBase {
    * Scoped to the live seat (`left_at IS NULL`) so it can never resurrect state
    * onto a historical row for a player who has since left and come back.
    */
+  /**
+   * WRITE ORDER IS THE STATE (2026-08-30). persistEntryHold is fire-and-forget
+   * by design, but two forgotten fires can land out of order — and did, in
+   * production: a player who sat down in the very seat the big blind was
+   * arriving at was registered ('waiting') and released (null) in the same
+   * loop iteration, the two HTTP writes raced, and the CLEAR lost. The row
+   * then said 'waiting' for a player the engine was actively dealing — which
+   * is harmless right up until the next restart, when
+   * restoreEntryHoldsFromSeats would re-hold a player who had already paid
+   * their way in. Seat 7, table 08746c1a, 2026-08-31 00:27 UTC: entry_hold
+   * was still 'waiting' when the seat was evicted ten minutes after the
+   * player posted a live big blind. One chain per user, so a user's writes
+   * apply in the order the engine decided them; different users still write
+   * concurrently. Entries are removed when their chain drains, so the map
+   * stays bounded by in-flight writers, not by table lifetime.
+   */
+  private entryHoldWriteChains: Map<string, Promise<void>> = new Map();
+
   protected persistEntryHold(
     userId: string,
     state: { hold: 'waiting' | 'posting' | null; agreed?: boolean }
@@ -3482,14 +3500,18 @@ export abstract class ServerTableEngineBase {
        `.catch` an unhandled rejection takes the engine down (that is what
        noUnhandledRejections.test.ts pins). Promise.resolve turns the thenable
        into a real Promise, which is the only shape that has both. */
-    void Promise.resolve(
-      supabase
-        .from('table_seats')
-        .update(patch)
-        .eq('table_id', this.tableId)
-        .eq('user_id', userId)
-        .is('left_at', null)
-    )
+    const prevWrite = this.entryHoldWriteChains.get(userId) ?? Promise.resolve();
+    const thisWrite: Promise<void> = prevWrite
+      .then(() =>
+        Promise.resolve(
+          supabase
+            .from('table_seats')
+            .update(patch)
+            .eq('table_id', this.tableId)
+            .eq('user_id', userId)
+            .is('left_at', null)
+        )
+      )
       .then(({ error }) => {
         if (error) {
           console.warn(
@@ -3507,7 +3529,17 @@ export abstract class ServerTableEngineBase {
           `[ServerTableEngine:${this.tableId}] entry hold write threw for ${userId.slice(0, 8)}:`,
           err
         );
+      })
+      // Drop the chain entry once it drains, IF this write is still the tail —
+      // a later write may have chained past it already, and deleting that one
+      // would let the write after it start unordered. Runs after the .catch,
+      // so this promise can never reject.
+      .then(() => {
+        if (this.entryHoldWriteChains.get(userId) === thisWrite) {
+          this.entryHoldWriteChains.delete(userId);
+        }
       });
+    this.entryHoldWriteChains.set(userId, thisWrite);
   }
 
   /**

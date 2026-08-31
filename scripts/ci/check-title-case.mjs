@@ -25,7 +25,34 @@ const ROOT = new URL('../../', import.meta.url).pathname;
 const SRC = process.env.TITLE_CASE_SOURCE_DIR
   ? resolve(process.env.TITLE_CASE_SOURCE_DIR)
   : join(ROOT, 'src');
+/**
+ * ── THE ENGINE WRITES COPY TOO (2026-08-31) ───────────────────────────────
+ *
+ * This gate walked src/ and stopped there, so the rule reached every page the
+ * client renders and nothing the SERVER says. That is not a quiet corner: the
+ * engine's refusals and results are pushed straight to the felt and to the
+ * player's phone, unchanged. Scanning server/src found two live surfaces the
+ * src-only walk could never see:
+ *
+ *   RakeConfig.ts   the twelve BBJ qualifying rules, which are the body text
+ *                   of the Bad Beat Jackpot panel on every table that has one
+ *   bbj.ts          the push notification title a player gets when the
+ *                   jackpot pays them
+ *
+ * check-ui-text made exactly this move on the same day, for the same reason,
+ * and its note is the right one: "A list of the files somebody happened to
+ * check is a cleanup. The directory is the gate." So this walks server/src as
+ * well, and the two gates now cover the same ground.
+ *
+ * TEST FILES ARE NOT COPY. `__tests__` was already skipped as a directory, but
+ * this codebase keeps its tests BESIDE the source as `*.test.ts`, so the walk
+ * dragged in fixture labels ('test', '$5 -> 1 seat') that no player will ever
+ * read. Skipped by filename now, in both trees.
+ */
+const SERVER_SRC = join(ROOT, 'server/src');
+const SCAN_SERVER = !process.env.TITLE_CASE_SOURCE_DIR;
 const SKIP_DIRS = new Set(['node_modules', 'dist', '_to_delete', '__tests__', 'test-results']);
+const isTestFile = (name) => /\.(test|spec)\.tsx?$/.test(name) || /\.behaviour\.test\./.test(name);
 const COPY_REGISTRY_FILES = new Set(['src/i18n/index.ts']);
 const COPY_TABLE_PROPERTIES = new Map([
   ['src/components/support/FAQPanel.tsx', new Set(['category', 'question', 'answer'])],
@@ -106,7 +133,8 @@ function walk(dir, acc = []) {
     const full = join(dir, entry);
     const st = statSync(full);
     if (st.isDirectory()) walk(full, acc);
-    else if (extname(entry) === '.tsx' || extname(entry) === '.ts') acc.push(full);
+    else if ((extname(entry) === '.tsx' || extname(entry) === '.ts') && !isTestFile(entry))
+      acc.push(full);
   }
   return acc;
 }
@@ -549,7 +577,7 @@ if (!isMain) {
   let fixedNodes = 0;
   let fixedFiles = 0;
 
-  for (const file of walk(SRC)) {
+  for (const file of [...walk(SRC), ...(SCAN_SERVER ? walk(SERVER_SRC) : [])]) {
     const original = readFileSync(file, 'utf8');
     let sf;
     try {

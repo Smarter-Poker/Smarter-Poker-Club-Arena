@@ -77,6 +77,32 @@ jobs:
           echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
           set -e
 
+      # ── THE OTHER THING ONLY THE DATABASE KNOWS (2026-08-31) ─────────────
+      #
+      # Dan's copy rules have five source gates and every one of them reads
+      # files. A Postgres function hands its RAISE message and its jsonb
+      # {'message': ...} straight to the client, which toasts it verbatim, so
+      # 120 functions were serving banned dash characters to players while all
+      # five gates reported OK. Migration 20260831202752 cleaned them and left
+      # fn_ca_banned_copy_characters() behind; this is the thing that reads it.
+      #
+      # It lives HERE rather than in ci.yml because this is the workflow that
+      # already holds the service-role credentials, and because the question it
+      # asks - what does production actually serve - is the same question the
+      # cron check asks. A source-only CI job cannot answer either one.
+      - name: Ask the database whether it serves any banned copy characters
+        id: dbcopy
+        if: always()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -o pipefail
+          set +e
+          node scripts/ci/check-db-copy.mjs 2>&1 | tee /tmp/db-copy.log
+          echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          set -e
+
       - name: Summary
         if: always()
         run: |
@@ -85,6 +111,12 @@ jobs:
             echo ""
             echo '```'
             cat /tmp/cron-health.log 2>/dev/null || echo "(the check produced no output)"
+            echo '```'
+            echo ""
+            echo "## Database copy rules"
+            echo ""
+            echo '```'
+            cat /tmp/db-copy.log 2>/dev/null || echo "(the check produced no output)"
             echo '```'
             echo ""
             echo "\`critical\` = ran in the window and never once succeeded. Read the job's"
@@ -96,4 +128,10 @@ jobs:
         if: steps.cron.outputs.status != '0'
         run: |
           echo "::error title=Cron job failing silently::At least one active scheduled job ran and never succeeded. See the job summary."
+          exit 1
+
+      - name: Fail the run when the database serves a banned character
+        if: always() && steps.dbcopy.outputs.status != '0'
+        run: |
+          echo "::error title=Banned copy character in the database::A public function still carries a dash character Dan banned. See the job summary."
           exit 1

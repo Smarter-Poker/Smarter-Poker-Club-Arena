@@ -39,31 +39,48 @@ Three corrections:
 Production before the fix: 47 plo4 / 43 plo5 / 33 plo6 raise-then-folds in
 six hours, ten of them folding to a re-raise of 2.5x or smaller.
 
-## 2. The horses had Dan filed as a passive station
+## 2. The aggression factor counted preflop — but Dan was not the victim of it
 
-They are not blind — the model is populated and deep: **590 tracked players,
-every one past the 10-hand gate, 589 at full confidence, up to 16,306 hands
-on a single player, 241,265 targeting pairs.** Probed directly, it moves a
-marginal bluff-catcher by **40 percentage points** between a maniac and a
-nit. The machinery works.
+**A correction I have to make against myself.** The first read of this said
+the horses had Dan filed as a passive station, from a profile showing
+VPIP 69.7% / AF 0.67. That profile belongs to `danbek4545@gmail.com` — an
+account with **zero table_seats, ever**, and stats last touched two days
+ago. It is not the account he plays on.
 
-It had simply drawn the wrong conclusion:
+His real one (`daniel@bekavactrading.com`, 600 hands, updated the same
+morning) reads:
 
-    Dan, as the horses saw him:  VPIP 69.7%   AF 0.67   fold-to-aggr 19.4%
+    VPIP 39.3%   PFR 29.5%   AF 3.51   fold-to-aggression 72.1%
 
-AF 0.67 sits under the 0.7 "passive" bar, so `exploit()` returned
-callDownMod 0.85 — _passives get respect_ — and the horses folded MORE to the
-pot bets of the most aggressive player at the table.
+AF 3.51 is comfortably past the 2.5 maniac bar, so the horses already
+classify him correctly and already call him lighter (callDownMod 1.2).
+Probed with those exact counters injected, the read moves a marginal pair
+from a 63% fold against an unknown to a 46% fold against him — sixteen
+points in the right direction — while air still folds 100% and made hands
+call 100%. **The table awareness works. It was not the leak, and the leak
+was preflop, above.**
 
-The cause: `aggr / passive` counted **every street**. The classic Aggression
-Factor is postflop-only because preflop calling is structurally normal. A
-loose-preflop, hammer-postflop player is precisely the profile that inverts.
+The mind is also not thin: **590 tracked players, every one past the
+10-hand gate, 589 at full confidence, up to 16,306 hands on a single
+player, 241,265 targeting pairs.**
+
+### The AF fix stands on its own evidence, not on Dan's hands
+
+While proving the above I did find a real defect, and it is worth fixing on
+its own terms: `aggr / passive` counts **every street**. The classic
+Aggression Factor is postflop-only because preflop calling is structurally
+normal (blinds, position, price), so a loose-preflop / hammer-postflop
+player is dragged toward "passive" — and `exploit()` then hands that
+player's bets MORE respect.
 
 Measured over 58 live players with real samples: average AF **1.87**
 all-streets vs **1.37** postflop-only, and **ten of the 58 misclassified
 across a decision threshold** — two genuine maniacs read as normal. Fixed
-with two additive counters and a fallback to the old ratio until a player has
-ten postflop actions, so nobody is read from three hands of noise.
+with two additive counters and a fallback to the old ratio until a player
+has ten postflop actions, so nobody is judged on three hands of noise.
+
+Dan's own account is not among the ten; his AF is high either way. This is
+a fix for the players it silently mis-reads.
 
 ## Verification
 

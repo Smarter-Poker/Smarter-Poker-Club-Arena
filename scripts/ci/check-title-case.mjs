@@ -123,6 +123,18 @@ export function titleCaseText(text) {
     if (/^[0-9]/.test(word)) return word;
     const lower = word.toLowerCase();
     if (before === '(' && (lower === 's' || lower === 'es')) return lower;
+    /**
+     * THE POSSESSIVE IS A SUFFIX, NOT A WORD (2026-08-31).
+     *
+     * `${username}'s Profile` reaches this as the span `'s Profile`. The span
+     * does not start with a letter, so the unit-suffix guard never fired, and
+     * `s` was cased on its own: five labels shipped reading "Alice'S Profile",
+     * which a screen reader pronounces "Alice apostrophe S Profile".
+     *
+     * Only a LONE s after an apostrophe is a possessive. O'Brien is unaffected
+     * because the word there is "Brien".
+     */
+    if ((before === "'" || before === '\u2019') && lower === 's') return lower;
     if (ACRONYMS.has(lower)) return lower.toUpperCase();
     if (word.length > 1 && word === word.toUpperCase()) return word;
     return word.charAt(0).toUpperCase() + word.slice(1);
@@ -196,10 +208,42 @@ function isPluralOrUnitExpression(node) {
   );
 }
 
+/**
+ * A BRANCH CAN START WITH A SUFFIX AND STILL BE A SENTENCE (2026-08-31).
+ *
+ * `Game{n === 1 ? ' is' : 's are'} Open In This Club` is not a plural
+ * expression by the test above - the branches carry a word after the suffix,
+ * so `every()` is false and the whole string was cased. That shipped
+ * "3 GameS Are Open In This Club" to the club home page, three times on the
+ * same screen.
+ *
+ * It is precisely the failure this file's own header warns about: "that
+ * particular one is the plural suffix of the word before it, and capitalising
+ * it renders GameS". The guard existed; it just could not see a suffix that
+ * had a sentence attached.
+ *
+ * So a leading suffix is protected on its own, and the rest of the branch is
+ * cased normally.
+ */
+export function titleCaseBranch(text) {
+  // A KNOWN suffix, not merely a short token: "go now" and "in play" open with
+  // real words, and protecting those would leave them lowercase forever.
+  const m = text.match(/^(['\u2019]?)([a-z]+)(?=[\s.,;:!?]|$)/);
+  if (!m) return titleCaseText(text);
+  const [, apostrophe, fragment] = m;
+  const isSuffix = apostrophe ? fragment === 's' : PLURAL_OR_UNIT_FRAGMENTS.has(fragment);
+  if (!isSuffix) return titleCaseText(text);
+  const head = apostrophe + fragment;
+  return head + titleCaseText(text.slice(head.length));
+}
+
 function stringChange(node, source, sf, context) {
   const text = node.text;
   if (isMachineString(text)) return null;
-  const cased = titleCaseText(text);
+  // A string reached through a render expression can be a branch that OPENS
+  // with a suffix ("s are ..."); everywhere else the whole string is a word.
+  const cased =
+    context === 'render expression' ? titleCaseBranch(text) : titleCaseText(text);
   if (cased === text) return null;
 
   const nodeStart = node.getStart(sf);
@@ -455,118 +499,133 @@ function htmlTextNodes(source) {
   return out.filter((change) => change.cased !== change.text);
 }
 
-const offenders = [];
-let fixedNodes = 0;
-let fixedFiles = 0;
+/**
+ * Everything above is a pure function; everything below is the RUN.
+ *
+ * Importing this module used to execute the scan, so a unit test that wanted
+ * to assert `titleCaseText` crashed on `readdirSync` before it reached a single
+ * expectation. The rules are worth testing directly - two of them shipped bugs
+ * on 2026-08-31 - so the run is gated behind "was I executed?" and the module
+ * is importable.
+ */
+const isMain = process.argv[1] && resolve(process.argv[1]) === resolve(new URL(import.meta.url).pathname);
+if (!isMain) {
+  // Imported for its rules; the caller runs nothing.
+} else {
+  const offenders = [];
+  let fixedNodes = 0;
+  let fixedFiles = 0;
 
-for (const file of walk(SRC)) {
-  const original = readFileSync(file, 'utf8');
-  let sf;
-  try {
-    sf = ts.createSourceFile(
-      file,
-      original,
-      ts.ScriptTarget.Latest,
-      true,
-      file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
-    );
-  } catch {
-    continue;
-  }
-
-  const changes = [];
-  if (file.endsWith('.tsx')) {
-    for (const node of jsxTextNodes(original, sf)) {
-      let cased;
-      if (node.suffix) {
-        const match = node.text.match(/^[A-Za-z][A-Za-z0-9'’]*/);
-        const head = match ? match[0] : '';
-        cased = head + titleCaseText(node.text.slice(head.length));
-      } else {
-        cased = titleCaseText(node.text);
-      }
-      if (node.prefix) {
-        const match = node.text.match(/[A-Za-z][A-Za-z0-9'’]*$/);
-        if (match) cased = cased.slice(0, cased.length - match[0].length) + match[0];
-      }
-      if (cased !== node.text) changes.push({ ...node, cased });
-    }
-  }
-  changes.push(...staticCopyChanges(original, sf, file));
-
-  const uniqueChanges = [
-    ...new Map(changes.map((change) => [`${change.start}:${change.end}`, change])).values(),
-  ].sort((a, b) => a.start - b.start);
-  if (uniqueChanges.length === 0) continue;
-
-  if (fix) {
-    let out = original;
-    let applied = 0;
-    for (let index = uniqueChanges.length - 1; index >= 0; index--) {
-      const change = uniqueChanges[index];
-      if (change.replaceable === false) continue;
-      out = out.slice(0, change.start) + change.cased + out.slice(change.end);
-      applied++;
-    }
-    if (out !== original) {
-      writeFileSync(file, out, 'utf8');
-      fixedNodes += applied;
-      fixedFiles++;
-    }
-  } else {
-    for (const change of uniqueChanges) {
-      const line = original.slice(0, change.start).split('\n').length;
-      offenders.push(
-        `${file.replace(ROOT, '')}:${line}: [${change.context}] ${change.text.trim().slice(0, 90)}`
+  for (const file of walk(SRC)) {
+    const original = readFileSync(file, 'utf8');
+    let sf;
+    try {
+      sf = ts.createSourceFile(
+        file,
+        original,
+        ts.ScriptTarget.Latest,
+        true,
+        file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
       );
+    } catch {
+      continue;
     }
-  }
-}
 
-for (const relativeFile of HTML_FILES) {
-  const htmlFile = join(ROOT, relativeFile);
-  let htmlOriginal;
-  try {
-    htmlOriginal = readFileSync(htmlFile, 'utf8');
-  } catch {
-    offenders.push(`${relativeFile}: configured HTML page is missing or unreadable`);
-    continue;
-  }
-  const htmlChanges = htmlTextNodes(htmlOriginal);
-  if (htmlChanges.length > 0) {
-    if (fix) {
-      let out = htmlOriginal;
-      for (let index = htmlChanges.length - 1; index >= 0; index--) {
-        const change = htmlChanges[index];
-        out = out.slice(0, change.start) + change.cased + out.slice(change.end);
+    const changes = [];
+    if (file.endsWith('.tsx')) {
+      for (const node of jsxTextNodes(original, sf)) {
+        let cased;
+        if (node.suffix) {
+          const match = node.text.match(/^[A-Za-z][A-Za-z0-9'’]*/);
+          const head = match ? match[0] : '';
+          cased = head + titleCaseText(node.text.slice(head.length));
+        } else {
+          cased = titleCaseText(node.text);
+        }
+        if (node.prefix) {
+          const match = node.text.match(/[A-Za-z][A-Za-z0-9'’]*$/);
+          if (match) cased = cased.slice(0, cased.length - match[0].length) + match[0];
+        }
+        if (cased !== node.text) changes.push({ ...node, cased });
       }
-      writeFileSync(htmlFile, out, 'utf8');
-      fixedNodes += htmlChanges.length;
-      fixedFiles++;
+    }
+    changes.push(...staticCopyChanges(original, sf, file));
+
+    const uniqueChanges = [
+      ...new Map(changes.map((change) => [`${change.start}:${change.end}`, change])).values(),
+    ].sort((a, b) => a.start - b.start);
+    if (uniqueChanges.length === 0) continue;
+
+    if (fix) {
+      let out = original;
+      let applied = 0;
+      for (let index = uniqueChanges.length - 1; index >= 0; index--) {
+        const change = uniqueChanges[index];
+        if (change.replaceable === false) continue;
+        out = out.slice(0, change.start) + change.cased + out.slice(change.end);
+        applied++;
+      }
+      if (out !== original) {
+        writeFileSync(file, out, 'utf8');
+        fixedNodes += applied;
+        fixedFiles++;
+      }
     } else {
-      for (const change of htmlChanges) {
-        const line = htmlOriginal.slice(0, change.start).split('\n').length;
+      for (const change of uniqueChanges) {
+        const line = original.slice(0, change.start).split('\n').length;
         offenders.push(
-          `${relativeFile}:${line}: [${change.context}] ${change.text.trim().slice(0, 90)}`
+          `${file.replace(ROOT, '')}:${line}: [${change.context}] ${change.text.trim().slice(0, 90)}`
         );
       }
     }
   }
-}
 
-if (fix) {
-  console.log(`check-title-case: fixed ${fixedNodes} copy node(s) across ${fixedFiles} file(s).`);
-  process.exit(0);
-}
+  for (const relativeFile of HTML_FILES) {
+    const htmlFile = join(ROOT, relativeFile);
+    let htmlOriginal;
+    try {
+      htmlOriginal = readFileSync(htmlFile, 'utf8');
+    } catch {
+      offenders.push(`${relativeFile}: configured HTML page is missing or unreadable`);
+      continue;
+    }
+    const htmlChanges = htmlTextNodes(htmlOriginal);
+    if (htmlChanges.length > 0) {
+      if (fix) {
+        let out = htmlOriginal;
+        for (let index = htmlChanges.length - 1; index >= 0; index--) {
+          const change = htmlChanges[index];
+          out = out.slice(0, change.start) + change.cased + out.slice(change.end);
+        }
+        writeFileSync(htmlFile, out, 'utf8');
+        fixedNodes += htmlChanges.length;
+        fixedFiles++;
+      } else {
+        for (const change of htmlChanges) {
+          const line = htmlOriginal.slice(0, change.start).split('\n').length;
+          offenders.push(
+            `${relativeFile}:${line}: [${change.context}] ${change.text.trim().slice(0, 90)}`
+          );
+        }
+      }
+    }
+  }
 
-if (offenders.length > 0) {
-  console.error('\ncheck-title-case FAILED: page copy is not Title Cased.\n');
-  console.error('The first letter of every word must be capitalized on every forward-facing page.');
-  console.error('Run: node scripts/ci/check-title-case.mjs --fix\n');
-  offenders.slice(0, 60).forEach((offender) => console.error('  ' + offender));
-  if (offenders.length > 60) console.error(`  ... and ${offenders.length - 60} more`);
-  console.error('');
-  process.exit(1);
-}
+  if (fix) {
+    console.log(`check-title-case: fixed ${fixedNodes} copy node(s) across ${fixedFiles} file(s).`);
+    process.exit(0);
+  }
 
-console.log('check-title-case: OK - every static word on every page starts with a capital.');
+  if (offenders.length > 0) {
+    console.error('\ncheck-title-case FAILED: page copy is not Title Cased.\n');
+    console.error('The first letter of every word must be capitalized on every forward-facing page.');
+    console.error('Run: node scripts/ci/check-title-case.mjs --fix\n');
+    offenders.slice(0, 60).forEach((offender) => console.error('  ' + offender));
+    if (offenders.length > 60) console.error(`  ... and ${offenders.length - 60} more`);
+    console.error('');
+    process.exit(1);
+  }
+
+  console.log('check-title-case: OK - every static word on every page starts with a capital.');
+
+}

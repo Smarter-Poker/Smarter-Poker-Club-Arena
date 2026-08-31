@@ -770,6 +770,171 @@ describe('ClubDataPage', () => {
     );
   });
 
+  it('retires stale game pagination when a sort establishes a new cursor', async () => {
+    const recentRows = Array.from({ length: 200 }, (_, index) => ({
+      ...snapshot.rows[0],
+      id: `recent-race-${index + 1}`,
+      name: `Recent Race ${index + 1}`,
+      started_at: new Date(Date.UTC(2026, 7, 30, 12, 0, 0) - index * 1_000).toISOString(),
+    }));
+    const rankedRows = Array.from({ length: 200 }, (_, index) => ({
+      ...snapshot.rows[0],
+      id: `ranked-race-${index + 1}`,
+      name: `Ranked Race ${index + 1}`,
+      fee: 10_000 - index,
+    }));
+    let resolveRecent!: (result: { data: Record<string, unknown>; error: null }) => void;
+    let resolveRanked!: (result: { data: Record<string, unknown>; error: null }) => void;
+    rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
+      if (fn === 'ca_club_data_snapshot') {
+        return {
+          data: { ...snapshot, rows: recentRows.slice(0, 100), row_count: 250 },
+          error: null,
+        };
+      }
+      if (fn === 'ca_club_game_page' && args?.p_sort === 'recent') {
+        return new Promise((resolve) => {
+          resolveRecent = resolve;
+        });
+      }
+      if (fn === 'ca_club_game_page' && args?.p_sort === 'fee') {
+        return new Promise((resolve) => {
+          resolveRanked = resolve;
+        });
+      }
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      return { data: null, error: null };
+    });
+
+    render(<ClubDataPage />);
+
+    const recentLoadMore = await screen.findByRole('button', {
+      name: 'Load More Games - 100 Of 250',
+    });
+    await waitFor(() => expect(resolveRecent).toBeTypeOf('function'));
+    fireEvent.click(recentLoadMore);
+    await screen.findByRole('button', { name: 'Loading More Games' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Highest Fee' }));
+    await waitFor(() => expect(resolveRanked).toBeTypeOf('function'));
+    expect(screen.getByRole('button', { name: 'Load More Games - 100 Of 250' })).toBeDisabled();
+
+    act(() => {
+      resolveRanked({
+        data: {
+          ...gamePage,
+          rows: rankedRows,
+          next_cursor: { value: 9_801, time: 1, kind: 'CASH', id: 'ranked-race-200' },
+          has_more: true,
+          filtered_count: 250,
+        },
+        error: null,
+      });
+      resolveRecent({
+        data: {
+          ...gamePage,
+          rows: recentRows.slice(100),
+          next_cursor: { value: 1, time: 1, kind: 'CASH', id: 'recent-race-200' },
+          has_more: true,
+          filtered_count: 250,
+        },
+        error: null,
+      });
+    });
+
+    const rankedLoadMore = await screen.findByRole('button', {
+      name: 'Load More Games - 100 Of 250',
+    });
+    expect(rankedLoadMore).toBeEnabled();
+    fireEvent.click(rankedLoadMore);
+    await screen.findByRole('button', { name: 'Load More Games - 200 Of 250' });
+  });
+
+  it('retires stale player pagination when a sort establishes a new cursor', async () => {
+    const playerRows = Array.from({ length: 200 }, (_, index) => ({
+      ...playerBreakdown.players[0],
+      user_id: `player-race-${index + 1}`,
+      username: `Player Race ${index + 1}`,
+      net: 1_000 - index,
+    }));
+    let resolveOldPage!: (result: { data: Record<string, unknown>; error: null }) => void;
+    let resolveLosers!: (result: { data: Record<string, unknown>; error: null }) => void;
+    rpcMock.mockImplementation(async (fn: string, args?: Record<string, unknown>) => {
+      if (fn === 'ca_club_data_snapshot') return { data: snapshot, error: null };
+      if (fn === 'ca_club_game_page') return { data: gamePage, error: null };
+      if (fn === 'ca_club_player_breakdown') {
+        return {
+          data: { ...playerBreakdown, players: [], player_count: 250 },
+          error: null,
+        };
+      }
+      if (fn === 'ca_club_player_page' && args?.p_cursor) {
+        return new Promise((resolve) => {
+          resolveOldPage = resolve;
+        });
+      }
+      if (fn === 'ca_club_player_page' && args?.p_sort === 'losers') {
+        return new Promise((resolve) => {
+          resolveLosers = resolve;
+        });
+      }
+      if (fn === 'ca_club_player_page') {
+        return {
+          data: {
+            ...playerPage,
+            rows: playerRows.slice(0, 100),
+            next_cursor: { value: 901, id: 'player-race-100' },
+            has_more: true,
+            filtered_count: 250,
+          },
+          error: null,
+        };
+      }
+      if (fn === 'ca_club_union_invoices') return { data: [], error: null };
+      return { data: null, error: null };
+    });
+
+    render(<ClubDataPage />);
+    fireEvent.click(await screen.findByRole('tab', { name: 'Players' }));
+
+    const loadMore = await screen.findByRole('button', {
+      name: 'Load More Players - 100 Of 250',
+    });
+    fireEvent.click(loadMore);
+    await waitFor(() => expect(resolveOldPage).toBeTypeOf('function'));
+    await screen.findByRole('button', { name: 'Loading More Players' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Biggest Losers' }));
+    await waitFor(() => expect(resolveLosers).toBeTypeOf('function'));
+    act(() => {
+      resolveLosers({
+        data: {
+          ...playerPage,
+          rows: playerRows.slice(0, 100).reverse(),
+          next_cursor: { value: 901, id: 'player-race-1' },
+          has_more: true,
+          filtered_count: 250,
+        },
+        error: null,
+      });
+      resolveOldPage({
+        data: {
+          ...playerPage,
+          rows: playerRows.slice(100),
+          next_cursor: { value: 801, id: 'player-race-200' },
+          has_more: true,
+          filtered_count: 250,
+        },
+        error: null,
+      });
+    });
+
+    const sortedLoadMore = await screen.findByRole('button', {
+      name: 'Load More Players - 100 Of 250',
+    });
+    expect(sortedLoadMore).toBeEnabled();
+  });
+
   it('serves the first metric-sorted continuation from the initial ranked query', async () => {
     const rankedRows = Array.from({ length: 200 }, (_, index) => ({
       ...snapshot.rows[0],

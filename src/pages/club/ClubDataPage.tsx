@@ -667,9 +667,20 @@ export default function ClubDataPage() {
   const load = useCallback(
     async (showSpinner: boolean, preserveOnError = false): Promise<boolean> => {
       if (!clubUuid || isHydrating || !user) return false;
+      // Pagination owns its cursor while it is in flight. A heartbeat is a
+      // recovery mechanism, not a reason to supersede that operator action.
+      if (preserveOnError && gamesMoreRef.current) return true;
       const requestStartedAt = performance.now();
       const myVersion = ++loadVersion.current;
       const stale = () => cancelledRef.current || loadVersion.current !== myVersion;
+      // A foreground query change (range, filter, search, or sort) owns a new
+      // cursor. Explicitly retire any older page request before it becomes
+      // stale; a stale request intentionally cannot clear UI owned by a newer
+      // request, which previously left "Loading More Games" locked forever.
+      if (gamesMoreRef.current) {
+        gamesMoreRef.current = false;
+        setGamesLoadingMore(false);
+      }
       if (showSpinner) setLoading(true);
       setGamesPageError(null);
       try {
@@ -927,6 +938,13 @@ export default function ClubDataPage() {
       if (preserveOnError && playersMoreRef.current) return true;
       const myVersion = ++playersVersion.current;
       const stale = () => cancelledRef.current || playersVersion.current !== myVersion;
+      // Player sort changes establish a new cursor and supersede pagination.
+      // Retire the old spinner here because its now-stale finally block must
+      // not mutate state owned by this newer request.
+      if (playersMoreRef.current) {
+        playersMoreRef.current = false;
+        setPlayersLoadingMore(false);
+      }
       // Silent recovery must not make the operator's manual recovery control
       // unavailable. When verified rows already exist, keep them interactive
       // while the newest background request owns the reconciliation.
@@ -1054,7 +1072,7 @@ export default function ClubDataPage() {
   }, [tab, loadPlayers, clubUuid, isHydrating, user, playerCacheKey]);
 
   const loadMoreGames = useCallback(async () => {
-    if (!clubUuid || gamesMoreRef.current || isHydrating || !user) return;
+    if (!clubUuid || gamesMoreRef.current || loading || isHydrating || !user) return;
     let prefetched = prefetchedGamePageRef.current;
     const pendingPrefetch = prefetchedGameRequestRef.current;
     if (!prefetched && pendingPrefetch?.key === gameCacheKey) {
@@ -1177,6 +1195,7 @@ export default function ClubDataPage() {
     search,
     gameSort,
     gameCacheKey,
+    loading,
   ]);
 
   const loadMorePlayers = useCallback(async () => {
@@ -1185,6 +1204,7 @@ export default function ClubDataPage() {
       !playerCursor ||
       !playersHasMore ||
       playersMoreRef.current ||
+      playersLoading ||
       isHydrating ||
       !user
     )
@@ -1246,7 +1266,17 @@ export default function ClubDataPage() {
       playersMoreRef.current = false;
       if (!stale()) setPlayersLoadingMore(false);
     }
-  }, [clubUuid, playerCursor, playersHasMore, isHydrating, user, startDate, endDate, playerSort]);
+  }, [
+    clubUuid,
+    playerCursor,
+    playersHasMore,
+    playersLoading,
+    isHydrating,
+    user,
+    startDate,
+    endDate,
+    playerSort,
+  ]);
 
   // ca_club_player_page owns ordering before it applies the keyset cursor. A
   // client sort here would corrupt page boundaries (and was why "losers"
@@ -2412,7 +2442,7 @@ export default function ClubDataPage() {
                 type="button"
                 className={styles.retryButton}
                 onClick={() => void loadMoreGames()}
-                disabled={gamesLoadingMore}
+                disabled={gamesLoadingMore || loading}
               >
                 {gamesLoadingMore ? 'Loading' : 'Try Again'}
               </button>
@@ -2424,7 +2454,7 @@ export default function ClubDataPage() {
               type="button"
               className={styles.loadMore}
               onClick={() => void loadMoreGames()}
-              disabled={gamesLoadingMore}
+              disabled={gamesLoadingMore || loading}
             >
               {gamesLoadingMore
                 ? 'Loading More Games'
@@ -2569,7 +2599,7 @@ export default function ClubDataPage() {
                 type="button"
                 className={styles.retryButton}
                 onClick={() => void loadMorePlayers()}
-                disabled={playersLoadingMore}
+                disabled={playersLoadingMore || playersLoading}
               >
                 {playersLoadingMore ? 'Loading' : 'Try Again'}
               </button>
@@ -2581,7 +2611,7 @@ export default function ClubDataPage() {
               type="button"
               className={styles.loadMore}
               onClick={() => void loadMorePlayers()}
-              disabled={playersLoadingMore}
+              disabled={playersLoadingMore || playersLoading}
             >
               {playersLoadingMore
                 ? 'Loading More Players'

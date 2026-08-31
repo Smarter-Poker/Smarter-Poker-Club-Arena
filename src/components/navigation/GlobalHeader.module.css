@@ -220,6 +220,25 @@
     sans-serif;
 }
 
+/* The approved desktop authority is 1680 x 932 and gives the shared header a
+   96px chrome band. Letting the 1648 x 168 source ratio dictate height made
+   that band 171px at the authority viewport, taking 75px from the lobby and
+   forcing the wallet stack beneath the footer. The artwork and its semantic
+   hit plane stay on the same coordinate system; desktop only compresses that
+   system to the approved height. Mobile keeps the lossless proportional row. */
+@media (min-width: 901px) {
+  .desktopArtwork {
+    height: 96px;
+    aspect-ratio: auto;
+    object-fit: fill;
+  }
+
+  .headerControls {
+    height: 96px;
+    aspect-ratio: auto;
+  }
+}
+
 /* These semantic anchors make each count belong to its own control. A generic
    absolute badge must never fall back to the header control plane, where the
    notification count previously appeared over Profile. */

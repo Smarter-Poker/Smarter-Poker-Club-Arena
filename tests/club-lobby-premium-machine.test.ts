@@ -18,6 +18,11 @@ const IDENTITY_CSS = readFileSync(
   'utf8'
 );
 const APP_LAYOUT = readFileSync(resolve(ROOT, 'src/components/layouts/AppLayout.tsx'), 'utf8');
+const HEADER_CSS = readFileSync(
+  resolve(ROOT, 'src/components/navigation/GlobalHeader.module.css'),
+  'utf8'
+);
+const GLOBALS_CSS = readFileSync(resolve(ROOT, 'src/styles/globals.css'), 'utf8');
 
 describe('responsive premium Club Arena', () => {
   it('renders one live composition instead of using the approval screenshot as the interface', () => {
@@ -135,9 +140,9 @@ describe('responsive premium Club Arena', () => {
     expect(PAGE_CSS).toContain(
       ".lobby-top__wallet .dw--lobby-board .dw__row[data-wallet-key='diamonds']"
     );
-    expect(PAGE_CSS).toContain('aspect-ratio: 1800 / 273');
+    expect(PAGE_CSS).toContain('aspect-ratio: 1800 / 334');
     expect(PAGE_CSS).toMatch(
-      /\.lobby-top__wallet \.dw--lobby-board \.dw__row--wallet-art \.dw__row-shell\s*\{[^}]*object-fit:\s*contain/s
+      /\.lobby-top__wallet \.dw--lobby-board \.dw__row--wallet-art \.dw__row-shell\s*\{[^}]*object-fit:\s*fill/s
     );
   });
 
@@ -145,11 +150,30 @@ describe('responsive premium Club Arena', () => {
     const desktop = PAGE_CSS.slice(PAGE_CSS.indexOf('@media (min-width: 901px)'));
 
     expect(desktop).toMatch(
-      /\.lobby-top__identity,\s*\.lobby-bbj\s*\{[^}]*width:\s*100%[^}]*aspect-ratio:\s*2\.4 \/ 1/s
+      /\.lobby-top \.club-identity\.lobby-top__identity,\s*\.lobby-bbj\s*\{[^}]*width:\s*100%[^}]*aspect-ratio:\s*2\.4 \/ 1/s
     );
     expect(desktop).toMatch(
       /\.lobby-top__identity \.club-identity__shell img,\s*\.lobby-bbj__shell\s*\{[^}]*object-fit:\s*fill/s
     );
+  });
+
+  it('uses the authority desktop chrome heights without changing mobile artwork scaling', () => {
+    expect(HEADER_CSS).toMatch(
+      /@media \(min-width: 901px\)[\s\S]*?\.desktopArtwork\s*\{[^}]*height:\s*96px[^}]*aspect-ratio:\s*auto[^}]*object-fit:\s*fill/s
+    );
+    expect(HEADER_CSS).toMatch(
+      /@media \(min-width: 901px\)[\s\S]*?\.headerControls\s*\{[^}]*height:\s*96px[^}]*aspect-ratio:\s*auto/s
+    );
+    expect(GLOBALS_CSS).toContain('--bottom-nav-height: clamp(44px, 13.72vw, 132px)');
+  });
+
+  it('keeps every desktop lobby table inside the premium frame', () => {
+    const desktop = TOP_CSS.slice(TOP_CSS.lastIndexOf('@media (min-width: 901px)'));
+    expect(desktop).toMatch(
+      /\.lobby-table--all \.lt-col-tstack,[\s\S]*?\.lobby-table--all \.lt-col-format\s*\{[^}]*display:\s*none/s
+    );
+    expect(desktop).toMatch(/\.lobby-table--all \.lt-col-name\s*\{[^}]*width:\s*36%/s);
+    expect(desktop).toMatch(/\.lobby-table--all \.lt-col-status\s*\{[^}]*width:\s*13%/s);
   });
 
   it('uses live club identity for every club without a Shark-only branch', () => {

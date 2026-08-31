@@ -40,7 +40,18 @@ LOCK_FILE="${LOCK_FILE:-/var/lock/club-arena-engine-up.lock}"
 # when autoheal itself is dead.
 FAIL_THRESHOLD="${FAIL_THRESHOLD:-3}"
 # Grace after container start. Must exceed --health-start-period (90s).
-BOOT_GRACE_SEC="${BOOT_GRACE_SEC:-120}"
+#
+# 2026-08-30: raised 120 -> 300. During the Supabase resize outage the engine's
+# cold boot legitimately ran 5-8 minutes (repair sweeps + loaders against a
+# cold-cache database), and a 120s grace made the supervisor one of the THREE
+# things restarting the engine mid-boot (with the deploy train and the
+# leadership standby->leader exit). Every kill restarted the boot from zero and
+# the fleet went ~80 minutes without dealing a hand. The supervisor exists to
+# recover a dead engine, not to cap how long a live boot may take: a healthy
+# warm boot clears in under 2 minutes and is unaffected; a genuinely wedged
+# boot is still caught, 3 minutes later than before, by FAIL_THRESHOLD or
+# CHURN_THRESHOLD.
+BOOT_GRACE_SEC="${BOOT_GRACE_SEC:-300}"
 # Consecutive runs that may find the container inside boot grace before we call
 # it a crash loop. Without this the supervisor is blind forever to an engine
 # that restarts faster than BOOT_GRACE_SEC — every sample looks like a healthy

@@ -29,26 +29,14 @@ describe('temporary customization account cleanup', () => {
     const reservedId = '00000000-0000-4000-8000-000000000002';
     const fetchMock = vi.fn(async (input: string | URL | Request, _init?: RequestInit) => {
       const url = String(input);
-      if (url.includes('/auth/v1/admin/users?page=')) {
-        return Response.json({
-          users: [
-            {
-              id: reservedId,
-              email: 'ca-customization-cert-orphan@example.invalid',
-              created_at: '2026-01-01T00:00:00.000Z',
-            },
-            {
-              id: '00000000-0000-4000-8000-000000000003',
-              email: 'real-player@example.com',
-              created_at: '2026-01-01T00:00:00.000Z',
-            },
-            {
-              id: '00000000-0000-4000-8000-000000000004',
-              email: 'ca-customization-cert-active@example.invalid',
-              created_at: '2999-01-01T00:00:00.000Z',
-            },
-          ],
-        });
+      if (url.includes('/rest/v1/profiles?')) {
+        return Response.json([
+          {
+            id: reservedId,
+            email: 'ca-customization-cert-orphan@example.invalid',
+            created_at: '2026-01-01T00:00:00.000Z',
+          },
+        ]);
       }
       if (url.includes(`/auth/v1/admin/users/${reservedId}`)) {
         return new Response(null, { status: 404 });
@@ -69,11 +57,9 @@ describe('temporary customization account cleanup', () => {
     );
     expect(cleanupCalls).toHaveLength(1);
     expect(String(cleanupCalls[0]?.[1]?.body)).toContain(reservedId);
-    expect(String(cleanupCalls[0]?.[1]?.body)).not.toContain(
-      '00000000-0000-4000-8000-000000000003'
-    );
-    expect(String(cleanupCalls[0]?.[1]?.body)).not.toContain(
-      '00000000-0000-4000-8000-000000000004'
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      expect.stringContaining('/auth/v1/admin/users?page='),
+      expect.anything()
     );
   });
 

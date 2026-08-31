@@ -373,12 +373,6 @@ async function authUserExists(
   });
 }
 
-type AuthAdminUser = {
-  id?: string;
-  email?: string;
-  created_at?: string;
-};
-
 function isReservedCertificationEmail(email: string): boolean {
   return email.startsWith(ACCOUNT_PREFIX) && email.endsWith('@example.invalid');
 }
@@ -393,44 +387,34 @@ export async function cleanupStaleTemporaryCustomizationAccounts(
   environment: CustomizationCertificationEnvironment,
   minimumAgeMs = STALE_FIXTURE_MINIMUM_AGE_MS
 ): Promise<number> {
-  const perPage = 100;
-  const candidates: Array<{ id: string; email: string }> = [];
   // Never permit a caller to turn this recovery sweep into current-run cleanup.
   const safeMinimumAgeMs = Math.max(minimumAgeMs, 60_000);
-  const cutoff = Date.now() - safeMinimumAgeMs;
-
-  for (let page = 1; page <= 20; page += 1) {
-    const response = await serviceRequest<{ users?: AuthAdminUser[] }>(
-      environment,
-      `/auth/v1/admin/users?page=${page}&per_page=${perPage}`
-    );
-    const users = Array.isArray(response?.users) ? response.users : [];
-    for (const user of users) {
-      const id = String(user.id || '');
-      const email = String(user.email || '');
-      const createdAt = Date.parse(String(user.created_at || ''));
-      if (
-        id &&
-        isReservedCertificationEmail(email) &&
-        Number.isFinite(createdAt) &&
-        createdAt <= cutoff
-      ) {
-        candidates.push({ id, email });
-      }
-    }
-    if (users.length < perPage) break;
-  }
-
+  const cutoff = new Date(Date.now() - safeMinimumAgeMs).toISOString();
+  const candidates = await readServiceRows<{ id: string; email: string; created_at: string }>(
+    environment,
+    'profiles',
+    new URLSearchParams({
+      select: 'id,email,created_at',
+      email: `like.${ACCOUNT_PREFIX}*@example.invalid`,
+      created_at: `lte.${cutoff}`,
+      order: 'created_at.asc',
+      limit: String(STALE_FIXTURE_CLEANUP_LIMIT + 1),
+    })
+  );
   if (candidates.length > STALE_FIXTURE_CLEANUP_LIMIT) {
     throw new Error(
-      `Refusing to clean ${candidates.length} stale certification accounts in one run; ` +
-        `the bounded limit is ${STALE_FIXTURE_CLEANUP_LIMIT}.`
+      `Refusing to clean more than ${STALE_FIXTURE_CLEANUP_LIMIT} stale certification accounts in one run.`
     );
   }
-
   for (const candidate of candidates) {
-    if (!isReservedCertificationEmail(candidate.email)) {
-      throw new Error(`Refusing to clean non-certification account ${candidate.email}.`);
+    if (
+      !candidate.id ||
+      !isReservedCertificationEmail(candidate.email || '') ||
+      Date.parse(candidate.created_at) > Date.parse(cutoff)
+    ) {
+      throw new Error(
+        `Refusing invalid stale certification candidate ${candidate.id || 'unknown'}.`
+      );
     }
     await callServiceRpc<JsonObject>(
       environment,
@@ -442,7 +426,6 @@ export async function cleanupStaleTemporaryCustomizationAccounts(
       throw new Error(`Stale certification account ${candidate.id} still exists after cleanup.`);
     }
   }
-
   return candidates.length;
 }
 

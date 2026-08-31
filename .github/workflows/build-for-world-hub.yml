@@ -331,9 +331,9 @@ jobs:
 
       - name: Sync dist/ to World Hub public/hub/club-arena/
         run: |
-          rsync -av --delete \
-            club-arena-build/dist/ \
-            world-hub/public/hub/club-arena/
+          node scripts/ci/sync-club-arena-dist.mjs \
+            club-arena-build/dist \
+            world-hub/public/hub/club-arena
 
       - name: Commit and push to World Hub
         # 2026-08-21: this step used to `git pull --rebase` on a rejected push
@@ -443,7 +443,9 @@ jobs:
               exit 0
             fi
 
-            rsync -a --delete ../club-arena-build/dist/ public/hub/club-arena/
+            node ../scripts/ci/sync-club-arena-dist.mjs \
+              ../club-arena-build/dist \
+              public/hub/club-arena
             git add -A public/hub/club-arena/
             if git diff --cached --quiet; then
               echo "No changes to sync — World Hub already carries this bundle."

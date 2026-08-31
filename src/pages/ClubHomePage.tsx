@@ -4486,7 +4486,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       {/* ═══════════════════════════════════════════════════════════════════
           GAME ACTION BAR — every game type, flat, plus explicit sorting
       ═══════════════════════════════════════════════════════════════════ */}
-      <section className="club-lobby-machine" aria-label={`${club.name} Game Lobby`}>
+      <section
+        className="club-lobby-machine"
+        data-opening-checklist={noticeEditable || undefined}
+        aria-label={`${club.name} Game Lobby`}
+      >
         <ClubLobbyCommandTop
           welcome={
             <div

@@ -1228,6 +1228,30 @@
       0 8px 24px rgb(0 0 0 / 72%);
   }
 
+  /* A new club inserts its opening checklist between the fixed command deck
+     and the game results. The desktop cabinet used to flex-shrink that panel
+     to the remaining pixels and then hide rows 9/10 behind `overflow:hidden`.
+     Keep every setup card at its natural height and make the cabinet itself
+     the single scroll surface. This preserves the locked global footer while
+     making the full checklist and the results beneath it reachable at every
+     desktop viewport height. */
+  .club-lobby-machine[data-opening-checklist='true'] {
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-color: #1b6da7 #030507;
+    scrollbar-width: thin;
+  }
+
+  .club-lobby-machine[data-opening-checklist='true'] > .club-launch {
+    flex: 0 0 auto;
+  }
+
+  .club-lobby-machine[data-opening-checklist='true'] > .club-home__games--v2 {
+    flex: 0 0 auto;
+    min-height: clamp(220px, 30vh, 360px);
+  }
+
   .club-lobby-command-top {
     position: relative;
     inset: auto;

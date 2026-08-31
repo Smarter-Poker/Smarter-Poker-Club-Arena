@@ -103,7 +103,7 @@ export async function refundAndCloseCancelledTournament(
     if (openRowsErr) {
       reportError(
         new Error(
-          `[GameServer] Cancel refund ABORTED for ${tournamentId.slice(0, 8)}: open-registration list unreadable (${openRowsErr.message}) — refunding nobody and closing nothing this pass`
+          `[GameServer] Cancel refund ABORTED for ${tournamentId.slice(0, 8)}: open-registration list unreadable (${openRowsErr.message}) - refunding nobody and closing nothing this pass`
         ),
         'GameServer.cancel_refund_open_rows_unreadable'
       );
@@ -190,7 +190,7 @@ export async function refundAndCloseCancelledTournament(
         if (feeErr) {
           reportError(
             new Error(
-              `[GameServer] Cancel refund: fee-ledger read failed for ${row.user_id.slice(0, 8)} (${tournamentId.slice(0, 8)}): ${feeErr.message} — fee NOT reversed`
+              `[GameServer] Cancel refund: fee-ledger read failed for ${row.user_id.slice(0, 8)} (${tournamentId.slice(0, 8)}): ${feeErr.message} - fee NOT reversed`
             ),
             'GameServer.cancel_refund_fee_read_failed'
           );
@@ -222,7 +222,7 @@ export async function refundAndCloseCancelledTournament(
           if (revErr) {
             reportError(
               new Error(
-                `[GameServer] Cancel refund: fee reversal INSERT failed for ${row.user_id.slice(0, 8)} (${tournamentId.slice(0, 8)}): ${revErr.message} — ${feePaid} still booked as rake`
+                `[GameServer] Cancel refund: fee reversal INSERT failed for ${row.user_id.slice(0, 8)} (${tournamentId.slice(0, 8)}): ${revErr.message} - ${feePaid} still booked as rake`
               ),
               'GameServer.cancel_refund_fee_reversal_failed'
             );
@@ -243,7 +243,7 @@ export async function refundAndCloseCancelledTournament(
     if (closeRowsErr) {
       reportError(
         new Error(
-          `[GameServer] Cancel refund: could not close player rows for ${tournamentId.slice(0, 8)}: ${closeRowsErr.message} — registrations left stranded`
+          `[GameServer] Cancel refund: could not close player rows for ${tournamentId.slice(0, 8)}: ${closeRowsErr.message} - registrations left stranded`
         ),
         'GameServer.cancel_refund_close_rows_failed'
       );
@@ -290,7 +290,7 @@ export async function recoverStuckCompletingTournaments(
     if (stuckErr) {
       reportError(
         new Error(
-          `[GameServer] recoverStuckCompleting (${reason}): COMPLETING scan failed: ${stuckErr.message} — recovered nothing this pass`
+          `[GameServer] recoverStuckCompleting (${reason}): COMPLETING scan failed: ${stuckErr.message} - recovered nothing this pass`
         ),
         'GameServer.recoverStuckCompleting_scan_failed'
       );
@@ -360,7 +360,7 @@ export async function recoverStuckCompletingTournaments(
               .eq('status', 'COMPLETING');
             reportError(
               new Error(
-                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is an UNDECIDED satellite (${aliveCount} alive) stuck in COMPLETING — ${reviveErr ? `revive failed: ${reviveErr.message}` : 'flipped back to RUNNING for discovery to resume'}`
+                `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is an UNDECIDED satellite (${aliveCount} alive) stuck in COMPLETING - ${reviveErr ? `revive failed: ${reviveErr.message}` : 'flipped back to RUNNING for discovery to resume'}`
               ),
               'GameServer.recoverStuckCompleting_satellite_revived'
             );
@@ -368,7 +368,7 @@ export async function recoverStuckCompletingTournaments(
           }
           reportError(
             new Error(
-              `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a SATELLITE — it awards seats, not structure cash. Left COMPLETING for processSatelliteAwards.`
+              `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} is a SATELLITE - it awards seats, not structure cash. Left COMPLETING for processSatelliteAwards.`
             ),
             'GameServer.recoverStuckCompleting_satellite_skipped'
           );
@@ -397,7 +397,7 @@ export async function recoverStuckCompletingTournaments(
           // exist is exactly the thing this guard is for.
           reportError(
             new Error(
-              `[GameServer] recoverStuckCompleting (${reason}): could not tell whether ${t.id.slice(0, 8)} was chopped (${dealErr.message}) — skipped rather than risk paying over a deal`
+              `[GameServer] recoverStuckCompleting (${reason}): could not tell whether ${t.id.slice(0, 8)} was chopped (${dealErr.message}) - skipped rather than risk paying over a deal`
             ),
             'GameServer.recoverStuckCompleting_deal_check_failed'
           );
@@ -407,7 +407,7 @@ export async function recoverStuckCompletingTournaments(
         if ((dealRows?.length ?? 0) > 0) {
           reportError(
             new Error(
-              `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} settled by a final-table deal — structure prizes would be new money on top of it. Skipped.`
+              `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} settled by a final-table deal - structure prizes would be new money on top of it. Skipped.`
             ),
             'GameServer.recoverStuckCompleting_chopped_skipped'
           );
@@ -470,7 +470,7 @@ export async function recoverStuckCompletingTournaments(
          */
         if (playersErr) {
           throw new Error(
-            `player field unreadable for ${t.id.slice(0, 8)} "${t.name}": ${playersErr.message} — refusing to complete a tournament we cannot pay`
+            `player field unreadable for ${t.id.slice(0, 8)} "${t.name}": ${playersErr.message} - refusing to complete a tournament we cannot pay`
           );
         }
         const rows = players ?? [];
@@ -523,7 +523,7 @@ export async function recoverStuckCompletingTournaments(
           reportError(
             new Error(
               `[GameServer] recoverStuckCompleting (${reason}): ${t.id.slice(0, 8)} "${t.name}" ` +
-                `has ${livePlayers} player(s) still playing against ${paidPlaces} paid place(s) — ` +
+                `has ${livePlayers} player(s) still playing against ${paidPlaces} paid place(s) - ` +
                 'that is a tournament that was still being PLAYED when its engine died, not one ' +
                 'that was finishing. Refusing to rank it by chipstack and pay the structure; left ' +
                 'in COMPLETING for a live engine to resume or an operator to settle.'
@@ -612,7 +612,7 @@ export async function recoverStuckCompletingTournaments(
         if (alive.length > 0 && !anyDealtIn) {
           reportError(
             new Error(
-              `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} "${t.name}" — all ${alive.length} surviving entrant(s) are still 'registered', so none of them has been dealt a card in this event. Ranking them by chips would invent a podium. Paying nobody; left COMPLETING for review.`
+              `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} "${t.name}" - all ${alive.length} surviving entrant(s) are still 'registered', so none of them has been dealt a card in this event. Ranking them by chips would invent a podium. Paying nobody; left COMPLETING for review.`
             ),
             'GameServer.recoverStuckCompleting_no_dealt_in_survivor'
           );
@@ -665,7 +665,7 @@ export async function recoverStuckCompletingTournaments(
         if (collisions.length > 0) {
           reportError(
             new Error(
-              `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} "${t.name}" — ${alive.length} survivor(s) would be given place(s) already held by eliminated players: ${collisions.join(', ')}. Paying nobody; left COMPLETING for review.`
+              `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} "${t.name}" - ${alive.length} survivor(s) would be given place(s) already held by eliminated players: ${collisions.join(', ')}. Paying nobody; left COMPLETING for review.`
             ),
             'GameServer.recoverStuckCompleting_position_collision'
           );
@@ -678,7 +678,7 @@ export async function recoverStuckCompletingTournaments(
           await credit(
             alive[i].user_id,
             prize,
-            `Tournament prize (recovery): position ${place} — ${t.name || 'tournament'}`,
+            `Tournament prize (recovery): position ${place} - ${t.name || 'tournament'}`,
             `tourney:${t.id}:prize:place:${place}`
           );
           // PAYOUT-INTEGRITY 2026-08-25: the credit is only half of it. When
@@ -741,7 +741,7 @@ export async function recoverStuckCompletingTournaments(
             const credited = await credit(
               r.user_id,
               diff,
-              `Tournament prize top-up (recovery): position ${r.position} — ${t.name || 'tournament'}`,
+              `Tournament prize top-up (recovery): position ${r.position} - ${t.name || 'tournament'}`,
               `tourney:${t.id}:prizeadj:${r.user_id}:${r.position}:${owed}`
             );
 
@@ -788,7 +788,7 @@ export async function recoverStuckCompletingTournaments(
           if (rakeErr || !rakeRes?.ok) {
             reportError(
               new Error(
-                `[GameServer] recoverStuckCompleting: rake settlement failed for ${t.id.slice(0, 8)}: ${rakeErr?.message || rakeRes?.reason} — sweep will re-drive`
+                `[GameServer] recoverStuckCompleting: rake settlement failed for ${t.id.slice(0, 8)}: ${rakeErr?.message || rakeRes?.reason} - sweep will re-drive`
               ),
               'GameServer.recoverStuckCompleting_rake_settle_failed'
             );

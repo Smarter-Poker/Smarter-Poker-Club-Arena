@@ -37,7 +37,7 @@ describe('Daily Missions realtime and render-isolation contract', () => {
   it('coalesces event bursts and never turns them into visible UX polling', () => {
     expect(page).toContain('scheduleRealtimeRefresh');
     expect(page).toContain("loadChallenges(userId, 'silent')");
-    expect(page).toContain('masterBus.subscribeDebounced(');
+    expect(page).not.toContain("'CHALLENGE_PROGRESS_UPDATED'");
     expect(page).not.toMatch(/setInterval\s*\(/);
   });
 

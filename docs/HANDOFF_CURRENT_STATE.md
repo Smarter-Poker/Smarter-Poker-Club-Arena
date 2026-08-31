@@ -23,6 +23,16 @@ cache` behind it. 15,729 503s in one five-minute window (about 28% of
 >    affected. **This has no owner yet and is not a Club Arena spec defect.** The
 >    post-deploy suite is red because of it, and those specs should STAY red.
 
+> **PHASE 7 IS ALSO COMPLETE (PR #2265, 2026-08-31).** Resume at **Phase 8**.
+> Read `docs/audit/2026-08-31-the-orphans-were-mostly-doors.md` first: the "24
+> orphaned pages / ~9,900 lines" figure repeated in §16 and §19 of this document
+> was **wrong**. Twelve of the 24 were legacy redirects with no page behind them,
+> three were duplicate doors onto components already reachable, and
+> `UnionDashboardPage`'s 3,130 lines were never invisible - they serve at
+> `/unions/:unionId/operations`. The real set was nine pages. Four are now
+> connected, three retired as redirects, and **two remain: `xmtt` and
+> `flash-pool`, parked by Dan as a launch decision.** The ratchet ceiling is 2.
+
 > **Read `AGENT-PLAYBOOK.md` and `CLAUDE.md` before touching anything.** This
 > document is the session record; those are the binding law.
 
@@ -764,8 +774,9 @@ line from `ALLOWED_ORPHANS`** and the ratchet keeps the number from rising.
       npx tsc --noEmit
 6.  DO NOT MODIFY: the 9 dirty files in the shared clone (§10);
     supabase/migrations history; other agents' .agent/handoffs/*.
-7.  RESUME AT: Phase 7 of 8 — the 24 orphaned pages (§21). Phase 6 completed
-    2026-08-31 in PRs #2184 and #2201; see the note at the top of this file.
+7.  RESUME AT: Phase 8 of 8 — the small closables (§21). Phases 6 and 7 both
+    completed 2026-08-31 (PRs #2184, #2201, #2237, #2265); see the notes at the
+    top of this file.
 ```
 
 ---
@@ -875,3 +886,45 @@ production — Phases 1 and 2 verified on the live site for the first time.
 
 **Still open, and now measured:** the PGRST002/503 storms above. Someone needs to
 own that. It is the single loudest thing in production right now.
+
+---
+
+## 27. Phase 7 Addendum (2026-08-31)
+
+**Phase 7 of 8 — the orphaned pages — is COMPLETE.** PR #2265, merged.
+
+**The count in §16 was wrong, and that is the main thing to carry forward.** The
+ratchet counts ROUTES; the sentence that travelled through two handoffs described
+PAGES. Of the 24:
+
+- **12 were legacy redirects** with no page at all - four through
+  `LegacyClubToolRedirect`, four to the World Hub messenger, three plain
+  `<Navigate>`, and `notification-center`, which Dan retired on 2026-08-25.
+  Being unreachable from navigation is the POINT of a legacy redirect. One
+  reason was not merely vague but false: `agent-management` was recorded as
+  rendering `RateAuditPage`, which it had not done for some time.
+- **3 were a second door** onto a component already reachable elsewhere.
+- **9 were real pages.** About 6,300 lines, not 9,900.
+
+**Two production numbers decided most of it.** `agent_commissions` holds
+**1,490,109 rows** against 113 agents with no door anywhere, and `user_reports`
+holds **zero** - never once - while the review page that reads it has always been
+reachable. The club had a moderation queue that could not receive anything.
+
+**Connected:** `agent-dashboard` (hamburger, Club Operations),
+`clubs/:clubId/agent-dashboard` (operations rail, "Agent Network"),
+`clubs/:clubId/anti-cheat` (new route, operations rail, "Anti-Cheat"), and
+`report/:playerId` (Report action on the public profile, beside Block).
+
+**Retired as redirects, nothing deleted:** `rakeback-dashboard`,
+`player-sessions`, `waitlist`, `union-dashboard`, `union-games`,
+`clubs/:clubId/dashboard`.
+
+**Still open and needing Dan:** `xmtt` (XMTTPage, 551 lines) and `flash-pool`
+(FlashPoolPage, 450 lines). Both built, both player-facing game modes, parked as
+a launch decision rather than a wiring one.
+
+**A pattern worth carrying into Phase 8:** every connection here was proven by
+BREAKING it - removing the nav entry and watching `everyRouteIsReachableLaw` go
+red naming the route that lost its door. A page is only connected if the ratchet
+can tell when it stops being connected.

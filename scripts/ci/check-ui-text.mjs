@@ -28,7 +28,23 @@ import { join, extname } from 'node:path';
 
 const ROOT = new URL('../../', import.meta.url).pathname;
 const SRC = join(ROOT, 'src');
-const EXTS = new Set(['.ts', '.tsx', '.css']);
+const PUBLIC = join(ROOT, 'public');
+const EXTS = new Set(['.ts', '.tsx', '.css', '.html', '.js']);
+/**
+ * index.html sits at the repo ROOT, outside src/, so walking src/ never saw it -
+ * and it carried an em dash in the <meta> title, description, og:title and
+ * twitter:title. Those are not decoration: they are the browser tab, the Google
+ * result and every shared link. Scanned explicitly now.
+ */
+const HTML_FILES = [
+  'index.html',
+  'public/offline.html',
+];
+/** Server copy proven to flow into player toasts or transaction history. */
+const SERVER_UI_FILES = [
+  'server/src/config/RakeConfig.ts',
+  'server/src/tournament/tournamentRecovery.ts',
+];
 const SKIP_DIRS = new Set(['node_modules', 'dist', '_to_delete', '__tests__', 'test-results']);
 /**
  * The one file that is ALLOWED to contain these characters is the one whose job
@@ -37,14 +53,28 @@ const SKIP_DIRS = new Set(['node_modules', 'dist', '_to_delete', '__tests__', 't
  * disabled the stripper. titleCase.ts now writes them as \u escapes so there is
  * nothing here to match, and this exemption is the belt to that pair of braces.
  */
-const SKIP_FILES = new Set(['src/utils/titleCase.ts', 'scripts/ci/check-ui-text.mjs']);
-const EM_DASHES = /[—–―‒]/;
+const SKIP_FILES = new Set([
+  'src/utils/titleCase.ts',
+  'src/utils/popupStyle.ts',
+  'src/components/bbj/BBJBasicPanel.tsx',
+  'src/components/lobby/lobbyEntries.ts',
+  'scripts/ci/check-ui-text.mjs',
+]);
+const EM_DASHES =
+  /[—–―‒]|\\u201[2-5]|\\u\{201[2-5]\}|&(?:m|n)dash;|&horbar;|&#(?:8210|8211|8212|8213);|&#x201[2-5];/i;
+const EM_DASHES_GLOBAL =
+  /[—–―‒]|\\u201[2-5]|\\u\{201[2-5]\}|&(?:m|n)dash;|&horbar;|&#(?:8210|8211|8212|8213);|&#x201[2-5];/gi;
 
 const fix = process.argv.includes('--fix');
 
 /** Strip comments so the scan only sees code and copy. */
-function stripComments(source, isCss) {
-  let out = source.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
+function stripComments(source, isCss, isHtml) {
+  let out = source;
+  if (isHtml) {
+    // <!-- ... --> first, so a JS comment inside a script block still strips after.
+    out = out.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
+  }
+  out = out.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
   if (!isCss) {
     // Line comments, but not the // inside a URL like https://
     out = out.replace(/(^|[^:])\/\/[^\n]*/g, (m, p1) => p1 + ' '.repeat(m.length - p1.length));
@@ -66,27 +96,33 @@ function walk(dir, acc = []) {
 const offenders = [];
 let fixedCount = 0;
 
-for (const file of walk(SRC)) {
+for (const file of [
+  ...walk(SRC),
+  ...walk(PUBLIC),
+  ...HTML_FILES.map((f) => join(ROOT, f)),
+  ...SERVER_UI_FILES.map((f) => join(ROOT, f)),
+]) {
   const rel = file.replace(ROOT, '');
   if (SKIP_FILES.has(rel)) continue;
   const original = readFileSync(file, 'utf8');
   if (!EM_DASHES.test(original)) continue;
 
   const isCss = extname(file) === '.css';
-  const scannable = stripComments(original, isCss);
+  const isHtml = extname(file) === '.html';
+  const scannable = stripComments(original, isCss, isHtml);
   if (!EM_DASHES.test(scannable)) continue; // only in comments -> allowed
 
   if (fix) {
-    // Rewrite only OUTSIDE comments: walk the stripped copy to find real
-    // offsets, then patch those exact positions in the original.
-    let patched = original.split('');
-    for (let i = 0; i < scannable.length; i++) {
-      if (EM_DASHES.test(scannable[i])) {
-        patched[i] = '-';
-        fixedCount++;
-      }
+    // Rewrite only OUTSIDE comments. Comment stripping preserves byte offsets,
+    // so matches in the stripped copy map exactly onto the original source.
+    const matches = [...scannable.matchAll(EM_DASHES_GLOBAL)];
+    let patched = original;
+    for (let i = matches.length - 1; i >= 0; i--) {
+      const match = matches[i];
+      patched = patched.slice(0, match.index) + '-' + patched.slice(match.index + match[0].length);
+      fixedCount++;
     }
-    writeFileSync(file, patched.join(''), 'utf8');
+    writeFileSync(file, patched, 'utf8');
     continue;
   }
 

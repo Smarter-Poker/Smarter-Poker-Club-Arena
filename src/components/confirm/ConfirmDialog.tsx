@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatPopupText } from '../../utils/popupStyle';
 import './ConfirmDialog.css';
 
 interface ConfirmDialogProps {
@@ -27,14 +28,14 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
   return (
     <div className="confirm-dialog-overlay">
       <div className="confirm-dialog">
-        <h3 className="confirm-title">{title}</h3>
-        <p className="confirm-message">{message}</p>
+        <h3 className="confirm-title">{formatPopupText(title)}</h3>
+        <p className="confirm-message">{formatPopupText(message)}</p>
         <div className="confirm-actions">
           <button className="btn-cancel" onClick={onCancel}>
-            {cancelLabel}
+            {formatPopupText(cancelLabel)}
           </button>
           <button className={`btn-confirm variant-${variant}`} onClick={onConfirm}>
-            {confirmLabel}
+            {formatPopupText(confirmLabel)}
           </button>
         </div>
       </div>

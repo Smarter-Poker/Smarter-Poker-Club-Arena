@@ -35,6 +35,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { generateDefaultAvatar } from '../utils/avatarGenerator';
 import { reportError } from '../utils/errorReporter';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
+import { formatPopupText } from '../utils/popupStyle';
 
 // #5: Lazy-load Recharts (387KB) — only imported when History tab is opened
 const LazyProfitChart = lazyWithRetry(() => import('../components/profile/ProfitChart'));
@@ -990,7 +991,7 @@ export default function ProfilePage() {
       {/* Dedicated workspaces own reward claims, deep analytics, promotions,
           and ranking. Profile is their identity index, not a second copy of
           their data loaders and mutation guards. */}
-      <nav className={styles.destinationGrid} aria-label="Player workspaces">
+      <nav className={styles.destinationGrid} aria-label="Player Workspaces">
         {[
           { label: 'Player Analytics', meta: 'Deep stats and leak analysis', path: '/stats' },
           { label: 'Bonus Center', meta: 'Daily and special claims', path: '/bonuses' },
@@ -1041,7 +1042,7 @@ export default function ProfilePage() {
       )}
 
       {/* Tab Navigation */}
-      <nav className={styles.tabNav} role="tablist" aria-label="Profile details">
+      <nav className={styles.tabNav} role="tablist" aria-label="Profile Details">
         {PROFILE_TABS.map((tab, index) => (
           <button
             type="button"
@@ -1281,7 +1282,7 @@ export default function ProfilePage() {
                     .map((tx) => (
                       <div key={tx.id} className={styles.transactionRow}>
                         <div>
-                          <span>{tx.description || tx.type}</span>
+                          <span>{formatPopupText(tx.description || tx.type)}</span>
                           <small>{new Date(tx.created_at).toLocaleDateString()}</small>
                         </div>
                         <span

@@ -221,7 +221,7 @@ describe('the exported text says what the screen says', () => {
     URL.revokeObjectURL = vi.fn() as unknown as typeof URL.revokeObjectURL;
     try {
       render(<HandHistoryPanel isOpen onClose={() => {}} hands={[hand]} heroId={HERO} />);
-      fireEvent.click(screen.getByTitle('Export all hands'));
+      fireEvent.click(screen.getByTitle('Export All Hands'));
       expect(captured).not.toBeNull();
       const text = await (captured as unknown as Blob).text();
       /* "collected N from pot" is the PokerStars wording, and the number after
@@ -316,8 +316,8 @@ describe('the REPLAY button replays the hand on screen', () => {
         onReplay={onReplay}
       />
     );
-    fireEvent.click(screen.getByLabelText('Older hand'));
-    fireEvent.click(screen.getByLabelText('Video replay'));
+    fireEvent.click(screen.getByLabelText('Older Hand'));
+    fireEvent.click(screen.getByLabelText('Video Replay'));
     expect(onReplay).toHaveBeenCalledWith(expect.objectContaining({ id: 'older' }));
   });
 

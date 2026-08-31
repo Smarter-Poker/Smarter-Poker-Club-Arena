@@ -678,7 +678,7 @@ export default function TournamentResultsPage() {
       <CasinoSurfaceHeader
         eyebrow="Play & Review / Results"
         title="Tournament Archive"
-        description="Inspect completed fields, standings, total payouts, bounty awards, Spin outcomes, and recorded hands without flattening format-specific results."
+        description="Inspect Completed Fields, Standings, Total Payouts, Bounty Awards, Spin Outcomes, And Recorded Hands Without Flattening Format-Specific Results."
         artPath="assets/club-buttons/lobby/shark-club-championship-ad-v2.png"
         status="RESULTS LEDGER // LIVE"
         metrics={[

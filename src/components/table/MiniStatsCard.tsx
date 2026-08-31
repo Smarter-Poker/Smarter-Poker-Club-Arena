@@ -101,7 +101,7 @@ export function MiniStatsCard({
         type="button"
         className="mini-stats-card mini-stats-card--icon"
         onClick={handleClick}
-        aria-label="Tournament lobby. Standings, payouts and the clock."
+        aria-label="Tournament Lobby. Standings, Payouts And The Clock."
         title="Tournament Lobby"
       >
         <img
@@ -124,7 +124,7 @@ export function MiniStatsCard({
       type="button"
       className="mini-stats-card mini-stats-card--icon"
       onClick={handleClick}
-      aria-label={`Session stats, P&L ${pnlSign}${pnl.toLocaleString()}`}
+      aria-label={`Session Stats, P&L ${pnlSign}${pnl.toLocaleString()}`}
       title="Session Stats"
       data-pnl-direction={pnlDirection}
     >

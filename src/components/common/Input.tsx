@@ -49,7 +49,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         {label && (
           <label className="input-label" htmlFor={id}>
             {label}
-            {required && <span aria-label="required"> *</span>}
+            {required && <span aria-label="Required"> *</span>}
           </label>
         )}
         <div
@@ -130,7 +130,7 @@ export const Textarea = forwardRef<
         {label && (
           <label className="input-label" htmlFor={id}>
             {label}
-            {required && <span aria-label="required"> *</span>}
+            {required && <span aria-label="Required"> *</span>}
           </label>
         )}
         <textarea
@@ -205,7 +205,7 @@ export const Select = forwardRef<
         {label && (
           <label className="input-label" htmlFor={id}>
             {label}
-            {required && <span aria-label="required"> *</span>}
+            {required && <span aria-label="Required"> *</span>}
           </label>
         )}
         <div

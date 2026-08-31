@@ -186,7 +186,7 @@ export function IdentityModal({
               type="button"
               role="switch"
               aria-checked={useAlias}
-              aria-label="Use alias at tables"
+              aria-label="Use Alias At Tables"
               className={`tsp-toggle ${useAlias ? 'tsp-toggle--on' : 'tsp-toggle--off'}`}
               onClick={onToggleAlias}
             >

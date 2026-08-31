@@ -9,6 +9,7 @@ import {
 
 import { DAILY_MISSIONS_RESPONSE_TIMEOUT, DailyMissionsPage } from './support/DailyMissionsPage';
 import {
+  callServiceRpc,
   cleanupTemporaryCustomizationAccount,
   createTemporaryCustomizationAccount,
   readServiceRows,
@@ -63,6 +64,22 @@ async function dashboardRevision(
   return Number(rows[0].revision);
 }
 
+async function playerWalletBalance(
+  environment: CustomizationCertificationEnvironment,
+  userId: string
+): Promise<number> {
+  const rows = await readServiceRows<{ balance: number }>(
+    environment,
+    'wallets',
+    new URLSearchParams({
+      select: 'balance',
+      user_id: `eq.${userId}`,
+      wallet_type: 'eq.PLAYER',
+    })
+  );
+  return Number(rows[0]?.balance || 0);
+}
+
 function currentPeriodKeys(now = new Date()) {
   const daily = now.toISOString().split('T')[0];
   const monday = new Date(now);
@@ -75,29 +92,33 @@ function currentPeriodKeys(now = new Date()) {
   };
 }
 
-async function completeEveryAssignedMission(account: TemporaryCustomizationAccount) {
-  const keys = currentPeriodKeys();
-  const { data, error } = await account.client.rpc('bump_challenge_progress', {
-    p_user_id: account.id,
-    p_amounts: {
-      hands_played: 1_000_000,
-      hands_won: 1_000_000,
-      showdowns: 1_000_000,
-      showdowns_won: 1_000_000,
-      hands_won_no_showdown: 1_000_000,
-      big_pots: 1_000_000,
-      strong_hands: 1_000_000,
-      chips_won: 1_000_000_000,
-      tournaments_played: 1_000_000,
-      friends_added: 1_000_000,
+async function completeEveryAssignedMission(
+  environment: CustomizationCertificationEnvironment,
+  account: TemporaryCustomizationAccount
+) {
+  const advanced = await callServiceRpc<Array<JsonObject>>(
+    environment,
+    'record_daily_challenge_event',
+    {
+      p_user_id: account.id,
+      p_event_key: `certification:${account.id}:${Date.now()}`,
+      p_amounts: {
+        hands_played: 2_500,
+        hands_won: 2_500,
+        showdowns: 2_500,
+        showdowns_won: 2_500,
+        hands_won_no_showdown: 2_500,
+        big_pots: 2_500,
+        strong_hands: 2_500,
+        chips_won: 1_000_000_000,
+        tournaments_played: 2_500,
+        friends_added: 2_500,
+      },
+      p_magnitudes: { big_pots: 1_000_000_000, strong_hands: 10 },
+      p_occurred_at: new Date().toISOString(),
     },
-    p_magnitudes: { big_pots: 1_000_000_000, strong_hands: 10 },
-    p_daily_key: keys.daily,
-    p_weekly_key: keys.weekly,
-    p_monthly_key: keys.monthly,
-  });
-  if (error) throw error;
-  const advanced = Array.isArray(data) ? data : [];
+    true
+  );
   expect(advanced.length).toBeGreaterThanOrEqual(10);
 }
 
@@ -145,6 +166,7 @@ test.describe('production Daily Missions certification', () => {
         const dashboardRequests: Request[] = [];
         const dashboardStartedAt = new Map<Request, number>();
         let dashboardRpcMs = Number.POSITIVE_INFINITY;
+        let dashboardRpcStatus = 0;
         const onRequest = (request: Request) => {
           if (request.url().includes('/rest/v1/rpc/get_daily_challenge_dashboard')) {
             dashboardRequests.push(request);
@@ -154,7 +176,10 @@ test.describe('production Daily Missions certification', () => {
         const onResponse = (response: Response) => {
           const request = response.request();
           const startedAt = dashboardStartedAt.get(request);
-          if (startedAt != null) dashboardRpcMs = Date.now() - startedAt;
+          if (startedAt != null) {
+            dashboardRpcMs = Date.now() - startedAt;
+            dashboardRpcStatus = response.status();
+          }
         };
         page.on('request', onRequest);
         page.on('response', onResponse);
@@ -168,11 +193,14 @@ test.describe('production Daily Missions certification', () => {
         page.off('response', onResponse);
         report.coldLoadMs = loadMs;
         report.dashboardRpcMs = dashboardRpcMs;
+        report.dashboardRpcStatus = dashboardRpcStatus;
         report.dashboardRequests = dashboardRequests.length;
         report.consoleErrors = consoleErrors;
         expect(loadMs).toBeLessThan(LOAD_BUDGET_MS);
         expect(dashboardRpcMs).toBeLessThan(DASHBOARD_RPC_BUDGET_MS);
         expect(dashboardRequests).toHaveLength(1);
+        expect(dashboardRpcStatus).toBeGreaterThanOrEqual(200);
+        expect(dashboardRpcStatus).toBeLessThan(300);
         // The app shell owns unrelated header/membership fetches and can log a
         // transient failure while the mission aggregate succeeds. Preserve
         // every entry in the artifact, but fail this page gate on its own
@@ -184,15 +212,15 @@ test.describe('production Daily Missions certification', () => {
         ).toEqual([]);
         expect(pageErrors).toEqual([]);
         await expect(page.locator('main')).toHaveCount(1);
+        await expect(page.locator('[id^="mission-card-"]')).not.toHaveCount(0);
       });
 
       await test.step('reroll confirmation charges ten diamonds exactly once', async () => {
         const balanceBefore = await diamondBalance(environment, account!.id);
-        const reroll = missions.rerollButton();
-        await expect(reroll).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
+        const reroll = await missions.firstRerollButton();
         await missions.placeControlInSafeViewport(reroll);
         await reroll.click();
-        const confirmation = page.getByRole('group', { name: /^Confirm reroll for / });
+        const confirmation = page.getByRole('group', { name: /^Confirm Reroll For / });
         await expect(confirmation).toBeVisible();
         const replace = confirmation.getByRole('button', { name: 'Replace' });
         let settled = false;
@@ -286,7 +314,40 @@ test.describe('production Daily Missions certification', () => {
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
         });
         const revisionBefore = await dashboardRevision(environment, account!.id);
-        await completeEveryAssignedMission(account!);
+        const { error: forbidden } = await account!.client.rpc('bump_challenge_progress', {
+          p_user_id: account!.id,
+          p_amounts: { hands_played: 1_000_000 },
+          p_magnitudes: {},
+          p_daily_key: currentPeriodKeys().daily,
+          p_weekly_key: currentPeriodKeys().weekly,
+          p_monthly_key: currentPeriodKeys().monthly,
+        });
+        expect(forbidden, 'authenticated raw mission progress must be denied').toBeTruthy();
+        const { error: assignmentForbidden } = await account!.client.rpc('assign_user_challenges', {
+          p_assigned_date: currentPeriodKeys().daily,
+          p_challenge_ids: [],
+        });
+        expect(
+          assignmentForbidden,
+          'authenticated caller-selected mission assignment must be denied'
+        ).toBeTruthy();
+        const assigned = await serviceRows<{ id: string }>(
+          environment,
+          'user_daily_challenges',
+          account!.id,
+          'id'
+        );
+        const { error: incrementForbidden } = await account!.client.rpc(
+          'increment_challenge_progress',
+          {
+            p_user_id: account!.id,
+            p_challenge_row_id: assigned[0].id,
+            p_amount: 1_000_000,
+            p_requirement: 1,
+          }
+        );
+        expect(incrementForbidden, 'authenticated row progress must be denied').toBeTruthy();
+        await completeEveryAssignedMission(environment, account!);
         await expect
           .poll(() => dashboardRevision(environment, account!.id), {
             timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
@@ -298,6 +359,28 @@ test.describe('production Daily Missions certification', () => {
       });
 
       await test.step('claim-all settles chips and diamonds once and replays its receipt', async () => {
+        const payable = await serviceRows<{
+          chip_reward_snapshot: number;
+          diamond_reward_snapshot: number;
+          completed: boolean;
+          claimed: boolean;
+        }>(
+          environment,
+          'user_daily_challenges',
+          account!.id,
+          'chip_reward_snapshot,diamond_reward_snapshot,completed,claimed'
+        );
+        const due = payable.filter((row) => row.completed && !row.claimed);
+        const expectedChips = due.reduce(
+          (total, row) => total + Number(row.chip_reward_snapshot || 0),
+          0
+        );
+        const expectedDiamonds = due.reduce(
+          (total, row) => total + Number(row.diamond_reward_snapshot || 0),
+          0
+        );
+        const walletBefore = await playerWalletBalance(environment, account!.id);
+        const diamondsBefore = await diamondBalance(environment, account!.id);
         const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
         await missions.placeControlInSafeViewport(claim);
         let claimCalls = 0;
@@ -325,6 +408,12 @@ test.describe('production Daily Missions certification', () => {
           reward.getByText('Deposited Securely To Your Club Arena Balances')
         ).toBeVisible();
         await reward.getByRole('button', { name: 'Continue' }).click();
+        await expect
+          .poll(() => playerWalletBalance(environment, account!.id))
+          .toBe(walletBefore + expectedChips);
+        await expect
+          .poll(() => diamondBalance(environment, account!.id))
+          .toBe(diamondsBefore + expectedDiamonds);
         page.off('request', onRequest);
         expect(claimCalls).toBe(1);
 
@@ -406,10 +495,15 @@ test.describe('production Daily Missions certification', () => {
           }
           await route.continue();
         });
-        await page.goto(new URL('challenges', baseURL).toString(), {
-          waitUntil: 'domcontentloaded',
-          timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
-        });
+        // Remount through the already-loaded SPA. page.route() deliberately
+        // disables Chromium's HTTP cache, so a second full document navigation
+        // here used to turn this RPC recovery assertion into an unrelated
+        // 60-second asset-waterfall timeout on a busy production edge.
+        await missions.navigateWithinArena('notifications');
+        await expect(page.getByRole('heading', { name: 'Daily Missions', level: 1 })).toHaveCount(
+          0
+        );
+        await missions.navigateWithinArena('challenges');
         await expect(page.getByRole('alert')).toContainText('Mission Network Unavailable', {
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
         });
@@ -462,18 +556,31 @@ test.describe('production Daily Missions certification', () => {
         );
       });
 
-      const operations = await serviceRows<{ event: string }>(
-        environment,
-        'daily_mission_operations',
-        account.id,
-        'event'
-      );
-      for (const event of ['reroll_succeeded', 'freeze_succeeded', 'claim_all_succeeded']) {
-        expect(
-          operations.some((row) => row.event === event),
-          `missing operation ${event}`
-        ).toBe(true);
-      }
+      const requiredOperationEvents = [
+        'reroll_succeeded',
+        'freeze_succeeded',
+        'claim_all_succeeded',
+      ];
+      let operations: Array<{ event: string }> = [];
+      // Product telemetry is deliberately fire-and-forget so it can never
+      // delay an action. The certification must therefore wait for the
+      // durable receipts instead of racing the final network microtask.
+      await expect
+        .poll(
+          async () => {
+            operations = await serviceRows<{ event: string }>(
+              environment,
+              'daily_mission_operations',
+              account!.id,
+              'event'
+            );
+            return requiredOperationEvents.filter(
+              (event) => !operations.some((row) => row.event === event)
+            );
+          },
+          { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT }
+        )
+        .toEqual([]);
       report.operationEvents = [...new Set(operations.map((row) => row.event))].sort();
       await test.info().attach('daily-missions-certification.json', {
         body: JSON.stringify(report, null, 2),

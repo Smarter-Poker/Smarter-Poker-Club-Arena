@@ -121,7 +121,7 @@ describe('consolidated route families', () => {
 
   it('keeps the command drawer intelligent and permission-aware', () => {
     const menu = readFileSync('src/components/navigation/HamburgerMenu.tsx', 'utf8');
-    expect(menu).toContain('Search destinations or the arena');
+    expect(menu).toContain('Search Destinations Or The Arena');
     expect(menu).toContain('club_arena_nav_recents_v1');
     expect(menu).toContain('club_arena_nav_pins_v1');
     expect(menu).toContain('fetchQuickLinkClubs');

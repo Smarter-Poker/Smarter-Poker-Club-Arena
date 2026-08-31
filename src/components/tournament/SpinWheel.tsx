@@ -314,6 +314,46 @@ export function chaseSchedule(
   return times;
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE CHASE CATCHES UP TOO (2026-08-31 audit)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Every other beat in this component is scheduled through `at()`, so a client
+ * that loads slowly or refreshes mid-spin joins the shared moment already in
+ * progress rather than replaying it. The chase's own light steps were the one
+ * exception: they were scheduled at their RAW offsets, always from step one,
+ * always over the full `chaseMs`.
+ *
+ * So a client that joined two seconds into the chase got the result card at
+ * the right instant — `at()` handled that — while the runner was still walking
+ * from the beginning, and its remaining `setLitIndex` calls then overwrote the
+ * winner highlight for the rest of the chase. The light lands on the winner,
+ * walks off it, and keeps going. On a table where three seats are supposed to
+ * be watching the same disc, the one player who reloaded sees it stop
+ * somewhere else.
+ *
+ * The ticking had the same shape: `playSpinTicking` was handed the full
+ * schedule, so the pegs kept striking past the announcement.
+ *
+ * This drops the steps already behind us, reports the last of them so the disc
+ * can be lit where the runner actually IS, and rebases the rest.
+ */
+export function chaseCatchUp(
+  schedule: number[],
+  elapsedIntoChaseMs: number
+): { litNow: number; remaining: Array<{ stepIdx: number; at: number }> } {
+  const behind = Number.isFinite(elapsedIntoChaseMs) ? Math.max(0, elapsedIntoChaseMs) : 0;
+  const remaining: Array<{ stepIdx: number; at: number }> = [];
+  let litNow = -1;
+  schedule.forEach((offset, stepIdx) => {
+    const at = offset - behind;
+    if (at > 0) remaining.push({ stepIdx, at });
+    else litNow = stepIdx;
+  });
+  return { litNow, remaining };
+}
+
 export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheelProps) {
   const lockedDetail = useMemo(() => {
     const map = new Map<number, SpinLockedTier>();
@@ -516,16 +556,23 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
       setTimeout(
         () => {
           setPhase('chase');
+          /* How far into the CHASE this client already is. `at()` above put us
+             at the right phase; this puts the runner at the right segment. */
+          const intoChase = Math.max(0, elapsed - (leadInMs + countdownMs));
+          const schedule = reduced ? [] : chaseSchedule(order.length, targetIndex, chaseMs);
+          const { litNow, remaining } = chaseCatchUp(schedule, intoChase);
           if (playSounds) {
             try {
               // Dan: "CLICKING SOUNDS AS IT PASSES." Handing the sound the
               // light's OWN schedule is what makes that literally true — one
               // peg strike per segment crossed, on the same millisecond,
               // because it is the same array. Passing only a duration left the
-              // two to drift apart on any easing change.
+              // two to drift apart on any easing change. It is the CAUGHT-UP
+              // schedule for the same reason the light is: pegs for segments
+              // already crossed would strike after the result was announced.
               soundService.playSpinTicking(
-                chaseMs,
-                reduced ? [] : chaseSchedule(order.length, targetIndex, chaseMs)
+                Math.max(0, chaseMs - intoChase),
+                remaining.map((r) => r.at)
               );
             } catch {
               /* best effort */
@@ -534,10 +581,12 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
           if (reduced) {
             setLitIndex(targetIndex);
           } else {
-            const schedule = chaseSchedule(order.length, targetIndex, chaseMs);
-            schedule.forEach((offset, stepIdx) => {
-              timers.push(setTimeout(() => setLitIndex(stepIdx % order.length), offset));
-            });
+            /* Light where the runner actually is before scheduling the rest,
+               so a caught-up client never shows an empty disc. */
+            if (litNow >= 0) setLitIndex(litNow % order.length);
+            for (const step of remaining) {
+              timers.push(setTimeout(() => setLitIndex(step.stepIdx % order.length), step.at));
+            }
           }
         },
         at(leadInMs + countdownMs)
@@ -620,7 +669,7 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
       className={`sw sw--${phase} ${tierClass(data.multiplier)}`}
       role="dialog"
       aria-modal="true"
-      aria-label="Spin multiplier draw"
+      aria-label="Spin Multiplier Draw"
     >
       {/* The table stays visible: a vignette dims it and a spotlight beam
           falls from the top of the screen, exactly like the reference. */}
@@ -716,9 +765,9 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
                       </text>
                       {unlocksAt ? (
                         <title>
-                          {`${tier.multiplier}x unlocks at a ${currency}${Number(
+                          {`${tier.multiplier}x Unlocks At A ${currency}${Number(
                             unlocksAt
-                          ).toLocaleString(undefined, { maximumFractionDigits: 0 })} reserve`}
+                          ).toLocaleString(undefined, { maximumFractionDigits: 0 })} Reserve`}
                         </title>
                       ) : null}
                     </g>

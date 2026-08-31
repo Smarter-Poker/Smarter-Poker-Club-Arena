@@ -336,7 +336,7 @@ export default function FindPlayerModal({
                   </div>
                 )}
                 {isSuggesting && (
-                  <span className={styles.suggestLoading} aria-label="Loading suggestions">
+                  <span className={styles.suggestLoading} aria-label="Loading Suggestions">
                     <span className={styles.suggestSpinner} aria-hidden="true" />
                   </span>
                 )}
@@ -387,7 +387,7 @@ export default function FindPlayerModal({
               </label>
               <span className={styles.scopeLabel}>
                 {total
-                  ? `${total} Eligible Match${total === 1 ? '' : 'es'}`
+                  ? `${total} Eligible Match${total === 1 ? '' : 'Es'}`
                   : 'Global Player Directory'}
               </span>
             </div>

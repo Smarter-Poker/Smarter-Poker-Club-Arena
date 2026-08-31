@@ -40,12 +40,9 @@
  * produced no JSON at all it did not run — that is the exact condition this
  * script exists to catch, so it is never treated as "nothing to check".
  *
- * The one sanctioned exception is a report containing only `notRunReason`. The
- * workflow writes that when it has DECIDED not to invoke Playwright for a path
- * — today, when the specs were taken from an older deployed commit at which
- * that file did not yet exist. That is a stated, printed reason rather than a
- * hole, so it is reported and not failed. It is deliberately the only shape
- * that gets this treatment: anything else missing is still a red.
+ * A report containing only `notRunReason` is explicit evidence that a release
+ * contract was not exercised. It is named and failed just like a missing
+ * report; deploy lag is not permission to publish without certification.
  *
  * Usage:
  *   node scripts/ci/assert-e2e-actually-ran.mjs report-a.json [report-b.json ...]
@@ -190,7 +187,8 @@ if (missing.length) {
 }
 
 if (declined.length) {
-  lines.push('**Not invoked, by decision:**');
+  failed = true;
+  lines.push('**Not invoked, so no production verdict exists:**');
   lines.push('');
   for (const d of declined) lines.push(`- \`${d.path}\` — ${d.reason}`);
   lines.push('');

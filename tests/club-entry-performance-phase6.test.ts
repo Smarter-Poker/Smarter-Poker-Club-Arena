@@ -54,4 +54,10 @@ describe('Phase 6 Club Entry visual and performance contracts', () => {
     expect(read('package.json')).toContain('check:club-entry-budgets');
     expect(read('scripts/check-club-entry-budgets.mjs')).toContain('gzipSync');
   });
+
+  it('keeps the lobby route lazy instead of charging every deep link for it', () => {
+    const optimizer = read('scripts/optimize-dist-media.mjs');
+    expect(optimizer).not.toContain('injectLobbyPreload');
+    expect(optimizer).not.toContain('modulepreloads ${chunk}');
+  });
 });

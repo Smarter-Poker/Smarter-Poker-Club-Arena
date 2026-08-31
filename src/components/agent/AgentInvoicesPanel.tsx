@@ -194,7 +194,7 @@ export default function AgentInvoicesPanel({ agentId }: Props) {
                       minWidth: '84px',
                     }}
                   >
-                    {payingId === inv.id ? 'Paying...' : 'Pay now'}
+                    {payingId === inv.id ? 'Paying...' : 'Pay Now'}
                   </button>
                 )}
               </div>

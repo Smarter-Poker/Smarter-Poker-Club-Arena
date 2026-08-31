@@ -84,7 +84,12 @@ jobs:
       github.event.workflow_run.conclusion == 'success'
     name: Specs that need a real deployed page
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Cashier plus six isolated stateful groups and the 138-test responsive
+    # sweep take 20-24 minutes when production is under normal publish load.
+    # The old 20-minute ceiling cancelled the honesty/report steps just as the
+    # sweep completed, discarding a real verdict. This remains bounded while
+    # leaving enough room for first-attempt, zero-retry certification.
+    timeout-minutes: 35
 
     steps:
       - name: Checkout
@@ -327,7 +332,9 @@ jobs:
               return 0
             fi
             echo "running:$specs"
-            PLAYWRIGHT_JSON_OUTPUT_NAME="e2e-report/$json" npx playwright test $specs $flags
+            output_dir="${json%.json}"
+            PLAYWRIGHT_JSON_OUTPUT_NAME="e2e-report/$json" npx playwright test $specs $flags \
+              --output="test-results/$output_dir"
           }
 
           # Certify Stats first among the broader route checks. Cashier has its
@@ -394,7 +401,11 @@ jobs:
           e2e-report/sweep.json
 
       - name: Upload the report when something is wrong on production
-        if: failure()
+        # `failure()` is false when GitHub cancels a job at its time limit. The
+        # old condition therefore discarded the only report from exactly the
+        # run that exposed the obsolete timeout. Preserve evidence for both
+        # kinds of non-verdict, while still skipping uploads on a clean run.
+        if: always() && (failure() || cancelled())
         uses: actions/upload-artifact@v4
         with:
           name: post-deploy-playwright-report

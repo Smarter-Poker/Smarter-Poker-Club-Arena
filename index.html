@@ -1,13 +1,14 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-
-<head>
-  <meta charset="UTF-8" />
-  <link rel="icon"
-    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♠</text></svg>" />
-  <link rel="manifest" href="/manifest.json" />
-  <link rel="apple-touch-icon" href="/hub/club-arena/poker-chip-logo.png" />
-  <!-- PINCH-ZOOM RESTORED 2026-08-23 (Dan approved). This carried
+  <head>
+    <meta charset="UTF-8" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♠</text></svg>"
+    />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/hub/club-arena/poker-chip-logo.png" />
+    <!-- PINCH-ZOOM RESTORED 2026-08-23 (Dan approved). This carried
        `maximum-scale=1.0, user-scalable=no`, which disabled pinch-zoom for
        everyone — a WCAG 1.4.4 failure, and on iOS it is what was masking the
        real bug: any text field under 16px makes Safari auto-zoom on focus and
@@ -20,7 +21,7 @@
        fix the field. -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="description"
-    content="Club Arena — Private online poker clubs with real-time gameplay, tournaments, hand histories, player stats, leaderboards, and club management on Smarter.Poker." />
+    content="Club Arena. Private Online Poker Clubs With Real Time Gameplay, Tournaments, Hand Histories, Player Stats, Leaderboards, And Club Management On Smarter.Poker." />
   <meta name="robots" content="noindex, nofollow" />
   <meta name="theme-color" content="#0a0a1a" />
   <meta name="mobile-web-app-capable" content="yes" />
@@ -31,9 +32,9 @@
   <!-- Open Graph / Social Sharing -->
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Smarter.Poker" />
-  <meta property="og:title" content="Club Arena — Private Online Poker Clubs | Smarter.Poker" />
+  <meta property="og:title" content="Club Arena. Private Online Poker Clubs | Smarter.Poker" />
   <meta property="og:description"
-    content="Create and join private poker clubs. Real-time gameplay, tournaments, hand histories, player stats, and club management." />
+    content="Create And Join Private Poker Clubs. Real Time Gameplay, Tournaments, Hand Histories, Player Stats, And Club Management." />
   <meta property="og:image" content="https://smarter.poker/images/og-default.png" />
   <meta property="og:image:width" content="1200" />
   <meta property="og:image:height" content="630" />
@@ -43,48 +44,52 @@
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:site" content="@SmarterPoker" />
-  <meta name="twitter:title" content="Club Arena — Private Online Poker Clubs | Smarter.Poker" />
+  <meta name="twitter:title" content="Club Arena. Private Online Poker Clubs | Smarter.Poker" />
   <meta name="twitter:description"
-    content="Create and join private poker clubs. Real-time gameplay, tournaments, and club management." />
+    content="Create And Join Private Poker Clubs. Real Time Gameplay, Tournaments, And Club Management." />
   <meta name="twitter:image" content="https://smarter.poker/images/og-default.png" />
 
-  <title>♠ Club Arena | Smarter.Poker</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <!-- PERF 2026-08-22: preconnect to Supabase — every boot's first real work is
+    <title>♠ Club Arena | Smarter.Poker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- PERF 2026-08-22: preconnect to Supabase — every boot's first real work is
        auth (getSession → token refresh) + data fetches against this origin.
        Warming DNS+TLS in parallel with JS download saves 100-300ms on mobile. -->
-  <link rel="preconnect" href="https://kuklfnapbkmacvwxktbh.supabase.co" crossorigin>
-  <!-- PERF 2026-08-22: Google Fonts stylesheet loads ASYNC (media=print swap
+    <link rel="preconnect" href="https://kuklfnapbkmacvwxktbh.supabase.co" crossorigin />
+    <!-- PERF 2026-08-22: Google Fonts stylesheet loads ASYNC (media=print swap
        trick) instead of render-blocking. display=swap already renders text in
        fallback fonts, so nothing waits on this fetch anymore. -->
-  <link
-    href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Rajdhani:wght@400;500;600;700&family=Roboto+Condensed:wght@400;500;600;700;800&display=swap"
-    rel="stylesheet" media="print" onload="this.media='all'">
-  <noscript>
     <link
       href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Rajdhani:wght@400;500;600;700&family=Roboto+Condensed:wght@400;500;600;700;800&display=swap"
-      rel="stylesheet">
-  </noscript>
-  <!-- Preload critical stylesheets -->
-  <link rel="preload" href="/src/styles/globals.css" as="style">
-  <link rel="preload" href="/src/styles/design-tokens.css" as="style">
-  <!-- Preload club card frame template (used by carousel) -->
-  <link rel="preload" href="/images/club-card-frame-template.webp" as="image" type="image/webp">
+      rel="stylesheet"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Rajdhani:wght@400;500;600;700&family=Roboto+Condensed:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
+    <!-- Preload critical stylesheets -->
+    <link rel="preload" href="/src/styles/globals.css" as="style" />
+    <link rel="preload" href="/src/styles/design-tokens.css" as="style" />
+    <!-- Preload club card frame template (used by carousel) -->
+    <link rel="preload" href="/images/club-card-frame-template.webp" as="image" type="image/webp" />
 
-  <!-- No third-party push SDK is loaded here, deliberately. OneSignal was
+    <!-- No third-party push SDK is loaded here, deliberately. OneSignal was
        retired 2026-08-19 and this loader was left behind until 2026-08-29,
        fetching its SDK and pinging the vendor on every session for a feature
        it no longer provided. Full story: docs/changelog/2026-08-29-onesignal-was-still-loading.md
        Push enrolment is src/lib/pushClient.ts against the ROOT service worker. -->
-</head>
+  </head>
 
-<body>
-  <div id="root"></div>
+  <body>
+    <div id="root"></div>
 
-  <script type="module" src="/src/main.tsx"></script>
+    <script type="module" src="/src/main.tsx"></script>
 
-  <!-- SELF-HEALING: Detect Next.js soft-navigation black screen and auto-recover.
+    <!-- SELF-HEALING: Detect Next.js soft-navigation black screen and auto-recover.
        When the World Hub navigates here via client-side routing, type="module" scripts
        don't re-execute, leaving #root empty. This inline script detects that condition
        and forces a full page reload to properly boot the SPA.
@@ -94,58 +99,93 @@
        Raised CHECK_DELAY to 10000ms. Also added a boot sentinel (window.__CLUB_ARENA_BOOTING__)
        that main.tsx sets on import — if the sentinel is set, the self-heal stands
        down because React has started (even if mount hasn't finished yet). -->
-  <script>
-    (function() {
-      var CHECK_DELAY = 10000;
-      var MAX_RETRIES = 2;
-      var RETRY_KEY = '__club_arena_recovery';
-      var retryCount = 0;
-      try { retryCount = parseInt(sessionStorage.getItem(RETRY_KEY) || '0', 10); } catch(e) {}
+    <script>
+      (function () {
+        var CHECK_DELAY = 10000;
+        var MAX_RETRIES = 2;
+        var RETRY_KEY = '__club_arena_recovery';
+        var retryCount = 0;
+        try {
+          retryCount = parseInt(sessionStorage.getItem(RETRY_KEY) || '0', 10);
+        } catch (e) {}
 
-      setTimeout(function() {
-        var root = document.getElementById('root');
-        // Only reload if: (a) #root is empty, AND (b) main.tsx never even imported.
-        // The sentinel flips to true the moment main.tsx runs. If it's true, React
-        // is booting — just slow. Don't reload, or we'll thrash the chunk loader.
-        var mainNeverStarted = !window.__CLUB_ARENA_BOOTING__;
-        if (root && root.childNodes.length === 0 && mainNeverStarted && retryCount < MAX_RETRIES) {
-          try { sessionStorage.setItem(RETRY_KEY, String(retryCount + 1)); } catch(e) {}
+        setTimeout(function () {
+          var root = document.getElementById('root');
+          // Only reload if: (a) #root is empty, AND (b) main.tsx never even imported.
+          // The sentinel flips to true the moment main.tsx runs. If it's true, React
+          // is booting — just slow. Don't reload, or we'll thrash the chunk loader.
+          var mainNeverStarted = !window.__CLUB_ARENA_BOOTING__;
+          if (
+            root &&
+            root.childNodes.length === 0 &&
+            mainNeverStarted &&
+            retryCount < MAX_RETRIES
+          ) {
+            try {
+              sessionStorage.setItem(RETRY_KEY, String(retryCount + 1));
+            } catch (e) {}
 
-          // On first retry, nuke stale service worker caches that may be causing blank pages
-          if (retryCount === 0 && 'caches' in window) {
-            caches.keys().then(function(keys) {
-              keys.forEach(function(key) { caches.delete(key); });
-            }).catch(function() {});
+            // On first retry, nuke stale service worker caches that may be causing blank pages
+            if (retryCount === 0 && 'caches' in window) {
+              caches
+                .keys()
+                .then(function (keys) {
+                  keys.forEach(function (key) {
+                    caches.delete(key);
+                  });
+                })
+                .catch(function () {});
+            }
+
+            // On second retry, also unregister the service worker entirely
+            if (retryCount >= 1 && 'serviceWorker' in navigator) {
+              navigator.serviceWorker
+                .getRegistrations()
+                .then(function (regs) {
+                  regs.forEach(function (reg) {
+                    reg.unregister();
+                  });
+                })
+                .catch(function () {});
+            }
+
+            // Small delay to let cache/SW cleanup finish before reload
+            setTimeout(
+              function () {
+                window.location.reload();
+              },
+              retryCount > 0 ? 500 : 100
+            );
+          } else if (
+            retryCount >= MAX_RETRIES &&
+            root &&
+            root.childNodes.length === 0 &&
+            mainNeverStarted
+          ) {
+            try {
+              sessionStorage.removeItem(RETRY_KEY);
+            } catch (e) {}
+            // Last resort: show a visible error so the page isn't just blank
+            root.innerHTML =
+              '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0a1a;color:#fff;font-family:Inter,system-ui,sans-serif;text-align:center;padding:2rem"><div><h1 style="font-size:1.5rem;margin-bottom:1rem">Loading Failed</h1><p style="color:rgba(255,255,255,0.6);margin-bottom:1.5rem">Please Clear Your Browser Cache And Reload.</p><button onclick="caches.keys().then(function(k){k.forEach(function(n){caches.delete(n)})});location.reload()" style="padding:10px 24px;border:none;border-radius:8px;background:#3b82f6;color:#fff;font-size:1rem;cursor:pointer">Clear Cache & Reload</button></div></div>';
           }
+        }, CHECK_DELAY);
 
-          // On second retry, also unregister the service worker entirely
-          if (retryCount >= 1 && 'serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistrations().then(function(regs) {
-              regs.forEach(function(reg) { reg.unregister(); });
-            }).catch(function() {});
+        // Clear retry counter on successful mount
+        var observer = new MutationObserver(function (mutations, obs) {
+          var root = document.getElementById('root');
+          if (root && root.childNodes.length > 0) {
+            try {
+              sessionStorage.removeItem(RETRY_KEY);
+            } catch (e) {}
+            obs.disconnect();
           }
-
-          // Small delay to let cache/SW cleanup finish before reload
-          setTimeout(function() { window.location.reload(); }, retryCount > 0 ? 500 : 100);
-        } else if (retryCount >= MAX_RETRIES && root && root.childNodes.length === 0 && mainNeverStarted) {
-          try { sessionStorage.removeItem(RETRY_KEY); } catch(e) {}
-          // Last resort: show a visible error so the page isn't just blank
-          root.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0a1a;color:#fff;font-family:Inter,system-ui,sans-serif;text-align:center;padding:2rem"><div><h1 style="font-size:1.5rem;margin-bottom:1rem">Loading failed</h1><p style="color:rgba(255,255,255,0.6);margin-bottom:1.5rem">Please clear your browser cache and reload.</p><button onclick="caches.keys().then(function(k){k.forEach(function(n){caches.delete(n)})});location.reload()" style="padding:10px 24px;border:none;border-radius:8px;background:#3b82f6;color:#fff;font-size:1rem;cursor:pointer">Clear Cache & Reload</button></div></div>';
+        });
+        var rootEl = document.getElementById('root');
+        if (rootEl) {
+          observer.observe(rootEl, { childList: true });
         }
-      }, CHECK_DELAY);
-
-      // Clear retry counter on successful mount
-      var observer = new MutationObserver(function(mutations, obs) {
-        var root = document.getElementById('root');
-        if (root && root.childNodes.length > 0) {
-          try { sessionStorage.removeItem(RETRY_KEY); } catch(e) {}
-          obs.disconnect();
-        }
-      });
-      var rootEl = document.getElementById('root');
-      if (rootEl) { observer.observe(rootEl, { childList: true }); }
-    })();
-  </script>
-</body>
-
+      })();
+    </script>
+  </body>
 </html>

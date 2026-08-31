@@ -380,7 +380,7 @@ export default function FlashPoolPage() {
             <div style={{ display: 'flex', gap: '8px' }}>
               <input
                 type="number"
-                placeholder={`Buy-in (${pool.buyInMin})`}
+                placeholder={`Buy-In (${pool.buyInMin})`}
                 min={pool.buyInMin}
                 max={pool.buyInMax}
                 value={buyInAmounts[pool.poolId] || ''}

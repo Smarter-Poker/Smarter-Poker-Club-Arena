@@ -27,6 +27,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
 import { formatDateShort as formatDate } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
+import { formatPopupText } from '../utils/popupStyle';
 
 interface FinancialSummary {
   period: string;
@@ -337,7 +338,7 @@ export default function ClubFinancialsPage() {
           id: r.id,
           type: 'rake' as const,
           amount: r.rake_amount || 0,
-          description: `${(r.rake_amount || 0).toLocaleString()} chips raked from a ${(r.pot_size || 0).toLocaleString()} pot`,
+          description: `${(r.rake_amount || 0).toLocaleString()} Chips Raked From A ${(r.pot_size || 0).toLocaleString()} Pot`,
           created_at: r.created_at,
         }));
         setTransactions(mappedTx);
@@ -578,7 +579,7 @@ export default function ClubFinancialsPage() {
               >
                 <span className="tx-icon">{getTypeIcon(tx.type)}</span>
                 <div className="tx-info">
-                  <span className="tx-desc">{tx.description}</span>
+                  <span className="tx-desc">{formatPopupText(tx.description)}</span>
                   <span className="tx-date">{formatDate(tx.created_at)}</span>
                 </div>
                 <span className={`tx-amount ${tx.amount >= 0 ? 'positive' : 'negative'}`}>

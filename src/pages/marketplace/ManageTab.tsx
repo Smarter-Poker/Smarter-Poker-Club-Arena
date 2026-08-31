@@ -429,7 +429,7 @@ export default function ManageTab({
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="Item Name"
-            aria-label="Item name"
+            aria-label="Item Name"
             className={styles.formInput}
             maxLength={100}
           />
@@ -438,7 +438,7 @@ export default function ManageTab({
             value={price}
             onChange={(e) => setPrice(e.target.value)}
             placeholder="Price (Diamonds)"
-            aria-label="Item price in diamonds"
+            aria-label="Item Price In Diamonds"
             min="1"
             step="1"
             className={styles.formInput}
@@ -456,7 +456,7 @@ export default function ManageTab({
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             className={styles.formSelect}
-            aria-label="Item category"
+            aria-label="Item Category"
           >
             {categoryNames.map((cat) => (
               <option key={cat} value={cat}>
@@ -468,7 +468,7 @@ export default function ManageTab({
             value={imageUrl}
             onChange={(e) => setImageUrl(e.target.value)}
             placeholder="Image URL (Https Only, Optional)"
-            aria-label="Item image URL"
+            aria-label="Item Image URL"
             className={styles.formInput}
           />
         </div>
@@ -480,7 +480,7 @@ export default function ManageTab({
             value={stock}
             onChange={(e) => setStock(e.target.value)}
             placeholder="Stock (Blank = Unlimited)"
-            aria-label="Stock quantity, blank for unlimited"
+            aria-label="Stock Quantity, Blank For Unlimited"
             className={styles.formInput}
           />
           <input
@@ -490,7 +490,7 @@ export default function ManageTab({
             value={perUserLimit}
             onChange={(e) => setPerUserLimit(e.target.value)}
             placeholder="Max Per Member (Blank = No Cap)"
-            aria-label="Maximum purchases per member"
+            aria-label="Maximum Purchases Per Member"
             className={styles.formInput}
           />
         </div>
@@ -502,14 +502,14 @@ export default function ManageTab({
             value={salePrice}
             onChange={(e) => setSalePrice(e.target.value)}
             placeholder="Sale Price (Blank = None)"
-            aria-label="Discounted sale price"
+            aria-label="Discounted Sale Price"
             className={styles.formInput}
           />
           <input
             type="datetime-local"
             value={availableUntil}
             onChange={(e) => setAvailableUntil(e.target.value)}
-            aria-label="Available until"
+            aria-label="Available Until"
             className={styles.formInput}
           />
         </div>
@@ -518,7 +518,7 @@ export default function ManageTab({
             type="datetime-local"
             value={availableFrom}
             onChange={(e) => setAvailableFrom(e.target.value)}
-            aria-label="Available from"
+            aria-label="Available From"
             className={styles.formInput}
           />
           <input
@@ -527,7 +527,7 @@ export default function ManageTab({
             value={sortOrder}
             onChange={(e) => setSortOrder(e.target.value)}
             placeholder="Sort Order (Lower Shows First)"
-            aria-label="Storefront sort order"
+            aria-label="Storefront Sort Order"
             className={styles.formInput}
           />
         </div>
@@ -543,8 +543,8 @@ export default function ManageTab({
               step="1"
               value={grantQty}
               onChange={(e) => setGrantQty(e.target.value)}
-              placeholder={`How many ${grantInfo.grantUnit}?`}
-              aria-label={`Number of ${grantInfo.grantUnit} granted`}
+              placeholder={`How Many ${grantInfo.grantUnit}?`}
+              aria-label={`Number Of ${grantInfo.grantUnit} Granted`}
               className={styles.formInput}
             />
             <span className={styles.grantHint}>
@@ -560,7 +560,7 @@ export default function ManageTab({
               <select
                 value={grantRef}
                 onChange={(event) => setGrantRef(event.target.value)}
-                aria-label="Table Studio theme"
+                aria-label="Table Studio Theme"
                 className={styles.formInput}
               >
                 <option value="">Choose A Table Studio Theme</option>
@@ -574,7 +574,7 @@ export default function ManageTab({
               <select
                 value={grantRef}
                 onChange={(event) => setGrantRef(event.target.value)}
-                aria-label="Avatar library selection"
+                aria-label="Avatar Library Selection"
                 className={styles.formInput}
                 disabled={avatarCatalogState === 'loading' || avatarCatalogState === 'error'}
               >
@@ -737,7 +737,7 @@ export default function ManageTab({
                     value={draft.description}
                     onChange={(e) => setDraft({ ...draft, description: e.target.value })}
                     placeholder="Description"
-                    aria-label="Item description"
+                    aria-label="Item Description"
                     className={styles.formInput}
                     maxLength={500}
                   />
@@ -746,7 +746,7 @@ export default function ManageTab({
                       value={draft.category}
                       onChange={(e) => setDraft({ ...draft, category: e.target.value })}
                       className={styles.formSelect}
-                      aria-label="Item category"
+                      aria-label="Item Category"
                     >
                       {(categoryNames.includes(draft.category)
                         ? categoryNames
@@ -772,7 +772,7 @@ export default function ManageTab({
                       value={draft.stock}
                       onChange={(e) => setDraft({ ...draft, stock: e.target.value })}
                       placeholder="Stock (Blank = Unlimited)"
-                      aria-label="Stock quantity, blank for unlimited"
+                      aria-label="Stock Quantity, Blank For Unlimited"
                       className={styles.formInput}
                     />
                     <input
@@ -782,7 +782,7 @@ export default function ManageTab({
                       value={draft.salePrice}
                       onChange={(e) => setDraft({ ...draft, salePrice: e.target.value })}
                       placeholder="Sale Price (Blank Ends The Sale)"
-                      aria-label="Sale price, blank to end the sale"
+                      aria-label="Sale Price, Blank To End The Sale"
                       className={styles.formInput}
                     />
                     <span className={styles.grantHint}>
@@ -797,7 +797,7 @@ export default function ManageTab({
                       value={draft.perUserLimit}
                       onChange={(e) => setDraft({ ...draft, perUserLimit: e.target.value })}
                       placeholder="Max Per Member (Blank = No Cap)"
-                      aria-label="Maximum purchases per member"
+                      aria-label="Maximum Purchases Per Member"
                       className={styles.formInput}
                     />
                     <input
@@ -806,7 +806,7 @@ export default function ManageTab({
                       value={draft.sortOrder}
                       onChange={(e) => setDraft({ ...draft, sortOrder: e.target.value })}
                       placeholder="Sort Order"
-                      aria-label="Storefront sort order"
+                      aria-label="Storefront Sort Order"
                       className={styles.formInput}
                     />
                   </div>
@@ -815,14 +815,14 @@ export default function ManageTab({
                       type="datetime-local"
                       value={draft.availableFrom}
                       onChange={(e) => setDraft({ ...draft, availableFrom: e.target.value })}
-                      aria-label="Available from"
+                      aria-label="Available From"
                       className={styles.formInput}
                     />
                     <input
                       type="datetime-local"
                       value={draft.availableUntil}
                       onChange={(e) => setDraft({ ...draft, availableUntil: e.target.value })}
-                      aria-label="Available until"
+                      aria-label="Available Until"
                       className={styles.formInput}
                     />
                   </div>
@@ -849,8 +849,8 @@ export default function ManageTab({
                             step="1"
                             value={draft.grantQty}
                             onChange={(e) => setDraft({ ...draft, grantQty: e.target.value })}
-                            placeholder={`How many ${g.grantUnit}?`}
-                            aria-label={`Number of ${g.grantUnit} granted`}
+                            placeholder={`How Many ${g.grantUnit}?`}
+                            aria-label={`Number Of ${g.grantUnit} Granted`}
                             className={styles.formInput}
                           />
                         )}
@@ -860,7 +860,7 @@ export default function ManageTab({
                             onChange={(event) =>
                               setDraft({ ...draft, grantRef: event.target.value })
                             }
-                            aria-label="Table Studio theme"
+                            aria-label="Table Studio Theme"
                             className={styles.formInput}
                           >
                             {!MARKETPLACE_THEME_IDS.has(draft.grantRef) && draft.grantRef && (
@@ -879,7 +879,7 @@ export default function ManageTab({
                             <select
                               value={draft.grantRef}
                               onChange={(e) => setDraft({ ...draft, grantRef: e.target.value })}
-                              aria-label="Avatar library selection"
+                              aria-label="Avatar Library Selection"
                               className={styles.formInput}
                               disabled={avatarCatalogState === 'loading'}
                             >

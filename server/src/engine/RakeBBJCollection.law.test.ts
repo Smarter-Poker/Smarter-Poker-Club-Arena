@@ -67,7 +67,24 @@ function mkHC(players: number, over: Partial<HandConfig> = {}): HandController {
   } as HandConfig;
   const hc = new HandController(cfg, mkPlayers(players), 1);
   hc.start();
+  // 2026-08-31: priceDeductions now requires a BOARD before it will take a
+  // drop — `sawFlop` alone stopped being enough the day the rake-law alarm
+  // caught 20 live preflop folds being raked on a true flag and an empty
+  // board. Every pin below that passes `flopSeen = true` means "a hand that
+  // saw the flop", so give these controllers the flop they are describing.
+  // The pins themselves are unchanged; the no-flop pins pass `false` and are
+  // unaffected either way.
+  giveFlop(hc);
   return hc;
+}
+
+/** Three community cards in the controller's own state — a real flop. */
+function giveFlop(hc: HandController): void {
+  (hc as unknown as { state: { communityCards: unknown[] } }).state.communityCards = [
+    { rank: 'A', suit: 'spades' },
+    { rank: '7', suit: 'hearts' },
+    { rank: '2', suit: 'clubs' },
+  ];
 }
 
 function setPot(hc: HandController, pot: number): void {

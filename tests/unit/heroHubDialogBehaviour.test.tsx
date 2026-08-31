@@ -41,7 +41,7 @@ describe('it is a real dialog', () => {
     render(<HeroHubPanel {...base} />);
     const dlg = screen.getByRole('dialog');
     expect(dlg.getAttribute('aria-modal')).toBe('true');
-    expect(dlg.getAttribute('aria-label')).toBe('Player hub');
+    expect(dlg.getAttribute('aria-label')).toBe('Player Hub');
   });
 
   it('Escape closes it', () => {

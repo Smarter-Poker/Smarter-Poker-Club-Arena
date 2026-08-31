@@ -190,7 +190,7 @@ export default function PreActionBar({
           aria-pressed={preAction === 'fold'}
           onClick={() => handleToggle('fold')}
           title={
-            canCheck ? 'Check if possible, fold if forced to act' : 'Fold when action reaches you'
+            canCheck ? 'Check If Possible, Fold If Forced To Act' : 'Fold When Action Reaches You'
           }
         >
           <ToggleDot active={preAction === 'fold'} />
@@ -204,7 +204,7 @@ export default function PreActionBar({
             className={`pre-action-btn check ${preAction === 'check' ? 'active' : ''}`}
             aria-pressed={preAction === 'check'}
             onClick={() => handleToggle('check')}
-            title="Check when action reaches you"
+            title="Check When Action Reaches You"
           >
             <ToggleDot active={preAction === 'check'} />
             <span className="pre-action-btn__label">Check</span>
@@ -220,7 +220,7 @@ export default function PreActionBar({
             onClick={() => handleToggle('call')}
             /* House rule 5: never print a raw number. This tooltip was the one
                place on the bar that did - a 12,500 call read "Call 12500". */
-            title={`Call ${currentBet.toLocaleString()} when action reaches you`}
+            title={`Call ${currentBet.toLocaleString()} When Action Reaches You`}
           >
             <ToggleDot active={preAction === 'call'} />
             {/* The branch is already inside `currentBet > 0`; the second test
@@ -235,7 +235,7 @@ export default function PreActionBar({
           className={`pre-action-btn call-any ${preAction === 'callAny' ? 'active' : ''}`}
           aria-pressed={preAction === 'callAny'}
           onClick={() => handleToggle('callAny')}
-          title="Call any bet when action reaches you"
+          title="Call Any Bet When Action Reaches You"
         >
           <ToggleDot active={preAction === 'callAny'} />
           <span className="pre-action-btn__label">Call Any</span>

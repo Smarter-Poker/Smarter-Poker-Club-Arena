@@ -185,7 +185,7 @@ const PAYMENT_METHODS: PaymentMethodInfo[] = [
     id: 'agent',
     icon: '',
     label: 'Agent',
-    description: 'Transfer through your agent',
+    description: 'Transfer Through Your Agent',
     minAmount: 10,
     maxAmount: 50000,
     fee: 0,
@@ -592,7 +592,7 @@ export default function DepositWithdrawModal({
                 <span className={styles.methodLabel}>{method.label}</span>
                 <span className={styles.methodDesc}>{method.description}</span>
                 <span className={styles.methodFee}>
-                  {method.fee > 0 ? `${method.fee}% fee` : 'No fee'}
+                  {method.fee > 0 ? `${method.fee}% Fee` : 'No Fee'}
                 </span>
               </button>
             ))}

@@ -53,7 +53,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'hands_100',
     name: 'Getting Started',
-    description: 'Play 100 hands',
+    description: 'Play 100 Hands',
     icon: '',
     category: 'hands',
     rarity: 'common',
@@ -63,7 +63,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'hands_1000',
     name: 'Regular',
-    description: 'Play 1,000 hands',
+    description: 'Play 1,000 Hands',
     icon: '',
     category: 'hands',
     rarity: 'rare',
@@ -73,7 +73,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'hands_10000',
     name: 'Grinder',
-    description: 'Play 10,000 hands',
+    description: 'Play 10,000 Hands',
     icon: '',
     category: 'hands',
     rarity: 'epic',
@@ -83,7 +83,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'hands_100000',
     name: 'Professional',
-    description: 'Play 100,000 hands',
+    description: 'Play 100,000 Hands',
     icon: '',
     category: 'hands',
     rarity: 'legendary',
@@ -95,7 +95,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'wins_10',
     name: 'First Blood',
-    description: 'Win 10 hands',
+    description: 'Win 10 Hands',
     icon: '☆',
     category: 'wins',
     rarity: 'common',
@@ -105,7 +105,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'wins_100',
     name: 'Winner',
-    description: 'Win 100 hands',
+    description: 'Win 100 Hands',
     icon: '',
     category: 'wins',
     rarity: 'rare',
@@ -115,7 +115,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'wins_1000',
     name: 'Dominator',
-    description: 'Win 1,000 hands',
+    description: 'Win 1,000 Hands',
     icon: '',
     category: 'wins',
     rarity: 'epic',
@@ -127,7 +127,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'friends_5',
     name: 'Social Butterfly',
-    description: 'Add 5 friends',
+    description: 'Add 5 Friends',
     icon: '◆',
     category: 'social',
     rarity: 'common',
@@ -137,7 +137,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'friends_25',
     name: 'Popular',
-    description: 'Add 25 friends',
+    description: 'Add 25 Friends',
     icon: '',
     category: 'social',
     rarity: 'rare',
@@ -147,7 +147,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'clubs_3',
     name: 'Club Hopper',
-    description: 'Join 3 clubs',
+    description: 'Join 3 Clubs',
     icon: '',
     category: 'social',
     rarity: 'common',
@@ -158,8 +158,8 @@ export const ACHIEVEMENTS: Achievement[] = [
   // Financial
   {
     id: 'profit_1000',
-    name: 'In the Green',
-    description: 'Profit 1,000 chips',
+    name: 'In The Green',
+    description: 'Profit 1,000 Chips',
     icon: '',
     category: 'financial',
     rarity: 'rare',
@@ -169,7 +169,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'profit_10000',
     name: 'High Roller',
-    description: 'Profit 10,000 chips',
+    description: 'Profit 10,000 Chips',
     icon: '',
     category: 'financial',
     rarity: 'epic',
@@ -179,7 +179,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'biggest_pot_500',
     name: 'Big Pot',
-    description: 'Win a 500+ chip pot',
+    description: 'Win A 500+ Chip Pot',
     icon: '',
     category: 'financial',
     rarity: 'rare',
@@ -191,7 +191,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'tourney_win_1',
     name: 'Champion',
-    description: 'Win a tournament',
+    description: 'Win A Tournament',
     icon: '',
     category: 'tournament',
     rarity: 'epic',
@@ -201,7 +201,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'tourney_top3_10',
     name: 'Consistent',
-    description: 'Finish top 3 in 10 tournaments',
+    description: 'Finish Top 3 In 10 Tournaments',
     icon: '',
     category: 'tournament',
     rarity: 'rare',
@@ -211,7 +211,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'tourney_played_50',
     name: 'Tournament Regular',
-    description: 'Play 50 tournaments',
+    description: 'Play 50 Tournaments',
     icon: '',
     category: 'tournament',
     rarity: 'rare',
@@ -223,7 +223,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'royal_flush',
     name: 'Royal Flush',
-    description: 'Hit a Royal Flush',
+    description: 'Hit A Royal Flush',
     icon: '',
     category: 'special',
     rarity: 'legendary',
@@ -233,7 +233,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'straight_flush',
     name: 'Straight Flush',
-    description: 'Hit a Straight Flush',
+    description: 'Hit A Straight Flush',
     icon: '',
     category: 'special',
     rarity: 'epic',
@@ -242,7 +242,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   },
   {
     id: 'quads',
-    name: 'Four of a Kind',
+    name: 'Four Of A Kind',
     description: 'Hit Quads',
     icon: '4',
     category: 'special',
@@ -253,7 +253,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'bad_beat',
     name: 'Bad Beat Survivor',
-    description: 'Lose with quads or better',
+    description: 'Lose With Quads Or Better',
     icon: '',
     category: 'special',
     rarity: 'epic',
@@ -266,7 +266,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'streak_7',
     name: 'Weekly Warrior',
-    description: 'Log in 7 days in a row',
+    description: 'Log In 7 Days In A Row',
     icon: '',
     category: 'special',
     rarity: 'common',
@@ -276,7 +276,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'streak_30',
     name: 'Monthly Grinder',
-    description: 'Log in 30 days in a row',
+    description: 'Log In 30 Days In A Row',
     icon: '▤',
     category: 'special',
     rarity: 'rare',
@@ -286,7 +286,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'streak_100',
     name: 'Centurion',
-    description: 'Log in 100 days in a row',
+    description: 'Log In 100 Days In A Row',
     icon: '◆',
     category: 'special',
     rarity: 'legendary',

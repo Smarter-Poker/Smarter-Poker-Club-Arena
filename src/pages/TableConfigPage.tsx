@@ -1722,7 +1722,7 @@ export default function TableConfigPage() {
               label="Bomb Pot"
               value={config.bombPotEnabled}
               onChange={(v) => updateConfig('bombPotEnabled', v)}
-              tooltip="Everyone antes and the hand starts on the flop, on a fixed schedule"
+              tooltip="Everyone Antes And The Hand Starts On The Flop, On A Fixed Schedule"
             />
             {config.bombPotEnabled && (
               <>
@@ -2025,7 +2025,7 @@ export default function TableConfigPage() {
                   label="Separate Bomb Button"
                   value={config.bombPotSeparateButton}
                   onChange={(v) => updateConfig('bombPotSeparateButton', v)}
-                  tooltip="Bomb pots rotate their own dealer button, and the regular button does not move on bomb hands"
+                  tooltip="Bomb Pots Rotate Their Own Dealer Button, And The Regular Button Does Not Move On Bomb Hands"
                 />
               </>
             )}
@@ -2039,7 +2039,7 @@ export default function TableConfigPage() {
                 label="Seven-Deuce"
                 value={config.sevenDeuceEnabled}
                 onChange={(v) => updateConfig('sevenDeuceEnabled', v)}
-                tooltip="Winner holding any 7-2 collects a bounty from each other player (post-flop only)"
+                tooltip="Winner Holding Any 7-2 Collects A Bounty From Each Other Player (Post-Flop Only)"
               />
             )}
             {SEVEN_DEUCE_VARIANTS.has(String(gameType || 'nlh').toLowerCase()) &&
@@ -2065,14 +2065,14 @@ export default function TableConfigPage() {
                 label="Pineapple Hold'em"
                 value={config.pineappleHoldem}
                 onChange={(v) => updateConfig('pineappleHoldem', v)}
-                tooltip="Three hole cards, discard one after the flop"
+                tooltip="Three Hole Cards, Discard One After The Flop"
               />
             )}
             <Toggle
               label="NIT Game"
               value={config.nitGame}
               onChange={(v) => updateConfig('nitGame', v)}
-              tooltip="Penalty for tight play"
+              tooltip="Penalty For Tight Play"
             />
             <Toggle
               label="Anonymous Table"
@@ -2087,7 +2087,7 @@ export default function TableConfigPage() {
                 label="Cap"
                 value={config.capEnabled}
                 onChange={(v) => updateConfig('capEnabled', v)}
-                tooltip="Limit the total chips a player can commit in one hand"
+                tooltip="Limit The Total Chips A Player Can Commit In One Hand"
               />
             )}
             {!limitGame && config.capEnabled && (
@@ -2099,7 +2099,7 @@ export default function TableConfigPage() {
                 max={200}
                 step={5}
                 suffix=" Big Blinds"
-                tooltip="The most a player can put in across the whole hand. Reaching the cap does not put them all-in."
+                tooltip="The Most A Player Can Put In Across The Whole Hand. Reaching The Cap Does Not Put Them All-In."
               />
             )}
             <Toggle
@@ -2108,22 +2108,22 @@ export default function TableConfigPage() {
               onChange={(v) => updateConfig('banChat', v)}
             />
             <Toggle
-              label="Label as NEW"
+              label="Label As NEW"
               value={config.labelAsNew}
               onChange={(v) => updateConfig('labelAsNew', v)}
-              tooltip="Show NEW badge"
+              tooltip="Show NEW Badge"
             />
             <Toggle
               label="Featured Table"
               value={config.isFeatured}
               onChange={(v) => updateConfig('isFeatured', v)}
-              tooltip="Feature at top of list"
+              tooltip="Feature At Top Of List"
             />
             <Toggle
               label="No Rathole"
               value={config.noRathole}
               onChange={(v) => updateConfig('noRathole', v)}
-              tooltip="Prevent leaving with winnings"
+              tooltip="Prevent Leaving With Winnings"
             />
 
             {/* SECTION: Table Parameters */}
@@ -2272,7 +2272,7 @@ export default function TableConfigPage() {
               label="Auto Extension"
               value={config.autoExtension}
               onChange={(v) => updateConfig('autoExtension', v)}
-              tooltip="Keep this table open when it empties"
+              tooltip="Keep This Table Open When It Empties"
             />
             {/* Auto Restart and Auto Create Table look dead from a
                 TypeScript grep and are NOT: fn_table_lifecycle_pass reads
@@ -2282,13 +2282,13 @@ export default function TableConfigPage() {
               label="Auto Restart"
               value={config.autoRestart}
               onChange={(v) => updateConfig('autoRestart', v)}
-              tooltip="Reopen this table if it closes"
+              tooltip="Reopen This Table If It Closes"
             />
             <Toggle
               label="Auto Create Table"
               value={config.autoCreateTable}
               onChange={(v) => updateConfig('autoCreateTable', v)}
-              tooltip="Create new table when full"
+              tooltip="Create New Table When Full"
             />
             {/* Hidden on a fixed-limit table: HandController posts a straddle
                 by assigning currentBet with no structure branch, and the
@@ -2299,13 +2299,13 @@ export default function TableConfigPage() {
                   label="Auto UTG Straddle"
                   value={config.autoUtgStraddle}
                   onChange={(v) => updateConfig('autoUtgStraddle', v)}
-                  tooltip="Automatic UTG straddle"
+                  tooltip="Automatic UTG Straddle"
                 />
                 <Toggle
                   label="Voluntary Straddle"
                   value={config.voluntaryStraddle}
                   onChange={(v) => updateConfig('voluntaryStraddle', v)}
-                  tooltip="Allow voluntary straddle"
+                  tooltip="Allow Voluntary Straddle"
                 />
               </>
             )}
@@ -2313,7 +2313,7 @@ export default function TableConfigPage() {
               label="Insurance"
               value={config.insuranceEnabled}
               onChange={(v) => updateConfig('insuranceEnabled', v)}
-              tooltip="All-in insurance option"
+              tooltip="All-In Insurance Option"
             />
 
             {/* Run It Multi-Times */}
@@ -2369,7 +2369,7 @@ export default function TableConfigPage() {
               <div className="config-toggle">
                 <span className="toggle-label">
                   Players
-                  <span className="tooltip-icon" title="Number of players in SNG">
+                  <span className="tooltip-icon" title="Number Of Players In SNG">
                     ?
                   </span>
                 </span>
@@ -2395,7 +2395,7 @@ export default function TableConfigPage() {
               label="Private Game"
               value={config.isPrivate || privateOnly}
               onChange={(v) => updateConfig('isPrivate', v)}
-              tooltip="Visible only inside your club, never in the union lobby"
+              tooltip="Visible Only Inside Your Club, Never In The Union Lobby"
             />
             <Toggle
               label="VIP Only"
@@ -2416,25 +2416,25 @@ export default function TableConfigPage() {
               label="Ban Chat"
               value={config.banChat}
               onChange={(v) => updateConfig('banChat', v)}
-              tooltip="Table chat is disabled for players in this tournament"
+              tooltip="Table Chat Is Disabled For Players In This Tournament"
             />
             <Toggle
-              label="All-in or Fold"
+              label="All-In Or Fold"
               value={config.allInOrFold}
               onChange={(v) => updateConfig('allInOrFold', v)}
-              tooltip="Players may only move all-in or fold"
+              tooltip="Players May Only Move All-In Or Fold"
             />
             <Toggle
-              label="Label as NEW"
+              label="Label As NEW"
               value={config.labelAsNew}
               onChange={(v) => updateConfig('labelAsNew', v)}
-              tooltip="Show NEW badge in the lobby"
+              tooltip="Show NEW Badge In The Lobby"
             />
             <Toggle
               label="Featured Tournament"
               value={config.featuredTournament}
               onChange={(v) => updateConfig('featuredTournament', v)}
-              tooltip="Pinned to the top of every tournament list"
+              tooltip="Pinned To The Top Of Every Tournament List"
             />
             <Toggle
               label="Hide Club Name"
@@ -2471,7 +2471,7 @@ export default function TableConfigPage() {
                 Fee
                 <span
                   className="tooltip-icon"
-                  title="Taken out of the buy-in, never added on top. Spins carry no fee."
+                  title="Taken Out Of The Buy-In, Never Added On Top. Spins Carry No Fee."
                 >
                   ?
                 </span>
@@ -2486,22 +2486,22 @@ export default function TableConfigPage() {
             </div>
 
             <Toggle
-              label="Custom Buy-in"
+              label="Custom Buy-In"
               value={config.customBuyIn}
               onChange={(v) => updateConfig('customBuyIn', v)}
-              tooltip="Type any whole-number buy-in instead of using the slider"
+              tooltip="Type Any Whole-Number Buy-In Instead Of Using The Slider"
             />
             {config.customBuyIn ? (
               <NumberField
-                label="Buy-in"
+                label="Buy-In"
                 value={config.buyIn}
                 onChange={(v) => updateConfig('buyIn', v)}
                 min={0}
-                tooltip="Whole chips only. 0 = freeroll."
+                tooltip="Whole Chips Only. 0 = Freeroll."
               />
             ) : (
               <Slider
-                label="Buy-in"
+                label="Buy-In"
                 value={config.buyIn}
                 onChange={(v) => updateConfig('buyIn', v)}
                 min={10}
@@ -2557,7 +2557,7 @@ export default function TableConfigPage() {
             <div className="config-toggle">
               <span className="toggle-label">
                 Payout Structure
-                <span className="tooltip-icon" title="Prize distribution">
+                <span className="tooltip-icon" title="Prize Distribution">
                   ?
                 </span>
               </span>
@@ -2595,19 +2595,19 @@ export default function TableConfigPage() {
               label="Big Blind Ante"
               value={config.bigBlindAnte}
               onChange={(v) => updateConfig('bigBlindAnte', v)}
-              tooltip="The big blind posts the ante for the whole table"
+              tooltip="The Big Blind Posts The Ante For The Whole Table"
             />
             <Toggle
-              label="Authorized to Register"
+              label="Authorized To Register"
               value={config.authorizedToRegister}
               onChange={(v) => updateConfig('authorizedToRegister', v)}
-              tooltip="Only players you approve can register"
+              tooltip="Only Players You Approve Can Register"
             />
             <Toggle
               label="Synchronized Breaks"
               value={config.synchronizedBreaks}
               onChange={(v) => updateConfig('synchronizedBreaks', v)}
-              tooltip="All tables break at the same time"
+              tooltip="All Tables Break At The Same Time"
             />
           </>
         )}
@@ -2619,11 +2619,11 @@ export default function TableConfigPage() {
               label="Accelerated MTT"
               value={config.acceleratedMtt}
               onChange={(v) => updateConfig('acceleratedMtt', v)}
-              tooltip="Faster level progression once the field shrinks"
+              tooltip="Faster Level Progression Once The Field Shrinks"
             />
 
             <Slider
-              label="Number of Rebuys/Re-entries"
+              label="Number Of Rebuys/Re-Entries"
               value={config.numberOfRebuysReentries}
               onChange={(v) => updateConfig('numberOfRebuysReentries', v)}
               min={0}
@@ -2632,18 +2632,18 @@ export default function TableConfigPage() {
             {config.numberOfRebuysReentries > 0 && (
               <>
                 <Toggle
-                  label="Custom Rebuy/Re-entry Cost"
+                  label="Custom Rebuy/Re-Entry Cost"
                   value={config.customRebuyReentryCost}
                   onChange={(v) => updateConfig('customRebuyReentryCost', v)}
-                  tooltip="Charge a different price than the buy-in"
+                  tooltip="Charge A Different Price Than The Buy-In"
                 />
                 {config.customRebuyReentryCost && (
                   <NumberField
-                    label="Rebuy/Re-entry Cost"
+                    label="Rebuy/Re-Entry Cost"
                     value={config.rebuyReentryCost}
                     onChange={(v) => updateConfig('rebuyReentryCost', v)}
                     min={0}
-                    tooltip="Whole chips only. 0 = same as the buy-in."
+                    tooltip="Whole Chips Only. 0 = Same As The Buy-In."
                   />
                 )}
               </>
@@ -2651,34 +2651,34 @@ export default function TableConfigPage() {
 
             {/* Add-on Options */}
             <Slider
-              label="Add-on"
+              label="Add-On"
               value={config.addOnMultiplier}
               onChange={(v) => updateConfig('addOnMultiplier', v)}
               min={0}
               max={3}
               step={0.5}
               suffix="x"
-              tooltip="Add-on chips as a multiple of the starting stack. 0 = no add-on."
+              tooltip="Add-On Chips As A Multiple Of The Starting Stack. 0 = No Add-On."
             />
             {config.addOnMultiplier > 0 && (
               <>
                 <Toggle
-                  label="Custom Add-on"
+                  label="Custom Add-On"
                   value={config.customAddOn}
                   onChange={(v) => updateConfig('customAddOn', v)}
-                  tooltip="Charge a different add-on price than the buy-in"
+                  tooltip="Charge A Different Add-On Price Than The Buy-In"
                 />
                 {config.customAddOn && (
                   <NumberField
-                    label="Add-on Cost"
+                    label="Add-On Cost"
                     value={config.customAddOnCost}
                     onChange={(v) => updateConfig('customAddOnCost', v)}
                     min={0}
-                    tooltip="Whole chips only. 0 = same as the buy-in."
+                    tooltip="Whole Chips Only. 0 = Same As The Buy-In."
                   />
                 )}
                 <Slider
-                  label="Add-on Break Length"
+                  label="Add-On Break Length"
                   value={config.addOnBreakLengthMinutes}
                   onChange={(v) => updateConfig('addOnBreakLengthMinutes', v)}
                   min={1}
@@ -2698,7 +2698,7 @@ export default function TableConfigPage() {
               label="GTD Prize Pool"
               value={config.gtdPrizePool}
               onChange={(v) => updateConfig('gtdPrizePool', v)}
-              tooltip="Guarantee a minimum prize pool. The club covers any overlay."
+              tooltip="Guarantee A Minimum Prize Pool. The Club Covers Any Overlay."
             />
             {config.gtdPrizePool && (
               <NumberField
@@ -2706,20 +2706,20 @@ export default function TableConfigPage() {
                 value={config.gtdPrizeAmount}
                 onChange={(v) => updateConfig('gtdPrizeAmount', v)}
                 min={0}
-                tooltip="Whole chips only"
+                tooltip="Whole Chips Only"
               />
             )}
             <Toggle
               label="Final Table Deal"
               value={config.finalTableDeal}
               onChange={(v) => updateConfig('finalTableDeal', v)}
-              tooltip="Final table players may vote to split the remaining prizes"
+              tooltip="Final Table Players May Vote To Split The Remaining Prizes"
             />
             <Toggle
               label="Bubble Protection"
               value={config.bubbleProtection}
               onChange={(v) => updateConfig('bubbleProtection', v)}
-              tooltip="The bubble finisher gets their buy-in back"
+              tooltip="The Bubble Finisher Gets Their Buy-In Back"
             />
 
             {/* Registration & Players */}
@@ -2735,7 +2735,7 @@ export default function TableConfigPage() {
               label="Early Bird Registration"
               value={config.earlyBirdRegistration}
               onChange={(v) => updateConfig('earlyBirdRegistration', v)}
-              tooltip="Players who register before the start get bonus chips"
+              tooltip="Players Who Register Before The Start Get Bonus Chips"
             />
             {config.earlyBirdRegistration && (
               <NumberField
@@ -2743,14 +2743,14 @@ export default function TableConfigPage() {
                 value={config.earlyBirdChips}
                 onChange={(v) => updateConfig('earlyBirdChips', v)}
                 min={0}
-                tooltip="Extra starting chips for registering before the start"
+                tooltip="Extra Starting Chips For Registering Before The Start"
               />
             )}
             <Toggle
               label="Next Step (Satellite)"
               value={config.nextStepSatellite}
               onChange={(v) => updateConfig('nextStepSatellite', v)}
-              tooltip="Winners earn seats into a bigger tournament instead of cash"
+              tooltip="Winners Earn Seats Into A Bigger Tournament Instead Of Cash"
             />
             {config.nextStepSatellite && (
               <>
@@ -2774,7 +2774,7 @@ export default function TableConfigPage() {
                   value={config.satelliteSeats}
                   onChange={(v) => updateConfig('satelliteSeats', v)}
                   min={1}
-                  tooltip="Top N finishers win a seat"
+                  tooltip="Top N Finishers Win A Seat"
                 />
               </>
             )}
@@ -2796,7 +2796,7 @@ export default function TableConfigPage() {
                 Multi-Day MTT
                 <span
                   className="tooltip-icon"
-                  title="Day 2 resume and flight merging are not built. Setting this would badge the event Multi-Day while it played down to one winner in a single session, so it is refused rather than promised."
+                  title="Day 2 Resume And Flight Merging Are Not Built. Setting This Would Badge The Event Multi-Day While It Played Down To One Winner In A Single Session, So It Is Refused Rather Than Promised."
                 >
                   ?
                 </span>
@@ -2846,17 +2846,17 @@ export default function TableConfigPage() {
                 picked start time in localStorage per club and prefills it on
                 the next visit — simple and honest about what it does. */}
             <Toggle
-              label="Save the Start Time"
+              label="Save The Start Time"
               value={config.saveStartTime}
               onChange={(v) => updateConfig('saveStartTime', v)}
-              tooltip="Remember this start time on this device and prefill it next time"
+              tooltip="Remember This Start Time On This Device And Prefill It Next Time"
             />
 
             <Toggle
-              label="Restart the Tournament"
+              label="Restart The Tournament"
               value={config.restartTournamentEvery}
               onChange={(v) => updateConfig('restartTournamentEvery', v)}
-              tooltip="Automatically respawn this tournament on a fixed interval"
+              tooltip="Automatically Respawn This Tournament On A Fixed Interval"
             />
             {config.restartTournamentEvery && (
               <Slider
@@ -2878,7 +2878,7 @@ export default function TableConfigPage() {
               label="Tournament Schedule"
               value={config.tournamentSchedule}
               onChange={(v) => updateConfig('tournamentSchedule', v)}
-              tooltip="Repeat this tournament weekly. With no start time picked, only the schedule is created."
+              tooltip="Repeat This Tournament Weekly. With No Start Time Picked, Only The Schedule Is Created."
             />
             {config.tournamentSchedule && (
               <WeeklyScheduleEditor
@@ -2924,7 +2924,7 @@ export default function TableConfigPage() {
               max={10}
               step={0.5}
               format={(v) => (v < 0 ? 'Schedule (10%)' : `${v}%`)}
-              tooltip="Percentage of each raked pot. Schedule = use the house rake schedule."
+              tooltip="Percentage Of Each Raked Pot. Schedule = Use The House Rake Schedule."
             />
 
             <Slider
@@ -2938,7 +2938,7 @@ export default function TableConfigPage() {
                   ? 'Schedule'
                   : `${v} x Big Blind${config.bigBlind ? ` (= ${formatCurrency(v * config.bigBlind)})` : ''}`
               }
-              tooltip="Most that can be raked from one pot. Schedule = use the house cap for this stake."
+              tooltip="Most That Can Be Raked From One Pot. Schedule = Use The House Cap For This Stake."
             />
 
             {/*
@@ -3005,7 +3005,7 @@ export default function TableConfigPage() {
               label="IP Restriction"
               value={config.ipRestriction}
               onChange={(v) => updateConfig('ipRestriction', v)}
-              tooltip="Two different accounts cannot sit at this table from the same internet connection. Players already seated are not affected."
+              tooltip="Two Different Accounts Cannot Sit At This Table From The Same Internet Connection. Players Already Seated Are Not Affected."
             />
             <Toggle
               label="Hide Club Name"
@@ -3023,7 +3023,7 @@ export default function TableConfigPage() {
       {/* Footer Buttons */}
       <footer className="config-footer">
         <button className="btn-template" onClick={handleSaveAsTemplate} disabled={savingTemplate}>
-          {savingTemplate ? 'Saving...' : 'Save as Template'}
+          {savingTemplate ? 'Saving...' : 'Save As Template'}
         </button>
         <button className="btn-save" onClick={handleSave} disabled={saving}>
           {saving ? 'Saving...' : 'Save'}

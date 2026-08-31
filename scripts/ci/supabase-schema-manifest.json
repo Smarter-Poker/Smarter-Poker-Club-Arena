@@ -1902,6 +1902,7 @@
     "fn_request_cashout",
     "fn_request_chips",
     "fn_request_manual_bomb_pot",
+    "fn_requeue_unbanked_cash_rake",
     "fn_requeue_unbanked_fees",
     "fn_require_active_home_group",
     "fn_require_age_verified",

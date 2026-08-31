@@ -116,6 +116,39 @@ browser callers. Revoked from PUBLIC/anon/authenticated; the engine holds
 human-owned decisions — `mystery_bounty_double_pay_backlog` and the new
 `tournament_double_payment_backlog`. Nothing else is red.
 
+## 5. The 21 hand-repaired hands were a symptom — the leak is now self-healing
+
+Phase 2 re-queued 21 outage-lost hands **by hand**. The verification pass
+asked whether that was a one-off. It is not: measured over 24 hours, **17,911
+raked cash hands, 20 of them (72.30 chips) with no `rake_records` row and
+nothing in the queue either**, clustered exactly at engine restarts (08-30
+08–10h, 08-30 17–18h, 08-31 08h). 0.11%, permanent, roughly a chip an hour.
+
+**Why it happens.** `FeeReconciler.pendingHands` is an in-memory queue drained
+on shutdown; a process death between the inline fee write failing and that
+drain loses the claim, and nothing on disk remembers the hand owed a fee. The
+08:07 cluster shows the split cleanly — four hands carry a
+`bbj_contributions` row and no `rake_records`, three the reverse. Two halves
+of one write with a restart between them.
+
+**Why nothing healed it.** `fn_bbj_repair_unbanked` heals BBJ _from_
+`rake_records`, so it covers exactly one direction. A hand with no
+`rake_records` row at all is invisible to every existing healer.
+
+`fn_requeue_unbanked_cash_rake` closes the class: any cash hand past a
+10-minute grace with rake but no `rake_records` and nothing queued is filed
+back into `pending_fee_distributions`, and `requeueUnbankedCashRake()` runs it
+every reconciler cycle. It never banks — banking stays on the hand-gated,
+idempotent `atomic_distribute_rake`, so a double sweep cannot double-bank.
+Swept 30 hands over the 48-hour window on application; zero unqueued remain.
+
+**Attribution says what it lost.** `hand_history.players` carries the dealt-in
+user ids and their ENDING STACK, never per-street contribution, so the
+weighted-contributed split is unreconstructable after the fact. The sweep
+stamps `rake_method='DEALT_EQUAL'` — the legacy method the allocator still
+implements exactly — rather than inventing weights from stack sizes and
+labelling the guess as weighted truth.
+
 ## For phase 3, measured here
 
 The rakeback settler is not lagging because it is slow — it is **halted by

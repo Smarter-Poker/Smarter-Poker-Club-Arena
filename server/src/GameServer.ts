@@ -59,6 +59,7 @@ import {
   auditRakeAttributionDrift,
   auditSatelliteConservation,
   auditPrizeDisbursement,
+  requeueUnbankedCashRake,
 } from './services/FeeReconciler.js';
 import { reportError, initSentry, flushSentry } from './services/errorReporter.js';
 import { fetchAllRows } from './services/supabase/pagination.js';
@@ -1373,6 +1374,14 @@ export class GameServer {
           // other check precisely because the outage reset overwrote that
           // snapshot while the wallet ledger kept the truth.
           await auditPrizeDisbursement(24);
+          // Restart-orphaned fees (2026-08-31): pendingHands is in-memory, so
+          // a process death between the inline write and the drain loses the
+          // claim entirely — and fn_bbj_repair_unbanked cannot see it because
+          // it heals BBJ *from* rake_records. Measured: 20 cash hands / 72.30
+          // chips in 24h, clustered at restarts. This files them back into
+          // the durable queue; banking still goes through the hand-gated,
+          // idempotent atomic_distribute_rake below.
+          await requeueUnbankedCashRake(48, 10, 200);
         } catch (err) {
           reportError(err, 'GameServer.bbj_drift_audit_failed');
         }

@@ -1560,7 +1560,17 @@ export class HandController {
    */
   public markFlopSeen(): void {
     this.state.sawFlop = true;
+    this.boardDealtOutsideState = true;
   }
+
+  /**
+   * TRUE only when a real board exists that this controller's own
+   * `state.communityCards` does not hold — which today means exactly one
+   * thing: markFlopSeen() above, the RIT path. It is not a second copy of
+   * `sawFlop`; it is the evidence that makes an empty board legitimate, and
+   * priceDeductions is its only reader.
+   */
+  private boardDealtOutsideState = false;
 
   public creditRunoutWinnings(distribution: Map<string, number>): void {
     this.applyStackDeltas(distribution);
@@ -2920,13 +2930,61 @@ export class HandController {
    * INVARIANT, enforced here and nowhere else: rake + bbjFee <= pot, with
    * the BBJ drop yielding first (the pot is the only source of both).
    */
-  public priceDeductions(flopSeen: boolean, pot: number): { rake: number; bbjFee: number } {
+  public priceDeductions(
+    flopSeen: boolean,
+    pot: number,
+    opts: { forecast?: boolean } = {}
+  ): { rake: number; bbjFee: number } {
+    /* ═══ NO FLOP, NO DROP IS SETTLED BY THE BOARD, NOT BY A FLAG ══════════
+       2026-08-31. `sawFlop` is a mutable flag written in five places; the
+       board is the evidence. Every time the two have disagreed, the flag has
+       been the wrong one — HandFuzzer has asserted
+       `sawFlop === board.length >= 3` since the 2026-08-18 rake-leak fix, and
+       on 2026-08-31 the rake-law alarm (migration 20260831140000) caught the
+       same disagreement in production, which the fuzzer's seeded hands never
+       reach: 20 live cash hands that ended PREFLOP were charged the full 10%
+       (5% heads-up) of a pot no card was ever dealt to.
+
+       They are not ambiguous. Hand 3900820, NLH 2/4 heads-up: SB posts 2, BB
+       posts 4, SB folds, 2 returned — a walk, pot 4.00, raked 0.20, winner
+       paid 3.80. Hand 3805102, 1/2 seven-handed: one raise, everyone folds,
+       pot 5.00, raked 0.50. Board empty, no showdown, nothing to drop on.
+       9.15 chips across 20 hands, taken from players who folded before the
+       flop. Small money; the wrong money.
+
+       So the flag alone no longer authorises a drop. A drop needs a board:
+       three community cards in this controller's own state, or markFlopSeen()
+       — the RIT path, which builds its boards outside this state and is the
+       ONE legitimate way a fully-dealt hand has no board here. Anything else
+       is priced as what the record shows: no flop, no drop. The disagreement
+       is REPORTED rather than swallowed, because the flag going wrong is a
+       real bug that still needs finding, and this refuses its money without
+       hiding it.
+
+       `forecast` is the insurance dialog pricing a runout that has not been
+       dealt yet (computeRakeAndBBJ(true)). It moves no chips and must keep
+       quoting what the completed hand will pay, so it is exempt. */
+    const boardDealt = this.state.communityCards.length >= 3 || this.boardDealtOutsideState;
+    let flopCounts = flopSeen;
+    if (flopSeen && !boardDealt && !opts.forecast) {
+      flopCounts = false;
+      reportError(
+        new Error(
+          `[HandController] sawFlop was true with NO board on hand ` +
+            `${this.config.handNumber} (stage ${this.state.stage}, pot ${pot}, ` +
+            `${this.state.players.length} seats) - priced as no flop, no drop. ` +
+            `The rake and BBJ drop were refused; the flag is what needs fixing.`
+        ),
+        'HandController.saw_flop_without_board'
+      );
+    }
+
     const playerCount = this.state.players.filter((p) => !p.is_sitting_out).length;
-    const rake = calculateRake(pot, flopSeen, this.config.rakeConfig, playerCount);
+    const rake = calculateRake(pot, flopCounts, this.config.rakeConfig, playerCount);
 
     let bbjFee = 0;
     const bbjCfg = this.config.bbjConfig;
-    if (bbjCfg && bbjCfg.enabled && flopSeen && playerCount >= bbjCfg.minPlayersDealt) {
+    if (bbjCfg && bbjCfg.enabled && flopCounts && playerCount >= bbjCfg.minPlayersDealt) {
       bbjFee = Math.round(this.config.bigBlind * bbjCfg.feeBB * 100) / 100;
     }
 
@@ -2951,7 +3009,12 @@ export class HandController {
    * and overstated "For Winning" by the full rake + BBJ drop. Default false
    * keeps every other caller (RIT settlement, etc.) exactly as before. */
   public computeRakeAndBBJ(assumeFlop: boolean = false): { rake: number; bbjFee: number } {
-    return this.priceDeductions(this.state.sawFlop || assumeFlop, this.state.pot);
+    // `assumeFlop` is a FORECAST of a runout that has not been dealt yet, so
+    // it is exempt from the board-corroboration rule priceDeductions applies
+    // to money that is actually leaving a pot.
+    return this.priceDeductions(this.state.sawFlop || assumeFlop, this.state.pot, {
+      forecast: assumeFlop,
+    });
   }
 
   /** Dealer seat (for odd-chip allocation in RIT). */

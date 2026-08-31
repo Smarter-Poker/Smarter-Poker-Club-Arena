@@ -130,11 +130,6 @@
 .closeButton::after {
   transform: rotate(-45deg);
 }
-.closeButton:hover {
-  border-color: #54c6ff;
-  background: #0a1720;
-}
-
 .closeButton:focus-visible,
 .metaRetryButton:focus-visible,
 .uploadLogoBtn:focus-visible,
@@ -343,10 +338,6 @@
   text-align: left;
 }
 
-.uploadLogoBtn:hover {
-  border-color: #4fc8ff;
-  background: #0b2532;
-}
 .uploadLogoBtn:disabled {
   cursor: wait;
   opacity: 0.6;
@@ -386,11 +377,6 @@
     border-color 150ms ease,
     background 150ms ease,
     transform 150ms ease;
-}
-.crestOption:hover {
-  border-color: rgba(91, 199, 250, 0.7);
-  background: #0a151c;
-  transform: translateY(-1px);
 }
 .crestOption img {
   width: 100%;
@@ -524,9 +510,6 @@
     sans-serif;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-}
-.createButton:not(:disabled):hover {
-  background: linear-gradient(180deg, #0d91cc, #056493);
 }
 .createButton:disabled {
   border-color: #27323a;

@@ -106,3 +106,14 @@ describe('3. every menu destination is actually connected to a route', () => {
     });
   }
 });
+
+describe('4. Table Studio takes control from the command drawer', () => {
+  it('opens the studio and closes the drawer in the same launcher action', () => {
+    expect(MENU).toContain(`const handleOpenTableStudio = () => {
+    setShowThemeSettings(true);
+    onClose();
+  };`);
+    expect(MENU).toContain('onClick={handleOpenTableStudio}');
+    expect(MENU).not.toContain('onClick={() => setShowThemeSettings(true)}');
+  });
+});

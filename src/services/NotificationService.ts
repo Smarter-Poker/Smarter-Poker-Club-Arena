@@ -355,7 +355,9 @@ class NotificationServiceClass {
         // mapNotification folds into this metadata bag. Snake and camel both
         // accepted so an older writer still deep-links.
         const tid = (metadata.table_id ?? metadata.tableId) as string | undefined;
-        return tid ? `/table/${tid}` : '/waitlist';
+        // ?buyin=1: the seat is held 60s (Dan 2026-08-30) — land the player on
+        // the table with the buy-in screen ALREADY OPEN, not just the felt.
+        return tid ? `/table/${tid}?buyin=1` : '/waitlist';
       }
       case 'table_invite':
         return metadata.tableId ? `/table/${metadata.tableId}` : '/';

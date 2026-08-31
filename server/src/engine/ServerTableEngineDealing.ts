@@ -950,6 +950,42 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
                           'ServerTableEngine.busted_seat_vacate_failed'
                         );
                       } else {
+                        /**
+                         * THE VACATED BUST MUST ALSO BE VISIBLE TO THE SWEEP
+                         * (2026-08-30, same-day regression fix).
+                         *
+                         * The elimination sweep detects busts ONLY via
+                         * `tournament_players.chips <= 0`, and its chip sync
+                         * reads OPEN seats. Vacating the seat here (the fix
+                         * above, shipped earlier today) removed the 0-stack
+                         * row before the next sync ran, so `chips` froze at
+                         * the last pre-bust positive value and the player was
+                         * never eliminated: 10 of 16 RUNNING MTTs in
+                         * production hung with one seated survivor, blinds
+                         * escalating past level 100, champion never paid.
+                         *
+                         * So the bust writes its own zero, in the same breath
+                         * as the vacate. Guarded on status='playing' so a
+                         * player already eliminated (or finished) is not
+                         * touched. A rebuy that lands later overwrites the 0
+                         * via process_tournament_rebuy exactly as it always
+                         * did, and the sweep's rebuy decision window still
+                         * holds their entry open before eliminating them.
+                         */
+                        const { error: zeroErr } = await supabase
+                          .from('tournament_players')
+                          .update({ chips: 0 })
+                          .eq('tournament_id', this.tableInfo!.tournament_id!)
+                          .in('user_id', bustedIds)
+                          .eq('status', 'playing');
+                        if (zeroErr) {
+                          reportError(
+                            new Error(
+                              `[ServerTableEngine:${this.tableId}] busted-player chips-zero failed: ${zeroErr.message} — the seatless-phantom sweep guard will catch them`
+                            ),
+                            'ServerTableEngine.busted_chip_zero_failed'
+                          );
+                        }
                         for (const p of justBustedPlayers) {
                           if (!p.user_id) continue;
                           this.hub?.emitEvent(this.tableId, {

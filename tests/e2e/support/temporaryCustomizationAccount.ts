@@ -25,6 +25,8 @@ export type StorefrontSku = {
 type JsonObject = Record<string, unknown>;
 
 const CLEANUP_RETRY_DELAYS_MS = [250, 750, 1_500] as const;
+const SERVICE_REQUEST_MAX_ATTEMPTS = 5;
+const SERVICE_REQUEST_BASE_DELAY_MS = 500;
 
 function isTransientCleanupError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');
@@ -48,7 +50,6 @@ async function withCleanupRetries<T>(operation: () => Promise<T>): Promise<T> {
   }
   throw lastError;
 }
-
 function serverHeaders(key: string, extra: Record<string, string> = {}): Record<string, string> {
   return {
     apikey: key,
@@ -82,23 +83,72 @@ async function serviceRequest<T>(
   path: string,
   init: RequestInit = {}
 ): Promise<T> {
-  const response = await fetch(`${environment.supabaseUrl}${path}`, {
-    ...init,
-    headers: serverHeaders(environment.serviceRoleKey, {
-      Accept: 'application/json',
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...((init.headers as Record<string, string> | undefined) || {}),
-    }),
-  });
-  const text = await response.text();
-  const body = text ? (JSON.parse(text) as T) : (undefined as T);
-  if (!response.ok) {
-    throw new Error(
-      `Supabase service request ${init.method || 'GET'} ${path} failed ` +
-        `(${response.status}): ${text.slice(0, 400)}`
-    );
+  const method = (init.method || 'GET').toUpperCase();
+  const methodIsIdempotent = ['GET', 'HEAD', 'PUT', 'PATCH', 'DELETE'].includes(method);
+
+  for (let attempt = 0; attempt < SERVICE_REQUEST_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(`${environment.supabaseUrl}${path}`, {
+        ...init,
+        headers: serverHeaders(environment.serviceRoleKey, {
+          Accept: 'application/json',
+          ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+          ...((init.headers as Record<string, string> | undefined) || {}),
+        }),
+      });
+      const responseText = await response.text();
+      let body = undefined as T;
+      if (responseText) {
+        try {
+          body = JSON.parse(responseText) as T;
+        } catch {
+          if (response.ok) {
+            throw new Error(
+              `Supabase service request ${method} ${path} returned invalid JSON: ` +
+                responseText.slice(0, 400)
+            );
+          }
+        }
+      }
+      if (response.ok) return body;
+
+      const schemaCacheUnavailable =
+        (body as JsonObject | undefined)?.code === 'PGRST002' ||
+        responseText.includes('"code":"PGRST002"');
+      const retryableStatus =
+        response.status === 429 ||
+        response.status === 502 ||
+        response.status === 503 ||
+        response.status === 504;
+      // PGRST002 means PostgREST could not resolve the request against its
+      // schema cache, so it never invoked even a POST RPC. Other ambiguous
+      // transport failures are retried only for idempotent methods; this test
+      // harness must never double-credit or double-create a fixture account.
+      const safeToRetry = schemaCacheUnavailable || (methodIsIdempotent && retryableStatus);
+      if (safeToRetry && attempt + 1 < SERVICE_REQUEST_MAX_ATTEMPTS) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, SERVICE_REQUEST_BASE_DELAY_MS * 2 ** attempt)
+        );
+        continue;
+      }
+
+      throw new Error(
+        `Supabase service request ${method} ${path} failed ` +
+          `(${response.status}): ${responseText.slice(0, 400)}`
+      );
+    } catch (error) {
+      const mayRetryTransport =
+        methodIsIdempotent &&
+        attempt + 1 < SERVICE_REQUEST_MAX_ATTEMPTS &&
+        !String((error as Error)?.message || error).startsWith('Supabase service request');
+      if (!mayRetryTransport) throw error;
+      await new Promise((resolve) =>
+        setTimeout(resolve, SERVICE_REQUEST_BASE_DELAY_MS * 2 ** attempt)
+      );
+    }
   }
-  return body;
+
+  throw new Error(`Supabase service request ${method} ${path} exhausted its retry window.`);
 }
 
 export async function readServiceRows<T>(

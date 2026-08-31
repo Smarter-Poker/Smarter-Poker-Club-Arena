@@ -1566,7 +1566,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             .eq(clubCol, clubVal)
             .maybeSingle()
             .then((r) => r),
-        { maxRetries: 2, isMountedRef }
+        { maxRetries: 4, baseDelayMs: 500, isMountedRef }
       );
 
       if (clubError || !clubData) {
@@ -2826,6 +2826,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
    * round trips to answer a question one query answers for all of them.
    */
   const [waitlistedTableIds, setWaitlistedTableIds] = useState<Set<string>>(new Set());
+  const [waitlistActionBusy, setWaitlistActionBusy] = useState(false);
+  const waitlistActionBusyRef = useRef(false);
 
   useEffect(() => {
     if (!currentUserId) {
@@ -2863,10 +2865,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
   const handleWaitlistToggle = useCallback(
     async (tableId: string, joining: boolean) => {
+      if (waitlistActionBusyRef.current) return;
       if (!currentUserId) {
         toast.error('Sign In To Join A Waitlist');
         return;
       }
+      waitlistActionBusyRef.current = true;
+      setWaitlistActionBusy(true);
       haptic.selection();
       /* Optimistic, then reconciled. The button is on a card in a long grid
          and the round trip is not instant; leaving it unchanged until the
@@ -2904,6 +2909,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         });
         reportError(e, 'ClubHomePage.handleWaitlistToggle', { tableId, joining });
         toast.error(joining ? 'Could Not Join The Waitlist' : 'Could Not Leave The Waitlist');
+      } finally {
+        waitlistActionBusyRef.current = false;
+        setWaitlistActionBusy(false);
       }
     },
     [currentUserId, toast]
@@ -3507,7 +3515,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         const row = filteredTournamentsRef.current.find((t) => t.id === e.id);
         if (row) void handleUnregister(row);
       },
-      actionBusy,
+      actionBusy: actionBusy || waitlistActionBusy,
       /* SEAT-FIRST (Dan 2026-08-21, binding): a Spin or Heads-Up card's Sit
          Down opens the TABLE — the seat is bought there, by the tap that
          picks it. Same flow the game-lobby panel already runs; the card was
@@ -3584,6 +3592,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       openTournamentLobby,
       spinQuickJoin,
       actionBusy,
+      waitlistActionBusy,
     ]
   );
 
@@ -4695,7 +4704,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
              used, so the Register CTA had no pending state of its own. Both
              feed the panel's busy flag now, which is the control that was
              built for exactly this. */
-          busy={actionBusy || isRegisteringMtt || deletingTableId !== null}
+          busy={actionBusy || waitlistActionBusy || isRegisteringMtt || deletingTableId !== null}
           onClose={() => setPanelOpen(false)}
           onJoinTable={handleJoinTable}
           onWaitlistToggle={handleWaitlistToggle}

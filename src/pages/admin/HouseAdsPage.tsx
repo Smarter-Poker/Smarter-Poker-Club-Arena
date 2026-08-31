@@ -721,7 +721,7 @@ export default function HouseAdsPage() {
                 className="admin-input"
                 maxLength={120}
                 value={form.headline}
-                placeholder="Spins Pay Up To 1000x"
+                placeholder="Spins Pay Up To 1000X"
                 onChange={(e) => setForm((f) => ({ ...f, headline: e.target.value }))}
               />
             </div>

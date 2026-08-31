@@ -77,7 +77,7 @@ describe('ActionPanel - bet-sizing panel ALL IN', () => {
     const onAction = vi.fn();
     render(<ActionPanel {...baseProps} canRaise confirmAllIn onAction={onAction} />);
     fireEvent.click(screen.getByLabelText('Open Raise Panel'));
-    // 2026-08-20: the label now carries the amount ("Bet All In for 500"),
+    // 2026-08-20: the label now carries the amount ("Bet All In For 500"),
     // because in pot-limit the shove and the pot cap are different numbers and
     // a screen reader was told neither. Match on the prefix.
     fireEvent.click(screen.getByLabelText(/^Bet All In/));

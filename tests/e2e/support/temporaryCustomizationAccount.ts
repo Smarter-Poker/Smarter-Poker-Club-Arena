@@ -27,6 +27,7 @@ type JsonObject = Record<string, unknown>;
 const CLEANUP_RETRY_DELAYS_MS = [250, 750, 1_500] as const;
 const SERVICE_REQUEST_MAX_ATTEMPTS = 5;
 const SERVICE_REQUEST_BASE_DELAY_MS = 500;
+let staleFixtureSweep: Promise<void> | null = null;
 
 function isTransientCleanupError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error || '');
@@ -81,10 +82,12 @@ export function requireCustomizationCertificationEnvironment(): CustomizationCer
 async function serviceRequest<T>(
   environment: CustomizationCertificationEnvironment,
   path: string,
-  init: RequestInit = {}
+  init: RequestInit = {},
+  retrySafe = false
 ): Promise<T> {
   const method = (init.method || 'GET').toUpperCase();
-  const methodIsIdempotent = ['GET', 'HEAD', 'PUT', 'PATCH', 'DELETE'].includes(method);
+  const methodIsIdempotent =
+    retrySafe || ['GET', 'HEAD', 'PUT', 'PATCH', 'DELETE'].includes(method);
 
   for (let attempt = 0; attempt < SERVICE_REQUEST_MAX_ATTEMPTS; attempt += 1) {
     try {
@@ -159,15 +162,21 @@ export async function readServiceRows<T>(
   return serviceRequest<T[]>(environment, `/rest/v1/${table}?${query.toString()}`);
 }
 
-export async function callServiceRpc<T extends JsonObject>(
+export async function callServiceRpc<T>(
   environment: CustomizationCertificationEnvironment,
   rpc: string,
-  body: JsonObject
+  body: JsonObject,
+  retrySafe = false
 ): Promise<T> {
-  return serviceRequest<T>(environment, `/rest/v1/rpc/${rpc}`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
+  return serviceRequest<T>(
+    environment,
+    `/rest/v1/rpc/${rpc}`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+    },
+    retrySafe
+  );
 }
 
 export async function listTableStudioStorefrontSkus(
@@ -249,6 +258,8 @@ export async function createTemporaryCustomizationAccount(
   label: string,
   diamonds: number
 ): Promise<TemporaryCustomizationAccount> {
+  staleFixtureSweep ??= cleanupStaleTemporaryCustomizationAccounts(environment);
+  await staleFixtureSweep;
   const suffix = `${Date.now()}-${randomUUID()}`;
   const email = `${ACCOUNT_PREFIX}${label}-${suffix}@example.invalid`;
   const password = `Ca!${randomUUID()}aA7`;
@@ -309,12 +320,19 @@ export async function createTemporaryCustomizationAccount(
     return { id: userId, email, password, client };
   } catch (error) {
     if (userId) {
-      await cleanupTemporaryCustomizationAccount(environment, {
-        id: userId,
-        email,
-        password,
-        client: createClient(environment.supabaseUrl, environment.publishableKey),
-      }).catch(() => undefined);
+      try {
+        await cleanupTemporaryCustomizationAccount(environment, {
+          id: userId,
+          email,
+          password,
+          client: createClient(environment.supabaseUrl, environment.publishableKey),
+        });
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          `Temporary account setup failed and cleanup was incomplete for ${userId}.`
+        );
+      }
     }
     throw error;
   }
@@ -361,7 +379,7 @@ async function authUserExists(
  * The prefix check is deliberately local and server-backed: a typo can never
  * turn this helper into a general account deletion primitive.
  */
-export async function cleanupTemporaryCustomizationAccount(
+async function cleanupTemporaryCustomizationAccountOnce(
   environment: CustomizationCertificationEnvironment,
   account: TemporaryCustomizationAccount
 ): Promise<void> {
@@ -376,6 +394,9 @@ export async function cleanupTemporaryCustomizationAccount(
     // their parent notification or account rows so cleanup remains explicit
     // even if a production FK temporarily loses ON DELETE CASCADE.
     'daily_mission_operations',
+    'daily_challenge_progress_events',
+    'daily_challenge_event_outbox',
+    'daily_challenge_milestone_claims',
     'daily_challenge_claim_batches',
     'user_daily_challenges',
     'challenge_streak_state',
@@ -404,9 +425,14 @@ export async function cleanupTemporaryCustomizationAccount(
     { table: 'chip_transactions', column: 'to_user_id' as const },
   ];
 
-  await callServiceRpc<JsonObject>(environment, 'cleanup_reserved_certification_account', {
-    p_user_id: account.id,
-  }).catch((error) => failures.push(`reserved identity: ${(error as Error).message}`));
+  await callServiceRpc<JsonObject>(
+    environment,
+    'cleanup_reserved_certification_account',
+    {
+      p_user_id: account.id,
+    },
+    true
+  ).catch((error) => failures.push(`reserved identity: ${(error as Error).message}`));
 
   for (const { table, column } of [
     ...relatedTables,
@@ -427,6 +453,47 @@ export async function cleanupTemporaryCustomizationAccount(
 
   if (failures.length) {
     throw new Error(`Temporary customization cleanup was incomplete: ${failures.join(' | ')}`);
+  }
+}
+
+export async function cleanupTemporaryCustomizationAccount(
+  environment: CustomizationCertificationEnvironment,
+  account: TemporaryCustomizationAccount
+): Promise<void> {
+  return withCleanupRetries(() => cleanupTemporaryCustomizationAccountOnce(environment, account));
+}
+
+/** Remove only abandoned reserved fixtures old enough not to belong to a live CI run. */
+export async function cleanupStaleTemporaryCustomizationAccounts(
+  environment: CustomizationCertificationEnvironment,
+  olderThanMs = 6 * 60 * 60 * 1000
+): Promise<void> {
+  const cutoff = Date.now() - olderThanMs;
+  for (let page = 1; page <= 20; page += 1) {
+    const response = await serviceRequest<{
+      users?: Array<{ id?: string; email?: string; created_at?: string }>;
+      next_page?: number | null;
+    }>(environment, `/auth/v1/admin/users?page=${page}&per_page=1000`);
+    const users = response.users || [];
+    for (const user of users) {
+      const createdAt = Date.parse(user.created_at || '');
+      if (
+        !user.id ||
+        !user.email?.startsWith(ACCOUNT_PREFIX) ||
+        !user.email.endsWith('@example.invalid') ||
+        !Number.isFinite(createdAt) ||
+        createdAt >= cutoff
+      ) {
+        continue;
+      }
+      await cleanupTemporaryCustomizationAccount(environment, {
+        id: user.id,
+        email: user.email,
+        password: '',
+        client: createClient(environment.supabaseUrl, environment.publishableKey),
+      });
+    }
+    if (!response.next_page || users.length === 0) break;
   }
 }
 

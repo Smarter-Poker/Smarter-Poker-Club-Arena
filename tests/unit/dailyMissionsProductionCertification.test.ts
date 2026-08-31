@@ -26,6 +26,7 @@ describe('Daily Missions production certification', () => {
       'challenge_reroll:',
       'buy_streak_freeze',
       'bump_challenge_progress',
+      'record_daily_challenge_event',
       'daily_challenge_dashboard_revisions',
       "getByText('Live Now')",
       'claim_daily_challenges',
@@ -51,6 +52,9 @@ describe('Daily Missions production certification', () => {
     const helper = source('tests/e2e/support/temporaryCustomizationAccount.ts');
     for (const table of [
       'daily_mission_operations',
+      'daily_challenge_progress_events',
+      'daily_challenge_event_outbox',
+      'daily_challenge_milestone_claims',
       'daily_challenge_claim_batches',
       'daily_challenge_dashboard_revisions',
       'user_daily_challenges',
@@ -65,6 +69,7 @@ describe('Daily Missions production certification', () => {
       expect(helper).toContain(`'${table}'`);
     }
     expect(helper).toContain('reserved fixture residue remains after cleanup');
+    expect(helper).toContain('cleanupStaleTemporaryCustomizationAccounts');
   });
 
   it('keeps decorative card chrome out of every mission control hit target', () => {

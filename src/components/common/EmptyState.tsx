@@ -6,6 +6,7 @@
  */
 
 import { ReactNode } from 'react';
+import { formatPopupText } from '../../utils/popupStyle';
 import styles from './EmptyState.module.css';
 
 export type EmptyStateTone = 'empty' | 'error' | 'permission' | 'success';
@@ -48,14 +49,14 @@ export function EmptyState({
         <div className={styles.beacon} aria-hidden="true">
           <span className={styles.beaconCore}>{icon || 'SP'}</span>
         </div>
-        <span className={styles.eyebrow}>{eyebrow}</span>
-        <h3 className={styles.title}>{title}</h3>
-        {description && <p className={styles.description}>{description}</p>}
+        <span className={styles.eyebrow}>{formatPopupText(eyebrow)}</span>
+        <h3 className={styles.title}>{formatPopupText(title)}</h3>
+        {description && <p className={styles.description}>{formatPopupText(description)}</p>}
         {(action || secondaryAction) && (
           <div className={styles.actions}>
             {action && (
               <button type="button" className={styles.actionButton} onClick={action.onClick}>
-                {action.label}
+                {formatPopupText(action.label)}
               </button>
             )}
             {secondaryAction && (
@@ -64,7 +65,7 @@ export function EmptyState({
                 className={styles.secondaryButton}
                 onClick={secondaryAction.onClick}
               >
-                {secondaryAction.label}
+                {formatPopupText(secondaryAction.label)}
               </button>
             )}
           </div>
@@ -129,7 +130,7 @@ export function LoadingState({ message = 'Loading...' }: { message?: string }) {
       <div className={styles.loadingBeacon} aria-hidden="true">
         <span />
       </div>
-      <p className={styles.loadingText}>{message}</p>
+      <p className={styles.loadingText}>{formatPopupText(message)}</p>
     </div>
   );
 }

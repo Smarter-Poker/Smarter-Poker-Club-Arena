@@ -17,6 +17,7 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import { formatDateTime as formatDate } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
+import { formatPopupText } from '../utils/popupStyle';
 
 interface Transaction {
   id: string;
@@ -534,7 +535,9 @@ export default function TransactionHistoryPage() {
                     {icon.symbol}
                   </span>
                   <div className="tx-info">
-                    <span className="tx-desc">{tx.description || tx.type.replace('_', ' ')}</span>
+                    <span className="tx-desc">
+                      {formatPopupText(tx.description || tx.type.replace('_', ' '))}
+                    </span>
                     <span className="tx-meta">
                       {tx.club_name && <span className="tx-club">{tx.club_name}</span>}
                       {formatDate(tx.created_at)}

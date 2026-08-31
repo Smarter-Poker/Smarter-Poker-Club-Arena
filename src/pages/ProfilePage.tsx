@@ -35,6 +35,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { generateDefaultAvatar } from '../utils/avatarGenerator';
 import { reportError } from '../utils/errorReporter';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
+import { formatPopupText } from '../utils/popupStyle';
 
 // #5: Lazy-load Recharts (387KB) — only imported when History tab is opened
 const LazyProfitChart = lazyWithRetry(() => import('../components/profile/ProfitChart'));
@@ -1281,7 +1282,7 @@ export default function ProfilePage() {
                     .map((tx) => (
                       <div key={tx.id} className={styles.transactionRow}>
                         <div>
-                          <span>{tx.description || tx.type}</span>
+                          <span>{formatPopupText(tx.description || tx.type)}</span>
                           <small>{new Date(tx.created_at).toLocaleDateString()}</small>
                         </div>
                         <span

@@ -10,6 +10,7 @@ import {
 import { DAILY_MISSIONS_RESPONSE_TIMEOUT, DailyMissionsPage } from './support/DailyMissionsPage';
 import {
   cleanupTemporaryCustomizationAccount,
+  callServiceRpc,
   createTemporaryCustomizationAccount,
   readServiceRows,
   requireCustomizationCertificationEnvironment,
@@ -63,6 +64,22 @@ async function dashboardRevision(
   return Number(rows[0].revision);
 }
 
+async function playerWalletBalance(
+  environment: CustomizationCertificationEnvironment,
+  userId: string
+): Promise<number> {
+  const rows = await readServiceRows<{ balance: number }>(
+    environment,
+    'wallets',
+    new URLSearchParams({
+      select: 'balance',
+      user_id: `eq.${userId}`,
+      wallet_type: 'eq.PLAYER',
+    })
+  );
+  return Number(rows[0]?.balance || 0);
+}
+
 function currentPeriodKeys(now = new Date()) {
   const daily = now.toISOString().split('T')[0];
   const monday = new Date(now);
@@ -75,29 +92,33 @@ function currentPeriodKeys(now = new Date()) {
   };
 }
 
-async function completeEveryAssignedMission(account: TemporaryCustomizationAccount) {
-  const keys = currentPeriodKeys();
-  const { data, error } = await account.client.rpc('bump_challenge_progress', {
-    p_user_id: account.id,
-    p_amounts: {
-      hands_played: 1_000_000,
-      hands_won: 1_000_000,
-      showdowns: 1_000_000,
-      showdowns_won: 1_000_000,
-      hands_won_no_showdown: 1_000_000,
-      big_pots: 1_000_000,
-      strong_hands: 1_000_000,
-      chips_won: 1_000_000_000,
-      tournaments_played: 1_000_000,
-      friends_added: 1_000_000,
+async function completeEveryAssignedMission(
+  environment: CustomizationCertificationEnvironment,
+  account: TemporaryCustomizationAccount
+) {
+  const advanced = await callServiceRpc<Array<JsonObject>>(
+    environment,
+    'record_daily_challenge_event',
+    {
+      p_user_id: account.id,
+      p_event_key: `certification:${account.id}:${Date.now()}`,
+      p_amounts: {
+        hands_played: 2_500,
+        hands_won: 2_500,
+        showdowns: 2_500,
+        showdowns_won: 2_500,
+        hands_won_no_showdown: 2_500,
+        big_pots: 2_500,
+        strong_hands: 2_500,
+        chips_won: 1_000_000_000,
+        tournaments_played: 2_500,
+        friends_added: 2_500,
+      },
+      p_magnitudes: { big_pots: 1_000_000_000, strong_hands: 10 },
+      p_occurred_at: new Date().toISOString(),
     },
-    p_magnitudes: { big_pots: 1_000_000_000, strong_hands: 10 },
-    p_daily_key: keys.daily,
-    p_weekly_key: keys.weekly,
-    p_monthly_key: keys.monthly,
-  });
-  if (error) throw error;
-  const advanced = Array.isArray(data) ? data : [];
+    true
+  );
   expect(advanced.length).toBeGreaterThanOrEqual(10);
 }
 
@@ -286,7 +307,40 @@ test.describe('production Daily Missions certification', () => {
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
         });
         const revisionBefore = await dashboardRevision(environment, account!.id);
-        await completeEveryAssignedMission(account!);
+        const { error: forbidden } = await account!.client.rpc('bump_challenge_progress', {
+          p_user_id: account!.id,
+          p_amounts: { hands_played: 1_000_000 },
+          p_magnitudes: {},
+          p_daily_key: currentPeriodKeys().daily,
+          p_weekly_key: currentPeriodKeys().weekly,
+          p_monthly_key: currentPeriodKeys().monthly,
+        });
+        expect(forbidden, 'authenticated raw mission progress must be denied').toBeTruthy();
+        const { error: assignmentForbidden } = await account!.client.rpc('assign_user_challenges', {
+          p_assigned_date: currentPeriodKeys().daily,
+          p_challenge_ids: [],
+        });
+        expect(
+          assignmentForbidden,
+          'authenticated caller-selected mission assignment must be denied'
+        ).toBeTruthy();
+        const assigned = await serviceRows<{ id: string }>(
+          environment,
+          'user_daily_challenges',
+          account!.id,
+          'id'
+        );
+        const { error: incrementForbidden } = await account!.client.rpc(
+          'increment_challenge_progress',
+          {
+            p_user_id: account!.id,
+            p_challenge_row_id: assigned[0].id,
+            p_amount: 1_000_000,
+            p_requirement: 1,
+          }
+        );
+        expect(incrementForbidden, 'authenticated row progress must be denied').toBeTruthy();
+        await completeEveryAssignedMission(environment, account!);
         await expect
           .poll(() => dashboardRevision(environment, account!.id), {
             timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
@@ -298,6 +352,28 @@ test.describe('production Daily Missions certification', () => {
       });
 
       await test.step('claim-all settles chips and diamonds once and replays its receipt', async () => {
+        const payable = await serviceRows<{
+          chip_reward_snapshot: number;
+          diamond_reward_snapshot: number;
+          completed: boolean;
+          claimed: boolean;
+        }>(
+          environment,
+          'user_daily_challenges',
+          account!.id,
+          'chip_reward_snapshot,diamond_reward_snapshot,completed,claimed'
+        );
+        const due = payable.filter((row) => row.completed && !row.claimed);
+        const expectedChips = due.reduce(
+          (total, row) => total + Number(row.chip_reward_snapshot || 0),
+          0
+        );
+        const expectedDiamonds = due.reduce(
+          (total, row) => total + Number(row.diamond_reward_snapshot || 0),
+          0
+        );
+        const walletBefore = await playerWalletBalance(environment, account!.id);
+        const diamondsBefore = await diamondBalance(environment, account!.id);
         const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
         await missions.placeControlInSafeViewport(claim);
         let claimCalls = 0;
@@ -325,6 +401,12 @@ test.describe('production Daily Missions certification', () => {
           reward.getByText('Deposited Securely To Your Club Arena Balances')
         ).toBeVisible();
         await reward.getByRole('button', { name: 'Continue' }).click();
+        await expect
+          .poll(() => playerWalletBalance(environment, account!.id))
+          .toBe(walletBefore + expectedChips);
+        await expect
+          .poll(() => diamondBalance(environment, account!.id))
+          .toBe(diamondsBefore + expectedDiamonds);
         page.off('request', onRequest);
         expect(claimCalls).toBe(1);
 

@@ -1749,7 +1749,7 @@ export default function ClubDataPage() {
           </button>
           <div className={styles.rangeChip}>
             <span>{startDate}</span>
-            <span className={styles.rangeDivider}>&mdash;</span>
+            <span className={styles.rangeDivider}>-</span>
             <span>{endDate}</span>
             <span className={styles.rangeTz}>UTC</span>
           </div>

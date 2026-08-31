@@ -103,16 +103,29 @@ const ACRONYMS = new Set([
 
 const fix = process.argv.includes('--fix');
 
-/**
- * Native display/accessibility attributes plus the explicit presentation props
- * used by Club Arena components. Keeping this list semantic avoids touching
- * route, query, class, and data-key props while still covering copy that a
- * component paints on behalf of its caller.
- */
-const UI_ATTRIBUTES = new Set([
+/** Copy modules whose string values are player-facing by definition. */
+const STRING_TABLES = new Map([
+  ['src/i18n/index.ts', null],
+  ['src/components/support/FAQPanel.tsx', new Set(['category', 'question', 'answer'])],
+  ['src/pages/HelpPage.tsx', new Set(['category', 'question', 'answer'])],
+  ['src/pages/AchievementsPage.tsx', new Set(['name', 'description', 'requirement'])],
+  ['src/services/AchievementService.ts', new Set(['name', 'description'])],
+  ['src/components/moderation/ReportPlayerModal.tsx', new Set(['label', 'description'])],
+  ['src/services/PlayerStyleClassifier.ts', new Set(['label', 'tooltip'])],
+  ['src/services/ArenaTrainingController.ts', new Set(['name', 'description'])],
+  ['src/services/DailyChallengeService.ts', new Set(['name', 'description'])],
+  ['src/components/security/PasswordStrength.tsx', new Set(['label'])],
+  ['src/components/gamification/FinancialAchievementBadge.tsx', new Set(['title', 'description'])],
+  ['src/components/admin/AdminCommandPalette.tsx', new Set(['label', 'description'])],
+  ['src/pages/workspaces/ArenaWorkspacePages.tsx', new Set(['label', 'description'])],
+]);
+
+/** Native and component props painted visually or announced by assistive technology. */
+const TEXT_ATTRS = new Set([
   'alt',
   'aria-description',
   'aria-label',
+  'aria-valuetext',
   'caption',
   'description',
   'emptyLabel',
@@ -128,6 +141,21 @@ const UI_ATTRIBUTES = new Set([
   'tooltip',
 ]);
 
+/** Root/public HTML documents that can be opened as pages. */
+const HTML_FILES = [
+  'index.html',
+  'public/offline.html',
+];
+
+/** Avoid treating routes, URLs, identifiers, examples, or numeric values as prose. */
+function notProse(value) {
+  const v = value.trim();
+  if (!/[A-Za-z]/.test(v)) return true;
+  if (/^(e\.g\.|i\.e\.|etc\.|vs\.)/i.test(v)) return true;
+  if (/:\/\//.test(v) || v.startsWith('/')) return true;
+  if (!/\s/.test(v) && /[_.]/.test(v)) return true;
+  return false;
+}
 function walk(dir, acc = []) {
   for (const entry of readdirSync(dir)) {
     if (SKIP_DIRS.has(entry)) continue;
@@ -360,30 +388,175 @@ function jsxTextNodes(file, source) {
   return out;
 }
 
-/** Static copy that ships before React: metadata and the fatal boot fallback. */
-function indexHtmlTextNodes(source) {
-  const scannable = source.replace(/<!--[\s\S]*?-->/g, (m) => m.replace(/[^\n]/g, ' '));
+/**
+ * Copy-bearing JSX attributes. Template-expression holes remain untouched;
+ * only their literal spans are inspected.
+ */
+function textAttributeNodes(file, source) {
+  const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const out = [];
-  const addGroup = (match, group) => {
-    if (!group || !/[A-Za-z]/.test(group)) return;
-    const withinMatch = match[0].indexOf(group);
-    if (withinMatch < 0) return;
+
+  const pushTemplate = (tpl, attr) => {
+    const spans = ts.isNoSubstitutionTemplateLiteral(tpl)
+      ? [{ node: tpl, continues: false }]
+      : [
+          { node: tpl.head, continues: false },
+          ...tpl.templateSpans.map((span) => ({ node: span.literal, continues: true })),
+        ];
+
+    for (const { node, continues } of spans) {
+      const text = node.text;
+      if (!/[A-Za-z]/.test(text) || notProse(text)) continue;
+      let cased = titleCaseText(text);
+      if (continues && /^[A-Za-z]/.test(text)) {
+        const match = text.match(/^[A-Za-z][A-Za-z0-9'’]*/);
+        const suffix = match ? match[0] : '';
+        cased = suffix + titleCaseText(text.slice(suffix.length));
+      }
+      if (cased === text) continue;
+      const start = node.getStart(sf) + 1;
+      const tail = ts.isTemplateTail(node) || ts.isNoSubstitutionTemplateLiteral(node);
+      const end = node.getEnd() - (tail ? 1 : 2);
+      out.push({ start, end, text, cased, attr });
+    }
+  };
+
+  const pushString = (literal, attr) => {
+    if (!/[A-Za-z]/.test(literal.text) || notProse(literal.text)) return;
     out.push({
-      start: match.index + withinMatch,
-      end: match.index + withinMatch + group.length,
-      text: group,
-      suffix: false,
-      prefix: false,
+      start: literal.getStart(sf) + 1,
+      end: literal.getEnd() - 1,
+      text: literal.text,
+      cased: titleCaseText(literal.text),
+      attr,
     });
   };
 
-  const metaCopy =
-    /<meta\b[^>]*(?:name|property)="(?:description|og:title|og:description|twitter:title|twitter:description|apple-mobile-web-app-title)"[^>]*\bcontent="([^"]*)"[^>]*>/gi;
-  for (const match of scannable.matchAll(metaCopy)) addGroup(match, match[1]);
+  // Only value branches are copy. Never traverse a condition: its string
+  // literals are data tokens such as activeTab === 'add', not painted text.
+  const pushExpression = (expression, attr) => {
+    if (ts.isStringLiteral(expression)) pushString(expression, attr);
+    else if (
+      ts.isTemplateExpression(expression) ||
+      ts.isNoSubstitutionTemplateLiteral(expression)
+    ) pushTemplate(expression, attr);
+    else if (ts.isConditionalExpression(expression)) {
+      pushExpression(expression.whenTrue, attr);
+      pushExpression(expression.whenFalse, attr);
+    } else if (ts.isParenthesizedExpression(expression)) {
+      pushExpression(expression.expression, attr);
+    }
+  };
 
-  const staticElementCopy = /<(title|h1|p|button)\b[^>]*>([^<]*)<\/\1>/gi;
-  for (const match of scannable.matchAll(staticElementCopy)) addGroup(match, match[2]);
+  const visit = (node) => {
+    if (ts.isJsxAttribute(node) && node.initializer) {
+      const attr = node.name.getText(sf);
+      if (TEXT_ATTRS.has(attr)) {
+        const init = node.initializer;
+        if (ts.isStringLiteral(init) && !notProse(init.text)) {
+          pushString(init, attr);
+        } else if (ts.isJsxExpression(init) && init.expression) {
+          pushExpression(init.expression, attr);
+        }
+      }
+    }
+    node.forEachChild(visit);
+  };
+  visit(sf);
+  return out;
+}
 
+/** Title Case copy while preserving i18n interpolation identifiers. */
+function titleCaseTemplate(value) {
+  const slots = [];
+  const masked = value.replace(/\{\{[^}]+\}\}/g, (token) => {
+    slots.push(token);
+    return `\u0000${slots.length - 1}\u0000`;
+  });
+  return titleCaseText(masked).replace(/\u0000(\d+)\u0000/g, (_, index) => slots[Number(index)]);
+}
+
+/** String-literal property values from an explicitly player-facing copy table. */
+function stringTableNodes(file, source, propertyNames) {
+  const sf = ts.createSourceFile(
+    file,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    file.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+  );
+  const out = [];
+  const visit = (node) => {
+    if (
+      ts.isPropertyAssignment(node) &&
+      (!propertyNames || propertyNames.has(node.name.getText(sf).replace(/^['"]|['"]$/g, ''))) &&
+      ts.isStringLiteral(node.initializer) &&
+      /[A-Za-z]/.test(node.initializer.text) &&
+      !notProse(node.initializer.text)
+    ) {
+      const literal = node.initializer;
+      out.push({
+        start: literal.getStart(sf) + 1,
+        end: literal.getEnd() - 1,
+        text: literal.text,
+      });
+    }
+    node.forEachChild(visit);
+  };
+  visit(sf);
+  return out;
+}
+
+/**
+ * User-facing text and copy attributes from standalone HTML pages. Script,
+ * style, and comments are blanked before matching so code is never rewritten.
+ */
+function htmlTextNodes(source) {
+  let visible = source
+    .replace(/<!--[\s\S]*?-->/g, (match) => match.replace(/[^\n]/g, ' '))
+    .replace(/<script\b[\s\S]*?<\/script>/gi, (match) => match.replace(/[^\n]/g, ' '))
+    .replace(/<style\b[\s\S]*?<\/style>/gi, (match) => match.replace(/[^\n]/g, ' '));
+  const out = [];
+
+  const push = (start, end, text, kind) => {
+    if (notProse(text)) return;
+    const cased = titleCaseText(text);
+    if (cased !== text) out.push({ start, end, text, cased, kind });
+  };
+
+  const tagPattern = /<[^>]+>/g;
+  let cursor = 0;
+  for (const match of visible.matchAll(tagPattern)) {
+    if (match.index > cursor) {
+      const text = visible.slice(cursor, match.index);
+      if (/[A-Za-z]/.test(text)) push(cursor, match.index, text, 'html-text');
+    }
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < visible.length) {
+    const text = visible.slice(cursor);
+    if (/[A-Za-z]/.test(text)) push(cursor, visible.length, text, 'html-text');
+  }
+
+  const attrPattern =
+    /\b(placeholder|aria-label|aria-valuetext|alt|title)\s*=\s*(["'])([\s\S]*?)\2/gi;
+  for (const match of visible.matchAll(attrPattern)) {
+    const text = match[3];
+    const valueOffset = match[0].indexOf(text);
+    push(match.index + valueOffset, match.index + valueOffset + text.length, text, match[1]);
+  }
+
+  const metaPattern = /<meta\b[^>]*>/gi;
+  for (const meta of visible.matchAll(metaPattern)) {
+    const target = meta[0].match(
+      /\b(?:name|property)\s*=\s*(["'])(description|og:title|og:description|twitter:title|twitter:description|apple-mobile-web-app-title)\1/i
+    );
+    const content = meta[0].match(/\bcontent\s*=\s*(["'])([\s\S]*?)\1/i);
+    if (!target || !content) continue;
+    const value = content[2];
+    const valueOffset = meta[0].indexOf(value, content.index);
+    push(meta.index + valueOffset, meta.index + valueOffset + value.length, value, 'meta-content');
+  }
   return out;
 }
 
@@ -391,18 +564,79 @@ const offenders = [];
 let fixedNodes = 0;
 let fixedFiles = 0;
 
+for (const [rel, propertyNames] of STRING_TABLES) {
+  const file = join(ROOT, rel);
+  let original;
+  try {
+    original = readFileSync(file, 'utf8');
+  } catch {
+    offenders.push(`${rel}: configured copy table is missing or unreadable`);
+    continue;
+  }
+  const changes = stringTableNodes(file, original, propertyNames)
+    .map((node) => ({ ...node, cased: titleCaseTemplate(node.text) }))
+    .filter((node) => node.cased !== node.text)
+    .sort((a, b) => a.start - b.start);
+  if (changes.length === 0) continue;
+  if (fix) {
+    let out = original;
+    for (let i = changes.length - 1; i >= 0; i--) {
+      const change = changes[i];
+      out = out.slice(0, change.start) + change.cased + out.slice(change.end);
+    }
+    writeFileSync(file, out, 'utf8');
+    fixedNodes += changes.length;
+    fixedFiles++;
+  } else {
+    for (const change of changes) {
+      const line = original.slice(0, change.start).split('\n').length;
+      offenders.push(`${rel}:${line}: ${change.text.trim().slice(0, 90)}`);
+    }
+  }
+}
+
+for (const rel of HTML_FILES) {
+  const file = join(ROOT, rel);
+  let original;
+  try {
+    original = readFileSync(file, 'utf8');
+  } catch {
+    offenders.push(`${rel}: configured HTML page is missing or unreadable`);
+    continue;
+  }
+  const changes = htmlTextNodes(original).sort((a, b) => a.start - b.start);
+  if (changes.length === 0) continue;
+  if (fix) {
+    let out = original;
+    for (let i = changes.length - 1; i >= 0; i--) {
+      const change = changes[i];
+      out = out.slice(0, change.start) + change.cased + out.slice(change.end);
+    }
+    writeFileSync(file, out, 'utf8');
+    fixedNodes += changes.length;
+    fixedFiles++;
+  } else {
+    for (const change of changes) {
+      const line = original.slice(0, change.start).split('\n').length;
+      offenders.push(`${rel}:${line}: ${change.text.trim().slice(0, 90)}`);
+    }
+  }
+}
+
 for (const file of walk(SRC)) {
   const original = readFileSync(file, 'utf8');
   if (!original.includes('<')) continue;
 
   let nodes;
+  let attrs;
   try {
     nodes = jsxTextNodes(file, original);
+    attrs = textAttributeNodes(file, original);
   } catch {
     continue; // a file the parser cannot read is not this gate's problem
   }
 
-  const changes = [];
+  const changes = attrs.filter((attr) => attr.cased !== attr.text);
   for (const n of nodes) {
     let cased;
     if (n.suffix) {
@@ -422,6 +656,7 @@ for (const file of walk(SRC)) {
     if (cased !== n.text) changes.push({ ...n, cased });
   }
   if (changes.length === 0) continue;
+  changes.sort((a, b) => a.start - b.start);
 
   if (fix) {
     let out = original;
@@ -437,30 +672,6 @@ for (const file of walk(SRC)) {
     for (const c of changes) {
       const line = original.slice(0, c.start).split('\n').length;
       offenders.push(`${file.replace(ROOT, '')}:${line}: ${c.text.trim().slice(0, 90)}`);
-    }
-  }
-}
-
-const indexFile = join(ROOT, 'index.html');
-const indexOriginal = readFileSync(indexFile, 'utf8');
-const indexChanges = indexHtmlTextNodes(indexOriginal)
-  .map((node) => ({ ...node, cased: titleCaseText(node.text) }))
-  .filter((node) => node.cased !== node.text);
-
-if (indexChanges.length > 0) {
-  if (fix) {
-    let out = indexOriginal;
-    for (let i = indexChanges.length - 1; i >= 0; i--) {
-      const change = indexChanges[i];
-      out = out.slice(0, change.start) + change.cased + out.slice(change.end);
-    }
-    writeFileSync(indexFile, out, 'utf8');
-    fixedNodes += indexChanges.length;
-    fixedFiles++;
-  } else {
-    for (const change of indexChanges) {
-      const line = indexOriginal.slice(0, change.start).split('\n').length;
-      offenders.push(`index.html:${line}: ${change.text.trim().slice(0, 90)}`);
     }
   }
 }

@@ -67,6 +67,13 @@ describe('Daily Mission feedback, consent, and health wiring', () => {
     ),
     'utf8'
   );
+  const authority = readFileSync(
+    path.resolve(
+      __dirname,
+      '../../supabase/migrations/20260901030000_daily_missions_server_authority.sql'
+    ),
+    'utf8'
+  );
 
   it('keeps push permission on the original click path and stores explicit consent', () => {
     expect(page).toContain('const pushResultPromise = enablePush();');
@@ -126,5 +133,11 @@ describe('Daily Mission feedback, consent, and health wiring', () => {
     expect(migration).toContain('v_daily_mission_health_daily');
     expect(migration).toContain('fn_prune_daily_mission_operations');
     expect(migration).toMatch(/percentile_disc\(0\.95\)/);
+    expect(authority).toContain('DROP POLICY IF EXISTS daily_mission_operations_insert_own');
+    expect(authority).toContain(
+      'REVOKE INSERT ON public.daily_mission_operations FROM authenticated'
+    );
+    expect(authority).toContain('CREATE OR REPLACE FUNCTION public.record_daily_mission_operation');
+    expect(authority).toContain('>= 60 THEN');
   });
 });

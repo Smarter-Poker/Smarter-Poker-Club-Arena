@@ -325,6 +325,9 @@
       "user_id",
       "stat_date"
     ],
+    "ca_ddl_events": [
+      "command_tag"
+    ],
     "ca_drift_incidents": [
       "source",
       "dedupe_key"
@@ -335,6 +338,10 @@
     "ca_frozen_pool_baseline": [
       "pool",
       "frozen_total"
+    ],
+    "ca_guard_inventory": [
+      "kind",
+      "object_a"
     ],
     "ca_hand_facts": [
       "hand_id",
@@ -412,6 +419,9 @@
       "db_role",
       "reason",
       "old_row"
+    ],
+    "ca_money_rpc_registry": [
+      "proname"
     ],
     "ca_rake_schedule": [
       "sb",
@@ -1227,10 +1237,28 @@
     "daily_challenge_dashboard_revisions": [
       "user_id"
     ],
+    "daily_challenge_event_outbox": [
+      "user_id",
+      "event_key",
+      "amounts",
+      "occurred_at"
+    ],
+    "daily_challenge_milestone_claims": [
+      "user_id",
+      "streak_started_on",
+      "milestone_days",
+      "reward_chips"
+    ],
     "daily_challenge_milestones": [
       "days",
       "reward_chips",
       "label"
+    ],
+    "daily_challenge_progress_events": [
+      "user_id",
+      "event_key",
+      "amounts",
+      "occurred_at"
     ],
     "daily_mission_operations": [
       "user_id",
@@ -2135,6 +2163,11 @@
       "player_id",
       "name",
       "archetype"
+    ],
+    "pgrst_reload_watchdog_log": [
+      "breach_count",
+      "warn_count",
+      "result"
     ],
     "phase22_remediation_playbook": [
       "priority",

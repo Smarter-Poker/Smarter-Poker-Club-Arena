@@ -1388,7 +1388,7 @@ export default function LobbyTable({
          actually takes focus and handles the keys, which is this one; the
          table below keeps its own grid semantics for the rows. */
         role="grid"
-        aria-label={`Game List, ${sorted.length} game${sorted.length === 1 ? '' : 's'}`}
+        aria-label={`Game List, ${sorted.length} Game${sorted.length === 1 ? '' : 's'}`}
         tabIndex={0}
         onKeyDown={handleKeyDown}
         /* Without this the arrow keys moved a selection no screen reader was

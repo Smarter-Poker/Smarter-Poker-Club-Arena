@@ -131,8 +131,8 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
 
       <div className="bbj-admin__bar">
         <div className="bbj-admin__bar-label">
-          Pool Split &mdash; Main ${money(data.main_balance, 0)} / Backup $
-          {money(data.backup_balance, 0)} / Promo ${money(data.promo_balance, 0)}
+          Pool Split - Main ${money(data.main_balance, 0)} / Backup ${money(data.backup_balance, 0)}{' '}
+          / Promo ${money(data.promo_balance, 0)}
         </div>
         <div className="bbj-admin__bar-track">
           {(() => {

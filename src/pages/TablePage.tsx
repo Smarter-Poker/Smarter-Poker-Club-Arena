@@ -6035,7 +6035,7 @@ export default function TablePage({
               'The Connection Dropped Before The Table Answered. Your Chips May Have Been Added. Check Your Stack Before Trying Again.'
             );
           } else {
-            toast.error(res.error || 'Unable to add chips \u2014 your wallet was not charged.');
+            toast.error(res.error || 'Unable To Add Chips - Your Wallet Was Not Charged.');
           }
         }
         return false;

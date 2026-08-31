@@ -138,8 +138,13 @@
 }
 
 .profileBtn {
-  left: 66.5%;
-  width: 7.5%;
+  /* Exact source-pixel bounds of profile.png within the approved 1648×168
+     header. Keeping the live portrait in this coordinate space makes its
+     centre identical to the chrome ring's centre at every viewport scale. */
+  top: 19.642857%;
+  left: 67.415049%;
+  width: 5.946602%;
+  height: 60.714286%;
   position: absolute !important;
   overflow: hidden;
   contain: layout paint;
@@ -215,6 +220,48 @@
 .vipBtn {
   left: 79.9%;
   width: 6.5%;
+}
+
+/* Non-members keep the untouched approved raster. Active members receive a
+   restrained blue/gold energy halo around the same VIP card artwork. */
+.vipActive::before {
+  position: absolute;
+  z-index: 0;
+  inset: 15% 8%;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 228, 124, 0.72) 0%,
+    rgba(0, 153, 255, 0.48) 42%,
+    rgba(0, 102, 255, 0) 76%
+  );
+  content: '';
+  filter: blur(7px);
+  mix-blend-mode: screen;
+  opacity: 0.86;
+  pointer-events: none;
+  animation: vipHeaderGlow 2.4s ease-in-out infinite;
+}
+
+.vipActive > img {
+  position: relative;
+  z-index: 1;
+  /* The crop includes an opaque black rectangle, so revealing it would cover
+     the exact full-header pixels. The halo above is the only active overlay. */
+  opacity: 0;
+}
+
+@keyframes vipHeaderGlow {
+  0%,
+  100% {
+    opacity: 0.58;
+    transform: scale(0.94);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
 }
 
 .messengerBtn {
@@ -325,5 +372,9 @@
 @media (prefers-reduced-motion: reduce) {
   .artButton {
     scroll-behavior: auto;
+  }
+
+  .vipActive::before {
+    animation: none;
   }
 }

@@ -44,6 +44,7 @@ export default function GlobalHeader() {
 
   const {
     avatarUrl,
+    isVipActive,
     notificationCount,
     unreadMessages,
     loadOnce,
@@ -336,10 +337,11 @@ export default function GlobalHeader() {
             </button>
 
             <button
-              className={`${styles.artButton} ${styles.vipBtn}`}
+              className={`${styles.artButton} ${styles.vipBtn} ${isVipActive ? styles.vipActive : ''}`}
               onClick={() => navigateToHub('/hub/vip-membership')}
-              aria-label="VIP Member"
-              title="VIP Member"
+              aria-label={isVipActive ? 'VIP Membership Active' : 'VIP Membership'}
+              title={isVipActive ? 'VIP Membership Active' : 'VIP Membership'}
+              data-vip-active={isVipActive ? 'true' : 'false'}
             >
               <img src={`${APPROVED_HEADER_ASSET}vip.png`} alt="VIP Member" />
             </button>

@@ -96,3 +96,44 @@ down twice today: **a lookup keyed on something that can silently miss must be
 pinned to its key.** The rotator's `club_id` was caught that morning precisely
 because it was pinned. This was the same bug in the same shape, one file away,
 and it was not.
+
+---
+
+## Resolution — verified in production
+
+|                    |                                                           |
+| ------------------ | --------------------------------------------------------- |
+| Floor emptied      | 11:20 UTC                                                 |
+| Root cause found   | 11:50                                                     |
+| Fix merged (#2151) | 11:57                                                     |
+| First seat back    | **12:15**                                                 |
+| Steady state       | 12:19 — **30 seats across 21 tables**, cash hands dealing |
+| Chips lost         | **zero** (`fn_unaccounted_seat_exits()` = 0 throughout)   |
+
+31 joins and 1 leave in the five minutes after recovery: the floor is filling
+normally, not thrashing between seat and eviction.
+
+## Why recovery took 25 minutes after the fix merged
+
+Worth knowing before the next incident, because none of it is a bug:
+
+- **The drain gate held the deploy for about six minutes.** It waits for
+  `handsInFlightTotal` to reach zero, and a busy tournament floor never goes
+  quiet for long. That gate is correct — it exists so a restart cannot void a
+  live hand — but it means **an emergency fix is not a fast fix**, and the
+  incident response has to be planned around that rather than surprised by it.
+- **Deploy runs cancel each other.** Three consecutive deploys were cancelled by
+  newer merges landing behind them. On a busy merge day a fix can sit behind
+  other people's traffic.
+- **`MIN_RESTART_SPACING_SEC=1200` coalesces restarts**, which is what made two
+  separate PRs go live in one restart and sent the first revert after the wrong
+  suspect.
+
+## One behaviour change to be aware of
+
+261 of the 584 horses hold no membership in the club that owns the cash tables.
+Under the old code the gate refused them; they now **fail open** and may be
+seated. That is the correct outcome — `atomic_table_buyin` still resolves the
+wallet through `fn_seat_club_for_user` and refuses anyone who genuinely cannot
+pay — but it is a real change in who is eligible, and the new `rollUnknown`
+warning is what makes it visible rather than silent.

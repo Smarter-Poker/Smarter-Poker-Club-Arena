@@ -542,15 +542,17 @@ export default function DailyChallengesPage() {
       setClaimingIds((prev) => new Set(prev).add(challenge.id));
 
       try {
-        const paid = await dailyChallengeService.claimChallenge(
-          userId,
-          challenge.id,
-          challenge.challenge.chipReward
-        );
-        if (paid.alreadyClaimed) {
+        const paid = await dailyChallengeService.claimChallenges(userId, [challenge.id]);
+        const newlyClaimed = paid.claimedIds.includes(challenge.id);
+        const alreadyClaimed = paid.alreadyClaimedIds.includes(challenge.id);
+
+        setDiamondBalance(paid.diamondBalance);
+        setRewardVault(paid.vault);
+        setStats((prev) => (prev ? { ...prev, ...paid.stats } : prev));
+
+        if (alreadyClaimed && !newlyClaimed) {
           toast.info('You already claimed this one');
-        } else if (paid.claimed) {
-          setDiamondBalance(paid.diamondBalance);
+        } else if (newlyClaimed) {
           setReward({
             name: challenge.challenge.name,
             chips: paid.chips,
@@ -558,39 +560,37 @@ export default function DailyChallengesPage() {
             diamondBalance: paid.diamondBalance,
           });
         } else {
-          toast.error('That reward could not be claimed. Refreshing...');
-          loadChallenges(userId, false);
-          return;
+          throw new Error('The claim receipt did not settle this reward');
         }
 
         setChallenges((prev) =>
           prev.map((c) => (c.id === challenge.id ? { ...c, claimed: true } : c))
         );
-        triggerHaptic('success');
-        setCelebratingIds((prev) => new Set(prev).add(challenge.id));
+        if (newlyClaimed) {
+          triggerHaptic('success');
+          setCelebratingIds((prev) => new Set(prev).add(challenge.id));
 
-        setTimeout(() => {
-          if (isMountedRef.current) {
-            setCelebratingIds((prev) => {
-              const next = new Set(prev);
-              next.delete(challenge.id);
-              return next;
-            });
-          }
-        }, 3000);
+          setTimeout(() => {
+            if (isMountedRef.current) {
+              setCelebratingIds((prev) => {
+                const next = new Set(prev);
+                next.delete(challenge.id);
+                return next;
+              });
+            }
+          }, 3000);
 
-        masterBus.emit('MISSION_CLAIMED', {
-          missionId: challenge.id,
-          tier: challenge.tier,
-          rewardType: paid.diamonds > 0 ? 'diamonds' : 'chips',
-          rewardAmount: paid.diamonds > 0 ? paid.diamonds : paid.chips,
-        });
-
-        // Refresh stats silently
-        if (isMountedRef.current) loadChallenges(userId, false);
+          masterBus.emit('MISSION_CLAIMED', {
+            missionId: challenge.id,
+            tier: challenge.tier,
+            rewardType: paid.diamonds > 0 ? 'diamonds' : 'chips',
+            rewardAmount: paid.diamonds > 0 ? paid.diamonds : paid.chips,
+          });
+        }
       } catch (err: any) {
         reportError(err, 'DailyChallengesPage.claim_failed');
         if (isMountedRef.current) toast.error(err?.message || 'Failed to claim reward');
+        loadChallenges(userId, false);
       } finally {
         claimGuardRef.current.delete(challenge.id);
         if (isMountedRef.current) {
@@ -602,8 +602,7 @@ export default function DailyChallengesPage() {
         }
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [userId, loadChallenges, toast]
+    [userId, loadChallenges, toast, isMountedRef]
   );
 
   // ── Claim All ──
@@ -676,11 +675,18 @@ export default function DailyChallengesPage() {
           return;
         }
         if (result.diamondBalance != null) setDiamondBalance(result.diamondBalance);
+        if (!result.challenge) {
+          toast.error('The replacement mission receipt was incomplete. Refreshing...');
+          loadChallenges(userId, false);
+          return;
+        }
+        setChallenges((prev) =>
+          prev.map((item) => (item.id === challenge.id ? result.challenge! : item))
+        );
         setConfirmingRerollId(null);
         toast.success(
           result.alreadyRerolled ? 'Challenge already replaced.' : 'New mission online.'
         );
-        await loadChallenges(userId, false);
       } finally {
         rerollGuardRef.current.delete(challenge.id);
         if (isMountedRef.current) {
@@ -704,67 +710,64 @@ export default function DailyChallengesPage() {
     if (ready.length === 0) return;
 
     setClaimingAll(true);
-    let chips = 0;
-    let diamonds = 0;
-    let balance = 0;
-    let failures = 0;
-    const claimedIds: string[] = [];
+    const readyIds = ready.map((challenge) => challenge.id);
+    readyIds.forEach((id) => claimGuardRef.current.add(id));
+    setClaimingIds((prev) => new Set([...prev, ...readyIds]));
 
-    for (const c of ready) {
-      if (claimGuardRef.current.has(c.id)) continue;
-      claimGuardRef.current.add(c.id);
-      try {
-        const paid = await dailyChallengeService.claimChallenge(
-          userId,
-          c.id,
-          c.challenge.chipReward
-        );
-        if (paid.claimed) {
-          chips += paid.chips;
-          diamonds += paid.diamonds;
-          balance = paid.diamondBalance;
-          claimedIds.push(c.id);
-        } else if (paid.alreadyClaimed) {
-          claimedIds.push(c.id);
-        } else {
-          failures++;
+    try {
+      const paid = await dailyChallengeService.claimChallenges(userId, readyIds);
+      if (!isMountedRef.current) return;
+
+      const settledIds = new Set([...paid.claimedIds, ...paid.alreadyClaimedIds]);
+      setChallenges((prev) =>
+        prev.map((challenge) =>
+          settledIds.has(challenge.id) ? { ...challenge, claimed: true } : challenge
+        )
+      );
+      setRewardVault(paid.vault);
+      setStats((prev) => (prev ? { ...prev, ...paid.stats } : prev));
+      setDiamondBalance(paid.diamondBalance);
+
+      if (paid.claimedIds.length > 0) {
+        const newlyClaimedIds = new Set(paid.claimedIds);
+        triggerHaptic('success');
+        setReward({
+          name: `${paid.claimedIds.length} challenge${paid.claimedIds.length === 1 ? '' : 's'}`,
+          chips: paid.chips,
+          diamonds: paid.diamonds,
+          diamondBalance: paid.diamondBalance,
+        });
+        for (const challenge of ready) {
+          if (!newlyClaimedIds.has(challenge.id)) continue;
+          masterBus.emit('MISSION_CLAIMED', {
+            missionId: challenge.id,
+            tier: challenge.tier,
+            rewardType: challenge.challenge.diamondReward > 0 ? 'diamonds' : 'chips',
+            rewardAmount:
+              challenge.challenge.diamondReward > 0
+                ? challenge.challenge.diamondReward
+                : challenge.challenge.chipReward,
+          });
         }
-      } catch (err) {
-        failures++;
-        reportError(err, 'DailyChallengesPage.claimAll_failed');
-      } finally {
-        claimGuardRef.current.delete(c.id);
+      } else {
+        toast.info('Those rewards were already claimed.');
+      }
+    } catch (err) {
+      reportError(err, 'DailyChallengesPage.claimAll_failed');
+      toast.error('Rewards could not be claimed. Nothing was deducted. Refreshing...');
+      loadChallenges(userId, false);
+    } finally {
+      readyIds.forEach((id) => claimGuardRef.current.delete(id));
+      if (isMountedRef.current) {
+        setClaimingAll(false);
+        setClaimingIds((prev) => {
+          const next = new Set(prev);
+          readyIds.forEach((id) => next.delete(id));
+          return next;
+        });
       }
     }
-
-    if (!isMountedRef.current) return;
-    setClaimingAll(false);
-    if (claimedIds.length > 0) {
-      const done = new Set(claimedIds);
-      setChallenges((prev) => prev.map((c) => (done.has(c.id) ? { ...c, claimed: true } : c)));
-      triggerHaptic('success');
-    }
-    if (chips > 0 || diamonds > 0) {
-      setDiamondBalance(balance);
-      setReward({
-        name: `${claimedIds.length} challenge${claimedIds.length === 1 ? '' : 's'}`,
-        chips,
-        diamonds,
-        diamondBalance: balance,
-      });
-    }
-    // Report partial failure honestly rather than letting a silent skip look
-    // like a reward that was never owed.
-    if (failures > 0) {
-      toast.error(
-        `${failures} reward${failures === 1 ? '' : 's'} could not be claimed. Refreshing...`
-      );
-      loadChallenges(userId, false);
-    } else if (claimedIds.length > 0) {
-      loadChallenges(userId, false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, rewardVault.items, claimingAll, toast, loadChallenges]);
+  }, [userId, rewardVault.items, claimingAll, toast, loadChallenges, isMountedRef]);
 
   // ── Derived ──
   const tierCounts = useMemo(() => {

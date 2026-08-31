@@ -96,6 +96,76 @@ describe('daily challenge rerolls', () => {
   });
 });
 
+describe('daily challenge batch claims', () => {
+  it('keeps one request id and maps the exact next vault page receipt', async () => {
+    rpc.mockResolvedValue({
+      data: {
+        success: true,
+        replayed: false,
+        claimedIds: [ROW],
+        alreadyClaimedIds: [],
+        chips: 750,
+        diamonds: 10,
+        diamondBalance: 500,
+        stats: {
+          totalClaimed: 4,
+          totalChipsEarned: 2750,
+          totalDiamondsEarned: 35,
+        },
+        vault: {
+          count: 1,
+          chips: 1000,
+          diamonds: 15,
+          pageSize: 100,
+          hasMore: false,
+          items: [
+            {
+              id: '33333333-3333-4333-8333-333333333333',
+              challenge_id: 'straight_1',
+              assigned_date: '2026-08-31',
+              progress: 1,
+              completed: true,
+              claimed: false,
+              name: 'Straight Away',
+              description: 'Win A Hand With A Straight Or Better Today',
+              challenge_type: 'straight_or_better',
+              requirement: 1,
+              chip_reward: 1000,
+              diamond_reward: 15,
+              tier: 'daily',
+            },
+          ],
+        },
+      },
+      error: null,
+    });
+
+    const receipt = await dailyChallengeService.claimChallenges(USER, [ROW, ROW]);
+
+    expect(rpc).toHaveBeenCalledWith('claim_daily_challenges', {
+      p_user_id: USER,
+      p_challenge_row_ids: [ROW],
+      p_request_id: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+    });
+    expect(receipt).toMatchObject({
+      claimedIds: [ROW],
+      chips: 750,
+      diamonds: 10,
+      diamondBalance: 500,
+      vault: { count: 1, items: [{ challengeId: 'straight_1', tier: 'daily' }] },
+    });
+    expect(emit).toHaveBeenCalledWith('BALANCE_UPDATED', {
+      source: 'daily_challenge_claim',
+      userId: USER,
+    });
+    expect(emit).toHaveBeenCalledWith('DIAMOND_BALANCE_CHANGED', {
+      newBalance: 500,
+      delta: 10,
+      source: 'daily_challenge_claim',
+    });
+  });
+});
+
 describe('reroll integrity is enforced below the UI', () => {
   const migration = readFileSync(
     resolve(__dirname, '../supabase/migrations/20260830220000_atomic_daily_challenge_reroll.sql'),

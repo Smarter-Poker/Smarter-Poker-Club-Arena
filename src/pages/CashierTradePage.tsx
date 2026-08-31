@@ -63,6 +63,7 @@ import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { resolveClubUUID, isUUID } from '../utils/clubIdResolver';
 import { reportError } from '../utils/errorReporter';
+import { cashierReasonCode, recordCashierOperation } from '../services/CashierOperationsTelemetry';
 import { masterBus } from '../core/MasterBus';
 import { useToast } from '../components/common/Toast';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
@@ -693,6 +694,7 @@ export default function CashierTradePage() {
         let afterUserId: string | null = null;
         let pageNumber = 0;
         for (;;) {
+          const rosterPageStartedAt = Date.now();
           const { data: memberRows, error: dlErr } = await supabase.rpc(
             'fn_club_cashier_members_page_v3',
             {
@@ -703,6 +705,16 @@ export default function CashierTradePage() {
             }
           );
           if (dlErr) {
+            recordCashierOperation({
+              userId: user.id,
+              clubId: clubUuid,
+              event: 'roster_page_failed',
+              operation: 'roster',
+              durationMs: Date.now() - rosterPageStartedAt,
+              pageNumber,
+              itemCount: dl.length,
+              reasonCode: cashierReasonCode(dlErr),
+            });
             if (pageNumber === 0) throw dlErr;
             reportError(dlErr, 'CashierTradePage.rosterContinuation');
             if (isMounted.current && !stale()) {
@@ -715,6 +727,15 @@ export default function CashierTradePage() {
           if (stale()) return;
           const page = (memberRows || []) as CashierRosterRpcRow[];
           dl.push(...page);
+          recordCashierOperation({
+            userId: user.id,
+            clubId: clubUuid,
+            event: 'roster_page_succeeded',
+            operation: 'roster',
+            durationMs: Date.now() - rosterPageStartedAt,
+            pageNumber,
+            itemCount: page.length,
+          });
           pageNumber++;
 
           if (isMounted.current && !stale()) {
@@ -1456,6 +1477,8 @@ export default function CashierTradePage() {
     };
     let ok = 0;
     const failed: Array<{ userId: string; name: string; message: string }> = [];
+    const batchStartedAt = Date.now();
+    let batchFailureReason: string | undefined;
     try {
       // The server processes one bounded chunk in one round trip. Every item
       // still owns a retry key, and the response names every recipient, so a
@@ -1508,6 +1531,7 @@ export default function CashierTradePage() {
             }
           }
         } catch (e) {
+          batchFailureReason ||= cashierReasonCode(e);
           for (const target of chunk) {
             failed.push({
               userId: target.userId,
@@ -1524,6 +1548,7 @@ export default function CashierTradePage() {
         }
       }
       if (failed.length > 0) {
+        batchFailureReason ||= 'item_refused';
         reportError(
           new Error(
             `${kind} batch ${submissionId}: ${failed.length}/${targets.length} failed; ` +
@@ -1536,6 +1561,17 @@ export default function CashierTradePage() {
         );
       }
     } finally {
+      recordCashierOperation({
+        userId: user?.id,
+        clubId: clubUuid,
+        event: failed.length === 0 ? 'batch_succeeded' : ok > 0 ? 'batch_partial' : 'batch_failed',
+        operation: kind,
+        durationMs: Date.now() - batchStartedAt,
+        itemCount: targets.length,
+        successCount: ok,
+        failureCount: failed.length,
+        reasonCode: batchFailureReason,
+      });
       // A throw between here and the end used to leave `busy` true forever,
       // and both Confirm and Cancel are disabled on it - the modal became a
       // trap that only a page reload could escape.
@@ -1794,7 +1830,7 @@ export default function CashierTradePage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-cashier-surface="trade">
       <section className={styles.hero} aria-labelledby="cashier-title">
         <img
           className={styles.heroImage}

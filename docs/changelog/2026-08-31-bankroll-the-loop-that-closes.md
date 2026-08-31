@@ -227,3 +227,43 @@ Descent rescues the 48 `high` and the mid-band nits. It cannot rescue the
 **127 `micro`-banded horses**: micro is the bottom of the ladder, so there is
 nothing below to drop to, and merit forbids going up. Those 127 need micro
 tables to exist. `ladder_exhausted` counts exactly them.
+
+---
+
+# Addendum 2 — the last two unwired functions, and a seated horse that could not afford its seat
+
+## A seated horse now stands up when it can no longer afford the game
+
+The seating gate only ever ran BEFORE a horse sat. After buy-ins and reloads a
+wallet can fall under the level that justifies the stake, and nothing stood it
+up for that — so the ladder could demote a horse in principle while it went on
+playing a game it could not afford in practice.
+
+The rotator now checks `shouldMoveDown` per seat. At the **looser** bar
+deliberately (17 buy-ins, not `canSit`'s 25): a horse that merely dips under
+the entry bar mid-session finishes what it is doing. Using the entry bar here
+would stand a horse up the moment it fell below 25 and re-seat it at 25 — the
+flap the three thresholds exist to prevent.
+
+## `isBroke` and `bestAffordableGame` deleted
+
+Both were correct, tested, and had zero callers — the same failure this audit
+was written to find, so leaving two more behind would have been the wrong
+lesson. Each was superseded the moment something real needed the job:
+
+- `bestAffordableGame` picked from a synthetic ladder; `resolveStakeBand` does
+  it against the bands and tables that actually exist, with hysteresis it
+  never had.
+- `isBroke` compared a roll to a hard-coded cheapest buy-in; the freeroll
+  router asks the better question — can this horse afford the cheapest **paid
+  event on the board** — which cannot go stale when the schedule moves.
+
+Deleted rather than kept "just in case". Dead code with passing tests reads as
+working machinery, which is exactly how the first four went unnoticed.
+
+**Every exported bankroll function now has a production caller.**
+
+## Verification
+
+tsc clean both roots. Server **3,072 / 268**, client **10,013 / 702**.
+19 mutations caught across the day.

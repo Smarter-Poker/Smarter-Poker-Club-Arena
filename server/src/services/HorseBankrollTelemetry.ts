@@ -47,7 +47,9 @@ export type BankrollEvent =
   /** Dropped a stake band because the roll no longer carried the old one. */
   | 'moved_down_a_stake'
   /** Climbed back toward the earned band after clearing the stricter bar. */
-  | 'moved_up_a_stake';
+  | 'moved_up_a_stake'
+  /** Stood up mid-session: the roll no longer justifies this stake. */
+  | 'left_underrolled';
 
 /**
  * COUNTERS ACCUMULATE; GAUGES DO NOT.

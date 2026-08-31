@@ -8,9 +8,9 @@ interface ClubLobbyCommandTopProps {
 }
 
 /**
- * The live content layer for the top three bays of the approved four-zone
- * lobby chassis. The full generated chassis is mounted by ClubHomePage so the
- * desktop ledger and bottom poker-chip rail remain part of the same machine.
+ * Live content for the Club Arena controls and campaign. ClubHomePage places
+ * this real DOM in the desktop workspace or mobile stack; the supplied design
+ * is never mounted as a screenshot behind it.
  */
 export function ClubLobbyCommandTop({ welcome, controls, campaign }: ClubLobbyCommandTopProps) {
   return (

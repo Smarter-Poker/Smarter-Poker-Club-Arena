@@ -136,7 +136,7 @@
   transform: translate(-50%, -50%) !important;
   overflow: hidden;
   box-sizing: border-box;
-  border: 1px solid rgba(0, 0, 0, 0.94);
+  border: 0.5px solid rgba(0, 0, 0, 0.94);
   border-radius: 50%;
   background: transparent;
   pointer-events: none;
@@ -229,6 +229,17 @@
 
   .headerControls {
     height: 96px;
+    aspect-ratio: auto;
+  }
+
+  .profileBtn {
+    /* Desktop deliberately compresses the artwork into a 96px chrome band.
+       A width-derived square is taller than that band at common laptop widths
+       and paints black over the lower silver rail. Keep the opaque ornament
+       mask inside the same 74%-high control band while the portrait remains a
+       centered circle with its own 0.5px edge. */
+    top: 13%;
+    height: 74%;
     aspect-ratio: auto;
   }
 }

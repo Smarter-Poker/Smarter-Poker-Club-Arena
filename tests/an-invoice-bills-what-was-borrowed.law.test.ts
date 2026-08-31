@@ -141,3 +141,66 @@ describe('the client still calls the same three RPCs', () => {
     expect(CREDIT_SERVICE).toMatch(/rpc\('fn_apply_credit_payment'/);
   });
 });
+
+/**
+ * ───────────────────────────────────────────────────────────────────────────
+ * THE CLIENT HALF, found in the completion sweep AFTER the migration shipped.
+ *
+ * A new status in the database is a new state in every screen that reads it,
+ * and four places did not know the word. The last of them would have suspended
+ * people.
+ * ───────────────────────────────────────────────────────────────────────────
+ */
+const INVOICES_PANEL = read('src/components/agent/AgentInvoicesPanel.tsx');
+
+describe('the client knows what a void invoice is', () => {
+  it('the status union can express it', () => {
+    expect(CREDIT_SERVICE).toMatch(
+      /InvoiceStatus =\s*'pending' \| 'partial' \| 'paid' \| 'overdue' \| 'disputed' \| 'void'/
+    );
+  });
+
+  it('there is ONE definition of which statuses still owe money', () => {
+    expect(CREDIT_SERVICE).toMatch(/export const OWED_INVOICE_STATUSES/);
+    expect(INVOICES_PANEL).toMatch(/OWED_INVOICE_STATUSES/);
+    // and the panel imports it rather than keeping a second copy
+    expect(INVOICES_PANEL).toMatch(/import \{[\s\S]{0,120}OWED_INVOICE_STATUSES/);
+  });
+
+  it('a cancelled invoice cannot trap a settled agent in suspension either', () => {
+    // reinstateAgent carried the identical filter. Suspending on a void invoice
+    // is bad; refusing to lift it on the same void invoice is worse, because
+    // there is nothing the agent can do about it.
+    expect(codeOnly(CREDIT_SERVICE)).toMatch(
+      /const hasOverdue = invoices\.some\(\s*\(i\) => OWED_INVOICE_STATUSES\.has\(i\.status\)/
+    );
+  });
+
+  it('a cancelled invoice cannot get an agent suspended', () => {
+    // checkSuspension asked `status !== 'paid'`, which counts a void invoice as
+    // debt. FinancialCronService reads that answer and calls suspendAgent, so
+    // 224 cancelled bills would have suspended every credit agent on the estate.
+    expect(codeOnly(CREDIT_SERVICE)).not.toMatch(/i\.status !== 'paid' && new Date\(i\.dueDate\)/);
+    expect(CREDIT_SERVICE).toMatch(
+      /OWED_INVOICE_STATUSES\.has\(i\.status\) && new Date\(i\.dueDate\) < new Date\(\)/
+    );
+  });
+
+  it('zero remaining means zero, not "fall back to the whole debt"', () => {
+    // `inv.amount_remaining || inv.debt_owed` is falsy-coalescing: 0 became the
+    // full original debt, so a settled or voided invoice reported its whole
+    // balance as still due and drew a Pay Now button on it.
+    expect(codeOnly(CREDIT_SERVICE)).not.toMatch(/amount_remaining \|\| inv\.debt_owed/);
+    expect(CREDIT_SERVICE).toMatch(/amountRemaining: inv\.amount_remaining \?\? inv\.debt_owed/);
+  });
+
+  it('the pay button asks the status, not only the number', () => {
+    expect(INVOICES_PANEL).toMatch(
+      /const canPay = OWED_INVOICE_STATUSES\.has\(inv\.status\) && inv\.amountRemaining > 0/
+    );
+  });
+
+  it('a void invoice has its own colour rather than the unknown-state fallback', () => {
+    expect(INVOICES_PANEL).toMatch(/void: '#718096'/);
+  });
+});

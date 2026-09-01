@@ -42,6 +42,62 @@ describe('Club Arena runtime asset retention', () => {
     await expect(readFile(path.join(target, 'index.html'), 'utf8')).resolves.toBe('new');
   });
 
+  it('mirrors nested non-asset directories so every retired command-bar binary is deleted', async () => {
+    const { source, target } = await fixture();
+    const retiredPaths = [
+      'images/btn-hamburger-v4.png',
+      'images/btn-hamburger.png',
+      'images/btn-hamburger.webp',
+      'images/global-header/menu.png',
+      'images/global-header/global-header-approved-source.png',
+      'images/global-header/global-header-desktop.png',
+    ];
+    await mkdir(path.join(source, 'images', 'global-header'), { recursive: true });
+    await mkdir(path.join(target, 'images', 'global-header'), { recursive: true });
+    await mkdir(path.join(target, 'images', 'retired', 'nested'), { recursive: true });
+    await writeFile(
+      path.join(source, 'images', 'global-header', 'global-header-command-center-v1.png'),
+      'current command grid'
+    );
+    await Promise.all(
+      retiredPaths.map(async (relative) => {
+        await mkdir(path.dirname(path.join(target, relative)), { recursive: true });
+        await writeFile(path.join(target, relative), 'retired three-bar artwork');
+      })
+    );
+    await writeFile(
+      path.join(target, 'images', 'retired', 'nested', 'stale.png'),
+      'arbitrary stale nested file'
+    );
+    await writeFile(path.join(source, 'assets', 'current.js'), 'current runtime');
+    await writeFile(path.join(target, 'assets', 'previous.js'), 'previous runtime');
+
+    const result = await syncClubArenaDist(source, target);
+
+    expect(result).toEqual({ currentRuntimeAssets: 1, retainedPreviousRuntimeAssets: 1 });
+    await expect(
+      readFile(
+        path.join(source, 'images', 'global-header', 'global-header-command-center-v1.png'),
+        'utf8'
+      )
+    ).resolves.toBe('current command grid');
+    await expect(
+      readFile(
+        path.join(target, 'images', 'global-header', 'global-header-command-center-v1.png'),
+        'utf8'
+      )
+    ).resolves.toBe('current command grid');
+    for (const relative of retiredPaths) {
+      await expect(readFile(path.join(target, relative), 'utf8')).rejects.toThrow();
+    }
+    await expect(
+      readFile(path.join(target, 'images', 'retired', 'nested', 'stale.png'), 'utf8')
+    ).rejects.toThrow();
+    await expect(readFile(path.join(target, 'assets', 'previous.js'), 'utf8')).resolves.toBe(
+      'previous runtime'
+    );
+  });
+
   it('drops runtime assets older than the manifest generation', async () => {
     const { source, target } = await fixture();
     await writeFile(path.join(target, 'assets', 'ancient.js'), 'ancient');

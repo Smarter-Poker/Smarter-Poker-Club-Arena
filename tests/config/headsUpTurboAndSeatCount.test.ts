@@ -201,9 +201,9 @@ describe('4. the payout sweep can actually reach the events it repairs', () => {
   });
 
   it('looks 30 days back on the deep pass, with a limit that covers the window', () => {
-    // Measured: 35,042 events in a 30-day window at ~0.29ms each.
+    // Measured: 48,093 events in a 30-day window; 150,000 restores headroom.
     expect(settler).toMatch(/PAYOUT_SWEEP_DEEP_DAYS\s*=\s*30/);
-    expect(settler).toMatch(/PAYOUT_SWEEP_DEEP_LIMIT\s*=\s*40000/);
+    expect(settler).toMatch(/PAYOUT_SWEEP_DEEP_LIMIT\s*=\s*150000/);
   });
 
   it('does not pay the ~10s scan on all 48 cycles a day', () => {

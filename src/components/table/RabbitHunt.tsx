@@ -27,9 +27,8 @@
  * price is decided server-side either way.
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { vipService, FEATURE_PRICING } from '../../services/VIPService';
-import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import './RabbitHunt.css';
 import { reportError } from '../../utils/errorReporter';
@@ -77,6 +76,8 @@ export interface RabbitHuntProps {
    * Falls back to the constant only if the offer arrived without one.
    */
   rabbitDiamondCost?: number | null;
+  /** Authenticated player supplied by TablePage, the owner of the session. */
+  userId: string | null | undefined;
   onReveal: () => Promise<RabbitHuntRevealResult>;
 }
 
@@ -94,10 +95,10 @@ export function RabbitHunt({
   isAvailable,
   cardsAvailable,
   rabbitDiamondCost,
+  userId,
   onReveal,
 }: RabbitHuntProps) {
   const rabbitHuntIcon = useButtonImage('icon-rabbit');
-  const { user } = useAuthUser();
   const toast = useToast();
 
   const [isRevealing, setIsRevealing] = useState(false);
@@ -114,6 +115,7 @@ export function RabbitHunt({
      before the first press. Once it IS known it belongs on the tile with every
      other count, not in a popup. See the corner numeral below. */
   const [packRemaining, setPackRemaining] = useState<number | null>(null);
+  const revealInFlightRef = useRef(false);
 
   // Server price when we have it, the constant only as a fallback.
   const cost =
@@ -138,12 +140,12 @@ export function RabbitHunt({
   useEffect(() => {
     let cancelled = false;
     const checkVIP = async () => {
-      if (!user?.id) {
+      if (!userId) {
         if (!cancelled) setIsVIP(false);
         return;
       }
       try {
-        const status = await vipService.checkVIPStatus(user.id);
+        const status = await vipService.checkVIPStatus(userId);
         if (cancelled) return;
         setIsVIP(!!status?.isVIP);
         const pool = status?.monthlyLimits?.rabbitHunts;
@@ -165,7 +167,7 @@ export function RabbitHunt({
     return () => {
       cancelled = true;
     };
-  }, [user?.id, isAvailable]);
+  }, [userId, isAvailable]);
 
   // A new hand's offer must not show the previous hand's cards.
   useEffect(() => {
@@ -174,12 +176,15 @@ export function RabbitHunt({
   }, [isAvailable, cardsAvailable]);
 
   const handleReveal = useCallback(async () => {
-    if (isRevealing || hasRevealed || !isAvailable) return;
-    if (!user?.id) {
+    if (revealInFlightRef.current || isRevealing || hasRevealed || !isAvailable) return;
+    if (!userId) {
       toast.error('Please Log In To Use Rabbit Hunt');
       return;
     }
 
+    // State does not update until React renders. This synchronous mutex makes
+    // the paid endpoint single-flight even when two taps land in one frame.
+    revealInFlightRef.current = true;
     setIsRevealing(true);
     try {
       // One call: it charges and returns the cards, or it charges nothing and
@@ -231,9 +236,10 @@ export function RabbitHunt({
       reportError(error, 'RabbitHunt.Rabbit_hunt_failed');
       toast.error('Rabbit Hunt Failed');
     } finally {
+      revealInFlightRef.current = false;
       setIsRevealing(false);
     }
-  }, [isRevealing, hasRevealed, isAvailable, onReveal, user?.id, toast]);
+  }, [isRevealing, hasRevealed, isAvailable, onReveal, userId, toast]);
 
   if (!isAvailable && !hasRevealed) {
     return null;
@@ -258,9 +264,9 @@ export function RabbitHunt({
           aria-label={
             isRevealing
               ? 'Revealing Rabbit Hunt'
-              : typeof vipRemaining === 'number'
+              : isVIP && typeof vipRemaining === 'number' && vipRemaining > 0
                 ? `Rabbit Hunt, ${vipRemaining} Free This Month`
-                : 'Rabbit Hunt'
+                : `Rabbit Hunt, ${cost} Diamonds`
           }
           title="Rabbit Hunt"
         >

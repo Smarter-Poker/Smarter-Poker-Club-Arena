@@ -38,34 +38,37 @@ set -uo pipefail
 ENGINE_URL="${ENGINE_URL:-https://engine.smarter.poker}"
 REPO="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
 DEPLOY_WORKFLOW="${DEPLOY_WORKFLOW:-auto-deploy-hetzner.yml}"
-# A floor, not the deadline. The engine does not restart on merge, so "N
-# minutes after the commit" was never a deadline it was trying to meet. The
-# real deadline is the first restart window at or after the commit plus one
-# deploy's worth of time, and GRACE_MIN only stops this firing sooner than that
-# when a commit lands moments before a window.
+# Two full catch-up cycles plus a margin. One missed */20 tick is ordinary;
+# three in a row is the failure this exists to catch.
 GRACE_MIN="${GRACE_MIN:-45}"
+# The engine does not restart on merge. Since #2343 auto-deploy-hetzner.yml only
+# lets a restart through during scheduled Chicago hours, so "45 minutes after the
+# merge" was never a deadline the engine was trying to meet -- and between the
+# 04:00 and 10:00 windows this watchdog was guaranteed to fire every morning
+# about a platform behaving exactly as designed. An alarm that is right about the
+# reading and wrong about whether anything is broken is how people learn to close
+# alarms unread. The deadline is the first restart window at or after the commit,
+# plus one deploy's worth of time -- and never sooner than GRACE_MIN, so this is
+# strictly more patient than what it replaces, never less.
+# ── EVERY HOUR, ON THE :55 (Dan, 2026-09-01) ───────────────────────────────
+# This used to be RESTART_HOURS="04 10 14 18 22", America/Chicago, with the
+# comment "matches auto-deploy-hetzner.yml". It stopped matching the moment
+# #2527 landed the hourly break at 13:00 UTC, and the mismatch made this
+# watchdog silent for the rest of the day.
 #
-# HOURLY, AT :55 (Dan 2026-09-01: "every hour on the :55 instead of every 5
-# hours so nothing gets lost or orphaned from production improvements").
+# MEASURED. At 18:32 UTC the engine was serving the 03:54 image with five
+# merged pull requests unshipped for fourteen and a half hours, and the job
+# reported SUCCESS. The arithmetic that produced that: the newest
+# server-touching commit was early afternoon Chicago, window_at_or_after
+# rounded it up to the next FIVE-HOUR window at 14:00 Chicago (19:00 UTC),
+# the deadline became 19:25 UTC, and 18:32 is comfortably before it. The
+# watchdog was waiting for a window the deploy workflow no longer has.
 #
-# This used to carry RESTART_HOURS="04 10 14 18 22" to mirror the five Chicago
-# windows. Both halves of that are now wrong, and leaving either would have
-# made this watchdog useless in opposite directions:
-#
-#   * the HOURS are wrong - every hour is a window now, so a deadline computed
-#     from the old five would sit up to six hours late and this would stay
-#     quiet through a whole morning of genuinely stranded code;
-#   * the MINUTE is wrong - the window opens at :55, not at the top of the
-#     hour, so a deadline anchored to :00 fires 55 minutes early and alarms
-#     about a platform behaving exactly as designed. An alarm that is right
-#     about the reading and wrong about whether anything is broken is how
-#     people learn to close alarms unread.
-#
-# There is no timezone here any more either. :55 is the same minute in every
-# whole-hour offset, which is the same reason the deploy workflow could drop
-# its Chicago gate.
-BREAK_MINUTE="${BREAK_MINUTE:-55}"                # matches MaintenanceBreak.BREAK_START_MINUTE
-DEPLOY_MIN="${DEPLOY_MIN:-25}"                    # a real deploy is ~5m; 25 leaves room for the break
+# So the window is now a MINUTE, not an hour. Every hour has one, the restart
+# happens inside the announced break at :55, and the deadline is measured from
+# that boundary rather than from the top of some rationed hour.
+RESTART_MINUTE="${RESTART_MINUTE:-55}"            # matches auto-deploy-hetzner.yml
+DEPLOY_MIN="${DEPLOY_MIN:-25}"                    # a real deploy is ~5m; 25 leaves room for a drain
 ISSUE_TITLE="Engine watchdog: production is not running main"
 
 chicago_hour() {  # $1 = epoch -> HH in America/Chicago (GNU date, BSD fallback)
@@ -75,17 +78,20 @@ chicago_stamp() {
   TZ=America/Chicago date -d "@$1" '+%Y-%m-%d %H:%M %Z' 2>/dev/null \
     || TZ=America/Chicago date -r "$1" '+%Y-%m-%d %H:%M %Z'
 }
-# The opening of the first restart window at or after $1 - i.e. the next :55.
-#
-# Epoch arithmetic, no timezone: :55 past the hour is the same instant in every
-# whole-hour offset, and every hour is a window. A commit landing at :56 has
-# just missed one and waits for the next; one landing at :10 catches the same
-# hour's.
+# Every hour is a restart window now, so there is no longer an hour that is
+# not one. Kept as a function because the dispatch decision below reads better
+# for it, and because a future rationing change has one place to go.
+is_restart_hour() { return 0; }
+
+# The next :55 at or after $1 - the moment the announced break opens and the
+# restart can actually happen. "At or after" matters: a commit landing at
+# 10:55:30 has missed that break by thirty seconds and waits for 11:55, which
+# is what the deploy workflow does too.
 window_at_or_after() {
-  local e=$1 hour_start cand
-  hour_start=$(( e / 3600 * 3600 ))
-  cand=$(( hour_start + BREAK_MINUTE * 60 ))
-  if [ "$cand" -lt "$e" ]; then cand=$(( cand + 3600 )); fi
+  local e=$1 hour_floor cand
+  hour_floor=$(( e / 3600 * 3600 ))
+  cand=$(( hour_floor + RESTART_MINUTE * 60 ))
+  [ "$cand" -lt "$e" ] && cand=$(( cand + 3600 ))
   printf '%s' "$cand"
 }
 
@@ -191,7 +197,7 @@ GRACE_DEADLINE=$(( REQ_EPOCH + GRACE_MIN * 60 ))
 WINDOW_LOCAL=$(chicago_stamp "$WINDOW_EPOCH")
 
 if [ "$NOW_EPOCH" -lt "$DEADLINE" ]; then
-  say "Behind by design: the engine restarts inside the :${BREAK_MINUTE} maintenance break."
+  say "Behind by design: the engine restarts in the :${RESTART_MINUTE} break."
   say "  first window at or after $REQ_SHORT: $WINDOW_LOCAL, +${DEPLOY_MIN}m to deploy"
   # Say WHICH deadline is holding this quiet. When the grace window is the
   # later of the two, the window has already opened and the engine simply has
@@ -215,17 +221,9 @@ say "::warning title=ENGINE BEHIND::$REQ_SHORT has been on main for ${AGE_MIN}m 
 # has been dispatched" when the retry provably cannot do anything is worse than
 # an alarm that says nothing.
 DISPATCHED="no"
-NOW_TS=$(date -u +%s)
-NEXT_WINDOW_EPOCH=$(window_at_or_after "$NOW_TS")
-NEXT_WINDOW_LOCAL=$(chicago_stamp "$NEXT_WINDOW_EPOCH")
-# Dispatch only when the next :55 is close enough that the run will still be
-# alive and waiting when the break opens. The deploy's break gate polls for
-# about 14 minutes; dispatching at :10 would burn a runner for 14 minutes and
-# then give up with BREAK NEVER OPENED, having provably fixed nothing, and an
-# alarm that claims a retry was dispatched when the retry could not work is
-# worse than one that says nothing.
-MINS_TO_WINDOW=$(( (NEXT_WINDOW_EPOCH - NOW_TS) / 60 ))
-if [ "$MINS_TO_WINDOW" -le 13 ]; then
+NOW_HOUR=$(chicago_hour "$(date -u +%s)")
+NEXT_WINDOW_LOCAL=$(chicago_stamp "$(window_at_or_after "$(date -u +%s)")")
+if is_restart_hour "$NOW_HOUR"; then
   if gh workflow run "$DEPLOY_WORKFLOW" --repo "$REPO" --ref main >/dev/null 2>&1; then
     DISPATCHED="yes"
     say "  dispatched $DEPLOY_WORKFLOW on main"
@@ -250,12 +248,11 @@ The engine is not running main.
 \`$REQ_SHORT\` is the newest commit touching the engine runtime, excluding tests
 and sim, which never enter the image.
 
-**The engine restarts on a schedule, not on a merge.** It restarts inside the
-five-minute maintenance break that runs at :${BREAK_MINUTE} of every hour, so
-being behind between windows is normal and this watchdog stays silent for it.
-Seeing this issue at all means a window has already opened since the commit and
-passed without the engine catching up - which, on an hourly schedule, is a real
-failure rather than a wait.
+**The engine restarts on a schedule, not on a merge.** Since #2527 it restarts
+every hour inside the announced break at :${RESTART_MINUTE}, so being behind
+for part of an hour is normal and this watchdog stays silent for it. Seeing
+this issue at all means a break has already opened since the commit and passed
+without the engine catching up.
 
 **Why a green deploy is not an answer.** \`auto-deploy-hetzner.yml\` coalesces a
 restart inside MIN_RESTART_SPACING_SEC and exits 0, and the drain gate defers

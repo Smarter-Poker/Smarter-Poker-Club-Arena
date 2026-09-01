@@ -33,6 +33,7 @@ import {
   snapDepthBucket,
   depthCandidates,
 } from './GtoPostflop.js';
+import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 
 describe('GTO depth ceiling', () => {
   it('sits at twice the deepest bucket', () => {
@@ -136,9 +137,7 @@ describe('the solver stack is measurable at all', () => {
   it('the depth-ceiling matchup is dealt deeper than the ceiling', () => {
     // Dealt at 100bb it would measure nothing and report 0.00 +/- 0.00
     // forever - exactly the inert-matchup shape the daily audit now flags.
-    const at = league.indexOf('v33_depth_ceiling_400bb');
-    expect(at).toBeGreaterThan(-1);
-    const entry = league.slice(at, at + 300);
+    const entry = sliceEnclosingBlock(league, 'v33_depth_ceiling_400bb');
     const stack = /stackBB: (\d+)/.exec(entry);
     expect(stack).not.toBeNull();
     expect(Number(stack![1])).toBeGreaterThan(GTO_MAX_DEPTH_BB);

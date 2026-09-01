@@ -1429,6 +1429,7 @@
     "fn_audit_layer_silence_and_coverage",
     "fn_audit_league_coverage",
     "fn_audit_league_pooled_findings",
+    "fn_audit_nightly_job_health",
     "fn_audit_overlays",
     "fn_audit_privileged_grants",
     "fn_auto_create_story_from_post",

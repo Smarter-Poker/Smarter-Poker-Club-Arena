@@ -29,6 +29,15 @@
 -- tournaments, so this wants its own window and its own cadence, and mixing it
 -- into the tournament check would make one slow query out of two fast ones.
 --
+-- APPLIED AS THREE MIGRATIONS, and this file is the union of them. Both later
+-- ones were corrections the check earned by being run:
+--   20260901190656  a_cash_pot_reaches_a_player_or_it_is_a_bug
+--   20260901190917  a_no_winner_hand_that_owes_nobody_is_not_an_alert
+--   20260901192531  the_cash_pot_check_is_bounded_at_forty_eight_hours
+-- The function body here was then checked against production rather than
+-- assumed - md5 of pg_proc.prosrc against md5 of the body in this file,
+-- 2026-09-01: 0e3898647e1fb5b4bcac56077d06b3a5, 5111 bytes.
+--
 -- ROLLBACK
 --   DROP FUNCTION IF EXISTS public.fn_cash_pot_conservation_check(integer);
 
@@ -41,7 +50,22 @@ SECURITY DEFINER
 SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE
-  v_hours   integer := LEAST(GREATEST(COALESCE(p_since_hours, 24), 1), 720);
+  /* BOUNDED AT 48 HOURS, MEASURED (2026-09-01, and the ceiling was 720 for
+     about an hour before this).
+
+     Cash hands arrive at roughly 59,000 a day and the per-row cost is a
+     jsonb_array_elements sum over `winners`. A 24-hour window reads 58,932
+     rows and returns comfortably. A 168-hour window read 463,506 rows and
+     returned once, then hit the statement timeout on the very next call an
+     hour later when the database was busier - which is the shape of every
+     check on this platform that quietly stopped working. fn_spin_unpaid_check
+     learned the same lesson the same way ("it read the unbounded view three
+     times and timed out every call before 2026-08-31").
+
+     48 hours is double what the engine asks for and still half of what has
+     been seen to fail. An operator who wants a week walks it two days at a
+     time; a check that cannot finish tells nobody anything. */
+  v_hours   integer := LEAST(GREATEST(COALESCE(p_since_hours, 24), 1), 48);
   v_since   timestamptz;
   v_hands   bigint := 0;
   v_bad     bigint := 0;
@@ -106,11 +130,11 @@ BEGIN
   IF v_nowin > 0 THEN
     PERFORM public.fn_raise_server_financial_alert(
       'warning', 'fn_cash_pot_conservation_check',
-      format('%s cash hand(s) in the last %sh recorded no winner at all while holding %s chips after rake',
+      format('%s cash hand(s) in the last %sh recorded no winner at all while still holding %s chips after rake and jackpot',
              v_nowin, v_hours, v_nowin_chips),
       jsonb_build_object('kind','no_winner_recorded','hands',v_nowin,
         'chips',v_nowin_chips,'since_hours',v_hours,
-        'detail','usually a hand interrupted at a boundary; two occurred on 2026-08-30 and none since'),
+        'detail','a hand whose whole pot goes to the jackpot has no winner and owes nobody; this counts only the ones still holding chips'),
       'no_winner_recorded');
     v_alerts := v_alerts + 1;
   END IF;

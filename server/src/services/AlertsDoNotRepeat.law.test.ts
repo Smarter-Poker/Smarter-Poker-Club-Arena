@@ -109,6 +109,16 @@ describe('the cash pot check', () => {
     expect(cashMigration).not.toMatch(/UPDATE\s+public\.club_members/);
   });
 
+  it('is bounded to a window it can actually finish', () => {
+    // The ceiling was 720 hours for about an hour. A 168-hour window read
+    // 463,506 rows and returned once, then hit the statement timeout on the
+    // next call when the database was busier - the shape of every check here
+    // that quietly stopped working. 48 is double what the engine asks for and
+    // half of what has been seen to fail.
+    expect(cashMigration).toContain('LEAST(GREATEST(COALESCE(p_since_hours, 24), 1), 48)');
+    expect(gameServer).toContain('p_since_hours: 24');
+  });
+
   it('is closed to browser roles', () => {
     expect(cashMigration).toMatch(
       /REVOKE ALL ON FUNCTION public\.fn_cash_pot_conservation_check\(integer\)\s*\n?\s*FROM PUBLIC, anon, authenticated;/

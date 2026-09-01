@@ -1,0 +1,26 @@
+-- A second correction to 20260901190656, folded into that file, and found the
+-- only way this kind of thing is found: by running it.
+--
+-- The window ceiling was 720 hours. Cash hands arrive at roughly 59,000 a day
+-- and the per-row cost is a jsonb_array_elements sum over `winners`. A 24-hour
+-- window reads 58,932 rows and returns comfortably. A 168-hour window read
+-- 463,506 rows and returned once - then hit the statement timeout on the very
+-- next call an hour later, when the database was busier. That is the shape of
+-- every check on this platform that quietly stopped working, and
+-- fn_spin_unpaid_check learned the same lesson the same way on 2026-08-31
+-- ("it read the unbounded view three times and timed out every call").
+--
+-- 48 hours is double what the engine asks for and half of what has been seen
+-- to fail. A request for more is capped rather than refused: asking for 720
+-- now returns 48 hours of answer, 97,833 hands, instead of an error. An
+-- operator who wants a week walks it two days at a time; a check that cannot
+-- finish tells nobody anything.
+--
+-- Only the LEAST() ceiling changed. The whole function body is in
+-- 20260901190656 and its deployed copy was verified against that file by md5
+-- of pg_proc.prosrc after this ran.
+
+-- The full CREATE OR REPLACE that production ran is the body of
+-- 20260901190656_a_cash_pot_reaches_a_player_or_it_is_a_bug.sql as it stands
+-- in this repo. Re-applying that file reproduces this state exactly; this file
+-- exists so the applied-migrations recorder can find the name it recorded.

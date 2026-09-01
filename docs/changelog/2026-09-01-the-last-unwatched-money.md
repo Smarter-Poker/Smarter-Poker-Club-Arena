@@ -87,6 +87,17 @@ Over the seven days to 2026-09-01, **463,506 cash hands: 0 mismatches, 0 chips
 undistributed.** Healthy — and healthy unobserved, which is exactly where the
 vacant finishing places sat for ten weeks.
 
+It earned two corrections by being run, and the second is the more useful one.
+That seven-day sweep returned once and then **hit the statement timeout on the
+very next call an hour later**, when the database was busier. Cash hands arrive
+at roughly 59,000 a day; 24 hours reads 58,932 rows comfortably, 168 hours reads
+463,506 and is a coin flip. That is the shape of every check on this platform
+that quietly stopped working — `fn_spin_unpaid_check` learned it the same way on
+2026-08-31. The window is capped at 48 hours now: double what the engine asks
+for, half of what has been seen to fail, and a request for more is capped rather
+than refused, so asking for 720 returns 48 hours of answer (97,833 hands, all
+clean) instead of an error.
+
 It was corrected on its own first live run. It flagged two hands with no winner
 recorded; both had their entire pot after rake go to the Bad Beat Jackpot (pot
 0.30, rake 0.03, bbj 0.27), owed nobody, and were fine. It counts only a
@@ -125,7 +136,7 @@ fn_payout_guarantee_check(150 days)
   earners_not_paid            0
   paid_but_unrecorded_events  0
 
-fn_cash_pot_conservation_check(7 days, 463,506 hands)
+fn_cash_pot_conservation_check(48 hours, 97,833 hands)
   pot_not_distributed         0
   no_winner_recorded          0
 

@@ -521,7 +521,11 @@ export class ScheduledTournamentService {
   ): Promise<void> {
     // Optional per-schedule look-ahead (minutes, 30 min .. 7 days), else the
     // buy-in decides: 48 hours, or 6 days above 200. See spawnAheadMsFor.
-    const due = timedSpawnsDue(schedule, new Date(), spawnAheadMsFor(cfg));
+    const cadence = String(cfg.recurrenceCadence ?? 'weekly').toLowerCase();
+    const monthlyDay = Math.min(31, Math.max(1, Number(cfg.recurrenceDayOfMonth) || 1));
+    const due = timedSpawnsDue(schedule, new Date(), spawnAheadMsFor(cfg)).filter((spawn) =>
+      cadence === 'monthly' ? spawn.startTime.getUTCDate() === monthlyDay : true
+    );
     if (due.length === 0) return;
 
     // 2026-08-31: pre-filter instances whose spawn key is already claimed.

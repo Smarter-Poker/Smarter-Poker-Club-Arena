@@ -87,7 +87,7 @@ describe('responsive premium Club Arena', () => {
     expect(campaign).toBeGreaterThan(allStatuses);
     expect(launch).toBeGreaterThan(campaign);
     expect(games).toBeGreaterThan(launch);
-    expect(PAGE).toContain('noticeEditable && totalGameCount === 0');
+    expect(PAGE).toContain('noticeEditable && launchTasks.some((task) => !task.complete)');
   });
 
   it('builds the approved mobile welcome, owner message, identity/jackpot pair, and wallet accordion', () => {
@@ -137,7 +137,7 @@ describe('responsive premium Club Arena', () => {
     expect(mobile).not.toContain('padding-bottom: calc(var(--bottom-nav-height, 74px)');
   });
 
-  it('shows every authorized wallet on mobile while limiting the desktop command column', () => {
+  it('shows every role-authorized wallet on both desktop and mobile', () => {
     expect(PAGE).toContain('showAllLobbyWallets');
     expect(PAGE).toContain('onVisibleWalletCountChange={setVisibleWalletCount}');
     expect(PAGE.indexOf('className="lobby-top__house-welcome"')).toBeGreaterThan(
@@ -147,22 +147,30 @@ describe('responsive premium Club Arena', () => {
     expect(WALLET).toContain('data-wallet-key="diamonds"');
     expect(WALLET).toContain('data-wallet-key={row.key}');
     expect(WALLET).toContain('onVisibleWalletCountChange?.(visibleWalletCount)');
-    expect(PAGE_CSS).toContain(".dw__row[data-wallet-key='diamonds']");
-    expect(PAGE_CSS).toContain(".dw__row[data-wallet-key='club_bank']");
-    expect(PAGE_CSS).toContain(".dw__row[data-wallet-key='agent_wallet']");
     expect(PAGE_CSS).toMatch(
       /@media \(min-width: 901px\)[\s\S]*?\.lobby-wallets-content__inner\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column/s
     );
     expect(PAGE_CSS).toMatch(
       /@media \(min-width: 901px\)[\s\S]*?\.lobby-top__wallet\s*\{[^}]*align-self:\s*stretch[^}]*width:\s*100%[^}]*max-width:\s*100%/s
     );
-    expect(PAGE_CSS).toContain(
-      ".lobby-top__wallet .dw--lobby-board .dw__row[data-wallet-key='diamonds']"
+    expect(PAGE_CSS).toMatch(
+      /@media \(min-width: 901px\)[\s\S]*?\.lobby-top__wallet \.dw--lobby-board \.dw__row\s*\{[^}]*display:\s*block/s
+    );
+    expect(PAGE_CSS).not.toMatch(
+      /@media \(min-width: 901px\)[\s\S]*?\.lobby-top__wallet \.dw--lobby-board \.dw__row\s*\{[^}]*display:\s*none/s
     );
     expect(PAGE_CSS).toContain('aspect-ratio: 1800 / 334');
     expect(PAGE_CSS).toMatch(
       /\.lobby-top__wallet \.dw--lobby-board \.dw__row--wallet-art \.dw__row-shell\s*\{[^}]*object-fit:\s*fill/s
     );
+    expect(PAGE).toContain(
+      "import DiamondWalletModal from '../components/wallet/DiamondWalletModal'"
+    );
+    expect(PAGE).toContain('setShowDiamondWallet(true)');
+    expect(PAGE).toContain('<DiamondWalletModal');
+    expect(PAGE).toContain('onOpenClubRake={() => setStandaloneRakeModal(true)}');
+    expect(PAGE).toContain('onOpenClubSpins={() => setStandaloneSpinsModal(true)}');
+    expect(PAGE).not.toContain('navigate(`/clubs/${clubId}/detail`)');
   });
 
   it('keeps the desktop club card and jackpot on one premium frame footprint', () => {
@@ -193,6 +201,22 @@ describe('responsive premium Club Arena', () => {
     );
     expect(desktop).toMatch(/\.lobby-table--all \.lt-col-name\s*\{[^}]*width:\s*36%/s);
     expect(desktop).toMatch(/\.lobby-table--all \.lt-col-status\s*\{[^}]*width:\s*13%/s);
+  });
+
+  it('uses one desktop workspace frame instead of clipped control and campaign frames', () => {
+    const desktop = TOP_CSS.slice(TOP_CSS.lastIndexOf('@media (min-width: 901px)'));
+    const machine = desktop.slice(
+      desktop.indexOf('.club-lobby-machine {'),
+      desktop.indexOf('.club-lobby-command-top {')
+    );
+    expect(machine).toContain('border: 2px solid #58636d');
+    expect(machine).toContain('inset 0 0 0 4px #1b2228');
+    expect(desktop).toMatch(/\.club-lobby-command-top__controls\s*\{[^}]*border:\s*0/s);
+    expect(desktop).toMatch(/\.club-lobby-command-top__campaign\s*\{[^}]*border:\s*0/s);
+    const desktopControls = desktop.match(/\.club-lobby-command-top__controls\s*\{[^}]*\}/s)?.[0];
+    const desktopCampaign = desktop.match(/\.club-lobby-command-top__campaign\s*\{[^}]*\}/s)?.[0];
+    expect(desktopControls).not.toContain('border-image-source');
+    expect(desktopCampaign).not.toContain('border-image-source');
   });
 
   it('uses live club identity for every club without a Shark-only branch', () => {
@@ -245,10 +269,10 @@ describe('responsive premium Club Arena', () => {
       /@media \(min-width: 901px\)[\s\S]*?\.club-lobby-machine\s*\{[^}]*max-width:\s*100%[^}]*box-sizing:\s*border-box/s
     );
     expect(TOP_CSS).toMatch(
-      /@media \(min-width: 901px\)[\s\S]*?\.club-lobby-command-top__controls\s*\{[^}]*overflow:\s*hidden/s
+      /@media \(min-width: 901px\)[\s\S]*?\.club-lobby-command-top__controls\s*\{[^}]*overflow:\s*visible/s
     );
     expect(TOP_CSS).toMatch(
-      /@media \(min-width: 901px\)[\s\S]*?\.club-lobby-machine > \.club-home__games--v2\s*\{[^}]*max-width:\s*calc\(100% - 16px\)/s
+      /@media \(min-width: 901px\)[\s\S]*?\.club-lobby-machine > \.club-home__games--v2\s*\{[^}]*max-width:\s*calc\(100% - 14px\)/s
     );
     expect(TOP_CSS).toContain('.club-lobby-machine .lobby-table .lt-status');
     expect(TOP_CSS).toContain('.club-lobby-machine .lobby-table td.lt-col-name::before');

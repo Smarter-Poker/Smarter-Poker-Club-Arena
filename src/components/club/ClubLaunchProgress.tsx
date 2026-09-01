@@ -6,10 +6,12 @@ export interface ClubLaunchTask {
   label: string;
   detail: string;
   complete: boolean;
+  skipped?: boolean;
   actionLabel: string;
   onAction: () => void;
   disabled?: boolean;
   disabledLabel?: string;
+  onSkip?: () => void;
 }
 
 interface Props {
@@ -19,8 +21,21 @@ interface Props {
 }
 
 export default function ClubLaunchProgress({ clubName, openingBank, tasks }: Props) {
-  const completed = tasks.filter((task) => task.complete).length;
-  const percent = tasks.length === 0 ? 100 : Math.round((completed / tasks.length) * 100);
+  const storageKey = `club-launch-skips:${clubName}`;
+  const [skippedIds, setSkippedIds] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(storageKey) || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const resolvedTasks = tasks.map((task) => ({
+    ...task,
+    skipped: !task.complete && skippedIds.includes(task.id),
+  }));
+  const completed = resolvedTasks.filter((task) => task.complete || task.skipped).length;
+  const percent =
+    resolvedTasks.length === 0 ? 100 : Math.round((completed / resolvedTasks.length) * 100);
   const [expanded, setExpanded] = useState(percent < 100);
 
   return (
@@ -70,29 +85,48 @@ export default function ClubLaunchProgress({ clubName, openingBank, tasks }: Pro
 
       {expanded && (
         <div className="club-launch__steps" id="club-launch-steps">
-          {tasks.map((task, index) => (
+          {resolvedTasks.map((task, index) => (
             <article
               key={task.id}
-              className={`club-launch__step ${task.complete ? 'is-complete' : ''}`}
+              className={`club-launch__step ${task.complete ? 'is-complete' : task.skipped ? 'is-skipped' : ''}`}
             >
               <span className="club-launch__step-number" aria-hidden="true">
-                {task.complete ? '✓' : String(index + 1).padStart(2, '0')}
+                {task.complete ? '✓' : task.skipped ? 'S' : String(index + 1).padStart(2, '0')}
               </span>
               <div className="club-launch__step-copy">
                 <strong>{task.label}</strong>
-                <span>{task.complete ? 'Complete' : task.detail}</span>
+                <span>{task.complete ? 'Complete' : task.skipped ? 'Skipped' : task.detail}</span>
               </div>
-              <button
-                type="button"
-                onClick={task.onAction}
-                disabled={task.complete || task.disabled}
-              >
-                {task.complete
-                  ? 'Done'
-                  : task.disabled
-                    ? task.disabledLabel || 'Owner Required'
-                    : task.actionLabel}
-              </button>
+              <div className="club-launch__step-actions">
+                {!task.complete && !task.skipped && (
+                  <button
+                    type="button"
+                    className="is-skip"
+                    onClick={() =>
+                      setSkippedIds((current) => {
+                        const next = current.includes(task.id) ? current : [...current, task.id];
+                        localStorage.setItem(storageKey, JSON.stringify(next));
+                        return next;
+                      })
+                    }
+                  >
+                    Skip
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={task.onAction}
+                  disabled={task.complete || task.skipped || task.disabled}
+                >
+                  {task.complete
+                    ? 'Done'
+                    : task.skipped
+                      ? 'Skipped'
+                      : task.disabled
+                        ? task.disabledLabel || 'Owner Required'
+                        : task.actionLabel}
+                </button>
+              </div>
             </article>
           ))}
         </div>

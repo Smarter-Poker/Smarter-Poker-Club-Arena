@@ -4,10 +4,10 @@
 
 `public.chip_ledger` is the authoritative journal of every chip movement. Each row IS a balanced
 double entry: one debit (`from_type`/`from_entity_id`) and one credit (`to_type`/`to_entity_id`)
-of the same positive `amount` — sum of debits equals sum of credits by construction, per row.
+of the same positive `amount` - sum of debits equals sum of credits by construction, per row.
 Multi-leg settlements are rows sharing `correlation_id`/`settlement_id`. Issuance and retirement
 must debit/credit the explicit system accounts (`issuance_reserve`/`system_mint`,
-`chip_retirement`/`system_burn`) — never a one-sided wallet update.
+`chip_retirement`/`system_burn`) - never a one-sided wallet update.
 
 This deliberately extends the EXISTING production ledger rather than introducing a parallel
 two-table journal: every reconciliation job, baseline, and dashboard already reads `chip_ledger`,
@@ -40,7 +40,7 @@ suspense incident enforce that).
   authorized maintenance via `SET LOCAL app.ledger_maintenance = '<incident ref>'`, fully logged
   to `ca_ledger_mutation_log`.
 - Corrections are new linked rows (`category='correction'`/`'reversal'`, `causation_id` pointing
-  at the original, incident reference in metadata) — never edits.
+  at the original, incident reference in metadata) - never edits.
 - Every row: monotone `chain_seq` + SHA-256 content checksum (`row_hash`, versioned 'v1').
   `prev_hash` is best-effort forensics. The design intentionally does NOT chain each insert
   through the previous row's committed hash: that requires a global serialization point (and a
@@ -69,7 +69,7 @@ The GUC contract (transaction-local, read by both writers):
 | `app.ledger_autoskip_<table>` = '1'                                               | this transaction self-journals that table (set it, do the update, set '0') |
 | `app.ledger_maintenance`                                                          | authorizes+logs a journal mutation (incident ref required)                 |
 
-Undeclared movements default to `category='adjustment'` against `settlement_suspense` — visible,
+Undeclared movements default to `category='adjustment'` against `settlement_suspense` - visible,
 measured daily, incident-raised. The felt (`table_seats.stack`) is deliberately NOT per-update
 journaled: pots settle per hand under a single-writer engine lease; the journaled events are the
 wallet↔felt crossings (buy-in, rebuy, add-on, cash-out, rake off the pot, BBJ drop, payouts),
@@ -97,4 +97,4 @@ normalized at the boundary and the source RPCs are being converted to exact 2dp 
 post_commit_verified → final`, single-step advance trigger-enforced, `failed` reachable from any
 non-final state and resumable at or before `ledger_posted`, `final` immutable, one settlement per
 `(settlement_type, external_ref)` by unique constraint. `locked_for_calculation` locks only the
-settlement row — never a table, club, union, wallet, or player. Engine adoption plan in doc 05.
+settlement row - never a table, club, union, wallet, or player. Engine adoption plan in doc 05.

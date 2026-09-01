@@ -13,6 +13,7 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { CommandGridIcon } from './CommandGridIcon';
 
 import styles from './GlobalHeader.module.css';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
@@ -277,7 +278,7 @@ export default function GlobalHeader() {
               className={`${styles.artButton} ${styles.hamburgerBtn}`}
               aria-label="Open Menu"
             >
-              <img src={`${APPROVED_HEADER_ASSET}command-center-v1.png`} alt="Command Center" />
+              <CommandGridIcon />
             </button>
             <button
               onClick={handleBackClick}

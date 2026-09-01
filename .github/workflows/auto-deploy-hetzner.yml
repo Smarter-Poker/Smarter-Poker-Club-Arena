@@ -72,8 +72,26 @@ on:
   # DST. 18, 22, 04, 10, 14 America/Chicago translate to two different UTC hour
   # sets depending on CDT vs CST, so all ten fire and the window gate (first step)
   # keeps only the five that are genuinely the correct local hours in Chicago.
+  #
+  # THREE TICKS PER WINDOW, NOT ONE (2026-08-31).
+  #
+  # This fired once, at the top of each candidate hour, and a GitHub scheduled
+  # workflow is best-effort: under load it is delayed, and it is sometimes
+  # dropped outright. Miss the single tick and the whole one-hour window closes
+  # unused, so merged engine code waits FOUR MORE HOURS for the next one.
+  #
+  # That is not hypothetical. On 2026-08-31 the 23:00 UTC tick (18:00 Chicago)
+  # never arrived. The engine served the same build for over three hours with
+  # the window standing open and twelve deploy runs reporting success having
+  # shipped nothing, while the insurance fix and the horse seat-call fix sat
+  # unlanded.
+  #
+  # :00, :20 and :40 of each candidate hour. The window gate below still admits
+  # only the five correct Chicago hours, and the dedupe step still returns
+  # immediately once production serves the commit - so the extra ticks cost
+  # seconds each and buy two more chances at every window.
   schedule:
-    - cron: '0 0,3,4,9,10,15,16,19,20,23 * * *'
+    - cron: '0,20,40 0,3,4,9,10,15,16,19,20,23 * * *'
 
   # The override, and the only path that may restart outside a window:
   # a deliberate `force: true` dispatch. A plain dispatch -- which is what
@@ -141,7 +159,7 @@ jobs:
               echo "Restart window OPEN — $LOCAL." ;;
             *)
               echo "open=false" >> $GITHUB_OUTPUT
-              echo "::notice title=OUTSIDE THE RESTART WINDOW::$LOCAL is not a scheduled restart hour in Chicago. Nothing was deployed and the engine was not touched. Merged engine code lands at the next window; dispatch this workflow with force=true to land it now." ;;
+              echo "::warning title=OUTSIDE THE RESTART WINDOW::$LOCAL is not a scheduled restart hour in Chicago. Nothing was deployed and the engine was not touched. Merged engine code lands at the next window; dispatch this workflow with force=true to land it now." ;;
           esac
 
       - name: Skip if production already serves this commit
@@ -219,7 +237,7 @@ jobs:
       # between a failing engine test and production.
       - name: Setup Node 22
         if: steps.dedupe.outputs.skip != 'true'
-        uses: actions/setup-node@v4.1.0
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
@@ -232,6 +250,30 @@ jobs:
           npm ci
           npx tsc --noEmit
           npm test
+
+      - name: Financial health-gate (zero-drift phase 5)
+        # Do not deploy onto a bleeding ledger. Runs the conservation
+        # invariants read-only against production: trailing unexplained chip
+        # and diamond supply, settlement state legality, stranded op-id
+        # claims, plus the largest-remainder split property tests. SKIPS
+        # loudly when the SUPABASE_DB_PASSWORD secret is not configured, and
+        # can be overridden for the deploy that FIXES a bleed by putting
+        # [skip-financial-gate] in the commit message.
+        if: steps.dedupe.outputs.skip != 'true'
+        env:
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          # GitHub runners have no IPv6 route, and db.<ref>.supabase.co is
+          # IPv6-only, so the direct host ENETUNREACHes from Actions. The
+          # DATABASE_URL secret points at the IPv4 Supavisor pooler
+          # (aws-0-us-west-2.pooler.supabase.com) and the script prefers it.
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if git log -1 --pretty=%B | grep -q '\[skip-financial-gate\]'; then
+            echo '::warning::financial health-gate skipped by commit message tag'
+            exit 0
+          fi
+          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
+          node scripts/ci/check-chip-conservation.mjs
 
       - name: Setup SSH key
         if: steps.dedupe.outputs.skip != 'true'

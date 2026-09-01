@@ -171,8 +171,67 @@ export async function syncStacks(
     stack: number;
     time_bank_uses_remaining?: number;
     time_bank_remaining?: number;
-  }[]
+  }[],
+  handNumber?: number
 ): Promise<void> {
+  /* ZERO-DRIFT phase 5 (2026-08-31): when the caller identifies the hand,
+     the stack write goes through fn_ca_settle_hand_stacks_absolute - ONE
+     transaction that locks every named seat and writes all stacks or none,
+     idempotent on (table, hand): a crash-and-resend replays the stored
+     result instead of double-writing, and a partial hand write can no
+     longer persist (remaining risk #1 in the zero-drift audit, doc 05).
+     Rake/BBJ conservation checking arrives when those figures are wired
+     through (the RPC runs lenient with rake=null). Any RPC failure falls
+     back to the legacy per-seat loop below - the write path never narrows.
+     Time banks are not money and keep their own writes either way. */
+  if (handNumber !== undefined && handNumber !== null && players.length > 0) {
+    try {
+      const { data, error } = await supabase.rpc('fn_ca_settle_hand_stacks_absolute', {
+        p_table_id: tableId,
+        p_hand_number: handNumber,
+        p_stacks: players.map((p) => ({
+          user_id: p.user_id,
+          stack: Math.round(p.stack * 100) / 100,
+        })),
+        p_rake: null,
+        p_bbj: null,
+      });
+      const ok =
+        !error && (data as { success?: boolean; replay?: boolean } | null)?.success === true;
+      if (ok) {
+        // Stacks are settled atomically; persist the non-money seat fields.
+        await Promise.all(
+          players
+            .filter(
+              (p) => p.time_bank_uses_remaining !== undefined || p.time_bank_remaining !== undefined
+            )
+            .map(async (p) => {
+              const payload: Record<string, unknown> = {};
+              if (p.time_bank_uses_remaining !== undefined)
+                payload.time_bank_uses_remaining = p.time_bank_uses_remaining;
+              if (p.time_bank_remaining !== undefined)
+                payload.time_bank_remaining = p.time_bank_remaining;
+              await supabase
+                .from('table_seats')
+                .update(payload)
+                .eq('table_id', tableId)
+                .eq('user_id', p.user_id)
+                .is('left_at', null);
+            })
+        );
+        return;
+      }
+      reportError(
+        new Error(
+          `[DB] atomic hand-stack settle declined for table ${tableId} hand ${handNumber} ` +
+            `(${error ? error.message : JSON.stringify(data)}) - falling back to per-seat writes`
+        ),
+        'DB.settle_hand_stacks_fallback'
+      );
+    } catch (err) {
+      reportError(err, 'DB.settle_hand_stacks_transport_fallback');
+    }
+  }
   // Dan 2026-08-25, BINDING: "ALL CHIPS ON ALL TABLES MUST STAY EXACTLY THE
   // SAME" across an engine restart. This function is the ONLY place a hand's
   // result reaches durable storage, and it had two ways to lose chips silently.

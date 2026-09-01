@@ -25,7 +25,34 @@ const ROOT = new URL('../../', import.meta.url).pathname;
 const SRC = process.env.TITLE_CASE_SOURCE_DIR
   ? resolve(process.env.TITLE_CASE_SOURCE_DIR)
   : join(ROOT, 'src');
+/**
+ * ── THE ENGINE WRITES COPY TOO (2026-08-31) ───────────────────────────────
+ *
+ * This gate walked src/ and stopped there, so the rule reached every page the
+ * client renders and nothing the SERVER says. That is not a quiet corner: the
+ * engine's refusals and results are pushed straight to the felt and to the
+ * player's phone, unchanged. Scanning server/src found two live surfaces the
+ * src-only walk could never see:
+ *
+ *   RakeConfig.ts   the twelve BBJ qualifying rules, which are the body text
+ *                   of the Bad Beat Jackpot panel on every table that has one
+ *   bbj.ts          the push notification title a player gets when the
+ *                   jackpot pays them
+ *
+ * check-ui-text made exactly this move on the same day, for the same reason,
+ * and its note is the right one: "A list of the files somebody happened to
+ * check is a cleanup. The directory is the gate." So this walks server/src as
+ * well, and the two gates now cover the same ground.
+ *
+ * TEST FILES ARE NOT COPY. `__tests__` was already skipped as a directory, but
+ * this codebase keeps its tests BESIDE the source as `*.test.ts`, so the walk
+ * dragged in fixture labels ('test', '$5 -> 1 seat') that no player will ever
+ * read. Skipped by filename now, in both trees.
+ */
+const SERVER_SRC = join(ROOT, 'server/src');
+const SCAN_SERVER = !process.env.TITLE_CASE_SOURCE_DIR;
 const SKIP_DIRS = new Set(['node_modules', 'dist', '_to_delete', '__tests__', 'test-results']);
+const isTestFile = (name) => /\.(test|spec)\.tsx?$/.test(name) || /\.behaviour\.test\./.test(name);
 const COPY_REGISTRY_FILES = new Set(['src/i18n/index.ts']);
 const COPY_TABLE_PROPERTIES = new Map([
   ['src/components/support/FAQPanel.tsx', new Set(['category', 'question', 'answer'])],
@@ -106,7 +133,8 @@ function walk(dir, acc = []) {
     const full = join(dir, entry);
     const st = statSync(full);
     if (st.isDirectory()) walk(full, acc);
-    else if (extname(entry) === '.tsx' || extname(entry) === '.ts') acc.push(full);
+    else if ((extname(entry) === '.tsx' || extname(entry) === '.ts') && !isTestFile(entry))
+      acc.push(full);
   }
   return acc;
 }
@@ -116,6 +144,24 @@ export function titleCaseText(text) {
   return text.replace(/[A-Za-z0-9][A-Za-z0-9'’]*/g, (word, offset, whole) => {
     const before = whole.slice(Math.max(0, offset - 1), offset);
     if (before === '&') return word;
+    // A LETTER IMMEDIATELY AFTER A DIGIT IS A SUFFIX, NOT A WORD.
+    //
+    // "Last 24h", "Win 1.5x Your Buy In", "Won 20bb+ Pots", "GPT-4o" - the
+    // letter belongs to the token the digits started, and capitalising it
+    // renders "24H", "1.5X", "20BB+", "GPT-4O". Worse than cosmetic: once
+    // --fix writes that, the gate then DEMANDS it, so the corruption is what
+    // passes CI from that point on.
+    //
+    // The `/^[0-9]/` line further down was meant to be this guard and can
+    // never fire: the match expression starts at [A-Za-z], so `word` never
+    // begins with a digit. It is left alone because a future edit to that
+    // regex would make it load-bearing again.
+    //
+    // Found 2026-08-31 by running this gate against the apex site, where the
+    // same logic wanted to rewrite "Last 24h" and "GPT-4o Mini" on live admin
+    // pages. The World Hub copy of this gate already carries this guard;
+    // this brings the two back into agreement.
+    if (/\d/.test(before)) return word;
     if (
       whole.slice(Math.max(0, offset - 2), offset) === '{{' &&
       whole.slice(offset + word.length, offset + word.length + 2) === '}}'
@@ -549,7 +595,7 @@ if (!isMain) {
   let fixedNodes = 0;
   let fixedFiles = 0;
 
-  for (const file of walk(SRC)) {
+  for (const file of [...walk(SRC), ...(SCAN_SERVER ? walk(SERVER_SRC) : [])]) {
     const original = readFileSync(file, 'utf8');
     let sf;
     try {

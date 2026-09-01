@@ -1,4 +1,4 @@
-# Zero-Drift Directive — Executive Summary (2026-08-31)
+# Zero-Drift Directive - Executive Summary (2026-08-31)
 
 **Directive:** "Military-Grade Club Arena Chip Integrity, Ledger Hardening, and Zero-Drift" (Dan, 2026-08-31).
 **Session:** Cowork cloud session, 2026-08-31. Eight production migrations applied via Supabase MCP
@@ -11,7 +11,7 @@
    insurance), `club_wallets`, `union_wallets` (all six sub-wallets), `unions`, `agents`,
    `bbj_pools` (main/backup/promo/legacy), `spin_bonus_pools`, and `club_members.promo_balance`
    all journal automatically. A movement whose caller declared nothing lands against
-   `settlement_suspense` with category `adjustment` — visible and measured, never absorbed.
+   `settlement_suspense` with category `adjustment` - visible and measured, never absorbed.
 2. **The ledger is append-only and tamper-evident.** UPDATE/DELETE on `chip_ledger`,
    `wallet_transactions`, `chip_transactions`, `club_wallet_transactions`, and
    `union_wallet_transactions` are rejected at the database level (metadata-only annotation
@@ -28,10 +28,10 @@
    Wired sources: every warn/critical `ledger_reconcile_log` row, every critical
    `financial_alerts` row, the 5-minute quick-reconcile pass, ledger-write failures, the
    frozen-pool monitor, and checksum verification. **Nothing anywhere locks a table, game, club,
-   union, player, or wallet** — detection and repair are strictly non-blocking.
+   union, player, or wallet** - detection and repair are strictly non-blocking.
 4. **Automated reconciliation runs continuously.** A per-minute repair tick re-drives the existing
    idempotent repair functions (`fn_redrive_unbanked_rake`, `fn_bbj_repair_unbanked`), re-verifies
-   each incident's source measurement, and auto-resolves incidents whose measurement is clean —
+   each incident's source measurement, and auto-resolves incidents whose measurement is clean -
    with the action recorded in the trail. It never mints, burns, deletes, or silently adjusts.
 5. **Live leaks are closed.** `promo_apply_playthrough` was callable by ANY authenticated user
    with a fabricated wager to release anyone's locked promo (now engine-only) and truncated
@@ -45,7 +45,7 @@
    contributions/payouts, promo releases and horse funding now declare real categories and
    counterparties (transaction-local GUCs read by the ledger writers).
 7. **Financial epochs exist.** `ca_financial_epochs` (epoch 2 = hardened ledger) stamps every new
-   ledger row. The Midway Union master reset opens epoch 3 — procedure in doc 05.
+   ledger row. The Midway Union master reset opens epoch 3 - procedure in doc 05.
 8. **A settlement state machine exists** (`ca_settlements`): Open → Locked For Calculation →
    Calculated → Validated → Ledger Posted → Post-Commit Verified → Final, single-step advance
    enforced by trigger, duplicates impossible, `final` immutable. Engine integration is the next
@@ -60,18 +60,18 @@
 ## Proven working on production, same day
 
 The self-test incident pushed to management phones and resolved cleanly. Within 20 minutes of
-going live the system caught two real events — a failed tournament winner credit (repaired by the
+going live the system caught two real events - a failed tournament winner credit (repaired by the
 standing payout reconciler; root-caused to the migration DDL lock window) and a rake/BBJ invariant
-alert (fees verified re-driven) — both investigated, root-caused, and resolved inside their
+alert (fees verified re-driven) - both investigated, root-caused, and resolved inside their
 20-minute targets, with the full trail recorded.
 
-## Not done yet (honest gaps — see doc 05 for the plan)
+## Not done yet (honest gaps - see doc 05 for the plan)
 
 - Engine `syncStacks` remains the one multi-step JS money path (crash window on hard kill).
 - Remaining un-idempotent RPCs (`fn_union_send_to_member`, `transfer_chips_agent_to_player`,
   `fn_mint_club_chips`, treasury primitives) and the `fn_union_settle_player_pnl` partial-failure
   trap.
-- Category GUCs on the mid-volume RPCs (cashier/agent/union sends, tournament register) — the
+- Category GUCs on the mid-volume RPCs (cashier/agent/union sends, tournament register) - the
   suspense monitor measures exactly what remains.
 - DB-permission lockdown so app credentials cannot UPDATE balance columns outside approved RPCs.
 - World Hub ops API fixes ship as a separate PR (raw promo mint, parseFloat, durable idempotency).

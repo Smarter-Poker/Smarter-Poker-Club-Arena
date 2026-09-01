@@ -43,6 +43,13 @@ describe('Daily Missions production certification', () => {
     expect(spec).toContain('interceptedRealtimeSockets');
     expect(spec).toContain('isDailyMissionRevisionFrame');
     expect(spec).toContain('observedRevisionFrames');
+    expect(spec).toMatch(
+      /expect\(\s*advanced\.length,\s*'the catch-all mission event must advance at least one contract'\s*\)\.toBeGreaterThan\(0\)/
+    );
+    expect(spec).not.toContain('expect(advanced.length).toBeGreaterThanOrEqual(10)');
+    expect(spec.indexOf('expect(completed.every((row) => row.completed)).toBe(true)')).toBeLessThan(
+      spec.indexOf('No Daily Mission revision frame crossed the routed socket')
+    );
     // dashboard_loaded is intentionally sampled at 20%; certification proves
     // the actual receipt and only requires unsampled mutation operations.
     const operationGate = spec.slice(

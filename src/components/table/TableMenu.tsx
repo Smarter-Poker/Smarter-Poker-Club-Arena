@@ -32,8 +32,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { AvatarGallery } from '../customization/AvatarGallery';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
-
-const COMMAND_CENTER_ASSET = `${import.meta.env.BASE_URL}images/global-header/command-center-v1.png`;
+import { CommandGridIcon } from '../navigation/CommandGridIcon';
 
 // ─── SVG Icons for Identity section ─── */
 const AvatarIcon = () => (
@@ -498,12 +497,7 @@ export function TableMenu({
         aria-haspopup="menu"
         aria-expanded={isOpen}
       >
-        <img
-          src={COMMAND_CENTER_ASSET}
-          className="table-menu__trigger-img"
-          alt=""
-          draggable={false}
-        />
+        <CommandGridIcon className="table-menu__trigger-grid" />
         {/* Notification badge */}
         {badgeCount != null && badgeCount > 0 && (
           <span className="table-menu__badge" aria-label={`${badgeCount} Notifications`}>

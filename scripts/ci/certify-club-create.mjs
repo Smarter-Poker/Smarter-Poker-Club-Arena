@@ -89,19 +89,25 @@ try {
     .eq('club_id', club.id)
     .eq('user_id', userId)
     .single();
-  if (membershipError || membership?.role !== 'owner' || membership?.status !== 'active') {
+  if (
+    membershipError ||
+    membership?.role !== 'owner' ||
+    membership?.status !== 'active' ||
+    Number(membership?.chip_balance) !== 0
+  ) {
     throw membershipError || new Error('Owner Membership Was Not Created Correctly.');
   }
 
   const { data: storedClub, error: storedClubError } = await admin
     .from('clubs')
-    .select('logo_url,avatar_url')
+    .select('logo_url,avatar_url,chip_treasury')
     .eq('id', club.id)
     .single();
   if (
     storedClubError ||
     storedClub?.logo_url !== publicLogo.publicUrl ||
-    storedClub?.avatar_url !== publicLogo.publicUrl
+    storedClub?.avatar_url !== publicLogo.publicUrl ||
+    Number(storedClub?.chip_treasury) !== 100000
   ) {
     throw storedClubError || new Error('The Selected Logo Was Not Stored On Both Identity Fields.');
   }
@@ -138,7 +144,25 @@ try {
 
   console.log(`PASS Custom And Placeholder Club Creation Certified For ${clubIds.join(', ')}.`);
 } finally {
-  if (clubIds.length) await admin.from('clubs').delete().in('id', clubIds);
-  if (logoPath) await admin.storage.from('club-assets').remove([logoPath]);
-  if (userId) await admin.auth.admin.deleteUser(userId);
+  // Append-only financial records can intentionally prevent a hard delete.
+  // Retire fixtures first so a failed delete can never leak certification
+  // clubs into the public Club Arena.
+  if (clubIds.length) {
+    const { error: retireError } = await admin
+      .from('clubs')
+      .update({ is_public: false, status: 'inactive' })
+      .in('id', clubIds);
+    if (retireError) console.error(`Fixture Retirement Failed: ${retireError.message}`);
+
+    const { error: deleteError } = await admin.from('clubs').delete().in('id', clubIds);
+    if (deleteError) console.warn(`Fixture Hard Delete Skipped: ${deleteError.message}`);
+  }
+  if (logoPath) {
+    const { error: storageError } = await admin.storage.from('club-assets').remove([logoPath]);
+    if (storageError) console.error(`Fixture Asset Cleanup Failed: ${storageError.message}`);
+  }
+  if (userId) {
+    const { error: userDeleteError } = await admin.auth.admin.deleteUser(userId);
+    if (userDeleteError) console.warn(`Fixture User Delete Skipped: ${userDeleteError.message}`);
+  }
 }

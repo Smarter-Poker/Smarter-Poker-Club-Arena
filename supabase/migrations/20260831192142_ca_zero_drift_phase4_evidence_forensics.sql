@@ -1,0 +1,23 @@
+-- ZERO-DRIFT PHASE 4 - EVIDENCE & FORENSICS (prod ~19:21 UTC; canonical body
+-- in prod schema_migrations, byte-exact pull at bundle rebuild)
+-- A. ca_hand_financial_facts + trg_ca_capture_hand_facts (BEFORE DELETE on
+--    hand_history): money-bearing hands (rake>0, bbj>0, or reported) leave a
+--    compact financial fact row when pruned; never blocks a prune; 90-day
+--    self-retention (cron ca-hand-facts-prune-daily).
+-- B. fn_ca_balance_asof(type, entity, at): point-in-time balance from the
+--    ledger's recorded pre/post balances. Supporting concurrent indexes
+--    idx_chip_ledger_from_entity_created / _to_entity_created (built with
+--    CREATE INDEX CONCURRENTLY outside this transactional migration).
+-- C. fn_ca_daily_attestation + cron ca-daily-attestation (06:10 UTC): daily
+--    digest push to platform recipients - green days say so explicitly.
+-- D. ca_ledger_day_manifests + fn_ca_ledger_day_manifest + cron
+--    ca-ledger-day-manifest (04:25 UTC): daily SHA-256 manifest over the
+--    prior day's ledger rows; a recompute mismatch raises a CRITICAL
+--    tamper incident. (Fixup ca_phase4_manifest_hashes_content: hash row
+--    CONTENT, not just row_hash - pre-hardening rows have no row_hash.)
+-- Also in this phase (prod):
+--   ca_phase4_redrive_stamps_resolved - fn_redrive_unbanked_rake stamps
+--     resolved_at (queue rows were rescanned forever); found while manually
+--     re-queuing 3 hands dropped in the 19:23 PostgREST schema-reload window.
+--   ca_phase4_tournament_table_cashout_mint_guard - THE BIG ONE: see
+--     20260831193300 file.

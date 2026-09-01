@@ -77,3 +77,59 @@ function has changed shape.
 Other loops in that function rebind `r` to records that legitimately do have an
 `id`, so the match is anchored on the surrounding text and never on `r.id`
 alone.
+
+---
+
+# And the settlement check could not reach its own index
+
+Same sweep, second failing job. `ca-settlement-correctness-30m` had been dying
+at its 120s statement timeout, every time on the same statement:
+
+```sql
+SELECT count(*) FROM public.hand_history
+ WHERE created_at > now() - interval '24 hours' AND has_human IS TRUE
+```
+
+An index exists for exactly that:
+
+```sql
+idx_hand_history_human_created ON hand_history (created_at) WHERE has_human
+```
+
+and it is never used. Postgres's predicate-implication prover does not equate
+the `BooleanTest` node `has_human IS TRUE` with the bare boolean predicate
+`has_human` the index was declared with. The two are identical in a `WHERE`
+clause — both exclude NULL and false — and the planner still will not connect
+them.
+
+Measured on production, the same query one word apart:
+
+```
+... AND has_human IS TRUE   cost 231817.29   Index Scan idx_hand_history_created
+                                             + Filter: (has_human IS TRUE)
+... AND has_human           cost     12.57   Index Only Scan
+                                             idx_hand_history_human_created
+```
+
+Eighteen thousand times the cost. The first plan walks every hand dealt in 24
+hours — about 221,000 rows — to find the ~265 a human sat in.
+
+**Worth being blunt about this one.** That index was added earlier today to fix
+this exact job, and the job kept timing out afterwards. The index was correct.
+The query could not reach it. An index added for a query that cannot use it
+looks like a fix, measures like a fix against any hand-run variant of the query,
+and changes nothing in production.
+
+So the measurement that matters is the function itself, not its query:
+
+```
+SELECT public.fn_ca_settlement_correctness_check();
+Time: 9183.581 ms
+```
+
+Nine seconds, against a 120-second timeout it had been failing at.
+
+`fn_hand_history_prune_skip_depth` also writes `has_human IS TRUE`, inside
+`count(*) FILTER (WHERE has_human IS TRUE OR reported IS TRUE)`. That is an
+aggregate filter over an OR, not an index-usable predicate, so rewriting it
+would buy nothing and it is deliberately left alone.

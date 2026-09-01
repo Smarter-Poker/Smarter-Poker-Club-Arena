@@ -192,7 +192,7 @@ export default function SharedHandReplayPage() {
       />
 
       <footer style={{ marginTop: 28, opacity: 0.6, fontSize: '0.8rem' }}>
-        {hero ? `Shared From ${hero.name}'S Hand History · ` : ''}Smarter Poker
+        {hero ? `Shared From ${hero.name}'s Hand History · ` : ''}Smarter Poker
       </footer>
     </div>
   );

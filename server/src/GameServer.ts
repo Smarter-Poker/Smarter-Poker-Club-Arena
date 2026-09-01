@@ -26,6 +26,7 @@ import {
 } from './services/TournamentRecurringService.js';
 import { ScheduledTournamentService } from './services/ScheduledTournamentService.js';
 import { TournamentMetrics } from './services/TournamentMetrics.js';
+import { SpinMetrics } from './services/SpinMetrics.js';
 import {
   planTableReopens,
   freshHumanWindowMs,
@@ -73,6 +74,7 @@ import { tableStateHub } from './transport/TableStateHub.js';
 import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
 import { TournamentManager } from './tournament/TournamentManager.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
+import { isWakeableCashTable } from './services/onDemandTableWake.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
 // services/tableLease.ts for the dual-container incident that motivated them.
 import {
@@ -182,6 +184,8 @@ const TOURNAMENT_PRESEAT_LEAD_MS = 60_000;
 
 export class GameServer {
   private tableEngines: Map<string, ServerTableEngine> = new Map();
+  /** One shared readiness promise per on-demand engine start. */
+  private tableEngineStartPromises: Map<string, Promise<boolean>> = new Map();
   /**
    * Table ids whose engine is owned and rebuilt by a TournamentManager rather
    * than by discoverCashTables. Discovery's RPC is cash-only, so without this
@@ -313,6 +317,7 @@ export class GameServer {
    * 2026-08-30/31 audit was found by a human running SQL by hand.
    */
   private tournamentMetrics = new TournamentMetrics();
+  private spinMetrics = new SpinMetrics();
   private lifecycle = new HorseLifecycleManager();
 
   /**
@@ -556,6 +561,12 @@ export class GameServer {
       // poker_tournament_metrics_stale_seconds climbs — a blind collector must
       // never read as a healthy platform.
       this.tournamentMetrics.start();
+
+      // Step 3d: Spin gauges. Spin charges no rake — the 8% IS the multiplier
+      // distribution — so E[multiplier] = 2.7638 is the only evidence the house
+      // takes what it advertises, and until this collector shipped nothing had
+      // ever checked it except a human typing SQL. Same fail-loud contract.
+      this.spinMetrics.start();
 
       // Step 4: Start lifecycle manager (stuck horse detection, cleanup)
       this.lifecycle.start();
@@ -1177,6 +1188,11 @@ export class GameServer {
       // from the database because the database is the only thing that knows
       // what SHOULD exist. See services/TournamentMetrics.ts.
       ...this.tournamentMetrics.toPrometheus(),
+      // ── SPIN OBSERVABILITY (2026-08-31) ──────────────────────────────
+      // The tournament gauges above count events. These test the one
+      // EQUALITY the Spin format is sold on, and watch the punctuality of
+      // the wheel that sells it. See services/SpinMetrics.ts.
+      ...this.spinMetrics.toPrometheus(),
     ];
 
     if (allLines.length === 0) {
@@ -3193,13 +3209,28 @@ export class GameServer {
         // event completed by a path that predates the settler) is settled by
         // fn_sweep_unsettled_tournament_rake. Idempotent by PK claim, so it
         // can never double-pay a tournament something else settled. Every 10
-        // minutes — this is a safety net, not the primary path.
+        // minutes - this is a safety net, not the primary path.
+        //
+        // THE BATCH IS SMALL ON PURPOSE. 2026-08-31: this ran with p_limit 200
+        // and settled nothing for two and a half hours while 29 terminal events
+        // holding 215.98 in union rake piled up behind it. The whole sweep is
+        // ONE transaction, and every settlement inside it updates the SAME
+        // club_wallets row and the same union wallet. At 200 candidates that is
+        // minutes of held row locks, against a live engine settling its own
+        // finishing tournaments on those exact rows, so the sweep deadlocked,
+        // lost, and rolled back, every single pass. The alert it left behind
+        // said only "deadlock detected".
+        //
+        // Ten per pass is ~5s of locking, and at one pass per 10 minutes it
+        // drains 60 events an hour against a normal arrival rate near one. A
+        // backlog costs a little latency; a batch that deadlocks costs the
+        // whole sweep, forever, which is what actually happened.
         if (Date.now() - this.lastRakeSweepAt > 10 * 60 * 1000) {
           this.lastRakeSweepAt = Date.now();
           try {
             const { data: sweep, error: sweepErr } = await supabase.rpc(
               'fn_sweep_unsettled_tournament_rake',
-              { p_since_days: 60, p_limit: 200 }
+              { p_since_days: 60, p_limit: 10 }
             );
             if (sweepErr) {
               reportError(
@@ -3352,6 +3383,36 @@ export class GameServer {
             }
           } catch (attEx) {
             reportError(attEx, 'GameServer.rake_attribution_repair_threw');
+          }
+
+          // ── AND THE BACKLOG BEHIND IT (2026-08-31) ──
+          // fn_repair_ retries settlements the settle path recorded as FAILED.
+          // It cannot see the ones that were never measured at all, because
+          // before attributed_users existed there was nothing to record — and
+          // that was 40,055 rows on 2026-08-31, four years of VIP points and
+          // agent commission owed to 585 players and never paid. Draining it
+          // was a one-off by hand; keeping it drained cannot be, or the next
+          // outage rebuilds the same silent backlog. Small limit, on the same
+          // 15-minute clock: this is a floor sweeper, not a migration.
+          try {
+            const { data: bp, error: bpErr } = await supabase.rpc(
+              'fn_backpay_tournament_rake_attribution',
+              { p_limit: 200 }
+            );
+            if (bpErr) {
+              reportError(
+                new Error(`[GameServer] rake attribution back-pay failed: ${bpErr.message}`),
+                'GameServer.rake_attribution_backpay_failed'
+              );
+            } else if (Number(bp?.paid) > 0 || Number(bp?.errors) > 0) {
+              console.log(
+                `[GameServer] Rake attribution back-pay: ${bp.paid} paid ` +
+                  `(${bp.chips} chips), ${bp.retried} retried, ${bp.errors} threw, ` +
+                  `${bp.remaining} unmeasured left, ${bp.needs_a_human} need a human`
+              );
+            }
+          } catch (bpEx) {
+            reportError(bpEx, 'GameServer.rake_attribution_backpay_threw');
           }
         }
 
@@ -4378,7 +4439,7 @@ export class GameServer {
       );
       return;
     }
-    const hasHuman = (profiles || []).some((p) => !Boolean((p as { is_horse?: boolean }).is_horse));
+    const hasHuman = (profiles || []).some((p) => !(p as { is_horse?: boolean }).is_horse);
     if (!hasHuman) return;
 
     await this.topUpPartialSeatFirst(tournamentId, seats, paid, 'a human is waiting');
@@ -4435,6 +4496,68 @@ export class GameServer {
     }
     this.tournamentOwnedTables.add(tableId);
     this.tableEngines.set(tableId, engine);
+  }
+
+  /**
+   * Ensure one newly-created cash table has a live engine before an authorized
+   * WebSocket viewer is admitted.
+   *
+   * Background discovery is intentionally occupancy-driven so thousands of
+   * abandoned empty lobby rows do not consume an engine forever. That makes it
+   * the wrong primitive for Create And Start: the client opens the table before
+   * anybody has bought a seat. This on-demand path validates the durable table,
+   * takes the same lease as discovery, installs the map entry synchronously to
+   * collapse concurrent connects, and lets start() publish the waiting snapshot
+   * as soon as its database reads complete.
+   */
+  async ensureCashTableEngine(tableId: string): Promise<boolean> {
+    const existingStart = this.tableEngineStartPromises.get(tableId);
+    if (existingStart) return existingStart;
+    if (this.tableEngines.has(tableId)) return true;
+
+    const { data: table, error } = await supabase
+      .from('tables')
+      .select('id, tournament_id, status, game_type, is_deleted')
+      .eq('id', tableId)
+      .maybeSingle();
+
+    if (error) {
+      reportError(
+        new Error(`On-demand table lookup failed for ${tableId}: ${error.message}`),
+        'GameServer.on_demand_table_lookup_failed'
+      );
+      return false;
+    }
+    if (!isWakeableCashTable(table)) return false;
+
+    if (!(await claimTable(tableId))) return false;
+    // Another authorized connection may have completed the same wake while the
+    // lease call was in flight. Never construct a second dealer.
+    const racedStart = this.tableEngineStartPromises.get(tableId);
+    if (racedStart) return racedStart;
+    if (this.tableEngines.has(tableId)) return true;
+
+    const engine = new ServerTableEngine(tableId);
+    engine.setHub(tableStateHub);
+    this.tableEngines.set(tableId, engine);
+    const startPromise = engine
+      .start()
+      .then(() => true)
+      .catch(async (startError) => {
+        this.engineStartFailures++;
+        reportError(startError, 'GameServer.on_demand_table_start_failed');
+        if (this.tableEngines.get(tableId) === engine) {
+          this.tableEngines.delete(tableId);
+          tableStateHub.dropTable(tableId);
+          await releaseTables([tableId]);
+        }
+        return false;
+      })
+      .finally(() => {
+        this.tableEngineStartPromises.delete(tableId);
+      });
+    this.tableEngineStartPromises.set(tableId, startPromise);
+    return startPromise;
   }
 
   /**

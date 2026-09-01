@@ -49,7 +49,11 @@ interface Draft {
 }
 
 const MODES: Array<{ value: TriggerMode; label: string; hint: string }> = [
-  { value: 'every_n_hands', label: 'Every N Hands', hint: 'A Bomb Every Few Dealt Hands' },
+  {
+    value: 'every_n_hands',
+    label: 'Every Set Number Of Hands',
+    hint: 'Choose Which Dealt Hand Becomes A Bomb Pot',
+  },
   {
     value: 'once_per_orbit',
     label: 'Every Orbit',
@@ -169,7 +173,7 @@ export default function TableBombSettingsPage() {
         res?.reason === 'not_authorized'
           ? 'Only Club Staff Can Change This'
           : res?.reason === 'frequency_must_be_at_least_1'
-            ? 'Every N Hands Needs A Frequency Of At Least 1'
+            ? 'The Number Of Hands Between Bomb Pots Must Be At Least 1'
             : res?.reason === 'interval_must_be_at_least_60s'
               ? 'The Timer Must Be At Least One Minute'
               : 'Could Not Save These Settings'
@@ -240,7 +244,7 @@ export default function TableBombSettingsPage() {
 
           {draft.mode === 'every_n_hands' && (
             <label className={styles.field}>
-              <span className={styles.label}>A Bomb Every</span>
+              <span className={styles.label}>Bomb Pot Hand Interval</span>
               <input
                 type="number"
                 min={1}

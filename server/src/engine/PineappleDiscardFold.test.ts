@@ -162,15 +162,15 @@ describe('pineapple discard round', () => {
   });
 
   /**
-   * MOVED, NOT WEAKENED — PHASE 3 2026-08-31.
+   * MOVED, NOT WEAKENED - PHASE 3 2026-08-31.
    *
    * This pin used to read `expect(st().stage).not.toBe('pineapple_discard')`
    * on the same synchronous tick as the last discard, because the advance was
    * synchronous. It is not any more: the last discard buys a
    * HAND_COMPLETION.DISCARD_SETTLE_MS beat so the card leaving the hand
    * finishes its flight before a betting round opens over the top of it. The
-   * assertion it was making — a full round of discards ADVANCES, and every
-   * survivor is left holding two cards — is unchanged and is still made here.
+   * assertion it was making - a full round of discards ADVANCES, and every
+   * survivor is left holding two cards - is unchanged and is still made here.
    * What is added is the half that is now load-bearing: the round is still
    * held DURING the beat (so nothing downstream may read the advance as its
    * signal that the round is over), and it advances when the beat elapses.

@@ -7,8 +7,13 @@ import {
   type Page,
 } from '@playwright/test';
 
-import { STORAGE_STATE } from './global-setup';
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
+import {
+  cleanupTemporaryCustomizationAccount,
+  createTemporaryCustomizationAccount,
+  requireCustomizationCertificationEnvironment,
+  type TemporaryCustomizationAccount,
+} from './support/temporaryCustomizationAccount';
 
 type Appearance = {
   table: string;
@@ -124,13 +129,11 @@ async function openStudio(page: Page) {
   return studio;
 }
 
-async function signIn(context: BrowserContext, baseURL: string) {
-  const email = process.env.SP_EMAIL_2;
-  const password = process.env.SP_PASS_2;
-  if (!email || !password) {
-    throw new Error('SP_EMAIL_2 and SP_PASS_2 are required for the two-player production test.');
-  }
-
+async function signIn(
+  context: BrowserContext,
+  baseURL: string,
+  account: TemporaryCustomizationAccount
+) {
   const page = await context.newPage();
   await page.goto(baseURL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await page
@@ -140,8 +143,8 @@ async function signIn(context: BrowserContext, baseURL: string) {
     const emailInput = page.locator('input[type="email"]').first();
     const passwordInput = page.locator('input[type="password"]').first();
     await expect(emailInput).toBeVisible({ timeout: 30_000 });
-    await emailInput.fill(email);
-    await passwordInput.fill(password);
+    await emailInput.fill(account.email);
+    await passwordInput.fill(account.password);
     const titled = page.locator('button[type="submit"][title="Sign In"]').first();
     const submit = (await titled.count())
       ? titled
@@ -158,6 +161,7 @@ async function signIn(context: BrowserContext, baseURL: string) {
   await expect(page.getByRole('button', { name: 'Open Menu' }).first()).toBeVisible({
     timeout: 30_000,
   });
+  expect(await sessionUserId(page)).toBe(account.id);
   return page;
 }
 
@@ -265,85 +269,81 @@ function differentFrom(disallowed: readonly string[], options: readonly string[]
   return result;
 }
 
-async function restoreState(studio: Locator, state: SavedStudioState) {
-  await selectAsset(studio, 'Looks', state.selections.Looks);
-  await selectAsset(studio, 'Tables', state.selections.Tables);
-  await activateCategory(studio, 'Scenes');
-  await studio.getByRole('button', { name: new RegExp(`^${state.sceneGroup}`) }).click();
-  const scene = studio.getByRole('button', { name: state.selections.Scenes, exact: true });
-  await expect(scene).toBeEnabled({ timeout: 20_000 });
-  if ((await scene.getAttribute('aria-pressed')) !== 'true') {
-    const scenePersisted = studio
-      .page()
-      .waitForResponse(
-        (response) =>
-          response.request().method() === 'POST' &&
-          response.url().includes('/rest/v1/user_theme_settings'),
-        { timeout: PRODUCTION_RESPONSE_TIMEOUT }
-      );
-    await scene.click();
-    await expect(scene).toHaveAttribute('aria-pressed', 'true', { timeout: 20_000 });
-    const sceneResponse = await scenePersisted;
-    if (!sceneResponse.ok()) {
-      throw new Error(`Table Studio restoration failed with HTTP ${sceneResponse.status()}.`);
-    }
-  }
-  await selectAsset(studio, 'Buttons', state.selections.Buttons);
-  await selectAsset(studio, 'Cards', state.selections.Cards);
-  await studio.getByRole('button', { name: state.mode, exact: true }).click();
-  await expectAppearance(studio, state.appearance);
-}
-
 test.describe('production Table Studio realtime contract', () => {
-  // This test deliberately performs and verifies a dozen durable production
-  // writes, then restores two accounts. Publish bursts can make the cleanup
-  // slower without making it less necessary, so give the live contract its
-  // own budget instead of letting Playwright close the browser mid-restore.
-  test.describe.configure({ mode: 'serial', timeout: 360_000 });
+  // This test performs and verifies durable production writes on two reserved
+  // identities, then hard-deletes both. Restoring disposable cosmetics before
+  // deletion adds no evidence and can hide the original journey failure.
+  test.describe.configure({ mode: 'serial', timeout: 600_000 });
 
   test('every free cosmetic applies, persists, syncs to another device, and stays isolated from another player', async ({
     browser,
-    page,
     baseURL,
   }) => {
-    test.setTimeout(360_000);
+    test.setTimeout(600_000);
     if (!baseURL) throw new Error('A deployed BASE_URL is required.');
 
-    const primaryMobile = await browser.newContext({
-      ...devices['iPhone 13'],
-      baseURL,
-      storageState: STORAGE_STATE,
-    });
-    const otherPlayer = await browser.newContext({
-      ...devices['iPhone 13'],
-      baseURL,
-      storageState: { cookies: [], origins: [] },
-    });
+    const environment = requireCustomizationCertificationEnvironment();
+    let primaryAccount: TemporaryCustomizationAccount | undefined;
+    let otherAccount: TemporaryCustomizationAccount | undefined;
+    let primaryDesktop: BrowserContext | undefined;
+    let primaryMobile: BrowserContext | undefined;
+    let otherPlayer: BrowserContext | undefined;
+    let primaryPage: Page | undefined;
     let primaryStudio: Locator | undefined;
     let mobileStudio: Locator | undefined;
     let otherStudio: Locator | undefined;
     let primaryOriginal: SavedStudioState | undefined;
     let otherOriginal: SavedStudioState | undefined;
+    let journeyFailure: unknown;
+    const teardownFailures: unknown[] = [];
 
     try {
-      primaryStudio = await openStudio(page);
-      const primaryMobilePage = await primaryMobile.newPage();
-      mobileStudio = await openStudio(primaryMobilePage);
-      const otherPage = await signIn(otherPlayer, baseURL);
+      // Each run owns both players. Post-deploy workflows intentionally do not
+      // cancel one another, so standing SP_EMAIL accounts let a newer canary
+      // overwrite an older run between its successful POST and reload. That
+      // produced a false durability failure while also making cleanup capable
+      // of changing a real player's appearance. Reserved identities preserve
+      // the exact same two-device/isolation proof without shared mutable state.
+      primaryAccount = await createTemporaryCustomizationAccount(environment, 'theme-primary', 0);
+      otherAccount = await createTemporaryCustomizationAccount(environment, 'theme-other', 0);
+      primaryDesktop = await browser.newContext({
+        ...devices['Desktop Chrome'],
+        baseURL,
+        storageState: { cookies: [], origins: [] },
+      });
+      primaryMobile = await browser.newContext({
+        ...devices['iPhone 13'],
+        baseURL,
+        storageState: { cookies: [], origins: [] },
+      });
+      otherPlayer = await browser.newContext({
+        ...devices['iPhone 13'],
+        baseURL,
+        storageState: { cookies: [], origins: [] },
+      });
+
+      primaryPage = await signIn(primaryDesktop, baseURL, primaryAccount);
+      primaryStudio = await openStudio(primaryPage);
+      const mobilePage = await signIn(primaryMobile, baseURL, primaryAccount);
+      mobileStudio = await openStudio(mobilePage);
+      const otherPage = await signIn(otherPlayer, baseURL, otherAccount);
       otherStudio = await openStudio(otherPage);
-      const primaryUserId = await sessionUserId(page);
-      expect(await sessionUserId(primaryMobilePage)).toBe(primaryUserId);
+      console.log('[customization-realtime] three isolated sessions ready');
+      const primaryUserId = await sessionUserId(primaryPage);
+      expect(await sessionUserId(mobilePage)).toBe(primaryUserId);
       expect(await sessionUserId(otherPage)).not.toBe(primaryUserId);
 
       primaryOriginal = await captureState(primaryStudio);
       otherOriginal = await captureState(otherStudio);
       const otherBefore = otherOriginal.appearance;
+      console.log('[customization-realtime] account baselines captured');
 
       const primaryPreset = different(primaryOriginal.selections.Looks, Object.keys(PRESETS));
       await selectAsset(primaryStudio, 'Looks', primaryPreset);
       await expectAppearance(primaryStudio, PRESETS[primaryPreset]);
       await expectAppearance(mobileStudio, PRESETS[primaryPreset]);
       await expectAppearance(otherStudio, otherBefore);
+      console.log('[customization-realtime] preset synced and remained account-scoped');
 
       for (const category of ['Tables', 'Scenes', 'Buttons', 'Cards'] as const) {
         await activateCategory(primaryStudio, category);
@@ -367,26 +367,55 @@ test.describe('production Table Studio realtime contract', () => {
         const updated = await readAppearance(primaryStudio);
         await expectAppearance(mobileStudio, updated);
         await expectAppearance(otherStudio, otherBefore);
+        console.log(`[customization-realtime] ${category} synced and remained account-scoped`);
       }
 
       const finalPrimary = await readAppearance(primaryStudio);
-      await primaryMobilePage.reload({ waitUntil: 'domcontentloaded' });
-      mobileStudio = await openStudio(primaryMobilePage);
+      await mobilePage.reload({ waitUntil: 'domcontentloaded' });
+      mobileStudio = await openStudio(mobilePage);
       await expectAppearance(mobileStudio, finalPrimary);
+      console.log('[customization-realtime] persisted appearance survived a device reload');
 
       const otherPreset = different(primaryPreset, Object.keys(PRESETS));
       await selectAsset(otherStudio, 'Looks', otherPreset);
       await expectAppearance(otherStudio, PRESETS[otherPreset]);
       await expectAppearance(primaryStudio, finalPrimary);
+      console.log('[customization-realtime] second player remained isolated');
+    } catch (error) {
+      journeyFailure = error;
     } finally {
-      await Promise.all([
-        primaryStudio && primaryOriginal
-          ? restoreState(primaryStudio, primaryOriginal)
-          : Promise.resolve(),
-        otherStudio && otherOriginal ? restoreState(otherStudio, otherOriginal) : Promise.resolve(),
+      // Close all realtime sockets before hard-deleting the reserved Auth and
+      // database rows. Cleanup must still run when the journey itself fails.
+      const closed = await Promise.allSettled([
+        primaryDesktop?.close(),
+        primaryMobile?.close(),
+        otherPlayer?.close(),
       ]);
-      await primaryMobile.close();
-      await otherPlayer.close();
+      closed.forEach((result) => {
+        if (result.status === 'rejected') teardownFailures.push(result.reason);
+      });
+      const cleaned = await Promise.allSettled([
+        primaryAccount
+          ? cleanupTemporaryCustomizationAccount(environment, primaryAccount)
+          : Promise.resolve(),
+        otherAccount
+          ? cleanupTemporaryCustomizationAccount(environment, otherAccount)
+          : Promise.resolve(),
+      ]);
+      cleaned.forEach((result) => {
+        if (result.status === 'rejected') teardownFailures.push(result.reason);
+      });
+    }
+
+    if (journeyFailure && teardownFailures.length) {
+      throw new AggregateError(
+        [journeyFailure, ...teardownFailures],
+        'Customization certification journey and cleanup both failed.'
+      );
+    }
+    if (journeyFailure) throw journeyFailure;
+    if (teardownFailures.length) {
+      throw new AggregateError(teardownFailures, 'Customization certification cleanup failed.');
     }
   });
 });

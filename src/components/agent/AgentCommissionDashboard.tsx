@@ -14,6 +14,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import './AgentCommissionDashboard.css';
 import { reportError } from '../../utils/errorReporter';
+import { CommissionService } from '../../services/CommissionService';
 
 interface CommissionSummary {
   totalEarned: number;
@@ -45,7 +46,7 @@ interface SubAgent {
   joinedAt: Date;
 }
 
-export function AgentCommissionDashboard() {
+export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
   const isMounted = useIsMounted();
   const { user } = useAuthUser();
   const toast = useToast();
@@ -55,6 +56,14 @@ export function AgentCommissionDashboard() {
   const [subAgents, setSubAgents] = useState<SubAgent[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'summary' | 'records' | 'subagents'>('summary');
+
+  // WHAT THIS AGENT IS ACTUALLY OWED, read from agent_commissions rather than
+  // agents.pending_commission - a column written by no function and no trigger
+  // anywhere in the database. On 2026-08-31 it claimed 26,859.87 owed across 5
+  // agents while the ledger held 394,904.61 across 96.
+  const [owed, setOwed] = useState<number | null>(null);
+  const [claiming, setClaiming] = useState(false);
+  const [claimProgress, setClaimProgress] = useState<number>(0);
 
   // Stagger animations for each tab
   const { style: summaryStyle } = useStaggerAnimation(summary ? 4 : 0);
@@ -144,6 +153,19 @@ export function AgentCommissionDashboard() {
         });
       }
 
+      // The real outstanding figure, per club. Cheap enough for a page load
+      // (one indexed sum) and deliberately not inside the claim itself, where
+      // it cost 1,474ms of an 8 second budget.
+      if (clubId && user?.id) {
+        try {
+          const amount = await CommissionService.unsettledCommission(clubId, user.id);
+          if (isMounted.current) setOwed(amount);
+        } catch (e) {
+          reportError(e, 'AgentCommissionDashboard.unsettled');
+          if (isMounted.current) setOwed(null);
+        }
+      }
+
       // Load recent records
       // commission_records schema: id, agent_id, period_id, gross_rake, commission_rate, commission_amount, status, paid_at, created_at, updated_at
       const { data: recordsData } = await supabase
@@ -226,13 +248,49 @@ export function AgentCommissionDashboard() {
     if (isMounted.current) setLoading(false);
   };
 
-  const requestPayout = () => {
-    // Agent commissions are not paid on-demand — they accrue (pending_commission /
-    // agent_commissions) and are disbursed automatically at the weekly settlement.
-    // There is no request-payout RPC; give the agent clear feedback instead of a
-    // silently-dead button.
-    if (isMounted.current) {
-      toast.info('Commissions are paid out automatically at the weekly settlement.');
+  /**
+   * CLAIM IT.
+   *
+   * This button used to tell the agent "Commissions are paid out automatically
+   * at the weekly settlement." Nothing paid them out - no function, no cron, no
+   * settlement job. It was a reassuring sentence in front of 394,904.61 chips
+   * that had been sitting unclaimed since April.
+   *
+   * fn_agent_claim_commission pays the caller from the club bank and marks the
+   * rows settled. It works in batches, so this reports progress rather than
+   * appearing to hang: the largest agent has 192,135 rows to stamp.
+   */
+  const claimPayout = async () => {
+    if (!clubId || claiming) return;
+    setClaiming(true);
+    setClaimProgress(0);
+    try {
+      const { claimed, stoppedEarly, reason } = await CommissionService.claimCommission(
+        clubId,
+        (soFar) => {
+          if (isMounted.current) setClaimProgress(soFar);
+        }
+      );
+      if (!isMounted.current) return;
+      if (claimed > 0) {
+        toast.success(`${claimed.toLocaleString()} Chips Are Now In Your Balance`);
+      }
+      if (stoppedEarly) {
+        toast.info(reason || 'Some Commission Is Still Owed. Claim Again To Continue.');
+      }
+      await loadData();
+    } catch (e) {
+      reportError(e, 'AgentCommissionDashboard.claim');
+      if (isMounted.current) {
+        // The server's own sentence, which names the shortfall when the club
+        // bank cannot cover the claim.
+        toast.error(e instanceof Error ? e.message : 'The Claim Was Refused');
+      }
+    } finally {
+      if (isMounted.current) {
+        setClaiming(false);
+        setClaimProgress(0);
+      }
     }
   };
 
@@ -277,14 +335,23 @@ export function AgentCommissionDashboard() {
             { className: 'total', label: 'Total Earned', value: summary.totalEarned },
             { className: '', label: 'This Week', value: summary.thisWeek },
             { className: '', label: 'This Month', value: summary.thisMonth },
-            { className: 'pending', label: 'Pending Payout', value: summary.pendingPayout },
+            {
+              className: 'pending',
+              label: 'Unclaimed Commission',
+              value: owed ?? summary.pendingPayout,
+            },
           ].map((card, idx) => (
             <div key={idx} className={`summary-card ${card.className}`} style={summaryStyle(idx)}>
               <span className="label">{card.label}</span>
               <span className="value">{card.value.toLocaleString()}</span>
-              {card.className === 'pending' && summary.pendingPayout > 0 && (
-                <button className="payout-btn" onClick={requestPayout}>
-                  Request Payout
+              {card.className === 'pending' && (owed ?? 0) > 0 && (
+                <button
+                  className="payout-btn"
+                  onClick={claimPayout}
+                  disabled={claiming || !clubId}
+                  title={!clubId ? 'Open This From A Club To Claim' : undefined}
+                >
+                  {claiming ? `Claiming... ${claimProgress.toLocaleString()}` : 'Claim Commission'}
                 </button>
               )}
             </div>

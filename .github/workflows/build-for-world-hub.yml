@@ -245,7 +245,7 @@ jobs:
           compression-level: 6
 
       # Prove the thing the next job depends on actually exists, rather than
-      # discovering it is missing halfway through the rsync. Kept from the
+      # discovering it is missing halfway through publication. Kept from the
       # branch version, which checked the same file for the same reason.
       - name: Verify dist is complete
         run: |
@@ -273,6 +273,16 @@ jobs:
       contents: write
 
     steps:
+      # This job does not inherit the source checkout from build-and-store.
+      # Keep the retention helper beside the downloaded artifact so the
+      # publish retry path executes code from this exact CA SHA.
+      - name: Checkout Club Arena sync tooling
+        uses: actions/checkout@v4
+        with:
+          path: club-arena-source
+          sparse-checkout: scripts/ci/sync-club-arena-dist.mjs
+          sparse-checkout-cone-mode: false
+
       - name: Download the dist built by the previous job
         uses: actions/download-artifact@v4
         with:
@@ -317,9 +327,10 @@ jobs:
           # 3m36s on run 32993261791, materialising an entire Next.js app to
           # write one directory inside it. This job reads nothing outside
           # public/hub/club-arena and writes nothing outside it either: the
-          # rsync below targets exactly that path and the commit that follows
-          # stages exactly that path. Cone-mode sparse checkout gives us that
-          # directory and the git metadata to commit it, and skips the rest.
+          # synchronizer below targets exactly that path and the commit that
+          # follows stages exactly that path. Cone-mode sparse checkout gives
+          # us that directory and the git metadata to commit it, and skips the
+          # rest.
           #
           # fetch-depth: 1 is already the action's default; it is written out
           # because the cost here was never history, it was tree size, and the
@@ -328,12 +339,6 @@ jobs:
           sparse-checkout: public/hub/club-arena
           sparse-checkout-cone-mode: true
           fetch-depth: 1
-
-      - name: Sync dist/ to World Hub public/hub/club-arena/
-        run: |
-          rsync -av --delete \
-            club-arena-build/dist/ \
-            world-hub/public/hub/club-arena/
 
       - name: Commit and push to World Hub
         # 2026-08-21: this step used to `git pull --rebase` on a rejected push
@@ -348,10 +353,11 @@ jobs:
         # already built.
         #
         # A merge is the wrong tool for a build artifact. There is nothing to
-        # reconcile: our dist/ is a COMPLETE directory (`rsync --delete`), so
-        # instead of replaying our commit onto the new tip we throw the commit
-        # away and rebuild it on top of the new tip. That cannot conflict, by
-        # construction.
+        # reconcile: our dist/ is a COMPLETE release input, so instead of
+        # replaying our commit onto the new tip we throw the commit away and
+        # rebuild it on top of the new tip. That cannot conflict, by
+        # construction. The synchronizer bounds runtime compatibility to the
+        # current and immediately previous JS/CSS generations.
         #
         # The one thing that must not happen is publishing an OLDER bundle over
         # a newer one, which is how a "retry" turns into a regression.
@@ -385,21 +391,15 @@ jobs:
           for attempt in 1 2 3 4 5; do
             # READ THE DEPLOYED PROVENANCE FROM GIT, NOT FROM THE WORKING TREE.
             #
-            # 2026-08-23: the "Sync dist/" step above rsyncs OUR bundle into
-            # public/hub/club-arena/ before this step runs, so reading that
-            # path here read our own build-info.json back and compared the
-            # bundle to itself. THEIRS_SHA equalled OURS_SHA on attempt 1,
-            # every time, and the stand-down guard could not fire on the one
-            # attempt that usually decides the outcome. It only worked from
-            # attempt 2, after `git reset --hard origin/main` restored the
-            # file - which is to say only when the push had already been
-            # rejected.
+            # The working tree is intentionally untouched until this verdict
+            # is complete. Otherwise an eager sync would make the first
+            # attempt compare our build-info.json to itself and could publish
+            # an older bundle over a newer one.
             #
-            # That leaves the original regression open: a losing older-sha run
-            # that checks World Hub out AFTER the winner has pushed sees the
-            # newer bundle, overwrites it with rsync, compares ours-to-ours,
-            # and pushes cleanly as a fast-forward. Production goes backwards
-            # with every check green.
+            # The ordering prevents the original regression: a losing
+            # older-sha run that checked World Hub out after the winner could
+            # otherwise overwrite the newer bundle, compare ours-to-ours, and
+            # push the regression as a clean fast-forward.
             #
             # origin/main (freshly fetched) is the only honest answer to "what
             # is deployed", and it is correct on every attempt, not just
@@ -443,7 +443,9 @@ jobs:
               exit 0
             fi
 
-            rsync -a --delete ../club-arena-build/dist/ public/hub/club-arena/
+            node ../club-arena-source/scripts/ci/sync-club-arena-dist.mjs \
+              ../club-arena-build/dist \
+              public/hub/club-arena
             git add -A public/hub/club-arena/
             if git diff --cached --quiet; then
               echo "No changes to sync — World Hub already carries this bundle."

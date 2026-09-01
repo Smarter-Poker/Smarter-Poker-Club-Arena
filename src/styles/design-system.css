@@ -127,7 +127,7 @@
   --header-height: 56px;
   /* Keep all six approved controls visible in a compact fixed bar. The floor
      is a full touch target and the ceiling protects the content viewport. */
-  --bottom-nav-height: clamp(44px, 13.72vw, 263px);
+  --bottom-nav-height: clamp(44px, 13.72vw, 132px);
   --bottom-nav-clearance: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
   --sidebar-width: 280px;
   --max-width-mobile: 480px;

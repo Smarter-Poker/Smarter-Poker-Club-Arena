@@ -250,6 +250,11 @@ interface PrefetchedGamePage {
   hasMore: boolean;
 }
 
+interface PrefetchedGameRequest {
+  key: string;
+  promise: Promise<PrefetchedGamePage | null>;
+}
+
 interface CachedPlayerLedger {
   players: PlayerBreakdown;
   cursor: PageCursor | null;
@@ -478,6 +483,7 @@ export default function ClubDataPage() {
   const snapshotRef = useRef<Snapshot | null>(null);
   const gameCursorRef = useRef<PageCursor | null>(null);
   const prefetchedGamePageRef = useRef<PrefetchedGamePage | null>(null);
+  const prefetchedGameRequestRef = useRef<PrefetchedGameRequest | null>(null);
   const playersRef = useRef<PlayerBreakdown | null>(null);
   const playerCursorRef = useRef<PageCursor | null>(null);
   const playersMoreRef = useRef(false);
@@ -489,6 +495,7 @@ export default function ClubDataPage() {
   const eventRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingEventRefreshRef = useRef({ ledger: false, invoices: false });
   const cancelledRef = useRef(false);
+  const manualRefreshingRef = useRef(false);
   const gamesTabRef = useRef<HTMLButtonElement>(null);
   const playersTabRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -561,6 +568,7 @@ export default function ClubDataPage() {
     setGameCursor(null);
     gameCursorRef.current = null;
     prefetchedGamePageRef.current = null;
+    prefetchedGameRequestRef.current = null;
     setGamesHasMore(false);
     setGamesLoadingMore(false);
     setGamesPageError(null);
@@ -577,6 +585,8 @@ export default function ClubDataPage() {
     setPlayersError(null);
     setExportNote(null);
     setRefreshNote(null);
+    manualRefreshingRef.current = false;
+    setManualRefreshing(false);
     setLedgerSource('cold');
     setLastVerifiedAt(null);
     setLastRequestMs(null);
@@ -657,9 +667,20 @@ export default function ClubDataPage() {
   const load = useCallback(
     async (showSpinner: boolean, preserveOnError = false): Promise<boolean> => {
       if (!clubUuid || isHydrating || !user) return false;
+      // Pagination owns its cursor while it is in flight. A heartbeat is a
+      // recovery mechanism, not a reason to supersede that operator action.
+      if (preserveOnError && gamesMoreRef.current) return true;
       const requestStartedAt = performance.now();
       const myVersion = ++loadVersion.current;
       const stale = () => cancelledRef.current || loadVersion.current !== myVersion;
+      // A foreground query change (range, filter, search, or sort) owns a new
+      // cursor. Explicitly retire any older page request before it becomes
+      // stale; a stale request intentionally cannot clear UI owned by a newer
+      // request, which previously left "Loading More Games" locked forever.
+      if (gamesMoreRef.current) {
+        gamesMoreRef.current = false;
+        setGamesLoadingMore(false);
+      }
       if (showSpinner) setLoading(true);
       setGamesPageError(null);
       try {
@@ -677,10 +698,10 @@ export default function ClubDataPage() {
               p_game: game,
               p_stakes: stakes,
               p_search: search || null,
-              // Keep the first continuation inside the same bounded snapshot
-              // read. Only the first 100 rows paint; the verified remainder is
-              // held locally until the operator asks for it.
-              p_limit: gameSort === 'recent' ? GAME_PAGE_SIZE * 2 : 1,
+              // Keep first paint inside the production-proven 100-row budget.
+              // The next Recent slice is warmed only after these rows settle,
+              // so a continuation can never make the initial ledger heavier.
+              p_limit: gameSort === 'recent' ? GAME_PAGE_SIZE : 1,
             }),
           'Club data request timed out'
         );
@@ -745,11 +766,14 @@ export default function ClubDataPage() {
         } else {
           const snapshot = data as Snapshot;
           const currentRows = snapshotRef.current?.rows || [];
-          const sourceRows = gameSort === 'recent' ? snapshot.rows : page!.rows;
-          const keepExpandedSourceRows = preserveOnError && currentRows.length > GAME_PAGE_SIZE;
-          const refreshedRows = keepExpandedSourceRows
-            ? sourceRows
-            : sourceRows.slice(0, GAME_PAGE_SIZE);
+          const keepExpandedMetricRows =
+            gameSort !== 'recent' && preserveOnError && currentRows.length > GAME_PAGE_SIZE;
+          const refreshedRows =
+            gameSort === 'recent'
+              ? snapshot.rows
+              : keepExpandedMetricRows
+                ? page!.rows
+                : page!.rows.slice(0, GAME_PAGE_SIZE);
           const rows = preserveExpandedClubDataRows(currentRows, refreshedRows, preserveOnError);
           const nextSnapshot = {
             ...snapshot,
@@ -757,22 +781,23 @@ export default function ClubDataPage() {
             row_count: Number(page?.filtered_count ?? snapshot.row_count),
           };
           const keptExpandedRows = rows.length > refreshedRows.length;
-          const sourceCursor =
-            gameSort === 'recent' ? recentCursor(sourceRows) : page!.next_cursor || null;
-          const sourceHasMore =
-            gameSort === 'recent'
-              ? Number(snapshot.row_count) > sourceRows.length
-              : Boolean(page!.has_more);
-          const prefetchedRows = keepExpandedSourceRows ? [] : sourceRows.slice(GAME_PAGE_SIZE);
+          const prefetchedRows =
+            gameSort !== 'recent' && !keepExpandedMetricRows
+              ? page!.rows.slice(GAME_PAGE_SIZE)
+              : [];
           prefetchedGamePageRef.current = prefetchedRows.length
             ? {
                 key: gameCacheKey,
                 rows: prefetchedRows,
-                nextCursor: sourceCursor,
-                hasMore: sourceHasMore,
+                nextCursor: page!.next_cursor || null,
+                hasMore: Boolean(page!.has_more),
               }
             : null;
-          const nextCursor = keptExpandedRows ? gameCursorRef.current : sourceCursor;
+          const nextCursor = keptExpandedRows
+            ? gameCursorRef.current
+            : gameSort === 'recent'
+              ? recentCursor(rows)
+              : page!.next_cursor || null;
           const nextHasMore = Number(nextSnapshot.row_count) > rows.length;
           setError(null);
           setSnapshot(nextSnapshot);
@@ -787,9 +812,59 @@ export default function ClubDataPage() {
             : nextSnapshot;
           writeClubDataCache<CachedGameLedger>(user.id, clubUuid, gameCacheKey, {
             snapshot: cachedSnapshot,
-            cursor: prefetchedRows.length ? sourceCursor : nextCursor,
-            hasMore: prefetchedRows.length ? sourceHasMore : nextHasMore,
+            cursor: prefetchedRows.length ? page!.next_cursor || null : nextCursor,
+            hasMore: prefetchedRows.length ? Boolean(page!.has_more) : nextHasMore,
           });
+
+          // Recent first paint is intentionally lighter than the ranked sorts.
+          // Warm its continuation only after the authoritative 100-row snapshot
+          // is visible. Load More can await this exact in-flight request, so it
+          // never starts a duplicate query when the operator gets there first.
+          if (gameSort === 'recent' && !keptExpandedRows && nextCursor && nextHasMore) {
+            const prefetchKey = gameCacheKey;
+            const prefetchPromise = coldRead(
+              () =>
+                supabase.rpc('ca_club_game_page', {
+                  p_club_id: clubUuid,
+                  p_start: startDate,
+                  p_end: endDate,
+                  p_game: game,
+                  p_stakes: stakes,
+                  p_search: search || null,
+                  p_sort: 'recent',
+                  p_cursor: nextCursor,
+                  p_limit: GAME_PAGE_SIZE,
+                }),
+              'Recent games prefetch timed out',
+              1
+            )
+              .then(({ data: prefetchedData, error: prefetchError }) => {
+                const prefetchPage = prefetchedData as GamePage | null;
+                if (prefetchError || !prefetchPage || !Array.isArray(prefetchPage.rows))
+                  return null;
+                return {
+                  key: prefetchKey,
+                  rows: prefetchPage.rows,
+                  nextCursor: prefetchPage.next_cursor || null,
+                  hasMore: Boolean(prefetchPage.has_more),
+                } satisfies PrefetchedGamePage;
+              })
+              .catch(() => null);
+            prefetchedGameRequestRef.current = { key: prefetchKey, promise: prefetchPromise };
+            void prefetchPromise.then((prefetchedPage) => {
+              if (stale() || prefetchedGameRequestRef.current?.promise !== prefetchPromise) return;
+              prefetchedGameRequestRef.current = null;
+              if (!prefetchedPage) return;
+              prefetchedGamePageRef.current = prefetchedPage;
+              writeClubDataCache<CachedGameLedger>(user.id, clubUuid, prefetchKey, {
+                snapshot: { ...nextSnapshot, rows: [...rows, ...prefetchedPage.rows] },
+                cursor: prefetchedPage.nextCursor,
+                hasMore: prefetchedPage.hasMore,
+              });
+            });
+          } else {
+            prefetchedGameRequestRef.current = null;
+          }
           return true;
         }
       } catch (err) {
@@ -863,7 +938,17 @@ export default function ClubDataPage() {
       if (preserveOnError && playersMoreRef.current) return true;
       const myVersion = ++playersVersion.current;
       const stale = () => cancelledRef.current || playersVersion.current !== myVersion;
-      setPlayersLoading(true);
+      // Player sort changes establish a new cursor and supersede pagination.
+      // Retire the old spinner here because its now-stale finally block must
+      // not mutate state owned by this newer request.
+      if (playersMoreRef.current) {
+        playersMoreRef.current = false;
+        setPlayersLoadingMore(false);
+      }
+      // Silent recovery must not make the operator's manual recovery control
+      // unavailable. When verified rows already exist, keep them interactive
+      // while the newest background request owns the reconciliation.
+      setPlayersLoading(!preserveOnError || !playersRef.current);
       setPlayersError(null);
       setPlayersPageError(null);
       try {
@@ -987,8 +1072,25 @@ export default function ClubDataPage() {
   }, [tab, loadPlayers, clubUuid, isHydrating, user, playerCacheKey]);
 
   const loadMoreGames = useCallback(async () => {
-    if (!clubUuid || gamesMoreRef.current || isHydrating || !user) return;
-    const prefetched = prefetchedGamePageRef.current;
+    if (!clubUuid || gamesMoreRef.current || loading || isHydrating || !user) return;
+    let prefetched = prefetchedGamePageRef.current;
+    const pendingPrefetch = prefetchedGameRequestRef.current;
+    if (!prefetched && pendingPrefetch?.key === gameCacheKey) {
+      gamesMoreRef.current = true;
+      setGamesLoadingMore(true);
+      setGamesPageError(null);
+      const myVersion = loadVersion.current;
+      try {
+        prefetched = await pendingPrefetch.promise;
+        if (cancelledRef.current || loadVersion.current !== myVersion) return;
+        if (prefetched) prefetchedGamePageRef.current = prefetched;
+      } finally {
+        gamesMoreRef.current = false;
+        if (!cancelledRef.current && loadVersion.current === myVersion) {
+          setGamesLoadingMore(false);
+        }
+      }
+    }
     const current = snapshotRef.current;
     if (prefetched?.key === gameCacheKey && prefetched.rows.length && current) {
       const known = new Set(current.rows.map((row) => `${row.kind}:${row.id}`));
@@ -1093,6 +1195,7 @@ export default function ClubDataPage() {
     search,
     gameSort,
     gameCacheKey,
+    loading,
   ]);
 
   const loadMorePlayers = useCallback(async () => {
@@ -1101,6 +1204,7 @@ export default function ClubDataPage() {
       !playerCursor ||
       !playersHasMore ||
       playersMoreRef.current ||
+      playersLoading ||
       isHydrating ||
       !user
     )
@@ -1162,7 +1266,17 @@ export default function ClubDataPage() {
       playersMoreRef.current = false;
       if (!stale()) setPlayersLoadingMore(false);
     }
-  }, [clubUuid, playerCursor, playersHasMore, isHydrating, user, startDate, endDate, playerSort]);
+  }, [
+    clubUuid,
+    playerCursor,
+    playersHasMore,
+    playersLoading,
+    isHydrating,
+    user,
+    startDate,
+    endDate,
+    playerSort,
+  ]);
 
   // ca_club_player_page owns ordering before it applies the keyset cursor. A
   // client sort here would corrupt page boundaries (and was why "losers"
@@ -1214,12 +1328,13 @@ export default function ClubDataPage() {
       setEndDate((cur) => (cur >= today ? today : cur));
     };
     const id = setInterval(() => {
+      if (manualRefreshingRef.current) return;
       pinToToday();
       void load(false, true);
       if (tabRef.current === 'players') void loadPlayers(true);
     }, REFRESH_MS);
     const onVisible = () => {
-      if (document.visibilityState !== 'visible') return;
+      if (document.visibilityState !== 'visible' || manualRefreshingRef.current) return;
       pinToToday();
       void load(false, true);
       // The Players tab was never refreshed by either trigger, so the tiles
@@ -1309,6 +1424,11 @@ export default function ClubDataPage() {
       if (eventRefreshTimerRef.current) clearTimeout(eventRefreshTimerRef.current);
       eventRefreshTimerRef.current = setTimeout(() => {
         eventRefreshTimerRef.current = null;
+        // refreshAll already requests every authoritative source. Leave these
+        // flags queued and drain them once that bounded foreground cycle ends,
+        // instead of superseding it and extending the disabled state by a
+        // second full retry budget.
+        if (manualRefreshingRef.current) return;
         const pending = pendingEventRefreshRef.current;
         pendingEventRefreshRef.current = { ledger: false, invoices: false };
         if (pending.ledger) {
@@ -1425,7 +1545,8 @@ export default function ClubDataPage() {
   );
 
   const refreshAll = useCallback(async () => {
-    if (manualRefreshing || !clubUuid || isHydrating || !user) return;
+    if (manualRefreshingRef.current || !clubUuid || isHydrating || !user) return;
+    manualRefreshingRef.current = true;
     setManualRefreshing(true);
     setRefreshNote('Refreshing Club Ledger.');
     try {
@@ -1440,9 +1561,19 @@ export default function ClubDataPage() {
         );
       }
     } finally {
-      if (!cancelledRef.current) setManualRefreshing(false);
+      manualRefreshingRef.current = false;
+      if (!cancelledRef.current) {
+        setManualRefreshing(false);
+        const pending = pendingEventRefreshRef.current;
+        pendingEventRefreshRef.current = { ledger: false, invoices: false };
+        if (pending.ledger) {
+          void load(false, true);
+          if (tabRef.current === 'players') void loadPlayers(true);
+        }
+        if (pending.invoices) void loadInvoices();
+      }
     }
-  }, [manualRefreshing, clubUuid, isHydrating, user, load, loadInvoices, loadPlayers, tab]);
+  }, [clubUuid, isHydrating, user, load, loadInvoices, loadPlayers, tab]);
 
   const exportCsv = useCallback(async () => {
     if (!clubUuid || exporting) return;
@@ -1660,7 +1791,7 @@ export default function ClubDataPage() {
             type="button"
             className={styles.headerBtn}
             onClick={() => void refreshAll()}
-            disabled={manualRefreshing || loading || playersLoading || invoicesLoading}
+            disabled={manualRefreshing || !clubUuid || isHydrating}
             aria-label="Refresh Club Ledger"
           >
             {manualRefreshing ? 'Refreshing' : 'Refresh'}
@@ -2311,7 +2442,7 @@ export default function ClubDataPage() {
                 type="button"
                 className={styles.retryButton}
                 onClick={() => void loadMoreGames()}
-                disabled={gamesLoadingMore}
+                disabled={gamesLoadingMore || loading}
               >
                 {gamesLoadingMore ? 'Loading' : 'Try Again'}
               </button>
@@ -2323,7 +2454,7 @@ export default function ClubDataPage() {
               type="button"
               className={styles.loadMore}
               onClick={() => void loadMoreGames()}
-              disabled={gamesLoadingMore}
+              disabled={gamesLoadingMore || loading}
             >
               {gamesLoadingMore
                 ? 'Loading More Games'
@@ -2468,7 +2599,7 @@ export default function ClubDataPage() {
                 type="button"
                 className={styles.retryButton}
                 onClick={() => void loadMorePlayers()}
-                disabled={playersLoadingMore}
+                disabled={playersLoadingMore || playersLoading}
               >
                 {playersLoadingMore ? 'Loading' : 'Try Again'}
               </button>
@@ -2480,7 +2611,7 @@ export default function ClubDataPage() {
               type="button"
               className={styles.loadMore}
               onClick={() => void loadMorePlayers()}
-              disabled={playersLoadingMore}
+              disabled={playersLoadingMore || playersLoading}
             >
               {playersLoadingMore
                 ? 'Loading More Players'

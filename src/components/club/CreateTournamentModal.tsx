@@ -23,7 +23,7 @@ import WeeklyScheduleEditor, {
 import { BlindStructureBuilder } from '../tournament/BlindStructureBuilder';
 import PayoutStructureEditor from '../tournament/PayoutStructureEditor';
 import type { BlindLevel } from '../../config/blindStructures';
-import type { PayoutEntry, PayoutTemplate } from '../../services/PayoutEngine';
+import payoutEngine, { type PayoutEntry, type PayoutTemplate } from '../../services/PayoutEngine';
 import { canRunAsSpin, type TournamentGameVariant } from '../../config/tournamentVariants';
 
 interface Props {
@@ -243,6 +243,8 @@ export default function CreateTournamentModal({
   // ── Weekly recurring schedule (tournament_schedules) ──
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [schedule, setSchedule] = useState<WeeklyScheduleValue>({ ...DEFAULT_WEEKLY_SCHEDULE });
+  const [scheduleCadence, setScheduleCadence] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
+  const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState(new Date().getUTCDate());
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -285,7 +287,9 @@ export default function CreateTournamentModal({
   );
 
   // ── Auto-select payout structure ──
-  // SNG/Spin: based on max players. MTT/Bounty/PKO/Mystery: default MTT structure (no max player cap)
+  // MTT-shaped events advertise the standard top 15% of their capacity here.
+  // The engine recalculates the same 15% against the FINAL field after entry
+  // closes, so this preview can never become a fixed ten-place payout table.
   const payoutStructure = useMemo(() => {
     if (format === 'spin') return [{ place: 1, percentage: 100 }];
     const mp = parseInt(maxPlayers) || 0;
@@ -293,8 +297,7 @@ export default function CreateTournamentModal({
       if (mp <= 6) return PAYOUT_STRUCTURES.sng6;
       return PAYOUT_STRUCTURES.sng9;
     }
-    // MTT / Bounty / PKO / Mystery / Satellite / XMTT — no max player limit, use standard MTT payouts
-    return PAYOUT_STRUCTURES.mtt50;
+    return payoutEngine.generatePayouts('top15', Math.max(2, mp));
   }, [maxPlayers, format]);
 
   /* What actually gets sent. A custom ladder or a custom payout table is only
@@ -316,13 +319,13 @@ export default function CreateTournamentModal({
   const effectivePayouts = useMemo(
     () =>
       capPaidPlaces(
-        customPayoutsOn
+        customPayoutsOn && format === 'sng'
           ? customPayouts.map((pp) => ({ place: pp.place, percentage: pp.percentage }))
           : payoutStructure,
         fieldCap
       ),
 
-    [customPayoutsOn, customPayouts, payoutStructure, fieldCap]
+    [customPayoutsOn, customPayouts, payoutStructure, fieldCap, format]
   );
 
   /* TournamentService rejects a payout table that does not total 100%, and a
@@ -761,6 +764,8 @@ export default function CreateTournamentModal({
         const resolvedClubId = await resolveClubUUID(clubId);
         const rpcConfig = tournamentService.buildRpcConfig(tournamentConfig);
         delete rpcConfig.startTime;
+        rpcConfig.recurrenceCadence = scheduleCadence;
+        if (scheduleCadence === 'monthly') rpcConfig.recurrenceDayOfMonth = scheduleDayOfMonth;
         await tournamentScheduleService.upsert({
           clubId: resolvedClubId,
           unionId: unionId || null,
@@ -911,7 +916,7 @@ export default function CreateTournamentModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        <form className={styles.form} onSubmit={handleSubmit}>
           <div className={styles.formGroup}>
             <label>
               Tournament Name <span style={{ color: '#ef4444' }}>*</span>
@@ -1973,7 +1978,7 @@ export default function CreateTournamentModal({
             )}
           </div>
 
-          {/* ── Weekly Recurring Schedule ── */}
+          {/* ── Recurring Schedule ── */}
           {!isSngOrSpin && (
             <div className={styles.sectionDivider}>
               <div className={styles.formGroup}>
@@ -1988,13 +1993,60 @@ export default function CreateTournamentModal({
                     }}
                     className={styles.checkbox}
                   />
-                  Tournament Schedule (Recurring)
+                  Recurring Tournament
                 </label>
                 <span className={styles.helperText}>
-                  Repeats This Tournament Weekly. Spawned Instances Use Exactly This Configuration.
+                  Repeat This Tournament Daily, Weekly, Or Monthly With The Same Configuration.
                 </span>
               </div>
-              {scheduleEnabled && <WeeklyScheduleEditor value={schedule} onChange={setSchedule} />}
+              {scheduleEnabled && (
+                <>
+                  <div className={styles.choiceGrid}>
+                    {(['daily', 'weekly', 'monthly'] as const).map((cadence) => (
+                      <button
+                        key={cadence}
+                        type="button"
+                        className={scheduleCadence === cadence ? styles.selected : ''}
+                        onClick={() => {
+                          setScheduleCadence(cadence);
+                          if (cadence !== 'weekly')
+                            setSchedule((current) => ({
+                              ...current,
+                              daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+                            }));
+                        }}
+                      >
+                        {cadence === 'daily'
+                          ? 'Daily'
+                          : cadence === 'weekly'
+                            ? 'Weekly'
+                            : 'Monthly'}
+                      </button>
+                    ))}
+                  </div>
+                  {scheduleCadence === 'monthly' && (
+                    <label className={styles.formGroup}>
+                      Day Of Month
+                      <input
+                        type="number"
+                        min={1}
+                        max={31}
+                        value={scheduleDayOfMonth}
+                        onChange={(event) =>
+                          setScheduleDayOfMonth(
+                            Math.min(31, Math.max(1, Number(event.target.value) || 1))
+                          )
+                        }
+                      />
+                    </label>
+                  )}
+                  <WeeklyScheduleEditor
+                    value={schedule}
+                    onChange={setSchedule}
+                    hideDays={scheduleCadence !== 'weekly'}
+                  />
+                </>
+              )}
             </div>
           )}
 
@@ -2005,9 +2057,9 @@ export default function CreateTournamentModal({
               the editor is opt-in. */}
           <div className={styles.payoutPreview}>
             <span className={styles.sectionLabel}>
-              Payout Structure ({effectivePayouts.length} Places Paid)
+              Payout Structure ({effectivePayouts.length} Places Paid At Capacity)
             </span>
-            {format !== 'spin' && (
+            {format === 'sng' && (
               <label className={styles.toggleLabel}>
                 <input
                   type="checkbox"
@@ -2022,7 +2074,14 @@ export default function CreateTournamentModal({
               </label>
             )}
 
-            {customPayoutsOn && format !== 'spin' ? (
+            {format !== 'spin' && format !== 'sng' && (
+              <span className={styles.helperText}>
+                Standard Payouts Cover 15% Of The Final Field. Paid Places Are Recalculated When
+                Registration Closes, With No Fixed Ten-Place Limit.
+              </span>
+            )}
+
+            {customPayoutsOn && format === 'sng' ? (
               <>
                 <span className={styles.helperText}>
                   {isSngOrSpin

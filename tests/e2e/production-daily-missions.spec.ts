@@ -24,6 +24,32 @@ const DASHBOARD_RPC_BUDGET_MS = 8_000;
 
 type JsonObject = Record<string, unknown>;
 
+function isDailyMissionRevisionFrame(message: string | Buffer): boolean {
+  try {
+    const frame = JSON.parse(typeof message === 'string' ? message : message.toString('utf8'));
+    const event = Array.isArray(frame) ? frame[3] : frame?.event;
+    const payload = Array.isArray(frame) ? frame[4] : frame?.payload;
+    const change = payload?.data ?? payload;
+    return event === 'postgres_changes' && change?.table === 'daily_challenge_dashboard_revisions';
+  } catch {
+    return false;
+  }
+}
+
+function realtimeFrameDescriptor(message: string | Buffer): string {
+  try {
+    const frame = JSON.parse(typeof message === 'string' ? message : message.toString('utf8'));
+    const event = Array.isArray(frame) ? frame[3] : frame?.event;
+    const payload = Array.isArray(frame) ? frame[4] : frame?.payload;
+    const change = payload?.data ?? payload;
+    return [event || 'unknown', change?.schema, change?.table, change?.type]
+      .filter(Boolean)
+      .join(':');
+  } catch {
+    return 'non-json';
+  }
+}
+
 function exactQuery(select: string, column: string, value: string): URLSearchParams {
   return new URLSearchParams({ select, [column]: `eq.${value}` });
 }
@@ -157,6 +183,28 @@ test.describe('production Daily Missions certification', () => {
         storageState: { cookies: [], origins: [] },
       });
       contexts.push(desktopContext);
+      let observedRevisionFrames = 0;
+      let blockedRevisionFrames = 0;
+      let blockRevisionFrames = false;
+      const observedRealtimeFrames = new Set<string>();
+      let interceptedRealtimeSockets = 0;
+      await desktopContext.routeWebSocket(/\/realtime\/v1\/websocket/, (socket) => {
+        interceptedRealtimeSockets += 1;
+        const server = socket.connectToServer();
+        server.onMessage((message) => {
+          if (observedRealtimeFrames.size < 30) {
+            observedRealtimeFrames.add(realtimeFrameDescriptor(message));
+          }
+          if (isDailyMissionRevisionFrame(message)) {
+            observedRevisionFrames += 1;
+            if (blockRevisionFrames) {
+              blockedRevisionFrames += 1;
+              return;
+            }
+          }
+          socket.send(message);
+        });
+      });
       const missions = await signInContext(desktopContext, baseURL, account);
       const { page } = missions;
 
@@ -301,18 +349,22 @@ test.describe('production Daily Missions certification', () => {
         expect(Number(freezes[0].amount)).toBe(-5_000);
       });
 
-      await test.step('realtime completion opens the vault without a reload', async () => {
+      await test.step('a missed realtime completion still opens the vault without a reload', async () => {
         let navigations = 0;
         page.on('framenavigated', (frame) => {
           if (frame === page.mainFrame()) navigations += 1;
         });
-        // Realtime has no backlog. Prove the filtered channel has joined before
-        // advancing contracts, then separately prove the server emitted its
-        // revision cursor. This distinguishes a trigger regression from a
-        // client subscription regression without adding UX polling.
+        // Realtime has no backlog. Prove the browser has joined through an
+        // intercepted socket before advancing contracts, then suppress every
+        // server frame. This is intentionally protocol-agnostic: Supabase can
+        // encode Phoenix frames as arrays or objects, and parsing one transport
+        // shape here previously let the supposed outage test receive the real
+        // change. The revision cursor watchdog must open the vault while no
+        // realtime delivery can help it, without navigation or a manual reload.
         await expect(page.getByText('Live Now')).toBeVisible({
           timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
         });
+        expect(interceptedRealtimeSockets).toBeGreaterThan(0);
         const revisionBefore = await dashboardRevision(environment, account!.id);
         const { error: forbidden } = await account!.client.rpc('bump_challenge_progress', {
           p_user_id: account!.id,
@@ -347,15 +399,53 @@ test.describe('production Daily Missions certification', () => {
           }
         );
         expect(incrementForbidden, 'authenticated row progress must be denied').toBeTruthy();
-        await completeEveryAssignedMission(environment, account!);
-        await expect
-          .poll(() => dashboardRevision(environment, account!.id), {
-            timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
-          })
-          .toBeGreaterThan(revisionBefore);
-        const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
-        await expect(claim).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
+        try {
+          await expect
+            .poll(() => observedRevisionFrames, { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT })
+            .toBeGreaterThan(0);
+        } catch (error) {
+          throw new Error(
+            `No Daily Mission revision frame was observed before the missed-frame test. Observed: ${
+              [...observedRealtimeFrames].join(', ') || 'none'
+            }`,
+            { cause: error }
+          );
+        }
+        blockedRevisionFrames = 0;
+        blockRevisionFrames = true;
+        try {
+          await completeEveryAssignedMission(environment, account!);
+          const completed = await serviceRows<{ id: string; completed: boolean }>(
+            environment,
+            'user_daily_challenges',
+            account!.id,
+            'id,completed'
+          );
+          expect(completed.length).toBeGreaterThanOrEqual(10);
+          expect(completed.every((row) => row.completed)).toBe(true);
+          await expect
+            .poll(() => dashboardRevision(environment, account!.id), {
+              timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
+            })
+            .toBeGreaterThan(revisionBefore);
+          await expect
+            .poll(() => blockedRevisionFrames, { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT })
+            .toBeGreaterThan(0);
+          const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
+          await expect(claim).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
+        } catch (error) {
+          throw new Error(
+            `No Daily Mission revision frame crossed the routed socket. Observed: ${
+              [...observedRealtimeFrames].join(', ') || 'none'
+            }`,
+            { cause: error }
+          );
+        } finally {
+          blockRevisionFrames = false;
+        }
         expect(navigations).toBe(0);
+        report.interceptedRealtimeSockets = interceptedRealtimeSockets;
+        report.blockedRevisionFrames = blockedRevisionFrames;
       });
 
       await test.step('claim-all settles chips and diamonds once and replays its receipt', async () => {

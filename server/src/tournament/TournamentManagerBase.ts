@@ -25,11 +25,33 @@ import {
   spinBlindsForLevel,
 } from '../config/spinSpec.js';
 import { reportError } from '../services/errorReporter.js';
-import { clampSeatsForVariant } from '../config/tableSeating.js';
+/**
+ * THE TOURNAMENT CEILING IS THE DECK, NOT THE CASH SEAT LAW (2026-08-31).
+ *
+ * This line used to import `clampSeatsForVariant` from
+ * `../config/tableSeating.js`. That module's own header says CASH GAMES ONLY —
+ * "Nothing here may be applied to a table with a tournament_id" — and the
+ * client copy carries Dan verbatim: "WHAT I GAVE YOU WAS FOR CASH GAMES ONLY,
+ * YOU CAN NOT RUN IT TWO OR THREE TIMES IN A TOURNAMENT". The cash cap is
+ * deliberately TIGHTER than the deck so Run It Twice still has three boards to
+ * come out of (PLO6 dies at 7 seats: 52 - 6n >= 15 means n <= 6). Run It Twice
+ * is hard-disabled on a tournament table — ServerTableEngineBase, `ritIsTournament`
+ * forces `ritEnabled` false — so a tournament was paying that seat for a board
+ * it can never be dealt.
+ *
+ * REUSED, not copied. `maxSeatsFor` is floor((deck - 5) / holeCards), which
+ * already exists in exactly two places: here, and `maxSeatsTheDeckAllows` in
+ * src/config/tableSeating.ts, which the browser bundle needs because it cannot
+ * import from server/. A third copy of the formula would be a third thing to
+ * keep in step; importing the engine's own module keeps the number the deal
+ * path uses and the number the seating path uses the same by construction.
+ */
+import { maxSeatsFor as maxSeatsTheDeckAllows } from '../engine/VariantRules.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
 import { spinRevealWouldSkipABeat, spinRevealLag } from './spinRevealWindow.js';
+import { SpinOverrunReporter, describeOverrun } from './spinOverrunReporter.js';
 import { isShortFormat, mayTakeSynchronizedBreak } from './breakEligibility.js';
 import {
   capLevelToChipsInPlay,
@@ -2689,11 +2711,67 @@ export abstract class TournamentManagerBase {
       );
       return 0;
     }
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  A CREDIT MAY FUND AN EMPTY SEAT. IT MAY NOT RESCUE A LOSING ONE.
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * `stack < target` is the right question BEFORE a hand is dealt and the
+     * wrong one after it. Every seat that is losing is below the starting
+     * stack by definition, so once play is under way this raised the loser
+     * back to a full stack and MINTED the difference onto the felt.
+     *
+     * Measured on production 2026-08-31, spins completed in 24 hours:
+     *
+     *     2,168 games at a 300 stack   418 drifted, worst +470
+     *       305 games at a 1,000 stack  84 drifted, worst +1,603
+     *
+     * and NOT ONE of the 502 exceeded twice the starting stack - exactly the
+     * ceiling of topping up the two players who can be behind. That is the
+     * signature of this line and nothing else.
+     *
+     * A Spin's prize is buy_in x multiplier, so no money is created directly.
+     * What is created is a different WINNER: the engine decides the game on
+     * chips, and a player who was busting got their stack back. On an MTT,
+     * where finishing position is the payout, it moves real money.
+     *
+     * All four callers are pre-deal by intent - start(), the post-reveal beat,
+     * its safety net, and resume(), whose own note scopes it to "a process
+     * restart INSIDE THAT WINDOW". None of them checked, and resume() runs on
+     * every restart forever, which is why this fired on one game in five.
+     *
+     * So the question is now asked against the state of the game:
+     *   - no hand dealt yet  -> fund anything short of the target, unchanged;
+     *   - play under way     -> fund ONLY a seat still sitting on zero, which
+     *                           is the stranded reservation the resume path
+     *                           exists for. A losing stack is left alone.
+     *
+     * If the hand read itself fails, take the conservative branch and say so.
+     * The stranded-at-zero case is still rescued either way; the only thing
+     * given up is raising a placeholder tier, which the next call redoes.
+     */
+    const { data: dealtRows, error: dealtErr } = await supabase
+      .from('hand_history')
+      .select('id')
+      .eq('tournament_id', this.tournamentId)
+      .limit(1);
+
+    if (dealtErr) {
+      reportError(
+        new Error(`seat stack credit could not tell whether play had started: ${dealtErr.message}`),
+        'Tournament.' + this.tournamentId.slice(0, 8) + '.seat_stack_dealt_probe_failed'
+      );
+    }
+
+    const playUnderWay = dealtErr ? true : (dealtRows?.length ?? 0) > 0;
+
     // Strictly RAISE, never lower: the legitimate case is a reservation seat
     // holding 0 (or a smaller placeholder tier) waiting on the drawn stack.
     // An early-bird seat (starting chips + bonus, 2026-08-22) sits ABOVE the
     // plain starting stack, and flattening it here would destroy the bonus.
-    const stale = (seatRows ?? []).filter((r: any) => Number(r.stack) < target);
+    const stale = (seatRows ?? []).filter((r: any) =>
+      playUnderWay ? Number(r.stack) <= 0 : Number(r.stack) < target
+    );
     if (stale.length === 0) return 0;
     const { error } = await supabase
       .from('table_seats')
@@ -2892,6 +2970,13 @@ export abstract class TournamentManagerBase {
    * player who refreshes mid-spin rejoins the shared moment already in
    * progress. What it no longer has to absorb is the engine's own delay.
    */
+  /**
+   * Process-wide overrun aggregator. STATIC on purpose: the overrun is a
+   * property of the ENGINE being late, not of any one tournament, so a
+   * per-instance limiter would report once per spin exactly as before.
+   */
+  private static readonly spinOverruns = new SpinOverrunReporter();
+
   protected resolveSpinReveal(): { revealAt: number; holdUntil: number } {
     const now = Date.now();
     if (this.spinRevealAt <= 0) {
@@ -2920,12 +3005,21 @@ export abstract class TournamentManagerBase {
        times a day. See spinRevealWindow.ts for the full account. */
     const wouldSkipABeat = spinRevealWouldSkipABeat({ now, revealAt: this.spinRevealAt });
     if (wouldSkipABeat) {
-      reportError(
-        new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] Spin start overran its own reveal window by ${this.spinRevealLagMs}ms - the wheel is being re-anchored to now so it plays in full, and the three players see it start late`
-        ),
-        'Tournament.spin_reveal_window_overrun'
-      );
+      /* AGGREGATED, NOT SILENCED (2026-08-31). This fired once per spin, on
+         88-97% of ~2,500 spins a day, which is over a thousand identical
+         reports daily out of one call site - loud enough to bury every other
+         error in the stream. The per-spin number now lives at full
+         resolution on poker_spin_reveal_lag_p50_ms and
+         poker_spin_reveal_past_lead_in; what survives here is one report per
+         incident, opening immediately and then carrying the count. See
+         spinOverrunReporter.ts. */
+      const overrun = TournamentManagerBase.spinOverruns.record(this.spinRevealLagMs, now);
+      if (overrun) {
+        reportError(
+          new Error(`[Tournament:${this.tournamentId.slice(0, 8)}] ${describeOverrun(overrun)}`),
+          'Tournament.spin_reveal_window_overrun'
+        );
+      }
       this.spinRevealAt = now;
       this.spinHoldUntil = now + spinRevealToDealMs();
     }
@@ -3206,9 +3300,8 @@ export abstract class TournamentManagerBase {
     /**
      * THE DECK HAS TO BE ABLE TO SERVE THE TABLE (2026-08-25).
      *
-     * Cash tables have run through clampSeatsForVariant since the seat law was
-     * written. Tournament tables never did - they took table_size verbatim, and
-     * table_size knows nothing about how many hole cards the game deals.
+     * Tournament tables took table_size verbatim, and table_size knows nothing
+     * about how many hole cards the game deals.
      *
      * A 9-handed PLO6 table needs 9 x 6 = 54 hole cards plus a 5-card board
      * from a 52-card deck. It cannot be dealt, ever. ServerTableEngineDealing
@@ -3223,12 +3316,22 @@ export abstract class TournamentManagerBase {
      * NLH 22.3%. The whole 5-and-6-card excess is this one line.
      *
      * Clamped LAST so it wins over every branch above, including spin and sng.
+     *
+     * 2026-08-31: the ceiling used to be `clampSeatsForVariant`, which is the
+     * CASH seat law — a house rule that keeps a table small enough to run it
+     * twice, not an arithmetic limit. Applying it here made a tournament pay
+     * for boards it can never deal (Run It Twice is hard-disabled on tournament
+     * tables) and shrank real events: PLO4 8 -> 9, PLO5 7 -> 9, PLO6 6 -> 7,
+     * PLO8 8 -> 9, and a table_size 10 NLH MTT lost its tenth seat to
+     * DEFAULT_MAX_SEATS. The ceiling is now the deck and only the deck:
+     * floor((52 - 5) / holeCards) — nlh/flh 23, short_deck 15, pineapple 15,
+     * plo4/plo8/flo8 11, plo5 9, plo6 7. The cash cap is untouched.
      */
     const seatVariant = (tournament.game_type || '').toLowerCase();
-    const deckSafe = clampSeatsForVariant(seatVariant, maxPerTable);
+    const deckSafe = Math.min(maxPerTable, maxSeatsTheDeckAllows(seatVariant));
     if (deckSafe !== maxPerTable) {
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] ${seatVariant || 'nlh'} seats ${maxPerTable} -> ${deckSafe} (deck cannot serve more)`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] ${seatVariant || 'nlh'} seats ${maxPerTable} -> ${deckSafe} (the deck seats ${maxSeatsTheDeckAllows(seatVariant)} at this variant)`
       );
       maxPerTable = deckSafe;
     }
@@ -3254,8 +3357,8 @@ export abstract class TournamentManagerBase {
      * one of them with 10 live seats; 54 such seats across 53 tournament
      * tables platform-wide. A seat past the table's own ceiling is not
      * cosmetic — it is the deck-exhaustion deadlock (#782) reopened through a
-     * different door, because clampSeatsForVariant clamps `max_players` and
-     * this loop then walked straight past it.
+     * different door, because the deck ceiling clamps `max_players` and this
+     * loop then walked straight past it.
      *
      * The shortfall is now measured in SEATS, against the real free capacity
      * of the tables the tournament already has.
@@ -3770,20 +3873,18 @@ export abstract class TournamentManagerBase {
   protected blindCapReported = false;
 
   /**
-   * Replace the stored payout structure with one whose DEPTH matches the field
-   * that actually turned up. Called exactly once, at prize-pool finalisation.
+   * Replace the stored payout structure with one whose DEPTH matches the final
+   * field that actually turned up. Called exactly once, after entry closes.
    *
    * FAIL-CLOSED IN EVERY DIRECTION. It returns without writing when:
    *   - the entrant count cannot be read (never guess a field size — too small
    *     a guess promotes an earlier place to residual holder and overpays it);
    *   - the event is a Spin (its structure is derived from the multiplier and
    *     is not a ladder at all);
-   *   - the existing structure is already at least as deep as the field
-   *     warrants, so a hand-authored deep ladder is never narrowed;
    *   - the write fails, in which case the old structure stands and the reprice
    *     below simply runs against it, exactly as it did before this existed.
    */
-  protected async widenPayoutStructureToField(): Promise<void> {
+  protected async fitPayoutStructureToField(): Promise<void> {
     try {
       const t = this.tournamentCache as Record<string, unknown> | null;
       if (isSpinTournament(t as never)) return;
@@ -3802,9 +3903,9 @@ export abstract class TournamentManagerBase {
         return;
       }
 
-      const current = parsePayoutStructure(t?.payout_structure) ?? [];
       const wanted = paidPlacesForField(field);
-      if (current.length >= wanted) return;
+      const current = parsePayoutStructure(t?.payout_structure) ?? [];
+      if (current.length === wanted) return;
 
       const widened = payoutStructureForField(field);
       const { error: writeErr } = await supabase
@@ -3827,7 +3928,7 @@ export abstract class TournamentManagerBase {
           JSON.stringify(widened);
       }
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] Payout structure widened ${current.length} -> ${widened.length} places for a field of ${field}`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Payout structure fitted ${current.length} -> ${widened.length} places for a final field of ${field}`
       );
     } catch (err) {
       reportError(err, 'Tournament.payout_widen_threw');
@@ -4260,7 +4361,7 @@ export abstract class TournamentManagerBase {
              * from the nine-place structure while everyone after them was paid
              * from the wide one.
              */
-            await this.widenPayoutStructureToField();
+            await this.fitPayoutStructureToField();
             if (poolToPriceBy > 0) {
               await this.recalculateEliminatedPrizes(poolToPriceBy);
             } else {

@@ -92,7 +92,9 @@ describe('a bomb hand that awards nothing says so', () => {
        repair sweep chases it forever - the units were never computed, so no
        backfill can reconstruct them. */
     expect(settlement).toMatch(/bomb_award_units_empty/);
-    expect(settlement).toMatch(/currentHandPerPotAwards\.length === 0/);
+    // 2026-08-31 stale-continuation sweep: postHandTasks reads the per-hand
+    // SNAPSHOT (snap.*), never the live fields - the pin follows the rename.
+    expect(settlement).toMatch(/snap\.perPotAwards\.length === 0/);
   });
 });
 

@@ -272,10 +272,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(28, 33, 40, 0.85); /* Solid color background */
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 50%;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  /* Solid color background, border, and box-shadow removed 2026-08-31 because the coin image already has them.
+     This also fixes the 'oval shadow' bug caused by .seat width media queries stretching this container into an oval. */
 }
 
 /* The coin image — fills the container, no crop, transparent background. */
@@ -2961,14 +2959,14 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   CRAZY PINEAPPLE DISCARD — ONE CARD TO THE MUCK (PHASE 3, 2026-08-31)
+   CRAZY PINEAPPLE DISCARD - ONE CARD TO THE MUCK (PHASE 3, 2026-08-31)
    ═══════════════════════════════════════════════════════════════════════════════
    Until today a discard drew NOTHING. The engine emitted the action, the
    client had no arm for it, and a horse's deliberate 1.2s-5.2s humanlike
    delay (the delay that exists so a horse cannot be told from a human) played
    as a dead pause followed by a jump.
 
-   Built on the fold's shape on purpose — same easing, same --fold-to-x/y
+   Built on the fold's shape on purpose - same easing, same --fold-to-x/y
    heading (the table centre, set per seat by TablePage), same
    `calc(... * var(--animation-speed, 1))` scaling that CLAUDE.md §10.6 makes
    the ONLY sanctioned control over an animation. What separates it from a
@@ -2976,7 +2974,7 @@
 
      - ONE card, not the hand. `cardFoldOut` is applied to `.seat__card`, i.e.
        every card in the row; this is applied ONLY to the single element
-       SeatSlot marks `.seat__card--discarding`, and that element is a ghost —
+       SeatSlot marks `.seat__card--discarding`, and that element is a ghost -
        the hand it left has already dropped it.
      - It is DISCARDED, not mucked. The card is flicked out on a flatter arc
        and keeps more of its brightness on the way, because the hand it came
@@ -2992,7 +2990,7 @@
    card left the hand is carried by the final frame and by a row that is one
    card shorter, and reducedMotion.css collapses to 1ms rather than
    `animation: none` precisely so a `forwards` animation still lands on it.
-   Motion collapses; the meaning survives. And there is no toggle — §10.6
+   Motion collapses; the meaning survives. And there is no toggle - §10.6
    allows exactly one control over this and it is --animation-speed.
    ═══════════════════════════════════════════════════════════════════════════════ */
 
@@ -3010,7 +3008,7 @@
     transform: translate(0, 0) rotate(var(--card-rotation, 0deg)) scale(1);
     filter: brightness(1) blur(0);
   }
-  /* The pick-up. Shorter and higher than the fold's — this is a flick from
+  /* The pick-up. Shorter and higher than the fold's - this is a flick from
      the hand, not a hand being pushed away. */
   18% {
     opacity: 1;
@@ -3626,6 +3624,13 @@
      while the full size happened to be a literal 84px. Naming the full-size slot
      directly says what this rule means and survives the slot becoming
      proportional. */
+  --seat-avatar-base: var(--seat-avatar-full);
+}
+
+/* Dan 2026-08-31: "ALL THE 'SIT BUTTONS' SHOULD ALL BE THE SAME SIZE, EVEN AT THE TOP OF THE TABLE."
+   Empty seats do not have character art that can overflow into the BBJ banner,
+   so the 56px cap above is unnecessary for them. Revert to full size. */
+.seat-wrapper--top .seat.seat--empty {
   --seat-avatar-base: var(--seat-avatar-full);
 }
 

@@ -2230,21 +2230,31 @@ export default function CashierTradePage() {
         className={styles.tabs}
         role="tablist"
         aria-label="Cashier Actions"
+        aria-busy={!roleResolved}
         onKeyDown={(event) => {
           if (!['ArrowRight', 'ArrowLeft', 'Home', 'End'].includes(event.key)) return;
           event.preventDefault();
-          const keys = visibleTabs.map(([key]) => key);
-          const index = Math.max(0, keys.indexOf(tab));
-          const next =
+          const buttons = Array.from(
+            event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+          );
+          const focusedIndex = buttons.indexOf(document.activeElement as HTMLButtonElement);
+          const stateIndex = Math.max(
+            0,
+            visibleTabs.findIndex(([key]) => key === tab)
+          );
+          const index = focusedIndex >= 0 ? focusedIndex : stateIndex;
+          const nextIndex =
             event.key === 'Home'
-              ? keys[0]
+              ? 0
               : event.key === 'End'
-                ? keys[keys.length - 1]
+                ? buttons.length - 1
                 : event.key === 'ArrowRight'
-                  ? keys[(index + 1) % keys.length]
-                  : keys[(index - 1 + keys.length) % keys.length];
+                  ? (index + 1) % buttons.length
+                  : (index - 1 + buttons.length) % buttons.length;
+          const next = visibleTabs[nextIndex]?.[0];
+          if (!next) return;
           setTab(next);
-          document.getElementById(`cashier-tab-${next}`)?.focus();
+          buttons[nextIndex]?.focus();
         }}
       >
         {visibleTabs.map(([key, label]) => (

@@ -93,7 +93,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4.3.1
+        uses: actions/checkout@v4
         with:
           # The step below may need to resolve the sha production is actually
           # serving, which is usually an ancestor of this run's commit and is
@@ -101,7 +101,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Node 20
-        uses: actions/setup-node@v4.1.0
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
@@ -250,14 +250,10 @@ jobs:
           ARENA_BASE_URL: https://smarter.poker/hub/club-arena
           SP_EMAIL: ${{ secrets.SP_EMAIL }}
           SP_PASS: ${{ secrets.SP_PASS }}
-          # A genuinely separate player account. The production customization
-          # contract uses it to prove that realtime updates cross devices for
-          # one player without ever leaking into another player's settings.
-          SP_EMAIL_2: ${{ secrets.SP_EMAIL_2 }}
-          SP_PASS_2: ${{ secrets.SP_PASS_2 }}
-          # The commerce certification never touches either standing player
-          # above. It creates, funds and hard-deletes reserved temporary Auth
-          # users so every live SKU can traverse checkout safely.
+          # Customization certification never mutates either standing player.
+          # Realtime creates two isolated identities to prove cross-device sync
+          # and cross-player isolation; commerce creates a third for checkout.
+          # Every one is hard-deleted and residue-checked before the run ends.
           CUSTOMIZATION_COMMERCE_CERTIFICATION: '1'
           # Daily Missions uses the same reserved hard-delete harness for one
           # production player, then proves the complete economy/realtime/error

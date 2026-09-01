@@ -11,12 +11,17 @@
 import { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import { supabase } from '../services/supabase.js';
 import { planSatelliteAwards } from './satelliteAwardPlan.js';
+import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { isSatelliteTargetOpen, satelliteTicketCost } from './satelliteTargetOpen.js';
 import { type BalancerTable, type MoveInstruction } from '../engine/TableBalancer.js';
 import { reportError } from '../services/errorReporter.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { TournamentManagerEliminations } from './TournamentManagerEliminations.js';
-import { clampSeatsForVariant } from '../config/tableSeating.js';
+// The DECK is the tournament ceiling, never the cash seat law — see the note on
+// the same import in TournamentManagerBase.ts. Reused from the engine's own
+// VariantRules rather than copied, so the seating path and the deal path read
+// the same number.
+import { maxSeatsFor as maxSeatsTheDeckAllows } from '../engine/VariantRules.js';
 import { mayTakeSeat } from './seatClaim.js';
 
 export class TournamentManager extends TournamentManagerEliminations {
@@ -561,13 +566,14 @@ export class TournamentManager extends TournamentManagerEliminations {
       current_level: number | null;
       late_reg_levels: number | null;
       rebuy_levels: number | null;
+      prize_pool_finalized: boolean | null;
     }
     let target: SatelliteTarget | null = null;
     if (targetId) {
       const { data, error: targetErr } = await supabase
         .from('tournaments')
         .select(
-          'id, name, buy_in_amount, buy_in_fee, status, max_players, current_players, current_level, late_reg_levels, rebuy_levels'
+          'id, name, buy_in_amount, buy_in_fee, status, max_players, current_players, current_level, late_reg_levels, rebuy_levels, prize_pool_finalized'
         )
         .eq('id', targetId)
         .maybeSingle();
@@ -764,12 +770,18 @@ export class TournamentManager extends TournamentManagerEliminations {
           p_target_id: target.id,
           p_user_id: w.user_id,
           p_username: w.username || 'Player',
+          // PHASE 5: the finishing place, so the payout record this function
+          // now writes for the seat can say WHICH place won it. Everything
+          // else about the award was already recorded; the place was not.
+          p_position: w.position,
         });
         const seat = seatRes as {
           ok?: boolean;
           awarded?: boolean;
           reason?: string;
-          held_from_this_satellite?: boolean;
+          /** true / false / null, where NULL means "cannot tell". See below. */
+          held_from_this_satellite?: boolean | null;
+          origin_unknown?: boolean;
         } | null;
         const regErr =
           seatErr || (seat?.ok === false ? { message: seat?.reason || 'seat_refused' } : null);
@@ -813,9 +825,43 @@ export class TournamentManager extends TournamentManagerEliminations {
           console.log(
             `[Satellite:${this.tournamentId.slice(0, 8)}] Seat already held elsewhere - ticket cashed: ${w.user_id.slice(0, 8)}`
           );
+        } else if (seat?.ok === true && seat?.awarded === false && seat?.origin_unknown === true) {
+          /**
+           * WE CANNOT TELL WHO SEATED THEM, SO WE DO NOT PAY (2026-08-31).
+           *
+           * `held_from_this_satellite` is NULL when the seat row predates
+           * fn_award_satellite_seat writing `source_satellite_id`, which it
+           * only began doing on 2026-08-30. 19 seats are in that state.
+           *
+           * The branch above pays the ticket value in cash on `=== false`,
+           * meaning "a DIFFERENT satellite seated them". NULL is not that; it
+           * is "unknown", and answering it with the branch that moves money
+           * would hand the ticket value to a player who may already hold the
+           * seat THIS satellite bought them.
+           *
+           * So nothing is paid, and it is said out loud. A missed payment is
+           * visible and recoverable; a double payment is neither. If the alert
+           * shows a player who really is owed, the ticket can be paid by hand
+           * under this satellite's own place key, which still dedupes.
+           */
+          await raiseFinancialAlert(
+            'warning',
+            'Satellite.seat_origin_unknown',
+            `Satellite winner already holds the target seat and the seat predates origin tracking, so it cannot be told whether THIS satellite seated them. No cash paid; needs a human.`,
+            {
+              tournament_id: this.tournamentId,
+              target_id: target.id,
+              user_id: w.user_id,
+              position: w.position,
+              ticket_value: ticketCost,
+            }
+          );
+          console.warn(
+            `[Satellite:${this.tournamentId.slice(0, 8)}] Seat origin UNKNOWN for ${w.user_id.slice(0, 8)} - paid nothing, alert raised`
+          );
         } else {
           console.log(
-            `[Satellite:${this.tournamentId.slice(0, 8)}] Seat awarded: ${w.user_id.slice(0, 8)} → ${target.name || target.id.slice(0, 8)}`
+            `[Satellite:${this.tournamentId.slice(0, 8)}] Seat awarded: ${w.user_id.slice(0, 8)} -> ${target.name || target.id.slice(0, 8)}`
           );
         }
       } else {
@@ -1176,10 +1222,13 @@ export class TournamentManager extends TournamentManagerEliminations {
     }
     // Deck capacity wins over table_size - see the note in
     // TournamentManagerBase.createTablesAndSeatPlayers. An expansion table has
-    // to be dealable for the same reason the original ones do.
-    maxPerTable = clampSeatsForVariant(
-      (this.tournamentCache?.game_type || '').toLowerCase(),
-      maxPerTable
+    // to be dealable for the same reason the original ones do. The ceiling is
+    // the deck, floor((deck - 5) / holeCards), NOT the cash seat law: that law
+    // is tuned to leave Run It Twice three boards, and Run It Twice is disabled
+    // on tournament tables.
+    maxPerTable = Math.min(
+      maxPerTable,
+      maxSeatsTheDeckAllows((this.tournamentCache?.game_type || '').toLowerCase())
     );
 
     // Round 51 RE-RUN fix: ground currentTableCount in the DB, not the

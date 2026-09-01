@@ -2,10 +2,35 @@
 
 **Status: reported, not fixed. This is a money path and the decision is Dan's.**
 
+## CORRECTION, added after the first version of this file
+
+The original text said deploys are blocked, full stop. That is incomplete in a
+way that could mislead, so it is corrected here rather than quietly reworded.
+
+**The engine is SUPPOSED to wait.** Dan, 2026-08-31, binding: _"STOP THE
+ENGINE FROM RESTARTING. IT SHOULD ONLY BE RESTARTING AT 7AM AND 7PM FROM NOW
+ON."_ `auto-deploy-hetzner.yml` now admits only five Chicago hours - 04, 10,
+14, 18, 22 - and merged engine code waits for the next one by design. The
+workflow says so itself: _"the wait is the feature."_
+
+So there are two separate reasons nothing from today is live, and only one of
+them is a fault:
+
+1. **By design.** The 14:58 UTC run skipped correctly - _"2026-09-01 09:58 CDT
+   is not a scheduled restart hour in Chicago. Nothing was deployed and the
+   engine was not touched."_ That is the system working.
+2. **The fault.** The three runs inside the 10:00 Chicago window (15:25, 15:37,
+   15:54 UTC) did try to deploy, and the financial gate stopped all three.
+
+The next window is 14:00 CDT = **19:00 UTC**, and the gate clears around 18:30
+UTC, so today's engine work should land at 19:00 UTC without anyone forcing
+anything. If it does not, the gate is still failing and the cause below has
+not resolved.
+
 ## What is happening
 
-`auto-deploy-hetzner.yml` has failed its last three runs (15:25, 15:37, 15:54
-UTC), all on the same step:
+`auto-deploy-hetzner.yml` failed the three runs that fell inside its 10:00
+Chicago window (15:25, 15:37, 15:54 UTC), all on the same step:
 
     Financial health-gate (zero-drift phase 5)
       FAIL  trailing 4h unexplained chip supply is -4162775.63

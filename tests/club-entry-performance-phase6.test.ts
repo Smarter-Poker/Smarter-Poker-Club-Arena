@@ -39,13 +39,10 @@ describe('Phase 6 Club Entry visual and performance contracts', () => {
 
   it('keeps the approved global Smarter.Poker identity raster lossless and unobstructed', () => {
     const header = read('src/components/navigation/GlobalHeader.tsx');
-    expect(header).toContain('global-header-command-center-v1.png');
+    expect(header).toContain('global-header-desktop.png');
     expect(header).not.toContain('srcSet=');
     expect(header).not.toContain('vault-iris-emblem-v1');
-    const approved = resolve(
-      root,
-      'public/images/global-header/global-header-command-center-v1.png'
-    );
+    const approved = resolve(root, 'public/images/global-header/global-header-desktop.png');
     expect(existsSync(approved)).toBe(true);
     expect(statSync(approved).size).toBeLessThanOrEqual(400 * 1024);
     expect(read('scripts/optimize-dist-media.mjs')).toContain(

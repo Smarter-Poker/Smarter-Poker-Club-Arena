@@ -115,15 +115,54 @@ alone would have been wrong, and the comment at the hub-drop site says why: a
 tournament table can be briefly without an engine while its manager rebuilds
 it, and dropping the room there costs the seated players a sequence reset.
 
-## 4.4 The scheduled Duel born a husk - not reproducing
+## 4.4 The scheduled Duel born a husk - not reproducing, and the reason matters
 
-Measured rather than assumed. Every REGISTERING duel and Spin on the board
-(32 and 32) owns a table; none is a husk. The 49 REGISTERING MTTs with no table
-row are all scheduled for a future `start_time` (the nearest 105 minutes away),
-which is the normal shape - an MTT gets its tables at start.
+**A Spin or a duel has no scheduled start time.** Dan, 2026-09-01, verbatim:
+"SPINS AND HEADS UP DO NOT HAVE 'SCHEDULED TIMES' THEY START WHEN 3 PLAYERS
+HAVE BOUGHT IN AND PAID FOR SPINS, AND WHEN TWO PLAYERS FOR HEADS UP!"
 
-Nothing was changed for this item. If it returns, the shape to look for is a
-2-max SNG that is REGISTERING with no table and a `start_time` in the past.
+The first version of this section talked about a duel with "a `start_time` in
+the past" as the shape to look for. That was wrong on the architecture and is
+corrected here. The engine gates these games on seats sold and always has -
+`GameServer` discovery, one line:
+
+```
+const shouldStart = isSngOrSpin ? seatFirstReady : maxReached || timeReached;
+```
+
+`seatFirstReady` is `paidSeats >= max_players`, counted from the seat rows on
+the live table rather than from `current_players` (a registration counter that
+is incremented and never decremented, and which the live lobby has carried
+reading 3/3 with two seats actually sold). `timeReached` is on the other side
+of that ternary and cannot reach a seat-first game.
+
+Production agrees. Over the six hours to 12:50 UTC:
+
+| format             | games started | avg from last seat sold to start | worst  | started > 2 min after full |
+| ------------------ | ------------- | -------------------------------- | ------ | -------------------------- |
+| Spin (3 seats)     | 833           | -9.9 s                           | 55.2 s | 0                          |
+| Heads-up (2 seats) | 358           | -6.9 s                           | 35.7 s | 0                          |
+
+(The average is negative because `started_at` is stamped as the last seats are
+being written.) Not one seat-first game is sitting full and unstarted right now.
+
+So this is not what stalled anything, and the freeroll in 4.1 is an MTT. What
+was missing is that the rule lived in a single ternary with nothing pinning it:
+folding seat-first games into the scheduled-start branch would have regressed
+silently. `seatFirstStartsOnSeatsNotClocks.law.test.ts` now pins it - that a
+Spin is 3 seats and a duel is 2, that the gate reads paid seats and never
+`current_players` or `startTime`, and that `timeReached` is used in exactly two
+places, its declaration and the MTT branch.
+
+Two clocks do legitimately touch these games and neither is a start gate: the
+past-start horse top-up BUYS SEATS on a board that is not filling (it fills the
+game, the seats then start it), and the stall watchdog fires when a game is
+full and has not started, which is this law already broken.
+
+The husk hunt itself found nothing: every REGISTERING duel and Spin on the
+board (32 and 32) owns a table. The 49 REGISTERING MTTs with no table row are
+scheduled events whose `start_time` has not arrived - an MTT, and only an MTT,
+gets its tables at its advertised start.
 
 ---
 

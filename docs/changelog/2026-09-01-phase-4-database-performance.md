@@ -9,12 +9,12 @@ The handoff carried "11 auth_rls_initplan warnings, 47 multiple_permissive_polic
 20 unindexed foreign keys, 1,461 never-scanned indexes / 1,352 MB". Measured fresh
 against the live catalog on 2026-09-01:
 
-| item | handoff | measured |
-|---|---|---|
-| policies with an unhoisted `auth.*` call | 11 | **15** |
-| multiple-permissive groups (table x role x cmd) | 47 rows | **12 groups** |
-| unindexed foreign keys | 20 | **25** |
-| never-scanned droppable indexes | 1,461 / 1,352 MB | **1,146 / 414 MB** |
+| item                                            | handoff          | measured           |
+| ----------------------------------------------- | ---------------- | ------------------ |
+| policies with an unhoisted `auth.*` call        | 11               | **15**             |
+| multiple-permissive groups (table x role x cmd) | 47 rows          | **12 groups**      |
+| unindexed foreign keys                          | 20               | **25**             |
+| never-scanned droppable indexes                 | 1,461 / 1,352 MB | **1,146 / 414 MB** |
 
 None of the four was right. Advisor output moves; inherited counts are not evidence.
 
@@ -115,11 +115,11 @@ is wrong as a description of production** and is recorded here so nobody repeats
 it: it came from an unfiltered `SELECT` with no WHERE clause, which no client
 issues. The real shapes:
 
-| query | time |
-|---|---|
-| `WHERE user_id = <self>` (the common path) | **18 ms** |
-| `WHERE club_id = <largest club, 593 members>` | **345 ms** |
-| no WHERE clause (not a real client query) | 4.1 s warm / 13.6 s cold |
+| query                                         | time                     |
+| --------------------------------------------- | ------------------------ |
+| `WHERE user_id = <self>` (the common path)    | **18 ms**                |
+| `WHERE club_id = <largest club, 593 members>` | **345 ms**               |
+| no WHERE clause (not a real client query)     | 4.1 s warm / 13.6 s cold |
 
 345 ms on a roster is real and grows linearly with club size. The cause is visible
 in the plan: `fn_club_cashier_scope` and `is_club_admin` are SECURITY DEFINER

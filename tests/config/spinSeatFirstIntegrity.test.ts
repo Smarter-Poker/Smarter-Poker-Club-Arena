@@ -100,15 +100,11 @@ describe('horses take seats, not just places on a list', () => {
      */
     // 2026-08-27: an optional second argument was added (the freeroll
     // all-lanes override, defaulted so every existing caller is unchanged).
-    // 2026-09-01: the host tournament id became an optional third argument so
-    // candidate horses stay inside that tournament's club. Prettier now wraps
-    // the signature after the opening parenthesis, so the guard permits that
-    // whitespace while still pinning the plural count and string-array return.
     // The property under test is the PLURAL, count-taking, batched shape -
     // one call answering with many horses - so the first parameter and the
     // string[] return stay pinned and the optional tail is left open.
     expect(recurring).toMatch(
-      /private async pickFreeHorses\(\s*count: number[,)][^)]*\)?: Promise<string\[\]>/
+      /private async pickFreeHorses\(\s*count:\s*number[,)][^)]*\)\s*:\s*Promise<string\[\]>/
     );
     // The singular form must be gone, or a caller can quietly reintroduce the
     // per-horse shape.

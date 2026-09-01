@@ -34,9 +34,13 @@ export default function ClubLaunchProgress({ clubName, openingBank, tasks }: Pro
     skipped: !task.complete && skippedIds.includes(task.id),
   }));
   const completed = resolvedTasks.filter((task) => task.complete || task.skipped).length;
-  const percent =
-    resolvedTasks.length === 0 ? 100 : Math.round((completed / resolvedTasks.length) * 100);
+  const allTasksResolved = completed === resolvedTasks.length;
+  const percent = allTasksResolved
+    ? 100
+    : Math.min(99, Math.round((completed / resolvedTasks.length) * 100));
   const [expanded, setExpanded] = useState(percent < 100);
+
+  if (allTasksResolved) return null;
 
   return (
     <section className="club-launch" aria-labelledby="club-launch-title">

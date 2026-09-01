@@ -2036,6 +2036,31 @@ export class TournamentRecurringService {
         this.houseOwner,
         budget
       );
+
+      /* Dan 2026-09-01 (Deep Stack Society directive): heads-up and SNG
+       * boards for activated club owners, exactly the way the Spin pass
+       * already does it -- the house board first so it is never starved,
+       * then one owner board per activated owner. activatedSpinOwners()
+       * is the platform's one "this owner has switched club games on and
+       * funded them" signal; a standalone club like Deep Stack (11192)
+       * activates via fn_spin_activate and gets its own SNG/heads-up
+       * board on the same tick, same budget, same repair pass.
+       *
+       * maxStake clamps the buy-ins an owner's board offers, mirroring
+       * the Spin rule: never list a price point the owner did not sign
+       * up for. */
+      for (const owner of await this.activatedSpinOwners()) {
+        if (budget.left <= 0) break;
+        const affordable = SNG_CONFIGS.filter((c) => c.buyIn <= owner.maxStake);
+        if (affordable.length === 0) continue;
+        await this.ensureBoardOpen(
+          'sng',
+          affordable,
+          (c, o) => this.createSNG(c as any, o),
+          owner,
+          budget
+        );
+      }
     });
   }
 
@@ -3452,12 +3477,7 @@ export class TournamentRecurringService {
       const clubIds = tournamentId ? await this.clubMemberIdsForTournament(tournamentId) : null;
       const inClub = clubIds ? fleetIds.filter((id) => clubIds.has(id)) : fleetIds;
 
-      const candidates = selectHorseCandidates(
-        inClub,
-        busy,
-        allLanes,
-        new Date().getUTCHours()
-      );
+      const candidates = selectHorseCandidates(inClub, busy, allLanes, new Date().getUTCHours());
 
       /**
        * ═══════════════════════════════════════════════════════════════════

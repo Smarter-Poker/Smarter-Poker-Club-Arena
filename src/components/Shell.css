@@ -72,11 +72,6 @@
   transition: all var(--duration-fast) var(--ease-out);
 }
 
-.shell-mobile-command-grid {
-  width: 20px;
-  height: 20px;
-}
-
 .shell-logo-link {
   display: flex;
   align-items: center;

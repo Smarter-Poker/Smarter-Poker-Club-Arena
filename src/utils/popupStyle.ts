@@ -21,7 +21,7 @@
  *
  * If you are about to ban "bars" anywhere near an ICON, you have misread this
  * sentence. The hamburger is the menu. See
- * tests/hamburger-never-regresses.law.test.ts.
+ * tests/approvedHamburgerGearGuard.law.test.ts.
  *
  * Enforced HERE, in one transform the Toast layer applies to every message it
  * renders — not as a convention call sites are asked to remember. The codebase

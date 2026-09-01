@@ -65,29 +65,33 @@ describe('it fails in the safe direction', () => {
     /**
      * One missed twenty-minute tick is ordinary. Three in a row is the failure.
      *
-     * MOVED TO THE MECHANISM, 2026-09-01. This used to assert the sentence
-     * `inside the ${GRACE_MIN}m grace window`, which the script printed while
-     * it was waiting. #2446 gave the engine a RESTART SCHEDULE, so the wait is
-     * now expressed as "Behind by design: the engine restarts only at
-     * $RESTART_HOURS Chicago" and that sentence went away. The grace window
-     * itself did not - it survived as the FLOOR under the new schedule
-     * deadline - but this pin went red on main and stopped the World Hub
-     * bundle for every agent until it was noticed.
+     * READ THE ARITHMETIC, NOT THE PROSE (2026-09-01). This assertion used to
+     * be the single sentence the script printed while it waited, `inside the
+     * ${GRACE_MIN}m grace window`. #2446 gave the engine a RESTART SCHEDULE and
+     * replaced that message. The grace window itself survived -- it is the
+     * FLOOR under the new schedule deadline -- but the pin went red on main,
+     * and `npx vitest run tests/` is the step that publishes the Club Arena
+     * bundle, so the World Hub sync failed on every commit until it was found.
      *
      * A pin on wording fails when the wording improves and passes when the
-     * behaviour is deleted, which is backwards. These four assertions read the
-     * arithmetic instead: the window is defined, it is measured from the
-     * commit, it can only ever PUSH the deadline later, and being inside it
-     * returns quietly. Rewrite the prose freely; remove the guard and this
-     * still goes red.
+     * behaviour is deleted, which is backwards. The assertions below read the
+     * shape of the calculation instead. Two of them still name a message; if
+     * the prose changes again, MOVE those two rather than deleting the
+     * arithmetic underneath them.
      */
+    // The engine restarts on scheduled Chicago windows, not on every merge. The
+    // deadline is the first eligible window plus deploy time, but it can never
+    // be earlier than the legacy grace period.
     expect(SH).toContain('GRACE_MIN="${GRACE_MIN:-45}"');
+    expect(SH).toContain('RESTART_HOURS="${RESTART_HOURS:-04 10 14 18 22}"');
+    expect(SH).toContain('DEPLOY_MIN="${DEPLOY_MIN:-25}"');
+    expect(SH).toContain('WINDOW_EPOCH=$(window_at_or_after "$REQ_EPOCH")');
     expect(SH).toContain('GRACE_DEADLINE=$(( REQ_EPOCH + GRACE_MIN * 60 ))');
-    // The later of the two deadlines wins, so a short restart window can never
-    // shorten the grace period.
     expect(SH).toContain('[ "$GRACE_DEADLINE" -gt "$DEADLINE" ] && DEADLINE=$GRACE_DEADLINE');
-    // ...and inside it the script says its piece and stops, before the
-    // ENGINE BEHIND warning that section 5 raises.
+    expect(SH).toContain('Engine watchdog: waiting for the restart window');
+    // ...and inside that deadline the script says its piece and STOPS, before
+    // the ENGINE BEHIND warning section 5 raises. Without this, a deadline that
+    // is computed and then ignored still passes every assertion above it.
     expect(SH_CODE).toMatch(/if \[ "\$NOW_EPOCH" -lt "\$DEADLINE" \][\s\S]{0,900}?exit 0/);
     expect(SH_CODE.indexOf('NOW_EPOCH" -lt "$DEADLINE')).toBeLessThan(
       SH_CODE.indexOf('ENGINE BEHIND')

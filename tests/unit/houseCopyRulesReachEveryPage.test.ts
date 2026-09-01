@@ -20,7 +20,7 @@
  *
  * If you are about to ban "bars" anywhere near an ICON, you have misread this
  * sentence. The hamburger is the menu. See
- * tests/hamburger-never-regresses.law.test.ts.
+ * tests/approvedHamburgerGearGuard.law.test.ts.
  *
  * Both rules already had gates. Both gates had a surface they could not see, and
  * in each case the escape was real and shipped:

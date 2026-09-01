@@ -79,7 +79,13 @@ import { gtoOpenJam, gtoBbVsSbJam, handClass as gtoHandClass } from './GtoCharts
 // V29 (Dan 2026-08-29): the flop plays from the solver — class-mean mixes
 // aggregated offline from the 8.8M-solution warehouse, preloaded by
 // GtoPostflopLoader. See engine/GtoPostflop.ts for scope and honesty notes.
-import { gtoStreetAdvice, rollMix, snapDepthBucket } from './GtoPostflop.js';
+import {
+  gtoStreetAdvice,
+  rollMix,
+  snapDepthBucket,
+  beyondGtoDepthCeiling,
+  GTO_MAX_DEPTH_BB,
+} from './GtoPostflop.js';
 import { gtoStreetAdviceV31 } from './GtoPostflopV31.js';
 import { gtoFacingDefense } from './GtoFacingDefenseV32.js';
 // V7 split: evaluators + Monte Carlo equity + preflop scores live in
@@ -417,6 +423,36 @@ const STAGE_ORDER: Record<string, number> = {
  * cell key is `street|family|position|depth|texture`; parsing it here keeps
  * the stores' return shape untouched.
  */
+/**
+ * NAME THE MISS (2026-09-01).
+ *
+ * On 2026-08-31 the solver layers missed far more than they hit: V32 recorded
+ * v32_defend_no_range 9,693 times against 7,202 usable answers (a 57% miss),
+ * and V31 answered 165 consults against gto_miss_no_cell 12,193 - a 1.3% hit
+ * rate. The counters proved there was a hole and could not say WHERE, so the
+ * only available response was to guess at the export or to widen the gate.
+ *
+ * These two axes make the hole addressable. Cardinality is deliberately tiny
+ * - five depth buckets and four streets per layer, not the full
+ * street x family x position x depth product, which would be ~432 rows a day
+ * and unreadable. Depth and street are the two that were actually suspected,
+ * and either can be split further once the coarse answer points somewhere.
+ */
+function missDepthBand(stackBB: number): string {
+  if (!(stackBB > 0) || !isFinite(stackBB)) return 'unknown';
+  if (stackBB <= 20) return 'le20';
+  if (stackBB <= 50) return 'le50';
+  if (stackBB <= 110) return 'le110';
+  if (stackBB <= GTO_MAX_DEPTH_BB) return 'le' + GTO_MAX_DEPTH_BB;
+  return 'gt' + GTO_MAX_DEPTH_BB;
+}
+
+/** Record one miss against both axes. `layer` is 'v31' or 'v32'. */
+function noteGtoMiss(layer: string, street: string, stackBB: number): void {
+  noteFire(layer + '_miss_depth_' + missDepthBand(stackBB));
+  noteFire(layer + '_miss_street_' + street);
+}
+
 function cellDepthIsPrimary(cell: string, stackBB: number): boolean {
   const parts = cell.split('|');
   if (parts.length < 5) return true; // unknown shape: do not invent a miss
@@ -994,6 +1030,15 @@ export interface HorseDecideOpts {
   v31GtoSuitAware?: boolean;
   /** V32: facing-a-bet defence from the solver's own betting range. */
   v32FacingDefense?: boolean;
+  /** V33 (2026-09-01): refuse a solver consult the warehouse cannot honestly
+   *  answer. DEPTH_BUCKETS stops at 150 and snapDepthBucket returns 150 for
+   *  ANY stack over 110, so a 400bb or 800bb hero was served 150bb strategy
+   *  silently, with no miss recorded. Above GTO_MAX_DEPTH_BB (twice the
+   *  deepest bucket - the same log-distance this file already tolerates for a
+   *  one-bucket fallback) the consult declines and the heuristic layers,
+   *  which scale continuously with depth, play the spot. Disable to ablate
+   *  (default: enabled) */
+  v33DepthCeiling?: boolean;
 }
 
 /**
@@ -2541,18 +2586,30 @@ export class HorseLogic {
       // bet_big for range purposes even when hero's call is small.
       const bettorWager32 = isFinite(bettor.bet) ? Math.max(0, bettor.bet) : 0;
       const rawPotBefore32 = gs.pot - bettorWager32;
-      const defense = gtoFacingDefense({
-        street,
-        family: family32,
-        bettorPosition: chartPos32,
-        stackBB: stackBB32,
-        board: gs.communityCards,
-        heroCards: player.cards,
-        pot,
-        toCall,
-        rawBetFraction: rawPotBefore32 > 0 ? bettorWager32 / rawPotBefore32 : undefined,
-        rand: fastRandom,
-      });
+      /*
+       * DEPTH CEILING (2026-09-01), same reasoning as the open-node consult:
+       * the facing export is keyed by the same depth buckets, which stop at
+       * 150bb. Above the ceiling the answer would be extrapolated rather than
+       * looked up, so the layer declines and the heuristics play the spot.
+       */
+      const tooDeep32 =
+        (opts.v33DepthCeiling ?? true) !== false && beyondGtoDepthCeiling(stackBB32);
+      if (tooDeep32 && telemetryOn(opts)) noteFire('gto_skip_too_deep');
+
+      const defense = tooDeep32
+        ? null
+        : gtoFacingDefense({
+            street,
+            family: family32,
+            bettorPosition: chartPos32,
+            stackBB: stackBB32,
+            board: gs.communityCards,
+            heroCards: player.cards,
+            pot,
+            toCall,
+            rawBetFraction: rawPotBefore32 > 0 ? bettorWager32 / rawPotBefore32 : undefined,
+            rand: fastRandom,
+          });
       if (defense) {
         if (defense.action === 'pass_strong') {
           if (telemetryOn(opts)) noteFire('v32_defend_pass_strong');
@@ -2564,8 +2621,12 @@ export class HorseLogic {
           if (telemetryOn(opts)) noteFire('v32_defend_fold');
           return { action: 'fold', thinkTime: 0 };
         }
-      } else if (telemetryOn(opts)) {
+      } else if (!tooDeep32 && telemetryOn(opts)) {
+        // A genuine miss - the gate was passed, the warehouse was asked, and
+        // it had no range. A skip for depth is NOT a miss and must not be
+        // counted as one, or the coverage number it feeds becomes fiction.
         noteFire('v32_defend_no_range');
+        noteGtoMiss('v32', street, stackBB32);
       }
     }
 
@@ -2638,8 +2699,21 @@ export class HorseLogic {
         // disabled layer that reports `empty_store` teaches the counters to
         // lie about the table being empty, and those counters are the whole
         // point of the attribution below.
+        /*
+         * DEPTH CEILING (2026-09-01). snapDepthBucket answers ANY stack over
+         * 110bb from the 150 cell, so an 800bb hero was being handed 150bb
+         * strategy with no miss recorded and nothing in the telemetry saying
+         * the answer was extrapolated. See GTO_MAX_DEPTH_BB for why the line
+         * sits at twice the deepest bucket. Beyond it the consult declines
+         * and the heuristic layers - which scale continuously with depth -
+         * play the spot. Flagged so it can be ablated in the league.
+         */
+        const tooDeep29 =
+          (opts.v33DepthCeiling ?? true) !== false && beyondGtoDepthCeiling(stackBB29);
+        if (tooDeep29 && telemetryOn(opts)) noteFire('gto_skip_too_deep');
+
         const v31 =
-          (opts.v31GtoSuitAware ?? true) !== false
+          !tooDeep29 && (opts.v31GtoSuitAware ?? true) !== false
             ? gtoStreetAdviceV31({
                 street,
                 family: family29,
@@ -2686,14 +2760,18 @@ export class HorseLogic {
           }
         }
 
-        const advice29 = gtoStreetAdvice({
-          street,
-          family: family29,
-          position: chartPos29,
-          stackBB: stackBB29,
-          board: gs.communityCards,
-          hand: hand29,
-        });
+        // The open-node consult reads the same warehouse and the same depth
+        // buckets, so the ceiling applies to it identically.
+        const advice29 = tooDeep29
+          ? null
+          : gtoStreetAdvice({
+              street,
+              family: family29,
+              position: chartPos29,
+              stackBB: stackBB29,
+              board: gs.communityCards,
+              hand: hand29,
+            });
         if (!advice29 && telemetryOn(opts) && v31 && !v31.hit) {
           // OBSERVABILITY (2026-08-30): the gate was passed and NEITHER layer
           // answered. Until now that was silent, so "the solver layer fires on
@@ -2711,6 +2789,8 @@ export class HorseLogic {
           else if (v31.miss === 'no_texture') noteFire('gto_miss_no_texture');
           else if (v31.miss === 'no_hand') noteFire('gto_miss_no_hand');
           else noteFire('gto_miss_empty_store');
+          // WHICH cells are missing, not merely how many. See noteGtoMiss.
+          noteGtoMiss('v31', street, stackBB29);
         }
         if (advice29) {
           if (telemetryOn(opts) && !cellDepthIsPrimary(advice29.cell, stackBB29)) {

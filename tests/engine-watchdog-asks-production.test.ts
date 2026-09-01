@@ -61,10 +61,14 @@ describe('it fails in the safe direction', () => {
     expect(SH).toMatch(/if \[ -z "\$\{SERVED:-\}" \][\s\S]{0,600}?exit 0/);
   });
 
-  it('gives the catch-up schedule a grace window before raising anything', () => {
-    // One missed twenty-minute tick is ordinary. Three in a row is the failure.
+  it('waits for the scheduled restart window and a grace period before raising anything', () => {
+    // A commit can legitimately be behind between scheduled restart windows.
+    // The watchdog must also retain the minimum grace period for commits that
+    // land during a window.
     expect(SH).toContain('GRACE_MIN="${GRACE_MIN:-45}"');
-    expect(SH).toContain('inside the ${GRACE_MIN}m grace window');
+    expect(SH).toContain('RESTART_HOURS="${RESTART_HOURS:-04 10 14 18 22}"');
+    expect(SH).toContain('WINDOW_EPOCH=$(window_at_or_after "$REQ_EPOCH")');
+    expect(SH).toContain('Engine watchdog: waiting for the restart window');
   });
 
   it('does not fail the job, because the alarm is the point', () => {

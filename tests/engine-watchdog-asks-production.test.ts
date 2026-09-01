@@ -129,9 +129,15 @@ describe('it fixes what it finds, and only then complains', () => {
 });
 
 describe('and it is actually scheduled to run', () => {
-  it('is a job in the publish watchdog, which already runs every 30 minutes', () => {
+  it('is a job in the publish watchdog, which runs on a real schedule', () => {
     expect(WF).toContain('bash .github/scripts/engine-watchdog.sh');
-    expect(WF).toContain("cron: '*/30 * * * *'");
+    // 2026-09-01 (cost audit): the watchdog schedule went */30 -> hourly. The
+    // workflow_run trigger still fires after every publish attempt, and
+    // engine deploy truth is now ALSO watched database-side every 10 minutes
+    // by fn_ca_engine_deploy_truth_watch() via pg_cron, which is the net that
+    // still works when Actions itself is the outage. The pin asserts a
+    // schedule EXISTS, so the job can never quietly lose its cron entirely.
+    expect(WF).toMatch(/cron: '\S+ \* \* \* \*'/);
   });
 
   it('is its own job, so an engine problem cannot hide behind a bundle problem', () => {

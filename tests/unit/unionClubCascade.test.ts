@@ -37,7 +37,7 @@ describe('union -> club cascade', () => {
   });
 
   it('carries union_id on the club row so the fallback costs no round trip', () => {
-    expect(SRC).toMatch(/created_at, is_union, union_id'/);
+    expect(SRC).toMatch(/created_at, is_union, union_id, opening_checklist_started_at'/);
   });
 
   it('caches a resolved union so the next load survives a timeout', () => {

@@ -80,14 +80,14 @@ describe('the engine deploy tells the truth when it skips', () => {
     // hour apart, so both must be declared or the window silently disappears
     // for half the year. The gate keeps whichever five are genuinely 04, 10,
     // 14, 18 or 22 o'clock in Chicago.
-    expect(HETZNER).toMatch(/cron: '0 0,3,4,9,10,15,16,19,20,23 \* \* \*'/);
+    expect(HETZNER).toMatch(/cron: '0,20,40 0,3,4,9,10,15,16,19,20,23 \* \* \*'/);
     expect(cronEveryMinutes(HETZNER)).toBeNull();
 
     // Asserted as the PAIRING rather than as a literal, because the literal is
     // what a future edit gets wrong: dropping one hour leaves a cron that still
     // looks plausible and a window that stops firing when the clocks change.
     const utcHours = new Set(
-      HETZNER.match(/cron: '0 ([0-9,]+) \* \* \*'/)![1]
+      HETZNER.match(/cron: '0,20,40 ([0-9,]+) \* \* \*'/)![1]
         .split(',')
         .map(Number)
     );

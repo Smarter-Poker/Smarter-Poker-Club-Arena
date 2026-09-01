@@ -6,6 +6,23 @@
  * Dan 2026-08-20: "Capitalize the first letter of every word inside the entire
  * club arena, and forbid the use of em bars anywhere."
  *
+ * WHAT "EM BARS" MEANS, BECAUSE IT HAS ALREADY BEEN MISREAD TWICE
+ *
+ * Dan's phrase "em bars" means EM DASHES: the punctuation mark, U+2014.
+ * This is a rule about COPY -- the characters inside text a player reads.
+ * It is NOT a rule about artwork, icons, or anything shaped like a line,
+ * and it does NOT ban the hamburger menu.
+ *
+ * Read the other way it has now cost the hamburger menu twice in two days:
+ * #2321 replaced it with a gear on every trigger, deleted the approved
+ * rasters, and added a law forbidding its return; #2429 did it again with a
+ * six-tile grid after #2401 reverted the first one. Each time Dan opened the
+ * app and found a different icon where his menu button used to be.
+ *
+ * If you are about to ban "bars" anywhere near an ICON, you have misread this
+ * sentence. The hamburger is the menu. See
+ * tests/approvedHamburgerGearGuard.law.test.ts.
+ *
  * TWO RULES, ONE HELPER
  *
  *   1. Every word starts with a capital.       "hands played" -> "Hands Played"

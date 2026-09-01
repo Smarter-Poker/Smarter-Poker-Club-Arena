@@ -16,7 +16,22 @@ const publicationRepair = readFileSync(
   ),
   'utf8'
 );
+const publicationRefresh = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20260902050000_daily_mission_realtime_publication_refresh.sql'
+  ),
+  'utf8'
+);
+const privateBroadcast = readFileSync(
+  resolve(__dirname, '../supabase/migrations/20260902060000_daily_mission_private_broadcast.sql'),
+  'utf8'
+);
 const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
+const broadcastHook = readFileSync(
+  resolve(__dirname, '../src/hooks/useMasterBusBroadcastChannel.ts'),
+  'utf8'
+);
 const clock = readFileSync(resolve(__dirname, '../src/hooks/useChallengeClock.ts'), 'utf8');
 
 describe('Daily Missions realtime and render-isolation contract', () => {
@@ -48,14 +63,38 @@ describe('Daily Missions realtime and render-isolation contract', () => {
     ]);
   });
 
-  it('subscribes through the recoverable MasterBus channel with a server-side user filter', () => {
-    expect(page).toContain('useMasterBusChannel({');
-    expect(page).toContain("table: 'daily_challenge_dashboard_revisions'");
-    expect(page).toContain('filter: userId ? `user_id=eq.${userId}` : null');
+  it('refreshes stale Realtime relation state without exposing browser writes', () => {
+    expect(publicationRefresh).toContain('DROP TABLE public.daily_challenge_dashboard_revisions');
+    expect(publicationRefresh).toContain('ADD TABLE public.daily_challenge_dashboard_revisions');
+    expect(publicationRefresh).toContain('REPLICA IDENTITY FULL');
+    expect(publicationRefresh).toContain('FROM PUBLIC, anon, authenticated');
+    expect(publicationRefresh).toContain('TO authenticated, service_role');
+    expect(publicationRefresh).toContain("'INSERT,UPDATE,DELETE'");
+    expect(publicationRefresh.indexOf('DROP TABLE')).toBeLessThan(
+      publicationRefresh.indexOf('ADD TABLE')
+    );
+  });
+
+  it('moves the refresh signal to an authenticated private per-player Broadcast', () => {
+    expect(privateBroadcast).toContain('ON realtime.messages');
+    expect(privateBroadcast).toContain("realtime.messages.extension = 'broadcast'");
+    expect(privateBroadcast).toContain("'daily-mission-revision:' || (SELECT auth.uid())::text");
+    expect(privateBroadcast).toContain("'daily_mission_revision_changed'");
+    expect(privateBroadcast).toContain('DROP TABLE public.daily_challenge_dashboard_revisions');
+    expect(privateBroadcast).toContain("jsonb_build_object('revision', v_revision)");
+    expect(privateBroadcast).not.toContain('GRANT INSERT');
+
+    expect(page).toContain('useMasterBusBroadcastChannel({');
+    expect(page).toContain('channelName: userId ? `daily-mission-revision:${userId}` : null');
+    expect(page).toContain("event: 'daily_mission_revision_changed'");
+    expect(page).toContain('private: true');
     expect(page).toContain('onSubscriptionError:');
     expect(page).toContain('onSubscriptionStatus:');
-    expect(page).not.toContain('.channel(`daily-challenges:');
     expect(page).not.toContain("table: 'user_daily_challenges'");
+
+    expect(broadcastHook).toContain(".on('broadcast', { event }");
+    expect(broadcastHook).toContain('masterBus.registerChannelFactory');
+    expect(broadcastHook).toContain('masterBus.removeRegisteredChannel');
   });
 
   it('coalesces event bursts and repairs dropped events with a visible-tab cursor read', () => {

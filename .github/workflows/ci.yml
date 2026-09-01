@@ -12,6 +12,26 @@ on:
     # test a site that only republishes every seven minutes. Twice an hour
     # tests the same thing.
     - cron: '17 */2 * * *'
+    # ── IS MAIN ACTUALLY GREEN? (2026-08-31) ──────────────────────────────
+    #
+    # Every job below is gated on `github.event_name == 'pull_request'`, so a
+    # PUSH to main runs nothing and reports SUCCESS. That is defensible on its
+    # own terms - the pull request already tested that tree - but it leaves
+    # main itself unverified in two situations that both happen here daily:
+    #
+    #   1. A squash merge builds a tree that NO pull request ever tested,
+    #      whenever main moved between the PR's last CI run and the merge.
+    #   2. Anything landed by the GitHub API rather than through a PR.
+    #
+    # On 2026-08-31 four tests had been failing on main under a green badge.
+    # They were found only because an unrelated PR happened to touch tests/,
+    # which is the one thing that makes the client suite run. Nothing on main
+    # would ever have reported them.
+    #
+    # Once a day, against main, with no change detection: cheap enough to
+    # ignore next to nineteen merges an hour, and the only thing in this file
+    # that can answer "is the branch we deploy from actually passing".
+    - cron: '35 6 * * *'
 
 # ═══════════════════════════════════════════════════════════════════════════
 # THE GROUP IS KEYED ON THE HEAD SHA, NOT THE BRANCH — changed 2026-08-26.
@@ -238,6 +258,9 @@ jobs:
         run: node scripts/ci/check-discarded-read-then-write.mjs
 
       # Copy invariant. Dan 2026-08-20: "forbid the use of em bars anywhere."
+      # "em bars" means EM DASHES, the punctuation mark. A COPY rule about the
+      # characters in text -- NOT about artwork or icons, and it does not ban
+      # the hamburger menu. Misread that way twice: #2321 and #2429.
       # A style rule that lives only in someone's head gets re-broken by the
       # next person who writes a label — 444 of them had accumulated by the
       # time it was first run. Comments are exempt (they never reach a player);
@@ -738,9 +761,15 @@ jobs:
     # `always()` makes the job evaluate even when `changes` did not succeed, and
     # `needs.changes.result != 'success'` then RUNS it. An undetermined diff is
     # treated as "could break anything", never as "nothing to do".
+    #
+    # `schedule` runs it unconditionally: that is the daily "is main actually
+    # green" pass, and change detection is meaningless there because there is
+    # no diff to detect - the question is about the whole branch.
     if: >-
-      always() && github.event_name == 'pull_request' &&
-      (needs.changes.result != 'success' || needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')
+      always() &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'pull_request' &&
+        (needs.changes.result != 'success' || needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')))
     name: Client Unit Tests (vitest)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -790,9 +819,13 @@ jobs:
     # `always()` makes the job evaluate even when `changes` did not succeed, and
     # `needs.changes.result != 'success'` then RUNS it. An undetermined diff is
     # treated as "could break anything", never as "nothing to do".
+    #
+    # `schedule` runs it unconditionally - see the note on the unit job.
     if: >-
-      always() && github.event_name == 'pull_request' &&
-      (needs.changes.result != 'success' || needs.changes.outputs.server == 'true')
+      always() &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'pull_request' &&
+        (needs.changes.result != 'success' || needs.changes.outputs.server == 'true')))
     name: Server Engine (typecheck + tests)
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -836,6 +869,78 @@ jobs:
       - name: All-in action panel must never be pointer-events:none
         working-directory: .
         run: node scripts/ci/check-allin-pointer-events.mjs
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  #  WHAT DID THIS RUN ACTUALLY VERIFY?
+  # ═══════════════════════════════════════════════════════════════════════════
+  #
+  # Added 2026-08-31, after four tests were found failing on main under a green
+  # badge for an unknown length of time.
+  #
+  # A skipped job and a passing job are both green in the run list, in the PR
+  # header and in `gh run list`. Everything above is gated - on the event, on
+  # the diff, or on `needs` - so a run can legitimately execute nothing at all
+  # and still report success. That is the correct BEHAVIOUR and a terrible
+  # REPORT, and it is the same failure this repo already named twice: the
+  # Hetzner deploy's "DID NOT DEPLOY - this run shipped nothing" step, and the
+  # cron-health check that exists because nobody was reading job_run_details.
+  #
+  # This job costs a few seconds, blocks nothing, and makes the run say out
+  # loud which suites ran and which did not. A warning is an ANNOTATION, so it
+  # surfaces in the run header without anyone thinking to open the logs.
+  verdict:
+    name: What this run verified
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: always()
+    needs: [changes, stub_gate, typecheck, unit, server]
+    steps:
+      - name: Say what ran, and what did not
+        run: |
+          UNIT='${{ needs.unit.result }}'
+          SERVER='${{ needs.server.result }}'
+          TYPECHECK='${{ needs.typecheck.result }}'
+          STUB='${{ needs.stub_gate.result }}'
+          CHANGES='${{ needs.changes.result }}'
+
+          {
+            echo "## What this run verified"
+            echo ""
+            echo "| Suite | Result |"
+            echo "| --- | --- |"
+            echo "| What changed | $CHANGES |"
+            echo "| Stub Gate | $STUB |"
+            echo "| TypeScript + repo invariants | $TYPECHECK |"
+            echo "| Client Unit Tests | $UNIT |"
+            echo "| Server Engine | $SERVER |"
+            echo ""
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          SKIPPED=""
+          [ "$UNIT" = "skipped" ] && SKIPPED="$SKIPPED client-unit"
+          [ "$SERVER" = "skipped" ] && SKIPPED="$SKIPPED server-engine"
+
+          if [ "$UNIT" = "skipped" ] && [ "$SERVER" = "skipped" ]; then
+            echo "::warning title=NO TESTS RAN::This run executed neither test suite. It is green because nothing was checked, not because everything passed. On a push to main that is expected - every job here is gated on pull_request - and it is exactly why the daily scheduled run against main exists."
+            {
+              echo "**No test suite ran in this run.** It is green because nothing"
+              echo "was checked. The daily scheduled run (\\`35 6 * * *\\`) is what"
+              echo "answers whether main is actually passing."
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ -n "$SKIPPED" ]; then
+            echo "::notice title=PARTIAL VERIFICATION::These suites did not run:$SKIPPED. Change detection judged them unaffected by this diff."
+          else
+            echo "Both test suites ran."
+          fi
+
+      # The gate itself must fail closed. A suite that ERRORED (not skipped,
+      # not passed) while some other job's failure is what turned the run red
+      # is easy to lose in a long job list; naming it here is free.
+      - name: Fail if a suite that ran did not pass
+        if: needs.unit.result == 'failure' || needs.server.result == 'failure' || needs.typecheck.result == 'failure' || needs.stub_gate.result == 'failure'
+        run: |
+          echo "::error title=A suite that ran did not pass::unit=${{ needs.unit.result }} server=${{ needs.server.result }} typecheck=${{ needs.typecheck.result }} stub_gate=${{ needs.stub_gate.result }}"
+          exit 1
 
   build:
     # COST 2026-08-23: this already ran, and passed, on the pull request -

@@ -137,3 +137,76 @@ export const GAME_VARIANT_LABELS: Record<string, string> = {
 export function getGameVariantLabel(gameType: string): string {
   return GAME_VARIANT_LABELS[gameType] || gameType.toUpperCase().replace(/_/g, ' ');
 }
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  A CARD CANNOT BE IN TWO PLACES. THE DECK HAS ONE OF EACH.
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Dan 2026-08-31: the hero was holding J9h while the flop showed Kd 9h Qd —
+ * the same nine, in his hand and on the board. "How the fuck is that even
+ * possible?!"
+ *
+ * It is not, and the engine did not deal it. It is the client showing a hand
+ * that has expired. The hero's cards are held across engine frames on purpose
+ * (`cardHoldSameHand` in TablePage) because a snapshot carrying no hero cards
+ * means "no news", never "you have none" — a rule that exists because the hero
+ * losing sight of their hand is the worse bug. But that hold is fail-OPEN on an
+ * unknown hand number, so a frame that cannot identify its hand carries the
+ * PREVIOUS hand's cards into the new one, and the new board then contradicts
+ * them.
+ *
+ * The collision is the proof. Whatever path produced it — a missed
+ * HAND_STARTED, a snapshot with hand_number 0, a stale recovery row — a hole
+ * card that is also on the board is a hand that no longer exists, and it must
+ * never be shown as if it did. This is the last line of defence, deliberately
+ * placed where every delivery path passes through rather than in any one of
+ * them.
+ *
+ * Suit representation differs by path — the engine's own words ('hearts')
+ * arrive on snapshots, the single letters ('h') on the recovery and realtime
+ * paths — so both sides are normalised before comparing. Rank is compared with
+ * '10' and 'T' folded together for the same reason.
+ */
+function cardKey(card: { rank?: unknown; suit?: unknown } | null | undefined): string | null {
+  if (!card) return null;
+  const rawRank = typeof card.rank === 'string' ? card.rank : String(card.rank ?? '');
+  const rawSuit = typeof card.suit === 'string' ? card.suit : String(card.suit ?? '');
+  if (!rawRank || !rawSuit) return null;
+  const rank = rawRank.toUpperCase() === '10' ? 'T' : rawRank.toUpperCase();
+  const suitLower = rawSuit.toLowerCase();
+  const suit = ENGINE_SUIT_MAP[suitLower] ?? suitLower.charAt(0);
+  if (!rank || !suit) return null;
+  return `${rank}${suit}`;
+}
+
+/**
+ * True when any of `cards` also appears on any of the supplied boards.
+ *
+ * Boards are passed as a rest parameter so the double- and triple-board
+ * variants (bomb pots, run-it-twice) are covered by the same call: the runouts
+ * come off ONE deck, so a hole card colliding with the second board is exactly
+ * as impossible as one colliding with the first.
+ */
+export function heroCardsCollideWithBoard(
+  cards: ReadonlyArray<{ rank?: unknown; suit?: unknown } | null | undefined> | null | undefined,
+  ...boards: ReadonlyArray<
+    ReadonlyArray<{ rank?: unknown; suit?: unknown } | null | undefined> | null | undefined
+  >
+): boolean {
+  if (!cards || cards.length === 0) return false;
+  const onBoard = new Set<string>();
+  for (const board of boards) {
+    if (!board) continue;
+    for (const card of board) {
+      const key = cardKey(card);
+      if (key) onBoard.add(key);
+    }
+  }
+  if (onBoard.size === 0) return false;
+  for (const card of cards) {
+    const key = cardKey(card);
+    if (key && onBoard.has(key)) return true;
+  }
+  return false;
+}

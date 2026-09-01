@@ -72,8 +72,26 @@ on:
   # DST. 18, 22, 04, 10, 14 America/Chicago translate to two different UTC hour
   # sets depending on CDT vs CST, so all ten fire and the window gate (first step)
   # keeps only the five that are genuinely the correct local hours in Chicago.
+  #
+  # THREE TICKS PER WINDOW, NOT ONE (2026-08-31).
+  #
+  # This fired once, at the top of each candidate hour, and a GitHub scheduled
+  # workflow is best-effort: under load it is delayed, and it is sometimes
+  # dropped outright. Miss the single tick and the whole one-hour window closes
+  # unused, so merged engine code waits FOUR MORE HOURS for the next one.
+  #
+  # That is not hypothetical. On 2026-08-31 the 23:00 UTC tick (18:00 Chicago)
+  # never arrived. The engine served the same build for over three hours with
+  # the window standing open and twelve deploy runs reporting success having
+  # shipped nothing, while the insurance fix and the horse seat-call fix sat
+  # unlanded.
+  #
+  # :00, :20 and :40 of each candidate hour. The window gate below still admits
+  # only the five correct Chicago hours, and the dedupe step still returns
+  # immediately once production serves the commit - so the extra ticks cost
+  # seconds each and buy two more chances at every window.
   schedule:
-    - cron: '0 0,3,4,9,10,15,16,19,20,23 * * *'
+    - cron: '0,20,40 0,3,4,9,10,15,16,19,20,23 * * *'
 
   # The override, and the only path that may restart outside a window:
   # a deliberate `force: true` dispatch. A plain dispatch -- which is what
@@ -141,7 +159,7 @@ jobs:
               echo "Restart window OPEN — $LOCAL." ;;
             *)
               echo "open=false" >> $GITHUB_OUTPUT
-              echo "::notice title=OUTSIDE THE RESTART WINDOW::$LOCAL is not a scheduled restart hour in Chicago. Nothing was deployed and the engine was not touched. Merged engine code lands at the next window; dispatch this workflow with force=true to land it now." ;;
+              echo "::warning title=OUTSIDE THE RESTART WINDOW::$LOCAL is not a scheduled restart hour in Chicago. Nothing was deployed and the engine was not touched. Merged engine code lands at the next window; dispatch this workflow with force=true to land it now." ;;
           esac
 
       - name: Skip if production already serves this commit

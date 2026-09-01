@@ -402,7 +402,6 @@ sw.addEventListener('fetch', (event) => {
   }
   // All other requests (API, etc.) fall through to normal network fetch
 });
-
 // ═══════════════════════════════════════════════════════════════════════════════
 //  MASTER BUS NOTIFICATIONS — Background push for critical events
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -509,4 +508,3 @@ sw.addEventListener('activate', (event) => {
         ])
     );
 });
-

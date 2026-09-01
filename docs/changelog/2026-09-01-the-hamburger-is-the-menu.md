@@ -35,7 +35,7 @@ migrated worker.
 
 ## What replaces it
 
-`tests/hamburger-never-regresses.law.test.ts` pins the complete set of menu
+`tests/approvedHamburgerGearGuard.law.test.ts` pins the complete set of menu
 triggers, the md5 of every hamburger raster in the repo (this migration changed
 the icon with an empty code diff in the files that reference it, which is the
 failure mode that took longest to find), the absence of a gear or a grid glyph

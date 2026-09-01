@@ -418,7 +418,7 @@ export async function processBBJPayout(params: {
           .map((r) => ({
             user_id: r.id,
             type: 'bonus',
-            title: 'Bad Beat Jackpot - you got paid!',
+            title: 'Bad Beat Jackpot - You Got Paid!',
             message:
               `A Bad Beat Jackpot hit on a hand you were dealt into after you left the table. ` +
               `Your share of $${r.share.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ` +

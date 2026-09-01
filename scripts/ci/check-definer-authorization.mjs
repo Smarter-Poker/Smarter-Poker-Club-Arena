@@ -187,8 +187,22 @@ const BROWSER_ROLES = ['public', 'anon', 'authenticated'];
  */
 function effectiveGrants(sql, name) {
   const held = { public: true, anon: false, authenticated: false };
+  /* THE GAP CANNOT CROSS A STATEMENT BOUNDARY (2026-09-01). This used to be
+     `[\s\S]*?`, which let the word "grant" ANYWHERE - inside a RAISE EXCEPTION
+     string, a column name, a comment that survived stripping - reach forward to
+     the next `ON FUNCTION` in the file and label somebody else's statement with
+     its own verb. It really happened: 20260901090000 ends with
+
+       RAISE EXCEPTION 'Deep Stack Society still has a duplicate opening
+                        owner-wallet grant';
+
+     and that lone word turned the next REVOKE into a GRANT. Here it read as
+     stricter than the truth, which is the harmless direction; reversed - a
+     stray "revoke" ahead of a real GRANT - it clears a function that is wide
+     open, which is the whole failure this file exists to prevent. `[^;]*?`
+     keeps a verb inside its own statement. */
   const re = new RegExp(
-    String.raw`\b(GRANT|REVOKE)\b([\s\S]*?)\bON\s+FUNCTION\s+(?:public\.)?(\w+)\s*\(([^)]*)\)([\s\S]*?);`,
+    String.raw`\b(GRANT|REVOKE)\b([^;]*?)\bON\s+FUNCTION\s+(?:public\.)?(\w+)\s*\(([^)]*)\)([^;]*?);`,
     'gi'
   );
   let m;
@@ -368,7 +382,85 @@ export function anonReadableDefiners(sql, allowlist = new Set(), grantSql = sql)
   return out;
 }
 
-export { stripComments, declaredFunctions, browserReachable, anonReachable, effectiveGrants };
+/**
+ * --- THE THIRD RULE: A CLONE IS A DECLARATION (2026-09-01) ------------------
+ *
+ * Everything above reads `CREATE FUNCTION`. On 2026-09-01 a function arrived
+ * that never wrote those two words.
+ *
+ * 20260901090000_club_card_human_realtime_stats.sql needed three functions
+ * duplicated under new names, so it did what the database makes easy: read the
+ * old definition with pg_get_functiondef, rewrite the name in the text, and
+ * EXECUTE it.
+ *
+ *   IF to_regprocedure('public.fn_join_club_membership_impl(uuid)') IS NULL THEN
+ *     SELECT pg_get_functiondef('public.fn_join_club(uuid)'::regprocedure) INTO v_def;
+ *     v_def := regexp_replace(v_def, 'FUNCTION public\.fn_join_club\(',
+ *       'FUNCTION public.fn_join_club_membership_impl(', 1, 1);
+ *     EXECUTE v_def;
+ *   END IF;
+ *
+ * Two of the three clones were revoked from PUBLIC, anon and authenticated in
+ * that same file. The third, fn_seat_club_for_user_membership_unchecked, was
+ * not, and CREATE FUNCTION grants EXECUTE to PUBLIC by default. It went live
+ * SECURITY DEFINER, owned by postgres, answering any caller with no account at
+ * all: hand it a user id and a table id and it returns which club that player
+ * is seated under and which clubs they belong to.
+ *
+ * The author knew the rule -- they applied it twice in the same block, and
+ * revoked the wrapper four lines earlier. This gate simply had nothing to
+ * judge, because a clone is not spelled `CREATE FUNCTION`. The daily live
+ * audit found it hours after it shipped, which is the right backstop and the
+ * wrong moment.
+ *
+ * THE RULE. A name this migration clones into must have its grants stated. A
+ * clone starts PUBLIC-executable like any other new function, so silence is
+ * open here too, and unlike a declaration the file cannot tell us whether the
+ * body consults auth.uid() -- the body lives in the database. There is
+ * therefore no "it asks who is calling" exemption to earn: either the
+ * migration says who may execute the clone, or it does not ship.
+ *
+ * READING A CLONE. Two signals, both from the file:
+ *   * a `'FUNCTION public.<name>('` string literal -- how the new name is
+ *     spliced into the definition text;
+ *   * MINUS every name handed to pg_get_functiondef, which is the SOURCE being
+ *     copied and already exists with grants of its own.
+ * The source half of the regexp_replace is a regular expression, so its dot
+ * and paren are escaped, but subtracting the pg_get_functiondef argument is
+ * what actually tells source from target -- and it keeps working if somebody
+ * writes the pattern unescaped.
+ */
+export function clonedFunctions(sql) {
+  const clean = stripComments(sql);
+  const spliced = new Set();
+  const nameInLiteral = /'FUNCTION\s+public\\?\.([A-Za-z_]\w*)\\?\s*\(/g;
+  let m;
+  while ((m = nameInLiteral.exec(clean))) spliced.add(m[1]);
+
+  const sources = new Set();
+  const fromDefinition = /pg_get_functiondef\s*\(\s*'\s*(?:public\.)?([A-Za-z_]\w*)\s*\(/gi;
+  while ((m = fromDefinition.exec(clean))) sources.add(m[1]);
+
+  return [...spliced].filter((n) => !sources.has(n));
+}
+
+/**
+ * The clone rule, in the same shape as the two above so the test can drive it
+ * directly. Returns the cloned names a caller with no account could execute.
+ */
+export function unrevokedClones(sql, allowlist = new Set(), grantSql = sql) {
+  const clean = stripComments(sql);
+  const grants = grantSql === sql ? clean : stripComments(grantSql);
+  return clonedFunctions(clean).filter((name) => anonReachable(grants, name) && !allowlist.has(name));
+}
+
+export {
+  stripComments,
+  declaredFunctions,
+  browserReachable,
+  anonReachable,
+  effectiveGrants,
+};
 
 function main() {
   const base = ALL ? null : baseRef();
@@ -390,6 +482,7 @@ function main() {
   const anonAllowlist = new Set(loadAllowlist('anonPublicSurface').keys());
   const offenders = [];
   const anonOffenders = [];
+  const cloneOffenders = [];
   let inspected = 0;
 
   // Every migration this branch touches, concatenated, so a REVOKE in one file
@@ -417,6 +510,44 @@ function main() {
     for (const name of anonReadableDefiners(sql, anonAllowlist, branchSql)) {
       if (!alreadyNamed.has(name)) anonOffenders.push({ name, file });
     }
+    // A clone is judged on its grants alone: its body is in the database, not
+    // in this file, so there is no auth.uid() exemption to read.
+    for (const name of unrevokedClones(sql, anonAllowlist, branchSql)) {
+      cloneOffenders.push({ name, file });
+    }
+  }
+
+  if (cloneOffenders.length > 0) {
+    console.error('');
+    console.error('[check-definer-authorization] BLOCKED -- a clone with nobody named on it.');
+    console.error('');
+    for (const o of cloneOffenders) {
+      console.error(`  ${o.name}`);
+      console.error(`    cloned in ${o.file}`);
+      console.error('    A function copied into a new name is a NEW function, and a new function');
+      console.error('    holds EXECUTE for PUBLIC until something revokes it. This migration never');
+      console.error('    says who may execute this one.');
+      console.error('');
+    }
+    console.error('  On 2026-09-01 three functions were cloned in one migration. Two were');
+    console.error('  revoked in the same file and the third was not, and it went live answering');
+    console.error('  a caller with no account: give it a user id and a table id and it returned');
+    console.error('  which club that player was seated under and which clubs they belonged to.');
+    console.error('');
+    console.error('  There is no "the body checks auth.uid()" exemption here. The body lives in');
+    console.error('  the database, not in this file, so the grants have to be said out loud:');
+    console.error('');
+    console.error(
+      '       REVOKE ALL ON FUNCTION public.<name>(<types>) FROM PUBLIC, anon, authenticated;'
+    );
+    console.error('       GRANT EXECUTE ON FUNCTION public.<name>(<types>) TO service_role;');
+    console.error('');
+    console.error('  Keep `authenticated` instead if a logged-in player calls it directly. If it');
+    console.error('  is genuinely open to callers with no account, add it to the');
+    console.error('  anonPublicSurface block of scripts/ci/definer-authorization.allowlist.json');
+    console.error('  with a reason.');
+    console.error('');
+    process.exit(1);
   }
 
   if (anonOffenders.length > 0) {

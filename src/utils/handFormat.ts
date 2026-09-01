@@ -75,7 +75,18 @@ export function gameTypeLabel(variant: string | null | undefined): string | null
   if (v === 'nlh') return 'NLH';
   if (v === 'flh') return 'FLH';
   if (v === 'short_deck' || v === 'shortdeck' || v === 'sixplus') return 'Short Deck';
-  if (v === 'pineapple') return 'Pineapple';
+  /* PHASE 4 2026-09-01 - THE FELT WAS NAMING THE WRONG GAME.
+  
+     The `pineapple` variant key has always run CRAZY Pineapple: three cards,
+     and the discard comes AFTER the flop. In plain Pineapple you throw a card
+     BEFORE it, which is a different game with a different strategy - and the
+     one the table was announcing to anybody who knows the difference.
+  
+     The variant KEY stays `pineapple`. It is written into millions of
+     hand_history rows, ~120 live table rows, every horse profile and every
+     lobby filter, and renaming a key to fix a label is how a rename becomes
+     an outage. Only what a player READS changes. */
+  if (v === 'pineapple') return 'Crazy Pineapple';
   if (v === 'ofc_pineapple' || v === 'ofc') return 'OFC';
   if (/^(plo|flo)\d*8?$/.test(v)) return v.toUpperCase();
   // Anything unrecognised prints as words rather than as a column key.

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import GameCreationActions, {
@@ -11,6 +11,8 @@ import { confirmDialog } from '../components/common/confirmDialog';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
 import { useGameManagementRealtime } from '../hooks/useGameManagementRealtime';
+import { useFocusTrap } from '../hooks/useFocusTrap';
+import { useDialogEscape } from '../hooks/useDialogEscape';
 import { supabase } from '../lib/supabase';
 import { fetchGameCreationAccess } from '../services/GameAccessService';
 import {
@@ -79,7 +81,7 @@ function formatTime(value: string | null): string {
   });
 }
 
-function EditGameDialog({
+export function EditGameDialog({
   game,
   busy,
   onClose,
@@ -90,6 +92,8 @@ function EditGameDialog({
   onClose: () => void;
   onSave: (patch: ManagedGamePatch) => void;
 }) {
+  const dialogRef = useFocusTrap<HTMLFormElement>(true);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const [name, setName] = useState(game.name);
   const [smallBlind, setSmallBlind] = useState(String(game.smallBlind || 1));
   const [bigBlind, setBigBlind] = useState(String(game.bigBlind || 2));
@@ -104,30 +108,111 @@ function EditGameDialog({
     (Boolean(game.contract?.contractLocked) ||
       ['running', 'active'].includes(game.status.toLowerCase()));
 
+  const dirty =
+    name !== game.name ||
+    (!tableStructureLocked && maxPlayers !== String(game.maxPlayers || 9)) ||
+    (game.kind === 'table' &&
+      !tableStructureLocked &&
+      (smallBlind !== String(game.smallBlind || 1) ||
+        bigBlind !== String(game.bigBlind || 2) ||
+        minBuyIn !== String(game.minBuyIn || 40) ||
+        maxBuyIn !== String(game.maxBuyIn || 200))) ||
+    (game.kind === 'tournament' &&
+      startTime !== (game.startTime ? new Date(game.startTime).toISOString().slice(0, 16) : ''));
+
+  const requestClose = useCallback(() => {
+    if (busy) return;
+    if (!dirty) {
+      onClose();
+      return;
+    }
+    void confirmDialog({
+      message: 'Discard the unsaved game changes?',
+      variant: 'danger',
+    }).then((confirmed) => {
+      if (confirmed) onClose();
+    });
+  }, [busy, dirty, onClose]);
+
+  useDialogEscape(true, requestClose, busy);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  const buildPatch = (): ManagedGamePatch | null => {
+    const trimmedName = name.replace(/\s+/g, ' ').trim();
+    const seats = Number(maxPlayers);
+    if (!trimmedName) {
+      setValidationError('Enter a game name.');
+      return null;
+    }
+    if (!tableStructureLocked && (!Number.isInteger(seats) || seats < 2)) {
+      setValidationError('Maximum players must be a whole number of at least two.');
+      return null;
+    }
+    const patch: ManagedGamePatch = { name: trimmedName };
+    if (!tableStructureLocked) patch.maxPlayers = seats;
+    if (game.kind === 'table' && !tableStructureLocked) {
+      const small = Number(smallBlind);
+      const big = Number(bigBlind);
+      const minimum = Number(minBuyIn);
+      const maximum = Number(maxBuyIn);
+      if (![small, big, minimum, maximum].every(Number.isFinite) || small <= 0) {
+        setValidationError('Enter positive numeric blinds and buy-in limits.');
+        return null;
+      }
+      if (big < small) {
+        setValidationError('The big blind cannot be lower than the small blind.');
+        return null;
+      }
+      if (maximum < minimum) {
+        setValidationError('The maximum buy-in cannot be lower than the minimum buy-in.');
+        return null;
+      }
+      if (seats > 10) {
+        setValidationError('Cash tables support a maximum of ten seats.');
+        return null;
+      }
+      patch.smallBlind = small;
+      patch.bigBlind = big;
+      patch.minBuyIn = minimum;
+      patch.maxBuyIn = maximum;
+    } else if (startTime) {
+      const timestamp = new Date(startTime);
+      if (!Number.isFinite(timestamp.getTime())) {
+        setValidationError('Enter a valid tournament start time.');
+        return null;
+      }
+      patch.startTime = timestamp.toISOString();
+    }
+    setValidationError(null);
+    return patch;
+  };
+
   return (
     <div
       className={styles.dialogBackdrop}
       role="presentation"
       onMouseDown={(e) => {
-        if (e.currentTarget === e.target) onClose();
+        if (e.currentTarget === e.target) requestClose();
       }}
     >
       <form
+        ref={dialogRef}
         className={styles.dialog}
+        role="dialog"
+        aria-modal="true"
         aria-labelledby="edit-game-title"
+        aria-describedby="edit-game-description"
         onSubmit={(e) => {
           e.preventDefault();
-          const patch: ManagedGamePatch = { name: name.trim() };
-          if (!tableStructureLocked) patch.maxPlayers = Number(maxPlayers);
-          if (game.kind === 'table' && !tableStructureLocked) {
-            patch.smallBlind = Number(smallBlind);
-            patch.bigBlind = Number(bigBlind);
-            patch.minBuyIn = Number(minBuyIn);
-            patch.maxBuyIn = Number(maxBuyIn);
-          } else if (startTime) {
-            patch.startTime = new Date(startTime).toISOString();
-          }
-          onSave(patch);
+          const patch = buildPatch();
+          if (patch) onSave(patch);
         }}
       >
         <span className={styles.eyebrow}>Safe Pre-Game Changes</span>
@@ -141,7 +226,7 @@ function EditGameDialog({
           <input
             type="number"
             min="2"
-            max="1000000"
+            max={game.kind === 'table' ? '10' : '1000000'}
             value={maxPlayers}
             onChange={(e) => setMaxPlayers(e.target.value)}
             disabled={tableStructureLocked}
@@ -209,13 +294,18 @@ function EditGameDialog({
             />
           </label>
         )}
-        <p>
+        <p id="edit-game-description">
           {tableStructureLocked
             ? 'This Live Table Can Be Renamed. Its Blinds, Buy-In, And Seats Are Locked.'
             : 'Structural Changes Lock As Soon As Players Become Active.'}
         </p>
+        {validationError && (
+          <p className={styles.dialogError} role="alert">
+            {validationError}
+          </p>
+        )}
         <div className={styles.dialogActions}>
-          <button type="button" onClick={onClose} disabled={busy}>
+          <button type="button" onClick={requestClose} disabled={busy}>
             Cancel
           </button>
           <button type="submit" className={styles.primary} disabled={busy}>
@@ -227,7 +317,7 @@ function EditGameDialog({
   );
 }
 
-function ContractHistoryDialog({
+export function ContractHistoryDialog({
   game,
   versions,
   loading,
@@ -238,6 +328,17 @@ function ContractHistoryDialog({
   loading: boolean;
   onClose: () => void;
 }) {
+  const dialogRef = useFocusTrap(true);
+  useDialogEscape(true, onClose);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
   return (
     <div
       className={styles.dialogBackdrop}
@@ -247,6 +348,7 @@ function ContractHistoryDialog({
       }}
     >
       <section
+        ref={dialogRef}
         className={`${styles.dialog} ${styles.contractDialog}`}
         role="dialog"
         aria-modal="true"
@@ -287,7 +389,13 @@ function ContractHistoryDialog({
           </div>
         )}
         {loading ? (
-          <div className={styles.contractLoading}>Loading Contract History…</div>
+          <div className={styles.contractLoading} role="status" aria-live="polite">
+            Loading Contract History…
+          </div>
+        ) : versions.length === 0 ? (
+          <div className={styles.contractLoading} role="status">
+            No Published Contract Revisions Were Returned.
+          </div>
         ) : (
           <div className={styles.contractVersions}>
             {versions.map((version) => (
@@ -336,12 +444,15 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [view, setView] = useState<View>('all');
   const [surface, setSurface] = useState<ManagementSurface>('games');
+  const [surfaceDirty, setSurfaceDirty] = useState(false);
   const [editing, setEditing] = useState<ManagedGame | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [contractGame, setContractGame] = useState<ManagedGame | null>(null);
   const [contractVersions, setContractVersions] = useState<ManagedGameContractVersion[]>([]);
   const [contractLoading, setContractLoading] = useState(false);
   const [health, setHealth] = useState<GameManagementHealth | null>(null);
+  const loadEpochRef = useRef(0);
+  const loadedRouteRef = useRef('');
 
   const managementPath =
     scope === 'union' ? `/unions/${unionId}/table-management` : `/clubs/${clubId}/table-management`;
@@ -350,6 +461,19 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
 
   const load = useCallback(async () => {
     if (!user?.id) return;
+    const requestId = ++loadEpochRef.current;
+    const isCurrent = () => loadEpochRef.current === requestId;
+    const routeKey = `${scope}:${scope === 'union' ? unionId || '' : clubId || ''}`;
+    if (loadedRouteRef.current !== routeKey) {
+      loadedRouteRef.current = routeKey;
+      setAllowed(null);
+      setScopeId(null);
+      setHosts([]);
+      setHostClubId('');
+      setGames([]);
+      setHealth(null);
+      setSurfaceDirty(false);
+    }
     setLoading(true);
     setLoadError(null);
     try {
@@ -362,12 +486,17 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           fetchGameCreationAccess(resolvedScopeId),
           supabase.from('clubs').select('id,name').eq('id', resolvedScopeId).maybeSingle(),
         ]);
+        if (!isCurrent()) return;
         // A member club is operated from its union console, even for a union
         // owner who technically has authority over the underlying rows.
         const standaloneAccess = access.allowed && !access.unionId;
         setAllowed(standaloneAccess);
         if (!standaloneAccess) {
           setScopeId(resolvedScopeId);
+          setHosts([]);
+          setGames([]);
+          setHealth(null);
+          setSurfaceDirty(false);
           setLoading(false);
           return;
         }
@@ -380,9 +509,14 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         if (!unionId) throw new Error('Union not found');
         resolvedScopeId = unionId;
         const canManage = await unionService.isUnionAdmin(unionId, user.id);
+        if (!isCurrent()) return;
         setAllowed(canManage);
         if (!canManage) {
           setScopeId(unionId);
+          setHosts([]);
+          setGames([]);
+          setHealth(null);
+          setSurfaceDirty(false);
           setLoading(false);
           return;
         }
@@ -390,6 +524,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           supabase.from('unions').select('id,name').eq('id', unionId).maybeSingle(),
           supabase.from('union_clubs').select('club_id, clubs(name)').eq('union_id', unionId),
         ]);
+        if (!isCurrent()) return;
         if (unionResult.error || !unionResult.data)
           throw unionResult.error || new Error('Union not found');
         if (hostResult.error) throw hostResult.error;
@@ -430,6 +565,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         tableQuery.order('created_at', { ascending: false }).limit(500),
         tournamentQuery.order('start_time', { ascending: true }).limit(500),
       ]);
+      if (!isCurrent()) return;
       if (tableResult.error) throw tableResult.error;
       if (tournamentResult.error) throw tournamentResult.error;
       const tableIds = (tableResult.data || []).map((row: any) => row.id);
@@ -441,6 +577,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           gameManagementService.getCommandReceipts('table', tableIds),
           gameManagementService.getCommandReceipts('tournament', tournamentIds),
         ]);
+      if (!isCurrent()) return;
       const tableContractMap = new Map(
         tableContracts.map((contract) => [contract.gameId, contract])
       );
@@ -494,22 +631,65 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       ];
       setGames(rows);
       try {
-        setHealth(await gameManagementService.getHealth(scope, resolvedScopeId));
+        const nextHealth = await gameManagementService.getHealth(scope, resolvedScopeId);
+        if (isCurrent()) setHealth(nextHealth);
       } catch (healthError) {
         reportError(healthError, 'GameManagementPage.health');
-        setHealth(null);
+        if (isCurrent()) setHealth(null);
       }
     } catch (error) {
+      if (!isCurrent()) return;
       reportError(error, 'GameManagementPage.load');
       setLoadError(error instanceof Error ? error.message : 'Could not load games.');
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, [clubId, scope, unionId, user?.id]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // BrowserRouter links do not fire beforeunload. Protect drafts when an
+  // operator leaves through the hamburger menu or any other in-app link.
+  useEffect(() => {
+    if (!surfaceDirty) return;
+    const onClickCapture = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      )
+        return;
+      const anchor = (event.target as HTMLElement | null)?.closest?.(
+        'a[href]'
+      ) as HTMLAnchorElement | null;
+      if (!anchor || anchor.target === '_blank' || anchor.hasAttribute('download')) return;
+      const href = anchor.getAttribute('href') || '';
+      if (!href || href.startsWith('#')) return;
+      let destination: URL;
+      try {
+        destination = new URL(anchor.href, window.location.href);
+      } catch {
+        return;
+      }
+      if (
+        destination.origin !== window.location.origin ||
+        (destination.pathname === window.location.pathname &&
+          destination.search === window.location.search)
+      )
+        return;
+      if (!window.confirm('Leave Table Management And Discard Your Unsaved Changes?')) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    document.addEventListener('click', onClickCapture, true);
+    return () => document.removeEventListener('click', onClickCapture, true);
+  }, [surfaceDirty]);
 
   useMasterBusSubscriptions(
     [...GAME_REFRESH_EVENTS],
@@ -563,6 +743,34 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     requestedCreate === 'spin' ? 'spin' : requestedCreate === 'sng' ? 'sng' : 'mtt_freezeout';
   const tournamentModalOpen =
     requestedCreate === 'event' || requestedCreate === 'spin' || requestedCreate === 'sng';
+
+  const changeSurface = async (nextSurface: ManagementSurface) => {
+    if (nextSurface === surface) return;
+    if (
+      surfaceDirty &&
+      !(await confirmDialog({
+        message: 'Discard the unsaved changes on this management section?',
+        variant: 'danger',
+      }))
+    )
+      return;
+    setSurfaceDirty(false);
+    setSurface(nextSurface);
+  };
+
+  const changeHostClub = async (nextClubId: string) => {
+    if (nextClubId === hostClubId) return;
+    if (
+      surfaceDirty &&
+      !(await confirmDialog({
+        message: 'Discard the unsaved club-message changes before changing host clubs?',
+        variant: 'danger',
+      }))
+    )
+      return;
+    setSurfaceDirty(false);
+    setHostClubId(nextClubId);
+  };
 
   const closeGame = async (game: ManagedGame) => {
     if (game.players > 0 || game.contract?.contractLocked) {
@@ -653,7 +861,11 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         </div>
         <div className={styles.headerRight}>
           <div className={styles.countRail}>
-            <span className={realtimeStatus === 'live' ? styles.healthGood : styles.healthWarn}>
+            <span
+              className={realtimeStatus === 'live' ? styles.healthGood : styles.healthWarn}
+              role="status"
+              aria-live="polite"
+            >
               <strong>{realtimeStatus === 'live' ? 'Live' : 'Recovering'}</strong> Realtime
             </span>
             <span>
@@ -690,7 +902,10 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             type="button"
             className={surface === key ? styles.surfaceActive : ''}
             aria-current={surface === key ? 'page' : undefined}
-            onClick={() => setSurface(key)}
+            onClick={() => void changeSurface(key)}
+            title={
+              surfaceDirty && surface !== key ? 'Unsaved Changes Will Need Confirmation' : undefined
+            }
           >
             <span>0{index + 1}</span>
             <strong>{label}</strong>
@@ -702,7 +917,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       {scope === 'union' && hosts.length > 0 && (
         <label className={styles.hostPicker}>
           Host Club
-          <select value={hostClubId} onChange={(e) => setHostClubId(e.target.value)}>
+          <select value={hostClubId} onChange={(e) => void changeHostClub(e.target.value)}>
             {hosts.map((host) => (
               <option key={host.id} value={host.id}>
                 {host.name}
@@ -726,6 +941,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           {(['all', 'running', 'scheduled', 'closed'] as View[]).map((item) => (
             <button
               key={item}
+              type="button"
               className={view === item ? styles.active : ''}
               onClick={() => setView(item)}
             >
@@ -761,6 +977,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                 <article key={`${game.kind}-${game.id}`} className={styles.gameRow}>
                   <span
                     className={`${styles.statusRail} ${ACTIVE_STATUSES.has(game.status.toLowerCase()) ? styles.live : closed ? styles.closed : styles.scheduled}`}
+                    aria-hidden="true"
                   />
                   <div className={styles.gameIdentity}>
                     <span>
@@ -855,6 +1072,11 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                           ? 'Locked After The First Registration'
                           : 'Edit Game'
                       }
+                      aria-disabled={
+                        game.kind === 'tournament' && game.contract?.contractLocked
+                          ? true
+                          : undefined
+                      }
                     >
                       Edit
                     </button>
@@ -871,6 +1093,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                               : 'A Registered Tournament Cannot Be Cancelled'
                             : 'Close Game'
                         }
+                        aria-disabled={
+                          game.players > 0 || game.contract?.contractLocked ? true : undefined
+                        }
                       >
                         {busyId === game.id ? 'Closing…' : 'Close'}
                       </button>
@@ -883,13 +1108,14 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         ))}
 
       {surface === 'ticker' && allowed && scopeId && (
-        <TickerManagementPanel scope={scope} scopeId={scopeId} />
+        <TickerManagementPanel scope={scope} scopeId={scopeId} onDirtyChange={setSurfaceDirty} />
       )}
 
       {surface === 'messages' && allowed && hostClubId && (
         <ClubMessageManagementPanel
           clubId={hostClubId}
           clubName={hosts.find((host) => host.id === hostClubId)?.name || scopeName}
+          onDirtyChange={setSurfaceDirty}
         />
       )}
 

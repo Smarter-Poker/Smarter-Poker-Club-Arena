@@ -291,6 +291,7 @@
 .empty button,
 .denied button,
 .dialogActions button {
+  min-height: 44px;
   padding: 9px 13px;
   border: 1px solid #304652;
   border-radius: 1px;
@@ -302,6 +303,11 @@
   text-decoration: none;
   text-transform: uppercase;
   cursor: pointer;
+}
+.surfaceNav button:focus-visible,
+.page :is(button, a, select, input, summary):focus-visible {
+  outline: 3px solid #78d8ff;
+  outline-offset: 3px;
 }
 .filters button {
   text-transform: capitalize;
@@ -471,6 +477,9 @@
   color: #ff9c9c;
   border-color: #70383d;
 }
+.rowActions [aria-disabled='true'] {
+  border-style: dashed;
+}
 .rowActions button:disabled {
   opacity: 0.5;
   cursor: wait;
@@ -506,6 +515,8 @@
 }
 .dialog {
   width: min(540px, 100%);
+  max-height: calc(100dvh - 36px);
+  overflow: auto;
   padding: 24px;
   border: 1px solid #315a72;
   border-radius: 1px;
@@ -544,6 +555,12 @@
 .dialog p {
   color: #718894;
   font-size: 11px;
+}
+.dialog .dialogError {
+  padding: 10px 12px;
+  border: 1px solid #9b4d48;
+  color: #ffd0cb;
+  background: #321411;
 }
 .fieldGrid {
   display: grid;
@@ -722,6 +739,14 @@
   .fieldGrid {
     grid-template-columns: 1fr;
   }
+  .rowActions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .rowActions :is(button, a) {
+    display: grid;
+    place-items: center;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .variantGrid a,
@@ -730,5 +755,26 @@
   }
   .gameRow {
     transition: none;
+  }
+}
+@media (forced-colors: active) {
+  .commandHeader,
+  .surfaceNav,
+  .gameRow,
+  .dialog,
+  .readinessGrid > span,
+  .contractVersions details {
+    border: 1px solid CanvasText;
+  }
+  .surfaceNav .surfaceActive,
+  .filters .active {
+    outline: 3px solid Highlight;
+    outline-offset: -3px;
+  }
+  .statusRail {
+    border-right: 4px solid CanvasText;
+  }
+  .statusRail.live {
+    border-color: Highlight;
   }
 }

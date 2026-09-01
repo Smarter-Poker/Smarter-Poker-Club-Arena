@@ -56,6 +56,38 @@
   height: 18px;
   accent-color: #20baff;
 }
+.editor {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.editor:disabled {
+  opacity: 0.68;
+}
+.safetyNotice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid #9a6a2d;
+  color: #f8d99a;
+  background: #24180a;
+}
+.safetyNotice span {
+  color: #d8c6a8;
+  font-size: 12px;
+}
+.safetyNotice button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid #d3a44d;
+  color: #fff4d6;
+  background: #49300e;
+  cursor: pointer;
+}
 .preview {
   display: flex;
   align-items: stretch;
@@ -191,6 +223,7 @@
 .messageComposer button,
 .messages li button,
 .footer button {
+  min-height: 44px;
   padding: 9px 13px;
   border: 1px solid #3380a8;
   border-radius: 1px;
@@ -199,6 +232,13 @@
   font-weight: 800;
   text-transform: uppercase;
   cursor: pointer;
+}
+.characterCount {
+  display: block;
+  margin-top: 6px;
+  color: #7f9aa8;
+  font-size: 11px;
+  text-align: right;
 }
 .messages ul {
   display: grid;
@@ -236,6 +276,10 @@
 .footer button:disabled {
   opacity: 0.55;
 }
+.panel :is(button, input, select):focus-visible {
+  outline: 3px solid #77d8ff;
+  outline-offset: 3px;
+}
 @media (max-width: 900px) {
   .sourceGrid {
     grid-template-columns: repeat(2, 1fr);
@@ -257,10 +301,25 @@
   .messageComposer {
     flex-direction: column;
   }
+  .safetyNotice {
+    grid-template-columns: 1fr;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .preview div span {
     animation: none;
     padding-left: 12px;
+  }
+}
+@media (forced-colors: active) {
+  .panel,
+  .sourceGrid label,
+  .preview,
+  .safetyNotice {
+    border: 1px solid CanvasText;
+  }
+  .sourceGrid .sourceOn {
+    outline: 3px solid Highlight;
+    outline-offset: -3px;
   }
 }

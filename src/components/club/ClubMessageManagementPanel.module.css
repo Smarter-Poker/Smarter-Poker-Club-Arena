@@ -55,6 +55,29 @@
   max-width: 180px;
   text-align: right;
 }
+.safetyNotice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid #9a6a2d;
+  color: #f8d99a;
+  background: #24180a;
+}
+.safetyNotice span {
+  color: #d8c6a8;
+  font-size: 12px;
+}
+.safetyNotice button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid #d3a44d;
+  color: #fff4d6;
+  background: #49300e;
+  cursor: pointer;
+}
 
 .identityGrid,
 .announcementSection {
@@ -111,7 +134,7 @@
 .primary,
 .composerHeading button,
 .announcementActions button {
-  min-height: 34px;
+  min-height: 44px;
   border: 1px solid rgba(74, 180, 255, 0.58);
   border-radius: 1px;
   padding: 0 12px;
@@ -124,6 +147,16 @@
   letter-spacing: 0.05em;
   text-transform: uppercase;
   cursor: pointer;
+}
+.saveStatus {
+  margin: 16px 0 0;
+  color: #8fa8b7;
+  font-size: 12px;
+  text-align: right;
+}
+.panel :is(button, input, textarea):focus-visible {
+  outline: 3px solid #77d8ff;
+  outline-offset: 3px;
 }
 
 .primary:disabled,
@@ -254,5 +287,22 @@
   .announcementActions {
     max-width: none;
     justify-content: flex-start;
+  }
+  .safetyNotice {
+    grid-template-columns: 1fr;
+  }
+}
+@media (forced-colors: active) {
+  .panel,
+  .preview,
+  .composer,
+  .announcementList,
+  .announcementList article,
+  .safetyNotice {
+    border: 1px solid CanvasText;
+  }
+  .announcementList article.inactive {
+    opacity: 1;
+    border-left-style: dashed;
   }
 }

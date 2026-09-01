@@ -17,8 +17,8 @@ import { useRef, useEffect, useCallback } from 'react';
 const FOCUSABLE_SELECTORS =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-export function useFocusTrap(isActive: boolean) {
-  const containerRef = useRef<HTMLDivElement>(null);
+export function useFocusTrap<T extends HTMLElement = HTMLDivElement>(isActive: boolean) {
+  const containerRef = useRef<T>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {

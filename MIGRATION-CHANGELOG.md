@@ -2,6 +2,41 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-09-01 - A LOGGED-IN BROWSER COULD RUN A LEDGER REPAIR
+
+`fn_ca_repair_write_failure` is SECURITY DEFINER, VOLATILE, and was executable
+by **`authenticated`** - any logged-in account. It takes a write-failure id, a
+counterparty type, a counterparty entity and a reason, and posts a correction
+against whichever ledger account those map to: `club_treasury`, `promo_wallet`,
+the player stores. It takes **no identity argument and never looks at who is
+calling**, so the caller's own identity places no limit on which failure it
+repairs or what it attributes the repair to.
+
+**The gate was already shouting.** `Telemetry Exposure` exists to catch exactly
+this shape, and it had been failing on EVERY branch in the repo - it asks the
+live database, not the branch, so one open routine reddens everybody's PR. That
+is how a real finding gets quietly reclassified as noise, and it is why this
+was found while chasing an unrelated CI failure on a Spins guard.
+
+**Nothing calls it.** Not the client, not the server, not pg_cron, and no other
+database function - `fn_ca_guard_watchlist` merely names it in an array of
+routines to watch. It is an operator tool that was left open, not a feature
+anyone is using, so closing it removes no capability from anyone.
+
+The grants applied are exactly what the gate's own remediation text prescribes,
+with the revoke asserted in-migration rather than trusted:
+
+```
+REVOKE ALL ... FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ... TO service_role;
+```
+
+Verified after applying: `[telemetry-exposure] no unscoped operator routine is
+reachable from a browser.`
+
+---
+
+
 ## Cowork session 2026-08-31 - THE SWEEP DEADLOCKED ITSELF INTO DOING NOTHING (Spins audit, phase 7)
 
 For two and a half hours on 2026-08-31, **29 terminal tournaments finished with

@@ -62,7 +62,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4.3.1
+        uses: actions/checkout@v4
         with:
           # Full history: `gh pr create --fill` computes its title/body from
           # `base...head`, and a depth-1 checkout has no base ref — the run

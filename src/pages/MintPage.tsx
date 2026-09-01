@@ -287,8 +287,8 @@ export default function MintPage() {
       <header className={styles.header}>
         <h1 className={styles.title}>The Mint</h1>
         <p className={styles.blurb}>
-          The only place chips and diamonds are created. Every mint is journalled against the
-          issuance reserve as it happens, so it never turns up later as drift.
+          The Only Place Chips And Diamonds Are Created. Every Mint Is Journalled Against The
+          Issuance Reserve As It Happens, So It Never Turns Up Later As Drift.
         </p>
       </header>
 
@@ -434,7 +434,7 @@ export default function MintPage() {
             onChange={(e) => setReason(e.target.value)}
           />
           {reasonTooShort && (
-            <span className={styles.hint}>A reason of at least ten characters is required.</span>
+            <span className={styles.hint}>A Reason Of At Least Ten Characters Is Required.</span>
           )}
         </div>
 
@@ -450,11 +450,11 @@ export default function MintPage() {
                   {result.replayed ? 'Already Minted With That Key' : 'Minted And Recorded'}
                 </strong>
                 <span>
-                  {money(result.amount)} {result.asset === 'diamonds' ? 'diamonds' : 'chips'} into{' '}
+                  {money(result.amount)} {result.asset === 'diamonds' ? 'Diamonds' : 'Chips'} into{' '}
                   {DESTINATION_LABEL[(result.destination as Destination) ?? 'club']}
                 </span>
                 <span>
-                  Balance {money(result.balance_before)} to {money(result.balance_after)}
+                  Balance {money(result.balance_before)} To {money(result.balance_after)}
                 </span>
               </>
             ) : (
@@ -470,7 +470,7 @@ export default function MintPage() {
       <section className={styles.card}>
         <h2 className={styles.subTitle}>Recently Minted</h2>
         {recent.length === 0 ? (
-          <p className={styles.empty}>Nothing has been minted yet.</p>
+          <p className={styles.empty}>Nothing Has Been Minted Yet.</p>
         ) : (
           <ul className={styles.recent}>
             {recent.map((r) => (
@@ -485,7 +485,7 @@ export default function MintPage() {
         )}
       </section>
 
-      {!user && <p className={styles.empty}>Sign in as an administrator to use The Mint.</p>}
+      {!user && <p className={styles.empty}>Sign In As An Administrator To Use The Mint.</p>}
     </div>
   );
 }

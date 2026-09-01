@@ -79,3 +79,11 @@ BEGIN
     RAISE EXCEPTION 'the sweep still calls a lobby-message setter a money path';
   END IF;
 END $$;
+
+-- Who may call it, stated rather than left to be looked up. Checked against
+-- production first: anon and authenticated already have no execute here and
+-- service_role has it, and CREATE OR REPLACE does not touch grants - so this is
+-- a no-op that makes the migration say what is true. Also applied on its own as
+-- 20260901174433_state_the_money_rpc_sweep_is_service_role_only.
+REVOKE ALL ON FUNCTION public.fn_ca_money_rpc_drift() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_money_rpc_drift() TO service_role;

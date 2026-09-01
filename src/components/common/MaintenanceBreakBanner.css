@@ -47,3 +47,15 @@
     animation: none;
   }
 }
+
+/* The :50-:55 heads-up: quieter than the live break - informational, not
+   urgent - so the dot does not pulse and the border dims. */
+.maintenance-banner--upcoming {
+  border-color: rgba(96, 154, 255, 0.22);
+  background: linear-gradient(160deg, #101a2e 0%, #0b1322 100%);
+}
+
+.maintenance-banner--upcoming .maintenance-banner__dot {
+  animation: none;
+  opacity: 0.55;
+}

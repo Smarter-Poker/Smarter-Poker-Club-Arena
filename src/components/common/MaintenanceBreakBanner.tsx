@@ -39,7 +39,34 @@ export function MaintenanceBreakBanner() {
     return () => clearInterval(t);
   }, [maintenanceBreak.active, countingDown, maintenanceBreak.breakEndsAtMs]);
 
-  if (!maintenanceBreak.active) return null;
+  /**
+   * THE HEADS-UP BEFORE THE BREAK (to-do #2563 item 15). Poker rooms have
+   * taken synchronized breaks before the hour for decades - it reads as
+   * professional exactly when players are told it is COMING rather than
+   * discovering it. From :50 the lobby says so. Minute-of-hour is the same
+   * in every whole-hour timezone, so no server round trip is needed; the
+   * engine's own announcement takes over at :53.
+   */
+  const [minuteOfHour, setMinuteOfHour] = useState(() => new Date().getMinutes());
+  useEffect(() => {
+    if (maintenanceBreak.active) return;
+    const t = setInterval(() => setMinuteOfHour(new Date().getMinutes()), 15_000);
+    return () => clearInterval(t);
+  }, [maintenanceBreak.active]);
+
+  if (!maintenanceBreak.active) {
+    if (minuteOfHour >= 50 && minuteOfHour < 55) {
+      return (
+        <div className="maintenance-banner maintenance-banner--upcoming" role="status">
+          <span className="maintenance-banner__dot" aria-hidden="true" />
+          <span className="maintenance-banner__text">
+            Hourly Break At :55. All Tables Pause For Five Minutes And Resume On The Hour.
+          </span>
+        </div>
+      );
+    }
+    return null;
+  }
 
   return (
     <div className="maintenance-banner" role="status">

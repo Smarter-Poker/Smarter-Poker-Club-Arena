@@ -158,7 +158,6 @@
       "updated_at",
       "auto_rakeback_enabled",
       "rakeback_percentage",
-      "pending_commission",
       "agent_wallet_balance",
       "player_wallet_balance",
       "promo_wallet_balance",
@@ -1075,6 +1074,18 @@
       "metadata",
       "created_at"
     ],
+    "ca_dropped_index_ledger": [
+      "id",
+      "index_name",
+      "table_name",
+      "ddl",
+      "size_bytes",
+      "covered_by",
+      "coverer_scans",
+      "dropped_at",
+      "dropped_by",
+      "reason"
+    ],
     "ca_engine_deploy_attempts": [
       "id",
       "at",
@@ -1105,6 +1116,13 @@
       "window_hours",
       "failing",
       "result"
+    ],
+    "ca_guard_def_history": [
+      "id",
+      "proname",
+      "def_hash",
+      "def_text",
+      "captured_at"
     ],
     "ca_guard_defs": [
       "proname",
@@ -4423,22 +4441,6 @@
       "signup_method",
       "created_at"
     ],
-    "commission_history": [
-      "id",
-      "club_id",
-      "agent_id",
-      "period_start",
-      "period_end",
-      "player_rake_generated",
-      "commission_rate",
-      "commission_earned",
-      "sub_agent_commission",
-      "net_commission",
-      "status",
-      "paid_at",
-      "created_at",
-      "period_id"
-    ],
     "commission_rate_audit": [
       "id",
       "agent_id",
@@ -4447,17 +4449,6 @@
       "new_rate",
       "rate_type",
       "club_id",
-      "created_at"
-    ],
-    "commission_records": [
-      "id",
-      "period_id",
-      "agent_id",
-      "gross_rake",
-      "commission_rate",
-      "commission_amount",
-      "status",
-      "paid_at",
       "created_at"
     ],
     "content_authors": [
@@ -10506,6 +10497,16 @@
       "push_15m_sent",
       "push_2m_sent",
       "source_satellite_id"
+    ],
+    "tournament_players_position_repair_20260901": [
+      "tournament_id",
+      "user_id",
+      "old_position",
+      "new_position",
+      "place_worth",
+      "already_paid",
+      "top_up",
+      "recorded_at"
     ],
     "tournament_rake_settlements": [
       "tournament_id",

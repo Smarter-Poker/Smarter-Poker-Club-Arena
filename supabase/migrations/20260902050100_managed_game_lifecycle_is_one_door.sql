@@ -6,6 +6,13 @@
 
 BEGIN;
 
+-- Supabase Realtime's subscription manager acquires its catalog lock before
+-- inspecting published tables. Match that order before trigger DDL so a busy
+-- production database cannot deadlock this migration by taking the inverse
+-- tables -> realtime.subscription order.
+LOCK TABLE realtime.subscription IN ACCESS EXCLUSIVE MODE;
+LOCK TABLE public.tables, public.tournaments IN ACCESS EXCLUSIVE MODE;
+
 CREATE OR REPLACE FUNCTION public.fn_guard_managed_game_lifecycle()
 RETURNS trigger
 LANGUAGE plpgsql

@@ -27,6 +27,7 @@
  * removes the extrapolation that made deep spots read like 150bb spots.
  */
 import { describe, it, expect } from 'vitest';
+import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 import {
   GTO_MAX_DEPTH_BB,
   beyondGtoDepthCeiling,
@@ -136,9 +137,14 @@ describe('the solver stack is measurable at all', () => {
   it('the depth-ceiling matchup is dealt deeper than the ceiling', () => {
     // Dealt at 100bb it would measure nothing and report 0.00 +/- 0.00
     // forever - exactly the inert-matchup shape the daily audit now flags.
-    const at = league.indexOf('v33_depth_ceiling_400bb');
-    expect(at).toBeGreaterThan(-1);
-    const entry = league.slice(at, at + 300);
+    expect(league.indexOf('v33_depth_ceiling_400bb')).toBeGreaterThan(-1);
+    // The matchup's own object literal, not 300 bytes from where its name
+    // happens to sit. A byte window drifts off the end of the thing it guards
+    // the moment a comment is added above it, and it can drift off it while
+    // staying GREEN - which is how a fixed window took the whole estate's
+    // publish down for 39 minutes on 2026-08-28. See
+    // tests/unit/noFixedSizeSourceWindows.test.ts, which rejects this shape.
+    const entry = sliceEnclosingBlock(league, 'v33_depth_ceiling_400bb');
     const stack = /stackBB: (\d+)/.exec(entry);
     expect(stack).not.toBeNull();
     expect(Number(stack![1])).toBeGreaterThan(GTO_MAX_DEPTH_BB);

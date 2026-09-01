@@ -62,6 +62,23 @@ describe('it fails in the safe direction', () => {
   });
 
   it('gives the catch-up schedule a grace window before raising anything', () => {
+    /**
+     * One missed twenty-minute tick is ordinary. Three in a row is the failure.
+     *
+     * READ THE ARITHMETIC, NOT THE PROSE (2026-09-01). This assertion used to
+     * be the single sentence the script printed while it waited, `inside the
+     * ${GRACE_MIN}m grace window`. #2446 gave the engine a RESTART SCHEDULE and
+     * replaced that message. The grace window itself survived -- it is the
+     * FLOOR under the new schedule deadline -- but the pin went red on main,
+     * and `npx vitest run tests/` is the step that publishes the Club Arena
+     * bundle, so the World Hub sync failed on every commit until it was found.
+     *
+     * A pin on wording fails when the wording improves and passes when the
+     * behaviour is deleted, which is backwards. The assertions below read the
+     * shape of the calculation instead. Two of them still name a message; if
+     * the prose changes again, MOVE those two rather than deleting the
+     * arithmetic underneath them.
+     */
     // The engine restarts on scheduled Chicago windows, not on every merge. The
     // deadline is the first eligible window plus deploy time, but it can never
     // be earlier than the legacy grace period.
@@ -72,6 +89,13 @@ describe('it fails in the safe direction', () => {
     expect(SH).toContain('GRACE_DEADLINE=$(( REQ_EPOCH + GRACE_MIN * 60 ))');
     expect(SH).toContain('[ "$GRACE_DEADLINE" -gt "$DEADLINE" ] && DEADLINE=$GRACE_DEADLINE');
     expect(SH).toContain('Engine watchdog: waiting for the restart window');
+    // ...and inside that deadline the script says its piece and STOPS, before
+    // the ENGINE BEHIND warning section 5 raises. Without this, a deadline that
+    // is computed and then ignored still passes every assertion above it.
+    expect(SH_CODE).toMatch(/if \[ "\$NOW_EPOCH" -lt "\$DEADLINE" \][\s\S]{0,900}?exit 0/);
+    expect(SH_CODE.indexOf('NOW_EPOCH" -lt "$DEADLINE')).toBeLessThan(
+      SH_CODE.indexOf('ENGINE BEHIND')
+    );
   });
 
   it('does not fail the job, because the alarm is the point', () => {

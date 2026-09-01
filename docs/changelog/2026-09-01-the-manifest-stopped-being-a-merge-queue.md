@@ -167,3 +167,25 @@ reads source and asserts on text: no database, no build, no network, well under
 a second. There was never a reason for it to sit behind a gate that could hide
 it. The guard now also pins its own wiring, so nobody can quietly move it back
 behind one.
+
+## 5. Main went red a third time, from the same root cause
+
+`headsUpTurboAndSeatCount` pinned `PAYOUT_SWEEP_DEEP_LIMIT = 40000` as a
+literal. The limit was deliberately raised to 150,000 - about 3x the current
+event population, with the reasoning written beside it in
+`RakebackSettlerService` - and the pin went red on a change that made the sweep
+strictly better. Nothing published for anyone until it was noticed.
+
+Three red-main incidents in one session, all the same shape: **a pin written as
+an exact literal, and an improvement that changes the literal.** The pin is now
+a floor rather than an equality. The bug it exists to catch is a limit too
+SMALL to cover its window - a large one costs seconds, a small one silently
+shrinks the window back down and is the original defect in a new coat - so it
+asserts the direction that can actually hurt and lets the number grow with the
+platform. The invariant test directly below it already checks the same property
+against the measured population.
+
+That is the general lesson for anyone writing a source pin here: **assert the
+direction that can hurt, not the value that happens to be there today.** An
+equality pin turns every future improvement into a publish outage, and the
+person who pays is whoever is trying to ship something unrelated.

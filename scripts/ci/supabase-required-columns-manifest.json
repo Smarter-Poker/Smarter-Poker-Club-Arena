@@ -286,6 +286,10 @@
     "bus_event_log": [
       "event_type"
     ],
+    "ca_alarm_drills": [
+      "pass",
+      "results"
+    ],
     "ca_browser_definer_allowlist": [
       "proname",
       "reason"
@@ -362,6 +366,10 @@
       "pass",
       "window_hours",
       "result"
+    ],
+    "ca_guard_defs": [
+      "proname",
+      "def_hash"
     ],
     "ca_guard_inventory": [
       "kind",

@@ -932,6 +932,13 @@
       "user_id",
       "created_at"
     ],
+    "ca_alarm_drills": [
+      "id",
+      "run_at",
+      "pass",
+      "failing",
+      "results"
+    ],
     "ca_browser_definer_allowlist": [
       "proname",
       "reason",
@@ -1089,6 +1096,11 @@
       "window_hours",
       "failing",
       "result"
+    ],
+    "ca_guard_defs": [
+      "proname",
+      "def_hash",
+      "updated_at"
     ],
     "ca_guard_inventory": [
       "id",

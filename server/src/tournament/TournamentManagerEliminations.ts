@@ -1898,16 +1898,18 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
      * measurable and the ruling can be made against real numbers instead of a
      * guess.
      */
+    /* RULING MADE (2026-08-31, zero-drift phase 5): a tied pot splits the
+       bounty BY CLAIM WEIGHT - cents, largest remainder, shares always sum to
+       the payable bounty exactly; in a PKO each winner's share halves onto
+       their own head as usual. fn_collect_bounty now takes the claimant list
+       and does the split in one idempotent transaction; a single (or empty)
+       list is byte-for-byte the old single-collector behaviour. The comment
+       block above records why this waited for a ruling. */
     if (claimants.length > 1) {
-      reportError(
-        new Error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] SPLIT-POT KNOCKOUT: ${claimants.length} players share the pot that busted ${eliminatedUserId.slice(0, 8)} (${claimants
-            .map((c) => `${c.userId.slice(0, 8)}:${c.weight}`)
-            .join(
-              ', '
-            )}), but the bounty pays a single collector - ${knockerUserId.slice(0, 8)} takes the whole head. Needs a ruling on how a split head is shared.`
-        ),
-        'Tournament.split_pot_bounty_paid_to_one'
+      console.log(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Split-pot knockout: ${claimants.length} winners share the bounty for ${eliminatedUserId.slice(0, 8)} by weight (${claimants
+          .map((c) => `${c.userId.slice(0, 8)}:${c.weight}`)
+          .join(', ')})`
       );
     }
 
@@ -1915,6 +1917,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
       p_tournament_id: this.tournamentId,
       p_eliminated_user_id: eliminatedUserId,
       p_collector_user_id: knockerUserId,
+      p_claimants: claimants.map((c) => ({ user_id: c.userId, weight: c.weight })),
     });
 
     if (error) {

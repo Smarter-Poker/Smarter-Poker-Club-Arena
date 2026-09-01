@@ -29,8 +29,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import { HandController } from './HandController.js';
-import { sliceBetween } from '../testHelpers/sourceWindow.js';
 import type { HandConfig, HandEvent, SeatPlayer } from '../types.js';
+import { sliceBetween } from '../testHelpers/sourceWindow.js';
 
 function mkPlayers(stacks: number[]): SeatPlayer[] {
   return stacks.map(
@@ -160,10 +160,7 @@ describe('the consumer prefers the event over live state', () => {
       require('node:path').join(__dirname, 'ServerTableEngineHandEvents.ts'),
       'utf8'
     );
-    // Bounded by the case label that follows, not by a byte count — a fixed
-    // window drifts off the code it watches as comments accumulate
-    // (tests/unit/noFixedSizeSourceWindows.test.ts is the meta-guard).
-    const body = sliceBetween(src, "case 'PLAYER_ACTION':", '\n      case ').replace(
+    const body = sliceBetween(src, "case 'PLAYER_ACTION':", "case 'COMMUNITY_CARDS':").replace(
       /\/\*[\s\S]*?\*\//g,
       ''
     );

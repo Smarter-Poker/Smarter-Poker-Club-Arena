@@ -18,6 +18,8 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 // ── A minimal supabase double: enough surface for claimNightlyJob's three
 // calls (insert / select / update) and nothing more. ──────────────────────
@@ -298,5 +300,103 @@ describe('claimNightlyJob - concurrency and window independence', () => {
     // The PM job key is untouched by the AM corpse.
     expect(await claimNightlyJob('league_pm', DAY)).toBe(true);
     expect(state.jobRuns.find((r) => r.job === 'league_pm')?.claimed_by).toBe('container-A');
+  });
+});
+
+/**
+ * ── 2026-09-01: THE STAND-DOWN LATCH, and why the recovery above never ran ──
+ *
+ * Everything above this line was already shipped and correct, and the league
+ * STILL lost three days in four. MEASURED:
+ *
+ *   horse_league_results   2026-08-29  0 rows   (claim present)
+ *   horse_league_results   2026-08-30  0 rows   (claim present)
+ *   horse_league_results   2026-08-31  33 rows
+ *   horse_league_results   2026-09-01  0 rows   (claim present)
+ *
+ *   [HorseLeague] run 2026-09-01 starting: 33 matchups x 4000 pairs
+ *   docker inspect club-arena-engine -> StartedAt 2026-09-01T04:10:42Z
+ *
+ * The run began at 04:04 and the container was replaced at 04:10 - six
+ * minutes in, before the first matchup could write its row. The replacement
+ * booted at ~04:12, found no rows, and asked to claim. The dead claim was
+ * EIGHT MINUTES OLD, so it was judged fresh and the request was refused -
+ * correctly, on the information available. The bug is what happened next: the
+ * refused instance set `lastLeagueDate = today` and every subsequent tick
+ * returned immediately, so it never asked again, including after 05:04 when
+ * the claim was stale and the takeover above would finally have fired.
+ *
+ * Two properties fix it, and both are pinned here:
+ *   1. standing down must NOT latch the day (source-level: the assignment is
+ *      gone from both stand-down branches);
+ *   2. the staleness threshold must be short enough to act inside the
+ *      three-hour window, and still comfortably longer than one matchup.
+ */
+describe('the stand-down latch - 2026-09-01', () => {
+  it('a claim 35 minutes dead with no rows is taken over', async () => {
+    // Under the old 60-minute threshold this returned false and the AM window
+    // (04:00-07:00) closed with the corpse still holding the lock.
+    state.jobRuns.push({
+      job: 'league',
+      run_date: DAY,
+      claimed_at: new Date(Date.now() - 35 * 60_000).toISOString(),
+      claimed_by: 'dead-container',
+    });
+    expect(await claimNightlyJob('league', DAY)).toBe(true);
+    expect(state.jobRuns[0].claimed_by).toBe('container-A');
+  });
+
+  it('a claim 20 minutes old with no rows is still left alone', async () => {
+    // A matchup takes roughly nine minutes at PAIRS_PER_MATCHUP=4000, so at
+    // twenty minutes a healthy run may legitimately still be on its second.
+    // The threshold must not be so tight that it steals live work.
+    state.jobRuns.push({
+      job: 'league',
+      run_date: DAY,
+      claimed_at: new Date(Date.now() - 20 * 60_000).toISOString(),
+      claimed_by: 'container-B',
+    });
+    expect(await claimNightlyJob('league', DAY)).toBe(false);
+    expect(state.jobRuns[0].claimed_by).toBe('container-B');
+  });
+
+  it('neither stand-down branch latches the day', () => {
+    // Source-level, because maybeRunLeague is module-private and driving it
+    // would mean faking the clock, the window and two module flags. The
+    // property is simple and worth pinning literally: the stand-down branch
+    // must not assign the per-process "settled today" flag, or the retry that
+    // the takeover depends on never happens.
+    const src = readFileSync(join(__dirname, 'HorseLeague.ts'), 'utf8');
+    for (const [job, flag] of [
+      ["claimNightlyJob('league', today)", 'lastLeagueDate'],
+      ["claimNightlyJob('league_pm', today)", 'lastLeaguePmDate'],
+    ] as const) {
+      const at = src.indexOf(`if (!(await ${job}))`);
+      expect(at, `stand-down branch for ${job} not found`).toBeGreaterThan(-1);
+      // Comments stripped first: this asserts on CODE. The branch carries a
+      // long note that necessarily quotes the assignment it is warning about,
+      // and prose must not be able to fail - or pass - a wiring test.
+      const branch = src
+        .slice(at, src.indexOf('\n    }', at))
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\/\/.*$/gm, '');
+      expect(branch, `${job} must not latch ${flag} when standing down`).not.toContain(
+        `${flag} = today`
+      );
+    }
+  });
+
+  it('the staleness threshold acts well inside the catch-up window', () => {
+    const src = readFileSync(join(__dirname, 'HorseLeague.ts'), 'utf8');
+    const stale = /const CLAIM_STALE_MS = (\d+) \* 60 \* 1000;/.exec(src);
+    const catchup = /const LEAGUE_CATCHUP_HOURS = (\d+);/.exec(src);
+    expect(stale, 'CLAIM_STALE_MS must stay a literal minutes value').not.toBeNull();
+    expect(catchup).not.toBeNull();
+    const staleMin = Number(stale![1]);
+    const windowMin = Number(catchup![1]) * 60;
+    // Room for at least two takeover attempts before the window closes.
+    expect(staleMin * 2).toBeLessThan(windowMin);
+    // And longer than one matchup, so a live run is never mistaken for a corpse.
+    expect(staleMin).toBeGreaterThan(15);
   });
 });

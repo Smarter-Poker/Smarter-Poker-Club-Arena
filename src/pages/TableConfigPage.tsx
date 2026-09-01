@@ -639,20 +639,12 @@ export default function TableConfigPage() {
 
   // PERMISSION GATE: who is allowed to build a game for this club.
   //
-  // 2026-08-19. This used to ask "is this club in a union?" and bounce every
-  // visitor if so. That is not the rule — it locked out the union owner, the
-  // one person who IS supposed to build games for a union's clubs. Now it asks
-  // the same question the database enforces (fn_can_create_games), via
-  // fn_game_creation_access, which also reports WHY and which union owns the
-  // games so the row can be stamped with it.
+  // This page is the standalone-club builder. Union-managed clubs create games
+  // from the union console, never from an individual club lobby.
   const [access, setAccess] = useState<GameCreationAccess | null>(null);
   const checkingAccess = access === null;
-  const canCreate = access?.allowed === true;
-  // Union governance (2026-08-19): a union club's own staff may not build
-  // union-visible games, but they MAY build a PRIVATE club game here
-  // (is_private forced true; RLS enforces who can actually insert it).
-  const privateOnly = access?.allowed === false && access?.reason === 'union_only';
-  const canBuildHere = canCreate || privateOnly;
+  const unionManagedClub = Boolean(access?.unionId) || access?.reason === 'union_only';
+  const canBuildHere = access?.allowed === true && !unionManagedClub;
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
@@ -682,14 +674,12 @@ export default function TableConfigPage() {
       }
       if (!isMounted) return;
       setAccess(result);
-      if (!result.allowed) {
-        if (result.reason === 'union_only') {
-          // Union governance: club staff may still build a PRIVATE club game.
-          toast.info('This club is in a union - the game will be private to your club.');
-        } else {
-          toast.error(gameCreationDeniedMessage(result));
-          navigate(`/clubs/${clubId}`);
-        }
+      if (result.unionId || result.reason === 'union_only') {
+        toast.info('This Club Is Managed By A Union. Create Games From The Union Console.');
+        navigate(`/clubs/${clubId}`);
+      } else if (!result.allowed) {
+        toast.error(gameCreationDeniedMessage(result));
+        navigate(`/clubs/${clubId}`);
       }
     })();
     return () => {
@@ -1058,11 +1048,8 @@ export default function TableConfigPage() {
 
   const buildTableData = (resolvedClubId?: string) => ({
     club_id: resolvedClubId || clubId,
-    // Stamp the owning union when there is one, so a game the union built for a
-    // member club also shows up in the union's own views (getUnionTables).
-    // NULL for a standalone club — matching every existing union table, which
-    // carries BOTH union_id and the member club's club_id.
-    union_id: privateOnly ? null : (access?.unionId ?? null),
+    // This route is standalone-only; union games are created by the union console.
+    union_id: null,
     name: config.name,
     // FORMAT, not variant (2026-08-30 audit). tables.game_type is the table
     // FORMAT ('cash' | 'tournament') platform-wide: HorseFleetManager writes
@@ -1083,9 +1070,8 @@ export default function TableConfigPage() {
     // Bet sizes on a limit table ("2/4"), blinds everywhere else ("1/2").
     stakes: stakesLabel(config.smallBlind, config.bigBlind, gameType),
 
-    // Basic settings — union clubs build private club games ONLY (the
-    // trg_tables_union_ownership DB trigger enforces this server-side too)
-    is_private: config.isPrivate || privateOnly,
+    // Basic settings
+    is_private: config.isPrivate,
     is_vip_only: config.isVipOnly,
     is_anonymous: config.isAnonymous,
     ban_chat: config.banChat,
@@ -1364,7 +1350,6 @@ export default function TableConfigPage() {
       return;
     }
     // PERMISSION GATE: re-check at save time (defense-in-depth).
-    // privateOnly (union club staff) may proceed — the game is forced private.
     if (!canBuildHere) {
       toast.error(
         checkingAccess
@@ -1467,7 +1452,7 @@ export default function TableConfigPage() {
     delete rpcConfig.startTime;
     await tournamentScheduleService.upsert({
       clubId: resolvedId,
-      unionId: privateOnly ? null : (access?.unionId ?? null),
+      unionId: null,
       name: config.name.trim() || 'Tournament',
       daysOfWeek: scheduleValue.daysOfWeek,
       startTimesUtc: scheduleValue.mode === 'times' ? scheduleValue.startTimesUtc : [],
@@ -2406,7 +2391,7 @@ export default function TableConfigPage() {
                 Regular tab. ── */}
             <Toggle
               label="Private Game"
-              value={config.isPrivate || privateOnly}
+              value={config.isPrivate}
               onChange={(v) => updateConfig('isPrivate', v)}
               tooltip="Visible Only Inside Your Club, Never In The Union Lobby"
             />

@@ -129,3 +129,35 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           ENGINE_URL: https://engine.smarter.poker
         run: bash .github/scripts/engine-watchdog.sh
+
+  # ── Are the schedules themselves firing? ─────────────────────────────────
+  #
+  # 2026-09-01: auto-deploy-hetzner moved to an hourly cron at 13:00 UTC and
+  # then fired ONCE in the next six hours, so the engine served a fourteen and
+  # a half hour old image with five merged pull requests unshipped. Every run
+  # was green because none of them happened. cron-health.yml does not cover
+  # this - it asks the DATABASE which scheduled work failed, so it watches the
+  # horse jobs and not GitHub Actions cron.
+  #
+  # This is a job in THIS workflow, not a scheduled one of its own, for the
+  # reason already stated at the top of this file: a watchdog sharing a failure
+  # domain with the thing it watches is not a watchdog. `workflow_run` fires
+  # whenever anything else finishes, which on the day this was written was
+  # eight or more times against the schedule's one.
+  schedules:
+    name: The schedules are actually firing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Every scheduled workflow has fired within its own budget
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: node .github/scripts/schedule-liveness.mjs

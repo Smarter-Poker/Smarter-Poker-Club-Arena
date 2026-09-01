@@ -34,7 +34,6 @@ import {
   snapDepthBucket,
   depthCandidates,
 } from './GtoPostflop.js';
-import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
 
 describe('GTO depth ceiling', () => {
   it('sits at twice the deepest bucket', () => {

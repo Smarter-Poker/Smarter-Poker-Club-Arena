@@ -37,7 +37,11 @@
 }
 
 .floatingButton:focus-visible {
-  background: radial-gradient(closest-side, rgba(210, 220, 232, 0.26), rgba(210, 220, 232, 0) 76%);
+  background: radial-gradient(
+    closest-side,
+    rgba(210, 220, 232, 0.26),
+    rgba(210, 220, 232, 0) 76%
+  );
 }
 
 /* Hide when menu is open — belt-and-suspenders via CSS */

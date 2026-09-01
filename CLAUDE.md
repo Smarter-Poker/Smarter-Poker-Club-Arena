@@ -544,6 +544,54 @@ matter what setting, however opt-in, is proposed to gate it. Enforced by
 
 ---
 
+---
+
+## 10.7 "EM BARS" MEANS EM DASHES (Dan, 2026-09-01, BINDING)
+
+**Dan, 2026-08-20, verbatim: "forbid the use of em bars anywhere."**
+**He means the punctuation mark, U+2014. Nothing else.**
+
+Several files quote that sentence, and `src/utils/titleCase.ts` renders it as
+"inside the entire club arena, and forbid the use of em bars anywhere" with
+nothing nearby to say the subject is punctuation. Read literally, "bars ...
+banned anywhere" looks like a rule about horizontal lines.
+
+**It has now been misread that way twice in two days, and both times it took
+the hamburger menu off every page in the app:**
+
+| PR | What it did | Undone by |
+|----|-------------|-----------|
+| #2321 | Gear on all five menu triggers, approved rasters deleted, service-worker tombstones evicting them from players' caches, and `noThreeBarArtwork.law.test.ts` making restoration fail CI | #2401 |
+| #2429 | Same thing again with a six-tile "command grid", tombstones restored, law restored | #2432 (this) |
+
+The loop is self-sustaining and does not need a human in it: the ban is written
+down *in the repo*, so the next agent to read the repo re-enforces it, reverts
+whoever undid it, and writes the law back. That is why it kept coming back
+within hours.
+
+### The rule, stated so it cannot be misread
+
+- "em bars" = **em dashes** = the character `—`. A **copy** rule about the
+  characters inside text a player reads.
+- It says **nothing** about artwork, icons, SVG geometry, rasters, or anything
+  shaped like a line.
+- **It does not ban the hamburger menu.** The hamburger is the menu, on every
+  trigger, in Club Arena and everywhere else.
+
+### If you are about to ban "bars"
+
+Stop. If the word "bars" in something you are reading has led you toward an
+icon, a raster, an SVG path or a header composite, you have misread this
+sentence. Go read `tests/hamburger-never-regresses.law.test.ts`, which pins
+every menu trigger, the md5 of every hamburger raster, and the banned
+replacement names (`command-center-v1`, `CommandGridIcon`) by name.
+
+Do not "resolve" the conflict by writing a third law. Two laws demanding
+opposite artwork is not a stricter repo, it is a coin flip decided by whichever
+test the next agent notices first.
+
+---
+
 ## 11. AGENT NETWORK + DEPLOY PLAYBOOK (added 2026-07-23, binding; corrected same day after live use)
 
 Cloud Cowork sessions have a locked-down sandbox. Learn the map ONCE and never

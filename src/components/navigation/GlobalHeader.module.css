@@ -94,7 +94,11 @@
 }
 
 .artButton:focus-visible {
-  background: radial-gradient(closest-side, rgba(32, 169, 255, 0.3), rgba(32, 169, 255, 0) 78%);
+  background: radial-gradient(
+    closest-side,
+    rgba(32, 169, 255, 0.3),
+    rgba(32, 169, 255, 0) 78%
+  );
 }
 
 .artButton:active {

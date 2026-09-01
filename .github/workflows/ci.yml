@@ -258,6 +258,9 @@ jobs:
         run: node scripts/ci/check-discarded-read-then-write.mjs
 
       # Copy invariant. Dan 2026-08-20: "forbid the use of em bars anywhere."
+      # "em bars" means EM DASHES, the punctuation mark. A COPY rule about the
+      # characters in text -- NOT about artwork or icons, and it does not ban
+      # the hamburger menu. Misread that way twice: #2321 and #2429.
       # A style rule that lives only in someone's head gets re-broken by the
       # next person who writes a label — 444 of them had accumulated by the
       # time it was first run. Comments are exempt (they never reach a player);

@@ -1,5 +1,8 @@
 -- THE EM DASH BAN REACHES THE DATABASE
 -- Dan 2026-08-20: "forbid the use of em bars anywhere."
+-- "em bars" means EM DASHES, the punctuation mark: a rule about the
+-- characters in copy, NOT about artwork or icons. Misread as a ban on
+-- horizontal bars twice (#2321, #2429); it cost the hamburger menu.
 -- Dan 2026-08-31: "remove any and all m bars as they are banned from use."
 --
 -- Two gates already enforce this and BOTH of them read SOURCE:

@@ -101,3 +101,80 @@ so a verb stays inside its own statement.
   driven against the real migration, plus the statement-boundary regression.
   Both new groups were proven red by seeding the revert they guard: with the
   old `[\s\S]*?` gap restored, two of them fail and the rest stay green.
+
+---
+
+## Everything else this pass turned up
+
+The hole above was found by the daily audit. Looking for what else was open on
+the way to closing it produced four more, and each one is a guard that had
+stopped guarding.
+
+### main was red, and the bundle had stopped publishing
+
+`tests/engine-watchdog-asks-production.test.ts` asserted the sentence the engine
+watchdog printed while it waited: `inside the ${GRACE_MIN}m grace window`. #2446
+gave the engine a restart schedule and replaced that message. The grace window
+itself survived, as the floor under the new schedule deadline, but the pin went
+red -- and `npx vitest run tests/` is the step that PUBLISHES the Club Arena
+bundle, so the World Hub sync had been failing on every commit since. Production
+was serving a bundle from 12:03 while `main` moved six commits ahead.
+
+A pin on wording fails when the wording improves and passes when the behaviour is
+deleted, which is backwards. It reads the arithmetic now: the window is defined,
+measured from the commit, can only ever push the deadline later, and being inside
+it returns before the ENGINE BEHIND warning.
+
+### the recorder was wrong about one gap in five
+
+`check-applied-migrations-are-recorded` reports migrations that ran against
+production with no file here. Its key is the name, deliberately. But the stamp
+turns up INSIDE the name: an author who applies
+`20260825_perf_rakeback_stats_batch_set_based` and commits a file called exactly
+that was reported as missing, because the file name was read as everything after
+the stamp while the applied name still carried it.
+
+426 reported, 87 of them with the file sitting right there. Both sides are
+normalised now and the report falls to 365. An alarm that is wrong a fifth of the
+time is one people learn to scroll past, and those 365 are real.
+
+Its preconditions also moved out of module scope: a check that calls
+`process.exit(2)` on import cannot be read by a test.
+
+### the audit now runs hourly
+
+The definer-exposure job is the only thing on this estate that can see a grant
+made outside a migration, and almost all schema here is applied that way. At one
+run a day, a function that ships anon-executable at 09:00 answers strangers until
+05:20 the next morning. Both of the last two findings -- `fn_collect_bounty`,
+which pays knockout bounties, and the clone above -- had been live for hours.
+
+Hourly at :40. The manifest refresh in the same workflow stays daily and skips
+that cron by name, because a refresh pull request every hour would bury the one
+thing here that needs a person.
+
+### the estate agreed on one file again, and disagrees on one more
+
+`estate-integrity.sh` requires fifteen files to be byte-identical across all
+seven repositories, and issue #2190 has been reporting two of them drifting.
+
+`agent-autopilot.yml`: #2396 rewrote nine workflows here "to fix non-existent
+github action versions", with no body and no failing run cited, moving this one
+from `actions/checkout@v7.0.1` to `@v4` and `create-github-app-token@v3` to `@v1`.
+Both versions exist -- v7.0.1 published 2026-07-20, six weeks before that PR --
+and the other six repos have been running exactly those two on this workflow
+every ten minutes, green, throughout. Restored; the file now hashes identically
+to the estate copy.
+
+`agent-workspace.sh`: Club Arena was ahead, with a warning that says how stale a
+REUSED worktree is. That one is a real improvement and belongs everywhere, so it
+was copied verbatim into the other six (one PR each).
+
+`AGENT-PLAYBOOK.md` is left alone deliberately, and is the one item here for Dan
+rather than for an agent. Club Arena's copy carries a RULE 0 about em dashes and
+M-bar artwork, added by #2436, which the other six do not have. The rule is
+Dan's and is already binding in `CLAUDE.md` section 10.7 and pinned by
+`tests/unit/noThreeBarArtwork.law.test.ts`. Making the seven agree means either
+pushing a Club-Arena-specific artwork law into PepNationLab and the Commander
+repos, or removing Dan's own words from a file. Neither is an agent's call to
+make quietly, least of all on the rule that has already been misread twice.

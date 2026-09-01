@@ -10,10 +10,10 @@ that distinction turned out to be the entire diagnosis.
 
 **Two very different failures were arriving under one alert:**
 
-| | what it means | is it repairable |
-| --- | --- | --- |
-| **lost final write** | the engine's own last hand ends on the RIGHT total; `tournament_players` holds a different one. The play was correct, only the record is wrong. | yes, from `hand_history` |
-| **chips moved in play** | the engine's own last hand AGREES with the wrong total. Chips were really created or destroyed at the table and the engine never knew. | no - this is the bug |
+|                         | what it means                                                                                                                                   | is it repairable         |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| **lost final write**    | the engine's own last hand ends on the RIGHT total; `tournament_players` holds a different one. The play was correct, only the record is wrong. | yes, from `hand_history` |
+| **chips moved in play** | the engine's own last hand AGREES with the wrong total. Chips were really created or destroyed at the table and the engine never knew.          | no - this is the bug     |
 
 **Nothing repairs the first kind.** During a tournament the next hand's
 settlement rewrites both copies of the chip count, so mid-play divergence is
@@ -54,8 +54,39 @@ alert back into "something is wrong somewhere" and turns this test red.
 
 CLAUDE.md 10.5 - no `is_horse` filter, no `p_include_horses`.
 
----
+## Cowork session 2026-09-01 - A LOGGED-IN BROWSER COULD RUN A LEDGER REPAIR
 
+`fn_ca_repair_write_failure` is SECURITY DEFINER, VOLATILE, and was executable
+by **`authenticated`** - any logged-in account. It takes a write-failure id, a
+counterparty type, a counterparty entity and a reason, and posts a correction
+against whichever ledger account those map to: `club_treasury`, `promo_wallet`,
+the player stores. It takes **no identity argument and never looks at who is
+calling**, so the caller's own identity places no limit on which failure it
+repairs or what it attributes the repair to.
+
+**The gate was already shouting.** `Telemetry Exposure` exists to catch exactly
+this shape, and it had been failing on EVERY branch in the repo - it asks the
+live database, not the branch, so one open routine reddens everybody's PR. That
+is how a real finding gets quietly reclassified as noise, and it is why this
+was found while chasing an unrelated CI failure on a Spins guard.
+
+**Nothing calls it.** Not the client, not the server, not pg_cron, and no other
+database function - `fn_ca_guard_watchlist` merely names it in an array of
+routines to watch. It is an operator tool that was left open, not a feature
+anyone is using, so closing it removes no capability from anyone.
+
+The grants applied are exactly what the gate's own remediation text prescribes,
+with the revoke asserted in-migration rather than trusted:
+
+```
+REVOKE ALL ... FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ... TO service_role;
+```
+
+Verified after applying: `[telemetry-exposure] no unscoped operator routine is
+reachable from a browser.`
+
+---
 
 ## Cowork session 2026-08-31 - THE SWEEP DEADLOCKED ITSELF INTO DOING NOTHING (Spins audit, phase 7)
 

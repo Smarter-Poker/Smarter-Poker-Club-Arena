@@ -21,7 +21,7 @@
  *
  * If you are about to ban "bars" anywhere near an ICON, you have misread this
  * sentence. The hamburger is the menu. See
- * tests/hamburger-never-regresses.law.test.ts.
+ * tests/approvedHamburgerGearGuard.law.test.ts.
  *
  * The rule lives in the render path (Toast provider -> formatPopupText), so
  * these tests pin two things: the transform itself, and that the Toast layer

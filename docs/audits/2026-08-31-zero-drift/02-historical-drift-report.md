@@ -5,42 +5,42 @@ ledger evidence was rewritten or deleted; corrections remain linked compensating
 
 ## Chip supply at audit time (2026-08-31 ~14:20 UTC)
 
-| Pool | Amount |
-|------|--------|
-| Member wallets (`club_members.chip_balance`) | 164,771,645.57 |
-| On the felt (cash `table_seats.stack`) | 1,635,145.90 |
-| Club treasuries (`clubs.chip_treasury`) | 2,428,399.18 |
-| Legacy club pools (`clubs.chip_pool`) | 12,459.07 |
-| Club wallets (rake accumulator, non-circulating) | 4,306,490.19 |
-| Union wallets (all six sub-wallets) | 1,959,145.01 |
-| Agent wallets (agent + promo) | 6,726,000.00 |
-| BBJ pools (main + backup + promo) | 120,578.90 |
-| Spin reserve pools | 61,882.56 |
-| Member promo balances | 0.00 |
+| Pool                                                                | Amount         |
+| ------------------------------------------------------------------- | -------------- |
+| Member wallets (`club_members.chip_balance`)                        | 164,771,645.57 |
+| On the felt (cash `table_seats.stack`)                              | 1,635,145.90   |
+| Club treasuries (`clubs.chip_treasury`)                             | 2,428,399.18   |
+| Legacy club pools (`clubs.chip_pool`)                               | 12,459.07      |
+| Club wallets (rake accumulator, non-circulating)                    | 4,306,490.19   |
+| Union wallets (all six sub-wallets)                                 | 1,959,145.01   |
+| Agent wallets (agent + promo)                                       | 6,726,000.00   |
+| BBJ pools (main + backup + promo)                                   | 120,578.90     |
+| Spin reserve pools                                                  | 61,882.56      |
+| Member promo balances                                               | 0.00           |
 | **Frozen** `public.wallets` (stranded 2026-08-21, nothing reads it) | 732,591,994.33 |
 
 Hourly `ca_supply_snapshots` now tracks these totals against ledgered issuance/retirement.
 
 ## Drift on the books (ledger_reconcile_log, runs 2026-08-28 → 2026-08-31)
 
-| Class | Rows | Abs. drift | Status |
-|-------|------|-----------:|--------|
-| club_treasury (critical) | 8 | 48,172,984.00 | Ledger-vs-stored divergence measured from the pre-baseline era. Root cause: treasury movements were largely unledgered before the 2026-08-31 baselines (`ca_treasury_baseline` "measured from the line"). The 08-31 run reconciles clean against the new baseline. Largest: club `a0000000-…-01` ledger −24.3M vs stored 1.05M; `a41434bb…` −3.78M vs 1.38M; Midway Union club row −8,114.43 vs 0. Historical, explained, not a live leak. |
-| seat_stack_exit (critical) | 1,033 | 431,906.31 | Seat exits with no matched wallet credit, 08-29→08-30 window. The exit trigger has since been corrected (settled-row deletes and tournament tables excluded) and the locked cash-out RPC landed 08-27; **fn_unaccounted_seat_exits returns ZERO rows for the last 2 days** - the leak class is closed; historical rows remain as evidence. |
-| negative_balance (critical) | 2 | 12,007.20 | Midway Union treasury −1,202.80 (overlay-funded, by design, alarmed) + one agent pool; both clear by 08-31. The 5-minute detector now raises incidents on any recurrence. |
-| bomb_award_ledger_gap | 18 | 1,502.50 | Reporting-layer gaps; hourly repair job drains them. |
-| frozen_wallets_pool | - | 0.00 | No movement since freeze. Now checked every 5 minutes. |
-| insurance_bank | - | 0.00 | Reconciles exactly. |
+| Class                       | Rows  |    Abs. drift | Status                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --------------------------- | ----- | ------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| club_treasury (critical)    | 8     | 48,172,984.00 | Ledger-vs-stored divergence measured from the pre-baseline era. Root cause: treasury movements were largely unledgered before the 2026-08-31 baselines (`ca_treasury_baseline` "measured from the line"). The 08-31 run reconciles clean against the new baseline. Largest: club `a0000000-…-01` ledger −24.3M vs stored 1.05M; `a41434bb…` −3.78M vs 1.38M; Midway Union club row −8,114.43 vs 0. Historical, explained, not a live leak. |
+| seat_stack_exit (critical)  | 1,033 |    431,906.31 | Seat exits with no matched wallet credit, 08-29→08-30 window. The exit trigger has since been corrected (settled-row deletes and tournament tables excluded) and the locked cash-out RPC landed 08-27; **fn_unaccounted_seat_exits returns ZERO rows for the last 2 days** - the leak class is closed; historical rows remain as evidence.                                                                                                 |
+| negative_balance (critical) | 2     |     12,007.20 | Midway Union treasury −1,202.80 (overlay-funded, by design, alarmed) + one agent pool; both clear by 08-31. The 5-minute detector now raises incidents on any recurrence.                                                                                                                                                                                                                                                                  |
+| bomb_award_ledger_gap       | 18    |      1,502.50 | Reporting-layer gaps; hourly repair job drains them.                                                                                                                                                                                                                                                                                                                                                                                       |
+| frozen_wallets_pool         | -     |          0.00 | No movement since freeze. Now checked every 5 minutes.                                                                                                                                                                                                                                                                                                                                                                                     |
+| insurance_bank              | -     |          0.00 | Reconciles exactly.                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ## The 'adjustment' plug (30 days to 2026-08-31)
 
-| category | rows | amount |
-|----------|-----:|-------:|
-| adjustment | 125,586 | 65,507,543.29 |
-| tournament_prize | 2,368 | 215,434.06 |
-| cashout | 1,036 | 432,100.90 |
-| bounty | 33 | 383.00 |
-| refund | 8 | 205.00 |
+| category         |    rows |        amount |
+| ---------------- | ------: | ------------: |
+| adjustment       | 125,586 | 65,507,543.29 |
+| tournament_prize |   2,368 |    215,434.06 |
+| cashout          |   1,036 |    432,100.90 |
+| bounty           |      33 |        383.00 |
+| refund           |       8 |        205.00 |
 
 97% of rows / 99% of volume were category-anonymous. Not lost chips - unattributable bookkeeping.
 Now being drained by the category GUC plumbing; the daily suspense-flow incident measures what

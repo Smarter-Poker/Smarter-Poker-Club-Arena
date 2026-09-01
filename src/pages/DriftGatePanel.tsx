@@ -35,13 +35,19 @@ function Sparkline({
   const span = max - min || 1;
   const step = width / (points.length - 1);
   const y = (v: number) => height - ((v - min) / span) * (height - 6) - 3;
-  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(1)},${y(p.v).toFixed(1)}`).join(' ');
+  const path = points
+    .map((p, i) => `${i === 0 ? 'M' : 'L'}${(i * step).toFixed(1)},${y(p.v).toFixed(1)}`)
+    .join(' ');
   const zeroY = y(0);
   const last = vals[vals.length - 1];
   return (
     <svg className="dgp-spark" viewBox={`0 0 ${width} ${height}`} width={width} height={height}>
       <line x1="0" y1={zeroY} x2={width} y2={zeroY} className="dgp-spark-zero" />
-      <path d={path} className={`dgp-spark-line ${Math.abs(last) > 0.005 ? 'off' : 'flat'}`} fill="none" />
+      <path
+        d={path}
+        className={`dgp-spark-line ${Math.abs(last) > 0.005 ? 'off' : 'flat'}`}
+        fill="none"
+      />
     </svg>
   );
 }
@@ -89,7 +95,9 @@ export default function DriftGatePanel() {
         entityId.trim(),
         new Date(asOf).toISOString()
       );
-      setAsOfResult(res === null ? 'No Result (Check The Id And Time)' : JSON.stringify(res, null, 2));
+      setAsOfResult(
+        res === null ? 'No Result (Check The Id And Time)' : JSON.stringify(res, null, 2)
+      );
     } catch {
       setAsOfResult('Lookup Failed');
     } finally {
@@ -128,8 +136,8 @@ export default function DriftGatePanel() {
                       {stale ? 'STALE' : gate.pass ? 'GREEN' : 'RED'}
                     </span>
                     <span className="dgp-gate-meta">
-                      {gate.window_hours}h Window, Run{' '}
-                      {new Date(gate.run_at).toLocaleString()} ({ageMin}m Ago)
+                      {gate.window_hours}h Window, Run {new Date(gate.run_at).toLocaleString()} (
+                      {ageMin}m Ago)
                     </span>
                   </>
                 );

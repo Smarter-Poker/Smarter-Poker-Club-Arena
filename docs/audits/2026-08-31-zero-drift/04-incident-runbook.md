@@ -68,14 +68,14 @@ flag content changes to hashed fields as `unauthorized_adjustment`.
 
 ## Standing schedules
 
-| Cron | Cadence | Job |
-|------|---------|-----|
-| ca-incident-escalation-tick | every minute | 5/10/15/20-minute escalations, storm-capped |
-| ca-auto-reconcile-tick | every minute | automated repair + re-verify + auto-resolve |
-| ca-quick-reconcile-5m | every 5 min | negatives, frozen pool, stuck settlements, fresh unaccounted seat exits, ledger-write failures, suspense rollup |
-| ca-supply-snapshot-hourly | hourly | full supply totals vs ledgered mint/burn |
-| ca-ledger-chain-verify-daily | 04:35 UTC | checksum verification (raises on breaks) |
-| (pre-existing) reconcile_ledger_nightly, rake/BBJ/tournament/spin audits | nightly/hourly | now feed incidents automatically |
+| Cron                                                                     | Cadence        | Job                                                                                                             |
+| ------------------------------------------------------------------------ | -------------- | --------------------------------------------------------------------------------------------------------------- |
+| ca-incident-escalation-tick                                              | every minute   | 5/10/15/20-minute escalations, storm-capped                                                                     |
+| ca-auto-reconcile-tick                                                   | every minute   | automated repair + re-verify + auto-resolve                                                                     |
+| ca-quick-reconcile-5m                                                    | every 5 min    | negatives, frozen pool, stuck settlements, fresh unaccounted seat exits, ledger-write failures, suspense rollup |
+| ca-supply-snapshot-hourly                                                | hourly         | full supply totals vs ledgered mint/burn                                                                        |
+| ca-ledger-chain-verify-daily                                             | 04:35 UTC      | checksum verification (raises on breaks)                                                                        |
+| (pre-existing) reconcile_ledger_nightly, rake/BBJ/tournament/spin audits | nightly/hourly | now feed incidents automatically                                                                                |
 
 ## Probe suite
 

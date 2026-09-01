@@ -201,11 +201,11 @@ export interface TableModalsLayerProps {
   // Insurance Modal
   showInsurance: boolean;
   insuranceOffer: InsuranceOffer | null;
-  onInsuranceAccept: (amount?: number) => void;
-  onInsuranceDecline: () => void;
-  onInsuranceDeclineForHand: () => void;
+  onInsuranceAccept: (amount?: number) => void | boolean | Promise<void | boolean>;
+  onInsuranceDecline: () => void | boolean | Promise<void | boolean>;
+  onInsuranceDeclineForHand: () => void | boolean | Promise<void | boolean>;
   /** EV CASHOUT 2026-08-28: lock pot x equity now instead of insuring. */
-  onInsuranceEvCashout?: (amount?: number) => void;
+  onInsuranceEvCashout?: (amount?: number) => void | boolean | Promise<void | boolean>;
 
   // Hand Reveal (show/muck)
   showHandRevealModal: boolean;

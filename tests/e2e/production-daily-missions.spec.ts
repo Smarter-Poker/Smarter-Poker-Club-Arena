@@ -30,7 +30,11 @@ function isDailyMissionRevisionFrame(message: string | Buffer): boolean {
     const event = Array.isArray(frame) ? frame[3] : frame?.event;
     const payload = Array.isArray(frame) ? frame[4] : frame?.payload;
     const change = payload?.data ?? payload;
-    return event === 'postgres_changes' && change?.table === 'daily_challenge_dashboard_revisions';
+    return (
+      event === 'broadcast' &&
+      (payload?.event === 'daily_mission_revision_changed' ||
+        change?.event === 'daily_mission_revision_changed')
+    );
   } catch {
     return false;
   }
@@ -42,7 +46,7 @@ function realtimeFrameDescriptor(message: string | Buffer): string {
     const event = Array.isArray(frame) ? frame[3] : frame?.event;
     const payload = Array.isArray(frame) ? frame[4] : frame?.payload;
     const change = payload?.data ?? payload;
-    return [event || 'unknown', change?.schema, change?.table, change?.type]
+    return [event || 'unknown', payload?.event, change?.schema, change?.table, change?.type]
       .filter(Boolean)
       .join(':');
   } catch {
@@ -145,7 +149,14 @@ async function completeEveryAssignedMission(
     },
     true
   );
-  expect(advanced.length).toBeGreaterThanOrEqual(10);
+  // Earlier certified actions can complete one of the assigned contracts
+  // before this catch-all event. The RPC returns only rows advanced by this
+  // event, not the complete assigned set. The authoritative total is checked
+  // immediately afterward from user_daily_challenges.
+  expect(
+    advanced.length,
+    'the catch-all mission event must advance at least one contract'
+  ).toBeGreaterThan(0);
 }
 
 async function signInContext(
@@ -428,18 +439,20 @@ test.describe('production Daily Missions certification', () => {
               timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT,
             })
             .toBeGreaterThan(revisionBefore);
-          await expect
-            .poll(() => blockedRevisionFrames, { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT })
-            .toBeGreaterThan(0);
+          try {
+            await expect
+              .poll(() => blockedRevisionFrames, { timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT })
+              .toBeGreaterThan(0);
+          } catch (error) {
+            throw new Error(
+              `No Daily Mission revision frame crossed the routed socket. Observed: ${
+                [...observedRealtimeFrames].join(', ') || 'none'
+              }`,
+              { cause: error }
+            );
+          }
           const claim = page.getByRole('button', { name: /^Claim (?:All|Next) / });
           await expect(claim).toBeVisible({ timeout: DAILY_MISSIONS_RESPONSE_TIMEOUT });
-        } catch (error) {
-          throw new Error(
-            `No Daily Mission revision frame crossed the routed socket. Observed: ${
-              [...observedRealtimeFrames].join(', ') || 'none'
-            }`,
-            { cause: error }
-          );
         } finally {
           blockRevisionFrames = false;
         }

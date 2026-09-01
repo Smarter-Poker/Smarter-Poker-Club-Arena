@@ -4190,9 +4190,64 @@ export class TournamentRecurringService {
       const poolAll = poolPage.rows;
       let busyDropped = 0;
       let laneDropped = 0;
+      let clubDropped = 0;
+
+      /**
+       * A CLUB'S TOURNAMENTS DRAW FROM THAT CLUB'S MEMBERS (Dan 2026-09-01:
+       * "THIS CLUB IS NOT SUPPOSED TO BE ATTACHED TO THE UNION, ITS SUPPOSED
+       * TO BE ITS OWN STAND ALONE CLUB").
+       *
+       * This read selected every is_horse profile on the platform and never
+       * looked at the club the tournament belongs to, so ANY horse could be
+       * registered into ANY club's event. Measured when a 416-horse population
+       * was built for a standalone club: within seven hours it had taken 729
+       * seats in another club's tournaments - freerolls and paid events both -
+       * without ever being a member there. A standalone club's population
+       * wandering into a union's schedule is precisely the isolation this
+       * breaks.
+       *
+       * Membership is the rule a human is already held to: you cannot enter a
+       * club's tournament without joining the club. The fleet is now held to
+       * the same one.
+       *
+       * FAILS OPEN on an unreadable membership page, like every other gate in
+       * this file: a partial read is not an empty club, and refusing to
+       * register on a failed read would silently starve every event on the
+       * platform. Verified before shipping that no board is starved by this -
+       * Shark holds 584 horse members, JAQK 580, Midway 323, Deep Stack 416.
+       */
+      const hostClub = await supabase
+        .from('tournaments')
+        .select('club_id')
+        .eq('id', tournamentId)
+        .maybeSingle();
+      const hostClubId = (hostClub.data as { club_id?: string } | null)?.club_id;
+      let clubMemberIds: Set<string> | null = null;
+      if (hostClubId) {
+        const memberPage = await fetchAllRows<{ user_id: string }>(
+          (cursor, want) => {
+            let q = supabase
+              .from('club_members')
+              .select('user_id')
+              .eq('club_id', hostClubId)
+              .order('user_id', { ascending: true })
+              .limit(want);
+            if (cursor) q = q.gt('user_id', cursor);
+            return q;
+          },
+          { label: 'TournamentRecurring.clubMembers', maxRows: 100_000, idKey: 'user_id' }
+        );
+        if (memberPage.complete) clubMemberIds = new Set(memberPage.rows.map((r) => r.user_id));
+      }
+
       const eligible = poolAll.filter((h) => {
         if (busyIds.has(h.id)) {
           busyDropped++;
+          return false;
+        }
+        // Not a member of the club hosting this event: not a candidate.
+        if (clubMemberIds && !clubMemberIds.has(h.id)) {
+          clubDropped++;
           return false;
         }
         // Freeroll override (Dan 2026-08-27): free money is not a lane

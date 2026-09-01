@@ -306,6 +306,25 @@ export abstract class TournamentManagerBase {
     return [...this.tableEngines.keys()];
   }
 
+  /**
+   * Is this tournament on a break of its own right now?
+   *
+   * Added 2026-09-01 for the maintenance break, which resumes EVERY table on
+   * the platform when it ends. Without this it would also resume a tournament
+   * that is still on a break of a different length - an add-on break runs up
+   * to ten minutes (`addon_break_minutes`), so one starting near :55 outlives
+   * the five-minute maintenance break and its tables would be dealt back into
+   * play while the tournament clock still says they are away.
+   *
+   * Read-only, and deliberately the ONLY thing exposed: whoever paused a table
+   * is responsible for resuming it, and this lets a second pause authority ask
+   * "is somebody else still holding this" without being able to answer for
+   * them.
+   */
+  isOnBreak(): boolean {
+    return this.onBreak;
+  }
+
   /** Reusable broadcast — single channel per tournament lifecycle */
   protected async broadcast(eventType: string, payload: any): Promise<void> {
     try {

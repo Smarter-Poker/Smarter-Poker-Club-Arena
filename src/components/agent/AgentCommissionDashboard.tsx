@@ -237,6 +237,13 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
       // THEIR OWN rows and nobody else's - which is right, and is why this
       // cannot be a select. It used to be agents.pending_commission, a column
       // nothing wrote, so this column of the tab was zeros.
+      //
+      // 2026-09-01: another change landed on main the same afternoon that fixed
+      // this by looping fn_agent_unsettled_commission once per downline. Same
+      // symptom, and it worked. This shape is kept over it for two reasons: it
+      // is one round trip rather than one per sub agent, and it asks a function
+      // that answers ONLY for the caller's own downline, rather than one that
+      // will report any user id it is handed.
       const downlineOwed: Record<string, number> = {};
       if (myAgent) {
         try {

@@ -31,6 +31,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import { sliceYamlBlock } from '../helpers/sourceWindow';
 
 const ROOT = path.resolve(__dirname, '../..');
 const DIRS = ['tests', 'server/src'];
@@ -85,5 +86,33 @@ describe('no test bounds a source pin with a magic number', () => {
         'See tests/helpers/sourceWindow.ts for the extractor that fits.\n' +
         offenders.join('\n')
     ).toEqual([]);
+  });
+});
+
+/**
+ * A GUARD MAIN CAN HIDE IS NOT A GUARD.
+ *
+ * 2026-09-01: four byte-bounded windows landed on main inside two hours and
+ * main's CI never saw one of them. The unit job is gated behind the changed
+ * files, so a docs-only commit goes green in twelve seconds without running the
+ * suite - main showed an unbroken wall of ticks while carrying a red test that
+ * failed on every branch touching src/ or tests/, which is every branch doing
+ * real work. Three agents spent that morning discovering it one file at a time.
+ *
+ * This test reads source and asserts on text. No database, no build, no
+ * network, well under a second. There is no reason for it to sit behind a gate
+ * that can hide it, and this pin is what keeps it out from behind one.
+ */
+describe('this guard cannot be hidden behind the changed-files gate', () => {
+  it('runs in CI ungated, on main as well as on pull requests', () => {
+    const ci = fs.readFileSync(path.resolve(process.cwd(), '.github/workflows/ci.yml'), 'utf8');
+    expect(ci).toContain('noFixedSizeSourceWindows.test.ts');
+
+    // The job that runs it must not be conditioned on anything - not on the
+    // event, and not on the `changes` job whose whole purpose is to skip work.
+    const job = sliceYamlBlock(ci, 'source_windows:');
+    expect(job).toContain('noFixedSizeSourceWindows.test.ts');
+    expect(job, 'the source-window guard must not be gated').not.toMatch(/^\s{4}if:/m);
+    expect(job, 'and must not wait on the changed-files job').not.toContain('needs: changes');
   });
 });

@@ -1,0 +1,5 @@
+{
+  "_owner": "feat/maintenance-break",
+  "tables": ["engine_maintenance_break"],
+  "functions": ["fn_maintenance_break_state"]
+}

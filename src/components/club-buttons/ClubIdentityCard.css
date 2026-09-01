@@ -32,7 +32,7 @@
   position: absolute;
   z-index: 1;
   left: 17.05%;
-  top: 22.8%;
+  top: 52%;
   width: 21.7%;
   aspect-ratio: 1 / 1;
   display: grid;
@@ -41,6 +41,7 @@
   background: #050608;
   color: #69bfff;
   font-size: clamp(1rem, 10cqw, 4.2rem);
+  transform: translateY(-50%);
 }
 
 .club-identity__logo img {
@@ -92,6 +93,7 @@
   letter-spacing: 0.01em;
   line-height: 1.18;
   text-shadow: 0 2px 2px #000;
+  transform: translateY(1.1cqw);
 }
 
 .club-identity__line {
@@ -108,7 +110,7 @@
   line-height: 1;
   text-align: left;
   text-shadow: 0 2px 2px #000;
-  transform: translateY(0.55cqw);
+  transform: translateY(1.65cqw);
 }
 
 button.club-identity__line {
@@ -117,7 +119,7 @@ button.club-identity__line {
      centre of this button was answered by `P.club-identity__alias` — the
      SIBLING above it — and by the details grid itself. These rows are laid
      out by `grid-template-rows: 1.2fr 1fr 1fr 1fr` with no row-gap and the
-     line carries a `translateY(0.55cqw)`, so the boxes touch and the later
+     line carries a vertical translation, so the boxes touch and the later
      painter takes the hit test. The player was tapping a copy button and the
      tap was landing on a paragraph.
 
@@ -145,17 +147,29 @@ button.club-identity__line {
 }
 
 .club-identity__level {
+  /* Dan 2026-09-01, binding: the level sits BELOW the logo inside a blue
+     box, never overlapping the logo. On the current card the logo square is
+     centered at 52% (translateY(-50%), width 21.7%, 1:1 on a 1650/953
+     card), so it spans ~33.2% to ~70.8% of card height; this box shares the
+     logo's exact column and starts beneath that bottom edge. Every new club
+     renders Level 1 here on day one. */
   position: absolute;
-  z-index: 1;
-  left: 16%;
-  top: 67.1%;
-  width: 23.7%;
-  height: 10.8%;
+  z-index: 2;
+  left: 17.05%;
+  top: 72.8%;
+  width: 21.7%;
+  height: 9%;
   display: grid;
   place-items: center;
   overflow: hidden;
+  background: linear-gradient(180deg, #1c4fd8 0%, #0f2f8c 100%);
+  border: 1px solid #4a7dff;
+  border-radius: clamp(3px, 0.8cqw, 8px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 2px 6px rgba(0, 10, 40, 0.5);
   color: #f1f5fa;
-  font-size: clamp(0.62rem, 3.35cqw, 1.8rem);
+  font-size: clamp(0.62rem, 3.1cqw, 1.7rem);
   font-weight: 800;
   letter-spacing: 0.05em;
   line-height: 1;
@@ -186,7 +200,7 @@ button.club-identity__line {
 .club-identity__playing {
   position: absolute;
   left: 0;
-  bottom: 10.4%;
+  bottom: -13.6%;
   display: inline-flex;
   align-items: baseline;
   min-width: 0;
@@ -278,5 +292,80 @@ button.club-identity__line:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .club-identity__share:active {
     transform: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .club-identity__details {
+    left: 42.5%;
+    right: 8.5%;
+  }
+
+  .club-identity__details h2 {
+    font-size: clamp(0.78rem, 6.5cqw, 1.35rem);
+  }
+
+  .club-identity__alias {
+    font-size: clamp(0.62rem, 4.1cqw, 1rem);
+  }
+
+  .club-identity__line {
+    padding-left: 6.5cqw;
+    font-size: clamp(0.58rem, 3.8cqw, 0.92rem);
+  }
+}
+
+/* Compact identity bay inside the unified mobile lobby chassis. */
+@media (max-width: 900px) {
+  .lobby-top__identity .club-identity__details {
+    top: 17.5%;
+    right: 8%;
+    bottom: 27%;
+    left: 42.5%;
+  }
+
+  .lobby-top__identity .club-identity__details h2 {
+    font-size: clamp(10px, 3.4cqw, 15px);
+    line-height: 1;
+  }
+
+  .lobby-top__identity .club-identity__alias {
+    font-size: clamp(7px, 2.6cqw, 11px);
+  }
+
+  .lobby-top__identity .club-identity__line {
+    padding-left: 5cqw;
+    font-size: clamp(6px, 2.25cqw, 9px);
+  }
+
+  .lobby-top__identity .club-identity__footer {
+    right: 8%;
+    left: 43.5%;
+    top: 67%;
+  }
+
+  .lobby-top__identity .club-identity__playing {
+    bottom: -16%;
+    gap: 0.3em;
+    font-size: clamp(6px, 2.25cqw, 9px);
+  }
+
+  .lobby-top__identity .club-identity__playing strong {
+    font-size: 1.25em;
+  }
+
+  .lobby-top__identity .club-identity__share {
+    top: 0;
+    width: 44px;
+    height: 44px;
+    margin-top: 0;
+    /* Preserve the approved 26px box's visual center while restoring the
+       complete transparent thumb target around its 13px painted icon. */
+    margin-right: -9px;
+  }
+
+  .lobby-top__identity .club-identity__share svg {
+    width: 13px;
+    height: 13px;
   }
 }

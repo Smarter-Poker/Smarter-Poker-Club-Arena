@@ -380,6 +380,11 @@
       "window_hours",
       "result"
     ],
+    "ca_guard_def_history": [
+      "proname",
+      "def_hash",
+      "def_text"
+    ],
     "ca_guard_defs": [
       "proname",
       "def_hash"

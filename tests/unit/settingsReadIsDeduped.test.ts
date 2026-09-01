@@ -48,7 +48,7 @@ vi.mock('../../src/lib/supabase', () => ({
   },
 }));
 
-const { fetchUserTableSettingsRow, __inFlightSettingsReadCount } =
+const { fetchUserTableSettingsRow, __inFlightSettingsReadCount, SETTINGS_READ_TIMEOUT_MS } =
   await import('../../src/hooks/useUserTableSettings');
 
 describe('the user_table_settings read is de-duplicated per user', () => {
@@ -112,5 +112,25 @@ describe('the user_table_settings read is de-duplicated per user', () => {
     expect(queryCount(), 'the retry did not reach the network').toBe(2);
     pending[1].resolve({ data: null, error: null });
     await retry;
+  });
+
+  it('drops a read that never settles, so loading cannot remain wedged forever', async () => {
+    vi.useFakeTimers();
+    try {
+      const stuck = fetchUserTableSettingsRow('user-timeout');
+      expect(__inFlightSettingsReadCount()).toBe(1);
+
+      const rejection = expect(stuck).rejects.toThrow('timed out');
+      await vi.advanceTimersByTimeAsync(SETTINGS_READ_TIMEOUT_MS);
+      await rejection;
+      expect(__inFlightSettingsReadCount()).toBe(0);
+
+      const retry = fetchUserTableSettingsRow('user-timeout');
+      expect(queryCount(), 'a timed-out read permanently blocked a retry').toBe(2);
+      pending[1].resolve({ data: null, error: null });
+      await retry;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

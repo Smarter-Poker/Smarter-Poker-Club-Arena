@@ -33,15 +33,28 @@ const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8');
 const WF = read('.github/workflows/auto-deploy-hetzner.yml');
 
 describe('the drain gate cannot pin production on stale code', () => {
-  it('the staleness cap is short enough to be a real deploy path', () => {
-    // The wait-for-zero loop above it cannot succeed on a continuously
-    // dealing fleet, so this cap IS the path. Six hours meant six-hour-old
-    // code — including security fixes — with every run reporting success.
-    const m = WF.match(/MAX_ENGINE_AGE_SEC=(\d+)/);
-    expect(m).toBeTruthy();
-    const cap = Number(m![1]);
-    expect(cap).toBeGreaterThan(0);
-    expect(cap).toBeLessThanOrEqual(3600);
+  it('the deploy has a path that actually lands, and it is not a staleness cap', () => {
+    /**
+     * REWRITTEN 2026-09-01, and the staleness cap it used to pin is GONE.
+     *
+     * The cap existed because the gate above it waited for a moment when no
+     * table was mid-hand, which a fleet dealing ~290 hands a minute never
+     * reports. So the cap was not a backstop, it was the only path - and what
+     * it did was restart the engine straight through live play once the build
+     * got old enough.
+     *
+     * The engine now declares a five-minute break, parks every table between
+     * hands, and opens `maintenance.readyForRestart`. There is a real,
+     * routinely-reachable path again, so nothing has to be forced through.
+     */
+    expect(WF).not.toMatch(/MAX_ENGINE_AGE_SEC/);
+    expect(WF).toMatch(/readyForRestart/);
+    // And the deploy must never simply give up on the window: a break that
+    // opens has to be acted on, which means polling for long enough to reach
+    // :55 from the earliest tick at :40.
+    const attempts = Number(WF.match(/seq 1 (\d+)/)![1]);
+    const sleepSec = Number(WF.match(/sleep 15\n/) ? 15 : 0);
+    expect(attempts * sleepSec).toBeGreaterThanOrEqual(13 * 60);
   });
 
   it('proceeding is safe because the engine drains itself first', () => {
@@ -69,6 +82,9 @@ describe('the drain gate cannot pin production on stale code', () => {
     // thinking to open the log of a green run. This is how three and a half
     // hours of staleness went unnoticed.
     expect(WF).toMatch(/::warning title=NOT DEPLOYED::/);
-    expect(WF).toMatch(/::warning title=PROCEEDING ON STALENESS CAP::/);
+    // Was PROCEEDING ON STALENESS CAP, which announced the workflow giving up
+    // and restarting on live tables. That path is gone; the no-op path that
+    // remains is a break that never opened, and it must be just as loud.
+    expect(WF).toMatch(/::warning title=BREAK NEVER OPENED::/);
   });
 });

@@ -87,7 +87,12 @@ describe('daily challenge dashboard contract', () => {
     expect(page).not.toContain('dailyChallengeService.getStats(uid)');
     expect(page).not.toContain('dailyChallengeService.getStreak(uid)');
     expect(page).not.toContain('dailyChallengeService.getDiamondBalance(uid)');
-    expect(page).toContain('const ready = rewardVault.items;');
+    expect(page).toContain('const dashboard = await dailyChallengeService.getDashboard(userId);');
+    expect(page).toContain('ready = dashboard.vault.items;');
+    expect(page).toContain('if (!userId || claimAllGuardRef.current) return;');
+    expect(page).toContain('claimAllGuardRef.current = true;');
+    expect(page).toContain('claimAllGuardRef.current = false;');
+    expect(page).not.toContain('const ready = rewardVault.items;');
     expect(page).toContain('width: `${stats?.milestoneProgressPercent ?? 0}%`');
   });
 

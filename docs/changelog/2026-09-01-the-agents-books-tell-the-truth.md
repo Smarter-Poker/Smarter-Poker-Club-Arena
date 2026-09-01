@@ -157,3 +157,30 @@ this phase deliberately moved -
 `a-demotion-closes-the-books` on `'pending_commission'` - moved with it in the
 same commit, to `'unclaimed_commission'` read from the ledger, and got two more
 pins beside it rather than being weakened.
+
+And the proof that the file is what ran: `md5(pg_get_functiondef(oid))` for all
+eight touched functions, captured before re-applying this file inside a
+transaction that was rolled back, compared to after. Seven came back IDENTICAL.
+The eighth, `fn_club_commission_accrued`, did not - the body applied through the
+migration API was missing two comment lines the file carries, and a comment is
+part of `prosrc`. `20260901133551` corrects it, and all eight are identical now.
+
+## Three things I got wrong on the way, since they cost time
+
+**The role change is patched, not re-emitted.** The first version of this
+migration carried all 18,519 characters of `fn_club_set_member_role` so the
+whole function would be readable in one place. It is a patch now: ten changed
+lines are reviewable and 400 unchanged ones are not, and re-emitting silently
+clobbers whatever another agent lands in that function between this file being
+written and being applied. Every replacement asserts it matched exactly once,
+and the patch refuses a definition it does not recognise.
+
+**The reversal script looped forever.** It counted rows with `wc -l` on psql
+output, which returns one line even when nothing matched, so `n` never reached 0. It had already reversed all 548,987 rows by then and every extra pass was an
+UPDATE that changed nothing, but it would have run until somebody looked. Killed
+and finished by hand.
+
+**Main was red when this started**, on `tests/unit/noFixedSizeSourceWindows` -
+magic-number source windows from #2474, #2479 and #2464. Fix-first (CLAUDE.md
+section 4): bounded by structure instead, in this branch, because you cannot
+ship past a red suite anyway.

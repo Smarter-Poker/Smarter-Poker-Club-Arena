@@ -323,35 +323,119 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           stack: number | null;
           joined_at: string | null;
         }> = [];
+        /**
+         * ===================================================================
+         *  TWO INDEXED READS, NOT ONE SCAN OF EVERY LIVE SEAT (2026-09-01)
+         * ===================================================================
+         *
+         * The read this replaces was right in intent and right in coverage. It
+         * reads what the TOURNAMENT has rather than what this process happens to
+         * hold engines for, which is the blind spot the block above closed. Its
+         * SHAPE was the problem.
+         *
+         * `.select('...tables!inner(tournament_id)').eq('tables.tournament_id')`
+         * compiles to a LATERAL join in which the OUTER table carries no
+         * tournament predicate at all:
+         *
+         *   FROM table_seats
+         *   INNER JOIN LATERAL (SELECT 1 FROM tables
+         *                       WHERE tables.tournament_id = $1
+         *                         AND tables.id = table_seats.table_id) ON true
+         *   WHERE table_seats.left_at IS NULL
+         *   ORDER BY table_seats.user_id LIMIT 1000
+         *
+         * So Postgres walks EVERY live seat on the platform and probes `tables`
+         * once per seat, discarding the ones that belong to other tournaments.
+         * Under an inner join with a LIMIT it cannot stop early either.
+         *
+         * MEASURED in production (pg_stat_statements, 2026-09-01): 68,049 calls
+         * at 45ms mean, 3,085 seconds of database time - the largest single
+         * component of the 6% of all DB time that table_seats reads account for.
+         *
+         * Replaced with the two reads the indexes were built for:
+         *   tables      -> idx_tables_tournament_id (946,647 lifetime scans)
+         *   table_seats -> idx_table_seats_table    (131,417 lifetime scans)
+         * Coverage is IDENTICAL: still every table the tournament has, read from
+         * the database rather than from this process's memory.
+         *
+         * PAGING IS ALSO DETERMINISTIC NOW, which is a correctness fix and not a
+         * performance one. The old read paged with `.order('user_id')`, and
+         * user_id IS NOT UNIQUE in table_seats - the block above exists precisely
+         * because one user can hold several open seats. Two seats of the same
+         * user straddling a 1000-row page boundary can be returned twice or not
+         * at all depending on how Postgres breaks the tie, and this sweep is what
+         * decides who is eliminated. Ordering on `id`, the primary key, makes
+         * every page boundary unambiguous.
+         */
+        const TABLE_PAGE = 1000;
+        const TABLE_ID_CHUNK = 200;
+
+        // (1) Which tables does this tournament have? Indexed lookup.
+        const tableIds: string[] = [];
         for (let page = 0; ; page++) {
           if (page > 10_000) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] seat paging did not terminate - skipping this sweep`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] table paging did not terminate - skipping this sweep`
               ),
-              'Tournament.seat_paging_runaway'
+              'Tournament.table_paging_runaway'
             );
             return; // the finally block clears isProcessingEliminations
           }
-          const { data: chunk, error: seatsErr } = await supabase
-            .from('table_seats')
-            .select('user_id, stack, joined_at, tables!inner(tournament_id)')
-            .eq('tables.tournament_id', this.tournamentId)
-            .is('left_at', null)
-            .order('user_id', { ascending: true })
-            .range(page * SEAT_PAGE, page * SEAT_PAGE + SEAT_PAGE - 1);
+          const { data: tblChunk, error: tblErr } = await supabase
+            .from('tables')
+            .select('id')
+            .eq('tournament_id', this.tournamentId)
+            .order('id', { ascending: true })
+            .range(page * TABLE_PAGE, page * TABLE_PAGE + TABLE_PAGE - 1);
 
-          if (seatsErr || !chunk) {
+          if (tblErr || !tblChunk) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] seat read failed (${seatsErr?.message ?? 'null chunk'}) - skipping the whole sweep rather than busting on a partial chip picture`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] table read failed (${tblErr?.message ?? 'null chunk'}) - skipping the whole sweep rather than busting on a partial chip picture`
               ),
-              'Tournament.seat_read_failed'
+              'Tournament.table_read_failed'
             );
             return; // the finally block clears isProcessingEliminations
           }
-          seatRows.push(...(chunk as unknown as typeof seatRows));
-          if (chunk.length < SEAT_PAGE) break;
+          for (const row of tblChunk as Array<{ id: string }>) tableIds.push(row.id);
+          if (tblChunk.length < TABLE_PAGE) break;
+        }
+
+        // (2) Live seats at those tables. Chunked, because the largest field on
+        //     record is 1,076 tables and an unbounded IN list is its own outage.
+        for (let start = 0; start < tableIds.length; start += TABLE_ID_CHUNK) {
+          const idsForChunk = tableIds.slice(start, start + TABLE_ID_CHUNK);
+          for (let page = 0; ; page++) {
+            if (page > 10_000) {
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] seat paging did not terminate - skipping this sweep`
+                ),
+                'Tournament.seat_paging_runaway'
+              );
+              return; // the finally block clears isProcessingEliminations
+            }
+            const { data: chunk, error: seatsErr } = await supabase
+              .from('table_seats')
+              .select('user_id, stack, joined_at')
+              .in('table_id', idsForChunk)
+              .is('left_at', null)
+              .order('id', { ascending: true })
+              .range(page * SEAT_PAGE, page * SEAT_PAGE + SEAT_PAGE - 1);
+
+            if (seatsErr || !chunk) {
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] seat read failed (${seatsErr?.message ?? 'null chunk'}) - skipping the whole sweep rather than busting on a partial chip picture`
+                ),
+                'Tournament.seat_read_failed'
+              );
+              return; // the finally block clears isProcessingEliminations
+            }
+            seatRows.push(...(chunk as unknown as typeof seatRows));
+            if (chunk.length < SEAT_PAGE) break;
+          }
         }
 
         {

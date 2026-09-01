@@ -158,7 +158,16 @@ describe('responsive premium Club Arena', () => {
   it('shows every role-authorized wallet on both desktop and mobile', () => {
     expect(PAGE).toContain('showAllLobbyWallets');
     expect(PAGE).toContain('onVisibleWalletCountChange={setVisibleWalletCount}');
-    expect(PAGE.indexOf('className="lobby-top__house-welcome"')).toBeGreaterThan(
+    /* The club message strip used to be the LAST child of the wallet stack and
+       this line pinned it there. Dan moved it on 2026-09-01 - "the 'welcome to
+       club jaqk' thats on the bottom of the wallets should be at the top above
+       the club card" - so the assertion is inverted rather than deleted: it now
+       pins that <ClubOwnerMessage> leads the rail, ahead of both the club card
+       and the wallets. The strip itself lives in
+       components/club/ClubOwnerMessage.tsx and keeps the same class name. */
+    expect(PAGE).toContain('<ClubOwnerMessage');
+    expect(PAGE.indexOf('<ClubOwnerMessage')).toBeLessThan(PAGE.indexOf('<ClubIdentityCard'));
+    expect(PAGE.indexOf('<ClubOwnerMessage')).toBeLessThan(
       PAGE.indexOf('onVisibleWalletCountChange={setVisibleWalletCount}')
     );
     expect(WALLET).toContain('showAllLobbyWallets?: boolean');

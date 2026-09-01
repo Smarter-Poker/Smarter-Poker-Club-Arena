@@ -1,0 +1,21 @@
+-- SEAT-FIRST HEALER FITS ITS TIMEOUT (2026-09-01, v2 — SUPERSEDED IN
+-- MINUTES). Applied to production as 20260901181626. It added a
+-- function-level `SET statement_timeout = '60s'` and clamped the husk batch
+-- to 6 per call, believing the per-function setting would lift service_role's
+-- pinned 8-second ceiling.
+--
+-- THE LESSON THIS FILE EXISTS TO RECORD: `statement_timeout` is checked
+-- against the START of the top-level statement. A SET inside a function —
+-- including a function-level SET clause — does NOT restart the timer for the
+-- statement already running. The engine's RPC calls kept cancelling at 8s
+-- exactly as before. If you are reaching for a function-level
+-- statement_timeout to outlive a caller's ceiling: it does not work. Make the
+-- function faster instead.
+--
+-- The batch clamp survived into the fix. The definitive function body is in
+-- 20260901181911_seat_first_healer_inside_eight_seconds.sql, which replaced
+-- the ~1,000 per-horse fn_ca_entry_scope_ok evaluations with a set-based
+-- membership predicate and runs well inside the ceiling. No forward action
+-- is needed from this file; it is history, kept so the migration list in the
+-- repo matches supabase_migrations.schema_migrations.
+SELECT 1;

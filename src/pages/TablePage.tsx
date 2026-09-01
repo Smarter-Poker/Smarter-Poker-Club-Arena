@@ -5730,6 +5730,37 @@ export default function TablePage({
   // fetch fn is exposed so HAND_STARTED can re-arm it (recovering a dropped
   // realtime insert) after clearing stale cards.
   const heroHandRef = useRef<number>(0);
+  /* ═══ AND IT MUST NOT WAIT FOR AN EVENT THAT MAY NEVER ARRIVE ═══════════
+     Dan 2026-09-01, finishing the J9h work.
+
+     `heroHandRef` was written in exactly ONE place: the HAND_STARTED handler.
+     Every client that never receives that event - a mid-hand join, a reload,
+     a dropped frame, the websocket sequence gap that fires GAME_START - sat on
+     0 for the rest of the hand. Two comments in this file already work around
+     the symptom rather than the cause (`autoShowFiredHandRef` is initialised to
+     -1 precisely because 0 read as "already fired").
+
+     What made it worth fixing today is that BOTH stale-hand guards are gated on
+     it being non-zero:
+
+       door 1, the realtime push  currentHandNumber: heroHandRef.current
+       door 2, the recovery poll  heroHandRef.current > 0 && ...
+
+     So the very clients most likely to be handed a stale row - the ones that
+     just reloaded or joined mid-hand - were the ones running with the hand
+     check disabled, leaving only the board check. Preflop, with no board, there
+     is nothing left to catch it. That is the reported bug with the flop removed.
+
+     `tableState.handNumber` is server truth and is already trusted everywhere
+     else; it is maintained from every engine snapshot, not from one event. So
+     seed from it, and FORWARD ONLY - a late or replayed snapshot must never be
+     able to lower the mark and re-admit a row this client has already moved
+     past. Achievements and the auto-show guard read the same ref and stop
+     missing a mid-hand-join hand as a side effect. */
+  useEffect(() => {
+    const hn = tableState.handNumber ?? 0;
+    if (hn > heroHandRef.current) heroHandRef.current = hn;
+  }, [tableState.handNumber]);
   const heroCardFetchRef = useRef<(() => void) | null>(null);
   // Achievement/challenge wiring: accumulate the hero's outcome across a hand's
   // server events (dealt-in at card populate, showdown, per-pot win) and fire
@@ -8191,6 +8222,12 @@ export default function TablePage({
   // Callback for handling new hole cards
   const handleHoleCardPayload = useCallback(
     (payload: any) => {
+      /* DELETE carries no `new`, so it falls through here and is IGNORED, and
+         that is deliberate. `insert_hole_cards` prunes rows with
+         `hand_number < p_hand_number` on every deal, so the deletes this
+         channel sees are the previous hand being tidied away. Clearing the
+         hero's holding on one would blank a live hand at the exact moment the
+         next one is dealt. Do not "fix" this into a clear. */
       const row = payload.new;
       if (row && row.user_id === userId && row.cards) {
         /* ═══ THE DOOR THAT HAD NO LOCK (Dan 2026-09-01) ═══════════════════

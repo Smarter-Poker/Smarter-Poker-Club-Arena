@@ -62,6 +62,7 @@ import {
   auditSatelliteConservation,
   auditPrizeDisbursement,
   requeueUnbankedCashRake,
+  auditGuaranteesKept,
 } from './services/FeeReconciler.js';
 import { reportError, initSentry, flushSentry } from './services/errorReporter.js';
 import { fetchAllRows } from './services/supabase/pagination.js';
@@ -1454,6 +1455,15 @@ export class GameServer {
           // other check precisely because the outage reset overwrote that
           // snapshot while the wallet ledger kept the truth.
           await auditPrizeDisbursement(24);
+          // Guarantee kept (2026-08-31, phase 6): a COMPLETED event that
+          // advertised a guaranteed prize must actually have PAID it. Nothing
+          // in this estate asked that question - every other guarantee check
+          // is pre-start affordability, or excludes freerolls via
+          // `buy_in_amount > 0`, or (the phase 2 unpaid detector) filters
+          // `prize_pool > 0`, the exact column an unfunded guarantee zeroes.
+          // Nine freerolls ranked a full field, crowned a winner and paid
+          // nobody, silently. Detects only; the finish path does the funding.
+          await auditGuaranteesKept(24);
           // Restart-orphaned fees (2026-08-31): pendingHands is in-memory, so
           // a process death between the inline write and the drain loses the
           // claim entirely — and fn_bbj_repair_unbanked cannot see it because

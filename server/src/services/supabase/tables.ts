@@ -203,8 +203,7 @@ export async function syncStacks(
         await Promise.all(
           players
             .filter(
-              (p) =>
-                p.time_bank_uses_remaining !== undefined || p.time_bank_remaining !== undefined
+              (p) => p.time_bank_uses_remaining !== undefined || p.time_bank_remaining !== undefined
             )
             .map(async (p) => {
               const payload: Record<string, unknown> = {};

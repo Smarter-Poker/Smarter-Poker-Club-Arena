@@ -179,7 +179,7 @@ describe('the two gaps in how work reaches production', () => {
     expect(CI).toContain('::warning title=NO TESTS RAN::');
     // It must not be able to hide behind a skipped dependency.
     expect(CI).toMatch(/verdict:[\s\S]{0,400}if: always\(\)/);
-    expect(CI).toContain("needs: [changes, stub_gate, typecheck, unit, server]");
+    expect(CI).toContain('needs: [changes, stub_gate, typecheck, unit, server]');
   });
 
   it('and something actually verifies main on a schedule', () => {
@@ -237,12 +237,12 @@ describe('the database gate answers for both character bans', () => {
     // The first version of this gate matched the arrow block and the dingbat
     // star, so it reported '->' inside a HINT and '* NEW:' in a comment. A
     // gate that cries wolf gets deleted by the next agent.
-    expect(emojiPass).toContain("[\\U0001F000-\\U0001FAFF");
+    expect(emojiPass).toContain('[\\U0001F000-\\U0001FAFF');
     expect(emojiPass).not.toMatch(/\[\\u2190-\\u21ff/i);
   });
 
   it('exempts operator dashboards by name, never by pattern', () => {
-    expect(emojiPass).toContain("proname NOT IN (");
+    expect(emojiPass).toContain('proname NOT IN (');
     expect(emojiPass).toContain("'verify_home_games_health_core'");
     // A pattern would quietly grow to cover whatever somebody names next.
     expect(emojiPass).not.toMatch(/proname\s+(NOT\s+)?LIKE\s+'fn_ca_%'/i);

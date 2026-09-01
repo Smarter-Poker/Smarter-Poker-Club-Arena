@@ -30,6 +30,15 @@ interface HubStats {
 
 const NAV_ITEMS = [
   {
+    icon: '◉',
+    label: 'The Mint',
+    description: 'Create Chips And Diamonds, Fully Accounted At Issue',
+    path: '/mint',
+    color: '#eab308',
+    bg: 'rgba(234,179,8,0.1)',
+    border: 'rgba(234,179,8,0.3)',
+  },
+  {
     icon: '◆',
     label: 'Financial Alerts',
     description: 'Critical Warnings And System Notifications',

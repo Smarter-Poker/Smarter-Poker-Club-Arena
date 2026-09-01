@@ -108,11 +108,17 @@ export default function MintPage() {
       }
       try {
         if (destination === 'club') {
-          const { data } = await supabase
+          const { data, error } = await supabase
             .from('clubs')
             .select('id, name, club_id')
             .ilike('name', `%${term}%`)
             .limit(8);
+          if (error) {
+            console.error('[MintPage.searchTargets_club]', error);
+            toast.error('Club Search Could Not Reach The Database');
+            setTargetOptions([]);
+            return;
+          }
           setTargetOptions(
             (data ?? []).map((c: { id: string; name: string; club_id: number }) => ({
               id: c.id,
@@ -123,11 +129,17 @@ export default function MintPage() {
           return;
         }
         if (destination === 'union') {
-          const { data } = await supabase
+          const { data, error } = await supabase
             .from('unions')
             .select('id, name')
             .ilike('name', `%${term}%`)
             .limit(8);
+          if (error) {
+            console.error('[MintPage.searchTargets_union]', error);
+            toast.error('Union Search Could Not Reach The Database');
+            setTargetOptions([]);
+            return;
+          }
           setTargetOptions(
             (data ?? []).map((u: { id: string; name: string }) => ({
               id: u.id,
@@ -136,11 +148,17 @@ export default function MintPage() {
           );
           return;
         }
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('profiles')
           .select('id, username, display_name')
           .ilike('username', `%${term}%`)
           .limit(8);
+        if (error) {
+          console.error('[MintPage.searchTargets_player]', error);
+          toast.error('Player Search Could Not Reach The Database');
+          setTargetOptions([]);
+          return;
+        }
         setTargetOptions(
           (data ?? []).map((p: { id: string; username: string; display_name: string }) => ({
             id: p.id,
@@ -152,36 +170,45 @@ export default function MintPage() {
         setTargetOptions([]);
       }
     },
-    [destination]
+    [destination, toast]
   );
 
-  const searchClubs = useCallback(async (q: string) => {
-    const term = q.trim();
-    if (term.length < 2) {
-      setClubOptions([]);
-      return;
-    }
-    try {
-      const { data } = await supabase
-        .from('clubs')
-        .select('id, name, club_id')
-        .ilike('name', `%${term}%`)
-        .limit(8);
-      setClubOptions(
-        (data ?? []).map((c: { id: string; name: string; club_id: number }) => ({
-          id: c.id,
-          label: c.name ?? 'Unnamed Club',
-          sub: `Club ${c.club_id}`,
-        }))
-      );
-    } catch {
-      setClubOptions([]);
-    }
-  }, []);
+  const searchClubs = useCallback(
+    async (q: string) => {
+      const term = q.trim();
+      if (term.length < 2) {
+        setClubOptions([]);
+        return;
+      }
+      try {
+        const { data, error } = await supabase
+          .from('clubs')
+          .select('id, name, club_id')
+          .ilike('name', `%${term}%`)
+          .limit(8);
+        if (error) {
+          console.error('[MintPage.searchClubs]', error);
+          toast.error('Club Search Could Not Reach The Database');
+          setClubOptions([]);
+          return;
+        }
+        setClubOptions(
+          (data ?? []).map((c: { id: string; name: string; club_id: number }) => ({
+            id: c.id,
+            label: c.name ?? 'Unnamed Club',
+            sub: `Club ${c.club_id}`,
+          }))
+        );
+      } catch {
+        setClubOptions([]);
+      }
+    },
+    [toast]
+  );
 
   const loadRecent = useCallback(async () => {
     try {
-      const { data: chips } = await supabase
+      const { data: chips, error: chipsError } = await supabase
         .from('chip_ledger')
         .select('id, created_at, amount, to_type, description')
         .eq('from_type', 'issuance_reserve')
@@ -189,12 +216,19 @@ export default function MintPage() {
         .order('created_at', { ascending: false })
         .limit(10);
 
-      const { data: gems } = await supabase
+      const { data: gems, error: gemsError } = await supabase
         .from('diamond_transactions')
         .select('id, created_at, amount, description')
         .eq('source', 'the_mint')
         .order('created_at', { ascending: false })
         .limit(10);
+
+      if (chipsError || gemsError) {
+        console.error('[MintPage.loadRecent]', chipsError ?? gemsError);
+        toast.error('Recent Mints Could Not Be Loaded');
+        setRecent([]);
+        return;
+      }
 
       const rows: RecentMint[] = [
         ...(chips ?? []).map(
@@ -229,7 +263,7 @@ export default function MintPage() {
     } catch {
       setRecent([]);
     }
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     void loadRecent();

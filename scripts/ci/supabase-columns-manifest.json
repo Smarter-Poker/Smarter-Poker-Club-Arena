@@ -1844,6 +1844,14 @@
       "updated_at",
       "updated_by"
     ],
+    "club_financial_quarantine": [
+      "source_table",
+      "source_id",
+      "club_id",
+      "reason",
+      "row_data",
+      "quarantined_at"
+    ],
     "club_financial_summary": [
       "id",
       "club_id",
@@ -8437,6 +8445,12 @@
       "window_start",
       "request_count",
       "last_request_at"
+    ],
+    "rate_limits": [
+      "id",
+      "user_id",
+      "action",
+      "created_at"
     ],
     "raw_games": [
       "game_pk",

@@ -664,6 +664,13 @@
     "club_entry_feature_flags": [
       "key"
     ],
+    "club_financial_quarantine": [
+      "source_table",
+      "source_id",
+      "club_id",
+      "reason",
+      "row_data"
+    ],
     "club_financial_summary": [
       "club_id",
       "period_start",
@@ -2566,6 +2573,10 @@
     "rate_limit_buckets": [
       "bucket_key",
       "window_start"
+    ],
+    "rate_limits": [
+      "user_id",
+      "action"
     ],
     "raw_games": [
       "game_pk",

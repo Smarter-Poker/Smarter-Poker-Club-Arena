@@ -3873,20 +3873,18 @@ export abstract class TournamentManagerBase {
   protected blindCapReported = false;
 
   /**
-   * Replace the stored payout structure with one whose DEPTH matches the field
-   * that actually turned up. Called exactly once, at prize-pool finalisation.
+   * Replace the stored payout structure with one whose DEPTH matches the final
+   * field that actually turned up. Called exactly once, after entry closes.
    *
    * FAIL-CLOSED IN EVERY DIRECTION. It returns without writing when:
    *   - the entrant count cannot be read (never guess a field size — too small
    *     a guess promotes an earlier place to residual holder and overpays it);
    *   - the event is a Spin (its structure is derived from the multiplier and
    *     is not a ladder at all);
-   *   - the existing structure is already at least as deep as the field
-   *     warrants, so a hand-authored deep ladder is never narrowed;
    *   - the write fails, in which case the old structure stands and the reprice
    *     below simply runs against it, exactly as it did before this existed.
    */
-  protected async widenPayoutStructureToField(): Promise<void> {
+  protected async fitPayoutStructureToField(): Promise<void> {
     try {
       const t = this.tournamentCache as Record<string, unknown> | null;
       if (isSpinTournament(t as never)) return;
@@ -3905,9 +3903,9 @@ export abstract class TournamentManagerBase {
         return;
       }
 
-      const current = parsePayoutStructure(t?.payout_structure) ?? [];
       const wanted = paidPlacesForField(field);
-      if (current.length >= wanted) return;
+      const current = parsePayoutStructure(t?.payout_structure) ?? [];
+      if (current.length === wanted) return;
 
       const widened = payoutStructureForField(field);
       const { error: writeErr } = await supabase
@@ -3930,7 +3928,7 @@ export abstract class TournamentManagerBase {
           JSON.stringify(widened);
       }
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] Payout structure widened ${current.length} -> ${widened.length} places for a field of ${field}`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] Payout structure fitted ${current.length} -> ${widened.length} places for a final field of ${field}`
       );
     } catch (err) {
       reportError(err, 'Tournament.payout_widen_threw');
@@ -4363,7 +4361,7 @@ export abstract class TournamentManagerBase {
              * from the nine-place structure while everyone after them was paid
              * from the wide one.
              */
-            await this.widenPayoutStructureToField();
+            await this.fitPayoutStructureToField();
             if (poolToPriceBy > 0) {
               await this.recalculateEliminatedPrizes(poolToPriceBy);
             } else {

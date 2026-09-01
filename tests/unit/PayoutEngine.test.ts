@@ -305,10 +305,10 @@ describe('PayoutEngine', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('payoutsForChoice', () => {
-    it('pays ~10/15/20% of the field for payout1/2/3', () => {
+    it('pays ~10/12.5/15% of the field for payout1/2/3', () => {
       expect(payoutEngine.payoutsForChoice('payout1', 100).length).toBe(10);
-      expect(payoutEngine.payoutsForChoice('payout2', 100).length).toBe(15);
-      expect(payoutEngine.payoutsForChoice('payout3', 100).length).toBe(20);
+      expect(payoutEngine.payoutsForChoice('payout2', 100).length).toBe(13);
+      expect(payoutEngine.payoutsForChoice('payout3', 100).length).toBe(15);
     });
 
     it('winner_take_all is exactly one place at 100%', () => {

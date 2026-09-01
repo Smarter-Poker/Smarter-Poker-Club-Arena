@@ -8,7 +8,7 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 1000;
+  z-index: 12000;
   backdrop-filter: blur(4px) saturate(1.1);
   -webkit-backdrop-filter: blur(4px) saturate(1.1);
   animation: fadeIn 0.2s ease-out;
@@ -16,17 +16,22 @@
 
 .modal {
   background-color: #1a1a1a;
-  width: 90%;
-  max-width: 500px;
-  border-radius: 16px;
-  padding: 24px;
+  width: min(100%, 1180px);
+  max-width: 1180px;
+  height: 100vh;
+  height: 100dvh;
+  border-radius: 0;
+  padding: 0;
   border: 1px solid #333;
   box-shadow:
     0 20px 50px rgba(0, 0, 0, 0.5),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
   animation: createTournamentModalSlideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  max-height: 90vh;
-  overflow-y: auto;
+  max-height: 100vh;
+  max-height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
@@ -35,7 +40,19 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  margin: 0;
+  padding: 20px 24px;
+  flex: 0 0 auto;
+  border-bottom: 1px solid #333;
+  background: #151922;
+}
+
+.form {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 24px 24px calc(env(safe-area-inset-bottom, 0px) + 8px);
 }
 
 .header h2 {
@@ -103,6 +120,37 @@
   display: flex;
   gap: 12px;
   margin-top: 32px;
+  position: sticky;
+  z-index: 5;
+  bottom: 0;
+  padding: 16px 0 max(16px, env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(180deg, rgba(21, 25, 34, 0.2), #151922 24%);
+  border-top: 1px solid #3a4657;
+  box-shadow: 0 -14px 30px rgba(0, 0, 0, 0.42);
+}
+
+.choiceGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.choiceGrid button {
+  min-height: 42px;
+  border: 1px solid #40536b;
+  border-radius: 6px;
+  background: #111b29;
+  color: #cbd8e6;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.choiceGrid button.selected {
+  border-color: #38bdf8;
+  background: linear-gradient(180deg, #0e496a, #09283d);
+  color: #fff;
+  box-shadow: 0 0 14px rgb(56 189 248 / 28%);
 }
 
 .cancelBtn {
@@ -199,8 +247,13 @@
 /* ── Mobile ≤480px ── */
 @media (max-width: 480px) {
   .modal {
-    padding: 16px;
-    border-radius: 12px;
+    border-radius: 0;
+  }
+  .header {
+    padding: 14px 16px;
+  }
+  .form {
+    padding: 16px 16px calc(env(safe-area-inset-bottom, 0px) + 8px);
   }
   .header h2 {
     font-size: 1.2rem;
@@ -229,8 +282,9 @@
 }
 
 @media (max-width: 380px) {
-  .modal {
-    padding: 12px;
+  .form {
+    padding-right: 12px;
+    padding-left: 12px;
   }
   .header h2 {
     font-size: 1.1rem;

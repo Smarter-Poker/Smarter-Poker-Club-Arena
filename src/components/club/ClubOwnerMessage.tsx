@@ -19,7 +19,7 @@
  *           line: written once in the opening wizard, tracked by the opening
  *           checklist, printed on the invite page. A message meant to change
  *           daily cannot share that column. `clubs.lobby_message` is its own
- *           field (migration 20260901120000_club_lobby_owner_message), and
+ *           field (migration 20260902113000_club_lobby_owner_message), and
  *           `tagline` remains the fallback so nothing a club already wrote
  *           disappears.
  *

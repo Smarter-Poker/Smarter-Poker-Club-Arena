@@ -64,12 +64,37 @@ RPC writes so freshness does not depend on which surface saved it.
 
 ## Migration
 
-`supabase/migrations/20260901120000_club_lobby_owner_message.sql`, applied to
+`supabase/migrations/20260902113000_club_lobby_owner_message.sql`, applied to
 production `kuklfnapbkmacvwxktbh` as `club_lobby_owner_message` and verified:
 both columns are present in `information_schema.columns`. One migration, one
 `BEGIN`/`COMMIT`, one PostgREST schema reload, per the DDL policy in CLAUDE.md
 section 2. Declared in `scripts/ci/schema-manifest.d/lobbydesk-msg.json` rather
 than in the shared nightly manifests.
+
+### The version was renamed after the fact
+
+It was first written as `20260901120000_club_lobby_owner_message.sql`. Another
+agent claimed the same stamp for
+`20260901120000_the_seat_club_clone_is_not_an_anon_reader.sql` and landed on
+`main` first, so `check-new-migration-version-collisions.mjs` refused this
+branch. The file was renamed to `20260902113000`, which collides with nothing
+on `origin/main` and with nothing in
+`supabase_migrations.schema_migrations`. Its CONTENTS did not change and the
+DDL was NOT re-run: the columns and the function already exist, and replaying
+them would have bought a second ~28-second PostgREST schema reload for no new
+object (CLAUDE.md section 2). The applied migration had never been written into
+the ledger at all, so it was recorded there under the new version with a single
+`INSERT` (DML, no schema reload):
+
+    insert into supabase_migrations.schema_migrations (version, name)
+    values ('20260902113000', 'club_lobby_owner_message');
+
+`check-migrations-applied.mjs` never reads that ledger - it compares the
+objects a changed migration DECLARES against the schema manifest, and this
+migration's function and columns are declared in
+`scripts/ci/schema-manifest.d/lobbydesk-msg.json`, which does not name a
+version. The file stays idempotent (`ADD COLUMN IF NOT EXISTS`,
+`CREATE OR REPLACE FUNCTION`) so a fresh environment runs it cleanly.
 
 ## Hostile state
 

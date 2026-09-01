@@ -23,7 +23,7 @@ const read = (rel: string) => readFileSync(resolve(ROOT, rel), 'utf8');
 const PAGE = read('src/pages/ClubHomePage.tsx');
 const COMPONENT = read('src/components/club/ClubOwnerMessage.tsx');
 const SETTINGS = read('src/pages/ClubSettingsPage.tsx');
-const MIGRATION = read('supabase/migrations/20260901120000_club_lobby_owner_message.sql');
+const MIGRATION = read('supabase/migrations/20260902113000_club_lobby_owner_message.sql');
 
 describe('where it sits', () => {
   it('leads the rail: above the club card and above the wallets', () => {

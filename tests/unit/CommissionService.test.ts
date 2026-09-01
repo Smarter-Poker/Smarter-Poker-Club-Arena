@@ -162,31 +162,87 @@ describe('CommissionService', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // EXECUTE PAYOUT — BUS EMISSION
   // ─────────────────────────────────────────────────────────────────────────
+  // CLAIMING COMMISSION - WHAT REPLACED executePayout
+  // ─────────────────────────────────────────────────────────────────────────
+  //
+  // executePayout called execute_commission_payout, which credited a wallet,
+  // debited nothing and never marked the commission settled - so the same row
+  // could be paid forever. Both the RPC and the method are gone (migration
+  // 20260902000001). These pins cover the loop that replaced them.
 
-  describe('executePayout', () => {
-    it('should emit COMMISSION_PAID bus event on successful payout', async () => {
-      mockRpc.mockResolvedValueOnce({ error: null }); // execute_commission_payout
-      // sweep #3: execute_commission_payout operates on agent_commissions, which
-      // is keyed by user_id and stores the figure in `amount` — NOT the legacy
-      // commission_payouts shape (agent_id / net_payout) this mock used to use.
-      mockMaybeSingle.mockResolvedValueOnce({
-        data: { user_id: 'agent-1', amount: 5000 },
-      }); // fetch payout record
+  describe('claimCommission', () => {
+    it('claims in batches until the server says there is no more', async () => {
+      mockRpc
+        .mockResolvedValueOnce({ data: { success: true, amount: 100, more: true }, error: null })
+        .mockResolvedValueOnce({ data: { success: true, amount: 40, more: false }, error: null });
 
-      await CommissionService.executePayout('payout-123');
+      const result = await CommissionService.claimCommission('club-1');
+
+      expect(result.claimed).toBe(140);
+      expect(result.batches).toBe(2);
+      expect(result.stoppedEarly).toBe(false);
+      expect(mockRpc).toHaveBeenCalledWith('fn_agent_claim_commission', expect.any(Object));
+    });
+
+    it('sends a DIFFERENT op_id per batch, or the second call would replay the first', async () => {
+      mockRpc
+        .mockResolvedValueOnce({ data: { success: true, amount: 10, more: true }, error: null })
+        .mockResolvedValueOnce({ data: { success: true, amount: 10, more: false }, error: null });
+
+      await CommissionService.claimCommission('club-1');
+
+      const first = mockRpc.mock.calls[0][1] as { p_op_id: string };
+      const second = mockRpc.mock.calls[1][1] as { p_op_id: string };
+      expect(first.p_op_id).toBeTruthy();
+      expect(second.p_op_id).toBeTruthy();
+      expect(first.p_op_id).not.toBe(second.p_op_id);
+    });
+
+    it('emits COMMISSION_PAID once, for the whole claim', async () => {
+      mockRpc.mockResolvedValueOnce({
+        data: { success: true, amount: 5000, more: false },
+        error: null,
+      });
+
+      await CommissionService.claimCommission('club-1');
 
       expect(mockBusEmit).toHaveBeenCalledWith('COMMISSION_PAID', {
-        agentId: 'agent-1',
+        agentId: 'self',
         amount: 5000,
       });
     });
 
-    it('should throw on RPC failure', async () => {
-      mockRpc.mockResolvedValueOnce({ error: { message: 'payout already executed' } });
+    it('throws the server refusal when the FIRST batch is refused', async () => {
+      mockRpc.mockResolvedValueOnce({
+        data: { success: false, error: 'The Club Bank Holds 1.00 Chips And Owes You 803.49.' },
+        error: null,
+      });
 
-      await expect(CommissionService.executePayout('payout-123')).rejects.toBeDefined();
+      await expect(CommissionService.claimCommission('club-1')).rejects.toThrow(
+        /The Club Bank Holds/
+      );
+      expect(mockBusEmit).not.toHaveBeenCalledWith('COMMISSION_PAID', expect.anything());
+    });
+
+    it('keeps what it already claimed when a LATER batch is refused', async () => {
+      // Money that moved, moved. Throwing here would tell the agent nothing was
+      // paid while their balance says otherwise.
+      mockRpc
+        .mockResolvedValueOnce({ data: { success: true, amount: 700, more: true }, error: null })
+        .mockResolvedValueOnce({ data: { success: false, error: 'Bank Short' }, error: null });
+
+      const result = await CommissionService.claimCommission('club-1');
+
+      expect(result.claimed).toBe(700);
+      expect(result.stoppedEarly).toBe(true);
+      expect(result.reason).toMatch(/Bank Short/);
+    });
+
+    it('throws when the RPC itself fails', async () => {
+      mockRpc.mockResolvedValueOnce({ data: null, error: { message: 'network' } });
+
+      await expect(CommissionService.claimCommission('club-1')).rejects.toBeDefined();
     });
   });
 

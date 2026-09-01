@@ -77,7 +77,7 @@ const BASELINE = new Map<string, number>([
   ['src/services/FriendSuggestionService.ts', 1],
   ['src/services/CreditRequestService.ts', 4],
   ['src/services/ChipFlowService.ts', 4],
-  ['src/pages/HomePage.tsx', 4],
+  ['src/pages/HomePage.tsx', 1],
   ['src/pages/BadBeatJackpotPage.tsx', 4],
   ['src/components/social/PlayerActivityFeed.tsx', 4],
   ['src/components/agent/ChipTransferModal.tsx', 4],
@@ -86,7 +86,9 @@ const BASELINE = new Map<string, number>([
   ['src/services/FinancialCronService.ts', 3],
   ['src/services/DisputeService.ts', 3],
   ['src/services/DiamondService.ts', 3],
-  ['src/services/CommissionService.ts', 3],
+  // 3 -> 2 on 2026-09-01: executePayout is gone, and with it the discarded
+  // read it did on agent_commissions after calling execute_commission_payout.
+  ['src/services/CommissionService.ts', 2],
   // TournamentResultsPage was cleared to 0 in round 10 (the deep-link work
   // touched the file, so its three reads were fixed under the ratchet's own
   // rule: shrink what you touch).

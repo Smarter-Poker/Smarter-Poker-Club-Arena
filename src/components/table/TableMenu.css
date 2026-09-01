@@ -70,12 +70,10 @@
   border-color: #1877f2;
 }
 
-/* Premium command-center artwork fills the trigger button. */
-.table-menu__trigger-img {
+/* Premium six-tile command grid fills the trigger button. */
+.table-menu__trigger-grid {
   width: 88%;
   height: 88%;
-  object-fit: contain;
-  border-radius: inherit;
   display: block;
 }
 

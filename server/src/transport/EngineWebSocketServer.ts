@@ -110,10 +110,17 @@ const IP_RESTRICTION_TTL_MS = 60_000;
  * ServerTableEngine / GameServer classes.
  */
 export type TableExistsCheck = (tableId: string) => boolean;
+export type EnsureTableCheck = (tableId: string) => Promise<boolean>;
 
 export interface EngineWebSocketServerOptions {
   hub: TableStateHub;
   tableExists: TableExistsCheck;
+  /**
+   * Starts a valid cash-table engine on demand when the table exists in the
+   * database but has not reached the occupied-table discovery feed yet.
+   * Optional for isolated transport tests; production always wires it.
+   */
+  ensureTable?: EnsureTableCheck;
   /** Optional override for auth, used by tests to inject fake tokens. */
   verifyToken?: (token: string) => Promise<{ userId: string } | null>;
   /** Optional override for the authoritative club-membership gate in tests. */
@@ -219,6 +226,7 @@ export class EngineWebSocketServer {
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private readonly hub: TableStateHub;
   private readonly tableExists: TableExistsCheck;
+  private readonly ensureTable?: EnsureTableCheck;
   private readonly verifyToken: (token: string) => Promise<{ userId: string } | null>;
   private readonly authorizeViewer: (tableId: string, userId: string) => Promise<TableViewerAccess>;
   private readonly onResync?: (tableId: string, userId: string) => void;
@@ -237,6 +245,7 @@ export class EngineWebSocketServer {
   constructor(opts: EngineWebSocketServerOptions) {
     this.hub = opts.hub;
     this.tableExists = opts.tableExists;
+    this.ensureTable = opts.ensureTable;
     this.verifyToken = opts.verifyToken ?? defaultVerifyToken;
     this.authorizeViewer = opts.authorizeViewer ?? authorizeTableViewer;
     this.onResync = opts.onResync;
@@ -327,19 +336,36 @@ export class EngineWebSocketServer {
             socket.destroy();
             return;
           }
-          if (!this.tableExists(tableId)) {
-            socket.write(
-              'HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
-            );
+          const viewerAccess = await this.authorizeViewer(tableId, auth.userId);
+          if (!viewerAccess.allowed) {
+            const status =
+              viewerAccess.reason === 'table_not_found'
+                ? '404 Not Found'
+                : viewerAccess.reason === 'check_failed'
+                  ? '503 Service Unavailable'
+                  : '403 Forbidden';
+            socket.write(`HTTP/1.1 ${status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`);
             socket.destroy();
             return;
           }
 
-          const viewerAccess = await this.authorizeViewer(tableId, auth.userId);
-          if (!viewerAccess.allowed) {
-            const status =
-              viewerAccess.reason === 'check_failed' ? '503 Service Unavailable' : '403 Forbidden';
-            socket.write(`HTTP/1.1 ${status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`);
+          /*
+           * A brand-new empty table is deliberately absent from the normal
+           * occupied-table discovery RPC. Before this gate, Create And Start
+           * navigated to the felt immediately, this synchronous check returned
+           * false, and the client received an endless 404/reconnect cycle until
+           * a seat somehow existed on a table nobody could open. An authorized
+           * viewer now wakes that one table on demand. The GameServer method
+           * validates cash/status/deletion state and takes the same single-owner
+           * lease as background discovery before it installs the engine.
+           */
+          if (
+            !this.tableExists(tableId) &&
+            !(this.ensureTable && (await this.ensureTable(tableId)))
+          ) {
+            socket.write(
+              'HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+            );
             socket.destroy();
             return;
           }
@@ -829,28 +855,35 @@ export class EngineWebSocketServer {
     }
     conn.subs.set(tableId, 'pending');
     try {
-      if (!this.tableExists(tableId)) {
-        conn.subs.delete(tableId);
-        this.sendMuxError(conn, tableId, 'TABLE_NOT_FOUND', 'Table not found in engine');
-        return;
-      }
       const viewerAccess = await this.authorizeViewer(tableId, conn.userId);
       if (!viewerAccess.allowed) {
         conn.subs.delete(tableId);
         this.sendMuxError(
           conn,
           tableId,
-          viewerAccess.reason === 'check_failed'
-            ? 'ACCESS_CHECK_FAILED'
-            : viewerAccess.reason === 'observers_restricted'
-              ? 'OBSERVERS_RESTRICTED'
-              : 'CLUB_MEMBERSHIP_REQUIRED',
-          viewerAccess.reason === 'check_failed'
-            ? 'Unable to verify table access'
-            : viewerAccess.reason === 'observers_restricted'
-              ? 'This Table Is Open To Seated Players Only'
-              : 'Join this club before watching its live games'
+          viewerAccess.reason === 'table_not_found'
+            ? 'TABLE_NOT_FOUND'
+            : viewerAccess.reason === 'check_failed'
+              ? 'ACCESS_CHECK_FAILED'
+              : viewerAccess.reason === 'observers_restricted'
+                ? 'OBSERVERS_RESTRICTED'
+                : 'CLUB_MEMBERSHIP_REQUIRED',
+          viewerAccess.reason === 'table_not_found'
+            ? 'Table not found'
+            : viewerAccess.reason === 'check_failed'
+              ? 'Unable to verify table access'
+              : viewerAccess.reason === 'observers_restricted'
+                ? 'This Table Is Open To Seated Players Only'
+                : 'Join this club before watching its live games'
         );
+        return;
+      }
+      // The multiplexed path must wake new empty tables exactly like the
+      // single-table WebSocket path, or multi-table users still get the old
+      // permanent TABLE_NOT_FOUND loop.
+      if (!this.tableExists(tableId) && !(this.ensureTable && (await this.ensureTable(tableId)))) {
+        conn.subs.delete(tableId);
+        this.sendMuxError(conn, tableId, 'TABLE_NOT_FOUND', 'Table not found in engine');
         return;
       }
       try {

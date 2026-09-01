@@ -31,21 +31,17 @@ const CLUB_SCOPED_COUNT =
   /from\('club_members'\)[\s\S]{0,220}?count: 'exact'[\s\S]{0,220}?\.(eq|in)\('club_id'/;
 
 describe('nothing writes a private view into a shared column', () => {
-  it('HorseOrchestrator takes the count from the SECURITY DEFINER RPC', () => {
-    expect(HORSE).toMatch(/rpc\(\s*\n?\s*'fn_get_club_member_count'/);
+  it('HorseOrchestrator never manufactures club memberships', () => {
+    expect(HORSE).not.toContain('ensureHorsesInBothClubs');
+    expect(HORSE).not.toMatch(/from\(['"]club_members['"]\)\s*\.(?:insert|upsert)/);
   });
 
   it('and no longer counts club_members directly', () => {
     expect(HORSE).not.toMatch(CLUB_SCOPED_COUNT);
   });
 
-  it('refuses to write a null/NaN over the shared column on a dropped request', () => {
-    /**
-     * The failure that matters here is not a wrong number, it is a ZEROED shared
-     * number. If the RPC drops, the update must not run at all.
-     */
-    expect(HORSE).toMatch(/Number\.isFinite\(next\)/);
-    expect(HORSE).toMatch(/next != null/);
+  it('does not write a membership-derived count into the shared club row', () => {
+    expect(HORSE).not.toMatch(/from\(['"]clubs['"]\)\s*\.update\(\{\s*member_count:/);
   });
 
   it('that guard would have caught the old code', () => {

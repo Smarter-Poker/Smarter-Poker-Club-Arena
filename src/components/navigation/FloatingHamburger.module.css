@@ -1,6 +1,6 @@
 /**
  * FLOATING HAMBURGER BUTTON — Bottom-left navigation toggle
- * Metallic command-center icon - NO BACKGROUND (transparent)
+ * Silver metallic icon - NO BACKGROUND (transparent)
  * Companion trigger for the GlobalHeader HamburgerMenu
  * z-index: 1001 (above GlobalHeader's 1000, below HamburgerMenu's 1100+)
  */
@@ -26,6 +26,20 @@
   transform: scale(0.95);
 }
 
+/* NO BOXES OVER CHROME ICONS (Dan, 2026-09-01, binding). club-engine.css
+   paints a global `button:focus-visible` outline plus a 4px halo on every
+   button; on this round, transparent trigger it reads as a rectangle sitting
+   on the icon. Focus stays visible as a round glow. */
+.floatingButton:focus,
+.floatingButton:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.floatingButton:focus-visible {
+  background: radial-gradient(closest-side, rgba(210, 220, 232, 0.26), rgba(210, 220, 232, 0) 76%);
+}
+
 /* Hide when menu is open — belt-and-suspenders via CSS */
 .hidden {
   opacity: 0 !important;
@@ -36,9 +50,8 @@
 }
 
 .icon {
-  width: 40px;
-  height: 40px;
-  object-fit: contain;
+  width: 26px;
+  height: 26px;
   filter: drop-shadow(0 0 4px rgba(200, 210, 220, 0.4));
 }
 
@@ -52,7 +65,7 @@
   }
 
   .icon {
-    width: 36px;
-    height: 36px;
+    width: 22px;
+    height: 22px;
   }
 }

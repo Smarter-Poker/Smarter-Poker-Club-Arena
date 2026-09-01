@@ -153,7 +153,7 @@ describe('no handler is left wired to nothing', () => {
 });
 
 describe('the button artwork exists', () => {
-  const IMAGES = ['command-center-v1.png', 'back.png', 'hub.png'] as const;
+  const IMAGES = ['back.png', 'hub.png'] as const;
 
   it.each(IMAGES)('%s is referenced by the header', (file) => {
     expect(TSX).toContain(`APPROVED_HEADER_ASSET}${file}`);
@@ -177,6 +177,12 @@ describe('the button artwork exists', () => {
       ).toBe(true);
     }
   });
+
+  it('uses the shared six-tile command grid for the drawer trigger', () => {
+    expect(TSX).toContain("import { CommandGridIcon } from './CommandGridIcon'");
+    expect(TSX).toContain('<CommandGridIcon');
+    expect(TSX).not.toContain('${APPROVED_HEADER_ASSET}command-center-v1.png');
+  });
 });
 
 describe('mobile uses the identical desktop header', () => {
@@ -195,7 +201,6 @@ describe('mobile uses the identical desktop header', () => {
   it('uses only artwork derived from the approved source image', () => {
     expect(TSX).toContain('global-header-command-center-v1.png');
     for (const file of [
-      'command-center-v1.png',
       'back.png',
       'hub.png',
       'profile.png',

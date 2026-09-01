@@ -22,11 +22,20 @@ describe('club lobby creation controls', () => {
     expect(tableConfig).toContain('Create Games From The Union Console');
   });
 
-  it('locks the complete selector deck at the viewport edge while games scroll', () => {
-    expect(commandCss).toContain('display: contents');
-    expect(commandCss).toContain('position: sticky');
-    expect(commandCss).toContain('top: calc(env(safe-area-inset-top, 0px) + 10.2vw)');
-    expect(commandCss).toMatch(/@media \(min-width: 901px\)[\s\S]*top: 0;/);
+  it('keeps the desktop selector deck sticky and mobile controls inside the approved chassis', () => {
+    const desktop = commandCss.slice(commandCss.lastIndexOf('@media (min-width: 901px)'));
+    expect(desktop).toContain('display: contents');
+    expect(desktop).toContain('position: sticky');
+    expect(desktop).toContain('top: 0');
+
+    const mobile = commandCss.slice(commandCss.indexOf('/* ONE-CHASSIS CONTROL LOCK'));
+    expect(mobile).toContain('@media (max-width: 900px)');
+    expect(mobile).toMatch(
+      /\.club-lobby-command-top\s*\{[^}]*position:\s*relative[^}]*display:\s*grid/s
+    );
+    expect(commandCss).toMatch(
+      /\.club-lobby-machine\s*\{[^}]*width:\s*calc\(100% - 8px\)[^}]*max-width:\s*none/s
+    );
   });
 
   it('keeps cash and tournament creation on their existing flows', () => {

@@ -1151,6 +1151,472 @@
   }
 }
 
+/* Final cascade lock for the one-frame mobile lobby. */
+@media (max-width: 900px) {
+  .club-lobby-command-top {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: auto;
+    display: grid;
+    grid-template-rows: auto auto;
+    overflow: hidden;
+  }
+
+  .club-lobby-command-top__welcome {
+    display: none;
+  }
+
+  .club-lobby-command-top__controls,
+  .club-lobby-command-top__campaign {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    border: 0;
+    border-image: none;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .club-lobby-command-top__controls {
+    padding: 7px 10px 8px;
+    border-top: 1px solid #26323b;
+  }
+
+  .club-lobby-command-top .lobby-controls {
+    height: auto;
+    gap: 5px;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .club-lobby-command-top .lobby-controls__heading {
+    min-height: 32px;
+    padding: 0 2px 3px;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 5px;
+    margin-top: 0;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__type,
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn,
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip {
+    min-height: 29px;
+    height: 29px;
+    padding: 0 5px;
+    overflow: hidden;
+    border: 1px solid #33414c;
+    border-radius: 3px;
+    background: linear-gradient(180deg, #111820, #030608 78%);
+    color: #cbd2d7;
+    font-size: clamp(7px, 2vw, 9px);
+    filter: none;
+    box-shadow:
+      inset 0 0 0 1px #05080a,
+      inset 0 0 9px #000,
+      0 1px 1px #000;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__type.is-active,
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn.is-set,
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip.is-on {
+    border-color: #138fe7;
+    background: linear-gradient(180deg, #0c3860, #03111e 78%);
+    color: #f1f8fd;
+    box-shadow:
+      inset 0 0 0 1px #07518d,
+      inset 0 0 10px rgb(15 132 224 / 38%),
+      0 0 6px rgb(18 146 238 / 48%);
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn:not(.is-set) {
+    background: linear-gradient(180deg, #111820, #030608 78%);
+    color: #a9cbe0;
+    text-shadow: 0 1px 2px #000;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn:not(.is-set) > * {
+    opacity: 1;
+  }
+
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status {
+    grid-auto-flow: row;
+    grid-auto-columns: unset;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip {
+    grid-column: span 2;
+  }
+
+  .club-lobby-command-top
+    .lobby-controls
+    .quickprefs__row--status
+    .quickprefs__chip:nth-child(4):nth-last-child(2),
+  .club-lobby-command-top
+    .lobby-controls
+    .quickprefs__row--status
+    .quickprefs__chip:nth-child(5):last-child {
+    grid-column: span 3;
+  }
+
+  .club-lobby-command-top__campaign {
+    aspect-ratio: 2172 / 302;
+    padding: 5px 10px 7px;
+    border-top: 1px solid #26323b;
+  }
+
+  .club-lobby-command-top__campaign-button,
+  .club-lobby-command-top__campaign-picture,
+  .club-lobby-command-top__campaign-button img {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .club-lobby-command-top__campaign-button {
+    min-height: 0;
+    padding: 0;
+    border: 1px solid #34434e;
+  }
+
+  .club-lobby-command-top__campaign-button img {
+    min-height: 0;
+    object-fit: contain;
+    clip-path: none;
+  }
+}
+
+/* Unified mobile control bays. The selector geometry is CSS-owned so labels
+   remain centered and never inherit distortions from stretched button art. */
+@media (max-width: 900px) {
+  .club-lobby-command-top {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: auto;
+    display: grid;
+    grid-template-rows: auto auto;
+    overflow: hidden;
+    background: #020507;
+  }
+
+  .club-lobby-command-top__welcome {
+    display: none;
+  }
+
+  .club-lobby-command-top__controls,
+  .club-lobby-command-top__campaign {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .club-lobby-command-top__controls {
+    padding: 7px 10px 8px;
+    border-top: 1px solid #26323b;
+  }
+
+  .club-lobby-command-top .lobby-controls {
+    height: auto;
+    gap: 5px;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .club-lobby-command-top .lobby-controls__heading {
+    min-height: 32px;
+    padding: 0 2px 3px;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 5px;
+    margin-top: 0;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__type,
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn,
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip {
+    min-height: 29px;
+    height: 29px;
+    padding: 0 5px;
+    overflow: hidden;
+    border: 1px solid #33414c;
+    border-radius: 3px;
+    background: linear-gradient(180deg, #111820, #030608 78%);
+    color: #cbd2d7;
+    font-size: clamp(7px, 2vw, 9px);
+    letter-spacing: 0.025em;
+    filter: none;
+    box-shadow:
+      inset 0 0 0 1px #05080a,
+      inset 0 0 9px #000,
+      0 1px 1px #000;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__type::after,
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn::after,
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip::after {
+    display: none;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__type.is-active,
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn.is-set,
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip.is-on {
+    border-color: #138fe7;
+    background: linear-gradient(180deg, #0c3860, #03111e 78%);
+    color: #f1f8fd;
+    box-shadow:
+      inset 0 0 0 1px #07518d,
+      inset 0 0 10px rgb(15 132 224 / 38%),
+      0 0 6px rgb(18 146 238 / 48%);
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn:not(.is-set) {
+    background: linear-gradient(180deg, #111820, #030608 78%);
+    color: #a9cbe0;
+    text-shadow: 0 1px 2px #000;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn:not(.is-set) > * {
+    opacity: 1;
+  }
+
+  .club-lobby-command-top .lobby-controls .quickprefs {
+    margin-top: 0;
+  }
+
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status {
+    grid-auto-flow: row;
+    grid-auto-columns: unset;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip {
+    grid-column: span 2;
+  }
+
+  .club-lobby-command-top
+    .lobby-controls
+    .quickprefs__row--status
+    .quickprefs__chip:nth-child(4):nth-last-child(2),
+  .club-lobby-command-top
+    .lobby-controls
+    .quickprefs__row--status
+    .quickprefs__chip:nth-child(5):last-child {
+    grid-column: span 3;
+  }
+
+  .club-lobby-command-top__campaign {
+    aspect-ratio: 2172 / 302;
+    padding: 5px 10px 7px;
+    border-top: 1px solid #26323b;
+  }
+
+  .club-lobby-command-top__campaign-button,
+  .club-lobby-command-top__campaign-picture,
+  .club-lobby-command-top__campaign-button img {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .club-lobby-command-top__campaign-button {
+    padding: 0;
+    border: 1px solid #34434e;
+    background: #000;
+  }
+
+  .club-lobby-command-top__campaign-picture {
+    display: block;
+  }
+
+  .club-lobby-command-top__campaign-button img {
+    min-height: 0;
+    object-fit: contain;
+    object-position: center;
+    clip-path: none;
+  }
+}
+
+/* Mobile reference repair: one continuous full-width command machine. */
+@media (max-width: 900px) {
+  .club-lobby-machine {
+    width: calc(100% - 8px);
+    max-width: none;
+    margin: 0 4px calc(18px + var(--bottom-nav-clearance, 74px));
+    overflow: visible;
+  }
+
+  .club-lobby-command-top {
+    grid-template-rows: auto auto;
+    overflow: hidden;
+    background: #000;
+    filter: none;
+    box-shadow:
+      inset 1px 0 #000,
+      inset -1px 0 #000;
+  }
+
+  .club-lobby-command-top__welcome {
+    display: none;
+  }
+
+  .club-lobby-command-top__controls,
+  .club-lobby-command-top__campaign {
+    box-sizing: border-box;
+    width: 100%;
+    margin: 0;
+    overflow: hidden;
+    border-style: solid;
+    border-color: transparent;
+    background: #030507;
+    box-shadow:
+      inset 1px 0 #000,
+      inset -1px 0 #000;
+  }
+
+  .club-lobby-command-top__controls {
+    min-height: 0;
+    padding: 7px 9px 9px;
+    border-width: 10px;
+    border-image: var(--machine-controls-frame) 20 38 20 38 / 10px stretch;
+  }
+
+  .club-lobby-command-top .lobby-controls {
+    gap: 5px;
+    padding: 2px 1px;
+  }
+
+  .club-lobby-command-top .lobby-controls__heading {
+    min-height: 34px;
+    padding: 0 2px 3px;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__type,
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn,
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip {
+    position: relative;
+    min-height: 28px;
+    height: 28px;
+    padding: 0 5px;
+    background-image: var(--machine-selector-default);
+    background-position: center;
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    font-size: clamp(7px, 2.15vw, 10px);
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__type.is-active,
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn.is-set,
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip.is-on {
+    background-image: var(--machine-selector-active);
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn:not(.is-set) {
+    background-image: var(--machine-filter-default);
+    background-size: 100% 100%;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__type::after,
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn::after,
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip::after {
+    content: '';
+    position: absolute;
+    z-index: 2;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 44px;
+    transform: translateY(-50%);
+  }
+
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .club-lobby-command-top__campaign {
+    height: auto;
+    min-height: 0;
+    aspect-ratio: 3 / 1;
+    padding: 8px 10px;
+    border-width: 10px;
+    border-image: var(--machine-campaign-frame) 18 38 18 38 / 10px stretch;
+  }
+
+  .club-lobby-command-top__campaign-button,
+  .club-lobby-command-top__campaign-picture,
+  .club-lobby-command-top__campaign-button img {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .club-lobby-command-top__campaign-picture {
+    display: block;
+  }
+
+  .club-lobby-command-top__campaign-button {
+    display: grid;
+    place-items: center;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .club-lobby-command-top__campaign-button img {
+    display: block;
+    object-fit: contain;
+    object-position: center;
+  }
+
+  .club-lobby-machine > .club-home__games--v2 {
+    width: 100%;
+    margin: 0;
+    padding: 8px 0 0;
+    overflow: visible;
+    border-top: 0;
+  }
+}
+
+@media (max-width: 430px) {
+  .club-lobby-machine {
+    width: calc(100% - 8px);
+    margin-left: 4px;
+    margin-bottom: calc(18px + var(--bottom-nav-clearance, 74px));
+  }
+
+  .club-lobby-command-top__controls {
+    min-height: 0;
+    padding-inline: 9px;
+  }
+
+  .club-lobby-command-top__campaign {
+    min-height: 0;
+  }
+}
+
 @media (max-width: 900px) {
   /* Chromium exposes the first source pixel of the stretched border-image as
      a solid white seam. Keep the metal edge, but cover that one invalid pixel
@@ -1474,7 +1940,9 @@
 /* Keep the complete Find Your Game selector deck available while the game
    catalogue scrolls. display: contents removes the short command wrapper as
    the sticky containing block without changing the DOM or accessible order.
-   This override intentionally follows every responsive cabinet rule. */
+   This override intentionally follows every responsive cabinet rule on the
+   desktop ledger. Mobile retains the approved one-chassis control and campaign
+   composition below. */
 @media (min-width: 901px) {
   .club-lobby-machine > .club-lobby-command-top {
     display: contents;
@@ -1490,17 +1958,248 @@
   }
 }
 
+/* Final mobile composition lock. Keep this after the legacy proof-shell block
+   so the production phone layout cannot fall back to its 16px side gutters. */
 @media (max-width: 900px) {
-  .club-lobby-machine > .club-lobby-command-top {
-    display: contents;
+  .club-lobby-machine {
+    width: calc(100% - 8px);
+    max-width: none;
+    margin: 0 4px calc(18px + var(--bottom-nav-clearance, 74px));
   }
 
-  .club-lobby-machine > .club-lobby-command-top > .club-lobby-command-top__controls {
-    position: sticky;
-    top: calc(env(safe-area-inset-top, 0px) + 10.2vw);
-    z-index: 30;
-    isolation: isolate;
-    background: #03070a;
-    box-shadow: 0 10px 24px rgb(0 0 0 / 78%);
+  .club-lobby-command-top {
+    grid-template-rows: auto auto;
+    overflow: hidden;
+    box-shadow:
+      inset 1px 0 #000,
+      inset -1px 0 #000;
+  }
+
+  .club-lobby-command-top__controls {
+    min-height: 0;
+    margin: 0;
+    padding: 4px 6px 6px;
+    border-width: 10px;
+    border-image: var(--machine-controls-frame) 20 38 20 38 / 10px stretch;
+  }
+
+  .club-lobby-command-top .lobby-controls {
+    gap: 4px;
+    padding: 0;
+  }
+
+  .club-lobby-command-top .lobby-controls__heading {
+    min-height: 26px;
+    padding-bottom: 1px;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__type,
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn,
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip {
+    min-height: 24px;
+    height: 24px;
+    background-image: var(--machine-selector-default);
+    background-size: 100% 100%;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar,
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status {
+    gap: 4px;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__type.is-active,
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn.is-set,
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip.is-on {
+    background-image: var(--machine-selector-active);
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn:not(.is-set) {
+    background-image: var(--machine-filter-default);
+  }
+
+  .club-lobby-command-top__campaign {
+    height: auto;
+    min-height: 0;
+    aspect-ratio: 7.2 / 1;
+    margin: 0;
+    padding: 0;
+    border-width: 5px;
+    border-image: var(--machine-campaign-frame) 18 38 18 38 / 5px stretch;
+  }
+
+  .club-lobby-command-top__campaign-button,
+  .club-lobby-command-top__campaign-picture,
+  .club-lobby-command-top__campaign-button img {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .club-lobby-command-top__campaign-picture {
+    display: block;
+  }
+
+  .club-lobby-command-top__campaign-button img {
+    object-fit: fill;
+  }
+
+  .club-lobby-machine > .club-home__games--v2 {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 8px 0 0;
+    overflow: visible;
+    border: 0;
+  }
+}
+
+@media (max-width: 430px) {
+  .club-lobby-machine {
+    width: calc(100% - 8px);
+    margin-left: 4px;
+    margin-bottom: calc(18px + var(--bottom-nav-clearance, 74px));
+  }
+}
+
+/* ONE-CHASSIS CONTROL LOCK — must remain the final mobile command rule. */
+@media (max-width: 900px) {
+  .club-lobby-command-top {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: auto;
+    display: grid;
+    grid-template-rows: auto auto;
+    overflow: hidden;
+  }
+
+  .club-lobby-command-top__welcome {
+    display: none;
+  }
+
+  .club-lobby-command-top__controls,
+  .club-lobby-command-top__campaign {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    border: 0;
+    border-image: none;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .club-lobby-command-top__controls {
+    padding: 7px 10px 8px;
+    border-top: 1px solid #26323b;
+  }
+
+  .club-lobby-command-top .lobby-controls {
+    height: auto;
+    gap: 5px;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .club-lobby-command-top .lobby-controls__heading {
+    min-height: 32px;
+    padding: 0 2px 3px;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 5px;
+    margin-top: 0;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__type,
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn,
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip {
+    min-height: 29px;
+    height: 29px;
+    padding: 0 5px;
+    overflow: hidden;
+    border: 1px solid #33414c;
+    border-radius: 3px;
+    background: linear-gradient(180deg, #111820, #030608 78%);
+    color: #cbd2d7;
+    font-size: clamp(7px, 2vw, 9px);
+    filter: none;
+    box-shadow:
+      inset 0 0 0 1px #05080a,
+      inset 0 0 9px #000,
+      0 1px 1px #000;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__type.is-active,
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn.is-set,
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip.is-on {
+    border-color: #138fe7;
+    background: linear-gradient(180deg, #0c3860, #03111e 78%);
+    color: #f1f8fd;
+    box-shadow:
+      inset 0 0 0 1px #07518d,
+      inset 0 0 10px rgb(15 132 224 / 38%),
+      0 0 6px rgb(18 146 238 / 48%);
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn:not(.is-set) {
+    background: linear-gradient(180deg, #111820, #030608 78%);
+    color: #a9cbe0;
+    text-shadow: 0 1px 2px #000;
+  }
+
+  .club-lobby-command-top .lobby-controls .game-bar__filter-btn:not(.is-set) > * {
+    opacity: 1;
+  }
+
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status {
+    grid-auto-flow: row;
+    grid-auto-columns: unset;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .club-lobby-command-top .lobby-controls .quickprefs__row--status .quickprefs__chip {
+    grid-column: span 2;
+  }
+
+  .club-lobby-command-top
+    .lobby-controls
+    .quickprefs__row--status
+    .quickprefs__chip:nth-child(4):nth-last-child(2),
+  .club-lobby-command-top
+    .lobby-controls
+    .quickprefs__row--status
+    .quickprefs__chip:nth-child(5):last-child {
+    grid-column: span 3;
+  }
+
+  .club-lobby-command-top__campaign {
+    aspect-ratio: 2172 / 302;
+    padding: 5px 10px 7px;
+    border-top: 1px solid #26323b;
+  }
+
+  .club-lobby-command-top__campaign-button,
+  .club-lobby-command-top__campaign-picture,
+  .club-lobby-command-top__campaign-button img {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .club-lobby-command-top__campaign-button {
+    min-height: 0;
+    padding: 0;
+    border: 1px solid #34434e;
+  }
+
+  .club-lobby-command-top__campaign-button img {
+    min-height: 0;
+    object-fit: contain;
+    clip-path: none;
   }
 }

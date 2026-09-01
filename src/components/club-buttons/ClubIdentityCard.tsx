@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import './ClubIdentityCard.css';
 
-const CLUB_IDENTITY_SHELL = `${import.meta.env.BASE_URL}assets/club-buttons/club/club-identity-template-bbj-finish-v1.png`;
+const CLUB_IDENTITY_SHELL = `${import.meta.env.BASE_URL}assets/club-buttons/club/club-identity-template-no-level-v2.png`;
 
 export interface ClubIdentityCardProps {
   clubName: string;
@@ -10,7 +10,6 @@ export interface ClubIdentityCardProps {
   pokerAlias: string;
   clubId: string | number;
   playerId?: string | number | null;
-  level?: number | null;
   playersPlaying?: number | null;
   onCopyClubId?: () => void;
   onCopyPlayerId?: () => void;
@@ -59,7 +58,6 @@ export function ClubIdentityCard({
   pokerAlias,
   clubId,
   playerId,
-  level,
   playersPlaying,
   onCopyClubId,
   onCopyPlayerId,
@@ -93,12 +91,6 @@ export function ClubIdentityCard({
           onCopy={onCopyPlayerId}
         />
       </div>
-
-      {level != null && (
-        <span className="club-identity__level">
-          <span>Level {level}</span>
-        </span>
-      )}
 
       <div className="club-identity__footer">
         <span className="club-identity__playing" aria-live="polite">

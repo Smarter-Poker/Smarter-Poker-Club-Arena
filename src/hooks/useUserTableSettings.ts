@@ -317,6 +317,7 @@ const settingsRowQuery = (userId: string) =>
 type SettingsRowResult = Awaited<ReturnType<typeof settingsRowQuery>>;
 
 const inFlightSettingsReads = new Map<string, Promise<SettingsRowResult>>();
+export const SETTINGS_READ_TIMEOUT_MS = 8_000;
 
 export function fetchUserTableSettingsRow(userId: string): Promise<SettingsRowResult> {
   const existing = inFlightSettingsReads.get(userId);
@@ -325,12 +326,22 @@ export function fetchUserTableSettingsRow(userId: string): Promise<SettingsRowRe
   // `Promise.resolve` because a PostgREST builder is a THENABLE, not a Promise:
   // it has `.then` but no `.catch`/`.finally`, so it cannot be stored or awaited
   // as one. Resolving it once gives a real Promise that many callers can await.
-  const p = Promise.resolve(settingsRowQuery(userId)).then(
+  const request = Promise.resolve(settingsRowQuery(userId));
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`User table settings read timed out after ${SETTINGS_READ_TIMEOUT_MS} ms.`));
+    }, SETTINGS_READ_TIMEOUT_MS);
+  });
+
+  const p = Promise.race([request, timeout]).then(
     (res) => {
+      if (timeoutId) clearTimeout(timeoutId);
       inFlightSettingsReads.delete(userId);
       return res;
     },
     (err) => {
+      if (timeoutId) clearTimeout(timeoutId);
       // Drop the entry on rejection too, or one network blip would wedge every
       // future mount onto a permanently failed promise.
       inFlightSettingsReads.delete(userId);

@@ -77,6 +77,7 @@ import { RakeReports } from '../components/admin/RakeReports';
 import SpinActivationPanel from '../components/club/SpinActivationPanel';
 import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
 import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
+import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { readLocalSession } from '../lib/authUtils';
 import { reportError } from '../utils/errorReporter';
@@ -661,6 +662,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   // ALL TRANSACTIONS AND OTHER AVAILABLE DATA WHEN CLICKED." The row opens the
   // member's own statement - a read-only view, so it is not an activeCashier.
   const [showPlayerWallet, setShowPlayerWallet] = useState(false);
+  const [showDiamondWallet, setShowDiamondWallet] = useState(false);
   /* LOBBY V2 follow-up (Dan's QA, 2026-08-22): the lobby landed on the MTT
      tab, a leftover from before All Games was a real tab. A club with no open
      MTTs therefore opened onto an empty screen blaming "filters" - every
@@ -4311,9 +4313,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               them; one wallet never gets access to the other. Union figures are
               managed on the union's own surfaces and appear nowhere here.
 
-              The compact lobby summary intentionally exposes only the three
-              role-approved balances requested for this surface. Every other
-              wallet remains available through its existing cashier flow. */}
+              The lobby exposes every balance authorized for the viewer's role;
+              each actionable row opens its matching ledger or cashier without
+              leaving the club lobby. */}
           {currentUserId && resolvedClubId && (
             <div className="lobby-top__wallet">
               <button
@@ -4366,7 +4368,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     onVisibleWalletCountChange={setVisibleWalletCount}
                     onBuyDiamonds={() => {
                       haptic.medium();
-                      navigate(`/clubs/${clubId}/detail`);
+                      setShowDiamondWallet(true);
                     }}
                     // Dan 2026-08-23: "if they click on Club Bank, that should
                     // open the Club Bank Cashier." The row only renders for owner,
@@ -4397,14 +4399,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                         balance,
                       });
                     }}
-                    onOpenClubRake={() => setUnionTreasuryModal('rake')}
-                    onOpenClubSpins={(balance) =>
-                      setUnionWalletModal({
-                        key: 'spin_reserve',
-                        label: 'Spins Treasury',
-                        balance,
-                      })
-                    }
+                    onOpenClubRake={() => setStandaloneRakeModal(true)}
+                    onOpenClubSpins={() => setStandaloneSpinsModal(true)}
                   />
                   <p className="lobby-top__house-welcome">
                     {club.tagline?.trim() || `Welcome To ${club.name}`}
@@ -4503,6 +4499,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         isOpen={showPlayerWallet}
         onClose={() => setShowPlayerWallet(false)}
         clubId={resolvedClubId || clubId || ''}
+      />
+      <DiamondWalletModal
+        isOpen={showDiamondWallet}
+        onClose={() => setShowDiamondWallet(false)}
+        onBuyClick={() => navigate('/vip')}
       />
       <BBJInfoModal
         isOpen={showBBJInfo}

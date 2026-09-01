@@ -163,6 +163,14 @@ describe('responsive premium Club Arena', () => {
     expect(PAGE_CSS).toMatch(
       /\.lobby-top__wallet \.dw--lobby-board \.dw__row--wallet-art \.dw__row-shell\s*\{[^}]*object-fit:\s*fill/s
     );
+    expect(PAGE).toContain(
+      "import DiamondWalletModal from '../components/wallet/DiamondWalletModal'"
+    );
+    expect(PAGE).toContain('setShowDiamondWallet(true)');
+    expect(PAGE).toContain('<DiamondWalletModal');
+    expect(PAGE).toContain('onOpenClubRake={() => setStandaloneRakeModal(true)}');
+    expect(PAGE).toContain('onOpenClubSpins={() => setStandaloneSpinsModal(true)}');
+    expect(PAGE).not.toContain('navigate(`/clubs/${clubId}/detail`)');
   });
 
   it('keeps the desktop club card and jackpot on one premium frame footprint', () => {

@@ -19,7 +19,10 @@ name: Estate Integrity
 
 on:
   schedule:
-    - cron: '17 * * * *'
+    # 2026-09-01 (cost audit): hourly -> every 4 hours. Ruleset drift and
+    # guard drift are measured in days, not minutes; six checks a day still
+    # bounds any drift to a working half-day while cutting 18 runs a day.
+    - cron: '17 */4 * * *'
   workflow_dispatch:
 
 permissions:

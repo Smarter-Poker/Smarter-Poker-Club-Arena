@@ -1,334 +1,354 @@
 import { useMemo, useState } from 'react';
+import { ClubIdentityCard } from '../../components/club-buttons/ClubIdentityCard';
+import { ClubLobbyCommandTop } from '../../components/lobby/ClubLobbyCommandTop';
 import {
   ArenaGameCard,
-  listArenaGameCardSkins,
-  resolveArenaGameCardTemplate,
+  NLH_PREMIUM_ASSETS,
   type ArenaGameCardActions,
   type ArenaGameCardData,
-  type ArenaGameFamily,
-  type ArenaGameStatus,
 } from '../../components/lobby/game-cards';
-import type { RuleMedallion } from '../../components/lobby/lobbyEntries';
+import { ClubBBJShell } from '../../components/wallet/ClubWalletArtwork';
+import '../ClubHomePage.css';
+import '../../components/lobby/ClubLobbyCommandTop.css';
 import './ArenaGameCardsShowcasePage.css';
 
-const rule = (key: string, label: string, detail?: string): RuleMedallion => ({
-  key,
-  label,
-  detail,
-  tip: `${label}${detail ? `: ${detail}` : ''}`,
-});
+const MOBILE_REVIEW_ROOT = `${import.meta.env.BASE_URL}`;
 
-const samples: Record<ArenaGameFamily, ArenaGameCardData> = {
-  mtt: {
-    id: 'mtt-1',
-    family: 'mtt',
-    title: 'Sunday $200 Deep Stack (NLH)',
-    subtitle: 'No Limit Hold’em',
-    gameType: 'NLH',
-    buyIn: '200',
-    guarantee: '20,000 GTD',
-    registered: '25/500',
-    startTime: 'Aug 30, 12:00 PM',
-    startsIn: 'Starts In 38:04:38',
-    startingStack: '30,000',
-    currentLevel: '1',
-    currentBlinds: '25/50',
-    status: 'registering',
-    statusLabel: 'Registering',
-    featured: true,
-    registeredByViewer: true,
-    rules: [
-      rule('pko', 'PKO'),
-      rule('rebuy', 'Rebuy'),
-      rule('addon', 'Add-On'),
-      rule('deepstack', 'Deep Stack'),
-      rule('latereg', 'Late Reg', '8 Levels'),
-    ],
-  },
-  nlh: {
-    id: 'nlh-1',
-    family: 'nlh',
-    title: 'NLH 25/50 Insurance Test',
-    subtitle: 'No Limit Hold’em',
-    gameType: 'NLH',
-    stakes: '25/50',
-    players: '3/6',
-    buyIn: '2,000 - 10,000',
-    status: 'running',
-    statusLabel: 'Running',
-    rules: [
-      rule('insurance', 'Insurance'),
-      rule('nit_game', 'VPIP', '25% Min'),
-      rule('straddle', 'Straddle'),
-      rule('time_bank', 'Time Bank'),
-    ],
-  },
-  plo: {
-    id: 'plo-1',
-    family: 'plo',
-    title: 'PLO8 Bomb Pot Double Board',
-    subtitle: 'Omaha Hi-Lo',
-    gameType: 'PLO8',
-    stakes: '1/2',
-    players: '8/8',
-    buyIn: '80 - 400',
-    waitlist: 'Waitlist 2',
-    status: 'waitlist',
-    statusLabel: 'Waitlist 2',
-    rules: [
-      rule('bomb', 'Bomb Pots', 'Every Orbit'),
-      rule('double_board', 'Double Board'),
-      rule('rit', 'Run It Twice'),
-      rule('ante', 'Ante', '2x BB'),
-    ],
-  },
-  spins: {
-    id: 'spin-1',
-    family: 'spins',
-    title: '50 Chip Spin PLO5',
-    subtitle: 'Three-Player Prize Machine',
-    gameType: 'PLO5',
-    buyIn: '50',
-    registered: '2/3',
-    startingStack: '300',
-    maxPayout: 'Win Up To 100x',
-    topPrize: 'Top Prize 5,000',
-    blindLevels: '3 Min',
-    format: 'Turbo',
-    status: 'filling',
-    statusLabel: 'Filling',
-    featured: true,
-    rules: [rule('turbo', 'Turbo'), rule('gtd', '100x Live')],
-  },
-  'heads-up': {
-    id: 'heads-1',
-    family: 'heads-up',
-    title: 'NLH Heads-Up 1',
-    subtitle: 'One Opponent. One Winner.',
-    gameType: 'NLH',
-    buyIn: '1',
-    registered: '1/2',
-    startingStack: '1,000',
-    blindLevels: '3 Min',
-    format: 'Deepstack',
-    status: 'filling',
-    statusLabel: 'Filling',
-    rules: [rule('deepstack', 'Deep Stack'), rule('time_bank', 'Time Bank')],
-  },
+const NLH_REFERENCE_DATA: ArenaGameCardData = {
+  id: 'nlh-reference-calibration',
+  family: 'nlh',
+  title: 'NLH 25/50',
+  subtitle: 'Insurance Test',
+  gameType: 'NLH',
+  stakes: '25/50',
+  players: '3/6',
+  buyIn: '2,000 - 10,000',
+  status: 'running',
+  statusLabel: 'Running',
+  rules: [],
 };
 
-const statusOptions: ArenaGameStatus[] = [
-  'open',
-  'running',
-  'filling',
-  'registering',
-  'late-reg',
-  'full',
-  'waitlist',
-  'closed',
-  'starting',
-  'paused',
-];
-
-const labels: Record<ArenaGameFamily, string> = {
-  mtt: 'MTT / Tournament',
-  nlh: 'NLH Cash',
-  plo: 'PLO Family',
-  spins: 'Spins',
-  'heads-up': 'Heads Up',
+const NLH_SECONDARY_DATA: ArenaGameCardData = {
+  ...NLH_REFERENCE_DATA,
+  id: 'nlh-secondary-calibration',
+  title: 'NLH 10/20',
+  subtitle: 'Deep Stack Cash',
+  stakes: '10/20',
+  players: '5/8',
+  buyIn: '800 - 4,000',
 };
 
-interface CardPreview {
-  data: ArenaGameCardData;
-  skin?: string;
+function LiveNlhCard({
+  actions,
+  className,
+  data = NLH_REFERENCE_DATA,
+}: {
+  actions: ArenaGameCardActions;
+  className?: string;
+  data?: ArenaGameCardData;
+}) {
+  return (
+    <ArenaGameCard
+      data={data}
+      actions={actions}
+      presentation="mobile"
+      skin="spade-nlh-premium-v1"
+      className={className}
+    />
+  );
 }
 
-function previewActions(data: ArenaGameCardData): ArenaGameCardActions {
-  if (data.family === 'mtt') {
-    if (data.registeredByViewer && (data.status === 'running' || data.status === 'late-reg')) {
-      return {
-        primaryLabel: 'Return To Tournament',
-        primaryTone: 'gold',
-        secondaryLabel: 'Details',
-      };
-    }
-    if (data.registeredByViewer) {
-      return { primaryLabel: 'Unregister', primaryTone: 'red', secondaryLabel: 'Details' };
-    }
-    if (data.status === 'late-reg') {
-      return { primaryLabel: 'Late Register', primaryTone: 'gold', secondaryLabel: 'Details' };
-    }
-    if (data.status === 'running' || data.status === 'closed' || data.status === 'full') {
-      return {
-        primaryLabel: data.status === 'full' ? 'Tournament Full' : 'Registration Closed',
-        primaryTone: 'neutral',
-        primaryDisabled: true,
-        secondaryLabel: 'Details',
-      };
-    }
-    return { primaryLabel: 'Register', primaryTone: 'blue', secondaryLabel: 'Details' };
-  }
-  if (data.family === 'spins' || data.family === 'heads-up') return { primaryLabel: 'Sit Down' };
-  return {
-    secondaryLabel: 'View Table',
-    primaryLabel: data.status === 'waitlist' ? 'Join Waitlist' : 'Join Table',
-  };
+function ClubLinkIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M9.5 14.5 14.5 9.5M7.2 16.8l-1 1a3.4 3.4 0 0 0 4.8 4.8l3.2-3.2a3.4 3.4 0 0 0 0-4.8M16.8 7.2l1-1A3.4 3.4 0 0 0 13 1.4L9.8 4.6a3.4 3.4 0 0 0 0 4.8"
+      />
+    </svg>
+  );
+}
+
+function MobileLobbyReview({
+  actions,
+  lastAction,
+}: {
+  actions: ArenaGameCardActions;
+  lastAction: string;
+}) {
+  const [walletsOpen, setWalletsOpen] = useState(false);
+  const gameTypes = ['All', 'MTT', 'NLH', 'PLO', 'Limit', 'Spins', 'Heads Up'];
+  const statuses = ['All', 'Full', 'Empty', 'Open Seats', 'Favorites'];
+
+  return (
+    <main className="agc-mobile-page">
+      <output className="agc-mobile-handler-output" aria-live="polite">
+        {lastAction}
+      </output>
+      <section className="agc-mobile-sessionbar" aria-label="Open Table Tabs">
+        <button type="button" aria-label="Open Table Menu">
+          <span />
+          <span />
+          <span />
+        </button>
+        <span className="agc-mobile-sessionbar__tab">
+          <strong>NLH</strong>
+          <small>25/50</small>
+        </span>
+        <button
+          type="button"
+          className="agc-mobile-sessionbar__add"
+          aria-label="Open Another Table"
+        >
+          +
+        </button>
+      </section>
+
+      <section className="agc-mobile-unified-shell" aria-label="Shark Club Lobby Controls">
+        <section className="club-mobile-welcome" aria-labelledby="mobile-review-club-name">
+          <span>Welcome To The</span>
+          <h1 id="mobile-review-club-name">Shark Club</h1>
+        </section>
+
+        <section className="club-mobile-owner-message" aria-label="Club Owner Message">
+          <button type="button" className="club-mobile-owner-message__copy" disabled>
+            Welcome To The Shark Club, All Fish Of All Shapes And Sizes Are Welcome!
+          </button>
+        </section>
+
+        <header className="lobby-top">
+          <div className="lobby-top__main">
+            <ClubIdentityCard
+              className="lobby-top__identity"
+              clubName="Shark Club"
+              logoUrl={`${MOBILE_REVIEW_ROOT}images/shark-club-logo.jpg`}
+              pokerAlias="Dan Bekavac"
+              clubId="25450"
+              playerId="1"
+              playersPlaying={223}
+              shareIcon={<ClubLinkIcon />}
+            />
+
+            <button type="button" className="lobby-bbj" aria-label="Bad Beat Jackpot: 93,293.98">
+              <ClubBBJShell className="lobby-bbj__shell" />
+              <span className="lobby-bbj__label">Bad Beat Jackpot</span>
+              <strong className="lobby-bbj__amount">93,293.98</strong>
+            </button>
+
+            <div className="lobby-top__wallet">
+              <button
+                type="button"
+                className="lobby-wallets-trigger"
+                aria-expanded={walletsOpen}
+                onClick={() => setWalletsOpen((open) => !open)}
+              >
+                <span className="lobby-wallets-trigger__icon" aria-hidden="true" />
+                <span className="lobby-wallets-trigger__copy">
+                  <strong>My Wallets</strong>
+                  <small>3 Balances</small>
+                </span>
+                <span
+                  className={`lobby-wallets-trigger__chevron ${walletsOpen ? 'is-expanded' : ''}`}
+                  aria-hidden="true"
+                />
+              </button>
+              <div className="agc-mobile-wallet-list" data-expanded={walletsOpen}>
+                {[
+                  ['Player Wallet', '80,000.00'],
+                  ['Diamonds', '493,640'],
+                  ['Club Bank', '1,376,610.47'],
+                ].map(([label, value]) => (
+                  <button type="button" key={label}>
+                    <span>{label}</span>
+                    <strong>{value}</strong>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <section className="club-lobby-machine" aria-label="Shark Club Game Lobby">
+          <ClubLobbyCommandTop
+            welcome={<span />}
+            controls={
+              <section className="lobby-controls" aria-label="Browse Games">
+                <div className="lobby-controls__heading">
+                  <div>
+                    <span className="lobby-controls__eyebrow">Live Club Schedule</span>
+                    <strong className="lobby-controls__title">Find Your Game</strong>
+                  </div>
+                  <span className="lobby-controls__total">
+                    <strong>135</strong> Games
+                  </span>
+                </div>
+                <div className="game-bar">
+                  <div className="game-bar__types" role="tablist" aria-label="Game Type">
+                    {gameTypes.map((type) => (
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={type === 'NLH'}
+                        className={`game-bar__type ${type === 'NLH' ? 'is-active' : ''}`}
+                        key={type}
+                      >
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className="game-bar__filter-btn"
+                    aria-label="Filters And Sort"
+                  >
+                    <span className="agc-mobile-filter-icon" aria-hidden="true" />
+                    <span>Filters</span>
+                  </button>
+                </div>
+                <div className="quickprefs">
+                  <div className="quickprefs__row quickprefs__row--status" aria-label="Game Status">
+                    {statuses.map((status) => (
+                      <button
+                        type="button"
+                        className={`quickprefs__chip ${status === 'All' ? 'is-on' : ''}`}
+                        aria-pressed={status === 'All'}
+                        key={status}
+                      >
+                        {status}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            }
+            campaign={
+              <button type="button" className="club-lobby-command-top__campaign-button">
+                <img
+                  src={`${MOBILE_REVIEW_ROOT}assets/club-buttons/lobby/shark-club-championship-ad-mobile-v4.png`}
+                  alt="Shark Club Championship Series, 250,000 Guaranteed Main Event"
+                />
+              </button>
+            }
+          />
+        </section>
+      </section>
+
+      <div className="agc-mobile-lobby-games">
+        <LiveNlhCard actions={actions} />
+        <LiveNlhCard actions={actions} data={NLH_SECONDARY_DATA} />
+      </div>
+    </main>
+  );
+}
+
+function ReferenceStage({ label }: { label: string }) {
+  return (
+    <figure className="agc-calibration__figure">
+      <figcaption>{label}</figcaption>
+      <div className="agc-calibration__stage">
+        <img src={NLH_PREMIUM_ASSETS.reference} alt="Approved NLH 25/50 Reference" />
+      </div>
+    </figure>
+  );
+}
+
+function LiveStage({
+  actions,
+  label,
+  className,
+}: {
+  actions: ArenaGameCardActions;
+  label: string;
+  className?: string;
+}) {
+  return (
+    <figure className={`agc-calibration__figure${className ? ` ${className}` : ''}`}>
+      <figcaption>{label}</figcaption>
+      <div className="agc-calibration__stage agc-calibration__live">
+        <LiveNlhCard actions={actions} />
+      </div>
+    </figure>
+  );
 }
 
 export default function ArenaGameCardsShowcasePage() {
-  const [status, setStatus] = useState<ArenaGameStatus | 'sample'>('sample');
-  const [longValues, setLongValues] = useState(false);
-  const [presentation, setPresentation] = useState<'mobile' | 'desktop'>('mobile');
-  const [familyFilter, setFamilyFilter] = useState<ArenaGameFamily | 'all'>('all');
-  const [skinMode, setSkinMode] = useState('default');
-  const [viewerState, setViewerState] = useState<'sample' | 'unregistered' | 'registered'>(
-    'sample'
+  const [lastAction, setLastAction] = useState('No interaction yet');
+  const actions = useMemo<ArenaGameCardActions>(
+    () => ({
+      secondaryLabel: 'View Table',
+      primaryLabel: 'Join Table',
+      onSecondary: () => setLastAction('VIEW TABLE handler fired'),
+      onPrimary: () => setLastAction('JOIN TABLE handler fired'),
+    }),
+    []
   );
 
-  const cards = useMemo<CardPreview[]>(() => {
-    const normalized = (Object.keys(samples) as ArenaGameFamily[])
-      .filter((family) => familyFilter === 'all' || family === familyFilter)
-      .map((family) => {
-        const sample = samples[family];
-        return {
-          ...sample,
-          title: longValues
-            ? `${sample.title} - Super High Roller Championship Satellite Final Table`
-            : sample.title,
-          buyIn: longValues ? '100,000 - 1,000,000' : sample.buyIn,
-          guarantee: longValues && family === 'mtt' ? '$1,000,000 GTD' : sample.guarantee,
-          status: status === 'sample' ? sample.status : status,
-          statusLabel: status === 'sample' ? sample.statusLabel : status.replace('-', ' '),
-          registeredByViewer:
-            family !== 'mtt' || viewerState === 'sample'
-              ? sample.registeredByViewer
-              : viewerState === 'registered',
-        };
-      });
-    const previews: CardPreview[] = [];
-    for (const data of normalized) {
-      if (familyFilter === 'all' || skinMode === 'default') previews.push({ data });
-      else if (skinMode === 'compare') {
-        for (const cardSkin of listArenaGameCardSkins(data.family))
-          previews.push({ data, skin: cardSkin.id });
-      } else previews.push({ data, skin: skinMode });
-    }
-    return previews;
-  }, [familyFilter, longValues, skinMode, status, viewerState]);
-
-  const availableSkins = familyFilter === 'all' ? [] : listArenaGameCardSkins(familyFilter);
+  if (new URLSearchParams(window.location.search).get('review') === 'mobile') {
+    return <MobileLobbyReview actions={actions} lastAction={lastAction} />;
+  }
 
   return (
-    <main className="agc-showcase">
-      <header className="agc-showcase__header">
+    <main className="agc-calibration">
+      <header className="agc-calibration__header">
         <div>
-          <p>#ClubButtons / Dynamic Game Factory</p>
-          <h1>Same Factory. Five Different Machines.</h1>
-          <span>Approved Artwork As Hardware. Every Displayed Value Is Live DOM Content.</span>
+          <p>NLH Production Reconstruction · 729 × 945 Master</p>
+          <h1>Approved Artwork, Live Values, Real Hit Targets</h1>
         </div>
-        <div className="agc-showcase__controls">
-          <label>
-            Family
-            <select
-              value={familyFilter}
-              onChange={(event) => {
-                setFamilyFilter(event.target.value as ArenaGameFamily | 'all');
-                setSkinMode('default');
-              }}
-            >
-              <option value="all">All Families</option>
-              {(Object.keys(samples) as ArenaGameFamily[]).map((family) => (
-                <option key={family} value={family}>
-                  {labels[family]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Skin
-            <select
-              value={skinMode}
-              disabled={familyFilter === 'all'}
-              onChange={(event) => setSkinMode(event.target.value)}
-            >
-              <option value="default">Family Default</option>
-              <option value="compare">Compare All Skins</option>
-              {availableSkins.map((cardSkin) => (
-                <option key={cardSkin.id} value={cardSkin.id}>
-                  {cardSkin.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            View
-            <select
-              value={presentation}
-              onChange={(event) => setPresentation(event.target.value as 'mobile' | 'desktop')}
-            >
-              <option value="mobile">Mobile Template</option>
-              <option value="desktop">Desktop Template</option>
-            </select>
-          </label>
-          <label>
-            Status
-            <select
-              value={status}
-              onChange={(event) => setStatus(event.target.value as ArenaGameStatus | 'sample')}
-            >
-              <option value="sample">Family Sample State</option>
-              {statusOptions.map((option) => (
-                <option key={option}>{option}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Player State
-            <select
-              value={viewerState}
-              onChange={(event) => setViewerState(event.target.value as typeof viewerState)}
-            >
-              <option value="sample">Sample Player State</option>
-              <option value="unregistered">Not Registered</option>
-              <option value="registered">Already Registered</option>
-            </select>
-          </label>
-          <label className="agc-showcase__check">
-            <input
-              type="checkbox"
-              checked={longValues}
-              onChange={(event) => setLongValues(event.target.checked)}
-            />
-            Stress-Test Long Values
-          </label>
-        </div>
+        <output aria-live="polite">{lastAction}</output>
       </header>
 
-      <section className={`agc-showcase__grid agc-showcase__grid--${presentation}`}>
-        {cards.map(({ data, skin }) => {
-          const resolved = resolveArenaGameCardTemplate({
-            family: data.family,
-            skin,
-            presentation,
-          });
-          return (
-            <article className="agc-showcase__sample" key={`${data.family}-${resolved.skinId}`}>
-              <div className="agc-showcase__label">
-                <span>{labels[data.family]}</span>
-                <small>
-                  {resolved.skin.name} · {resolved.skin.lifecycle} ·{' '}
-                  {Object.keys(resolved.template.zones).join(' · ')}
-                </small>
-              </div>
-              <ArenaGameCard
-                data={data}
-                skin={resolved.skinId}
-                presentation={presentation}
-                actions={previewActions(data)}
-              />
-            </article>
-          );
-        })}
+      <section className="agc-calibration__section" aria-labelledby="comparison-title">
+        <div className="agc-calibration__section-heading">
+          <span>01</span>
+          <div>
+            <h2 id="comparison-title">430px Side-By-Side Comparison</h2>
+            <p>The Live Card Uses The Exact Sample Values From The Approved Source.</p>
+          </div>
+        </div>
+        <div className="agc-calibration__pair">
+          <ReferenceStage label="Approved Reference" />
+          <LiveStage actions={actions} label="Actual Live 430px Render" />
+        </div>
+      </section>
+
+      <section className="agc-calibration__section" aria-labelledby="asset-pack-title">
+        <div className="agc-calibration__section-heading">
+          <span>02</span>
+          <div>
+            <h2 id="asset-pack-title">Static Premium Asset Set</h2>
+            <p>Chassis, State Art, Type Plaque, And Button Faces Remain Image-Owned.</p>
+          </div>
+        </div>
+        <div className="agc-calibration__assets">
+          <figure className="agc-calibration__asset agc-calibration__asset--chassis">
+            <img src={NLH_PREMIUM_ASSETS.chassis} alt="NLH Premium Static Chassis" />
+            <figcaption>Chassis</figcaption>
+          </figure>
+          <figure className="agc-calibration__asset">
+            <img src={NLH_PREMIUM_ASSETS.statusRunning} alt="Running Status Artwork" />
+            <figcaption>Running Status</figcaption>
+          </figure>
+          <figure className="agc-calibration__asset">
+            <img src={NLH_PREMIUM_ASSETS.liveDot} alt="Live Dot Artwork" />
+            <figcaption>Live Dot</figcaption>
+          </figure>
+          <figure className="agc-calibration__asset">
+            <img src={NLH_PREMIUM_ASSETS.gameTypeNlh} alt="NLH Game-Type Plaque Artwork" />
+            <figcaption>NLH Type Plaque</figcaption>
+          </figure>
+          <figure className="agc-calibration__asset">
+            <img src={NLH_PREMIUM_ASSETS.viewTable} alt="View Table Button Artwork" />
+            <figcaption>View Table</figcaption>
+          </figure>
+          <figure className="agc-calibration__asset">
+            <img src={NLH_PREMIUM_ASSETS.joinTable} alt="Join Table Button Artwork" />
+            <figcaption>Join Table</figcaption>
+          </figure>
+        </div>
       </section>
     </main>
   );

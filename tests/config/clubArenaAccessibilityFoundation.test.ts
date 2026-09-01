@@ -31,6 +31,8 @@ describe('Club Arena accessibility foundation', () => {
     expect(source).not.toContain('Card Colors');
     expect(tableSettingsSource).toContain('role="switch"');
     expect(tableSettingsSource).toContain('aria-labelledby={labelId}');
+    expect(tableSettingsSource).toContain('aria-busy={loading}');
+    expect(tableSettingsSource).toContain('Refreshing Settings In Background...');
     expect(tableSettingsSource).not.toContain('tsp-theme-link');
   });
 

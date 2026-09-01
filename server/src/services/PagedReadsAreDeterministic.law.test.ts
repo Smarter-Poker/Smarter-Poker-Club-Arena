@@ -36,6 +36,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceCall } from '../testHelpers/sourceWindow.js';
 
 const FILES = ['HorseSelfTuner.ts', 'TournamentRecurringService.ts'];
 
@@ -50,7 +51,7 @@ function pagedReads(src: string): Array<{ table: string; block: string }> {
       const table = /\.from\('([^']+)'\)/.exec(block)?.[1] ?? 'unknown';
       // Only reads that page inside a loop matter; a single bounded .range
       // with no offset arithmetic cannot straddle a boundary.
-      if (/range\(\s*(page|offset)/.test(src.slice(idx, idx + 60))) {
+      if (/range\(\s*(page|offset)/.test(sliceCall(src.slice(idx), '.range('))) {
         out.push({ table, block });
       }
     }

@@ -876,7 +876,17 @@ let leagueRunning = false;
  * UPDATE matches and the loser stands down. That is the same
  * one-winner property the INSERT gives, applied to the second attempt.
  */
-const CLAIM_STALE_MS = 60 * 60 * 1000;
+/*
+ * 2026-09-01: was 60 minutes against a 3-hour window. The threshold only ever
+ * bites when the claim wrote NOTHING (see claimNightlyJob: age AND no rows),
+ * and at PAIRS_PER_MATCHUP=4000 a matchup completes in roughly nine minutes -
+ * so a live run proves itself long before this. An hour of grace bought no
+ * safety and cost most of the window: it left only two chances to notice a
+ * corpse. Thirty minutes is still triple the measured first-row time, and a
+ * mistaken takeover is harmless anyway - the (run_date, matchup) upsert makes
+ * a duplicated matchup idempotent.
+ */
+const CLAIM_STALE_MS = 30 * 60 * 1000;
 
 /**
  * Where each nightly job leaves its evidence.
@@ -1020,8 +1030,38 @@ async function maybeRunLeague(): Promise<void> {
     // V13.1: leader/standby means TWO containers boot the full engine path and
     // both reach this line within seconds. Claim the night before working it.
     if (!(await claimNightlyJob('league', today))) {
-      lastLeagueDate = today;
-      console.log(`[HorseLeague] run ${today} claimed by another instance - standing down`);
+      /*
+       * DO NOT LATCH lastLeagueDate HERE (2026-09-01, measured).
+       *
+       * Standing down is not the same as settling the day. This line used to
+       * latch the per-process "settled today" flag, and that single
+       * assignment defeated the whole takeover mechanism below it:
+       *
+       *   04:04  instance A claims 'league' and starts the run.
+       *   04:10  the container is replaced (server/** merges deploy, so this
+       *          is routine). The run dies having written ZERO rows - the
+       *          first matchup had not finished yet.
+       *   04:12  the replacement boots, finds no rows, tries to claim, and is
+       *          refused because the dead claim is only EIGHT MINUTES old and
+       *          therefore judged "still plausibly working". It then latched
+       *          lastLeagueDate = today and every 10-minute tick for the rest
+       *          of the process's life returned immediately - including every
+       *          tick after the claim went stale and became reclaimable.
+       *
+       * The window is three hours precisely so a corpse can be taken over
+       * inside it. Latching on stand-down threw that away and cost the league
+       * 2026-08-29, 2026-08-30 and 2026-09-01 - three days in four with a
+       * claim row and no results, while nothing said so.
+       *
+       * Leaving the flag unset costs one extra claim probe per ten minutes
+       * per standby, and buys a retry every ten minutes until either the run
+       * lands rows (alreadyRanToday short-circuits above) or the stale claim
+       * is taken over.
+       */
+      console.log(
+        `[HorseLeague] run ${today} claimed by another instance - standing down, ` +
+          `will re-check in ${Math.round(LEAGUE_CHECK_MS / 60000)} min in case that claim dies`
+      );
       return;
     }
     lastLeagueDate = today;
@@ -1035,8 +1075,12 @@ async function maybeRunLeague(): Promise<void> {
   // left unmeasured.
   if (inPmWindow && lastLeaguePmDate !== today) {
     if (!(await claimNightlyJob('league_pm', today))) {
-      lastLeaguePmDate = today;
-      console.log(`[HorseLeague] pm run ${today} claimed by another instance - standing down`);
+      // Same reasoning as the AM window above: standing down is not settling
+      // the day, so the flag stays unset and the next tick re-checks.
+      console.log(
+        `[HorseLeague] pm run ${today} claimed by another instance - standing down, ` +
+          `will re-check in ${Math.round(LEAGUE_CHECK_MS / 60000)} min in case that claim dies`
+      );
       return;
     }
     lastLeaguePmDate = today;

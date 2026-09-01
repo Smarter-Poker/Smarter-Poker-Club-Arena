@@ -1410,12 +1410,15 @@ export default function DynamicWallet({
           ? showAllLobbyWallets
             ? clubWalletRows(rowRole, {
                 standalone: !isClubInUnion,
-                spinsActive: spins.active,
+                // A funded/configured reserve is a wallet even while Spins is
+                // temporarily inactive. Hiding it made real club money vanish
+                // from the owner's wallet panel.
+                spinsActive: spins.state !== null,
               })
             : clubLobbyWalletRows(rowRole)
           : clubWalletRows(rowRole, {
               standalone: !isClubInUnion,
-              spinsActive: spins.active,
+              spinsActive: spins.state !== null,
             })
         ).map((k) => CLUB_ROW_BY_KEY[k]);
 

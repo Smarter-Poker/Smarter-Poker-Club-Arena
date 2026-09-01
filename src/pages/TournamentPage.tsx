@@ -1234,7 +1234,7 @@ export default function TournamentPage() {
                         PLO8: 'PLO8',
                         PLO_HILO: 'PLO Hi-Lo',
                         SHORT_DECK: 'Short Deck',
-                        PINEAPPLE: 'Pineapple',
+                        PINEAPPLE: 'Crazy Pineapple',
                         MIXED: 'Mixed',
                         CRAZY_PINEAPPLE: 'Crazy Pine',
                         DOUBLE_BOARD: 'Double Board',

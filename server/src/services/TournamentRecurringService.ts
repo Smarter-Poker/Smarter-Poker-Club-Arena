@@ -2036,6 +2036,31 @@ export class TournamentRecurringService {
         this.houseOwner,
         budget
       );
+
+      /* Dan 2026-09-01 (Deep Stack Society directive): heads-up and SNG
+       * boards for activated club owners, exactly the way the Spin pass
+       * already does it -- the house board first so it is never starved,
+       * then one owner board per activated owner. activatedSpinOwners()
+       * is the platform's one "this owner has switched club games on and
+       * funded them" signal; a standalone club like Deep Stack (11192)
+       * activates via fn_spin_activate and gets its own SNG/heads-up
+       * board on the same tick, same budget, same repair pass.
+       *
+       * maxStake clamps the buy-ins an owner's board offers, mirroring
+       * the Spin rule: never list a price point the owner did not sign
+       * up for. */
+      for (const owner of await this.activatedSpinOwners()) {
+        if (budget.left <= 0) break;
+        const affordable = SNG_CONFIGS.filter((c) => c.buyIn <= owner.maxStake);
+        if (affordable.length === 0) continue;
+        await this.ensureBoardOpen(
+          'sng',
+          affordable,
+          (c, o) => this.createSNG(c as any, o),
+          owner,
+          budget
+        );
+      }
     });
   }
 
@@ -3039,7 +3064,7 @@ export class TournamentRecurringService {
         isHouseBoard && !seatFirstHeldEmpty(tournament.id, seats)
           ? openingHorsesForSeatFirst(seats)
           : 0;
-      const candidates = await this.pickFreeHorses(opening);
+      const candidates = await this.pickFreeHorses(opening, false, tournament.id);
       let seated = 0;
       for (const horse of candidates) {
         const { data: res, error: seatRpcErr } = await supabase.rpc(
@@ -3244,10 +3269,36 @@ export class TournamentRecurringService {
              seat-first chair from a separate booking for the same game. */
       const { data: chunk, error: seatErr } = await supabase
         .from('table_seats')
-        .select('user_id, tables!inner(status, tournament_id)')
+        .select('user_id, table_id, tables!inner(status, tournament_id)')
         .is('left_at', null)
         .neq('tables.status', 'closed')
+        /*
+         * THE SORT KEY MUST BE UNIQUE (2026-09-01).
+         *
+         * This paged 1,000 rows at a time ordered by `user_id` alone, and
+         * user_id is the LEAST unique column here: the whole point of this
+         * read is that a horse holds up to four seats. Postgres does not
+         * promise a stable order within ties, so LIMIT/OFFSET over it can
+         * repeat a row on one page and drop another.
+         *
+         * Both directions land on a documented failure of this very
+         * function. A dropped row UNDERSTATES load, so a horse already at
+         * four tables is handed out, the four-table trigger refuses it with
+         * 23514 and the pass fills nobody - which is the "added NONE" line
+         * the overlay guard keeps logging. A repeated row OVERSTATES load, so
+         * a horse with two tables looks maxed out and is held out of every
+         * board.
+         *
+         * NOT currently firing: measured 2026-09-01 there were 244 live seat
+         * rows and 540 registration rows, both inside a single page, so no
+         * boundary is crossed today. It is fixed now because it is invisible
+         * until the fleet grows past a page and then presents as
+         * intermittent, unexplainable starvation - and because this function
+         * already documents that an incomplete read must be reported as
+         * UNKNOWN rather than passed off as an answer.
+         */
         .order('user_id', { ascending: true })
+        .order('table_id', { ascending: true })
         .range(page * PAGE, page * PAGE + PAGE - 1);
       if (seatErr) {
         reportError(
@@ -3280,7 +3331,11 @@ export class TournamentRecurringService {
         .select('user_id, tournament_id, tournaments!inner(status)')
         .in('status', ['registered', 'playing'])
         .in('tournaments.status', ['ANNOUNCED', 'REGISTERING'])
+        // Same unstable-pagination hazard as the seat read above: a horse is
+        // registered for several events at once, so user_id alone does not
+        // order these rows deterministically.
         .order('user_id', { ascending: true })
+        .order('tournament_id', { ascending: true })
         .range(page * PAGE, page * PAGE + PAGE - 1);
       if (regErr) {
         reportError(
@@ -3321,7 +3376,51 @@ export class TournamentRecurringService {
     return horseAtCapacity(load.get(id) ?? 0);
   }
 
-  private async pickFreeHorses(count: number, allLanes = false): Promise<string[]> {
+  /**
+   * The ids that may play in this tournament's club, or null when the answer
+   * is not knowable right now.
+   *
+   * Hoisted out of registerHorses (#2430) because it was only ever applied
+   * THERE. Every seat-first format -- Spins, Heads-Up, SNGs, the past-start
+   * top-up -- fills through pickFreeHorses instead, which read the whole
+   * platform fleet and never looked at the club. #2430 closed the front door
+   * and left that one open.
+   *
+   * NULL IS NOT AN EMPTY CLUB. A failed or partial membership read returns
+   * null and the caller declines to filter, exactly as registerHorses does:
+   * refusing to seat on an unreadable page would starve every board on the
+   * platform, which is a worse failure than the one being fixed.
+   */
+  private async clubMemberIdsForTournament(tournamentId: string): Promise<Set<string> | null> {
+    const hostClub = await supabase
+      .from('tournaments')
+      .select('club_id')
+      .eq('id', tournamentId)
+      .maybeSingle();
+    const hostClubId = (hostClub.data as { club_id?: string } | null)?.club_id;
+    if (!hostClubId) return null;
+    const memberPage = await fetchAllRows<{ user_id: string }>(
+      (cursor, want) => {
+        let q = supabase
+          .from('club_members')
+          .select('user_id')
+          .eq('club_id', hostClubId)
+          .order('user_id', { ascending: true })
+          .limit(want);
+        if (cursor) q = q.gt('user_id', cursor);
+        return q;
+      },
+      { label: 'TournamentRecurring.clubMembers', maxRows: 100_000, idKey: 'user_id' }
+    );
+    if (!memberPage.complete) return null;
+    return new Set(memberPage.rows.map((r) => r.user_id));
+  }
+
+  private async pickFreeHorses(
+    count: number,
+    allLanes = false,
+    tournamentId?: string
+  ): Promise<string[]> {
     if (count <= 0) return [];
     try {
       // Dan 2026-08-23: a horse is unavailable at FOUR concurrent games, not
@@ -3394,12 +3493,21 @@ export class TournamentRecurringService {
 
       // Busy (4-game cap) exclusion and the lane/activity filters, unchanged
       // in meaning — now applied to the FULL fleet. See selectHorseCandidates.
-      const candidates = selectHorseCandidates(
-        fleetPage.rows.map((h) => h.id),
-        busy,
-        allLanes,
-        new Date().getUTCHours()
-      );
+      /**
+       * A CLUB'S GAMES ARE FILLED BY THAT CLUB'S MEMBERS (Dan 2026-09-01:
+       * "IT CAN NOT, WANDER... THEY ARE LIMITED TO ONLY THE CLUB THEY ARE
+       * APART OF!").
+       *
+       * The fleet read above is every is_horse profile on the platform. A
+       * standalone club's population was seated into another club's Spins and
+       * heads-up games through this path while #2430 held the registration
+       * path shut.
+       */
+      const fleetIds = fleetPage.rows.map((h) => h.id);
+      const clubIds = tournamentId ? await this.clubMemberIdsForTournament(tournamentId) : null;
+      const inClub = clubIds ? fleetIds.filter((id) => clubIds.has(id)) : fleetIds;
+
+      const candidates = selectHorseCandidates(inClub, busy, allLanes, new Date().getUTCHours());
 
       /**
        * ═══════════════════════════════════════════════════════════════════
@@ -3964,7 +4072,8 @@ export class TournamentRecurringService {
          */
         const own = await this.unseatedRegistrantHorses(tournamentId, primaryTableId);
         const poolWanted = Math.max(0, shortfall - own.length);
-        const pool = poolWanted > 0 ? await this.pickFreeHorses(poolWanted) : [];
+        const pool =
+          poolWanted > 0 ? await this.pickFreeHorses(poolWanted, false, tournamentId) : [];
         const candidates = seatFirstFillOrder(shortfall, own, pool);
 
         for (const horse of candidates) {
@@ -4108,10 +4217,17 @@ export class TournamentRecurringService {
         }
         const { data: alreadyIn, error: entrantErr } = await supabase
           .from('tournament_players')
-          .select('user_id')
+          .select('user_id, id')
           .eq('tournament_id', tournamentId)
           .in('status', ['registered', 'playing'])
+          // The primary key as the tiebreaker (2026-09-01). Ordering by
+          // user_id alone assumes one row per player per tournament, which
+          // re-entry formats break - and an unstable order under LIMIT/OFFSET
+          // drops rows. The comment directly below says an incomplete entrant
+          // list lets a double-registration through, which is precisely what a
+          // dropped row causes.
           .order('user_id', { ascending: true })
+          .order('id', { ascending: true })
           .range(page * ENTRANT_PAGE, page * ENTRANT_PAGE + ENTRANT_PAGE - 1);
         // An incomplete entrant list would let a double-registration through,
         // so a failed page declines the pass rather than guessing.
@@ -4190,9 +4306,42 @@ export class TournamentRecurringService {
       const poolAll = poolPage.rows;
       let busyDropped = 0;
       let laneDropped = 0;
+      let clubDropped = 0;
+
+      /**
+       * A CLUB'S TOURNAMENTS DRAW FROM THAT CLUB'S MEMBERS (Dan 2026-09-01:
+       * "THIS CLUB IS NOT SUPPOSED TO BE ATTACHED TO THE UNION, ITS SUPPOSED
+       * TO BE ITS OWN STAND ALONE CLUB").
+       *
+       * This read selected every is_horse profile on the platform and never
+       * looked at the club the tournament belongs to, so ANY horse could be
+       * registered into ANY club's event. Measured when a 416-horse population
+       * was built for a standalone club: within seven hours it had taken 729
+       * seats in another club's tournaments - freerolls and paid events both -
+       * without ever being a member there. A standalone club's population
+       * wandering into a union's schedule is precisely the isolation this
+       * breaks.
+       *
+       * Membership is the rule a human is already held to: you cannot enter a
+       * club's tournament without joining the club. The fleet is now held to
+       * the same one.
+       *
+       * FAILS OPEN on an unreadable membership page, like every other gate in
+       * this file: a partial read is not an empty club, and refusing to
+       * register on a failed read would silently starve every event on the
+       * platform. Verified before shipping that no board is starved by this -
+       * Shark holds 584 horse members, JAQK 580, Midway 323, Deep Stack 416.
+       */
+      const clubMemberIds = await this.clubMemberIdsForTournament(tournamentId);
+
       const eligible = poolAll.filter((h) => {
         if (busyIds.has(h.id)) {
           busyDropped++;
+          return false;
+        }
+        // Not a member of the club hosting this event: not a candidate.
+        if (clubMemberIds && !clubMemberIds.has(h.id)) {
+          clubDropped++;
           return false;
         }
         // Freeroll override (Dan 2026-08-27): free money is not a lane

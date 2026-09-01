@@ -61,10 +61,12 @@ describe('it fails in the safe direction', () => {
     expect(SH).toMatch(/if \[ -z "\$\{SERVED:-\}" \][\s\S]{0,600}?exit 0/);
   });
 
-  it('gives the catch-up schedule a grace window before raising anything', () => {
-    // One missed twenty-minute tick is ordinary. Three in a row is the failure.
+  it('keeps the grace floor when the restart-window deadline is later', () => {
+    // A restart-window deadline may be later than the original catch-up grace,
+    // but it must never make the watchdog less patient than that grace floor.
     expect(SH).toContain('GRACE_MIN="${GRACE_MIN:-45}"');
-    expect(SH).toContain('inside the ${GRACE_MIN}m grace window');
+    expect(SH).toContain('GRACE_DEADLINE=$(( REQ_EPOCH + GRACE_MIN * 60 ))');
+    expect(SH).toContain('[ "$GRACE_DEADLINE" -gt "$DEADLINE" ] && DEADLINE=$GRACE_DEADLINE');
   });
 
   it('does not fail the job, because the alarm is the point', () => {

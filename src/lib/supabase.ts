@@ -11,10 +11,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import {
-  readLocalSession as readLocalSessionShared,
-  AUTH_STORAGE_KEY,
-} from './authUtils';
+import { readLocalSession as readLocalSessionShared, AUTH_STORAGE_KEY } from './authUtils';
 import { reportError } from '../utils/errorReporter';
 
 // Environment validation - follows VITE_ prefix law

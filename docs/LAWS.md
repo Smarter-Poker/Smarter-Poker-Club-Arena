@@ -67,6 +67,7 @@ whichever test the next agent notices first.
 | tests/the-last-wrong-account-path.law.test.ts                   | Account path correctness                                |
 | tests/law-registry.law.test.ts                                  | This registry itself                                    |
 | tests/unit/allInShowsAndBustsClear.law.test.ts                  | All-in showdown and bust display                        |
+| tests/unit/heroCardsAreForThisHand.law.test.ts                  | Hero holdings shown only for this hand at this table    |
 | tests/unit/heroCardsNeverCollideWithBoard.law.test.ts           | Hero card layout geometry                               |
 | tests/unit/noReentryFieldAndPremiumScroll.law.test.ts           | Re-entry field + premium scroll rules                   |
 | tests/unit/snapshotNeverDropsASeat.law.test.ts                  | State snapshots keep every seat                         |

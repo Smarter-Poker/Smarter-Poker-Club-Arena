@@ -133,9 +133,14 @@ const ClubFooterShowcasePage = lazyWithRetry(() => import('./pages/dev/ClubFoote
 const CustomizationStudioShowcasePage = lazyWithRetry(
   () => import('./pages/dev/CustomizationStudioShowcasePage')
 );
+const FinancialDecisionShowcasePage = lazyWithRetry(
+  () => import('./pages/dev/FinancialDecisionShowcasePage')
+);
 const clubButtonsPreviewEnabled = import.meta.env.VITE_CLUB_BUTTONS_PREVIEW === 'true';
 const customizationHarnessEnabled =
   import.meta.env.DEV || import.meta.env.VITE_CUSTOMIZATION_TEST_HARNESS === 'true';
+const financialDecisionHarnessEnabled =
+  import.meta.env.DEV || import.meta.env.VITE_FINANCIAL_DECISION_TEST_HARNESS === 'true';
 const FinancialAlertsPage = lazyWithRetry(() => import('./pages/FinancialAlertsPage'));
 const DisputeManagementPage = lazyWithRetry(() => import('./pages/DisputeManagementPage'));
 const FinancialHealthPage = lazyWithRetry(() => import('./pages/FinancialHealthPage'));
@@ -586,6 +591,20 @@ function FullApp() {
                 element={
                   customizationHarnessEnabled ? (
                     <CustomizationStudioShowcasePage />
+                  ) : (
+                    <Navigate to="/" replace />
+                  )
+                }
+              />
+
+              {/* Real insurance and Rabbit Hunt components, driven by a
+                  deterministic no-money backend. The route is unavailable in
+                  normal production builds. */}
+              <Route
+                path="/dev/financial-decisions"
+                element={
+                  financialDecisionHarnessEnabled ? (
+                    <FinancialDecisionShowcasePage />
                   ) : (
                     <Navigate to="/" replace />
                   )

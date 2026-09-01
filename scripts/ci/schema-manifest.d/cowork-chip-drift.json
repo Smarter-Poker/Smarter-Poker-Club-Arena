@@ -1,5 +1,9 @@
 {
   "_owner": "fix/a-correction-is-not-a-mint",
-  "tables": ["ca_ratchet_baselines"],
-  "functions": ["fn_ca_ratchet_watch"]
+  "tables": ["ca_ratchet_baselines", "ca_tournament_conservation_samples"],
+  "functions": [
+    "fn_ca_ratchet_watch",
+    "fn_ca_reconcile_owned_entity_types",
+    "fn_ca_tournament_conservation_confirm"
+  ]
 }

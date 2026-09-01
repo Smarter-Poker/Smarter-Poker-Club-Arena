@@ -42,10 +42,6 @@
 --
 -- Reopening is untouched. Nothing about this blocks, delays or locks any table,
 -- club, player or game - it governs paperwork, not the floor.
---
--- Probed rolled back: no cause REFUSED, "fixed" REFUSED, a real cause with no
--- prevention REFUSED, cause plus a migration reference ALLOWED, and the
--- automated reconciler's auto_repair_status='repaired' ALLOWED.
 
 CREATE OR REPLACE FUNCTION public.fn_ca_resolution_needs_a_cause()
 RETURNS trigger

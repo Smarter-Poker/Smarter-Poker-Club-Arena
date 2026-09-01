@@ -25,6 +25,8 @@ const read = (p: string) => readFileSync(resolve(root, p), 'utf8');
 const WORKFLOW = '.github/workflows/auto-deploy-hetzner.yml';
 const RECORDER = 'scripts/ci/record-engine-deploy-attempt.mjs';
 const MIGRATION = 'supabase/migrations/20260901123315_deploy_truth_lives_in_the_database.sql';
+const ZERO_ENGINE_FIX =
+  'supabase/migrations/20260902103000_deploy_truth_cannot_mistake_zero_for_healthy.sql';
 
 describe('the deploy pipeline reports what it actually did', () => {
   it('records deploy truth on every run, including the runs that ship nothing', () => {
@@ -53,7 +55,9 @@ describe('the deploy pipeline reports what it actually did', () => {
   it('reports the sha the run was FOR, not whatever the host happens to hold', () => {
     const wf = read(WORKFLOW);
     const step = wf.slice(wf.indexOf('Record deploy truth in the database'));
-    expect(step).toMatch(/TARGET_SHA:\s*\$\{\{\s*github\.sha\s*\}\}/);
+    expect(step).toMatch(
+      /TARGET_SHA:\s*\$\{\{\s*github\.event\.inputs\.ref_sha\s*\|\|\s*github\.sha\s*\}\}/
+    );
   });
 });
 
@@ -101,5 +105,36 @@ describe('the watchdog can actually raise', () => {
       );
       expect(sql).toMatch(revoke);
     }
+  });
+});
+
+describe('zero engine rows are an outage, not an all-clear', () => {
+  const sql = read(ZERO_ENGINE_FIX);
+
+  it('uses the engine leader heartbeat as well as per-table leases', () => {
+    expect(sql).toContain('public.engine_leader');
+    expect(sql).toContain('public.engine_table_leases');
+    expect(sql).toContain('v_engine_signal_live');
+  });
+
+  it('debounces a missing engine across the three-minute restart grace', () => {
+    expect(sql).toContain('ca_engine_deploy_watch_state');
+    expect(sql).toMatch(/v_engine_missing_since\s*<\s*now\(\)\s*-\s*c_heartbeat_dead/);
+    expect(sql).not.toMatch(/IF\s+v_leases\s*>\s*0\s+AND\s+v_last_heartbeat/);
+  });
+
+  it('checks each minute so a three-minute grace is measurable', () => {
+    expect(sql).toContain("'ca-engine-deploy-truth-1m'");
+    expect(sql).toContain("'* * * * *'");
+    expect(sql).toContain('pg_try_advisory_xact_lock');
+  });
+
+  it('keeps the new state private and the watcher service-only', () => {
+    expect(sql).toMatch(
+      /REVOKE ALL ON TABLE public\.ca_engine_deploy_watch_state\s+FROM PUBLIC, anon, authenticated;/
+    );
+    expect(sql).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_ca_engine_deploy_truth_watch\(\)\s+FROM PUBLIC, anon, authenticated;/
+    );
   });
 });

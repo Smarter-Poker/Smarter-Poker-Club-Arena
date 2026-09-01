@@ -122,7 +122,7 @@ BEGIN
       VALUES (inc.id, 'repair_action',
               jsonb_build_object('action', COALESCE(v_res,'reverify'), 'result', 'clean -> resolved'));
       PERFORM public.fn_ca_incident_notify(inc.id, 'notified',
-        'Auto-reconciled: ' || inc.classification, false);
+        '✅ Auto-reconciled: ' || inc.classification, false);
       repaired := repaired + 1;
     ELSIF v_res IS NOT NULL THEN
       UPDATE public.ca_drift_incidents SET auto_repair_status = 'running' WHERE id = inc.id;
@@ -179,6 +179,12 @@ BEGIN
   RETURN NEW;
 END;
 $function$;
+-- The pre-push definer gate caught what redefining this function made
+-- visible: fn_ca_auto_reconcile_tick is SECURITY DEFINER, writes, and was
+-- executable by browser roles. It is a cron tick; no browser has any
+-- business calling it. Revoked (gate remedy 1). GRANT/REVOKE does not
+-- trigger a PostgREST schema reload, so this is free at any hour.
+REVOKE ALL ON FUNCTION public.fn_ca_auto_reconcile_tick() FROM PUBLIC, anon, authenticated;
 
 -- Definer authorization, stated explicitly.
 --
@@ -187,18 +193,9 @@ $function$;
 -- it, and CREATE OR REPLACE does not touch grants - so re-declaring the
 -- function above exposed nothing. The pre-push gate reads the migration text
 -- rather than the live catalogue, and it is right to: a migration that
--- re-declares a SECURITY DEFINER writer should say who may call it, so the
--- next reader does not have to go and ask the database.
+-- re-declares a SECURITY DEFINER writer should say who may call it.
 --
 -- Nobody in a browser should ever call the reconciler. It resolves incidents.
 
 REVOKE ALL ON FUNCTION public.fn_ca_auto_reconcile_tick() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_auto_reconcile_tick() TO service_role;
-
-DO $$
-BEGIN
-  IF has_function_privilege('anon', 'public.fn_ca_auto_reconcile_tick()', 'EXECUTE')
-     OR has_function_privilege('authenticated', 'public.fn_ca_auto_reconcile_tick()', 'EXECUTE') THEN
-    RAISE EXCEPTION 'a browser role can still execute the auto-reconciler';
-  END IF;
-END $$;

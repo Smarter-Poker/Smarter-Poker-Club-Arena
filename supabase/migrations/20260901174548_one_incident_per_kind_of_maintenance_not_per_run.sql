@@ -17,11 +17,6 @@
 -- occurrence count is the number of rows it removed, while a distinct named
 -- action still gets an incident of its own. Nothing is hidden; the same events
 -- are reported, grouped the way a person would group them.
---
--- Everything else about the function is exactly as
--- deleting_the_journal_must_announce_itself left it: the refusal without a
--- reason, the whole-row copy into ca_ledger_mutation_log, and the wrapper that
--- stops the alarm ever aborting the write it reports on.
 
 CREATE OR REPLACE FUNCTION public.fn_ca_journal_append_only()
  RETURNS trigger
@@ -78,7 +73,8 @@ BEGIN
             to_jsonb(OLD), CASE WHEN TG_OP='UPDATE' THEN to_jsonb(NEW) END);
 
     /* One incident per KIND of maintenance per day, not per run. A reason of
-       the form 'thing:<uuid>' groups under 'thing'; occurrences count the rows. */
+       the form 'thing:<uuid>' groups under 'thing'; occurrences count the rows.
+       See one_incident_per_kind_of_maintenance_not_per_run. */
     BEGIN
       v_kind := split_part(v_reason, ':', 1);
       PERFORM public.fn_ca_raise_drift_incident(

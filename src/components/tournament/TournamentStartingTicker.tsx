@@ -20,6 +20,25 @@
  *   those clubs belongs to. A player is never told about an event they cannot
  *   enter.
  *
+ * WHAT THIS BAR IS ALLOWED TO SAY (Dan 2026-09-01, verbatim: "the ticker needs
+ * to be adjusted to only announce when a MTT Is starting, and only if an
+ * overlay alert is in the last level of late registration, and has less then
+ * 50% of the prize pool of the guarantee yet registered")
+ *
+ *   1. AN MTT IS STARTING. A scheduled MTT inside the five-minute window
+ *      below, in a club the player belongs to. Spins and heads-up games have
+ *      never been announced here and still are not.
+ *   2. AN OVERLAY ALERT, and only when BOTH of Dan's conditions hold: the
+ *      event is on the LAST LEVEL of late registration, and the field has paid
+ *      in LESS THAN 50% of the guarantee. Both gates are enforced in
+ *      utils/overlayAnnouncements (isInLastLateRegLevel and
+ *      MAX_REGISTERED_FRACTION), which is also where the reasoning is written
+ *      down.
+ *
+ *   There is no third thing, and adding one is a product decision rather than
+ *   an implementation detail. Two queries feed this component and they are the
+ *   two above.
+ *
  * TIMING
  *   Polls every 30s for events with a start time inside the next 5 minutes and
  *   a pre-start status (ANNOUNCED / REGISTERING), then counts down locally
@@ -380,13 +399,19 @@ export function TournamentStartingTicker() {
         /* Dan 2026-08-26: overlays are announced ONLY for events currently
            running — a future event's shortfall is a field that has not
            arrived, not an overlay. ANNOUNCED/REGISTERING are gone from the
-           status list, and the row now carries blind_structure +
-           level_started_at so overlayFor can place the 75%-of-late-reg
-           gate exactly (it fails closed without them). */
+           status list.
+
+           Dan 2026-09-01 narrowed it again: an overlay is announced only on
+           the LAST LEVEL of late registration and only when the field has paid
+           in under half the guarantee. Both gates live in overlayFor. The gate
+           is now a level comparison rather than a wall-clock fraction of the
+           late-reg window, so `blind_structure` and `level_started_at` are no
+           longer selected — `current_level` and `late_reg_levels` are the whole
+           question, and they were already here. */
         const overlayPromise = supabase
           .from('tournaments')
           .select(
-            'id, name, status, start_time, guaranteed_prize, prize_pool, current_players, buy_in_amount, late_reg_levels, late_reg_mins, started_at, current_level, max_players, blind_structure, level_started_at'
+            'id, name, status, start_time, guaranteed_prize, prize_pool, current_players, buy_in_amount, late_reg_levels, late_reg_mins, started_at, current_level, max_players'
           )
           .in('club_id', clubIds)
           .eq('tournament_type', 'MTT')

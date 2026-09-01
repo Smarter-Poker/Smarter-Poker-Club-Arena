@@ -28,7 +28,11 @@ on:
     # trigger and fires the moment the publisher finishes; this schedule only
     # catches a publish that never STARTED, and thirty minutes is well inside
     # the window where that matters.
-    - cron: '*/30 * * * *'
+    #
+    # 2026-09-01 (cost audit): */30 -> hourly. The workflow_run trigger above
+    # fires after every publish attempt, and the publisher itself now carries
+    # a */30 catch-up cron - three overlapping nets at */30 was two too many.
+    - cron: '19 * * * *'
   workflow_dispatch:
 
 permissions:

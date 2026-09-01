@@ -361,6 +361,8 @@ describe('the page tells the truth when it has nothing to show', () => {
 
   it('opens Filters and Create Game on a slug route the resolver never answered', () => {
     expect(CLUB_HOME).toContain('{filtersOpen && (resolvedClubId || club?.id) && (');
-    expect(CLUB_HOME).toContain('{showCreateTournament && (resolvedClubId || club?.id) && (');
+    expect(CLUB_HOME).toContain(
+      '{showCreateTournament && canCreateClubGames && (resolvedClubId || club?.id) && ('
+    );
   });
 });

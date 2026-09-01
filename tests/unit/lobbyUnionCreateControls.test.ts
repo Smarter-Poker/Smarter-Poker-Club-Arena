@@ -4,18 +4,38 @@ import { describe, expect, it } from 'vitest';
 
 const page = readFileSync(resolve(__dirname, '../../src/pages/ClubHomePage.tsx'), 'utf8');
 const pageCss = readFileSync(resolve(__dirname, '../../src/pages/ClubHomePage.css'), 'utf8');
+const commandCss = readFileSync(
+  resolve(__dirname, '../../src/components/lobby/ClubLobbyCommandTop.css'),
+  'utf8'
+);
 const table = readFileSync(resolve(__dirname, '../../src/components/lobby/LobbyTable.tsx'), 'utf8');
 const css = readFileSync(resolve(__dirname, '../../src/components/lobby/LobbyTable.css'), 'utf8');
+const tableConfig = readFileSync(resolve(__dirname, '../../src/pages/TableConfigPage.tsx'), 'utf8');
 
 describe('club lobby creation controls', () => {
-  it('shows creation to authorized staff in standalone and union clubs', () => {
-    // `noticeEditable` is the shared owner/staff authority predicate. Game
-    // creation is a club capability, so standalone clubs must not be hidden
-    // behind the union-only condition that used to make a new club inert.
-    expect(page).toContain("noticeEditable && gameType !== 'ALL'");
-    expect(page).not.toContain('(isOwner || isClubStaff(userRole)) && club?.is_union === true');
-    expect(page).not.toContain("userRole === 'admin') && club?.is_union");
-    expect(page).not.toContain('(!isInUnion || club?.is_union)');
+  it('shows creation only to authorized standalone clubs', () => {
+    expect(page).toContain('const canCreateClubGames = noticeEditable && !unionManagedClub');
+    expect(page).toContain("canCreateClubGames && gameType !== 'ALL'");
+    expect(page).toContain('showCreateTournament && canCreateClubGames');
+    expect(tableConfig).toContain("access?.reason === 'union_only'");
+    expect(tableConfig).toContain('access?.allowed === true && !unionManagedClub');
+    expect(tableConfig).toContain('Create Games From The Union Console');
+  });
+
+  it('keeps the desktop selector deck sticky and mobile controls inside the approved chassis', () => {
+    const desktop = commandCss.slice(commandCss.lastIndexOf('@media (min-width: 901px)'));
+    expect(desktop).toContain('display: contents');
+    expect(desktop).toContain('position: sticky');
+    expect(desktop).toContain('top: 0');
+
+    const mobile = commandCss.slice(commandCss.indexOf('/* ONE-CHASSIS CONTROL LOCK'));
+    expect(mobile).toContain('@media (max-width: 900px)');
+    expect(mobile).toMatch(
+      /\.club-lobby-command-top\s*\{[^}]*position:\s*relative[^}]*display:\s*grid/s
+    );
+    expect(commandCss).toMatch(
+      /\.club-lobby-machine\s*\{[^}]*width:\s*calc\(100% - 8px\)[^}]*max-width:\s*none/s
+    );
   });
 
   it('keeps cash and tournament creation on their existing flows', () => {

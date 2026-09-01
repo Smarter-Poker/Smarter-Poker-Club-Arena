@@ -36,12 +36,12 @@ hand with a human in it is kept forever, so a human's discard is kept forever.
 
 Proven, not assumed:
 
-| check | result |
-| --- | --- |
-| two players, one hand, player 1 reads | 1 row, their own |
-| the same, player 2 reads | 1 row, their own |
-| `anon` reads | permission denied for table |
-| `authenticated` writes | no grant, refused |
+| check                                 | result                      |
+| ------------------------------------- | --------------------------- |
+| two players, one hand, player 1 reads | 1 row, their own            |
+| the same, player 2 reads              | 1 row, their own            |
+| `anon` reads                          | permission denied for table |
+| `authenticated` writes                | no grant, refused           |
 
 The card reaches that table on a **private event**. `PINEAPPLE_DISCARDED`
 carries the card and is consumed by the engine; the public `player_action`

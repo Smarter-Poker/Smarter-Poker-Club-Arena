@@ -409,4 +409,4 @@ jobs:
             playwright-report/
             test-results/
             e2e-report/
-          retention-days: 7
+          retention-days: 3 # 2026-09-01 cost audit: reports are read same-day or never

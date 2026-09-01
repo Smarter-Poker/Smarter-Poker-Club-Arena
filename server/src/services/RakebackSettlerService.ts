@@ -971,8 +971,30 @@ export class RakebackSettlerService {
   private static readonly PAYOUT_SWEEP_RECENT_LIMIT = 20000;
   /** Days back the periodic pass looks — far enough to reach the May backlog. */
   private static readonly PAYOUT_SWEEP_DEEP_DAYS = 30;
-  /** 35,220 events live in a 30-day window; 40,000 covers it with headroom. */
-  private static readonly PAYOUT_SWEEP_DEEP_LIMIT = 40000;
+  /**
+   * 2026-09-01: RAISED 40,000 -> 150,000, for the same reason the narrow limit
+   * was raised hours earlier, and caught by the same alert.
+   *
+   * The comment this replaces read "35,220 events live in a 30-day window;
+   * 40,000 covers it with headroom", measured 2026-08-27. Measured again today
+   * the window holds **48,093**, so the deep pass was scanning the newest
+   * 40,000 and stopping 8,093 short -- and the deep pass is the one thing that
+   * reaches an event after it ages out of the hourly 7-day pg_cron sweep. A
+   * deep pass that truncates is a safety net with a hole in the far corner,
+   * which is exactly where it is meant to catch.
+   *
+   * Nothing was missed in practice: every event is swept hourly by
+   * `ca-payout-sweep-hourly` (7 days / 40,000 against a 30,878 population)
+   * while it is fresh, so the unreached tail had already been reconciled many
+   * times over before it aged past the deep pass. The hole is in the
+   * guarantee, not yet in the money.
+   *
+   * 150,000 is ~3x the current population, the same multiple the other two
+   * limits were chosen at. The full 2-day window (6,959 events) reconciles in
+   * 5.7s, so a full 30-day pass is on the order of 40s against the RPC's own
+   * 600s statement timeout, twice a day.
+   */
+  private static readonly PAYOUT_SWEEP_DEEP_LIMIT = 150000;
   /** Cycles between deep passes. 30-minute cycle, so ~twice a day. */
   private static readonly PAYOUT_SWEEP_DEEP_EVERY = 24;
 

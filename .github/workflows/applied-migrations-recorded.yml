@@ -29,6 +29,9 @@ on:
 
 permissions:
   contents: read
+  # 2026-09-01 (cost audit): a red run in the Actions tab is silence with
+  # extra steps — nobody reads that tab. Drift now files an issue.
+  issues: write
 
 concurrency:
   group: applied-migrations-recorded
@@ -80,6 +83,28 @@ jobs:
             echo "\`supabase_migrations.schema_migrations.statements\`. Name the file for the"
             echo "version it was applied under so the two can be tied together."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # 2026-09-01: measured drift was 426 of 925 applied migrations with no
+      # file in the repo — the database regressing invisibly. An open issue is
+      # the alarm; it is commented on while the gap persists and closed by
+      # hand when the backfill lands.
+      - name: File an issue while the drift exists
+        if: steps.compare.outputs.status != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          COUNT=$(grep -cE '^[0-9]{14}' /tmp/recorded.log 2>/dev/null || echo "?")
+          EXISTING=$(gh issue list --repo "$REPO" --state open --label migration-drift --limit 1 --json number --jq '.[0].number' || echo "")
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "$REPO" --body "Still drifting (~${COUNT} unrecorded). Latest run: $RUN" || true
+          else
+            gh api "/repos/$REPO/labels" -f name=migration-drift -f color=B60205 >/dev/null 2>&1 || true
+            gh issue create --repo "$REPO" --label migration-drift \
+              --title "Applied migrations with no file in this repo (~${COUNT})" \
+              --body "$(printf 'Production has applied migrations this repo has no file for, so the schema can regress with no source-control record and no guard able to see it.\n\nThe applied SQL for each is in supabase_migrations.schema_migrations.statements — name the backfilled file for the version it was applied under.\n\nRun: %s' "$RUN")" || true
+          fi
 
       - name: Fail the run when migrations are unrecorded
         if: steps.compare.outputs.status != '0'

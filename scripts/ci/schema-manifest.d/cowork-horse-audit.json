@@ -1,0 +1,8 @@
+{
+  "_owner": "agent/cowork-horse-audit (2026-09-01 horse audit sweep). Each function below is applied to production via the Supabase MCP apply_migration and proved by a post-apply assertion inside its own migration file.",
+  "functions": [
+    "fn_audit_nightly_job_health",
+    "fn_audit_river_aggression_ev",
+    "fn_audit_layer_drift"
+  ]
+}

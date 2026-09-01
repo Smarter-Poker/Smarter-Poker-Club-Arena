@@ -12,7 +12,22 @@ import { resolveClubUUID, isUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 import { notifyServerLeave } from './GameServerAPI';
-import { gameManagementService } from './GameManagementService';
+
+/**
+ * The governed command gateway, loaded on demand.
+ *
+ * TableService sits in the eager app shell (App -> TournamentRankingHost ->
+ * TableService), so a static import put the whole operator command gateway —
+ * receipts, contracts, idempotency — into the entry bundle that every player
+ * downloads before first paint. Closing, pausing and resuming a table are
+ * operator actions behind an authorization check; a player who never performs
+ * one never needs the module. Every call site below keeps its exact shape, so
+ * the lifecycle-authority law still reads the same routed calls.
+ */
+async function managementGateway() {
+  const { gameManagementService } = await import('./GameManagementService');
+  return gameManagementService;
+}
 
 // AUDIT M17: the admin money RPCs return a `reason` for ordinary refusals rather
 // than raising, so the UI can tell "you are not an admin here" apart from "the
@@ -248,6 +263,7 @@ class TableService {
    * until every active seat has left through the normal engine-owned path.
    */
   async closeTable(tableId: string): Promise<void> {
+    const gameManagementService = await managementGateway();
     await gameManagementService.close('table', tableId);
   }
 
@@ -604,6 +620,7 @@ class TableService {
   /** Pause through the engine so the displayed status matches actual dealing. */
   async pauseTable(tableId: string): Promise<boolean> {
     try {
+      const gameManagementService = await managementGateway();
       await gameManagementService.pause(tableId);
       return true;
     } catch (error) {
@@ -615,6 +632,7 @@ class TableService {
   /** Resume through the engine so play actually restarts. */
   async resumeTable(tableId: string): Promise<boolean> {
     try {
+      const gameManagementService = await managementGateway();
       await gameManagementService.resume(tableId);
       return true;
     } catch (error) {
@@ -629,6 +647,7 @@ class TableService {
    */
   async deleteTable(tableId: string, _clubId: string, _userId?: string): Promise<boolean> {
     try {
+      const gameManagementService = await managementGateway();
       await gameManagementService.close('table', tableId);
       return true;
     } catch (error) {

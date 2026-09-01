@@ -1,0 +1,42 @@
+{
+  "_owner": "codex/club-table-management-20260901",
+  "tables": [
+    "game_management_events",
+    "game_ticker_settings",
+    "managed_game_command_receipts",
+    "managed_game_contract_versions",
+    "managed_game_schedules"
+  ],
+  "functions": [
+    "fn_cancel_managed_game_schedule",
+    "fn_execute_managed_game_command",
+    "fn_get_club_message_management",
+    "fn_get_game_management_health",
+    "fn_get_game_management_scale_health",
+    "fn_get_game_ticker_settings",
+    "fn_get_game_ticker_settings_for_management",
+    "fn_get_managed_game_command_receipt",
+    "fn_get_managed_game_command_receipts",
+    "fn_get_managed_game_contract_history",
+    "fn_get_managed_game_contracts",
+    "fn_list_managed_games",
+    "fn_manage_club_announcement_versioned",
+    "fn_save_club_identity_messages_versioned",
+    "fn_save_game_ticker_settings_versioned",
+    "fn_schedule_managed_game_close"
+  ],
+  "columns": {
+    "club_announcements": ["management_revision"],
+    "clubs": ["lobby_message", "message_revision"],
+    "game_ticker_settings": [
+      "club_id",
+      "created_at",
+      "created_by",
+      "id",
+      "revision",
+      "settings",
+      "union_id",
+      "updated_at"
+    ]
+  }
+}

@@ -34,6 +34,20 @@ describe('published game contracts are append-only promises', () => {
     expect(migration).toContain('AFTER INSERT OR UPDATE ON public.tournaments');
   });
 
+  it('finishes the mature-estate backfill and closes the snapshot-to-trigger race', () => {
+    expect(migration).toContain("SET LOCAL statement_timeout = '10min'");
+    expect(migration).toContain("'baseline_catchup'");
+    const tableCatchups = migration.match(/WHERE v\.game_kind = 'table' AND v\.game_id = t\.id/g);
+    const tournamentCatchups = migration.match(
+      /WHERE v\.game_kind = 'tournament' AND v\.game_id = t\.id/g
+    );
+    expect(tableCatchups).toHaveLength(1);
+    expect(tournamentCatchups).toHaveLength(1);
+    expect(migration.indexOf("'baseline_catchup'")).toBeGreaterThan(
+      migration.indexOf('trg_tournaments_capture_management_contract')
+    );
+  });
+
   it('locks operator edits at the first registration without excluding horses', () => {
     const guard = migration.slice(
       migration.indexOf('public.fn_guard_registered_tournament_contract'),

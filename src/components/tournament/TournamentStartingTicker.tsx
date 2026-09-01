@@ -71,7 +71,11 @@ import {
   type OverlayAnnouncement,
   type OverlayCandidate,
 } from '../../utils/overlayAnnouncements';
-import { lateRegEndMs, type LobbyTournamentRow } from '../lobby/lobbyEntries';
+/* The value comes from the small extracted module and the row shape is a
+   type-only import, so this root-mounted ticker does not pull the whole
+   lobby view-model into the entry bundle every player downloads. */
+import { lateRegEndMs } from '../lobby/lateRegWindow';
+import type { LobbyTournamentRow } from '../lobby/lobbyEntries';
 import './TournamentStartingTicker.css';
 
 /** How far ahead an event counts as "about to start". */

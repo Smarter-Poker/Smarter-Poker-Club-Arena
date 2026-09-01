@@ -39,6 +39,9 @@ CREATE INDEX IF NOT EXISTS idx_tables_management_club_page
 CREATE INDEX IF NOT EXISTS idx_tables_management_union_page
   ON public.tables(union_id, created_at, id)
   WHERE tournament_id IS NULL AND NOT COALESCE(is_deleted,false) AND union_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_tables_management_scope_club_page
+  ON public.tables(club_id, created_at, id)
+  WHERE tournament_id IS NULL AND NOT COALESCE(is_deleted,false);
 CREATE INDEX IF NOT EXISTS idx_tournaments_management_club_page
   ON public.tournaments(club_id, start_time, id) WHERE union_id IS NULL;
 CREATE INDEX IF NOT EXISTS idx_tournaments_management_union_page
@@ -178,12 +181,27 @@ CREATE OR REPLACE FUNCTION public.fn_list_managed_games(
   p_cursor_kind text DEFAULT NULL, p_cursor_id uuid DEFAULT NULL, p_limit integer DEFAULT 100
 )
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public' AS $function$
-DECLARE v_limit integer:=LEAST(100,GREATEST(1,COALESCE(p_limit,100))); v_items jsonb; v_counts jsonb; v_next jsonb;
+DECLARE v_limit integer:=LEAST(100,GREATEST(1,COALESCE(p_limit,100))); v_items jsonb; v_counts jsonb; v_next jsonb; v_access jsonb; v_scope_clubs uuid[];
 BEGIN
-  IF p_scope NOT IN ('club','union') OR NOT COALESCE(CASE p_scope
-    WHEN 'club' THEN public.fn_can_create_games(p_scope_id,auth.uid())
-    ELSE public.fn_is_union_operator(p_scope_id,auth.uid()) END,false) THEN
+  IF p_scope NOT IN ('club','union') OR p_scope_id IS NULL THEN
     RETURN jsonb_build_object('ok',false,'reason','not_authorized');
+  END IF;
+  IF p_scope='club' THEN
+    v_access:=public.fn_game_creation_access(p_scope_id);
+    IF NOT COALESCE((v_access->>'allowed')::boolean,false)
+       OR v_access->>'union_id' IS NOT NULL THEN
+      RETURN jsonb_build_object('ok',false,'reason','not_authorized');
+    END IF;
+  ELSIF NOT public.fn_is_union_operator(p_scope_id,auth.uid()) THEN
+    RETURN jsonb_build_object('ok',false,'reason','not_authorized');
+  END IF;
+  IF p_scope='union' THEN
+    SELECT COALESCE(array_agg(x.club_id),'{}'::uuid[]) INTO v_scope_clubs
+    FROM (
+      SELECT p_scope_id AS club_id
+      UNION SELECT uc.club_id FROM public.union_clubs uc WHERE uc.union_id=p_scope_id
+      UNION SELECT c.id FROM public.clubs c WHERE c.union_id=p_scope_id
+    ) x;
   END IF;
   WITH all_games AS (
     SELECT t.id,'table'::text kind,t.club_id,t.name,t.status,COALESCE(t.game_variant,'NLH') variant,
@@ -193,7 +211,7 @@ BEGIN
       COALESCE(t.max_buy_in,0) max_buy_in,0::numeric buy_in
     FROM public.tables t WHERE t.tournament_id IS NULL AND NOT COALESCE(t.is_deleted,false)
       AND ((p_scope='club' AND t.club_id=p_scope_id AND t.union_id IS NULL)
-        OR (p_scope='union' AND t.union_id=p_scope_id))
+        OR (p_scope='union' AND (t.union_id=p_scope_id OR t.club_id=ANY(v_scope_clubs))))
     UNION ALL
     SELECT t.id,'tournament',t.club_id,t.name,t.status,COALESCE(t.game_type,t.variant,'MTT'),
       COALESCE(t.current_players,0),COALESCE(t.max_players,0),t.start_time,
@@ -201,7 +219,7 @@ BEGIN
       COALESCE(t.buy_in_amount,0)
     FROM public.tournaments t WHERE
       (p_scope='club' AND t.club_id=p_scope_id AND t.union_id IS NULL)
-      OR (p_scope='union' AND t.union_id=p_scope_id)
+      OR (p_scope='union' AND (t.union_id=p_scope_id OR t.club_id=ANY(v_scope_clubs)))
   ), page AS (
     SELECT g.* FROM all_games g
     WHERE p_cursor IS NULL OR (g.sort_at,g.kind,g.id)>(p_cursor,p_cursor_kind,p_cursor_id)
@@ -219,10 +237,10 @@ BEGIN
     SELECT status,'table'::text kind FROM public.tables t
     WHERE t.tournament_id IS NULL AND NOT COALESCE(t.is_deleted,false)
       AND ((p_scope='club' AND t.club_id=p_scope_id AND t.union_id IS NULL)
-        OR (p_scope='union' AND t.union_id=p_scope_id))
+        OR (p_scope='union' AND (t.union_id=p_scope_id OR t.club_id=ANY(v_scope_clubs))))
     UNION ALL SELECT status,'tournament' FROM public.tournaments t WHERE
       (p_scope='club' AND t.club_id=p_scope_id AND t.union_id IS NULL)
-      OR (p_scope='union' AND t.union_id=p_scope_id)
+      OR (p_scope='union' AND (t.union_id=p_scope_id OR t.club_id=ANY(v_scope_clubs)))
   ) SELECT jsonb_build_object('total',count(*),
     'live',count(*) FILTER (WHERE lower(status) IN ('running','active','waiting','registering','late_reg')),
     'scheduled',count(*) FILTER (WHERE kind='tournament' AND lower(status) NOT IN
@@ -233,10 +251,10 @@ BEGIN
     SELECT t.id,'table'::text kind,t.created_at sort_at FROM public.tables t
     WHERE t.tournament_id IS NULL AND NOT COALESCE(t.is_deleted,false)
       AND ((p_scope='club' AND t.club_id=p_scope_id AND t.union_id IS NULL)
-        OR (p_scope='union' AND t.union_id=p_scope_id))
+        OR (p_scope='union' AND (t.union_id=p_scope_id OR t.club_id=ANY(v_scope_clubs))))
     UNION ALL SELECT t.id,'tournament',COALESCE(t.start_time,t.created_at)
     FROM public.tournaments t WHERE (p_scope='club' AND t.club_id=p_scope_id AND t.union_id IS NULL)
-      OR (p_scope='union' AND t.union_id=p_scope_id)
+      OR (p_scope='union' AND (t.union_id=p_scope_id OR t.club_id=ANY(v_scope_clubs)))
   ), remaining AS (
     SELECT * FROM all_games WHERE p_cursor IS NULL OR (sort_at,kind,id)>(p_cursor,p_cursor_kind,p_cursor_id)
     ORDER BY sort_at,kind,id OFFSET v_limit LIMIT 1
@@ -284,25 +302,46 @@ $function$;
 
 CREATE OR REPLACE FUNCTION public.fn_get_game_management_scale_health(p_scope text,p_scope_id uuid)
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public' AS $function$
+DECLARE v_access jsonb; v_authorized boolean; v_scope_clubs uuid[];
 BEGIN
-  IF NOT COALESCE(CASE p_scope WHEN 'club' THEN public.fn_can_create_games(p_scope_id,auth.uid())
-    WHEN 'union' THEN public.fn_is_union_operator(p_scope_id,auth.uid()) ELSE false END,false) THEN
+  IF p_scope='club' THEN
+    v_access:=public.fn_game_creation_access(p_scope_id);
+    v_authorized:=COALESCE((v_access->>'allowed')::boolean,false)
+      AND v_access->>'union_id' IS NULL;
+  ELSIF p_scope='union' THEN
+    v_authorized:=public.fn_is_union_operator(p_scope_id,auth.uid());
+  ELSE
+    v_authorized:=false;
+  END IF;
+  IF NOT COALESCE(v_authorized,false) THEN
     RETURN jsonb_build_object('ok',false,'reason','not_authorized');
+  END IF;
+  IF p_scope='union' THEN
+    SELECT COALESCE(array_agg(x.club_id),'{}'::uuid[]) INTO v_scope_clubs
+    FROM (
+      SELECT p_scope_id AS club_id
+      UNION SELECT uc.club_id FROM public.union_clubs uc WHERE uc.union_id=p_scope_id
+      UNION SELECT c.id FROM public.clubs c WHERE c.union_id=p_scope_id
+    ) x;
   END IF;
   RETURN jsonb_build_object('ok',true,
     'scheduled_pending',(SELECT count(*) FROM public.managed_game_schedules s
       WHERE s.status IN ('scheduled','executing') AND (
         (s.game_kind='table' AND EXISTS(SELECT 1 FROM public.tables t WHERE t.id=s.game_id AND
-          ((p_scope='club' AND t.club_id=p_scope_id AND t.union_id IS NULL) OR (p_scope='union' AND t.union_id=p_scope_id))))
+          ((p_scope='club' AND t.club_id=p_scope_id AND t.union_id IS NULL)
+            OR (p_scope='union' AND (t.union_id=p_scope_id OR t.club_id=ANY(v_scope_clubs))))))
         OR (s.game_kind='tournament' AND EXISTS(SELECT 1 FROM public.tournaments t WHERE t.id=s.game_id AND
-          ((p_scope='club' AND t.club_id=p_scope_id AND t.union_id IS NULL) OR (p_scope='union' AND t.union_id=p_scope_id))))
+          ((p_scope='club' AND t.club_id=p_scope_id AND t.union_id IS NULL)
+            OR (p_scope='union' AND (t.union_id=p_scope_id OR t.club_id=ANY(v_scope_clubs))))))
       )),
     'scheduled_rejected_24h',(SELECT count(*) FROM public.managed_game_schedules s
       WHERE s.status='rejected' AND s.completed_at>=now()-interval '24 hours' AND (
         (s.game_kind='table' AND EXISTS(SELECT 1 FROM public.tables t WHERE t.id=s.game_id AND
-          ((p_scope='club' AND t.club_id=p_scope_id AND t.union_id IS NULL) OR (p_scope='union' AND t.union_id=p_scope_id))))
+          ((p_scope='club' AND t.club_id=p_scope_id AND t.union_id IS NULL)
+            OR (p_scope='union' AND (t.union_id=p_scope_id OR t.club_id=ANY(v_scope_clubs))))))
         OR (s.game_kind='tournament' AND EXISTS(SELECT 1 FROM public.tournaments t WHERE t.id=s.game_id AND
-          ((p_scope='club' AND t.club_id=p_scope_id AND t.union_id IS NULL) OR (p_scope='union' AND t.union_id=p_scope_id))))
+          ((p_scope='club' AND t.club_id=p_scope_id AND t.union_id IS NULL)
+            OR (p_scope='union' AND (t.union_id=p_scope_id OR t.club_id=ANY(v_scope_clubs))))))
       )),
     'event_rows',(SELECT count(*) FROM public.game_management_events WHERE scope_kind=p_scope AND scope_id=p_scope_id),
     'oldest_event_at',(SELECT min(created_at) FROM public.game_management_events WHERE scope_kind=p_scope AND scope_id=p_scope_id),

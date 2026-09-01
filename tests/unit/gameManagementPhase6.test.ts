@@ -61,8 +61,12 @@ describe('Table Management Phase 6 scheduling authority', () => {
 describe('Table Management Phase 6 scale and retention', () => {
   it('uses an authorized keyset read model capped at 100 rows', () => {
     expect(migration).toContain('public.fn_list_managed_games');
+    expect(migration).toContain('public.fn_game_creation_access(p_scope_id)');
+    expect(migration).toContain("v_access->>'union_id' IS NOT NULL");
     expect(migration).toContain('(g.sort_at,g.kind,g.id)>(p_cursor,p_cursor_kind,p_cursor_id)');
     expect(migration).toContain('LEAST(100,GREATEST(1,COALESCE(p_limit,100)))');
+    expect(migration).toContain('idx_tables_management_scope_club_page');
+    expect(migration).toContain('t.club_id=ANY(v_scope_clubs)');
     expect(service).toContain("rpc('fn_list_managed_games'");
     expect(service).toContain('p_limit: 100');
     expect(page).toContain('Load More · ${games.length} Of ${counts.total}');

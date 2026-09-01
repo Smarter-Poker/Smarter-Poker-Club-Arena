@@ -129,10 +129,41 @@ async function main() {
   const INITIAL_GZ_LIMIT = 320;
   const INITIAL_RAW_LIMIT = 1400;
 
-  /** Ceiling, not a budget. ~29% over today. Trips on duplicated vendors or a
-   *  library arriving twice, not on the product gaining routes. */
-  const TOTAL_GZ_CEILING = 2400;
-  const TOTAL_RAW_CEILING = 8400;
+  /** Ceiling, not a budget. Trips on duplicated vendors or a library arriving
+   *  twice, not on the product gaining routes.
+   *
+   *  RAISED 2026-09-01 (Dan's call): 2400 -> 2600 gz, 8400 -> 9200 raw.
+   *
+   *  Not a waiver. The ceiling was set on 2026-08-21 against a 1862kB gz app
+   *  with ~29% of deliberate headroom for growth. That headroom is now gone:
+   *  on 2026-09-01 EVERY open pull request in the repository measured within
+   *  25kB of the ceiling, and main itself never measures at all because
+   *  Production Build only runs on pull_request. The first feature to arrive
+   *  after the room ran out was failing for the product's whole accumulated
+   *  history rather than for anything it did, which is precisely the failure
+   *  mode the block above says this gate must not have: "a codebase adding
+   *  routes is not a codebase getting worse".
+   *
+   *  Measured before raising it, so the growth is known to be growth:
+   *    main                          2328kB gz / 388 files  (local build)
+   *    same tree + table management  2355kB gz / 393 files  (local build)
+   *    ten heaviest chunks inspected: one copy each of react, sentry,
+   *      supabase, motion and the chart runtime. No duplicated vendor, no
+   *      library arriving twice.
+   *
+   *  The two REAL regressions that measurement exposed were fixed rather than
+   *  absorbed, and both were on the initial load, the gate that actually
+   *  protects users. A root-mounted ticker was importing one function out of
+   *  the 1,482-line lobby view-model, and the eager app shell was statically
+   *  importing the operator command gateway. Entry cost of the feature fell
+   *  from +11kB gz to +3kB gz. INITIAL_GZ_LIMIT is deliberately untouched.
+   *
+   *  ~8% of headroom is a quarter of what the original author allowed. That is
+   *  intentional: enough that ordinary work is not blocked, little enough that
+   *  this comment gets read again soon rather than never.
+   */
+  const TOTAL_GZ_CEILING = 2600;
+  const TOTAL_RAW_CEILING = 9200;
 
   const biggest = all
     .map((f) => ({ name: path.basename(f), ...sizeOf(f) }))

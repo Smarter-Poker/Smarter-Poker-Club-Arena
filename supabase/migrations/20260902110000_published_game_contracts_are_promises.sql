@@ -8,6 +8,13 @@
 
 BEGIN;
 
+-- The baseline snapshot hashes every already-published tournament contract.
+-- Production enforces a short role-level statement timeout, and the bounded
+-- one-time backfill can legitimately exceed it on a mature estate. Keep the
+-- larger budget local to this transaction; runtime calls retain the normal
+-- operational timeout after COMMIT.
+SET LOCAL statement_timeout = '10min';
+
 CREATE TABLE IF NOT EXISTS public.managed_game_contract_versions (
   id bigserial PRIMARY KEY,
   game_kind text NOT NULL CHECK (game_kind IN ('table', 'tournament')),
@@ -390,6 +397,45 @@ DROP TRIGGER IF EXISTS trg_tournaments_capture_management_contract ON public.tou
 CREATE TRIGGER trg_tournaments_capture_management_contract
 AFTER INSERT OR UPDATE ON public.tournaments
 FOR EACH ROW EXECUTE FUNCTION public.fn_capture_managed_game_contract();
+
+-- Games may be created while the historical snapshot above is hashing a large
+-- estate. Once these triggers are installed, take a final catch-up snapshot.
+-- Trigger DDL has serialized with concurrent writers, so rows created before
+-- installation are included here and rows created afterward capture
+-- themselves. This closes the snapshot-to-trigger race without a long table
+-- lock around the full historical backfill.
+INSERT INTO public.managed_game_contract_versions (
+  game_kind, game_id, club_id, union_id, version, contract,
+  contract_hash, change_reason
+)
+SELECT 'table', t.id, t.club_id, t.union_id, 1, d.contract,
+       public.fn_managed_game_contract_hash(d.contract), 'baseline_catchup'
+  FROM public.tables t
+ CROSS JOIN LATERAL (
+   SELECT public.fn_managed_game_contract_document('table', to_jsonb(t)) AS contract
+ ) d
+ WHERE t.tournament_id IS NULL
+   AND NOT EXISTS (
+     SELECT 1 FROM public.managed_game_contract_versions v
+      WHERE v.game_kind = 'table' AND v.game_id = t.id
+   )
+ON CONFLICT (game_kind, game_id, version) DO NOTHING;
+
+INSERT INTO public.managed_game_contract_versions (
+  game_kind, game_id, club_id, union_id, version, contract,
+  contract_hash, change_reason
+)
+SELECT 'tournament', t.id, t.club_id, t.union_id, 1, d.contract,
+       public.fn_managed_game_contract_hash(d.contract), 'baseline_catchup'
+  FROM public.tournaments t
+ CROSS JOIN LATERAL (
+   SELECT public.fn_managed_game_contract_document('tournament', to_jsonb(t)) AS contract
+ ) d
+ WHERE NOT EXISTS (
+   SELECT 1 FROM public.managed_game_contract_versions v
+    WHERE v.game_kind = 'tournament' AND v.game_id = t.id
+ )
+ON CONFLICT (game_kind, game_id, version) DO NOTHING;
 
 CREATE OR REPLACE FUNCTION public.fn_get_managed_game_contracts(
   p_kind text,

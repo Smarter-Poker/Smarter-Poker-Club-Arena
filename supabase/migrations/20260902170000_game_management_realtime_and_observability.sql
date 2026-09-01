@@ -5,6 +5,12 @@
 
 BEGIN;
 
+-- Fail cleanly instead of waiting indefinitely if a busy gameplay transaction
+-- temporarily owns a trigger target. The migration is idempotent and can be
+-- retried without pre-locking multiple live game tables in a conflicting order.
+SET LOCAL lock_timeout = '30s';
+SET LOCAL statement_timeout = '10min';
+
 CREATE TABLE IF NOT EXISTS public.game_management_events (
   sequence bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   event_id uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,
@@ -323,12 +329,17 @@ ON public.unions FOR EACH ROW EXECUTE FUNCTION public.fn_emit_union_owner_access
 
 CREATE OR REPLACE FUNCTION public.fn_get_game_management_health(p_scope text,p_scope_id uuid)
 RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public' AS $function$
-DECLARE v_authorized boolean; v_result jsonb;
+DECLARE v_authorized boolean; v_result jsonb; v_access jsonb;
 BEGIN
-  v_authorized := CASE p_scope
-    WHEN 'club' THEN public.fn_can_create_games(p_scope_id,auth.uid())
-    WHEN 'union' THEN public.fn_is_union_operator(p_scope_id,auth.uid())
-    ELSE false END;
+  IF p_scope='club' THEN
+    v_access:=public.fn_game_creation_access(p_scope_id);
+    v_authorized:=COALESCE((v_access->>'allowed')::boolean,false)
+      AND v_access->>'union_id' IS NULL;
+  ELSIF p_scope='union' THEN
+    v_authorized:=public.fn_is_union_operator(p_scope_id,auth.uid());
+  ELSE
+    v_authorized:=false;
+  END IF;
   IF NOT COALESCE(v_authorized,false) THEN
     RETURN jsonb_build_object('ok',false,'reason','not_authorized');
   END IF;
@@ -351,13 +362,21 @@ BEGIN
           r.game_kind='table' AND EXISTS (
             SELECT 1 FROM public.tables t WHERE t.id=r.game_id AND (
               (p_scope='club' AND t.club_id=p_scope_id AND t.union_id IS NULL)
-              OR (p_scope='union' AND t.union_id=p_scope_id)
+              OR (p_scope='union' AND (t.union_id=p_scope_id OR t.club_id=p_scope_id
+                OR EXISTS (SELECT 1 FROM public.union_clubs uc
+                  WHERE uc.club_id=t.club_id AND uc.union_id=p_scope_id)
+                OR EXISTS (SELECT 1 FROM public.clubs c
+                  WHERE c.id=t.club_id AND c.union_id=p_scope_id)))
             )
           )
           OR r.game_kind='tournament' AND EXISTS (
             SELECT 1 FROM public.tournaments t WHERE t.id=r.game_id AND (
               (p_scope='club' AND t.club_id=p_scope_id AND t.union_id IS NULL)
-              OR (p_scope='union' AND t.union_id=p_scope_id)
+              OR (p_scope='union' AND (t.union_id=p_scope_id OR t.club_id=p_scope_id
+                OR EXISTS (SELECT 1 FROM public.union_clubs uc
+                  WHERE uc.club_id=t.club_id AND uc.union_id=p_scope_id)
+                OR EXISTS (SELECT 1 FROM public.clubs c
+                  WHERE c.id=t.club_id AND c.union_id=p_scope_id)))
             )
           )
         )

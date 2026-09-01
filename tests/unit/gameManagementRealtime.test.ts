@@ -21,6 +21,12 @@ describe('Table Management realtime and observability architecture', () => {
     expect(migration).toMatch(/BEGIN;[\s\S]*COMMIT;/);
   });
 
+  it('fails cleanly instead of pre-locking busy gameplay tables into a deadlock cycle', () => {
+    expect(migration).toContain("SET LOCAL lock_timeout = '30s'");
+    expect(migration).not.toContain('LOCK TABLE public.tables');
+    expect(migration).not.toContain('LOCK TABLE public.tournaments');
+  });
+
   it('authorizes current operators and still delivers targeted revocations', () => {
     expect(migration).toContain('recipient_id = auth.uid()');
     expect(migration).toContain('public.fn_can_create_games(scope_id, auth.uid())');
@@ -46,6 +52,7 @@ describe('Table Management realtime and observability architecture', () => {
     expect(migration).toContain('INSERT INTO public.audit_trail');
     expect(migration).toContain('managed_game_');
     expect(migration).toContain('public.fn_get_game_management_health');
+    expect(migration).toContain("v_access->>'union_id' IS NULL");
     expect(migration).toContain("interval '5 minutes'");
     expect(page).toContain('Integrity Alerts');
     expect(page).toContain('Commands / 24h');

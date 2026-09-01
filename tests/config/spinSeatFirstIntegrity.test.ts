@@ -103,8 +103,21 @@ describe('horses take seats, not just places on a list', () => {
     // The property under test is the PLURAL, count-taking, batched shape -
     // one call answering with many horses - so the first parameter and the
     // string[] return stay pinned and the optional tail is left open.
+    //
+    // 2026-09-01: THE PIN NOW TOLERATES A WRAPPED SIGNATURE, and this is a
+    // formatting fix, not a weakening. #2438 added a third parameter
+    // (tournamentId), which pushed the signature past Prettier's print width,
+    // so Prettier broke it across four lines. The regex required
+    // `pickFreeHorses(count: number` with no gap, matched nothing, and every
+    // pull request in the repo went red on the required Client Unit Tests
+    // check for a source file that had not changed shape at all. The three
+    // things this asserts are unchanged and still asserted: the method is
+    // named pickFreeHorses, its FIRST parameter is `count: number`, and it
+    // returns Promise<string[]>. Only the whitespace between them is now
+    // allowed to be a newline. `[^)]*` still forbids a nested call in the
+    // parameter list, so the tail stays as open as it was and no looser.
     expect(recurring).toMatch(
-      /private async pickFreeHorses\(count: number[,)][^)]*\)?: Promise<string\[\]>/
+      /private async pickFreeHorses\(\s*count: number\s*[,)][^)]*\)\s*:\s*Promise<string\[\]>/
     );
     // The singular form must be gone, or a caller can quietly reintroduce the
     // per-horse shape.

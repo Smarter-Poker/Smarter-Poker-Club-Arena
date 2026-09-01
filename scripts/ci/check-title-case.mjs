@@ -144,6 +144,24 @@ export function titleCaseText(text) {
   return text.replace(/[A-Za-z0-9][A-Za-z0-9'’]*/g, (word, offset, whole) => {
     const before = whole.slice(Math.max(0, offset - 1), offset);
     if (before === '&') return word;
+    // A LETTER IMMEDIATELY AFTER A DIGIT IS A SUFFIX, NOT A WORD.
+    //
+    // "Last 24h", "Win 1.5x Your Buy In", "Won 20bb+ Pots", "GPT-4o" - the
+    // letter belongs to the token the digits started, and capitalising it
+    // renders "24H", "1.5X", "20BB+", "GPT-4O". Worse than cosmetic: once
+    // --fix writes that, the gate then DEMANDS it, so the corruption is what
+    // passes CI from that point on.
+    //
+    // The `/^[0-9]/` line further down was meant to be this guard and can
+    // never fire: the match expression starts at [A-Za-z], so `word` never
+    // begins with a digit. It is left alone because a future edit to that
+    // regex would make it load-bearing again.
+    //
+    // Found 2026-08-31 by running this gate against the apex site, where the
+    // same logic wanted to rewrite "Last 24h" and "GPT-4o Mini" on live admin
+    // pages. The World Hub copy of this gate already carries this guard;
+    // this brings the two back into agreement.
+    if (/\d/.test(before)) return word;
     if (
       whole.slice(Math.max(0, offset - 2), offset) === '{{' &&
       whole.slice(offset + word.length, offset + word.length + 2) === '}}'

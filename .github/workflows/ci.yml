@@ -170,7 +170,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4.3.1
+        uses: actions/checkout@v4
 
       - name: No bare stubs — TODO and FIXME must have issue references
         run: |
@@ -199,14 +199,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4.3.1
+        uses: actions/checkout@v4
         with:
           # The new-migration gate diffs this branch against its base, so it
           # needs more than the single commit a default checkout brings.
           fetch-depth: 0
 
       - name: Setup Node 20
-        uses: actions/setup-node@v4.1.0
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
@@ -773,10 +773,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4.3.1
+        uses: actions/checkout@v4
 
       - name: Setup Node 20
-        uses: actions/setup-node@v4.1.0
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
@@ -833,10 +833,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4.3.1
+        uses: actions/checkout@v4
 
       - name: Setup Node 22
-        uses: actions/setup-node@v4.1.0
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
@@ -968,16 +968,16 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4.3.1
+        uses: actions/checkout@v4
 
       - name: Setup Node 20
-        uses: actions/setup-node@v4.1.0
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
 
       - name: Cache Vite Build
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: node_modules/.vite
           key: vite-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
@@ -1089,12 +1089,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4.3.1
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Setup Node 20
-        uses: actions/setup-node@v4.1.0
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
@@ -1331,10 +1331,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4.3.1
+        uses: actions/checkout@v4
 
       - name: Setup Node 20
-        uses: actions/setup-node@v4.1.0
+        uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
@@ -1448,7 +1448,7 @@ jobs:
 
     steps:
       - name: Checkout (full history for revert)
-        uses: actions/checkout@v4.3.1
+        uses: actions/checkout@v4
         with:
           fetch-depth: 2
           token: ${{ secrets.GITHUB_TOKEN }}

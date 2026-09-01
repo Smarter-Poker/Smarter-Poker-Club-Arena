@@ -222,10 +222,14 @@ describe('the prize pool and the structure it is priced by', () => {
 });
 
 describe('a split pot is never settled silently', () => {
-  it('says so when the bounty pays one of several claimants', () => {
-    // Not fixed -- splitting a PKO head is a rule, not arithmetic, and belongs
-    // to Dan. But it must not be silent: the frequency has to be measurable
-    // before the ruling is made.
-    expect(ELIM).toMatch(/split_pot_bounty_paid_to_one/);
+  it('passes every claimant into the bounty split (ruling 2026-08-31)', () => {
+    // The ruling landed with zero-drift phase 5: a tied pot splits the bounty
+    // BY CLAIM WEIGHT inside fn_collect_bounty (cents, largest remainder,
+    // conserving). The engine must hand the claimant list over, and a split
+    // must still announce itself in the log. The old single-collector audit
+    // marker is gone because the defect it measured is gone.
+    expect(ELIM).toMatch(/p_claimants: claimants\.map/);
+    expect(ELIM).toMatch(/Split-pot knockout/);
+    expect(ELIM).not.toMatch(/split_pot_bounty_paid_to_one/);
   });
 });

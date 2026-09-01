@@ -1,0 +1,3 @@
+-- ca_phase5_atomic_buyin_mints_honestly (prod 20260831195719). Canonical body lives in prod schema_migrations -
+-- replace this marker byte-exact via scripts/dev/export-applied-migrations.sh.
+-- Phase 5 ruling: buyin.js endpoint retired (WH PR); fn_atomic_buyin journals diamond→chip conversion as mint vs issuance_reserve.

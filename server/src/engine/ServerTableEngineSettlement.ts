@@ -1188,7 +1188,16 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // source of truth.
           time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
           time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
-        }))
+        })),
+        // ZERO-DRIFT phase 5: identify the hand so the write is atomic and
+        // idempotent (fn_ca_settle_hand_stacks_absolute). The BBJ re-sync
+        // later in this file deliberately does NOT pass a hand number - it is
+        // a correction pass over the same hand and must not be swallowed by
+        // the idempotency replay.
+        // Read from the snapshot, never the live field (stale-continuation
+        // law): dealHand reassigns handCount while a stalled settlement is
+        // still writing.
+        snap.handNumber
       );
     });
 

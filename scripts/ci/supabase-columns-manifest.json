@@ -932,6 +932,24 @@
       "user_id",
       "created_at"
     ],
+    "ca_alarm_drills": [
+      "id",
+      "run_at",
+      "pass",
+      "failing",
+      "results"
+    ],
+    "ca_browser_definer_allowlist": [
+      "proname",
+      "reason",
+      "recorded_at"
+    ],
+    "ca_cert_accounts": [
+      "user_id",
+      "reason",
+      "tagged_at",
+      "active"
+    ],
     "ca_chip_baseline": [
       "club_id",
       "user_id",
@@ -979,6 +997,19 @@
       "stat_date",
       "updated_at"
     ],
+    "ca_collusion_signals": [
+      "id",
+      "detected_at",
+      "window_days",
+      "user_a",
+      "user_b",
+      "hands_together",
+      "gross_flow",
+      "net_flow",
+      "direction_ratio",
+      "both_cert",
+      "detail"
+    ],
     "ca_ddl_events": [
       "id",
       "occurred_at",
@@ -990,6 +1021,17 @@
       "role_name",
       "application_name",
       "query_snippet"
+    ],
+    "ca_diamond_snapshots": [
+      "id",
+      "taken_at",
+      "profile_diamonds",
+      "wallet_diamonds",
+      "cert_diamonds",
+      "total",
+      "journaled_delta",
+      "delta_vs_prev",
+      "unexplained"
     ],
     "ca_drift_incidents": [
       "id",
@@ -1046,6 +1088,19 @@
       "frozen_total",
       "frozen_at",
       "note"
+    ],
+    "ca_gate_runs": [
+      "id",
+      "run_at",
+      "pass",
+      "window_hours",
+      "failing",
+      "result"
+    ],
+    "ca_guard_defs": [
+      "proname",
+      "def_hash",
+      "updated_at"
     ],
     "ca_guard_inventory": [
       "id",
@@ -1231,6 +1286,14 @@
       "notes",
       "added_at"
     ],
+    "ca_op_claims": [
+      "op_id",
+      "fn_name",
+      "result",
+      "claimed_at",
+      "finalized_at",
+      "claimed_by"
+    ],
     "ca_pending_promo_accruals": [
       "id",
       "club_id",
@@ -1326,7 +1389,9 @@
       "burn_since_prev",
       "delta_vs_prev",
       "unexplained",
-      "tournament_liability"
+      "tournament_liability",
+      "leaderboard_liability",
+      "cert_wallets"
     ],
     "ca_treasury_baseline": [
       "club_id",
@@ -1778,6 +1843,14 @@
       "rollout_percent",
       "updated_at",
       "updated_by"
+    ],
+    "club_financial_quarantine": [
+      "source_table",
+      "source_id",
+      "club_id",
+      "reason",
+      "row_data",
+      "quarantined_at"
     ],
     "club_financial_summary": [
       "id",
@@ -5372,6 +5445,15 @@
       "created_at",
       "updated_at"
     ],
+    "hand_discards": [
+      "id",
+      "table_id",
+      "hand_number",
+      "user_id",
+      "seat_number",
+      "discarded_card",
+      "created_at"
+    ],
     "hand_histories": [
       "id",
       "table_id",
@@ -8363,6 +8445,12 @@
       "window_start",
       "request_count",
       "last_request_at"
+    ],
+    "rate_limits": [
+      "id",
+      "user_id",
+      "action",
+      "created_at"
     ],
     "raw_games": [
       "game_pk",

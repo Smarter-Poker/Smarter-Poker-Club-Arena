@@ -101,15 +101,14 @@ export function TournamentStartingTicker() {
      early return — hook order must stay stable (same rule as atLiveTable
      below). */
   const { settings: tickerSettings } = useTableSettings();
-  /* Dan 2026-08-30, superseding 2026-08-21's "only inside the club": the
-     ticker "SHOULD EVER ONLY APPEAR WHILE LIVE AT A TABLE, NOT ANYWHERE
-     ELSE" — and it must never appear over the hamburger menu. So the route
-     gate is /table/* alone now: club lobbies, the home page and every other
-     surface get nothing. (The drawer is additionally stacked ABOVE this
-     strip in HamburgerMenu.module.css, so even at a table an open menu
-     covers it.) Computed here rather than at the return so hook order stays
-     stable. */
+  /* The live ticker belongs on active tables and inside a club's live lobby.
+     The club route matters: its desktop reference reserves this exact strip
+     below the global header, and suppressing it there left no ticker band at
+     all. Other Club Arena pages remain quiet. The drawer is additionally
+     stacked above this strip in HamburgerMenu.module.css. */
   const atLiveTable = location.pathname.startsWith('/table');
+  const atClubLobby = /^\/clubs\/[^/]+(?:\/lobby)?\/?$/.test(location.pathname);
+  const onTickerRoute = atLiveTable || atClubLobby;
   const [upcoming, setUpcoming] = useState<UpcomingTournament[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [dismissed, setDismissed] = useState<Set<string>>(readDismissed);
@@ -514,7 +513,7 @@ export function TournamentStartingTicker() {
          (Dan 2026-08-28, one shared store). */
   const barVisible =
     (live.length > 0 || liveOverlays.length > 0) &&
-    atLiveTable &&
+    onTickerRoute &&
     tickerSettings.showTicker !== false;
 
   /* ── PUBLISH THE HEIGHT SO THE ACTION TAB CAN START BELOW IT ───────────────

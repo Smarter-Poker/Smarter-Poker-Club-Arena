@@ -1,4 +1,4 @@
--- CASHIER PHASE 5 — privacy-safe production SLOs, not a transaction log.
+-- CASHIER PHASE 5 - privacy-safe production SLOs, not a transaction log.
 -- Money details, recipient identities, notes and free-form error messages are
 -- deliberately excluded. Failures are retained completely; routine successes
 -- are sampled by the client and weighted back to an estimated event count.

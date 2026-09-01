@@ -1522,6 +1522,7 @@
     "fn_ca_declare_ledger",
     "fn_ca_diamond_snapshot",
     "fn_ca_drift_metrics",
+    "fn_ca_duplicate_structure_payout_check",
     "fn_ca_engine_deploy_truth_watch",
     "fn_ca_entry_scope_ok",
     "fn_ca_epoch3_cert_fleet_reset",

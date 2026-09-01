@@ -365,10 +365,26 @@ export class GameServer {
    * itself. This one asks the DATABASE whether the tables it claims should be
    * dealing are actually producing hands.
    */
+  /**
+   * A PLATFORM-WIDE BREAK IS NOT A FLEET COLLAPSE (Dan 2026-09-01).
+   *
+   * The verifier watches for tables that SHOULD be dealing and are not, and
+   * raises a critical `ClubArenaFleetFloorLost` after three consecutive
+   * minutes below three dealing tables. During the maintenance break every
+   * table is legitimately parked, so the filtered list is empty for five
+   * minutes - which is three ticks, which is a critical page. Every hour,
+   * forever, for the one event we deliberately caused.
+   *
+   * Reporting an EMPTY list during the break would be the same lie the stall
+   * reapers avoid by consulting `isPausedByDesign()`; instead the verifier is
+   * told there is nothing to check, which is true.
+   */
   private dealRateVerifier = new DealRateVerifier(() =>
-    this.tableLivenessSnapshot()
-      .filter((t) => t.dealable >= 2 && !t.paused)
-      .map((t) => t.tableId)
+    this.maintenanceBreak.isActive()
+      ? []
+      : this.tableLivenessSnapshot()
+          .filter((t) => t.dealable >= 2 && !t.paused)
+          .map((t) => t.tableId)
   );
   // BUG 008 FIX: settler reads rake_records (durable per-hand log) every 30 min and
   // upserts per-player rakeback_periods rows. Without this the in-memory accumulator

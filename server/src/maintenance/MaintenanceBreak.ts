@@ -29,7 +29,7 @@
  * ─── THE TIMELINE ──────────────────────────────────────────────────────────
  *
  *   :53   announceLastHand()
- *         Every engine gets pauseAfterHand(..., { beforeNextHand: true }).
+ *         Every engine gets pauseForMaintenance(budget).
  *         The hand in front of a player plays to the end. No new hand starts.
  *         Players see "Last Hand - Maintenance Break In 2:00".
  *
@@ -97,12 +97,19 @@
  * seats are horses.
  */
 
-/** The parking primitive, as this module needs it. */
+/**
+ * The parking primitive, as this module needs it.
+ *
+ * `pauseForMaintenance` / `resumeFromMaintenance` rather than the
+ * hand-for-hand pair, because the two are independent authorities and
+ * hand-for-hand's 500ms sync loop would otherwise resume a table mid-break.
+ * See the `maintenancePaused` field on ServerTableEngineBase.
+ */
 export interface PausableTableEngine {
-  pauseAfterHand(maxWaitMs?: number, opts?: { beforeNextHand?: boolean }): void;
-  resumeDealing(): void;
-  isWaitingForHandForHand(): boolean;
-  isPausedByDesign(): boolean;
+  pauseForMaintenance(maxWaitMs: number): void;
+  resumeFromMaintenance(): void;
+  /** Parked between hands, from EITHER loop - dealing or start-up wait. */
+  isParkedBetweenHands(): boolean;
   isRunning(): boolean;
 }
 
@@ -301,7 +308,7 @@ export class MaintenanceBreak {
    */
   adopt(tableId: string, engine: PausableTableEngine): void {
     if (!this.isActive()) return;
-    engine.pauseAfterHand(this.remainingParkBudgetMs(), { beforeNextHand: true });
+    engine.pauseForMaintenance(this.remainingParkBudgetMs());
     this.deps.emit(tableId, this.eventPayload(tableId, this.phase as MaintenanceBreakPhase));
   }
 
@@ -506,7 +513,7 @@ export class MaintenanceBreak {
     const budget = this.remainingParkBudgetMs();
     for (const [tableId, engine] of this.deps.engines()) {
       try {
-        engine.pauseAfterHand(budget, { beforeNextHand: true });
+        engine.pauseForMaintenance(budget);
         n++;
       } catch (err) {
         console.warn(`[MaintenanceBreak] could not park table ${tableId}`, err);
@@ -529,7 +536,7 @@ export class MaintenanceBreak {
           );
           continue;
         }
-        engine.resumeDealing();
+        engine.resumeFromMaintenance();
         n++;
       } catch (err) {
         // Keep going. One table that refuses to resume must not strand the
@@ -543,19 +550,27 @@ export class MaintenanceBreak {
   /**
    * Tables that have not reached the pause gate yet.
    *
-   * `isWaitingForHandForHand()` is the ONLY acceptable test here, and this
-   * originally also accepted `isPausedByDesign()` - which is wrong in the most
-   * dangerous possible direction, and the unit test caught it. `pauseAfterHand`
-   * sets the paused flag the instant it is CALLED, so `isPausedByDesign()` is
-   * true for a table with four players all-in and cards still in the air. The
-   * gate opened at :55 whether or not a single hand had finished, and the
-   * restart went in on top of live play - the exact failure this whole feature
-   * exists to remove.
+   * THIS TEST HAS BEEN WRONG TWICE, IN OPPOSITE DIRECTIONS. Both are worth
+   * recording, because the failure modes are not symmetrical.
    *
-   * `isWaitingForHandForHand()` is true only once the deal loop has actually
-   * reached `awaitPauseGate` and registered its resolver, which by
-   * construction happens between hands. It is the same test
-   * TournamentManagerBase.areAllTablesParked uses, for the same reason.
+   * TOO LOOSE (caught by the unit test): it accepted `isPausedByDesign()`,
+   * which goes true the instant the pause is REQUESTED - so it was true for a
+   * table with four players all-in and cards still in the air. The gate opened
+   * at :55 whether or not a single hand had finished, and the restart would
+   * have gone in on top of live play. That is the exact failure this feature
+   * exists to remove, so it must never be relaxed back.
+   *
+   * TOO TIGHT (caught by an audit before this shipped): the fix used
+   * `isWaitingForHandForHand()`, which is only ever true for a table that
+   * reached the gate from the DEALING loop. A table below `minPlayersToDeal`
+   * sits in the start-up wait loop instead and never gets there - so every
+   * quiet table counted as unparked FOREVER, the gate could never open on any
+   * fleet with one on it, and the deploy would have waited fourteen minutes
+   * and given up, every hour, permanently.
+   *
+   * `isParkedBetweenHands()` is the honest question: has some loop actually
+   * stopped at the gate. It is true from either loop and false while a hand is
+   * live, which is exactly the property both bugs missed.
    *
    * A stopped engine is not counted: it has no hand to protect.
    */
@@ -564,7 +579,7 @@ export class MaintenanceBreak {
     for (const [tableId, engine] of this.deps.engines()) {
       try {
         if (!engine.isRunning()) continue;
-        if (!engine.isWaitingForHandForHand()) out.push(tableId);
+        if (!engine.isParkedBetweenHands()) out.push(tableId);
       } catch {
         // Unreadable engines are not counted against the gate; an engine that
         // throws on inspection is already being handled by the reapers.

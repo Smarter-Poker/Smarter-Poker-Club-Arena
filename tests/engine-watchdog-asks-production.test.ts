@@ -79,11 +79,21 @@ describe('it fails in the safe direction', () => {
      * the prose changes again, MOVE those two rather than deleting the
      * arithmetic underneath them.
      */
-    // The engine restarts on scheduled Chicago windows, not on every merge. The
-    // deadline is the first eligible window plus deploy time, but it can never
-    // be earlier than the legacy grace period.
+    // The engine restarts inside the :55 maintenance break, not on every
+    // merge. The deadline is the first window at or after the commit plus
+    // deploy time, and can never be earlier than the legacy grace period.
+    //
+    // HOURLY SINCE 2026-09-01 (Dan: "every hour on the :55 instead of every 5
+    // hours"). This pinned `RESTART_HOURS="04 10 14 18 22"`. Keeping that pin
+    // would have been worse than useless: the deadline it describes can sit up
+    // to six hours late, so the watchdog would stay quiet through a whole
+    // morning of genuinely stranded engine code — the exact thing it exists to
+    // catch. The window minute is what matters now, and it must agree with
+    // MaintenanceBreak.BREAK_START_MINUTE or the watchdog alarms 55 minutes
+    // early, every hour, about a platform working as designed.
     expect(SH).toContain('GRACE_MIN="${GRACE_MIN:-45}"');
-    expect(SH).toContain('RESTART_HOURS="${RESTART_HOURS:-04 10 14 18 22}"');
+    expect(SH).toContain('BREAK_MINUTE="${BREAK_MINUTE:-55}"');
+    expect(SH).not.toMatch(/^RESTART_HOURS=/m);
     expect(SH).toContain('DEPLOY_MIN="${DEPLOY_MIN:-25}"');
     expect(SH).toContain('WINDOW_EPOCH=$(window_at_or_after "$REQ_EPOCH")');
     expect(SH).toContain('GRACE_DEADLINE=$(( REQ_EPOCH + GRACE_MIN * 60 ))');

@@ -394,8 +394,34 @@ jobs:
           # Poll for up to 14 minutes. We are dispatched at :40/:45/:50 and the
           # flag opens at :55, so the wait is normally 5-15 minutes of sleeping
           # and the budget has to cover the earliest tick.
+          # ── HOW FAR BEHIND IS PRODUCTION? ───────────────────────────────
+          #
+          # Read before the wait, because it decides what to do when the gate
+          # does not open. Dan 2026-09-01: "no work ever gets lost, orphaned
+          # or not published ... EVER". A gate that fails closed protects
+          # hands, but a gate that fails closed FOREVER strands the code it
+          # was protecting them for, and that is the failure this measures.
+          #
+          # The measure is the age of the commit production is actually
+          # serving, not a run counter: it needs no state, it survives a
+          # cancelled run, and it is the number a human would ask for.
+          LIVE=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version") or "")' 2>/dev/null || echo "")
+          BEHIND_MIN=0
+          if [ -n "$LIVE" ] && git cat-file -e "${LIVE}^{commit}" 2>/dev/null; then
+            BEHIND_MIN=$(( ( $(date -u +%s) - $(git show -s --format=%ct "$LIVE") ) / 60 ))
+            echo "production serves $LIVE, committed ${BEHIND_MIN}m ago"
+          else
+            echo "could not date the live commit ($LIVE) - treating as not-stale"
+          fi
+          # Three missed windows. One is ordinary (a straggler table, a dropped
+          # cron); three in a row means the strict gate is never going to open
+          # on this fleet and waiting a fourth hour just loses another hour.
+          STALE_MIN=190
+
           READY=no
           LEGACY=no
+          BREAK_RUNNING=no
           for i in $(seq 1 56); do
             BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
             # Three outcomes, deliberately distinguished: ready / not ready /
@@ -406,12 +432,48 @@ jobs:
               READY)  READY=yes; echo "attempt $i/56: break is running and every table is parked — restarting now"; break ;;
               LEGACY) LEGACY=yes; echo "attempt $i/56: /health has no maintenance block"; break ;;
               ERR)    echo "attempt $i/56: /health unreadable — retrying" ;;
-              *)      echo "attempt $i/56: waiting for the break — $STATE" ;;
+              *)
+                # Remember that a break was actually RUNNING at some point,
+                # even if a straggler table kept the strict gate shut. That is
+                # the difference between "the break works and one table is
+                # slow" and "the break never fired at all", and the escalation
+                # below is only safe in the first case.
+                case "$STATE" in *"phase=counting_down"*) BREAK_RUNNING=yes ;; esac
+                echo "attempt $i/56: waiting for the break — $STATE" ;;
             esac
             sleep 15
           done
 
           if [ "$READY" = "yes" ]; then exit 0; fi
+
+          # ── ESCALATION: A BREAK WITH A STRAGGLER STILL BEATS NEVER ────────
+          #
+          # The strict gate wants EVERY table parked. If one table cannot park
+          # — wedged mid-hand, or a bug in the park path — the gate never
+          # opens and, with a fail-closed deploy, that single table silently
+          # holds every engine fix on the platform hostage indefinitely. That
+          # is precisely the "orphaned work" this whole change exists to end,
+          # arriving through a different door.
+          #
+          # So after three missed windows, proceed IF a break is genuinely
+          # running. This is not the old staleness cap. That one restarted on
+          # a fully live fleet with no warning to anybody. Here:
+          #
+          #   * the break was announced at :53 and players are on the break
+          #     screen with a countdown;
+          #   * every table that could park has parked and has no cards out;
+          #   * the straggler is still protected — SIGTERM runs
+          #     GameServer.drainHands, which parks it at a hand boundary
+          #     inside docker stop -t 45.
+          #
+          # The straggler's hand is therefore no less safe than it was on
+          # EVERY restart before this feature existed, and everyone else is
+          # strictly safer. Refusing anyway would trade a real, shipped fix
+          # for a protection that is already in place.
+          if [ "$BREAK_RUNNING" = "yes" ] && [ "$BEHIND_MIN" -ge "$STALE_MIN" ]; then
+            echo "::warning title=RESTARTING ON A STRAGGLER::A maintenance break is running but at least one table never parked, and production has been ${BEHIND_MIN}m behind main (>= ${STALE_MIN}m, three missed windows). Restarting inside the break rather than stranding every engine fix behind one table. drainHands still parks the straggler at a hand boundary on SIGTERM."
+            exit 0
+          fi
 
           if [ "$LEGACY" = "yes" ]; then
             # BOOTSTRAP ONLY, AND IT REMOVES ITSELF. The engine in production
@@ -433,7 +495,7 @@ jobs:
           # break genuinely stops firing that is an engine bug and it should be
           # loud, not routed around.
           echo "skip=true" >> $GITHUB_OUTPUT
-          echo "::warning title=BREAK NEVER OPENED::The engine never reported maintenance.readyForRestart within 14 minutes, so nothing was deployed. Either the break did not fire (check the engine log for '[MaintenanceBreak]') or a table never parked. The next window retries; dispatch with force=true to restart outside the break."
+          echo "::warning title=BREAK NEVER OPENED::The engine never reported maintenance.readyForRestart within 14 minutes, so nothing was deployed. Production is ${BEHIND_MIN}m behind main. A break was ${BREAK_RUNNING} running during the wait. If it was NOT, the engine's break scheduler is not firing (check the engine log for '[MaintenanceBreak]') - that is an engine bug and no deploy will land until it is fixed. The next window retries automatically, and engine-watchdog.sh raises a tracked issue once a window has passed without the engine catching up."
           exit 0
 
       - name: Pull the exact commit onto the host

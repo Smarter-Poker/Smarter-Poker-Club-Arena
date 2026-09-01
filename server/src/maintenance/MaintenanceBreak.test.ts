@@ -16,10 +16,10 @@ import {
 
 /**
  * Mirrors ServerTableEngineBase's real pause semantics closely enough to be
- * worth trusting: pauseAfterHand only ARMS the pause, and the table is not
- * actually parked until the deal loop reaches the gate (`park()` here).
- * Conflating the two would let a test pass while real tables were still
- * mid-hand.
+ * worth trusting: pauseForMaintenance only ARMS the pause, and the table is
+ * not actually parked until one of its loops reaches the gate (`park()`
+ * here). Conflating the two would let a test pass while real tables were
+ * still mid-hand - which is exactly the bug the restart-gate test caught.
  */
 class FakeEngine {
   paused = false;
@@ -28,30 +28,39 @@ class FakeEngine {
   running = true;
   budgets: number[] = [];
   resumeCount = 0;
+  /** Set when hand-for-hand tries to resume this table. */
+  handForHandResumeAttempts = 0;
 
-  pauseAfterHand(maxWaitMs?: number, opts?: { beforeNextHand?: boolean }): void {
+  pauseForMaintenance(maxWaitMs: number): void {
     this.paused = true;
+    this.holdBeforeNextHand = true;
     if (typeof maxWaitMs === 'number') this.budgets.push(maxWaitMs);
-    if (opts?.beforeNextHand) this.holdBeforeNextHand = true;
   }
-  resumeDealing(): void {
+  resumeFromMaintenance(): void {
     this.paused = false;
     this.holdBeforeNextHand = false;
     this.atGate = false;
     this.resumeCount++;
   }
-  isWaitingForHandForHand(): boolean {
-    return this.paused && this.atGate;
-  }
-  isPausedByDesign(): boolean {
-    return this.paused;
+  isParkedBetweenHands(): boolean {
+    return this.atGate;
   }
   isRunning(): boolean {
     return this.running;
   }
-  /** The deal loop reaching awaitPauseGate between hands. */
+  /** A loop reaching awaitPauseGate between hands. */
   park(): void {
     this.atGate = true;
+  }
+  /**
+   * What hand-for-hand's 500ms sync loop does. On the real engine
+   * resumeDealing() early-returns while maintenancePaused, which is the whole
+   * point of the two flags; the fake mirrors that.
+   */
+  handForHandResume(): void {
+    this.handForHandResumeAttempts++;
+    if (this.paused) return; // maintenance still holds it
+    this.atGate = false;
   }
 }
 
@@ -196,6 +205,32 @@ describe('the restart gate', () => {
     expect(mb.readyForRestart()).toBe(true);
   });
 
+  it('opens for a QUIET table, which parks in the start-up loop not the deal loop', async () => {
+    /**
+     * FOUND BY AUDIT BEFORE THIS SHIPPED, and it would have made the whole
+     * feature inert. The gate first used `isWaitingForHandForHand()`, which is
+     * only ever true for a table that reached the gate from the DEALING loop.
+     * A table below minPlayersToDeal sits in the start-up wait loop instead,
+     * and GameServer deliberately starts engines for exactly those tables.
+     *
+     * So every quiet table counted as unparked forever, the gate could never
+     * open, and the deploy would have waited fourteen minutes and given up -
+     * every hour, permanently, with nothing ever shipping except force=true,
+     * which restarts on live tables. The symptom would have been the straggler
+     * warning naming the same table ids every hour.
+     *
+     * `isParkedBetweenHands()` accepts a park from either loop, so this test
+     * is the difference between the feature working and doing nothing.
+     */
+    const { mb, engines } = build(2);
+    await mb.announceLastHand();
+    await mb.beginCountdown();
+
+    // Neither table ever sees a hand; they park from the wait loop.
+    parkAll(engines);
+    expect(mb.readyForRestart()).toBe(true);
+  });
+
   it('shuts again once too little break remains to finish a restart inside it', async () => {
     const { mb, engines } = build(1);
     await mb.announceLastHand();
@@ -232,6 +267,39 @@ describe('the end of the break', () => {
     expect(mb.isActive()).toBe(false);
   });
 
+  it('hand-for-hand cannot deal a hand inside the break', async () => {
+    /**
+     * FOUND BY AUDIT. Hand-for-hand runs a 500ms sync loop that says "every
+     * table is waiting, so the round is over, resume them all". During a break
+     * every table IS waiting - so on a bubble tournament at :55 that loop
+     * resumed the fleet and dealt a hand inside the break.
+     *
+     * The second-order damage was worse than the hand: its resume cleared the
+     * break's pause budget, and the 500ms re-park was a bare pauseAfterHand()
+     * with no budget, so the safety timeout fell back to 120s and the table
+     * SELF-RESUMED two minutes into a five minute break. That is the
+     * 2026-08-19 bug PARK_BUDGET_MS exists to prevent, through another door.
+     *
+     * Two independent flags is the fix: whoever paused a table is the only one
+     * who may resume it.
+     */
+    const { mb, engines } = build(3);
+    await mb.announceLastHand();
+    parkAll(engines);
+    await mb.beginCountdown();
+
+    for (const e of engines.values()) e.handForHandResume();
+
+    for (const [id, e] of engines) {
+      expect(e.handForHandResumeAttempts, `${id} was not exercised`).toBe(1);
+      expect(e.paused, `${id} was un-parked by hand-for-hand`).toBe(true);
+      expect(e.isParkedBetweenHands(), `${id} left the gate mid-break`).toBe(true);
+      expect(e.resumeCount, `${id} counted a real resume`).toBe(0);
+    }
+    // And the break is still the authority the restart gate trusts.
+    expect(mb.readyForRestart()).toBe(true);
+  });
+
   it('leaves a table another authority is still holding', async () => {
     // A tournament add-on break runs up to ten minutes. One starting near :55
     // outlives this five-minute break, and resuming its tables here would deal
@@ -262,7 +330,7 @@ describe('the end of the break', () => {
     // timeout eventually deals again, but a row nobody deletes keeps every
     // browser on the platform showing a break that ended.
     const { mb, engines, store } = build(2);
-    [...engines.values()][0].resumeDealing = () => {
+    [...engines.values()][0].resumeFromMaintenance = () => {
       throw new Error('engine is wedged');
     };
     await mb.announceLastHand();

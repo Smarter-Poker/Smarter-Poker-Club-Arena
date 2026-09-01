@@ -674,7 +674,12 @@ import { generateAvatarSvg } from '../utils/avatarGenerator';
 // 2026-08-19: pure card + seat helpers now live in their own modules. They used
 // to sit inline in this file; the seat rings in particular carry measured rail
 // positions that must not be casually rewritten. See those files for why.
-import { ENGINE_SUIT_MAP, sortCardsByRank, getGameVariantLabel } from '../lib/tableCardDisplay';
+import {
+  ENGINE_SUIT_MAP,
+  sortCardsByRank,
+  getGameVariantLabel,
+  heroCardsCollideWithBoard,
+} from '../lib/tableCardDisplay';
 import {
   seatLayoutFor,
   createEmptySeats,
@@ -2127,7 +2132,28 @@ export default function TablePage({
             prevHero &&
             prevHero.isHero &&
             prevHero.holeCards &&
-            prevHero.holeCards.length > 0
+            prevHero.holeCards.length > 0 &&
+            /* ═══ A CARD CANNOT BE IN TWO PLACES ════════════════════════════
+               Dan 2026-08-31: hero holding J9h with Kd 9h Qd on the flop.
+               `cardHoldSameHand` is fail-OPEN by design — an unknown hand
+               number reads as "cannot tell", which the `<= 0` arms treat as
+               "keep the cards", because the hero seeing NOTHING is the worse
+               bug. The cost of failing open is exactly this: a frame that
+               cannot identify its hand carries the PREVIOUS hand's cards into
+               the new one, and the new board then contradicts them.
+
+               So the hold keeps its benefit of the doubt everywhere except
+               where the board has already disproved it. A held hand that
+               collides with the incoming board is expired, full stop — drop
+               it, and the recovery poll (which runs precisely while the hero
+               is blind) re-reads the real one. Showing a hand the player does
+               not hold is worse than briefly showing none: they act on it. */
+            !heroCardsCollideWithBoard(
+              prevHero.holeCards,
+              mapped.communityCards,
+              mapped.communityCards2,
+              mapped.communityCards3
+            )
           ) {
             return { ...sp, holeCards: prevHero.holeCards };
           }
@@ -8194,6 +8220,26 @@ export default function TablePage({
     filter: tableId ? `table_id=eq.${tableId}` : null,
     event: '*',
     onPayload: handleHoleCardPayload,
+    /* ═══ A DEAD CHANNEL MUST NOT BE A SILENT ONE (2026-08-31) ════════════
+       This subscription had no error handler, so when `table_hole_cards` was
+       dropped from the supabase_realtime publication at 19:02 UTC the channel
+       failed with nothing said - no toast, no telemetry, no fallback - and
+       every player at every table quietly lost their hole-card push for four
+       hours. `useMasterBusChannel` has surfaced CHANNEL_ERROR / TIMED_OUT /
+       CLOSED this whole time; nobody was listening.
+
+       Listening now, and answering: force the recovery fetch immediately
+       rather than waiting out the poll interval. Had this been wired, the
+       incident would have self-reported on the first table load and
+       self-recovered on the first hand. */
+    onSubscriptionError: (status, err) => {
+      reportError(
+        err ?? new Error(`hole-card channel ${status}`),
+        'TablePage.hole_card_channel_failed',
+        { tableId, status }
+      );
+      heroCardFetchRef.current?.();
+    },
     enabled: !!tableId && !!userId,
   });
 
@@ -8236,6 +8282,43 @@ export default function TablePage({
         heroHandRef.current > 0 &&
         typeof (data as any).hand_number === 'number' &&
         (data as any).hand_number !== heroHandRef.current
+      ) {
+        return;
+      }
+
+      /* ═══ AND THE SAME ROW REJECTED WHEN THE BOARD DISPROVES IT ══════════
+         The guard above cannot fire when `heroHandRef.current` is 0, which is
+         the state of every client that has not yet seen a HAND_STARTED — a
+         mid-hand join, a reload, a dropped event. In that window the newest
+         row for this table is applied unconditionally, and if the engine has
+         not written THIS hand's row yet, the newest row is the PREVIOUS
+         hand's. That is the second way Dan's J9h landed on a 9h board.
+
+         `insert_hole_cards` deletes rows from earlier hands, so this row is
+         normally current; when it is not, the board says so. Rejecting rather
+         than applying costs one 5s poll cycle, and the poll keeps running for
+         exactly as long as the hero is blind. */
+      if (
+        data &&
+        (data as { cards?: unknown }).cards &&
+        (() => {
+          let probe: unknown = (data as { cards?: unknown }).cards;
+          if (typeof probe === 'string') {
+            try {
+              probe = JSON.parse(probe);
+            } catch {
+              return false;
+            }
+          }
+          if (!Array.isArray(probe)) return false;
+          const board = tableStateRef.current;
+          return heroCardsCollideWithBoard(
+            probe as Array<{ rank?: unknown; suit?: unknown }>,
+            board.communityCards,
+            board.communityCards2,
+            board.communityCards3
+          );
+        })()
       ) {
         return;
       }
@@ -8294,6 +8377,7 @@ export default function TablePage({
         if (heroCardsRecoveredRef.current) {
           if (retryTimer) clearTimeout(retryTimer);
           if (pollTimer) clearInterval(pollTimer);
+          clearEarlyTimers();
         }
       }
     };
@@ -8305,11 +8389,32 @@ export default function TablePage({
     // bounded cycle, so a player who gets dealt in is always covered.
     const MAX_POLL_ATTEMPTS = 24;
     let pollAttempts = 0;
+    /* Cleared alongside retryTimer everywhere it is cleared, so a re-arm or an
+       unmount cannot leave a fetch firing against a dead closure. */
+    let earlyTimers: ReturnType<typeof setTimeout>[] = [];
+    const clearEarlyTimers = () => {
+      earlyTimers.forEach(clearTimeout);
+      earlyTimers = [];
+    };
     const startPolling = () => {
       if (retryTimer) clearTimeout(retryTimer);
       if (pollTimer) clearInterval(pollTimer);
+      clearEarlyTimers();
       pollAttempts = 0;
       fetchExistingHand();
+      /* ═══ THE FIRST SECOND IS THE ONE THAT MATTERS (2026-08-31) ══════════
+         The action clock is 15s. The old ladder was 0s, 2s, then every 5s -
+         and the 0s attempt is always too early (the engine writes the row
+         after HAND_STARTED, behind the deal animation's button beat), so a
+         row that lands at t=2.1s was not read until t=5s. A third of the
+         clock, spent staring at an empty seat.
+
+         These extra early attempts cost two reads on a hand where the push
+         works, and they are the difference between a blink and a blind
+         decision on one where it does not. `heroCardsRecoveredRef` short-
+         circuits the work as soon as the cards are actually on screen. */
+      earlyTimers.push(setTimeout(fetchExistingHand, 600));
+      earlyTimers.push(setTimeout(fetchExistingHand, 1200));
       retryTimer = setTimeout(fetchExistingHand, 2000);
       pollTimer = setInterval(() => {
         /* ── THE WATCH DOES NOT STAND DOWN WHILE THE HERO IS BLIND ──────────
@@ -8335,7 +8440,19 @@ export default function TablePage({
           !(heroNow.holeCards && heroNow.holeCards.length > 0);
         if (heroIsBlind) heroCardsRecoveredRef.current = false;
 
-        if ((heroCardsRecoveredRef.current && !heroIsBlind) || ++pollAttempts > MAX_POLL_ATTEMPTS) {
+        /* Dan 2026-08-31: "a user can never not get their cards dealt and
+           exposed to them visually. That can never EVER EVER happen."
+
+           The attempt ceiling exists so an OBSERVER or a sat-out player does
+           not poll forever - `heroIsBlind` is already false for both of them,
+           and for anyone holding cards. So the ceiling has no business ending
+           the watch on a seated player in a live hand who is holding NOTHING:
+           that is the one case the poll exists for, and retiring at ~120s left
+           them blind for the rest of the session with nothing left looking. */
+        if (
+          (heroCardsRecoveredRef.current && !heroIsBlind) ||
+          (++pollAttempts > MAX_POLL_ATTEMPTS && !heroIsBlind)
+        ) {
           if (pollTimer) clearInterval(pollTimer);
           pollTimer = null;
           return;
@@ -8357,6 +8474,7 @@ export default function TablePage({
       heroCardFetchRef.current = null;
       if (retryTimer) clearTimeout(retryTimer);
       if (pollTimer) clearInterval(pollTimer);
+      clearEarlyTimers();
     };
   }, [tableId, userId]);
 

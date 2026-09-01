@@ -2,6 +2,40 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-09-01 - A HEALER THAT COULD NOT FINISH
+
+`rake-repair-unbanked-hourly` calls `fn_rake_repair_unbanked(48, 200)`, which
+looks for cash hands that banked rake but never got a `rake_records` row.
+
+**It finds nothing, and it was timing out looking.** The candidate query
+returned ZERO rows every time it was measured, and still cost 56s, 64s, 80s,
+95s, 116s on consecutive runs - climbing with the table - dying at the 120s
+statement timeout on **4 of the last 24 runs**, most recently 23:52.
+
+A healer that cannot finish is worse than no healer. It burns two minutes of
+database an hour, reports failure into `cron.job_run_details`, and would not
+have banked the rake if there had been any to bank.
+
+**The cost was the scan, and the index that would have bounded it was pointed
+the wrong way.** `hand_history` carries 426,168 rows in a 48h window; only
+40,472 are cash hands with rake. The only usable index was
+`idx_hand_history_created` (bare `created_at DESC`), so every run walked all
+426k rows. The one partial index that mentions `tournament_id` -
+`idx_hand_history_tournament_created` - is `WHERE tournament_id IS NOT NULL`,
+exactly the opposite population to the one this job needs.
+
+`idx_hand_history_cash_rake_unbanked` matches the job's predicate. The three
+`NOT EXISTS` probes were already indexed.
+
+**Measured on production, same call, before and after: 116,000ms -> 9,768ms.**
+A 12x improvement, and comfortably inside the timeout it had been failing.
+
+Built `CONCURRENTLY` - `hand_history` takes roughly 600 hands a minute during
+play - with an online `DROP INDEX CONCURRENTLY` rollback recorded in the
+migration.
+
+---
+
 ## Cowork session 2026-09-01 - THE CHIP GUARD LEARNS TO SAY WHICH KIND OF WRONG (Spins audit, phase 7)
 
 `fn_spin_chip_conservation_check` could tell us a game's chips did not add up.

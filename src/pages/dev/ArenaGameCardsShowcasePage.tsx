@@ -129,7 +129,6 @@ function MobileLobbyReview({
               pokerAlias="Dan Bekavac"
               clubId="25450"
               playerId="1"
-              level={29}
               playersPlaying={223}
               shareIcon={<ClubLinkIcon />}
             />

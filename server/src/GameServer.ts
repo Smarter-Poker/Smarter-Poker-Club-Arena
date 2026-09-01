@@ -291,6 +291,8 @@ export class GameServer {
   private lastHuBackpayAt = 0;
   /** Last fn_detect_results_without_a_hand pass (2026-09-01 phase 7). */
   private lastNoHandResultCheckAt = 0;
+  /** Last fn_payout_guarantee_check pass (2026-09-01 every-earner-is-paid). */
+  private lastPayoutGuaranteeCheckAt = 0;
   /** Last fn_charge_place_overpays pass (2026-08-28 duplicate-place overpay). */
   private lastPlaceOverpayChargeAt = 0;
   /** Last fn_repair_tournament_rake_attribution pass (2026-08-28). */
@@ -3354,6 +3356,54 @@ export class GameServer {
             }
           } catch (nhEx) {
             reportError(nhEx, 'GameServer.no_hand_result_check_threw');
+          }
+        }
+
+        // ── EVERY EARNER IS PAID (2026-09-01) ──
+        // Dan, verbatim: "IT IS AN ABSOLUTE MUST THAT PLAYERS ALWAYS 100% GET
+        // PAID OUT OF EVERY SINGLE MTT, SPIN OR HEADS UP THEY PLAY (IF THEY
+        // EARNED A PAYOUT)." This is the check that makes that verifiable, and
+        // it is the only one on the platform that asks the question against
+        // the WALLET rather than against tournament_payouts.
+        //
+        // It catches three things nothing else looked for:
+        //   - a paid place with no holder. Fifteen MTTs between 2026-05-08 and
+        //     2026-07-19 recorded finishing places 1, 2, then 6 onwards, so the
+        //     18/10/7 percent places had nobody in them and 193.10 chips went
+        //     to no one. The cause was fixed on 2026-07-19; the blindness was
+        //     not, and it had run for ten weeks.
+        //   - an earner whose wallet never saw the money. Across 150 days and
+        //     ~49,000 events that is exactly one player, short by 0.02.
+        //   - prizes paid with no payout record (61 events, 5,515.91 chips),
+        //     which is what arms fn_tournament_payout_reconcile to pay a second
+        //     time, because it reads that record to decide what is owed.
+        //
+        // Hourly, on its own timer, and it moves no money.
+        if (Date.now() - this.lastPayoutGuaranteeCheckAt > 60 * 60 * 1000) {
+          this.lastPayoutGuaranteeCheckAt = Date.now();
+          try {
+            const { data: pg, error: pgErr } = await supabase.rpc('fn_payout_guarantee_check', {
+              p_since_days: 7,
+            });
+            if (pgErr) {
+              reportError(
+                new Error(`[GameServer] payout guarantee check failed: ${pgErr.message}`),
+                'GameServer.payout_guarantee_check_failed'
+              );
+            } else if (
+              Number(pg?.vacant_paid_place_events) > 0 ||
+              Number(pg?.earners_not_paid) > 0 ||
+              Number(pg?.paid_but_unrecorded_events) > 0
+            ) {
+              console.log(
+                `[GameServer] Payout guarantee: ${pg.vacant_paid_place_events} event(s) with an unheld paid place ` +
+                  `(${pg.vacant_paid_place_chips} chips), ${pg.earners_not_paid} earner(s) unpaid ` +
+                  `(${pg.earners_not_paid_chips} chips), ${pg.paid_but_unrecorded_events} event(s) paid without a record ` +
+                  `(${pg.paid_but_unrecorded_chips} chips), ${pg.alerts_raised} new alert(s)`
+              );
+            }
+          } catch (pgEx) {
+            reportError(pgEx, 'GameServer.payout_guarantee_check_threw');
           }
         }
 

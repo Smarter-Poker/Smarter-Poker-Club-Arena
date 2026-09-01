@@ -2,6 +2,47 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-09-01 - THE SECOND JOB SCANNING hand_history WHOLE
+
+`fn_ca_settlement_correctness_check()` runs every 30 minutes. Its legacy-fallback
+alarm asks hand_history two questions:
+
+```sql
+SELECT count(*) FROM public.hand_history
+ WHERE created_at > now() - interval '24 hours' AND has_human IS TRUE;
+```
+
+and the same shape again over the last hour. Only `idx_hand_history_created` (a
+bare `created_at`) could serve them, so every run counted its way through every
+hand dealt in 24 hours - roughly **213,000 rows** - looking for the ones with a
+human at the table.
+
+**There are 22 of them.** Human hands are **0.01%** of the board. The other
+99.99% of that scan is horses, read and discarded, twice per run, 48 times a
+day.
+
+The job averaged **66s against a 120s statement timeout** and had already hit it
+(02:30). That is the same trajectory `rake-repair-unbanked-hourly` was on before
+`20260901104500`, and the same fix applies: give the predicate its own index
+rather than asking the planner to filter a full window.
+
+**Measured on production:**
+
+| | before | after |
+| --- | --- | --- |
+| the `count(*)` alone | >60s (client timeout) | **1,354ms** warm |
+| the whole check | 66s average, 120s worst | **5,383ms** |
+
+Built `CONCURRENTLY`, with an online `DROP INDEX CONCURRENTLY` rollback recorded
+in the migration.
+
+Two jobs in one night were scanning this table whole for a needle. It is worth
+someone asking which others do - `hand_history` is the largest table in the
+estate and the only index most predicates can reach is a bare `created_at`.
+
+---
+
+
 ## Cowork session 2026-09-01 - A HEALER THAT COULD NOT FINISH
 
 `rake-repair-unbanked-hourly` calls `fn_rake_repair_unbanked(48, 200)`, which

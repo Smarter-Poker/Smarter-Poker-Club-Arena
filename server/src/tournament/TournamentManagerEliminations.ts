@@ -323,35 +323,119 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           stack: number | null;
           joined_at: string | null;
         }> = [];
+        /**
+         * ===================================================================
+         *  TWO INDEXED READS, NOT ONE SCAN OF EVERY LIVE SEAT (2026-09-01)
+         * ===================================================================
+         *
+         * The read this replaces was right in intent and right in coverage. It
+         * reads what the TOURNAMENT has rather than what this process happens to
+         * hold engines for, which is the blind spot the block above closed. Its
+         * SHAPE was the problem.
+         *
+         * `.select('...tables!inner(tournament_id)').eq('tables.tournament_id')`
+         * compiles to a LATERAL join in which the OUTER table carries no
+         * tournament predicate at all:
+         *
+         *   FROM table_seats
+         *   INNER JOIN LATERAL (SELECT 1 FROM tables
+         *                       WHERE tables.tournament_id = $1
+         *                         AND tables.id = table_seats.table_id) ON true
+         *   WHERE table_seats.left_at IS NULL
+         *   ORDER BY table_seats.user_id LIMIT 1000
+         *
+         * So Postgres walks EVERY live seat on the platform and probes `tables`
+         * once per seat, discarding the ones that belong to other tournaments.
+         * Under an inner join with a LIMIT it cannot stop early either.
+         *
+         * MEASURED in production (pg_stat_statements, 2026-09-01): 68,049 calls
+         * at 45ms mean, 3,085 seconds of database time - the largest single
+         * component of the 6% of all DB time that table_seats reads account for.
+         *
+         * Replaced with the two reads the indexes were built for:
+         *   tables      -> idx_tables_tournament_id (946,647 lifetime scans)
+         *   table_seats -> idx_table_seats_table    (131,417 lifetime scans)
+         * Coverage is IDENTICAL: still every table the tournament has, read from
+         * the database rather than from this process's memory.
+         *
+         * PAGING IS ALSO DETERMINISTIC NOW, which is a correctness fix and not a
+         * performance one. The old read paged with `.order('user_id')`, and
+         * user_id IS NOT UNIQUE in table_seats - the block above exists precisely
+         * because one user can hold several open seats. Two seats of the same
+         * user straddling a 1000-row page boundary can be returned twice or not
+         * at all depending on how Postgres breaks the tie, and this sweep is what
+         * decides who is eliminated. Ordering on `id`, the primary key, makes
+         * every page boundary unambiguous.
+         */
+        const TABLE_PAGE = 1000;
+        const TABLE_ID_CHUNK = 200;
+
+        // (1) Which tables does this tournament have? Indexed lookup.
+        const tableIds: string[] = [];
         for (let page = 0; ; page++) {
           if (page > 10_000) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] seat paging did not terminate - skipping this sweep`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] table paging did not terminate - skipping this sweep`
               ),
-              'Tournament.seat_paging_runaway'
+              'Tournament.table_paging_runaway'
             );
             return; // the finally block clears isProcessingEliminations
           }
-          const { data: chunk, error: seatsErr } = await supabase
-            .from('table_seats')
-            .select('user_id, stack, joined_at, tables!inner(tournament_id)')
-            .eq('tables.tournament_id', this.tournamentId)
-            .is('left_at', null)
-            .order('user_id', { ascending: true })
-            .range(page * SEAT_PAGE, page * SEAT_PAGE + SEAT_PAGE - 1);
+          const { data: tblChunk, error: tblErr } = await supabase
+            .from('tables')
+            .select('id')
+            .eq('tournament_id', this.tournamentId)
+            .order('id', { ascending: true })
+            .range(page * TABLE_PAGE, page * TABLE_PAGE + TABLE_PAGE - 1);
 
-          if (seatsErr || !chunk) {
+          if (tblErr || !tblChunk) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] seat read failed (${seatsErr?.message ?? 'null chunk'}) - skipping the whole sweep rather than busting on a partial chip picture`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] table read failed (${tblErr?.message ?? 'null chunk'}) - skipping the whole sweep rather than busting on a partial chip picture`
               ),
-              'Tournament.seat_read_failed'
+              'Tournament.table_read_failed'
             );
             return; // the finally block clears isProcessingEliminations
           }
-          seatRows.push(...(chunk as unknown as typeof seatRows));
-          if (chunk.length < SEAT_PAGE) break;
+          for (const row of tblChunk as Array<{ id: string }>) tableIds.push(row.id);
+          if (tblChunk.length < TABLE_PAGE) break;
+        }
+
+        // (2) Live seats at those tables. Chunked, because the largest field on
+        //     record is 1,076 tables and an unbounded IN list is its own outage.
+        for (let start = 0; start < tableIds.length; start += TABLE_ID_CHUNK) {
+          const idsForChunk = tableIds.slice(start, start + TABLE_ID_CHUNK);
+          for (let page = 0; ; page++) {
+            if (page > 10_000) {
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] seat paging did not terminate - skipping this sweep`
+                ),
+                'Tournament.seat_paging_runaway'
+              );
+              return; // the finally block clears isProcessingEliminations
+            }
+            const { data: chunk, error: seatsErr } = await supabase
+              .from('table_seats')
+              .select('user_id, stack, joined_at')
+              .in('table_id', idsForChunk)
+              .is('left_at', null)
+              .order('id', { ascending: true })
+              .range(page * SEAT_PAGE, page * SEAT_PAGE + SEAT_PAGE - 1);
+
+            if (seatsErr || !chunk) {
+              reportError(
+                new Error(
+                  `[Tournament:${this.tournamentId.slice(0, 8)}] seat read failed (${seatsErr?.message ?? 'null chunk'}) - skipping the whole sweep rather than busting on a partial chip picture`
+                ),
+                'Tournament.seat_read_failed'
+              );
+              return; // the finally block clears isProcessingEliminations
+            }
+            seatRows.push(...(chunk as unknown as typeof seatRows));
+            if (chunk.length < SEAT_PAGE) break;
+          }
         }
 
         {
@@ -3300,6 +3384,65 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const isSatelliteFinish =
       (tournament as any)?.variant === 'satellite' ||
       ((tournament as any)?.tournament_type || '').toUpperCase() === 'SATELLITE';
+    /**
+     * THE GUARANTEE IS FUNDED HERE OR IT IS NEVER FUNDED (2026-08-31, phase 6).
+     *
+     * applyPrizeGuarantee had exactly two triggers, and between them they miss
+     * an entire shape of event:
+     *
+     *   start()          only when late_reg_levels <= 0
+     *   level change     only when currentLevel >= late_reg_levels
+     *
+     * An event with a late-reg window that FINISHES BELOW THAT LEVEL calls it
+     * ZERO times. The pool is never topped up, and the finish path below then
+     * prices every place off a pool the guarantee never reached.
+     *
+     * Measured before this was written: 12 completed events since 2026-08-29
+     * short of their guarantee with no overlay row, and TWELVE OF FOURTEEN
+     * died below their late-reg cap. Nine of them were freerolls, whose pool
+     * is 0 by construction and whose guarantee is therefore the ONLY money
+     * they ever have. Those nine ranked a full field - up to 326 players -
+     * stamped a winner, and paid zero chips to anybody.
+     *
+     * TournamentManagerBase's own comment promises `fn_sweep_unfunded_guarantees`
+     * as the safety net for exactly this. It was never written; the name
+     * appears nowhere else in the repo or the database. This is that net, put
+     * where it cannot be missed: the last moment before the money is priced.
+     *
+     * Deliberately NOT guarded on prize_pool > 0 or on buy_in_amount - those
+     * two conditions are precisely what made a freeroll invisible to every
+     * other check. The RPC is idempotent (it returns early on `finalized`) and
+     * settles to greatest(pool, guarantee), so a re-drive of an event that was
+     * already funded moves nothing.
+     *
+     * A failure here must never strand a finish, so it is caught: the event
+     * still completes and pays what its pool holds, and the shortfall is
+     * raised for a human rather than silently priced in.
+     */
+    if (
+      !isSatelliteFinish &&
+      Number((tournament as { guaranteed_prize?: number }).guaranteed_prize ?? 0) > 0
+    ) {
+      try {
+        const funded = await this.applyPrizeGuarantee('finish_fallback');
+        if (typeof funded === 'number' && funded > Number(tournament.prize_pool || 0)) {
+          // The RPC moved chips into the pool. Our row is a snapshot taken
+          // before that, so every price computed below would still use the
+          // old pool. Re-read it rather than trusting the local copy.
+          const { data: refreshed } = await supabase
+            .from('tournaments')
+            .select('prize_pool')
+            .eq('id', this.tournamentId)
+            .maybeSingle();
+          if (refreshed?.prize_pool != null) {
+            (tournament as { prize_pool?: number }).prize_pool = Number(refreshed.prize_pool);
+          }
+        }
+      } catch (guaranteeErr) {
+        reportError(guaranteeErr, 'Tournament.guarantee_finish_fallback_failed');
+      }
+    }
+
     let winnerPrize = 0;
     if (!isSatelliteFinish) {
       // resolvePayoutStructure returns the stored structure when it is usable
@@ -3367,6 +3510,45 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           'TournamentthistournamentIdslic.No_usable_payout_structure'
         );
       }
+    }
+
+    /**
+     * A WINNER PAID NOTHING MUST SAY SO (2026-08-31, phase 6).
+     *
+     * `if (winnerPrize > 0)` is the right guard for the credit and the wrong
+     * place to stop thinking. Every alert this path added on 2026-08-31 -
+     * winner_prize_credit_failed, prize_credit_failed - lives INSIDE this
+     * block, so it can only escalate a credit that was ATTEMPTED AND FAILED.
+     * A credit that is never attempted is silent.
+     *
+     * That silence is what let nine freerolls rank a full field (313 and 326
+     * players among them), stamp a winner, and pay zero chips with not one
+     * alert anywhere. Their pool was 0, so every price was 0, so this branch
+     * was simply skipped - and the Phase 2 detector could not see them either,
+     * because it filters on `prize_pool > 0`, the exact column the defect
+     * zeroes.
+     *
+     * Zero is a legitimate outcome for a play-money or unfunded event, so this
+     * is a WARNING, not a critical, and it never blocks the finish. But it is
+     * no longer nothing.
+     */
+    if (winnerPrize <= 0 && !isSatelliteFinish) {
+      const gtd = Number((tournament as { guaranteed_prize?: number }).guaranteed_prize ?? 0);
+      await raiseFinancialAlert(
+        gtd > 0 ? 'critical' : 'warning',
+        'Tournament.winner_paid_nothing',
+        gtd > 0
+          ? 'A tournament with an advertised guarantee crowned a winner and paid them nothing. The guarantee was never funded into the prize pool.'
+          : 'A tournament crowned a winner and paid them nothing, because its prize pool is zero.',
+        {
+          tournament_id: this.tournamentId,
+          tournament_name: (tournament as { name?: string }).name ?? null,
+          winner_id: winnerId,
+          prize_pool: Number(tournament.prize_pool || 0),
+          guaranteed_prize: gtd,
+          field_size: await this.finalFieldSize(),
+        }
+      );
     }
 
     if (winnerPrize > 0) {

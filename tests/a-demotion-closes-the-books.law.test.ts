@@ -98,19 +98,74 @@ describe('a move that keeps the wallet is not blocked', () => {
 
 describe('what the club owes the agent does not block the club', () => {
   /**
-   * pending_commission is money the CLUB owes the AGENT. The agents row survives
-   * a demotion with the figure intact, and there is no payout path to send
-   * anyone to yet - phase 6 builds one. Blocking would strand the club behind
-   * its own unpaid obligation with no way out. The phase 4 plan said to refuse
-   * on all three; this is a deliberate, documented departure.
+   * Money the CLUB owes the AGENT. The role change reports it and does not
+   * refuse on it - blocking would strand the club behind its own unpaid
+   * obligation. The phase 4 plan said to refuse on all three; this is a
+   * deliberate, documented departure.
+   *
+   * PHASE 7 (2026-09-01) changed two things about it, and this pin moves with
+   * them rather than being weakened:
+   *
+   *   - the figure comes from agent_commissions instead of
+   *     agents.pending_commission, a column nothing wrote and which is now
+   *     dropped;
+   *   - the key it is reported under is `unclaimed_commission`, because the old
+   *     name was the dead column's name.
+   *
+   * The reason it is safe not to refuse got STRONGER, not weaker: phase 6's
+   * claim requires club membership rather than an agent role, so a demoted
+   * agent can still claim every chip of it.
    */
-  it('reports pending_commission rather than refusing on it', () => {
-    expect(SQL).toMatch(/'pending_commission', COALESCE\(v_commission, 0\)/);
-    const refusal = SQL.slice(
-      SQL.indexOf("'needs_settlement', true"),
-      SQL.indexOf("'needs_settlement', true") + 1400
+  const PHASE7 = codeOnly(
+    read('supabase/migrations/20260901133348_the_agents_books_tell_the_truth.sql')
+  );
+
+  it('reports the unclaimed figure rather than refusing on it', () => {
+    expect(PHASE7).toMatch(/'unclaimed_commission', COALESCE\(v_commission, 0\)/);
+    const refusal = PHASE7.slice(
+      PHASE7.indexOf("'needs_settlement', true"),
+      PHASE7.indexOf("'needs_settlement', true") + 1400
     );
     expect(refusal).not.toMatch(/v_commission\s*>\s*0/);
+  });
+
+  /**
+   * Phase 7 changes this function by PATCHING the live definition rather than
+   * re-emitting all 18,519 characters of it, so these pins read the patch. The
+   * old text appears in the file because it is the thing being replaced.
+   */
+  it('reads that figure from the ledger, on every path', () => {
+    expect(PHASE7).toMatch(
+      /v_commission := public\.fn_agent_unsettled_commission\(p_club_id, p_user_id\)/
+    );
+    // The read is spliced onto the v_keeps_wallet line, which sits before every
+    // branch. It used to live inside the demotion branch alone, so a promotion
+    // reported this figure as 0 no matter what the club owed.
+    expect(PHASE7).toMatch(
+      /v_keeps_wallet := p_role <> 'player';[\s\S]{0,900}v_commission := public\.fn_agent_unsettled_commission/
+    );
+  });
+
+  it('leaves no read of the dropped column behind, and refuses if it did', () => {
+    // The replacement text - what the function ends up containing.
+    expect(PHASE7).toMatch(
+      /SELECT COALESCE\(a\.agent_wallet_balance, 0\), COALESCE\(a\.credit_used, 0\)\n\s*INTO v_float, v_owed\n/
+    );
+    // And the patch checks its own work rather than trusting the replace.
+    expect(PHASE7).toMatch(
+      /IF position\('pending_commission' in v_new\) <> 0 THEN\s*\n\s*RAISE EXCEPTION 'a reference to the dropped column survived the patch'/
+    );
+  });
+
+  it('refuses to patch a definition it does not recognise', () => {
+    // Another agent editing this function between the file being written and
+    // applied must stop the migration, not be silently overwritten by it.
+    expect(PHASE7).toMatch(
+      /RAISE EXCEPTION 'the agents-row read is not what this migration expects'/
+    );
+    expect(PHASE7).toMatch(
+      /RAISE EXCEPTION 'the patch removed something it was not supposed to touch'/
+    );
   });
 });
 

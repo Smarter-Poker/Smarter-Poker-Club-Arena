@@ -32,6 +32,23 @@ import { resolve } from 'node:path';
 const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8');
 const WF = read('.github/workflows/auto-deploy-hetzner.yml');
 
+/**
+ * The shutdown budgets moved from inline literals to named constants
+ * (DRAIN_BUDGET_MS / SHUTDOWN_CAP_MS) on 2026-09-01, so these pins resolve the
+ * value through the name instead of matching `drainHands(28000)`. The property
+ * being asserted is unchanged -- only the way the number is spelled in the
+ * source moved. Falls back to a literal so an inlined value still reads.
+ */
+function budgetFrom(src: string, callPattern: RegExp): number {
+  const m = src.match(callPattern);
+  if (!m) throw new Error(`no match for ${callPattern}`);
+  const token = m[1];
+  if (/^[0-9_]+$/.test(token)) return Number(token.replace(/_/g, ''));
+  const decl = src.match(new RegExp(`const ${token} = ([0-9_]+);`));
+  if (!decl) throw new Error(`${token} is not declared as a numeric constant`);
+  return Number(decl[1].replace(/_/g, ''));
+}
+
 describe('the drain gate cannot pin production on stale code', () => {
   it('the staleness cap is short enough to be a real deploy path', () => {
     // The wait-for-zero loop above it cannot succeed on a continuously
@@ -50,7 +67,8 @@ describe('the drain gate cannot pin production on stale code', () => {
     // why the two are asserted in one test.
     const idx = read('server/src/index.ts');
     const shutdown = idx.slice(idx.indexOf('const shutdown'), idx.indexOf("process.on('SIGINT'"));
-    expect(shutdown).toMatch(/drainHands\(\d+\)/);
+    // A budget, literal or named -- see budgetFrom above for why.
+    expect(shutdown).toMatch(/drainHands\([A-Za-z0-9_]+\)/);
     expect(read('server/src/GameServer.ts')).toMatch(/engine\.pauseAfterHand\(\)/);
   });
 
@@ -59,7 +77,7 @@ describe('the drain gate cannot pin production on stale code', () => {
     // longer than that grace is a drain that gets SIGKILLed halfway.
     const up = read('server/scripts/engine-up.sh');
     const grace = Number(up.match(/docker stop -t (\d+)/)![1]) * 1000;
-    const budget = Number(read('server/src/index.ts').match(/drainHands\((\d+)\)/)![1]);
+    const budget = budgetFrom(read('server/src/index.ts'), /drainHands\(([A-Za-z0-9_]+)\)/);
     expect(budget).toBeLessThan(grace);
   });
 

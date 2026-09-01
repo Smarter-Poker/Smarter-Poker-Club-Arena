@@ -95,3 +95,20 @@ Two restarts are still not deploys. **04:10** was the engine restarting itself
 54 seconds into its own boot (`container restarted again within boot grace`).
 **01:15** has no deploy, no SSH and no supervisor line, and remains unexplained
 — it is also the one that did zero damage.
+
+## Two existing pins had to move with it
+
+`drainProtectsEveryHand.test.ts` and `deployCannotPinStaleCode.test.ts` both
+read the budget out of the source with `/drainHands\((\d+)\)/`. Naming the
+constants broke that regex, and CI caught it — correctly, since a pin that
+cannot find the value it guards is a pin that has stopped guarding.
+
+They now resolve the value _through_ the name (falling back to a literal, so an
+inlined number still reads), which is the same property asserted against a
+different spelling. The one real change is the floor in
+`drainProtectsEveryHand`: it required `budget >= 15_000` against the "~20s"
+estimate, and now requires 1.5x the measured p50 of 17.2s. Under the old rule
+an 18s budget passed both files while expiring on 47% of hands.
+
+Checked red against the old 18s budget before shipping: two failures across the
+two suites, and 13 green once restored.

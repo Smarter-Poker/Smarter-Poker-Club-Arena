@@ -23,6 +23,23 @@ import { resolve } from 'node:path';
 
 const read = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8');
 
+/**
+ * The shutdown budgets moved from inline literals to named constants
+ * (DRAIN_BUDGET_MS / SHUTDOWN_CAP_MS) on 2026-09-01, so these pins resolve the
+ * value through the name instead of matching `drainHands(28000)`. The property
+ * being asserted is unchanged -- only the way the number is spelled in the
+ * source moved. Falls back to a literal so an inlined value still reads.
+ */
+function budgetFrom(src: string, callPattern: RegExp): number {
+  const m = src.match(callPattern);
+  if (!m) throw new Error(`no match for ${callPattern}`);
+  const token = m[1];
+  if (/^[0-9_]+$/.test(token)) return Number(token.replace(/_/g, ''));
+  const decl = src.match(new RegExp(`const ${token} = ([0-9_]+);`));
+  if (!decl) throw new Error(`${token} is not declared as a numeric constant`);
+  return Number(decl[1].replace(/_/g, ''));
+}
+
 describe('the engine drains itself before stopping', () => {
   it('GameServer exposes a bounded drainHands()', () => {
     const src = read('server/src/GameServer.ts');
@@ -51,7 +68,7 @@ describe('the engine drains itself before stopping', () => {
     // ORDER — the thing that matters — survives future tuning.
     const drainAt = shutdown.indexOf('drainHands(');
     const raceAt = shutdown.indexOf('Promise.race');
-    const capMatch = shutdown.match(/setTimeout\(r, (\d+)_?(\d*)\)/);
+    const capMatch = shutdown.match(/setTimeout\(r, ([A-Za-z0-9_]+)\)/);
     expect(capMatch).toBeTruthy();
     const capAt = shutdown.indexOf(capMatch![0]);
     expect(raceAt).toBeGreaterThan(-1);
@@ -61,13 +78,20 @@ describe('the engine drains itself before stopping', () => {
     // The budget must fit inside the cap, and the cap inside Docker's grace
     // (`docker stop -t 45` in server/scripts/engine-up.sh) — otherwise the
     // supervisor SIGKILLs the engine mid-flush and the drain buys nothing.
-    const budget = Number(read('server/src/index.ts').match(/drainHands\((\d+)\)/)![1]);
-    const cap = Number(`${capMatch![1]}${capMatch![2]}`);
+    const idxSrc = read('server/src/index.ts');
+    const budget = budgetFrom(idxSrc, /drainHands\(([A-Za-z0-9_]+)\)/);
+    const cap = budgetFrom(idxSrc, /setTimeout\(r, ([A-Za-z0-9_]+)\)/);
     expect(budget).toBeLessThan(cap);
     expect(cap).toBeLessThan(45_000);
-    // And the budget must actually outlast a hand (~20s), or it expires with
-    // tables still mid-hand and stops them anyway — the 2026-08-28 finding.
-    expect(budget).toBeGreaterThanOrEqual(15_000);
+    // And the budget must actually outlast a hand, or it expires with tables
+    // still mid-hand and stops them anyway.
+    //
+    // 2026-09-01: floor raised 15s -> 25.8s. The "~20s" above was an estimate;
+    // measured over 41,269 real hands the median is 17.2s and the p90 48.2s, so
+    // an 18s budget was still expiring on 47% of hands. The floor is 1.5x the
+    // measured median, because a budget that merely equals p50 expires on half
+    // the tables by definition.
+    expect(budget).toBeGreaterThanOrEqual(25_800);
   });
 });
 

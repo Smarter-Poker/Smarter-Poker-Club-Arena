@@ -25,8 +25,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // The RPC is the only thing revealRabbitHunt reaches outside itself.
 const rpc = vi.fn();
+const revealInsert = vi.fn();
 vi.mock('../services/supabase.js', () => ({
-  supabase: { rpc: (...args: unknown[]) => rpc(...args) },
+  supabase: {
+    rpc: (...args: unknown[]) => rpc(...args),
+    from: (table: string) => ({
+      insert: (payload: unknown) => revealInsert(table, payload),
+    }),
+  },
   loadTable: vi.fn(),
   syncStacks: vi.fn(),
   syncTournamentChips: vi.fn(),
@@ -92,6 +98,8 @@ function makeEngine(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   rpc.mockReset();
+  revealInsert.mockReset();
+  revealInsert.mockResolvedValue({ error: null });
   rpc.mockResolvedValue({
     data: { success: true, source: 'vip_monthly', vip_remaining: 99, diamonds_spent: 0 },
     error: null,
@@ -176,6 +184,32 @@ describe('the charge', () => {
     expect(typeof r.diamonds_remaining).toBe('number');
   });
 
+  it('records one metadata-only reveal after payment and never stores the cards', async () => {
+    rpc.mockResolvedValue({
+      data: { success: true, source: 'diamonds', diamonds_spent: 5, diamonds_remaining: 120 },
+      error: null,
+    });
+    const { reveal } = makeEngine();
+    const result = await reveal();
+
+    expect(result.success).toBe(true);
+    expect(revealInsert).toHaveBeenCalledTimes(1);
+    expect(revealInsert).toHaveBeenCalledWith('rabbit_hunt_reveals', {
+      user_id: HERO,
+      table_id: 'table-1',
+      hand_number: HAND,
+      charged: 5,
+    });
+    expect(JSON.stringify(revealInsert.mock.calls)).not.toMatch(/\"cards\"/);
+  });
+
+  it('returns paid cards when the metadata ledger is temporarily unavailable', async () => {
+    revealInsert.mockResolvedValue({ error: new Error('ledger unavailable') });
+    const result = await makeEngine().reveal();
+    expect(result.success).toBe(true);
+    expect(result.cards).toHaveLength(5);
+  });
+
   it('a purchased pack reports what is left of it', async () => {
     rpc.mockResolvedValue({
       data: { success: true, source: 'purchased', diamonds_spent: 0, uses_remaining: 7 },
@@ -196,6 +230,7 @@ describe('the charge', () => {
     expect(r.success).toBe(false);
     expect(r.cards).toBeUndefined();
     expect(r.error).toMatch(/not enough diamonds/i);
+    expect(revealInsert).not.toHaveBeenCalled();
   });
 
   it('an RPC that throws reveals nothing either', async () => {

@@ -4171,6 +4171,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             pokerAlias={currentUser?.display_name || currentUser?.username || 'Player'}
             clubId={club.club_id}
             playerId={currentUser?.player_number}
+            level={clubLevel?.level}
             playersPlaying={playersPlaying}
             onCopyClubId={() => {
               navigator.clipboard.writeText(club.club_id.toString());
@@ -4912,22 +4913,45 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                       </p>
                     </>
                   ) : !filtered ? (
-                    <>
-                      {/* Tab (or Favorites) is the ONLY narrowing: blaming
-                        "filters" here sent players hunting for filters they
-                        never set (QA 2026-08-22). Name the real cause. */}
-                      <p>Nothing Here On This Tab</p>
-                      <p className="empty-hint">
-                        {totalHere.toLocaleString()}
-                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
-                        This Club, Just None Of This Type Right Now.
-                      </p>
-                      <div className="empty-actions">
-                        <button className="empty-action" onClick={clearAllNarrowing}>
-                          Show All Games
-                        </button>
-                      </div>
-                    </>
+                    favoritesOnly ? (
+                      <>
+                        {/* Dan 2026-09-01: the Favorites toggle persisted from
+                          an earlier visit and this branch blamed the TAB
+                          ("None Of This Type Right Now") while 980 cash games
+                          sat one toggle away. When Favorites is the narrowing,
+                          say Favorites. Same rule as the comment below: name
+                          the real cause. */}
+                        <p>No Favorites On This Tab</p>
+                        <p className="empty-hint">
+                          The Favorites Filter Is On And Nothing Here Is Marked As A Favorite Yet.{' '}
+                          {totalHere.toLocaleString()}
+                          {countsCapped ? '+' : ''} Game
+                          {totalHere === 1 ? ' Is' : 's Are'} Open In This Club.
+                        </p>
+                        <div className="empty-actions">
+                          <button className="empty-action" onClick={clearAllNarrowing}>
+                            Show All Games
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {/* Tab is the ONLY narrowing: blaming "filters" here
+                          sent players hunting for filters they never set
+                          (QA 2026-08-22). Name the real cause. */}
+                        <p>Nothing Here On This Tab</p>
+                        <p className="empty-hint">
+                          {totalHere.toLocaleString()}
+                          {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
+                          This Club, Just None Of This Type Right Now.
+                        </p>
+                        <div className="empty-actions">
+                          <button className="empty-action" onClick={clearAllNarrowing}>
+                            Show All Games
+                          </button>
+                        </div>
+                      </>
+                    )
                   ) : (
                     <>
                       <p>Nothing Matches Your Filters</p>

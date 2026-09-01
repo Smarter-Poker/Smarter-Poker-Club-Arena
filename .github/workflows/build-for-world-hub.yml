@@ -23,7 +23,12 @@ on:
     # for exactly this reason.
     #
     # `publish-needed` below keeps an up-to-date cycle down to one curl.
-    - cron: '*/20 * * * *'
+    #
+    # 2026-09-01 (cost audit): */20 -> */30. The catch-up only matters when
+    # pushes STOP right after a cancellation, and publish-watchdog re-dispatches
+    # within its own cycle anyway. 24 fewer runs a day, each of which was
+    # usually just the dedupe curl plus a billed minute.
+    - cron: '*/30 * * * *'
 
 # 2026-08-21: was cancel-in-progress: true, which deadlocked publishing.
 # This build takes about 4 minutes. With several agents pushing to main every
@@ -451,7 +456,15 @@ jobs:
               echo "No changes to sync — World Hub already carries this bundle."
               exit 0
             fi
-            git commit -q -m "chore(club-arena): sync build ${{ github.sha }}"
+            # `[skip actions]` (2026-09-01 cost audit): this commit is a
+            # machine-built bundle that Club Arena's own CI already gated, yet
+            # its push woke ~9 World Hub workflows ~76 times a day - none of
+            # which have anything to say about minified output (their own
+            # comments agree). The token is GitHub's documented skip
+            # instruction for ACTIONS ONLY: Vercel's git integration does not
+            # read it, so the production deploy still fires exactly as before.
+            # Deliberately NOT `[skip ci]`, which other platforms interpret.
+            git commit -q -m "chore(club-arena): sync build ${{ github.sha }} [skip actions]"
 
             if git push; then
               echo "World Hub updated successfully (attempt ${attempt})."

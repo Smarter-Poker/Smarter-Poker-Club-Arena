@@ -26,7 +26,16 @@ describe('Club Arena Tournament Board lobby design', () => {
     expect(page).toContain('playerId={currentUser?.player_number}');
     expect(page).toContain('playersPlaying={playersPlaying}');
     expect(identityCard).toContain('club-identity-template-no-level-v2.png');
-    expect(identityCard).not.toContain('club-identity__level');
+    /* Dan 2026-09-01, verbatim: "ANYTIME A NEW CLUB IS CREATED, IT NEEDS TO
+       START AT LEVEL 1, THAT NEEDS TO BE BELOW THE LOGO INSIDE A BLUE BOX,
+       NOT OVERLAPPING THE LOGO." #2509 cured the old overlap by deleting the
+       level and pinned the deletion here; the order was the other cure. The
+       pin now guards the ordered state: the level RENDERS, in its own blue
+       box, in the logo's column, starting beneath the logo square. */
+    expect(identityCard).toContain('club-identity__level');
+    expect(identityCardCss).toContain('.club-identity__level');
+    expect(identityCardCss).toContain('top: 72.8%');
+    expect(identityCardCss).toContain('linear-gradient(180deg, #1c4fd8 0%, #0f2f8c 100%)');
     expect(identityCard).toContain('Copy Referral Link');
     expect(identityCardCss).toContain('aspect-ratio: 1650 / 953');
     expect(identityCardCss).toContain('line-height: 1.18');

@@ -23,8 +23,20 @@ const ROOT = resolve(__dirname, '../..');
 const TOP_CSS = readFileSync(resolve(ROOT, 'src/components/lobby/ClubLobbyCommandTop.css'), 'utf8');
 const PAGE = readFileSync(resolve(ROOT, 'src/pages/ClubHomePage.tsx'), 'utf8');
 
-/** The last `@media (min-width: 901px)` block: the one that actually wins. */
-const finalDesktop = TOP_CSS.slice(TOP_CSS.lastIndexOf('@media (min-width: 901px)'));
+/**
+ * The desktop block that owns the campaign bay, found by its own header
+ * comment rather than by being the last `@media (min-width: 901px)` in the
+ * file. Slicing on `lastIndexOf` is exactly what made
+ * `lobbyUnionCreateControls.test.ts` go red when this block was appended
+ * beneath the deck lock - `display: contents` had not moved a character - and
+ * this file would have inherited the same fragility the moment anyone appended
+ * a desktop block below it. `.club-lobby-command-top__campaign` alone is not
+ * an anchor: eighteen blocks declare it.
+ */
+const bayAnchor = TOP_CSS.indexOf('DESKTOP CAMPAIGN BAY');
+const bayOpen = TOP_CSS.indexOf('@media (min-width: 901px)', bayAnchor);
+const bayEnd = TOP_CSS.indexOf('@media', bayOpen + 1);
+const finalDesktop = TOP_CSS.slice(bayOpen, bayEnd === -1 ? undefined : bayEnd);
 
 describe('desktop lobby campaign bay', () => {
   it('sizes the bay to the artwork it serves rather than a fixed pixel height', () => {

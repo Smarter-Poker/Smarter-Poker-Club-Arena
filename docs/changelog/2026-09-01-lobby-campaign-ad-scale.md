@@ -80,3 +80,69 @@ tests/club-lobby-premium-machine.test.ts` — 24 tests, all passing.
   bring the crop back: the bay's aspect ratio, `contain` (and the absence of
   `cover`) in the winning desktop block, and the lobby no longer reaching for
   the 3:1 file.
+
+## The pin that went red, and why it was the pin's fault
+
+`tests/unit/lobbyUnionCreateControls.test.ts >  keeps the desktop selector deck
+sticky and mobile controls inside the approved chassis` failed on this branch:
+
+    AssertionError: expected '@media (min-width: 901px) {\n .club-…'
+    to contain 'display: contents'
+
+That looks like a collision between this fix and the deck lock, because
+`display: contents` on `.club-lobby-machine > .club-lobby-command-top` is what
+makes the campaign well a bare flex item with only `min-height: 92px` - the
+condition this fix exists to correct. It is not one. **`display: contents` was
+never touched by this branch**, and it is still exactly where it was, at
+`ClubLobbyCommandTop.css` line 1946.
+
+The pin sliced its subject out with
+
+    commandCss.slice(commandCss.lastIndexOf('@media (min-width: 901px)'))
+
+which is a guess about file order, not a statement about the deck lock. This
+fix appends a SECOND `@media (min-width: 901px)` block - the campaign bay - so
+`lastIndexOf` re-pointed the pin at the ad block, which of course declares
+neither `display: contents` nor `position: sticky`.
+
+So neither side was wrong and nothing was weakened. Both tests now find their
+block by what it declares:
+
+- `lobbyUnionCreateControls.test.ts` anchors on
+  `.club-lobby-machine > .club-lobby-command-top {` (one occurrence in the
+  file) and walks back to the `@media (min-width: 901px)` that opens it. All
+  three declarations - `display: contents`, `position: sticky`, `top: 0` - are
+  still asserted, about the block that owns them.
+- `lobbyCampaignScale.test.ts` had inherited the identical `lastIndexOf`
+  fragility and would have broken for the next author who appended a desktop
+  block. It anchors on this block's own `DESKTOP CAMPAIGN BAY` header.
+  `.club-lobby-command-top__campaign` alone is not an anchor - eighteen blocks
+  declare it.
+
+The two rules genuinely coexist: `display: contents` decides how the campaign
+well participates in the machine column, and this fix gives that well an
+`aspect-ratio` and `object-fit: contain` so it no longer depends on
+`min-height: 92px` to have a shape. Different properties, same element, no
+conflict.
+
+## Re-verified after the test fix
+
+Measured in headless Chromium against the real `ClubLobbyCommandTop.css` and
+the real DOM shape, with the ad column at its production ~1000px width. `drawn`
+is the rendered content box of the `contain`-fitted image; `CLIPPED` compares
+it against the element box:
+
+    2560x1440  bay=996x138.5  drawn=960x133.5  contain  CLIPPED=false
+    1920x1080  bay=996x138.5  drawn=960x133.5  contain  CLIPPED=false
+    1440x900   bay=996x117    drawn=805x112    contain  CLIPPED=false
+    1200x900   bay=996x117    drawn=805x112    contain  CLIPPED=false
+     901x800   bay=897x104    drawn=712x99     contain  CLIPPED=false
+     900x800   bay=892x124    drawn=784x109    contain  CLIPPED=false
+     430x932   bay=422x58.7   drawn=314x43.7   contain  CLIPPED=false
+     375x812   bay=367x51     drawn=259x36     contain  CLIPPED=false
+
+Nothing clips at any width. At 1440x900 the `max-height: clamp(96px, 13vh,
+156px)` cap binds before the aspect ratio does, so the ad letterboxes to 805 of
+996px rather than filling the bay - that is the documented ultrawide/short-
+viewport guard doing its job, and letterboxing is the outcome the guard was
+written to prefer over eating the game list.

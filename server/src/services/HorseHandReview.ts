@@ -132,14 +132,45 @@ export function detectLeaks(row: {
   const vi = variantInfo(row.variant);
   const investedBB = row.invested / (row.bigBlind || 1);
 
-  if (row.netBB > 0) return tags; // wins carry no leak tags (they are still stored)
-
   const folded = row.heroActions.some((a) => a.action === 'fold');
   const raisedOrBet = (stage: string) =>
     row.heroActions.some(
       (a) =>
         a.stage === stage && (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
     );
+
+  /*
+   * ═══ THE WIN SIDE OF RIVER AGGRESSION (2026-09-01) ═══
+   *
+   * Every tag below this point is a LEAK, and a leak is only a leak when the
+   * hand lost - hence the early return. That is right for the leak tags and
+   * it made one number unreadable.
+   *
+   * MEASURED on 2026-08-31: `river_aggr_lost` carried 1,545 hands and
+   * -97,229bb, roughly five times the entire day's horse net of -19,984bb,
+   * and it dominated the tag mix of nine of the ten bleeding horses. It is
+   * the largest single line in the audit - and it cannot be acted on, because
+   * the tag exists only on losses. There is no denominator. A horse that bets
+   * every river and a horse that value-bets perfectly produce the same
+   * evidence here, since a winning river bet is stored (5,277 wins were) and
+   * simply carries no tag at all.
+   *
+   * Tuning a river cap on that number would be tuning against a sample
+   * selected for being negative. So the mirror is recorded: the same line,
+   * the same showdown, the winning outcome. `river_aggr_won` plus
+   * `river_aggr_lost` is river aggression's actual EV.
+   *
+   * It is NOT a leak tag and must never be treated as one. It is named for
+   * the outcome so no gate can mistake it, and the self-tuner reads tags by
+   * exact name (nonnut_flush_stackoff, big_bet_fold, preflop_stackoff), so
+   * nothing downstream picks it up by accident.
+   */
+  if (row.netBB > 0) {
+    if (row.wentToShowdown && raisedOrBet('river')) {
+      tags.push('river_aggr_won');
+    }
+    return tags; // wins carry no LEAK tags (they are still stored)
+  }
 
   // Big loss with a fold at the end: chips went in and then the hand was
   // surrendered — a blown-off bluff or a bet-fold line that cost a stack.

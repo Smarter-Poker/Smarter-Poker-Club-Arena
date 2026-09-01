@@ -767,6 +767,33 @@ jobs:
             echo "- URL: $ENGINE_URL"
           } >> $GITHUB_STEP_SUMMARY
 
+      # DEPLOY TRUTH (Phase 4). The database is told what this run actually
+      # did, ship or skip, because the question "is the engine running main"
+      # cannot be answered from inside the system that deploys it. On the night
+      # of 2026-08-31 GitHub Actions stopped starting jobs for this repo and
+      # every Actions-side watchdog went quiet with it. A pipeline that reports
+      # in turns silence itself into an alarm: fn_ca_engine_deploy_truth_watch
+      # runs from pg_cron every ten minutes and raises when these rows stop
+      # arriving, when the running engine_version falls behind what was
+      # offered, when two builds hold leases at once, or when the engine stops
+      # heartbeating. It never fails the deploy.
+      - name: Record deploy truth in the database
+        if: always()
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TARGET_SHA: ${{ github.sha }}
+          SHIPPED: ${{ steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true' && steps.health.outputs.verified == 'true' }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ACTOR: ${{ github.event_name }}
+          REASON: >-
+            ${{ steps.dedupe.outputs.skip == 'true' && 'coalesced or already serving this commit'
+             || steps.drain.outputs.skip == 'true' && 'outside the restart window, or hands still in flight'
+             || steps.health.outputs.verified == 'true' && 'deployed and verified serving this commit'
+             || 'run ended without a verified cutover' }}
+        run: |
+          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
+          node scripts/ci/record-engine-deploy-attempt.mjs
+
       - name: Cleanup SSH key
         if: always()
         run: rm -f ~/.ssh/id_deploy ~/hssh

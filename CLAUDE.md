@@ -544,26 +544,128 @@ matter what setting, however opt-in, is proposed to gate it. Enforced by
 
 ---
 
-## 10.7 EM DASH COPY AND M-BAR ARTWORK ARE SEPARATE BANS (BINDING)
+---
 
-There are two independent user instructions:
+## 10.7 "EM BARS" MEANS EM DASHES (Dan, 2026-09-01, BINDING)
 
-- Player-facing copy may not contain em dashes (U+2014). The copy transforms
-  and CI text gate enforce this punctuation rule.
-- No M bars or three-horizontal-line menu artwork. This is separately banned
-  everywhere, including inside images. Navigation behavior and accessible
-  names remain, while every visible drawer trigger uses the approved
-  command-grid artwork.
+**Dan, 2026-08-20, verbatim: "forbid the use of em bars anywhere."**
+**He means the punctuation mark, U+2014. Nothing else.**
 
-Do not infer that clarification of the punctuation rule permits hamburger
-bars. It does not. Do not add or restore three-line glyphs, SVG paths,
-rectangle geometry, rasters, composite headers, or generated bundle content.
-The canonical law is `tests/unit/noThreeBarArtwork.law.test.ts`; the six retired
-stable URLs must remain absent and cache-tombstoned in `public/sw-bus.js`.
+Several files quote that sentence, and `src/utils/titleCase.ts` renders it as
+"inside the entire club arena, and forbid the use of em bars anywhere" with
+nothing nearby to say the subject is punctuation. Read literally, "bars ...
+banned anywhere" looks like a rule about horizontal lines.
+
+**It has now been misread that way twice in two days, and both times it took
+the hamburger menu off every page in the app:**
+
+| PR    | What it did                                                                                                                                                                            | Undone by    |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| #2321 | Gear on all five menu triggers, approved rasters deleted, service-worker tombstones evicting them from players' caches, and `noThreeBarArtwork.law.test.ts` making restoration fail CI | #2401        |
+| #2429 | Same thing again with a six-tile "command grid", tombstones restored, law restored                                                                                                     | #2432 (this) |
+
+The loop is self-sustaining and does not need a human in it: the ban is written
+down _in the repo_, so the next agent to read the repo re-enforces it, reverts
+whoever undid it, and writes the law back. That is why it kept coming back
+within hours.
+
+### The rule, stated so it cannot be misread
+
+- "em bars" = **em dashes** = the character `—`. A **copy** rule about the
+  characters inside text a player reads.
+- It says **nothing** about artwork, icons, SVG geometry, rasters, or anything
+  shaped like a line.
+- **It does not ban the hamburger menu.** The hamburger is the menu, on every
+  trigger, in Club Arena and everywhere else.
+
+### If you are about to ban "bars"
+
+Stop. If the word "bars" in something you are reading has led you toward an
+icon, a raster, an SVG path or a header composite, you have misread this
+sentence. Go read `tests/approvedHamburgerGearGuard.law.test.ts`, which pins
+every menu trigger, the md5 of every hamburger raster, and the banned
+replacement names (`command-center-v1`, `CommandGridIcon`) by name.
+
+Do not "resolve" the conflict by writing a third law. Two laws demanding
+opposite artwork is not a stricter repo, it is a coin flip decided by whichever
+test the next agent notices first.
 
 ---
 
-## 11. AGENT NETWORK + DEPLOY PLAYBOOK (added 2026-07-23, binding; corrected same day after live use)
+## 10.8 LAWS LIVE IN docs/LAWS.md, AND YOU NEVER WAIT ON CI (added 2026-09-01, binding)
+
+**1. THE LAW REGISTRY.** Every `*.law.test.*` file must have a row in
+`docs/LAWS.md` — `tests/law-registry.law.test.ts` enforces it. Before
+enforcing any law, confirm it exists on **current `origin/main`**, never in
+your local tree: stale worktrees carrying retired laws are how the hamburger
+revert war ran for two days. If two laws (or two CLAUDE.md copies) demand
+opposite things, STOP and ask Dan; never write a third law and never delete
+the other side on your own authority.
+
+**2. INTENTIONAL REVERTS NEED A HUMAN.** The Silent Revert Guard no longer
+accepts `[allow-revert]` or the word "revert" in a commit message on its own —
+on 2026-08-31 an agent amended the token into its own message to get past the
+guard. A detected revert merges only when Dan applies the `revert-approved`
+label to the PR (the check re-runs itself on labeling, and the guard files an
+issue asking for it). If main is broken, prefer a forward fix; it needs no
+label. Do not edit commit messages to route around the guard.
+
+**3. NEVER SET A TIMER TO WATCH CI.** Playbook 7b is binding: push, open the
+PR, report the PR number, END YOUR SESSION. Autopilot merges it, the publisher
+ships it, the watchdogs verify it — all server-side. "I've set another brief
+timer and will be back shortly" is the forbidden `wait_and_merge.sh` written
+in prose; it burns tokens and adds nothing. Checking ONCE at the end to say
+why something is BLOCKED is fine. Sitting in a loop is not.
+
+**4. WORKTREES ARE DISPOSABLE.** `scripts/prune-stale-worktrees.sh` removes
+any worktree that is clean, pushed, and idle for 72 hours. Do not keep state
+you care about only in a worktree: commit and push it, or it will eventually
+be pruned (pushed branches lose nothing — the commits live on origin).
+
+---
+
+## 11. AGENT NETWORK + DEPLOY PLAYBOOK
+
+### 11.0 FIRST: WHICH ENVIRONMENT ARE YOU IN? (added 2026-09-01, binding)
+
+Everything below 11.0 was written for the CLOUD sandbox and is still true
+there. It is WRONG for a Cowork session running on Dan's Mac, and following it
+there costs an hour before you find out. Check first, in this order:
+
+**If you have `mcp__counselors__host_terminal`, you are on the Mac. Use it for
+everything.** Real bash on Dan's machine, where `git@github.com` over SSH works
+and `api.github.com` is reachable. Then:
+
+- **Claim a worktree** (AGENT-PLAYBOOK): `git worktree add -b fix/<slug>
+~/Documents/.agent-trees/club-arena/<name> origin/main`. Takes about 40
+  seconds - launch it with `nohup ... &` and return immediately, because the
+  tool kills the process group when a call times out.
+- **`node` is NOT on the default PATH.** Prefix every command with
+  `export PATH="$HOME/.nvm/versions/node/$(ls ~/.nvm/versions/node | tail -1)/bin:$PATH"`.
+- **The pre-push hook takes about three minutes** (guards, `tsc`, then the tests
+  covering your diff). Launch the push with
+  `nohup git push > /tmp/push.log 2>&1 < /dev/null & disown`, return
+  immediately, and poll the log in later calls. Never `--no-verify`.
+- **`gh` is not installed.** Open pull requests with `curl` against the REST
+  API. The token is `GITHUB_TOKEN` in `~/Documents/club-arena/.env`.
+- **Rebasing your branch onto main is refused by a ref-guard hook.** Use
+  `git merge origin/main` instead. Section 12 still forbids rebasing `main`.
+
+**The GitHub MCP (`mcp__github__*`) returns `Bad credentials` as of
+2026-09-01.** Every call fails, including read-only ones. Do not debug it and
+do not build a plan around it; use the host terminal. If you are reading this
+long after that date, one call will tell you whether it is back.
+
+**Do not hand-edit `scripts/ci/supabase-schema-manifest.json` or
+`supabase-columns-manifest.json`.** They are nightly snapshots and were the
+most-changed files on main - 25 and 14 commits in one day - which made every
+migration-bearing branch conflict with every other one. Declare what you
+created in your own file under `scripts/ci/schema-manifest.d/`. See the README
+there.
+
+---
+
+### 11.1 The cloud sandbox (added 2026-07-23; corrected same day after live use)
 
 Cloud Cowork sessions have a locked-down sandbox. Learn the map ONCE and never
 ask Dan for a manual handoff again:

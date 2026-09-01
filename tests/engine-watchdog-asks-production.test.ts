@@ -62,9 +62,40 @@ describe('it fails in the safe direction', () => {
   });
 
   it('gives the catch-up schedule a grace window before raising anything', () => {
-    // One missed twenty-minute tick is ordinary. Three in a row is the failure.
+    /**
+     * One missed twenty-minute tick is ordinary. Three in a row is the failure.
+     *
+     * READ THE ARITHMETIC, NOT THE PROSE (2026-09-01). This assertion used to
+     * be the single sentence the script printed while it waited, `inside the
+     * ${GRACE_MIN}m grace window`. #2446 gave the engine a RESTART SCHEDULE and
+     * replaced that message. The grace window itself survived -- it is the
+     * FLOOR under the new schedule deadline -- but the pin went red on main,
+     * and `npx vitest run tests/` is the step that publishes the Club Arena
+     * bundle, so the World Hub sync failed on every commit until it was found.
+     *
+     * A pin on wording fails when the wording improves and passes when the
+     * behaviour is deleted, which is backwards. The assertions below read the
+     * shape of the calculation instead. Two of them still name a message; if
+     * the prose changes again, MOVE those two rather than deleting the
+     * arithmetic underneath them.
+     */
+    // The engine restarts on scheduled Chicago windows, not on every merge. The
+    // deadline is the first eligible window plus deploy time, but it can never
+    // be earlier than the legacy grace period.
     expect(SH).toContain('GRACE_MIN="${GRACE_MIN:-45}"');
-    expect(SH).toContain('inside the ${GRACE_MIN}m grace window');
+    expect(SH).toContain('RESTART_HOURS="${RESTART_HOURS:-04 10 14 18 22}"');
+    expect(SH).toContain('DEPLOY_MIN="${DEPLOY_MIN:-25}"');
+    expect(SH).toContain('WINDOW_EPOCH=$(window_at_or_after "$REQ_EPOCH")');
+    expect(SH).toContain('GRACE_DEADLINE=$(( REQ_EPOCH + GRACE_MIN * 60 ))');
+    expect(SH).toContain('[ "$GRACE_DEADLINE" -gt "$DEADLINE" ] && DEADLINE=$GRACE_DEADLINE');
+    expect(SH).toContain('Engine watchdog: waiting for the restart window');
+    // ...and inside that deadline the script says its piece and STOPS, before
+    // the ENGINE BEHIND warning section 5 raises. Without this, a deadline that
+    // is computed and then ignored still passes every assertion above it.
+    expect(SH_CODE).toMatch(/if \[ "\$NOW_EPOCH" -lt "\$DEADLINE" \][\s\S]{0,900}?exit 0/);
+    expect(SH_CODE.indexOf('NOW_EPOCH" -lt "$DEADLINE')).toBeLessThan(
+      SH_CODE.indexOf('ENGINE BEHIND')
+    );
   });
 
   it('does not fail the job, because the alarm is the point', () => {
@@ -98,9 +129,15 @@ describe('it fixes what it finds, and only then complains', () => {
 });
 
 describe('and it is actually scheduled to run', () => {
-  it('is a job in the publish watchdog, which already runs every 30 minutes', () => {
+  it('is a job in the publish watchdog, which runs on a real schedule', () => {
     expect(WF).toContain('bash .github/scripts/engine-watchdog.sh');
-    expect(WF).toContain("cron: '*/30 * * * *'");
+    // 2026-09-01 (cost audit): the watchdog schedule went */30 -> hourly. The
+    // workflow_run trigger still fires after every publish attempt, and
+    // engine deploy truth is now ALSO watched database-side every 10 minutes
+    // by fn_ca_engine_deploy_truth_watch() via pg_cron, which is the net that
+    // still works when Actions itself is the outage. The pin asserts a
+    // schedule EXISTS, so the job can never quietly lose its cron entirely.
+    expect(WF).toMatch(/cron: '\S+ \* \* \* \*'/);
   });
 
   it('is its own job, so an engine problem cannot hide behind a bundle problem', () => {

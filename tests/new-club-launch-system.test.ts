@@ -85,7 +85,7 @@ describe('owner launch controls', () => {
     expect(progressCss).toContain('@media (max-width: 760px)');
     expect(progressCss).toContain('grid-template-columns: 1fr');
     expect(progressCss).not.toContain('clip-path');
-    expect(lobby).toContain('data-opening-checklist={noticeEditable || undefined}');
+    expect(lobby).toContain('data-opening-checklist={showLaunchChecklist || undefined}');
     expect(machineCss).toMatch(
       /\.club-lobby-machine\[data-opening-checklist='true'\]\s*\{[\s\S]*overflow-y:\s*auto;/
     );

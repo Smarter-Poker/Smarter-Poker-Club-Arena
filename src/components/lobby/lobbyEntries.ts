@@ -228,7 +228,10 @@ const VARIANT_LABELS: Record<string, { short: string; long: string }> = {
   plo5: { short: 'PLO5', long: 'Pot Limit Omaha 5' },
   plo6: { short: 'PLO6', long: 'Pot Limit Omaha 6' },
   plo8: { short: 'PLO8', long: 'Pot Limit Omaha Hi-Lo' },
-  pineapple: { short: 'PNPL', long: 'Pineapple' },
+  /* Long name corrected 2026-09-01: the engine deals CRAZY Pineapple (the
+     discard is after the flop). The short code stays PNPL - it is a compact
+     column label, not a sentence, and the lobby's own filters key on it. */
+  pineapple: { short: 'PNPL', long: 'Crazy Pineapple' },
   short_deck: { short: '6+', long: 'Short Deck' },
   /* OFC removed 2026-08-23. Open Face Chinese is a card-PLACEMENT game with no
      betting rounds and no board; this platform has never dealt one. Every row

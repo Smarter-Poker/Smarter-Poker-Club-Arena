@@ -107,8 +107,19 @@ describe('the prior fixes in this area are still in place', () => {
     expect(TABLE_PAGE).not.toContain('sp.cards || existing?.holeCards');
     /* Prettier wraps this ternary across four lines, so the assertion is
        whitespace-tolerant — a single-line regex here failed against correct
-       code. */
-    expect(TABLE_PAGE).toMatch(/sp\.cards\?\.length\s*\?\s*sp\.cards\s*:\s*existing\?\.holeCards/);
+       code.
+
+       2026-09-01: the preserve branch grew one condition in front of it. This
+       merge runs on `requestResync()`, i.e. on the websocket sequence gap that
+       is the very thing that loses HAND_STARTED, so it was the one path that
+       could carry a previous hand's holding across a hand boundary. It now
+       asks whether the board in the same payload disproves what it is about to
+       carry. The property this test defends is unchanged and is still pinned:
+       length decides, and when the snapshot carries nothing the hero's holding
+       is PRESERVED rather than wiped. */
+    expect(TABLE_PAGE).toMatch(
+      /sp\.cards\?\.length\s*\?\s*sp\.cards\s*:\s*heroHoldIsExpired\(existing\?\.holeCards\)\s*\?\s*\[\]\s*:\s*existing\?\.holeCards/
+    );
   });
 
   it('HAND_STARTED still clears the hero hand at the boundary', () => {

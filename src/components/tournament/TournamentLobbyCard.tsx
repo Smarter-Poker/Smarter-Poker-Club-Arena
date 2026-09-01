@@ -541,7 +541,7 @@ function TournamentLobbyCardInner({
                   PLO8: 'PLO8',
                   PLO_HILO: 'PLO Hi-Lo',
                   SHORT_DECK: 'Short Deck',
-                  PINEAPPLE: 'Pineapple',
+                  PINEAPPLE: 'Crazy Pineapple',
                   MIXED: 'Mixed',
                 } as Record<string, string>
               )[tournament.gameType ?? ''] ?? tournament.gameType}

@@ -72,6 +72,7 @@ import { tableStateHub } from './transport/TableStateHub.js';
 // GameServer had four tournament-cancel paths; all four are gone. Nothing in
 // this file cancels a tournament any more — it fills, resumes or settles.
 import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
+import { selectCompletingDue } from './tournament/completingDwell.js';
 import { TournamentManager } from './tournament/TournamentManager.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
 import { isWakeableCashTable } from './services/onDemandTableWake.js';
@@ -193,6 +194,41 @@ export class GameServer {
    * dealing" and silently skipped its freeze recovery.
    */
   private tournamentOwnedTables: Set<string> = new Set();
+  /**
+   * IT ONLY EVER GREW (2026-09-01). `registerTableEngine` adds to the set above
+   * and nothing has ever removed from it, so on a board creating roughly 7,000
+   * tournament tables a day it grew without bound for the life of the process.
+   * The memory is the least of it: a table id that is in this set is treated as
+   * "should be dealing" by the zombie reaper and is skipped by
+   * `tableStateHub.dropTable`, so every long-dead table kept a hub room alive
+   * and kept lying to the reaper about what a healthy board looks like.
+   *
+   * Pruned once per discovery pass against what is genuinely still owned: the
+   * engines this process holds, plus every table its live TournamentManagers
+   * hold. Pruning against `tableEngines` alone would be wrong - the comment at
+   * the hub-drop site says exactly why: a tournament table can be briefly
+   * without an engine while its manager rebuilds it, and dropping the room
+   * there costs the seated players a sequence reset.
+   */
+  private pruneTournamentOwnedTables(): void {
+    if (this.tournamentOwnedTables.size === 0) return;
+    const stillOwned = new Set<string>(this.tableEngines.keys());
+    for (const tm of this.tournamentEngines.values()) {
+      for (const id of tm.getTableIds()) stillOwned.add(id);
+    }
+    for (const id of [...this.tournamentOwnedTables]) {
+      if (!stillOwned.has(id)) this.tournamentOwnedTables.delete(id);
+    }
+  }
+  /** Last orphaned-seat repair pass. See tournament/orphanedSeatRepair.ts. */
+  private lastOrphanSeatSweepAt = 0;
+  /**
+   * First time each COMPLETING row was seen by this process. See
+   * `tournament/completingDwell.ts`: the five-minute rule the scan has always
+   * claimed cannot be read off the row, because nothing maintains
+   * `tournaments.updated_at` on that path.
+   */
+  private completingFirstSeenAt: Map<string, number> = new Map();
   /**
    * Last time the cash-table discovery RPC completed successfully. Discovery is
    * the only thing that starts engines AND the only thing that reaps zombies —
@@ -3116,24 +3152,53 @@ export class GameServer {
           }
         }
 
+        // Bound the tournament-owned table set to what is still owned. See the
+        // field's own comment for the three things its unbounded growth broke.
+        this.pruneTournamentOwnedTables();
+
         // ── STUCK COMPLETING RECOVERY ──
-        // If a tournament has been in COMPLETING status for > 5 minutes, force it to COMPLETED.
-        // This handles crashes/failures during the finishTournament flow.
-        const { data: stuckTournaments } = await supabase
+        // A tournament that has been COMPLETING for more than five minutes is
+        // recovered: paid what it still owes, then completed. The dwell is
+        // measured by this process (tournament/completingDwell.ts) because
+        // nothing maintains `updated_at` on this path, and it is what keeps the
+        // recovery off the back of a finish that is still paying - the row is
+        // flipped to COMPLETING BEFORE the money moves, and a manager leaves
+        // `tournamentEngines` the moment it stops.
+        const { data: stuckTournaments, error: completingScanErr } = await supabase
           .from('tournaments')
           .select('id, name, status')
           .eq('status', 'COMPLETING');
 
-        for (const stuck of stuckTournaments || []) {
-          if (!this.tournamentEngines.has(stuck.id)) {
-            // No active engine managing this tournament — it's truly stuck.
-            // TOURNEY-AUDIT 2026-07-24: recovery now PAYS remaining players
-            // (winner + unpaid ITM places) before completing — the old path
-            // flipped straight to COMPLETED and the winner's prize vanished.
-            console.warn(
-              `[GameServer] Recovering stuck COMPLETING tournament: ${stuck.name} (${stuck.id.slice(0, 8)})`
-            );
-            await recoverStuckCompletingTournaments('discovery-watchdog', stuck.id);
+        // An unreadable scan is not an empty one: forgetting every dwell here
+        // would restart all five-minute clocks on a transient error, which is
+        // the one way this gate could hold a genuinely stuck row forever.
+        if (completingScanErr) {
+          reportError(
+            new Error(
+              `[GameServer] COMPLETING scan failed: ${completingScanErr.message} - dwell clocks kept, nothing recovered this pass`
+            ),
+            'GameServer.completing_scan_failed'
+          );
+        } else {
+          const dwell = selectCompletingDue(
+            (stuckTournaments || []).map((t) => String(t.id)),
+            this.completingFirstSeenAt,
+            Date.now()
+          );
+          this.completingFirstSeenAt = dwell.seenAt;
+          const dueIds = new Set(dwell.due);
+          for (const stuck of stuckTournaments || []) {
+            if (!dueIds.has(String(stuck.id))) continue;
+            if (!this.tournamentEngines.has(stuck.id)) {
+              // No active engine managing this tournament - it's truly stuck.
+              // TOURNEY-AUDIT 2026-07-24: recovery now PAYS remaining players
+              // (winner + unpaid ITM places) before completing - the old path
+              // flipped straight to COMPLETED and the winner's prize vanished.
+              console.warn(
+                `[GameServer] Recovering stuck COMPLETING tournament: ${stuck.name} (${stuck.id.slice(0, 8)})`
+              );
+              await recoverStuckCompletingTournaments('discovery-watchdog', stuck.id);
+            }
           }
         }
 
@@ -3199,6 +3264,26 @@ export class GameServer {
           this.lastClosedTableReopenSweepAt = Date.now();
           void this.reopenTablesClosedUnderLiveTournaments().catch((err) =>
             reportError(err, 'GameServer.closed_table_reopen_sweep_error')
+          );
+        }
+
+        /**
+         * ── A STRANDED PLAYER IS BROUGHT BACK TO THE FELT (2026-09-01) ──────
+         *
+         * The reopen sweep above declines when the tournament still owns an
+         * open table, and it is right to: the repair for a player left on a
+         * CLOSED table is to move them to the felt that is already open, not
+         * to put a second felt under the game. Nothing did that, and the state
+         * fell between all three existing sweeps, so "$100 Freeroll - 12:00 AM"
+         * sat RUNNING and silent for 5h21m with two entrants, one on each side
+         * of a closed table. See tournament/orphanedSeatRepair.ts.
+         *
+         * Same cadence and the same fire-and-forget shape as its neighbours.
+         */
+        if (Date.now() - this.lastOrphanSeatSweepAt > 60 * 1000) {
+          this.lastOrphanSeatSweepAt = Date.now();
+          void this.repairOrphanedTournamentSeats().catch((err) =>
+            reportError(err, 'GameServer.orphan_seat_repair_sweep_error')
           );
         }
 
@@ -4139,6 +4224,40 @@ export class GameServer {
       /* ONE SECOND, not five. See SEAT_FIRST_START_INTERVAL: Dan's rule is a
          number, and four fifths of the old floor was this line. */
       await this.sleep(SEAT_FIRST_START_INTERVAL);
+    }
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  BRING A STRANDED PLAYER BACK TO THE FELT
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The rules, and the tournament that sat silent for 5h21m holding them
+   * apart, are in `tournament/orphanedSeatRepair.ts`. This method is the one
+   * read that finds the shape and the hand-off to the manager that owns the
+   * move; the move itself goes through `executePlayerMoves`, the only hardened
+   * seat-move path on the platform, so this sweep writes no seat rows itself.
+   *
+   * A tournament with no live manager on this instance is left for the next
+   * pass: discovery adopts it within a cycle and the repair runs then. Doing
+   * the move without a manager would mean re-implementing the move, which is
+   * how the duplicate-seat incidents of 2026-08-20 and 2026-08-25 happened.
+   */
+  private async repairOrphanedTournamentSeats(): Promise<void> {
+    if (this.tournamentEngines.size === 0) return;
+
+    for (const [tournamentId, tm] of this.tournamentEngines) {
+      if (!tm.isRunning()) continue;
+      try {
+        const moved = await tm.absorbOrphanedSeats();
+        if (moved > 0) {
+          console.warn(
+            `[GameServer] Orphaned-seat repair: ${moved} stranded player(s) moved back onto open felt in tournament ${tournamentId.slice(0, 8)}`
+          );
+        }
+      } catch (err) {
+        reportError(err, 'GameServer.orphan_seat_repair_failed');
+      }
     }
   }
 

@@ -84,6 +84,8 @@ const ALLOWED_ORPHANS: Record<string, string> = {
   'dev/bus': 'developer bus inspector',
   'dev/club-ui': 'developer component showcase',
   'dev/game-cards': 'developer component showcase',
+  'dev/financial-decisions':
+    'development-only financial decision browser harness with no production navigation',
   health: 'diagnostic endpoint, probed by monitoring not by people',
   engine: 'diagnostic endpoint, probed by monitoring not by people',
   'stats/:userId': 'intentional owner-privacy boundary retained for old bookmarks',

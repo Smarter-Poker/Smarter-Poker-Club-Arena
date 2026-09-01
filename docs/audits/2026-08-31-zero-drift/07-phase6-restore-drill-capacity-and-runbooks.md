@@ -15,15 +15,15 @@ rows with zero persistence risk.
 Result: the reset REFUSED to run, which is the safety rail working. Its
 preflight reported, precisely:
 
-| Check | State At Rehearsal | State After Same-Night Fixes |
-| --- | --- | --- |
-| no_open_incidents | FAIL (4 open) | PASS |
-| guards_all_present | PASS | PASS |
-| ledger_chain_clean | PASS (41,274 rows verified) | PASS |
-| zero_suspense_flow | FAIL (108 rows / 24h) | FAIL - decays to green about 24h after the last suspense row |
-| no_unregistered_rpcs | FAIL (3 functions) | PASS (audited + registered) |
-| fresh_supply_snapshot | PASS (unexplained 62.76) | PASS |
-| zero_write_failures_24h | PASS | PASS |
+| Check                   | State At Rehearsal          | State After Same-Night Fixes                                 |
+| ----------------------- | --------------------------- | ------------------------------------------------------------ |
+| no_open_incidents       | FAIL (4 open)               | PASS                                                         |
+| guards_all_present      | PASS                        | PASS                                                         |
+| ledger_chain_clean      | PASS (41,274 rows verified) | PASS                                                         |
+| zero_suspense_flow      | FAIL (108 rows / 24h)       | FAIL - decays to green about 24h after the last suspense row |
+| no_unregistered_rpcs    | FAIL (3 functions)          | PASS (audited + registered)                                  |
+| fresh_supply_snapshot   | PASS (unexplained 62.76)    | PASS                                                         |
+| zero_write_failures_24h | PASS                        | PASS                                                         |
 
 The rehearsal itself found the last uncategorized money writer on the
 platform: `fn_spin_move_owner_wallet`, the spin-margin mover for STANDALONE
@@ -68,15 +68,16 @@ Success criterion: restored ledger chain verifies and the supply totals match
 
 Measured 2026-09-01 (sizes include indexes):
 
-| Table | Size | Rows | Growth |
-| --- | --- | --- | --- |
-| solved_spots_gold | 80 GB | 6.1M | static solver corpus - archive candidate, not a partition candidate |
-| hand_state_snapshots | 6.3 GB | 2.0M | high churn - already pruned; verify retention window |
-| hand_history | 4.5 GB | 2.0M | append-heavy |
-| ca_hand_player_idx | 3.8 GB | 12.4M | append-heavy |
-| chip_ledger | 174 MB | 259K | 58,234 rows/day measured = ~21M rows/yr, ~15 GB/yr |
+| Table                | Size   | Rows  | Growth                                                              |
+| -------------------- | ------ | ----- | ------------------------------------------------------------------- |
+| solved_spots_gold    | 80 GB  | 6.1M  | static solver corpus - archive candidate, not a partition candidate |
+| hand_state_snapshots | 6.3 GB | 2.0M  | high churn - already pruned; verify retention window                |
+| hand_history         | 4.5 GB | 2.0M  | append-heavy                                                        |
+| ca_hand_player_idx   | 3.8 GB | 12.4M | append-heavy                                                        |
+| chip_ledger          | 174 MB | 259K  | 58,234 rows/day measured = ~21M rows/yr, ~15 GB/yr                  |
 
 Recommendations, in order:
+
 1. chip_ledger: RANGE partition by month on created_at BEFORE it reaches
    ~5 GB (around 4 months out). The append-only trigger, hash chain
    (chain_seq/prev_hash) and partial-unique dedupe indexes must be recreated

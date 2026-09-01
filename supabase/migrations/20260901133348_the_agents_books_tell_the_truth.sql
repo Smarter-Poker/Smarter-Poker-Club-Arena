@@ -188,6 +188,16 @@ BEGIN
 END;
 $function$;
 
+
+-- Operator surface, not player surface. It answers for whichever agent id it is
+-- given, so an authenticated caller could read another agent's day-by-day
+-- earnings with an id they happen to know. Its one caller is the World Hub
+-- trends endpoint, which holds the service role. (The database's autorevoke
+-- trigger already strips PUBLIC and anon from every new definer function; this
+-- says so in the file, which is where the next reader looks.)
+REVOKE ALL ON FUNCTION public.get_daily_commission_summary(uuid, uuid, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_daily_commission_summary(uuid, uuid, integer) TO service_role;
+
 -- ───────────────────────────────────────────────────────────────────────────
 -- 3. FOUR FUNCTIONS THAT ONLY EVER TOUCHED THE DEAD OBJECTS
 -- ───────────────────────────────────────────────────────────────────────────
@@ -265,6 +275,12 @@ AS $function$
             WHERE n.nspname = 'public' AND p.proname = x.fn)
       OR NOT public.fn_money_path_reaches_club_scope(x.fn, 4);
 $function$;
+
+
+-- An estate guard reporting which money paths have stopped reaching club scope.
+-- Diagnostics: service role only.
+REVOKE ALL ON FUNCTION public.fn_union_money_path_check() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_union_money_path_check() TO service_role;
 
 -- guard_wallet_balance_write whitelists the functions permitted to move
 -- balances. atomic_pay_agent_settlement sat on that list; it is gone, so its
@@ -389,6 +405,13 @@ BEGIN
                             'blockers', v_blockers, 'checked_at', now());
 END;
 $function$;
+
+
+-- It reports another account's balances, seats, tickets and unclaimed
+-- commission by user id. Only the deletion pipeline calls it, and that holds
+-- the service role.
+REVOKE ALL ON FUNCTION public.fn_ca_gdpr_financial_precheck(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_gdpr_financial_precheck(uuid) TO service_role;
 
 -- ───────────────────────────────────────────────────────────────────────────
 -- 6. A ROLE CHANGE REPORTS WHAT IS ACTUALLY OWED

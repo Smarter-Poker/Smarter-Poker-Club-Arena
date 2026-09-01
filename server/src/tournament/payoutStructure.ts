@@ -201,7 +201,6 @@ export function trimStructureToField(
  */
 export const PAID_FRACTION_OF_FIELD = 0.15;
 export const MIN_PAID_PLACES = 3;
-export const MAX_PAID_PLACES = 100;
 
 export function paidPlacesForField(fieldSize: number): number {
   const field = Number(fieldSize);
@@ -209,7 +208,7 @@ export function paidPlacesForField(fieldSize: number): number {
   // Never pay more places than there are players, and never pay every player:
   // a structure that pays 100% of the field is a refund, not a tournament.
   const byFraction = Math.round(field * PAID_FRACTION_OF_FIELD);
-  const capped = Math.min(byFraction, Math.floor(field / 2), MAX_PAID_PLACES);
+  const capped = Math.min(byFraction, Math.floor(field / 2));
   return Math.max(1, Math.min(Math.max(MIN_PAID_PLACES, capped), Math.floor(field)));
 }
 
@@ -265,9 +264,7 @@ export function payoutStructureForField(fieldSize: number): PayoutPlace[] {
     const isLast = i === places - 1;
     // Two decimals: the column and every downstream reader are money-shaped.
     // The residual lands on the LAST place, never the first.
-    const pct = isLast
-      ? Math.round((100 - running) * 100) / 100
-      : Math.round(raw[i] * 100) / 100;
+    const pct = isLast ? Math.round((100 - running) * 100) / 100 : Math.round(raw[i] * 100) / 100;
     running = Math.round((running + pct) * 100) / 100;
     out.push({ place: i + 1, percentage: pct });
   }

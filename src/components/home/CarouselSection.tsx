@@ -7,7 +7,7 @@
  * live stats. Single-click navigates to the club's lobby.
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
+import { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
 import haptic from '../../services/HapticService';
 import { playPremiumSfx } from '../../utils/playPremiumSfx';
@@ -42,9 +42,9 @@ export interface UserClub {
 }
 
 export interface ClubStats {
-  totalMembers: number;
-  clubLevel: number;
-  activePlayers: number;
+  totalMembers: number | null;
+  clubLevel: number | null;
+  activePlayers: number | null;
 }
 
 export interface CarouselSectionProps {
@@ -270,9 +270,9 @@ export default function CarouselSection({
             <PageErrorBoundary pageName={club.name || 'Club Card'}>
               <ClubCardPanel
                 clubName={club.name?.toUpperCase() || 'MY CLUB'}
-                totalMembers={stats?.totalMembers ?? club.member_count ?? 0}
-                clubLevel={stats?.clubLevel ?? 1}
-                activePlayers={stats?.activePlayers ?? 0}
+                totalMembers={stats?.totalMembers ?? null}
+                clubLevel={stats?.clubLevel ?? null}
+                activePlayers={stats?.activePlayers ?? null}
                 clubId={club.club_id}
                 cardImageUrl={
                   Number(club.club_id) === SHARK_CLUB_ID

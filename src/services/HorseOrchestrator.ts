@@ -26,10 +26,7 @@
 
 import { supabase } from '../lib/supabase';
 import { HydraService } from './HydraService';
-import { tournamentService } from './TournamentService';
-import { QUERY_LIMITS } from '../lib/constants';
 import { masterBus } from '../core/MasterBus';
-import { resolveClubUUID } from '../utils/clubIdResolver';
 import { buyInFor, rakeRateFor } from '../utils/buyIn';
 import { clampSeatsForVariant } from '../config/tableSeating';
 
@@ -1243,9 +1240,6 @@ class HorseOrchestrator {
     // Ensure the Midway Union exists and both clubs are attached
     await this.ensureUnionSetup();
 
-    // Ensure horses are members of BOTH clubs
-    await this.ensureHorsesInBothClubs();
-
     let tablesCreated = 0;
     let horsesSeated = 0;
 
@@ -2009,132 +2003,6 @@ class HorseOrchestrator {
       const error = `activateAllHorses error: ${err.message}`;
       this.logError(error);
       return { activated: 0, errors: [error] };
-    }
-  }
-
-  /**
-   * Ensure ALL 100 horses are members of BOTH Shark Club AND Club JAQK.
-   * This enables cross-club union settlement testing — each horse plays in
-   * both clubs and their stats/ledgers are tracked independently per club.
-   */
-  private async ensureHorsesInBothClubs(): Promise<void> {
-    try {
-      // Get all horse profile IDs
-      const { data: horses, error: horsesError } = await supabase
-        .from('profiles')
-        .select('id, username')
-        .eq('is_horse', true)
-        .limit(QUERY_LIMITS.LIST);
-
-      if (horsesError || !horses?.length) {
-        this.logError(`Failed to fetch horses: ${horsesError?.message || 'No horses found'}`);
-        return;
-      }
-
-      console.debug(`[Orchestrator] Ensuring ${horses.length} horses are members of both clubs...`);
-
-      const clubIds = [this.sharkClubId, this.jaqkClubId];
-      let membershipsCreated = 0;
-
-      for (const clubId of clubIds) {
-        // Get existing members for this club
-        const { data: existing, error: existingErr } = await supabase
-          .from('club_members')
-          .select('user_id')
-          .eq('club_id', await resolveClubUUID(clubId));
-
-        /* A FAILED READ IS NOT AN EMPTY CLUB (2026-08-29). Only `data` was
-           destructured, so a failure produced an EMPTY `existingIds` set --
-           i.e. "no horse is in this club" -- and the batch insert below then
-           tried to add every horse in the fleet again. */
-        if (existingErr) {
-          console.error(`[Orchestrator] club_members read failed for ${clubId}:`, existingErr);
-          continue;
-        }
-
-        const existingIds = new Set((existing || []).map((m: any) => m.user_id));
-
-        // Find horses not yet in this club
-        const missing = horses.filter((h) => !existingIds.has(h.id));
-
-        if (missing.length === 0) {
-          console.debug(`[Orchestrator] All horses already in club ${clubId}`);
-          continue;
-        }
-
-        // Batch insert missing memberships
-        const rows = missing.map((h) => ({
-          club_id: clubId,
-          user_id: h.id,
-          role: 'player',
-          status: 'active',
-        }));
-
-        // Insert in batches of 50 to avoid payload limits
-        for (let i = 0; i < rows.length; i += 50) {
-          const batch = rows.slice(i, i + 50);
-          const { error: insertError } = await supabase
-            .from('club_members')
-            .upsert(batch, { onConflict: 'club_id,user_id', ignoreDuplicates: true });
-
-          if (insertError) {
-            // If upsert fails (e.g. no unique constraint), try individual inserts
-            for (const row of batch) {
-              const { error: singleError } = await supabase.from('club_members').insert(row);
-              if (!singleError) membershipsCreated++;
-              // Ignore duplicate key errors silently
-            }
-          } else {
-            membershipsCreated += batch.length;
-          }
-        }
-
-        console.debug(`[Orchestrator] Added ${missing.length} horses to club ${clubId}`);
-      }
-
-      /* Update member counts on both clubs.
-       *
-       * THIS WRITES A SHARED COLUMN, SO IT MUST NOT WRITE A PRIVATE VIEW.
-       * It used a direct `club_members` count, which is RLS-filtered: it returns
-       * how many rows THE VISITING USER may enumerate, not how many members the
-       * club has. This module is imported by UnionDetailPage, a browser page, so
-       * it runs with whatever visibility that visitor happens to have.
-       *
-       * The blast radius is why this matters more than a display bug. It is the
-       * ONLY client-side writer of clubs.member_count, there is NO trigger on
-       * club_members maintaining that column, and the value it writes then feeds:
-       *   - ClubsService.getLiveMemberCount (source B),
-       *   - ClubHomePage's fallback when the live count is unavailable,
-       *   - and the union total, via trg_union_totals_follow_club_counts.
-       * So one visit by a non-member would have overwritten the shared number for
-       * everyone and cascaded it upward. The counts were correct only because the
-       * last person to trigger this could see every row.
-       *
-       * fn_get_club_member_count is SECURITY DEFINER with a pinned search_path,
-       * so what gets stored is the club's number regardless of who triggered it.
-       */
-      for (const clubId of clubIds) {
-        // NOTE: No FK between club_members and profiles — count all members directly.
-        // Horse filtering requires a separate profiles query (future enhancement).
-        const resolvedForCount = await resolveClubUUID(clubId);
-        const { data: trueCount, error: countErr } = await supabase.rpc(
-          'fn_get_club_member_count',
-          { p_club_id: resolvedForCount }
-        );
-
-        // Only write a number we actually got. A dropped request must leave the
-        // stored count alone rather than zeroing a shared column.
-        const next = trueCount == null ? null : Number(trueCount);
-        if (!countErr && next != null && Number.isFinite(next)) {
-          await supabase.from('clubs').update({ member_count: next }).eq('id', clubId);
-        }
-      }
-
-      console.debug(
-        `[Orchestrator] Cross-club membership complete: ${membershipsCreated} new memberships created`
-      );
-    } catch (err: any) {
-      this.logError(`ensureHorsesInBothClubs error: ${err.message}`);
     }
   }
 

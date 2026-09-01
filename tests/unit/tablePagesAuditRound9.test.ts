@@ -60,9 +60,11 @@ describe('round 9: TableService', () => {
 });
 
 describe('round 9: ClubHomePage', () => {
-  it('reports failed union member-count, level re-read, and share-ref reads', () => {
+  it('reports remaining reads and never invokes the removed legacy level re-read', () => {
     expect(CLUB_HOME).toContain('union_member_counts_read_failed');
-    expect(CLUB_HOME).toContain('level_reread_failed');
+    expect(CLUB_HOME).not.toContain('level_reread_failed');
+    expect(CLUB_HOME).not.toContain("rpc('recompute_club_levels'");
+    expect(CLUB_HOME).toContain('getClubLevelInfoFromMembers(clubData.member_count || 0)');
     expect(CLUB_HOME).toContain('share_ref_profile_read_failed');
   });
 });

@@ -20,7 +20,7 @@
 -- rarer is not never.)
 --
 -- So the loop now also picks up rows stamped -1 whose recorded error names a
--- retryable condition — deadlock, serialization failure, lock timeout,
+-- retryable condition - deadlock, serialization failure, lock timeout,
 -- statement timeout, canceled statement. A row that failed for any OTHER
 -- reason keeps its -1 and stays visible in
 -- v_tournament_rake_attribution_gaps, because a genuine data fault must be

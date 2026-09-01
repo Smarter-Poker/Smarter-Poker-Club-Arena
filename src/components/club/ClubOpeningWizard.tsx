@@ -57,6 +57,7 @@ export default function ClubOpeningWizard({
   const [bbjEnabled, setBbjEnabled] = useState(true);
   const [bbjSeed, setBbjSeed] = useState(100);
   const [spinsEnabled, setSpinsEnabled] = useState(false);
+  const [spinFundingConfirmed, setSpinFundingConfirmed] = useState(false);
   const [spinMaxStake, setSpinMaxStake] = useState(1);
   const spinCoverageMinimum = Math.max(100, requiredSeedForStake(spinMaxStake));
   const [spinSeed, setSpinSeed] = useState(requiredSeedForStake(1));
@@ -106,6 +107,9 @@ export default function ClubOpeningWizard({
     if (step === 4 && spinsEnabled && spinSeed < spinCoverageMinimum) {
       return `This Spin Board Requires At Least ${chips(spinCoverageMinimum)} Chips`;
     }
+    if (step === 4 && spinsEnabled && !spinFundingConfirmed) {
+      return 'Confirm The Exact Spin Reserve Transfer Before Continuing';
+    }
     if (step === 5 && promoEnabled) {
       if (promoName.trim().length < 3) return 'Promotion Name Must Be At Least 3 Characters';
       if (promoBudget < 100) return 'Promotion Budget Must Be At Least 100 Chips';
@@ -124,6 +128,7 @@ export default function ClubOpeningWizard({
     spinsEnabled,
     spinSeed,
     spinCoverageMinimum,
+    spinFundingConfirmed,
     promoEnabled,
     promoName,
     promoBudget,
@@ -387,6 +392,7 @@ export default function ClubOpeningWizard({
                   className={spinsEnabled ? 'is-selected' : ''}
                   onClick={() => {
                     setSpinsEnabled(true);
+                    setSpinFundingConfirmed(false);
                     setSpinSeed((value) => Math.max(value, spinCoverageMinimum));
                   }}
                 >
@@ -396,7 +402,10 @@ export default function ClubOpeningWizard({
                 <button
                   type="button"
                   className={!spinsEnabled ? 'is-selected' : ''}
-                  onClick={() => setSpinsEnabled(false)}
+                  onClick={() => {
+                    setSpinsEnabled(false);
+                    setSpinFundingConfirmed(false);
+                  }}
                 >
                   <strong>Not Now</strong>
                   <span>Keep Spins Closed For Launch</span>
@@ -411,6 +420,7 @@ export default function ClubOpeningWizard({
                       onChange={(event) => {
                         const stake = Number(event.target.value);
                         setSpinMaxStake(stake);
+                        setSpinFundingConfirmed(false);
                         setSpinSeed((value) =>
                           Math.max(value, Math.max(100, requiredSeedForStake(stake)))
                         );
@@ -430,9 +440,27 @@ export default function ClubOpeningWizard({
                       min={spinCoverageMinimum}
                       step="100"
                       value={spinSeed}
-                      onChange={(event) => setSpinSeed(Math.max(0, Number(event.target.value)))}
+                      onChange={(event) => {
+                        setSpinFundingConfirmed(false);
+                        setSpinSeed(Math.max(0, Number(event.target.value)));
+                      }}
                     />
                     <small>Coverage Minimum: {chips(spinCoverageMinimum)} Chips</small>
+                  </label>
+                  <label>
+                    <span>Spin Funding Confirmation</span>
+                    <span>
+                      <input
+                        type="checkbox"
+                        checked={spinFundingConfirmed}
+                        onChange={(event) => setSpinFundingConfirmed(event.target.checked)}
+                      />{' '}
+                      Transfer Exactly {chips(spinSeed)} Chips From The Club Bank Into The Spin
+                      Reserve
+                    </span>
+                    <small>
+                      Club Bank After This Spin Transfer: {chips(clubBank - spinSeed)} Chips
+                    </small>
                   </label>
                 </div>
               )}

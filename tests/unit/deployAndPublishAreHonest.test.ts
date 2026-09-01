@@ -76,10 +76,29 @@ describe('the engine deploy tells the truth when it skips', () => {
   });
 
   it('fires only at the hours that can be 6pm, 10pm, 4am, 10am, 2pm in Chicago', () => {
-    // Four UTC hours because CDT and CST put the two windows an hour apart;
-    // the gate keeps whichever two are genuinely 07 and 19 local.
+    // Ten UTC hours for five local windows: CDT and CST put each window an
+    // hour apart, so both must be declared or the window silently disappears
+    // for half the year. The gate keeps whichever five are genuinely 04, 10,
+    // 14, 18 or 22 o'clock in Chicago.
     expect(HETZNER).toMatch(/cron: '0 0,3,4,9,10,15,16,19,20,23 \* \* \*'/);
     expect(cronEveryMinutes(HETZNER)).toBeNull();
+
+    // Asserted as the PAIRING rather than as a literal, because the literal is
+    // what a future edit gets wrong: dropping one hour leaves a cron that still
+    // looks plausible and a window that stops firing when the clocks change.
+    const utcHours = new Set(
+      HETZNER.match(/cron: '0 ([0-9,]+) \* \* \*'/)![1]
+        .split(',')
+        .map(Number)
+    );
+    const gate = HETZNER.match(/case "\$HOUR" in\s*\n\s*([0-9|]+)\)/)![1]
+      .split('|')
+      .map(Number);
+    expect(gate.sort((a, b) => a - b)).toEqual([4, 10, 14, 18, 22]);
+    for (const local of gate) {
+      expect(utcHours.has((local + 5) % 24), `CDT hour missing for ${local}:00 local`).toBe(true);
+      expect(utcHours.has((local + 6) % 24), `CST hour missing for ${local}:00 local`).toBe(true);
+    }
   });
 
   it('resolves the window from the tz database, not from a baked offset', () => {

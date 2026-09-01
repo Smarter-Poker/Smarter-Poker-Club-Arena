@@ -114,6 +114,56 @@ describe('EngineWebSocketServer /ws/multi', () => {
     expect(errs.some((m) => m.type === 'ERROR' && m.code === 'TABLE_NOT_FOUND')).toBe(true);
   });
 
+  it('wakes an authorized new empty table before subscribing', async () => {
+    let running = false;
+    const ensureTable = vi.fn(async (id: string) => {
+      if (id !== T1) return false;
+      running = true;
+      return true;
+    });
+    const { server: wakeServer, hub: wakeHub } = makeServer({
+      tableExists: () => running,
+      ensureTable,
+    });
+    const wakeWs = makeFakeWs();
+    (wakeServer as unknown as { onUpgradedMux: Handler }).onUpgradedMux(wakeWs, 'user-1', null);
+
+    wakeWs.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+
+    expect(ensureTable).toHaveBeenCalledOnce();
+    expect(ensureTable).toHaveBeenCalledWith(T1);
+    expect(wakeHub.subscribe).toHaveBeenCalledOnce();
+    expect(wakeWs.sent.map((s) => JSON.parse(s))).toContainEqual({
+      type: 'SUBSCRIBED',
+      tableId: T1,
+    });
+  });
+
+  it('does not wake a table for a viewer who fails club access', async () => {
+    const ensureTable = vi.fn(async () => true);
+    const { server: deniedServer } = makeServer({
+      tableExists: () => false,
+      ensureTable,
+      authorizeViewer: async () => ({
+        allowed: false,
+        reason: 'membership_required',
+        clubId: 'club-1',
+      }),
+    });
+    const deniedWs = makeFakeWs();
+    (deniedServer as unknown as { onUpgradedMux: Handler }).onUpgradedMux(
+      deniedWs,
+      'outsider',
+      null
+    );
+
+    deniedWs.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+
+    expect(ensureTable).not.toHaveBeenCalled();
+  });
+
   it('rejects a non-member before any table state subscription', async () => {
     const { server: deniedServer, hub: deniedHub } = makeServer({
       authorizeViewer: async () => ({

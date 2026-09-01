@@ -73,6 +73,16 @@ describe('new club opening wizard', () => {
     expect(home).toContain('navigate(`/clubs/${clubId}/members`)');
   });
 
+  it('keeps the checklist visible until every launch task is complete', () => {
+    expect(home).toContain('launchTasks.some((task) => !task.complete)');
+    expect(home).not.toContain('noticeEditable && totalGameCount === 0');
+  });
+
+  it('derives the lobby level from live members and cannot celebrate a hierarchy level', () => {
+    expect(home).toContain('getClubLevelInfoFromMembers(clubData.member_count || 0)');
+    expect(home).not.toContain("rpc('recompute_club_levels'");
+  });
+
   it('keeps agent terms separate from the owner’s manual chip transfer', () => {
     expect(memberManagement).toContain('A credit LIMIT is');
     expect(memberManagement).toContain('never an automatic transfer');

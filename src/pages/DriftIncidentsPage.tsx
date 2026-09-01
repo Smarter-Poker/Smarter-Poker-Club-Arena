@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  DRIFT INCIDENTS PAGE — Ops Dashboard for Financial Drift Incidents
+ *  DRIFT INCIDENTS PAGE - Ops Dashboard for Financial Drift Incidents
  * ═══════════════════════════════════════════════════════════════════════════════
  * Lists drift incidents from fn_ca_incident_dashboard with the 20-minute
  * resolution-target countdown, expected vs actual amounts, auto-repair status,
@@ -19,6 +19,7 @@ import {
   IncidentAction,
   IncidentStatus,
 } from '../services/DriftIncidentService';
+import DriftGatePanel from './DriftGatePanel';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -77,6 +78,16 @@ export default function DriftIncidentsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<IncidentStatus>('open');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  /* Push notifications link here as /financial-incidents?id=<incident id>.
+     Capture the id once; when the incident arrives in a load, jump to it.
+     An id that never arrives (old bookmark, purged incident) is ignored. */
+  const [deepLinkId, setDeepLinkId] = useState<string | null>(() => {
+    try {
+      return new URLSearchParams(window.location.search).get('id');
+    } catch {
+      return null;
+    }
+  });
   // Incidents acted on stay visible in the current tab even after their
   // status changes (e.g. an acknowledged incident must NOT disappear from
   // the Open tab the operator is looking at).
@@ -135,6 +146,26 @@ export default function DriftIncidentsPage() {
     const timer = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // ── Notification deep link: land on the incident the push was about ──
+  useEffect(() => {
+    if (!deepLinkId || incidents.length === 0) return;
+    const target = incidents.find((i) => i.id === deepLinkId);
+    if (!target) return;
+    // The card only renders on its status tab - switch to it first.
+    setFilter(target.status);
+    setExpanded((prev) => new Set(prev).add(target.id));
+    setDeepLinkId(null);
+    // Scroll after the tab switch has rendered the card.
+    window.setTimeout(() => {
+      const el = document.getElementById(`di-${target.id}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('deep-linked');
+        window.setTimeout(() => el.classList.remove('deep-linked'), 4000);
+      }
+    }, 120);
+  }, [deepLinkId, incidents]);
 
   const changeFilter = (next: IncidentStatus) => {
     setFilter(next);
@@ -381,6 +412,9 @@ export default function DriftIncidentsPage() {
         ))}
       </div>
 
+      {/* Burn-In Gate + Supply Trends + Balance As-Of (management only) */}
+      <DriftGatePanel />
+
       {/* Filter Tabs */}
       <div className="di-filter-tabs">
         {STATUS_TABS.map((tab) => (
@@ -415,6 +449,7 @@ export default function DriftIncidentsPage() {
             return (
               <div
                 key={incident.id}
+                id={`di-${incident.id}`}
                 className={`di-card severity-${incident.severity} ${
                   incident.past_target && incident.status !== 'resolved' ? 'past-target' : ''
                 }`}

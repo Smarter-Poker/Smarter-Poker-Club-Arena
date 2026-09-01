@@ -180,6 +180,14 @@ WINDOW_LOCAL=$(chicago_stamp "$WINDOW_EPOCH")
 if [ "$NOW_EPOCH" -lt "$DEADLINE" ]; then
   say "Behind by design: the engine restarts only at $RESTART_HOURS Chicago."
   say "  first window at or after $REQ_SHORT: $WINDOW_LOCAL, +${DEPLOY_MIN}m to deploy"
+  # Say WHICH deadline is holding this quiet. When the grace window is the
+  # later of the two, the window has already opened and the engine simply has
+  # not caught up yet: one missed catch-up tick is ordinary, three in a row is
+  # the failure this watchdog exists to name. A reader of a quiet run could
+  # not tell those apart before.
+  if [ "$DEADLINE" -eq "$GRACE_DEADLINE" ]; then
+    say "  quiet because $REQ_SHORT is still inside the ${GRACE_MIN}m grace window"
+  fi
   summary "### Engine watchdog: waiting for the restart window"
   summary ""
   summary "\`$REQ_SHORT\` is ${AGE_MIN}m old and the engine serves \`$SERVED\`. The engine does not restart on merge: its first window opens **$WINDOW_LOCAL**, and this watchdog stays quiet until ${DEPLOY_MIN}m past it."

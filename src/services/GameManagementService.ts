@@ -61,6 +61,15 @@ export interface ManagedGameCommandReceipt {
   replayed?: boolean;
 }
 
+export interface GameManagementHealth {
+  latestEventSequence: number;
+  lastEventAt: string | null;
+  eventsLastHour: number;
+  commandsLast24h: number;
+  rejectedLast24h: number;
+  integrityAlerts: number;
+}
+
 interface ManagedGameCommandResult {
   ok?: boolean;
   reason?: string;
@@ -213,6 +222,24 @@ async function executeCommand(
 }
 
 export const gameManagementService = {
+  async getHealth(scope: 'club' | 'union', scopeId: string): Promise<GameManagementHealth> {
+    const { data, error } = await supabase.rpc('fn_get_game_management_health', {
+      p_scope: scope,
+      p_scope_id: scopeId,
+    });
+    if (error) throw new Error(error.message || 'Could not load management health.');
+    const result = data as Record<string, unknown> | null;
+    if (!result?.ok) throw new Error('Management health is not available for this scope.');
+    return {
+      latestEventSequence: numberValue(result.latest_event_sequence),
+      lastEventAt: typeof result.last_event_at === 'string' ? result.last_event_at : null,
+      eventsLastHour: numberValue(result.events_last_hour),
+      commandsLast24h: numberValue(result.commands_last_24h),
+      rejectedLast24h: numberValue(result.rejected_last_24h),
+      integrityAlerts: numberValue(result.integrity_alerts),
+    };
+  },
+
   async getContracts(
     kind: ManagedGameKind,
     gameIds: string[]

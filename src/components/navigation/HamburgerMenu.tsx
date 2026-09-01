@@ -166,6 +166,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const [rewardContexts, setRewardContexts] = useState<LeaderboardRewardContext[]>([]);
   const [rewardContextClubId, setRewardContextClubId] = useState<string>('');
   const [canManageGames, setCanManageGames] = useState(false);
+  const [gameAccessRevision, setGameAccessRevision] = useState(0);
 
   // Stripe returns to the route where the player opened Table Studio. The
   // command drawer is mounted globally even while closed, so it is the one
@@ -267,7 +268,13 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     return () => {
       cancelled = true;
     };
-  }, [isOpen, workspace.clubUUID]);
+  }, [gameAccessRevision, isOpen, workspace.clubUUID]);
+
+  useMasterBusSubscription('GAME_MANAGEMENT_ACCESS_CHANGED', (payload) => {
+    if (!payload.clubId || payload.clubId === workspace.clubUUID) {
+      setGameAccessRevision((value) => value + 1);
+    }
+  });
 
   useEffect(() => {
     if (!isOpen || !clubId) {

@@ -10,6 +10,7 @@ import { useToast } from '../components/common/Toast';
 import { confirmDialog } from '../components/common/confirmDialog';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
+import { useGameManagementRealtime } from '../hooks/useGameManagementRealtime';
 import { supabase } from '../lib/supabase';
 import { fetchGameCreationAccess } from '../services/GameAccessService';
 import {
@@ -19,6 +20,7 @@ import {
   type ManagedGameContractVersion,
   type ManagedGameKind,
   type ManagedGamePatch,
+  type GameManagementHealth,
 } from '../services/GameManagementService';
 import { unionService } from '../services/UnionService';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -339,6 +341,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const [contractGame, setContractGame] = useState<ManagedGame | null>(null);
   const [contractVersions, setContractVersions] = useState<ManagedGameContractVersion[]>([]);
   const [contractLoading, setContractLoading] = useState(false);
+  const [health, setHealth] = useState<GameManagementHealth | null>(null);
 
   const managementPath =
     scope === 'union' ? `/unions/${unionId}/table-management` : `/clubs/${clubId}/table-management`;
@@ -490,6 +493,12 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         })),
       ];
       setGames(rows);
+      try {
+        setHealth(await gameManagementService.getHealth(scope, resolvedScopeId));
+      } catch (healthError) {
+        reportError(healthError, 'GameManagementPage.health');
+        setHealth(null);
+      }
     } catch (error) {
       reportError(error, 'GameManagementPage.load');
       setLoadError(error instanceof Error ? error.message : 'Could not load games.');
@@ -509,6 +518,21 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     },
     { debounce: 350 }
   );
+
+  useMasterBusSubscriptions(
+    ['GAME_MANAGEMENT_ACCESS_CHANGED'],
+    () => {
+      void load();
+    },
+    { debounce: 100 }
+  );
+
+  const realtimeStatus = useGameManagementRealtime({
+    scope,
+    scopeId: scopeId || '',
+    enabled: allowed === true && Boolean(scopeId),
+    onResync: () => void load(),
+  });
 
   const filteredGames = useMemo(
     () =>
@@ -629,6 +653,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         </div>
         <div className={styles.headerRight}>
           <div className={styles.countRail}>
+            <span className={realtimeStatus === 'live' ? styles.healthGood : styles.healthWarn}>
+              <strong>{realtimeStatus === 'live' ? 'Live' : 'Recovering'}</strong> Realtime
+            </span>
             <span>
               <strong>{liveCount}</strong> Live
             </span>
@@ -637,6 +664,13 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             </span>
             <span>
               <strong>{games.length}</strong> Total
+            </span>
+          </div>
+          <div className={styles.healthRail} aria-label="Management Health">
+            <span>{health?.commandsLast24h ?? 0} Commands / 24h</span>
+            <span>{health?.rejectedLast24h ?? 0} Rejected</span>
+            <span className={health?.integrityAlerts ? styles.healthAlert : undefined}>
+              {health?.integrityAlerts ?? 0} Integrity Alerts
             </span>
           </div>
           <GameCreationActions managementPath={managementPath} />

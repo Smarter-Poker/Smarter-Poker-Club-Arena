@@ -139,6 +139,25 @@
   text-transform: uppercase;
   text-align: center;
 }
+.countRail .healthGood strong {
+  color: #56e3ad;
+}
+.countRail .healthWarn strong,
+.healthAlert {
+  color: #ffbf5b;
+}
+.healthRail {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px 13px;
+  color: #8da3af;
+  font:
+    700 9px/1.2 Inter,
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 .surfaceNav {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

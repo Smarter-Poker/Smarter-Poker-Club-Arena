@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import {
   DEFAULT_TICKER_SETTINGS,
   tickerManagementService,
@@ -65,7 +66,7 @@ export default function TickerManagementPanel({
   const [messageDraft, setMessageDraft] = useState('');
   const [serviceDraft, setServiceDraft] = useState('');
 
-  useEffect(() => {
+  const load = useCallback(() => {
     let alive = true;
     setLoading(true);
     tickerManagementService
@@ -80,6 +81,16 @@ export default function TickerManagementPanel({
       alive = false;
     };
   }, [scope, scopeId]);
+
+  useEffect(() => load(), [load]);
+
+  useMasterBusSubscription(
+    'TICKER_SETTINGS_CHANGED',
+    (payload) => {
+      if (payload.scope === scope && payload.scopeId === scopeId) load();
+    },
+    { debounce: 200 }
+  );
 
   const update = <K extends keyof ManagedTickerSettings>(key: K, value: ManagedTickerSettings[K]) =>
     setSettings((current) => ({ ...current, [key]: value }));

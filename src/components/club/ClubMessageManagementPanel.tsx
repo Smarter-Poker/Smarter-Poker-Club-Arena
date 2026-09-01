@@ -7,6 +7,7 @@ import {
 } from '../../services/ClubMessageManagementService';
 import { confirmDialog } from '../common/confirmDialog';
 import { useToast } from '../common/Toast';
+import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import styles from './ClubMessageManagementPanel.module.css';
 
 const EMPTY_IDENTITY: ClubIdentityMessages = { tagline: '', lobbyMessage: '', description: '' };
@@ -55,6 +56,14 @@ export default function ClubMessageManagementPanel({
     setEditingId(null);
     void load();
   }, [load]);
+
+  useMasterBusSubscriptions(
+    ['CLUB_UPDATED', 'ANNOUNCEMENT_CHANGED'],
+    (payload) => {
+      if ((payload as { clubId?: string })?.clubId === clubId) void load();
+    },
+    { debounce: 200 }
+  );
 
   const saveIdentity = async () => {
     setSavingIdentity(true);

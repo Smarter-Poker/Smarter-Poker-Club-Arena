@@ -170,4 +170,32 @@ describe('GameManagementService command execution', () => {
       }),
     ]);
   });
+
+  it('maps the scoped management health snapshot', async () => {
+    mocks.rpc.mockResolvedValueOnce({
+      data: {
+        ok: true,
+        latest_event_sequence: 44,
+        last_event_at: '2026-09-01T12:00:00Z',
+        events_last_hour: 8,
+        commands_last_24h: 5,
+        rejected_last_24h: 1,
+        integrity_alerts: 0,
+      },
+      error: null,
+    });
+
+    await expect(gameManagementService.getHealth('union', 'union-1')).resolves.toEqual({
+      latestEventSequence: 44,
+      lastEventAt: '2026-09-01T12:00:00Z',
+      eventsLastHour: 8,
+      commandsLast24h: 5,
+      rejectedLast24h: 1,
+      integrityAlerts: 0,
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith('fn_get_game_management_health', {
+      p_scope: 'union',
+      p_scope_id: 'union-1',
+    });
+  });
 });

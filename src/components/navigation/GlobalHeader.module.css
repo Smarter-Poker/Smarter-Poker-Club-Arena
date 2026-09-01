@@ -106,6 +106,12 @@
   width: 7%;
 }
 
+/* Force the hamburger artwork to be visible, overlaying and hiding whatever
+   is baked into the monolithic background sprite underneath it. */
+.hamburgerBtn > img {
+  opacity: 1;
+}
+
 .backBtn {
   left: 8%;
   width: 12%;

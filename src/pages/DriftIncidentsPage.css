@@ -741,6 +741,12 @@
   color: #2ecc71;
   border: 1px solid rgba(46, 204, 113, 0.5);
 }
+.dgp-gate-pill.stale {
+  background: rgba(148, 163, 184, 0.18);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+}
+
 .dgp-gate-pill.fail {
   background: rgba(231, 76, 60, 0.12);
   color: #ff6b5e;

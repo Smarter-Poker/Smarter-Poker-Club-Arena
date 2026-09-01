@@ -58,9 +58,18 @@ export default function DriftGatePanel() {
   const load = useCallback(async () => {
     const data = await DriftIncidentService.getGatePanel();
     if (data === null) {
-      setHidden(true);
+      // Null means non-management OR a transient RPC failure (the service
+      // returns null for both). Only hide when we have never had data;
+      // once management data has rendered, keep the last good panel and
+      // let the next 60s tick recover - a mid-flight drop must not blank
+      // the reopen decision.
+      setPanel((prev) => {
+        if (prev === null) setHidden(true);
+        return prev;
+      });
       return;
     }
+    setHidden(false);
     setPanel(data);
   }, []);
 
@@ -105,12 +114,26 @@ export default function DriftGatePanel() {
           <span className="dgp-label">Midway Burn-In Gate</span>
           {gate ? (
             <>
-              <span className={`dgp-gate-pill ${gate.pass ? 'pass' : 'fail'}`}>
-                {gate.pass ? 'GREEN' : 'RED'}
-              </span>
-              <span className="dgp-gate-meta">
-                {gate.window_hours}h Window, Run {new Date(gate.run_at).toLocaleTimeString()}
-              </span>
+              {(() => {
+                // The gate runs hourly. A run older than two hours means the
+                // cron is stalled, and a stale GREEN is a lie an operator
+                // could reopen Midway on - say STALE instead.
+                const ageMin = Math.round((Date.now() - new Date(gate.run_at).getTime()) / 60000);
+                const stale = ageMin > 120;
+                return (
+                  <>
+                    <span
+                      className={`dgp-gate-pill ${stale ? 'stale' : gate.pass ? 'pass' : 'fail'}`}
+                    >
+                      {stale ? 'STALE' : gate.pass ? 'GREEN' : 'RED'}
+                    </span>
+                    <span className="dgp-gate-meta">
+                      {gate.window_hours}h Window, Run{' '}
+                      {new Date(gate.run_at).toLocaleString()} ({ageMin}m Ago)
+                    </span>
+                  </>
+                );
+              })()}
               {!gate.pass && gate.failing && gate.failing.length > 0 && (
                 <ul className="dgp-gate-failing">
                   {gate.failing.map((f) => (

@@ -529,7 +529,36 @@ export abstract class ServerTableEngineHandEvents extends ServerTableEngineSettl
         // Track action for hand history
         if (event.seat !== undefined && event.action) {
           const hcState = this.handController?.getState();
-          const stage = hcState?.stage || 'preflop';
+          /*
+           * THE STAGE COMES FROM THE EVENT (2026-09-01, measured).
+           *
+           * This used to be `hcState?.stage` alone - the stage read off the
+           * LIVE controller at the moment this handler runs, not the stage the
+           * action was actually taken on. HandController emits PLAYER_ACTION
+           * and then calls advanceGame(), so whenever the emit does not drain
+           * synchronously ahead of that, the stage has already moved on by the
+           * time this line executes. When a whole hand's events drain late,
+           * every action in it is stamped with the stage the hand ENDED on.
+           *
+           * MEASURED on 2026-08-31: 517 real play actions - 151 check, 127
+           * call, 78 fold, 73 bet, 55 all_in, 33 raise - were persisted with
+           * stage 'showdown', across 30 hands, at about 17 actions per hand.
+           * Whole hands, not stray actions. hand_history for one of them
+           * (5e969448-bf2d-4e16-a551-660119e7f37a) holds 23 actions: the two
+           * blinds correct at 'preflop' (they are stamped literally, further
+           * up this file) and all 21 subsequent actions at 'showdown'.
+           *
+           * It is not cosmetic. HorseHandReview keys heroPre, postflopActed
+           * and every river detector off this field, so on those hands
+           * postflopActed is true for a hand that never saw a flop, and a
+           * preflop shove reads as river aggression.
+           *
+           * The event now carries the stage, stamped by HandController at the
+           * instant of the action from the same value it writes to its own
+           * actionHistory. The live-state read stays as a fallback so an
+           * emitter that has not been updated still behaves exactly as before.
+           */
+          const stage = event.stage ?? hcState?.stage ?? 'preflop';
           const actingPlayer = hcState?.players.find((p) => p.seat === event.seat);
           this.currentHandActions.push({
             seat: event.seat,

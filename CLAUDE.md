@@ -592,7 +592,48 @@ test the next agent notices first.
 
 ---
 
-## 11. AGENT NETWORK + DEPLOY PLAYBOOK (added 2026-07-23, binding; corrected same day after live use)
+## 11. AGENT NETWORK + DEPLOY PLAYBOOK
+
+### 11.0 FIRST: WHICH ENVIRONMENT ARE YOU IN? (added 2026-09-01, binding)
+
+Everything below 11.0 was written for the CLOUD sandbox and is still true
+there. It is WRONG for a Cowork session running on Dan's Mac, and following it
+there costs an hour before you find out. Check first, in this order:
+
+**If you have `mcp__counselors__host_terminal`, you are on the Mac. Use it for
+everything.** Real bash on Dan's machine, where `git@github.com` over SSH works
+and `api.github.com` is reachable. Then:
+
+- **Claim a worktree** (AGENT-PLAYBOOK): `git worktree add -b fix/<slug>
+~/Documents/.agent-trees/club-arena/<name> origin/main`. Takes about 40
+  seconds - launch it with `nohup ... &` and return immediately, because the
+  tool kills the process group when a call times out.
+- **`node` is NOT on the default PATH.** Prefix every command with
+  `export PATH="$HOME/.nvm/versions/node/$(ls ~/.nvm/versions/node | tail -1)/bin:$PATH"`.
+- **The pre-push hook takes about three minutes** (guards, `tsc`, then the tests
+  covering your diff). Launch the push with
+  `nohup git push > /tmp/push.log 2>&1 < /dev/null & disown`, return
+  immediately, and poll the log in later calls. Never `--no-verify`.
+- **`gh` is not installed.** Open pull requests with `curl` against the REST
+  API. The token is `GITHUB_TOKEN` in `~/Documents/club-arena/.env`.
+- **Rebasing your branch onto main is refused by a ref-guard hook.** Use
+  `git merge origin/main` instead. Section 12 still forbids rebasing `main`.
+
+**The GitHub MCP (`mcp__github__*`) returns `Bad credentials` as of
+2026-09-01.** Every call fails, including read-only ones. Do not debug it and
+do not build a plan around it; use the host terminal. If you are reading this
+long after that date, one call will tell you whether it is back.
+
+**Do not hand-edit `scripts/ci/supabase-schema-manifest.json` or
+`supabase-columns-manifest.json`.** They are nightly snapshots and were the
+most-changed files on main - 25 and 14 commits in one day - which made every
+migration-bearing branch conflict with every other one. Declare what you
+created in your own file under `scripts/ci/schema-manifest.d/`. See the README
+there.
+
+---
+
+### 11.1 The cloud sandbox (added 2026-07-23; corrected same day after live use)
 
 Cloud Cowork sessions have a locked-down sandbox. Learn the map ONCE and never
 ask Dan for a manual handoff again:

@@ -679,6 +679,7 @@ import {
   sortCardsByRank,
   getGameVariantLabel,
   heroCardsCollideWithBoard,
+  heroHoleCardsAreForThisHand,
 } from '../lib/tableCardDisplay';
 import {
   seatLayoutFor,
@@ -8151,6 +8152,60 @@ export default function TablePage({
     (payload: any) => {
       const row = payload.new;
       if (row && row.user_id === userId && row.cards) {
+        /* ═══ THE DOOR THAT HAD NO LOCK (Dan 2026-09-01) ═══════════════════
+           Dan, on the screenshot: "I NEED YOU TO TELL ME HOW IT WAS EVEN
+           POSSIBLE FOR TWO 9 OF HEARTS TO APPEAR AT THE SAME TIME."
+
+           This is how. Of the four ways cards reach the hero, this was the
+           only one with NO hand check and NO board check, and it is the only
+           one that OVERWRITES cards already on screen. It fires on '*', so an
+           UPDATE or a re-push carrying hand N lands after hand N+1 has begun
+           and repaints hand N's holding onto hand N+1's felt. The guard added
+           to the snapshot hold on 2026-08-31 could not save it: the hold would
+           drop the stale hand, and the very next payload through here would
+           put it straight back.
+
+           It asks the same question every other door asks now, and the answer
+           lives in one tested function rather than in four call sites. A
+           rejection is REPORTED, never swallowed - if this ever fires in
+           production it is telling us something upstream is wrong, and the
+           bounded recovery poll is already running to fetch the real hand. */
+        const boardNow = tableStateRef.current;
+        let probeCards: unknown = row.cards;
+        if (typeof probeCards === 'string') {
+          try {
+            probeCards = JSON.parse(probeCards);
+          } catch {
+            probeCards = null;
+          }
+        }
+        const verdict = heroHoleCardsAreForThisHand({
+          rowTableId: row.table_id,
+          tableId,
+          rowHandNumber: typeof row.hand_number === 'number' ? row.hand_number : undefined,
+          currentHandNumber: heroHandRef.current,
+          cards: Array.isArray(probeCards)
+            ? (probeCards as Array<{ rank?: unknown; suit?: unknown }>)
+            : null,
+          boards: [boardNow.communityCards, boardNow.communityCards2, boardNow.communityCards3],
+        });
+        if (!verdict.ok) {
+          reportError(
+            new Error(`hole-card push refused: ${verdict.reason}`),
+            'TablePage.hole_card_push_refused',
+            {
+              tableId,
+              reason: verdict.reason,
+              rowHand: row.hand_number ?? null,
+              liveHand: heroHandRef.current,
+            }
+          );
+          /* A refusal means this client does not have the right hand in front
+             of it. Re-arm the recovery read rather than sitting on nothing. */
+          heroCardsRecoveredRef.current = false;
+          heroCardFetchRef.current?.();
+          return;
+        }
         // Play deal sound if enabled (#175 gated for multi-table)
         if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playDeal();
 
@@ -8201,7 +8256,7 @@ export default function TablePage({
         });
       }
     },
-    [userId]
+    [userId, tableId, ambientSoundsAllowed]
   );
 
   /* ═══ 'INSERT' MISSED EVERY PINEAPPLE DISCARD (2026-08-31) ═════════════
@@ -8477,6 +8532,81 @@ export default function TablePage({
       clearEarlyTimers();
     };
   }, [tableId, userId]);
+
+  /* ═══ THE NET UNDER ALL FOUR DOORS (Dan 2026-09-01) ═══════════════════════
+     "PREVENT IT FROM NEVER BEING POSSIBLE TO HAPPEN EVER AGAIN UNDER ANY
+     CIRCUMSTANCES EVER."
+
+     The four guarded doors above are what PREVENTS it. This is what catches
+     it if a fifth door is ever added, or if one of the four is edited badly:
+     `holeCards` is written from ~80 `setTableState` call sites in this file,
+     and no reviewer can hold all of them in their head.
+
+     So the invariant is also checked on the finished state, once per commit,
+     independent of which code path produced it. A hero card that is also on
+     the board is physically impossible, so the holding is expired: drop it,
+     say so loudly, and re-arm the read that fetches the real one. The signature
+     ref keeps this to one correction per bad state rather than a loop, and it
+     is cleared as soon as a clean state arrives so the next hand is watched
+     just as closely.
+
+     This runs after paint, so on its own it would still allow a single wrong
+     frame. It is not on its own. */
+  const heroCardInvariantSigRef = useRef<string>('');
+  /* The correction, as one named thing rather than a lambda buried in an
+     effect: it is what the law test slices, and it is what a reader looks for
+     when a `hero_card_board_collision` shows up in telemetry. */
+  const dropExpiredHeroHolding = useCallback(
+    (handNumber: number) => {
+      reportError(
+        new Error('hero hole card is also on the board'),
+        'TablePage.hero_card_board_collision',
+        { tableId, handNumber }
+      );
+      setTableState((prev) => {
+        const players = [...prev.players];
+        const idx = players.findIndex((pl) => pl?.isHero);
+        if (idx < 0 || !players[idx]) return prev;
+        players[idx] = { ...players[idx]!, holeCards: [] };
+        return { ...prev, players };
+      });
+      heroCardsRecoveredRef.current = false;
+      heroCardFetchRef.current?.();
+    },
+    [tableId]
+  );
+  useEffect(() => {
+    const hero = tableState.players.find((p) => p?.isHero);
+    const cards = hero?.holeCards;
+    if (!cards || cards.length === 0) {
+      heroCardInvariantSigRef.current = '';
+      return;
+    }
+    if (
+      !heroCardsCollideWithBoard(
+        cards,
+        tableState.communityCards,
+        tableState.communityCards2,
+        tableState.communityCards3
+      )
+    ) {
+      heroCardInvariantSigRef.current = '';
+      return;
+    }
+    const sig = `${tableState.handNumber ?? 0}:${cards
+      .map((c) => (c ? `${c.rank}${c.suit}` : '-'))
+      .join(',')}`;
+    if (heroCardInvariantSigRef.current === sig) return;
+    heroCardInvariantSigRef.current = sig;
+    dropExpiredHeroHolding(tableState.handNumber ?? 0);
+  }, [
+    tableState.players,
+    tableState.communityCards,
+    tableState.communityCards2,
+    tableState.communityCards3,
+    tableState.handNumber,
+    dropExpiredHeroHolding,
+  ]);
 
   // Phase 1.1 PR-5 (NO-GO-2): Migrated from subscribeToHandState (deleted)
   // to the engine WebSocket EVENT channel. Regular hand-state updates now
@@ -12594,6 +12724,34 @@ export default function TablePage({
         setTableState((prev) => {
           const updatedPlayers = [...prev.players];
           const serverPlayers = syncData.players || [];
+          /* ═══ THE FOURTH DOOR (Dan 2026-09-01) ══════════════════════════
+             This merge carries `existing?.holeCards` forward when the
+             snapshot has none, which is correct and necessary - the engine
+             scrubs the hero's cards from every non-showdown snapshot on
+             purpose. But GAME_START is dispatched by `requestResync()` on a
+             WEBSOCKET SEQUENCE GAP, which is exactly the case where
+             HAND_STARTED was the event that got dropped. So this is the one
+             path that can walk a previous hand's holding across a hand
+             boundary without anything noticing.
+
+             The board that arrives in this same payload is the evidence: if
+             what we are about to carry forward is sitting on the felt, the
+             hand it belonged to is over. */
+          const syncBoard: Array<{ rank?: unknown; suit?: unknown } | null | undefined> =
+            Array.isArray(syncData.community_cards)
+              ? syncData.community_cards
+              : Array.isArray(syncData.communityCards)
+                ? syncData.communityCards
+                : [];
+          const heroHoldIsExpired = (cards: unknown): boolean =>
+            Array.isArray(cards) &&
+            cards.length > 0 &&
+            heroCardsCollideWithBoard(
+              cards as Array<{ rank?: unknown; suit?: unknown }>,
+              syncBoard,
+              prev.communityCards2,
+              prev.communityCards3
+            );
           // BUGFIX 2026-07-24: this recovery snapshot rebuilt `players` with isHero
           // but never updated `heroSeat`. When heroSeat had drifted (snapshot race,
           // reconnect), players[heroSeat-1] became null → the footer showed
@@ -12650,7 +12808,9 @@ export default function TablePage({
                   sp.user_id === userId
                     ? sp.cards?.length
                       ? sp.cards
-                      : existing?.holeCards || []
+                      : heroHoldIsExpired(existing?.holeCards)
+                        ? []
+                        : existing?.holeCards || []
                     : sp.cards?.length && !sp.is_folded
                       ? sp.cards
                       : [],

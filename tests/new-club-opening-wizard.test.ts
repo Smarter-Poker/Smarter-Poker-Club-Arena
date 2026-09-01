@@ -74,7 +74,9 @@ describe('new club opening wizard', () => {
   });
 
   it('keeps the checklist visible until every launch task is complete', () => {
-    expect(home).toContain('launchTasks.some((task) => !task.complete)');
+    expect(home).toContain('openingChecklistEligible &&');
+    expect(home).toContain('launchTasks.some((task) => !task.complete && !task.skipped)');
+    expect(home).toContain('{showLaunchChecklist && (');
     expect(home).not.toContain('noticeEditable && totalGameCount === 0');
   });
 

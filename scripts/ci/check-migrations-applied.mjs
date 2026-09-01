@@ -36,6 +36,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { loadSchemaManifest, loadColumnsManifest } from './schema-manifest.mjs';
 
 const REPO = process.cwd();
 const MANIFEST = join(REPO, 'scripts/ci/supabase-schema-manifest.json');
@@ -178,7 +179,16 @@ function main() {
     console.error('[check-migrations-applied] missing schema manifest — cannot judge.');
     process.exit(2);
   }
-  const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
+  /* Base snapshot UNION scripts/ci/schema-manifest.d/*.json. A migration's own
+     branch declares its new functions in its own fragment file, which is what
+     stopped this gate from forcing every migration through one shared array. */
+  let manifest;
+  try {
+    manifest = loadSchemaManifest(REPO);
+  } catch (err) {
+    console.error(`[check-migrations-applied] ${err.message}`);
+    process.exit(2);
+  }
   const liveFns = new Set(manifest.functions || []);
   const liveTables = new Set(manifest.tables || []);
 
@@ -186,10 +196,7 @@ function main() {
      phantom-column gate already depends on it. If it is absent this checks
      what it can rather than exiting 2 - a missing companion file should not
      turn off the function and table checks that do not need it. */
-  const columnsPath = join(REPO, 'scripts/ci/supabase-columns-manifest.json');
-  const liveColumns = existsSync(columnsPath)
-    ? JSON.parse(readFileSync(columnsPath, 'utf8')).columns || {}
-    : null;
+  const liveColumns = loadColumnsManifest(REPO).columns;
 
   const base = baseRef();
   const files = changedMigrations(base);

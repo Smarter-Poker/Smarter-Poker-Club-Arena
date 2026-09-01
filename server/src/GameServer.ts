@@ -74,6 +74,7 @@ import { tableStateHub } from './transport/TableStateHub.js';
 import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
 import { TournamentManager } from './tournament/TournamentManager.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
+import { isWakeableCashTable } from './services/onDemandTableWake.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
 // services/tableLease.ts for the dual-container incident that motivated them.
 import {
@@ -183,6 +184,8 @@ const TOURNAMENT_PRESEAT_LEAD_MS = 60_000;
 
 export class GameServer {
   private tableEngines: Map<string, ServerTableEngine> = new Map();
+  /** One shared readiness promise per on-demand engine start. */
+  private tableEngineStartPromises: Map<string, Promise<boolean>> = new Map();
   /**
    * Table ids whose engine is owned and rebuilt by a TournamentManager rather
    * than by discoverCashTables. Discovery's RPC is cash-only, so without this
@@ -4421,7 +4424,7 @@ export class GameServer {
       );
       return;
     }
-    const hasHuman = (profiles || []).some((p) => !Boolean((p as { is_horse?: boolean }).is_horse));
+    const hasHuman = (profiles || []).some((p) => !(p as { is_horse?: boolean }).is_horse);
     if (!hasHuman) return;
 
     await this.topUpPartialSeatFirst(tournamentId, seats, paid, 'a human is waiting');
@@ -4478,6 +4481,68 @@ export class GameServer {
     }
     this.tournamentOwnedTables.add(tableId);
     this.tableEngines.set(tableId, engine);
+  }
+
+  /**
+   * Ensure one newly-created cash table has a live engine before an authorized
+   * WebSocket viewer is admitted.
+   *
+   * Background discovery is intentionally occupancy-driven so thousands of
+   * abandoned empty lobby rows do not consume an engine forever. That makes it
+   * the wrong primitive for Create And Start: the client opens the table before
+   * anybody has bought a seat. This on-demand path validates the durable table,
+   * takes the same lease as discovery, installs the map entry synchronously to
+   * collapse concurrent connects, and lets start() publish the waiting snapshot
+   * as soon as its database reads complete.
+   */
+  async ensureCashTableEngine(tableId: string): Promise<boolean> {
+    const existingStart = this.tableEngineStartPromises.get(tableId);
+    if (existingStart) return existingStart;
+    if (this.tableEngines.has(tableId)) return true;
+
+    const { data: table, error } = await supabase
+      .from('tables')
+      .select('id, tournament_id, status, game_type, is_deleted')
+      .eq('id', tableId)
+      .maybeSingle();
+
+    if (error) {
+      reportError(
+        new Error(`On-demand table lookup failed for ${tableId}: ${error.message}`),
+        'GameServer.on_demand_table_lookup_failed'
+      );
+      return false;
+    }
+    if (!isWakeableCashTable(table)) return false;
+
+    if (!(await claimTable(tableId))) return false;
+    // Another authorized connection may have completed the same wake while the
+    // lease call was in flight. Never construct a second dealer.
+    const racedStart = this.tableEngineStartPromises.get(tableId);
+    if (racedStart) return racedStart;
+    if (this.tableEngines.has(tableId)) return true;
+
+    const engine = new ServerTableEngine(tableId);
+    engine.setHub(tableStateHub);
+    this.tableEngines.set(tableId, engine);
+    const startPromise = engine
+      .start()
+      .then(() => true)
+      .catch(async (startError) => {
+        this.engineStartFailures++;
+        reportError(startError, 'GameServer.on_demand_table_start_failed');
+        if (this.tableEngines.get(tableId) === engine) {
+          this.tableEngines.delete(tableId);
+          tableStateHub.dropTable(tableId);
+          await releaseTables([tableId]);
+        }
+        return false;
+      })
+      .finally(() => {
+        this.tableEngineStartPromises.delete(tableId);
+      });
+    this.tableEngineStartPromises.set(tableId, startPromise);
+    return startPromise;
   }
 
   /**

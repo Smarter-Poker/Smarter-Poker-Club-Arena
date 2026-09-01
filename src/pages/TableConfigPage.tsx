@@ -427,7 +427,7 @@ const DEFAULT_CONFIG: TableConfig = {
   buyIn: 100,
   customBuyIn: false,
   blindStructure: 'standard',
-  payoutStructure: 'payout1',
+  payoutStructure: 'payout3',
   startingChips: 1000,
   blindsUpMinutes: 3,
   sngPlayerCount: 9,
@@ -2563,10 +2563,12 @@ export default function TableConfigPage() {
                 value={config.payoutStructure}
                 onChange={(e) => updateConfig('payoutStructure', e.target.value as PayoutStructure)}
               >
-                <option value="payout1">Payout 1</option>
-                <option value="payout2">Payout 2</option>
-                <option value="payout3">Payout 3</option>
-                <option value="winner_take_all">Winner Take All</option>
+                <option value="payout1">Top 10% Of Field</option>
+                <option value="payout2">Top 12.5% Of Field</option>
+                <option value="payout3">Top 15% Of Field (Standard)</option>
+                {config.gameMode === 'sng' && (
+                  <option value="winner_take_all">Winner Take All</option>
+                )}
               </select>
             </div>
 

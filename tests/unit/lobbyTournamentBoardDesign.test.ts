@@ -25,11 +25,13 @@ describe('Club Arena Tournament Board lobby design', () => {
     expect(page).toContain("currentUser?.display_name || currentUser?.username || 'Player'");
     expect(page).toContain('playerId={currentUser?.player_number}');
     expect(page).toContain('playersPlaying={playersPlaying}');
-    expect(identityCard).toContain('club-identity-template-bbj-finish-v1.png');
+    expect(identityCard).toContain('club-identity-template-no-level-v2.png');
+    expect(identityCard).not.toContain('club-identity__level');
     expect(identityCard).toContain('Copy Referral Link');
     expect(identityCardCss).toContain('aspect-ratio: 1650 / 953');
     expect(identityCardCss).toContain('line-height: 1.18');
-    expect(identityCardCss).toContain('transform: translateY(0.55cqw)');
+    expect(identityCardCss).toContain('transform: translateY(1.65cqw)');
+    expect(identityCardCss).toContain('top: 52%');
     expect(identityCardCss).toContain('margin-top: 1.4cqw');
     expect(identityCardCss).not.toContain('translateY(1.44cqw)');
     expect(identityCardCss).toMatch(

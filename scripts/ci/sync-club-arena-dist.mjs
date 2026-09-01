@@ -77,7 +77,12 @@ export async function syncClubArenaDist(source, target) {
   }
   for (const entry of await readdir(source, { withFileTypes: true })) {
     if (entry.name === 'assets') continue;
-    await cp(path.join(source, entry.name), path.join(target, entry.name), {
+    const targetEntry = path.join(target, entry.name);
+    // Non-runtime roots are an exact mirror of the canonical build. Removing
+    // the destination entry first is essential: recursive cp overlays a
+    // directory and otherwise leaves deleted nested files deployed forever.
+    await rm(targetEntry, { recursive: true, force: true });
+    await cp(path.join(source, entry.name), targetEntry, {
       recursive: true,
       force: true,
     });

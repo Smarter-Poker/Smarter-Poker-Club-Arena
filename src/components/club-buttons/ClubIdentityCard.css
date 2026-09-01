@@ -350,9 +350,12 @@ button.club-identity__line:focus-visible {
 
   .lobby-top__identity .club-identity__share {
     top: 0;
-    width: 26px;
-    height: 26px;
+    width: 44px;
+    height: 44px;
     margin-top: 0;
+    /* Preserve the approved 26px box's visual center while restoring the
+       complete transparent thumb target around its 13px painted icon. */
+    margin-right: -9px;
   }
 
   .lobby-top__identity .club-identity__share svg {

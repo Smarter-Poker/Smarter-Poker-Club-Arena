@@ -21,11 +21,11 @@ exactly why, and the snapshot booked the whole amount as `unexplained`.
 It had never fired because no retirement had ever been reversed. The whole
 ledger, at the time of writing:
 
-| direction | rows | amount |
-|---|---|---|
-| `to_type = 'chip_retirement'` | 38 | 9,908,714.22 |
+| direction                       | rows  | amount       |
+| ------------------------------- | ----- | ------------ |
+| `to_type = 'chip_retirement'`   | 38    | 9,908,714.22 |
 | `from_type = 'chip_retirement'` | **1** | 4,159,644.00 |
-| `issuance_reserve`, either side | 0 | — |
+| `issuance_reserve`, either side | 0     | —            |
 
 That one row is `deep-stack-horse-memberships:restore-20260901`, a hash-chained
 reversal restoring 416 Deep Stack Society horse memberships an earlier
@@ -97,15 +97,32 @@ actually open, and the issue body carries the next window.
 
 Checked at the boundaries:
 
-| commit | checked at | verdict |
-|---|---|---|
-| 05:26 CDT | 07:20 CDT | silent — its window is 10:00 |
-| 05:26 CDT | 10:30 CDT | alarm — window opened and passed |
-| 10:05 CDT (inside a window) | +15m | silent |
-| 10:05 CDT | +50m | alarm — it had its window and missed it |
-| 03:50 CDT | 04:40 CDT | alarm |
+| commit                      | checked at | verdict                                 |
+| --------------------------- | ---------- | --------------------------------------- |
+| 05:26 CDT                   | 07:20 CDT  | silent — its window is 10:00            |
+| 05:26 CDT                   | 10:30 CDT  | alarm — window opened and passed        |
+| 10:05 CDT (inside a window) | +15m       | silent                                  |
+| 10:05 CDT                   | +50m       | alarm — it had its window and missed it |
+| 03:50 CDT                   | 04:40 CDT  | alarm                                   |
 
 The first row is the false alarm that opened #2435 this morning.
+
+## 3. A gate caught me, twice, and was right both times
+
+`check-definer-authorization` blocked the first push: the migration re-declared
+a SECURITY DEFINER writer without naming its grants, so a replay on a fresh
+database would inherit `anon` and `authenticated`. Production's ACL was already
+`{postgres, service_role}` and `CREATE OR REPLACE` preserved it, so nothing was
+ever exposed -- but the gate is arguing about the replay, and on the replay it
+is right.
+
+Then the new helper came out of `CREATE` holding `authenticated=X` anyway.
+Supabase's default privileges grant EXECUTE on every new public function, and
+`REVOKE ALL ... FROM PUBLIC` does not touch a grant held by a _named_ role. That
+is the same trap the gate's own help text warns about, arriving from the other
+direction: the remedy has to name the roles.
+
+Both closed and asserted in `20260902060100`.
 
 ## Left alone deliberately
 

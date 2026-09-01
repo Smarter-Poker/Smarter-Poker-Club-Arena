@@ -221,3 +221,12 @@ BEGIN
     RAISE EXCEPTION 'the guard would refuse % existing payment(s) - stop and re-measure', v_bad;
   END IF;
 END $$;
+
+-- Who may call the credit funnel, stated rather than left to be looked up.
+-- Checked against production before writing it: anon, authenticated and PUBLIC
+-- already have no execute here and service_role has it, and CREATE OR REPLACE
+-- does not touch grants - so this is a no-op that makes the migration say what
+-- is true. Also applied on its own as
+-- 20260901135512_state_the_credit_funnel_is_service_role_only.
+REVOKE ALL ON FUNCTION public.fn_credit_and_log(uuid, numeric, text, text, text, uuid, text, uuid, uuid, integer, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_credit_and_log(uuid, numeric, text, text, text, uuid, text, uuid, uuid, integer, text) TO service_role;

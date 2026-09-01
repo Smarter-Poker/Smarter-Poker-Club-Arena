@@ -703,9 +703,13 @@ class UnionServiceClass {
       totalRakeCollected,
       totalUnionTax: round2(totalHolds),
       // Agent commissions and player rakeback settle INSIDE each club
-      // (commission_records / rake_records are club-scoped and not readable
-      // across the union under RLS) — they are not union revenue and are
-      // reported as 0 here rather than fabricated.
+      // (agent_commissions / rake_records are club-scoped, and RLS gives an
+      // agent their own rows and a union overseer only the clubs they oversee)
+      // - they are not union revenue and are reported as 0 here rather than
+      // fabricated.
+      //
+      // 2026-09-01: this named commission_records, a table dropped in phase 7
+      // that never held a row. The reasoning was right; the table was not.
       totalAgentCommissions: 0,
       totalPlayerRakeback: 0,
       netUnionRevenue: round2(totalHolds + engineRake),

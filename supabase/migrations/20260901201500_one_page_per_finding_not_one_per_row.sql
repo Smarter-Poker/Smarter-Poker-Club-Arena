@@ -433,4 +433,7 @@ GRANT EXECUTE ON FUNCTION public.fn_ca_suspense_regression_check() TO service_ro
 REVOKE ALL ON FUNCTION public.fn_ca_finding_key(text, text, text, uuid, uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_ca_finding_key(text, text, text, uuid, uuid) TO service_role;
 
+REVOKE ALL ON FUNCTION public.fn_ca_incident_notify(uuid, text, text, boolean) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_incident_notify(uuid, text, text, boolean) TO service_role;
+
 COMMIT;

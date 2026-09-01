@@ -122,7 +122,7 @@ Supabase's default privileges grant EXECUTE on every new public function, and
 is the same trap the gate's own help text warns about, arriving from the other
 direction: the remedy has to name the roles.
 
-Both closed and asserted in `20260902060100`.
+Both closed and asserted in `20260901122150`.
 
 ## Left alone deliberately
 

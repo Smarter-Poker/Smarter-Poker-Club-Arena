@@ -3039,7 +3039,7 @@ export class TournamentRecurringService {
         isHouseBoard && !seatFirstHeldEmpty(tournament.id, seats)
           ? openingHorsesForSeatFirst(seats)
           : 0;
-      const candidates = await this.pickFreeHorses(opening);
+      const candidates = await this.pickFreeHorses(opening, false, tournament.id);
       let seated = 0;
       for (const horse of candidates) {
         const { data: res, error: seatRpcErr } = await supabase.rpc(
@@ -3321,7 +3321,51 @@ export class TournamentRecurringService {
     return horseAtCapacity(load.get(id) ?? 0);
   }
 
-  private async pickFreeHorses(count: number, allLanes = false): Promise<string[]> {
+  /**
+   * The ids that may play in this tournament's club, or null when the answer
+   * is not knowable right now.
+   *
+   * Hoisted out of registerHorses (#2430) because it was only ever applied
+   * THERE. Every seat-first format -- Spins, Heads-Up, SNGs, the past-start
+   * top-up -- fills through pickFreeHorses instead, which read the whole
+   * platform fleet and never looked at the club. #2430 closed the front door
+   * and left that one open.
+   *
+   * NULL IS NOT AN EMPTY CLUB. A failed or partial membership read returns
+   * null and the caller declines to filter, exactly as registerHorses does:
+   * refusing to seat on an unreadable page would starve every board on the
+   * platform, which is a worse failure than the one being fixed.
+   */
+  private async clubMemberIdsForTournament(tournamentId: string): Promise<Set<string> | null> {
+    const hostClub = await supabase
+      .from('tournaments')
+      .select('club_id')
+      .eq('id', tournamentId)
+      .maybeSingle();
+    const hostClubId = (hostClub.data as { club_id?: string } | null)?.club_id;
+    if (!hostClubId) return null;
+    const memberPage = await fetchAllRows<{ user_id: string }>(
+      (cursor, want) => {
+        let q = supabase
+          .from('club_members')
+          .select('user_id')
+          .eq('club_id', hostClubId)
+          .order('user_id', { ascending: true })
+          .limit(want);
+        if (cursor) q = q.gt('user_id', cursor);
+        return q;
+      },
+      { label: 'TournamentRecurring.clubMembers', maxRows: 100_000, idKey: 'user_id' }
+    );
+    if (!memberPage.complete) return null;
+    return new Set(memberPage.rows.map((r) => r.user_id));
+  }
+
+  private async pickFreeHorses(
+    count: number,
+    allLanes = false,
+    tournamentId?: string
+  ): Promise<string[]> {
     if (count <= 0) return [];
     try {
       // Dan 2026-08-23: a horse is unavailable at FOUR concurrent games, not
@@ -3394,8 +3438,22 @@ export class TournamentRecurringService {
 
       // Busy (4-game cap) exclusion and the lane/activity filters, unchanged
       // in meaning — now applied to the FULL fleet. See selectHorseCandidates.
+      /**
+       * A CLUB'S GAMES ARE FILLED BY THAT CLUB'S MEMBERS (Dan 2026-09-01:
+       * "IT CAN NOT, WANDER... THEY ARE LIMITED TO ONLY THE CLUB THEY ARE
+       * APART OF!").
+       *
+       * The fleet read above is every is_horse profile on the platform. A
+       * standalone club's population was seated into another club's Spins and
+       * heads-up games through this path while #2430 held the registration
+       * path shut.
+       */
+      const fleetIds = fleetPage.rows.map((h) => h.id);
+      const clubIds = tournamentId ? await this.clubMemberIdsForTournament(tournamentId) : null;
+      const inClub = clubIds ? fleetIds.filter((id) => clubIds.has(id)) : fleetIds;
+
       const candidates = selectHorseCandidates(
-        fleetPage.rows.map((h) => h.id),
+        inClub,
         busy,
         allLanes,
         new Date().getUTCHours()
@@ -3964,7 +4022,8 @@ export class TournamentRecurringService {
          */
         const own = await this.unseatedRegistrantHorses(tournamentId, primaryTableId);
         const poolWanted = Math.max(0, shortfall - own.length);
-        const pool = poolWanted > 0 ? await this.pickFreeHorses(poolWanted) : [];
+        const pool =
+          poolWanted > 0 ? await this.pickFreeHorses(poolWanted, false, tournamentId) : [];
         const candidates = seatFirstFillOrder(shortfall, own, pool);
 
         for (const horse of candidates) {
@@ -4216,29 +4275,7 @@ export class TournamentRecurringService {
        * platform. Verified before shipping that no board is starved by this -
        * Shark holds 584 horse members, JAQK 580, Midway 323, Deep Stack 416.
        */
-      const hostClub = await supabase
-        .from('tournaments')
-        .select('club_id')
-        .eq('id', tournamentId)
-        .maybeSingle();
-      const hostClubId = (hostClub.data as { club_id?: string } | null)?.club_id;
-      let clubMemberIds: Set<string> | null = null;
-      if (hostClubId) {
-        const memberPage = await fetchAllRows<{ user_id: string }>(
-          (cursor, want) => {
-            let q = supabase
-              .from('club_members')
-              .select('user_id')
-              .eq('club_id', hostClubId)
-              .order('user_id', { ascending: true })
-              .limit(want);
-            if (cursor) q = q.gt('user_id', cursor);
-            return q;
-          },
-          { label: 'TournamentRecurring.clubMembers', maxRows: 100_000, idKey: 'user_id' }
-        );
-        if (memberPage.complete) clubMemberIds = new Set(memberPage.rows.map((r) => r.user_id));
-      }
+      const clubMemberIds = await this.clubMemberIdsForTournament(tournamentId);
 
       const eligible = poolAll.filter((h) => {
         if (busyIds.has(h.id)) {

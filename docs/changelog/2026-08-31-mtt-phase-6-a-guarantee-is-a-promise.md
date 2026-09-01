@@ -16,15 +16,15 @@ was written. 566 of the 578 pre-date it.
 
 The remaining **12 are the live leak**, and nine of them are the bad kind:
 
-| event | field | guaranteed | pool | paid |
-| ----- | ----- | ---------- | ---- | ---- |
-| $100 Freeroll 12:00 PM | **326** | 100.00 | 0.00 | **0** |
-| $100 Freeroll 6:00 PM | **313** | 100.00 | 0.00 | **0** |
-| Early Bird Freeroll x5 | 20-48 | 75.00 | 0.00 | **0** |
-| Coffee Break Freeroll x2 | 14 | 80.00 | 0.00 | **0** |
-| Union Grand Championship | 62 | 2,500.00 | 1,860.00 | 1,860.00 |
-| Afternoon Bounty | 23 | 200.00 | 138.00 | 138.00 |
-| Late Night Grind | 7 | 50.00 | 18.90 | 18.90 |
+| event                    | field   | guaranteed | pool     | paid     |
+| ------------------------ | ------- | ---------- | -------- | -------- |
+| $100 Freeroll 12:00 PM   | **326** | 100.00     | 0.00     | **0**    |
+| $100 Freeroll 6:00 PM    | **313** | 100.00     | 0.00     | **0**    |
+| Early Bird Freeroll x5   | 20-48   | 75.00      | 0.00     | **0**    |
+| Coffee Break Freeroll x2 | 14      | 80.00      | 0.00     | **0**    |
+| Union Grand Championship | 62      | 2,500.00   | 1,860.00 | 1,860.00 |
+| Afternoon Bounty         | 23      | 200.00     | 138.00   | 138.00   |
+| Late Night Grind         | 7       | 50.00      | 18.90    | 18.90    |
 
 A full field ranked, a winner stamped, and **zero chips credited to anybody**.
 No alert fired from any source.
@@ -64,7 +64,9 @@ a re-drive moves nothing.
 ### 2. Paying nothing was silent
 
 ```ts
-if (winnerPrize > 0) { /* ...credit, retries, and EVERY alert... */ }
+if (winnerPrize > 0) {
+  /* ...credit, retries, and EVERY alert... */
+}
 ```
 
 The alerting added on 2026-08-31 - `winner_prize_credit_failed`,
@@ -94,13 +96,13 @@ fire on any of the nine.
 
 Every other guarantee check misses too, and each for its own reason:
 
-| check | why it cannot see this |
-| ----- | ---------------------- |
-| `trg_tournaments_guarantee_affordable` | scoped to ANNOUNCED/REGISTERING/RUNNING; pre-commitment only |
-| `fn_overlay_at_risk` | `buy_in_amount > 0` - excludes every freeroll - and not COMPLETED |
-| `fn_audit_overlays` | same `buy_in_amount > 0`; measures overlay at start, never whether it was funded |
-| `fn_backpay_hu_winner_shortfalls` | `guaranteed_prize = 0` - explicitly excludes guaranteed events |
-| `fn_tournament_conservation_delta` | never reads `guaranteed_prize`; for a freeroll every term is 0, so it reads perfectly conserved |
+| check                                  | why it cannot see this                                                                          |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `trg_tournaments_guarantee_affordable` | scoped to ANNOUNCED/REGISTERING/RUNNING; pre-commitment only                                    |
+| `fn_overlay_at_risk`                   | `buy_in_amount > 0` - excludes every freeroll - and not COMPLETED                               |
+| `fn_audit_overlays`                    | same `buy_in_amount > 0`; measures overlay at start, never whether it was funded                |
+| `fn_backpay_hu_winner_shortfalls`      | `guaranteed_prize = 0` - explicitly excludes guaranteed events                                  |
+| `fn_tournament_conservation_delta`     | never reads `guaranteed_prize`; for a freeroll every term is 0, so it reads perfectly conserved |
 
 The nine sat in a genuine blind spot: conservation-clean, affordability-clean,
 and below the `prize_pool > 0` floor of the one detector built to catch them.

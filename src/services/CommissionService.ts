@@ -440,6 +440,34 @@ export const CommissionService = {
     return Number(data ?? 0) || 0;
   },
 
+  /**
+   * What each of this agent's downlines is still owed, from the ledger.
+   *
+   * PHASE 7. The Sub-Agents tab printed `agents.pending_commission` for each
+   * downline - the column nothing wrote - so every figure in that column was a
+   * frozen number or a zero. It cannot simply select from agent_commissions
+   * instead: RLS lets an agent read their OWN commission rows and nobody
+   * else's, which is correct, so an upline needs a definer function.
+   *
+   * It answers UNCLAIMED rather than lifetime: it is what the club still owes,
+   * and it is the figure the partial index can produce without reading every
+   * row every downline has ever generated.
+   */
+  async downlineCommission(
+    clubId?: string
+  ): Promise<{ agentId: string; userId: string; unclaimed: number }[]> {
+    const resolvedId = clubId ? await resolveClubUUID(clubId) : null;
+    const { data, error } = await supabase.rpc('fn_agent_downline_commission', {
+      p_club_id: resolvedId,
+    });
+    if (error) throw error;
+    return (Array.isArray(data) ? data : []).map((row: any) => ({
+      agentId: row.agent_id,
+      userId: row.user_id,
+      unclaimed: Number(row.unclaimed ?? 0) || 0,
+    }));
+  },
+
   // ─────────────────────────────────────────────────────────────────────────────
   // REPORTING
   // ─────────────────────────────────────────────────────────────────────────────

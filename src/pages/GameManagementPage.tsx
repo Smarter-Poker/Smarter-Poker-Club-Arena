@@ -14,6 +14,8 @@ import { supabase } from '../lib/supabase';
 import { fetchGameCreationAccess } from '../services/GameAccessService';
 import {
   gameManagementService,
+  type ManagedGameContractSummary,
+  type ManagedGameContractVersion,
   type ManagedGameKind,
   type ManagedGamePatch,
 } from '../services/GameManagementService';
@@ -48,6 +50,7 @@ interface ManagedGame {
   minBuyIn: number;
   maxBuyIn: number;
   buyIn: number;
+  contract: ManagedGameContractSummary | null;
 }
 
 const ACTIVE_STATUSES = new Set(['running', 'active', 'waiting', 'registering', 'late_reg']);
@@ -92,6 +95,10 @@ function EditGameDialog({
   const [startTime, setStartTime] = useState(
     game.startTime ? new Date(game.startTime).toISOString().slice(0, 16) : ''
   );
+  const tableStructureLocked =
+    game.kind === 'table' &&
+    (Boolean(game.contract?.contractLocked) ||
+      ['running', 'active'].includes(game.status.toLowerCase()));
 
   return (
     <div
@@ -106,8 +113,9 @@ function EditGameDialog({
         aria-labelledby="edit-game-title"
         onSubmit={(e) => {
           e.preventDefault();
-          const patch: ManagedGamePatch = { name: name.trim(), maxPlayers: Number(maxPlayers) };
-          if (game.kind === 'table') {
+          const patch: ManagedGamePatch = { name: name.trim() };
+          if (!tableStructureLocked) patch.maxPlayers = Number(maxPlayers);
+          if (game.kind === 'table' && !tableStructureLocked) {
             patch.smallBlind = Number(smallBlind);
             patch.bigBlind = Number(bigBlind);
             patch.minBuyIn = Number(minBuyIn);
@@ -132,6 +140,7 @@ function EditGameDialog({
             max="1000000"
             value={maxPlayers}
             onChange={(e) => setMaxPlayers(e.target.value)}
+            disabled={tableStructureLocked}
             required
           />
         </label>
@@ -145,6 +154,7 @@ function EditGameDialog({
                 step="0.01"
                 value={smallBlind}
                 onChange={(e) => setSmallBlind(e.target.value)}
+                disabled={tableStructureLocked}
                 required
               />
             </label>
@@ -156,6 +166,7 @@ function EditGameDialog({
                 step="0.01"
                 value={bigBlind}
                 onChange={(e) => setBigBlind(e.target.value)}
+                disabled={tableStructureLocked}
                 required
               />
             </label>
@@ -167,6 +178,7 @@ function EditGameDialog({
                 step="1"
                 value={minBuyIn}
                 onChange={(e) => setMinBuyIn(e.target.value)}
+                disabled={tableStructureLocked}
                 required
               />
             </label>
@@ -178,6 +190,7 @@ function EditGameDialog({
                 step="1"
                 value={maxBuyIn}
                 onChange={(e) => setMaxBuyIn(e.target.value)}
+                disabled={tableStructureLocked}
                 required
               />
             </label>
@@ -192,7 +205,11 @@ function EditGameDialog({
             />
           </label>
         )}
-        <p>Live Games Can Be Renamed, But Structural Changes Are Locked Once Players Are Active.</p>
+        <p>
+          {tableStructureLocked
+            ? 'This Live Table Can Be Renamed. Its Blinds, Buy-In, And Seats Are Locked.'
+            : 'Structural Changes Lock As Soon As Players Become Active.'}
+        </p>
         <div className={styles.dialogActions}>
           <button type="button" onClick={onClose} disabled={busy}>
             Cancel
@@ -202,6 +219,95 @@ function EditGameDialog({
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function ContractHistoryDialog({
+  game,
+  versions,
+  loading,
+  onClose,
+}: {
+  game: ManagedGame;
+  versions: ManagedGameContractVersion[];
+  loading: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className={styles.dialogBackdrop}
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.currentTarget === event.target) onClose();
+      }}
+    >
+      <section
+        className={`${styles.dialog} ${styles.contractDialog}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="contract-title"
+      >
+        <span className={styles.eyebrow}>Published Contract History</span>
+        <h2 id="contract-title">{game.name}</h2>
+        <p>
+          Every Revision Is Hashed And Append-Only. Registered Tournament Contracts Cannot Be
+          Rewritten.
+        </p>
+        {game.kind === 'tournament' && game.contract && (
+          <div className={styles.readinessGrid} aria-label="Tournament Guarantee Readiness">
+            <span>
+              <small>Readiness</small>
+              <strong>{game.contract.readiness.state.replace(/_/g, ' ')}</strong>
+            </span>
+            <span>
+              <small>Guarantee</small>
+              <strong>{game.contract.readiness.guaranteedPrize}</strong>
+            </span>
+            <span>
+              <small>Overlay Required</small>
+              <strong>{game.contract.readiness.overlayRequired}</strong>
+            </span>
+            <span>
+              <small>{game.contract.readiness.bankType || 'Funding'} Bank</small>
+              <strong>{game.contract.readiness.bankBalance}</strong>
+            </span>
+            <span>
+              <small>Other Live Promises</small>
+              <strong>{game.contract.readiness.otherLiveExposure}</strong>
+            </span>
+            <span>
+              <small>Short By</small>
+              <strong>{game.contract.readiness.shortBy}</strong>
+            </span>
+          </div>
+        )}
+        {loading ? (
+          <div className={styles.contractLoading}>Loading Contract History…</div>
+        ) : (
+          <div className={styles.contractVersions}>
+            {versions.map((version) => (
+              <details key={version.version} open={version.version === versions[0]?.version}>
+                <summary>
+                  <strong>Version {version.version}</strong>
+                  <span>{new Date(version.publishedAt).toLocaleString()}</span>
+                  <code>{version.contractHash.slice(0, 12)}</code>
+                </summary>
+                <div className={styles.contractMeta}>
+                  <span>{version.changeReason.replace(/_/g, ' ')}</span>
+                  <span>SHA-256 {version.contractHash}</span>
+                </div>
+                <pre>{JSON.stringify(version.contract, null, 2)}</pre>
+              </details>
+            ))}
+          </div>
+        )}
+        <div className={styles.dialogActions}>
+          <button type="button" className={styles.primary} onClick={onClose}>
+            Close
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -228,6 +334,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const [surface, setSurface] = useState<ManagementSurface>('games');
   const [editing, setEditing] = useState<ManagedGame | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [contractGame, setContractGame] = useState<ManagedGame | null>(null);
+  const [contractVersions, setContractVersions] = useState<ManagedGameContractVersion[]>([]);
+  const [contractLoading, setContractLoading] = useState(false);
 
   const managementPath =
     scope === 'union' ? `/unions/${unionId}/table-management` : `/clubs/${clubId}/table-management`;
@@ -318,6 +427,22 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       ]);
       if (tableResult.error) throw tableResult.error;
       if (tournamentResult.error) throw tournamentResult.error;
+      const [tableContracts, tournamentContracts] = await Promise.all([
+        gameManagementService.getContracts(
+          'table',
+          (tableResult.data || []).map((row: any) => row.id)
+        ),
+        gameManagementService.getContracts(
+          'tournament',
+          (tournamentResult.data || []).map((row: any) => row.id)
+        ),
+      ]);
+      const tableContractMap = new Map(
+        tableContracts.map((contract) => [contract.gameId, contract])
+      );
+      const tournamentContractMap = new Map(
+        tournamentContracts.map((contract) => [contract.gameId, contract])
+      );
       const hostNames = Object.fromEntries(nextHosts.map((host) => [host.id, host.name]));
       const rows: ManagedGame[] = [
         ...(tableResult.data || []).map((row: any) => ({
@@ -336,6 +461,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           minBuyIn: Number(row.min_buy_in || 0),
           maxBuyIn: Number(row.max_buy_in || 0),
           buyIn: 0,
+          contract: tableContractMap.get(row.id) || null,
         })),
         ...(tournamentResult.data || []).map((row: any) => ({
           id: row.id,
@@ -353,6 +479,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           minBuyIn: 0,
           maxBuyIn: 0,
           buyIn: Number(row.buy_in_amount || 0),
+          contract: tournamentContractMap.get(row.id) || null,
         })),
       ];
       setGames(rows);
@@ -407,7 +534,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     requestedCreate === 'event' || requestedCreate === 'spin' || requestedCreate === 'sng';
 
   const closeGame = async (game: ManagedGame) => {
-    if (game.players > 0) {
+    if (game.players > 0 || game.contract?.contractLocked) {
       toast.error(
         game.kind === 'table'
           ? 'This table cannot be closed while players are seated. Ask every player to leave first.'
@@ -434,6 +561,20 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       toast.error(error instanceof Error ? error.message : 'Could not close the game.');
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const openContractHistory = async (game: ManagedGame) => {
+    setContractGame(game);
+    setContractVersions([]);
+    setContractLoading(true);
+    try {
+      setContractVersions(await gameManagementService.getContractHistory(game.kind, game.id));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not load contract history.');
+      setContractGame(null);
+    } finally {
+      setContractLoading(false);
     }
   };
 
@@ -591,6 +732,31 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                         ? `${game.smallBlind}/${game.bigBlind} · Buy-In ${game.minBuyIn}-${game.maxBuyIn}`
                         : `${game.buyIn} Buy-In · ${formatTime(game.startTime)}`}
                     </p>
+                    {game.contract && (
+                      <div className={styles.contractRail}>
+                        <span>Contract V{game.contract.version}</span>
+                        <span>{game.contract.contractHash.slice(0, 8)}</span>
+                        {game.contract.contractLocked && (
+                          <span className={styles.locked}>Locked</span>
+                        )}
+                        {game.kind === 'tournament' && (
+                          <span
+                            className={
+                              game.contract.readiness.canStart ? styles.ready : styles.blocked
+                            }
+                            title={
+                              game.contract.readiness.state === 'funding_blocked'
+                                ? `Guarantee Short By ${game.contract.readiness.shortBy} Chips`
+                                : 'Published Contract Readiness'
+                            }
+                          >
+                            {game.contract.readiness.state === 'funding_blocked'
+                              ? `Funding Short ${game.contract.readiness.shortBy}`
+                              : game.contract.readiness.state.replace(/_/g, ' ')}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className={styles.gameNumbers}>
                     <strong>
@@ -601,8 +767,15 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                   <span className={styles.status}>{game.status.replace(/_/g, ' ')}</span>
                   <div className={styles.rowActions}>
                     <button
+                      onClick={() => void openContractHistory(game)}
+                      disabled={busyId === game.id}
+                      title="View Published Contract History"
+                    >
+                      Contract
+                    </button>
+                    <button
                       onClick={() => {
-                        if (game.kind === 'tournament' && game.players > 0) {
+                        if (game.kind === 'tournament' && game.contract?.contractLocked) {
                           toast.error(
                             'This tournament cannot be modified after a player has registered.'
                           );
@@ -612,7 +785,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                       }}
                       disabled={busyId === game.id}
                       title={
-                        game.kind === 'tournament' && game.players > 0
+                        game.kind === 'tournament' && game.contract?.contractLocked
                           ? 'Locked After The First Registration'
                           : 'Edit Game'
                       }
@@ -626,7 +799,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                         onClick={() => void closeGame(game)}
                         disabled={busyId === game.id}
                         title={
-                          game.players > 0
+                          game.players > 0 || game.contract?.contractLocked
                             ? game.kind === 'table'
                               ? 'Players Must Leave Before This Table Can Close'
                               : 'A Registered Tournament Cannot Be Cancelled'
@@ -684,6 +857,15 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
               setBusyId(null);
             }
           }}
+        />
+      )}
+
+      {contractGame && (
+        <ContractHistoryDialog
+          game={contractGame}
+          versions={contractVersions}
+          loading={contractLoading}
+          onClose={() => setContractGame(null)}
         />
       )}
     </main>

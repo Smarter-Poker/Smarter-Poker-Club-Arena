@@ -357,6 +357,33 @@
   color: #8296a1;
   font-size: 11px;
 }
+.contractRail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+.contractRail span {
+  padding: 4px 6px;
+  border: 1px solid #2b4655;
+  color: #7f9aa9;
+  background: rgba(3, 10, 14, 0.78);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.contractRail .ready {
+  border-color: #217253;
+  color: #6fe0ae;
+}
+.contractRail .blocked {
+  border-color: #81433e;
+  color: #ff9f92;
+}
+.contractRail .locked {
+  border-color: #725e2d;
+  color: #e5c46a;
+}
 .gameNumbers {
   display: grid;
   text-align: center;
@@ -454,6 +481,12 @@
   color: #fff;
   background: #050a0e;
 }
+.dialog input:disabled {
+  color: #6f7c83;
+  border-color: #26343c;
+  background: #080d10;
+  cursor: not-allowed;
+}
 .dialog p {
   color: #718894;
   font-size: 11px;
@@ -468,6 +501,92 @@
   justify-content: flex-end;
   gap: 8px;
   margin-top: 18px;
+}
+.contractDialog {
+  width: min(840px, 100%);
+  max-height: min(86dvh, 900px);
+  overflow: auto;
+}
+.contractLoading {
+  padding: 32px;
+  color: #8aa5b3;
+  text-align: center;
+}
+.readinessGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 16px;
+}
+.readinessGrid > span {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border: 1px solid #294555;
+  background: #061017;
+}
+.readinessGrid small {
+  color: #647f8d;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.readinessGrid strong {
+  color: #dff4ff;
+  font:
+    700 15px/1 Rajdhani,
+    Inter,
+    sans-serif;
+  text-transform: uppercase;
+}
+.contractVersions {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+.contractVersions details {
+  border: 1px solid #263e4c;
+  background: #050c10;
+}
+.contractVersions summary {
+  display: grid;
+  grid-template-columns: 110px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  color: #9db3bf;
+  cursor: pointer;
+}
+.contractVersions summary strong {
+  color: #e8f7ff;
+  font-family: Rajdhani, Inter, sans-serif;
+  text-transform: uppercase;
+}
+.contractVersions summary code {
+  color: #55c8ff;
+  overflow-wrap: anywhere;
+}
+.contractMeta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid #1c303a;
+  color: #6d8795;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+.contractVersions pre {
+  max-height: 320px;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  border-top: 1px solid #1c303a;
+  color: #b8cbd5;
+  background: #020609;
+  font-size: 10px;
+  line-height: 1.5;
 }
 @media (max-width: 900px) {
   .commandHeader {
@@ -499,6 +618,15 @@
   }
   .rowActions {
     grid-column: 1 / -1;
+  }
+  .contractVersions summary {
+    grid-template-columns: 1fr auto;
+  }
+  .contractVersions summary span {
+    grid-column: 1 / -1;
+  }
+  .readinessGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 @media (max-width: 560px) {

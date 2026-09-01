@@ -13,6 +13,61 @@ export interface ManagedGamePatch {
   startTime?: string;
 }
 
+export interface ManagedGameReadiness {
+  state: 'ready' | 'funding_blocked' | 'incomplete' | 'closed' | 'missing';
+  canStart: boolean;
+  contractLocked: boolean;
+  guaranteeEnforced: boolean;
+  guaranteedPrize: number;
+  currentPrizePool: number;
+  overlayRequired: number;
+  bankType: 'club' | 'union' | null;
+  bankBalance: number;
+  bankFloor: number;
+  otherLiveExposure: number;
+  shortBy: number;
+}
+
+export interface ManagedGameContractSummary {
+  gameId: string;
+  version: number;
+  contractHash: string;
+  publishedAt: string;
+  changeReason: string;
+  contractLocked: boolean;
+  readiness: ManagedGameReadiness;
+}
+
+export interface ManagedGameContractVersion {
+  version: number;
+  contractHash: string;
+  contract: Record<string, unknown>;
+  publishedAt: string;
+  changeReason: string;
+}
+
+const numberValue = (value: unknown): number => {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+function mapReadiness(raw: any): ManagedGameReadiness {
+  return {
+    state: raw?.state || 'missing',
+    canStart: Boolean(raw?.can_start),
+    contractLocked: Boolean(raw?.contract_locked),
+    guaranteeEnforced: Boolean(raw?.guarantee_enforced),
+    guaranteedPrize: numberValue(raw?.guaranteed_prize),
+    currentPrizePool: numberValue(raw?.current_prize_pool),
+    overlayRequired: numberValue(raw?.overlay_required),
+    bankType: raw?.bank_type === 'club' || raw?.bank_type === 'union' ? raw.bank_type : null,
+    bankBalance: numberValue(raw?.bank_balance),
+    bankFloor: numberValue(raw?.bank_floor),
+    otherLiveExposure: numberValue(raw?.other_live_exposure),
+    shortBy: numberValue(raw?.short_by),
+  };
+}
+
 function resultError(data: unknown, fallback: string): string | null {
   if (!data || typeof data !== 'object') return fallback;
   const result = data as { ok?: boolean; reason?: string };
@@ -34,6 +89,55 @@ function managementError(reason: string | null): string | null {
 }
 
 export const gameManagementService = {
+  async getContracts(
+    kind: ManagedGameKind,
+    gameIds: string[]
+  ): Promise<ManagedGameContractSummary[]> {
+    if (gameIds.length === 0) return [];
+    const { data, error } = await supabase.rpc('fn_get_managed_game_contracts', {
+      p_kind: kind,
+      p_game_ids: gameIds,
+    });
+    if (error) throw new Error(error.message || 'Could not load published game contracts.');
+    const result = data as { ok?: boolean; reason?: string; contracts?: any[] } | null;
+    if (!result?.ok)
+      throw new Error(
+        managementError(result?.reason || null) || 'Could not load published game contracts.'
+      );
+    return (result.contracts || []).map((row) => ({
+      gameId: String(row.game_id),
+      version: numberValue(row.version),
+      contractHash: String(row.contract_hash || ''),
+      publishedAt: String(row.published_at || ''),
+      changeReason: String(row.change_reason || 'published'),
+      contractLocked: Boolean(row.contract_locked),
+      readiness: mapReadiness(row.readiness),
+    }));
+  },
+
+  async getContractHistory(
+    kind: ManagedGameKind,
+    gameId: string
+  ): Promise<ManagedGameContractVersion[]> {
+    const { data, error } = await supabase.rpc('fn_get_managed_game_contract_history', {
+      p_kind: kind,
+      p_game_id: gameId,
+    });
+    if (error) throw new Error(error.message || 'Could not load contract history.');
+    const result = data as { ok?: boolean; reason?: string; versions?: any[] } | null;
+    if (!result?.ok)
+      throw new Error(
+        managementError(result?.reason || null) || 'Could not load contract history.'
+      );
+    return (result.versions || []).map((row) => ({
+      version: numberValue(row.version),
+      contractHash: String(row.contract_hash || ''),
+      contract: row.contract && typeof row.contract === 'object' ? row.contract : {},
+      publishedAt: String(row.published_at || ''),
+      changeReason: String(row.change_reason || 'published'),
+    }));
+  },
+
   async update(kind: ManagedGameKind, gameId: string, patch: ManagedGamePatch): Promise<void> {
     const { data, error } = await supabase.rpc('fn_update_managed_game', {
       p_kind: kind,

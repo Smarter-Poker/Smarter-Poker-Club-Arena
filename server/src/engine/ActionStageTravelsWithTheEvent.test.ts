@@ -30,6 +30,7 @@
 import { describe, it, expect } from 'vitest';
 import { HandController } from './HandController.js';
 import type { HandConfig, HandEvent, SeatPlayer } from '../types.js';
+import { sliceBetween } from '../testHelpers/sourceWindow.js';
 
 function mkPlayers(stacks: number[]): SeatPlayer[] {
   return stacks.map(
@@ -159,14 +160,10 @@ describe('the consumer prefers the event over live state', () => {
       require('node:path').join(__dirname, 'ServerTableEngineHandEvents.ts'),
       'utf8'
     );
-    const at = src.indexOf("case 'PLAYER_ACTION':");
-    expect(at).toBeGreaterThan(-1);
-    // Bounded by the next case rather than by 4,000 bytes. A window that can be
-    // outrun by the body it watches goes green while watching nothing, which is
-    // what tests/unit/noFixedSizeSourceWindows exists to stop.
-    const nextCase = src.indexOf("      case '", at + 1);
-    expect(nextCase).toBeGreaterThan(at);
-    const body = src.slice(at, nextCase).replace(/\/\*[\s\S]*?\*\//g, '');
+    const body = sliceBetween(src, "case 'PLAYER_ACTION':", "case 'COMMUNITY_CARDS':").replace(
+      /\/\*[\s\S]*?\*\//g,
+      ''
+    );
     expect(body).toContain('event.stage ??');
     // The bare live-state read must not be what feeds the persisted record.
     expect(body).not.toMatch(/const stage = hcState\?\.stage \|\| 'preflop';/);

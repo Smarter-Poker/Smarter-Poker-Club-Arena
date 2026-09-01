@@ -109,3 +109,41 @@ host terminal, the worktree claim, the `node` PATH, the three-minute pre-push
 hook, `curl` instead of `gh`, and merge-not-rebase. `AGENT-PLAYBOOK.md` was
 deliberately not touched - it is byte-identical across seven repos and
 `estate-integrity.sh` checks that hourly.
+
+---
+
+## 4. And main went red a second time, from the other direction
+
+An hour after the watchdog test was fixed, `noFixedSizeSourceWindows` started
+failing on three source pins that had landed meanwhile:
+
+```
+server/src/engine/GtoDepthCeiling.test.ts:141        league.slice(at, at + 300)
+server/src/engine/SqueezeAndPagination.law.test.ts:47  logicSrc.slice(at, at + 900)
+server/src/engine/SqueezeAndPagination.law.test.ts:69  logicSrc.slice(at, at + 900)
+server/src/services/PagedReadsAreDeterministic.law.test.ts:53  src.slice(idx, idx + 60)
+```
+
+That guard exists because of a real publish outage on 2026-08-28: a 7000-byte
+window drifted off the code it was watching when comments were added, three
+pins went red, the guarded code had not changed by a character, and the whole
+estate published nothing for 39 minutes.
+
+**This one was hidden.** Main's own CI gates the unit job behind the changed
+files, so a docs-only commit to main goes green in 0.2 minutes without ever
+running the suite - main showed a wall of green ticks while carrying a red
+test. It only bit branches that touch `tests/` or `src/`, which is every branch
+doing real work.
+
+All four windows are now bounded by the structure they are about, using the
+extractors the guard's own message points at:
+
+- the `squeezed:` branch is bounded by the next property in the same object
+  literal (`sliceBetween(logicSrc, 'squeezed:', 'omahaAA:')`), which matters
+  most for its `not.toMatch(/\bcallers >= 1\b/)` - a forward byte window can run
+  past the property and read a match belonging to something else;
+- the `.range(` argument check is bounded by the call's own matching paren
+  (`sliceCall`);
+- `GtoDepthCeiling` was fixed on main by another agent while this was in flight.
+
+27 tests across those three files pass, and the meta-guard is green.

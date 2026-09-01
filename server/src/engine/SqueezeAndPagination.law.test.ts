@@ -36,15 +36,18 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceBetween } from '../../../tests/helpers/sourceWindow';
 
 const logicSrc = readFileSync(join(__dirname, 'HorseLogic.ts'), 'utf8');
 const tunerSrc = readFileSync(join(__dirname, '..', 'services', 'HorseSelfTuner.ts'), 'utf8');
 
 describe('the squeeze branch can actually fire', () => {
   it('reads the callers of the OPEN, not the callers of the 3-bet', () => {
-    const at = logicSrc.indexOf('squeezed:');
-    expect(at).toBeGreaterThan(-1);
-    const branch = logicSrc.slice(at, at + 900).replace(/\/\/.*$/gm, '');
+    // Bounded by the NEXT property in the same object literal, not by a byte
+    // count: `squeezed:` grows every time the branch gains a condition, and a
+    // fixed window that outruns it goes green while watching nothing.
+    const branch = sliceBetween(logicSrc, 'squeezed:', 'omahaAA:').replace(/\/\/.*$/gm, '');
+    expect(branch.length).toBeGreaterThan(0);
     expect(branch).toContain('callersOfPreviousRaise >= 1');
     // The old test. If this ever comes back the layer is dead again and the
     // league will report 0.00 +/- 0.00 forever.
@@ -65,8 +68,7 @@ describe('the squeeze branch can actually fire', () => {
   });
 
   it('still keeps the rest of the squeeze shape', () => {
-    const at = logicSrc.indexOf('squeezed:');
-    const branch = logicSrc.slice(at, at + 900);
+    const branch = sliceBetween(logicSrc, 'squeezed:', 'omahaAA:');
     expect(branch).toContain('raises === 2');
     // Hero must have made the FIRST raise - a squeeze is something done TO
     // the opener, not something the cold-caller experiences.

@@ -355,10 +355,13 @@ const isLobbyTab = isLobbyLike;
  */
 /* Dan 2026-08-30: the 4-square (tile view) artwork - brushed-metal icon Dan
    supplied, served from the same buttons bucket as every other table icon.
-   One artwork for both button skins: the metal piece is skin-neutral. */
-const fourScreenIcon = `${
-  import.meta.env.VITE_SUPABASE_URL || 'https://kuklfnapbkmacvwxktbh.supabase.co'
-}/storage/v1/object/public/assets/buttons/black/icon-fourscreen.webp`;
+   One artwork for both button skins: the metal piece is skin-neutral.
+
+   RETIRED 2026-08-31. That render carries a dark rounded PLATE baked into it
+   (no alpha channel), which the 40px button painted as a backdrop behind the
+   glyph - Dan: "remove the little pill behind the 4 square button." The icon
+   is now drawn inline at the button; see the note there. Restore this const
+   and the <img> together if the artwork is ever re-cut transparent. */
 
 const MAX_TABLES = typeof window !== 'undefined' && window.innerWidth >= 1024 ? 6 : 4;
 
@@ -3445,7 +3448,44 @@ export default function MultiTablePage() {
               }
               aria-label={isTileView ? 'Single View' : 'Tile View'}
             >
-              <img className="tile-toggle-btn__img" src={fourScreenIcon} alt="" draggable={false} />
+              {/* ═══ NO PLATE BEHIND THE GLYPH (Dan 2026-08-31) ══════════════
+                  "Remove the little pill behind the 4 square button."
+
+                  It was not CSS - `.tile-toggle-btn` has painted
+                  `background: transparent` all along. The plate is inside the
+                  ARTWORK: the source render (1254x1254, RGB, no alpha channel)
+                  is a dark rounded rectangle with the four screens sitting in
+                  the middle at roughly 46% of its width, so `object-fit:
+                  contain` in the 40px button faithfully painted the plate too.
+                  Its sibling assets (hamburger, add-screen) are transparent
+                  cutouts, which is why this was the only button wearing one.
+
+                  Drawn inline instead, so the button is the glyph and nothing
+                  else - the same approach TableTabBar already uses for its "+".
+                  If the artwork is ever re-exported with a transparent
+                  background, this can go back to being an <img> in one line. */}
+              <svg
+                className="tile-toggle-btn__img"
+                viewBox="0 0 48 48"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <defs>
+                  <linearGradient id="tileToggleMetal" x1="0" y1="0" x2="0.9" y2="1">
+                    <stop offset="0%" stopColor="#fdfdfd" />
+                    <stop offset="28%" stopColor="#cdd2d8" />
+                    <stop offset="55%" stopColor="#8d949d" />
+                    <stop offset="78%" stopColor="#b6bcc4" />
+                    <stop offset="100%" stopColor="#6b727b" />
+                  </linearGradient>
+                </defs>
+                <g fill="url(#tileToggleMetal)">
+                  <rect x="5" y="5" width="17" height="17" rx="3.6" />
+                  <rect x="26" y="5" width="17" height="17" rx="3.6" />
+                  <rect x="5" y="26" width="17" height="17" rx="3.6" />
+                  <rect x="26" y="26" width="17" height="17" rx="3.6" />
+                </g>
+              </svg>
             </button>
           </div>
         )}

@@ -944,8 +944,31 @@ export class RakebackSettlerService {
    * has to EXCEED the window's population or the window is decorative.
    * Measured 2026-08-27: 35,220 COMPLETED events in 30 days, ~1,174/day, so a
    * 2-day window normally holds ~2,350. Five times that, ~1.7s of scan.
+   *
+   * 2026-09-01: RAISED 6,000 -> 20,000, because the window overtook the limit.
+   *
+   * The 2-day window now holds **6,959** events, not ~2,350 -- daily volume has
+   * roughly tripled since the figure above was measured. So the narrow pass was
+   * examining 6,000 of 6,959 and stopping, and by the reasoning in the comment
+   * directly above this one the window had become decorative again.
+   *
+   * This is not a silent miss -- the deep pass (30 days / 40,000, every 24th
+   * cycle) reaches the remainder within about twelve hours, which is why nobody
+   * noticed. It is still twelve hours of an underpaid player waiting on a pass
+   * that had the budget to reach them and did not.
+   *
+   * Measured against production 2026-09-01: the FULL 2-day window, all 6,959
+   * events, reconciles in **5.7 seconds** -- so the headroom costs about a
+   * second. The old comment's worry about PostgREST's single-digit statement
+   * timeout no longer applies either: the RPC sets its own
+   * `statement_timeout = 600s`, which overrides it for the duration of the call.
+   *
+   * 20,000 is ~3x the current population, the same multiple the original 6,000
+   * was chosen at. When the window overtakes this one too, the sweep now says
+   * so out loud (fn_tournament_payout_sweep raises a truncation alert on any
+   * applying pass) rather than leaving it to be rediscovered.
    */
-  private static readonly PAYOUT_SWEEP_RECENT_LIMIT = 6000;
+  private static readonly PAYOUT_SWEEP_RECENT_LIMIT = 20000;
   /** Days back the periodic pass looks — far enough to reach the May backlog. */
   private static readonly PAYOUT_SWEEP_DEEP_DAYS = 30;
   /** 35,220 events live in a 30-day window; 40,000 covers it with headroom. */

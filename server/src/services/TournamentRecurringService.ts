@@ -2036,6 +2036,31 @@ export class TournamentRecurringService {
         this.houseOwner,
         budget
       );
+
+      /* Dan 2026-09-01 (Deep Stack Society directive): heads-up and SNG
+       * boards for activated club owners, exactly the way the Spin pass
+       * already does it -- the house board first so it is never starved,
+       * then one owner board per activated owner. activatedSpinOwners()
+       * is the platform's one "this owner has switched club games on and
+       * funded them" signal; a standalone club like Deep Stack (11192)
+       * activates via fn_spin_activate and gets its own SNG/heads-up
+       * board on the same tick, same budget, same repair pass.
+       *
+       * maxStake clamps the buy-ins an owner's board offers, mirroring
+       * the Spin rule: never list a price point the owner did not sign
+       * up for. */
+      for (const owner of await this.activatedSpinOwners()) {
+        if (budget.left <= 0) break;
+        const affordable = SNG_CONFIGS.filter((c) => c.buyIn <= owner.maxStake);
+        if (affordable.length === 0) continue;
+        await this.ensureBoardOpen(
+          'sng',
+          affordable,
+          (c, o) => this.createSNG(c as any, o),
+          owner,
+          budget
+        );
+      }
     });
   }
 
@@ -3244,10 +3269,36 @@ export class TournamentRecurringService {
              seat-first chair from a separate booking for the same game. */
       const { data: chunk, error: seatErr } = await supabase
         .from('table_seats')
-        .select('user_id, tables!inner(status, tournament_id)')
+        .select('user_id, table_id, tables!inner(status, tournament_id)')
         .is('left_at', null)
         .neq('tables.status', 'closed')
+        /*
+         * THE SORT KEY MUST BE UNIQUE (2026-09-01).
+         *
+         * This paged 1,000 rows at a time ordered by `user_id` alone, and
+         * user_id is the LEAST unique column here: the whole point of this
+         * read is that a horse holds up to four seats. Postgres does not
+         * promise a stable order within ties, so LIMIT/OFFSET over it can
+         * repeat a row on one page and drop another.
+         *
+         * Both directions land on a documented failure of this very
+         * function. A dropped row UNDERSTATES load, so a horse already at
+         * four tables is handed out, the four-table trigger refuses it with
+         * 23514 and the pass fills nobody - which is the "added NONE" line
+         * the overlay guard keeps logging. A repeated row OVERSTATES load, so
+         * a horse with two tables looks maxed out and is held out of every
+         * board.
+         *
+         * NOT currently firing: measured 2026-09-01 there were 244 live seat
+         * rows and 540 registration rows, both inside a single page, so no
+         * boundary is crossed today. It is fixed now because it is invisible
+         * until the fleet grows past a page and then presents as
+         * intermittent, unexplainable starvation - and because this function
+         * already documents that an incomplete read must be reported as
+         * UNKNOWN rather than passed off as an answer.
+         */
         .order('user_id', { ascending: true })
+        .order('table_id', { ascending: true })
         .range(page * PAGE, page * PAGE + PAGE - 1);
       if (seatErr) {
         reportError(
@@ -3280,7 +3331,11 @@ export class TournamentRecurringService {
         .select('user_id, tournament_id, tournaments!inner(status)')
         .in('status', ['registered', 'playing'])
         .in('tournaments.status', ['ANNOUNCED', 'REGISTERING'])
+        // Same unstable-pagination hazard as the seat read above: a horse is
+        // registered for several events at once, so user_id alone does not
+        // order these rows deterministically.
         .order('user_id', { ascending: true })
+        .order('tournament_id', { ascending: true })
         .range(page * PAGE, page * PAGE + PAGE - 1);
       if (regErr) {
         reportError(
@@ -4162,10 +4217,17 @@ export class TournamentRecurringService {
         }
         const { data: alreadyIn, error: entrantErr } = await supabase
           .from('tournament_players')
-          .select('user_id')
+          .select('user_id, id')
           .eq('tournament_id', tournamentId)
           .in('status', ['registered', 'playing'])
+          // The primary key as the tiebreaker (2026-09-01). Ordering by
+          // user_id alone assumes one row per player per tournament, which
+          // re-entry formats break - and an unstable order under LIMIT/OFFSET
+          // drops rows. The comment directly below says an incomplete entrant
+          // list lets a double-registration through, which is precisely what a
+          // dropped row causes.
           .order('user_id', { ascending: true })
+          .order('id', { ascending: true })
           .range(page * ENTRANT_PAGE, page * ENTRANT_PAGE + ENTRANT_PAGE - 1);
         // An incomplete entrant list would let a double-registration through,
         // so a failed page declines the pass rather than guessing.

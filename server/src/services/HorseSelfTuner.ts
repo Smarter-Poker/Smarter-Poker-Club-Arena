@@ -715,8 +715,35 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
           .select('horse_user_id, hands, net_bb, format')
           .gte('day', sinceDay)
           .in('format', ['cash', 'hu_cash'])
+          /*
+           * ═══ THE SORT KEY MUST BE UNIQUE (2026-09-01, measured) ═══
+           *
+           * This paged 1,000 rows at a time ordered by (horse_user_id, day) -
+           * which is NOT unique here. horse_daily_nets is keyed
+           * (horse_user_id, day, game_variant, format), and in the seven-day
+           * window there were 19,883 matching rows across 20 pages with 2,589
+           * groups sharing a (horse_user_id, day) pair.
+           *
+           * Postgres does not promise a stable order within ties, and
+           * LIMIT/OFFSET pagination over an unstable order silently DROPS
+           * rows and repeats others. The horse whose rows are dropped simply
+           * has a smaller sample than it really played.
+           *
+           * MEASURED consequence on 2026-08-31: two horses with 2,141 and
+           * 2,332 cash hands in the window - both comfortably past the
+           * 1,500-hand bar - came out under it and were logged with the
+           * -9999 "no real sample" sentinel. Their dials were then tuned from
+           * frequency estimates instead of settlement truth, which is the
+           * exact substitution MIN_REAL_HANDS_FOR_BB100 exists to prevent.
+           *
+           * Ordering by the full unique key makes the page boundaries
+           * deterministic. The same fix is applied to the leak-tag loop
+           * below, which had 3,413 tied groups.
+           */
           .order('horse_user_id', { ascending: true })
           .order('day', { ascending: true })
+          .order('game_variant', { ascending: true })
+          .order('format', { ascending: true })
           .range(offset, offset + 999);
         if (error) throw new Error(error.message);
         if (!data || data.length === 0) break;
@@ -750,8 +777,15 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
           .from('horse_review_rollup')
           .select('horse_user_id, leak_counts')
           .gte('day', sinceDay)
+          // Same unstable-pagination bug as the real-nets loop above, same
+          // fix: horse_review_rollup is keyed (horse_user_id, day,
+          // game_variant) and 3,413 groups shared a (horse_user_id, day)
+          // pair, so leak counts - which drive the tightness, aggression and
+          // bluff dials directly - were being assembled from a sample with
+          // rows silently missing.
           .order('horse_user_id', { ascending: true })
           .order('day', { ascending: true })
+          .order('game_variant', { ascending: true })
           .range(offset, offset + 999);
         if (error) throw new Error(error.message);
         if (!data || data.length === 0) break;

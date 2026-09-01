@@ -41,7 +41,40 @@ DEPLOY_WORKFLOW="${DEPLOY_WORKFLOW:-auto-deploy-hetzner.yml}"
 # Two full catch-up cycles plus a margin. One missed */20 tick is ordinary;
 # three in a row is the failure this exists to catch.
 GRACE_MIN="${GRACE_MIN:-45}"
+# The engine does not restart on merge. Since #2343 auto-deploy-hetzner.yml only
+# lets a restart through during scheduled Chicago hours, so "45 minutes after the
+# merge" was never a deadline the engine was trying to meet -- and between the
+# 04:00 and 10:00 windows this watchdog was guaranteed to fire every morning
+# about a platform behaving exactly as designed. An alarm that is right about the
+# reading and wrong about whether anything is broken is how people learn to close
+# alarms unread. The deadline is the first restart window at or after the commit,
+# plus one deploy's worth of time -- and never sooner than GRACE_MIN, so this is
+# strictly more patient than what it replaces, never less.
+RESTART_HOURS="${RESTART_HOURS:-04 10 14 18 22}"  # America/Chicago; matches auto-deploy-hetzner.yml
+DEPLOY_MIN="${DEPLOY_MIN:-25}"                    # a real deploy is ~5m; 25 leaves room for a drain
 ISSUE_TITLE="Engine watchdog: production is not running main"
+
+chicago_hour() {  # $1 = epoch -> HH in America/Chicago (GNU date, BSD fallback)
+  TZ=America/Chicago date -d "@$1" +%H 2>/dev/null || TZ=America/Chicago date -r "$1" +%H
+}
+chicago_stamp() {
+  TZ=America/Chicago date -d "@$1" '+%Y-%m-%d %H:%M %Z' 2>/dev/null \
+    || TZ=America/Chicago date -r "$1" '+%Y-%m-%d %H:%M %Z'
+}
+is_restart_hour() { case " $RESTART_HOURS " in *" $1 "*) return 0 ;; esac; return 1; }
+# The opening of the first restart window at or after $1. "At or after" matters:
+# a commit landing at 10:05 Chicago is already inside the 10:00 window and ships
+# on its own push -- it does not wait for 14:00.
+window_at_or_after() {
+  local e=$1 h i cand
+  cand=$(( e / 3600 * 3600 ))
+  for i in $(seq 0 47); do
+    h=$(chicago_hour "$cand")
+    if is_restart_hour "$h"; then printf '%s' "$cand"; return 0; fi
+    cand=$(( cand + 3600 ))
+  done
+  printf '%s' "$(( e + 86400 ))"  # unreachable unless RESTART_HOURS is empty
+}
 
 say() { printf '%s\n' "$*"; }
 summary() { [ -n "${GITHUB_STEP_SUMMARY:-}" ] && printf '%s\n' "$*" >> "$GITHUB_STEP_SUMMARY"; return 0; }
@@ -131,24 +164,56 @@ if git cat-file -e "${SERVED}^{commit}" 2>/dev/null && \
   exit 0
 fi
 
-# ── 4. Behind, but recently ─────────────────────────────────────────────────
-if [ "$AGE_MIN" -lt "$GRACE_MIN" ]; then
-  say "Behind by design so far: $REQ_SHORT is ${AGE_MIN}m old, inside the ${GRACE_MIN}m grace window."
-  summary "### Engine watchdog: catching up"
+# ── 4. Behind, but not yet late ─────────────────────────────────────────────
+# Two things must be true before this is a fault: a restart window has to have
+# OPENED since the commit landed, and enough time has to have passed inside it
+# for a deploy to finish. Before that the engine is behind exactly as designed
+# and there is nothing to report.
+NOW_EPOCH=$(date -u +%s)
+WINDOW_EPOCH=$(window_at_or_after "$REQ_EPOCH")
+WINDOW_START=$(( WINDOW_EPOCH > REQ_EPOCH ? WINDOW_EPOCH : REQ_EPOCH ))
+DEADLINE=$(( WINDOW_START + DEPLOY_MIN * 60 ))
+GRACE_DEADLINE=$(( REQ_EPOCH + GRACE_MIN * 60 ))
+[ "$GRACE_DEADLINE" -gt "$DEADLINE" ] && DEADLINE=$GRACE_DEADLINE
+WINDOW_LOCAL=$(chicago_stamp "$WINDOW_EPOCH")
+
+if [ "$NOW_EPOCH" -lt "$DEADLINE" ]; then
+  say "Behind by design: the engine restarts only at $RESTART_HOURS Chicago."
+  say "  first window at or after $REQ_SHORT: $WINDOW_LOCAL, +${DEPLOY_MIN}m to deploy"
+  # Say WHICH deadline is holding this quiet. When the grace window is the
+  # later of the two, the window has already opened and the engine simply has
+  # not caught up yet: one missed catch-up tick is ordinary, three in a row is
+  # the failure this watchdog exists to name. A reader of a quiet run could
+  # not tell those apart before.
+  if [ "$DEADLINE" -eq "$GRACE_DEADLINE" ]; then
+    say "  quiet because $REQ_SHORT is still inside the ${GRACE_MIN}m grace window"
+  fi
+  summary "### Engine watchdog: waiting for the restart window"
   summary ""
-  summary "\`$REQ_SHORT\` is ${AGE_MIN}m old and the engine serves \`$SERVED\`. A coalesced restart or a drain-gate deferral is normal here; the \`*/20\` catch-up has not run out of chances yet."
+  summary "\`$REQ_SHORT\` is ${AGE_MIN}m old and the engine serves \`$SERVED\`. The engine does not restart on merge: its first window opens **$WINDOW_LOCAL**, and this watchdog stays quiet until ${DEPLOY_MIN}m past it."
   exit 0
 fi
 
 # ── 5. Behind for too long. Fix it, then say so. ────────────────────────────
 say "::warning title=ENGINE BEHIND::$REQ_SHORT has been on main for ${AGE_MIN}m and the engine still serves $SERVED."
 
+# Dispatch only when a restart window is actually open. Outside one, the deploy
+# exits in 20 seconds having shipped nothing, and an alarm that claims "a retry
+# has been dispatched" when the retry provably cannot do anything is worse than
+# an alarm that says nothing.
 DISPATCHED="no"
-if gh workflow run "$DEPLOY_WORKFLOW" --repo "$REPO" --ref main >/dev/null 2>&1; then
-  DISPATCHED="yes"
-  say "  dispatched $DEPLOY_WORKFLOW on main"
+NOW_HOUR=$(chicago_hour "$(date -u +%s)")
+NEXT_WINDOW_LOCAL=$(chicago_stamp "$(window_at_or_after "$(date -u +%s)")")
+if is_restart_hour "$NOW_HOUR"; then
+  if gh workflow run "$DEPLOY_WORKFLOW" --repo "$REPO" --ref main >/dev/null 2>&1; then
+    DISPATCHED="yes"
+    say "  dispatched $DEPLOY_WORKFLOW on main"
+  else
+    say "::error::could not dispatch $DEPLOY_WORKFLOW -- the engine is behind and this run could not even try to fix it."
+  fi
 else
-  say "::error::could not dispatch $DEPLOY_WORKFLOW -- the engine is behind and this run could not even try to fix it."
+  DISPATCHED="no - outside the restart window, where a dispatch ships nothing"
+  say "  not dispatching: $NOW_HOUR:00 Chicago is not a restart hour. Next window $NEXT_WINDOW_LOCAL."
 fi
 
 BODY=$(cat <<EOF
@@ -159,9 +224,16 @@ The engine is not running main.
 | main needs | \`$REQ_SHORT\` ($REQ_TIME, **${AGE_MIN}m** ago) |
 | engine serves | \`$SERVED\` |
 | deploy dispatched by this run | $DISPATCHED |
+| next restart window | $NEXT_WINDOW_LOCAL |
 
 \`$REQ_SHORT\` is the newest commit touching the engine runtime, excluding tests
 and sim, which never enter the image.
+
+**The engine restarts on a schedule, not on a merge.** Since #2343 it restarts
+only at $RESTART_HOURS America/Chicago, so being behind between windows is
+normal and this watchdog stays silent for it. Seeing this issue at all means a
+window has already opened since the commit and passed without the engine
+catching up.
 
 **Why a green deploy is not an answer.** \`auto-deploy-hetzner.yml\` coalesces a
 restart inside MIN_RESTART_SPACING_SEC and exits 0, and the drain gate defers

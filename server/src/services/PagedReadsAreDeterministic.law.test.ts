@@ -36,21 +36,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-
-/** A call's argument list, bounded by the paren that closes it. */
-const callArgs = (src: string, at: number): string => {
-  const open = src.indexOf('(', at);
-  if (open < 0) return '';
-  let depth = 0;
-  for (let i = open; i < src.length; i++) {
-    if (src[i] === '(') depth++;
-    else if (src[i] === ')') {
-      depth--;
-      if (depth === 0) return src.slice(open, i + 1);
-    }
-  }
-  return src.slice(open);
-};
+import { sliceCall } from '../testHelpers/sourceWindow.js';
 
 const FILES = ['HorseSelfTuner.ts', 'TournamentRecurringService.ts'];
 
@@ -65,11 +51,7 @@ function pagedReads(src: string): Array<{ table: string; block: string }> {
       const table = /\.from\('([^']+)'\)/.exec(block)?.[1] ?? 'unknown';
       // Only reads that page inside a loop matter; a single bounded .range
       // with no offset arithmetic cannot straddle a boundary.
-      // The call and its whole argument list, not the next 60 bytes: a
-      // .range() whose arguments grow past a fixed window stops being
-      // classified as paging at all, and this scanner then covers less than it
-      // says it does.
-      if (/^\(\s*(page|offset)/.test(callArgs(src, idx))) {
+      if (/range\(\s*(page|offset)/.test(sliceCall(src.slice(idx), '.range('))) {
         out.push({ table, block });
       }
     }

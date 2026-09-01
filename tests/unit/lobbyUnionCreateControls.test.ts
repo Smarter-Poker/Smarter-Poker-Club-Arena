@@ -4,18 +4,29 @@ import { describe, expect, it } from 'vitest';
 
 const page = readFileSync(resolve(__dirname, '../../src/pages/ClubHomePage.tsx'), 'utf8');
 const pageCss = readFileSync(resolve(__dirname, '../../src/pages/ClubHomePage.css'), 'utf8');
+const commandCss = readFileSync(
+  resolve(__dirname, '../../src/components/lobby/ClubLobbyCommandTop.css'),
+  'utf8'
+);
 const table = readFileSync(resolve(__dirname, '../../src/components/lobby/LobbyTable.tsx'), 'utf8');
 const css = readFileSync(resolve(__dirname, '../../src/components/lobby/LobbyTable.css'), 'utf8');
+const tableConfig = readFileSync(resolve(__dirname, '../../src/pages/TableConfigPage.tsx'), 'utf8');
 
 describe('club lobby creation controls', () => {
-  it('shows creation to authorized staff in standalone and union clubs', () => {
-    // `noticeEditable` is the shared owner/staff authority predicate. Game
-    // creation is a club capability, so standalone clubs must not be hidden
-    // behind the union-only condition that used to make a new club inert.
-    expect(page).toContain("noticeEditable && gameType !== 'ALL'");
-    expect(page).not.toContain('(isOwner || isClubStaff(userRole)) && club?.is_union === true');
-    expect(page).not.toContain("userRole === 'admin') && club?.is_union");
-    expect(page).not.toContain('(!isInUnion || club?.is_union)');
+  it('shows creation only to authorized standalone clubs', () => {
+    expect(page).toContain('const canCreateClubGames = noticeEditable && !unionManagedClub');
+    expect(page).toContain("canCreateClubGames && gameType !== 'ALL'");
+    expect(page).toContain('showCreateTournament && canCreateClubGames');
+    expect(tableConfig).toContain("access?.reason === 'union_only'");
+    expect(tableConfig).toContain('access?.allowed === true && !unionManagedClub');
+    expect(tableConfig).toContain('Create Games From The Union Console');
+  });
+
+  it('locks the complete selector deck at the viewport edge while games scroll', () => {
+    expect(commandCss).toContain('display: contents');
+    expect(commandCss).toContain('position: sticky');
+    expect(commandCss).toContain('top: calc(env(safe-area-inset-top, 0px) + 10.2vw)');
+    expect(commandCss).toMatch(/@media \(min-width: 901px\)[\s\S]*top: 0;/);
   });
 
   it('keeps cash and tournament creation on their existing flows', () => {

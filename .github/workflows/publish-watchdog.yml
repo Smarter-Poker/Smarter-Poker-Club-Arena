@@ -47,7 +47,7 @@ jobs:
     timeout-minutes: 6
     steps:
       - name: Checkout main with full history
-        uses: actions/checkout@v4.3.1
+        uses: actions/checkout@v4
         with:
           ref: main
           # Full history is required: the script asks `git merge-base
@@ -99,7 +99,7 @@ jobs:
     timeout-minutes: 6
     steps:
       - name: Checkout main with full history
-        uses: actions/checkout@v4.3.1
+        uses: actions/checkout@v4
         with:
           ref: main
           # `git merge-base --is-ancestor` needs real history on both sides: the

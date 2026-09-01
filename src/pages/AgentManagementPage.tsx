@@ -1170,7 +1170,7 @@ export default function AgentManagementPage() {
         {/* ═══════════════════════════════════════════════════════════════════════════════ */}
         {activeTab === 'commissions' && (
           <div className={styles.commissionsSection}>
-            <AgentCommissionDashboard />
+            <AgentCommissionDashboard clubId={clubId} />
           </div>
         )}
 

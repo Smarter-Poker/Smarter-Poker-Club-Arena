@@ -189,6 +189,8 @@ import {
 import { type HandRecord } from '../components/table/HandHistoryPanel';
 // [MIGRATION] timeBankEngine removed — server-authoritative (Step 5). Time bank via GameServerAPI + DB.
 import { usePlayerStats } from '../hooks/usePlayerStats';
+import { useMaintenanceBreak } from '../hooks/useMaintenanceBreak';
+import { MaintenanceBreakScreen } from '../components/table/MaintenanceBreakScreen';
 import { useTableSettings } from '../hooks/useTableSettings';
 import { useTableTimer } from '../hooks/useTableTimer';
 import { useTableChat } from '../hooks/useTableChat';
@@ -679,6 +681,7 @@ import {
   sortCardsByRank,
   getGameVariantLabel,
   heroCardsCollideWithBoard,
+  heroHoleCardsAreForThisHand,
 } from '../lib/tableCardDisplay';
 import {
   seatLayoutFor,
@@ -3226,6 +3229,21 @@ export default function TablePage({
   // tell the player once instead.
   const notFoundCountRef = useRef(0);
   const tableClosedToastShownRef = useRef(false);
+  /**
+   * The scheduled maintenance break (Dan 2026-09-01). Driven by the engine
+   * while a socket exists, by the local clock while it does not, and by the
+   * database for a browser that loaded during the outage. See
+   * hooks/useMaintenanceBreak.ts.
+   */
+  const {
+    maintenanceBreak,
+    ingestMaintenanceEvent,
+    refreshFromDb: refreshMaintenanceBreak,
+  } = useMaintenanceBreak();
+  // Read inside the 4404 effect without making it re-run on every countdown
+  // tick, which would reset the consecutive-close counter every second.
+  const maintenanceBreakRef = useRef(maintenanceBreak);
+  maintenanceBreakRef.current = maintenanceBreak;
   useEffect(() => {
     if (!engineLastError) return;
     if (engineLastError.code === 4404) {
@@ -3234,15 +3252,39 @@ export default function TablePage({
          table, and absolutely not the moment to tell a player mid-buy-in
          "This Table Is No Longer Running" (Dan 2026-08-28). */
       if (seatFirstOpenRef.current) return;
+      /* A 4404 DURING A MAINTENANCE BREAK IS THE BREAK, NOT A CLOSED TABLE
+         (Dan 2026-09-01). The engine restarts inside an announced five-minute
+         break and answers 4404 for the ~2 minutes its tables take to
+         rehydrate. Telling a player "This Table Is No Longer Running" in the
+         middle of a break we just promised them their seat would survive is
+         the single most alarming thing this page could say, and it is false.
+         The overlay is already up and counting; say nothing.
+
+         Also asks the database, because a browser that loaded DURING the
+         outage never received the announcement over a socket. */
+      if (maintenanceBreakRef.current.active) return;
       notFoundCountRef.current += 1;
       if (notFoundCountRef.current >= 3 && !tableClosedToastShownRef.current) {
+        // Claim the slot BEFORE the await so three more 4404s arriving during
+        // the round trip cannot queue three more of these.
         tableClosedToastShownRef.current = true;
-        heartbeatToastRef.current?.info?.('This Table Is No Longer Running');
+        void (async () => {
+          await refreshMaintenanceBreak();
+          if (maintenanceBreakRef.current.active) {
+            // It was a break after all. Release the slot so a genuine closure
+            // later in this session can still be announced.
+            tableClosedToastShownRef.current = false;
+            return;
+          }
+          heartbeatToastRef.current?.info?.('This Table Is No Longer Running');
+        })();
       }
     } else if (engineLastError.code !== undefined) {
       notFoundCountRef.current = 0;
     }
-  }, [engineLastError]);
+    // refreshMaintenanceBreak is a stable useCallback, so this still runs once
+    // per error rather than on every break countdown tick.
+  }, [engineLastError, refreshMaintenanceBreak]);
   useEffect(() => {
     if (engineWsStatus === 'connected') {
       notFoundCountRef.current = 0;
@@ -5397,7 +5439,6 @@ export default function TablePage({
   // coverageAmount param accepted for InsuranceModal compatibility but ignored — server is authoritative
   // FIX 89: Insurance accept with server-authoritative coverage percentage
   const handleInsuranceAccept = async (coverageAmount?: number) => {
-    setShowInsurance(false);
     if (tableId) {
       // coverageAmount from slider maps to coveragePercent on server
       // If not provided, defaults to 100% (full insurance)
@@ -5418,8 +5459,14 @@ export default function TablePage({
       const result = await respondToInsurance(tableId, 'accept', coveragePct);
       if (!result.success) {
         reportError(result.error, 'TablePage.Accept_failed');
+        toast?.error?.(result.error || 'Insurance Could Not Be Purchased');
+        return false;
       }
+      setShowInsurance(false);
+      return true;
     }
+    toast?.error?.('Table Is Not Ready');
+    return false;
   };
 
   // FIX 89: "Decline Now" — may be re-offered on later streets if equity shifts
@@ -5435,13 +5482,18 @@ export default function TablePage({
   // the engine and the engine recomputes it on accept; the client sends only
   // the decision.
   const handleInsuranceEvCashout = async () => {
-    setShowInsurance(false);
     if (tableId) {
       const result = await respondToInsurance(tableId, 'cashout');
       if (!result.success) {
         reportError(result.error, 'TablePage.Ev_cashout_failed');
+        toast?.error?.(result.error || 'Cash Out Could Not Be Completed');
+        return false;
       }
+      setShowInsurance(false);
+      return true;
     }
+    toast?.error?.('Table Is Not Ready');
+    return false;
   };
 
   // A decline is final: never re-offered on later streets. Per-street pacing
@@ -5688,6 +5740,37 @@ export default function TablePage({
   // fetch fn is exposed so HAND_STARTED can re-arm it (recovering a dropped
   // realtime insert) after clearing stale cards.
   const heroHandRef = useRef<number>(0);
+  /* ═══ AND IT MUST NOT WAIT FOR AN EVENT THAT MAY NEVER ARRIVE ═══════════
+     Dan 2026-09-01, finishing the J9h work.
+
+     `heroHandRef` was written in exactly ONE place: the HAND_STARTED handler.
+     Every client that never receives that event - a mid-hand join, a reload,
+     a dropped frame, the websocket sequence gap that fires GAME_START - sat on
+     0 for the rest of the hand. Two comments in this file already work around
+     the symptom rather than the cause (`autoShowFiredHandRef` is initialised to
+     -1 precisely because 0 read as "already fired").
+
+     What made it worth fixing today is that BOTH stale-hand guards are gated on
+     it being non-zero:
+
+       door 1, the realtime push  currentHandNumber: heroHandRef.current
+       door 2, the recovery poll  heroHandRef.current > 0 && ...
+
+     So the very clients most likely to be handed a stale row - the ones that
+     just reloaded or joined mid-hand - were the ones running with the hand
+     check disabled, leaving only the board check. Preflop, with no board, there
+     is nothing left to catch it. That is the reported bug with the flop removed.
+
+     `tableState.handNumber` is server truth and is already trusted everywhere
+     else; it is maintained from every engine snapshot, not from one event. So
+     seed from it, and FORWARD ONLY - a late or replayed snapshot must never be
+     able to lower the mark and re-admit a row this client has already moved
+     past. Achievements and the auto-show guard read the same ref and stop
+     missing a mid-hand-join hand as a side effect. */
+  useEffect(() => {
+    const hn = tableState.handNumber ?? 0;
+    if (hn > heroHandRef.current) heroHandRef.current = hn;
+  }, [tableState.handNumber]);
   const heroCardFetchRef = useRef<(() => void) | null>(null);
   // Achievement/challenge wiring: accumulate the hero's outcome across a hand's
   // server events (dealt-in at card populate, showdown, per-pot win) and fire
@@ -8149,8 +8232,68 @@ export default function TablePage({
   // Callback for handling new hole cards
   const handleHoleCardPayload = useCallback(
     (payload: any) => {
+      /* DELETE carries no `new`, so it falls through here and is IGNORED, and
+         that is deliberate. `insert_hole_cards` prunes rows with
+         `hand_number < p_hand_number` on every deal, so the deletes this
+         channel sees are the previous hand being tidied away. Clearing the
+         hero's holding on one would blank a live hand at the exact moment the
+         next one is dealt. Do not "fix" this into a clear. */
       const row = payload.new;
       if (row && row.user_id === userId && row.cards) {
+        /* ═══ THE DOOR THAT HAD NO LOCK (Dan 2026-09-01) ═══════════════════
+           Dan, on the screenshot: "I NEED YOU TO TELL ME HOW IT WAS EVEN
+           POSSIBLE FOR TWO 9 OF HEARTS TO APPEAR AT THE SAME TIME."
+
+           This is how. Of the four ways cards reach the hero, this was the
+           only one with NO hand check and NO board check, and it is the only
+           one that OVERWRITES cards already on screen. It fires on '*', so an
+           UPDATE or a re-push carrying hand N lands after hand N+1 has begun
+           and repaints hand N's holding onto hand N+1's felt. The guard added
+           to the snapshot hold on 2026-08-31 could not save it: the hold would
+           drop the stale hand, and the very next payload through here would
+           put it straight back.
+
+           It asks the same question every other door asks now, and the answer
+           lives in one tested function rather than in four call sites. A
+           rejection is REPORTED, never swallowed - if this ever fires in
+           production it is telling us something upstream is wrong, and the
+           bounded recovery poll is already running to fetch the real hand. */
+        const boardNow = tableStateRef.current;
+        let probeCards: unknown = row.cards;
+        if (typeof probeCards === 'string') {
+          try {
+            probeCards = JSON.parse(probeCards);
+          } catch {
+            probeCards = null;
+          }
+        }
+        const verdict = heroHoleCardsAreForThisHand({
+          rowTableId: row.table_id,
+          tableId,
+          rowHandNumber: typeof row.hand_number === 'number' ? row.hand_number : undefined,
+          currentHandNumber: heroHandRef.current,
+          cards: Array.isArray(probeCards)
+            ? (probeCards as Array<{ rank?: unknown; suit?: unknown }>)
+            : null,
+          boards: [boardNow.communityCards, boardNow.communityCards2, boardNow.communityCards3],
+        });
+        if (!verdict.ok) {
+          reportError(
+            new Error(`hole-card push refused: ${verdict.reason}`),
+            'TablePage.hole_card_push_refused',
+            {
+              tableId,
+              reason: verdict.reason,
+              rowHand: row.hand_number ?? null,
+              liveHand: heroHandRef.current,
+            }
+          );
+          /* A refusal means this client does not have the right hand in front
+             of it. Re-arm the recovery read rather than sitting on nothing. */
+          heroCardsRecoveredRef.current = false;
+          heroCardFetchRef.current?.();
+          return;
+        }
         // Play deal sound if enabled (#175 gated for multi-table)
         if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playDeal();
 
@@ -8201,7 +8344,7 @@ export default function TablePage({
         });
       }
     },
-    [userId]
+    [userId, tableId, ambientSoundsAllowed]
   );
 
   /* ═══ 'INSERT' MISSED EVERY PINEAPPLE DISCARD (2026-08-31) ═════════════
@@ -8477,6 +8620,81 @@ export default function TablePage({
       clearEarlyTimers();
     };
   }, [tableId, userId]);
+
+  /* ═══ THE NET UNDER ALL FOUR DOORS (Dan 2026-09-01) ═══════════════════════
+     "PREVENT IT FROM NEVER BEING POSSIBLE TO HAPPEN EVER AGAIN UNDER ANY
+     CIRCUMSTANCES EVER."
+
+     The four guarded doors above are what PREVENTS it. This is what catches
+     it if a fifth door is ever added, or if one of the four is edited badly:
+     `holeCards` is written from ~80 `setTableState` call sites in this file,
+     and no reviewer can hold all of them in their head.
+
+     So the invariant is also checked on the finished state, once per commit,
+     independent of which code path produced it. A hero card that is also on
+     the board is physically impossible, so the holding is expired: drop it,
+     say so loudly, and re-arm the read that fetches the real one. The signature
+     ref keeps this to one correction per bad state rather than a loop, and it
+     is cleared as soon as a clean state arrives so the next hand is watched
+     just as closely.
+
+     This runs after paint, so on its own it would still allow a single wrong
+     frame. It is not on its own. */
+  const heroCardInvariantSigRef = useRef<string>('');
+  /* The correction, as one named thing rather than a lambda buried in an
+     effect: it is what the law test slices, and it is what a reader looks for
+     when a `hero_card_board_collision` shows up in telemetry. */
+  const dropExpiredHeroHolding = useCallback(
+    (handNumber: number) => {
+      reportError(
+        new Error('hero hole card is also on the board'),
+        'TablePage.hero_card_board_collision',
+        { tableId, handNumber }
+      );
+      setTableState((prev) => {
+        const players = [...prev.players];
+        const idx = players.findIndex((pl) => pl?.isHero);
+        if (idx < 0 || !players[idx]) return prev;
+        players[idx] = { ...players[idx]!, holeCards: [] };
+        return { ...prev, players };
+      });
+      heroCardsRecoveredRef.current = false;
+      heroCardFetchRef.current?.();
+    },
+    [tableId]
+  );
+  useEffect(() => {
+    const hero = tableState.players.find((p) => p?.isHero);
+    const cards = hero?.holeCards;
+    if (!cards || cards.length === 0) {
+      heroCardInvariantSigRef.current = '';
+      return;
+    }
+    if (
+      !heroCardsCollideWithBoard(
+        cards,
+        tableState.communityCards,
+        tableState.communityCards2,
+        tableState.communityCards3
+      )
+    ) {
+      heroCardInvariantSigRef.current = '';
+      return;
+    }
+    const sig = `${tableState.handNumber ?? 0}:${cards
+      .map((c) => (c ? `${c.rank}${c.suit}` : '-'))
+      .join(',')}`;
+    if (heroCardInvariantSigRef.current === sig) return;
+    heroCardInvariantSigRef.current = sig;
+    dropExpiredHeroHolding(tableState.handNumber ?? 0);
+  }, [
+    tableState.players,
+    tableState.communityCards,
+    tableState.communityCards2,
+    tableState.communityCards3,
+    tableState.handNumber,
+    dropExpiredHeroHolding,
+  ]);
 
   // Phase 1.1 PR-5 (NO-GO-2): Migrated from subscribeToHandState (deleted)
   // to the engine WebSocket EVENT channel. Regular hand-state updates now
@@ -12594,6 +12812,34 @@ export default function TablePage({
         setTableState((prev) => {
           const updatedPlayers = [...prev.players];
           const serverPlayers = syncData.players || [];
+          /* ═══ THE FOURTH DOOR (Dan 2026-09-01) ══════════════════════════
+             This merge carries `existing?.holeCards` forward when the
+             snapshot has none, which is correct and necessary - the engine
+             scrubs the hero's cards from every non-showdown snapshot on
+             purpose. But GAME_START is dispatched by `requestResync()` on a
+             WEBSOCKET SEQUENCE GAP, which is exactly the case where
+             HAND_STARTED was the event that got dropped. So this is the one
+             path that can walk a previous hand's holding across a hand
+             boundary without anything noticing.
+
+             The board that arrives in this same payload is the evidence: if
+             what we are about to carry forward is sitting on the felt, the
+             hand it belonged to is over. */
+          const syncBoard: Array<{ rank?: unknown; suit?: unknown } | null | undefined> =
+            Array.isArray(syncData.community_cards)
+              ? syncData.community_cards
+              : Array.isArray(syncData.communityCards)
+                ? syncData.communityCards
+                : [];
+          const heroHoldIsExpired = (cards: unknown): boolean =>
+            Array.isArray(cards) &&
+            cards.length > 0 &&
+            heroCardsCollideWithBoard(
+              cards as Array<{ rank?: unknown; suit?: unknown }>,
+              syncBoard,
+              prev.communityCards2,
+              prev.communityCards3
+            );
           // BUGFIX 2026-07-24: this recovery snapshot rebuilt `players` with isHero
           // but never updated `heroSeat`. When heroSeat had drifted (snapshot race,
           // reconnect), players[heroSeat-1] became null → the footer showed
@@ -12650,7 +12896,9 @@ export default function TablePage({
                   sp.user_id === userId
                     ? sp.cards?.length
                       ? sp.cards
-                      : existing?.holeCards || []
+                      : heroHoldIsExpired(existing?.holeCards)
+                        ? []
+                        : existing?.holeCards || []
                     : sp.cards?.length && !sp.is_folded
                       ? sp.cards
                       : [],
@@ -15075,6 +15323,20 @@ export default function TablePage({
         } as any);
         break;
       }
+      /**
+       * THE SCHEDULED MAINTENANCE BREAK (Dan 2026-09-01).
+       *
+       * Handed straight to the hook, which owns the countdown. Note there is
+       * no `return`/`break`-and-forget subtlety here: the payload carries an
+       * ABSOLUTE end instant, so once this fires the overlay keeps correct
+       * time on its own through the ~2 minutes when the engine that sent it
+       * no longer exists.
+       */
+      case 'MAINTENANCE_BREAK':
+      case 'MAINTENANCE_BREAK_ENDED': {
+        ingestMaintenanceEvent(evt.type, (evt.data ?? {}) as Record<string, unknown>);
+        break;
+      }
       case 'TABLE_BALANCE_EXECUTED': {
         const d = (evt.data ?? {}) as Record<string, unknown>;
         masterBus.emit('TABLE_BALANCE_EXECUTED', {
@@ -15206,7 +15468,9 @@ export default function TablePage({
         break;
       }
     }
-  }, [engineLastEvent]);
+    // ingestMaintenanceEvent is a stable useCallback; listed so the exhaustive
+    // deps rule does not have to be suppressed for it.
+  }, [engineLastEvent, ingestMaintenanceEvent]);
 
   // Supabase Realtime fallback: process lastEvent if engine WS is not connected.
   // When engine WS IS connected, it handles all events above; this block is
@@ -19094,6 +19358,7 @@ export default function TablePage({
                 isAvailable={isRabbitAvailable}
                 cardsAvailable={rabbitCardsAvailable}
                 rabbitDiamondCost={rabbitDiamondCost}
+                userId={userId === 'guest' ? null : userId}
                 onReveal={handleRabbitReveal}
               />
             )}
@@ -21765,6 +22030,22 @@ export default function TablePage({
             toast?.error?.('Could Not Build A Share Link For That Hand');
           }
         }}
+      />
+      {/* The maintenance break overlay (Dan 2026-09-01). Rendered here rather
+          than inside TableModalsLayer because it must survive the states that
+          layer is gated behind: it is up precisely when the engine socket is
+          gone and the table state is stale, which is the one moment the player
+          most needs to be told their seat is safe. */}
+      {/* One overlay, not four. MultiTablePage mounts up to four TablePages
+          at once and this layer is position:fixed, so without the isActive
+          gate a break would stack four identical full-screen dialogs on top
+          of each other. The break is platform-wide, so the foreground tile
+          speaks for all of them. */}
+      <MaintenanceBreakScreen
+        isVisible={maintenanceBreak.active && (!isMultiTable || isActive)}
+        phase={maintenanceBreak.phase}
+        breakEndsAtMs={maintenanceBreak.breakEndsAtMs}
+        reason={maintenanceBreak.reason}
       />
       <TableModalsLayer
         tableId={tableId}

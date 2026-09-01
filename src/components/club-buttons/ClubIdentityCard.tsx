@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import './ClubIdentityCard.css';
 
-const CLUB_IDENTITY_SHELL = `${import.meta.env.BASE_URL}assets/club-buttons/club/club-identity-template-bbj-finish-v1.png`;
+const CLUB_IDENTITY_SHELL = `${import.meta.env.BASE_URL}assets/club-buttons/club/club-identity-template-no-level-v2.png`;
 
 export interface ClubIdentityCardProps {
   clubName: string;
@@ -10,6 +10,10 @@ export interface ClubIdentityCardProps {
   pokerAlias: string;
   clubId: string | number;
   playerId?: string | number | null;
+  /** Dan 2026-09-01, binding: the club level renders BELOW the logo inside a
+   *  blue box, never overlapping it. A new club shows Level 1 from day one.
+   *  (#2509 removed the level after the old placement overlapped the logo;
+   *  the order was to move it into a blue box, not to delete it.) */
   level?: number | null;
   playersPlaying?: number | null;
   onCopyClubId?: () => void;
@@ -80,6 +84,12 @@ export function ClubIdentityCard({
         {logoUrl ? <img src={logoUrl} alt={`${clubName} Logo`} loading="lazy" /> : logoFallback}
       </div>
 
+      {level != null && (
+        <span className="club-identity__level">
+          <span>Level {level}</span>
+        </span>
+      )}
+
       <div className="club-identity__details">
         <h2 title={clubName}>{clubName}</h2>
         <p className="club-identity__alias" title={pokerAlias}>
@@ -93,12 +103,6 @@ export function ClubIdentityCard({
           onCopy={onCopyPlayerId}
         />
       </div>
-
-      {level != null && (
-        <span className="club-identity__level">
-          <span>Level {level}</span>
-        </span>
-      )}
 
       <div className="club-identity__footer">
         <span className="club-identity__playing" aria-live="polite">

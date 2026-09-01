@@ -592,7 +592,80 @@ test the next agent notices first.
 
 ---
 
-## 11. AGENT NETWORK + DEPLOY PLAYBOOK (added 2026-07-23, binding; corrected same day after live use)
+## 10.8 LAWS LIVE IN docs/LAWS.md, AND YOU NEVER WAIT ON CI (added 2026-09-01, binding)
+
+**1. THE LAW REGISTRY.** Every `*.law.test.*` file must have a row in
+`docs/LAWS.md` — `tests/law-registry.law.test.ts` enforces it. Before
+enforcing any law, confirm it exists on **current `origin/main`**, never in
+your local tree: stale worktrees carrying retired laws are how the hamburger
+revert war ran for two days. If two laws (or two CLAUDE.md copies) demand
+opposite things, STOP and ask Dan; never write a third law and never delete
+the other side on your own authority.
+
+**2. INTENTIONAL REVERTS NEED A HUMAN.** The Silent Revert Guard no longer
+accepts `[allow-revert]` or the word "revert" in a commit message on its own —
+on 2026-08-31 an agent amended the token into its own message to get past the
+guard. A detected revert merges only when Dan applies the `revert-approved`
+label to the PR (the check re-runs itself on labeling, and the guard files an
+issue asking for it). If main is broken, prefer a forward fix; it needs no
+label. Do not edit commit messages to route around the guard.
+
+**3. NEVER SET A TIMER TO WATCH CI.** Playbook 7b is binding: push, open the
+PR, report the PR number, END YOUR SESSION. Autopilot merges it, the publisher
+ships it, the watchdogs verify it — all server-side. "I've set another brief
+timer and will be back shortly" is the forbidden `wait_and_merge.sh` written
+in prose; it burns tokens and adds nothing. Checking ONCE at the end to say
+why something is BLOCKED is fine. Sitting in a loop is not.
+
+**4. WORKTREES ARE DISPOSABLE.** `scripts/prune-stale-worktrees.sh` removes
+any worktree that is clean, pushed, and idle for 72 hours. Do not keep state
+you care about only in a worktree: commit and push it, or it will eventually
+be pruned (pushed branches lose nothing — the commits live on origin).
+
+---
+
+## 11. AGENT NETWORK + DEPLOY PLAYBOOK
+
+### 11.0 FIRST: WHICH ENVIRONMENT ARE YOU IN? (added 2026-09-01, binding)
+
+Everything below 11.0 was written for the CLOUD sandbox and is still true
+there. It is WRONG for a Cowork session running on Dan's Mac, and following it
+there costs an hour before you find out. Check first, in this order:
+
+**If you have `mcp__counselors__host_terminal`, you are on the Mac. Use it for
+everything.** Real bash on Dan's machine, where `git@github.com` over SSH works
+and `api.github.com` is reachable. Then:
+
+- **Claim a worktree** (AGENT-PLAYBOOK): `git worktree add -b fix/<slug>
+~/Documents/.agent-trees/club-arena/<name> origin/main`. Takes about 40
+  seconds - launch it with `nohup ... &` and return immediately, because the
+  tool kills the process group when a call times out.
+- **`node` is NOT on the default PATH.** Prefix every command with
+  `export PATH="$HOME/.nvm/versions/node/$(ls ~/.nvm/versions/node | tail -1)/bin:$PATH"`.
+- **The pre-push hook takes about three minutes** (guards, `tsc`, then the tests
+  covering your diff). Launch the push with
+  `nohup git push > /tmp/push.log 2>&1 < /dev/null & disown`, return
+  immediately, and poll the log in later calls. Never `--no-verify`.
+- **`gh` is not installed.** Open pull requests with `curl` against the REST
+  API. The token is `GITHUB_TOKEN` in `~/Documents/club-arena/.env`.
+- **Rebasing your branch onto main is refused by a ref-guard hook.** Use
+  `git merge origin/main` instead. Section 12 still forbids rebasing `main`.
+
+**The GitHub MCP (`mcp__github__*`) returns `Bad credentials` as of
+2026-09-01.** Every call fails, including read-only ones. Do not debug it and
+do not build a plan around it; use the host terminal. If you are reading this
+long after that date, one call will tell you whether it is back.
+
+**Do not hand-edit `scripts/ci/supabase-schema-manifest.json` or
+`supabase-columns-manifest.json`.** They are nightly snapshots and were the
+most-changed files on main - 25 and 14 commits in one day - which made every
+migration-bearing branch conflict with every other one. Declare what you
+created in your own file under `scripts/ci/schema-manifest.d/`. See the README
+there.
+
+---
+
+### 11.1 The cloud sandbox (added 2026-07-23; corrected same day after live use)
 
 Cloud Cowork sessions have a locked-down sandbox. Learn the map ONCE and never
 ask Dan for a manual handoff again:

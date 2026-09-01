@@ -950,7 +950,16 @@ export class HandController {
       isFullRaise: isFullRaiseFlag,
     });
 
-    this.emit({ type: 'PLAYER_ACTION', seat, action, amount: actualAmount });
+    // The stage travels WITH the action. This is the same value just written
+    // to actionHistory above, so the persisted hand history and the
+    // controller's own record agree by construction rather than by timing.
+    this.emit({
+      type: 'PLAYER_ACTION',
+      seat,
+      action,
+      amount: actualAmount,
+      stage: this.state.stage,
+    });
     this.emit({ type: 'POT_UPDATE', pot: this.state.pot, pots: calculatePots(this.state.players) });
     this.advanceGame();
     return true;
@@ -1036,7 +1045,13 @@ export class HandController {
     });
 
     // Emit discard action for logging
-    this.emit({ type: 'PLAYER_ACTION', seat, action: 'discard', amount: 0 });
+    this.emit({
+      type: 'PLAYER_ACTION',
+      seat,
+      action: 'discard',
+      amount: 0,
+      stage: this.state.stage,
+    });
     // Send updated cards to the player (secure per-player)
     this.emit({ type: 'CARDS_DEALT', seat, cards: [...player.cards] });
 
@@ -1871,7 +1886,13 @@ export class HandController {
         timestamp: Date.now(),
         stage: this.state.stage,
       });
-      this.emit({ type: 'PLAYER_ACTION', seat: player.seat, action: 'discard', amount: 0 });
+      this.emit({
+        type: 'PLAYER_ACTION',
+        seat: player.seat,
+        action: 'discard',
+        amount: 0,
+        stage: this.state.stage,
+      });
 
       this.emit({ type: 'CARDS_DEALT', seat: player.seat, cards: [...player.cards] });
     }

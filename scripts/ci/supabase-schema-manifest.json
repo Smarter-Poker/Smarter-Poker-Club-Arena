@@ -1540,6 +1540,7 @@
     "fn_ca_supply_snapshot",
     "fn_ca_suspense_regression_check",
     "fn_ca_verify_ledger_chain",
+    "fn_ca_weekly_revenue_digest",
     "fn_calculate_rakeback",
     "fn_caller_can_moderate_user",
     "fn_caller_is_engine",

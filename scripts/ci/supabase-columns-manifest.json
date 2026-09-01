@@ -1279,7 +1279,8 @@
       "fn_name",
       "result",
       "claimed_at",
-      "finalized_at"
+      "finalized_at",
+      "claimed_by"
     ],
     "ca_pending_promo_accruals": [
       "id",

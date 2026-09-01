@@ -77,7 +77,7 @@ const BASELINE = new Map<string, number>([
   ['src/services/FriendSuggestionService.ts', 1],
   ['src/services/CreditRequestService.ts', 4],
   ['src/services/ChipFlowService.ts', 4],
-  ['src/pages/HomePage.tsx', 4],
+  ['src/pages/HomePage.tsx', 1],
   ['src/pages/BadBeatJackpotPage.tsx', 4],
   ['src/components/social/PlayerActivityFeed.tsx', 4],
   ['src/components/agent/ChipTransferModal.tsx', 4],

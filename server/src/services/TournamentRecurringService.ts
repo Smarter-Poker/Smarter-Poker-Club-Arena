@@ -3030,9 +3030,15 @@ export class TournamentRecurringService {
        */
       // Dan 2026-08-26: a held-empty game opens with NO horses — its seats
       // are the invitation. topUpWithHorses fills it the moment a human sits.
-      const opening = seatFirstHeldEmpty(tournament.id, seats)
-        ? 0
-        : openingHorsesForSeatFirst(seats);
+      // A club-owned board belongs to that club's actual membership. The
+      // house fleet may keep the house lobby liquid, but it cannot silently
+      // enroll itself in a player's newly created club merely because that
+      // owner enabled Spins or Heads-Up.
+      const isHouseBoard = tournament.club_id === this.houseOwner.clubId;
+      const opening =
+        isHouseBoard && !seatFirstHeldEmpty(tournament.id, seats)
+          ? openingHorsesForSeatFirst(seats)
+          : 0;
       const candidates = await this.pickFreeHorses(opening);
       let seated = 0;
       for (const horse of candidates) {
@@ -3790,7 +3796,7 @@ export class TournamentRecurringService {
        */
       const { data: tRow, error: tErr } = await supabase
         .from('tournaments')
-        .select('variant, max_players')
+        .select('variant, max_players, club_id')
         .eq('id', tournamentId)
         .maybeSingle();
       if (tErr || !tRow) {
@@ -3806,6 +3812,18 @@ export class TournamentRecurringService {
         String((tRow as { variant?: string } | null)?.variant ?? ''),
         Number((tRow as { max_players?: number } | null)?.max_players ?? 0)
       );
+
+      // Membership is explicit. Automated liquidity is permitted on the
+      // platform house board only; a user-owned club fills its tournaments
+      // with users who joined that club through Join A Club.
+      if (String((tRow as { club_id?: string | null }).club_id ?? '') !== this.houseOwner.clubId) {
+        if (seatFirst) {
+          await supabase.rpc('fn_sync_seat_first_player_count', {
+            p_tournament_id: tournamentId,
+          });
+        }
+        return 0;
+      }
 
       /**
        * MEASURE THE SHORTFALL IN THE UNIT THE START GATE READS.

@@ -1,7 +1,11 @@
 import type { ReactNode } from 'react';
 import './ClubIdentityCard.css';
 
-const CLUB_IDENTITY_SHELL = `${import.meta.env.BASE_URL}assets/club-buttons/club/club-identity-template-no-level-v2.png`;
+/* v3 moved the club and profile icons DOWN 32px so they sit level with the two
+   ID lines they label (Dan, 2026-09-01). It is a new filename rather than a new
+   copy of v2 because the old file is already in browser and CDN caches, and a
+   card whose labels point one line too high is exactly the bug being fixed. */
+const CLUB_IDENTITY_SHELL = `${import.meta.env.BASE_URL}assets/club-buttons/club/club-identity-template-no-level-v3.png`;
 
 export interface ClubIdentityCardProps {
   clubName: string;
@@ -95,6 +99,13 @@ export function ClubIdentityCard({
         <p className="club-identity__alias" title={pokerAlias}>
           {pokerAlias}
         </p>
+      </div>
+
+      {/* Its own bay, pinned to the artwork icons that label these two lines.
+          They used to be rows three and four of the details grid, which meant
+          their vertical position was a by-product of the club name's row
+          height and drifted away from the icons on every narrower card. */}
+      <div className="club-identity__ids">
         <IdentityLine label="ID" accessibleLabel="Club ID" value={clubId} onCopy={onCopyClubId} />
         <IdentityLine
           label="ID"

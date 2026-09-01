@@ -127,6 +127,106 @@ async function lastScheduledRun(file) {
   return run ? Date.parse(run.created_at) : null; // null = never ran on a schedule
 }
 
+async function api(path, method = 'GET', body = undefined) {
+  const res = await fetch(`https://api.github.com/repos/${REPO}${path}`, {
+    method,
+    headers: {
+      authorization: `Bearer ${TOKEN}`,
+      accept: 'application/vnd.github+json',
+      ...(body ? { 'content-type': 'application/json' } : {}),
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  return res;
+}
+
+/**
+ * ── SELF-HEAL (added 2026-09-01, the day this failure actually happened) ──
+ *
+ * A single overdue workflow is a dropped tick: common, transient, not worth
+ * acting on. SEVERAL overdue at once is the other thing - the repo-level
+ * schedule-REGISTRATION wedge that follows workflow-file churn. Measured
+ * live on 2026-09-01: every CA schedule silent for 2.5 hours after three
+ * workflow-editing merges, while World Hub's crons fired normally and
+ * githubstatus said all operational. The proven remedy, applied by hand that
+ * day, is to disable and re-enable each scheduled workflow, which makes
+ * GitHub re-register its cron. This automates exactly that.
+ *
+ * Guard rails: only fires at WEDGE_MIN simultaneous overdue workflows; only
+ * touches workflows whose state is `active` (a deliberately disabled one
+ * stays disabled); refuses to run again within REHEAL_COOLDOWN_H hours, using
+ * the audit issue itself as the memory, so a wedge the cycle cannot fix does
+ * not flap; and it NEVER fails the job - the heal is best-effort and the
+ * issue is the record either way.
+ */
+const WEDGE_MIN = Number(process.env.SCHEDULE_WEDGE_MIN || 3);
+const REHEAL_COOLDOWN_H = Number(process.env.REHEAL_COOLDOWN_H || 6);
+const WEDGE_ISSUE_TITLE = 'Cron registration wedge: schedules stopped firing repo-wide';
+
+async function selfHeal(late) {
+  // The audit issue is also the anti-flap memory.
+  const listRes = await api(`/issues?state=all&labels=cron-wedge&per_page=5`);
+  if (listRes.ok) {
+    const issues = await listRes.json();
+    const recent = issues.find(
+      (i) => Date.now() - Date.parse(i.created_at) < REHEAL_COOLDOWN_H * 3600_000
+    );
+    if (recent) {
+      say(
+        `[schedule-liveness] wedge detected but a heal ran ${recent.created_at}; ` +
+          `inside the ${REHEAL_COOLDOWN_H}h cooldown, not cycling again (see #${recent.number}).`
+      );
+      return;
+    }
+  }
+
+  const cycled = [];
+  for (const w of late) {
+    const wfRes = await api(`/actions/workflows/${encodeURIComponent(w.file)}`);
+    if (!wfRes.ok) continue;
+    const wf = await wfRes.json();
+    if (wf.state !== 'active') {
+      say(`[schedule-liveness] ${w.file} is '${wf.state}' - deliberately off, leaving it alone.`);
+      continue;
+    }
+    const off = await api(`/actions/workflows/${wf.id}/disable`, 'PUT');
+    const on = await api(`/actions/workflows/${wf.id}/enable`, 'PUT');
+    if (off.ok && on.ok) {
+      cycled.push(w.file);
+      say(`[schedule-liveness] re-registered schedule for ${w.file}`);
+    } else {
+      // Enable is the half that must not be left undone.
+      if (!on.ok) await api(`/actions/workflows/${wf.id}/enable`, 'PUT');
+      say(`[schedule-liveness] could not cycle ${w.file} (disable ${off.status}/enable ${on.status})`);
+    }
+  }
+
+  await api(`/labels`, 'POST', { name: 'cron-wedge', color: 'B60205' }).catch(() => {});
+  const bodyLines = [
+    `${late.length} scheduled workflows were simultaneously overdue by more than`,
+    `${TOLERANCE}x their own interval - the repo-level schedule-registration wedge`,
+    `(first seen 2026-09-01 after workflow-file churn; GitHub itself was healthy).`,
+    '',
+    `Auto-remediated by disabling and re-enabling ${cycled.length} workflow(s) to force`,
+    'GitHub to re-register their crons:',
+    '',
+    ...cycled.map((f) => `- \`${f}\``),
+    '',
+    'The next scheduled ticks prove whether it worked - check',
+    `\`gh run list --repo ${REPO} --event schedule --limit 5\` after the next boundary.`,
+    'If schedules are still silent past another full cycle, the wedge is beyond the',
+    'cycle fix: check githubstatus, then Actions -> the workflow pages by hand.',
+    'This issue is the cooldown marker; a new heal will not run within',
+    `${REHEAL_COOLDOWN_H}h of it. Close it once ticks are confirmed flowing.`,
+  ];
+  await api(`/issues`, 'POST', {
+    title: WEDGE_ISSUE_TITLE,
+    labels: ['cron-wedge'],
+    body: bodyLines.join('\n'),
+  }).catch(() => {});
+  say(`[schedule-liveness] wedge heal complete: cycled ${cycled.length}, issue filed.`);
+}
+
 /* Guarded so the arithmetic above can be imported and tested. A module that
    runs its whole body on import cannot be unit tested, and the cron maths is
    exactly the part worth pinning. */
@@ -171,6 +271,12 @@ summary.push(
   'This is information, not a failure: the engine watchdog in this same workflow',
   'repairs the case that matters by dispatching the deploy itself.'
 );
+
+// Several overdue at once is not dropped ticks - it is the registration
+// wedge, and that one this script now repairs itself (see selfHeal above).
+if (late.length >= WEDGE_MIN) {
+  await selfHeal(late);
+}
 
 if (process.env.GITHUB_STEP_SUMMARY) {
   const { appendFileSync } = await import('node:fs');

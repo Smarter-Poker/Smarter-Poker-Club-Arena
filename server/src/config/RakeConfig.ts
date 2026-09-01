@@ -279,7 +279,7 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   nlh: {
     label: 'NLH / FLH',
     minLosingHand: 'AAAJJ',
-    description: 'Full House (Aces full of Jacks) or better must LOSE to Quads or Straight Flush',
+    description: 'Full House (Aces Full Of Jacks) Or Better Must LOSE To Quads Or Straight Flush',
     rules: [
       'AAAJJ+ must lose to Quads or Straight Flush',
       'Player holding Full House must have at least one Ace in their hole cards (dealt cards)',
@@ -292,7 +292,7 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   flh: {
     label: 'NLH / FLH',
     minLosingHand: 'AAAJJ',
-    description: 'Full House (Aces full of Jacks) or better must LOSE to Quads or Straight Flush',
+    description: 'Full House (Aces Full Of Jacks) Or Better Must LOSE To Quads Or Straight Flush',
     rules: [
       'AAAJJ+ must lose to Quads or Straight Flush',
       'Player holding Full House must have at least one Ace in their hole cards (dealt cards)',
@@ -304,7 +304,7 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   plo4: {
     label: 'PLO4 / FLO4',
     minLosingHand: 'KKKK2',
-    description: 'Four of a Kind (Kings) or better must LOSE',
+    description: 'Four Of A Kind (Kings) Or Better Must LOSE',
     rules: [
       'Must use exactly 2 cards from hand',
       'Both players must use two cards from their hole cards',
@@ -315,7 +315,7 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   plo: {
     label: 'PLO4 / FLO4',
     minLosingHand: 'KKKK2',
-    description: 'Four of a Kind (Kings) or better must LOSE',
+    description: 'Four Of A Kind (Kings) Or Better Must LOSE',
     rules: [
       'Must use exactly 2 cards from hand',
       'Both players must use two cards from their hole cards',
@@ -324,9 +324,9 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
     minRankValue: 'KKKK',
   },
   plo8: {
-    label: 'PLO8 (Hi-Lo 8 or Better)',
+    label: 'PLO8 (Hi-Lo 8 Or Better)',
     minLosingHand: 'KKKK2',
-    description: 'Four of a Kind (Kings) or better must LOSE - evaluated on HIGH hand only',
+    description: 'Four Of A Kind (Kings) Or Better Must LOSE - Evaluated On HIGH Hand Only',
     rules: [
       'Must use exactly 2 cards from hand',
       'Both players must use two cards from their hole cards',
@@ -340,9 +340,9 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   // differs, and the betting has nothing to do with which hand qualifies for
   // the jackpot. Same entry, exactly as `flh` aliases `nlh` above.
   flo8: {
-    label: 'FLO8 (Hi-Lo 8 or Better)',
+    label: 'FLO8 (Hi-Lo 8 Or Better)',
     minLosingHand: 'KKKK2',
-    description: 'Four of a Kind (Kings) or better must LOSE - evaluated on HIGH hand only',
+    description: 'Four Of A Kind (Kings) Or Better Must LOSE - Evaluated On HIGH Hand Only',
     rules: [
       'Must use exactly 2 cards from hand',
       'Both players must use two cards from their hole cards',
@@ -355,7 +355,7 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   plo5: {
     label: 'PLO5 / FLO5',
     minLosingHand: '87654',
-    description: 'Straight Flush (8-high) or better must LOSE',
+    description: 'Straight Flush (8-High) Or Better Must LOSE',
     rules: [
       'Must use exactly 2 cards from hand',
       'Both players must use two cards from their hole cards',
@@ -366,21 +366,21 @@ export const BBJ_QUALIFYING_HANDS: Record<string, BBJQualifyingHand> = {
   plo6: {
     label: 'PLO6',
     minLosingHand: null,
-    description: 'BBJ not available for PLO6',
+    description: 'BBJ Not Available For PLO6',
     rules: [],
     eligible: false,
   },
   short_deck: {
     label: 'Short Deck',
     minLosingHand: null,
-    description: 'BBJ not available for Short Deck',
+    description: 'BBJ Not Available For Short Deck',
     rules: [],
     eligible: false,
   },
   pineapple: {
     label: 'Pineapple',
     minLosingHand: 'KKKK2',
-    description: 'Four of a Kind (Kings) or better must LOSE',
+    description: 'Four Of A Kind (Kings) Or Better Must LOSE',
     rules: [
       'Must use exactly 2 cards from hand',
       'Both players must use two cards from their hole cards',

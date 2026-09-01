@@ -20,7 +20,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -29,17 +29,21 @@ import { tmpdir } from 'node:os';
 // exist on disk. vitest runs with the repo root as its cwd.
 const REPO = process.cwd();
 const GATE = join(REPO, 'scripts/ci/check-painted-text-case.mjs');
-const PROBE_DIR = join(REPO, 'src/components/__escapeProbe__');
+const PROBE_DIR = mkdtempSync(join(tmpdir(), 'painted-text-escape-'));
 const PROBE = join(PROBE_DIR, 'Probe.tsx');
 
 const WITH_ESCAPE =
-  "export const P = ({ n }: { n: number }) => (\n" +
+  'export const P = ({ n }: { n: number }) => (\n' +
   "  <div>{n > 0 ? 'you have unread messages\\ncheck the inbox' : 'no unread messages here'}</div>\n" +
-  ");\n";
+  ');\n';
 
 function runGate(fix: boolean): string {
   try {
-    return execFileSync('node', fix ? [GATE, '--fix'] : [GATE], { encoding: 'utf8', cwd: REPO });
+    return execFileSync('node', fix ? [GATE, '--fix'] : [GATE], {
+      encoding: 'utf8',
+      cwd: REPO,
+      env: { ...process.env, PAINTED_TEXT_SOURCE_DIR: PROBE_DIR },
+    });
   } catch (e) {
     const err = e as { stdout?: string; stderr?: string };
     return `${err.stdout ?? ''}${err.stderr ?? ''}`;
@@ -48,7 +52,6 @@ function runGate(fix: boolean): string {
 
 describe('check-painted-text-case never corrupts an escape sequence', () => {
   beforeAll(() => {
-    mkdirSync(PROBE_DIR, { recursive: true });
     writeFileSync(PROBE, WITH_ESCAPE, 'utf8');
   });
   afterAll(() => rmSync(PROBE_DIR, { recursive: true, force: true }));
@@ -74,7 +77,10 @@ describe('check-painted-text-case never corrupts an escape sequence', () => {
 
   it('the guard compares raw source to cooked text rather than sniffing for backslashes', () => {
     const src = readFileSync(GATE, 'utf8');
+    expect(src).toContain('process.env.PAINTED_TEXT_SOURCE_DIR');
     expect(src).toMatch(/function rawMatchesCooked/);
-    expect(src).toMatch(/text\.slice\(lit\.getStart\(sf\) \+ 1, lit\.getEnd\(\) - 1\) === lit\.text/);
+    expect(src).toMatch(
+      /text\.slice\(lit\.getStart\(sf\) \+ 1, lit\.getEnd\(\) - 1\) === lit\.text/
+    );
   });
 });

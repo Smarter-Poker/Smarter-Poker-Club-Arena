@@ -23,6 +23,12 @@ import { TournamentManagerEliminations } from './TournamentManagerEliminations.j
 // the same number.
 import { maxSeatsFor as maxSeatsTheDeckAllows } from '../engine/VariantRules.js';
 import { mayTakeSeat } from './seatClaim.js';
+import {
+  planOrphanReseats,
+  describeUnmovableOrphans,
+  type OrphanTableRow,
+  type OrphanSeatRow,
+} from './orphanedSeatRepair.js';
 
 export class TournamentManager extends TournamentManagerEliminations {
   protected async checkTableBalance(): Promise<void> {
@@ -298,6 +304,73 @@ export class TournamentManager extends TournamentManagerEliminations {
    * FIX 154: Execute a set of player move instructions (used by both table break + rebalance).
    * Moves player seats in DB: marks old seat as left, inserts new seat, updates tournament_players.
    */
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  A PLAYER LEFT ON A CLOSED TABLE IS BROUGHT BACK TO THE FELT
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The evidence and every rule are in `orphanedSeatRepair.ts`. The short
+   * version: `checkTableBalance` iterates `tableEngines`, a closed table has
+   * no engine, so a live seat left behind on one is invisible to the balancer
+   * forever - and the tournament counts that player as still in the game and
+   * waits for an action nobody can take.
+   *
+   * This reads the tournament's own tables and live seats, asks the pure
+   * planner what to do, and hands the answer to `executePlayerMoves`. Every
+   * protection that path has earned - source stack read first, the
+   * `mayTakeSeat` duplicate check, update-first seat reuse, the committed-but-
+   * errored destination check - applies unchanged, because this adds no second
+   * way to move a player.
+   *
+   * Both reads fail CLOSED. An unreadable board is UNKNOWN, never "nobody is
+   * stranded" and never "everybody is".
+   */
+  public async absorbOrphanedSeats(): Promise<number> {
+    const { data: tableRows, error: tableErr } = await supabase
+      .from('tables')
+      .select('id, status, is_deleted, max_players')
+      .eq('tournament_id', this.tournamentId);
+    if (tableErr || !tableRows || tableRows.length === 0) return 0;
+
+    const tableIds = tableRows.map((r) => String((r as { id: string }).id));
+    const { data: seatRows, error: seatErr } = await supabase
+      .from('table_seats')
+      .select('table_id, user_id, seat_number, stack')
+      .in('table_id', tableIds)
+      .is('left_at', null);
+    if (seatErr || !seatRows) return 0;
+
+    const moves = planOrphanReseats(tableRows as OrphanTableRow[], seatRows as OrphanSeatRow[]);
+
+    const { duplicateSeat, noChips } = describeUnmovableOrphans(
+      tableRows as OrphanTableRow[],
+      seatRows as OrphanSeatRow[]
+    );
+    if (duplicateSeat.length > 0) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] ${duplicateSeat.length} player(s) hold a live seat on BOTH a closed table and an open one. Which stack is real is a money decision, so nothing was moved: ${duplicateSeat.map((id) => id.slice(0, 8)).join(', ')}`
+        ),
+        'Tournament.orphan_seat_duplicate_not_moved'
+      );
+    }
+    if (noChips.length > 0) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] ${noChips.length} stranded seat(s) on a closed table hold no chips, so the elimination path owns them rather than this repair: ${noChips.map((id) => id.slice(0, 8)).join(', ')}`
+        ),
+        'Tournament.orphan_seat_no_chips_not_moved'
+      );
+    }
+
+    if (moves.length === 0) return 0;
+
+    console.warn(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] ${moves.length} player(s) stranded on a closed table - moving them to open felt so the tournament can deal again`
+    );
+    return this.executePlayerMoves(moves);
+  }
+
   protected async executePlayerMoves(moves: MoveInstruction[]): Promise<number> {
     let moved = 0;
     for (const move of moves) {

@@ -104,7 +104,7 @@ describe('horses take seats, not just places on a list', () => {
     // one call answering with many horses - so the first parameter and the
     // string[] return stay pinned and the optional tail is left open.
     expect(recurring).toMatch(
-      /private async pickFreeHorses\(count: number[,)][^)]*\)?: Promise<string\[\]>/
+      /private async pickFreeHorses\(\s*count:\s*number[,)][^)]*\)\s*:\s*Promise<string\[\]>/
     );
     // The singular form must be gone, or a caller can quietly reintroduce the
     // per-horse shape.

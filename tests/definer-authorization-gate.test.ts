@@ -22,9 +22,11 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { pathToFileURL } from 'url';
 
-type Verdict = (sql: string, allowlist?: Set<string>) => string[];
+type Verdict = (sql: string, allowlist?: Set<string>, grantSql?: string) => string[];
 let unauthorisedWriters: Verdict;
 let anonReadableDefiners: Verdict;
+let unrevokedClones: Verdict;
+let clonedFunctions: (sql: string) => string[];
 
 beforeAll(async () => {
   // Computed specifier: the checker is a plain ESM script with no type
@@ -37,6 +39,8 @@ beforeAll(async () => {
   const mod = await import(/* @vite-ignore */ href);
   unauthorisedWriters = mod.unauthorisedWriters;
   anonReadableDefiners = mod.anonReadableDefiners;
+  unrevokedClones = mod.unrevokedClones;
+  clonedFunctions = mod.clonedFunctions;
 });
 
 /** The shape that shipped nineteen times: no GRANT written at all, which
@@ -300,5 +304,124 @@ describe('the gate is actually wired to something', () => {
   it('runs on pre-push, because branch protection is unavailable on a private repo', () => {
     const hook = readFileSync(resolve(__dirname, '..', '.husky/pre-push'), 'utf8');
     expect(hook).toContain('check-definer-authorization.mjs');
+  });
+});
+
+/**
+ * ---------------------------------------------------------------------------
+ *  A CLONE IS A DECLARATION (2026-09-01)
+ * ---------------------------------------------------------------------------
+ *
+ * 20260901090000_club_card_human_realtime_stats.sql duplicated three functions
+ * under new names by rewriting pg_get_functiondef output and EXECUTEing it.
+ * Two of the three were revoked from PUBLIC, anon and authenticated in that
+ * same file; the third was not, and CREATE FUNCTION grants EXECUTE to PUBLIC.
+ *
+ * fn_seat_club_for_user_membership_unchecked therefore went live SECURITY
+ * DEFINER, owned by postgres, answering a caller with no account: give it a
+ * user id and a table id and it returns which club that player is seated under
+ * and which clubs they are a member of. The gate cleared the migration,
+ * because a clone is not spelled CREATE FUNCTION and there was nothing to
+ * judge. The daily live audit found it hours later.
+ *
+ * These cases are fed the REAL migration, so they fail if the reading of a
+ * clone is ever weakened back to "only what CREATE FUNCTION declares".
+ */
+describe('a function cloned into a new name is judged like a new function', () => {
+  const SHIPPED = resolve(
+    __dirname,
+    '..',
+    'supabase/migrations/20260901090000_club_card_human_realtime_stats.sql'
+  );
+
+  it('tells the clone target from the function being copied', () => {
+    // The source half of the regexp_replace is a REGULAR EXPRESSION, so its dot
+    // and paren are escaped; what actually separates source from target is that
+    // the source is the argument to pg_get_functiondef.
+    const clones = clonedFunctions(readFileSync(SHIPPED, 'utf8')).sort();
+    expect(clones).toEqual([
+      'fn_create_club_atomic_membership_impl',
+      'fn_join_club_membership_impl',
+      'fn_seat_club_for_user_membership_unchecked',
+    ]);
+  });
+
+  it('names the one clone that migration left open, and only that one', () => {
+    expect(unrevokedClones(readFileSync(SHIPPED, 'utf8'))).toEqual([
+      'fn_seat_club_for_user_membership_unchecked',
+    ]);
+  });
+
+  it('clears it once the revoke it was missing is present', () => {
+    const sql = readFileSync(SHIPPED, 'utf8');
+    const withRevoke =
+      sql +
+      '\nREVOKE ALL ON FUNCTION public.fn_seat_club_for_user_membership_unchecked' +
+      '(uuid, uuid, uuid) FROM PUBLIC, anon, authenticated;';
+    expect(unrevokedClones(sql, new Set(), withRevoke)).toEqual([]);
+  });
+
+  it('is not satisfied by revoking authenticated while PUBLIC still holds it', () => {
+    const sql = readFileSync(SHIPPED, 'utf8');
+    const halfFixed =
+      sql +
+      '\nREVOKE ALL ON FUNCTION public.fn_seat_club_for_user_membership_unchecked' +
+      '(uuid, uuid, uuid) FROM authenticated;';
+    expect(unrevokedClones(sql, new Set(), halfFixed)).toEqual([
+      'fn_seat_club_for_user_membership_unchecked',
+    ]);
+  });
+
+  it('has no auth.uid() exemption, because the body is not in the file', () => {
+    // The two rules above clear a function whose body consults the request.
+    // A clone's body lives in the database, so there is nothing to read and
+    // nothing to earn: the grants have to be stated.
+    const sql = `
+DO $clone$
+DECLARE v_def text;
+BEGIN
+  SELECT pg_get_functiondef('public.fn_original(uuid)'::regprocedure) INTO v_def;
+  v_def := regexp_replace(v_def, 'FUNCTION public\\.fn_original\\(',
+    'FUNCTION public.fn_copy(', 1, 1);
+  EXECUTE v_def;   -- auth.uid() appears here and means nothing
+END;
+$clone$;
+`;
+    expect(unrevokedClones(sql)).toEqual(['fn_copy']);
+  });
+
+  it('accepts a written decision instead, like the other two rules', () => {
+    const sql = readFileSync(SHIPPED, 'utf8');
+    expect(unrevokedClones(sql, new Set(['fn_seat_club_for_user_membership_unchecked']))).toEqual(
+      []
+    );
+  });
+});
+
+describe('a grant statement cannot be read across a semicolon', () => {
+  /**
+   * Found while writing the clone rule. The gap between GRANT/REVOKE and
+   * `ON FUNCTION` was `[\s\S]*?`, so the word "grant" anywhere at all -- here
+   * inside a RAISE EXCEPTION message, which is how the real migration ends --
+   * reached forward to the next `ON FUNCTION` in the file and stamped its own
+   * verb on somebody else's statement.
+   *
+   * In that direction it read as stricter than the truth. Reversed, a stray
+   * "revoke" ahead of a real GRANT clears a function that is wide open, which
+   * is the exact failure this file exists to prevent.
+   */
+  it('does not let a stray verb in a string relabel the next statement', () => {
+    const sql = `
+CREATE OR REPLACE FUNCTION public.fn_reader(p_id uuid)
+RETURNS uuid LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path TO 'public'
+AS $function$
+BEGIN
+  RAISE EXCEPTION 'this club still has a duplicate owner-wallet grant';
+END;
+$function$;
+REVOKE ALL ON FUNCTION public.fn_reader(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_reader(uuid) TO service_role;
+`;
+    expect(anonReadableDefiners(sql)).toEqual([]);
   });
 });

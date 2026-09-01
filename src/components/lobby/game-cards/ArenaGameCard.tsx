@@ -6,6 +6,7 @@ import type {
   ArenaGameDataState,
 } from './arenaGameCardTypes';
 import { ArenaGameRuleBadge } from './ArenaGameRuleIcon';
+import { NlhPremiumCard } from './NlhPremiumCard';
 import './ArenaGameCard.css';
 
 const CASH_CARD_TITLE_LIMIT = 30;
@@ -17,15 +18,6 @@ function constrainedTitle(value: string, limit: number): string {
   const candidate = normalized.slice(0, Math.max(1, limit - 1));
   const wordBreak = candidate.lastIndexOf(' ');
   return `${candidate.slice(0, wordBreak > limit * 0.62 ? wordBreak : candidate.length).trimEnd()}…`;
-}
-
-function tournamentDisplayTitle(data: ArenaGameCardData): string {
-  const title = constrainedTitle(data.title, TOURNAMENT_CARD_TITLE_LIMIT);
-  if (!data.guarantee) return title;
-  const normalizedGuarantee = data.guarantee.replace(/\s+/g, ' ').trim();
-  const guaranteeNumber = normalizedGuarantee.replace(/\s*GTD$/i, '').trim();
-  if (title.toLowerCase().includes('gtd') || title.includes(guaranteeNumber)) return title;
-  return constrainedTitle(`${normalizedGuarantee} • ${title}`, TOURNAMENT_CARD_TITLE_LIMIT);
 }
 
 function ActionIcon({ label }: { label: string }) {
@@ -198,7 +190,7 @@ function LiveValue({
 
 function MttMachine({ data, actions }: ArenaGameCardProps) {
   const visibleRules = data.rules.slice(0, 2);
-  const displayTitle = tournamentDisplayTitle(data);
+  const displayTitle = constrainedTitle(data.title, TOURNAMENT_CARD_TITLE_LIMIT);
   return (
     <div className="agc-machine agc-machine--mtt">
       <span className="agc-mtt-club-chip" aria-hidden="true" />
@@ -207,6 +199,8 @@ function MttMachine({ data, actions }: ArenaGameCardProps) {
           {displayTitle}
         </h3>
         <div className="agc-mtt-meta">
+          {data.guarantee && <strong data-zone="guarantee">{data.guarantee}</strong>}
+          {data.guarantee && <i aria-hidden="true" />}
           <span data-zone="startsIn">{data.startsIn || data.statusLabel}</span>
         </div>
         <div className="agc-mtt-badge-rail">
@@ -257,11 +251,9 @@ function MttMachine({ data, actions }: ArenaGameCardProps) {
 function NlhMachine({ data, actions }: ArenaGameCardProps) {
   return (
     <div className="agc-machine agc-machine--nlh">
-      <PremiumHeader data={data} showSubtitle={false} />
-      <span className="agc-semantic-only" data-zone="gameType">
-        {data.gameType}
-      </span>
+      <PremiumHeader data={data} />
       <Rules data={data} className="agc-premium-rules agc-premium-rules--nlh" limit={3} />
+      <LiveValue className="agc-premium-value--game-type" value={data.gameType} zone="gameType" />
       <LiveValue
         className="agc-premium-value--stakes"
         value={data.stakes}
@@ -294,9 +286,24 @@ function PloMachine({ data, actions }: ArenaGameCardProps) {
       <span className="agc-plo-game-repeat" aria-hidden="true">
         {data.gameType}
       </span>
-      <LiveValue className="agc-premium-value--stakes" value={data.stakes} zone="stakes" />
-      <LiveValue className="agc-premium-value--players" value={data.players} zone="players" />
-      <LiveValue className="agc-premium-value--buy-in" value={data.buyIn} zone="buyIn" />
+      <LiveValue
+        className="agc-premium-value--stakes"
+        value={data.stakes}
+        zone="stakes"
+        icon="stakes"
+      />
+      <LiveValue
+        className="agc-premium-value--players"
+        value={data.players}
+        zone="players"
+        icon="players"
+      />
+      <LiveValue
+        className="agc-premium-value--buy-in"
+        value={data.buyIn}
+        zone="buyIn"
+        icon="buy-in"
+      />
       <Actions actions={actions} />
     </div>
   );
@@ -437,6 +444,10 @@ export const ArenaGameCard = memo(function ArenaGameCard({
   });
   const template = resolved.skin;
   const Renderer = familyRenderers[data.family];
+  const usesLayeredNlh =
+    data.family === 'nlh' &&
+    resolved.skinId === 'spade-nlh-premium-v1' &&
+    resolved.presentation === 'mobile';
   const dataState = data.dataState || 'loaded';
   const notice = stateLabel(dataState);
   const style = {
@@ -460,7 +471,11 @@ export const ArenaGameCard = memo(function ArenaGameCard({
     >
       <span className="arena-game-card__art" aria-hidden="true" />
       <div className="arena-game-card__glass">
-        <Renderer data={data} actions={actions} presentation={presentation} />
+        {usesLayeredNlh ? (
+          <NlhPremiumCard data={data} actions={actions} />
+        ) : (
+          <Renderer data={data} actions={actions} presentation={presentation} />
+        )}
       </div>
       {notice && <div className="arena-game-card__notice">{notice}</div>}
     </article>

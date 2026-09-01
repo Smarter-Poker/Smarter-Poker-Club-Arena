@@ -158,7 +158,12 @@ export function TournamentRankingHost() {
     /* The card's own fallback (tournaments list) handles the no-id case. */
     const fallback = () => {
       close();
-      navigate(payload?.tournament?.isSpin ? '/tournaments?type=spin' : '/tournaments');
+      /* `?type=spin` was dead: TournamentPage reads useParams() only and its
+         filter state is 'all' | 'freeroll' | 'micro' | 'highroller', so the
+         query string was carried for nobody. Sending the player to the list
+         they can actually use beats sending them to a filter that is not
+         read. */
+      navigate('/tournaments');
     };
     if (!tournamentId) {
       fallback();
@@ -190,15 +195,31 @@ export function TournamentRankingHost() {
            scoping PR #1702 made law after the unscoped hop nearly seated a
            player in a stranger's club. Oldest first, matching the engine's
            own primary-table election bias. */
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  PLAY AGAIN MUST NOT LAND YOU ON A FULL TABLE (2026-09-01)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * This filtered on status, club, stake, game and class - and NOT on
+         * capacity. Every other surface goes through `seatFirstJoinable`,
+         * whose whole job is `players >= capacity` (lobbyEntries). Spins fill
+         * in seconds, so the most likely sibling of a game you just finished
+         * is one that filled while you were watching the podium, and the
+         * player was walked into "That Seat Was Just Taken".
+         *
+         * `current_players < max_players` is the same predicate in SQL, and
+         * a handful of rows are taken rather than one so a row that fills
+         * between this read and the seat claim is not the end of the attempt.
+         */
         let q = supabase
           .from('tournaments')
-          .select('id')
+          .select('id, current_players, max_players')
           .eq('status', 'REGISTERING')
           .eq('buy_in_amount', origin.buy_in_amount)
           .eq('game_type', origin.game_type)
           .neq('id', tournamentId)
           .order('created_at', { ascending: true })
-          .limit(1);
+          .limit(8);
         if (origin.club_id) q = q.eq('club_id', origin.club_id);
         q =
           String(origin.variant) === 'spin'
@@ -207,7 +228,16 @@ export function TournamentRankingHost() {
         const { data: siblings, error: siblingErr } = await q;
         if (siblingErr) throw siblingErr;
 
-        const sibling = siblings?.[0];
+        /* Capacity, applied here rather than in the query so a row with a
+           null/absent max is treated as joinable rather than silently
+           dropped - the same forgiving reading `seatFirstJoinable` takes. */
+        const sibling = (
+          siblings as Array<{ id: string; current_players?: number; max_players?: number }> | null
+        )?.find((row) => {
+          const max = Number(row?.max_players) || 0;
+          const seated = Number(row?.current_players) || 0;
+          return max <= 0 || seated < max;
+        });
         if (!sibling) {
           fallback();
           return;

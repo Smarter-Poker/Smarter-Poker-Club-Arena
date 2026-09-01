@@ -76,11 +76,15 @@ import {
 
 const DESCRIPTION_MAX = 500;
 const TAGLINE_MAX = 72;
+/* Dan 2026-09-01: the club's custom / day's message, printed at the top of the
+   lobby rail. Same 240-character cap `fn_set_club_lobby_message` enforces. */
+const LOBBY_MESSAGE_MAX = 240;
 
 interface ClubSettings {
   name: string;
   description: string;
   tagline: string;
+  lobby_message: string;
   is_public: boolean;
   requires_approval: boolean;
   default_rake_percent: number;
@@ -106,6 +110,7 @@ export default function ClubSettingsPage() {
     name: '',
     description: '',
     tagline: '',
+    lobby_message: '',
     is_public: true,
     requires_approval: false,
     default_rake_percent: RAKE_INHERIT,
@@ -157,6 +162,7 @@ export default function ClubSettingsPage() {
     if (settings.name !== orig.name) changes.push('Name');
     if (settings.description !== orig.description) changes.push('Description');
     if (settings.tagline !== orig.tagline) changes.push('Tag Line');
+    if (settings.lobby_message !== orig.lobby_message) changes.push('Club Message');
     if (settings.is_public !== orig.is_public) changes.push('Public');
     if (settings.requires_approval !== orig.requires_approval) changes.push('Approval');
     if (settings.default_rake_percent !== orig.default_rake_percent) changes.push('Rake %');
@@ -686,7 +692,7 @@ export default function ClubSettingsPage() {
           supabase
             .from('clubs')
             .select(
-              'id, owner_id, club_id, logo_url, name, description, tagline, is_public, requires_approval, default_rake_percent, rake_cap, bbj_rake_enabled, spins_enabled, spins_preseed_amount, spins_wallet_funding, union_id'
+              'id, owner_id, club_id, logo_url, name, description, tagline, lobby_message, is_public, requires_approval, default_rake_percent, rake_cap, bbj_rake_enabled, spins_enabled, spins_preseed_amount, spins_wallet_funding, union_id'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -708,6 +714,7 @@ export default function ClubSettingsPage() {
           name: data.name || '',
           description: data.description || '',
           tagline: data.tagline || '',
+          lobby_message: data.lobby_message || '',
           is_public: data.is_public ?? true,
           requires_approval: data.requires_approval ?? false,
           default_rake_percent: data.default_rake_percent ?? RAKE_INHERIT,
@@ -806,6 +813,10 @@ export default function ClubSettingsPage() {
       name: sanitizeInput(settings.name),
       description: sanitizeInput(settings.description),
       tagline: sanitizeInput(settings.tagline).slice(0, TAGLINE_MAX),
+      lobby_message: sanitizeInput(settings.lobby_message)
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, LOBBY_MESSAGE_MAX),
     };
     setSaving(true);
     try {
@@ -853,6 +864,15 @@ export default function ClubSettingsPage() {
               name: toSave.name,
               description: toSave.description,
               tagline: toSave.tagline || null,
+              /* The lobby's own inline editor writes this through
+                 fn_set_club_lobby_message, which is what lets a co-owner or an
+                 admin set it too. Here the owner is already updating the row
+                 directly under RLS, so the column rides along with the rest of
+                 Basic Information - and carries its own timestamp, exactly as
+                 the RPC does, so "how fresh is the day's message" cannot depend
+                 on which surface wrote it. */
+              lobby_message: toSave.lobby_message || null,
+              lobby_message_updated_at: toSave.lobby_message ? new Date().toISOString() : null,
               is_public: toSave.is_public,
               requires_approval: toSave.requires_approval,
               default_rake_percent: toSave.default_rake_percent,
@@ -1377,6 +1397,28 @@ export default function ClubSettingsPage() {
             <small id="club-tagline-hint" className="form-hint">
               {taglineError ||
                 `${settings.tagline.length}/${TAGLINE_MAX} · Write An Original Line For This Club`}
+            </small>
+          </div>
+          {/* Dan 2026-09-01: "that should be the 'custom clickable message' for
+              the club owners to put the days message, or something custom".
+              The lobby rail shows this above the club card and opens it in
+              full when tapped; club staff can also write it from there. This
+              is the same field, where an owner already manages the club. */}
+          <div className="form-group">
+            <label htmlFor="club-lobby-message">Club Message</label>
+            <textarea
+              id="club-lobby-message"
+              value={settings.lobby_message}
+              onChange={(e) => updateSetting('lobby_message', e.target.value)}
+              rows={2}
+              disabled={!isOwner}
+              maxLength={LOBBY_MESSAGE_MAX}
+              placeholder="Tonight At 8, Double Rakeback On Every Nine Handed Table"
+              aria-describedby="club-lobby-message-hint"
+            />
+            <small id="club-lobby-message-hint" className="form-hint">
+              {settings.lobby_message.length}/{LOBBY_MESSAGE_MAX} &middot; Shown At The Top Of The
+              Club Lobby. Leave It Empty To Fall Back To The Tag Line
             </small>
           </div>
           <div className="form-group">

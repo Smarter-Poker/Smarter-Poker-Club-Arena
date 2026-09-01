@@ -52,7 +52,14 @@ name: Agent Autopilot
 
 on:
   pull_request:
-    types: [opened, reopened, ready_for_review, synchronize]
+    # NO `synchronize` (removed 2026-09-01, cost audit). Auto-merge is enabled
+    # ONCE per PR and stays armed across branch pushes - GitHub does not
+    # disarm it on a new commit - so re-running this job on every push to the
+    # branch re-enabled something already enabled. Agents push ~2.1 times per
+    # branch; synchronize was most of this workflow's 3,292 August runs. The
+    # */30 sweep below still catches the rare PR whose auto-merge was
+    # genuinely disarmed (conflict resolved by force-push, reopened race).
+    types: [opened, reopened, ready_for_review]
   # NO push TRIGGER. Removed 2026-08-23.
   #
   # It fired a full sweep on every merge to main. Club Arena merges about
@@ -122,14 +129,14 @@ jobs:
         # WITHOUT THIS the job has no working tree and
         # `.github/scripts/queue-pr.sh` exits 127. That is how this workflow
         # failed on its own first run.
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Mint a GitHub App installation token
         # Skipped entirely when the App is not configured, in which case the
         # `||` chain below falls through to GH_PAT exactly as before.
         id: app-token
         if: vars.AUTOPILOT_APP_ID != ''
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.AUTOPILOT_APP_ID }}
           private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}
@@ -167,14 +174,14 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Mint a GitHub App installation token
         # Skipped entirely when the App is not configured, in which case the
         # `||` chain below falls through to GH_PAT exactly as before.
         id: app-token
         if: vars.AUTOPILOT_APP_ID != ''
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ vars.AUTOPILOT_APP_ID }}
           private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}

@@ -105,6 +105,21 @@ describe('the bar stretches across the top', () => {
     expect(390 * 0.6675).toBeCloseTo(260.33, 2);
   });
 
+  it('paints no background of its own behind or around the artwork', () => {
+    /*
+     * Dan, 2026-09-01: "on mobile, the global header needs the background
+     * removed on all pages inside smarter.poker, club arena, and club
+     * commander." The approved artwork is opaque across its whole canvas, so a
+     * fill on .header was only ever visible where the artwork is NOT - the
+     * safe-area band this rule pads by, the standalone band, and the left/right
+     * insets - which on a phone is an opaque black block above and around the
+     * header. Desktop has no insets, so nothing changed there.
+     */
+    expect(header).toContain('background: transparent');
+    expect(header).not.toMatch(/background:\s*#000/);
+    expect(header).toContain('padding-top: env(safe-area-inset-top, 0px)');
+  });
+
   it('is not capped by a max-width anywhere in the file', () => {
     // A max-width on .header would reinstate the floating pill by another route.
     expect(ruleBody(CSS, '.header')).not.toContain('max-width');
@@ -222,7 +237,23 @@ describe('mobile uses the identical desktop header', () => {
 });
 
 describe('the profile region shows the complete live profile picture', () => {
-  it('removes the baked ornament and centers one thin black-framed circle', () => {
+  /*
+   * UPDATED 2026-09-01. This block used to pin an opaque black disc over the
+   * baked ornament on EVERY width, with a 72% portrait centred at 50%/50%.
+   * Measured against the artwork this header actually renders
+   * (images/global-header/global-header-desktop.png, 1648x168), the ornament is
+   * a circle centred at (1159.75, 80.5) with a 94-unit outer diameter and an
+   * 81-unit aperture inside its chrome band. The disc was 117.8 units - wider
+   * than the ornament - so it painted out the ring and its blue glow, and the
+   * 72% portrait was 84.8 units sitting 3.6 units low, overlapping the band.
+   * Dan, 2026-09-01: "the profile image needs to be fixed on most of them".
+   * Below 901px the portrait now fills the measured aperture and the approved
+   * ring frames it. At and above 901px the artwork is squashed by
+   * `object-fit: fill` into a 96px band, so the ornament is an ellipse up there
+   * and the old opaque mask is still correct - the second test pins that it
+   * survived unchanged.
+   */
+  it('fills the measured ornament aperture and stops covering the approved ring', () => {
     expect(TSX_CODE).toContain('avatarUrl');
     expect(TSX).toContain('className={styles.profileAvatarSlot}');
     expect(TSX).toContain('className={styles.profileAvatar}');
@@ -230,36 +261,46 @@ describe('the profile region shows the complete live profile picture', () => {
     expect(CSS).toContain('.profileAvatarSlot');
     expect(CSS).toContain('.profileAvatar');
     expect(CSS).not.toContain('.profileFrameOverlay');
+
     const profileButton = ruleBody(CSS, '.profileBtn');
     expect(profileButton).toContain('contain: layout paint');
     expect(profileButton).toContain('left: 66.75%');
     expect(profileButton).toContain('width: 7.15%');
     expect(profileButton).toContain('top: 15%');
     expect(profileButton).toContain('aspect-ratio: 1');
-    expect(profileButton).toContain('border: 0');
-    expect(profileButton).toContain('border-radius: 50%');
-    expect(profileButton).toContain('background: #000');
+    // The hit region paints nothing. A shape drawn over approved artwork is a
+    // defect, and this one was hiding the chrome ring and its glow.
+    expect(profileButton).not.toMatch(/background:\s*#000/);
+    expect(profileButton).not.toMatch(/border-radius:\s*50%/);
+
     const slot = ruleBody(CSS, '.profileAvatarSlot');
-    expect(slot).toContain('top: 50% !important');
-    expect(slot).toContain('left: 50% !important');
-    expect(slot).toContain('width: 72%');
+    expect(slot).toContain('top: 46.9% !important');
+    expect(slot).toContain('left: 50.7% !important');
+    expect(slot).toContain('width: 68.7%');
     expect(slot).toContain('aspect-ratio: 1');
     expect(slot).toContain('transform: translate(-50%, -50%) !important');
-    expect(slot).toContain('box-sizing: border-box');
-    expect(slot).toContain('border: 0.5px solid rgba(0, 0, 0, 0.94)');
     expect(slot).toContain('border-radius: 50%');
     expect(slot).toContain('background: transparent');
     expect(slot).toContain('z-index: 1');
+
     const portrait = ruleBody(CSS, '.profileAvatarSlot > .profileAvatar');
     expect(portrait).toContain('width: 100% !important');
     expect(portrait).toContain('border-radius: 50% !important');
     expect(portrait).toContain('background: transparent !important');
+    // cover, never contain: an avatar is almost never 1:1, and contain
+    // letterboxes it with black bars instead of filling the aperture.
     expect(portrait).toContain('object-fit: cover !important');
+    expect(portrait).not.toContain('object-fit: contain');
   });
 
   it('keeps the desktop profile mask inside the compressed 96px header rail', () => {
     expect(CSS).toMatch(
-      /@media \(min-width: 901px\)[\s\S]*?\.profileBtn\s*\{[\s\S]*?top: 13%;[\s\S]*?height: 74%;[\s\S]*?aspect-ratio: auto;/
+      /@media \(min-width: 901px\)[\s\S]*?\.profileBtn\s*\{[\s\S]*?top: 13%;[\s\S]*?height: 74%;[\s\S]*?aspect-ratio: auto;[\s\S]*?background: #000;/
+    );
+    // The desktop slot keeps the pre-2026-09-01 geometry verbatim, so the
+    // mobile aperture fix cannot silently move the portrait on a laptop.
+    expect(CSS).toMatch(
+      /@media \(min-width: 901px\)[\s\S]*?\.profileAvatarSlot\s*\{[\s\S]*?top: 50% !important;[\s\S]*?left: 50% !important;[\s\S]*?width: 72%;/
     );
   });
 });

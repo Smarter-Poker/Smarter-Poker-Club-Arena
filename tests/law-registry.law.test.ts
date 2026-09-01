@@ -57,7 +57,8 @@ describe('the law registry (docs/LAWS.md)', () => {
   });
 
   it('lists no law file that does not exist (retire laws visibly)', () => {
-    const listed = [...registry.matchAll(/\| (tests\/[^ |]+\.law\.test\.\w+) \|/g)].map(
+    // Tolerates Prettier's column padding: any whitespace around the cell.
+    const listed = [...registry.matchAll(/\|\s*(tests\/\S+\.law\.test\.\w+)\s*\|/g)].map(
       (m) => m[1]
     );
     const ghosts = listed.filter((f) => !lawFiles.includes(f));

@@ -2904,6 +2904,7 @@
     "postgis_version",
     "postgis_wagyu_version",
     "process_tournament_rebuy",
+    "process_tournament_rebuy_before_one_minute_addon",
     "promo_apply_playthrough",
     "promote_home_game_waitlist",
     "promote_member",

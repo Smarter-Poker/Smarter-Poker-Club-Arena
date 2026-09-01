@@ -10715,7 +10715,9 @@
       "mystery_bounty_activated_players",
       "mystery_bounty_pool_cents",
       "allow_rabbit_hunt",
-      "spin_reveal_lag_ms"
+      "spin_reveal_lag_ms",
+      "addon_period_started_at",
+      "addon_period_ends_at"
     ],
     "tours_due_for_refresh": [
       "tour_code",

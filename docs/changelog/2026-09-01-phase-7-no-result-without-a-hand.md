@@ -79,18 +79,20 @@ human settles it deliberately.
 
 `fn_detect_results_without_a_hand()`, migration
 `20260901122006_no_result_without_a_hand_detector.sql`, applied to production.
+It flags any COMPLETED tournament carrying finishing places with no hand in
+`hand_history`, and raises one deduped critical `financial_alerts` row per
+offender. It moves no money, exactly like `fn_spin_unpaid_check`. It runs on its
+own six-hour timer from `GameServer`, per the lesson recorded on the overpay
+charge that a repair gated on another job's clock runs once at boot and then
+never.
+
 A second migration, `20260901122350_..._close_browser_access.sql`, revokes
-EXECUTE from PUBLIC, anon and authenticated: `check-definer-authorization`
+EXECUTE from PUBLIC, anon and authenticated. `check-definer-authorization`
 refuses a SECURITY DEFINER writer a browser role can reach that never asks who
 is calling, and it caught this one on the first push attempt. Nobody in a
-browser calls a sweep. The two files are kept separate and each is byte-identical
-to what production ran, rather than folding the revoke back into the first file
-and leaving the repo saying something the database never executed. Flags
-any COMPLETED tournament carrying finishing places with no hand in
-`hand_history`, one deduped critical `financial_alerts` row per offender. It
-moves no money, exactly like `fn_spin_unpaid_check`. Called on its own six-hour
-timer from `GameServer`, per the lesson recorded on the overpay charge that a
-repair gated on another job's clock runs once at boot and then never.
+browser calls a sweep. The two files are kept separate, each byte-identical to
+what production ran, rather than folding the revoke back into the first file and
+leaving the repo asserting something the database never executed.
 
 Run live twice on 2026-09-01: 4 flagged inside the 6-day window, 324.00 chips,
 4 alerts raised on the first pass and 0 on the second, 4 alert rows in total.

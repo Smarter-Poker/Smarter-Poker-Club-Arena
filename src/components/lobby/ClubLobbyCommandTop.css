@@ -2203,3 +2203,76 @@
     clip-path: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DESKTOP CAMPAIGN BAY — THE AD SCALES, IT IS NEVER CROPPED (Dan 2026-09-01)
+   ---------------------------------------------------------------------------
+   Dan: "the 'dynamic ad image' is cut off, and it needs to scale to size.
+   because when you 'shrink the page' it fits perfectly."
+
+   He was describing two different assets meeting two different bays.
+
+     THE BAY   On desktop `.club-lobby-machine > .club-lobby-command-top` is
+               `display: contents`, so the campaign well is a flex item of the
+               machine column with `min-height: 92px` and nothing telling it
+               how tall to be. At a 1440px viewport the right column is about
+               1000px wide, so the bay is roughly 11:1.
+     THE ART   The house ad served above 900px was
+               `shark-club-championship-ad-v2.png`, 2172 x 724 - a 3:1 image.
+     THE CROP  `object-fit: cover` on a 3:1 image inside an 11:1 bay keeps the
+               middle 28% of its height. The ad's content band is the middle
+               ~45%, so the top of the trophy and the whole "Saturday June 14 /
+               530 Buy-In / Late Reg 8 Levels" line were cut off.
+
+   Below 900px the SAME ad is served from
+   `shark-club-championship-ad-mobile-v4.png` - 2172 x 302, the identical
+   artwork cropped tight - into a bay whose `aspect-ratio` is that exact ratio.
+   That is the "shrink the page and it fits perfectly" Dan saw, and it is the
+   right answer for a short wide bay at any width. Desktop uses the same wide
+   crop and the same aspect ratio now (see ClubHomePage.tsx), so the bay and
+   the artwork agree instead of one cropping the other.
+
+   `object-fit: contain` is the guarantee rather than the layout: a club's own
+   `banner_url` can be any shape at all, and `contain` means the worst case is
+   black at the sides, never a headline with its top sliced off.
+
+   `max-height` is the ultrawide guard. On a 2560px monitor the bay is ~1800px
+   wide and 2172/302 would make it 250px tall, which would eat the game list.
+   When the cap binds the ad letterboxes; it still never clips.
+═══════════════════════════════════════════════════════════════════════════ */
+@media (min-width: 901px) {
+  .club-lobby-command-top__campaign {
+    height: auto;
+    min-height: 0;
+    aspect-ratio: 2172 / 302;
+    max-height: clamp(96px, 13vh, 156px);
+    padding: 4px 0 0;
+    overflow: hidden;
+  }
+
+  .club-lobby-command-top__campaign-button,
+  .club-lobby-command-top__campaign-picture,
+  .club-lobby-command-top__campaign-button img {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .club-lobby-command-top__campaign-picture {
+    display: block;
+  }
+
+  .club-lobby-command-top__campaign-button {
+    display: grid;
+    place-items: center;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .club-lobby-command-top__campaign-button img {
+    display: block;
+    object-fit: contain;
+    object-position: center;
+    clip-path: none;
+  }
+}

@@ -355,10 +355,6 @@
       "source",
       "dedupe_key"
     ],
-    "ca_engine_deploy_attempts": [
-      "target_sha",
-      "shipped"
-    ],
     "ca_financial_epochs": [
       "name"
     ],
@@ -509,11 +505,6 @@
       "cohort",
       "metric",
       "sample_size"
-    ],
-    "ca_supply_snapshot_classifications": [
-      "snapshot_id",
-      "original_unexplained",
-      "classification"
     ],
     "ca_supply_snapshots": [
       "member_wallets",
@@ -1371,13 +1362,6 @@
       "user_id",
       "category",
       "file_url"
-    ],
-    "deep_stack_delete_attempts": [
-      "source_table",
-      "allowed",
-      "db_user",
-      "db_role",
-      "old_row"
     ],
     "deploy_alerts": [
       "alert_key",

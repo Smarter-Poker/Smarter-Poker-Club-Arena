@@ -1075,15 +1075,6 @@
       "metadata",
       "created_at"
     ],
-    "ca_engine_deploy_attempts": [
-      "id",
-      "at",
-      "run_id",
-      "target_sha",
-      "shipped",
-      "reason",
-      "actor"
-    ],
     "ca_financial_epochs": [
       "id",
       "name",
@@ -1379,14 +1370,6 @@
       "p90",
       "sample_size",
       "computed_at"
-    ],
-    "ca_supply_snapshot_classifications": [
-      "snapshot_id",
-      "original_unexplained",
-      "classification",
-      "club_id",
-      "evidence",
-      "classified_at"
     ],
     "ca_supply_snapshots": [
       "id",
@@ -4796,19 +4779,6 @@
       "notes",
       "created_at",
       "last_reminder_sent_at"
-    ],
-    "deep_stack_delete_attempts": [
-      "id",
-      "at",
-      "source_table",
-      "allowed",
-      "db_user",
-      "db_role",
-      "application",
-      "client_addr",
-      "backend_pid",
-      "running_query",
-      "old_row"
     ],
     "deploy_alerts": [
       "alert_key",

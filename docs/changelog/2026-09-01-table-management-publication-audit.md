@@ -77,6 +77,46 @@ gets read again soon rather than never. `INITIAL_GZ_LIMIT` is untouched at
 320kB; that is the gate that protects users, and this branch moves it in the
 right direction.
 
+## 4. The last door that could still evict a seated player
+
+Auditing the shipped phases against the live database, rather than against the
+source that claims them, turned up one authority gap the tests could not see.
+
+`fn_admin_close_table` is SECURITY DEFINER and was still EXECUTE-granted to
+`authenticated`. It does not trip `trg_tables_managed_lifecycle_guard`, because
+it empties the table before it closes it:
+
+```
+credit every seated stack back to the wallet
+UPDATE table_seats SET left_at = now() WHERE left_at IS NULL   <-- here
+UPDATE tables    SET status   = 'closed'
+```
+
+By the time the guard looks for a seat with a null `left_at`, there is none.
+
+Phase 1 revoked exactly this on the tournament side — `atomic_cancel_tournament`
+is `service_role` only — and Phase 3 revoked `fn_close_managed_game` and
+`fn_update_managed_game`. The table twin was missed. The frontend had stopped
+calling it, but the point of Phase 1 was that the rule must not depend on the
+frontend: any club admin could still call it directly and cash out a live table
+mid-hand. Under section 10.5 that reaches horses exactly as it reaches humans.
+
+Revoked from `authenticated` and `anon` in
+`20260902223000_the_last_door_that_could_evict_a_player.sql`, applied and
+verified live (only `postgres` and `service_role` retain EXECUTE). The function
+stays for genuine service-role recovery. The supported operator path remains
+`fn_execute_managed_game_command`, which refuses while anyone is seated and
+says so. GRANT/REVOKE fires no PostgREST schema reload, so this was safe under
+live traffic.
+
+The same sweep confirmed there is nothing else of this shape: all five new
+tables have RLS enabled with no INSERT/UPDATE/DELETE granted to
+`authenticated`, and of the seven definer RPCs still reachable by an ordinary
+caller that name a close, cancel or delete, two are Club Commander home games,
+two are the Phase 6 schedule commands themselves, one removes a single
+tournament player behind its own start-time guard, one cancels a ticket, and
+`fn_delete_tournament_schedule` only deactivates a recurring template.
+
 ## Production database
 
 All seven migrations are recorded in `supabase_migrations.schema_migrations`
@@ -96,6 +136,6 @@ closes the snapshot race.
 
 ## Verification
 
-- Client: 827 files, 11,293 tests.
+- Client: 828 files, 11,294 tests.
 - All 12 previously-skipped Supabase invariants, run locally against production.
 - Production build plus bundle measurement on `main` and on this branch.

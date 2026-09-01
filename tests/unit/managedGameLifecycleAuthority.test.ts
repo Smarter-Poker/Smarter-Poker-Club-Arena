@@ -68,6 +68,34 @@ describe('managed game lifecycle has one browser authority', () => {
     expect(pauseResumeBlock).not.toContain(".from('tables')");
   });
 
+  /**
+   * Found on 2026-09-01 auditing the shipped phases against the live database.
+   *
+   * fn_admin_close_table is SECURITY DEFINER and was still EXECUTE-granted to
+   * `authenticated`. It does not trip trg_tables_managed_lifecycle_guard
+   * because it empties the table first: it credits every seated stack back,
+   * sets left_at on every seat, and only then closes. By the time the guard
+   * looks, no seat has a null left_at.
+   *
+   * The frontend stopped calling it in Phase 1, but the point of Phase 1 was
+   * that the rule must not depend on the frontend. Any club admin could still
+   * call it directly and cash out a live table mid-hand, horses and humans
+   * alike. Revoked to match what the same phase did to its tournament twin,
+   * atomic_cancel_tournament.
+   */
+  it('the legacy force-close RPC is out of reach of an ordinary authenticated caller', () => {
+    const migration = readFileSync(
+      join(ROOT, 'supabase/migrations/20260902223000_the_last_door_that_could_evict_a_player.sql'),
+      'utf8'
+    );
+    expect(migration).toContain(
+      'REVOKE EXECUTE ON FUNCTION public.fn_admin_close_table(uuid) FROM authenticated;'
+    );
+    expect(migration).toContain(
+      'REVOKE EXECUTE ON FUNCTION public.fn_admin_close_table(uuid) FROM anon;'
+    );
+  });
+
   it('the legacy operations dialog states that occupied tables are never force-closed', () => {
     const panel = readFileSync(join(ROOT, 'src/components/club/TableOperationsPanel.tsx'), 'utf8');
     expect(panel).toContain('It Can Only Close After Every Player Has Left');

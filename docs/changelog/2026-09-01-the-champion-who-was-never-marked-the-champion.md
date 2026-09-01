@@ -100,3 +100,48 @@ investigation of its own and it is recorded, not acted on.
 The 52 championless events also still have no champion recorded. Naming them
 would let the bounty settlement pay out; that is a money decision, so it is
 Dan's.
+
+## Audit follow-up: four million chips were outside the supply total
+
+The Phase 3 audit began with the two things that could have been my own fault:
+the leak's timing, and the bounty backpay I had just scheduled with
+`p_apply => true`. The backpay ran at 23:12 and moved **nothing** - zero bounty
+credits, the pool still at 0 - which is correct, because that pool has no
+champion. The leak predates the Phase 3 work.
+
+Then the supply snapshot itself. `fn_ca_supply_snapshot` reads eleven balance
+stores into one record, writes all of them to `ca_supply_snapshots` - there is
+a populated `club_wallets` column - and then omits `club_wallets` from the
+total it computes. The store holds **4,351,836.36 chips**, and it is not a
+duplicate: every club carries both a `club_wallets.chip_balance` and a separate
+`clubs.chip_treasury` (Midway Union 1,360,555.87 against 0.00; Deep Stack
+4,087.98 against 2,468,178.63).
+
+Two wrong turns worth recording, because both would have shipped clean-looking
+fixes:
+
+1. **"The reads must not be atomic."** They are. All eleven sums sit inside a
+   single `SELECT ... INTO`, which shares one MVCC snapshot. I checked before
+   writing the fix.
+2. **"The omission is the source of the noise."** It is the opposite.
+   `club_wallets` is GROWING, so counting it makes the measured drift
+   **larger**. Recomputed over 25 intervals the corrected series is
+   **+31,133.15 chips, mean +1,245/hour, 21 positive against 4 negative**. The
+   23:05 critical that said "SAME-SIGN across consecutive intervals, a leak
+   persists" was **right**, and the old measure had been hiding it by
+   excluding the very store the chips accumulate in.
+
+So this fixes a real accounting hole - reported supply was understated by 4.35
+million - and it makes the leak visible rather than smaller. The two routines
+that write `club_wallets.chip_balance` without declaring a ledger counterparty
+are `credit_club_wallet_rake` and `record_rake`.
+
+The rebaseline row is written by the migration with `unexplained` NULL and the
+reason recorded, so the definition change does not fire a critical or poison
+the engine deploy gate's trailing-4h window.
+
+**The gate is still breached** at 5,169.29 against a 5,000 tolerance, on four
+pre-fix intervals. I have deliberately NOT nulled them to make it green: they
+are real measurements of a subset of stores, and blanking inconvenient history
+is the behaviour this whole sweep exists to stop. The corrected snapshots will
+say within a few hours whether the drift continues at ~1,245/hour.

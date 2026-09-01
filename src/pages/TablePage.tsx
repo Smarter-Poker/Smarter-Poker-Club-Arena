@@ -1422,6 +1422,11 @@ export default function TablePage({
   // The Spin multiplier draw. Server-decided, shown once per tournament.
   const [spinDraw, setSpinDraw] = useState<SpinWheelData | null>(null);
   /**
+   * The Spin prize pool, kept after the wheel has gone so the persistent badge
+   * can say what the multiplier is worth. See the wheel's onDone.
+   */
+  const [spinPrizePool, setSpinPrizePool] = useState<number>(0);
+  /**
    * D1: has THIS mount already put the wheel on screen? The sessionStorage
    * stamp records only a COMPLETED reveal, so this in-memory ref is what stops
    * the SPIN_REVEAL event and the DB fallback from both opening it in the same
@@ -11119,10 +11124,40 @@ export default function TablePage({
                        rebuy prompt could never get in front of it. If a bust
                        hold is running, the exit is DEFERRED into it and replayed
                        verbatim when the hold releases (see bustHoldRef). */
+                    /**
+                     * ═════════════════════════════════════════════════════
+                     *  A PAID FINISH IS NOT A BUST (2026-09-01)
+                     * ═════════════════════════════════════════════════════
+                     *
+                     * Only `position === 1` got a celebration. Everyone else
+                     * went out through this door - a 2.5 second elimination
+                     * beat and the lobby - including places that CASHED. At
+                     * 10x and above a Spin pays 2nd and 3rd (80/12/8 or
+                     * 80/20), so a 100x runner-up took a fifth of the pool
+                     * and was shown the animation for losing everything.
+                     *
+                     * `elimData.prize` was already in hand and simply never
+                     * consulted. A paid place now gets the same overlay the
+                     * champion gets, saying which place it was, and the same
+                     * unhurried exit rather than the bust beat.
+                     */
+                    const finishPosition = Number(elimData.position) || 0;
+                    const finishPrize = Number(elimData.prize) || 0;
+                    const cashed = finishPrize > 0 && finishPosition > 1;
+                    if (cashed) {
+                      const tournamentName = tableStateRef.current.tableName || 'Tournament';
+                      setTournamentWinner({
+                        prize: finishPrize,
+                        name: tournamentName,
+                        position: finishPosition,
+                      });
+                    }
                     const exit = {
-                      position: Number(elimData.position) || 0,
-                      prize: Number(elimData.prize) || 0,
-                      delayMs: 2500,
+                      position: finishPosition,
+                      prize: finishPrize,
+                      /* A paid finish is held as long as a win is. Being shown
+                         the door faster because you came second is the bug. */
+                      delayMs: cashed ? 7000 : 2500,
                     };
                     /* 2026-08-25 audit: this used to only DEFER when some
                        other watcher had already claimed the hold, and otherwise
@@ -18916,6 +18951,16 @@ export default function TablePage({
              and replays from wherever the engine's clock says everyone else
              is; a tab that saw the whole thing does not see it twice. */
           markSpinRevealPlayed(spinRevealTournamentRef.current);
+          /* AFTER THE WHEEL, SAY WHAT IT IS FOR (2026-09-01). The badge that
+             replaces the wheel printed a bare "4x" and the HUD carried Level /
+             Blinds / Next / Rank / Left / Avg - so once the wheel had gone the
+             player could not find out what they were playing for. At 10x and
+             above 2nd and 3rd are PAID, which makes it a decision input, not
+             trivia. The prize is buy-in x multiplier, exactly as the wheel
+             computed it. */
+          if (spinDraw) {
+            setSpinPrizePool(Math.round(spinDraw.buyIn * spinDraw.multiplier));
+          }
           setSpinDraw(null);
         }}
         playSounds={ambientSoundsAllowed}
@@ -19921,6 +19966,14 @@ export default function TablePage({
                     >
                       <span className="spinMultiplierIcon">X</span>
                       <span className="spinMultiplierValue">{tableState.spinMultiplier}x</span>
+                      {/* What the multiplier is WORTH. Without it the badge was
+                          the only thing left after the wheel and it said only
+                          how many times something unstated. */}
+                      {spinPrizePool > 0 && (
+                        <span className="spinMultiplierPrize">
+                          {spinPrizePool.toLocaleString()}
+                        </span>
+                      )}
                     </div>
                   )}
 

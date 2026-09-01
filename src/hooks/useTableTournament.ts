@@ -67,6 +67,12 @@ export interface RebuyData {
 export interface TournamentWinner {
   prize: number;
   name: string;
+  /**
+   * Finishing place. Defaults to 1 for every existing caller, so the champion
+   * overlay is unchanged. 2 and 3 reach the same overlay when the place PAID -
+   * see "A PAID FINISH IS NOT A BUST" in TournamentWinnerOverlay.
+   */
+  position?: number;
 }
 
 export interface Announcement {

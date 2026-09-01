@@ -437,7 +437,7 @@ export interface TableModalsLayerProps {
   onDismissAnnouncement: () => void;
 
   // Tournament Winner
-  tournamentWinner: { prize: number; name: string } | null;
+  tournamentWinner: { prize: number; name: string; position?: number } | null;
   onDismissTournamentWinner: () => void;
 
   // Hand History Panel
@@ -1272,6 +1272,9 @@ function TableModalsLayerImpl(props: TableModalsLayerProps) {
           isWinner={true}
           prize={tournamentWinner.prize}
           tournamentName={tournamentWinner.name}
+          /* A paid finish is not a bust: 2nd and 3rd reach this overlay too
+             and it says which place they took. See the prop's own comment. */
+          position={tournamentWinner.position ?? 1}
           onDismiss={onDismissTournamentWinner}
         />
       )}

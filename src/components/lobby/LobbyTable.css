@@ -1927,3 +1927,18 @@ abbr.lt-variant[title] {
     display: none;
   }
 }
+
+@media (max-width: 900px) {
+  .arena-lobby-card-list {
+    width: 100%;
+    gap: 10px;
+    padding: 0 0 24px;
+  }
+
+  .arena-lobby-card-list > div,
+  .arena-lobby-card-list .arena-game-card {
+    width: 100%;
+    max-width: none;
+    margin-inline: 0;
+  }
+}

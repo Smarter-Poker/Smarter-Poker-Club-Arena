@@ -14,5 +14,14 @@
     "",
     "Adding a line requires a reason that says WHAT is missing, not that it skipped."
   ],
-  "allowed": []
+  "allowed": [
+    {
+      "file": "tournament-buy-in-dialog.spec.ts",
+      "reason": "Requires a tournament currently registerable by the certification account. The read-only suite must never create or purchase a production entry."
+    },
+    {
+      "file": "tournament-watch.spec.ts",
+      "reason": "Requires a running tournament with a live table. Production can legitimately have none during the deployment window."
+    }
+  ]
 }

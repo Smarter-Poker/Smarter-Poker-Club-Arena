@@ -70,3 +70,34 @@ at V19 and left forty of sixty features unwatched. This watchdog guarded a
 schedule that had moved. All three looked identical whether or not they were
 working, and all three were found by asking what each one had actually done
 rather than whether it was green.
+
+## The fix repairs the schedule, it does not merely report it
+
+This turned out to matter more than the alarm.
+
+Section 5 of the watchdog dispatches `auto-deploy-hetzner.yml` itself when the
+engine is late, but it was gated on `is_restart_hour "$NOW_HOUR"` -- and
+outside the five Chicago hours that branch took the other path:
+
+    not dispatching: $NOW_HOUR:00 Chicago is not a restart hour.
+
+With every hour a restart window, that gate is now unconditionally true, so a
+late engine is **dispatched automatically** rather than waiting for a human or
+for GitHub's next scheduled tick.
+
+That is the part that closes today's actual failure. GitHub fired **one**
+scheduled tick for this workflow between 13:00 and 18:52 UTC where nineteen
+were due, and other repo schedules were sparse and hours late in the same
+window, so the cron is not something to rely on. The watchdog, by contrast,
+runs on `workflow_run` -- it fired eight or more times today, because
+something is always completing -- which makes it a far steadier trigger than
+the schedule it was written to supervise.
+
+So after this change the hourly deploy has two independent triggers: the cron
+when GitHub honours it, and the watchdog within about forty-five minutes when
+it does not. Today it had one, and that one did not fire.
+
+**Not fixed here, and worth knowing:** _why_ GitHub is dropping these
+schedules. `cron-health.yml` does not cover it -- it asks the DATABASE which
+scheduled work is failing, so it watches the horse jobs and not GitHub Actions
+cron. That gap is now survivable rather than closed.

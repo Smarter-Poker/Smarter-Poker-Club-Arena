@@ -44,7 +44,28 @@ function isRetryableError(error: unknown): boolean {
 export async function retryAsync<T>(
   fn: () => PromiseLike<T> | Promise<T>,
   maxRetries: number = 2,
-  baseDelayMs: number = 500
+  baseDelayMs: number = 500,
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  A CALLER HAS TO BE ABLE TO KNOW IT RETRIED (2026-09-01)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * A retry is invisible to the caller today, and for a read that is fine.
+   * For a WRITE it is not: a network error can be raised for a request the
+   * server already COMMITTED, so the second attempt lands on top of work that
+   * succeeded. The caller then sees "you already did that" and has no way to
+   * tell whether that means "somebody else did it" or "you did it, a moment
+   * ago, on the attempt you never saw succeed".
+   *
+   * The registration path is exactly that shape and it is a money path: a
+   * blip after a committed buy-in returned `already_registered`, so the
+   * player was told "Already registered for this tournament" having just been
+   * charged for it.
+   *
+   * `onRetry` lets a write-path caller notice. It does not change any retry
+   * behaviour and reads may ignore it entirely.
+   */
+  onRetry?: (attempt: number) => void
 ): Promise<T> {
   let lastError: unknown;
 
@@ -63,6 +84,11 @@ export async function retryAsync<T>(
       if (attempt < maxRetries) {
         const delay = baseDelayMs * Math.pow(2, attempt);
         console.warn(`[retryAsync] Attempt ${attempt + 1} failed, retrying in ${delay}ms...`);
+        try {
+          onRetry?.(attempt + 1);
+        } catch {
+          /* a caller's bookkeeping must never break the retry it is watching */
+        }
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }

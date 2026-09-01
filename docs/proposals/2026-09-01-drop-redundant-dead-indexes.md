@@ -1,6 +1,8 @@
 # Proposal: drop 130 redundant, never-scanned indexes
 
-Status: **NOT APPLIED. Awaiting Dan's word.**
+Status: **APPLIED 2026-09-01.** Dan authorised it ("IF WE DON'T NEED THEM REMOVE THEM").
+All 130 dropped, 106 MB reclaimed, every one recoverable from `ca_dropped_index_ledger`.
+Kept as the written record of why they were safe to drop and how to put any of them back.
 Author: Cowork Claude, 2026-09-01 (Phase 4).
 
 ## What

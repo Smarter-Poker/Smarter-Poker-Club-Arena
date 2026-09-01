@@ -87,6 +87,7 @@
     "ca_ddl_events",
     "ca_diamond_snapshots",
     "ca_drift_incidents",
+    "ca_dropped_index_ledger",
     "ca_engine_deploy_attempts",
     "ca_financial_epochs",
     "ca_frozen_pool_baseline",

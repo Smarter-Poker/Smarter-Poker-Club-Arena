@@ -16,6 +16,7 @@ import { useLocation } from 'react-router-dom';
 import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import styles from './FloatingHamburger.module.css';
+import { CommandGridIcon } from './CommandGridIcon';
 
 // Routes where the floating button should not appear
 const HIDDEN_ROUTES = ['/auth', '/share/'];
@@ -48,12 +49,7 @@ export default function FloatingHamburger() {
       aria-label="Open Menu"
       id="floating-hamburger-btn"
     >
-      <img
-        className={styles.icon}
-        src={`${import.meta.env.BASE_URL}images/global-header/command-center-v1.png`}
-        alt=""
-        draggable={false}
-      />
+      <CommandGridIcon className={styles.icon} />
     </button>
   );
 }

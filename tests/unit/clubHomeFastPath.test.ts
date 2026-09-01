@@ -25,6 +25,14 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const src = readFileSync(path.resolve(__dirname, '../..', 'src/pages/ClubHomePage.tsx'), 'utf8');
+const scopedPlayingMigration = readFileSync(
+  path.resolve(
+    __dirname,
+    '../..',
+    'supabase/migrations/20260831223000_club_home_playing_is_club_scoped.sql'
+  ),
+  'utf8'
+);
 
 const at = (needle: string) => {
   const i = src.indexOf(needle);
@@ -85,5 +93,15 @@ describe('the club lobby paints from one round trip', () => {
       rpcBlock.split('if (stale() || (getIsMounted && !getIsMounted())) return;').length - 1,
       'both the players-playing write and the list paint must be guarded'
     ).toBe(2);
+  });
+
+  it('never reuses another club’s playing count', () => {
+    expect(src).toContain('setPlayersPlaying(null);');
+    expect(src).toContain('ClubHomePage.players_playing_realtime_refresh_failed');
+    expect(src).toContain("supabase.rpc('get_club_home'");
+    expect(src).toContain('refreshScopedPlaying();');
+    expect(scopedPlayingMigration).toContain('tb.club_id, tb.is_private, tb.union_id,');
+    expect(scopedPlayingMigration).toContain('v_union_id, v_club.id, v_union_club_ids);');
+    expect(scopedPlayingMigration).toContain('public.get_club_home(v_club.id::text)');
   });
 });

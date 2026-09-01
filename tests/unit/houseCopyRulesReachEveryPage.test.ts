@@ -5,6 +5,23 @@
  *   1. "the first letter of every word is capitalized ... every page and subpage"
  *   2. "forbid the use of em bars" / "any and all m bars ... are banned"
  *
+ * WHAT "EM BARS" MEANS, BECAUSE IT HAS ALREADY BEEN MISREAD TWICE
+ *
+ * Dan's phrase "em bars" means EM DASHES: the punctuation mark, U+2014.
+ * This is a rule about COPY -- the characters inside text a player reads.
+ * It is NOT a rule about artwork, icons, or anything shaped like a line,
+ * and it does NOT ban the hamburger menu.
+ *
+ * Read the other way it has now cost the hamburger menu twice in two days:
+ * #2321 replaced it with a gear on every trigger, deleted the approved
+ * rasters, and added a law forbidding its return; #2429 did it again with a
+ * six-tile grid after #2401 reverted the first one. Each time Dan opened the
+ * app and found a different icon where his menu button used to be.
+ *
+ * If you are about to ban "bars" anywhere near an ICON, you have misread this
+ * sentence. The hamburger is the menu. See
+ * tests/hamburger-never-regresses.law.test.ts.
+ *
  * Both rules already had gates. Both gates had a surface they could not see, and
  * in each case the escape was real and shipped:
  *
@@ -179,21 +196,22 @@ describe('title case reaches the popups React never renders', () => {
   });
 });
 
-describe('the live source obeys both rules', () => {
-  const run = (script: string) => {
-    try {
-      execFileSync(process.execPath, [script], { stdio: 'pipe' });
-      return 0;
-    } catch (err) {
-      return (err as { status?: number }).status ?? -1;
-    }
-  };
-
-  it('has no em dash a player can read', () => {
-    expect(run(UI_TEXT)).toBe(0);
-  });
-
-  it('has no lowercase word in static page copy', () => {
-    expect(run(TITLE_CASE)).toBe(0);
-  });
-});
+/*
+ * WHAT USED TO BE HERE, AND WHY IT IS NOT.
+ *
+ * Two tests that shelled out to run check-ui-text and check-title-case over the
+ * whole of src/ and asserted exit 0. They duplicated ci.yml steps 247 and 257,
+ * which are dedicated blocking checks and run the same two scripts on every PR,
+ * so they added no coverage at all - and on 2026-08-31 one of them went red
+ * inside a 766-file parallel run while passing on its own and while the gate it
+ * shells out to exited 0.
+ *
+ * A false red here is not cheap. A red client suite stops build-for-world-hub
+ * and therefore the publish for the whole estate (CLAUDE.md 5.8). A test whose
+ * only contribution is a second opinion on a required check, bought with a
+ * subprocess competing for CPU against 765 other files, is a liability.
+ *
+ * The tests above keep the part that is not duplicated: proof that the gates
+ * catch the two blind spots that let a real defect ship, run against small
+ * fixtures rather than the whole tree.
+ */

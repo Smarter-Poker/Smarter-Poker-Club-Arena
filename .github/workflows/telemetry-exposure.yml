@@ -1,0 +1,94 @@
+# -----------------------------------------------------------------------------
+# THE OPERATOR CONSOLE MUST NOT BE OPEN TO THE BROWSER
+#
+# fn_chip_integrity_report() returns the platform's total chip supply, the
+# ledger's throughput, and which invariant is currently failing. It is SECURITY
+# DEFINER, so RLS does not apply to it, and `authenticated` could execute it.
+# Any account that could log in could read all of that. Thirty-eight routines
+# were in that shape.
+#
+# They are closed. This is the reader that keeps the closure true, because a
+# sweep with nothing re-checking it is a closure with a date on it - the same
+# lesson as v_system_health_cron watching three job-name prefixes out of
+# seventy-five.
+#
+# THE DEFAULT IS OPEN. Postgres grants EXECUTE to PUBLIC on every new function,
+# so a migration that creates a SECURITY DEFINER function and forgets to revoke
+# has published it to the browser. That is not a hypothetical: it is how most of
+# the thirty-eight got there. Which is why this runs on PRs too, not only on a
+# schedule.
+#
+# RED means: a routine is SECURITY DEFINER, browser-executable, takes no
+# identity argument, never consults the caller, and is not recorded on
+# ca_browser_definer_allowlist with a written reason.
+# -----------------------------------------------------------------------------
+name: Telemetry Exposure
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/**'
+      - 'scripts/ci/check-telemetry-exposure.mjs'
+      - '.github/workflows/telemetry-exposure.yml'
+  schedule:
+    # Twice a day. A grant made by a migration that skipped the PR path still
+    # gets found within twelve hours.
+    - cron: '10 6,18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: telemetry-exposure-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: No unscoped definer answers a browser
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Use Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Ask the database what a browser can still execute
+        id: telemetry
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -o pipefail
+          # Exit 1 = something is open. Exit 2 = the script could not run at all
+          # (no credentials, guard missing). Both must be visible.
+          set +e
+          node scripts/ci/check-telemetry-exposure.mjs 2>&1 | tee /tmp/telemetry.log
+          echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          set -e
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Unscoped SECURITY DEFINER routines a browser can execute"
+            echo ""
+            echo '```'
+            cat /tmp/telemetry.log 2>/dev/null || echo "(the check produced no output)"
+            echo '```'
+            echo ""
+            echo "Postgres grants EXECUTE to PUBLIC on every new function, so a migration"
+            echo "that creates a SECURITY DEFINER function and does not revoke has published"
+            echo "it to the browser. Revoke it, or record the decision and its reason in"
+            echo "\`public.ca_browser_definer_allowlist\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail the run when the console is open
+        if: steps.telemetry.outputs.status != '0'
+        run: |
+          echo "::error title=Operator console reachable::A browser can execute an unscoped SECURITY DEFINER routine. See the job summary."
+          exit 1

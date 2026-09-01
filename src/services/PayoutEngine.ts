@@ -204,11 +204,11 @@ class PayoutEngineClass {
     const n = Math.max(2, Math.floor(playerCount) || 2);
     const spec: Record<string, { pct: number; minPlaces: number; alpha: number }> = {
       payout1: { pct: 0.1, minPlaces: 1, alpha: 1.5 },
-      payout2: { pct: 0.15, minPlaces: 2, alpha: 1.25 },
-      payout3: { pct: 0.2, minPlaces: 3, alpha: 1.0 },
+      payout2: { pct: 0.125, minPlaces: 1, alpha: 1.25 },
+      payout3: { pct: 0.15, minPlaces: 1, alpha: 1.0 },
     };
     const s = spec[choice] ?? spec.payout1;
-    const paidPlaces = Math.max(1, Math.min(n - 1, Math.max(s.minPlaces, Math.floor(n * s.pct))));
+    const paidPlaces = Math.max(1, Math.min(n - 1, Math.max(s.minPlaces, Math.round(n * s.pct))));
     // 1-3 places: the standard canned shapes (100 / 65-35 / 50-30-20).
     if (paidPlaces <= 3) return this.normalizePayouts(this.generateSmoothPayouts(paidPlaces));
     // 4+ places: power-law weights 1/place^alpha. A higher alpha concentrates

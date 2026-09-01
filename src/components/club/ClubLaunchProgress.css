@@ -177,6 +177,23 @@
   background: linear-gradient(180deg, rgb(12 34 27 / 80%), rgb(5 16 13 / 92%));
 }
 
+.club-launch__step.is-skipped {
+  border-color: rgb(181 153 88 / 36%);
+  opacity: 0.82;
+}
+
+.club-launch__step-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.club-launch__step-actions .is-skip {
+  min-width: 54px;
+  border-color: rgb(181 153 88 / 45%);
+  background: rgb(80 61 20 / 28%);
+  color: #e6c978;
+}
+
 .club-launch__step-number {
   width: 32px;
   height: 32px;

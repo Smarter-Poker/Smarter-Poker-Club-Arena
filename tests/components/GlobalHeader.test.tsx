@@ -93,10 +93,11 @@ describe('GlobalHeader Component', () => {
     expect(screen.getByRole('button', { name: /Go Back/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Go To The Hub/i })).toBeInTheDocument();
 
-    expect(screen.getByAltText('Command Center')).toHaveAttribute(
-      'src',
-      expect.stringContaining('images/global-header/command-center-v1.png')
-    );
+    expect(
+      screen
+        .getByRole('button', { name: /Open Menu/i })
+        .querySelector('[data-command-grid="six-tile"]')
+    ).toBeInTheDocument();
     expect(screen.getByAltText('Back')).toHaveAttribute(
       'src',
       expect.stringContaining('images/global-header/back.png')

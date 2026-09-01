@@ -57,11 +57,13 @@
  */
 
 import { readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
-import { join, extname } from 'node:path';
+import { join, extname, resolve } from 'node:path';
 import ts from 'typescript';
 
 const ROOT = new URL('../../', import.meta.url).pathname;
-const SRC = join(ROOT, 'src');
+const SRC = process.env.PAINTED_TEXT_SOURCE_DIR
+  ? resolve(process.env.PAINTED_TEXT_SOURCE_DIR)
+  : join(ROOT, 'src');
 const SKIP_DIRS = new Set(['node_modules', 'dist', '_to_delete', '__tests__', 'test-results']);
 const FIX = process.argv.includes('--fix');
 
@@ -146,6 +148,37 @@ const titleCase = (s) =>
     .replace(WORD_START, (_, boundary, letter) => boundary + letter.toUpperCase())
     .replace(QUOTED_WORD_START, (_, boundary, quote, letter) => boundary + quote + letter.toUpperCase());
 
+
+/**
+ * AN ESCAPE SEQUENCE IS NOT A LETTER, AND --fix MUST NOT REWRITE ONE (2026-08-31).
+ *
+ * The rewrite reads `lit.text` - the COOKED value, escapes already resolved -
+ * and splices it back into the RAW span between the quotes. For a literal with
+ * no escapes those are the same string and nothing is lost. For one containing
+ * `\n` they are not, and the fixer writes a REAL NEWLINE into the middle of a
+ * single-quoted string:
+ *
+ *     desc:'Android - HD LCD - Built-in Speaker\nTempered Glass'
+ *  -> desc:'Android - HD LCD - Built-In Speaker
+ *     Tempered Glass'                            <- unterminated. Build fails.
+ *
+ * Caught on the World Hub, where this gate was being ported and `\n` is common
+ * in painted copy. Club Arena has 78 literals carrying a real escape; none is
+ * currently an offender, so the fixer has never reached one. That is luck, not
+ * safety - the next lower-case painted string containing `\n` fires it.
+ *
+ * Same shape as the regex-literal hazard in check-ui-text.mjs, and the same
+ * answer: a value this script cannot rewrite BYTE-FOR-BYTE is REPORTED for a
+ * human, never guessed at. Detection is exact rather than a regex over escape
+ * shapes - if the raw source between the quotes differs from the cooked value
+ * at all, splicing the cooked value back in would change something.
+ */
+function rawMatchesCooked(lit, sf, text) {
+  return text.slice(lit.getStart(sf) + 1, lit.getEnd() - 1) === lit.text;
+}
+
+const unsafe = [];
+
 const offenders = [];
 
 for (const file of sourceFiles(SRC)) {
@@ -219,6 +252,10 @@ for (const file of sourceFiles(SRC)) {
         const cased = titleCase(value);
         if (cased === value) continue;
         const { line } = sf.getLineAndCharacterOfPosition(lit.getStart(sf));
+        if (!rawMatchesCooked(lit, sf, text)) {
+          unsafe.push({ file: file.replace(ROOT, ''), line: line + 1, attr: 'rendered text', from: value });
+          continue;
+        }
         offenders.push({
           file: file.replace(ROOT, ''),
           line: line + 1,
@@ -247,6 +284,16 @@ for (const file of sourceFiles(SRC)) {
       const cased = isProse(value) ? titleCase(value) : value;
       if (cased !== value) {
         const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+        if (!rawMatchesCooked(node.initializer, sf, text)) {
+          unsafe.push({
+            file: file.replace(ROOT, ''),
+            line: line + 1,
+            attr: node.name.getText(sf),
+            from: value,
+          });
+          ts.forEachChild(node, walk);
+          return;
+        }
         offenders.push({
           file: file.replace(ROOT, ''),
           line: line + 1,
@@ -272,6 +319,25 @@ for (const file of sourceFiles(SRC)) {
     }
     writeFileSync(file, out);
   }
+}
+
+/**
+ * The escapes are reported whether or not anything else is wrong, and BEFORE
+ * the OK line, so a clean run still shows what the fixer declined to touch. A
+ * hazard the tool silently swallows is a hazard the next person walks into.
+ */
+if (unsafe.length > 0) {
+  console.error(
+    `\ncheck-painted-text-case: ${unsafe.length} lower-case painted string(s) contain an ESCAPE`
+  );
+  console.error('SEQUENCE and were left alone. --fix would splice the cooked value back');
+  console.error('into the raw source and turn \\n into a real newline, breaking the file.');
+  console.error('Retype these by hand, or split the escape out of the copy:\n');
+  for (const u of unsafe.slice(0, 20)) {
+    console.error(`  ${u.file}:${u.line}  ${u.attr}: ${JSON.stringify(u.from).slice(0, 100)}`);
+  }
+  if (unsafe.length > 20) console.error(`  ... and ${unsafe.length - 20} more`);
+  console.error('');
 }
 
 if (offenders.length === 0) {

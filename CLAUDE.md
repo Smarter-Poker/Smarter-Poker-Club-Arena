@@ -544,6 +544,25 @@ matter what setting, however opt-in, is proposed to gate it. Enforced by
 
 ---
 
+## 10.7 EM DASH COPY AND M-BAR ARTWORK ARE SEPARATE BANS (BINDING)
+
+There are two independent user instructions:
+
+- Player-facing copy may not contain em dashes (U+2014). The copy transforms
+  and CI text gate enforce this punctuation rule.
+- No M bars or three-horizontal-line menu artwork. This is separately banned
+  everywhere, including inside images. Navigation behavior and accessible
+  names remain, while every visible drawer trigger uses the approved
+  command-grid artwork.
+
+Do not infer that clarification of the punctuation rule permits hamburger
+bars. It does not. Do not add or restore three-line glyphs, SVG paths,
+rectangle geometry, rasters, composite headers, or generated bundle content.
+The canonical law is `tests/unit/noThreeBarArtwork.law.test.ts`; the six retired
+stable URLs must remain absent and cache-tombstoned in `public/sw-bus.js`.
+
+---
+
 ## 11. AGENT NETWORK + DEPLOY PLAYBOOK (added 2026-07-23, binding; corrected same day after live use)
 
 Cloud Cowork sessions have a locked-down sandbox. Learn the map ONCE and never

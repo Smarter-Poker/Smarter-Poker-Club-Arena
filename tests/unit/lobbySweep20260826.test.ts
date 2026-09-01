@@ -354,12 +354,9 @@ describe('the page tells the truth when it has nothing to show', () => {
     expect(CLUB_HOME).toContain("toast.error('Failed to load club data')");
   });
 
-  it('survives storage that throws instead of returning null', () => {
-    /* Safari private mode and a sandboxed frame both throw. The unwrapped read
-       landed in the outer catch and put a red error toast over a lobby that had
-       already loaded. */
-    expect(CLUB_HOME).not.toMatch(/!sessionStorage\.getItem\(levelRecomputeKey\)/);
-    expect(CLUB_HOME).toContain('const levelRecomputeDone = (() => {');
+  it('does not use browser storage to control club-level correctness', () => {
+    expect(CLUB_HOME).not.toContain('levelRecomputeKey');
+    expect(CLUB_HOME).not.toContain("rpc('recompute_club_levels'");
   });
 
   it('opens Filters and Create Game on a slug route the resolver never answered', () => {

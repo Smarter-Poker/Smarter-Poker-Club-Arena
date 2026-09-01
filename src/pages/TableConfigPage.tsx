@@ -52,6 +52,8 @@ import { tournamentScheduleService } from '../services/TournamentScheduleService
 import WeeklyScheduleEditor, {
   validateWeeklySchedule,
 } from '../components/tournament/WeeklyScheduleEditor';
+import { HelpPopover } from '../components/common/HelpPopover';
+import { getTableState } from '../services/GameServerAPI';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -426,7 +428,7 @@ const DEFAULT_CONFIG: TableConfig = {
   buyIn: 100,
   customBuyIn: false,
   blindStructure: 'standard',
-  payoutStructure: 'payout1',
+  payoutStructure: 'payout3',
   startingChips: 1000,
   blindsUpMinutes: 3,
   sngPlayerCount: 9,
@@ -502,18 +504,23 @@ const Toggle = ({
   <div className="config-toggle">
     <span className="toggle-label">
       {label}
-      {tooltip && (
-        <span className="tooltip-icon" title={tooltip}>
-          ?
-        </span>
-      )}
+      {tooltip && <HelpPopover label={label}>{tooltip}</HelpPopover>}
     </span>
-    <label className="toggle-switch">
-      <input type="checkbox" checked={value} onChange={(e) => onChange(e.target.checked)} />
-      <span className="toggle-track">
-        <span className="toggle-thumb"></span>
+    <label className="table-config-switch">
+      <input
+        className="table-config-switch__input"
+        type="checkbox"
+        role="switch"
+        aria-label={label}
+        checked={value}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span className="table-config-switch__track" aria-hidden="true">
+        <span className="table-config-switch__thumb" />
       </span>
-      <span className={`toggle-status ${value ? 'on' : 'off'}`}>{value ? 'ON' : 'OFF'}</span>
+      <span className={`table-config-switch__status ${value ? 'is-on' : 'is-off'}`}>
+        {value ? 'On' : 'Off'}
+      </span>
     </label>
   </div>
 );
@@ -545,11 +552,7 @@ const Slider = ({
       <span className="slider-label">
         {label}: {format ? format(value) : `${value}${suffix}`}
         {format ? '' : ''}
-        {tooltip && (
-          <span className="tooltip-icon" title={tooltip}>
-            ?
-          </span>
-        )}
+        {tooltip && <HelpPopover label={label}>{tooltip}</HelpPopover>}
       </span>
     </div>
     <div className="slider-track-container">
@@ -591,11 +594,7 @@ const NumberField = ({
   <div className="config-toggle">
     <span className="toggle-label">
       {label}
-      {tooltip && (
-        <span className="tooltip-icon" title={tooltip}>
-          ?
-        </span>
-      )}
+      {tooltip && <HelpPopover label={label}>{tooltip}</HelpPopover>}
     </span>
     <input
       type="number"
@@ -1608,6 +1607,16 @@ export default function TableConfigPage() {
         clubId: clubId || undefined,
         table: data,
       });
+      // A durable row is only half of "Create And Start". Force the same
+      // authenticated engine wake that reconnects use and refuse to navigate
+      // to a dead felt. The state endpoint now adopts an eligible empty cash
+      // table on demand, so this also verifies Supabase -> engine wiring.
+      const engineState = await getTableState(data.id);
+      if (!engineState) {
+        throw new Error(
+          'Table Was Saved, But The Table Engine Did Not Connect. Please Try Start Again.'
+        );
+      }
       toast.success('Table created and started!');
       navigate(`/table/${data.id}`);
     } catch (error) {
@@ -1805,7 +1814,7 @@ export default function TableConfigPage() {
                         checked={config.bombPotTriggerMode === 'every_n_hands'}
                         onChange={() => updateConfig('bombPotTriggerMode', 'every_n_hands')}
                       />
-                      <span>Every N Hands</span>
+                      <span>Every Set Number Of Hands</span>
                     </label>
                     <label className="radio-option">
                       <input
@@ -1837,15 +1846,21 @@ export default function TableConfigPage() {
                   </div>
                 </div>
                 {config.bombPotTriggerMode === 'every_n_hands' && (
-                  <Slider
-                    label="Bomb Pot Every"
-                    value={config.bombPotFrequency}
-                    onChange={(v) => updateConfig('bombPotFrequency', v)}
-                    min={5}
-                    max={50}
-                    step={5}
-                    suffix=" hands"
-                  />
+                  <>
+                    <div className="config-inline-help" role="note">
+                      <strong>How This Schedule Works</strong>
+                      <span>Every {config.bombPotFrequency}th Dealt Hand Is A Bomb Pot.</span>
+                    </div>
+                    <Slider
+                      label="Bomb Pot Hand Interval"
+                      value={config.bombPotFrequency}
+                      onChange={(v) => updateConfig('bombPotFrequency', v)}
+                      min={5}
+                      max={50}
+                      step={5}
+                      suffix=" Hands"
+                    />
+                  </>
                 )}
                 {config.bombPotTriggerMode === 'timed' && (
                   <Slider
@@ -2369,9 +2384,7 @@ export default function TableConfigPage() {
               <div className="config-toggle">
                 <span className="toggle-label">
                   Players
-                  <span className="tooltip-icon" title="Number Of Players In SNG">
-                    ?
-                  </span>
+                  <HelpPopover label="Players">Number Of Players In SNG</HelpPopover>
                 </span>
                 <select
                   className="config-select sng-player-select"
@@ -2469,12 +2482,9 @@ export default function TableConfigPage() {
             <div className="config-toggle">
               <span className="toggle-label">
                 Fee
-                <span
-                  className="tooltip-icon"
-                  title="Taken Out Of The Buy-In, Never Added On Top. Spins Carry No Fee."
-                >
-                  ?
-                </span>
+                <HelpPopover label="Fee">
+                  Taken Out Of The Buy-In, Never Added On Top. Spins Carry No Fee.
+                </HelpPopover>
               </span>
               <span style={{ color: '#1877f2', fontWeight: 600, fontSize: '0.85rem' }}>
                 {config.gameMode === 'sng'
@@ -2557,19 +2567,19 @@ export default function TableConfigPage() {
             <div className="config-toggle">
               <span className="toggle-label">
                 Payout Structure
-                <span className="tooltip-icon" title="Prize Distribution">
-                  ?
-                </span>
+                <HelpPopover label="Payout Structure">Prize Distribution</HelpPopover>
               </span>
               <select
                 className="config-select"
                 value={config.payoutStructure}
                 onChange={(e) => updateConfig('payoutStructure', e.target.value as PayoutStructure)}
               >
-                <option value="payout1">Payout 1</option>
-                <option value="payout2">Payout 2</option>
-                <option value="payout3">Payout 3</option>
-                <option value="winner_take_all">Winner Take All</option>
+                <option value="payout1">Top 10% Of Field</option>
+                <option value="payout2">Top 12.5% Of Field</option>
+                <option value="payout3">Top 15% Of Field (Standard)</option>
+                {config.gameMode === 'sng' && (
+                  <option value="winner_take_all">Winner Take All</option>
+                )}
               </select>
             </div>
 
@@ -2794,12 +2804,11 @@ export default function TableConfigPage() {
             <div className="config-toggle">
               <span className="toggle-label">
                 Multi-Day MTT
-                <span
-                  className="tooltip-icon"
-                  title="Day 2 Resume And Flight Merging Are Not Built. Setting This Would Badge The Event Multi-Day While It Played Down To One Winner In A Single Session, So It Is Refused Rather Than Promised."
-                >
-                  ?
-                </span>
+                <HelpPopover label="Multi-Day MTT">
+                  Day 2 Resume And Flight Merging Are Not Built. Setting This Would Badge The Event
+                  Multi-Day While It Played Down To One Winner In A Single Session, So It Is Refused
+                  Rather Than Promised.
+                </HelpPopover>
               </span>
               <span className="toggle-status off">NOT AVAILABLE YET</span>
             </div>

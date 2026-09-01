@@ -1,3 +1,24 @@
+# RULE 0 - TWO DISTINCT USER RULES: EM DASHES AND M-BAR ARTWORK
+
+The user has issued two separate binding rules. They must never be collapsed
+into one another:
+
+1. **No em dashes in player-facing copy.** "Em bars" in the copy-style request
+   means the U+2014 punctuation character. The shared copy transforms and CI
+   text gate enforce that rule.
+2. **No M bars or three-horizontal-line menu artwork.** In the later navigation
+   request the user explicitly banned M bars anywhere, including inside images.
+   No three-line glyph, SVG geometry, raster, composite header, or generated
+   bundle may restore hamburger bars. Navigation drawers keep their behavior
+   and accessible names, but their visible trigger is a command grid.
+
+The artwork rule is enforced by
+`tests/unit/noThreeBarArtwork.law.test.ts`. Never replace it with a counter-law
+that requires hamburger bars. The six retired stable URLs remain absent and
+must stay cache-tombstoned in `public/sw-bus.js`.
+
+---
+
 # RULE 1 — VERIFICATION PASS. Do not take your own word for it.
 
 Every claim below needs a command behind it, and you must paste the output.

@@ -56,4 +56,17 @@ describe('post-deploy E2E concurrency', () => {
       '[customization-realtime] second player remained isolated'
     );
   });
+
+  it('rehydrates realtime settings with one bounded Studio navigation', () => {
+    expect(realtimeCertification).not.toContain(
+      "mobilePage.reload({ waitUntil: 'domcontentloaded' })"
+    );
+    expect(realtimeCertification).toContain('mobileStudio = await openStudio(mobilePage)');
+    expect(realtimeCertification).toContain(
+      "page.goto('./', { waitUntil: 'domcontentloaded', timeout: 60_000 })"
+    );
+    expect(realtimeCertification).toContain(
+      '[customization-realtime] persisted appearance survived a device reload'
+    );
+  });
 });

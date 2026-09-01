@@ -371,7 +371,11 @@ test.describe('production Table Studio realtime contract', () => {
       }
 
       const finalPrimary = await readAppearance(primaryStudio);
-      await mobilePage.reload({ waitUntil: 'domcontentloaded' });
+      // openStudio performs a fresh, bounded navigation before reopening the
+      // modal. A separate reload here duplicated that navigation and could
+      // leave Playwright waiting forever for a lifecycle event even though the
+      // production page had already rendered. The navigation below remains a
+      // genuine cold rehydrate from the persisted account settings.
       mobileStudio = await openStudio(mobilePage);
       await expectAppearance(mobileStudio, finalPrimary);
       console.log('[customization-realtime] persisted appearance survived a device reload');

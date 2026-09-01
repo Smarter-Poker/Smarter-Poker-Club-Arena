@@ -2273,20 +2273,20 @@
 
   .lobby-top__wallet {
     grid-column: auto;
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     align-self: stretch;
     width: 100%;
     max-width: 100%;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow: visible;
   }
 
   .lobby-wallets-content,
   .lobby-wallets-content__inner,
   .lobby-top__wallet .dw__rows {
-    height: 100%;
+    height: auto;
   }
 
   .lobby-wallets-content__inner {
@@ -2295,7 +2295,7 @@
   }
 
   .lobby-top__wallet .dw {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     width: 100%;
     max-width: 100%;
     min-height: 0;
@@ -2313,33 +2313,16 @@
     gap: 5px;
   }
 
-  /* The approved desktop command column has three visible accounts. The
-     authorized remainder stays in this same live wallet DOM and remains
-     available through Cashier; mobile reveals the complete list. */
+  /* DynamicWallet already emits exactly the rows authorized for this role.
+     Desktop must not hide any of them: the command rail scrolls, so Club Bank,
+     Promo, Agent, Player, Rake, BBJ backup, and Spins remain visible and open
+     whenever that viewer's role is entitled to the account. */
   .lobby-top__wallet .dw--lobby-board .dw__row {
-    display: none;
-  }
-
-  .lobby-top__wallet .dw--lobby-board .dw__row[data-wallet-key='diamonds'],
-  .lobby-top__wallet .dw--lobby-board .dw__row[data-wallet-key='club_bank'],
-  .lobby-top__wallet .dw--lobby-board .dw__row[data-wallet-key='agent_wallet'],
-  .lobby-top__wallet .dw--lobby-board .dw__row[data-wallet-key='player_wallet'] {
     display: block;
     flex: 0 0 auto;
     width: 100%;
     max-width: 100%;
     aspect-ratio: 1800 / 334;
-  }
-
-  .lobby-top__wallet .dw--lobby-board .dw__row[data-wallet-key='player_wallet'] {
-    order: 4;
-  }
-
-  .lobby-top__wallet
-    .dw--lobby-board
-    .dw__row[data-wallet-key='club_bank']
-    ~ .dw__row[data-wallet-key='player_wallet'] {
-    display: none;
   }
 
   .lobby-top__wallet .dw--lobby-board .dw__row--wallet-art .dw__row-shell {

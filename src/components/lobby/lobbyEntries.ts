@@ -24,7 +24,11 @@ import {
   tournamentLevel,
 } from './tournamentFigures';
 import { cashBuyInLabel, cashBuyInRange } from '../../lib/cashBuyIn';
-import { spinMultiplierLabel } from '../../utils/spinReveal';
+import {
+  spinMultiplierLabel,
+  isSpinTournament,
+  spinMultiplierRevealed,
+} from '../../utils/spinReveal';
 import { SPIN_TIERS } from '../../config/spinSpec';
 
 // ─── Raw row shapes (subset the lobby queries actually select) ─────────────
@@ -1266,6 +1270,16 @@ export function stackDepthLabel(entry: LobbyEntry): string | null {
   const t = entry.raw as LobbyTournamentRow;
   const named = tournamentSpeed(t.name);
   if (named) return named;
+
+  /**
+   * A SPIN'S STACK IS NOT KNOWN UNTIL THE WHEEL HAS TURNED (2026-09-01).
+   * `starting_chips` is seeded at 300 and rewritten at draw time, so this
+   * derived "Turbo" from a placeholder - and a 100x deals 5,000 chips at 250
+   * big blinds, which is the opposite of Turbo. Before the draw there is no
+   * honest depth label; the caller falls back to the speed label it already
+   * has. After the draw the column is the truth and this reads it as before.
+   */
+  if (isSpinTournament(t) && !spinMultiplierRevealed(t)) return null;
 
   const chips = Number(t.starting_chips) || 0;
   if (chips <= 0) return null;

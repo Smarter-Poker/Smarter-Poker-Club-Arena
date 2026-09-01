@@ -8,6 +8,8 @@ import {
 } from '../lobbyEntries';
 import { tournamentBlinds, tournamentLevel } from '../tournamentFigures';
 import type { ArenaGameCardData, ArenaGameFamily, ArenaGameStatus } from './arenaGameCardTypes';
+import { spinStartingStackRange } from '../../../config/spinSpec';
+import { isSpinTournament, spinMultiplierRevealed } from '../../../utils/spinReveal';
 
 function compactChipAmount(value: number): string {
   if (!Number.isFinite(value) || value < 1_000) return value.toLocaleString('en-US');
@@ -66,7 +68,26 @@ export function arenaGameCardDataFromEntry(entry: LobbyEntry): ArenaGameCardData
   const tournament = entry.kind === 'cash' ? null : (entry.raw as LobbyTournamentRow);
   const blinds = tournament ? tournamentBlinds(tournament) : null;
   const level = tournament ? tournamentLevel(tournament) : null;
+  /**
+   * A SPIN'S STACK IS NOT KNOWN UNTIL THE WHEEL HAS TURNED (2026-09-01).
+   * `starting_chips` is seeded at 300 and rewritten at draw time, so reading
+   * it raw made every Spin card claim 300 while 12.6% of games deal 1,000 or
+   * 5,000. Before the draw, print the range from the same tier table the draw
+   * uses; after it, the column is the truth. See spinStartingStackRange.
+   */
+  const spinStackUndrawn =
+    !!tournament &&
+    isSpinTournament(tournament as Parameters<typeof isSpinTournament>[0]) &&
+    !spinMultiplierRevealed(tournament as Parameters<typeof spinMultiplierRevealed>[0]);
   const startingStack = tournament ? Number(tournament.starting_chips) || 0 : 0;
+  const startingStackLabel = spinStackUndrawn
+    ? (() => {
+        const { min, max } = spinStartingStackRange();
+        return `${min.toLocaleString('en-US')}-${max.toLocaleString('en-US')}`;
+      })()
+    : startingStack > 0
+      ? startingStack.toLocaleString('en-US')
+      : undefined;
 
   return {
     id: entry.id,
@@ -88,7 +109,7 @@ export function arenaGameCardDataFromEntry(entry: LobbyEntry): ArenaGameCardData
           ? `${entry.players}/${entry.capacity}`
           : String(entry.players),
     startTime: timeLabel(entry.startTime),
-    startingStack: startingStack > 0 ? startingStack.toLocaleString('en-US') : undefined,
+    startingStack: startingStackLabel,
     currentLevel: level ? String(level) : undefined,
     currentBlinds: blinds || undefined,
     waitlist: entry.status === 'waitlist' ? entry.statusLabel : undefined,

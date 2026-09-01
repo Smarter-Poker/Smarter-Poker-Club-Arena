@@ -63,7 +63,7 @@ const countsByFile = (): Map<string, number> => {
 
 /** Frozen 2026-08-30 (Community Command Center). 262 occurrences. Only ever shrink. */
 const BASELINE = new Map<string, number>([
-  ['src/services/HorseOrchestrator.ts', 11],
+  ['src/services/HorseOrchestrator.ts', 8],
   // 13 -> 12: phase 3 of 7 removed distributeFromTreasury, distributeChips and
   // transferToAgent, and rewired transferToPlayer onto fn_agent_wallet_send.
   ['src/services/AgentService.ts', 12],
@@ -115,7 +115,6 @@ const BASELINE = new Map<string, number>([
   ['src/services/MembershipService.ts', 2],
   ['src/services/LeaderboardService.ts', 2],
   ['src/services/HydraService.ts', 2],
-  ['src/services/GTOQueryService.ts', 2],
   ['src/services/FinancialExportService.ts', 2],
   ['src/services/BonusService.ts', 2],
   ['src/services/AchievementTriggerService.ts', 1],
@@ -134,7 +133,7 @@ const BASELINE = new Map<string, number>([
   ['src/components/bbj/BBJTicker.tsx', 2],
   ['src/components/agent/PlayerInviteModal.tsx', 2],
   ['src/components/agent/AgentPromoPanel.tsx', 2],
-  ['src/components/agent/AgentAnalyticsDashboard.tsx', 2],
+  ['src/components/agent/AgentAnalyticsDashboard.tsx', 1],
   ['src/components/admin/ArenaLedger.tsx', 2],
   ['src/utils/unionScope.ts', 1],
   // 1 -> 0 on 2026-08-29. The discarded read was in filterByPreferences(),

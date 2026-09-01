@@ -251,13 +251,61 @@ describe('CommissionService', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('approvePayout', () => {
-    it('should update status to approved with metadata', async () => {
-      mockMaybeSingle.mockResolvedValueOnce({ error: null });
+    /**
+     * The title of this test used to say "should update status to approved with
+     * metadata". It has not done that since the payout tables went: the method
+     * is a retired no-op that logs and returns false, and the assertion only
+     * ever checked that it did not throw - which a no-op cannot. A test name
+     * describing behaviour the code does not have is a promise nobody is
+     * keeping, in the same family as the columns and tables phase 7 removed.
+     */
+    it('is retired: returns false, touches nothing, approves nobody', async () => {
+      mockRpc.mockClear();
+      mockUpsert.mockClear();
 
-      // approvePayout updates status — verify it doesn't throw
-      await expect(
-        CommissionService.approvePayout('payout-1', 'admin-user')
-      ).resolves.not.toThrow();
+      await expect(CommissionService.approvePayout('payout-1', 'admin-user')).resolves.toBe(false);
+
+      expect(mockRpc).not.toHaveBeenCalled();
+      expect(mockUpsert).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // WHAT A DOWNLINE IS OWED
+  // ─────────────────────────────────────────────────────────────────────────
+  //
+  // The Sub-Agents tab printed agents.pending_commission until phase 7 - a
+  // column nothing wrote. It cannot select from agent_commissions instead: RLS
+  // gives an agent their OWN rows and nobody else's, which is why this goes
+  // through a definer function scoped to the caller's own downline.
+
+  describe('downlineCommission', () => {
+    it('asks the scoped RPC and maps what it answers', async () => {
+      mockRpc.mockResolvedValueOnce({
+        data: [
+          { agent_id: 'a1', user_id: 'u1', club_id: 'c1', unclaimed: '120.50' },
+          { agent_id: 'a2', user_id: 'u2', club_id: 'c1', unclaimed: 0 },
+        ],
+        error: null,
+      });
+
+      const rows = await CommissionService.downlineCommission();
+
+      expect(mockRpc).toHaveBeenCalledWith('fn_agent_downline_commission', {
+        p_club_id: null,
+      });
+      expect(rows).toEqual([
+        { agentId: 'a1', userId: 'u1', unclaimed: 120.5 },
+        { agentId: 'a2', userId: 'u2', unclaimed: 0 },
+      ]);
+    });
+
+    it('throws rather than reporting zero when the read fails', async () => {
+      // A denied or failed read is not a downline that is owed nothing. The
+      // dashboard binds this error; it must not arrive as an empty list.
+      mockRpc.mockResolvedValueOnce({ data: null, error: { message: 'denied' } });
+
+      await expect(CommissionService.downlineCommission()).rejects.toBeDefined();
     });
   });
 });

@@ -302,9 +302,15 @@ export const AgentFinancialPortal: React.FC<AgentPortalProps> = ({ agentId }) =>
       {/* COMMISSION TRENDS CHART */}
       <div className="bg-slate-800 p-6 rounded border border-gray-700 mt-6">
         <h3 className="font-bold text-lg mb-4"> Commission Trends (7 Days)</h3>
+        {/* This chart has commission data and no rake data - it fed rake: 0 for
+            every day, and the chart drew that as a flat "Rake" line at zero,
+            which reads as a week with no rake. The agent's downline rake lives
+            in fn_agent_downline_rake (the Downline Rake panel); until this
+            chart is given it, it shows only what it actually has. */}
         <FinancialChart
           data={commissionData}
           height={200}
+          showRake={false}
           showRakeback={false}
           showCommissions={true}
         />

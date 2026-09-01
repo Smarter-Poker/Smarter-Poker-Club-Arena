@@ -94,9 +94,7 @@ describe('GlobalHeader Component', () => {
     expect(screen.getByRole('button', { name: /Go To The Hub/i })).toBeInTheDocument();
 
     expect(
-      screen
-        .getByRole('button', { name: /Open Menu/i })
-        .querySelector('[data-command-grid="six-tile"]')
+      screen.getByRole('button', { name: /Open Menu/i }).querySelector('img[alt="Menu"]')
     ).toBeInTheDocument();
     expect(screen.getByAltText('Back')).toHaveAttribute(
       'src',

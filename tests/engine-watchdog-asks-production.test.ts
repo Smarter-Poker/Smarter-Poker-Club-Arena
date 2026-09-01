@@ -64,7 +64,7 @@ describe('it fails in the safe direction', () => {
   it('gives the catch-up schedule a grace window before raising anything', () => {
     // One missed twenty-minute tick is ordinary. Three in a row is the failure.
     expect(SH).toContain('GRACE_MIN="${GRACE_MIN:-45}"');
-    expect(SH).toContain('inside the ${GRACE_MIN}m grace window');
+    expect(SH).toContain('inside the grace window, says so and stops');
   });
 
   it('does not fail the job, because the alarm is the point', () => {

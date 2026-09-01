@@ -4,6 +4,7 @@
  */
 
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { MEDIA_BASE } from '../utils/mediaBase';
 import { useState, useEffect } from 'react';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useUserStore } from '../stores/useUserStore';
@@ -17,7 +18,6 @@ import { useClubTheme } from '../utils/clubThemeEngine';
 import { scheduleStaleCacheReaper } from '../utils/staleCacheReaper';
 import './Shell.css';
 import { reportError } from '../utils/errorReporter';
-import { CommandGridIcon } from './navigation/CommandGridIcon';
 
 // VIP Badge Component
 function VIPBadge() {
@@ -129,7 +129,11 @@ function ShellContent() {
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               aria-label="Menu"
             >
-              <CommandGridIcon />
+              <img
+                src={`${MEDIA_BASE}images/btn-hamburger.png`}
+                alt="Menu"
+                style={{ height: '100%', width: '100%', objectFit: 'contain' }}
+              />
             </button>
             <NavLink to="/" className="shell-logo-link">
               <span className="shell-logo-text">Hub</span>
@@ -241,7 +245,15 @@ function ShellContent() {
             aria-label={mobileMenuOpen ? 'Close Menu' : 'Open Menu'}
             aria-expanded={mobileMenuOpen}
           >
-            {mobileMenuOpen ? '✕' : <CommandGridIcon className="shell-mobile-command-grid" />}
+            {mobileMenuOpen ? (
+              '✕'
+            ) : (
+              <img
+                src={`${MEDIA_BASE}images/btn-hamburger.png`}
+                alt="Menu"
+                style={{ height: 20, width: 20, objectFit: 'contain' }}
+              />
+            )}
           </button>
         </div>
 

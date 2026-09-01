@@ -30,6 +30,7 @@
 import { describe, it, expect } from 'vitest';
 import { HandController } from './HandController.js';
 import type { HandConfig, HandEvent, SeatPlayer } from '../types.js';
+import { sliceBetween } from '../testHelpers/sourceWindow.js';
 
 function mkPlayers(stacks: number[]): SeatPlayer[] {
   return stacks.map(
@@ -159,9 +160,16 @@ describe('the consumer prefers the event over live state', () => {
       require('node:path').join(__dirname, 'ServerTableEngineHandEvents.ts'),
       'utf8'
     );
-    const at = src.indexOf("case 'PLAYER_ACTION':");
-    expect(at).toBeGreaterThan(-1);
-    const body = src.slice(at, at + 4000).replace(/\/\*[\s\S]*?\*\//g, '');
+    // Bounded by the NEXT case in the same switch, not by 4000 bytes. The
+    // negative assertion below is why it matters: a fixed forward window can
+    // run out of this case and into another one, and then it either matches
+    // something that is not this branch or drifts off the code entirely and
+    // passes while watching nothing.
+    const body = sliceBetween(src, "case 'PLAYER_ACTION':", "case 'COMMUNITY_CARDS':").replace(
+      /\/\*[\s\S]*?\*\//g,
+      ''
+    );
+    expect(body.length).toBeGreaterThan(0);
     expect(body).toContain('event.stage ??');
     // The bare live-state read must not be what feeds the persisted record.
     expect(body).not.toMatch(/const stage = hcState\?\.stage \|\| 'preflop';/);

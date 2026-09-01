@@ -147,3 +147,23 @@ extractors the guard's own message points at:
 - `GtoDepthCeiling` was fixed on main by another agent while this was in flight.
 
 27 tests across those three files pass, and the meta-guard is green.
+
+### The durable half: the guard cannot be hidden any more
+
+Fixing the four windows was the easy part and it did not hold - a fifth landed
+(`ActionStageTravelsWithTheEvent.test.ts`, `src.slice(at, at + 4000)`) while the
+first four were being fixed, and three agents spent the same morning
+rediscovering the same red test one file at a time.
+
+The reason it kept happening is that **main could not see it**. `ci.yml` gates
+the unit job behind the changed files, so a docs-only commit to main goes green
+in twelve seconds without running the suite. Main showed an unbroken wall of
+ticks while carrying a red test that failed on every branch touching `src/` or
+`tests/` - which is every branch doing real work.
+
+`noFixedSizeSourceWindows` now runs in its own **ungated** CI job, on pushes to
+main as well as on pull requests, alongside `typecheck` and `stub_gate`. It
+reads source and asserts on text: no database, no build, no network, well under
+a second. There was never a reason for it to sit behind a gate that could hide
+it. The guard now also pins its own wiring, so nobody can quietly move it back
+behind one.

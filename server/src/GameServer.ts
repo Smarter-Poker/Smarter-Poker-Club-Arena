@@ -62,6 +62,7 @@ import {
   auditSatelliteConservation,
   auditPrizeDisbursement,
   requeueUnbankedCashRake,
+  auditGuaranteesKept,
 } from './services/FeeReconciler.js';
 import { reportError, initSentry, flushSentry } from './services/errorReporter.js';
 import { fetchAllRows } from './services/supabase/pagination.js';
@@ -327,6 +328,10 @@ export class GameServer {
   private lastConservationAt = 0;
   /** Last fn_backpay_hu_winner_shortfalls pass (2026-08-27 phase 3d). */
   private lastHuBackpayAt = 0;
+  /** Last fn_detect_results_without_a_hand pass (2026-09-01 phase 7). */
+  private lastNoHandResultCheckAt = 0;
+  /** Last fn_payout_guarantee_check pass (2026-09-01 every-earner-is-paid). */
+  private lastPayoutGuaranteeCheckAt = 0;
   /** Last fn_charge_place_overpays pass (2026-08-28 duplicate-place overpay). */
   private lastPlaceOverpayChargeAt = 0;
   /** Last fn_repair_tournament_rake_attribution pass (2026-08-28). */
@@ -1542,6 +1547,15 @@ export class GameServer {
           // other check precisely because the outage reset overwrote that
           // snapshot while the wallet ledger kept the truth.
           await auditPrizeDisbursement(24);
+          // Guarantee kept (2026-08-31, phase 6): a COMPLETED event that
+          // advertised a guaranteed prize must actually have PAID it. Nothing
+          // in this estate asked that question - every other guarantee check
+          // is pre-start affordability, or excludes freerolls via
+          // `buy_in_amount > 0`, or (the phase 2 unpaid detector) filters
+          // `prize_pool > 0`, the exact column an unfunded guarantee zeroes.
+          // Nine freerolls ranked a full field, crowned a winner and paid
+          // nobody, silently. Detects only; the finish path does the funding.
+          await auditGuaranteesKept(24);
           // Restart-orphaned fees (2026-08-31): pendingHands is in-memory, so
           // a process death between the inline write and the drain loses the
           // claim entirely — and fn_bbj_repair_unbanked cannot see it because
@@ -3501,6 +3515,86 @@ export class GameServer {
             }
           } catch (consEx) {
             reportError(consEx, 'GameServer.conservation_sweep_threw');
+          }
+        }
+
+        // ── NO RESULT WITHOUT A HAND (2026-09-01) ──
+        // Seven events in the fortnight to 2026-08-30 were COMPLETED with a
+        // full set of finishing places, a stamped winner and 775.00 chips paid
+        // between five of them, and hand_history holds not one hand for any of
+        // them. The recovery had sorted a field in which every survivor held
+        // exactly starting_chips. The guard in tournamentRecovery stops that
+        // being invented again; this is what makes the CLASS visible, so a new
+        // cause arriving by another route cannot be silent for a fortnight the
+        // way that one was. It reports and moves no money.
+        // Its OWN timer, per the lesson recorded on the overpay charge below.
+        if (Date.now() - this.lastNoHandResultCheckAt > 6 * 60 * 60 * 1000) {
+          this.lastNoHandResultCheckAt = Date.now();
+          try {
+            const { data: nh, error: nhErr } = await supabase.rpc(
+              'fn_detect_results_without_a_hand',
+              {}
+            );
+            if (nhErr) {
+              reportError(
+                new Error(`[GameServer] no-hand result check failed: ${nhErr.message}`),
+                'GameServer.no_hand_result_check_failed'
+              );
+            } else if (Number(nh?.flagged) > 0) {
+              console.log(
+                `[GameServer] No-hand result check: ${nh.flagged} event(s) ranked without a hand (${nh.chips_paid} chips paid, ${nh.alerts_raised} new alert(s), ${nh.parked_completing} held in COMPLETING)`
+              );
+            }
+          } catch (nhEx) {
+            reportError(nhEx, 'GameServer.no_hand_result_check_threw');
+          }
+        }
+
+        // ── EVERY EARNER IS PAID (2026-09-01) ──
+        // Dan, verbatim: "IT IS AN ABSOLUTE MUST THAT PLAYERS ALWAYS 100% GET
+        // PAID OUT OF EVERY SINGLE MTT, SPIN OR HEADS UP THEY PLAY (IF THEY
+        // EARNED A PAYOUT)." This is the check that makes that verifiable, and
+        // it is the only one on the platform that asks the question against
+        // the WALLET rather than against tournament_payouts.
+        //
+        // It catches three things nothing else looked for:
+        //   - a paid place with no holder. Fifteen MTTs between 2026-05-08 and
+        //     2026-07-19 recorded finishing places 1, 2, then 6 onwards, so the
+        //     18/10/7 percent places had nobody in them and 193.10 chips went
+        //     to no one. The cause was fixed on 2026-07-19; the blindness was
+        //     not, and it had run for ten weeks.
+        //   - an earner whose wallet never saw the money. Across 150 days and
+        //     ~49,000 events that is exactly one player, short by 0.02.
+        //   - prizes paid with no payout record (61 events, 5,515.91 chips),
+        //     which is what arms fn_tournament_payout_reconcile to pay a second
+        //     time, because it reads that record to decide what is owed.
+        //
+        // Hourly, on its own timer, and it moves no money.
+        if (Date.now() - this.lastPayoutGuaranteeCheckAt > 60 * 60 * 1000) {
+          this.lastPayoutGuaranteeCheckAt = Date.now();
+          try {
+            const { data: pg, error: pgErr } = await supabase.rpc('fn_payout_guarantee_check', {
+              p_since_days: 7,
+            });
+            if (pgErr) {
+              reportError(
+                new Error(`[GameServer] payout guarantee check failed: ${pgErr.message}`),
+                'GameServer.payout_guarantee_check_failed'
+              );
+            } else if (
+              Number(pg?.vacant_paid_place_events) > 0 ||
+              Number(pg?.earners_not_paid) > 0 ||
+              Number(pg?.paid_but_unrecorded_events) > 0
+            ) {
+              console.log(
+                `[GameServer] Payout guarantee: ${pg.vacant_paid_place_events} event(s) with an unheld paid place ` +
+                  `(${pg.vacant_paid_place_chips} chips), ${pg.earners_not_paid} earner(s) unpaid ` +
+                  `(${pg.earners_not_paid_chips} chips), ${pg.paid_but_unrecorded_events} event(s) paid without a record ` +
+                  `(${pg.paid_but_unrecorded_chips} chips), ${pg.alerts_raised} new alert(s)`
+              );
+            }
+          } catch (pgEx) {
+            reportError(pgEx, 'GameServer.payout_guarantee_check_threw');
           }
         }
 

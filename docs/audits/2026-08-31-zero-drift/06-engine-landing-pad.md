@@ -12,11 +12,11 @@ One RPC call settles a hand's stack deltas atomically or not at all:
 // engine: replace the multi-step syncStacks table_seats writes with ONE rpc
 const { data, error } = await supabase.rpc('fn_ca_settle_hand_stacks', {
   p_table_id: table.id,
-  p_hand_id: hand.id,                 // stable per hand - this IS the idempotency key
+  p_hand_id: hand.id, // stable per hand - this IS the idempotency key
   p_hand_number: hand.number,
-  p_deltas: seats.map(s => ({ user_id: s.userId, delta: round2(s.net) })),
-  p_rake: round2(hand.rake),          // conservation only; banking stays with
-  p_bbj: round2(hand.bbjDrop),        // atomic_distribute_rake as today
+  p_deltas: seats.map((s) => ({ user_id: s.userId, delta: round2(s.net) })),
+  p_rake: round2(hand.rake), // conservation only; banking stays with
+  p_bbj: round2(hand.bbjDrop), // atomic_distribute_rake as today
 });
 // data.success === true        -> stacks written, walk to 'final' recorded
 // data.replay === true         -> this hand was already settled; adopt data verbatim
@@ -41,8 +41,11 @@ rake-queue writes at 19:23 UTC today - promo accruals die the same way):
 ```js
 // engine: in the catch around promo_apply_playthrough
 await supabase.from('ca_pending_promo_accruals').insert({
-  club_id, user_id: userId, wagered: round2(wagered),
-  hand_id: handId ?? null, source: 'engine:promoAccrual',
+  club_id,
+  user_id: userId,
+  wagered: round2(wagered),
+  hand_id: handId ?? null,
+  source: 'engine:promoAccrual',
   last_error: String(err).slice(0, 500),
 });
 ```

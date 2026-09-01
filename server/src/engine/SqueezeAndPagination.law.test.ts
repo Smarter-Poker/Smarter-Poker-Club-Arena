@@ -37,6 +37,21 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+/**
+ * The squeeze property, bounded by the property that follows it. Not a byte
+ * count: tests/helpers/sourceWindow explains at length why a fixed window over
+ * a growing body is a publish outage waiting to happen, and
+ * tests/unit/noFixedSizeSourceWindows enforces it. The helper itself lives
+ * under tests/, which is outside this package's rootDir, so the same bound is
+ * expressed here rather than imported across it.
+ */
+const squeezeBranch = (src: string): string => {
+  const at = src.indexOf('squeezed:');
+  if (at < 0) throw new Error('squeezed: not found in HorseLogic');
+  const next = src.indexOf('omahaAA:', at);
+  return next < 0 ? src.slice(at) : src.slice(at, next);
+};
+
 const logicSrc = readFileSync(join(__dirname, 'HorseLogic.ts'), 'utf8');
 const tunerSrc = readFileSync(join(__dirname, '..', 'services', 'HorseSelfTuner.ts'), 'utf8');
 
@@ -44,7 +59,7 @@ describe('the squeeze branch can actually fire', () => {
   it('reads the callers of the OPEN, not the callers of the 3-bet', () => {
     const at = logicSrc.indexOf('squeezed:');
     expect(at).toBeGreaterThan(-1);
-    const branch = logicSrc.slice(at, at + 900).replace(/\/\/.*$/gm, '');
+    const branch = squeezeBranch(logicSrc).replace(/\/\/.*$/gm, '');
     expect(branch).toContain('callersOfPreviousRaise >= 1');
     // The old test. If this ever comes back the layer is dead again and the
     // league will report 0.00 +/- 0.00 forever.
@@ -66,7 +81,8 @@ describe('the squeeze branch can actually fire', () => {
 
   it('still keeps the rest of the squeeze shape', () => {
     const at = logicSrc.indexOf('squeezed:');
-    const branch = logicSrc.slice(at, at + 900);
+    expect(at).toBeGreaterThan(-1);
+    const branch = squeezeBranch(logicSrc);
     expect(branch).toContain('raises === 2');
     // Hero must have made the FIRST raise - a squeeze is something done TO
     // the opener, not something the cold-caller experiences.

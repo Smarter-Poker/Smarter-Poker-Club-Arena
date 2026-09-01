@@ -32,7 +32,7 @@
   position: absolute;
   z-index: 1;
   left: 17.05%;
-  top: 22.8%;
+  top: 52%;
   width: 21.7%;
   aspect-ratio: 1 / 1;
   display: grid;
@@ -41,6 +41,7 @@
   background: #050608;
   color: #69bfff;
   font-size: clamp(1rem, 10cqw, 4.2rem);
+  transform: translateY(-50%);
 }
 
 .club-identity__logo img {
@@ -92,6 +93,7 @@
   letter-spacing: 0.01em;
   line-height: 1.18;
   text-shadow: 0 2px 2px #000;
+  transform: translateY(1.1cqw);
 }
 
 .club-identity__line {
@@ -108,7 +110,7 @@
   line-height: 1;
   text-align: left;
   text-shadow: 0 2px 2px #000;
-  transform: translateY(0.55cqw);
+  transform: translateY(1.65cqw);
 }
 
 button.club-identity__line {
@@ -117,7 +119,7 @@ button.club-identity__line {
      centre of this button was answered by `P.club-identity__alias` — the
      SIBLING above it — and by the details grid itself. These rows are laid
      out by `grid-template-rows: 1.2fr 1fr 1fr 1fr` with no row-gap and the
-     line carries a `translateY(0.55cqw)`, so the boxes touch and the later
+     line carries a vertical translation, so the boxes touch and the later
      painter takes the hit test. The player was tapping a copy button and the
      tap was landing on a paragraph.
 
@@ -144,32 +146,6 @@ button.club-identity__line {
   font-variant-numeric: tabular-nums;
 }
 
-.club-identity__level {
-  position: absolute;
-  z-index: 1;
-  left: 16%;
-  top: 67.1%;
-  width: 23.7%;
-  height: 10.8%;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  color: #f1f5fa;
-  font-size: clamp(0.62rem, 3.35cqw, 1.8rem);
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  line-height: 1;
-  text-align: center;
-  text-overflow: ellipsis;
-  text-shadow: 0 2px 2px #001129;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.club-identity__level > span {
-  display: block;
-}
-
 .club-identity__footer {
   position: absolute;
   z-index: 1;
@@ -186,7 +162,7 @@ button.club-identity__line {
 .club-identity__playing {
   position: absolute;
   left: 0;
-  bottom: 10.4%;
+  bottom: -13.6%;
   display: inline-flex;
   align-items: baseline;
   min-width: 0;
@@ -299,10 +275,6 @@ button.club-identity__line:focus-visible {
     padding-left: 6.5cqw;
     font-size: clamp(0.58rem, 3.8cqw, 0.92rem);
   }
-
-  .club-identity__level {
-    font-size: clamp(0.56rem, 3.5cqw, 0.88rem);
-  }
 }
 
 /* Compact identity bay inside the unified mobile lobby chassis. */
@@ -328,10 +300,6 @@ button.club-identity__line:focus-visible {
     font-size: clamp(6px, 2.25cqw, 9px);
   }
 
-  .lobby-top__identity .club-identity__level {
-    font-size: clamp(5px, 1.8cqw, 8px);
-  }
-
   .lobby-top__identity .club-identity__footer {
     right: 8%;
     left: 43.5%;
@@ -339,7 +307,7 @@ button.club-identity__line:focus-visible {
   }
 
   .lobby-top__identity .club-identity__playing {
-    bottom: 8%;
+    bottom: -16%;
     gap: 0.3em;
     font-size: clamp(6px, 2.25cqw, 9px);
   }

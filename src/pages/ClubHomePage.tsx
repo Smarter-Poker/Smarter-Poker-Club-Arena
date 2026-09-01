@@ -4157,7 +4157,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             pokerAlias={currentUser?.display_name || currentUser?.username || 'Player'}
             clubId={club.club_id}
             playerId={currentUser?.player_number}
-            level={clubLevel?.level ?? 1}
             playersPlaying={playersPlaying}
             onCopyClubId={() => {
               navigator.clipboard.writeText(club.club_id.toString());

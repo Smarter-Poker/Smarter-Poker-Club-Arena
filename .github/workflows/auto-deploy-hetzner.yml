@@ -262,6 +262,11 @@ jobs:
         if: steps.dedupe.outputs.skip != 'true'
         env:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          # GitHub runners have no IPv6 route, and db.<ref>.supabase.co is
+          # IPv6-only, so the direct host ENETUNREACHes from Actions. The
+          # DATABASE_URL secret points at the IPv4 Supavisor pooler
+          # (aws-0-us-west-2.pooler.supabase.com) and the script prefers it.
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           if git log -1 --pretty=%B | grep -q '\[skip-financial-gate\]'; then
             echo '::warning::financial health-gate skipped by commit message tag'

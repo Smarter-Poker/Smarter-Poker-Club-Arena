@@ -300,6 +300,95 @@ describe('the end of the break', () => {
     expect(mb.readyForRestart()).toBe(true);
   });
 
+  it('thaws the clocks BEFORE the first table resumes', async () => {
+    /**
+     * "Picks back up exactly as it was" is a statement about CLOCKS. The thaw
+     * shifts every in-flight deadline (sit-out, seat holds, add-on windows,
+     * Spin levels, claim-back) by the frozen duration, and it must land while
+     * every table is still parked - a table resumed first could evict a
+     * sit-out or roll a blind level on a clock that had not been given its
+     * five minutes back yet.
+     */
+    const engines = new Map<string, FakeEngine>([['t0', new FakeEngine()]]);
+    const events: string[] = [];
+    const origResume = FakeEngine.prototype.resumeFromMaintenance;
+    const store = new FakeStore();
+    let thawArgs: { startedAt: number; seconds: number } | null = null;
+    const mb = new MaintenanceBreak({
+      engines: () => engines.entries() as any,
+      isRunning: () => true,
+      emit: () => {},
+      store,
+      thaw: async (startedAt, seconds) => {
+        events.push('thaw');
+        thawArgs = { startedAt, seconds };
+      },
+    });
+    engines.get('t0')!.resumeFromMaintenance = function (this: FakeEngine) {
+      events.push('resume');
+      origResume.call(this);
+    };
+
+    await mb.announceLastHand();
+    parkAll(engines);
+    await mb.beginCountdown();
+    const started = Date.now();
+    vi.advanceTimersByTime(MaintenanceBreak.BREAK_DURATION_MS);
+    await mb.end();
+
+    expect(events).toEqual(['thaw', 'resume']);
+    expect(thawArgs!.seconds).toBeGreaterThanOrEqual(299);
+    expect(thawArgs!.seconds).toBeLessThanOrEqual(301);
+    expect(thawArgs!.startedAt).toBeLessThanOrEqual(started);
+  });
+
+  it('a thaw failure never leaves the platform frozen', async () => {
+    // Five minutes of clock drift is a wrong that heals; a platform that
+    // stays frozen is not.
+    const { mb, engines } = build(2);
+    (mb as any).deps.thaw = async () => {
+      throw new Error('PGRST002');
+    };
+    await mb.announceLastHand();
+    parkAll(engines);
+    await mb.beginCountdown();
+    await mb.end();
+    for (const [id, e] of engines) {
+      expect(e.paused, `${id} stayed frozen after a thaw failure`).toBe(false);
+    }
+    expect(mb.isActive()).toBe(false);
+  });
+
+  it('measures the WHOLE freeze across a restart, not this process`s slice', async () => {
+    // An engine that adopted the break at ~:58 must thaw from the ORIGINAL
+    // :55 start, or the clocks get back three minutes instead of five.
+    const engines = new Map<string, FakeEngine>([['t0', new FakeEngine()]]);
+    const store = new FakeStore();
+    const originalStart = Date.now() - 3 * 60 * 1000;
+    store.row = {
+      phase: 'counting_down',
+      announcedAt: originalStart - 2 * 60 * 1000,
+      breakStartedAt: originalStart,
+      breakEndsAt: Date.now() + 2 * 60 * 1000,
+      reason: 'Scheduled Engine Maintenance',
+    };
+    let thawSeconds = 0;
+    const mb = new MaintenanceBreak({
+      engines: () => engines.entries() as any,
+      isRunning: () => true,
+      emit: () => {},
+      store,
+      thaw: async (_startedAt, seconds) => {
+        thawSeconds = seconds;
+      },
+    });
+    await mb.start();
+    await vi.advanceTimersByTimeAsync(2 * 60 * 1000 + 500);
+    // ~5 minutes total: the 3 before the restart plus the 2 after it.
+    expect(thawSeconds).toBeGreaterThanOrEqual(295);
+    expect(thawSeconds).toBeLessThanOrEqual(305);
+  });
+
   it('leaves a table another authority is still holding', async () => {
     // A tournament add-on break runs up to ten minutes. One starting near :55
     // outlives this five-minute break, and resuming its tables here would deal
@@ -348,6 +437,7 @@ describe('surviving the restart', () => {
     store.row = {
       phase: 'counting_down',
       announcedAt: Date.now() - 4 * 60 * 1000,
+      breakStartedAt: Date.now() - 60_000,
       breakEndsAt: Date.now() + 2 * 60 * 1000,
       reason: 'Scheduled Engine Maintenance',
     };
@@ -369,6 +459,7 @@ describe('surviving the restart', () => {
     store.row = {
       phase: 'counting_down',
       announcedAt: Date.now(),
+      breakStartedAt: Date.now() - 60_000,
       breakEndsAt: Date.now() + 30_000,
       reason: 'Scheduled Engine Maintenance',
     };
@@ -387,6 +478,7 @@ describe('surviving the restart', () => {
     store.row = {
       phase: 'counting_down',
       announcedAt: Date.now() - 10 * 60 * 1000,
+      breakStartedAt: Date.now() - 60_000,
       breakEndsAt: Date.now() - 60_000,
       reason: 'Scheduled Engine Maintenance',
     };

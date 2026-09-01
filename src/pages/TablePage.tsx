@@ -190,6 +190,7 @@ import { type HandRecord } from '../components/table/HandHistoryPanel';
 // [MIGRATION] timeBankEngine removed — server-authoritative (Step 5). Time bank via GameServerAPI + DB.
 import { usePlayerStats } from '../hooks/usePlayerStats';
 import { useMaintenanceBreak } from '../hooks/useMaintenanceBreak';
+import { platformFrozenMessage } from '../utils/platformFrozen';
 import { MaintenanceBreakScreen } from '../components/table/MaintenanceBreakScreen';
 import { useTableSettings } from '../hooks/useTableSettings';
 import { useTableTimer } from '../hooks/useTableTimer';
@@ -16160,6 +16161,17 @@ export default function TablePage({
         if (error || !res.ok) {
           const reason = error?.message || res.reason || '';
           setSeatFirstConfirm(null);
+
+          /* THE FREEZE REFUSAL IS NOT AN ERROR (Dan 2026-09-01). During the
+             :55 maintenance break every seat and chip write is refused in
+             Postgres by the freeze guard. Showing a player the raw refusal
+             would read as something broken; the truth is a break they were
+             told about, and a seat they can take in a few minutes. */
+          const frozenMsg = platformFrozenMessage(error);
+          if (frozenMsg) {
+            toast?.info?.(frozenMsg);
+            return;
+          }
 
           /* D8 (2026-08-25): `game_already_started` is not a stale table, it
              is THIS table, running. It was in the stale set, so a viewer who

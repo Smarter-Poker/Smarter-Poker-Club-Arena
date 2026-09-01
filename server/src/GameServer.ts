@@ -75,6 +75,7 @@ import { tableStateHub } from './transport/TableStateHub.js';
 import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
 import { selectCompletingDue } from './tournament/completingDwell.js';
 import { TournamentManager } from './tournament/TournamentManager.js';
+import { isMaintenanceFrozen } from './maintenance/freezeState.js';
 import { MaintenanceBreak } from './maintenance/MaintenanceBreak.js';
 import { createSupabaseMaintenanceBreakStore } from './maintenance/maintenanceBreakStore.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
@@ -371,25 +372,18 @@ export class GameServer {
    * dealing are actually producing hands.
    */
   /**
-   * A PLATFORM-WIDE BREAK IS NOT A FLEET COLLAPSE (Dan 2026-09-01).
-   *
-   * The verifier watches for tables that SHOULD be dealing and are not, and
-   * raises a critical `ClubArenaFleetFloorLost` after three consecutive
-   * minutes below three dealing tables. During the maintenance break every
-   * table is legitimately parked, so the filtered list is empty for five
-   * minutes - which is three ticks, which is a critical page. Every hour,
-   * forever, for the one event we deliberately caused.
-   *
-   * Reporting an EMPTY list during the break would be the same lie the stall
-   * reapers avoid by consulting `isPausedByDesign()`; instead the verifier is
-   * told there is nothing to check, which is true.
+   * The maintenance-break suppression lives INSIDE the verifier now (see
+   * DealRateVerifier.check), not here. The first attempt fed it an empty
+   * table list during the break, and an empty list IS the below-floor
+   * condition - it primed the critical ClubArenaFleetFloorLost to fire on
+   * the third minute of every break. The verifier skips the whole check and
+   * resets its counters instead, which is the truthful statement: during a
+   * freeze there is nothing to verify, not a fleet of zero.
    */
   private dealRateVerifier = new DealRateVerifier(() =>
-    this.maintenanceBreak.isActive()
-      ? []
-      : this.tableLivenessSnapshot()
-          .filter((t) => t.dealable >= 2 && !t.paused)
-          .map((t) => t.tableId)
+    this.tableLivenessSnapshot()
+      .filter((t) => t.dealable >= 2 && !t.paused)
+      .map((t) => t.tableId)
   );
   // BUG 008 FIX: settler reads rake_records (durable per-hand log) every 30 min and
   // upserts per-player rakeback_periods rows. Without this the in-memory accumulator
@@ -432,6 +426,22 @@ export class GameServer {
         }
       }
       return false;
+    },
+    // The thaw: before the first table resumes, every in-flight absolute
+    // deadline (sit-out clocks, seat holds, add-on windows, Spin level
+    // clocks, the cashier claim-back window) is shifted forward by the frozen
+    // duration, so "picks back up exactly as it was" is true of the CLOCKS
+    // and not only of the chips. fn_thaw_platform is idempotent per freeze -
+    // two engines racing at :00 cannot shift the clocks twice.
+    thaw: async (freezeStartedAtMs, frozenSeconds) => {
+      const { data, error } = await supabase.rpc('fn_thaw_platform', {
+        p_freeze_started: new Date(freezeStartedAtMs).toISOString(),
+        p_frozen_seconds: frozenSeconds,
+        p_thawed_by:
+          process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
+      });
+      if (error) throw new Error(error.message);
+      console.log('[MaintenanceBreak] thaw:', JSON.stringify(data));
     },
   });
   /**
@@ -1267,6 +1277,20 @@ export class GameServer {
       '# HELP poker_paused_tables Tables paused on purpose (hand-for-hand/break) - excluded from stall detection',
       '# TYPE poker_paused_tables gauge',
       `poker_paused_tables ${pausedCount}`,
+      // The maintenance break, as numbers an alert rule can silence itself
+      // with. `active` exists first and foremost so every fleet-level alarm
+      // (deal rate, hands/min, fleet floor) can carry `unless
+      // poker_maintenance_break_active == 1` instead of firing hourly about a
+      // stop we scheduled on purpose.
+      '# HELP poker_maintenance_break_active 1 while the scheduled :55 maintenance break is running',
+      '# TYPE poker_maintenance_break_active gauge',
+      `poker_maintenance_break_active ${this.maintenanceBreak.isActive() ? 1 : 0}`,
+      '# HELP poker_maintenance_break_remaining_ms Milliseconds of break left; 0 outside a break',
+      '# TYPE poker_maintenance_break_remaining_ms gauge',
+      `poker_maintenance_break_remaining_ms ${this.maintenanceBreak.remainingMs()}`,
+      '# HELP poker_maintenance_break_ready_for_restart 1 when every table is parked and the deploy may restart the engine',
+      '# TYPE poker_maintenance_break_ready_for_restart gauge',
+      `poker_maintenance_break_ready_for_restart ${this.maintenanceBreak.readyForRestart() ? 1 : 0}`,
       '# HELP poker_discovery_stale_ms Milliseconds since the cash-table discovery loop last completed',
       '# TYPE poker_discovery_stale_ms gauge',
       `poker_discovery_stale_ms ${Date.now() - this.lastDiscoveryOkAt}`,
@@ -1504,6 +1528,11 @@ export class GameServer {
 
     const tick = async () => {
       if (!this.running) return;
+      // THE FREEZE (Dan 2026-09-01): re-driving failed fees is chip movement.
+      // Every operation here is idempotent and durable-queued, so a skipped
+      // cycle is picked up whole by the next one, five minutes after the thaw
+      // at the latest.
+      if (isMaintenanceFrozen()) return;
       try {
         const summary = await reconcilePendingFees();
         if (summary.scanned > 0) {
@@ -1658,6 +1687,9 @@ export class GameServer {
 
     const tick = async (): Promise<void> => {
       if (!this.running) return;
+      // THE FREEZE (Dan 2026-09-01): the backfill writes award units - chip
+      // accounting. Hourly cadence; the break costs it nothing.
+      if (isMaintenanceFrozen()) return;
       try {
         const { data, error } = await supabase.rpc('fn_backfill_bomb_pot_award_units', {
           p_limit: BOMB_LEDGER_REPAIR_BATCH,
@@ -4583,6 +4615,15 @@ export class GameServer {
    * the nine broken games on the live board and none of the healthy ones.
    */
   private async finishSeatFirstGamesThatAreOver(): Promise<void> {
+    /**
+     * THE FREEZE (Dan 2026-09-01), and this one is not a courtesy skip.
+     * This sweep decides a spin is OVER partly from "no hand recorded in the
+     * last three minutes" - and during a five-minute freeze that is true of
+     * every healthy spin on the platform. Unguarded, the first sweep after
+     * :58 would force-finish LIVE games whose only crime was obeying the
+     * break, paying them out mid-tournament. Frozen time is not silence.
+     */
+    if (isMaintenanceFrozen()) return;
     /** Old enough that a start, and its reveal hold, cannot be in progress. */
     const STUCK_MIN_AGE_MS = 5 * 60 * 1000;
     /** Silent long enough that the table has genuinely stopped dealing. */

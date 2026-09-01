@@ -40,6 +40,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import { cashTableHeldEmpty, isActiveNow, wantsTableChange } from './HorseBehavior.js';
 import {
@@ -101,6 +102,10 @@ export class HorseSessionRotator {
     if (this.isRunning) return;
     this.isRunning = true;
     this.handle = setInterval(() => {
+      // THE FREEZE (Dan 2026-09-01): "HORSES SHOULD NOT STAND UP OR ROTATE."
+      // A seat changing hands under a break screen is also the loudest
+      // possible horse tell (CLAUDE.md 10.5: timing is part of the treatment).
+      if (isMaintenanceFrozen()) return;
       this.rotate().catch((err) => reportError(err, 'HorseSessionRotator.cycle'));
     }, CYCLE_MS);
     console.log(`[SessionRotator] Running - humanlike departures every ${CYCLE_MS / 1000}s cycle`);

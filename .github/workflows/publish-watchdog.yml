@@ -129,3 +129,18 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           ENGINE_URL: https://engine.smarter.poker
         run: bash .github/scripts/engine-watchdog.sh
+
+      # Dan 2026-09-01: "no work ever gets lost, orphaned or not published."
+      # The two watchdogs above ask whether MERGED work reached production.
+      # This one asks the question upstream of both: does work exist that
+      # never became a merge at all - a branch pushed with no PR, a PR with a
+      # conflict autopilot cannot land, a forgotten draft? Files one
+      # self-updating, self-closing issue naming each piece and its remedy.
+      # if: always() - stranded work must be reported even when the engine
+      # comparison above failed; the two failure domains are independent.
+      - name: Find work that nothing will ever publish
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: bash .github/scripts/orphan-work-watchdog.sh

@@ -97,6 +97,8 @@
  * seats are horses.
  */
 
+import { setMaintenanceFrozen } from './freezeState.js';
+
 /**
  * The parking primitive, as this module needs it.
  *
@@ -118,6 +120,13 @@ export type MaintenanceBreakPhase = 'last_hand' | 'counting_down';
 export interface PersistedMaintenanceBreak {
   phase: MaintenanceBreakPhase;
   announcedAt: number;
+  /**
+   * When the countdown actually began. The thaw needs the real instant, not a
+   * derived one: deadlines are shifted by (end - start), and a start
+   * reconstructed as breakEndsAt minus five minutes would misstate the frozen
+   * duration for any break that was adopted mid-way by a fresh engine.
+   */
+  breakStartedAt: number | null;
   breakEndsAt: number | null;
   reason: string;
 }
@@ -148,6 +157,18 @@ export interface MaintenanceBreakDeps {
    * Optional, and defaults to "nobody else is holding anything".
    */
   shouldStayPaused?: (tableId: string) => boolean;
+  /**
+   * THE THAW (Dan 2026-09-01: "picks back up exactly as it was").
+   *
+   * Called once, at the end of the break, BEFORE the first table resumes.
+   * Wired to fn_thaw_platform, which shifts every in-flight absolute deadline
+   * - sit-out clocks, seat holds, add-on windows, Spin level clocks, the
+   * cashier claim-back window - forward by the frozen duration, so no
+   * player-facing clock lost time to a break they could not play through.
+   * Idempotent on the server side (keyed on the freeze start instant), so two
+   * engines racing at :00 cannot shift the clocks twice.
+   */
+  thaw?: (freezeStartedAtMs: number, frozenSeconds: number) => Promise<void>;
   /** Injectable purely so the tests are not real-time. */
   now?: () => number;
   setTimer?: (fn: () => void, ms: number) => NodeJS.Timeout;
@@ -189,6 +210,8 @@ export class MaintenanceBreak {
 
   private phase: MaintenanceBreakPhase | 'idle' = 'idle';
   private announcedAt = 0;
+  /** When counting_down began - the instant the thaw measures from. */
+  private breakStartedAt = 0;
   private breakEndsAt = 0;
   private reason = 'Scheduled Engine Maintenance';
 
@@ -284,7 +307,11 @@ export class MaintenanceBreak {
     this.reason = saved.reason;
     this.announcedAt = saved.announcedAt;
     this.phase = 'counting_down';
+    // The previous engine's start instant, so the thaw measures the WHOLE
+    // freeze, not just the slice this process lived through.
+    this.breakStartedAt = saved.breakStartedAt ?? this.now();
     this.breakEndsAt = this.now() + Math.min(remaining, MaintenanceBreak.BREAK_DURATION_MS);
+    setMaintenanceFrozen(true);
 
     console.log(
       `[MaintenanceBreak] Resumed a break left by the previous engine - ${Math.round(
@@ -401,6 +428,10 @@ export class MaintenanceBreak {
     this.phase = 'last_hand';
     this.announcedAt = this.now();
     this.breakEndsAt = 0;
+    // Freeze the engine's own sweeps from the announcement, not the countdown:
+    // a horse standing up at :54 under a "Last Hand" banner is the same tell
+    // as one standing up at :56, and nothing these sweeps do cannot wait.
+    setMaintenanceFrozen(true);
 
     const tables = this.parkEveryEngine();
     console.log(
@@ -456,6 +487,7 @@ export class MaintenanceBreak {
     }
 
     this.phase = 'counting_down';
+    this.breakStartedAt = this.now();
     this.breakEndsAt = this.now() + MaintenanceBreak.BREAK_DURATION_MS;
 
     console.log(
@@ -491,13 +523,50 @@ export class MaintenanceBreak {
    * break that ended. fn_maintenance_break_state self-expires for the same
    * reason, as a second line of defence.
    */
+  /**
+   * Re-entrancy latch for end(). The idle check alone is not enough: the
+   * phase only becomes 'idle' AFTER the awaited thaw completes, so the armed
+   * end-timer and a concurrent caller (a second timer, a manual end) could
+   * both pass the guard during that await and run the whole resume twice.
+   * The unit test caught exactly that - ['thaw','thaw','resume','resume'].
+   * The thaw RPC is idempotent server-side, but relying on the last line of
+   * defence to absorb a bug in the first is how defences get spent.
+   */
+  private ending = false;
+
   async end(): Promise<void> {
-    if (this.phase === 'idle') return;
+    if (this.phase === 'idle' || this.ending) return;
+    this.ending = true;
+
+    /**
+     * THE THAW COMES FIRST (Dan 2026-09-01: "picks back up exactly as it
+     * was"). Deadlines are shifted while every table is still parked, so no
+     * clock can be judged - a sit-out evicted, a seat hold expired, a Spin
+     * level rolled - in the gap between the first table resuming and the
+     * shift landing. If the thaw itself fails, play still resumes: five
+     * minutes of clock drift is a wrong that heals, a platform that stays
+     * frozen is not.
+     */
+    if (this.deps.thaw && this.breakStartedAt > 0) {
+      const frozenSeconds = Math.max(1, Math.round((this.now() - this.breakStartedAt) / 1000));
+      try {
+        await this.deps.thaw(this.breakStartedAt, frozenSeconds);
+        console.log(`[MaintenanceBreak] Thawed the platform clocks (+${frozenSeconds}s).`);
+      } catch (err) {
+        console.error(
+          '[MaintenanceBreak] THAW FAILED - resuming anyway; clocks lost the frozen minutes.',
+          err
+        );
+      }
+    }
 
     const resumed = this.resumeEveryEngine();
     this.phase = 'idle';
+    this.breakStartedAt = 0;
     this.breakEndsAt = 0;
     this.announcedAt = 0;
+    this.ending = false;
+    setMaintenanceFrozen(false);
 
     console.log(`[MaintenanceBreak] ═══ BREAK ENDED ═══ Resumed ${resumed} table(s).`);
     this.broadcastEnded();
@@ -652,6 +721,7 @@ export class MaintenanceBreak {
       await this.deps.store.save({
         phase: this.phase,
         announcedAt: this.announcedAt,
+        breakStartedAt: this.breakStartedAt > 0 ? this.breakStartedAt : null,
         breakEndsAt: this.breakEndsAt > 0 ? this.breakEndsAt : null,
         reason: this.reason,
       });

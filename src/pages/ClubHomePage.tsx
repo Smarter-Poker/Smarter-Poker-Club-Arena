@@ -95,6 +95,7 @@ import {
 } from '../components/lobby/lobbyViewPrefs';
 import { useUserStore } from '../stores/useUserStore';
 import ClubLobbyCommandTop from '../components/lobby/ClubLobbyCommandTop';
+import MaintenanceBreakBanner from '../components/common/MaintenanceBreakBanner';
 import HouseAdCard from '../components/ads/HouseAdCard';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
@@ -4468,6 +4469,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         data-opening-checklist={showLaunchChecklist || undefined}
         aria-label={`${club.name} Game Lobby`}
       >
+        {/* The lobby must tell the same truth as the felt during the :55
+            maintenance break (Dan 2026-09-01): without this it shows live
+            counts and working Join buttons for a platform that is
+            deliberately standing still. Renders nothing outside a break. */}
+        <MaintenanceBreakBanner />
         <ClubLobbyCommandTop
           welcome={
             <div

@@ -702,6 +702,7 @@ import { useUserStore } from '../stores/useUserStore';
 import { resolveLobbyClubId, resolveLobbyClubIdSync } from '../utils/clubQuickLink';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
 import { spinRevealToDealMs } from '../config/spinSpec';
+import SeatFillDots from '../components/table/SeatFillDots';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // WINDOW-LEVEL LOCKS — TRUE singletons that survive module reloads, lazy-load
@@ -20951,6 +20952,15 @@ export default function TablePage({
           </div>
         ) : !tableState.players.some((p) => p?.isHero) && tableState.heroSeat <= 0 ? (
           <div className="spectator-footer-bar">
+            {/* The same dots the seated player sees. Before this the two sides
+                disagreed in shape: a spectator got "2 Of 3 Seats Taken" and the
+                player who had PAID got "Waiting For 1 More Player". */}
+            {seatFirstBuyIn && (
+              <SeatFillDots
+                taken={tableState.players.filter(Boolean).length}
+                seats={seatFirstBuyIn.seats}
+              />
+            )}
             <span className="spectator-footer-bar__label">
               {/* An MTT table has no seat a spectator may take — `canSit` is
                   false for every one of them (see the SeatSlot `canSit` prop
@@ -20964,9 +20974,9 @@ export default function TablePage({
                      avatars (Dan 2026-08-28 polish pass). The roster
                      live-sync keeps players[] current pre-start, so this
                      number moves the moment a seat sells. */
-                  seatFirstBuyIn
-                  ? `Spectating, Tap An Open Seat To Join · ${tableState.players.filter(Boolean).length} Of ${seatFirstBuyIn.seats} Seats Taken`
-                  : 'Spectating, Tap An Open Seat To Join'}
+                  /* The count moved into SeatFillDots beside this label, so a
+                     spectator and a seated player read the same shape. */
+                  'Spectating, Tap An Open Seat To Join'}
             </span>
           </div>
         ) : !tableState.players.some((p) => p?.isHero) &&
@@ -21037,6 +21047,30 @@ export default function TablePage({
              chips exist yet and no hand is running. Say so, and offer the way
              out — "IF THEY LEAVE THE SEAT THEY ARE FULLY REFUNDED." */
           <div className="spectator-footer-bar" data-state="reserved">
+            {/* ═══════════════════════════════════════════════════════════
+                COUNT THE SEATS, DO NOT MAKE THE PLAYER COUNT AVATARS
+                (2026-09-01)
+
+                Both waiting footers were words only, and they did not even
+                agree with each other: a spectator read "2 Of 3 Seats Taken"
+                while the player who had just PAID read "Waiting For 1 More
+                Player". Same fact, two shapes, and the one who had money in
+                the game got the vaguer of them.
+
+                The dots are the same fact in a form you take in without
+                reading, and both sides now show them.
+
+                NO ETA, deliberately. The audit asks for one and the measured
+                fill says not to: median 188s against a p95 of 74 MINUTES.
+                An honest average is useless here and a number that says
+                "about three minutes" to somebody who then waits an hour is
+                worse than saying nothing. The 30-second escalation below
+                already tells a stalled room that it is stalled.
+                ═══════════════════════════════════════════════════════════ */}
+            <SeatFillDots
+              taken={tableState.players.filter(Boolean).length}
+              seats={seatFirstBuyIn.seats}
+            />
             <span className="spectator-footer-bar__label">
               {(() => {
                 /* Live countdown to the deal: the buy-in toast says this once,

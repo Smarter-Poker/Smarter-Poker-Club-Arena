@@ -1,0 +1,28 @@
+/* See SeatFillDots.tsx for why this exists and why there is no ETA beside it. */
+.seat-fill-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 8px;
+  flex: 0 0 auto;
+}
+
+.seat-fill-dots__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  background: transparent;
+}
+
+.seat-fill-dots__dot--filled {
+  background: #22c55e;
+  border-color: #22c55e;
+}
+
+.seat-fill-dots__count {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}

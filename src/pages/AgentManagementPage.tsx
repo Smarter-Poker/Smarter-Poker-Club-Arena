@@ -265,7 +265,14 @@ export default function AgentManagementPage() {
         )
         // wallet_transactions subscription removed (Phase 2 cost cut): the
         // canonical balance / commission state is derived via joins against
-        // wallets + commission_records (both still in supabase_realtime).
+        // wallets and agent_commissions.
+        //
+        // PHASE 7 (2026-09-01): this comment used to name commission_records
+        // and say it was "still in supabase_realtime". Neither was true - that
+        // table held zero rows for its whole life, was never in the
+        // publication, and is now dropped. A comment that points at a dead
+        // table is how the next person wires a subscription to nothing.
+        //
         // Bus 'BALANCE_UPDATED' / 'WALLET_REFRESHED' listeners below backstop
         // admin-side commission edits.
         .subscribe((status: string, err?: Error) => {

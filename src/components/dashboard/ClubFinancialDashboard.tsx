@@ -51,10 +51,29 @@ const getEmptyRevenueData = () => {
   return data;
 };
 
-const commissionDistribution = [
-  { name: 'Club', value: 50, color: '#1877f2' },
-  { name: 'Agents', value: 30, color: '#f7931a' },
-  { name: 'Players', value: 20, color: '#2ecc71' },
+/**
+ * WHAT THE CLUB'S RAKE ACTUALLY SPLIT INTO, over the same seven days as the
+ * bar chart beside it.
+ *
+ * 2026-09-01 (phase 7 audit): this was a hardcoded constant - Club 50, Agents
+ * 30, Players 20 - drawn as a pie and labelled "Commission Split" on a club
+ * owner's financials page. It was not a default, an estimate or a target; it
+ * was three numbers that had never been measured, rendered next to real ones.
+ * ClubFinancialsPage carries a note about the same page fabricating "rakeback
+ * as rake * 0.1 and agent commissions as rake * 0.05, labelled as if they were
+ * real"; this is the last of that family.
+ *
+ * The three sources, all live:
+ *   rake      rake_records (the ledger the bar chart already reads)
+ *   agents    fn_club_commission_accrued - the definer aggregate over
+ *             agent_commissions, staff-only, added in phase 7
+ *   players   chip_transactions of type 'rakeback'
+ * The club's own share is what is left, floored at zero.
+ */
+const EMPTY_SPLIT = [
+  { name: 'Club', value: 0, color: '#1877f2' },
+  { name: 'Agents', value: 0, color: '#f7931a' },
+  { name: 'Players', value: 0, color: '#2ecc71' },
 ];
 
 export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ clubId }) => {
@@ -66,6 +85,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
   const [mintAmount, setMintAmount] = useState(1000);
   const [loading, setLoading] = useState(false);
   const [revenueData, setRevenueData] = useState(getEmptyRevenueData());
+  const [split, setSplit] = useState(EMPTY_SPLIT);
   const [activeTableCount, setActiveTableCount] = useState(0);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
 
@@ -211,6 +231,57 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
       });
 
       setRevenueData(newData);
+
+      // The split, from the same window and the same ledgers.
+      const totalRake = (records || []).reduce(
+        (sum: number, r: any) => sum + Number(r.rake_amount || 0),
+        0
+      );
+
+      const { data: agentShare, error: agentErr } = await supabase.rpc(
+        'fn_club_commission_accrued',
+        { p_club_id: resolvedId, p_since: startDate.toISOString() }
+      );
+      if (agentErr) reportError(agentErr, 'ClubFinancialDashboard.commission_accrued');
+
+      const { data: rakebackRows, error: rakebackErr } = await supabase
+        .from('chip_transactions')
+        .select('amount')
+        .eq('club_id', resolvedId)
+        .eq('transaction_type', 'rakeback')
+        .gte('created_at', startDate.toISOString())
+        .limit(5000);
+      if (rakebackErr) reportError(rakebackErr, 'ClubFinancialDashboard.rakeback_paid');
+
+      const agents = Number(agentShare ?? 0) || 0;
+      const players = (rakebackRows || []).reduce(
+        (sum: number, r: any) => sum + Number(r.amount || 0),
+        0
+      );
+      const club = Math.max(totalRake - agents - players, 0);
+
+      // THE WHOLE IS THE RAKE, and that choice matters. Commission books to the
+      // PLAYER's club (credit_agent_commission_from_rake resolves the player's
+      // club, per union law) while rake_records books to the TABLE's club - so
+      // for a club whose members play at a host club's tables, this window can
+      // hold commission and no rake at all. Measured 2026-09-01: SHARK CLUB's
+      // last rake_records row is 2026-08-20 while its agents accrued 309,991.51
+      // in the following week, all of it at another club's tables.
+      //
+      // Dividing by (club + agents + players) there would draw "Agents 100%",
+      // which is not a split of anything. Dividing by the rake this club
+      // actually recorded shows zero, which is what this ledger knows - and it
+      // agrees with the Daily Rake chart beside it, which is already flat for
+      // the same reason.
+      setSplit(
+        totalRake <= 0
+          ? EMPTY_SPLIT
+          : [
+              { name: 'Club', value: Math.round((club / totalRake) * 100), color: '#1877f2' },
+              { name: 'Agents', value: Math.round((agents / totalRake) * 100), color: '#f7931a' },
+              { name: 'Players', value: Math.round((players / totalRake) * 100), color: '#2ecc71' },
+            ]
+      );
     } catch (error) {
       reportError(error, 'ClubFinancialDashboard.Failed_to_load_revenue_data');
     }
@@ -361,7 +432,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
           <ResponsiveContainer width="100%" height={180}>
             <PieChart>
               <Pie
-                data={commissionDistribution}
+                data={split}
                 cx="50%"
                 cy="50%"
                 innerRadius={40}
@@ -369,7 +440,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
                 paddingAngle={5}
                 dataKey="value"
               >
-                {commissionDistribution.map((entry, index) => (
+                {split.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
@@ -377,7 +448,7 @@ export const ClubFinancialDashboard: React.FC<FinancialDashboardProps> = ({ club
             </PieChart>
           </ResponsiveContainer>
           <div className="flex justify-center gap-4 mt-2">
-            {commissionDistribution.map((item) => (
+            {split.map((item) => (
               <div key={item.name} className="flex items-center gap-1 text-xs">
                 <span style={{ background: item.color }} className="w-3 h-3 rounded-full"></span>
                 <span className="text-gray-400">

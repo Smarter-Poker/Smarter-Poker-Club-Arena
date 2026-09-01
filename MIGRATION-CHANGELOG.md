@@ -30,8 +30,24 @@ rather than asking the planner to filter a full window.
 
 | | before | after |
 | --- | --- | --- |
-| the `count(*)` alone | >60s (client timeout) | **1,354ms** warm |
-| the whole check | 66s average, 120s worst | **5,383ms** |
+| the `count(*)` alone | >60s (client timeout) | **3,438ms** cold, 19ms for the 1h variant |
+| the whole check | 66s average, 120s worst | **56s - unchanged** |
+
+**CORRECTION (same night).** The first version of this entry claimed the whole
+check dropped to 5,383ms. It does not. That number was measured immediately
+after warming the same pages in the same session; the scheduled run starts cold
+and competes with live traffic. Its real cron history is 88s, 120s (failed),
+83s, 63s, 54s before the index and **56s after** - inside the pre-index spread.
+
+What the index actually fixed is the query it targets: 22 rows are no longer
+found by reading 213,000, and a demonstrated timeout source is gone. What it did
+not do is make the job fast. **The human-hand counts were not the dominant cost
+of this function**, and roughly 50 seconds of it remain unaccounted for.
+
+The index is cheap and correct and stays. But this entry should not be read as
+"the settlement check is fixed" - it is not, and the next person on it should
+start from what else `fn_ca_settlement_correctness_check` spends 50 seconds
+doing.
 
 Built `CONCURRENTLY`, with an online `DROP INDEX CONCURRENTLY` rollback recorded
 in the migration.

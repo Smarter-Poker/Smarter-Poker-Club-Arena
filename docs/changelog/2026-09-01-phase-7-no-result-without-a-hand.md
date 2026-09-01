@@ -78,7 +78,14 @@ human settles it deliberately.
 ## What makes the class visible
 
 `fn_detect_results_without_a_hand()`, migration
-`20260901_no_result_without_a_hand_detector.sql`, applied to production. Flags
+`20260901122006_no_result_without_a_hand_detector.sql`, applied to production.
+A second migration, `20260901122350_..._close_browser_access.sql`, revokes
+EXECUTE from PUBLIC, anon and authenticated: `check-definer-authorization`
+refuses a SECURITY DEFINER writer a browser role can reach that never asks who
+is calling, and it caught this one on the first push attempt. Nobody in a
+browser calls a sweep. The two files are kept separate and each is byte-identical
+to what production ran, rather than folding the revoke back into the first file
+and leaving the repo saying something the database never executed. Flags
 any COMPLETED tournament carrying finishing places with no hand in
 `hand_history`, one deduped critical `financial_alerts` row per offender. It
 moves no money, exactly like `fn_spin_unpaid_check`. Called on its own six-hour

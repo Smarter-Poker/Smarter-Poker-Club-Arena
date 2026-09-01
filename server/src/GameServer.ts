@@ -75,6 +75,8 @@ import { tableStateHub } from './transport/TableStateHub.js';
 import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
 import { selectCompletingDue } from './tournament/completingDwell.js';
 import { TournamentManager } from './tournament/TournamentManager.js';
+import { MaintenanceBreak } from './maintenance/MaintenanceBreak.js';
+import { createSupabaseMaintenanceBreakStore } from './maintenance/maintenanceBreakStore.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
 import { isWakeableCashTable } from './services/onDemandTableWake.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
@@ -381,6 +383,42 @@ export class GameServer {
   // Synchronized break timer — last hand announced at :55, break runs 5 min after it lands
   private breakTimer: NodeJS.Timeout | null = null;
   /**
+   * The maintenance break that hides the engine restart (Dan 2026-09-01).
+   *
+   * Distinct from the synchronized tournament break above and deliberately
+   * layered on top of it. That one stops TOURNAMENTS at :55 and suspends their
+   * blind clocks. This one stops EVERY table, cash included, at the same :55 -
+   * announcing the last hand two minutes earlier - and persists the break so
+   * the engine that replaces this one honours the rest of it.
+   *
+   * Both run hourly, which is what lets a restart land in any hour it is
+   * needed (Dan 2026-09-01) instead of waiting for one of five daily windows
+   * while merged fixes sit unshipped. See maintenance/MaintenanceBreak.ts.
+   */
+  private readonly maintenanceBreak = new MaintenanceBreak({
+    engines: () => this.tableEngines.entries(),
+    isRunning: () => this.running,
+    emit: (tableId, payload) => tableStateHub.emitEvent(tableId, payload),
+    store: createSupabaseMaintenanceBreakStore(
+      process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local'
+    ),
+    // Whoever paused a table is responsible for resuming it. A tournament
+    // add-on break runs up to ten minutes, so one starting near :55 outlives
+    // the five-minute maintenance break - resuming its tables here would deal
+    // that event back into play while its own clock still has it away.
+    shouldStayPaused: (tableId) => {
+      if (!this.tournamentOwnedTables.has(tableId)) return false;
+      for (const tm of this.tournamentEngines.values()) {
+        try {
+          if (tm.isOnBreak() && tm.getTableIds().includes(tableId)) return true;
+        } catch {
+          /* a manager we cannot interrogate does not get to hold a table */
+        }
+      }
+      return false;
+    },
+  });
+  /**
    * A5: drains `pending_fee_distributions` — rake / BBJ fees that left a pot but
    * whose banking RPC failed — and runs the independent BBJ ledger-drift alarm.
    */
@@ -626,6 +664,15 @@ export class GameServer {
       // Step 7: Start synchronized break timer (last hand at :55, then 5 min break)
       this.scheduleSynchronizedBreaks();
 
+      // Step 7b (Dan 2026-09-01): the maintenance break that carries the
+      // engine restart. Announces the last hand at :53 of a restart hour,
+      // parks every table - cash and tournament - for :55 to :00, and re-adopts
+      // a break the PREVIOUS engine declared before it was killed. That last
+      // part is why it is awaited here, ahead of any dealing: this process is
+      // usually booting *because* of the restart the break was declared for,
+      // and it must not deal a hand into a break players are still watching.
+      await this.maintenanceBreak.start();
+
       // Step 8 (A5): Start the fee reconciler. Rake and the BBJ contribution are
       // taken out of the pot inside the hand; if the banking RPC fails the chips
       // exist nowhere. The engine now queues those failures durably — this drains
@@ -686,6 +733,10 @@ export class GameServer {
     const engine = new ServerTableEngine(tableId);
     engine.setHub(tableStateHub); // Phase 1.1 PR-2: authoritative WS publisher
     this.tableEngines.set(tableId, engine);
+    // A table built during a maintenance break must be born parked. Otherwise
+    // it is the one table on the platform dealing while every other felt sits
+    // on the break screen. No-ops when no break is running.
+    this.maintenanceBreak.adopt(tableId, engine);
     // Mirror the discovery-loop start invocation so any errors get reported
     // consistently and the engine cleanup path runs on failure.
     engine.start().catch((err) => {
@@ -710,6 +761,18 @@ export class GameServer {
       clearTimeout(this.breakTimer);
       this.breakTimer = null;
     }
+    /**
+     * Drop the maintenance break's TIMERS but deliberately NOT its row.
+     *
+     * This shutdown is, on the intended path, the restart the break exists to
+     * cover. Clearing the row here would delete the break on the way out and
+     * the engine that replaces us would deal instantly into a countdown that
+     * is still running on every screen - the precise failure the persistence
+     * was added to prevent. The row is cleared by whoever ends the break:
+     * either the next engine when it reaches :00, or fn_maintenance_break_state
+     * expiring it if no engine ever comes back.
+     */
+    this.maintenanceBreak.stop();
     if (this.feeReconcileTimer) {
       clearInterval(this.feeReconcileTimer);
       this.feeReconcileTimer = null;
@@ -1091,6 +1154,19 @@ export class GameServer {
       handsInFlightTotal: tableLiveness.filter(
         (t) => t.dealable >= 2 && !t.paused && t.msSinceProgress < 120_000
       ).length,
+      /**
+       * THE RESTART GATE (Dan 2026-09-01).
+       *
+       * `maintenance.readyForRestart` is what auto-deploy-hetzner.yml waits
+       * for now, in place of the old handsInFlightTotal drain. The difference
+       * matters: the drain gate asked "is anybody mid-hand right now", which
+       * is a moving target that a busy fleet never holds still for, and it
+       * restarted on live tables the moment it timed out. This asks "has the
+       * platform been formally stopped, told the players, and is there enough
+       * break left to finish inside it" - a state the engine DECLARES rather
+       * than a race the workflow observes.
+       */
+      maintenance: this.maintenanceBreak.snapshot(),
       stalledTables: stalledTables.slice(0, 20),
       discoveryStaleMs,
       tableLiveness,
@@ -2570,6 +2646,10 @@ export class GameServer {
           const engine = new ServerTableEngine(row.table_id);
           engine.setHub(tableStateHub); // Phase 1.1 PR-2: authoritative WS publisher
           this.tableEngines.set(row.table_id, engine);
+          // THE POST-RESTART PATH. After a restart inside a break this sweep
+          // is what rebuilds the whole fleet, so without this every table
+          // would come back dealing while the break still has minutes left.
+          this.maintenanceBreak.adopt(row.table_id, engine);
           engine.start().catch((err) => {
             /**
              * C20: counted for the adoption budget. This delete is what makes
@@ -4709,6 +4789,9 @@ export class GameServer {
     }
     this.tournamentOwnedTables.add(tableId);
     this.tableEngines.set(tableId, engine);
+    // Tournament tables get the same treatment as cash ones. The tournament
+    // break suspends the blind clock; this keeps cards off the felt.
+    this.maintenanceBreak.adopt(tableId, engine);
   }
 
   /**
@@ -4753,6 +4836,9 @@ export class GameServer {
     const engine = new ServerTableEngine(tableId);
     engine.setHub(tableStateHub);
     this.tableEngines.set(tableId, engine);
+    // On-demand wake during a break: the player gets the break screen, not a
+    // table that deals to them alone.
+    this.maintenanceBreak.adopt(tableId, engine);
     const startPromise = engine
       .start()
       .then(() => true)

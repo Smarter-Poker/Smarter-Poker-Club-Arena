@@ -4,6 +4,7 @@
   "functions": [
     "fn_ca_ratchet_watch",
     "fn_ca_reconcile_owned_entity_types",
+    "fn_ca_reconciler_delete_unscoped",
     "fn_ca_tournament_conservation_confirm"
   ]
 }

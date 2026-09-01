@@ -153,3 +153,30 @@ zero configured above the law, zero above 10 percent, none null. The nine
 and none has recurred in 60 hours. (`cap_enabled=false` on every table is the
 CAP GAME feature, a per-hand ceiling on what a player may commit; it is
 unrelated to the rake cap and correctly off.)
+
+## Follow-up 2: the fix had nothing holding it in place either
+
+The scoped DELETE was applied by patching `reconcile_ledger_nightly` **in
+place** - read the live definition, replace the unscoped statement, re-execute.
+That was right at the time: the function is ~600 lines owned by another
+workstream, and pasting a copy into this migration would silently revert
+whatever had landed in it since.
+
+It also left the fix completely undefended. `reconcile_ledger_nightly` exists
+in the repository too, so the next agent to run `CREATE OR REPLACE` on it from
+their copy restores the unscoped DELETE - and nothing says so. No test can read
+a live function body, and the incident that would have been raised is the very
+thing being deleted. The fix would die exactly the way the bug lived: quietly.
+
+`fn_ca_reconciler_delete_unscoped()` returns 1 when the scoping is gone (or the
+function is missing entirely), and it is now the fourth entry in
+`ca_ratchet_baselines` at baseline 0. The hourly watcher raises a **critical**
+incident the moment it moves, whoever moved it and however.
+
+Proved in a rolled-back probe by simulating precisely that revert: the guard
+read 0, the simulated `CREATE OR REPLACE` without the scoping made it read 1,
+and `fn_ca_ratchet_watch()` raised exactly one incident.
+
+The four ratchets now standing: `unledgered_insert_paths` 0,
+`undeclared_money_paths` 139, `rake_law_violations_24h` 0,
+`reconciler_delete_unscoped` 0.

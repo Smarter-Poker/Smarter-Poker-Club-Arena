@@ -119,3 +119,20 @@ each piece and its remedy. It never merges or deletes anything itself.
 Chicago window list would have kept it silent for six hours over genuinely
 stranded code; the top-of-hour anchor would have alarmed 55 minutes early,
 hourly, about a platform working as designed).
+
+## Phase 2 addendum: the vault door (to-do #2563 item 8)
+
+The migration-file audit said ~30 legacy money RPCs were browser-callable.
+The live database, measured with `has_function_privilege`, said: anon 0,
+authenticated 1 - `fn_union_distribute_promo`, no caller anywhere. A prior
+hardening pass had closed the rest invisibly. Migration
+`20260902110000_the_vault_door_closes_on_the_legacy_money_rpcs` closed the
+one live exposure and made the state explicit on all 29 overloads (REVOKE
+browsers, GRANT service_role), verified after: anon 0 / authenticated 0 /
+service_role 29 of 29. All nine World Hub API callers of these names were
+verified to use SUPABASE_SERVICE_ROLE_KEY, so nothing broke. Names with live
+browser callers (atomic_table_addon, fn_bbj_promo_payout_atomic) were
+verified and excluded.
+
+The lesson worth keeping: an audit of migration FILES reads history, not
+state. Grants are measured, never inferred.

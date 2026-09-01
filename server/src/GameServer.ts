@@ -289,6 +289,8 @@ export class GameServer {
   private lastConservationAt = 0;
   /** Last fn_backpay_hu_winner_shortfalls pass (2026-08-27 phase 3d). */
   private lastHuBackpayAt = 0;
+  /** Last fn_detect_results_without_a_hand pass (2026-09-01 phase 7). */
+  private lastNoHandResultCheckAt = 0;
   /** Last fn_charge_place_overpays pass (2026-08-28 duplicate-place overpay). */
   private lastPlaceOverpayChargeAt = 0;
   /** Last fn_repair_tournament_rake_attribution pass (2026-08-28). */
@@ -3320,6 +3322,38 @@ export class GameServer {
             }
           } catch (consEx) {
             reportError(consEx, 'GameServer.conservation_sweep_threw');
+          }
+        }
+
+        // ── NO RESULT WITHOUT A HAND (2026-09-01) ──
+        // Seven events in the fortnight to 2026-08-30 were COMPLETED with a
+        // full set of finishing places, a stamped winner and 775.00 chips paid
+        // between five of them, and hand_history holds not one hand for any of
+        // them. The recovery had sorted a field in which every survivor held
+        // exactly starting_chips. The guard in tournamentRecovery stops that
+        // being invented again; this is what makes the CLASS visible, so a new
+        // cause arriving by another route cannot be silent for a fortnight the
+        // way that one was. It reports and moves no money.
+        // Its OWN timer, per the lesson recorded on the overpay charge below.
+        if (Date.now() - this.lastNoHandResultCheckAt > 6 * 60 * 60 * 1000) {
+          this.lastNoHandResultCheckAt = Date.now();
+          try {
+            const { data: nh, error: nhErr } = await supabase.rpc(
+              'fn_detect_results_without_a_hand',
+              {}
+            );
+            if (nhErr) {
+              reportError(
+                new Error(`[GameServer] no-hand result check failed: ${nhErr.message}`),
+                'GameServer.no_hand_result_check_failed'
+              );
+            } else if (Number(nh?.flagged) > 0) {
+              console.log(
+                `[GameServer] No-hand result check: ${nh.flagged} event(s) ranked without a hand (${nh.chips_paid} chips paid, ${nh.alerts_raised} new alert(s), ${nh.parked_completing} held in COMPLETING)`
+              );
+            }
+          } catch (nhEx) {
+            reportError(nhEx, 'GameServer.no_hand_result_check_threw');
           }
         }
 

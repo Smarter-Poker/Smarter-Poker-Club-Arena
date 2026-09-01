@@ -9,6 +9,7 @@ import ClubMessageManagementPanel from '../components/club/ClubMessageManagement
 import { useToast } from '../components/common/Toast';
 import { confirmDialog } from '../components/common/confirmDialog';
 import { useAuthUser } from '../hooks/useAuthUser';
+import { useMasterBusSubscriptions } from '../hooks/useMasterBusSubscription';
 import { supabase } from '../lib/supabase';
 import { fetchGameCreationAccess } from '../services/GameAccessService';
 import {
@@ -24,6 +25,7 @@ import styles from './GameManagementPage.module.css';
 
 type Scope = 'club' | 'union';
 type View = 'all' | 'running' | 'scheduled' | 'closed';
+type ManagementSurface = 'games' | 'ticker' | 'messages';
 
 interface HostClub {
   id: string;
@@ -50,6 +52,15 @@ interface ManagedGame {
 
 const ACTIVE_STATUSES = new Set(['running', 'active', 'waiting', 'registering', 'late_reg']);
 const CLOSED_STATUSES = new Set(['closed', 'completed', 'cancelled', 'canceled', 'deleted']);
+const CREATE_TARGETS = new Set<GameCreationTarget>(['table', 'event', 'spin', 'sng']);
+const GAME_REFRESH_EVENTS = [
+  'TABLE_CREATED',
+  'TABLE_UPDATED',
+  'TABLE_CLOSED',
+  'TOURNAMENT_UPDATED',
+  'TOURNAMENT_REGISTERED',
+  'TOURNAMENT_CANCELLED',
+] as const;
 
 function formatTime(value: string | null): string {
   if (!value) return 'Starts when ready';
@@ -181,7 +192,7 @@ function EditGameDialog({
             />
           </label>
         )}
-        <p>Live games can be renamed, but structural changes are locked once players are active.</p>
+        <p>Live Games Can Be Renamed, But Structural Changes Are Locked Once Players Are Active.</p>
         <div className={styles.dialogActions}>
           <button type="button" onClick={onClose} disabled={busy}>
             Cancel
@@ -201,7 +212,10 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const navigate = useNavigate();
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
-  const requestedCreate = searchParams.get('create') as GameCreationTarget | null;
+  const createParam = searchParams.get('create');
+  const requestedCreate = CREATE_TARGETS.has(createParam as GameCreationTarget)
+    ? (createParam as GameCreationTarget)
+    : null;
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [scopeId, setScopeId] = useState<string | null>(null);
   const [scopeName, setScopeName] = useState(scope === 'union' ? 'Union' : 'Club');
@@ -211,6 +225,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [view, setView] = useState<View>('all');
+  const [surface, setSurface] = useState<ManagementSurface>('games');
   const [editing, setEditing] = useState<ManagedGame | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -353,6 +368,14 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     void load();
   }, [load]);
 
+  useMasterBusSubscriptions(
+    [...GAME_REFRESH_EVENTS],
+    () => {
+      void load();
+    },
+    { debounce: 350 }
+  );
+
   const filteredGames = useMemo(
     () =>
       games.filter((game) => {
@@ -384,18 +407,28 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     requestedCreate === 'event' || requestedCreate === 'spin' || requestedCreate === 'sng';
 
   const closeGame = async (game: ManagedGame) => {
+    if (game.players > 0) {
+      toast.error(
+        game.kind === 'table'
+          ? 'This table cannot be closed while players are seated. Ask every player to leave first.'
+          : 'This tournament cannot be cancelled after a player has registered.'
+      );
+      return;
+    }
     const confirmed = await confirmDialog({
       message:
         game.kind === 'table'
-          ? `Close ${game.name}? Every seated player will be returned their live stack.`
-          : `Cancel ${game.name}? Every registered player will be refunded from the ledger.`,
+          ? `Close ${game.name}? Only an empty table can be closed.`
+          : `Cancel ${game.name}? This is allowed only before the first registration.`,
       variant: 'danger',
     });
     if (!confirmed) return;
     setBusyId(game.id);
     try {
       await gameManagementService.close(game.kind, game.id);
-      toast.success(game.kind === 'table' ? 'Table closed.' : 'Tournament cancelled and refunded.');
+      toast.success(
+        game.kind === 'table' ? 'Empty table closed.' : 'Unregistered tournament cancelled.'
+      );
       await load();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not close the game.');
@@ -407,7 +440,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   if (allowed === null) {
     return (
       <main className={styles.page}>
-        <section className={styles.empty}>Verifying game-management access…</section>
+        <section className={styles.empty}>Verifying Game-Management Access…</section>
       </main>
     );
   }
@@ -424,8 +457,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           </h1>
           <p>
             {scope === 'club'
-              ? 'When a club joins a union, its staff can no longer create, change, close, or view management controls for games. Use the union console instead.'
-              : 'Only the union owner and union admins can manage union games.'}
+              ? 'When A Club Joins A Union, Its Staff Can No Longer Create, Change, Close, Or View Management Controls For Games. Use The Union Console Instead.'
+              : 'Only The Union Owner And Union Admins Can Manage Union Games.'}
           </p>
           <button onClick={() => navigate(scope === 'club' ? `/clubs/${clubId}` : '/unions')}>
             Return
@@ -438,12 +471,13 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   return (
     <main className={styles.page}>
       <header className={styles.commandHeader}>
-        <div>
+        <div className={styles.heroCopy}>
           <span className={styles.eyebrow}>
             {scope === 'union' ? 'Union Command' : 'Standalone Club Command'}
           </span>
           <h1>Table Management</h1>
-          <p>{scopeName} · See, change, schedule, and close every game from one live board.</p>
+          <p>{scopeName} · One Governed Command Surface For Games, Ticker, And Club Messages.</p>
+          <span className={styles.safetyLine}>Live Contract · Occupied Games Stay Locked</span>
         </div>
         <div className={styles.headerRight}>
           <div className={styles.countRail}>
@@ -461,6 +495,28 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         </div>
       </header>
 
+      <nav className={styles.surfaceNav} aria-label="Management Sections">
+        {(
+          [
+            ['games', 'Game Board', 'Running & Scheduled'],
+            ['ticker', 'Ticker Management', 'Live Message Rail'],
+            ['messages', 'Club Messages', 'Identity & Announcements'],
+          ] as Array<[ManagementSurface, string, string]>
+        ).map(([key, label, detail], index) => (
+          <button
+            key={key}
+            type="button"
+            className={surface === key ? styles.surfaceActive : ''}
+            aria-current={surface === key ? 'page' : undefined}
+            onClick={() => setSurface(key)}
+          >
+            <span>0{index + 1}</span>
+            <strong>{label}</strong>
+            <small>{detail}</small>
+          </button>
+        ))}
+      </nav>
+
       {scope === 'union' && hosts.length > 0 && (
         <label className={styles.hostPicker}>
           Host Club
@@ -474,96 +530,124 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         </label>
       )}
 
-      {requestedCreate === 'table' && hostClubId && (
+      {surface === 'games' && requestedCreate === 'table' && hostClubId && (
         <section className={styles.creatorDeck} aria-label="Create Table">
           <CreateTablePage clubIdOverride={hostClubId} onBack={clearCreate} />
         </section>
       )}
       {scope === 'union' && hosts.length === 0 && !loading && (
-        <section className={styles.empty}>Add a club to this union before creating games.</section>
+        <section className={styles.empty}>Add A Club To This Union Before Creating Games.</section>
       )}
 
-      <nav className={styles.filters} aria-label="Game Status">
-        {(['all', 'running', 'scheduled', 'closed'] as View[]).map((item) => (
-          <button
-            key={item}
-            className={view === item ? styles.active : ''}
-            onClick={() => setView(item)}
-          >
-            {item}
-          </button>
-        ))}
-        {requestedCreate && (
-          <button className={styles.dismissCreator} onClick={clearCreate}>
-            Close Creator
-          </button>
-        )}
-      </nav>
+      {surface === 'games' && (
+        <nav className={styles.filters} aria-label="Game Status">
+          {(['all', 'running', 'scheduled', 'closed'] as View[]).map((item) => (
+            <button
+              key={item}
+              className={view === item ? styles.active : ''}
+              onClick={() => setView(item)}
+            >
+              {item}
+            </button>
+          ))}
+          {requestedCreate && (
+            <button className={styles.dismissCreator} onClick={clearCreate}>
+              Close Creator
+            </button>
+          )}
+        </nav>
+      )}
 
-      {loadError ? (
-        <section className={styles.empty}>
-          <p>{loadError}</p>
-          <button onClick={() => void load()}>Try Again</button>
-        </section>
-      ) : loading ? (
-        <section className={styles.empty}>Loading live game controls…</section>
-      ) : filteredGames.length === 0 ? (
-        <section className={styles.empty}>
-          <h2>No Games In This View</h2>
-          <p>Use the controls above to add the first one.</p>
-        </section>
-      ) : (
-        <section className={styles.gameList} aria-label="Managed Games">
-          {filteredGames.map((game) => {
-            const closed = CLOSED_STATUSES.has(game.status.toLowerCase());
-            return (
-              <article key={`${game.kind}-${game.id}`} className={styles.gameRow}>
-                <span
-                  className={`${styles.statusRail} ${ACTIVE_STATUSES.has(game.status.toLowerCase()) ? styles.live : closed ? styles.closed : styles.scheduled}`}
-                />
-                <div className={styles.gameIdentity}>
-                  <span>
-                    {game.kind === 'table' ? 'Cash Table' : 'Tournament'} · {game.hostName}
-                  </span>
-                  <h2>{game.name}</h2>
-                  <p>
-                    {game.variant.toUpperCase()} ·{' '}
-                    {game.kind === 'table'
-                      ? `${game.smallBlind}/${game.bigBlind} · Buy-In ${game.minBuyIn}-${game.maxBuyIn}`
-                      : `${game.buyIn} Buy-In · ${formatTime(game.startTime)}`}
-                  </p>
-                </div>
-                <div className={styles.gameNumbers}>
-                  <strong>
-                    {game.players}/{game.maxPlayers || '∞'}
-                  </strong>
-                  <span>Players</span>
-                </div>
-                <span className={styles.status}>{game.status.replace(/_/g, ' ')}</span>
-                <div className={styles.rowActions}>
-                  <button onClick={() => setEditing(game)} disabled={busyId === game.id}>
-                    Edit
-                  </button>
-                  {game.kind === 'table' && !closed && <Link to={`/table/${game.id}`}>Open</Link>}
-                  {!closed && (
+      {surface === 'games' &&
+        (loadError ? (
+          <section className={styles.empty}>
+            <p>{loadError}</p>
+            <button onClick={() => void load()}>Try Again</button>
+          </section>
+        ) : loading ? (
+          <section className={styles.empty}>Loading Live Game Controls…</section>
+        ) : filteredGames.length === 0 ? (
+          <section className={styles.empty}>
+            <h2>No Games In This View</h2>
+            <p>Use The Controls Above To Add The First One.</p>
+          </section>
+        ) : (
+          <section className={styles.gameList} aria-label="Managed Games">
+            {filteredGames.map((game) => {
+              const closed = CLOSED_STATUSES.has(game.status.toLowerCase());
+              return (
+                <article key={`${game.kind}-${game.id}`} className={styles.gameRow}>
+                  <span
+                    className={`${styles.statusRail} ${ACTIVE_STATUSES.has(game.status.toLowerCase()) ? styles.live : closed ? styles.closed : styles.scheduled}`}
+                  />
+                  <div className={styles.gameIdentity}>
+                    <span>
+                      {game.kind === 'table' ? 'Cash Table' : 'Tournament'} · {game.hostName}
+                    </span>
+                    <h2>{game.name}</h2>
+                    <p>
+                      {game.variant.toUpperCase()} ·{' '}
+                      {game.kind === 'table'
+                        ? `${game.smallBlind}/${game.bigBlind} · Buy-In ${game.minBuyIn}-${game.maxBuyIn}`
+                        : `${game.buyIn} Buy-In · ${formatTime(game.startTime)}`}
+                    </p>
+                  </div>
+                  <div className={styles.gameNumbers}>
+                    <strong>
+                      {game.players}/{game.maxPlayers || '∞'}
+                    </strong>
+                    <span>Players</span>
+                  </div>
+                  <span className={styles.status}>{game.status.replace(/_/g, ' ')}</span>
+                  <div className={styles.rowActions}>
                     <button
-                      className={styles.danger}
-                      onClick={() => void closeGame(game)}
+                      onClick={() => {
+                        if (game.kind === 'tournament' && game.players > 0) {
+                          toast.error(
+                            'This tournament cannot be modified after a player has registered.'
+                          );
+                          return;
+                        }
+                        setEditing(game);
+                      }}
                       disabled={busyId === game.id}
+                      title={
+                        game.kind === 'tournament' && game.players > 0
+                          ? 'Locked After The First Registration'
+                          : 'Edit Game'
+                      }
                     >
-                      {busyId === game.id ? 'Closing…' : 'Close'}
+                      Edit
                     </button>
-                  )}
-                </div>
-              </article>
-            );
-          })}
-        </section>
+                    {game.kind === 'table' && !closed && <Link to={`/table/${game.id}`}>Open</Link>}
+                    {!closed && (
+                      <button
+                        className={styles.danger}
+                        onClick={() => void closeGame(game)}
+                        disabled={busyId === game.id}
+                        title={
+                          game.players > 0
+                            ? game.kind === 'table'
+                              ? 'Players Must Leave Before This Table Can Close'
+                              : 'A Registered Tournament Cannot Be Cancelled'
+                            : 'Close Game'
+                        }
+                      >
+                        {busyId === game.id ? 'Closing…' : 'Close'}
+                      </button>
+                    )}
+                  </div>
+                </article>
+              );
+            })}
+          </section>
+        ))}
+
+      {surface === 'ticker' && allowed && scopeId && (
+        <TickerManagementPanel scope={scope} scopeId={scopeId} />
       )}
 
-      {allowed && scopeId && <TickerManagementPanel scope={scope} scopeId={scopeId} />}
-
-      {allowed && hostClubId && (
+      {surface === 'messages' && allowed && hostClubId && (
         <ClubMessageManagementPanel
           clubId={hostClubId}
           clubName={hosts.find((host) => host.id === hostClubId)?.name || scopeName}

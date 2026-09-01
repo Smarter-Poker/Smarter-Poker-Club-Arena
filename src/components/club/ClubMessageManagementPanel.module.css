@@ -1,13 +1,16 @@
 .panel {
   margin-top: 22px;
-  border: 1px solid rgba(62, 167, 237, 0.35);
-  border-radius: 8px;
+  border: 1px solid #40535e;
+  border-radius: 1px;
   padding: clamp(16px, 2.5vw, 26px);
   color: #eaf7ff;
   background:
-    linear-gradient(135deg, rgba(9, 37, 55, 0.95), rgba(4, 12, 20, 0.98)),
+    linear-gradient(135deg, rgba(10, 29, 40, 0.97), rgba(2, 7, 11, 0.99)),
     repeating-linear-gradient(90deg, transparent 0 31px, rgba(62, 167, 237, 0.04) 32px);
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.08),
+    0 24px 70px rgba(0, 0, 0, 0.35);
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%);
 }
 
 .heading,
@@ -87,7 +90,7 @@
   width: 100%;
   box-sizing: border-box;
   border: 1px solid rgba(89, 171, 224, 0.35);
-  border-radius: 5px;
+  border-radius: 1px;
   padding: 10px 12px;
   color: #f4fbff;
   background: rgba(1, 9, 15, 0.82);
@@ -110,7 +113,7 @@
 .announcementActions button {
   min-height: 34px;
   border: 1px solid rgba(74, 180, 255, 0.58);
-  border-radius: 5px;
+  border-radius: 1px;
   padding: 0 12px;
   color: #eaf8ff;
   background: linear-gradient(180deg, #16466a, #071a2a);
@@ -133,7 +136,7 @@
 .composer,
 .announcementList {
   border: 1px solid rgba(74, 180, 255, 0.22);
-  border-radius: 6px;
+  border-radius: 1px;
   padding: 16px;
   background: rgba(0, 6, 11, 0.58);
 }

@@ -114,9 +114,9 @@ describe('responsive premium Club Arena', () => {
   it('builds the approved mobile welcome, owner message, identity/jackpot pair, and wallet accordion', () => {
     expect(PAGE).toContain('className="club-mobile-welcome"');
     expect(PAGE).toContain('className={`club-mobile-owner-message');
-    expect(PAGE).toContain('const CLUB_DESCRIPTION_MAX_LENGTH = 72');
-    expect(PAGE).toContain('maxLength={CLUB_DESCRIPTION_MAX_LENGTH}');
-    expect(PAGE).toContain('.slice(0, CLUB_DESCRIPTION_MAX_LENGTH)');
+    expect(PAGE).toContain('const CLUB_LOBBY_MESSAGE_MAX_LENGTH = 72');
+    expect(PAGE).toContain('maxLength={CLUB_LOBBY_MESSAGE_MAX_LENGTH}');
+    expect(PAGE).toContain('.slice(0, CLUB_LOBBY_MESSAGE_MAX_LENGTH)');
     expect(PAGE).toContain('className="lobby-wallets-trigger"');
     expect(PAGE).toContain('aria-expanded={walletsExpanded}');
     expect(PAGE).toContain('data-expanded={walletsExpanded}');

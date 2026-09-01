@@ -39,8 +39,19 @@ describe('canonical table management architecture', () => {
     expect(migration).toContain('public.fn_is_union_operator');
     expect(migration).toContain('public.fn_update_managed_game');
     expect(migration).toContain('public.fn_close_managed_game');
-    expect(migration).toContain('atomic_credit_wallet_and_log');
-    expect(migration).toContain('fn_credit_and_log');
+    expect(migration).toContain("'reason','players_seated'");
+    expect(migration).toContain("'reason','players_registered'");
+    expect(migration).not.toContain("'Table closed:'");
+    expect(migration).not.toContain("'Tournament cancellation refund:");
+  });
+
+  it('never force-closes occupied games or mutates a registered tournament', () => {
+    expect(migration).toContain('FROM public.table_seats ts');
+    expect(migration).toContain('ts.left_at IS NULL AND ts.user_id IS NOT NULL');
+    expect(migration).toContain('FROM public.tournament_players tp');
+    expect(page).toContain('This table cannot be closed while players are seated');
+    expect(page).toContain('This tournament cannot be modified after a player has registered');
+    expect(page).not.toContain('cancelled and refunded');
   });
 
   it('removes the private-tournament bypass for union member clubs', () => {
@@ -74,6 +85,8 @@ describe('ticker management', () => {
     expect(tickerPanel).toContain('Text Color');
     expect(tickerPanel).toContain('Accent Color');
     expect(tickerPanel).toContain('Font');
+    expect(tickerPanel).toContain('Maintenance &amp; Service Rotation');
+    expect(tickerPanel).toContain('Add Service Notice');
   });
 
   it('wires saved controls into the live ticker', () => {
@@ -81,6 +94,8 @@ describe('ticker management', () => {
     expect(ticker).toContain('managedTicker.sources.overlays');
     expect(ticker).toContain('managedTicker.sources.registration_closing');
     expect(ticker).toContain('managedTicker.sources.table_openings');
+    expect(ticker).toContain('managedTicker.sources.maintenance');
+    expect(ticker).toContain('SERVICE NOTICE');
     expect(ticker).toContain("'--ticker-speed'");
     expect(ticker).toContain('managedTicker.backgroundColor');
     expect(ticker).toContain('managedTicker.fontFamily');

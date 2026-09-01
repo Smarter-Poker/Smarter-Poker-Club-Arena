@@ -63,6 +63,7 @@ export default function TickerManagementPanel({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [messageDraft, setMessageDraft] = useState('');
+  const [serviceDraft, setServiceDraft] = useState('');
 
   useEffect(() => {
     let alive = true;
@@ -100,7 +101,7 @@ export default function TickerManagementPanel({
         <div>
           <span>Ticker Management</span>
           <h2 id="ticker-management-title">Control The Live Message Rail</h2>
-          <p>Choose what earns the top strip, then tune its pace and visual treatment.</p>
+          <p>Choose What Earns The Top Strip, Then Tune Its Pace And Visual Treatment.</p>
         </div>
         <label className={styles.master}>
           <input
@@ -124,7 +125,7 @@ export default function TickerManagementPanel({
         <strong style={{ color: settings.accentColor }}>LIVE ALERT</strong>
         <div>
           <span style={{ animationDuration: `${settings.speedSeconds}s` }}>
-            Your ticker preview · tournament starting soon · custom messages · overlay alerts
+            Your Ticker Preview · Tournament Starting Soon · Custom Messages · Overlay Alerts
           </span>
         </div>
       </div>
@@ -201,7 +202,7 @@ export default function TickerManagementPanel({
           <input
             value={messageDraft}
             maxLength={160}
-            placeholder="Write a concise message players can act on"
+            placeholder="Write A Concise Message Players Can Act On"
             onChange={(e) => setMessageDraft(e.target.value)}
           />
           <button
@@ -217,7 +218,7 @@ export default function TickerManagementPanel({
           </button>
         </div>
         {settings.customMessages.length === 0 ? (
-          <p>No custom messages yet.</p>
+          <p>No Custom Messages Yet.</p>
         ) : (
           <ul>
             {settings.customMessages.map((message, index) => (
@@ -238,12 +239,55 @@ export default function TickerManagementPanel({
             ))}
           </ul>
         )}
+        <h3>Maintenance &amp; Service Rotation</h3>
+        <p>Service Notices Stay Separate From Promotional Copy And Display Only When Enabled.</p>
+        <div className={styles.messageComposer}>
+          <input
+            value={serviceDraft}
+            maxLength={160}
+            placeholder="Example: Scheduled Maintenance Begins Tonight At 2 AM"
+            onChange={(e) => setServiceDraft(e.target.value)}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const message = serviceDraft.replace(/\s+/g, ' ').trim();
+              if (!message) return;
+              update('serviceMessages', [...settings.serviceMessages, message].slice(-5));
+              setServiceDraft('');
+            }}
+          >
+            Add Service Notice
+          </button>
+        </div>
+        {settings.serviceMessages.length === 0 ? (
+          <p>No Service Notices Are Scheduled.</p>
+        ) : (
+          <ul>
+            {settings.serviceMessages.map((message, index) => (
+              <li key={`${message}-${index}`}>
+                <span>{message}</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    update(
+                      'serviceMessages',
+                      settings.serviceMessages.filter((_, itemIndex) => itemIndex !== index)
+                    )
+                  }
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
       <div className={styles.footer}>
         <span>
           {loading
-            ? 'Loading current ticker…'
-            : 'Changes publish to club and table pages after saving.'}
+            ? 'Loading Current Ticker…'
+            : 'Changes Publish To Club And Table Pages After Saving.'}
         </span>
         <button type="button" onClick={() => void save()} disabled={loading || saving}>
           {saving ? 'Saving…' : 'Save Ticker'}

@@ -20,6 +20,7 @@ export interface ManagedTickerSettings {
   fontFamily: 'Rajdhani' | 'Inter' | 'Roboto Condensed' | 'System';
   sources: Record<TickerSource, boolean>;
   customMessages: string[];
+  serviceMessages: string[];
 }
 
 export const DEFAULT_TICKER_SETTINGS: ManagedTickerSettings = {
@@ -40,6 +41,7 @@ export const DEFAULT_TICKER_SETTINGS: ManagedTickerSettings = {
     winner_results: false,
   },
   customMessages: [],
+  serviceMessages: [],
 };
 
 function parse(raw: unknown): ManagedTickerSettings {
@@ -73,6 +75,11 @@ function parse(raw: unknown): ManagedTickerSettings {
           .filter((message: unknown) => typeof message === 'string')
           .slice(0, 10)
       : [],
+    serviceMessages: Array.isArray(settings.service_messages ?? settings.serviceMessages)
+      ? (settings.service_messages ?? settings.serviceMessages)
+          .filter((message: unknown) => typeof message === 'string')
+          .slice(0, 5)
+      : [],
   };
 }
 
@@ -103,6 +110,7 @@ export const tickerManagementService = {
         font_family: settings.fontFamily,
         sources: settings.sources,
         custom_messages: settings.customMessages,
+        service_messages: settings.serviceMessages,
       },
     });
     if (error) throw new Error(error.message || 'Could not save ticker settings.');

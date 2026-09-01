@@ -2,6 +2,8 @@
 -- A standalone club manages itself. Once it joins a union, only the union
 -- owner/admin may manage those games, through the union scope.
 
+BEGIN;
+
 CREATE TABLE IF NOT EXISTS public.game_ticker_settings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   club_id uuid REFERENCES public.clubs(id) ON DELETE CASCADE,
@@ -112,7 +114,8 @@ BEGIN
     'accent_color', CASE WHEN COALESCE(p_settings->>'accent_color','') ~ '^#[0-9A-Fa-f]{6}$' THEN p_settings->>'accent_color' ELSE '#00d4ff' END,
     'font_family', v_font,
     'sources', COALESCE(p_settings->'sources','{}'::jsonb),
-    'custom_messages', COALESCE((SELECT jsonb_agg(left(regexp_replace(value,'\s+',' ','g'),160)) FROM jsonb_array_elements_text(COALESCE(p_settings->'custom_messages','[]'::jsonb)) WITH ORDINALITY m(value,ord) WHERE ord<=10),'[]'::jsonb)
+    'custom_messages', COALESCE((SELECT jsonb_agg(left(regexp_replace(value,'\s+',' ','g'),160)) FROM jsonb_array_elements_text(COALESCE(p_settings->'custom_messages','[]'::jsonb)) WITH ORDINALITY m(value,ord) WHERE ord<=10),'[]'::jsonb),
+    'service_messages', COALESCE((SELECT jsonb_agg(left(regexp_replace(value,'\s+',' ','g'),160)) FROM jsonb_array_elements_text(COALESCE(p_settings->'service_messages','[]'::jsonb)) WITH ORDINALITY m(value,ord) WHERE ord<=5),'[]'::jsonb)
   );
 
   IF p_scope='club' THEN
@@ -270,11 +273,19 @@ BEGIN
       UPDATE public.tables SET name=v_name,small_blind=(p_patch->>'small_blind')::numeric,big_blind=(p_patch->>'big_blind')::numeric,min_buy_in=(p_patch->>'min_buy_in')::numeric,max_buy_in=(p_patch->>'max_buy_in')::numeric,max_players=LEAST(10,GREATEST(2,(p_patch->>'max_players')::int)),updated_at=now() WHERE id=p_game_id;
     END IF;
   ELSE
-    IF v_players>0 OR upper(v_status) NOT IN ('ANNOUNCED','REGISTERING','SCHEDULED') THEN
-      UPDATE public.tournaments SET name=v_name,updated_at=now() WHERE id=p_game_id;
-    ELSE
-      UPDATE public.tournaments SET name=v_name,max_players=GREATEST(2,(p_patch->>'max_players')::int),start_time=COALESCE((p_patch->>'start_time')::timestamptz,start_time),updated_at=now() WHERE id=p_game_id;
+    -- Once even one real player registers, the advertised tournament contract
+    -- is immutable. This is intentionally stricter than a current_players
+    -- counter because a stale counter must never reopen the edit path.
+    IF EXISTS (
+      SELECT 1 FROM public.tournament_players tp
+      WHERE tp.tournament_id=p_game_id AND tp.user_id IS NOT NULL
+    ) THEN
+      RETURN jsonb_build_object('ok',false,'reason','players_registered');
     END IF;
+    IF upper(v_status) NOT IN ('ANNOUNCED','REGISTERING','SCHEDULED') THEN
+      RETURN jsonb_build_object('ok',false,'reason','already_started');
+    END IF;
+    UPDATE public.tournaments SET name=v_name,max_players=GREATEST(2,(p_patch->>'max_players')::int),start_time=COALESCE((p_patch->>'start_time')::timestamptz,start_time),updated_at=now() WHERE id=p_game_id;
   END IF;
   RETURN jsonb_build_object('ok',true);
 END $$;
@@ -286,42 +297,40 @@ SECURITY DEFINER
 SET search_path TO 'public','extensions'
 AS $$
 DECLARE
-  v_uid uuid:=auth.uid(); v_club uuid; v_seat record; v_t record; v_player record;
-  v_refunded int:=0; v_total numeric:=0; v_paid numeric; v_fee_net numeric; v_ok boolean; v_fees numeric:=0;
+  v_uid uuid:=auth.uid(); v_club uuid; v_status text;
 BEGIN
   IF v_uid IS NULL THEN RAISE EXCEPTION 'Authentication required' USING ERRCODE='28000'; END IF;
   IF p_kind='table' THEN
-    SELECT club_id INTO v_club FROM public.tables WHERE id=p_game_id FOR UPDATE;
+    SELECT club_id,status INTO v_club,v_status FROM public.tables WHERE id=p_game_id FOR UPDATE;
     IF NOT FOUND THEN RETURN jsonb_build_object('ok',false,'reason','game_not_found'); END IF;
     IF NOT public.fn_can_create_games(v_club,v_uid) THEN RETURN jsonb_build_object('ok',false,'reason','not_authorized'); END IF;
-    FOR v_seat IN SELECT id,user_id,stack FROM public.table_seats WHERE table_id=p_game_id AND left_at IS NULL AND COALESCE(stack,0)>0 ORDER BY seat_number FOR UPDATE LOOP
-      IF NOT public.atomic_credit_wallet_and_log(v_seat.user_id,v_seat.stack,'cashout','Table closed: '||v_seat.stack::text||' chips returned',p_game_id,NULL,NULL,'cashout:'||v_seat.id::text) THEN RAISE EXCEPTION 'Table refund failed' USING ERRCODE='25000'; END IF;
-      v_refunded:=v_refunded+1; v_total:=v_total+v_seat.stack;
-    END LOOP;
-    UPDATE public.table_seats SET left_at=now() WHERE table_id=p_game_id AND left_at IS NULL;
+    IF lower(COALESCE(v_status,'')) IN ('closed','completed','cancelled','finished') THEN
+      RETURN jsonb_build_object('ok',false,'reason','already_closed');
+    END IF;
+    -- Operators never force-cash-out a player. The player/engine owns the
+    -- canonical seat-exit transaction; management can close only an empty felt.
+    PERFORM 1 FROM public.table_seats ts
+      WHERE ts.table_id=p_game_id AND ts.left_at IS NULL AND ts.user_id IS NOT NULL
+      FOR UPDATE;
+    IF FOUND THEN
+      RETURN jsonb_build_object('ok',false,'reason','players_seated');
+    END IF;
     UPDATE public.tables SET status='closed',current_players=0,updated_at=now() WHERE id=p_game_id;
-    RETURN jsonb_build_object('ok',true,'players_refunded',v_refunded,'chips_refunded',v_total);
+    RETURN jsonb_build_object('ok',true);
   ELSIF p_kind='tournament' THEN
-    SELECT * INTO v_t FROM public.tournaments WHERE id=p_game_id FOR UPDATE;
+    SELECT club_id,status INTO v_club,v_status FROM public.tournaments WHERE id=p_game_id FOR UPDATE;
     IF NOT FOUND THEN RETURN jsonb_build_object('ok',false,'reason','game_not_found'); END IF;
-    IF NOT public.fn_can_create_games(v_t.club_id,v_uid) THEN RETURN jsonb_build_object('ok',false,'reason','not_authorized'); END IF;
-    IF upper(COALESCE(v_t.status,'')) IN ('COMPLETED','CANCELLED','CANCELED','COMPLETING') THEN RETURN jsonb_build_object('ok',false,'reason','already_closed'); END IF;
-    UPDATE public.tournaments SET status='CANCELLED',ended_at=now(),updated_at=now(),prize_pool=0,bounty_pool=0 WHERE id=p_game_id;
-    FOR v_player IN SELECT tp.id,tp.user_id FROM public.tournament_players tp WHERE tp.tournament_id=p_game_id AND tp.user_id IS NOT NULL LOOP
-      SELECT round(COALESCE(sum(CASE WHEN w.type='debit' AND w.category IN ('tournament_buyin','rebuy','addon') THEN w.amount WHEN w.type='credit' AND w.category='refund' THEN -w.amount ELSE 0 END),0),2) INTO v_paid FROM public.wallet_transactions w WHERE w.user_id=v_player.user_id AND w.related_entity_id=p_game_id;
-      IF v_paid>0 THEN
-        v_ok:=public.fn_credit_and_log(v_player.user_id,v_paid,'tourney:'||p_game_id||':cancelrefund:'||v_player.id,'refund','Tournament cancellation refund: '||COALESCE(v_t.name,'Unknown'),p_game_id);
-        IF COALESCE(v_ok,false) THEN v_refunded:=v_refunded+1; v_total:=v_total+v_paid; END IF;
-      END IF;
-      IF v_t.club_id IS NOT NULL THEN
-        SELECT round(COALESCE(sum(r.rake_amount),0),2) INTO v_fee_net FROM public.rake_records r WHERE r.tournament_id=p_game_id AND r.is_tournament AND r.metadata->>'user_id'=v_player.user_id::text;
-        IF v_fee_net>0 THEN INSERT INTO public.rake_records(hand_id,table_id,club_id,rake_amount,pot_size,num_players,bbj_contribution,is_tournament,tournament_id,source,metadata) VALUES(NULL,NULL,v_t.club_id,-v_fee_net,v_fee_net,1,0,true,p_game_id,'fn_close_managed_game',jsonb_build_object('kind','tournament_fee_refund','user_id',v_player.user_id)); v_fees:=v_fees+v_fee_net; END IF;
-      END IF;
-    END LOOP;
-    IF v_fees>0 THEN UPDATE public.tournaments SET total_rake=GREATEST(0,COALESCE(total_rake,0)-v_fees) WHERE id=p_game_id; END IF;
-    UPDATE public.tournament_players SET status='eliminated',eliminated_at=now() WHERE tournament_id=p_game_id AND status IN ('registered','playing');
+    IF NOT public.fn_can_create_games(v_club,v_uid) THEN RETURN jsonb_build_object('ok',false,'reason','not_authorized'); END IF;
+    IF upper(COALESCE(v_status,'')) IN ('COMPLETED','CANCELLED','CANCELED','COMPLETING') THEN RETURN jsonb_build_object('ok',false,'reason','already_closed'); END IF;
+    PERFORM 1 FROM public.tournament_players tp
+      WHERE tp.tournament_id=p_game_id AND tp.user_id IS NOT NULL
+      FOR UPDATE;
+    IF FOUND THEN
+      RETURN jsonb_build_object('ok',false,'reason','players_registered');
+    END IF;
+    UPDATE public.tournaments SET status='CANCELLED',ended_at=now(),updated_at=now() WHERE id=p_game_id;
     UPDATE public.tables SET status='closed',current_players=0 WHERE tournament_id=p_game_id;
-    RETURN jsonb_build_object('ok',true,'players_refunded',v_refunded,'chips_refunded',v_total);
+    RETURN jsonb_build_object('ok',true);
   END IF;
   RETURN jsonb_build_object('ok',false,'reason','invalid_game_kind');
 END $$;
@@ -378,3 +387,5 @@ END $$;
 REVOKE ALL ON FUNCTION public.fn_create_tournament_governed_legacy(uuid,jsonb) FROM PUBLIC,anon,authenticated;
 REVOKE ALL ON FUNCTION public.fn_create_tournament(uuid,jsonb) FROM PUBLIC,anon;
 GRANT EXECUTE ON FUNCTION public.fn_create_tournament(uuid,jsonb) TO authenticated,service_role;
+
+COMMIT;

@@ -19,6 +19,20 @@ function resultError(data: unknown, fallback: string): string | null {
   return result.ok ? null : result.reason || fallback;
 }
 
+const MANAGEMENT_ERRORS: Record<string, string> = {
+  players_seated:
+    'This table cannot be closed while players are seated. Ask every player to leave first.',
+  players_registered:
+    'This tournament cannot be changed or cancelled after a player has registered.',
+  already_closed: 'This game is already closed.',
+  not_authorized: 'You do not have permission to manage this game.',
+  game_not_found: 'This game could not be found.',
+};
+
+function managementError(reason: string | null): string | null {
+  return reason ? MANAGEMENT_ERRORS[reason] || reason.replace(/_/g, ' ') : null;
+}
+
 export const gameManagementService = {
   async update(kind: ManagedGameKind, gameId: string, patch: ManagedGamePatch): Promise<void> {
     const { data, error } = await supabase.rpc('fn_update_managed_game', {
@@ -35,7 +49,7 @@ export const gameManagementService = {
       },
     });
     if (error) throw new Error(error.message || 'Could not update the game.');
-    const reason = resultError(data, 'Could not update the game.');
+    const reason = managementError(resultError(data, 'Could not update the game.'));
     if (reason) throw new Error(reason);
     masterBus.emit(
       kind === 'table' ? 'TABLE_UPDATED' : 'TOURNAMENT_UPDATED',
@@ -49,12 +63,11 @@ export const gameManagementService = {
       p_game_id: gameId,
     });
     if (error) throw new Error(error.message || 'Could not close the game.');
-    const reason = resultError(data, 'Could not close the game.');
+    const reason = managementError(resultError(data, 'Could not close the game.'));
     if (reason) throw new Error(reason);
     masterBus.emit(
       kind === 'table' ? 'TABLE_CLOSED' : 'TOURNAMENT_CANCELLED',
       kind === 'table' ? { tableId: gameId } : { tournamentId: gameId }
     );
-    masterBus.emit('BALANCE_UPDATED', { source: `${kind}_management_close` });
   },
 };

@@ -119,6 +119,7 @@ export function TournamentStartingTicker() {
   const [managedTicker, setManagedTicker] = useState(DEFAULT_TICKER_SETTINGS);
   const [tickerScopeRevision, setTickerScopeRevision] = useState(0);
   const [customDismissed, setCustomDismissed] = useState(false);
+  const [serviceDismissed, setServiceDismissed] = useState(false);
   /* The live ticker belongs on active tables and inside a club's live lobby.
      The club route matters: its desktop reference reserves this exact strip
      below the global header, and suppressing it there left no ticker band at
@@ -143,24 +144,27 @@ export function TournamentStartingTicker() {
         const tableMatch = location.pathname.match(/^\/table\/([^/]+)/);
         if (clubMatch) {
           clubUuid = await resolveClubUUID(clubMatch[1]);
-          const { data } = await supabase
+          const { data, error } = await supabase
             .from('clubs')
             .select('union_id')
             .eq('id', clubUuid)
             .maybeSingle();
+          if (error) throw error;
           unionUuid = data?.union_id || null;
         } else if (tableMatch) {
-          const { data } = await supabase
+          const { data, error } = await supabase
             .from('tables')
             .select('club_id,union_id')
             .eq('id', tableMatch[1])
             .maybeSingle();
+          if (error) throw error;
           clubUuid = data?.club_id || null;
           unionUuid = data?.union_id || null;
         }
         const next = await tickerManagementService.get(unionUuid ? null : clubUuid, unionUuid);
         if (!cancelled) setManagedTicker(next);
-      } catch {
+      } catch (error) {
+        reportError(error, 'TournamentStartingTicker.loadManagedSettings');
         if (!cancelled) setManagedTicker(DEFAULT_TICKER_SETTINGS);
       }
     })();
@@ -584,9 +588,14 @@ export function TournamentStartingTicker() {
   );
   const customMessages =
     managedTicker.sources.custom_messages && !customDismissed ? managedTicker.customMessages : [];
+  const serviceMessages =
+    managedTicker.sources.maintenance && !serviceDismissed ? managedTicker.serviceMessages : [];
   useEffect(() => {
     setCustomDismissed(false);
   }, [managedTicker.customMessages]);
+  useEffect(() => {
+    setServiceDismissed(false);
+  }, [managedTicker.serviceMessages]);
 
   const notifiedRef = useRef<Record<string, { fiveMin: boolean; ninetySec: boolean }>>({});
   const upcomingRef = useRef(upcoming);
@@ -678,6 +687,7 @@ export function TournamentStartingTicker() {
     (live.length > 0 ||
       liveOverlays.length > 0 ||
       operationalMessages.length > 0 ||
+      serviceMessages.length > 0 ||
       customMessages.length > 0) &&
     onTickerRoute &&
     tickerSettings.showTicker !== false &&
@@ -749,8 +759,14 @@ export function TournamentStartingTicker() {
      the bar and the countdown waits for the next poll. */
   const showingOverlay = liveOverlays.length > 0;
   const showingOperational = !showingOverlay && live.length === 0 && operationalMessages.length > 0;
+  const showingService =
+    !showingOverlay && live.length === 0 && !showingOperational && serviceMessages.length > 0;
   const showingCustom =
-    !showingOverlay && !showingOperational && live.length === 0 && customMessages.length > 0;
+    !showingOverlay &&
+    !showingOperational &&
+    !showingService &&
+    live.length === 0 &&
+    customMessages.length > 0;
 
   // One bar. If two events land in the same window the marquee carries both
   // rather than stacking bars over the felt.
@@ -767,7 +783,7 @@ export function TournamentStartingTicker() {
     : primary?.id || primaryOperational?.tournamentId;
   const targetName = primaryOverlay
     ? primaryOverlay.name
-    : primary?.name || primaryOperational?.message || 'Club Update';
+    : primary?.name || primaryOperational?.message || serviceMessages[0] || 'Club Update';
 
   // Dan 2026-08-21: house popup rule applies here too - First Letter Of
   // Every Word Capitalized, hyphenated words included ("Buy-In 22").
@@ -777,18 +793,20 @@ export function TournamentStartingTicker() {
       ? operationalMessages.map((item) => formatPopupText(item.message)).join('        •        ')
       : showingCustom
         ? customMessages.map(formatPopupText).join('        •        ')
-        : live
-            .map((t) =>
-              formatPopupText(
-                `${formatGameTitle(t.name)} starts in ${countdown(t.startsAt - now)}` +
-                  (t.buyIn > 0 ? ` · buy-in ${t.buyIn.toLocaleString()}` : ' · freeroll') +
-                  // "entered", not "registered": this is tournaments.current_players,
-                  // a registration COUNTER that is incremented on entry and never
-                  // decremented, so it is an entry total and not a live head count.
-                  ` · ${t.registered.toLocaleString()} entered`
+        : showingService
+          ? serviceMessages.map(formatPopupText).join('        •        ')
+          : live
+              .map((t) =>
+                formatPopupText(
+                  `${formatGameTitle(t.name)} starts in ${countdown(t.startsAt - now)}` +
+                    (t.buyIn > 0 ? ` · buy-in ${t.buyIn.toLocaleString()}` : ' · freeroll') +
+                    // "entered", not "registered": this is tournaments.current_players,
+                    // a registration COUNTER that is incremented on entry and never
+                    // decremented, so it is an entry total and not a live head count.
+                    ` · ${t.registered.toLocaleString()} entered`
+                )
               )
-            )
-            .join('        •        ');
+              .join('        •        ');
 
   return (
     <div
@@ -833,15 +851,17 @@ export function TournamentStartingTicker() {
             : 'POTENTIAL OVERLAY'
           : showingCustom
             ? 'CLUB UPDATE'
-            : showingOperational
-              ? primaryOperational?.source === 'registration_closing'
-                ? 'REG CLOSING'
-                : primaryOperational?.source === 'guarantees'
-                  ? 'GUARANTEED'
-                  : primaryOperational?.source === 'table_openings'
-                    ? 'TABLE OPEN'
-                    : 'RESULTS'
-              : 'STARTING SOON'}
+            : showingService
+              ? 'SERVICE NOTICE'
+              : showingOperational
+                ? primaryOperational?.source === 'registration_closing'
+                  ? 'REG CLOSING'
+                  : primaryOperational?.source === 'guarantees'
+                    ? 'GUARANTEED'
+                    : primaryOperational?.source === 'table_openings'
+                      ? 'TABLE OPEN'
+                      : 'RESULTS'
+                : 'STARTING SOON'}
       </span>
 
       {/* Dan 2026-08-23: "if you click the ticker for the tournament running,
@@ -864,7 +884,7 @@ export function TournamentStartingTicker() {
         onClick={() => {
           if (targetId) navigate(`/tournaments/${targetId}`);
           else if (primaryOperational?.tableId) navigate(`/table/${primaryOperational.tableId}`);
-          else if (!showingCustom) navigate('/tournaments');
+          else if (!showingCustom && !showingService) navigate('/tournaments');
         }}
         title={`Register For ${formatGameTitle(targetName)}`}
       >
@@ -888,6 +908,7 @@ export function TournamentStartingTicker() {
             setOperationalMessages((items) =>
               items.filter((item) => item.id !== primaryOperational.id)
             );
+          else if (showingService) setServiceDismissed(true);
           else if (showingCustom) setCustomDismissed(true);
         }}
         aria-label={`Dismiss The Announcement For ${targetName}`}

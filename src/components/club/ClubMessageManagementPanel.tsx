@@ -120,7 +120,7 @@ export default function ClubMessageManagementPanel({
         <div>
           <span>Club Message Management</span>
           <h2 id="club-message-management-title">Every Player-Facing Club Message</h2>
-          <p>{clubName} · Edit identity copy and announcement banners from one governed surface.</p>
+          <p>{clubName} · Edit Identity Copy And Announcement Banners From One Governed Surface.</p>
         </div>
         <span className={styles.limitKey}>Limits Are Enforced In The Database</span>
       </header>
@@ -133,7 +133,7 @@ export default function ClubMessageManagementPanel({
               value={identity.tagline}
               maxLength={CLUB_MESSAGE_LIMITS.tagline}
               onChange={(event) => setIdentity({ ...identity, tagline: event.target.value })}
-              placeholder="Short identity line shown with the club"
+              placeholder="Short Identity Line Shown With The Club"
               disabled={loading}
             />
             <CharacterCount value={identity.tagline} limit={CLUB_MESSAGE_LIMITS.tagline} />
@@ -144,7 +144,7 @@ export default function ClubMessageManagementPanel({
               value={identity.lobbyMessage}
               maxLength={CLUB_MESSAGE_LIMITS.lobbyMessage}
               onChange={(event) => setIdentity({ ...identity, lobbyMessage: event.target.value })}
-              placeholder="One-line message above the club game lobby"
+              placeholder="One-Line Message Above The Club Game Lobby"
               disabled={loading}
             />
             <CharacterCount
@@ -159,7 +159,7 @@ export default function ClubMessageManagementPanel({
               value={identity.description}
               maxLength={CLUB_MESSAGE_LIMITS.description}
               onChange={(event) => setIdentity({ ...identity, description: event.target.value })}
-              placeholder="Long-form description used on club information surfaces"
+              placeholder="Long-Form Description Used On Club Information Surfaces"
               disabled={loading}
             />
             <CharacterCount value={identity.description} limit={CLUB_MESSAGE_LIMITS.description} />
@@ -177,8 +177,8 @@ export default function ClubMessageManagementPanel({
         <aside className={styles.preview}>
           <span>Live Copy Preview</span>
           <h3>{identity.tagline || `Welcome To ${clubName}`}</h3>
-          <strong>{identity.lobbyMessage || 'No lobby owner message'}</strong>
-          <p>{identity.description || 'No long-form club description'}</p>
+          <strong>{identity.lobbyMessage || 'No Lobby Owner Message'}</strong>
+          <p>{identity.description || 'No Long-Form Club Description'}</p>
         </aside>
       </div>
 
@@ -259,9 +259,9 @@ export default function ClubMessageManagementPanel({
         <div className={styles.announcementList}>
           <h3>Current Announcements</h3>
           {loading ? (
-            <p>Loading messages…</p>
+            <p>Loading Messages…</p>
           ) : announcements.length === 0 ? (
-            <p>No announcements have been published.</p>
+            <p>No Announcements Have Been Published.</p>
           ) : (
             announcements.map((announcement) => (
               <article

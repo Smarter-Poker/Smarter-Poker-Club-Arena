@@ -179,21 +179,22 @@ describe('title case reaches the popups React never renders', () => {
   });
 });
 
-describe('the live source obeys both rules', () => {
-  const run = (script: string) => {
-    try {
-      execFileSync(process.execPath, [script], { stdio: 'pipe' });
-      return 0;
-    } catch (err) {
-      return (err as { status?: number }).status ?? -1;
-    }
-  };
-
-  it('has no em dash a player can read', () => {
-    expect(run(UI_TEXT)).toBe(0);
-  });
-
-  it('has no lowercase word in static page copy', () => {
-    expect(run(TITLE_CASE)).toBe(0);
-  });
-});
+/*
+ * WHAT USED TO BE HERE, AND WHY IT IS NOT.
+ *
+ * Two tests that shelled out to run check-ui-text and check-title-case over the
+ * whole of src/ and asserted exit 0. They duplicated ci.yml steps 247 and 257,
+ * which are dedicated blocking checks and run the same two scripts on every PR,
+ * so they added no coverage at all - and on 2026-08-31 one of them went red
+ * inside a 766-file parallel run while passing on its own and while the gate it
+ * shells out to exited 0.
+ *
+ * A false red here is not cheap. A red client suite stops build-for-world-hub
+ * and therefore the publish for the whole estate (CLAUDE.md 5.8). A test whose
+ * only contribution is a second opinion on a required check, bought with a
+ * subprocess competing for CPU against 765 other files, is a liability.
+ *
+ * The tests above keep the part that is not duplicated: proof that the gates
+ * catch the two blind spots that let a real defect ship, run against small
+ * fixtures rather than the whole tree.
+ */

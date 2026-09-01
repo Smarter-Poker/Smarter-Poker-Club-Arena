@@ -267,3 +267,10 @@ BEGIN
     RAISE EXCEPTION 'fn_seat_horse_in_seat_first_game still seats a horse at zero chips';
   END IF;
 END $$;;
+
+-- ── Grants restated with the declarations above ────────────────────────────
+-- fn_take_seat_and_buy_in is deliberately left reachable by `authenticated`:
+-- it IS the browser's front door, and it derives the actor from auth.uid()
+-- rather than from a parameter. The horse seater is engine-only.
+REVOKE ALL ON FUNCTION public.fn_seat_horse_in_seat_first_game(uuid, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_seat_horse_in_seat_first_game(uuid, uuid) TO service_role;

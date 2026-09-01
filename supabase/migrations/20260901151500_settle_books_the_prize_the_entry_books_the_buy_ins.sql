@@ -307,3 +307,14 @@ BEGIN
     RAISE EXCEPTION 'the seat counter does not book the spin entry';
   END IF;
 END $$;;
+
+-- ── Grants restated with the declarations above ────────────────────────────
+-- Both functions are engine-only: nothing in the browser calls either, and
+-- neither can know who is asking (no auth.uid()). Production already holds
+-- exactly these grants; they are written here because a migration that
+-- re-declares a SECURITY DEFINER writer and does not say who may run it is
+-- indistinguishable from one that opened it.
+REVOKE ALL ON FUNCTION public.fn_spin_settle_game(uuid, uuid, numeric, integer, numeric, numeric) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_spin_settle_game(uuid, uuid, numeric, integer, numeric, numeric) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_sync_seat_first_player_count(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sync_seat_first_player_count(uuid) TO service_role;

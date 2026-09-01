@@ -217,3 +217,7 @@ BEGIN
     RAISE EXCEPTION 'the seat counter still swallows an entry-booking failure';
   END IF;
 END $$;;
+
+-- ── Grants restated with the declaration above ─────────────────────────────
+REVOKE ALL ON FUNCTION public.fn_sync_seat_first_player_count(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_sync_seat_first_player_count(uuid) TO service_role;

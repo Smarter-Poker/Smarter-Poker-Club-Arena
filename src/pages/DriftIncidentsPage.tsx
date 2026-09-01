@@ -19,6 +19,7 @@ import {
   IncidentAction,
   IncidentStatus,
 } from '../services/DriftIncidentService';
+import DriftGatePanel from './DriftGatePanel';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -380,6 +381,9 @@ export default function DriftIncidentsPage() {
           </div>
         ))}
       </div>
+
+      {/* Burn-In Gate + Supply Trends + Balance As-Of (management only) */}
+      <DriftGatePanel />
 
       {/* Filter Tabs */}
       <div className="di-filter-tabs">

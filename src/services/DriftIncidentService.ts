@@ -38,6 +38,26 @@ export type AutoRepairStatus =
   | 'manual_needed'
   | 'not_applicable';
 
+export interface GatePanelData {
+  gate: {
+    run_at: string;
+    pass: boolean;
+    window_hours: number;
+    failing: string[] | null;
+    result: Record<string, unknown>;
+  } | null;
+  supply_series: {
+    taken_at: string;
+    unexplained: number | null;
+    total: number;
+    cert_wallets: number | null;
+    leaderboard_liability: number | null;
+  }[];
+  diamond_series: { taken_at: string; unexplained: number | null; total: number }[];
+  open_counts: Record<string, number> | null;
+  generated_at: string;
+}
+
 /** One entry in an incident's event timeline. */
 export interface IncidentEvent {
   at: string;
@@ -210,6 +230,42 @@ export const DriftIncidentService = {
       return {};
     }
     return (data as DriftMetrics) || {};
+  },
+
+  /**
+   * Burn-in gate status + 24h supply/diamond trend series for the gate
+   * panel. Returns null for non-management callers (the RPC checks).
+   */
+  async getGatePanel(): Promise<GatePanelData | null> {
+    const { data, error } = await retryAsync(() => supabase.rpc('fn_ca_gate_panel'));
+    if (error) {
+      reportError(error, 'DriftIncidentService.getGatePanel');
+      return null;
+    }
+    return (data as GatePanelData) ?? null;
+  },
+
+  /**
+   * Point-in-time balance reconstruction from the ledger. Management only
+   * (the RPC checks the caller and returns null otherwise).
+   */
+  async getBalanceAsOf(
+    entityType: string,
+    entityId: string,
+    asOfIso: string
+  ): Promise<Record<string, unknown> | null> {
+    const { data, error } = await retryAsync(() =>
+      supabase.rpc('fn_ca_balance_asof_admin', {
+        p_entity_type: entityType,
+        p_entity_id: entityId,
+        p_asof: asOfIso,
+      })
+    );
+    if (error) {
+      reportError(error, 'DriftIncidentService.getBalanceAsOf', { entityType, entityId });
+      throw error;
+    }
+    return (data as Record<string, unknown>) ?? null;
   },
 
   /**

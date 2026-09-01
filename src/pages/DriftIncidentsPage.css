@@ -701,3 +701,117 @@
 .di-card.deep-linked {
   animation: di-deep-link-flash 1.2s ease-out 3;
 }
+
+/* ── Burn-In Gate Panel (zero-drift phase 5) ─────────────────────────────── */
+.dgp-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0 4px;
+}
+.dgp-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+}
+.dgp-card {
+  background: rgba(20, 20, 24, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dgp-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9aa0ac;
+}
+.dgp-gate-pill {
+  align-self: flex-start;
+  padding: 3px 14px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 15px;
+}
+.dgp-gate-pill.pass {
+  background: rgba(46, 204, 113, 0.15);
+  color: #2ecc71;
+  border: 1px solid rgba(46, 204, 113, 0.5);
+}
+.dgp-gate-pill.fail {
+  background: rgba(231, 76, 60, 0.12);
+  color: #ff6b5e;
+  border: 1px solid rgba(231, 76, 60, 0.5);
+}
+.dgp-gate-meta {
+  font-size: 11px;
+  color: #778;
+}
+.dgp-gate-failing {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #ffb3ab;
+}
+.dgp-spark-zero {
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-dasharray: 3 3;
+  stroke-width: 1;
+}
+.dgp-spark-line {
+  stroke-width: 1.6;
+}
+.dgp-spark-line.flat {
+  stroke: #2ecc71;
+}
+.dgp-spark-line.off {
+  stroke: #f5a623;
+}
+.dgp-spark-empty,
+.dgp-spark-caption {
+  font-size: 11px;
+  color: #778;
+}
+.dgp-asof-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dgp-asof-controls select,
+.dgp-asof-controls input {
+  background: #101014;
+  color: #dde;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.dgp-asof-controls input[type='text'] {
+  min-width: 260px;
+}
+.dgp-asof-controls button {
+  background: rgba(88, 101, 242, 0.2);
+  color: #aab4ff;
+  border: 1px solid rgba(88, 101, 242, 0.5);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.dgp-asof-controls button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.dgp-asof-result {
+  margin: 6px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  background: #0b0b0e;
+  border-radius: 6px;
+  padding: 10px;
+  font-size: 11px;
+  color: #cde;
+}

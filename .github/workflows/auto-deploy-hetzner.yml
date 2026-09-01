@@ -208,6 +208,25 @@ jobs:
           npx tsc --noEmit
           npm test
 
+      - name: Financial health-gate (zero-drift phase 5)
+        # Do not deploy onto a bleeding ledger. Runs the conservation
+        # invariants read-only against production: trailing unexplained chip
+        # and diamond supply, settlement state legality, stranded op-id
+        # claims, plus the largest-remainder split property tests. SKIPS
+        # loudly when the SUPABASE_DB_PASSWORD secret is not configured, and
+        # can be overridden for the deploy that FIXES a bleed by putting
+        # [skip-financial-gate] in the commit message.
+        if: steps.dedupe.outputs.skip != 'true'
+        env:
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          if git log -1 --pretty=%B | grep -q '\[skip-financial-gate\]'; then
+            echo '::warning::financial health-gate skipped by commit message tag'
+            exit 0
+          fi
+          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
+          node scripts/ci/check-chip-conservation.mjs
+
       - name: Setup SSH key
         if: steps.dedupe.outputs.skip != 'true'
         env:

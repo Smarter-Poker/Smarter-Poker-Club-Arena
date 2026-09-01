@@ -10,6 +10,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { AGENT_DISTRIBUTION_READ_TYPES } from '../../lib/agentDistributionTypes';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -54,7 +55,7 @@ export default function DistributionHistory({ userId, clubId }: DistributionHist
         .select('id, to_user_id, amount, created_at, transaction_type, notes, clawed_back')
         .eq('from_user_id', userId)
         .eq('club_id', resolvedClub)
-        .in('transaction_type', ['agent_to_player', 'promo_agent_to_player', 'send'])
+        .in('transaction_type', [...AGENT_DISTRIBUTION_READ_TYPES])
         .order('created_at', { ascending: false })
         .limit(200);
 

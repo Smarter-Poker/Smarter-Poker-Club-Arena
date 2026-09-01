@@ -10,6 +10,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
+import { AGENT_DISTRIBUTION_READ_TYPES } from '../../lib/agentDistributionTypes';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { supabase } from '../../lib/supabase';
@@ -65,7 +66,7 @@ export default function AgentScoreCard({ userId, clubId }: AgentScoreCardProps) 
         .select('id, amount, clawed_back')
         .eq('from_user_id', userId)
         .eq('club_id', clubId)
-        .in('transaction_type', ['agent_to_player', 'promo_agent_to_player'])
+        .in('transaction_type', [...AGENT_DISTRIBUTION_READ_TYPES])
         .gte('created_at', thirtyDaysAgo);
 
       // Get unique recipients (players)
@@ -74,7 +75,7 @@ export default function AgentScoreCard({ userId, clubId }: AgentScoreCardProps) 
         .select('to_user_id')
         .eq('from_user_id', userId)
         .eq('club_id', clubId)
-        .in('transaction_type', ['agent_to_player', 'promo_agent_to_player']);
+        .in('transaction_type', [...AGENT_DISTRIBUTION_READ_TYPES]);
 
       // Get active players (seen in last 7 days)
       const uniquePlayerIds = [

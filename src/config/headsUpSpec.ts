@@ -52,11 +52,32 @@ export const HEADS_UP_SEATS = 2;
 export const HEADS_UP_STACKS = {
   /** "Heads-Up <buy-in>" — 50bb at level 1. */
   deep: 1000,
+  /** "Heads-Up <buy-in> Regular" — 25bb at level 1. */
+  regular: 500,
   /** "Heads-Up <buy-in> Turbo" — 15bb at level 1. */
   turbo: 300,
+  /** "Heads-Up <buy-in> Hyper" — 7.5bb at level 1. */
+  hyper: 150,
 } as const;
 
 export type HeadsUpBand = keyof typeof HEADS_UP_STACKS;
+
+/**
+ * The band's place in the game NAME, which is also the board's config key --
+ * ensureBoardOpen keys on the name, so these suffixes are load-bearing:
+ * changing one retires the old queue and opens a new one.
+ *
+ * Dan's locked catalog (2026-09-01) names four speeds; his 2026-08-23 ruling
+ * ("SPEED SHOULDN'T CHANGE, ONLY THE STARTING STACK") means every band runs
+ * the SAME three-minute clock and differs only in depth, exactly like the
+ * original deep/turbo pair.
+ */
+export const HEADS_UP_BAND_SUFFIX: Record<HeadsUpBand, string> = {
+  deep: '',
+  regular: ' Regular',
+  turbo: ' Turbo',
+  hyper: ' Hyper',
+};
 
 /** Every level is this long, at every buy-in, in both bands. */
 export const HEADS_UP_LEVEL_MINUTES = 3;
@@ -121,10 +142,15 @@ export const HEADS_UP_PAYOUTS: Array<{ place: number; percentage: number }> = [
 ];
 
 /** The buy-in rungs the board opens, in chips the player pays in total. */
-export const HEADS_UP_BUYINS = [1, 2, 5, 10, 20, 25, 50, 100] as const;
+/**
+ * The locked nine-step ladder (Dan's catalog, 2026-09-01). The old 20 was
+ * retired with it -- open 20-chip duels play out and their queue simply stops
+ * reopening, which is how a config leaves this board.
+ */
+export const HEADS_UP_BUYINS = [1, 2, 5, 10, 25, 50, 100, 250, 500] as const;
 
 /** The variants the board opens. */
-export const HEADS_UP_GAME_TYPES = ['nlh', 'plo4'] as const;
+export const HEADS_UP_GAME_TYPES = ['nlh', 'plo4', 'plo5', 'short_deck'] as const;
 export type HeadsUpGameType = (typeof HEADS_UP_GAME_TYPES)[number];
 
 /**

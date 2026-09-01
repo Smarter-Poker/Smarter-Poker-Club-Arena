@@ -302,6 +302,7 @@ import {
   HEADS_UP_PAYOUTS,
   HEADS_UP_SEATS,
   HEADS_UP_STACKS,
+  HEADS_UP_BAND_SUFFIX,
 } from '../config/headsUpSpec.js';
 import { secureRandomInt } from '../engine/CryptoRandom.js';
 
@@ -1445,23 +1446,36 @@ function horsesForSeatHeldGame(maxPlayers: number): { horses: number; isSim: boo
 /* Every number below now comes from headsUpSpec -- the seats, both stacks, the
    rungs and the variants. The shapes array is what turns two stacks into two
    independently-refilled boards; the STACKS themselves are the spec's. */
-const SNG_BOARD_SHAPES: { seats: number; label: string; turbo: boolean; startingStack: number }[] =
-  [
-    { seats: HEADS_UP_SEATS, label: 'Heads-Up', turbo: false, startingStack: HEADS_UP_STACKS.deep },
-    { seats: HEADS_UP_SEATS, label: 'Heads-Up', turbo: true, startingStack: HEADS_UP_STACKS.turbo },
-  ];
+/* Dan's locked catalog (2026-09-01): four depth bands on the same
+ * three-minute clock -- the 2026-08-23 ruling stands, a band is a STACK, not
+ * a faster structure. Every shape derives from headsUpSpec so the board and
+ * the spec cannot drift. */
+const SNG_BOARD_SHAPES: { seats: number; label: string; suffix: string; startingStack: number }[] =
+  (Object.keys(HEADS_UP_STACKS) as Array<keyof typeof HEADS_UP_STACKS>).map((band) => ({
+    seats: HEADS_UP_SEATS,
+    label: 'Heads-Up',
+    suffix: HEADS_UP_BAND_SUFFIX[band],
+    startingStack: HEADS_UP_STACKS[band],
+  }));
+
+const SNG_VARIANT_LABELS: Record<string, string> = {
+  nlh: 'NLH',
+  plo4: 'PLO4',
+  plo5: 'PLO5',
+  short_deck: 'Short Deck',
+};
 
 const SNG_BOARD_VARIANTS: { key: string; label: string }[] = HEADS_UP_GAME_TYPES.map((key) => ({
   key,
-  label: key.toUpperCase(),
+  label: SNG_VARIANT_LABELS[key] ?? key.toUpperCase(),
 }));
 
 const SNG_BOARD_BUYINS = [...HEADS_UP_BUYINS];
 
-const SNG_CONFIGS: SNGConfig[] = SNG_BOARD_SHAPES.flatMap((shape) =>
+export const SNG_CONFIGS: SNGConfig[] = SNG_BOARD_SHAPES.flatMap((shape) =>
   SNG_BOARD_VARIANTS.flatMap((v) =>
     SNG_BOARD_BUYINS.map((buyIn) => ({
-      name: `${v.label} ${shape.label} ${buyIn}${shape.turbo ? ' Turbo' : ''}`,
+      name: `${v.label} ${shape.label} ${buyIn}${shape.suffix}`,
       type: 'sng' as const,
       gameVariant: v.key,
       buyIn,
@@ -1543,10 +1557,15 @@ const SPIN_BOARD_VARIANTS: { key: string; label: string }[] = [
   { key: 'plo4', label: 'PLO4' },
   { key: 'plo5', label: 'PLO5' },
   { key: 'plo6', label: 'PLO6' },
+  /* Dan's locked catalog (2026-09-01). The engine has dealt short_deck on
+   * cash tables since V3; the spin board simply never offered it. */
+  { key: 'short_deck', label: 'Short Deck' },
 ];
 
 /** Every price point the spin board is open at. Whole chips, from the ladder. */
-const SPIN_BOARD_BUYINS = [1, 2, 3, 5, 10, 20, 50, 100];
+/* The locked spin price ladder (Dan's catalog, 2026-09-01). 3 and 20 were
+ * retired with it; their open spins play out and the queues stop reopening. */
+const SPIN_BOARD_BUYINS = [1, 2, 5, 10, 25, 50, 100, 250];
 
 export const SPIN_CONFIGS: SpinConfig[] = SPIN_BOARD_VARIANTS.flatMap((v) =>
   SPIN_BOARD_BUYINS.map((buyIn) => ({

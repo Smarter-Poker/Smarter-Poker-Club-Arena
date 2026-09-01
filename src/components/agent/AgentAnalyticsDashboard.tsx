@@ -11,6 +11,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { AGENT_DISTRIBUTION_READ_TYPES } from '../../lib/agentDistributionTypes';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
@@ -59,7 +60,7 @@ export default function AgentAnalyticsDashboard({ userId, clubId }: AgentAnalyti
         .select('amount, created_at, transaction_type, clawed_back, to_user_id')
         .eq('from_user_id', userId)
         .eq('club_id', resolvedClub)
-        .in('transaction_type', ['agent_to_player', 'promo_agent_to_player', 'send'])
+        .in('transaction_type', [...AGENT_DISTRIBUTION_READ_TYPES])
         .order('created_at', { ascending: false })
         .limit(500);
 

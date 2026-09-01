@@ -618,17 +618,42 @@ export function useUserTableSettings(userId: string | null | undefined) {
       ) {
         return;
       }
-      if (setting && setting in DEFAULT_USER_TABLE_SETTINGS) {
-        setSettings((prev) => {
-          const updated = { ...prev, [setting]: value };
-          settingsRef.current = updated;
-          try {
-            if (userId) localStorage.setItem(cacheKeyForUser(userId), JSON.stringify(updated));
-          } catch {
-            /* */
-          }
-          return updated;
-        });
+      /* `in` walks the prototype chain, so a payload naming 'constructor' or
+         'toString' passed this test and wrote a function into settings. The
+         sister hook fixed this at useTableSettings.ts:232; it was never
+         back-ported here. */
+      if (setting && Object.prototype.hasOwnProperty.call(DEFAULT_USER_TABLE_SETTINGS, setting)) {
+        /* ═══ A LIVE EDIT OUTRANKS A STALE BROADCAST ════════════════════════
+           Dan 2026-08-31: "every time he logs in, Card Slide and Card Squeeze
+           are always turned off, even though he keeps changing it."
+
+           The load path has enforced this since 2026-08-28 (see
+           locallyTouchedRef) and `useTableSettings` enforces it on its own bus
+           path at :725 — "a live edit outranks a stale read". This hook applied
+           the guard to the load and NOT to the bus, which is the last of the
+           auto-change-backs the note above this file describes.
+
+           It matters more than a one-frame flicker, because of what reads this
+           value next. `toggleSetting` computes the next value from
+           `settingsRef.current`, not from rendered state. Let a stale broadcast
+           put `true` back into that ref while the switch renders OFF, and the
+           user's next tap writes `false` — the switch does not move, and the
+           default is persisted again. Tap it ten times and it never moves. That
+           is the report, exactly. */
+        if (locallyTouchedRef.current.has(setting as keyof UserTableSettings)) return;
+        /* Derived from the ref and assigned OUTSIDE the updater. React may run
+           an updater in a render it then discards (concurrent interruption,
+           StrictMode double-invoke); mutating the ref in there can leave it
+           holding a value that never became `settings`, and `toggleSetting`
+           would then calculate from a value the user never saw. */
+        const updated = { ...settingsRef.current, [setting]: value };
+        settingsRef.current = updated;
+        try {
+          if (userId) localStorage.setItem(cacheKeyForUser(userId), JSON.stringify(updated));
+        } catch {
+          /* */
+        }
+        setSettings(updated);
       }
     });
     return () => {

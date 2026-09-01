@@ -506,6 +506,11 @@
       "metric",
       "sample_size"
     ],
+    "ca_supply_snapshot_classifications": [
+      "snapshot_id",
+      "original_unexplained",
+      "classification"
+    ],
     "ca_supply_snapshots": [
       "member_wallets",
       "member_promo",

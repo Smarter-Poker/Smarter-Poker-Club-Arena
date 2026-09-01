@@ -293,6 +293,38 @@ export abstract class TournamentManagerBase {
     return this.running;
   }
 
+  /**
+   * The tables this manager currently owns an engine for.
+   *
+   * Added 2026-09-01 so GameServer can bound `tournamentOwnedTables`, which
+   * had only ever been added to. Pruning that set against GameServer's own
+   * `tableEngines` alone would drop the hub room of a tournament table during
+   * the window where its manager is rebuilding the engine, which is precisely
+   * the case the set was created to protect.
+   */
+  getTableIds(): string[] {
+    return [...this.tableEngines.keys()];
+  }
+
+  /**
+   * Is this tournament on a break of its own right now?
+   *
+   * Added 2026-09-01 for the maintenance break, which resumes EVERY table on
+   * the platform when it ends. Without this it would also resume a tournament
+   * that is still on a break of a different length - an add-on break runs up
+   * to ten minutes (`addon_break_minutes`), so one starting near :55 outlives
+   * the five-minute maintenance break and its tables would be dealt back into
+   * play while the tournament clock still says they are away.
+   *
+   * Read-only, and deliberately the ONLY thing exposed: whoever paused a table
+   * is responsible for resuming it, and this lets a second pause authority ask
+   * "is somebody else still holding this" without being able to answer for
+   * them.
+   */
+  isOnBreak(): boolean {
+    return this.onBreak;
+  }
+
   /** Reusable broadcast — single channel per tournament lifecycle */
   protected async broadcast(eventType: string, payload: any): Promise<void> {
     try {
@@ -3388,7 +3420,28 @@ export abstract class TournamentManagerBase {
 
     for (let i = alreadyHave; i < alreadyHave + tablesToCreate; i++) {
       const blindStructure = tournament.blind_structure || [];
-      const firstLevel = blindStructure[0] || { smallBlind: 10, bigBlind: 20 };
+      /**
+       * THE LEVEL THIS TABLE IS BEING BORN INTO, NOT LEVEL ONE (2026-09-01).
+       *
+       * This loop runs whenever a tournament needs MORE tables than it has --
+       * late registration, a rebalance -- which by definition happens after
+       * the clock has started. It stamped `stakes` from blindStructure[0]
+       * regardless, so a table created at level 8 advertised the level 1
+       * blinds for the rest of its life. 197 tables across 60 tournaments in
+       * the last three days were created after their tournament started, and
+       * every one of them carries level 1.
+       *
+       * `stakes` is a display string (the lobby reads it; the engine takes its
+       * blinds from the tournament level, never from this row), and the lobby
+       * shows buy-in rather than stakes on a tournament row -- so this is a
+       * lie that is currently hard to see rather than one anybody has
+       * complained about. It is still a lie, and it is the last place in this
+       * file that reached into the structure by index instead of asking
+       * resolveBlindLevel, which is the closing hazard Phase 2.3 went through
+       * the rest of the file to remove.
+       */
+      const firstLevel = this.resolveBlindLevel(blindStructure, this.currentLevel) ||
+        blindStructure[0] || { smallBlind: 10, bigBlind: 20 };
 
       const { data: table, error } = await supabase
         .from('tables')

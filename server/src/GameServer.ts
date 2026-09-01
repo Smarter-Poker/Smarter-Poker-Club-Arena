@@ -62,6 +62,7 @@ import {
   auditSatelliteConservation,
   auditPrizeDisbursement,
   requeueUnbankedCashRake,
+  auditGuaranteesKept,
 } from './services/FeeReconciler.js';
 import { reportError, initSentry, flushSentry } from './services/errorReporter.js';
 import { fetchAllRows } from './services/supabase/pagination.js';
@@ -72,7 +73,10 @@ import { tableStateHub } from './transport/TableStateHub.js';
 // GameServer had four tournament-cancel paths; all four are gone. Nothing in
 // this file cancels a tournament any more — it fills, resumes or settles.
 import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
+import { selectCompletingDue } from './tournament/completingDwell.js';
 import { TournamentManager } from './tournament/TournamentManager.js';
+import { MaintenanceBreak } from './maintenance/MaintenanceBreak.js';
+import { createSupabaseMaintenanceBreakStore } from './maintenance/maintenanceBreakStore.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
 import { isWakeableCashTable } from './services/onDemandTableWake.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
@@ -194,6 +198,41 @@ export class GameServer {
    */
   private tournamentOwnedTables: Set<string> = new Set();
   /**
+   * IT ONLY EVER GREW (2026-09-01). `registerTableEngine` adds to the set above
+   * and nothing has ever removed from it, so on a board creating roughly 7,000
+   * tournament tables a day it grew without bound for the life of the process.
+   * The memory is the least of it: a table id that is in this set is treated as
+   * "should be dealing" by the zombie reaper and is skipped by
+   * `tableStateHub.dropTable`, so every long-dead table kept a hub room alive
+   * and kept lying to the reaper about what a healthy board looks like.
+   *
+   * Pruned once per discovery pass against what is genuinely still owned: the
+   * engines this process holds, plus every table its live TournamentManagers
+   * hold. Pruning against `tableEngines` alone would be wrong - the comment at
+   * the hub-drop site says exactly why: a tournament table can be briefly
+   * without an engine while its manager rebuilds it, and dropping the room
+   * there costs the seated players a sequence reset.
+   */
+  private pruneTournamentOwnedTables(): void {
+    if (this.tournamentOwnedTables.size === 0) return;
+    const stillOwned = new Set<string>(this.tableEngines.keys());
+    for (const tm of this.tournamentEngines.values()) {
+      for (const id of tm.getTableIds()) stillOwned.add(id);
+    }
+    for (const id of [...this.tournamentOwnedTables]) {
+      if (!stillOwned.has(id)) this.tournamentOwnedTables.delete(id);
+    }
+  }
+  /** Last orphaned-seat repair pass. See tournament/orphanedSeatRepair.ts. */
+  private lastOrphanSeatSweepAt = 0;
+  /**
+   * First time each COMPLETING row was seen by this process. See
+   * `tournament/completingDwell.ts`: the five-minute rule the scan has always
+   * claimed cannot be read off the row, because nothing maintains
+   * `tournaments.updated_at` on that path.
+   */
+  private completingFirstSeenAt: Map<string, number> = new Map();
+  /**
    * Last time the cash-table discovery RPC completed successfully. Discovery is
    * the only thing that starts engines AND the only thing that reaps zombies —
    * if it stalls, the whole platform is frozen with nothing to notice.
@@ -289,6 +328,10 @@ export class GameServer {
   private lastConservationAt = 0;
   /** Last fn_backpay_hu_winner_shortfalls pass (2026-08-27 phase 3d). */
   private lastHuBackpayAt = 0;
+  /** Last fn_detect_results_without_a_hand pass (2026-09-01 phase 7). */
+  private lastNoHandResultCheckAt = 0;
+  /** Last fn_payout_guarantee_check pass (2026-09-01 every-earner-is-paid). */
+  private lastPayoutGuaranteeCheckAt = 0;
   /** Last fn_charge_place_overpays pass (2026-08-28 duplicate-place overpay). */
   private lastPlaceOverpayChargeAt = 0;
   /** Last fn_repair_tournament_rake_attribution pass (2026-08-28). */
@@ -339,6 +382,42 @@ export class GameServer {
 
   // Synchronized break timer — last hand announced at :55, break runs 5 min after it lands
   private breakTimer: NodeJS.Timeout | null = null;
+  /**
+   * The maintenance break that hides the engine restart (Dan 2026-09-01).
+   *
+   * Distinct from the synchronized tournament break above and deliberately
+   * layered on top of it. That one stops TOURNAMENTS at :55 and suspends their
+   * blind clocks. This one stops EVERY table, cash included, at the same :55 -
+   * announcing the last hand two minutes earlier - and persists the break so
+   * the engine that replaces this one honours the rest of it.
+   *
+   * Both run hourly, which is what lets a restart land in any hour it is
+   * needed (Dan 2026-09-01) instead of waiting for one of five daily windows
+   * while merged fixes sit unshipped. See maintenance/MaintenanceBreak.ts.
+   */
+  private readonly maintenanceBreak = new MaintenanceBreak({
+    engines: () => this.tableEngines.entries(),
+    isRunning: () => this.running,
+    emit: (tableId, payload) => tableStateHub.emitEvent(tableId, payload),
+    store: createSupabaseMaintenanceBreakStore(
+      process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local'
+    ),
+    // Whoever paused a table is responsible for resuming it. A tournament
+    // add-on break runs up to ten minutes, so one starting near :55 outlives
+    // the five-minute maintenance break - resuming its tables here would deal
+    // that event back into play while its own clock still has it away.
+    shouldStayPaused: (tableId) => {
+      if (!this.tournamentOwnedTables.has(tableId)) return false;
+      for (const tm of this.tournamentEngines.values()) {
+        try {
+          if (tm.isOnBreak() && tm.getTableIds().includes(tableId)) return true;
+        } catch {
+          /* a manager we cannot interrogate does not get to hold a table */
+        }
+      }
+      return false;
+    },
+  });
   /**
    * A5: drains `pending_fee_distributions` — rake / BBJ fees that left a pot but
    * whose banking RPC failed — and runs the independent BBJ ledger-drift alarm.
@@ -585,6 +664,15 @@ export class GameServer {
       // Step 7: Start synchronized break timer (last hand at :55, then 5 min break)
       this.scheduleSynchronizedBreaks();
 
+      // Step 7b (Dan 2026-09-01): the maintenance break that carries the
+      // engine restart. Announces the last hand at :53 of a restart hour,
+      // parks every table - cash and tournament - for :55 to :00, and re-adopts
+      // a break the PREVIOUS engine declared before it was killed. That last
+      // part is why it is awaited here, ahead of any dealing: this process is
+      // usually booting *because* of the restart the break was declared for,
+      // and it must not deal a hand into a break players are still watching.
+      await this.maintenanceBreak.start();
+
       // Step 8 (A5): Start the fee reconciler. Rake and the BBJ contribution are
       // taken out of the pot inside the hand; if the banking RPC fails the chips
       // exist nowhere. The engine now queues those failures durably — this drains
@@ -645,6 +733,10 @@ export class GameServer {
     const engine = new ServerTableEngine(tableId);
     engine.setHub(tableStateHub); // Phase 1.1 PR-2: authoritative WS publisher
     this.tableEngines.set(tableId, engine);
+    // A table built during a maintenance break must be born parked. Otherwise
+    // it is the one table on the platform dealing while every other felt sits
+    // on the break screen. No-ops when no break is running.
+    this.maintenanceBreak.adopt(tableId, engine);
     // Mirror the discovery-loop start invocation so any errors get reported
     // consistently and the engine cleanup path runs on failure.
     engine.start().catch((err) => {
@@ -669,6 +761,18 @@ export class GameServer {
       clearTimeout(this.breakTimer);
       this.breakTimer = null;
     }
+    /**
+     * Drop the maintenance break's TIMERS but deliberately NOT its row.
+     *
+     * This shutdown is, on the intended path, the restart the break exists to
+     * cover. Clearing the row here would delete the break on the way out and
+     * the engine that replaces us would deal instantly into a countdown that
+     * is still running on every screen - the precise failure the persistence
+     * was added to prevent. The row is cleared by whoever ends the break:
+     * either the next engine when it reaches :00, or fn_maintenance_break_state
+     * expiring it if no engine ever comes back.
+     */
+    this.maintenanceBreak.stop();
     if (this.feeReconcileTimer) {
       clearInterval(this.feeReconcileTimer);
       this.feeReconcileTimer = null;
@@ -1050,6 +1154,19 @@ export class GameServer {
       handsInFlightTotal: tableLiveness.filter(
         (t) => t.dealable >= 2 && !t.paused && t.msSinceProgress < 120_000
       ).length,
+      /**
+       * THE RESTART GATE (Dan 2026-09-01).
+       *
+       * `maintenance.readyForRestart` is what auto-deploy-hetzner.yml waits
+       * for now, in place of the old handsInFlightTotal drain. The difference
+       * matters: the drain gate asked "is anybody mid-hand right now", which
+       * is a moving target that a busy fleet never holds still for, and it
+       * restarted on live tables the moment it timed out. This asks "has the
+       * platform been formally stopped, told the players, and is there enough
+       * break left to finish inside it" - a state the engine DECLARES rather
+       * than a race the workflow observes.
+       */
+      maintenance: this.maintenanceBreak.snapshot(),
       stalledTables: stalledTables.slice(0, 20),
       discoveryStaleMs,
       tableLiveness,
@@ -1414,6 +1531,15 @@ export class GameServer {
           // other check precisely because the outage reset overwrote that
           // snapshot while the wallet ledger kept the truth.
           await auditPrizeDisbursement(24);
+          // Guarantee kept (2026-08-31, phase 6): a COMPLETED event that
+          // advertised a guaranteed prize must actually have PAID it. Nothing
+          // in this estate asked that question - every other guarantee check
+          // is pre-start affordability, or excludes freerolls via
+          // `buy_in_amount > 0`, or (the phase 2 unpaid detector) filters
+          // `prize_pool > 0`, the exact column an unfunded guarantee zeroes.
+          // Nine freerolls ranked a full field, crowned a winner and paid
+          // nobody, silently. Detects only; the finish path does the funding.
+          await auditGuaranteesKept(24);
           // Restart-orphaned fees (2026-08-31): pendingHands is in-memory, so
           // a process death between the inline write and the drain loses the
           // claim entirely — and fn_bbj_repair_unbanked cannot see it because
@@ -2520,6 +2646,10 @@ export class GameServer {
           const engine = new ServerTableEngine(row.table_id);
           engine.setHub(tableStateHub); // Phase 1.1 PR-2: authoritative WS publisher
           this.tableEngines.set(row.table_id, engine);
+          // THE POST-RESTART PATH. After a restart inside a break this sweep
+          // is what rebuilds the whole fleet, so without this every table
+          // would come back dealing while the break still has minutes left.
+          this.maintenanceBreak.adopt(row.table_id, engine);
           engine.start().catch((err) => {
             /**
              * C20: counted for the adoption budget. This delete is what makes
@@ -3116,24 +3246,53 @@ export class GameServer {
           }
         }
 
+        // Bound the tournament-owned table set to what is still owned. See the
+        // field's own comment for the three things its unbounded growth broke.
+        this.pruneTournamentOwnedTables();
+
         // ── STUCK COMPLETING RECOVERY ──
-        // If a tournament has been in COMPLETING status for > 5 minutes, force it to COMPLETED.
-        // This handles crashes/failures during the finishTournament flow.
-        const { data: stuckTournaments } = await supabase
+        // A tournament that has been COMPLETING for more than five minutes is
+        // recovered: paid what it still owes, then completed. The dwell is
+        // measured by this process (tournament/completingDwell.ts) because
+        // nothing maintains `updated_at` on this path, and it is what keeps the
+        // recovery off the back of a finish that is still paying - the row is
+        // flipped to COMPLETING BEFORE the money moves, and a manager leaves
+        // `tournamentEngines` the moment it stops.
+        const { data: stuckTournaments, error: completingScanErr } = await supabase
           .from('tournaments')
           .select('id, name, status')
           .eq('status', 'COMPLETING');
 
-        for (const stuck of stuckTournaments || []) {
-          if (!this.tournamentEngines.has(stuck.id)) {
-            // No active engine managing this tournament — it's truly stuck.
-            // TOURNEY-AUDIT 2026-07-24: recovery now PAYS remaining players
-            // (winner + unpaid ITM places) before completing — the old path
-            // flipped straight to COMPLETED and the winner's prize vanished.
-            console.warn(
-              `[GameServer] Recovering stuck COMPLETING tournament: ${stuck.name} (${stuck.id.slice(0, 8)})`
-            );
-            await recoverStuckCompletingTournaments('discovery-watchdog', stuck.id);
+        // An unreadable scan is not an empty one: forgetting every dwell here
+        // would restart all five-minute clocks on a transient error, which is
+        // the one way this gate could hold a genuinely stuck row forever.
+        if (completingScanErr) {
+          reportError(
+            new Error(
+              `[GameServer] COMPLETING scan failed: ${completingScanErr.message} - dwell clocks kept, nothing recovered this pass`
+            ),
+            'GameServer.completing_scan_failed'
+          );
+        } else {
+          const dwell = selectCompletingDue(
+            (stuckTournaments || []).map((t) => String(t.id)),
+            this.completingFirstSeenAt,
+            Date.now()
+          );
+          this.completingFirstSeenAt = dwell.seenAt;
+          const dueIds = new Set(dwell.due);
+          for (const stuck of stuckTournaments || []) {
+            if (!dueIds.has(String(stuck.id))) continue;
+            if (!this.tournamentEngines.has(stuck.id)) {
+              // No active engine managing this tournament - it's truly stuck.
+              // TOURNEY-AUDIT 2026-07-24: recovery now PAYS remaining players
+              // (winner + unpaid ITM places) before completing - the old path
+              // flipped straight to COMPLETED and the winner's prize vanished.
+              console.warn(
+                `[GameServer] Recovering stuck COMPLETING tournament: ${stuck.name} (${stuck.id.slice(0, 8)})`
+              );
+              await recoverStuckCompletingTournaments('discovery-watchdog', stuck.id);
+            }
           }
         }
 
@@ -3199,6 +3358,26 @@ export class GameServer {
           this.lastClosedTableReopenSweepAt = Date.now();
           void this.reopenTablesClosedUnderLiveTournaments().catch((err) =>
             reportError(err, 'GameServer.closed_table_reopen_sweep_error')
+          );
+        }
+
+        /**
+         * ── A STRANDED PLAYER IS BROUGHT BACK TO THE FELT (2026-09-01) ──────
+         *
+         * The reopen sweep above declines when the tournament still owns an
+         * open table, and it is right to: the repair for a player left on a
+         * CLOSED table is to move them to the felt that is already open, not
+         * to put a second felt under the game. Nothing did that, and the state
+         * fell between all three existing sweeps, so "$100 Freeroll - 12:00 AM"
+         * sat RUNNING and silent for 5h21m with two entrants, one on each side
+         * of a closed table. See tournament/orphanedSeatRepair.ts.
+         *
+         * Same cadence and the same fire-and-forget shape as its neighbours.
+         */
+        if (Date.now() - this.lastOrphanSeatSweepAt > 60 * 1000) {
+          this.lastOrphanSeatSweepAt = Date.now();
+          void this.repairOrphanedTournamentSeats().catch((err) =>
+            reportError(err, 'GameServer.orphan_seat_repair_sweep_error')
           );
         }
 
@@ -3320,6 +3499,86 @@ export class GameServer {
             }
           } catch (consEx) {
             reportError(consEx, 'GameServer.conservation_sweep_threw');
+          }
+        }
+
+        // ── NO RESULT WITHOUT A HAND (2026-09-01) ──
+        // Seven events in the fortnight to 2026-08-30 were COMPLETED with a
+        // full set of finishing places, a stamped winner and 775.00 chips paid
+        // between five of them, and hand_history holds not one hand for any of
+        // them. The recovery had sorted a field in which every survivor held
+        // exactly starting_chips. The guard in tournamentRecovery stops that
+        // being invented again; this is what makes the CLASS visible, so a new
+        // cause arriving by another route cannot be silent for a fortnight the
+        // way that one was. It reports and moves no money.
+        // Its OWN timer, per the lesson recorded on the overpay charge below.
+        if (Date.now() - this.lastNoHandResultCheckAt > 6 * 60 * 60 * 1000) {
+          this.lastNoHandResultCheckAt = Date.now();
+          try {
+            const { data: nh, error: nhErr } = await supabase.rpc(
+              'fn_detect_results_without_a_hand',
+              {}
+            );
+            if (nhErr) {
+              reportError(
+                new Error(`[GameServer] no-hand result check failed: ${nhErr.message}`),
+                'GameServer.no_hand_result_check_failed'
+              );
+            } else if (Number(nh?.flagged) > 0) {
+              console.log(
+                `[GameServer] No-hand result check: ${nh.flagged} event(s) ranked without a hand (${nh.chips_paid} chips paid, ${nh.alerts_raised} new alert(s), ${nh.parked_completing} held in COMPLETING)`
+              );
+            }
+          } catch (nhEx) {
+            reportError(nhEx, 'GameServer.no_hand_result_check_threw');
+          }
+        }
+
+        // ── EVERY EARNER IS PAID (2026-09-01) ──
+        // Dan, verbatim: "IT IS AN ABSOLUTE MUST THAT PLAYERS ALWAYS 100% GET
+        // PAID OUT OF EVERY SINGLE MTT, SPIN OR HEADS UP THEY PLAY (IF THEY
+        // EARNED A PAYOUT)." This is the check that makes that verifiable, and
+        // it is the only one on the platform that asks the question against
+        // the WALLET rather than against tournament_payouts.
+        //
+        // It catches three things nothing else looked for:
+        //   - a paid place with no holder. Fifteen MTTs between 2026-05-08 and
+        //     2026-07-19 recorded finishing places 1, 2, then 6 onwards, so the
+        //     18/10/7 percent places had nobody in them and 193.10 chips went
+        //     to no one. The cause was fixed on 2026-07-19; the blindness was
+        //     not, and it had run for ten weeks.
+        //   - an earner whose wallet never saw the money. Across 150 days and
+        //     ~49,000 events that is exactly one player, short by 0.02.
+        //   - prizes paid with no payout record (61 events, 5,515.91 chips),
+        //     which is what arms fn_tournament_payout_reconcile to pay a second
+        //     time, because it reads that record to decide what is owed.
+        //
+        // Hourly, on its own timer, and it moves no money.
+        if (Date.now() - this.lastPayoutGuaranteeCheckAt > 60 * 60 * 1000) {
+          this.lastPayoutGuaranteeCheckAt = Date.now();
+          try {
+            const { data: pg, error: pgErr } = await supabase.rpc('fn_payout_guarantee_check', {
+              p_since_days: 7,
+            });
+            if (pgErr) {
+              reportError(
+                new Error(`[GameServer] payout guarantee check failed: ${pgErr.message}`),
+                'GameServer.payout_guarantee_check_failed'
+              );
+            } else if (
+              Number(pg?.vacant_paid_place_events) > 0 ||
+              Number(pg?.earners_not_paid) > 0 ||
+              Number(pg?.paid_but_unrecorded_events) > 0
+            ) {
+              console.log(
+                `[GameServer] Payout guarantee: ${pg.vacant_paid_place_events} event(s) with an unheld paid place ` +
+                  `(${pg.vacant_paid_place_chips} chips), ${pg.earners_not_paid} earner(s) unpaid ` +
+                  `(${pg.earners_not_paid_chips} chips), ${pg.paid_but_unrecorded_events} event(s) paid without a record ` +
+                  `(${pg.paid_but_unrecorded_chips} chips), ${pg.alerts_raised} new alert(s)`
+              );
+            }
+          } catch (pgEx) {
+            reportError(pgEx, 'GameServer.payout_guarantee_check_threw');
           }
         }
 
@@ -4144,6 +4403,40 @@ export class GameServer {
 
   /**
    * ═══════════════════════════════════════════════════════════════════════
+   *  BRING A STRANDED PLAYER BACK TO THE FELT
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The rules, and the tournament that sat silent for 5h21m holding them
+   * apart, are in `tournament/orphanedSeatRepair.ts`. This method is the one
+   * read that finds the shape and the hand-off to the manager that owns the
+   * move; the move itself goes through `executePlayerMoves`, the only hardened
+   * seat-move path on the platform, so this sweep writes no seat rows itself.
+   *
+   * A tournament with no live manager on this instance is left for the next
+   * pass: discovery adopts it within a cycle and the repair runs then. Doing
+   * the move without a manager would mean re-implementing the move, which is
+   * how the duplicate-seat incidents of 2026-08-20 and 2026-08-25 happened.
+   */
+  private async repairOrphanedTournamentSeats(): Promise<void> {
+    if (this.tournamentEngines.size === 0) return;
+
+    for (const [tournamentId, tm] of this.tournamentEngines) {
+      if (!tm.isRunning()) continue;
+      try {
+        const moved = await tm.absorbOrphanedSeats();
+        if (moved > 0) {
+          console.warn(
+            `[GameServer] Orphaned-seat repair: ${moved} stranded player(s) moved back onto open felt in tournament ${tournamentId.slice(0, 8)}`
+          );
+        }
+      } catch (err) {
+        reportError(err, 'GameServer.orphan_seat_repair_failed');
+      }
+    }
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
    *  REOPEN A TABLE THAT WAS CLOSED UNDER A LIVE TOURNAMENT
    * ═══════════════════════════════════════════════════════════════════════
    *
@@ -4505,6 +4798,9 @@ export class GameServer {
     }
     this.tournamentOwnedTables.add(tableId);
     this.tableEngines.set(tableId, engine);
+    // Tournament tables get the same treatment as cash ones. The tournament
+    // break suspends the blind clock; this keeps cards off the felt.
+    this.maintenanceBreak.adopt(tableId, engine);
   }
 
   /**
@@ -4549,6 +4845,9 @@ export class GameServer {
     const engine = new ServerTableEngine(tableId);
     engine.setHub(tableStateHub);
     this.tableEngines.set(tableId, engine);
+    // On-demand wake during a break: the player gets the break screen, not a
+    // table that deals to them alone.
+    this.maintenanceBreak.adopt(tableId, engine);
     const startPromise = engine
       .start()
       .then(() => true)

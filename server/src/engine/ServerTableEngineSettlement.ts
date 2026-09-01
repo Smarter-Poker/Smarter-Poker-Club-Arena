@@ -210,7 +210,29 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       };
     }
 
+    // Mark the reveal before the audit write. Billing has succeeded and the
+    // in-flight guard has been released; an await before this line would let a
+    // second request slip between those states and call the billing RPC again.
     offer.revealed.add(userId);
+
+    // `rabbit_hunt_reveals` is the metadata-only production ledger that was
+    // created for this path and never wired. Do not use the obsolete
+    // `rabbit_hunt_offers` table: it has a `cards` column, and persisting the
+    // unseen runout would recreate the private-card leak this endpoint removed.
+    // A ledger outage must not strand a player after a successful charge, so
+    // report it and still return the cards they bought.
+    try {
+      const { error: revealLogError } = await supabase.from('rabbit_hunt_reveals').insert({
+        user_id: userId,
+        table_id: this.tableId,
+        hand_number: hand,
+        charged: Number(charge.diamonds_spent ?? 0),
+      });
+      if (revealLogError) throw revealLogError;
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.rabbit_hunt_reveal_log_error');
+    }
+
     return {
       success: true,
       cards,

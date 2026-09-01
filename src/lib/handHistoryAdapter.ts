@@ -197,7 +197,16 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
    invented number to whoever opened the link. `ShareablePlayer.stack` is
    optional so the figure can be omitted; omitted is what an unknown is. */
 
-const SHARE_VARIANTS = ['NLH', 'PLO4', 'PLO5', 'PLO6', 'PLO8', 'Short Deck', 'Pineapple'] as const;
+const SHARE_VARIANTS = [
+  'NLH',
+  'PLO4',
+  'PLO5',
+  'PLO6',
+  'PLO8',
+  'Short Deck',
+  // 2026-09-01: the engine deals CRAZY Pineapple. See handFormat.ts.
+  'Crazy Pineapple',
+] as const;
 
 /** Widen a stored game_type onto the share union without silently mislabelling.
     Order matters: PLO8 must be tested before PLO, and SHORT before anything
@@ -205,7 +214,7 @@ const SHARE_VARIANTS = ['NLH', 'PLO4', 'PLO5', 'PLO6', 'PLO8', 'Short Deck', 'Pi
     records as having happened. */
 export function toShareVariant(gameType: string | undefined): ShareableHand['variant'] {
   const g = (gameType || '').toUpperCase().replace(/[\s_-]/g, '');
-  if (g.includes('PINEAPPLE')) return 'Pineapple';
+  if (g.includes('PINEAPPLE')) return 'Crazy Pineapple';
   if (g.includes('SHORT')) return 'Short Deck';
   if (g.includes('PLO8') || g.includes('OMAHA8') || g.includes('HILO')) return 'PLO8';
   if (g.includes('PLO6')) return 'PLO6';

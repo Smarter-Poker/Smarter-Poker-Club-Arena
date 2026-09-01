@@ -62,9 +62,51 @@ describe('it fails in the safe direction', () => {
   });
 
   it('gives the catch-up schedule a grace window before raising anything', () => {
-    // One missed twenty-minute tick is ordinary. Three in a row is the failure.
+    /**
+     * One missed twenty-minute tick is ordinary. Three in a row is the failure.
+     *
+     * READ THE ARITHMETIC, NOT THE PROSE (2026-09-01). This assertion used to
+     * be the single sentence the script printed while it waited, `inside the
+     * ${GRACE_MIN}m grace window`. #2446 gave the engine a RESTART SCHEDULE and
+     * replaced that message. The grace window itself survived -- it is the
+     * FLOOR under the new schedule deadline -- but the pin went red on main,
+     * and `npx vitest run tests/` is the step that publishes the Club Arena
+     * bundle, so the World Hub sync failed on every commit until it was found.
+     *
+     * A pin on wording fails when the wording improves and passes when the
+     * behaviour is deleted, which is backwards. The assertions below read the
+     * shape of the calculation instead. Two of them still name a message; if
+     * the prose changes again, MOVE those two rather than deleting the
+     * arithmetic underneath them.
+     */
+    /*
+     * UPDATED 2026-09-01. This asserted
+     * RESTART_HOURS="${RESTART_HOURS:-04 10 14 18 22}" - the five Chicago
+     * windows. Dan moved deploys to every hour on the :55 and #2527 changed
+     * auto-deploy-hetzner.yml without changing the watchdog, so the pin was
+     * holding the DESYNCHRONISED value in place: at 18:32 UTC the engine had
+     * been fourteen and a half hours stale and every run reported success.
+     *
+     * The shape being pinned is unchanged and is the point - a deadline built
+     * from the next restart boundary plus deploy time, floored by the grace
+     * period. Only the boundary's definition moved, from an hour in a list to
+     * a minute in every hour. The agreement with the deploy workflow is now
+     * asserted directly, further down, so the two cannot drift again.
+     */
     expect(SH).toContain('GRACE_MIN="${GRACE_MIN:-45}"');
-    expect(SH).toContain('inside the ${GRACE_MIN}m grace window');
+    expect(SH).toContain('RESTART_MINUTE="${RESTART_MINUTE:-55}"');
+    expect(SH).toContain('DEPLOY_MIN="${DEPLOY_MIN:-25}"');
+    expect(SH).toContain('WINDOW_EPOCH=$(window_at_or_after "$REQ_EPOCH")');
+    expect(SH).toContain('GRACE_DEADLINE=$(( REQ_EPOCH + GRACE_MIN * 60 ))');
+    expect(SH).toContain('[ "$GRACE_DEADLINE" -gt "$DEADLINE" ] && DEADLINE=$GRACE_DEADLINE');
+    expect(SH).toContain('Engine watchdog: waiting for the restart window');
+    // ...and inside that deadline the script says its piece and STOPS, before
+    // the ENGINE BEHIND warning section 5 raises. Without this, a deadline that
+    // is computed and then ignored still passes every assertion above it.
+    expect(SH_CODE).toMatch(/if \[ "\$NOW_EPOCH" -lt "\$DEADLINE" \][\s\S]{0,900}?exit 0/);
+    expect(SH_CODE.indexOf('NOW_EPOCH" -lt "$DEADLINE')).toBeLessThan(
+      SH_CODE.indexOf('ENGINE BEHIND')
+    );
   });
 
   it('does not fail the job, because the alarm is the point', () => {
@@ -98,9 +140,15 @@ describe('it fixes what it finds, and only then complains', () => {
 });
 
 describe('and it is actually scheduled to run', () => {
-  it('is a job in the publish watchdog, which already runs every 30 minutes', () => {
+  it('is a job in the publish watchdog, which runs on a real schedule', () => {
     expect(WF).toContain('bash .github/scripts/engine-watchdog.sh');
-    expect(WF).toContain("cron: '*/30 * * * *'");
+    // 2026-09-01 (cost audit): the watchdog schedule went */30 -> hourly. The
+    // workflow_run trigger still fires after every publish attempt, and
+    // engine deploy truth is now ALSO watched database-side every 10 minutes
+    // by fn_ca_engine_deploy_truth_watch() via pg_cron, which is the net that
+    // still works when Actions itself is the outage. The pin asserts a
+    // schedule EXISTS, so the job can never quietly lose its cron entirely.
+    expect(WF).toMatch(/cron: '\S+ \* \* \* \*'/);
   });
 
   it('is its own job, so an engine problem cannot hide behind a bundle problem', () => {
@@ -111,5 +159,81 @@ describe('and it is actually scheduled to run', () => {
   it('has the permissions it needs to dispatch and to speak', () => {
     expect(WF).toContain('issues: write');
     expect(WF).toContain('actions: write');
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE WATCHDOG MUST AGREE WITH THE DEPLOY SCHEDULE (2026-09-01)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan: "WE DO DEPLOYMENTS EVERY HOUR ON THE :55 NOW." #2527 landed that in
+ * auto-deploy-hetzner.yml at 13:00 UTC and did not touch this watchdog, which
+ * still carried RESTART_HOURS="04 10 14 18 22" under a comment claiming it
+ * "matches auto-deploy-hetzner.yml". It did not match, and the mismatch is the
+ * whole failure.
+ *
+ * MEASURED. At 18:32 UTC the engine was serving the 03:54 image with five
+ * merged pull requests unshipped for fourteen and a half hours, and the job
+ * reported SUCCESS on every run. The arithmetic that produced that silence:
+ * the newest server-touching commit was rounded up to the next FIVE-HOUR
+ * window (14:00 Chicago, 19:00 UTC), the deadline became 19:25 UTC, and every
+ * run before that was "behind by design". The watchdog was patiently waiting
+ * for a window the deploy workflow had already stopped having.
+ *
+ * That is the third instrument found this way in one day - the league runner
+ * and the layer watchlist were the other two - and the shape is identical: a
+ * job that looks the same whether or not it is doing its work.
+ *
+ * These pin the agreement itself, not just the current number, so the next
+ * schedule change cannot silently desynchronise them again.
+ */
+describe('the watchdog agrees with the deploy schedule', () => {
+  const DEPLOY_YML = readFileSync(
+    resolve(__dirname, '..', '.github', 'workflows', 'auto-deploy-hetzner.yml'),
+    'utf8'
+  );
+
+  it('no longer rations restarts to five Chicago hours', () => {
+    // The literal that made it blind. If it returns, so does the blindness.
+    expect(SH_CODE).not.toMatch(/RESTART_HOURS="?\$\{RESTART_HOURS:-04 10 14 18 22\}/);
+    expect(SH_CODE).not.toContain('04 10 14 18 22');
+  });
+
+  it('measures its deadline from the same minute the deploy restarts on', () => {
+    const shMinute = /RESTART_MINUTE="?\$\{RESTART_MINUTE:-(\d+)\}/.exec(SH_CODE);
+    expect(shMinute, 'the watchdog must declare the restart minute').not.toBeNull();
+
+    // The deploy's cron ticks BEFORE the break so the runner can build; the
+    // break itself is the minute the watchdog must measure from.
+    const cron = /- cron: '([^']+)'/.exec(DEPLOY_YML);
+    expect(cron, 'the deploy workflow must have a schedule').not.toBeNull();
+    const ticks = cron![1].split(' ')[0].split(',').map(Number);
+    const breakMinute = Number(shMinute![1]);
+
+    // Every tick has to land in the same hour as, and before, the break -
+    // otherwise the runner is building for a break that has already passed.
+    for (const t of ticks) {
+      expect(t, `tick :${t} must precede the :${breakMinute} break`).toBeLessThan(breakMinute);
+    }
+    expect(breakMinute).toBeGreaterThan(0);
+    expect(breakMinute).toBeLessThan(60);
+  });
+
+  it('treats every hour as a restart window', () => {
+    // Not "every hour is in a list" - the list is gone. is_restart_hour is now
+    // unconditionally true, and that is what makes the dispatch branch reachable
+    // at any hour rather than only at five of them.
+    expect(SH_CODE).toMatch(/is_restart_hour\(\)\s*\{\s*return 0;\s*\}/);
+  });
+
+  it('rounds a commit up to the next break, not the next rationed hour', () => {
+    const fn = SH_CODE.slice(
+      SH_CODE.indexOf('window_at_or_after()'),
+      SH_CODE.indexOf('window_at_or_after()') + 400
+    );
+    expect(fn).toContain('RESTART_MINUTE');
+    // The hour-walking loop is what produced the five-hour deadline.
+    expect(fn).not.toContain('seq 0 47');
   });
 });

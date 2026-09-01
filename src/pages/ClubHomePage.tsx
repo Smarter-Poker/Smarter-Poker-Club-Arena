@@ -32,6 +32,7 @@ import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import ClubLaunchProgress, { type ClubLaunchTask } from '../components/club/ClubLaunchProgress';
 import ClubOpeningWizard from '../components/club/ClubOpeningWizard';
 import { clubOpeningSetupService } from '../services/ClubOpeningSetupService';
+import { hasNewClubOpeningChecklist } from '../utils/clubOpeningEligibility';
 /* LOBBY V2 (Dan 2026-08-22): the large card grid (DynamicGameCard) is replaced
    by the dense line-based LobbyTable + the CasinoPlaque game lobby panel.
    Selecting a row NEVER joins or spends; every commit action goes through the
@@ -60,6 +61,7 @@ import { waitlistService } from '../services/WaitlistService';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { retryFetch } from '../utils/retryFetch';
 import './ClubHomePage.css';
+import '../components/lobby/ClubLobbyCommandTop.css';
 import { isFixedLimitVariant } from '../lib/bettingStructure';
 
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -96,6 +98,7 @@ import ClubLobbyCommandTop from '../components/lobby/ClubLobbyCommandTop';
 import HouseAdCard from '../components/ads/HouseAdCard';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
+import ClubOwnerMessage from '../components/club/ClubOwnerMessage';
 import AdvancedFilters, {
   loadFilters,
   saveFilters,
@@ -126,6 +129,7 @@ const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-logo.jpg`;
 // the live lobby DOM visible without its premium chassis or campaign artwork.
 const CLUB_LOBBY_ASSET_ROOT = `${import.meta.env.BASE_URL}assets/club-buttons/lobby`;
 const CLUB_LOBBY_CAMPAIGN = `${CLUB_LOBBY_ASSET_ROOT}/shark-club-championship-ad-v2.png`;
+const CLUB_LOBBY_CAMPAIGN_MOBILE = `${CLUB_LOBBY_ASSET_ROOT}/shark-club-championship-ad-mobile-v4.png`;
 
 /**
  * The order the Omaha tab groups its variants in (Dan 2026-08-25). Four cards
@@ -228,6 +232,10 @@ interface ClubData {
   slug?: string;
   description: string;
   tagline?: string | null;
+  /* Dan 2026-09-01: the owner's custom / day's message, printed at the top of
+     the lobby rail. Its own column so `tagline` stays the permanent identity
+     line the opening checklist and the invite page depend on. */
+  lobby_message?: string | null;
   avatar_url: string;
   logo_url?: string;
   banner_url?: string | null;
@@ -242,6 +250,8 @@ interface ClubData {
   hierarchy_threshold_next: number;
   created_at: string;
   is_union: boolean;
+  union_id?: string | null;
+  opening_checklist_started_at?: string | null;
   chip_treasury?: number | null;
   spins_enabled?: boolean | null;
 }
@@ -755,9 +765,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [currentUserId, setCurrentUserId] = useState<string | null>(
     () => useUserStore.getState().user?.id ?? null
   );
+  const openingChecklistEligible = hasNewClubOpeningChecklist(club);
   const toast = useToast();
   useEffect(() => {
-    if (!club?.id || !currentUserId || club.owner_id !== currentUserId) {
+    if (
+      !club?.id ||
+      !currentUserId ||
+      club.owner_id !== currentUserId ||
+      !openingChecklistEligible
+    ) {
       setOpeningSetupComplete(false);
       return;
     }
@@ -774,7 +790,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     return () => {
       cancelled = true;
     };
-  }, [club?.id, club?.owner_id, currentUserId]);
+  }, [club?.id, club?.owner_id, currentUserId, openingChecklistEligible]);
   useEffect(() => {
     if (!club?.id || !currentUserId || club.owner_id !== currentUserId) {
       setConfiguredAgentUserId(null);
@@ -869,6 +885,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     setUserRole('player');
     setIsInUnion(false);
     setUnionName(null);
+    setUnionIdForCreate(undefined);
     setDeletingTableId(null);
     setShowOpeningWizard(false);
     setOpeningSetupComplete(false);
@@ -1702,7 +1719,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, slug, description, tagline, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, spins_enabled, created_at, is_union, union_id'
+              'id, club_id, name, slug, description, tagline, lobby_message, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, spins_enabled, created_at, is_union, union_id, opening_checklist_started_at'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -3905,6 +3922,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   /* Staff may edit the club notice. Derived once so the markup, the keyboard
      path and the visibility test cannot drift apart. */
   const noticeEditable = isOwner || isClubStaff(userRole);
+  const unionManagedClub = Boolean(club.is_union || club.union_id || unionIdForCreate);
+  const canCreateClubGames = noticeEditable && !unionManagedClub;
 
   const saveClubNotice = () => {
     const newDesc = noticeDraft.replace(/\s+/g, ' ').trim().slice(0, CLUB_DESCRIPTION_MAX_LENGTH);
@@ -3926,6 +3945,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   };
 
   const openCreationFor = (target: GameType) => {
+    if (!canCreateClubGames) {
+      toast.info('This Club Is Managed By A Union. Create Games From The Union Console.');
+      return;
+    }
     haptic.selection();
     selectGameType(target);
     if (TOURNAMENT_TYPES.includes(target)) {
@@ -4045,9 +4068,13 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       disabledLabel: 'Owner Required',
     },
   ];
+  const showLaunchChecklist =
+    openingChecklistEligible &&
+    noticeEditable &&
+    launchTasks.some((task) => !task.complete && !task.skipped);
 
   return (
-    <div className="club-home">
+    <div className="club-home club-home--unified-mobile">
       <GlobalUXIndicators wsConnected={wsConnected} />
       {/* Dan 2026-08-19: the resume bar moved into the persistent multi-table
           layer (PersistentTableLayer in App.tsx), which now shows it on EVERY
@@ -4119,6 +4146,30 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       )}
 
       <header className="lobby-top">
+        {/* ── THE CLUB'S OWN MESSAGE, FIRST (Dan 2026-09-01) ────────────────
+            "the 'welcome to club jaqk' thats on the bottom of the wallets
+            should be at the top above the club card, and that should be the
+            'custom clickable message' for the club owners to put the days
+            message, or something custom."
+
+            It was the last child of the wallet stack, which on a desktop rail
+            put it under seven wallet rows and, on a short viewport, past the
+            fold. It is the first thing in the rail now, and it is a button:
+            anybody may read the message in full, staff may write it, and both
+            paths continue to the club's announcements. */}
+        <ClubOwnerMessage
+          clubId={club.id}
+          clubName={club.name}
+          message={club.lobby_message}
+          tagline={club.tagline}
+          canEdit={noticeEditable}
+          onMessageSaved={(next) =>
+            setClub((prev) => (prev ? { ...prev, lobby_message: next } : prev))
+          }
+          onOpenAnnouncements={() => navigate(`/clubs/${clubId}/announcements`)}
+          onToast={(kind, text) => (kind === 'success' ? toast.success(text) : toast.error(text))}
+        />
+
         {/* ── Club identity + wallet ── */}
         <div className="lobby-top__main">
           <ClubIdentityCard
@@ -4327,9 +4378,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     onOpenClubRake={() => setStandaloneRakeModal(true)}
                     onOpenClubSpins={() => setStandaloneSpinsModal(true)}
                   />
-                  <p className="lobby-top__house-welcome">
-                    {club.tagline?.trim() || `Welcome To ${club.name}`}
-                  </p>
                 </div>
               </div>
             </div>
@@ -4443,7 +4491,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       ═══════════════════════════════════════════════════════════════════ */}
       <section
         className="club-lobby-machine"
-        data-opening-checklist={noticeEditable || undefined}
+        data-opening-checklist={showLaunchChecklist || undefined}
         aria-label={`${club.name} Game Lobby`}
       >
         <ClubLobbyCommandTop
@@ -4695,19 +4743,24 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 navigate(`/clubs/${clubId}/announcements`);
               }}
             >
-              <img
-                src={club.banner_url || CLUB_LOBBY_CAMPAIGN}
-                alt={
-                  club.banner_url
-                    ? `${club.name} Promotion`
-                    : 'Shark Club Championship Series, 250,000 Guaranteed Main Event'
-                }
-              />
+              <picture className="club-lobby-command-top__campaign-picture">
+                {!club.banner_url && (
+                  <source media="(max-width: 900px)" srcSet={CLUB_LOBBY_CAMPAIGN_MOBILE} />
+                )}
+                <img
+                  src={club.banner_url || CLUB_LOBBY_CAMPAIGN}
+                  alt={
+                    club.banner_url
+                      ? `${club.name} Promotion`
+                      : 'Shark Club Championship Series, 250,000 Guaranteed Main Event'
+                  }
+                />
+              </picture>
             </button>
           }
         />
 
-        {noticeEditable && launchTasks.some((task) => !task.complete) && (
+        {showLaunchChecklist && (
           <ClubLaunchProgress
             clubName={club.name}
             openingBank={Number(club.chip_treasury) || 0}
@@ -4763,7 +4816,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           filter or a search is actively hiding games — that one is not a
           statistic, it is the explanation for why the list looks short, and
           it carries the one-tap clear. */}
-        {noticeEditable && gameType !== 'ALL' && (
+        {canCreateClubGames && gameType !== 'ALL' && (
           <div className="lobby-resultsbar lobby-resultsbar--create-only">
             <button
               type="button"
@@ -4870,22 +4923,45 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                       </p>
                     </>
                   ) : !filtered ? (
-                    <>
-                      {/* Tab (or Favorites) is the ONLY narrowing: blaming
-                        "filters" here sent players hunting for filters they
-                        never set (QA 2026-08-22). Name the real cause. */}
-                      <p>Nothing Here On This Tab</p>
-                      <p className="empty-hint">
-                        {totalHere.toLocaleString()}
-                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
-                        This Club, Just None Of This Type Right Now.
-                      </p>
-                      <div className="empty-actions">
-                        <button className="empty-action" onClick={clearAllNarrowing}>
-                          Show All Games
-                        </button>
-                      </div>
-                    </>
+                    favoritesOnly ? (
+                      <>
+                        {/* Dan 2026-09-01: the Favorites toggle persisted from
+                          an earlier visit and this branch blamed the TAB
+                          ("None Of This Type Right Now") while 980 cash games
+                          sat one toggle away. When Favorites is the narrowing,
+                          say Favorites. Same rule as the comment below: name
+                          the real cause. */}
+                        <p>No Favorites On This Tab</p>
+                        <p className="empty-hint">
+                          The Favorites Filter Is On And Nothing Here Is Marked As A Favorite Yet.{' '}
+                          {totalHere.toLocaleString()}
+                          {countsCapped ? '+' : ''} Game
+                          {totalHere === 1 ? ' Is' : 's Are'} Open In This Club.
+                        </p>
+                        <div className="empty-actions">
+                          <button className="empty-action" onClick={clearAllNarrowing}>
+                            Show All Games
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {/* Tab is the ONLY narrowing: blaming "filters" here
+                          sent players hunting for filters they never set
+                          (QA 2026-08-22). Name the real cause. */}
+                        <p>Nothing Here On This Tab</p>
+                        <p className="empty-hint">
+                          {totalHere.toLocaleString()}
+                          {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
+                          This Club, Just None Of This Type Right Now.
+                        </p>
+                        <div className="empty-actions">
+                          <button className="empty-action" onClick={clearAllNarrowing}>
+                            Show All Games
+                          </button>
+                        </div>
+                      </>
+                    )
                   ) : (
                     <>
                       <p>Nothing Matches Your Filters</p>
@@ -5047,7 +5123,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         onCancel={() => setDeleteTableConfirm({ show: false, tableId: null, tableName: null })}
       />
 
-      {showOpeningWizard && isOwner && club && (
+      {showOpeningWizard && isOwner && club && openingChecklistEligible && (
         <ClubOpeningWizard
           clubId={club.id}
           clubName={club.name}
@@ -5070,7 +5146,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         />
       )}
 
-      {showCreateTournament && (resolvedClubId || club?.id) && (
+      {showCreateTournament && canCreateClubGames && (resolvedClubId || club?.id) && (
         <CreateTournamentModal
           clubId={resolvedClubId || club!.id}
           unionId={unionIdForCreate}

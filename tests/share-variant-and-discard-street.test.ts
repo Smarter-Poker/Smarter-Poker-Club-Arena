@@ -34,7 +34,7 @@ const readSrc = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8')
    page says something else would be worse than no test. */
 function toShareVariant(gameType: string | undefined): string {
   const g = (gameType || '').toUpperCase();
-  if (g.includes('PINEAPPLE')) return 'Pineapple';
+  if (g.includes('PINEAPPLE')) return 'Crazy Pineapple';
   if (g.includes('SHORT')) return 'Short Deck';
   if (g.includes('PLO8')) return 'PLO8';
   if (g.includes('PLO6')) return 'PLO6';
@@ -52,7 +52,10 @@ const LIVE_CATALOGUE: Array<[string, string]> = [
   ['PLO6', 'PLO6'],
   ['PLO8', 'PLO8'],
   ['SHORT_DECK', 'Short Deck'],
-  ['PINEAPPLE', 'Pineapple'],
+  /* MOVED, NOT WEAKENED 2026-09-01: the `pineapple` variant runs CRAZY
+     Pineapple - the discard is after the flop. This pin asserted the label,
+     and the label was the thing that was wrong. */
+  ['PINEAPPLE', 'Crazy Pineapple'],
   /* `ofc_pineapple` was RETIRED on 2026-08-23, not mapped. Open Face Chinese
      has no betting rounds and no board; every row carrying that variant was a
      Crazy Pineapple table wearing the wrong label, and all of them are named
@@ -84,7 +87,7 @@ describe('share variant covers the whole live catalogue', () => {
     expect(page).not.toContain("includes('OFC')");
     // A legacy ofc_pineapple row still contains "PINEAPPLE", so it lands on
     // Pineapple - which is what those tables always actually were.
-    expect(toShareVariant('OFC_PINEAPPLE')).toBe('Pineapple');
+    expect(toShareVariant('OFC_PINEAPPLE')).toBe('Crazy Pineapple');
   });
 
   it('still falls back to NLH for something it has never seen', () => {

@@ -678,6 +678,64 @@ export async function auditRakeAttributionDrift(
  *   disbursed = cash + seats x ticket, allowance = pool + acknowledged,
  *   excess (minted) or undisbursed (kept back) — and needs no seat count.
  */
+/**
+ * A GUARANTEE IS A PROMISE, AND NOTHING WAS CHECKING IT (2026-08-31, phase 6).
+ *
+ * Every guarantee check in this estate is a PRE-START affordability check, or
+ * it excludes the events that actually fail. Enumerated against production:
+ * trg_tournaments_guarantee_affordable is scoped to ANNOUNCED/REGISTERING/
+ * RUNNING; fn_overlay_at_risk and fn_audit_overlays both require
+ * `buy_in_amount > 0`, which excludes every freeroll; fn_tournament_metrics
+ * (the phase 2 unpaid detector) filters `prize_pool > 0`, which is the exact
+ * column this defect zeroes.
+ *
+ * So a freeroll - whose pool is 0 by construction and whose guarantee is
+ * therefore the only money it will ever have - was invisible to all of them.
+ * Nine of them ranked a full field, up to 326 players, stamped a winner, and
+ * paid zero chips to anybody, with no alert from any source.
+ *
+ * This asks the question nothing asked: did a COMPLETED guaranteed event
+ * actually PAY its guarantee? It reads tournament_payouts, not prize_pool,
+ * for the reason phase 3 built the record - a settled question is answered
+ * from evidence, not from a column an outage can overwrite.
+ *
+ * It detects and never repairs. The engine now funds the guarantee on the
+ * finish path; the historical backlog is an owner's decision, not a sweep's.
+ */
+export async function auditGuaranteesKept(
+  windowHours = 24
+): Promise<{ shortOfGuarantee: number } | null> {
+  try {
+    const { data, error } = await supabase.rpc('fn_tournament_guarantee_check', {
+      p_hours: windowHours,
+    });
+    if (error) {
+      reportError(error, 'FeeReconciler.guarantee_check_query_failed');
+      return null;
+    }
+    const r = (data ?? {}) as {
+      checked?: number;
+      short_of_guarantee?: number;
+      paid_nothing?: number;
+      chips_short?: number;
+      alerts_raised?: number;
+    };
+    const short = Number(r.short_of_guarantee ?? 0);
+    if (short > 0) {
+      console.warn(
+        `[FeeReconciler] guarantee check: ${short} of ${r.checked ?? 0} completed guaranteed event(s) ` +
+          `paid under their guarantee in the last ${windowHours}h ` +
+          `(${r.paid_nothing ?? 0} paid nothing at all, ${r.chips_short ?? 0} chips short, ` +
+          `${r.alerts_raised ?? 0} new alert(s)).`
+      );
+    }
+    return { shortOfGuarantee: short };
+  } catch (err) {
+    reportError(err, 'FeeReconciler.guarantee_check_failed');
+    return null;
+  }
+}
+
 export async function auditSatelliteConservation(
   windowHours = 24
 ): Promise<{ violations: number } | null> {

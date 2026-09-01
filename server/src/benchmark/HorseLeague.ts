@@ -667,6 +667,28 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'shortdeck_v17', variant: 'short_deck', pairs: 6000, a: {}, b: { v17ShortDeck: false } },
   // ── V18 (2026-08-26) ──
   { name: 'v18_squeeze_response', pairs: 6000, a: {}, b: { v18Squeeze: false } },
+  // ── V29-V33 (2026-09-01) ── THE SOLVER STACK HAD NO ABLATION MATCHUP AT
+  // ALL. V29/V30/V31/V32 shipped between 08-29 and 08-30, they short-circuit
+  // the mature V15-V23 layers on every spot they answer, and nothing on the
+  // card could say whether that trade was positive. Their gates need heads-up
+  // hold'em with the betting lead, so they are dealt at seats: 2 - the same
+  // shape hu_mind_layer uses.
+  { name: 'v29_gto_flop', seats: 2, pairs: 6000, a: {}, b: { v29GtoFlop: false } },
+  { name: 'v30_gto_turn_river', seats: 2, pairs: 6000, a: {}, b: { v30GtoTurnRiver: false } },
+  { name: 'v31_gto_suit_aware', seats: 2, pairs: 6000, a: {}, b: { v31GtoSuitAware: false } },
+  { name: 'v32_facing_defense', seats: 2, pairs: 6000, a: {}, b: { v32FacingDefense: false } },
+  // The depth ceiling only changes a decision ABOVE it, so dealing this at
+  // the standard 100bb would measure exactly nothing and report 0.00 +/- 0.00
+  // forever - the inert-matchup shape the audit now flags. 400bb is past
+  // GTO_MAX_DEPTH_BB (300), which is the only place the flag has an effect.
+  {
+    name: 'v33_depth_ceiling_400bb',
+    seats: 2,
+    stackBB: 400,
+    pairs: 6000,
+    a: {},
+    b: { v33DepthCeiling: false },
+  },
   { name: 'v18_self_image', pairs: 6000, a: {}, b: { v18SelfImage: false } },
   { name: 'v18_exploit_size', pairs: 6000, a: {}, b: { v18ExploitSize: false } },
   // 2026-08-27: the bet-ratio scale repair. There is no "off" for a fixed
@@ -854,7 +876,17 @@ let leagueRunning = false;
  * UPDATE matches and the loser stands down. That is the same
  * one-winner property the INSERT gives, applied to the second attempt.
  */
-const CLAIM_STALE_MS = 60 * 60 * 1000;
+/*
+ * 2026-09-01: was 60 minutes against a 3-hour window. The threshold only ever
+ * bites when the claim wrote NOTHING (see claimNightlyJob: age AND no rows),
+ * and at PAIRS_PER_MATCHUP=4000 a matchup completes in roughly nine minutes -
+ * so a live run proves itself long before this. An hour of grace bought no
+ * safety and cost most of the window: it left only two chances to notice a
+ * corpse. Thirty minutes is still triple the measured first-row time, and a
+ * mistaken takeover is harmless anyway - the (run_date, matchup) upsert makes
+ * a duplicated matchup idempotent.
+ */
+const CLAIM_STALE_MS = 30 * 60 * 1000;
 
 /**
  * Where each nightly job leaves its evidence.
@@ -998,8 +1030,38 @@ async function maybeRunLeague(): Promise<void> {
     // V13.1: leader/standby means TWO containers boot the full engine path and
     // both reach this line within seconds. Claim the night before working it.
     if (!(await claimNightlyJob('league', today))) {
-      lastLeagueDate = today;
-      console.log(`[HorseLeague] run ${today} claimed by another instance - standing down`);
+      /*
+       * DO NOT LATCH lastLeagueDate HERE (2026-09-01, measured).
+       *
+       * Standing down is not the same as settling the day. This line used to
+       * latch the per-process "settled today" flag, and that single
+       * assignment defeated the whole takeover mechanism below it:
+       *
+       *   04:04  instance A claims 'league' and starts the run.
+       *   04:10  the container is replaced (server/** merges deploy, so this
+       *          is routine). The run dies having written ZERO rows - the
+       *          first matchup had not finished yet.
+       *   04:12  the replacement boots, finds no rows, tries to claim, and is
+       *          refused because the dead claim is only EIGHT MINUTES old and
+       *          therefore judged "still plausibly working". It then latched
+       *          lastLeagueDate = today and every 10-minute tick for the rest
+       *          of the process's life returned immediately - including every
+       *          tick after the claim went stale and became reclaimable.
+       *
+       * The window is three hours precisely so a corpse can be taken over
+       * inside it. Latching on stand-down threw that away and cost the league
+       * 2026-08-29, 2026-08-30 and 2026-09-01 - three days in four with a
+       * claim row and no results, while nothing said so.
+       *
+       * Leaving the flag unset costs one extra claim probe per ten minutes
+       * per standby, and buys a retry every ten minutes until either the run
+       * lands rows (alreadyRanToday short-circuits above) or the stale claim
+       * is taken over.
+       */
+      console.log(
+        `[HorseLeague] run ${today} claimed by another instance - standing down, ` +
+          `will re-check in ${Math.round(LEAGUE_CHECK_MS / 60000)} min in case that claim dies`
+      );
       return;
     }
     lastLeagueDate = today;
@@ -1013,8 +1075,12 @@ async function maybeRunLeague(): Promise<void> {
   // left unmeasured.
   if (inPmWindow && lastLeaguePmDate !== today) {
     if (!(await claimNightlyJob('league_pm', today))) {
-      lastLeaguePmDate = today;
-      console.log(`[HorseLeague] pm run ${today} claimed by another instance - standing down`);
+      // Same reasoning as the AM window above: standing down is not settling
+      // the day, so the flag stays unset and the next tick re-checks.
+      console.log(
+        `[HorseLeague] pm run ${today} claimed by another instance - standing down, ` +
+          `will re-check in ${Math.round(LEAGUE_CHECK_MS / 60000)} min in case that claim dies`
+      );
       return;
     }
     lastLeaguePmDate = today;

@@ -209,21 +209,20 @@ describe('the two gaps in how work reaches production', () => {
   });
 
   it('the deploy window cannot be closed by one dropped cron tick', () => {
-    // GitHub schedules are best-effort. One tick per one-hour window meant a
-    // dropped tick cost the window, and the next is four hours later. On
-    // 2026-08-31 that left the engine three hours behind main with the window
-    // standing open and twelve runs reporting success having shipped nothing.
-    expect(DEPLOY).toContain("- cron: '0,20,40 0,3,4,9,10,15,16,19,20,23 * * *'");
-    // The window gate itself must survive - the extra ticks are chances to
-    // deploy, not permission to restart outside the scheduled hours.
-    expect(DEPLOY).toContain('Restart window');
-    expect(DEPLOY).toContain('18|22|04|10|14)');
+    // GitHub schedules are best-effort, so one tick per window is one dropped
+    // tick away from a lost window. Three ticks per hour, and since Dan moved
+    // the restart to every hour (2026-09-01) a lost window costs an hour
+    // rather than the four-to-six it used to.
+    expect(DEPLOY).toContain("- cron: '40,45,50 * * * *'");
   });
 
   it('a deploy that shipped nothing is a warning, not a notice', () => {
     // A notice does not surface in the run header. This run finishes GREEN
     // having deployed nothing, which is the whole reason the annotation exists.
-    expect(DEPLOY).toContain('::warning title=OUTSIDE THE RESTART WINDOW::');
+    // Was OUTSIDE THE RESTART WINDOW, which no longer exists: every hour is a
+    // window now. The run that ships nothing is the one whose break never
+    // opened, and it must still annotate rather than finish quietly green.
+    expect(DEPLOY).toContain('::warning title=BREAK NEVER OPENED::');
     // Asserted on the annotation, not the step name. Workflow step names are
     // developer-facing and this file uses em dashes in dozens of them; the
     // copy rules are about pages and sub pages, and pretending otherwise here

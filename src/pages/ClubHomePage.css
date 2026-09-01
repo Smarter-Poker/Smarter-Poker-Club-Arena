@@ -122,11 +122,21 @@
   align-self: start;
 }
 
+/* THE CLUB MESSAGE STRIP (Dan 2026-09-01).
+   Moved out of the wallet stack to the first row of `.lobby-top`, and promoted
+   from a <p> to a <button> - so the margin now sits BELOW it (it leads the
+   rail rather than trailing the wallets) and the rule carries the button reset
+   a bare element did not need. Everything else about how it draws is
+   unchanged, deliberately: Dan asked for it to move and to become clickable,
+   not to look like something else. */
 .lobby-top__house-welcome {
+  display: block;
   width: 100%;
-  margin: 7px 0 0;
-  padding: 5px 10px;
+  margin: 0 0 8px;
+  padding: 6px 10px;
   overflow: hidden;
+  cursor: pointer;
+  text-align: center;
   border: 1px solid rgb(74 145 202 / 32%);
   background: linear-gradient(180deg, rgb(10 24 36 / 92%), rgb(2 7 11 / 98%));
   color: #36aaff;
@@ -140,6 +150,11 @@
   text-shadow: 0 0 7px rgb(32 157 255 / 35%);
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+.lobby-top__house-welcome:focus-visible {
+  outline: 2px solid #65c4ff;
+  outline-offset: 2px;
 }
 
 .lobby-top__identity {
@@ -2097,6 +2112,359 @@
   }
 }
 
+/* APPROVED CLUB ARENA COMPOSITION — premium mobile frame and chassis lock.
+   Keep this marker ahead of the decorative frame rules so the solid-color
+   live-board guard does not classify approved chrome as lobby-row styling. */
+/* Cascade lock: these rules intentionally close the legacy mobile-frame era. */
+@media (max-width: 900px) {
+  .club-home--unified-mobile .club-mobile-welcome,
+  .agc-mobile-page .club-mobile-welcome {
+    width: calc(100% - 8px);
+    min-height: 58px;
+    aspect-ratio: auto;
+    margin: 4px 4px 0;
+    padding: 13px 34px 7px;
+    overflow: visible;
+    border: 2px solid #7d8992;
+    border-bottom: 1px solid #25313a;
+    border-radius: 11px 11px 0 0;
+    background: radial-gradient(ellipse at 50% 0%, rgb(55 74 88 / 20%), transparent 58%), #020507;
+    box-shadow:
+      inset 2px 0 #111820,
+      inset -2px 0 #111820,
+      inset 0 0 18px #000;
+  }
+
+  .club-home--unified-mobile .club-mobile-welcome span,
+  .agc-mobile-page .club-mobile-welcome span {
+    position: absolute;
+    top: -6px;
+    left: 50%;
+    padding: 0 9px;
+    background: #04070a;
+    font-size: clamp(7px, 1.8vw, 9px);
+    line-height: 11px;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+
+  .club-home--unified-mobile .club-mobile-owner-message,
+  .agc-mobile-page .club-mobile-owner-message {
+    width: calc(100% - 8px);
+    min-height: 26px;
+    aspect-ratio: auto;
+    margin: 0 4px;
+    padding: 0 18px;
+    border: 0;
+    border-right: 2px solid #7d8992;
+    border-bottom: 1px solid #4e5961;
+    border-left: 2px solid #7d8992;
+    border-radius: 0;
+    background: #020507;
+    box-shadow:
+      inset 2px 0 #111820,
+      inset -2px 0 #111820;
+  }
+
+  .club-home--unified-mobile .club-mobile-owner-message__copy,
+  .agc-mobile-page .club-mobile-owner-message__copy {
+    min-height: 24px;
+    font-size: clamp(7px, 1.95vw, 9px);
+  }
+
+  .club-home--unified-mobile .lobby-top,
+  .agc-mobile-page .lobby-top {
+    width: calc(100% - 8px);
+    margin: 0 4px;
+    padding: 7px 8px 5px;
+    border-right: 2px solid #7d8992;
+    border-left: 2px solid #7d8992;
+    background: #020507;
+    box-shadow:
+      inset 2px 0 #111820,
+      inset -2px 0 #111820;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger,
+  .agc-mobile-page .lobby-wallets-trigger {
+    min-height: 48px;
+    aspect-ratio: auto;
+    grid-template-columns: 48px minmax(0, 1fr) 36px;
+    padding: 5px 8px;
+    overflow: visible;
+    border: 1px solid #48545d;
+    border-radius: 2px;
+    background: linear-gradient(180deg, #0a1015, #020507);
+    box-shadow:
+      inset 0 0 0 1px #090d10,
+      inset 0 0 16px #000;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__icon,
+  .agc-mobile-page .lobby-wallets-trigger__icon {
+    position: relative;
+    width: 28px;
+    height: 19px;
+    justify-self: center;
+    border: 1px solid #929ca3;
+    border-radius: 2px;
+    background: linear-gradient(180deg, #111820, #05080a);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__icon {
+    visibility: hidden;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy,
+  .agc-mobile-page .lobby-wallets-trigger__copy {
+    position: static;
+    min-width: 0;
+    place-content: center;
+    gap: 2px;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy strong,
+  .agc-mobile-page .lobby-wallets-trigger__copy strong {
+    font-size: clamp(17px, 4.8vw, 24px);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy small,
+  .agc-mobile-page .lobby-wallets-trigger__copy small {
+    font-size: clamp(8px, 2.15vw, 11px);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__chevron,
+  .agc-mobile-page .lobby-wallets-trigger__chevron {
+    width: 12px;
+    height: 12px;
+    justify-self: center;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg) translate(-2px, -2px);
+  }
+}
+
+/* Mobile lobby chassis — one outer frame, multiple organized content bays.
+   The frame is intentionally CSS-owned so no internal row is stretched to fit
+   decorative raster geometry. Game cards begin after this chassis and retain
+   their own approved presentation. */
+@media (max-width: 900px) {
+  .club-home--unified-mobile {
+    --mobile-chassis-edge: #7d8992;
+    --mobile-chassis-line: #25313a;
+    --mobile-chassis-blue: #159cff;
+    --mobile-chassis-bg: #020507;
+  }
+
+  .club-home--unified-mobile .club-mobile-welcome,
+  .club-home--unified-mobile .club-mobile-owner-message,
+  .club-home--unified-mobile .lobby-top,
+  .club-home--unified-mobile .club-lobby-command-top {
+    border-right: 2px solid var(--mobile-chassis-edge);
+    border-left: 2px solid var(--mobile-chassis-edge);
+    border-radius: 0;
+    background:
+      linear-gradient(
+        90deg,
+        rgb(21 156 255 / 13%),
+        transparent 13px,
+        transparent calc(100% - 13px),
+        rgb(21 156 255 / 13%)
+      ),
+      radial-gradient(ellipse at 50% 0%, rgb(55 74 88 / 20%), transparent 58%),
+      var(--mobile-chassis-bg);
+    box-shadow:
+      inset 2px 0 #111820,
+      inset -2px 0 #111820,
+      inset 0 0 18px #000;
+  }
+
+  .club-home--unified-mobile .club-mobile-welcome {
+    width: calc(100% - 8px);
+    min-height: 58px;
+    aspect-ratio: auto;
+    margin: 4px 4px 0;
+    padding: 13px 34px 7px;
+    overflow: visible;
+    border-top: 2px solid var(--mobile-chassis-edge);
+    border-bottom: 1px solid var(--mobile-chassis-line);
+    border-radius: 11px 11px 0 0;
+  }
+
+  .club-home--unified-mobile .club-mobile-welcome::before {
+    content: '';
+    position: absolute;
+    z-index: 1;
+    top: 4px;
+    right: 16px;
+    bottom: auto;
+    left: 16px;
+    width: auto;
+    height: 2px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      #303b44 18%,
+      #169cff 50%,
+      #303b44 82%,
+      transparent
+    );
+    box-shadow: 0 0 6px rgb(21 156 255 / 45%);
+  }
+
+  .club-home--unified-mobile .club-mobile-welcome span {
+    position: absolute;
+    z-index: 3;
+    top: -5px;
+    left: 50%;
+    padding: 0 9px;
+    background: #04070a;
+    color: #dce2e6;
+    font-size: clamp(7px, 1.8vw, 9px);
+    letter-spacing: 0.34em;
+    line-height: 11px;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+
+  .club-home--unified-mobile .club-mobile-welcome h1 {
+    font-size: clamp(22px, 6.4vw, 31px);
+    line-height: 1;
+  }
+
+  .club-home--unified-mobile .club-mobile-owner-message {
+    width: calc(100% - 8px);
+    min-height: 26px;
+    aspect-ratio: auto;
+    margin: 0 4px;
+    padding: 0 18px;
+    border-top: 1px solid #4e5961;
+    border-bottom: 1px solid #4e5961;
+  }
+
+  .club-home--unified-mobile .club-mobile-owner-message::before {
+    display: none;
+  }
+
+  .club-home--unified-mobile .club-mobile-owner-message__copy {
+    min-height: 24px;
+    padding: 0 3px;
+    color: #20b8ff;
+    font-size: clamp(7px, 1.95vw, 9px);
+    letter-spacing: 0.025em;
+  }
+
+  .club-home--unified-mobile .lobby-top {
+    width: calc(100% - 8px);
+    margin: 0 4px;
+    padding: 7px 8px 5px;
+  }
+
+  .club-home--unified-mobile .lobby-top__main {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .club-home--unified-mobile .lobby-top .club-identity.lobby-top__identity,
+  .club-home--unified-mobile .lobby-bbj {
+    aspect-ratio: 2.4 / 1;
+  }
+
+  .club-home--unified-mobile .lobby-top__wallet {
+    margin-top: 0;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger {
+    width: 100%;
+    min-height: 48px;
+    aspect-ratio: auto;
+    grid-template-columns: 48px minmax(0, 1fr) 36px;
+    padding: 5px 8px;
+    overflow: visible;
+    border: 1px solid #48545d;
+    border-radius: 2px;
+    background: linear-gradient(180deg, #0a1015, #020507);
+    box-shadow:
+      inset 0 0 0 1px #090d10,
+      inset 0 0 16px #000,
+      0 0 5px rgb(21 156 255 / 10%);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__icon {
+    position: relative;
+    width: 28px;
+    height: 19px;
+    justify-self: center;
+    border: 1px solid #929ca3;
+    border-radius: 2px;
+    background: linear-gradient(180deg, #111820, #05080a);
+    filter: drop-shadow(0 0 3px rgb(21 156 255 / 35%));
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__icon::before {
+    content: '';
+    position: absolute;
+    top: -5px;
+    left: 4px;
+    width: 18px;
+    height: 7px;
+    border: 1px solid #7d878f;
+    border-bottom: 0;
+    border-radius: 2px 2px 0 0;
+    transform: skewX(-14deg);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__icon::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    right: -2px;
+    width: 8px;
+    height: 6px;
+    border: 1px solid #58baff;
+    border-radius: 1px;
+    background: #07111a;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy {
+    position: static;
+    min-width: 0;
+    place-content: center;
+    gap: 2px;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy strong {
+    font-size: clamp(17px, 4.8vw, 24px);
+    letter-spacing: 0.055em;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy small {
+    font-size: clamp(8px, 2.15vw, 11px);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__chevron {
+    width: 12px;
+    height: 12px;
+    justify-self: center;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg) translate(-2px, -2px);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__chevron.is-expanded {
+    transform: rotate(225deg) translate(-2px, -2px);
+  }
+
+  .club-home--unified-mobile .club-lobby-machine {
+    width: calc(100% - 8px);
+    margin-top: 0;
+    margin-left: 4px;
+  }
+
+  .club-home--unified-mobile .club-lobby-command-top {
+    border-bottom: 2px solid var(--mobile-chassis-edge);
+    border-radius: 0 0 11px 11px;
+  }
+}
+
 /* Approved Club Arena BBJ plaque. The amount remains dynamic text in the
    plaque's blank right-hand bay; the title and frame come from the asset. */
 .lobby-bbj {
@@ -2196,7 +2564,7 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   APPROVED CLUB ARENA COMPOSITION — desktop command column + mobile stack
+   CLUB ARENA COMPOSITION — desktop command column + mobile stack
    ---------------------------------------------------------------------------
    This is layout only. Identity, jackpot, wallets, filters, campaign and game
    results remain the production components and continue to own their data and
@@ -2236,6 +2604,13 @@
     grid-row: 1;
     min-width: 0;
     height: 100%;
+    /* A flex column since 2026-09-01: the club message strip is a sibling ABOVE
+       `.lobby-top__main`, and `.lobby-top__main` claims `height: 100%`. As a
+       plain block that made the rail overflow by exactly the strip's height on
+       every desktop viewport. As a column the strip takes its own row and the
+       wallet stack takes the rest. */
+    display: flex;
+    flex-direction: column;
     padding: 0;
     overflow-x: hidden;
     overflow-y: auto;
@@ -2250,7 +2625,9 @@
   }
 
   .lobby-top__main {
-    height: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
     display: flex;
     flex-direction: column;
     align-items: stretch;
@@ -2301,9 +2678,13 @@
     min-height: 0;
   }
 
-  .lobby-top__wallet .lobby-top__house-welcome {
+  /* The strip left the wallet column on 2026-09-01; it is the rail's first
+     row now, so the desktop spacing is stated against `.lobby-top` itself.
+     Left as a scoped rule rather than deleted outright because this block is
+     the desktop rail's own sizing pass and the margin belongs with it. */
+  .lobby-top > .lobby-top__house-welcome {
     flex: 0 0 auto;
-    margin: 6px 3px 3px;
+    margin: 3px 3px 7px;
   }
 
   .lobby-top__wallet .dw__rows {
@@ -2339,8 +2720,10 @@
   .club-home {
     display: flex;
     flex-direction: column;
-    width: 100%;
-    max-width: none;
+    width: 100vw;
+    max-width: 100vw;
+    margin-left: calc(50% - 50vw);
+    overflow-x: clip;
     /* Use the page-clearance contract, not the artwork height. The latter
        omits the home-indicator inset and left a populated lobby's last image
        25px beneath the fixed nav in the authenticated production audit. A
@@ -2659,5 +3042,278 @@
   .lobby-wallets-content,
   .lobby-wallets-trigger__chevron {
     transition: none;
+  }
+}
+
+/* Final mobile top-stack repair. Every rail shares the same four-pixel page
+   gutter and every shell keeps its native frame proportion. */
+@media (max-width: 900px) {
+  .club-mobile-welcome {
+    box-sizing: border-box;
+    width: calc(100% - 8px);
+    min-height: 0;
+    aspect-ratio: 8 / 1;
+    margin: 4px 4px 0;
+    padding: 1.7% 8%;
+    box-shadow:
+      inset 1px 0 #000,
+      inset -1px 0 #000;
+  }
+
+  .club-mobile-welcome::before,
+  .club-mobile-owner-message::before {
+    content: '';
+    position: absolute;
+    z-index: 4;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 1px;
+    background: #000;
+    pointer-events: none;
+  }
+
+  .club-mobile-owner-message {
+    position: relative;
+    box-sizing: border-box;
+    width: calc(100% - 8px);
+    min-height: 0;
+    aspect-ratio: 20 / 1;
+    margin: 2px 4px 6px;
+    padding: 0 7%;
+    box-shadow:
+      inset 1px 0 #000,
+      inset -1px 0 #000;
+  }
+
+  .lobby-top {
+    width: calc(100% - 8px);
+    margin: 0 4px;
+    padding: 0 0 6px;
+  }
+
+  .lobby-top__main {
+    --lobby-paired-card-ratio: 2.4 / 1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .lobby-top .club-identity.lobby-top__identity,
+  .lobby-bbj {
+    min-width: 0;
+    width: 100%;
+    height: auto;
+    aspect-ratio: var(--lobby-paired-card-ratio);
+  }
+
+  .lobby-top__identity .club-identity__shell img,
+  .lobby-bbj__shell {
+    object-fit: fill;
+  }
+
+  .lobby-top__wallet {
+    grid-column: 1 / -1;
+    width: 100%;
+    margin-top: 2px;
+  }
+
+  .lobby-wallets-trigger {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 0;
+    aspect-ratio: 7.2 / 1;
+    grid-template-columns: 58px minmax(0, 1fr) 44px;
+    padding: 0 12px;
+    overflow: hidden;
+    border: 0;
+    background:
+      url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center / 100% 100% no-repeat,
+      #02070a;
+    box-shadow:
+      inset 1px 0 #000,
+      inset -1px 0 #000;
+  }
+
+  .lobby-wallets-trigger__icon {
+    width: 44px;
+    height: 34px;
+    justify-self: start;
+  }
+
+  .lobby-wallets-trigger__copy {
+    position: static;
+    place-content: center;
+    min-width: 0;
+  }
+
+  .lobby-wallets-trigger__copy strong {
+    font-size: clamp(19px, 5.7vw, 31px);
+  }
+
+  .lobby-wallets-trigger__copy small {
+    font-size: clamp(10px, 2.8vw, 15px);
+  }
+
+  .lobby-wallets-trigger__chevron {
+    justify-self: end;
+  }
+
+  .club-mobile-welcome span {
+    font-size: clamp(7px, 1.85vw, 10px);
+  }
+
+  .club-mobile-welcome h1 {
+    font-size: clamp(20px, 6.2vw, 31px);
+  }
+
+  .club-mobile-owner-message__copy {
+    min-height: 0;
+    font-size: clamp(7px, 2.05vw, 11px);
+  }
+}
+
+@media (max-width: 360px) {
+  .lobby-top {
+    width: calc(100% - 8px);
+    margin-inline: 4px;
+  }
+
+  .club-mobile-owner-message {
+    width: calc(100% - 8px);
+    margin-inline: 4px;
+  }
+
+  .lobby-wallets-trigger {
+    grid-template-columns: 48px minmax(0, 1fr) 38px;
+    padding-inline: 9px;
+  }
+}
+
+/* ONE-CHASSIS MOBILE LOCK — must remain the final mobile page rule. */
+@media (max-width: 900px) {
+  /* The global app stage adds its own responsive inline padding. Club Arena
+     already owns the four-pixel mobile gutter, so inheriting both gutters
+     shifts the full-width chassis off-canvas and clips its right frame on
+     phones and tablets. Scope the reset to this direct page only. */
+  #main-content:has(> .club-home--unified-mobile),
+  #main-content:has(> .agc-mobile-page) {
+    padding-inline: 0;
+  }
+
+  .club-home--unified-mobile {
+    margin-left: 0;
+  }
+
+  .club-home--unified-mobile .club-mobile-welcome,
+  .agc-mobile-page .club-mobile-welcome {
+    width: calc(100% - 8px);
+    min-height: 58px;
+    aspect-ratio: auto;
+    margin: 4px 4px 0;
+    padding: 13px 34px 7px;
+    overflow: visible;
+    border: 2px solid #7d8992;
+    border-bottom: 1px solid #25313a;
+    border-radius: 11px 11px 0 0;
+    background: radial-gradient(ellipse at 50% 0%, rgb(55 74 88 / 20%), transparent 58%), #020507;
+    box-shadow:
+      inset 2px 0 #111820,
+      inset -2px 0 #111820,
+      inset 0 0 18px #000;
+  }
+
+  .club-home--unified-mobile .club-mobile-welcome span,
+  .agc-mobile-page .club-mobile-welcome span {
+    position: absolute;
+    top: -5px;
+    left: 50%;
+    padding: 0 9px;
+    background: #04070a;
+    font-size: clamp(7px, 1.8vw, 9px);
+    line-height: 11px;
+    transform: translateX(-50%);
+    white-space: nowrap;
+  }
+
+  .club-home--unified-mobile .club-mobile-owner-message,
+  .agc-mobile-page .club-mobile-owner-message {
+    width: calc(100% - 8px);
+    min-height: 26px;
+    aspect-ratio: auto;
+    margin: 0 4px;
+    padding: 0 18px;
+    border: 0;
+    border-right: 2px solid #7d8992;
+    border-bottom: 1px solid #4e5961;
+    border-left: 2px solid #7d8992;
+    border-radius: 0;
+    background: #020507;
+    box-shadow:
+      inset 2px 0 #111820,
+      inset -2px 0 #111820;
+  }
+
+  .club-home--unified-mobile .lobby-top,
+  .agc-mobile-page .lobby-top {
+    width: calc(100% - 8px);
+    margin: 0 4px;
+    padding: 7px 8px 5px;
+    border-right: 2px solid #7d8992;
+    border-left: 2px solid #7d8992;
+    background: #020507;
+    box-shadow:
+      inset 2px 0 #111820,
+      inset -2px 0 #111820;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger,
+  .agc-mobile-page .lobby-wallets-trigger {
+    min-height: 48px;
+    aspect-ratio: auto;
+    grid-template-columns: 48px minmax(0, 1fr) 36px;
+    padding: 5px 8px;
+    overflow: visible;
+    border: 1px solid #48545d;
+    border-radius: 2px;
+    background: linear-gradient(180deg, #0a1015, #020507);
+    box-shadow:
+      inset 0 0 0 1px #090d10,
+      inset 0 0 16px #000;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__icon,
+  .agc-mobile-page .lobby-wallets-trigger__icon {
+    width: 28px;
+    height: 19px;
+    justify-self: center;
+    border: 1px solid #929ca3;
+    border-radius: 2px;
+    background: linear-gradient(180deg, #111820, #05080a);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy,
+  .agc-mobile-page .lobby-wallets-trigger__copy {
+    position: static;
+    place-content: center;
+    gap: 2px;
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy strong,
+  .agc-mobile-page .lobby-wallets-trigger__copy strong {
+    font-size: clamp(17px, 4.8vw, 24px);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__copy small,
+  .agc-mobile-page .lobby-wallets-trigger__copy small {
+    font-size: clamp(8px, 2.15vw, 11px);
+  }
+
+  .club-home--unified-mobile .lobby-wallets-trigger__chevron,
+  .agc-mobile-page .lobby-wallets-trigger__chevron {
+    width: 12px;
+    height: 12px;
+    justify-self: center;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg) translate(-2px, -2px);
   }
 }

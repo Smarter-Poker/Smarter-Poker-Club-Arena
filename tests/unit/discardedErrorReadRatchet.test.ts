@@ -101,7 +101,9 @@ const BASELINE = new Map<string, number>([
   ['src/pages/CashierTradePage.tsx', 0],
   ['src/pages/AntiCheatPage.tsx', 3],
   ['src/components/wallet/ChipMintModal.tsx', 3],
-  ['src/components/agent/AgentCommissionDashboard.tsx', 3],
+  // 3 -> 2 in phase 7: the sub-agent read that discarded its error is gone with
+  // the dropped column it was reading, and its replacement binds the error.
+  ['src/components/agent/AgentCommissionDashboard.tsx', 2],
   ['src/utils/settlementLock.ts', 2],
   ['src/stores/useHeaderDataStore.ts', 2],
   ['src/services/WalletService.ts', 2],

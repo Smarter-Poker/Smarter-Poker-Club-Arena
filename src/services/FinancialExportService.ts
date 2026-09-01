@@ -23,7 +23,11 @@ import { reportError } from '../utils/errorReporter';
 export type ExportType =
   | 'settlement_club'
   | 'settlement_agent'
-  | 'commission_history'
+  // Named for the ledger it reads, not for the table it used to read.
+  // commission_history was dropped on 2026-09-01 (phase 7) after holding zero
+  // rows for its whole life; the fetcher below has read agent_commissions
+  // since the 2026-07-23 sweep, so only the label was stale.
+  | 'agent_commissions'
   | 'wallet_transactions'
   | 'rake_records'
   | 'cashout_history'
@@ -79,8 +83,8 @@ export const FinancialExportService = {
         return this.fetchClubSettlements(options);
       case 'settlement_agent':
         return this.fetchAgentSettlements(options);
-      case 'commission_history':
-        return this.fetchCommissionHistory(options);
+      case 'agent_commissions':
+        return this.fetchAgentCommissions(options);
       case 'wallet_transactions':
         return this.fetchWalletTransactions(options);
       case 'rake_records':
@@ -176,7 +180,7 @@ export const FinancialExportService = {
   // SWEEP #3 (2026-07-23): commission history exports repointed off the phantom
   // `commission_payouts` table onto `agent_commissions`, aggregated per agent
   // per day (the ledger is per-hand; day-level rows keep the CSV readable).
-  async fetchCommissionHistory(options: ExportOptions) {
+  async fetchAgentCommissions(options: ExportOptions) {
     let query = supabase
       .from('agent_commissions')
       .select('club_id, user_id, amount, created_at')

@@ -2429,6 +2429,51 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
    * insert and retries up to 3× with backoff; on final failure it emits a
    * `hole_cards_unavailable` event so the client can force a re-fetch.
    */
+  /**
+   * PHASE 4 2026-09-01 - write one player's discarded card where only that
+   * player can read it.
+   *
+   * Modelled on persistHoleCardsWithRetry below, including its hand-number
+   * capture: `this.handCount` is reallocated when the next hand deals, and
+   * this awaits, so re-reading it per attempt could stamp THIS hand's discard
+   * with the NEXT hand's number.
+   *
+   * Deliberately NOT retried and NOT escalated the way hole cards are. A
+   * missing hole card blinds a player in a live hand and has its own
+   * `hole_cards_unavailable` recovery path; a missing discard row costs one
+   * line of a REPLAY, after the hand is over. Retrying it three times with
+   * backoff inside the hand's own event loop would spend live-hand latency on
+   * a history record. One attempt, and a report if it fails.
+   */
+  protected async persistDiscardedCard(userId: string, seat: number, card: unknown): Promise<void> {
+    const handNumberAtDiscard = this.handCount;
+    try {
+      const { error } = await supabase.from('hand_discards').upsert(
+        {
+          table_id: this.tableId,
+          hand_number: handNumberAtDiscard,
+          user_id: userId,
+          seat_number: seat,
+          discarded_card: card,
+        },
+        { onConflict: 'table_id,hand_number,user_id' }
+      );
+      if (error) {
+        reportError(
+          new Error(`hand_discards upsert failed: ${error.message}`),
+          `ServerTableEngine.${this.tableId}.hand_discards_failed`,
+          { userId, seat, handNumber: handNumberAtDiscard }
+        );
+      }
+    } catch (err) {
+      reportError(err, `ServerTableEngine.${this.tableId}.hand_discards_threw`, {
+        userId,
+        seat,
+        handNumber: handNumberAtDiscard,
+      });
+    }
+  }
+
   protected async persistHoleCardsWithRetry(
     userId: string,
     seat: number,

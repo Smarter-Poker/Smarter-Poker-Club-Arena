@@ -402,7 +402,8 @@ describe('the share variant label', () => {
     ['plo6', 'PLO6'],
     ['plo8', 'PLO8'],
     ['short_deck', 'Short Deck'],
-    ['pineapple', 'Pineapple'],
+    // 2026-09-01: the engine deals Crazy Pineapple; the label follows it.
+    ['pineapple', 'Crazy Pineapple'],
     ['PLO', 'PLO4'],
     ['omaha8', 'PLO8'],
   ] as const)('reads %s as %s', (input, expected) => {

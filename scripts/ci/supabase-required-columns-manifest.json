@@ -1449,6 +1449,9 @@
     "engine_leader": [
       "instance_id"
     ],
+    "engine_maintenance_break": [
+      "phase"
+    ],
     "engine_recovery_events": [
       "event"
     ],

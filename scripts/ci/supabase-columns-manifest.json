@@ -1095,6 +1095,12 @@
       "reason",
       "actor"
     ],
+    "ca_engine_deploy_watch_state": [
+      "singleton",
+      "engine_missing_since",
+      "last_engine_heartbeat",
+      "checked_at"
+    ],
     "ca_financial_epochs": [
       "id",
       "name",
@@ -2313,7 +2319,9 @@
       "guarantee_treasury_floor",
       "guarantee_enforcement_enabled",
       "tagline",
-      "opening_checklist_started_at"
+      "opening_checklist_started_at",
+      "lobby_message",
+      "lobby_message_updated_at"
     ],
     "collusion_tracking": [
       "id",
@@ -4974,6 +4982,16 @@
       "engine_version",
       "acquired_at",
       "heartbeat_at"
+    ],
+    "engine_maintenance_break": [
+      "id",
+      "phase",
+      "announced_at",
+      "break_started_at",
+      "break_ends_at",
+      "reason",
+      "declared_by",
+      "updated_at"
     ],
     "engine_recovery_events": [
       "id",
@@ -12466,6 +12484,15 @@
       "incoherent_runlines",
       "incoherent_runlines_with_bet",
       "total_live_recs"
+    ],
+    "v_openclaw_job_staleness": [
+      "job_name",
+      "last_success_at",
+      "successes_30d",
+      "silent_minutes",
+      "p90_gap_minutes",
+      "threshold_minutes",
+      "is_stale"
     ],
     "v_shell_reload_lateness": [
       "day",

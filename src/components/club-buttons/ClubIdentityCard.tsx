@@ -10,6 +10,11 @@ export interface ClubIdentityCardProps {
   pokerAlias: string;
   clubId: string | number;
   playerId?: string | number | null;
+  /** Dan 2026-09-01, binding: the club level renders BELOW the logo inside a
+   *  blue box, never overlapping it. A new club shows Level 1 from day one.
+   *  (#2509 removed the level after the old placement overlapped the logo;
+   *  the order was to move it into a blue box, not to delete it.) */
+  level?: number | null;
   playersPlaying?: number | null;
   onCopyClubId?: () => void;
   onCopyPlayerId?: () => void;
@@ -58,6 +63,7 @@ export function ClubIdentityCard({
   pokerAlias,
   clubId,
   playerId,
+  level,
   playersPlaying,
   onCopyClubId,
   onCopyPlayerId,
@@ -77,6 +83,12 @@ export function ClubIdentityCard({
       <div className="club-identity__logo">
         {logoUrl ? <img src={logoUrl} alt={`${clubName} Logo`} loading="lazy" /> : logoFallback}
       </div>
+
+      {level != null && (
+        <span className="club-identity__level">
+          <span>Level {level}</span>
+        </span>
+      )}
 
       <div className="club-identity__details">
         <h2 title={clubName}>{clubName}</h2>

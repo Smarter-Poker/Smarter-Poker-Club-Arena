@@ -4693,3 +4693,24 @@ button.post-bb-overlay-button {
    not also declare, the banner vanishes for every reduced-motion player, and
    CLAUDE.md §10.6 is explicit that reduced motion collapses motion but never
    meaning. Deleting the override is the fix; the global rule is the mechanism. */
+
+/* ─────────────────────────────────────────────────────────────────────────
+   AFTER THE WHEEL, SAY WHAT IT IS FOR (2026-09-01)
+
+   The badge that replaces the Spin wheel printed a bare "4x", and the HUD
+   carries Level / Blinds / Next / Rank / Left / Avg. So once the wheel had
+   gone, a player could no longer find out what they were playing for - and
+   at 10x and above 2nd and 3rd are PAID, which makes the prize a decision
+   input rather than trivia.
+
+   Quieter than the multiplier beside it: the multiplier is the headline, the
+   amount is the answer to "how much".
+   ───────────────────────────────────────────────────────────────────────── */
+.spinMultiplierPrize {
+  margin-left: 6px;
+  padding-left: 6px;
+  border-left: 1px solid rgba(255, 255, 255, 0.25);
+  font-weight: 600;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}

@@ -96,6 +96,28 @@ Run live twice on 2026-09-01: 4 flagged inside the 6-day window, 324.00 chips,
 4 alerts raised on the first pass and 0 on the second, 4 alert rows in total.
 `parked_completing` 0.
 
+## Both guards earn their place, and the data says so
+
+Replaying the two predicates against the seven events as production still holds
+them:
+
+| event                          | distinct stacks in the field | guard one refuses | guard two refuses |
+| ------------------------------ | ---------------------------: | :---------------: | :---------------: |
+| $100 Freeroll 6:00 PM          |                            1 |        yes        |        yes        |
+| $100 Freeroll 12:00 PM         |                            1 |        yes        |        yes        |
+| Friday Six-Card Nightcap       |                            1 |        yes        |        yes        |
+| Sunday Deep Stack Satellite $5 |                            1 |        yes        |        yes        |
+| Turbo Tuesday PLO Deepstack    |                            1 |        yes        |        yes        |
+| All-In or Fold Frenzy          |                            1 |        yes        |        yes        |
+| Afternoon Bounty (NLH)         |                           12 |      **no**       |        yes        |
+
+Six of the seven are caught by the cheap test that needs no query. The seventh
+is not: Afternoon Bounty's field holds twelve different stacks despite no hand
+having been dealt in it, so the chips look rankable and are not. That single row
+is the whole argument for stating the rule outright as well as inferring it, and
+it is why guard two is not redundant. How that event's stacks came to differ
+with no hand behind them is a separate question and is not answered here.
+
 ## Evidence
 
 - Server suite 3400/3400 green, `tsc --noEmit` clean.

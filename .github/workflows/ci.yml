@@ -164,6 +164,39 @@ jobs:
   # STEP 1: TypeScript compilation check (fast — ~40s)
   # ─────────────────────────────────────────────────────────────────────────────
 
+  # UNGATED ON PURPOSE, like typecheck and stub_gate above.
+  #
+  # noFixedSizeSourceWindows guards every source pin in the repo against being
+  # bounded by a magic number, because a window that can drift off the code it
+  # watches can also drift off it while staying GREEN. It earned that status on
+  # 2026-09-01: four byte-bounded windows landed on main inside two hours, and
+  # main's own CI never saw any of them, because the unit job is gated behind
+  # the changed files and a docs-only commit goes green in twelve seconds
+  # without running the suite. Main showed an unbroken wall of ticks while
+  # carrying a red test that failed on every branch touching src/ or tests/.
+  #
+  # It reads source and asserts on text. It needs no database, no build and no
+  # network, and it finishes in well under a second, so there is no reason for
+  # it to be behind a gate that can hide it.
+  source_windows:
+    name: Source Windows Are Structural
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - name: Every source pin is bounded by a structure
+        run: npx vitest run tests/unit/noFixedSizeSourceWindows.test.ts
+
   stub_gate:
     if: github.event_name == 'pull_request'
     name: Stub Gate

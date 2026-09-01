@@ -34,6 +34,7 @@ import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
+import { loadSchemaManifest } from './schema-manifest.mjs';
 
 const REPO = process.cwd();
 const MANIFEST = join(REPO, 'scripts/ci/supabase-schema-manifest.json');
@@ -55,7 +56,16 @@ function loadJson(path, label) {
   }
 }
 
-const manifest = loadJson(MANIFEST, 'schema manifest');
+/* The base snapshot UNION scripts/ci/schema-manifest.d/*.json, so an agent
+   declaring a table it just created never has to edit the file every other
+   agent is editing. See scripts/ci/schema-manifest.mjs. */
+let manifest;
+try {
+  manifest = loadSchemaManifest(REPO);
+} catch (err) {
+  console.error(`ERROR: ${err.message}`);
+  process.exit(2);
+}
 const allow = loadJson(ALLOWLIST, 'invariants allowlist');
 const realTables = new Set(manifest.tables || []);
 const realFns = new Set(manifest.functions || []);

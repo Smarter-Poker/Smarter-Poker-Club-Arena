@@ -46,9 +46,9 @@ First action for the next agent: read section 22, then run the four status queri
 ## 4. Repository Map (zero-drift-relevant paths)
 
 - supabase/migrations/ - byte-exact mirrors of every applied migration. ~60 zero-drift migrations from 2026-08-31/09-01. EDIT ONLY by exporting from supabase_migrations.schema_migrations (scripts/dev/export-applied-migrations.sh, or the node+pg export pattern). A migration file that never ran in prod fails CI.
-- scripts/ci/ - the gate fleet (~50 checks). Notables: check-migrations-applied.mjs (asks the PRODUCTION ledger), check-definer-authorization.mjs (browser-reachable SECURITY DEFINER fns must consult auth.* or carry in-file REVOKEs), check-telemetry-exposure.mjs (live DB scan for unscoped definer fns), detect-silent-revert.mjs (generated supabase-*-manifest.json files are exempt), check-chip-conservation.mjs (deploy health gate, property tests + live invariants), gen-schema-manifest.mjs (regenerates the three supabase-*-manifest.json files; needs SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY, on the Mac export VITE_SUPABASE_URL as SUPABASE_URL).
+- scripts/ci/ - the gate fleet (~50 checks). Notables: check-migrations-applied.mjs (asks the PRODUCTION ledger), check-definer-authorization.mjs (browser-reachable SECURITY DEFINER fns must consult auth._ or carry in-file REVOKEs), check-telemetry-exposure.mjs (live DB scan for unscoped definer fns), detect-silent-revert.mjs (generated supabase-_-manifest.json files are exempt), check-chip-conservation.mjs (deploy health gate, property tests + live invariants), gen-schema-manifest.mjs (regenerates the three supabase-\*-manifest.json files; needs SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY, on the Mac export VITE_SUPABASE_URL as SUPABASE_URL).
 - src/pages/DriftIncidentsPage.tsx + .css + DriftGatePanel.tsx - the ops dashboard (deep links, gate pill with STALE state, sparklines, balance-as-of tool). src/services/DriftIncidentService.ts wraps the RPCs.
-- server/src/engine/ServerTableEngineSettlement.ts - postHandTasks takes a synchronous per-hand snapshot; NOTHING after `const snap = {` may read this.currentHand* or this.handCount (law test: server/src/engine/StaleContinuationSweep.law.test.ts). The atomic settle passes snap.handNumber to fn_ca_settle_hand_stacks_absolute.
+- server/src/engine/ServerTableEngineSettlement.ts - postHandTasks takes a synchronous per-hand snapshot; NOTHING after `const snap = {` may read this.currentHand\* or this.handCount (law test: server/src/engine/StaleContinuationSweep.law.test.ts). The atomic settle passes snap.handNumber to fn_ca_settle_hand_stacks_absolute.
 - server/src/tournament/TournamentManagerEliminations.ts - bounty split by claim weight (p_claimants to fn_collect_bounty). Guard test: server/src/tournament/moneyPathAudit.guard.test.ts.
 - docs/audits/2026-08-31-zero-drift/01-07 - the build-out audit trail. Doc 06 is the engine adoption guide, doc 07 has the epoch-3 rehearsal, PITR runbook, capacity plan.
 - .agents/rules/00-agent-playbook.md and AGENT-PLAYBOOK.md - the binding agent playbook (verification pass, worktrees, no --no-verify, fix your own build, zero-assumption doctrine). REREAD IT BEFORE WORKING.
@@ -70,7 +70,7 @@ INCIDENTS: ca_drift_incidents + ca_incident_events + ca_incident_recipients. fn_
 
 CERT/HORSE FLEET: fn_ca_is_cert_account(uuid) = zero-UUID pattern OR ca_cert_accounts registry OR auth email domain (@horses.smarter.poker, %.invalid). The harness RECREATES the fleet with new random UUIDs (it did on 09-01, 420 accounts) - the email-domain rung survives that. 519+ registered. Cert supply is broken out (cert_wallets, cert_diamonds columns), reported not excluded.
 
-EXACTLY-ONCE: op-id claim pattern (ca_op_claims, claimed_by = auth.uid()) wraps mint, union send/credit/debit, fn_credit_treasury; club_bank_send/claim_back/admin_remove_player_chips replay via chip_transactions metadata op_id receipts. Wrapper/core naming: <fn>_zd3core / _zd4core hold original bodies.
+EXACTLY-ONCE: op-id claim pattern (ca_op_claims, claimed_by = auth.uid()) wraps mint, union send/credit/debit, fn_credit_treasury; club_bank_send/claim_back/admin_remove_player_chips replay via chip_transactions metadata op_id receipts. Wrapper/core naming: <fn>\_zd3core / \_zd4core hold original bodies.
 
 SETTLEMENTS: ca_settlements state machine walks open -> final (invalid transitions refused); hand_stacks settlements are all-or-nothing (a missing seat rejects the WHOLE hand write - 108 such refusals during the 09-01 stand-ups are correct records, not bugs); union rakeback close and player PnL settle-or-scream with critical incidents and retryable resume.
 
@@ -111,11 +111,11 @@ One push per drift (implemented). Midway scope + platform alarms (implemented). 
 
 ## 11. Changed-File Ledger (this final branch; earlier branches all MERGED - see section 7)
 
-| File | Status | Purpose | Verified | Committed |
-| --- | --- | --- | --- | --- |
+| File                                                                                 | Status     | Purpose                                                                     | Verified            | Committed       |
+| ------------------------------------------------------------------------------------ | ---------- | --------------------------------------------------------------------------- | ------------------- | --------------- |
 | supabase/migrations/20260901111955_ca_sanctioned_club_funding_and_entry_gate_fns.sql | new mirror | fn_ca_fund_club, fn_ca_entry_scope_ok, entry-gate trigger fn, registry rows | live-applied + sims | pending this PR |
-| supabase/migrations/20260901112008_ca_entry_gate_trigger_armed.sql | new mirror | BEFORE INSERT trigger on tournament_players | live-applied + sims | pending this PR |
-| docs/HANDOFF_CURRENT_STATE.md | new | this document | n/a | pending this PR |
+| supabase/migrations/20260901112008_ca_entry_gate_trigger_armed.sql                   | new mirror | BEFORE INSERT trigger on tournament_players                                 | live-applied + sims | pending this PR |
+| docs/HANDOFF_CURRENT_STATE.md                                                        | new        | this document                                                               | n/a                 | pending this PR |
 
 Everything else from this session is already on origin/main via merged PRs #2346 #2413 #2414 #2416 #2420. No user-owned uncommitted changes were observed in the worktree (CONFIRMED clean before branching).
 
@@ -126,7 +126,7 @@ No visual assets were created or referenced in this workstream. The Drift page u
 ## 13. Commands And Tools Used (the repeatable ones)
 
 - Migration apply: Supabase MCP apply_migration against kuklfnapbkmacvwxktbh (THE only sanctioned DDL path).
-- Mirror export (Mac): write /tmp/zd-export.js (node + pg, NODE_PATH=~/Documents/club-arena/node_modules, password from .env, ssl rejectUnauthorized false), SELECT version,name,array_to_string(statements, chr(10)) FROM supabase_migrations.schema_migrations WHERE name IN (...), write supabase/migrations/<version>_<name>.sql.
+- Mirror export (Mac): write /tmp/zd-export.js (node + pg, NODE*PATH=~/Documents/club-arena/node_modules, password from .env, ssl rejectUnauthorized false), SELECT version,name,array_to_string(statements, chr(10)) FROM supabase_migrations.schema_migrations WHERE name IN (...), write supabase/migrations/<version>*<name>.sql.
 - Gates locally: node scripts/ci/check-migrations-applied.mjs (needs SUPABASE_DB_PASSWORD), check-definer-authorization.mjs, check-telemetry-exposure.mjs (needs SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY), check-title-case.mjs, check-ui-text.mjs, gen-schema-manifest.mjs.
 - Rolled-back production sims: DO $$ ... RAISE EXCEPTION 'CA_SIM_REPORT: %' $$ - the exception both reports and rolls back. Signup-path probe: INSERT INTO auth.users (id, instance_id '00000000-...', aud/role 'authenticated', email, encrypted_password 'x', raw_user_meta_data, timestamps) fires the real trigger chain.
 - Push: from the .agent-trees worktree, commit as Smarter-Poker, symlink node_modules for pre-push, git push -u origin <branch>, gh pr create (non-draft auto-merges on green).
@@ -134,22 +134,22 @@ No visual assets were created or referenced in this workstream. The Drift page u
 
 ## 14. Verification And Test Results
 
-| Verification | Method | Result |
-| --- | --- | --- |
-| PR #2346 CI (final head a631154b3b) | gh run list / gh pr checks | ALL GREEN, merged 01:56 UTC |
-| Server law tests | npx vitest run (2 files) | 19/19 pass |
-| Server suite (CI) | Full server test suite job | 3365 tests, 3363 -> 3365 pass after fixes |
-| tsc client + server | npx tsc --noEmit | clean (empty output) |
-| Declare-ledger sims | rolled-back DO blocks | vocab refusals + GUC stamp + adopters PASS |
-| Cert-fleet reset | dry run + refusal probes | 52 accounts / 15.79M measured; refuses without/wrong literal |
-| Alarm drill | live weekly fn | 9/9 checks fire and unwind |
-| Signup diamond journal | auth.users insert probe (rolled back) | 1 signup_bonus row; no double on re-auth; still works after ACL revoke |
-| Entry gate | rolled-back probes | club-less horse REFUSED (check_violation), union member ALLOWED |
-| fn_ca_fund_club | rolled-back probe | 1 declared mint row; replay no-op |
-| Echo-fold + horse-info | rolled-back probes | 0 new incidents on echo; folding confirmed live (occ 2..16, zero pages) |
-| Supply persistent-sign | live | 05:05 -28.17 no page; 10:05 +9.9M same-sign PAGED correctly |
-| Production serves merge | curl build-info.json + git merge-base --is-ancestor | YES for web (43cfb5b5) and engine (666a56a1) |
-| NOT RUN | PITR restore drill (billable, Dan-gated); chip_ledger partition rehearsal; Playwright suites locally (CI ran them) | - |
+| Verification                        | Method                                                                                                             | Result                                                                  |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| PR #2346 CI (final head a631154b3b) | gh run list / gh pr checks                                                                                         | ALL GREEN, merged 01:56 UTC                                             |
+| Server law tests                    | npx vitest run (2 files)                                                                                           | 19/19 pass                                                              |
+| Server suite (CI)                   | Full server test suite job                                                                                         | 3365 tests, 3363 -> 3365 pass after fixes                               |
+| tsc client + server                 | npx tsc --noEmit                                                                                                   | clean (empty output)                                                    |
+| Declare-ledger sims                 | rolled-back DO blocks                                                                                              | vocab refusals + GUC stamp + adopters PASS                              |
+| Cert-fleet reset                    | dry run + refusal probes                                                                                           | 52 accounts / 15.79M measured; refuses without/wrong literal            |
+| Alarm drill                         | live weekly fn                                                                                                     | 9/9 checks fire and unwind                                              |
+| Signup diamond journal              | auth.users insert probe (rolled back)                                                                              | 1 signup_bonus row; no double on re-auth; still works after ACL revoke  |
+| Entry gate                          | rolled-back probes                                                                                                 | club-less horse REFUSED (check_violation), union member ALLOWED         |
+| fn_ca_fund_club                     | rolled-back probe                                                                                                  | 1 declared mint row; replay no-op                                       |
+| Echo-fold + horse-info              | rolled-back probes                                                                                                 | 0 new incidents on echo; folding confirmed live (occ 2..16, zero pages) |
+| Supply persistent-sign              | live                                                                                                               | 05:05 -28.17 no page; 10:05 +9.9M same-sign PAGED correctly             |
+| Production serves merge             | curl build-info.json + git merge-base --is-ancestor                                                                | YES for web (43cfb5b5) and engine (666a56a1)                            |
+| NOT RUN                             | PITR restore drill (billable, Dan-gated); chip_ledger partition rehearsal; Playwright suites locally (CI ran them) | -                                                                       |
 
 ## 15. Setbacks, Failed Approaches, And Lessons
 
@@ -165,20 +165,20 @@ No visual assets were created or referenced in this workstream. The Drift page u
 
 ## 16. Known Defects And Architectural Holes (prioritized)
 
-| Priority | Item | Evidence | Status |
-| --- | --- | --- | --- |
-| P0 | Deep Stack clawback incomplete: 4.26M raw-funded chips still in club (416 horse members + treasury) | section 10 numbers, event-window math closes exactly | OTHER AGENT in progress; do not touch; verify it ends at ~0 and burns via ledger |
-| P0 | Burn-in gate + preflight RED until trailing windows decay (~24h after last event row) | gate run 4:58 AM, 7 checks failing | clock, not code; re-check after 12:00 UTC 09-02 |
-| P1 | Union-freeroll prize destination for club-less players: NO RULING. New gate prevents NEW cases; historical owed amounts tallied (84.18 + stand-up wave) in financial_alerts context | incident narratives | needs Dan |
-| P1 | PR #2394 (paid-places floor/cap, PayoutEngine n-1) still open; the 10.01 overpay class recurs until merged | incident 96018c03 | needs review/merge |
-| P1 | Cert-fleet epoch-3 wipe (15.79M): one-word ruling | fn dry run | needs Dan |
-| P2 | Engine entry paths may retry refused registrations forever (gate raises check_violation) | UNKNOWN - NEXT AGENT MUST INSPECT engine logs after a few hours | watch |
-| P2 | Money-question backlog for Dan: buy_in_fee 13,614.20; spins 252.00; bounty 1,730.16 + 150.40; VIP recompute; 3.21 + 10.01 overpays | earlier session records | needs Dan |
-| P3 | chip_ledger monthly partitioning due before ~4 months (58K rows/day); solved_spots_gold 80GB archive; PITR drill never executed; MFA for 3 admin accounts; 28 anon-executable read-only definer fns audit | doc 07 capacity plan | scheduled work |
+| Priority | Item                                                                                                                                                                                                      | Evidence                                                        | Status                                                                           |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| P0       | Deep Stack clawback incomplete: 4.26M raw-funded chips still in club (416 horse members + treasury)                                                                                                       | section 10 numbers, event-window math closes exactly            | OTHER AGENT in progress; do not touch; verify it ends at ~0 and burns via ledger |
+| P0       | Burn-in gate + preflight RED until trailing windows decay (~24h after last event row)                                                                                                                     | gate run 4:58 AM, 7 checks failing                              | clock, not code; re-check after 12:00 UTC 09-02                                  |
+| P1       | Union-freeroll prize destination for club-less players: NO RULING. New gate prevents NEW cases; historical owed amounts tallied (84.18 + stand-up wave) in financial_alerts context                       | incident narratives                                             | needs Dan                                                                        |
+| P1       | PR #2394 (paid-places floor/cap, PayoutEngine n-1) still open; the 10.01 overpay class recurs until merged                                                                                                | incident 96018c03                                               | needs review/merge                                                               |
+| P1       | Cert-fleet epoch-3 wipe (15.79M): one-word ruling                                                                                                                                                         | fn dry run                                                      | needs Dan                                                                        |
+| P2       | Engine entry paths may retry refused registrations forever (gate raises check_violation)                                                                                                                  | UNKNOWN - NEXT AGENT MUST INSPECT engine logs after a few hours | watch                                                                            |
+| P2       | Money-question backlog for Dan: buy_in_fee 13,614.20; spins 252.00; bounty 1,730.16 + 150.40; VIP recompute; 3.21 + 10.01 overpays                                                                        | earlier session records                                         | needs Dan                                                                        |
+| P3       | chip_ledger monthly partitioning due before ~4 months (58K rows/day); solved_spots_gold 80GB archive; PITR drill never executed; MFA for 3 admin accounts; 28 anon-executable read-only definer fns audit | doc 07 capacity plan                                            | scheduled work                                                                   |
 
 ## 17. Security, Secrets, And Credentials (names only)
 
-Mac ~/Documents/club-arena/.env: SUPABASE_DB_PASSWORD, SUPABASE_SERVICE_ROLE_KEY, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY (values quoted - strip quotes). GitHub Actions secrets (repo Smarter-Poker-Club-Arena): SUPABASE_DB_PASSWORD, DATABASE_URL (IPv4 pooler), SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, HETZNER_*, AUTOPILOT_APP_PRIVATE_KEY, GH_PAT, ANTHROPIC_API_KEY, AUTOFIX_GITHUB_TOKEN. All appear available. No secret values are reproduced anywhere in this document or in commits (CONFIRMED by review). The cloud-session GitHub token is a dead end; host gh works.
+Mac ~/Documents/club-arena/.env: SUPABASE*DB_PASSWORD, SUPABASE_SERVICE_ROLE_KEY, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY (values quoted - strip quotes). GitHub Actions secrets (repo Smarter-Poker-Club-Arena): SUPABASE_DB_PASSWORD, DATABASE_URL (IPv4 pooler), SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, HETZNER*\*, AUTOPILOT_APP_PRIVATE_KEY, GH_PAT, ANTHROPIC_API_KEY, AUTOFIX_GITHUB_TOKEN. All appear available. No secret values are reproduced anywhere in this document or in commits (CONFIRMED by review). The cloud-session GitHub token is a dead end; host gh works.
 
 ## 18. Database, Migration, And Seed Status
 
@@ -201,7 +201,7 @@ LOW/OPTIONAL: Drift page severity filter; per-entity nightly ledger-replay sampl
 
 ## 21. Prioritized Next-Phase Execution Plan
 
-Phase 0 - Recover And Verify (30 min): run (a) SELECT count(*) FROM ca_drift_incidents WHERE status<>'resolved'; (b) SELECT public.fn_ca_epoch3_preflight(); (c) SELECT jsonb_build_object('treasury',c.chip_treasury,'members',(SELECT sum(cm.chip_balance) FROM club_members cm WHERE cm.club_id=c.id)) FROM clubs c WHERE c.id='2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'; (d) gh pr list --author Smarter-Poker --state open. Root-cause anything open before proceeding. Completion: you can explain every open incident.
+Phase 0 - Recover And Verify (30 min): run (a) SELECT count(\*) FROM ca_drift_incidents WHERE status<>'resolved'; (b) SELECT public.fn_ca_epoch3_preflight(); (c) SELECT jsonb_build_object('treasury',c.chip_treasury,'members',(SELECT sum(cm.chip_balance) FROM club_members cm WHERE cm.club_id=c.id)) FROM clubs c WHERE c.id='2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'; (d) gh pr list --author Smarter-Poker --state open. Root-cause anything open before proceeding. Completion: you can explain every open incident.
 Phase 1 - Protect Completed Work: confirm the PR carrying this document merged; confirm supabase/migrations mirrors match schema_migrations names (node scripts/ci/check-migrations-applied.mjs). Never edit mirror files by hand except appending ACL blocks that match live.
 Phase 2 - Deep Stack Closure: when clawback ends, verify event books close (supply delta vs 08:05 baseline explained by ledgered burns + any fn_ca_fund_club issuance); resolve the daily suspense tracker with the final numbers.
 Phase 3 - Gate Green Path: after 24h clean, preflight 7/7 -> burn-in gate green -> present Dan the reopen numbers. Do NOT advance floors to force it.

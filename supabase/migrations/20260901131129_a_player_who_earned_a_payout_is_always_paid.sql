@@ -52,8 +52,10 @@
 -- bodies in this file were then checked against production rather than
 -- assumed - md5 of pg_proc.prosrc against md5 of the body in this file,
 -- 2026-09-01:
---   fn_payout_guarantee_check        e01c567a89b800e1f8c358ab1a7fb587  8221 bytes
+--   fn_payout_guarantee_check        c8c2e7eca158e7278967a0be875c8147  8810 bytes
 --   fn_pay_backed_payout_shortfalls  a528ce2103f371fb1f4f565dffb7589c  7361 bytes
+-- (the first hash moved when 20260901133x re-applied the check with the
+--  five-cent tolerance; it is re-verified above at that new value)
 -- Only the bodies can match byte for byte; pg_get_functiondef rewrites the
 -- signature and the SET clauses into its own layout.
 --
@@ -164,10 +166,18 @@ BEGIN
                              AND w.type = 'credit'
                              AND w.category IN ('prize','bounty')), 0) AS credited
       FROM owed o
+     /* FIVE CENTS, NOT ONE (2026-09-01, same day). place_worth here is the flat
+        pool * percentage. The engine allocates in whole cents and gives the
+        last paid place the remainder, so a place can legitimately land a cent
+        or two either side of the flat figure - the first run of this check
+        reported the ninth place of a $100 Freeroll as short by 0.02 on exactly
+        that difference, and it was not short. A player who was paid nothing
+        still trips this at any tolerance; what the tolerance buys is that the
+        one alert it raises is real. */
      WHERE COALESCE((SELECT sum(w.amount) FROM public.wallet_transactions w
                       WHERE w.related_entity_id = o.id AND w.user_id = o.user_id
                         AND w.type = 'credit'
-                        AND w.category IN ('prize','bounty')), 0) + 0.01 < o.place_worth
+                        AND w.category IN ('prize','bounty')), 0) + 0.05 < o.place_worth
   LOOP
     v_short := v_short + 1;
     v_short_chips := v_short_chips + (v_row.place_worth - v_row.credited);

@@ -30,7 +30,7 @@ import { join } from 'path';
 const migration = readFileSync(
   join(
     __dirname,
-    '../../../supabase/migrations/20260901140000_a_player_who_earned_a_payout_is_always_paid.sql'
+    '../../../supabase/migrations/20260901131129_a_player_who_earned_a_payout_is_always_paid.sql'
   ),
   'utf8'
 );

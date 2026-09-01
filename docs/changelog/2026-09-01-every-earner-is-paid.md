@@ -107,7 +107,56 @@ backfill_log ...)` meant one inspection excluded an event from every future
 - The detector was run twice against production and is idempotent (above). No
   money path was executed.
 
-## Open, and it needs Dan
+## Both repairs, applied
+
+Dan approved both on the day. Migrations `20260901133441` and `20260901134250`.
+
+**The players who finished third are paid third.** 15 events, 38 finishing places
+corrected, 32 players paid 161.30 chips. The compaction is dense rank over the
+recorded positions, which in all fifteen are present, distinct and exactly as
+many as the field, so it preserves the engine's own order and can only move a
+player up; place 1 was already occupied everywhere, so no champion changed. The
+migration refuses any event that fails those preconditions rather than ranking
+on `eliminated_at`, which for these events is a mass-sweep timestamp and would
+have reordered 114 of 170 rows on a guess.
+
+`trg_tournament_place_collision` refused the first attempt, correctly: a
+set-based UPDATE puts two players on the same place mid-statement, and a
+contested place is paid twice. The rows move one at a time in ascending target
+order now, so the place is always empty by the time it is filled. Nothing was
+written on the refused attempt.
+
+91.10 chips had already gone to players whose corrected place is worth less. No
+clawback, per Dan's ruling of 2026-08-28 on the duplicate-place overpays. 76.70
+came out of what the pools still held and the hosting clubs absorb **84.60**
+across 10 events, written to `tournament_conservation_baseline` as deliberate
+minting so those events do not alert forever on a difference somebody chose.
+
+The before picture is kept in `tournament_players_position_repair_20260901`.
+
+**The record catches up with the money.** 102 rows, 5,677.21 chips, 73 events.
+It moves no money; it writes down payments that already happened. Source
+`structure`, because the reconciler's source filter is a closed list and a row
+under a name it does not know would have left the phantom debt exactly where it
+was; `recorded_by = 'ledger_backfill_20260901'` carries the provenance.
+
+**After both, across 150 days:**
+
+```
+vacant_paid_place_events   0
+earners_not_paid           0
+paid_but_unrecorded_events 0
+fn_pay_backed_payout_shortfalls dry run: 0 owed, 0 withheld, 0 refused
+```
+
+One correction to this document's own check, found by running it: the first pass
+reported the ninth place of a $100 Freeroll as 0.02 short. It was not. The check
+compared against a flat pool-times-percentage while the engine allocates in whole
+cents with the last place absorbing the remainder. The tolerance is five cents
+now, and the reason is written where the comparison happens. A player paid
+nothing still trips it at any tolerance.
+
+## Previously open, now closed
 
 The 193.10 chips on those fifteen events are **not** paid, and the standings are
 not corrected. Every affected player is a horse; no human was short.

@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * ☰ TABLE MENU — Styles
+ * TABLE MENU — Styles
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -70,12 +70,10 @@
   border-color: #1877f2;
 }
 
-/* Custom hamburger icon image — fills the trigger button */
-.table-menu__trigger-img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  border-radius: inherit;
+/* Premium six-tile command grid fills the trigger button. */
+.table-menu__trigger-grid {
+  width: 88%;
+  height: 88%;
   display: block;
 }
 

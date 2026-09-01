@@ -205,7 +205,7 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
       const { data: subAgentsData } = myAgent
         ? await supabase
             .from('agents')
-            .select('id, user_id, total_players, pending_commission, commission_rate, created_at')
+            .select('id, user_id, total_players, commission_rate, created_at')
             .eq('parent_agent_id', myAgent.id)
         : { data: null };
 
@@ -228,6 +228,25 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
           }
         }
 
+        // A sub agent's unsettled commission comes from the ledger, the same
+        // place the header figure comes from. agents.pending_commission was
+        // read here until 2026-09-01; that column does not exist in the live
+        // schema and no function or trigger ever wrote it.
+        const subOwedMap: Record<string, number> = {};
+        if (clubId) {
+          for (const a of subAgentsData) {
+            if (!a.user_id) continue;
+            try {
+              subOwedMap[a.user_id] = await CommissionService.unsettledCommission(
+                clubId,
+                a.user_id
+              );
+            } catch (e) {
+              reportError(e, 'AgentCommissionDashboard.subOwed');
+            }
+          }
+        }
+
         setSubAgents(
           subAgentsData.map((a: any) => ({
             id: a.id,
@@ -235,7 +254,7 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
               subProfileMap[a.user_id]?.display_name || a.user_id?.substring(0, 8) || 'Unknown',
             avatarUrl: subProfileMap[a.user_id]?.avatar_url || '',
             totalPlayers: a.total_players || 0,
-            totalCommission: a.pending_commission || 0,
+            totalCommission: subOwedMap[a.user_id] ?? 0,
             commissionRate: a.commission_rate || 0,
             joinedAt: new Date(a.created_at),
           }))

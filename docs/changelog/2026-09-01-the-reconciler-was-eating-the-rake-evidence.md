@@ -109,3 +109,47 @@ BBJ pools), so a clawback is possible but touches pools that have since paid
 out. Funding it from The Mint instead would add 16.64 chips to supply. That is
 a supply decision, not an engineering one, so it is Dan's call and it is
 recorded here rather than acted on.
+
+## Follow-up: Dan's ruling, and the two layers nothing was holding
+
+**Dan, 2026-09-01: "DON'T PAY ANY OF THE HORSES FOR THE OVER RAKE, JUST INSURE
+THE BUG / GAP / LEAK IS FIXED BEFORE MOVING ON."** The 16.64 chips across 39
+hands are left as history; every affected incident records that ruling as its
+correction reference. What follows is the "insure it is fixed" half.
+
+The engine-side leak was real and is closed, in three layers:
+
+1. `HandController.start()` refuses to begin inside a dirty controller. The
+   2026-08-31 criticals were hands played inside a **corpse**: a stale runout
+   continuation from the PREVIOUS hand had already driven the controller to
+   showdown, `sawFlop` true and a phantom board dealt, before `start()` ran.
+   Live betting then proceeded in a state where no street could deal and the
+   fold-out settlement priced rake on `sawFlop=true`.
+2. `refuseUnlessRunout` rejects a runout entry point on an unstarted or
+   still-bettable hand, which is the only known way to get dirty.
+3. `priceDeductions` refuses a drop without a real board - three community
+   cards in this controller's state, or `markFlopSeen()` for the RIT path -
+   whatever the flag claims, and reports the disagreement to `financial_alerts`
+   rather than swallowing it.
+
+**Only layer 3 was pinned by a test.** Layer 3 refuses to CHARGE for the
+corruption; layers 1 and 2 stop the corruption happening, and a hand played
+inside a dead controller is a correctness bug well beyond rake - walked big
+blinds, streets that cannot deal. `server/src/engine/DirtyHandStart.law.test.ts`
+now holds both, registered in `docs/LAWS.md`.
+
+Five pins, and each was verified to actually bite by removing the guard and
+watching it go red:
+
+| mutation                               | result       |
+| -------------------------------------- | ------------ |
+| the state reset removed from `start()` | 2 tests fail |
+| `refuseUnlessRunout` removed           | 1 test fails |
+
+`over_cap` needed no engine change: `calculateRake` ends `Math.min(rake, cap)`,
+and all 2,103 live cash tables were checked against `fn_effective_rake_cap` -
+zero configured above the law, zero above 10 percent, none null. The nine
+`over_cap` hands all predate the detector, which was created 2026-08-31 14:40,
+and none has recurred in 60 hours. (`cap_enabled=false` on every table is the
+CAP GAME feature, a per-hand ceiling on what a player may commit; it is
+unrelated to the rake cap and correctly off.)

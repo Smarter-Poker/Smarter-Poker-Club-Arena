@@ -65,9 +65,10 @@ export const gameManagementService = {
     if (error) throw new Error(error.message || 'Could not close the game.');
     const reason = managementError(resultError(data, 'Could not close the game.'));
     if (reason) throw new Error(reason);
-    masterBus.emit(
-      kind === 'table' ? 'TABLE_CLOSED' : 'TOURNAMENT_CANCELLED',
-      kind === 'table' ? { tableId: gameId } : { tournamentId: gameId }
-    );
+    if (kind === 'table') {
+      masterBus.emit('TABLE_CLOSED', { tableId: gameId });
+    } else {
+      masterBus.emit('TOURNAMENT_CANCELLED', { tournamentId: gameId });
+    }
   },
 };

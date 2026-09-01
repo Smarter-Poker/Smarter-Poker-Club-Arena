@@ -12,6 +12,7 @@ import { resolveClubUUID, isUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 import { notifyServerLeave } from './GameServerAPI';
+import { gameManagementService } from './GameManagementService';
 
 // AUDIT M17: the admin money RPCs return a `reason` for ordinary refusals rather
 // than raising, so the UI can tell "you are not an admin here" apart from "the
@@ -683,113 +684,17 @@ class TableService {
   }
 
   /**
-   * Delete a table — marks as deleted + decrements club table count
-   * Blocks deletion of running/active tables (must close first)
-   * REQUIRES: requesting user is table creator OR club owner
+   * Compatibility entry point for old callers. Tables are closed, never
+   * client-deleted, and the database refuses while any seat remains occupied.
    */
-  async deleteTable(tableId: string, clubId: string, userId?: string): Promise<boolean> {
-    // Pre-check: get current status and verify ownership if userId provided
-    const table = await this.getTable(tableId);
-    if (!table) {
-      reportError('Table not found for delete', 'TableService.deleteTable.notFound');
-      return false;
-    }
-
-    // Authorization check: if userId provided, verify user is club owner
-    if (userId) {
-      const { getAuthUser } = await import('../lib/supabase');
-      const { data: authData } = await getAuthUser();
-      const requestingUserId = authData?.user?.id || userId;
-
-      const { data: clubMember, error: memberError } = await supabase
-        .from('club_members')
-        .select('role')
-        .eq('club_id', table.club_id)
-        .eq('user_id', requestingUserId)
-        .maybeSingle();
-
-      if (memberError || !clubMember) {
-        reportError('User not a member of this club', 'TableService.deleteTable.notMember');
-        return false;
-      }
-
-      // Only owner or admin can delete tables
-      if (!['owner', 'co_owner', 'admin'].includes(clubMember.role)) {
-        reportError('User lacks permission', 'TableService.deleteTable.noPermission');
-        return false;
-      }
-    }
-
-    if (['running', 'active'].includes(table.status)) {
-      reportError('Cannot delete active table', 'TableService.deleteTable.active');
-      return false;
-    }
-    if (table.status === 'deleted') {
-      return true; // already deleted
-    }
-
-    // Atomic conditional update
-    const { data: updated, error } = await supabase
-      .from('tables')
-      .update({ status: 'deleted', is_deleted: true, updated_at: new Date().toISOString() })
-      .eq('id', tableId)
-      .in('status', ['waiting', 'paused', 'closed'])
-      .select('id')
-      .maybeSingle();
-
-    if (error) {
+  async deleteTable(tableId: string, _clubId: string, _userId?: string): Promise<boolean> {
+    try {
+      await gameManagementService.close('table', tableId);
+      return true;
+    } catch (error) {
       reportError(error, 'TableService.deleteTable');
       return false;
     }
-    if (!updated) {
-      console.warn('[TableService] Delete conflict - table status changed concurrently');
-      return false;
-    }
-
-    // Decrement club table count (fire-and-forget)
-    (async () => {
-      try {
-        const { error: rpcErr } = await supabase.rpc('decrement_club_table_count', {
-          p_club_id: clubId,
-        });
-        if (rpcErr) {
-          // Fallback: manual decrement
-          // ROUND 9 (2026-08-29): both fallback legs discarded their errors,
-          // so when the RPC AND the fallback failed the club's table_count
-          // silently over-reported forever. Behaviour unchanged; the failure
-          // now leaves a trace.
-          const { data: club, error: countReadErr } = await supabase
-            .from('clubs')
-            .select('table_count')
-            .eq('id', clubId)
-            .maybeSingle();
-          if (countReadErr) {
-            reportError(countReadErr, 'TableService.deleteTable_count_fallback_read_failed', {
-              clubId,
-            });
-          }
-          if (club) {
-            const { error: countUpdErr } = await supabase
-              .from('clubs')
-              .update({ table_count: Math.max(0, (club.table_count || 1) - 1) })
-              .eq('id', clubId);
-            if (countUpdErr) {
-              reportError(countUpdErr, 'TableService.deleteTable_count_fallback_update_failed', {
-                clubId,
-              });
-            }
-          }
-        }
-      } catch (e: unknown) {
-        console.warn(
-          '[TableService] deleteTable: club table count decrement failed (fire-and-forget):',
-          e
-        );
-      }
-    })();
-
-    masterBus.emit('TABLE_DELETED', { tableId, clubId });
-    return true;
   }
 
   /**

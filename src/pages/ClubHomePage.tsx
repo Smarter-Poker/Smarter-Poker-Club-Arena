@@ -115,6 +115,7 @@ import { IconShareLink, IconSort } from '../components/icons/LobbyIcons';
 import { CLUB_HOME_CACHE_PREFIX } from '../utils/clearUserCaches';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { preloadRoute } from '../utils/ChunkPreloader';
+import { gameManagementService } from '../services/GameManagementService';
 
 // Shark Club fallback logo — used when DB logo_url is null
 /* Dan 2026-08-20: "replace the old logo image with the new one". v25 was a
@@ -624,13 +625,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [tables, setTables] = useState<TableData[]>(bootCache?.tables ?? []);
   const [tournaments, setTournaments] = useState<TournamentData[]>([]);
   const [jackpotAmount, setJackpotAmount] = useState(0);
-  // BBJ-TICKER 2026-08-18: the resolved BBJ scope for the lobby ticker.
-  // (jackpotAmount was live-subscribed but rendered NOWHERE before this —
-  // the realtime feed fed a value no player could see.)
-  const [bbjScope, setBbjScope] = useState<{ clubUuid: string | null; unionId: string | null }>({
-    clubUuid: null,
-    unionId: null,
-  });
   // Tapping the lobby jackpot opens the SAME view as tapping it at a table:
   // last 5 hits, qualifying hands per game, payout % per stakes (Dan 2026-08-18).
   const [bbjPoolId, setBbjPoolId] = useState<string | null>(null);
@@ -992,8 +986,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
            blip or a timeout was silently read as "this club is not in a union".
            Everything downstream then diverges from the fetch: the two union
            channels are never subscribed (union tables and tournaments stop
-           arriving live), belongsInTableList admits foreign rows, bbjScope
-           loses its unionId so the BBJ subscription binds to the retired
+           arriving live), belongsInTableList admits foreign rows, and the
+           BBJ subscription binds to the retired
            club-level pool instead of the union pool that actually grows, and
            the table-delete scoping narrows to club_id. Fall back to the same
            cached answer loadClubData uses rather than guessing. */
@@ -1001,7 +995,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         if (ucCheck?.union_id) {
           unionId = ucCheck.union_id;
         }
-        if (isMounted) setBbjScope({ clubUuid: resolvedId, unionId });
       } catch (e) {
         reportError(e, 'ClubHomePage.setupRealtime');
         // Last known good, written by loadClubData's own union resolution
@@ -1012,7 +1005,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         } catch {
           /* storage disabled */
         }
-        if (isMounted) setBbjScope({ clubUuid: resolvedId, unionId });
       }
 
       if (!isMounted) return;
@@ -4983,7 +4975,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             selectedEntry.players === 0 &&
             /* resolvedClubId, not clubId (2026-08-28 audit). On a `/clubs/:slug`
                route `clubId` is the SLUG while `raw.club_id` is a UUID, so this
-               comparison was always false and the owner's Delete Table button
+               comparison was always false and the owner's table-close button
                was silently absent from the panel for every game that carries a
                club_id — which is all of them. The resolved UUID is in scope and
                is what every other comparison in this file uses. */
@@ -5025,50 +5017,25 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         </div>
       )}
 
-      {/* Confirm Modal for Table Deletion */}
+      {/* Confirm Modal for Table Closure */}
       <ConfirmModal
         isOpen={deleteTableConfirm.show}
-        title="Delete Table"
-        message={`Delete table "${deleteTableConfirm.tableName || ''}"? This cannot be undone.`}
+        title="Close Table"
+        message={`Close table "${deleteTableConfirm.tableName || ''}"? It can only close after every player has left.`}
         variant="danger"
-        confirmText="Delete"
+        confirmText="Close Table"
         onConfirm={async () => {
           if (deleteTableConfirm.tableId) {
             const id = deleteTableConfirm.tableId;
             setDeleteTableConfirm({ show: false, tableId: null, tableName: null });
             setDeletingTableId(id);
             try {
-              // Defense-in-depth: scope the delete to tables this club can own.
-              // 2026-08-19: this scoped on club_id ALONE. Union games are owned
-              // BY the union, so club_id is the union's id, not club.id — the
-              // UPDATE matched ZERO rows, returned no error, the card was
-              // optimistically removed and the user was told "Table deleted".
-              // The table stayed live and reappeared on reload. Accept either
-              // the club's own tables or its union's.
-              const resolvedClubId = club?.id;
-              let query = supabase
-                .from('tables')
-                /* PHANTOM COLUMN FIX 2026-08-27: `tables` has no `is_active`
-                   column — this write 400'd and the delete always failed. */
-                .update({ status: 'deleted', is_deleted: true })
-                .eq('id', id);
-              if (resolvedClubId) {
-                query = bbjScope.unionId
-                  ? query.or(`club_id.eq.${resolvedClubId},union_id.eq.${bbjScope.unionId}`)
-                  : query.eq('club_id', resolvedClubId);
-              }
-              // Return the affected rows so a no-op cannot masquerade as success.
-              const { data: deleted, error } = await query.select('id');
-              if (error) throw error;
-              if (!deleted || deleted.length === 0) {
-                toast.error('That table could not be deleted - you may not own it.');
-                return;
-              }
+              await gameManagementService.close('table', id);
               setTables((prev) => prev.filter((t) => t.id !== id));
-              toast.success('Table deleted');
+              toast.success('Table Closed');
             } catch (err) {
-              reportError(err, 'ClubHomePage.Failed_to_delete_table');
-              toast.error('Failed to delete table');
+              reportError(err, 'ClubHomePage.Failed_to_close_table');
+              toast.error(err instanceof Error ? err.message : 'Failed To Close Table');
             } finally {
               setDeletingTableId(null);
             }

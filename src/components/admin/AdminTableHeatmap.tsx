@@ -115,7 +115,6 @@ export default function AdminTableHeatmap({
     const unsubs = [
       masterBus.subscribeDebounced('TABLE_CREATED', fetchTables, 500),
       masterBus.subscribeDebounced('TABLE_UPDATED', fetchTables, 500),
-      masterBus.subscribeDebounced('TABLE_DELETED', fetchTables, 500),
       masterBus.subscribeDebounced('TABLE_CLOSED', fetchTables, 500),
     ];
 

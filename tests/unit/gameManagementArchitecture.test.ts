@@ -15,6 +15,9 @@ const messagePanel = read('src/components/club/ClubMessageManagementPanel.tsx');
 const messageService = read('src/services/ClubMessageManagementService.ts');
 const clubHome = read('src/pages/ClubHomePage.tsx');
 const migration = read('supabase/migrations/20260901130000_game_and_ticker_management.sql');
+const lifecycleMigration = read(
+  'supabase/migrations/20260902050000_managed_game_lifecycle_is_one_door.sql'
+);
 
 describe('canonical table management architecture', () => {
   it('provides club and union management routes', () => {
@@ -46,12 +49,26 @@ describe('canonical table management architecture', () => {
   });
 
   it('never force-closes occupied games or mutates a registered tournament', () => {
-    expect(migration).toContain('FROM public.table_seats ts');
-    expect(migration).toContain('ts.left_at IS NULL AND ts.user_id IS NOT NULL');
-    expect(migration).toContain('FROM public.tournament_players tp');
+    expect(lifecycleMigration).toContain('FROM public.table_seats ts');
+    expect(lifecycleMigration).toContain('ts.left_at IS NULL');
+    expect(lifecycleMigration).not.toContain('ts.user_id IS NOT NULL');
+    expect(lifecycleMigration).toContain('FROM public.tournament_players tp');
+    expect(lifecycleMigration).not.toContain('tp.user_id IS NOT NULL');
+    expect(lifecycleMigration).toContain('trg_tables_managed_lifecycle_guard');
+    expect(lifecycleMigration).toContain('trg_tournaments_managed_lifecycle_guard');
     expect(page).toContain('This table cannot be closed while players are seated');
     expect(page).toContain('This tournament cannot be modified after a player has registered');
     expect(page).not.toContain('cancelled and refunded');
+  });
+
+  it('keeps refund cancellation away from browser callers', () => {
+    expect(lifecycleMigration).toContain(
+      'REVOKE ALL ON FUNCTION public.atomic_cancel_tournament(uuid, uuid)'
+    );
+    expect(lifecycleMigration).toContain('FROM PUBLIC, anon, authenticated');
+    expect(lifecycleMigration).toContain(
+      'GRANT EXECUTE ON FUNCTION public.atomic_cancel_tournament(uuid, uuid) TO service_role'
+    );
   });
 
   it('removes the private-tournament bypass for union member clubs', () => {

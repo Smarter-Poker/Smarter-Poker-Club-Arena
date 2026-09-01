@@ -2,6 +2,9 @@
   "_owner": "fix/a-correction-is-not-a-mint",
   "tables": ["ca_ratchet_baselines", "ca_tournament_conservation_samples"],
   "functions": [
+    "fn_ca_completed_without_a_champion",
+    "fn_ca_prize_overpay_count",
+    "fn_ca_prize_overpay_unexplained",
     "fn_ca_ratchet_watch",
     "fn_ca_reconcile_owned_entity_types",
     "fn_ca_reconciler_delete_unscoped",

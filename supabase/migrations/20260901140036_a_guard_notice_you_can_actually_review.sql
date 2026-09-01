@@ -149,3 +149,11 @@ BEGIN
     RAISE EXCEPTION 'the watcher did not re-baseline itself and will raise a notice about its own fix';
   END IF;
 END $$;
+
+-- Who may call the watcher, stated rather than left to be looked up. Checked
+-- against production before writing it: anon and authenticated already have no
+-- execute here and service_role has it, and CREATE OR REPLACE does not touch
+-- grants - so this is a no-op that makes the migration say what is true. Also
+-- applied on its own as 20260901141608_state_the_guard_watcher_is_service_role_only.
+REVOKE ALL ON FUNCTION public.fn_ca_guard_defs_watch() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_guard_defs_watch() TO service_role;

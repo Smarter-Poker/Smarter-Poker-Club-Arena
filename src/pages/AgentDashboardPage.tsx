@@ -80,6 +80,10 @@ interface AgentCommission {
   source_id?: string;
   notes?: string;
   created_at: string;
+  // Whether this row has been claimed. Phase 6 made commission claimable and
+  // phase 7 made every other surface say so; this list showed a claimed row and
+  // an owed one identically, which is the same figure meaning two things.
+  settled_at?: string | null;
 }
 // ChipTransaction imported from types/database.types (canonical definition)
 
@@ -240,7 +244,9 @@ export default function AgentDashboardPage() {
           () =>
             supabase
               .from('agent_commissions')
-              .select('id, user_id, club_id, amount, source_type, source_id, notes, created_at')
+              .select(
+                'id, user_id, club_id, amount, source_type, source_id, notes, created_at, settled_at'
+              )
               .eq('club_id', uuid)
               .eq('user_id', user.id)
               .order('created_at', { ascending: false })
@@ -727,6 +733,9 @@ export default function AgentDashboardPage() {
                   } else if (tab === 'commissions' && commissions.length > 0) {
                     exportToCSV(commissions, 'agent_commissions.csv', [
                       { key: 'amount', label: 'Amount' },
+                      // The export carries the same fact the table now shows:
+                      // a claimed row and an owed row are not the same money.
+                      { key: 'settled_at', label: 'Claimed At' },
                       { key: 'source_type', label: 'Source' },
                       { key: 'notes', label: 'Notes' },
                       { key: 'created_at', label: 'Date' },
@@ -1127,6 +1136,7 @@ export default function AgentDashboardPage() {
                   <thead>
                     <tr>
                       <th>Amount</th>
+                      <th>Status</th>
                       <th>Type</th>
                       <th>Notes</th>
                       <th>Date</th>
@@ -1136,6 +1146,18 @@ export default function AgentDashboardPage() {
                     {commissions.map((c: AgentCommission, i: number) => (
                       <tr key={c.id || i}>
                         <td style={{ fontWeight: 700, color: '#31A24C' }}>{fmtChips(c.amount)}</td>
+                        {/* Claimed or not. Until phase 6 there was no way to claim
+                            commission at all, so every row here meant the same
+                            thing; now they do not, and a list that cannot tell
+                            them apart is a list of two different numbers. */}
+                        <td>
+                          <span
+                            className="admin-badge"
+                            style={{ color: c.settled_at ? '#31A24C' : '#f59e0b' }}
+                          >
+                            {c.settled_at ? 'Claimed' : 'Unclaimed'}
+                          </span>
+                        </td>
                         <td>
                           <span className="admin-badge">{c.source_type || 'Rake'}</span>
                         </td>

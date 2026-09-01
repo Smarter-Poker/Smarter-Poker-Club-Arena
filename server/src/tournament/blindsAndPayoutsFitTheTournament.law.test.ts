@@ -232,6 +232,7 @@ describe('payout depth scales with the field', () => {
     expect(paidPlacesForField(40)).toBe(6);
     expect(paidPlacesForField(100)).toBe(15);
     expect(paidPlacesForField(500)).toBe(75);
+    expect(paidPlacesForField(1000)).toBe(150);
   });
 
   it('never pays fewer than the minimum, nor every player in the field', () => {

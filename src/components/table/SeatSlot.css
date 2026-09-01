@@ -272,10 +272,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(28, 33, 40, 0.85); /* Solid color background */
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 50%;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  /* Solid color background, border, and box-shadow removed 2026-08-31 because the coin image already has them.
+     This also fixes the 'oval shadow' bug caused by .seat width media queries stretching this container into an oval. */
 }
 
 /* The coin image — fills the container, no crop, transparent background. */
@@ -3626,6 +3624,13 @@
      while the full size happened to be a literal 84px. Naming the full-size slot
      directly says what this rule means and survives the slot becoming
      proportional. */
+  --seat-avatar-base: var(--seat-avatar-full);
+}
+
+/* Dan 2026-08-31: "ALL THE 'SIT BUTTONS' SHOULD ALL BE THE SAME SIZE, EVEN AT THE TOP OF THE TABLE."
+   Empty seats do not have character art that can overflow into the BBJ banner,
+   so the 56px cap above is unnecessary for them. Revert to full size. */
+.seat-wrapper--top .seat.seat--empty {
   --seat-avatar-base: var(--seat-avatar-full);
 }
 

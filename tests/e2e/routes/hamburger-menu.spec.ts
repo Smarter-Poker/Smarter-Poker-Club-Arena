@@ -57,6 +57,10 @@ async function openHamburgerMenu(page: any) {
   throw new Error('The hamburger opener was clickable, but its Club Arena drawer never opened.');
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /* Open the menu, or account honestly for why we could not.
  *
  * A signed-out run genuinely cannot test the menu: the route redirects to /auth
@@ -171,8 +175,14 @@ test.describe('Hamburger Menu — Navigation Links', () => {
 
       if (!(await openMenuOrSkip(page))) return;
 
-      // Find the menu item by text
-      const menuItem = page.locator(`span:text-is("${link.label}")`).first();
+      // Use the interactive control's accessible name. The button also owns a
+      // short description, so its name begins with the destination label.
+      const menuItem = page
+        .getByRole('dialog', { name: 'Club Arena' })
+        .getByRole('button', {
+          name: new RegExp(`^${escapeRegExp(link.label)}(?:\\s|$)`),
+        })
+        .first();
       await expect(menuItem).toBeVisible({ timeout: 3000 });
       await menuItem.click();
 

@@ -91,7 +91,7 @@ async function main() {
     );
     console.log('');
     if (critical.length) {
-      console.log('  RAN AND NEVER SUCCEEDED — these are broken, not flaky:');
+      console.log('  RAN AND NEVER SUCCEEDED - these are broken, not flaky:');
       for (const j of critical) {
         console.log(line(j));
         if (j.last_error) console.log(`           ${String(j.last_error).split('\n')[0]}`);

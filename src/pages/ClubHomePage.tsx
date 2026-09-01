@@ -98,6 +98,7 @@ import ClubLobbyCommandTop from '../components/lobby/ClubLobbyCommandTop';
 import HouseAdCard from '../components/ads/HouseAdCard';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
+import ClubOwnerMessage from '../components/club/ClubOwnerMessage';
 import AdvancedFilters, {
   loadFilters,
   saveFilters,
@@ -127,8 +128,22 @@ const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-logo.jpg`;
 // bypass Vite's configured base path in production and silently 404, leaving
 // the live lobby DOM visible without its premium chassis or campaign artwork.
 const CLUB_LOBBY_ASSET_ROOT = `${import.meta.env.BASE_URL}assets/club-buttons/lobby`;
-const CLUB_LOBBY_CAMPAIGN = `${CLUB_LOBBY_ASSET_ROOT}/shark-club-championship-ad-v2.png`;
-const CLUB_LOBBY_CAMPAIGN_MOBILE = `${CLUB_LOBBY_ASSET_ROOT}/shark-club-championship-ad-mobile-v4.png`;
+/* ONE CROP, EVERY WIDTH (Dan 2026-09-01: "the 'dynamic ad image' is cut off,
+   and it needs to scale to size. because when you 'shrink the page' it fits
+   perfectly").
+
+   There were two files of the same artwork: `-v2` at 2172 x 724 (3:1, the ad
+   centred in a tall black field) served above 900px, and `-mobile-v4` at
+   2172 x 302 (7.2:1, the identical ad cropped tight) served below it. The
+   campaign bay is a short wide strip at EVERY width - roughly 11:1 on a 1440px
+   desktop - so the 3:1 file could only ever be shown by cropping it, which is
+   the top of the trophy and the whole buy-in line that Dan lost. The tight
+   crop is not a phone variant, it is the shape this bay actually is, so it is
+   what both regimes serve now and the bay's aspect-ratio matches it.
+
+   The filename still says "mobile" because renaming a published asset breaks
+   every cached service-worker entry pointing at it. */
+const CLUB_LOBBY_CAMPAIGN = `${CLUB_LOBBY_ASSET_ROOT}/shark-club-championship-ad-mobile-v4.png`;
 
 /**
  * The order the Omaha tab groups its variants in (Dan 2026-08-25). Four cards
@@ -231,6 +246,10 @@ interface ClubData {
   slug?: string;
   description: string;
   tagline?: string | null;
+  /* Dan 2026-09-01: the owner's custom / day's message, printed at the top of
+     the lobby rail. Its own column so `tagline` stays the permanent identity
+     line the opening checklist and the invite page depend on. */
+  lobby_message?: string | null;
   avatar_url: string;
   logo_url?: string;
   banner_url?: string | null;
@@ -1714,7 +1733,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, slug, description, tagline, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, spins_enabled, created_at, is_union, union_id, opening_checklist_started_at'
+              'id, club_id, name, slug, description, tagline, lobby_message, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, spins_enabled, created_at, is_union, union_id, opening_checklist_started_at'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -4141,6 +4160,30 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       )}
 
       <header className="lobby-top">
+        {/* ── THE CLUB'S OWN MESSAGE, FIRST (Dan 2026-09-01) ────────────────
+            "the 'welcome to club jaqk' thats on the bottom of the wallets
+            should be at the top above the club card, and that should be the
+            'custom clickable message' for the club owners to put the days
+            message, or something custom."
+
+            It was the last child of the wallet stack, which on a desktop rail
+            put it under seven wallet rows and, on a short viewport, past the
+            fold. It is the first thing in the rail now, and it is a button:
+            anybody may read the message in full, staff may write it, and both
+            paths continue to the club's announcements. */}
+        <ClubOwnerMessage
+          clubId={club.id}
+          clubName={club.name}
+          message={club.lobby_message}
+          tagline={club.tagline}
+          canEdit={noticeEditable}
+          onMessageSaved={(next) =>
+            setClub((prev) => (prev ? { ...prev, lobby_message: next } : prev))
+          }
+          onOpenAnnouncements={() => navigate(`/clubs/${clubId}/announcements`)}
+          onToast={(kind, text) => (kind === 'success' ? toast.success(text) : toast.error(text))}
+        />
+
         {/* ── Club identity + wallet ── */}
         <div className="lobby-top__main">
           <ClubIdentityCard
@@ -4157,6 +4200,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             pokerAlias={currentUser?.display_name || currentUser?.username || 'Player'}
             clubId={club.club_id}
             playerId={currentUser?.player_number}
+            level={clubLevel?.level}
             playersPlaying={playersPlaying}
             onCopyClubId={() => {
               navigator.clipboard.writeText(club.club_id.toString());
@@ -4348,9 +4392,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     onOpenClubRake={() => setStandaloneRakeModal(true)}
                     onOpenClubSpins={() => setStandaloneSpinsModal(true)}
                   />
-                  <p className="lobby-top__house-welcome">
-                    {club.tagline?.trim() || `Welcome To ${club.name}`}
-                  </p>
                 </div>
               </div>
             </div>
@@ -4716,10 +4757,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 navigate(`/clubs/${clubId}/announcements`);
               }}
             >
+              {/* The <picture> wrapper stays although both regimes now resolve
+                  to the same file: it is the box the campaign bay's CSS sizes
+                  (`.club-lobby-command-top__campaign-picture`), and it is where
+                  a per-breakpoint <source> goes if a club ever ships two crops
+                  of its own banner. */}
               <picture className="club-lobby-command-top__campaign-picture">
-                {!club.banner_url && (
-                  <source media="(max-width: 900px)" srcSet={CLUB_LOBBY_CAMPAIGN_MOBILE} />
-                )}
                 <img
                   src={club.banner_url || CLUB_LOBBY_CAMPAIGN}
                   alt={
@@ -4896,22 +4939,45 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                       </p>
                     </>
                   ) : !filtered ? (
-                    <>
-                      {/* Tab (or Favorites) is the ONLY narrowing: blaming
-                        "filters" here sent players hunting for filters they
-                        never set (QA 2026-08-22). Name the real cause. */}
-                      <p>Nothing Here On This Tab</p>
-                      <p className="empty-hint">
-                        {totalHere.toLocaleString()}
-                        {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
-                        This Club, Just None Of This Type Right Now.
-                      </p>
-                      <div className="empty-actions">
-                        <button className="empty-action" onClick={clearAllNarrowing}>
-                          Show All Games
-                        </button>
-                      </div>
-                    </>
+                    favoritesOnly ? (
+                      <>
+                        {/* Dan 2026-09-01: the Favorites toggle persisted from
+                          an earlier visit and this branch blamed the TAB
+                          ("None Of This Type Right Now") while 980 cash games
+                          sat one toggle away. When Favorites is the narrowing,
+                          say Favorites. Same rule as the comment below: name
+                          the real cause. */}
+                        <p>No Favorites On This Tab</p>
+                        <p className="empty-hint">
+                          The Favorites Filter Is On And Nothing Here Is Marked As A Favorite Yet.{' '}
+                          {totalHere.toLocaleString()}
+                          {countsCapped ? '+' : ''} Game
+                          {totalHere === 1 ? ' Is' : 's Are'} Open In This Club.
+                        </p>
+                        <div className="empty-actions">
+                          <button className="empty-action" onClick={clearAllNarrowing}>
+                            Show All Games
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {/* Tab is the ONLY narrowing: blaming "filters" here
+                          sent players hunting for filters they never set
+                          (QA 2026-08-22). Name the real cause. */}
+                        <p>Nothing Here On This Tab</p>
+                        <p className="empty-hint">
+                          {totalHere.toLocaleString()}
+                          {countsCapped ? '+' : ''} Game{totalHere === 1 ? ' Is' : 's Are'} Open In
+                          This Club, Just None Of This Type Right Now.
+                        </p>
+                        <div className="empty-actions">
+                          <button className="empty-action" onClick={clearAllNarrowing}>
+                            Show All Games
+                          </button>
+                        </div>
+                      </>
+                    )
                   ) : (
                     <>
                       <p>Nothing Matches Your Filters</p>

@@ -22,28 +22,21 @@
  * information, it is a lie of omission - the field has six days to arrive - and
  * a ticker that cries wolf on Monday is a ticker nobody reads on Sunday.
  *
- * So an announcement needs the shortfall to be BOTH real and ACTIONABLE:
- *
- *   NEAR       within ANNOUNCE_WITHIN_MS of the start, or already inside late
- *              registration. Far enough out to act on, close enough that the
- *              field is roughly what it is going to be.
- *   MATERIAL   at least MIN_OVERLAY_FRACTION of the guarantee still missing.
- *              A 200-chip gap on a 20,000 guarantee is noise; announcing it
- *              teaches players the flag means nothing.
+ * So an announcement needs the shortfall to be BOTH real and ACTIONABLE. The
+ * two gates that decide are documented on the constants below.
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * TWO TIERS, BECAUSE THEY ARE DIFFERENT CLAIMS
  * ─────────────────────────────────────────────────────────────────────────────
  *
- *   'potential'  The event has not started. The gap is real right now but the
- *                field can still close it, so the copy says POTENTIAL. This is
- *                honest and it is also the better sell: "get in before it
- *                fills" beats "we are losing money".
+ *   'potential'  Kept in the type for exhaustiveness. overlayFor has not
+ *                produced it since 2026-08-26: a pre-start shortfall is a field
+ *                that has not arrived, not an overlay.
  *
- *   'live'       Late registration is open on a running event. The field is
- *                known, the shortfall is as close to certain as it gets, and
- *                there is a narrow window to act. This is the one that
- *                deserves to shout.
+ *   'live'       Late registration is open on a running event, on its final
+ *                late-reg level, and the field has paid for under half the
+ *                guarantee. The shortfall is as close to certain as it gets and
+ *                the window to act on it is about to shut.
  *
  * Pure on purpose - no Supabase, no React, no clock of its own. The caller
  * fetches and renders; this decides. Same shape as tournamentScheduleWindow,
@@ -51,38 +44,48 @@
  */
 
 import { isInLateRegistration, isRunning } from './tournamentFilters';
-import { lateRegEndMs, type LobbyTournamentRow } from '../components/lobby/lobbyEntries';
 
 /**
- * RUNNING EVENTS ONLY, AND ONLY LATE IN LATE REGISTRATION.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * THE TWO GATES (Dan 2026-09-01) — BOTH must hold, or the ticker says nothing
+ * ─────────────────────────────────────────────────────────────────────────────
  *
- * Dan 2026-08-26, overruling the 7-day pre-start window this shipped with the
- * day before: "YOU NEVER ANNOUNCE AN OVERLAY FOR EVENTS IN THE FUTURE, ONLY
- * FOR EVENTS THAT ARE CURRENTLY RUNNING. AND YOU SHOULDN'T MAKE ANY
- * ANNOUNCEMENT OF ANY TOURNAMENT UNTIL IT'S 75% OF THE WAY DOWN WITH LATE
- * REGISTRATION."
+ * Dan, verbatim: "the ticker needs to be adjusted to only announce when a MTT
+ * Is starting, and only if an overlay alert is in the last level of late
+ * registration, and has less then 50% of the prize pool of the guarantee yet
+ * registered".
  *
- * The reasoning holds up: a Sunday event flagged on Wednesday is not an
- * overlay, it is a field that has not arrived yet — and the prestart horse
- * ramp (mttPrestartHorseTarget) closes most gaps before the start anyway. The
- * only moment a shortfall is both REAL and ACTIONABLE is when the event is
- * running, the field is nearly settled, and the registration door is about to
- * close. That moment is the last quarter of late registration, and that is
- * now the only moment this module will speak.
+ * What each gate replaced, and why:
  *
- * The 'potential' tier still exists in the type for exhaustiveness, but
- * overlayFor never produces it any more.
+ *   WHEN   was "75% of the late-registration window has elapsed", measured in
+ *          wall-clock time against lateRegEndMs. That is a decent approximation
+ *          of "nearly closed" and a poor statement of it: the window is a sum
+ *          of blind-level durations, levels run long when a table is
+ *          short-handed or the clock is paused, and a row that did not carry
+ *          blind_structure could not place the 75% point at all - so the gate
+ *          failed closed on events that were in fact on their final level. It
+ *          is the LEVEL itself now, which the row always knows.
+ *
+ *   HOW    was "at least 10% of the guarantee is missing". Ten per cent of a
+ *   MUCH   20,000 guarantee is 2,000, which one late table closes, so the bar
+ *          spoke about events that were never really going to overlay. Dan set
+ *          the line at half.
+ *
+ * HORSES ARE PLAYERS (CLAUDE.md 10.5). `prize_pool` and `current_players` are
+ * the club's own totals and they already count every horse in the field, at the
+ * same buy-in, out of the same club wallet. Nothing here filters on `is_horse`
+ * and nothing here ever may: a horse's buy-in closes an overlay exactly as a
+ * human's does, and subtracting them would invent a shortfall the house is not
+ * actually covering.
  */
-export const LATE_REG_ANNOUNCE_FRACTION = 0.75;
 
 /**
- * The smallest shortfall worth announcing, as a fraction of the guarantee.
- *
- * Ten per cent. Below that the number is rounding on a real field and saying
- * it out loud devalues every future announcement. A 20,000 guarantee has to be
- * 2,000 short before the ticker mentions it.
+ * The most of its own guarantee a field may have paid in and still be worth
+ * announcing: Dan's "less then 50% of the prize pool of the guarantee yet
+ * registered", stated as the fraction it is. A 20,000 guarantee has to be
+ * sitting under a 10,000 prize pool before the ticker mentions it.
  */
-export const MIN_OVERLAY_FRACTION = 0.1;
+export const MAX_REGISTERED_FRACTION = 0.5;
 
 /** Never announce a trivial absolute amount either, whatever the fraction. */
 export const MIN_OVERLAY_CHIPS = 100;
@@ -100,16 +103,13 @@ export interface OverlayCandidate {
   current_players?: number | string | null;
   buy_in_amount?: number | string | null;
   buy_in_fee?: number | string | null;
+  /** 0-BASED cap: the door is open while `current_level < late_reg_levels`. */
   late_reg_levels?: number | null;
   late_reg_mins?: number | null;
   started_at?: string | null;
+  /** 0-BASED index into the blind structure, as the engine keeps it. */
   current_level?: number | null;
   max_players?: number | null;
-  /** Needed by lateRegEndMs to place the 75% point exactly (level-based
-   *  windows). Callers that cannot supply them simply never announce
-   *  level-gated events — the gate fails closed. */
-  blind_structure?: string | null;
-  level_started_at?: string | null;
 }
 
 export interface OverlayAnnouncement {
@@ -132,6 +132,27 @@ const num = (v: unknown): number => {
 };
 
 /**
+ * Is this event on the FINAL level of its late-registration window?
+ *
+ * `late_reg_levels` is a 0-based cap and `current_level` is a 0-based index
+ * (TournamentManagerBase counts from 0 and closes on `currentLevel >= cap`), so
+ * the levels registration is open for are `0 .. late_reg_levels - 1` and the
+ * last of them is `late_reg_levels - 1`.
+ *
+ * Fails CLOSED. An event with no level-based late-reg cap has no "last level"
+ * to be on, and a guess is exactly what this gate exists to stop. Verified
+ * against production 2026-09-01: all 2,013 guaranteed MTTs carry
+ * `late_reg_levels`, so nothing real is silenced by that strictness.
+ */
+export function isInLastLateRegLevel(t: OverlayCandidate): boolean {
+  const cap = Number(t.late_reg_levels);
+  if (!Number.isFinite(cap) || cap <= 0) return false;
+  const level = Number(t.current_level ?? 0);
+  if (!Number.isFinite(level)) return false;
+  return level === cap - 1;
+}
+
+/**
  * Is this event's shortfall worth announcing, and as what?
  *
  * Returns null for every event that is not - which is most of them, and
@@ -148,16 +169,19 @@ export function overlayFor(
   const overlay = Math.round((guarantee - prizePool) * 100) / 100;
   if (overlay <= 0) return null; // the field already covered it
 
-  // MATERIAL: both a real fraction and a real number of chips.
+  // GATE 2: the field has paid in less than half the guarantee. Stated the way
+  // Dan stated it - against what is REGISTERED - rather than against the
+  // shortfall, so the code reads as the rule does.
+  if (prizePool >= guarantee * MAX_REGISTERED_FRACTION) return null;
+  // ...and never a trivial absolute amount, whatever the fraction says.
   if (overlay < MIN_OVERLAY_CHIPS) return null;
-  if (overlay < guarantee * MIN_OVERLAY_FRACTION) return null;
 
   const startsAt = new Date(t.start_time).getTime();
   if (!Number.isFinite(startsAt)) return null;
 
   const status = String(t.status || '').toUpperCase();
 
-  // FUTURE EVENTS NEVER ANNOUNCE (Dan 2026-08-26). Not "rarely" — never.
+  // FUTURE EVENTS NEVER ANNOUNCE (Dan 2026-08-26). Not "rarely" - never.
   // A pre-start guarantee gap is a field that has not arrived, not an overlay.
   const running = isRunning(status) || status === 'LATE_REG' || status === 'LATE_REGISTRATION';
   if (!running) return null;
@@ -167,17 +191,8 @@ export function overlayFor(
     return null;
   }
 
-  // …and at least LATE_REG_ANNOUNCE_FRACTION of the late-reg window must have
-  // elapsed. Before that the field is still arriving and the "overlay" is
-  // noise. If the row cannot prove where the window starts and ends, it
-  // cannot prove the 75% point either — fail closed, never announce on a
-  // guess. lateRegEndMs is the same derivation the lobby countdown uses, so
-  // the ticker can never claim a window the card denies.
-  const begun = new Date(t.started_at || t.start_time).getTime();
-  const closesAt = lateRegEndMs(t as unknown as LobbyTournamentRow);
-  if (!Number.isFinite(begun) || closesAt == null || closesAt <= begun) return null;
-  const progress = (now - begun) / (closesAt - begun);
-  if (progress < LATE_REG_ANNOUNCE_FRACTION || now >= closesAt) return null;
+  // GATE 1: and it must be the LAST level of that window (Dan 2026-09-01).
+  if (!isInLastLateRegLevel(t)) return null;
 
   const tier: OverlayTier = 'live';
 
@@ -244,7 +259,9 @@ export function overlayMessage(a: OverlayAnnouncement): string {
   const parts = [head, a.name, `${chips(a.guarantee)} Guaranteed`, `${chips(a.entered)} Entered`];
   if (a.entriesToClose > 0) {
     parts.push(
-      a.tier === 'live' ? `Late Registration Open` : `${chips(a.entriesToClose)} More To Cover It`
+      a.tier === 'live'
+        ? `Last Level Of Late Registration`
+        : `${chips(a.entriesToClose)} More To Cover It`
     );
   }
   parts.push(a.tier === 'live' ? 'Jump In Now' : 'Jump In');

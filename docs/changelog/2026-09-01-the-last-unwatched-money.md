@@ -119,6 +119,32 @@ law the next agent cannot check against before writing its opposite.
 The scan covers both trees now and all twenty-one are registered. The registry
 test went from 39 assertions to 60.
 
+## 5. What completing the record made visible, and why it stays open
+
+The ledger backfill of the day before gave `fn_tournament_payout_reconcile` the
+full picture of what had already been paid — and the full picture shows
+**historical OVERpayments the incomplete record had been hiding.** Twelve
+criticals appeared for it within hours of the backfill, and they are all true.
+Late Night Grind `7ddd516f` is typical: the holder of place 3 received 29 chips
+against a place worth 9, and the event disbursed 70 against a 50 pool.
+
+Measured against the wallet across 120 days and 50,025 events with a pool:
+**65 events overpaid by 19,665.23 chips.** Nobody is short — this is the other
+direction, and it is a club cost.
+
+Sixty of the recent ones are the structure-narrowing defect in section 1, so the
+fix above stops the largest ongoing contributor at the next engine restart. The
+twelve alerts are deliberately **left open**: under Dan's ruling of 2026-08-28
+there is no clawback from players, so what to do about a settled overpay is his
+decision, and the agent whose backfill surfaced them is the last one who should
+quietly resolve them.
+
+Stale findings that ARE closed, and only because the check that raised them now
+returns clean: the four `fn_detect_results_without_a_hand` criticals (those
+events were unwound by another agent's `20260901130906`, and the detector now
+returns `flagged 0`), and the `prize_disbursement` repeats raised in the window
+between the dedupe key landing and the backlog being cut.
+
 ## Evidence
 
 - Server suite and client suite green, `tsc --noEmit` clean in both.

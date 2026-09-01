@@ -62,9 +62,36 @@ describe('it fails in the safe direction', () => {
   });
 
   it('gives the catch-up schedule a grace window before raising anything', () => {
-    // One missed twenty-minute tick is ordinary. Three in a row is the failure.
+    /**
+     * One missed twenty-minute tick is ordinary. Three in a row is the failure.
+     *
+     * MOVED TO THE MECHANISM, 2026-09-01. This used to assert the sentence
+     * `inside the ${GRACE_MIN}m grace window`, which the script printed while
+     * it was waiting. #2446 gave the engine a RESTART SCHEDULE, so the wait is
+     * now expressed as "Behind by design: the engine restarts only at
+     * $RESTART_HOURS Chicago" and that sentence went away. The grace window
+     * itself did not - it survived as the FLOOR under the new schedule
+     * deadline - but this pin went red on main and stopped the World Hub
+     * bundle for every agent until it was noticed.
+     *
+     * A pin on wording fails when the wording improves and passes when the
+     * behaviour is deleted, which is backwards. These four assertions read the
+     * arithmetic instead: the window is defined, it is measured from the
+     * commit, it can only ever PUSH the deadline later, and being inside it
+     * returns quietly. Rewrite the prose freely; remove the guard and this
+     * still goes red.
+     */
     expect(SH).toContain('GRACE_MIN="${GRACE_MIN:-45}"');
-    expect(SH).toContain('inside the ${GRACE_MIN}m grace window');
+    expect(SH).toContain('GRACE_DEADLINE=$(( REQ_EPOCH + GRACE_MIN * 60 ))');
+    // The later of the two deadlines wins, so a short restart window can never
+    // shorten the grace period.
+    expect(SH).toContain('[ "$GRACE_DEADLINE" -gt "$DEADLINE" ] && DEADLINE=$GRACE_DEADLINE');
+    // ...and inside it the script says its piece and stops, before the
+    // ENGINE BEHIND warning that section 5 raises.
+    expect(SH_CODE).toMatch(/if \[ "\$NOW_EPOCH" -lt "\$DEADLINE" \][\s\S]{0,900}?exit 0/);
+    expect(SH_CODE.indexOf('NOW_EPOCH" -lt "$DEADLINE')).toBeLessThan(
+      SH_CODE.indexOf('ENGINE BEHIND')
+    );
   });
 
   it('does not fail the job, because the alarm is the point', () => {

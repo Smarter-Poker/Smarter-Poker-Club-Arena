@@ -56,18 +56,8 @@ export function TableSettingsPanel({
     return () => timers.forEach(clearTimeout);
   }, []);
 
-  if (loading) {
-    return (
-      <div className={`tsp-container tsp-${mode}`}>
-        <div className="tsp-loading" role="status" aria-live="polite">
-          Loading Settings...
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className={`tsp-container tsp-${mode}`}>
+    <div className={`tsp-container tsp-${mode}`} aria-busy={loading}>
       {/* Header (overlay mode only) */}
       {mode === 'overlay' && (
         <div className="tsp-header">
@@ -82,6 +72,16 @@ export function TableSettingsPanel({
               ×
             </button>
           )}
+        </div>
+      )}
+
+      {/* Cached or default settings are already safe to use while the
+          canonical row refreshes. Keeping the switches mounted makes a slow
+          preference read non-blocking; the hook preserves any choice made
+          before that background read settles. */}
+      {loading && (
+        <div className="tsp-loading" role="status" aria-live="polite">
+          Refreshing Settings In Background...
         </div>
       )}
 

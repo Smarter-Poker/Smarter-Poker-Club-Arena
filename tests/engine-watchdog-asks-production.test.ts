@@ -62,9 +62,16 @@ describe('it fails in the safe direction', () => {
   });
 
   it('gives the catch-up schedule a grace window before raising anything', () => {
-    // One missed twenty-minute tick is ordinary. Three in a row is the failure.
+    // The engine restarts on scheduled Chicago windows, not on every merge. The
+    // deadline is the first eligible window plus deploy time, but it can never
+    // be earlier than the legacy grace period.
     expect(SH).toContain('GRACE_MIN="${GRACE_MIN:-45}"');
-    expect(SH).toContain('inside the ${GRACE_MIN}m grace window');
+    expect(SH).toContain('RESTART_HOURS="${RESTART_HOURS:-04 10 14 18 22}"');
+    expect(SH).toContain('DEPLOY_MIN="${DEPLOY_MIN:-25}"');
+    expect(SH).toContain('WINDOW_EPOCH=$(window_at_or_after "$REQ_EPOCH")');
+    expect(SH).toContain('GRACE_DEADLINE=$(( REQ_EPOCH + GRACE_MIN * 60 ))');
+    expect(SH).toContain('[ "$GRACE_DEADLINE" -gt "$DEADLINE" ] && DEADLINE=$GRACE_DEADLINE');
+    expect(SH).toContain('Engine watchdog: waiting for the restart window');
   });
 
   it('does not fail the job, because the alarm is the point', () => {

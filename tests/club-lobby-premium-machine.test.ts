@@ -143,8 +143,13 @@ describe('responsive premium Club Arena', () => {
     expect(PAGE_CSS).toMatch(
       /\.lobby-wallets-content\[data-expanded='true'\]\s*\{[^}]*visibility:\s*visible[^}]*pointer-events:\s*auto/s
     );
+    /* The 44px now comes from an invisible `::after` band instead of from the
+       button itself. Sizing the BUTTON to 44x44px made it 61% of the card's
+       height at 375px and pushed the copy icon out of its painted frame, which
+       is the mobile distortion Dan reported on 2026-09-01. The band gives the
+       same thumb target and paints nothing. See ClubIdentityCard.css. */
     expect(IDENTITY_CSS).toMatch(
-      /@media \(pointer: coarse\)[\s\S]*?\.club-identity__share\s*\{[^}]*width:\s*44px[^}]*height:\s*44px/s
+      /\.club-identity__share::after\s*\{[^}]*width:\s*max\(100%, 44px\)[^}]*height:\s*max\(100%, 44px\)/s
     );
   });
 

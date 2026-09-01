@@ -25,6 +25,15 @@ interface FinancialChartProps {
     net?: number;
   }[];
   height?: number;
+  /**
+   * The rake series. Defaults to true because every caller that has rake wants
+   * it, but it is a CHOICE now: the agent's Commission Trends chart feeds
+   * rake: 0 for every day (it has commission data, not rake data), and this
+   * component drew that as a flat green "Rake" line at zero next to the real
+   * commission line. A series with no source behind it reads as "no rake this
+   * week", which was never true - the downline rakes constantly.
+   */
+  showRake?: boolean;
   showRakeback?: boolean;
   showCommissions?: boolean;
 }
@@ -32,6 +41,7 @@ interface FinancialChartProps {
 export const FinancialChart: React.FC<FinancialChartProps> = ({
   data,
   height = 200,
+  showRake = true,
   showRakeback = true,
   showCommissions = false,
 }) => {
@@ -98,14 +108,16 @@ export const FinancialChart: React.FC<FinancialChartProps> = ({
             formatter={(value) => [`${((value as number) || 0).toLocaleString()}`, '']}
           />
           <Legend wrapperStyle={{ fontSize: '12px' }} iconType="circle" iconSize={8} />
-          <Area
-            type="monotone"
-            dataKey="rake"
-            name="Rake"
-            stroke="#10b981"
-            fill="url(#colorRake)"
-            strokeWidth={2}
-          />
+          {showRake && (
+            <Area
+              type="monotone"
+              dataKey="rake"
+              name="Rake"
+              stroke="#10b981"
+              fill="url(#colorRake)"
+              strokeWidth={2}
+            />
+          )}
           {showRakeback && (
             <Area
               type="monotone"

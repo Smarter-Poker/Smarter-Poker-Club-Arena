@@ -51,9 +51,9 @@ a lie:
 not the argument. Every index on a table is maintained on every insert, update and
 delete. 103 MB of the 106 MB reclaimed is a single index:
 
-| index | table | size | scans | covered by | coverer scans |
-|---|---|---|---|---|---|
-| `idx_ssg_game` | `solved_spots_gold` | 103 MB | 0 | `idx_ssg_next_street` | 1,140,656 |
+| index          | table               | size   | scans | covered by            | coverer scans |
+| -------------- | ------------------- | ------ | ----- | --------------------- | ------------- |
+| `idx_ssg_game` | `solved_spots_gold` | 103 MB | 0     | `idx_ssg_next_street` | 1,140,656     |
 
 The remaining 129 are 8-16 kB each. Their value is not space; it is 129 fewer
 things maintained on write and 129 fewer things to reason about.

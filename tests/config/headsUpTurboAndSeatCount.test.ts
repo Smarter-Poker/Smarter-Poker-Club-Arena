@@ -201,15 +201,16 @@ describe('4. the payout sweep can actually reach the events it repairs', () => {
   });
 
   it('looks 30 days back on the deep pass, with a limit that covers the window', () => {
-    // Measured: 35,042 events in a 30-day window at ~0.29ms each.
+    // Measured: 48,093 events in a 30-day window; 150,000 restores headroom.
     expect(settler).toMatch(/PAYOUT_SWEEP_DEEP_DAYS\s*=\s*30/);
     // 2026-09-01: was pinned literally to 40000 and went red when main raised
     // the limit to 150000 without this file in the same commit (a server-only
     // PR skips the client suite, so the red surfaced later, on an unrelated
-    // branch). The FLOOR is the property that matters — a limit smaller than
-    // the window silently shrinks the window — and the sibling test below
-    // already binds it to the measured population. This one now asserts the
-    // limit never drops back below the original measured floor.
+    // branch). Main's hotfix re-pinned the new literal, which breaks again on
+    // the next deliberate raise. The FLOOR is the property that matters — a
+    // limit smaller than the window silently shrinks the window — and the
+    // sibling test below already binds it to the measured population. This
+    // asserts the limit never drops back below the original measured floor.
     const deepLimit = Number(settler.match(/PAYOUT_SWEEP_DEEP_LIMIT\s*=\s*(\d+)/)?.[1] ?? NaN);
     expect(deepLimit).toBeGreaterThanOrEqual(40000);
   });

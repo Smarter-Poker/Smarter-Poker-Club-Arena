@@ -1470,3 +1470,37 @@
     margin-bottom: calc(22px + 88px + env(safe-area-inset-bottom, 0px));
   }
 }
+
+/* Keep the complete Find Your Game selector deck available while the game
+   catalogue scrolls. display: contents removes the short command wrapper as
+   the sticky containing block without changing the DOM or accessible order.
+   This override intentionally follows every responsive cabinet rule. */
+@media (min-width: 901px) {
+  .club-lobby-machine > .club-lobby-command-top {
+    display: contents;
+  }
+
+  .club-lobby-machine > .club-lobby-command-top > .club-lobby-command-top__controls {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    flex: 0 0 auto;
+    background: #03070a;
+    box-shadow: 0 10px 24px rgb(0 0 0 / 78%);
+  }
+}
+
+@media (max-width: 900px) {
+  .club-lobby-machine > .club-lobby-command-top {
+    display: contents;
+  }
+
+  .club-lobby-machine > .club-lobby-command-top > .club-lobby-command-top__controls {
+    position: sticky;
+    top: calc(env(safe-area-inset-top, 0px) + 10.2vw);
+    z-index: 30;
+    isolation: isolate;
+    background: #03070a;
+    box-shadow: 0 10px 24px rgb(0 0 0 / 78%);
+  }
+}

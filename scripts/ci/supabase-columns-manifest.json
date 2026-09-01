@@ -2294,7 +2294,8 @@
       "ticker_enabled",
       "guarantee_treasury_floor",
       "guarantee_enforcement_enabled",
-      "tagline"
+      "tagline",
+      "opening_checklist_started_at"
     ],
     "collusion_tracking": [
       "id",

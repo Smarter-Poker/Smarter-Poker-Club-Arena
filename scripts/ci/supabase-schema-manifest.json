@@ -1948,6 +1948,7 @@
     "fn_mark_feed_post_ended",
     "fn_mark_gdpr_completed",
     "fn_mark_messages_read",
+    "fn_mark_new_club_opening_checklist",
     "fn_mark_table_setting_touched",
     "fn_member_fee_lifetime_after_delete",
     "fn_member_fee_lifetime_after_insert",

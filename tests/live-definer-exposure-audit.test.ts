@@ -112,9 +112,34 @@ describe('the baseline is small, reasoned, and shrink-only', () => {
 });
 
 describe('and the alarm reaches a person', () => {
-  it('runs daily in the workflow that already holds the key', () => {
+  it('runs in the workflow that already holds the key', () => {
     expect(WF).toContain('node scripts/ci/audit-live-definer-exposure.mjs');
     expect(WF).toContain("cron: '20 5 * * *'");
+  });
+
+  it('runs HOURLY, because a hole applied straight to production waits for nobody', () => {
+    /**
+     * 2026-09-01. This job is the only thing on the estate that can see a
+     * grant made outside a migration, and almost all schema here is applied
+     * that way through the Supabase MCP. At one run a day, a function that
+     * ships anon-executable at 09:00 answers strangers until 05:20 the next
+     * morning.
+     *
+     * Both of the last two findings had been live for hours when it caught
+     * them: fn_collect_bounty, which pays knockout bounties, callable by any
+     * logged-in player; and fn_seat_club_for_user_membership_unchecked, which
+     * handed a caller with no account any player's club membership and live
+     * seating.
+     */
+    expect(WF).toContain("cron: '40 * * * *'");
+  });
+
+  it('does not open a manifest pull request every hour', () => {
+    // The hourly cron is for the audit alone. A refresh PR an hour would bury
+    // the one thing in this workflow that needs a person.
+    expect(WF).toMatch(
+      /refresh:\n\s*#[\s\S]{0,400}?if: github\.event\.schedule != '40 \* \* \* \*'/
+    );
   });
 
   it('is its own job, so a manifest problem cannot mask a security finding', () => {

@@ -218,7 +218,7 @@ export default function WaitlistPage() {
       case 'plo8':
         return 'PLO Hi-Lo';
       case 'pineapple':
-        return 'Pineapple';
+        return 'Crazy Pineapple';
       case 'short_deck':
         return 'Short Deck 6+';
       default:

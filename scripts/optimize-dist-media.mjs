@@ -62,6 +62,13 @@ const DIR_RULES = [
   // Resizing it changes both its definition and its byte identity, so it must
   // bypass the generic images/ optimizer and ship exactly as committed.
   { prefix: 'images/global-header/', maxDim: 0 },
+  // The three approved hamburger rasters are also byte-locked. The generic
+  // images rule used to palette-reencode the PNG during every production build,
+  // which made the deployed file differ from the approved source even though
+  // no component changed. These specific paths must pass through untouched.
+  { prefix: 'images/btn-hamburger-v4.png', maxDim: 0 },
+  { prefix: 'images/btn-hamburger.png', maxDim: 0 },
+  { prefix: 'images/btn-hamburger.webp', maxDim: 0 },
   { prefix: 'cards/backs/table/', maxDim: 0 }, // already hand-optimized — skip
   { prefix: 'cards/backs/', maxDim: 512 },
   { prefix: 'cards/', maxDim: 512 }, // full-size card faces (root + 2color/4color PNGs)

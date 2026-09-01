@@ -27,6 +27,7 @@ import { ThemeSettingsModal } from '../table/ThemeSettingsModal';
 import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
+import { fetchGameCreationAccess } from '../../services/GameAccessService';
 import { soundService } from '../../services/SoundService';
 import { isSoundAllowed } from '../../utils/soundGate';
 import { isVibrationPreferred, setVibrationAllowed } from '../../utils/vibrationGate';
@@ -164,6 +165,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const [attentionCount, setAttentionCount] = useState(0);
   const [rewardContexts, setRewardContexts] = useState<LeaderboardRewardContext[]>([]);
   const [rewardContextClubId, setRewardContextClubId] = useState<string>('');
+  const [canManageGames, setCanManageGames] = useState(false);
 
   // Stripe returns to the route where the player opened Table Studio. The
   // command drawer is mounted globally even while closed, so it is the one
@@ -206,6 +208,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     clubId,
     clubRole,
     isPlatformStaff: effectivePlatformStaff,
+    canManageGames,
   });
   const allNavigationItems = useMemo(
     () => navigationGroups.flatMap((group) => group.items),
@@ -251,6 +254,20 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       ? current === '/'
       : current === target || current.startsWith(`${target}/`);
   };
+
+  useEffect(() => {
+    if (!isOpen || !workspace.clubUUID) {
+      setCanManageGames(false);
+      return;
+    }
+    let cancelled = false;
+    void fetchGameCreationAccess(workspace.clubUUID).then((access) => {
+      if (!cancelled) setCanManageGames(access.allowed && !access.unionId);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, workspace.clubUUID]);
 
   useEffect(() => {
     if (!isOpen || !clubId) {
@@ -995,13 +1012,13 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         )}
 
         <div className={styles.quickActions} aria-label="Context Actions">
-          {clubId && workspace.isClubStaff ? (
+          {clubId && canManageGames ? (
             <button
               type="button"
               className={styles.quickAction}
-              onClick={() => handleNavigate(`/clubs/${clubId}/create-table`)}
+              onClick={() => handleNavigate(`/clubs/${clubId}/table-management`)}
             >
-              Create Table
+              Table Management
             </button>
           ) : (
             <button

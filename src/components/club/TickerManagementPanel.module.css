@@ -1,0 +1,253 @@
+.panel {
+  margin-top: 24px;
+  padding: 22px;
+  border: 1px solid #2a4959;
+  border-radius: 9px;
+  background: linear-gradient(145deg, #0b151b, #05090c);
+}
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+.heading > div > span {
+  color: #32b9ff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+}
+.heading h2 {
+  margin: 4px 0;
+  color: #eefaff;
+  font:
+    800 28px/1 Rajdhani,
+    sans-serif;
+  text-transform: uppercase;
+}
+.heading p,
+.messages > p,
+.footer > span {
+  margin: 0;
+  color: #8197a3;
+  font-size: 12px;
+}
+.master {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 14px;
+  border: 1px solid #2e596f;
+  border-radius: 5px;
+  color: #e8f8ff;
+  background: #08131a;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.master input {
+  width: 18px;
+  height: 18px;
+  accent-color: #20baff;
+}
+.preview {
+  display: flex;
+  align-items: stretch;
+  height: 36px;
+  margin: 18px 0;
+  overflow: hidden;
+  border: 1px solid;
+  border-radius: 3px;
+}
+.preview strong {
+  display: grid;
+  place-items: center;
+  padding: 0 14px;
+  border-right: 1px solid currentColor;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+.preview div {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  overflow: hidden;
+}
+.preview div span {
+  display: inline-block;
+  padding-left: 100%;
+  white-space: nowrap;
+  animation: tickerPreview linear infinite;
+}
+@keyframes tickerPreview {
+  to {
+    transform: translateX(-100%);
+  }
+}
+.sourceGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.sourceGrid label {
+  display: flex;
+  gap: 9px;
+  min-height: 82px;
+  padding: 12px;
+  border: 1px solid #243a46;
+  border-radius: 5px;
+  background: #071015;
+}
+.sourceGrid .sourceOn {
+  border-color: #287ba6;
+  background: #0a1c26;
+}
+.sourceGrid input {
+  margin-top: 2px;
+  accent-color: #22b9ff;
+}
+.sourceGrid span {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+}
+.sourceGrid strong {
+  color: #deedf4;
+  font-size: 12px;
+}
+.sourceGrid small {
+  color: #71858f;
+  font-size: 10px;
+  line-height: 1.35;
+}
+.customizer {
+  display: grid;
+  grid-template-columns: 2fr repeat(3, 1fr) 1.5fr;
+  gap: 9px;
+  margin-top: 16px;
+}
+.customizer label {
+  display: grid;
+  gap: 6px;
+  color: #8da2ad;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.customizer label span {
+  color: #43bdff;
+}
+.customizer input,
+.customizer select {
+  width: 100%;
+  height: 36px;
+  padding: 5px;
+  border: 1px solid #2d4857;
+  border-radius: 4px;
+  color: white;
+  background: #071015;
+}
+.customizer input[type='color'] {
+  padding: 3px;
+}
+.messages {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #1c303a;
+}
+.messages h3 {
+  margin: 0 0 9px;
+  font:
+    800 17px/1 Rajdhani,
+    sans-serif;
+  text-transform: uppercase;
+}
+.messageComposer {
+  display: flex;
+  gap: 7px;
+}
+.messageComposer input {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid #2b4655;
+  border-radius: 4px;
+  color: white;
+  background: #050b0e;
+}
+.messageComposer button,
+.messages li button,
+.footer button {
+  padding: 9px 13px;
+  border: 1px solid #3380a8;
+  border-radius: 4px;
+  color: #eaf9ff;
+  background: #0b3d58;
+  font-weight: 800;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.messages ul {
+  display: grid;
+  gap: 5px;
+  padding: 0;
+  list-style: none;
+}
+.messages li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid #1e343f;
+  color: #b9cbd4;
+  background: #071015;
+}
+.messages li button {
+  color: #ffaaa8;
+  border-color: #66383b;
+  background: transparent;
+  font-size: 9px;
+}
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+}
+.footer button {
+  min-width: 140px;
+  background: #07557f;
+}
+.footer button:disabled {
+  opacity: 0.55;
+}
+@media (max-width: 900px) {
+  .sourceGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .customizer {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 560px) {
+  .heading,
+  .footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .sourceGrid,
+  .customizer {
+    grid-template-columns: 1fr;
+  }
+  .messageComposer {
+    flex-direction: column;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .preview div span {
+    animation: none;
+    padding-left: 12px;
+  }
+}

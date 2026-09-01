@@ -14,6 +14,7 @@ interface ClubArenaNavigationContext {
   clubId: string | null;
   clubRole?: string | null;
   isPlatformStaff?: boolean;
+  canManageGames?: boolean;
 }
 
 const CLUB_STAFF_ROLES = new Set(['owner', 'co_owner', 'admin', 'manager', 'super_agent', 'agent']);
@@ -57,6 +58,7 @@ export function getClubArenaNavigation({
   clubId,
   clubRole = null,
   isPlatformStaff = false,
+  canManageGames = false,
 }: ClubArenaNavigationContext): ClubArenaNavGroup[] {
   const clubPath = (suffix = '') => (clubId ? `/clubs/${clubId}${suffix}` : '/');
 
@@ -191,6 +193,14 @@ export function getClubArenaNavigation({
         description: 'Games, Schedule, And Club Activity',
       },
     ];
+
+    if (canManageGames) {
+      operationItems.push({
+        label: 'Table Management',
+        path: clubPath('/table-management'),
+        description: 'Create, Schedule, Edit, Close Games, And Control The Ticker',
+      });
+    }
 
     if (isClubStaff) {
       /**

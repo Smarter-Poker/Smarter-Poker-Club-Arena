@@ -28,7 +28,7 @@ import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import haptic from '../services/HapticService';
-import CreateTournamentModal from '../components/club/CreateTournamentModal';
+import GameCreationActions from '../components/club/GameCreationActions';
 import ClubLaunchProgress, { type ClubLaunchTask } from '../components/club/ClubLaunchProgress';
 import ClubOpeningWizard from '../components/club/ClubOpeningWizard';
 import { clubOpeningSetupService } from '../services/ClubOpeningSetupService';
@@ -221,7 +221,7 @@ function setClubHomeCache(clubId: string, data: { club: any; tables: any[] }) {
   }
 }
 
-const CLUB_DESCRIPTION_MAX_LENGTH = 72;
+const CLUB_LOBBY_MESSAGE_MAX_LENGTH = 72;
 
 // Types
 interface ClubData {
@@ -230,6 +230,7 @@ interface ClubData {
   name: string;
   slug?: string;
   description: string;
+  lobby_message?: string | null;
   tagline?: string | null;
   avatar_url: string;
   logo_url?: string;
@@ -349,21 +350,6 @@ const LOBBY_TOURNAMENT_STATUSES = ['REGISTERING', 'RUNNING', 'LATE_REG', 'STARTI
 
 const CASH_TYPES: GameType[] = ['HOLDEM', 'OMAHA', 'LIMIT', 'MIXED'];
 const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
-
-const CASH_CREATION_ROUTE: Partial<Record<GameType, string>> = {
-  HOLDEM: 'nlh',
-  OMAHA: 'plo4',
-  LIMIT: 'flh',
-};
-
-const CREATE_LABEL_FOR: Partial<Record<GameType, string>> = {
-  MTT: 'Create MTT',
-  HOLDEM: 'Create NLH Table',
-  OMAHA: 'Create PLO Table',
-  LIMIT: 'Create Limit Table',
-  SPIN: 'Create Spin',
-  SNG: 'Create Heads Up',
-};
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -736,7 +722,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [unionIdForCreate, setUnionIdForCreate] = useState<string | undefined>(undefined);
   /** Owning-club names for a union board. Empty for a club that is in no union. */
   const [clubNames, setClubNames] = useState<Record<string, string>>({});
-  const [showCreateTournament, setShowCreateTournament] = useState(false);
   const [showOpeningWizard, setShowOpeningWizard] = useState(false);
   const [openingSetupComplete, setOpeningSetupComplete] = useState(false);
   const [configuredAgentUserId, setConfiguredAgentUserId] = useState<string | null>(null);
@@ -1714,7 +1699,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, slug, description, tagline, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, spins_enabled, created_at, is_union, union_id, opening_checklist_started_at'
+              'id, club_id, name, slug, description, lobby_message, tagline, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, spins_enabled, created_at, is_union, union_id, opening_checklist_started_at'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -3921,14 +3906,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const canCreateClubGames = noticeEditable && !unionManagedClub;
 
   const saveClubNotice = () => {
-    const newDesc = noticeDraft.replace(/\s+/g, ' ').trim().slice(0, CLUB_DESCRIPTION_MAX_LENGTH);
+    const newDesc = noticeDraft.replace(/\s+/g, ' ').trim().slice(0, CLUB_LOBBY_MESSAGE_MAX_LENGTH);
     const targetId = club.id;
-    setClub((prev) => (prev ? { ...prev, description: newDesc } : prev));
+    setClub((prev) => (prev ? { ...prev, lobby_message: newDesc } : prev));
     setIsEditingNotice(false);
     void (async () => {
       const { error } = await supabase
         .from('clubs')
-        .update({ description: newDesc })
+        .update({ lobby_message: newDesc })
         .eq('id', targetId);
       if (error) {
         reportError(error, 'ClubHomePage.Notice_save_failed');
@@ -3945,13 +3930,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       return;
     }
     haptic.selection();
-    selectGameType(target);
-    if (TOURNAMENT_TYPES.includes(target)) {
-      setShowCreateTournament(true);
-      return;
-    }
-    const routeVariant = CASH_CREATION_ROUTE[target];
-    if (routeVariant) navigate(`/clubs/${clubId}/create-table/${routeVariant}`);
+    const create =
+      target === 'MTT' ? 'event' : target === 'SPIN' ? 'spin' : target === 'SNG' ? 'sng' : 'table';
+    navigate(`/clubs/${clubId}/table-management?create=${create}`);
   };
 
   const hasCashCategory = (category: 'HOLDEM' | 'OMAHA' | 'LIMIT') =>
@@ -4091,7 +4072,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         </h1>
       </section>
 
-      {(club.description?.trim() || noticeEditable) && (
+      {(club.lobby_message?.trim() || noticeEditable) && (
         <section
           className={`club-mobile-owner-message ${noticeEditable && !isEditingNotice ? 'club-mobile-owner-message--editable' : ''}`}
           aria-label="Club Owner Message"
@@ -4100,7 +4081,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             <div className="club-mobile-owner-message__editor">
               <input
                 value={noticeDraft}
-                maxLength={CLUB_DESCRIPTION_MAX_LENGTH}
+                maxLength={CLUB_LOBBY_MESSAGE_MAX_LENGTH}
                 onChange={(event) => setNoticeDraft(event.target.value.replace(/[\r\n]+/g, ' '))}
                 placeholder="Add A One-Line Club Message"
                 autoFocus
@@ -4113,7 +4094,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 }}
               />
               <span>
-                {noticeDraft.length}/{CLUB_DESCRIPTION_MAX_LENGTH}
+                {noticeDraft.length}/{CLUB_LOBBY_MESSAGE_MAX_LENGTH}
               </span>
               <button type="button" onClick={() => setIsEditingNotice(false)}>
                 Cancel
@@ -4129,12 +4110,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               disabled={!noticeEditable}
               onClick={() => {
                 if (!noticeEditable) return;
-                setNoticeDraft(club.description || '');
+                setNoticeDraft(club.lobby_message || '');
                 setIsEditingNotice(true);
               }}
-              title={club.description || 'Add A One-Line Club Message'}
+              title={club.lobby_message || 'Add A One-Line Club Message'}
             >
-              {club.description?.trim() || 'Add A One-Line Club Message'}
+              {club.lobby_message?.trim() || 'Add A One-Line Club Message'}
             </button>
           )}
         </section>
@@ -4473,18 +4454,20 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               className={`lobby-top__notice ${isOwner || isClubStaff(userRole) ? 'lobby-top__notice--editable' : ''}`}
               role={noticeEditable && !isEditingNotice ? 'button' : undefined}
               tabIndex={noticeEditable && !isEditingNotice ? 0 : undefined}
-              aria-label={noticeEditable && !isEditingNotice ? 'Edit Club Description' : undefined}
+              aria-label={
+                noticeEditable && !isEditingNotice ? 'Edit Club Lobby Message' : undefined
+              }
               onKeyDown={(e) => {
                 if (!noticeEditable || isEditingNotice) return;
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
-                  setNoticeDraft(club.description || '');
+                  setNoticeDraft(club.lobby_message || '');
                   setIsEditingNotice(true);
                 }
               }}
               onClick={() => {
                 if (noticeEditable && !isEditingNotice) {
-                  setNoticeDraft(club.description || '');
+                  setNoticeDraft(club.lobby_message || '');
                   setIsEditingNotice(true);
                 }
               }}
@@ -4494,9 +4477,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   <input
                     type="text"
                     value={noticeDraft}
-                    maxLength={CLUB_DESCRIPTION_MAX_LENGTH}
+                    maxLength={CLUB_LOBBY_MESSAGE_MAX_LENGTH}
                     onChange={(e) => setNoticeDraft(e.target.value.replace(/\s+/g, ' '))}
-                    placeholder="Optional Club Description"
+                    placeholder="Optional Club Lobby Message"
                     autoFocus
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') setIsEditingNotice(false);
@@ -4515,9 +4498,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 <div className="club-lobby-command-top__welcome-copy">
                   <span className="club-lobby-command-top__welcome-eyebrow">Welcome To The</span>
                   <h2 className="club-lobby-command-top__club-name">{club.name}</h2>
-                  <p className={!club.description?.trim() ? 'is-empty' : undefined}>
-                    {club.description?.trim() ||
-                      (noticeEditable ? 'Add Optional Club Description' : '\u00a0')}
+                  <p className={!club.lobby_message?.trim() ? 'is-empty' : undefined}>
+                    {club.lobby_message?.trim() ||
+                      (noticeEditable ? 'Add Optional Club Lobby Message' : '\u00a0')}
                   </p>
                 </div>
               )}
@@ -4530,13 +4513,22 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   <span className="lobby-controls__eyebrow">Live Club Schedule</span>
                   <strong className="lobby-controls__title">Find Your Game</strong>
                 </div>
-                <span className="lobby-controls__total">
-                  <strong>
-                    {totalGameCount.toLocaleString()}
-                    {countsCapped ? '+' : ''}
-                  </strong>{' '}
-                  Games
-                </span>
+                <div className="lobby-controls__operator-actions">
+                  <span className="lobby-controls__total">
+                    <strong>
+                      {totalGameCount.toLocaleString()}
+                      {countsCapped ? '+' : ''}
+                    </strong>{' '}
+                    Games
+                  </span>
+                  {canCreateClubGames && (
+                    <GameCreationActions
+                      managementPath={`/clubs/${clubId}/table-management`}
+                      compact
+                      onNavigate={(path) => navigate(path)}
+                    />
+                  )}
+                </div>
               </div>
               <div className="game-bar">
                 <div className="game-bar__types" role="tablist" aria-label="Game Type">
@@ -4789,18 +4781,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           filter or a search is actively hiding games — that one is not a
           statistic, it is the explanation for why the list looks short, and
           it carries the one-tap clear. */}
-        {canCreateClubGames && gameType !== 'ALL' && (
-          <div className="lobby-resultsbar lobby-resultsbar--create-only">
-            <button
-              type="button"
-              className="lobby-createbtn"
-              onClick={() => openCreationFor(gameType)}
-            >
-              <span aria-hidden="true">＋</span> {CREATE_LABEL_FOR[gameType]}
-            </button>
-          </div>
-        )}
-
         {/* ═══════════════════════════════════════════════════════════════════
           LOBBY V2 — dense line-based game table + game lobby panel
           ─────────────────────────────────────────────────────────────────
@@ -5092,23 +5072,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             );
             setOpeningSetupComplete(true);
             setShowOpeningWizard(false);
-          }}
-        />
-      )}
-
-      {showCreateTournament && canCreateClubGames && (resolvedClubId || club?.id) && (
-        <CreateTournamentModal
-          clubId={resolvedClubId || club!.id}
-          unionId={unionIdForCreate}
-          initialFormat={
-            gameType === 'SPIN' ? 'spin' : gameType === 'SNG' ? 'sng' : 'mtt_freezeout'
-          }
-          onClose={() => setShowCreateTournament(false)}
-          onSuccess={() => {
-            setShowCreateTournament(false);
-            haptic.success();
-            toast.success('Tournament created successfully');
-            // Tables auto-refresh via the visibility hook / focus return
           }}
         />
       )}

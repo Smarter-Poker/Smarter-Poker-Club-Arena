@@ -16,6 +16,7 @@ import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { fetchGameCreationAccess } from './GameAccessService';
+import { gameCreationDeniedMessage } from '../lib/gameCreationAccess';
 import { parseBlindStructure, parsePayoutStructure } from '../utils/parseBlindStructure';
 /* The canonical level-length reader. It is the ONLY one that gets the
    three-spelling precedence right - see getCurrentLevelState. Pure, no React,
@@ -684,20 +685,12 @@ class TournamentService {
    * Create a new tournament
    */
   async createTournament(clubId: string, config: TournamentConfig): Promise<Tournament> {
-    // Union governance (2026-08-19): clubs inside a union cannot create
-    // union-visible tournaments — those are created at the union level.
-    // A union club's own staff MAY still create a PRIVATE club tournament
-    // (is_private = true, visible only inside the club, never in the union
-    // lobby). Union owners/admins keep building union-visible games. The
-    // fn_create_tournament RPC + trg_tournaments_union_ownership trigger
-    // enforce the same rule server-side.
-    if (!config.isXmtt && !config.isPrivate) {
-      const resolvedClubId = await resolveClubUUID(clubId);
-      const access = await fetchGameCreationAccess(resolvedClubId);
-      if (!access.allowed && access.reason === 'union_only') {
-        config.isPrivate = true;
-      }
-    }
+    // Union governance: member-club staff lose every tournament-creation path,
+    // including private tournaments. Union owners/admins remain authorized by
+    // fn_game_creation_access and create against a selected host club.
+    const resolvedClubId = await resolveClubUUID(clubId);
+    const access = await fetchGameCreationAccess(resolvedClubId);
+    if (!access.allowed) throw new Error(gameCreationDeniedMessage(access));
 
     // XMTT validation: require unionId and verify the union has crossClubTournaments enabled
     if (config.isXmtt) {

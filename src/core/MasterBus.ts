@@ -296,6 +296,7 @@ export type BusEventType =
   | 'PLAYER_LEFT'
   | 'RAKEBACK_CLAIMED'
   | 'CLUB_SETTINGS_UPDATED'
+  | 'TICKER_SETTINGS_CHANGED'
   // Phase 4 deep-sweep: Backported overlay + theme events
   // (MYSTERY_BOUNTY_REVEALED removed 2026-08-26: zero subscribers ever; the
   // celebration listens to the server's t-break channel directly.)
@@ -1121,6 +1122,7 @@ export interface BusPayloadMap {
   PLAYER_LEFT: { clubId: string; userId?: string; tableId?: string };
   RAKEBACK_CLAIMED: { clubId: string; amount?: number; userId?: string };
   CLUB_SETTINGS_UPDATED: { clubId?: string; setting?: string; value?: unknown };
+  TICKER_SETTINGS_CHANGED: { scope: 'club' | 'union'; scopeId: string };
   // Phase 4 deep-sweep: overlay + theme payloads
   UI_THEME_CHANGED: {
     key: string;

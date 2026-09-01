@@ -201,19 +201,19 @@ describe('4. the payout sweep can actually reach the events it repairs', () => {
   });
 
   it('looks 30 days back on the deep pass, with a limit that covers the window', () => {
-    // Measured: 35,042 events in a 30-day window at ~0.29ms each.
+    // Measured: 48,093 events in a 30-day window; 150,000 restores headroom.
     expect(settler).toMatch(/PAYOUT_SWEEP_DEEP_DAYS\s*=\s*30/);
 
-    // A FLOOR, NOT A LITERAL. 2026-09-01: this pinned `= 40000` exactly, the
-    // limit was deliberately raised to 150,000 (about 3x the population, with
-    // the reasoning written beside it in RakebackSettlerService), and the pin
-    // went red on a change that made the sweep strictly better. Nothing shipped
-    // for anyone until it was noticed.
+    // A FLOOR, NOT A LITERAL. This pinned `= 40000` exactly, the limit was
+    // deliberately raised to 150,000 (about 3x the population, with the
+    // reasoning written beside it in RakebackSettlerService), and the pin went
+    // red on a change that made the sweep strictly better - main published
+    // nothing for anyone until somebody noticed. Re-pinning the new literal
+    // just schedules the same outage for the next improvement.
     //
-    // The bug this guards is a limit too SMALL to cover its window - a big one
+    // The bug this guards is a limit too SMALL to cover its window: a large one
     // costs seconds, a small one silently shrinks the window back down and is
-    // the original defect in a new coat. So assert the direction that can hurt
-    // and let the number grow with the platform.
+    // the original defect in a new coat. Assert the direction that can hurt.
     const deepLimit = Number(settler.match(/PAYOUT_SWEEP_DEEP_LIMIT\s*=\s*(\d+)/)?.[1] ?? NaN);
     expect(deepLimit, 'the deep limit must be readable').not.toBeNaN();
     expect(deepLimit).toBeGreaterThanOrEqual(40000);

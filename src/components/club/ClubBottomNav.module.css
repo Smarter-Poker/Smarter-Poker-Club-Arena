@@ -87,7 +87,11 @@
 }
 
 .navItem:focus-visible {
-  background: radial-gradient(closest-side, rgba(255, 239, 196, 0.22), rgba(255, 239, 196, 0) 78%);
+  background: radial-gradient(
+    closest-side,
+    rgba(255, 239, 196, 0.22),
+    rgba(255, 239, 196, 0) 78%
+  );
 }
 
 .visuallyHidden {

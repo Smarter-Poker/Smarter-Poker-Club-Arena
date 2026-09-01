@@ -51,10 +51,7 @@ const ROOT = join(__dirname, '..');
 const SRC = join(ROOT, 'src');
 
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
-const md5 = (rel: string) =>
-  createHash('md5')
-    .update(readFileSync(join(ROOT, rel)))
-    .digest('hex');
+const md5 = (rel: string) => createHash('md5').update(readFileSync(join(ROOT, rel))).digest('hex');
 
 /** Strip block and line comments so a prose mention of "gear" cannot fail us. */
 const maskComments = (css: string) =>
@@ -107,7 +104,8 @@ const GEAR = /⚙|<Settings\b|<Cog\b|<Gear\b|M19\.4 15a1\.65|SettingsIcon\s*\/>/
 const BANNED_TRIGGER_ART = /command-center-v1|global-header-command-center/;
 
 /** Glyphs a menu trigger must never become. */
-const NOT_A_HAMBURGER = /Grid3X3|LayoutGrid|MoreVertical|MoreHorizontal|EllipsisVertical/;
+const NOT_A_HAMBURGER =
+  /Grid3X3|LayoutGrid|MoreVertical|MoreHorizontal|EllipsisVertical/;
 
 describe('the hamburger is the menu, and stays the menu', () => {
   it.each(TRIGGERS)('$name still opens the menu with a hamburger', (trigger) => {
@@ -217,8 +215,7 @@ describe('no boxes over header or footer icons', () => {
   it('the chrome focus state is a glow, never an outline or a hard ring', () => {
     for (const [file, selector] of CHROME) {
       const css = maskComments(read(file));
-      const focusBlocks =
-        css.match(new RegExp(`\\${selector}:focus-visible\\s*\\{[^}]*\\}`, 'g')) ?? [];
+      const focusBlocks = css.match(new RegExp(`\\${selector}:focus-visible\\s*\\{[^}]*\\}`, 'g')) ?? [];
       expect(focusBlocks.length, `${file} lost its ${selector} focus state`).toBeGreaterThan(0);
       const combined = focusBlocks.join('\n');
       // Read the VALUES rather than pattern-matching around them: a negative
@@ -238,8 +235,9 @@ describe('no boxes over header or footer icons', () => {
       // the exact cyan rectangle Dan screenshotted. Both were shapes with
       // straight edges. The answer is not a better-placed box.
       const pseudo =
-        css.match(new RegExp(`\\${selector}:focus[^{]*::(?:before|after)\\s*\\{[^}]*\\}`, 'g')) ??
-        [];
+        css.match(
+          new RegExp(`\\${selector}:focus[^{]*::(?:before|after)\\s*\\{[^}]*\\}`, 'g')
+        ) ?? [];
       for (const block of pseudo) {
         expect(block, `${file} draws a pseudo-element ring over ${selector}`).not.toMatch(
           /border(-(top|right|bottom|left))?\s*:\s*[^;]*\d/

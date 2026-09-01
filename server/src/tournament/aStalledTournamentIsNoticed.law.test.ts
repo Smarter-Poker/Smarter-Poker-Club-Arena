@@ -36,10 +36,9 @@ describe('a stalled tournament is noticed', () => {
 
     expect(src).toContain('lastOrphanSeatSweepAt');
     expect(src).toContain('this.repairOrphanedTournamentSeats()');
-    expect(src).toMatch(
-      /Date\.now\(\) - this\.lastOrphanSeatSweepAt > 60 \* 1000/,
-      'the repair must keep running every minute, not once per boot'
-    );
+    // Every minute, not once per boot: the stall it repairs is created while
+    // the engine is up and healthy, not at start-up.
+    expect(src).toMatch(/Date\.now\(\) - this\.lastOrphanSeatSweepAt > 60 \* 1000/);
   });
 
   it('moves stranded players only through executePlayerMoves', () => {

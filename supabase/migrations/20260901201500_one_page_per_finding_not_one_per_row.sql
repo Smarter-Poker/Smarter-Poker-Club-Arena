@@ -422,4 +422,15 @@ BEGIN
   RETURN 0;
 END $function$;
 
+-- Operator and engine telemetry only. Production already had these locked;
+-- named here so the definer-authorization gate can see it in the same file
+-- that declares them, and so a fresh clone reproduces the live grants.
+-- PUBLIC is named as well as anon: anon inherits whatever PUBLIC holds, so
+-- revoking anon alone reads as a fix and does nothing.
+REVOKE ALL ON FUNCTION public.fn_ca_suspense_regression_check() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_suspense_regression_check() TO service_role;
+
+REVOKE ALL ON FUNCTION public.fn_ca_finding_key(text, text, text, uuid, uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_ca_finding_key(text, text, text, uuid, uuid) TO service_role;
+
 COMMIT;

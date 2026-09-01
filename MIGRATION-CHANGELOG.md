@@ -2,6 +2,92 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-09-01 - A HEALER THAT COULD NOT FINISH
+
+`rake-repair-unbanked-hourly` calls `fn_rake_repair_unbanked(48, 200)`, which
+looks for cash hands that banked rake but never got a `rake_records` row.
+
+**It finds nothing, and it was timing out looking.** The candidate query
+returned ZERO rows every time it was measured, and still cost 56s, 64s, 80s,
+95s, 116s on consecutive runs - climbing with the table - dying at the 120s
+statement timeout on **4 of the last 24 runs**, most recently 23:52.
+
+A healer that cannot finish is worse than no healer. It burns two minutes of
+database an hour, reports failure into `cron.job_run_details`, and would not
+have banked the rake if there had been any to bank.
+
+**The cost was the scan, and the index that would have bounded it was pointed
+the wrong way.** `hand_history` carries 426,168 rows in a 48h window; only
+40,472 are cash hands with rake. The only usable index was
+`idx_hand_history_created` (bare `created_at DESC`), so every run walked all
+426k rows. The one partial index that mentions `tournament_id` -
+`idx_hand_history_tournament_created` - is `WHERE tournament_id IS NOT NULL`,
+exactly the opposite population to the one this job needs.
+
+`idx_hand_history_cash_rake_unbanked` matches the job's predicate. The three
+`NOT EXISTS` probes were already indexed.
+
+**Measured on production, same call, before and after: 116,000ms -> 9,768ms.**
+A 12x improvement, and comfortably inside the timeout it had been failing.
+
+Built `CONCURRENTLY` - `hand_history` takes roughly 600 hands a minute during
+play - with an online `DROP INDEX CONCURRENTLY` rollback recorded in the
+migration.
+
+---
+
+## Cowork session 2026-09-01 - THE CHIP GUARD LEARNS TO SAY WHICH KIND OF WRONG (Spins audit, phase 7)
+
+`fn_spin_chip_conservation_check` could tell us a game's chips did not add up.
+It could not tell us whether the ENGINE also believed the wrong number, and
+that distinction turned out to be the entire diagnosis.
+
+**Two very different failures were arriving under one alert:**
+
+|                         | what it means                                                                                                                                   | is it repairable         |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| **lost final write**    | the engine's own last hand ends on the RIGHT total; `tournament_players` holds a different one. The play was correct, only the record is wrong. | yes, from `hand_history` |
+| **chips moved in play** | the engine's own last hand AGREES with the wrong total. Chips were really created or destroyed at the table and the engine never knew.          | no - this is the bug     |
+
+**Nothing repairs the first kind.** During a tournament the next hand's
+settlement rewrites both copies of the chip count, so mid-play divergence is
+self-correcting - observed healing in under a minute. A COMPLETED tournament
+has no next hand, so a bad final write is permanent. And
+`fn_reconcile_tournament_denormals`, which runs every minute and sounds like it
+would cover this, does not touch chips at all: it reconciles `table_id`,
+`seat_number`, stakes strings and `current_players`.
+
+**What the classification found.** Of the 12 drifted games in the five hours
+after the `creditSeatStacks` mint fix: **2 lost final writes, 10 chips moved in
+play**. All ten of the second kind started between 00:31 and 00:41 on
+2026-09-01, straddling a 39-second board-wide dealing gap at 00:40:18 - an
+engine restart. Games in flight across that restart came out wrong **15.8%** of
+the time against **0.2%** for everything else, over 980 games. Filed as issue
+#2406.
+
+**A theory this ruled out.** The obvious explanation was that the abandoned
+hand's pot is destroyed at the process boundary: `checkCrashRecovery` marks the
+incomplete hand complete and players "retain their last-known stacks". It is
+not that. Measured against live snapshots, `table_seats.stack` is the PRE-hand
+stack - `db_stack - snapshot_stack` equals `totalInvested` exactly on every seat
+sampled - so chips committed to a pot are still counted in the stored stack, and
+refunding them would MINT chips rather than conserve them.
+
+Working all of that out took hand-written queries against `hand_history`.
+Nobody reading an alert at 3am should have to repeat it, so the check now does
+it: for each of the (at most 20) sampled games it compares the stack sum in the
+tournament's own last hand against both the expected total and the stored
+total, and reports `lost_final_write`, `chips_moved_in_play` and
+`classification_unclear` in the message and the context. Cost is bounded by the
+sample cap, not by how bad the hour was.
+
+`tests/config/chipGuardClassifiesTheDrift.test.ts` pins the comparison, the
+three-way split, the sample bound and the read-only shape. Dropping the
+`hand_history` join - the tempting "it's expensive" simplification - turns the
+alert back into "something is wrong somewhere" and turns this test red.
+
+CLAUDE.md 10.5 - no `is_horse` filter, no `p_include_horses`.
+
 ## Cowork session 2026-09-01 - A LOGGED-IN BROWSER COULD RUN A LEDGER REPAIR
 
 `fn_ca_repair_write_failure` is SECURITY DEFINER, VOLATILE, and was executable
@@ -35,7 +121,6 @@ Verified after applying: `[telemetry-exposure] no unscoped operator routine is
 reachable from a browser.`
 
 ---
-
 
 ## Cowork session 2026-08-31 - THE SWEEP DEADLOCKED ITSELF INTO DOING NOTHING (Spins audit, phase 7)
 

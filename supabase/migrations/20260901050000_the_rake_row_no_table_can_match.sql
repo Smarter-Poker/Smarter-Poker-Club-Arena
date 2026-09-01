@@ -1,5 +1,5 @@
 -- ═══════════════════════════════════════════════════════════════════════════
--- THE RAKE ROW NO TABLE CAN MATCH — delete ca_rake_schedule (sb 5, bb 5)
+-- THE RAKE ROW NO TABLE CAN MATCH - delete ca_rake_schedule (sb 5, bb 5)
 -- ═══════════════════════════════════════════════════════════════════════════
 --
 -- WHAT IT IS. public.ca_rake_schedule carried a row (sb = 5, bb = 5,
@@ -15,7 +15,7 @@
 --     cannot be created, so the row can never be read for a real table.
 --   * Zero live tables at 5/5, and zero hands have ever been priced by it.
 --   * src/config/blindsPresets.ts offers no 5/5 preset.
---   * It sorted out of order in the source array, between 2/5 and 3/6 — the
+--   * It sorted out of order in the source array, between 2/5 and 3/6 - the
 --     tell that it was a typo entered by big blind (2/5, then 5/5 where 5/10
 --     belongs, then 3/6).
 --
@@ -26,7 +26,7 @@
 -- (server/src/config/RakeConfig.ts) requires an exact sb/bb match, so no live
 -- table's price moves. The only difference is hypothetical:
 -- fn_effective_rake_cap(5, 5) returned 7.50 from this row and will now return
--- 8.00 from the 'mid' tier — a question no table can pose.
+-- 8.00 from the 'mid' tier - a question no table can pose.
 --
 -- LANDED WITH the same row removed from both source copies in the same commit,
 -- because scripts/ci/check-rake-schedule-parity.mjs is blocking and compares
@@ -37,7 +37,7 @@
 -- IDEMPOTENT: the DELETE is a no-op on a second run, and the CHECK constraint
 -- is added only if it is not already there.
 --
--- ROLLBACK (Tier 3 — this removes a priced row):
+-- ROLLBACK (Tier 3 - this removes a priced row):
 --   ALTER TABLE public.ca_rake_schedule
 --     DROP CONSTRAINT IF EXISTS ca_rake_schedule_bb_exceeds_sb;
 --   INSERT INTO public.ca_rake_schedule (sb, bb, rake_percent, rake_cap, bbj_fee_bb, source)
@@ -54,7 +54,7 @@ DELETE FROM public.ca_rake_schedule WHERE sb = 5 AND bb = 5;
 -- so on its own the DELETE above could be silently undone by anyone replaying
 -- that file out of order. This constraint makes that impossible: a re-seed
 -- carrying the 5/5 row now FAILS LOUDLY instead of resurrecting a stake no
--- table can have. A clean ordered replay is unaffected — 20260831140000 runs
+-- table can have. A clean ordered replay is unaffected - 20260831140000 runs
 -- and inserts before this file exists, and this file then deletes and locks.
 DO $$
 BEGIN

@@ -3,12 +3,12 @@
 -- Applied 2026-08-31 20:54:08 UTC on kuklfnapbkmacvwxktbh.
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- ROUND-2 BUILD-OUT, PHASE 2 — WATCHDOG DEPTH
+-- ROUND-2 BUILD-OUT, PHASE 2 - WATCHDOG DEPTH
 -- ═══════════════════════════════════════════════════════════════════════════
 -- A. Ticket money flows declare their categories (issue = ticket_issue into
 --    escrow; redeem = ticket_redeem out of escrow; cancel = escrow_release
 --    back to the issuer). The ticket system is dormant today (0 tickets in
---    7 days) — this makes its first real use land ledgered, not as suspense.
+--    7 days) - this makes its first real use land ledgered, not as suspense.
 -- B. Ticket VALUE conservation joins the 30-minute correctness sweep: every
 --    redeemed/cancelled ticket must have exactly one matching credit receipt
 --    of exactly the ticket's value.
@@ -22,7 +22,7 @@
 --    news is the one push worth sending.
 -- E. Legacy-fallback alarm: once the engine's atomic hand settlement is
 --    adopted (≥50% of settling hands claiming), any hour where claims cover
---    <90% of hands raises a warning — adoption cannot silently rot back to
+--    <90% of hands raises a warning - adoption cannot silently rot back to
 --    the unsafe path.
 
 -- ── A. ticket GUCs (anchored dynamic patches) ────────────────────────────

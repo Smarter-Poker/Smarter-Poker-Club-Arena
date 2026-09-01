@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  DRIFT INCIDENTS PAGE — Ops Dashboard for Financial Drift Incidents
+ *  DRIFT INCIDENTS PAGE - Ops Dashboard for Financial Drift Incidents
  * ═══════════════════════════════════════════════════════════════════════════════
  * Lists drift incidents from fn_ca_incident_dashboard with the 20-minute
  * resolution-target countdown, expected vs actual amounts, auto-repair status,

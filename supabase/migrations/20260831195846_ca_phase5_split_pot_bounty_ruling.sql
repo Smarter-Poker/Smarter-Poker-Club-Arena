@@ -1,3 +1,3 @@
--- ca_phase5_split_pot_bounty_ruling (prod 20260831195846). Canonical body lives in prod schema_migrations —
+-- ca_phase5_split_pot_bounty_ruling (prod 20260831195846). Canonical body lives in prod schema_migrations -
 -- replace this marker byte-exact via scripts/dev/export-applied-migrations.sh.
 -- Phase 5 ruling: tied pots split the bounty by claim weight (cents, largest remainder, conserving); fn_collect_bounty(p_claimants jsonb).

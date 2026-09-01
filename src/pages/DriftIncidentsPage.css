@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
-   DRIFT INCIDENTS PAGE — Styles
+   DRIFT INCIDENTS PAGE - Styles
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .drift-incidents-page {
@@ -8,7 +8,7 @@
   padding: 24px 16px;
   width: 100%;
   box-sizing: border-box;
-  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+  /* clip, not hidden - see src/styles/design-system.css on body. `hidden` on
      one axis computes the other to `auto`, which makes this a scroll container,
      and WebKit then resolves the fixed ClubBottomNav against IT instead of the
      viewport. */
@@ -644,7 +644,7 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   RESPONSIVE — Mobile (375px first)
+   RESPONSIVE - Mobile (375px first)
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 @media (max-width: 480px) {

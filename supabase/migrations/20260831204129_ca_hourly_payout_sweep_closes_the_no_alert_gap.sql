@@ -5,7 +5,7 @@
 -- Audit follow-through (winner-prize family): a failed winner credit is
 -- repaired within a minute WHEN the engine managed to file its alert (the
 -- auto-repair tick redrives per incident). If the engine dies before
--- alerting, the only net was the DAILY 02:40 payout sweep — up to a 24h
+-- alerting, the only net was the DAILY 02:40 payout sweep - up to a 24h
 -- wait to be made whole. The sweep took 600s before the 15:51 ANALYZE fix
 -- and 14.8s after, so an hourly narrow sweep (7-day lookback, small budget)
 -- is affordable and shrinks the worst case from 24 hours to one.

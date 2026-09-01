@@ -2,22 +2,22 @@
 -- copy briefly lacked the inner NOT EXISTS race guard in fn_bbj_repair_unbanked;
 -- 20260831185841 restored it 25s later. This file carries the final (guarded) text.
 -- ═══════════════════════════════════════════════════════════════════════════
--- ZERO-DRIFT PHASE 2 OF 5 — DRAIN THE SUSPENSE FLOW
+-- ZERO-DRIFT PHASE 2 OF 5 - DRAIN THE SUSPENSE FLOW
 -- ═══════════════════════════════════════════════════════════════════════════
 -- The four remaining top producers of 'adjustment'/settlement_suspense rows
 -- learn to declare their ledger category + counterparty via the transaction-
 -- local GUC contract, so the auto-journal writes correctly-classified rows
 -- instead of suspense plugs:
---   1. fn_spin_settle_game      — spin_entry / spin_prize vs prize_liability
+--   1. fn_spin_settle_game      - spin_entry / spin_prize vs prize_liability
 --                                 (entity = tournament); seed repayment as one
 --                                 clean treasury_transfer row (destination leg
 --                                 autoskipped: single-posting).
---   2. fn_settle_tournament_rake — rake vs prize_liability (entity=tournament).
---   3. fn_apply_prize_guarantee  — overlay vs prize_liability.
---   4. fn_bbj_repair_unbanked    — bbj_contribution vs table_stack.
+--   2. fn_settle_tournament_rake - rake vs prize_liability (entity=tournament).
+--   3. fn_apply_prize_guarantee  - overlay vs prize_liability.
+--   4. fn_bbj_repair_unbanked    - bbj_contribution vs table_stack.
 -- Function headers preserve their live DEFAULTs exactly (42P13 guard).
 -- Bodies are the live production definitions with ONLY the ZERO-DRIFT
--- set_config blocks added — no behavior change to money math.
+-- set_config blocks added - no behavior change to money math.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 -- ───────────────────────────────────────────────────────────────────────────

@@ -1,3 +1,3 @@
--- ca_phase1_fix_rpc_drift_regex (prod 20260831160616). Canonical body lives in prod schema_migrations —
+-- ca_phase1_fix_rpc_drift_regex (prod 20260831160616). Canonical body lives in prod schema_migrations -
 -- replace this marker byte-exact via scripts/dev/export-applied-migrations.sh.
--- Phase 1 fixup: \b is BACKSPACE in Postgres regex — \y is the word boundary; registry reseeded (190 fns).
+-- Phase 1 fixup: \b is BACKSPACE in Postgres regex - \y is the word boundary; registry reseeded (190 fns).

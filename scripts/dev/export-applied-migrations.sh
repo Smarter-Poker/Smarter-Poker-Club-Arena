@@ -13,7 +13,7 @@ while read -r v n; do
   if [ -e "$f" ]; then continue; fi
   # a phase placeholder file may exist under the same stamp with our naming
   if ls "supabase/migrations/${v}_"*.sql >/dev/null 2>&1; then
-    echo "note: ${v} has a placeholder file — replacing with canonical export" >&2
+    echo "note: ${v} has a placeholder file - replacing with canonical export" >&2
     rm -f "supabase/migrations/${v}_"*.sql
   fi
   psql "$DATABASE_URL" -At -c "
@@ -21,4 +21,4 @@ while read -r v n; do
     where version='${v}'" > "$f"
   echo "exported $f"
 done
-echo "done — review with git status, then commit."
+echo "done - review with git status, then commit."

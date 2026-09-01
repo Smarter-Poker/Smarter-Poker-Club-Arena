@@ -2,7 +2,7 @@
 -- SECOND path. Besides atomic_table_cashout (guarded 19:29), the engine's
 -- seat-exit service also calls atomic_credit_wallet_and_log(user, stack,
 -- 'cashout', ..., table_id), which credited tournament play-chip stacks to
--- club_members as real chips — rows kept flowing 19:33–19:39 and were caught
+-- club_members as real chips - rows kept flowing 19:33-19:39 and were caught
 -- by the phase-5 final verification sweep. Same guard: a 'cashout' credit
 -- referencing a tournament-attached table is blocked, raises the deduped
 -- tourney-cashout-blocked incident, and returns true (handled, nothing

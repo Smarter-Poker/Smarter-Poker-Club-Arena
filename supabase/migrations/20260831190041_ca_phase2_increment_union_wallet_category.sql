@@ -1,7 +1,7 @@
 -- ZERO-DRIFT phase 2 (prod 2026-08-31 19:00:41 UTC): increment_union_wallet
 -- is the last bare producer of suspense inflow to union rake wallets (the
 -- engine banks spin rake by calling it directly with no notes/club_id). It
--- now self-declares category 'rake' vs table_stack — but ONLY when the
+-- now self-declares category 'rake' vs table_stack - but ONLY when the
 -- calling transaction has not already set richer GUC context
 -- (fn_settle_tournament_rake sets rake vs prize_liability + tournament
 -- entity before calling; that must survive). No signature or money-math

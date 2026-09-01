@@ -1,4 +1,4 @@
--- CASHIER PHASE 3 — ROSTER, LEDGER, AND BATCH PERFORMANCE (2026-08-31)
+-- CASHIER PHASE 3 - ROSTER, LEDGER, AND BATCH PERFORMANCE (2026-08-31)
 --
 -- 1. The browser can paint the first authoritative roster page immediately and
 --    continue with an ordered keyset cursor. OFFSET made every later page walk

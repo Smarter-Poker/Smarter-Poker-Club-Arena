@@ -3,8 +3,8 @@
 -- Applied 2026-08-31 20:50:21 UTC on kuklfnapbkmacvwxktbh.
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- ROUND-2 BUILD-OUT, PHASE 1 — THE ALARMS THAT WATCH THE ALARMS
--- (retry: cron.job is not directly updatable — reschedule via cron.alter_job)
+-- ROUND-2 BUILD-OUT, PHASE 1 - THE ALARMS THAT WATCH THE ALARMS
+-- (retry: cron.job is not directly updatable - reschedule via cron.alter_job)
 -- 1. RECIPIENT LOCKDOWN: financial pushes go to Dan's account (kingfish) and
 --    NOBODY else, ever. Other seeded rows deactivated; the resolver becomes
 --    registry-only (the dynamic club/union-owner fan-out is gone).

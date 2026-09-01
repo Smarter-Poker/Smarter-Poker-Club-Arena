@@ -1,6 +1,6 @@
 -- ZERO-DRIFT phase 3 fixup (prod): fn_union_settle_player_pnl passed v_ca_id
 -- (uuid) positionally into fn_ca_raise_drift_incident's p_settlement_id
--- (text) — no implicit uuid->text cast exists for call resolution, so the
+-- (text) - no implicit uuid->text cast exists for call resolution, so the
 -- failure handler itself would have failed. Fixed to v_ca_id::text; the
 -- settlement claim id now rides as p_entity_id. Idempotent.
 DO $$

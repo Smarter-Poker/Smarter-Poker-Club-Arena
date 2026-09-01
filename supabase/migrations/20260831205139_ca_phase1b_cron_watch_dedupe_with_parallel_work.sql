@@ -4,7 +4,7 @@
 
 -- Phase 1b fixup: a parallel session shipped fn_ca_cron_health(interval
 -- DEFAULT ...) (a reporting function) minutes before phase 1b shipped
--- fn_ca_cron_health() (an incident raiser) — the zero-arg call is now
+-- fn_ca_cron_health() (an incident raiser) - the zero-arg call is now
 -- ambiguous, which would also have broken my new cron on its first tick.
 -- Mine renames to fn_ca_cron_failure_watch; theirs keeps the name.
 DROP FUNCTION IF EXISTS public.fn_ca_cron_health();

@@ -2,7 +2,7 @@
 -- re-apply of fn_bbj_repair_unbanked accidentally dropped the inner
 -- WHERE NOT EXISTS race guard on the bbj_contributions insert (the outer
 -- query filters too, but the inner guard is what protects two concurrent
--- runs — the 15-min cron and the repair tick — from double-banking the same
+-- runs - the 15-min cron and the repair tick - from double-banking the same
 -- hand). Restore it. Everything else identical.
 --
 -- The full guarded function text is identical to the one in

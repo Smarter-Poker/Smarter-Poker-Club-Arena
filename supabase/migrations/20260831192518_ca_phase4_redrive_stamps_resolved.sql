@@ -1,3 +1,3 @@
--- ca_phase4_redrive_stamps_resolved (prod 20260831192518). Canonical body lives in prod schema_migrations —
+-- ca_phase4_redrive_stamps_resolved (prod 20260831192518). Canonical body lives in prod schema_migrations -
 -- replace this marker byte-exact via scripts/dev/export-applied-migrations.sh.
 -- Phase 4: fn_redrive_unbanked_rake stamps resolved_at; banked queue rows were rescanned forever.

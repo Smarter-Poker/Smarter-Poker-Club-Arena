@@ -1,4 +1,4 @@
--- ZERO-DRIFT PHASE 4 — STOP THE TOURNAMENT-TABLE CASHOUT MINT
+-- ZERO-DRIFT PHASE 4 - STOP THE TOURNAMENT-TABLE CASHOUT MINT
 -- (prod 2026-08-31 19:33 UTC; canonical body in prod schema_migrations)
 -- Caught by the phase-1 supply monitor, root-caused via the ledger: the
 -- engine calls atomic_table_cashout for HORSE seats on TOURNAMENT-ATTACHED

@@ -3,7 +3,7 @@
 -- Applied 2026-08-31 20:23:38 UTC on kuklfnapbkmacvwxktbh.
 
 -- SIGNAL-NOT-NOISE part 2: an INFO incident is a dashboard metric by
--- definition — its RAISE must not push either (the round-2 policy silenced
+-- definition - its RAISE must not push either (the round-2 policy silenced
 -- info escalations but the initial 🚨 still went out; verified by sim:
 -- info raise produced 3 pushes). Criticals and warnings keep their single
 -- raise push (storm-capped as before).

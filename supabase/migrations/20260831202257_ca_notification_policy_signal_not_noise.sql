@@ -3,26 +3,26 @@
 -- Applied 2026-08-31 20:22:57 UTC on kuklfnapbkmacvwxktbh.
 
 -- ═══════════════════════════════════════════════════════════════════════════
--- ZERO-DRIFT — SIGNAL, NOT NOISE (push-policy overhaul, 2026-08-31 20:2x UTC)
+-- ZERO-DRIFT - SIGNAL, NOT NOISE (push-policy overhaul, 2026-08-31 20:2x UTC)
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Dan received a push every other minute tonight. Alert-by-alert audit of
 -- everything sent in the last 90 minutes found FIVE distinct sources; every
 -- one is fixed here or already fixed:
 --   1. Per-table blocked-mint raises (900/2000/600/...): one engine bug, one
 --      incident per TABLE. Already consolidated to one per day (20:10); now
---      also severity INFO — the guard makes each attempt harmless (zero
+--      also severity INFO - the guard makes each attempt harmless (zero
 --      chips move), the dashboard still counts every attempt, and the engine
 --      fix is queued. No pushes for a blocked non-event.
 --   2. ⏱ 5-min updates + 🟠 past-target repeats for WARNINGS: warnings now
---      get their ONE raise push and nothing further — the dashboard keeps
+--      get their ONE raise push and nothing further - the dashboard keeps
 --      the clock; only criticals get the escalation drumbeat.
 --   3. ✅ Resolved x111 (a bulk resolve pushed once per incident per
 --      recipient): resolution pushes now go out for CRITICALS only.
 --   4. Supply criticals (355K/577K): the pre-guard tournament-mint tail
---      inside those snapshot windows — root-caused and resolved; the 21:05
+--      inside those snapshot windows - root-caused and resolved; the 21:05
 --      snapshot verifies the guard held.
 --   5. Frozen-pool criticals (490,750 / 979,900 "a money path is writing to
---      the dead public.wallets pool"): FALSE ALARM with a real lesson —
+--      the dead public.wallets pool"): FALSE ALARM with a real lesson -
 --      certification/test accounts (no club membership) route their harness
 --      chips through public.wallets via the no-club fallback, and the
 --      certification cleanup deletes those rows again. The frozen pool the

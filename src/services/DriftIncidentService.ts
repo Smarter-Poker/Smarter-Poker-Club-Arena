@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  DRIFT INCIDENT SERVICE — Financial Drift Incident Dashboard + Actions
+ *  DRIFT INCIDENT SERVICE - Financial Drift Incident Dashboard + Actions
  * ═══════════════════════════════════════════════════════════════════════════════
  * Client wrapper around the SECURITY DEFINER incident RPCs:
  *   - fn_ca_incident_dashboard(p_status, p_limit)  -> SETOF jsonb incidents
@@ -270,7 +270,7 @@ export const DriftIncidentService = {
 
   /**
    * Perform a workflow action on an incident. Never throws on a server-side
-   * refusal — the RPC's {ok:false, reason} comes back for the UI to show.
+   * refusal - the RPC's {ok:false, reason} comes back for the UI to show.
    */
   async act(
     incidentId: string,

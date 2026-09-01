@@ -1,4 +1,4 @@
--- ZERO-DRIFT PHASE 3B–F — SETTLEMENT CORRECTNESS CHECKS
+-- ZERO-DRIFT PHASE 3B-F - SETTLEMENT CORRECTNESS CHECKS
 -- (prod: ca_zero_drift_phase3_settlement_correctness +
 --  ca_phase3_correctness_check_classifications fixup, 2026-08-31 ~19:12 UTC;
 --  this mirror carries the corrected classifications inline:

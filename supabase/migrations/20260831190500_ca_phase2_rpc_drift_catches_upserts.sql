@@ -1,5 +1,5 @@
 -- ZERO-DRIFT phase 2 (prod 2026-08-31 ~19:05 UTC): the money-RPC drift
--- detector matched only 'UPDATE <money table>' and missed upsert writers —
+-- detector matched only 'UPDATE <money table>' and missed upsert writers -
 -- increment_union_wallet (INSERT INTO union_wallets ... ON CONFLICT DO
 -- UPDATE) slipped the net. Widen the scan to INSERT INTO <money table> as
 -- well, then grandfather the existing upsert writers it now sees (each

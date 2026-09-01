@@ -7,15 +7,15 @@
 -- the worst game's winner ("co captain", +106,398 play chips above entries)
 -- is the same horse whose 826,398.96 REAL-chip cashout the mint guard
 -- blocked. Play-chip mint fed the real-chip mint through the tournament-
--- table cashout path — which is now guarded on both RPCs (zero real chips
+-- table cashout path - which is now guarded on both RPCs (zero real chips
 -- since 19:41). What remains is an ENGINE play-chip bug (281 games minted
 -- 363,800 play chips in 6h; 16 destroyed 14,395) with NO remaining
 -- real-money path: prizes pay from prize_pool, not stacks, and stacks can
 -- no longer cash out. So:
 --   • the check files 'info' (dashboard metric) instead of 'critical'
---     while the engine bug is open — no hourly paging for a quarantined bug;
+--     while the engine bug is open - no hourly paging for a quarantined bug;
 --   • the Midway burn-in gate gains check #12: play-chip conservation must
---     be CLEAN over the burn-in window — the reopen decision still sees it
+--     be CLEAN over the burn-in window - the reopen decision still sees it
 --     at full strength.
 DO $$
 DECLARE v_def text; v_new text; r record;
@@ -52,7 +52,7 @@ BEGIN
 END $$;
 
 -- Resolve tonight's open critical with the causal narrative; the underlying
--- financial_alert stays UNRESOLVED on purpose — the check's own dedupe
+-- financial_alert stays UNRESOLVED on purpose - the check's own dedupe
 -- (unresolved same-verdict alert) suppresses hourly re-raises while the
 -- engine bug persists.
 SELECT public.fn_ca_incident_action(i.id, 'resolve',

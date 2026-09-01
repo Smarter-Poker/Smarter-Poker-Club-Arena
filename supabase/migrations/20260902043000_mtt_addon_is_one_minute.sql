@@ -9,13 +9,16 @@ COMMENT ON COLUMN public.tournaments.addon_period_ends_at IS
 -- Preserve the audited money implementation and put the new clock gate in
 -- front of it. This avoids duplicating its wallet locks, idempotency, stack
 -- update, no-rake calculation, and prize-pool accounting.
-ALTER FUNCTION public.process_tournament_rebuy(uuid, uuid, text, numeric, numeric, integer)
+-- Only an ADD-ON demands a live seat inside that implementation.
+-- A rebuy cannot resurrect a settled result. The wrapper deliberately
+-- preserves that rule while the elimination decision is open.
+ALTER FUNCTION public.process_tournament_rebuy(uuid, uuid, text, numeric, numeric, integer, text)
   RENAME TO process_tournament_rebuy_before_one_minute_addon;
 
 -- The renamed implementation is an internal primitive. Leaving its inherited
 -- authenticated grant in place would let a client bypass the new clock gate.
 REVOKE ALL ON FUNCTION public.process_tournament_rebuy_before_one_minute_addon(
-  uuid, uuid, text, numeric, numeric, integer
+  uuid, uuid, text, numeric, numeric, integer, text
 ) FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE FUNCTION public.process_tournament_rebuy(
@@ -24,7 +27,8 @@ CREATE FUNCTION public.process_tournament_rebuy(
   p_rebuy_type text,
   p_cost numeric,
   p_chips numeric,
-  p_current_level integer DEFAULT NULL
+  p_current_level integer DEFAULT NULL,
+  p_client_token text DEFAULT NULL
 ) RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -59,12 +63,13 @@ BEGIN
   END IF;
 
   RETURN public.process_tournament_rebuy_before_one_minute_addon(
-    p_tournament_id, p_user_id, p_rebuy_type, p_cost, p_chips, p_current_level
+    p_tournament_id, p_user_id, p_rebuy_type, p_cost, p_chips, p_current_level,
+    p_client_token
   );
 END;
 $fn$;
 
-REVOKE ALL ON FUNCTION public.process_tournament_rebuy(uuid, uuid, text, numeric, numeric, integer)
+REVOKE ALL ON FUNCTION public.process_tournament_rebuy(uuid, uuid, text, numeric, numeric, integer, text)
   FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.process_tournament_rebuy(uuid, uuid, text, numeric, numeric, integer)
+GRANT EXECUTE ON FUNCTION public.process_tournament_rebuy(uuid, uuid, text, numeric, numeric, integer, text)
   TO authenticated, service_role;

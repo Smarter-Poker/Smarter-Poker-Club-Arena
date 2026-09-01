@@ -1239,6 +1239,29 @@ export class HorseLogic {
     let raises = 0;
     let limpers = 0;
     let callers = 0;
+    /**
+     * ═══ THE SQUEEZE COULD NOT BE SEEN (2026-09-01) ═══
+     *
+     * `callers` is reset by every raise, which is right for "how many people
+     * have called THE CURRENT bet". But V18's squeeze test asked
+     * `raises === 2 && callers >= 1`, and a squeeze is by definition
+     * open -> call -> 3-BET: the 3-bet that creates the shape is the very
+     * raise that zeroes the counter. At the moment the opener is asked to
+     * respond, `callers` is always 0, so `squeezed` was UNSATISFIABLE in the
+     * exact spot it was written for.
+     *
+     * It shipped 2026-08-26 and has never fired. The league said so from the
+     * first run and nobody read it: `v18_squeeze_response` returns
+     * 0.00 bb/100 with a stderr of 0.00 over 12,000 hands - not a small
+     * effect, an IDENTICAL one, because the two arms play the same because
+     * the flag never turns on. (The daily audit now flags that shape as
+     * `league_matchup_inert`; this is the first bug it caught.)
+     *
+     * Saving the count before the reset is all that was needed: at the
+     * instant the 3-bet lands, this holds the number of players who had
+     * called the OPEN - which is the squeeze condition, stated correctly.
+     */
+    let callersOfPreviousRaise = 0;
     let lastRaiserSeat = -1;
     for (const a of history) {
       /**
@@ -1269,6 +1292,7 @@ export class HorseLogic {
         (a.action === 'all_in' && a.isFullRaise !== undefined);
       if (isAggr) {
         raises++;
+        callersOfPreviousRaise = callers; // the squeeze shape, before the reset
         callers = 0; // callers-of-THE-raise reset when a new raise lands
         lastRaiserSeat = a.seat;
       } else if (a.action === 'call' || a.action === 'all_in') {
@@ -1581,7 +1605,9 @@ export class HorseLogic {
       squeezed:
         (opts.v18Squeeze ?? true) !== false &&
         raises === 2 &&
-        callers >= 1 &&
+        // Callers of the OPEN, counted before the 3-bet zeroed them. Reading
+        // `callers` here is what made this branch dead code for six days.
+        callersOfPreviousRaise >= 1 &&
         history.length > 0 &&
         (() => {
           for (const a of history) {

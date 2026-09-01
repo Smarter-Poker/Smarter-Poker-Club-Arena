@@ -161,7 +161,12 @@ describe('the consumer prefers the event over live state', () => {
     );
     const at = src.indexOf("case 'PLAYER_ACTION':");
     expect(at).toBeGreaterThan(-1);
-    const body = src.slice(at, at + 4000).replace(/\/\*[\s\S]*?\*\//g, '');
+    // Bounded by the next case rather than by 4,000 bytes. A window that can be
+    // outrun by the body it watches goes green while watching nothing, which is
+    // what tests/unit/noFixedSizeSourceWindows exists to stop.
+    const nextCase = src.indexOf("      case '", at + 1);
+    expect(nextCase).toBeGreaterThan(at);
+    const body = src.slice(at, nextCase).replace(/\/\*[\s\S]*?\*\//g, '');
     expect(body).toContain('event.stage ??');
     // The bare live-state read must not be what feeds the persisted record.
     expect(body).not.toMatch(/const stage = hcState\?\.stage \|\| 'preflop';/);

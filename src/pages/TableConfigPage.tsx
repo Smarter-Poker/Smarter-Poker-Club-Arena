@@ -53,6 +53,7 @@ import WeeklyScheduleEditor, {
   validateWeeklySchedule,
 } from '../components/tournament/WeeklyScheduleEditor';
 import { HelpPopover } from '../components/common/HelpPopover';
+import { getTableState } from '../services/GameServerAPI';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -1606,6 +1607,16 @@ export default function TableConfigPage() {
         clubId: clubId || undefined,
         table: data,
       });
+      // A durable row is only half of "Create And Start". Force the same
+      // authenticated engine wake that reconnects use and refuse to navigate
+      // to a dead felt. The state endpoint now adopts an eligible empty cash
+      // table on demand, so this also verifies Supabase -> engine wiring.
+      const engineState = await getTableState(data.id);
+      if (!engineState) {
+        throw new Error(
+          'Table Was Saved, But The Table Engine Did Not Connect. Please Try Start Again.'
+        );
+      }
       toast.success('Table created and started!');
       navigate(`/table/${data.id}`);
     } catch (error) {

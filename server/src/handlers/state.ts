@@ -16,6 +16,7 @@ import { authorizeTableViewer } from '../services/TableViewerAccess.js';
 
 export interface StateDeps {
   gameServer: {
+    ensureCashTableEngine?(tableId: string): Promise<boolean>;
     getTableEngine(tableId: string):
       | {
           getPlayerActions(userId: string): unknown;
@@ -40,6 +41,9 @@ export async function handleGetActions(
   // Use authenticated userId, ignore URL param to prevent info leakage
   const userId = auth.userId;
 
+  if (!deps.gameServer.getTableEngine(tableId) && deps.gameServer.ensureCashTableEngine) {
+    await deps.gameServer.ensureCashTableEngine(tableId);
+  }
   const engine = deps.gameServer.getTableEngine(tableId);
   if (!engine) {
     return sendJSON(res, 404, { canAct: false, error: 'Table engine not found' });
@@ -84,6 +88,9 @@ export async function handleGetState(
     });
   }
 
+  if (!deps.gameServer.getTableEngine(tableId) && deps.gameServer.ensureCashTableEngine) {
+    await deps.gameServer.ensureCashTableEngine(tableId);
+  }
   const engine = deps.gameServer.getTableEngine(tableId);
   if (!engine) {
     return sendJSON(res, 404, { success: false, error: 'Table engine not found' });

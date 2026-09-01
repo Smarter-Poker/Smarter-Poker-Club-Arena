@@ -2452,6 +2452,9 @@ export abstract class TournamentManagerBase {
       // restart mid-add-on doesn't re-broadcast ADDON_PERIOD_START or skip
       // finalizeAfterAddOn forever (they previously reset to defaults).
       this.addOnPeriodTriggered = !!tournament.addon_period_triggered;
+      if (this.addOnPeriodTriggered && !this.prizePoolFinalized) {
+        this.scheduleAddOnPeriodEnd(tournament.addon_period_ends_at);
+      }
       // Initialize broadcast channel on resume
       this.broadcastChannel = null;
       this.broadcastReady = false;
@@ -4532,10 +4535,19 @@ export abstract class TournamentManagerBase {
     // TOURNEY-AUDIT 2026-07-24: persist the flag so a restart mid-add-on
     // restores it (resume() reads addon_period_triggered) instead of
     // re-broadcasting ADDON_PERIOD_START and losing finalizeAfterAddOn.
+    const addonPeriodEndsAt = new Date(Date.now() + 60_000).toISOString();
+    if (this.tournamentCache) {
+      this.tournamentCache.addon_period_started_at = new Date().toISOString();
+      this.tournamentCache.addon_period_ends_at = addonPeriodEndsAt;
+    }
     void Promise.resolve(
       supabase
         .from('tournaments')
-        .update({ addon_period_triggered: true })
+        .update({
+          addon_period_triggered: true,
+          addon_period_started_at: new Date().toISOString(),
+          addon_period_ends_at: addonPeriodEndsAt,
+        })
         .eq('id', this.tournamentId)
     )
       .then(({ error }: { error: { message?: string } | null }) => {
@@ -4554,21 +4566,22 @@ export abstract class TournamentManagerBase {
     const addonCost = this.tournamentCache?.addon_cost || this.tournamentCache?.buy_in_amount || 0;
     const addonChips =
       this.tournamentCache?.addon_chips || this.tournamentCache?.starting_chips || 0;
-    const addonLevels = this.tournamentCache?.addon_levels ?? 1;
     const rebuyLevelCap =
       this.tournamentCache?.late_reg_levels ?? this.tournamentCache?.rebuy_levels ?? 8;
 
     console.log(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ON PERIOD START - ${addonLevels} level(s) (Level ${rebuyLevelCap} to ${rebuyLevelCap + addonLevels}), cost: ${addonCost}, chips: ${addonChips}`
+      `[Tournament:${this.tournamentId.slice(0, 8)}] ADD-ON PERIOD START - 60 seconds after level ${rebuyLevelCap}, cost: ${addonCost}, chips: ${addonChips}`
     );
 
-    // Broadcast ADDON_PERIOD_START via Supabase Realtime (no fixed duration — level-based)
+    // The client receives one explicit 60-second offer with the exact price
+    // and chip grant. There is no rake on the purchase.
     await this.broadcast('ADDON_PERIOD_START', {
+      message: 'The Add-On Period Has Begun',
       addOnCost: addonCost,
       addOnChips: addonChips,
-      addonLevels,
-      startLevel: rebuyLevelCap,
-      endLevel: rebuyLevelCap + addonLevels,
+      addOnFee: 0,
+      durationSeconds: 60,
+      endsAt: addonPeriodEndsAt,
     });
 
     // ADD-ON BREAK (2026-08-22 parity): the add-on window opens with a short
@@ -4576,10 +4589,7 @@ export abstract class TournamentManagerBase {
     // tournaments.addon_break_minutes (clamped 1-10 at creation), never a
     // hardcoded value. A synchronized break or hand-for-hand already owns the
     // pause state when active, so this stands down rather than fighting them.
-    const addonBreakMinutes = Math.min(
-      10,
-      Math.max(1, Number(this.tournamentCache?.addon_break_minutes) || 1)
-    );
+    const addonBreakMinutes = 1;
     if (!this.onBreak && !this.handForHandActive) {
       const breakMs = addonBreakMinutes * 60 * 1000;
       for (const engine of this.tableEngines.values()) {
@@ -4614,8 +4624,22 @@ export abstract class TournamentManagerBase {
     // Offer the add-on to the field now that the window is open.
     await this.tryTournamentAddOns();
 
-    // NOTE: Add-on period end is now handled by the level-up handler (finalizeAfterAddOn)
-    // No more hardcoded 60-second timer!
+    this.scheduleAddOnPeriodEnd(addonPeriodEndsAt);
+  }
+
+  /** Close the offer and finalize the pool exactly sixty seconds after it
+   * opens. The persisted end time makes a process restart resume the same
+   * clock instead of granting a new window or leaving it open for a level. */
+  protected scheduleAddOnPeriodEnd(endsAt: string | null | undefined): void {
+    const parsed = Date.parse(String(endsAt || ''));
+    const delay = Number.isFinite(parsed) ? Math.max(0, parsed - Date.now()) : 0;
+    const timer = setTimeout(() => {
+      if (!this.running || this.prizePoolFinalized) return;
+      void this.finalizeAfterAddOn().catch((err) =>
+        reportError(err, 'TournamentManagerBase.addon_period_finalize')
+      );
+    }, delay);
+    if (typeof (timer as any)?.unref === 'function') (timer as any).unref();
   }
 
   /**
@@ -4720,6 +4744,10 @@ export abstract class TournamentManagerBase {
     );
 
     this.prizePoolFinalized = true;
+    await supabase
+      .from('tournaments')
+      .update({ prize_pool_finalized: true })
+      .eq('id', this.tournamentId);
     // GUARANTEE (2026-08-27): same rule as the late-reg-close site — the pool
     // is final now, so the advertised guarantee is FUNDED here (not declared).
     const finalPool = await this.applyPrizeGuarantee('addon_period_end');

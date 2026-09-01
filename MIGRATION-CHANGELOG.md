@@ -2,6 +2,121 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-09-01 - ONE UNPAYABLE PLAYER STOPPED EVERY PAYOUT IN THE PASS
+
+`fn_tournament_payout_sweep` loops over completed tournaments calling
+`fn_tournament_payout_reconcile` on each, and the loop had **no exception
+handler at all**. So one tournament that raises did not get skipped - the
+function aborted, and every top-up the pass had already applied rolled back
+with it.
+
+That stopped being theoretical at 03:52. **Three consecutive hourly runs failed,
+one second into the pass, on three different players:**
+
+```
+03:52  No club wallet resolves ... player 6313dbdb  (dss-087)
+04:52  No club wallet resolves ... player 04910a99  (dss-388)
+05:52  No club wallet resolves ... player 5bb4ca99  (dss-025)
+```
+
+All three are among **417 `dss-*` accounts created in a 19-minute window that
+hold no `club_members` row at all**. The sweep was walking into a fresh one
+every hour and paying nobody in between.
+
+**The money owed to those accounts is synthetic. The collateral was not.** Every
+genuine payout in those three passes was rolled back alongside them, and the
+backlog is real: a completed dry run over 5,000 tournaments found **7 with
+unreconciled payouts totalling 230.15**, against 33,437 candidates matched (so
+the pass is also truncated, which is a separate matter).
+
+The accounts belong to the zero-drift certification work in flight and this
+migration **does not touch them**. What it fixes is the part that turned one bad
+row into a total outage. The sibling sweep has isolated its items since it was
+written, and its comment says why:
+
+```
+EXCEPTION WHEN OTHERS THEN
+  -- Loud, never fatal: one stuck game must not stop the rest being freed.
+```
+
+`fn_tournament_payout_sweep` is the one that pays PLAYERS, and it was the one
+without the handler.
+
+**Loud, not silent.** Failures are counted, the first twenty tournament ids come
+back to the caller in `failed_tournaments`, `first_error` carries the message,
+and a single deduped `financial_alerts` row is raised per pass - one, not one
+per failure, because 417 candidate accounts would otherwise flood the table with
+the same finding. `ok: true` no longer means "nothing raised" when work was
+skipped.
+
+**Verified under the exact conditions that were failing**, in a transaction that
+rolled back: `fn_tournament_payout_sweep(7, true, 400)` - apply mode, the shape
+the cron runs - completed with **scanned=400, failed=5**, capturing the same
+"No club wallet resolves" as its `first_error`. Before the change that call died
+after one tournament.
+
+Nothing about which players get paid, or how much, changes here.
+
+---
+
+
+## Cowork session 2026-09-01 - THE SECOND JOB SCANNING hand_history WHOLE
+
+`fn_ca_settlement_correctness_check()` runs every 30 minutes. Its legacy-fallback
+alarm asks hand_history two questions:
+
+```sql
+SELECT count(*) FROM public.hand_history
+ WHERE created_at > now() - interval '24 hours' AND has_human IS TRUE;
+```
+
+and the same shape again over the last hour. Only `idx_hand_history_created` (a
+bare `created_at`) could serve them, so every run counted its way through every
+hand dealt in 24 hours - roughly **213,000 rows** - looking for the ones with a
+human at the table.
+
+**There are 22 of them.** Human hands are **0.01%** of the board. The other
+99.99% of that scan is horses, read and discarded, twice per run, 48 times a
+day.
+
+The job averaged **66s against a 120s statement timeout** and had already hit it
+(02:30). That is the same trajectory `rake-repair-unbanked-hourly` was on before
+`20260901104500`, and the same fix applies: give the predicate its own index
+rather than asking the planner to filter a full window.
+
+**Measured on production:**
+
+| | before | after |
+| --- | --- | --- |
+| the `count(*)` alone | >60s (client timeout) | **3,438ms** cold, 19ms for the 1h variant |
+| the whole check | 66s average, 120s worst | **56s - unchanged** |
+
+**CORRECTION (same night).** The first version of this entry claimed the whole
+check dropped to 5,383ms. It does not. That number was measured immediately
+after warming the same pages in the same session; the scheduled run starts cold
+and competes with live traffic. Its real cron history is 88s, 120s (failed),
+83s, 63s, 54s before the index and **56s after** - inside the pre-index spread.
+
+What the index actually fixed is the query it targets: 22 rows are no longer
+found by reading 213,000, and a demonstrated timeout source is gone. What it did
+not do is make the job fast. **The human-hand counts were not the dominant cost
+of this function**, and roughly 50 seconds of it remain unaccounted for.
+
+The index is cheap and correct and stays. But this entry should not be read as
+"the settlement check is fixed" - it is not, and the next person on it should
+start from what else `fn_ca_settlement_correctness_check` spends 50 seconds
+doing.
+
+Built `CONCURRENTLY`, with an online `DROP INDEX CONCURRENTLY` rollback recorded
+in the migration.
+
+Two jobs in one night were scanning this table whole for a needle. It is worth
+someone asking which others do - `hand_history` is the largest table in the
+estate and the only index most predicates can reach is a bare `created_at`.
+
+---
+
+
 ## Cowork session 2026-09-01 - A HEALER THAT COULD NOT FINISH
 
 `rake-repair-unbanked-hourly` calls `fn_rake_repair_unbanked(48, 200)`, which

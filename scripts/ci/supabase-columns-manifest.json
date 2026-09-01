@@ -937,6 +937,12 @@
       "reason",
       "recorded_at"
     ],
+    "ca_cert_accounts": [
+      "user_id",
+      "reason",
+      "tagged_at",
+      "active"
+    ],
     "ca_chip_baseline": [
       "club_id",
       "user_id",
@@ -984,6 +990,19 @@
       "stat_date",
       "updated_at"
     ],
+    "ca_collusion_signals": [
+      "id",
+      "detected_at",
+      "window_days",
+      "user_a",
+      "user_b",
+      "hands_together",
+      "gross_flow",
+      "net_flow",
+      "direction_ratio",
+      "both_cert",
+      "detail"
+    ],
     "ca_ddl_events": [
       "id",
       "occurred_at",
@@ -995,6 +1014,17 @@
       "role_name",
       "application_name",
       "query_snippet"
+    ],
+    "ca_diamond_snapshots": [
+      "id",
+      "taken_at",
+      "profile_diamonds",
+      "wallet_diamonds",
+      "cert_diamonds",
+      "total",
+      "journaled_delta",
+      "delta_vs_prev",
+      "unexplained"
     ],
     "ca_drift_incidents": [
       "id",
@@ -1244,6 +1274,13 @@
       "notes",
       "added_at"
     ],
+    "ca_op_claims": [
+      "op_id",
+      "fn_name",
+      "result",
+      "claimed_at",
+      "finalized_at"
+    ],
     "ca_pending_promo_accruals": [
       "id",
       "club_id",
@@ -1339,7 +1376,9 @@
       "burn_since_prev",
       "delta_vs_prev",
       "unexplained",
-      "tournament_liability"
+      "tournament_liability",
+      "leaderboard_liability",
+      "cert_wallets"
     ],
     "ca_treasury_baseline": [
       "club_id",
@@ -5384,6 +5423,15 @@
       "audited_at",
       "created_at",
       "updated_at"
+    ],
+    "hand_discards": [
+      "id",
+      "table_id",
+      "hand_number",
+      "user_id",
+      "seat_number",
+      "discarded_card",
+      "created_at"
     ],
     "hand_histories": [
       "id",

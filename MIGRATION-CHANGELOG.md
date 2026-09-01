@@ -109,6 +109,36 @@ Postgres had granted PUBLIC on creation without anyone asking, which is the
 point. And a planted re-grant in a post-sweep migration file turns the repo pin
 red.
 
+### Postscript, 00:02 UTC: the guard's first real run went red
+
+`fn_ca_browser_reachable_telemetry()` shipped at 23:13. Its first run in CI, 49
+minutes later, failed on a function that did not exist when it was written:
+
+```
+fn_ca_migration_text                     stable    anon + authenticated
+                                         (p_version text)
+```
+
+It returns the full SQL text of any applied migration, by version, to anyone,
+including a visitor with no account. Every migration this platform has run: the
+money paths, the fraud rules, the security fixes, and the comments explaining
+what each one was defending against.
+
+Its own COMMENT, written by the agent who created it, says **"Read-only,
+service_role only."** That is what the author intended and believed. Postgres
+granted EXECUTE to PUBLIC on creation, Supabase published it as an RPC, nobody
+wrote the REVOKE, and it was anon-readable from birth while its own
+documentation said otherwise. It had been built hours earlier in response to
+this session's finding that 428 applied migrations have no file in the repo: a
+good tool, born public.
+
+Closed by `20260901000358_the_guard_caught_one_within_the_hour`. Zero callers
+anywhere; service_role keeps it, asserted by calling it rather than by reading
+its grant.
+
+This is the argument for the guard, made by the estate itself, inside an hour,
+without anybody going looking.
+
 ## Cowork session 2026-08-31 - NOTHING SCHEDULED FAILS SILENTLY (hardening phase 2 of 6)
 
 `sp_upcoming_tournament_pushes` runs every minute. It failed **4,017

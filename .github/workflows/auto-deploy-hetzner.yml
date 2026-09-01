@@ -792,7 +792,10 @@ jobs:
         if: always()
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          TARGET_SHA: ${{ github.sha }}
+          # A manual recovery can name an exact ref_sha. Recording github.sha
+          # here used to tell the watchdog a different commit than the one the
+          # host actually checked out, tagged, and verified.
+          TARGET_SHA: ${{ github.event.inputs.ref_sha || github.sha }}
           SHIPPED: ${{ steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true' && steps.health.outputs.verified == 'true' }}
           RUN_ID: ${{ github.run_id }}
           RUN_ACTOR: ${{ github.event_name }}

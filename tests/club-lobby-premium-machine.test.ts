@@ -87,7 +87,8 @@ describe('responsive premium Club Arena', () => {
     expect(campaign).toBeGreaterThan(allStatuses);
     expect(launch).toBeGreaterThan(campaign);
     expect(games).toBeGreaterThan(launch);
-    expect(PAGE).toContain('noticeEditable && launchTasks.some((task) => !task.complete)');
+    expect(PAGE).toContain('openingChecklistEligible &&');
+    expect(PAGE).toContain('launchTasks.some((task) => !task.complete && !task.skipped)');
   });
 
   it('builds the approved mobile welcome, owner message, identity/jackpot pair, and wallet accordion', () => {
@@ -195,7 +196,7 @@ describe('responsive premium Club Arena', () => {
   });
 
   it('keeps every desktop lobby table inside the premium frame', () => {
-    const desktop = TOP_CSS.slice(TOP_CSS.lastIndexOf('@media (min-width: 901px)'));
+    const desktop = TOP_CSS.slice(TOP_CSS.indexOf('LOCKED CLUB ARENA DESKTOP / MOBILE SHELL'));
     expect(desktop).toMatch(
       /\.lobby-table--all \.lt-col-tstack,[\s\S]*?\.lobby-table--all \.lt-col-format\s*\{[^}]*display:\s*none/s
     );
@@ -204,7 +205,7 @@ describe('responsive premium Club Arena', () => {
   });
 
   it('uses one desktop workspace frame instead of clipped control and campaign frames', () => {
-    const desktop = TOP_CSS.slice(TOP_CSS.lastIndexOf('@media (min-width: 901px)'));
+    const desktop = TOP_CSS.slice(TOP_CSS.indexOf('LOCKED CLUB ARENA DESKTOP / MOBILE SHELL'));
     const machine = desktop.slice(
       desktop.indexOf('.club-lobby-machine {'),
       desktop.indexOf('.club-lobby-command-top {')

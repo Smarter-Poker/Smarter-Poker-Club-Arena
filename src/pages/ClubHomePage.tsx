@@ -32,6 +32,7 @@ import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import ClubLaunchProgress, { type ClubLaunchTask } from '../components/club/ClubLaunchProgress';
 import ClubOpeningWizard from '../components/club/ClubOpeningWizard';
 import { clubOpeningSetupService } from '../services/ClubOpeningSetupService';
+import { hasNewClubOpeningChecklist } from '../utils/clubOpeningEligibility';
 /* LOBBY V2 (Dan 2026-08-22): the large card grid (DynamicGameCard) is replaced
    by the dense line-based LobbyTable + the CasinoPlaque game lobby panel.
    Selecting a row NEVER joins or spends; every commit action goes through the
@@ -242,6 +243,8 @@ interface ClubData {
   hierarchy_threshold_next: number;
   created_at: string;
   is_union: boolean;
+  union_id?: string | null;
+  opening_checklist_started_at?: string | null;
   chip_treasury?: number | null;
   spins_enabled?: boolean | null;
 }
@@ -755,9 +758,15 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [currentUserId, setCurrentUserId] = useState<string | null>(
     () => useUserStore.getState().user?.id ?? null
   );
+  const openingChecklistEligible = hasNewClubOpeningChecklist(club);
   const toast = useToast();
   useEffect(() => {
-    if (!club?.id || !currentUserId || club.owner_id !== currentUserId) {
+    if (
+      !club?.id ||
+      !currentUserId ||
+      club.owner_id !== currentUserId ||
+      !openingChecklistEligible
+    ) {
       setOpeningSetupComplete(false);
       return;
     }
@@ -774,7 +783,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     return () => {
       cancelled = true;
     };
-  }, [club?.id, club?.owner_id, currentUserId]);
+  }, [club?.id, club?.owner_id, currentUserId, openingChecklistEligible]);
   useEffect(() => {
     if (!club?.id || !currentUserId || club.owner_id !== currentUserId) {
       setConfiguredAgentUserId(null);
@@ -869,6 +878,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     setUserRole('player');
     setIsInUnion(false);
     setUnionName(null);
+    setUnionIdForCreate(undefined);
     setDeletingTableId(null);
     setShowOpeningWizard(false);
     setOpeningSetupComplete(false);
@@ -1702,7 +1712,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, slug, description, tagline, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, spins_enabled, created_at, is_union, union_id'
+              'id, club_id, name, slug, description, tagline, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, spins_enabled, created_at, is_union, union_id, opening_checklist_started_at'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -3905,6 +3915,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   /* Staff may edit the club notice. Derived once so the markup, the keyboard
      path and the visibility test cannot drift apart. */
   const noticeEditable = isOwner || isClubStaff(userRole);
+  const unionManagedClub = Boolean(club.is_union || club.union_id || unionIdForCreate);
+  const canCreateClubGames = noticeEditable && !unionManagedClub;
 
   const saveClubNotice = () => {
     const newDesc = noticeDraft.replace(/\s+/g, ' ').trim().slice(0, CLUB_DESCRIPTION_MAX_LENGTH);
@@ -3926,6 +3938,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   };
 
   const openCreationFor = (target: GameType) => {
+    if (!canCreateClubGames) {
+      toast.info('This Club Is Managed By A Union. Create Games From The Union Console.');
+      return;
+    }
     haptic.selection();
     selectGameType(target);
     if (TOURNAMENT_TYPES.includes(target)) {
@@ -4045,6 +4061,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       disabledLabel: 'Owner Required',
     },
   ];
+  const showLaunchChecklist =
+    openingChecklistEligible &&
+    noticeEditable &&
+    launchTasks.some((task) => !task.complete && !task.skipped);
 
   return (
     <div className="club-home">
@@ -4443,7 +4463,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       ═══════════════════════════════════════════════════════════════════ */}
       <section
         className="club-lobby-machine"
-        data-opening-checklist={noticeEditable || undefined}
+        data-opening-checklist={showLaunchChecklist || undefined}
         aria-label={`${club.name} Game Lobby`}
       >
         <ClubLobbyCommandTop
@@ -4707,7 +4727,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           }
         />
 
-        {noticeEditable && launchTasks.some((task) => !task.complete) && (
+        {showLaunchChecklist && (
           <ClubLaunchProgress
             clubName={club.name}
             openingBank={Number(club.chip_treasury) || 0}
@@ -4763,7 +4783,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           filter or a search is actively hiding games — that one is not a
           statistic, it is the explanation for why the list looks short, and
           it carries the one-tap clear. */}
-        {noticeEditable && gameType !== 'ALL' && (
+        {canCreateClubGames && gameType !== 'ALL' && (
           <div className="lobby-resultsbar lobby-resultsbar--create-only">
             <button
               type="button"
@@ -5047,7 +5067,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         onCancel={() => setDeleteTableConfirm({ show: false, tableId: null, tableName: null })}
       />
 
-      {showOpeningWizard && isOwner && club && (
+      {showOpeningWizard && isOwner && club && openingChecklistEligible && (
         <ClubOpeningWizard
           clubId={club.id}
           clubName={club.name}
@@ -5070,7 +5090,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         />
       )}
 
-      {showCreateTournament && (resolvedClubId || club?.id) && (
+      {showCreateTournament && canCreateClubGames && (resolvedClubId || club?.id) && (
         <CreateTournamentModal
           clubId={resolvedClubId || club!.id}
           unionId={unionIdForCreate}

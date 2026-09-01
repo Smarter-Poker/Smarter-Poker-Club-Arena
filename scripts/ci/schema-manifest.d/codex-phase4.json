@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/codex-phase4/audit/deploy-truth-watchdog",
+  "tables": ["ca_engine_deploy_watch_state"]
+}

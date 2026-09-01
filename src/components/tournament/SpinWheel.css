@@ -725,3 +725,23 @@
     animation: none;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   NO DEAD FELT (Dan 2026-09-01, binding): "THERE SHOULD NEVER BE THIS 14
+   SECONDS OR 10 SECONDS OF DEAD ANYTHING ANYWHERE."
+
+   The wheel used to unmount as soon as its own sequence finished and hand
+   back an empty table for the rest of the engine's hold - about fourteen
+   seconds under reduced motion. It now stays up and says what is happening.
+   Deliberately quiet: this is a status line under a result, not a second
+   celebration competing with the one above it.
+   ───────────────────────────────────────────────────────────────────────── */
+.sw__dealing {
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.72);
+  font-variant-numeric: tabular-nums;
+}

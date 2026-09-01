@@ -75,3 +75,4 @@ whichever test the next agent notices first.
 | server/src/tournament/aStalledTournamentIsNoticed.law.test.ts     | A RUNNING tournament that stops dealing is repaired, not left for hours                                                                                          |
 | server/src/tournament/seatFirstStartsOnSeatsNotClocks.law.test.ts | A Spin or a duel starts on seats sold, never on a scheduled time                                                                                                 |
 | server/src/tournament/headsUpIntegrityRulings.law.test.ts         | Dan's 2026-09-01 heads-up rulings: no RIT/insurance in tournaments, all-in hands survive a disconnect, no pause at two players, duel detection stays signal-only |
+| tests/no-dead-felt.law.test.ts                                    | A wait the player can see is filled: the Spin wheel holds the felt until the engine deals and says how long is left (Dan 2026-09-01)                             |

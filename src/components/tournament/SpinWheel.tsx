@@ -47,6 +47,7 @@ import {
   SPIN_REVEAL,
   spinRevealTotalMs,
   spinPostRevealMs,
+  spinRevealToDealMs,
 } from '../../config/spinSpec';
 import './SpinWheel.css';
 
@@ -391,6 +392,13 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
   /** Index of the currently lit segment; -1 = nothing lit yet. */
   const [litIndex, setLitIndex] = useState(-1);
   const [displayPrize, setDisplayPrize] = useState(0);
+  /**
+   * Seconds until the engine actually deals, shown once the wheel's own
+   * sequence has finished and the felt would otherwise sit empty. See the
+   * NO DEAD FELT block below.
+   */
+  const [dealInSec, setDealInSec] = useState<number | null>(null);
+  const dealTickerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const rafRef = useRef<number | null>(null);
   const onDoneRef = useRef(onDone);
@@ -633,21 +641,73 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
       )
     );
 
-    // ── 4. Fade out, hand the felt back ────────────────────────────────────
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  NO DEAD FELT (Dan, 2026-09-01, binding)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Dan, verbatim: "THERE SHOULD NEVER BE THIS 14 SECONDS OR 10 SECONDS OF
+     * DEAD ANYTHING ANYWHERE."
+     *
+     * What he is describing was measured. Under reduced motion this sequence
+     * collapses to about 2.4 seconds (lead-in 0, countdown 200ms, chase 400ms,
+     * result 1800ms) while the engine holds the deal for spinRevealToDealMs()
+     * regardless. The wheel therefore unmounted and handed back an EMPTY table
+     * with zero-chip seats and nothing on screen explaining the wait, for about
+     * fourteen seconds. The same gap opens, smaller, for a fast animation-speed
+     * setting, and it opens fully for a client that joins late.
+     *
+     * So the felt is not handed back until the engine is ready to use it, and
+     * the result card stays up with a live "Dealing In N" while it waits.
+     * Speeding the ANIMATION up is a preference and is still honoured; being
+     * shown nothing is not a preference, it is an empty screen.
+     *
+     * Nothing is slowed down: the exit is the LATER of this component's own
+     * sequence and the moment the engine deals, so a wheel already running to
+     * full length is untouched.
+     *
+     * CLAUDE.md 10.6 - reduced motion collapses MOTION, never MEANING. The
+     * countdown carries duration, so it is marked data-motion="keep".
+     */
+    const ownEndMs = leadInMs + countdownMs + chaseMs + (reduced ? 1800 : RESULT_MS) * speed;
+    /* When the engine will deal. Derived from the shared clock and the spec
+       rather than from `revealDeadlineMs`, which the fallback path does not
+       set - so this holds even for a client the socket never reached. */
+    const sequenceStartMs = sharedClock ? revealAt : Date.now() - elapsed;
+    const dealAtMs = sharedClock ? revealAt + spinRevealToDealMs() : sequenceStartMs + ownEndMs;
+
+    /* One ticker for the whole wait. It shows nothing until this component's
+       own sequence is done, then counts the remaining seconds down. */
+    const dealTicker = setInterval(() => {
+      const remainingMs = dealAtMs - Date.now();
+      const ownDone = Date.now() - sequenceStartMs >= ownEndMs;
+      setDealInSec(ownDone && remainingMs > 0 ? Math.ceil(remainingMs / 1000) : null);
+    }, 250);
+
     timers.push(
       setTimeout(
         () => {
+          clearInterval(dealTicker);
+          dealTickerRef.current = null;
+          setDealInSec(null);
           setPhase('idle');
           onDoneRef.current();
         },
-        at(leadInMs + countdownMs + chaseMs + (reduced ? 1800 : RESULT_MS) * speed)
+        Math.max(at(ownEndMs), dealAtMs - Date.now())
       )
     );
+    dealTickerRef.current = dealTicker;
 
     timersRef.current = timers;
     return () => {
       timersRef.current.forEach(clearTimeout);
       timersRef.current = [];
+      /* An interval is not a timeout: clearTimeout does not reliably stop one
+         outside a browser, so it gets its own handle and its own clear. */
+      if (dealTickerRef.current !== null) {
+        clearInterval(dealTickerRef.current);
+        dealTickerRef.current = null;
+      }
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
@@ -924,6 +984,15 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
                 and a 10x stops getting none. */}
             {celebration.label && (
               <div className={`sw__hype sw__hype--${celebration.band}`}>{celebration.label}</div>
+            )}
+
+            {/* NO DEAD FELT: the wheel never hands back an empty table. While
+                the engine finishes its hold the player is told what is
+                happening rather than shown nothing. */}
+            {dealInSec !== null && (
+              <div className="sw__dealing" data-motion="keep" aria-hidden="true">
+                Dealing In {dealInSec}
+              </div>
             )}
           </div>
         )}

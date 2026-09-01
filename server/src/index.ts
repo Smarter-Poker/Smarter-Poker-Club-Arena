@@ -344,6 +344,21 @@ httpServer.listen(PORT, () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 let shuttingDown = false;
+/**
+ * The shutdown budget, in one place, because the three numbers involved only
+ * make sense relative to each other:
+ *
+ *   docker stop -t 45   Docker's grace before SIGKILL   (server/scripts/engine-up.sh)
+ *   SHUTDOWN_CAP_MS 40s everything below must finish inside this
+ *   DRAIN_BUDGET_MS 28s of that, spent parking tables at a hand boundary
+ *                       leaving 12s for the state flush and 5s of margin
+ *
+ * Raising the drain past the cap, or the cap past the grace, converts a clean
+ * shutdown into a SIGKILL mid-flush. Change them together or not at all.
+ */
+const DRAIN_BUDGET_MS = 28_000;
+const SHUTDOWN_CAP_MS = 40_000;
+
 const shutdown = async () => {
   if (shuttingDown) return;
   shuttingDown = true;
@@ -375,14 +390,40 @@ const shutdown = async () => {
       // parks a table at the END of its current hand, and a hand on this
       // platform runs ~20s, so an 8s budget expired with most tables still
       // mid-hand — the drain logged "budget expired, stopping anyway" and
-      // stopped them, which is the voided hand it exists to prevent. The
-      // container gets `docker stop -t 45` of grace (server/scripts/
-      // engine-up.sh), so 18s of drain inside a 30s race leaves 12s for the
-      // state flush and still finishes 15s before Docker would SIGKILL.
+      // stopped them, which is the voided hand it exists to prevent.
+      //
+      // 2026-09-01: BUDGET RAISED 18s -> 28s, and the outer cap 30s -> 40s.
+      //
+      // 18 seconds was still short, and this time the estimate above is the
+      // reason. "~20s" was a guess; measured over 41,269 real hands in a
+      // three-hour window the distribution is:
+      //
+      //     p50 17.2s   p90 48.2s   p99 98.2s
+      //     47.2% of hands run longer than 18s
+      //     23.8% longer than 30s
+      //     11.6% longer than 45s
+      //
+      // So the drain was expiring on roughly HALF the tables it was meant to
+      // park, on every restart. That is not a subtle failure and it shows up
+      // in the data: chip drift on games in flight across a deploy restart
+      // runs at 8.05% against a 1.50% baseline (issue #2406).
+      //
+      // The ceiling is not the 45s of `docker stop -t 45` (server/scripts/
+      // engine-up.sh) — it is the 40s outer race below, which must finish
+      // before Docker's SIGKILL. 28s of drain leaves 12s for the state flush
+      // (the same 12s the 18s budget left) and still stops 5s clear of the
+      // grace. That lifts the share of hands the drain can actually save from
+      // 52.8% to about 74%.
+      //
+      // Getting past ~74% means raising `docker stop -t 45` itself, which is a
+      // deploy-script change with its own 180s lock margin to think about, so
+      // it is deliberately not bundled in here. The numbers above are what
+      // that decision needs.
+      //
       // The drain returns EARLY the moment every table has parked, so a quiet
       // fleet pays nothing for the larger budget.
       try {
-        await gameServer.drainHands(18000);
+        await gameServer.drainHands(DRAIN_BUDGET_MS);
       } catch (err) {
         console.error('[GameServer] drain failed, stopping anyway:', err);
       }
@@ -390,7 +431,7 @@ const shutdown = async () => {
       // reads from the last few minutes survive the restart.
       await Promise.allSettled([gameServer.stop(), channelWs.close(), stopHorseMindPersistence()]);
     })(),
-    new Promise((r) => setTimeout(r, 30_000)),
+    new Promise((r) => setTimeout(r, SHUTDOWN_CAP_MS)),
   ]);
   process.exit(0);
 };

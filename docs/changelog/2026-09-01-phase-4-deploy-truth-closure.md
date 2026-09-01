@@ -42,10 +42,13 @@ row is operational watchdog state.
   resolved it when a fresh leader heartbeat appeared. The drill rolled back.
 - Migration `20260902103000` is applied and its stored statement is byte-exact
   with this repository file (MD5 `b7542b248d5e8abb52b147c6b4a9d4df`).
-- The live cron is `ca-engine-deploy-truth-1m`; its first observed tick
-  succeeded. Live state showed one leader, 125 table leases, a current
-  heartbeat, no missing-engine timestamp, and no open deploy-truth alert.
+- The live cron is `ca-engine-deploy-truth-1m`; six consecutive observed ticks
+  succeeded. Live state showed one leader, a current heartbeat, no
+  missing-engine timestamp, and no open deploy-truth alert.
 - Anonymous and authenticated roles cannot read the private state table, and
   anonymous callers cannot execute the watcher.
 - Focused deploy, publication, stale-code, manifest, and watchdog coverage:
-  50 tests passed. TypeScript passed with zero errors.
+  50 tests passed. After merging current main, the full client suite passed
+  801 files and 11,083 tests; the full engine suite passed 1,205 files and
+  3,459 tests. TypeScript passed with zero errors, and the production build
+  completed with `behind-main=0`.

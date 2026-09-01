@@ -53,7 +53,7 @@ import {
 } from '../components/lobby/lobbyEntries';
 import { tournamentService } from '../services/TournamentService';
 import { tableService } from '../services/TableService';
-import { getClubLevel, ClubLevelInfo } from '../utils/clubLevels';
+import { getClubLevelInfoFromMembers, ClubLevelInfo } from '../utils/clubLevels';
 import { useToast } from '../components/common/Toast';
 import { applyClubScope, inClubScope, type ClubScope } from '../utils/clubScope';
 import { waitlistService } from '../services/WaitlistService';
@@ -1952,7 +1952,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          members does this club have - rather than how many of them this viewer
          is allowed to enumerate. */
       const liveMemberCountPromise = supabase
-        .rpc('fn_get_club_member_count', { p_club_id: resolvedId })
+        .rpc('fn_get_club_realtime_member_count', { p_club_id: resolvedId })
         .then(
           (r) => r,
           (error) => ({ data: null, error })
@@ -2145,13 +2145,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           cacheUnion(ucRow.union_id);
 
           // Get ALL club IDs in this union + member count in parallel
-          const [allUcResult, memberCountResult, unionResult] = await Promise.all([
+          const [allUcResult, memberCountResult] = await Promise.all([
             supabase.from('union_clubs').select('club_id').eq('union_id', unionId),
             // A CLUB's own count. Unions re-query below. Same RPC as the
             // standalone path above, for the same two reasons: a direct count
             // is RLS-filtered (0 for a non-member) and ~370x slower.
-            supabase.rpc('fn_get_club_member_count', { p_club_id: resolvedId }),
-            supabase.from('unions').select('name').eq('id', unionId).maybeSingle(),
+            supabase.rpc('fn_get_club_realtime_member_count', { p_club_id: resolvedId }),
           ]);
 
           // Do NOT throw on allUcResult or memberCountResult error.
@@ -2214,7 +2213,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                the RPC returns one row per club and a player in two clubs is two
                memberships, which is what unions.member_count holds. */
             const { data: perClub, error: perClubErr } = await supabase.rpc(
-              'fn_batch_club_member_counts',
+              'fn_batch_club_realtime_member_counts',
               {
                 p_club_ids: unionClubIds,
               }
@@ -2513,82 +2512,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          nothing - the club level below is derived server-side from the
          hierarchy thresholds on the club row. */
 
-      // Auto-recompute club level if stuck at default (1 or null)
-      // The RPC updates clubs.level in-place and returns VOID,
-      // so we re-read the level column after calling it.
-      // Session dedup: only fire the RPC once per session per club to avoid waste
-      let effectiveLevel = clubData.level || 1;
-      const levelRecomputeKey = `level_recomputed_${resolvedId}`;
-      /* Safari private mode and a sandboxed frame THROW on storage access
-         rather than returning null (the four cache helpers at the top of this
-         file all say so and all wrap). These two did not, and the throw landed
-         in the outer catch - which fires a red error toast over a lobby whose
-         tables and tournaments had already been set two hundred lines above. */
-      const levelRecomputeDone = (() => {
-        try {
-          return sessionStorage.getItem(levelRecomputeKey) != null;
-        } catch {
-          return false;
-        }
-      })();
-      if (effectiveLevel <= 1 && !levelRecomputeDone) {
-        try {
-          // Trigger server-side recompute (updates clubs.level in DB)
-          const { error: rpcErr } = await supabase.rpc('recompute_club_levels', {
-            p_club_id: resolvedId,
-          });
-          if (!rpcErr) {
-            try {
-              sessionStorage.setItem(levelRecomputeKey, '1');
-            } catch {
-              /* Dedupe is an optimisation; losing it costs one extra RPC. */
-            }
-            // Re-read the updated level from DB
-            const { data: refreshedClub, error: levelReadErr } = await supabase
-              .from('clubs')
-              .select(
-                'level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
-              )
-              .eq('id', resolvedId)
-              .maybeSingle();
-            // ROUND 9 (2026-08-29): a failed re-read left the badge at level 1
-            // with no trace - the recompute RPC had just SUCCEEDED, so the DB
-            // holds the real level and only this display missed it.
-            if (levelReadErr) {
-              reportError(levelReadErr, 'ClubHomePage.level_reread_failed', {
-                clubId: resolvedId,
-              });
-            }
-            if (refreshedClub && refreshedClub.level > 1) {
-              effectiveLevel = refreshedClub.level;
-              // Also update threshold values for accurate progress bar
-              clubData.hierarchy_units_rounded_up =
-                refreshedClub.hierarchy_units_rounded_up ?? clubData.hierarchy_units_rounded_up;
-              clubData.player_threshold_current =
-                refreshedClub.player_threshold_current ?? clubData.player_threshold_current;
-              clubData.player_threshold_next =
-                refreshedClub.player_threshold_next ?? clubData.player_threshold_next;
-              clubData.hierarchy_threshold_current =
-                refreshedClub.hierarchy_threshold_current ?? clubData.hierarchy_threshold_current;
-              clubData.hierarchy_threshold_next =
-                refreshedClub.hierarchy_threshold_next ?? clubData.hierarchy_threshold_next;
-            }
-          }
-        } catch (e) {
-          reportError(e, 'ClubHomePage');
-          // RPC not available — use default level
-        }
-      }
-
-      const levelInfo = getClubLevel({
-        level: effectiveLevel,
-        playerCount: clubData.member_count || 0,
-        hierarchyUnits: clubData.hierarchy_units_rounded_up || 0,
-        playerThresholdCurrent: clubData.player_threshold_current || 0,
-        playerThresholdNext: clubData.player_threshold_next || 0,
-        hierarchyThresholdCurrent: clubData.hierarchy_threshold_current || 0,
-        hierarchyThresholdNext: clubData.hierarchy_threshold_next || 0,
-      });
+      // Club Level Is A Pure Member-Count Fact. Never call the legacy dual-axis
+      // recompute here: that formula can level up a one-member club from its
+      // owner/admin hierarchy and produce a false celebration.
+      const levelInfo = getClubLevelInfoFromMembers(clubData.member_count || 0);
       if (getIsMounted && !getIsMounted()) return;
 
       /* Level-up celebration, decided OUTSIDE the updater.
@@ -4752,7 +4679,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           }
         />
 
-        {noticeEditable && totalGameCount === 0 && (
+        {noticeEditable && launchTasks.some((task) => !task.complete) && (
           <ClubLaunchProgress
             clubName={club.name}
             openingBank={Number(club.chip_treasury) || 0}

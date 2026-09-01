@@ -23,7 +23,21 @@ describe('club lobby creation controls', () => {
   });
 
   it('keeps the desktop selector deck sticky and mobile controls inside the approved chassis', () => {
-    const desktop = commandCss.slice(commandCss.lastIndexOf('@media (min-width: 901px)'));
+    /* FIND THE BLOCK BY THE RULE IT OWNS, NOT BY BEING LAST (2026-09-01).
+       This used to slice from `lastIndexOf('@media (min-width: 901px)')`, which
+       is a guess about file order rather than a statement about the deck lock.
+       The campaign-bay fix appended a SECOND desktop block below this one and
+       the pin went red while `display: contents` had not moved a character.
+       Anchoring on `.club-lobby-machine > .club-lobby-command-top` asserts the
+       same three declarations about the block that actually declares them, so
+       appending another desktop block cannot make this lie in either
+       direction. */
+    const deckAnchor = commandCss.indexOf('.club-lobby-machine > .club-lobby-command-top {');
+    expect(deckAnchor).toBeGreaterThan(-1);
+    const deckOpen = commandCss.lastIndexOf('@media (min-width: 901px)', deckAnchor);
+    expect(deckOpen).toBeGreaterThan(-1);
+    const deckEnd = commandCss.indexOf('@media', deckOpen + 1);
+    const desktop = commandCss.slice(deckOpen, deckEnd === -1 ? undefined : deckEnd);
     expect(desktop).toContain('display: contents');
     expect(desktop).toContain('position: sticky');
     expect(desktop).toContain('top: 0');

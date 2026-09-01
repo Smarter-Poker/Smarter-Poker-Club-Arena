@@ -22,12 +22,13 @@ walked `src/` and stopped. Pointing it at `server/src` found thirteen live
 strings, and the interesting part is which ones.
 
 Twelve of them are the BBJ qualifying rules in `server/src/config/RakeConfig.ts`
+
 - the body text of the Bad Beat Jackpot panel. The client renders that panel
-from its OWN copy of the same table in `src/config/RakeConfig.ts`, and the two
-files are meant to mirror each other. The client's copy had been Title Cased
-by the gate months ago. The server's had not, because nothing looked. They had
-drifted apart, and the drift was invisible **precisely because a gate was
-passing**:
+  from its OWN copy of the same table in `src/config/RakeConfig.ts`, and the two
+  files are meant to mirror each other. The client's copy had been Title Cased
+  by the gate months ago. The server's had not, because nothing looked. They had
+  drifted apart, and the drift was invisible **precisely because a gate was
+  passing**:
 
 ```
 client   'Full House (Aces Full Of Jacks) Or Better Must LOSE To Quads Or Straight Flush'
@@ -55,15 +56,15 @@ which toasts it verbatim. Nothing was reading that surface.
 **120 public functions were serving banned dash characters to players.** A
 sample of what production was actually saying while all five gates reported OK:
 
-| Function | Copy |
-|---|---|
-| `check_username_with_suggestions` | "Username must be 3-20 characters ..." (en dash), callable by `anon` - this is the signup screen |
-| `claim_social_profile` | "Your profile row is missing - refresh and try again." |
-| `process_tournament_rebuy` | "No live seat for this % - refusing to charge for chips ..." |
-| `fn_cancel_cashout` | "Cashout cancelled - chips returned" |
-| `redeem_referral_code` | "Referral reward - new player joined with your code" |
-| `fn_mint_club_chips` | "Chip Mint is revoked for clubs in a union - ..." |
-| `fn_notify_home_rsvp`, `fn_send_home_game_reminders` | push notification titles and bodies |
+| Function                                             | Copy                                                                                             |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `check_username_with_suggestions`                    | "Username must be 3-20 characters ..." (en dash), callable by `anon` - this is the signup screen |
+| `claim_social_profile`                               | "Your profile row is missing - refresh and try again."                                           |
+| `process_tournament_rebuy`                           | "No live seat for this % - refusing to charge for chips ..."                                     |
+| `fn_cancel_cashout`                                  | "Cashout cancelled - chips returned"                                                             |
+| `redeem_referral_code`                               | "Referral reward - new player joined with your code"                                             |
+| `fn_mint_club_chips`                                 | "Chip Mint is revoked for clubs in a union - ..."                                                |
+| `fn_notify_home_rsvp`, `fn_send_home_game_reminders` | push notification titles and bodies                                                              |
 
 This is the Phase 3 insurance finding wearing a different hat: a green gate is
 evidence about the gate, not about the product.
@@ -164,8 +165,9 @@ underneath that green. They surfaced only because an unrelated PR happened to
 touch `tests/`, the one thing that makes the client suite run.
 
 That is defensible on its own terms - the pull request already tested that tree
+
 - but a squash merge builds a tree NO pull request ever tested whenever main
-moved in between, which is most merges here. Two fixes:
+  moved in between, which is most merges here. Two fixes:
 
 - a **daily scheduled run against main** with no change detection, which is the
   only thing in that file able to answer "is the branch we deploy from actually

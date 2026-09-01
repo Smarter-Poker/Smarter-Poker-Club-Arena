@@ -4,16 +4,16 @@
 
 Applied via Supabase MCP, mirrored byte-exactly in `supabase/migrations/`:
 
-| Version | Name | Contents |
-|---------|------|----------|
-| 20260831142753 | ca_incident_core | incidents, events (append-only), recipients, raise/notify/escalate/action/dashboard fns, reconcile-log + financial-alerts wiring, escalation cron |
-| 20260831143501 | ca_ledger_hardening | chip_ledger full-record columns, widened account/category vocab, exact-scale, append-only on 5 journals, checksum enrichment + verifier, epochs, account registry, suspense view |
-| 20260831144023 | ca_full_ledger_coverage_fn | generic auto-ledger writer (+ trigger attaches, applied as separate short transactions to avoid deadlocking live traffic) |
-| 20260831144351 | ca_ledger_guc_plumbing_rake_bbj_horse | rake/BBJ/horse RPCs declare categories + autoskip |
-| 20260831144826 | ca_leak_fixes | promo_apply_playthrough lockdown+precision, rebuy seat guard, fn_credit_chips precision, bbj promo payout → club promo + idempotency, log_wallet_transaction balance fix |
-| 20260831144915 | ca_ledger_categories_addon_cashout_transfer | category GUCs |
-| 20260831145042 | ca_ledger_categories_buyin_credit | category GUCs (buy-in + shared credit path) |
-| 20260831145242 | ca_quick_reconcile_and_settlements | settlement state machine, supply snapshots, quick-reconcile, auto-repair tick, 4 crons |
+| Version        | Name                                        | Contents                                                                                                                                                                         |
+| -------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 20260831142753 | ca_incident_core                            | incidents, events (append-only), recipients, raise/notify/escalate/action/dashboard fns, reconcile-log + financial-alerts wiring, escalation cron                                |
+| 20260831143501 | ca_ledger_hardening                         | chip_ledger full-record columns, widened account/category vocab, exact-scale, append-only on 5 journals, checksum enrichment + verifier, epochs, account registry, suspense view |
+| 20260831144023 | ca_full_ledger_coverage_fn                  | generic auto-ledger writer (+ trigger attaches, applied as separate short transactions to avoid deadlocking live traffic)                                                        |
+| 20260831144351 | ca_ledger_guc_plumbing_rake_bbj_horse       | rake/BBJ/horse RPCs declare categories + autoskip                                                                                                                                |
+| 20260831144826 | ca_leak_fixes                               | promo_apply_playthrough lockdown+precision, rebuy seat guard, fn_credit_chips precision, bbj promo payout → club promo + idempotency, log_wallet_transaction balance fix         |
+| 20260831144915 | ca_ledger_categories_addon_cashout_transfer | category GUCs                                                                                                                                                                    |
+| 20260831145042 | ca_ledger_categories_buyin_credit           | category GUCs (buy-in + shared credit path)                                                                                                                                      |
+| 20260831145242 | ca_quick_reconcile_and_settlements          | settlement state machine, supply snapshots, quick-reconcile, auto-repair tick, 4 crons                                                                                           |
 
 Deployment notes: two DDL attempts deadlocked against live traffic (40P01) - resolved by
 grouping hot-table DDL, `SET LOCAL lock_timeout`, and applying trigger attaches as separate
@@ -138,7 +138,7 @@ Applied and verified live (`20260831154012` … `20260831154426` + grant revokes
   normalized to a string in the service (rendering an object as a React child crashes); the page
   gained Auto-Repairing and Unclassified-Flow-Today stat cards fed by `fn_ca_drift_metrics()`.
   The three dashboard files typecheck clean (permissive stubs; the repo's strict `TypeScript
-  Check` gate does the final pass on PR).
+Check` gate does the final pass on PR).
 
 Live incident-board state at close: zero open incidents; 30 resolved today, every one with a
 recorded root cause; the day's real finds (12 winner-prize credit failures during the DDL lock

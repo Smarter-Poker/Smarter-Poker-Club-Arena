@@ -898,6 +898,49 @@ describe('LAW: a Crazy Pineapple discard is seen and heard', () => {
     expect(SEAT_TSX).not.toMatch(/lastAction === 'fold' \|\| lastAction === 'discard'/);
   });
 
+  it('the discarded card never travels on anything a table can hear', () => {
+    // PHASE 4 2026-09-01. The replay can now show you the card you threw, and
+    // this is the pin that keeps it YOURS. The handoff for this phase said to
+    // persist it in hand_history; hand_history_authenticated_select lets any
+    // player who was in a hand read the WHOLE row, so that would have
+    // published every player's discard to every opponent, permanently.
+    //
+    // It goes to hand_discards instead, behind auth.uid() = user_id, carried
+    // there by an event the hub never sees - the same split CARDS_DEALT uses.
+    const hc = read('server/src/engine/HandController.ts');
+    expect(hc).toContain("type: 'PINEAPPLE_DISCARDED'");
+    const events = read('server/src/engine/ServerTableEngineHandEvents.ts');
+    // Anchored INSIDE the arm, not on the `case` label: the label sits before
+    // the arm's own brace, so walking up from it lands on the whole switch.
+    const arm = sliceEnclosingBlock(events, 'await this.persistDiscardedCard(', 0, 1);
+    // The whole point: this arm persists, and it does NOT broadcast.
+    expect(arm).toContain('persistDiscardedCard');
+    expect(arm).not.toContain('emitEvent');
+    // And the public action event still carries nothing card-shaped.
+    const dealing = read('server/src/engine/ServerTableEngineDealing.ts');
+    expect(dealing).toContain("from('hand_discards')");
+    // The client asks Postgres for the discard without naming a user, because
+    // the policy is what filters. A viewer id here would be a filter that can
+    // be got wrong; there is none, and there must not be one.
+    const svc = read('src/services/HandHistoryService.ts');
+    const fetcher = sliceMethod(svc, 'private async fetchOwnDiscards(');
+    expect(fetcher).toContain("from('hand_discards')");
+    expect(fetcher).not.toMatch(/auth\.getUser|requestingUserId|currentUserId/);
+  });
+
+  it('the felt names the game the engine actually deals', () => {
+    // The `pineapple` variant has always run CRAZY Pineapple - the discard
+    // comes after the flop. Plain Pineapple discards before it, which is a
+    // different game. Every surface a player READS says so now; the variant
+    // KEY stays `pineapple`, because it is in millions of hand_history rows
+    // and ~120 live table rows and renaming a key to fix a label is an outage.
+    expect(read('src/utils/handFormat.ts')).toContain("return 'Crazy Pineapple'");
+    expect(read('src/components/lobby/lobbyEntries.ts')).toContain("long: 'Crazy Pineapple'");
+    expect(read('src/lib/constants.ts')).toContain("PINEAPPLE: 'Crazy Pineapple'");
+    // The key is untouched wherever it is a key.
+    expect(read('src/lib/holeCardCount.ts')).toMatch(/\bpineapple: 3\b/);
+  });
+
   it('nothing about the discard can be switched off', () => {
     // §10.6: no new toggle may disable an animation or its cue. The only
     // control is --animation-speed, asserted above.

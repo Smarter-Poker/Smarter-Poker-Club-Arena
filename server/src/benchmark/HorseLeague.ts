@@ -667,6 +667,28 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   { name: 'shortdeck_v17', variant: 'short_deck', pairs: 6000, a: {}, b: { v17ShortDeck: false } },
   // ── V18 (2026-08-26) ──
   { name: 'v18_squeeze_response', pairs: 6000, a: {}, b: { v18Squeeze: false } },
+  // ── V29-V33 (2026-09-01) ── THE SOLVER STACK HAD NO ABLATION MATCHUP AT
+  // ALL. V29/V30/V31/V32 shipped between 08-29 and 08-30, they short-circuit
+  // the mature V15-V23 layers on every spot they answer, and nothing on the
+  // card could say whether that trade was positive. Their gates need heads-up
+  // hold'em with the betting lead, so they are dealt at seats: 2 - the same
+  // shape hu_mind_layer uses.
+  { name: 'v29_gto_flop', seats: 2, pairs: 6000, a: {}, b: { v29GtoFlop: false } },
+  { name: 'v30_gto_turn_river', seats: 2, pairs: 6000, a: {}, b: { v30GtoTurnRiver: false } },
+  { name: 'v31_gto_suit_aware', seats: 2, pairs: 6000, a: {}, b: { v31GtoSuitAware: false } },
+  { name: 'v32_facing_defense', seats: 2, pairs: 6000, a: {}, b: { v32FacingDefense: false } },
+  // The depth ceiling only changes a decision ABOVE it, so dealing this at
+  // the standard 100bb would measure exactly nothing and report 0.00 +/- 0.00
+  // forever - the inert-matchup shape the audit now flags. 400bb is past
+  // GTO_MAX_DEPTH_BB (300), which is the only place the flag has an effect.
+  {
+    name: 'v33_depth_ceiling_400bb',
+    seats: 2,
+    stackBB: 400,
+    pairs: 6000,
+    a: {},
+    b: { v33DepthCeiling: false },
+  },
   { name: 'v18_self_image', pairs: 6000, a: {}, b: { v18SelfImage: false } },
   { name: 'v18_exploit_size', pairs: 6000, a: {}, b: { v18ExploitSize: false } },
   // 2026-08-27: the bet-ratio scale repair. There is no "off" for a fixed

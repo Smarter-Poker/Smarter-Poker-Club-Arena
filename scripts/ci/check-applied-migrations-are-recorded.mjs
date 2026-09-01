@@ -43,6 +43,7 @@
  * Exit: 0 clean (or gaps found without --fail) · 1 gaps found with --fail · 2 script error
  */
 import { readdirSync, existsSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
 import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
 
@@ -67,16 +68,30 @@ const SINCE = argValue('--since', defaultSince());
 const URL_BASE = process.env.SUPABASE_URL;
 const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-if (!URL_BASE || !KEY) {
-  console.error(
-    'check-applied-migrations-are-recorded: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.'
-  );
-  process.exit(2);
-}
+/**
+ * THE PRECONDITIONS BELONG TO THE RUN, NOT TO THE IMPORT (2026-09-01).
+ *
+ * These two checks used to sit at module scope and call process.exit(2) there.
+ * That is correct for the script and fatal for anything that wants to READ it:
+ * a test importing the pure halves below never gets past the import, because a
+ * missing SUPABASE_URL kills the process before the first assertion. Moved into
+ * requireEnvironment(), which main() calls first, so the behaviour of running
+ * the script is identical and the file can also be opened.
+ */
+function requireEnvironment() {
+  if (!URL_BASE || !KEY) {
+    console.error(
+      'check-applied-migrations-are-recorded: set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.'
+    );
+    process.exit(2);
+  }
 
-if (!existsSync(DIR)) {
-  console.error(`check-applied-migrations-are-recorded: ${DIR} not found - run from the repo root.`);
-  process.exit(2);
+  if (!existsSync(DIR)) {
+    console.error(
+      `check-applied-migrations-are-recorded: ${DIR} not found - run from the repo root.`
+    );
+    process.exit(2);
+  }
 }
 
 /**
@@ -94,12 +109,41 @@ if (!existsSync(DIR)) {
  * an exact version match counts too. Naming is policed by
  * check-new-migration-version-collisions.mjs, not here.
  */
-function repoIndex() {
+/**
+ * THE DATE PREFIX BELONGS TO THE FILE, SOMETIMES TO THE NAME, AND SOMETIMES TO
+ * BOTH (2026-09-01).
+ *
+ * The regex below strips a leading stamp off the FILE to get its name. But the
+ * applied migration's own `name` is whatever the author typed, and a great many
+ * of them typed the date into it: production holds an applied migration called
+ * `20260825_perf_rakeback_stats_batch_set_based`, and the file recording it is
+ * `20260825_perf_rakeback_stats_batch_set_based.sql`. Stripping one side and
+ * not the other made those two different strings, and this check reported a
+ * file that is sitting right there as missing.
+ *
+ * Measured 2026-09-01 before the fix: of 426 applied migrations reported as
+ * unrecorded, 87 -- one in five -- had a file whose name contained the applied
+ * name exactly. An alarm that is wrong a fifth of the time is an alarm people
+ * learn to scroll past, and the 339 real gaps underneath it are the ones that
+ * matter.
+ *
+ * Both sides are normalised now: a file is indexed under its stem AND under
+ * that stem with the stamp removed, and an applied name is looked up as given
+ * AND with its own leading stamp removed. Matching a name to a file carrying a
+ * different stamp is already this check's stated philosophy - the name is the
+ * key, the stamp is not - so this only completes it.
+ */
+const withoutStamp = (s) => s.replace(/^\d+[_-]/, '');
+
+export function indexFrom(files) {
   const versions = new Set();
   const names = new Set();
-  for (const f of readdirSync(DIR)) {
+  for (const f of files) {
     if (!f.endsWith('.sql')) continue;
-    const m = /^(\d+)[_-]?(.*)\.sql$/.exec(f);
+    const stem = f.slice(0, -'.sql'.length);
+    // The whole stem, for an applied name that carries its own date.
+    names.add(stem.toLowerCase());
+    const m = /^(\d+)[_-]?(.*)$/.exec(stem);
     if (!m) continue;
     versions.add(m[1]);
     if (m[2]) names.add(m[2].toLowerCase());
@@ -107,10 +151,17 @@ function repoIndex() {
   return { versions, names };
 }
 
-function recordedBy(index, migration) {
+function repoIndex() {
+  return indexFrom(readdirSync(DIR));
+}
+
+export function recordedBy(index, migration) {
   if (index.versions.has(migration.version)) return true;
   const name = String(migration.name || '').toLowerCase();
-  return name.length > 0 && index.names.has(name);
+  if (name.length === 0) return false;
+  if (index.names.has(name)) return true;
+  const bare = withoutStamp(name);
+  return bare.length > 0 && index.names.has(bare);
 }
 
 async function appliedMigrations() {
@@ -130,6 +181,7 @@ async function appliedMigrations() {
 }
 
 async function main() {
+  requireEnvironment();
   const applied = await appliedMigrations();
   const index = repoIndex();
   const missing = applied.filter((m) => !recordedBy(index, m));
@@ -158,7 +210,11 @@ async function main() {
   if (missing.length > 0 && FAIL_ON_GAP) process.exit(1);
 }
 
-main().catch((err) => {
-  console.error('check-applied-migrations-are-recorded failed:', err.message);
-  process.exit(2);
-});
+/* Guarded so a test can import indexFrom/recordedBy without this script
+   reaching for production. Same idiom as check-definer-authorization.mjs. */
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => {
+    console.error('check-applied-migrations-are-recorded failed:', err.message);
+    process.exit(2);
+  });
+}

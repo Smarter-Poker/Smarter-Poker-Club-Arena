@@ -95,6 +95,12 @@ function ActionRow({
         {row.shownCards?.map((c, i) => (
           <CardImage key={`s-${row.key}-${i}`} card={c} size="xs" />
         ))}
+        {/* PHASE 4 2026-09-01: the card you threw, on your own discard row.
+            Only ever present for the viewer - `hand_discards` is read through
+            an RLS policy that returns nothing but the caller's own rows, so
+            this cannot draw an opponent's discard even if the model asked it
+            to. Drawn face UP because it is yours and you already chose it. */}
+        {row.discardedCard && <CardImage key={`d-${row.key}`} card={row.discardedCard} size="xs" />}
       </span>
 
       <span className={`hdv__amt${row.amount < 0 ? ' is-return' : ''}`}>

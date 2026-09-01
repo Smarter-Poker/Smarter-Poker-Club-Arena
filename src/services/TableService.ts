@@ -243,44 +243,12 @@ class TableService {
   }
 
   /**
-   * Close a table — refunds every seated player and closes it, atomically.
-   *
-   * AUDIT M17: this used to call `force_close_table_and_refund` and, when that
-   * failed, fall back to closing the table and then crediting each player in a
-   * client-side loop. Both halves were dead.
-   * `force_close_table_and_refund` takes THREE arguments (uuid, uuid, text) and
-   * the client passed one, so the primary path was a signature error before it
-   * was ever a permission error — and it is granted to postgres/service_role
-   * only regardless. In the fallback, every `atomic_credit_wallet_and_log` was
-   * 42501 and the `tables` UPDATE matched zero rows, which PostgREST reports as
-   * success. So the table never closed, nobody was refunded, and the UI said it
-   * worked.
-   *
-   * `fn_admin_close_table` does it all server-side in one transaction: club-admin
-   * check, refund each seat from its ACTUAL stack, vacate the seats, close the
-   * table. Each refund is idempotent on the seat-occupancy row id, so it cannot
-   * double-pay against the engine's own cash-out path.
+   * Compatibility entry point for the legacy operations panel. Closing never
+   * evicts or cashes out seated players: the authoritative command refuses
+   * until every active seat has left through the normal engine-owned path.
    */
   async closeTable(tableId: string): Promise<void> {
-    const { data, error } = await supabase.rpc('fn_admin_close_table', {
-      p_table_id: tableId,
-    });
-
-    if (error) {
-      reportError(error, 'TableService.closeTable', { tableId });
-      throw new Error('Could not close the table');
-    }
-
-    const res = data as { ok: boolean; reason?: string; players_refunded?: number } | null;
-
-    if (!res?.ok) {
-      throw new Error(adminActionReasonText(res?.reason));
-    }
-
-    if ((res.players_refunded ?? 0) > 0) {
-      masterBus.emit('BALANCE_UPDATED', { source: 'table_close_refund' });
-    }
-    masterBus.emit('TABLE_CLOSED', { tableId });
+    await gameManagementService.close('table', tableId);
   }
 
   /**
@@ -633,54 +601,26 @@ class TableService {
   // Admin Operations — Club owner/admin table controls
   // ═══════════════════════════════════════════════════════════════════════════════
 
-  /**
-   * Pause a running table (stops new hands from being dealt)
-   * Uses atomic conditional update — only pauses if currently running/active
-   */
+  /** Pause through the engine so the displayed status matches actual dealing. */
   async pauseTable(tableId: string): Promise<boolean> {
-    const { data: updated, error } = await supabase
-      .from('tables')
-      .update({ status: 'paused', updated_at: new Date().toISOString() })
-      .eq('id', tableId)
-      .in('status', ['running', 'active', 'waiting'])
-      .select('id')
-      .maybeSingle();
-
-    if (error) {
-      reportError(error, 'TableService.pauseTable');
+    try {
+      await gameManagementService.pause(tableId);
+      return true;
+    } catch (error) {
+      reportError(error, 'TableService.pauseTable', { tableId });
       return false;
     }
-    if (!updated) {
-      console.warn('[TableService] Pause conflict - table status already changed');
-      return false;
-    }
-    masterBus.emit('TABLE_UPDATED', { tableId, status: 'paused' });
-    return true;
   }
 
-  /**
-   * Resume a paused table
-   * Uses atomic conditional update — only resumes if currently paused
-   */
+  /** Resume through the engine so play actually restarts. */
   async resumeTable(tableId: string): Promise<boolean> {
-    const { data: updated, error } = await supabase
-      .from('tables')
-      .update({ status: 'running', updated_at: new Date().toISOString() })
-      .eq('id', tableId)
-      .eq('status', 'paused')
-      .select('id')
-      .maybeSingle();
-
-    if (error) {
-      reportError(error, 'TableService.resumeTable');
+    try {
+      await gameManagementService.resume(tableId);
+      return true;
+    } catch (error) {
+      reportError(error, 'TableService.resumeTable', { tableId });
       return false;
     }
-    if (!updated) {
-      console.warn('[TableService] Resume conflict - table is not paused');
-      return false;
-    }
-    masterBus.emit('TABLE_UPDATED', { tableId, status: 'running' });
-    return true;
   }
 
   /**
@@ -697,7 +637,6 @@ class TableService {
     }
   }
 
-  /**
   /**
    * Kick a player from a table — refunds their stack and vacates the seat.
    *

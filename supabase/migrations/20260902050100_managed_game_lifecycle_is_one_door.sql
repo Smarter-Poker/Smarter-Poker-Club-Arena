@@ -1,4 +1,6 @@
 -- Phase 1: every operator lifecycle command goes through one authoritative door.
+-- Version 20260902050100 is intentionally unique; 20260902050000 belongs to
+-- daily_mission_realtime_publication_refresh and would make one migration skip.
 -- Browser RLS used to let club admins reproduce the old direct soft-delete and
 -- cancellation writes even after the management UI moved to guarded RPCs.
 
@@ -10,7 +12,7 @@ LANGUAGE plpgsql
 SET search_path TO 'public'
 AS $function$
 DECLARE
-  v_is_engine boolean := COALESCE(auth.role(), '') = 'service_role' OR auth.uid() IS NULL;
+  v_is_engine boolean := COALESCE(auth.role(), '') = 'service_role';
   v_managed_command boolean :=
     COALESCE(current_setting('app.managed_game_lifecycle', true), '') = 'on';
   v_protected_tournament_keys text[] := ARRAY[
@@ -19,7 +21,19 @@ DECLARE
     'payout_structure', 'game_type', 'variant', 'tournament_type', 'is_rebuy',
     'rebuy_cost', 'rebuy_chips', 'rebuy_levels', 'add_on_available',
     'addon_cost', 'addon_chips', 'is_bounty', 'bounty_amount', 'is_pko',
-    'is_mystery_bounty', 'mystery_bounty_min', 'mystery_bounty_max'
+    'is_mystery_bounty', 'mystery_bounty_min', 'mystery_bounty_max',
+    'description', 'short_description', 'min_players', 'late_reg_levels',
+    'is_reentry', 'max_rebuys', 'max_reentries', 'addon_levels',
+    'addon_break_minutes', 'is_private', 'is_vip_only', 'ban_chat',
+    'all_in_or_fold', 'label_as_new', 'hide_club_name', 'is_pinned',
+    'action_time_seconds', 'table_size', 'accelerated_mtt', 'big_blind_ante',
+    'authorized_to_register', 'early_bird_enabled', 'early_bird_chips',
+    'bubble_protection', 'final_table_deal_enabled', 'restart_every_minutes',
+    'synchronized_breaks', 'is_multi_day', 'total_days', 'is_xmtt',
+    'union_id', 'satellite_target_id', 'satellite_seats', 'spin_type',
+    'mystery_bounty_profile', 'mystery_bounty_activation',
+    'mystery_bounty_activation_value', 'mystery_bounty_pool_percent',
+    'mystery_bounty_top_percent', 'settings'
   ];
   v_key text;
 BEGIN
@@ -93,6 +107,56 @@ DROP TRIGGER IF EXISTS trg_tournaments_managed_lifecycle_guard ON public.tournam
 CREATE TRIGGER trg_tournaments_managed_lifecycle_guard
 BEFORE UPDATE ON public.tournaments
 FOR EACH ROW EXECUTE FUNCTION public.fn_guard_managed_game_lifecycle();
+
+-- UPDATE guards are not DELETE guards. Keep this separate so OLD is always
+-- available and no DELETE execution can accidentally dereference NEW.
+CREATE OR REPLACE FUNCTION public.fn_guard_managed_game_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_is_engine boolean := COALESCE(auth.role(), '') = 'service_role';
+BEGIN
+  IF TG_TABLE_NAME = 'tables' THEN
+    IF EXISTS (
+      SELECT 1 FROM public.table_seats ts
+       WHERE ts.table_id = OLD.id AND ts.left_at IS NULL
+    ) THEN
+      RAISE EXCEPTION 'This table cannot be deleted while players are seated'
+        USING ERRCODE = 'P0001';
+    END IF;
+    IF NOT v_is_engine THEN
+      RAISE EXCEPTION 'Tables are closed through fn_close_managed_game, never deleted'
+        USING ERRCODE = '42501';
+    END IF;
+    RETURN OLD;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.tournament_players tp
+     WHERE tp.tournament_id = OLD.id
+  ) THEN
+    RAISE EXCEPTION 'This tournament cannot be deleted after a player has registered'
+      USING ERRCODE = 'P0001';
+  END IF;
+  IF NOT v_is_engine THEN
+    RAISE EXCEPTION 'Tournaments are cancelled through fn_close_managed_game, never deleted'
+      USING ERRCODE = '42501';
+  END IF;
+  RETURN OLD;
+END;
+$function$;
+
+DROP TRIGGER IF EXISTS trg_tables_managed_delete_guard ON public.tables;
+CREATE TRIGGER trg_tables_managed_delete_guard
+BEFORE DELETE ON public.tables
+FOR EACH ROW EXECUTE FUNCTION public.fn_guard_managed_game_delete();
+
+DROP TRIGGER IF EXISTS trg_tournaments_managed_delete_guard ON public.tournaments;
+CREATE TRIGGER trg_tournaments_managed_delete_guard
+BEFORE DELETE ON public.tournaments
+FOR EACH ROW EXECUTE FUNCTION public.fn_guard_managed_game_delete();
 
 CREATE OR REPLACE FUNCTION public.fn_update_managed_game(
   p_kind text,
@@ -282,5 +346,7 @@ GRANT EXECUTE ON FUNCTION public.atomic_cancel_tournament(uuid, uuid) TO service
 
 REVOKE ALL ON FUNCTION public.fn_guard_managed_game_lifecycle() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_guard_managed_game_lifecycle() TO service_role;
+REVOKE ALL ON FUNCTION public.fn_guard_managed_game_delete() FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_guard_managed_game_delete() TO service_role;
 
 COMMIT;

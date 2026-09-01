@@ -54,4 +54,24 @@ describe('managed game lifecycle has one browser authority', () => {
     expect(service).not.toContain("supabase.rpc('atomic_cancel_tournament'");
     expect(service).toContain("gameManagementService.close('tournament', tournamentId)");
   });
+
+  it('legacy table controls cannot force-close or fake pause state in the database', () => {
+    const service = readFileSync(join(ROOT, 'src/services/TableService.ts'), 'utf8');
+    expect(service).not.toContain("supabase.rpc('fn_admin_close_table'");
+    expect(service).toContain("gameManagementService.close('table', tableId)");
+    expect(service).toContain('gameManagementService.pause(tableId)');
+    expect(service).toContain('gameManagementService.resume(tableId)');
+
+    const pauseStart = service.indexOf('async pauseTable(');
+    const deleteStart = service.indexOf('async deleteTable(', pauseStart);
+    const pauseResumeBlock = service.slice(pauseStart, deleteStart);
+    expect(pauseResumeBlock).not.toContain(".from('tables')");
+  });
+
+  it('the legacy operations dialog states that occupied tables are never force-closed', () => {
+    const panel = readFileSync(join(ROOT, 'src/components/club/TableOperationsPanel.tsx'), 'utf8');
+    expect(panel).toContain('It Can Only Close After Every Player Has Left');
+    expect(panel).toContain('Players Will Never Be Removed Or Cashed Out');
+    expect(panel).not.toContain('all seated players refunded');
+  });
 });

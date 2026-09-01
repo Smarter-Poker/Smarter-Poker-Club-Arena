@@ -16,7 +16,7 @@ const messageService = read('src/services/ClubMessageManagementService.ts');
 const clubHome = read('src/pages/ClubHomePage.tsx');
 const migration = read('supabase/migrations/20260901130000_game_and_ticker_management.sql');
 const lifecycleMigration = read(
-  'supabase/migrations/20260902050000_managed_game_lifecycle_is_one_door.sql'
+  'supabase/migrations/20260902050100_managed_game_lifecycle_is_one_door.sql'
 );
 
 describe('canonical table management architecture', () => {
@@ -56,6 +56,23 @@ describe('canonical table management architecture', () => {
     expect(lifecycleMigration).not.toContain('tp.user_id IS NOT NULL');
     expect(lifecycleMigration).toContain('trg_tables_managed_lifecycle_guard');
     expect(lifecycleMigration).toContain('trg_tournaments_managed_lifecycle_guard');
+    expect(lifecycleMigration).toContain('trg_tables_managed_delete_guard');
+    expect(lifecycleMigration).toContain('trg_tournaments_managed_delete_guard');
+    expect(lifecycleMigration).toContain(
+      'This tournament cannot be deleted after a player has registered'
+    );
+    for (const protectedField of [
+      "'is_private'",
+      "'is_vip_only'",
+      "'table_size'",
+      "'action_time_seconds'",
+      "'max_reentries'",
+      "'satellite_target_id'",
+      "'mystery_bounty_profile'",
+      "'settings'",
+    ]) {
+      expect(lifecycleMigration).toContain(protectedField);
+    }
     expect(page).toContain('This table cannot be closed while players are seated');
     expect(page).toContain('This tournament cannot be modified after a player has registered');
     expect(page).not.toContain('cancelled and refunded');

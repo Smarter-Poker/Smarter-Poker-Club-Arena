@@ -98,6 +98,7 @@ import ClubLobbyCommandTop from '../components/lobby/ClubLobbyCommandTop';
 import HouseAdCard from '../components/ads/HouseAdCard';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
+import ClubOwnerMessage from '../components/club/ClubOwnerMessage';
 import AdvancedFilters, {
   loadFilters,
   saveFilters,
@@ -231,6 +232,10 @@ interface ClubData {
   slug?: string;
   description: string;
   tagline?: string | null;
+  /* Dan 2026-09-01: the owner's custom / day's message, printed at the top of
+     the lobby rail. Its own column so `tagline` stays the permanent identity
+     line the opening checklist and the invite page depend on. */
+  lobby_message?: string | null;
   avatar_url: string;
   logo_url?: string;
   banner_url?: string | null;
@@ -1714,7 +1719,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           supabase
             .from('clubs')
             .select(
-              'id, club_id, name, slug, description, tagline, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, spins_enabled, created_at, is_union, union_id, opening_checklist_started_at'
+              'id, club_id, name, slug, description, tagline, lobby_message, avatar_url, logo_url, banner_url, member_count, online_count, owner_id, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, chip_treasury, spins_enabled, created_at, is_union, union_id, opening_checklist_started_at'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -4141,6 +4146,30 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       )}
 
       <header className="lobby-top">
+        {/* ── THE CLUB'S OWN MESSAGE, FIRST (Dan 2026-09-01) ────────────────
+            "the 'welcome to club jaqk' thats on the bottom of the wallets
+            should be at the top above the club card, and that should be the
+            'custom clickable message' for the club owners to put the days
+            message, or something custom."
+
+            It was the last child of the wallet stack, which on a desktop rail
+            put it under seven wallet rows and, on a short viewport, past the
+            fold. It is the first thing in the rail now, and it is a button:
+            anybody may read the message in full, staff may write it, and both
+            paths continue to the club's announcements. */}
+        <ClubOwnerMessage
+          clubId={club.id}
+          clubName={club.name}
+          message={club.lobby_message}
+          tagline={club.tagline}
+          canEdit={noticeEditable}
+          onMessageSaved={(next) =>
+            setClub((prev) => (prev ? { ...prev, lobby_message: next } : prev))
+          }
+          onOpenAnnouncements={() => navigate(`/clubs/${clubId}/announcements`)}
+          onToast={(kind, text) => (kind === 'success' ? toast.success(text) : toast.error(text))}
+        />
+
         {/* ── Club identity + wallet ── */}
         <div className="lobby-top__main">
           <ClubIdentityCard
@@ -4348,9 +4377,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     onOpenClubRake={() => setStandaloneRakeModal(true)}
                     onOpenClubSpins={() => setStandaloneSpinsModal(true)}
                   />
-                  <p className="lobby-top__house-welcome">
-                    {club.tagline?.trim() || `Welcome To ${club.name}`}
-                  </p>
                 </div>
               </div>
             </div>

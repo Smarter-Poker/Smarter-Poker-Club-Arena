@@ -99,7 +99,12 @@ WHERE proname IN (
   -- Club / agent ops
   'mint_club_chips', 'mint_club_promo',
   'transfer_promo_union_to_agent', 'transfer_promo_union_to_club',
-  'increment_agent_rake', 'increment_club_chip_pool',
+  -- increment_agent_rake was here. Phase 7 dropped it (2026-09-01): it was the
+  -- only writer of agents.pending_commission anywhere in the database and it
+  -- had no caller, which is why that column froze at 26,859.87 while the ledger
+  -- held 408,809.59. A dropped function returns no row from this query, so it
+  -- was never a false FAIL - just a name asking to be looked for.
+  'increment_club_chip_pool',
   -- Rate limiting
   'check_rate_limit',
   -- Wallet logging

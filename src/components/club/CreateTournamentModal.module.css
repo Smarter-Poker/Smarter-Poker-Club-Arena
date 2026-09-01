@@ -129,6 +129,30 @@
   box-shadow: 0 -14px 30px rgba(0, 0, 0, 0.42);
 }
 
+.choiceGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.choiceGrid button {
+  min-height: 42px;
+  border: 1px solid #40536b;
+  border-radius: 6px;
+  background: #111b29;
+  color: #cbd8e6;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.choiceGrid button.selected {
+  border-color: #38bdf8;
+  background: linear-gradient(180deg, #0e496a, #09283d);
+  color: #fff;
+  box-shadow: 0 0 14px rgb(56 189 248 / 28%);
+}
+
 .cancelBtn {
   flex: 1;
   padding: 12px;

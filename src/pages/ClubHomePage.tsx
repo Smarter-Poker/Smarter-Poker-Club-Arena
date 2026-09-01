@@ -4001,18 +4001,16 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       actionLabel: 'Create MTT',
       onAction: () => openCreationFor('MTT'),
     },
-    ...(openingSetupComplete && club.spins_enabled
-      ? [
-          {
-            id: 'spin',
-            label: 'Launch Your First Spin',
-            detail: 'Create A Three-Player Spin Event',
-            complete: tournamentKinds.includes('spin'),
-            actionLabel: 'Create Spin',
-            onAction: () => openCreationFor('SPIN'),
-          },
-        ]
-      : []),
+    {
+      id: 'spin',
+      label: 'Launch Your First Spin',
+      detail: club.spins_enabled
+        ? 'Create A Three-Player Spin Event'
+        : 'Enable And Fund Spins First',
+      complete: tournamentKinds.includes('spin'),
+      actionLabel: club.spins_enabled ? 'Create Spin' : 'Set Up Spins',
+      onAction: () => (club.spins_enabled ? openCreationFor('SPIN') : setShowOpeningWizard(true)),
+    },
     {
       id: 'heads-up',
       label: 'Launch Your First Heads Up Game',

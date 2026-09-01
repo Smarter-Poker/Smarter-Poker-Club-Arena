@@ -243,6 +243,8 @@ export default function CreateTournamentModal({
   // ── Weekly recurring schedule (tournament_schedules) ──
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [schedule, setSchedule] = useState<WeeklyScheduleValue>({ ...DEFAULT_WEEKLY_SCHEDULE });
+  const [scheduleCadence, setScheduleCadence] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
+  const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState(new Date().getUTCDate());
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -762,6 +764,8 @@ export default function CreateTournamentModal({
         const resolvedClubId = await resolveClubUUID(clubId);
         const rpcConfig = tournamentService.buildRpcConfig(tournamentConfig);
         delete rpcConfig.startTime;
+        rpcConfig.recurrenceCadence = scheduleCadence;
+        if (scheduleCadence === 'monthly') rpcConfig.recurrenceDayOfMonth = scheduleDayOfMonth;
         await tournamentScheduleService.upsert({
           clubId: resolvedClubId,
           unionId: unionId || null,
@@ -1974,7 +1978,7 @@ export default function CreateTournamentModal({
             )}
           </div>
 
-          {/* ── Weekly Recurring Schedule ── */}
+          {/* ── Recurring Schedule ── */}
           {!isSngOrSpin && (
             <div className={styles.sectionDivider}>
               <div className={styles.formGroup}>
@@ -1989,13 +1993,60 @@ export default function CreateTournamentModal({
                     }}
                     className={styles.checkbox}
                   />
-                  Tournament Schedule (Recurring)
+                  Recurring Tournament
                 </label>
                 <span className={styles.helperText}>
-                  Repeats This Tournament Weekly. Spawned Instances Use Exactly This Configuration.
+                  Repeat This Tournament Daily, Weekly, Or Monthly With The Same Configuration.
                 </span>
               </div>
-              {scheduleEnabled && <WeeklyScheduleEditor value={schedule} onChange={setSchedule} />}
+              {scheduleEnabled && (
+                <>
+                  <div className={styles.choiceGrid}>
+                    {(['daily', 'weekly', 'monthly'] as const).map((cadence) => (
+                      <button
+                        key={cadence}
+                        type="button"
+                        className={scheduleCadence === cadence ? styles.selected : ''}
+                        onClick={() => {
+                          setScheduleCadence(cadence);
+                          if (cadence !== 'weekly')
+                            setSchedule((current) => ({
+                              ...current,
+                              daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+                            }));
+                        }}
+                      >
+                        {cadence === 'daily'
+                          ? 'Daily'
+                          : cadence === 'weekly'
+                            ? 'Weekly'
+                            : 'Monthly'}
+                      </button>
+                    ))}
+                  </div>
+                  {scheduleCadence === 'monthly' && (
+                    <label className={styles.formGroup}>
+                      Day Of Month
+                      <input
+                        type="number"
+                        min={1}
+                        max={31}
+                        value={scheduleDayOfMonth}
+                        onChange={(event) =>
+                          setScheduleDayOfMonth(
+                            Math.min(31, Math.max(1, Number(event.target.value) || 1))
+                          )
+                        }
+                      />
+                    </label>
+                  )}
+                  <WeeklyScheduleEditor
+                    value={schedule}
+                    onChange={setSchedule}
+                    hideDays={scheduleCadence !== 'weekly'}
+                  />
+                </>
+              )}
             </div>
           )}
 

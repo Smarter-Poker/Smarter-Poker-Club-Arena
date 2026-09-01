@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * TABLE MENU — Command Center for Table Actions
+ * ☰ TABLE MENU — Hamburger Menu for Table Actions
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Comprehensive table menu with:
@@ -32,8 +32,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { AvatarGallery } from '../customization/AvatarGallery';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
-
-const COMMAND_CENTER_ASSET = `${import.meta.env.BASE_URL}images/global-header/command-center-v1.png`;
+import { useButtonImage } from '../../hooks/useButtonImage';
 
 // ─── SVG Icons for Identity section ─── */
 const AvatarIcon = () => (
@@ -284,6 +283,7 @@ export function TableMenu({
   observers = [],
   onOpenIdentity,
 }: TableMenuProps) {
+  const hamburgerIcon = useButtonImage('icon-hamburger');
   /* `activeSection` / `setActiveSection` deleted 2026-08-25: state written by
      nobody and read by nobody since the file was written. */
   const menuRef = useRef<HTMLDivElement>(null);
@@ -490,7 +490,7 @@ export function TableMenu({
 
   return (
     <div className={`table-menu table-menu--${position}`} ref={menuRef}>
-      {/* Command Center Button */}
+      {/* Hamburger Button */}
       <button
         className={`table-menu__trigger ${isOpen ? 'table-menu__trigger--active' : ''}`}
         onClick={onToggle}
@@ -498,12 +498,7 @@ export function TableMenu({
         aria-haspopup="menu"
         aria-expanded={isOpen}
       >
-        <img
-          src={COMMAND_CENTER_ASSET}
-          className="table-menu__trigger-img"
-          alt=""
-          draggable={false}
-        />
+        <img src={hamburgerIcon} className="table-menu__trigger-img" alt="" draggable={false} />
         {/* Notification badge */}
         {badgeCount != null && badgeCount > 0 && (
           <span className="table-menu__badge" aria-label={`${badgeCount} Notifications`}>

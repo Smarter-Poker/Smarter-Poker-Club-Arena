@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -6,6 +6,13 @@ const migration = readFileSync(
   resolve(
     __dirname,
     '../supabase/migrations/20260831130000_daily_challenge_dashboard_realtime_revision.sql'
+  ),
+  'utf8'
+);
+const publicationRepair = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20260901074500_daily_mission_revision_publication_repair.sql'
   ),
   'utf8'
 );
@@ -22,6 +29,23 @@ describe('Daily Missions realtime and render-isolation contract', () => {
     expect(migration).toContain('trg_daily_challenge_revision_from_diamonds');
     expect(migration).toContain('ALTER PUBLICATION supabase_realtime');
     expect(migration).toContain('OLD.diamonds IS DISTINCT FROM NEW.diamonds');
+  });
+
+  it('repairs the duplicate-version split state under a unique migration version', () => {
+    expect(publicationRepair).toContain('20260831130000 was accidentally used by TWO');
+    expect(publicationRepair).toContain('ADD TABLE public.daily_challenge_dashboard_revisions');
+    expect(publicationRepair).toContain('REPLICA IDENTITY FULL');
+    expect(publicationRepair).toContain('users read own daily challenge revision');
+    expect(publicationRepair).toContain(
+      'Daily Missions revision publication has incomplete trigger coverage'
+    );
+    const repairVersion = '20260901074500';
+    const matchingVersions = readdirSync(resolve(__dirname, '../supabase/migrations')).filter(
+      (name) => name.startsWith(`${repairVersion}_`)
+    );
+    expect(matchingVersions).toEqual([
+      '20260901074500_daily_mission_revision_publication_repair.sql',
+    ]);
   });
 
   it('subscribes through the recoverable MasterBus channel with a server-side user filter', () => {

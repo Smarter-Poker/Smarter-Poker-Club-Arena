@@ -59,15 +59,78 @@ describe('the engine deploy tells the truth when it skips', () => {
     expect(HETZNER).not.toMatch(/::notice::Engine restarted only/);
   });
 
-  it('the catch-up fires at least as often as the coalescing window', () => {
-    const spacing = Number(HETZNER.match(/MIN_RESTART_SPACING_SEC=(\d+)/)![1]);
-    const everyMin = cronEveryMinutes(HETZNER);
-    expect(spacing).toBeGreaterThan(0);
-    expect(everyMin).not.toBeNull();
-    // The whole point: a commit that defers becomes eligible after `spacing`,
-    // so the catch-up must come round by then. Hourly against a 20-minute
-    // window left a 40-minute dead zone.
-    expect(everyMin! * 60).toBeLessThanOrEqual(spacing);
+  /**
+   * 2026-08-31, Dan, binding: "STOP THE ENGINE FROM RESTARTING. IT SHOULD ONLY
+   * BE RESTARTING AT 7AM AND 7PM FROM NOW ON."
+   *
+   * This replaces the old cadence pin, which asserted that an every-20-minutes
+   * catch-up came round at least as often as the coalescing window. There is no
+   * catch-up any more and no merge-triggered restart at all: the engine
+   * restarts on a schedule, and merged engine code waits for the next window.
+   */
+  it('never restarts on a merge — there is no push trigger', () => {
+    const triggers = HETZNER.slice(HETZNER.indexOf('\non:'), HETZNER.indexOf('\nconcurrency:'));
+    expect(triggers).not.toMatch(/^\s{2}push:/m);
+    expect(triggers).toMatch(/^\s{2}schedule:/m);
+    expect(triggers).toMatch(/^\s{2}workflow_dispatch:/m);
+  });
+
+  it('fires only at the hours that can be 6pm, 10pm, 4am, 10am, 2pm in Chicago', () => {
+    // Ten UTC hours for five local windows: CDT and CST put each window an
+    // hour apart, so both must be declared or the window silently disappears
+    // for half the year. The gate keeps whichever five are genuinely 04, 10,
+    // 14, 18 or 22 o'clock in Chicago.
+    expect(HETZNER).toMatch(/cron: '0 0,3,4,9,10,15,16,19,20,23 \* \* \*'/);
+    expect(cronEveryMinutes(HETZNER)).toBeNull();
+
+    // Asserted as the PAIRING rather than as a literal, because the literal is
+    // what a future edit gets wrong: dropping one hour leaves a cron that still
+    // looks plausible and a window that stops firing when the clocks change.
+    const utcHours = new Set(
+      HETZNER.match(/cron: '0 ([0-9,]+) \* \* \*'/)![1]
+        .split(',')
+        .map(Number)
+    );
+    const gate = HETZNER.match(/case "\$HOUR" in\s*\n\s*([0-9|]+)\)/)![1]
+      .split('|')
+      .map(Number);
+    expect(gate.sort((a, b) => a - b)).toEqual([4, 10, 14, 18, 22]);
+    for (const local of gate) {
+      expect(utcHours.has((local + 5) % 24), `CDT hour missing for ${local}:00 local`).toBe(true);
+      expect(utcHours.has((local + 6) % 24), `CST hour missing for ${local}:00 local`).toBe(true);
+    }
+  });
+
+  it('resolves the window from the tz database, not from a baked offset', () => {
+    expect(HETZNER).toMatch(/TZ=America\/Chicago date \+%H/);
+    expect(HETZNER).toMatch(/case "\$HOUR" in\s*\n\s*18\|22\|04\|10\|14\)/);
+  });
+
+  it('a plain dispatch is subject to the window; only force overrides it', () => {
+    // publish-watchdog.yml dispatches this workflow when the engine is behind
+    // main. That must keep alarming without being able to bounce production
+    // at three in the morning.
+    const gate = HETZNER.slice(
+      HETZNER.indexOf('Restart window'),
+      HETZNER.indexOf('Skip if production')
+    );
+    expect(gate).toMatch(/FORCED="\$\{\{ github\.event\.inputs\.force \}\}"/);
+    expect(gate).toMatch(/if \[ "\$FORCED" = "true" \]/);
+    // The refusal is a notice on the run, not a silent no-op.
+    expect(gate).toMatch(/OUTSIDE THE RESTART WINDOW/);
+  });
+
+  it('inside a window the deploy actually lands rather than polling forever', () => {
+    // The drain poll waits for handsInFlightTotal to hit zero, which a fleet
+    // dealing ~290 hands a minute never reports. Three runs in a row reported
+    // success and shipped nothing the day this was written; with two windows a
+    // day that would mean the engine never updates at all.
+    const drain = HETZNER.slice(
+      HETZNER.indexOf('Drain gate'),
+      HETZNER.indexOf('Pull the exact commit')
+    );
+    expect(drain).toMatch(/github\.event_name \}\} " *= *"schedule"|event_name \}\}" = "schedule"/);
+    expect(drain).toMatch(/drains itself at a hand boundary on SIGTERM/);
   });
 
   it('still bypasses the spacing gate for a manual dispatch', () => {
@@ -103,9 +166,7 @@ describe('the publish path cannot be left waiting on a push that never comes', (
     expect(SYNC).toMatch(/outputs:\s*\n\s*skip: \$\{\{ steps\.dedupe\.outputs\.skip \}\}/);
     for (const job of ['client-tests', 'build-and-store']) {
       const block = sliceYamlBlock(SYNC, `  ${job}:`);
-      expect(block, `${job} must wait on publish-needed`).toMatch(
-        /needs: publish-needed/
-      );
+      expect(block, `${job} must wait on publish-needed`).toMatch(/needs: publish-needed/);
       expect(block, `${job} must skip with it`).toMatch(
         /if: needs\.publish-needed\.outputs\.skip != 'true'/
       );

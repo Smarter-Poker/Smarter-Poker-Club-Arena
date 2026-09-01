@@ -28,13 +28,24 @@
  *
  * WHAT IT DELIBERATELY DOES NOT TOUCH
  *
- *   aria-label, aria-description and friends. Those are read aloud, not
- *   painted, and a screen reader pronounces a word the same in any case. They
- *   are assistive text rather than page text, they are the majority of the
- *   corpus (252 against 109), and mass-rewriting them would put a large
- *   accessibility-adjacent diff through files this change has no other reason
- *   to touch. If Dan wants them included, add the names to VISIBLE_ATTRS and
- *   run with --fix.
+ *   aria-label, aria-description and friends. Not because they are exempt, but
+ *   because they already have a gate: check-title-case.mjs lists all three in
+ *   UI_ATTRIBUTE_NAMES and cased the whole corpus in PR #2273. As of this
+ *   writing 400 literal aria-labels live in src and none of them are lower
+ *   case.
+ *
+ *   So do NOT add them to VISIBLE_ATTRS. This file and check-title-case case a
+ *   string by different code -- that one uses the shared ACRONYMS set, this one
+ *   uses WORD_START boundaries and isProse() -- and two gates that disagree
+ *   about what Title Case IS would each spend forever 'fixing' the other's
+ *   output. One attribute, one gate. Six names already appear in both lists
+ *   (title, alt, label, placeholder, caption, subtitle); they agree on today's
+ *   corpus, and that overlap is a thing to collapse, not to widen.
+ *
+ *   What is still genuinely uncovered is not the literals: it is the template
+ *   -literal aria-labels whose static chunks are lower case. Those are cased at
+ *   their source, and a --fix codemod is not safe there -- an earlier run Title
+ *   Cased a CSS class name and silently broke the equity overlay.
  *
  *   Attribute values that are not plain string literals ({expr}, template
  *   literals): cased at their source, exactly as check-title-case reasons.

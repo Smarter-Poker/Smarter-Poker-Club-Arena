@@ -25,7 +25,28 @@ import {
   spinBlindsForLevel,
 } from '../config/spinSpec.js';
 import { reportError } from '../services/errorReporter.js';
-import { clampSeatsForVariant } from '../config/tableSeating.js';
+/**
+ * THE TOURNAMENT CEILING IS THE DECK, NOT THE CASH SEAT LAW (2026-08-31).
+ *
+ * This line used to import `clampSeatsForVariant` from
+ * `../config/tableSeating.js`. That module's own header says CASH GAMES ONLY —
+ * "Nothing here may be applied to a table with a tournament_id" — and the
+ * client copy carries Dan verbatim: "WHAT I GAVE YOU WAS FOR CASH GAMES ONLY,
+ * YOU CAN NOT RUN IT TWO OR THREE TIMES IN A TOURNAMENT". The cash cap is
+ * deliberately TIGHTER than the deck so Run It Twice still has three boards to
+ * come out of (PLO6 dies at 7 seats: 52 - 6n >= 15 means n <= 6). Run It Twice
+ * is hard-disabled on a tournament table — ServerTableEngineBase, `ritIsTournament`
+ * forces `ritEnabled` false — so a tournament was paying that seat for a board
+ * it can never be dealt.
+ *
+ * REUSED, not copied. `maxSeatsFor` is floor((deck - 5) / holeCards), which
+ * already exists in exactly two places: here, and `maxSeatsTheDeckAllows` in
+ * src/config/tableSeating.ts, which the browser bundle needs because it cannot
+ * import from server/. A third copy of the formula would be a third thing to
+ * keep in step; importing the engine's own module keeps the number the deal
+ * path uses and the number the seating path uses the same by construction.
+ */
+import { maxSeatsFor as maxSeatsTheDeckAllows } from '../engine/VariantRules.js';
 import { tableStateHub } from '../transport/TableStateHub.js';
 import { refundAndCloseCancelledTournament } from './tournamentRecovery.js';
 import { acceleratedLevelMs } from './acceleratedLevels.js';
@@ -3279,9 +3300,8 @@ export abstract class TournamentManagerBase {
     /**
      * THE DECK HAS TO BE ABLE TO SERVE THE TABLE (2026-08-25).
      *
-     * Cash tables have run through clampSeatsForVariant since the seat law was
-     * written. Tournament tables never did - they took table_size verbatim, and
-     * table_size knows nothing about how many hole cards the game deals.
+     * Tournament tables took table_size verbatim, and table_size knows nothing
+     * about how many hole cards the game deals.
      *
      * A 9-handed PLO6 table needs 9 x 6 = 54 hole cards plus a 5-card board
      * from a 52-card deck. It cannot be dealt, ever. ServerTableEngineDealing
@@ -3296,12 +3316,22 @@ export abstract class TournamentManagerBase {
      * NLH 22.3%. The whole 5-and-6-card excess is this one line.
      *
      * Clamped LAST so it wins over every branch above, including spin and sng.
+     *
+     * 2026-08-31: the ceiling used to be `clampSeatsForVariant`, which is the
+     * CASH seat law — a house rule that keeps a table small enough to run it
+     * twice, not an arithmetic limit. Applying it here made a tournament pay
+     * for boards it can never deal (Run It Twice is hard-disabled on tournament
+     * tables) and shrank real events: PLO4 8 -> 9, PLO5 7 -> 9, PLO6 6 -> 7,
+     * PLO8 8 -> 9, and a table_size 10 NLH MTT lost its tenth seat to
+     * DEFAULT_MAX_SEATS. The ceiling is now the deck and only the deck:
+     * floor((52 - 5) / holeCards) — nlh/flh 23, short_deck 15, pineapple 15,
+     * plo4/plo8/flo8 11, plo5 9, plo6 7. The cash cap is untouched.
      */
     const seatVariant = (tournament.game_type || '').toLowerCase();
-    const deckSafe = clampSeatsForVariant(seatVariant, maxPerTable);
+    const deckSafe = Math.min(maxPerTable, maxSeatsTheDeckAllows(seatVariant));
     if (deckSafe !== maxPerTable) {
       console.log(
-        `[Tournament:${this.tournamentId.slice(0, 8)}] ${seatVariant || 'nlh'} seats ${maxPerTable} -> ${deckSafe} (deck cannot serve more)`
+        `[Tournament:${this.tournamentId.slice(0, 8)}] ${seatVariant || 'nlh'} seats ${maxPerTable} -> ${deckSafe} (the deck seats ${maxSeatsTheDeckAllows(seatVariant)} at this variant)`
       );
       maxPerTable = deckSafe;
     }
@@ -3327,8 +3357,8 @@ export abstract class TournamentManagerBase {
      * one of them with 10 live seats; 54 such seats across 53 tournament
      * tables platform-wide. A seat past the table's own ceiling is not
      * cosmetic — it is the deck-exhaustion deadlock (#782) reopened through a
-     * different door, because clampSeatsForVariant clamps `max_players` and
-     * this loop then walked straight past it.
+     * different door, because the deck ceiling clamps `max_players` and this
+     * loop then walked straight past it.
      *
      * The shortfall is now measured in SEATS, against the real free capacity
      * of the tables the tournament already has.

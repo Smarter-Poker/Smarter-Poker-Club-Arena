@@ -179,3 +179,9 @@ BEGIN
   RETURN NEW;
 END;
 $function$;
+-- The pre-push definer gate caught what redefining this function made
+-- visible: fn_ca_auto_reconcile_tick is SECURITY DEFINER, writes, and was
+-- executable by browser roles. It is a cron tick; no browser has any
+-- business calling it. Revoked (gate remedy 1). GRANT/REVOKE does not
+-- trigger a PostgREST schema reload, so this is free at any hour.
+REVOKE ALL ON FUNCTION public.fn_ca_auto_reconcile_tick() FROM PUBLIC, anon, authenticated;

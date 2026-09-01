@@ -160,16 +160,10 @@ describe('the consumer prefers the event over live state', () => {
       require('node:path').join(__dirname, 'ServerTableEngineHandEvents.ts'),
       'utf8'
     );
-    // Bounded by the NEXT case in the same switch, not by 4000 bytes. The
-    // negative assertion below is why it matters: a fixed forward window can
-    // run out of this case and into another one, and then it either matches
-    // something that is not this branch or drifts off the code entirely and
-    // passes while watching nothing.
     const body = sliceBetween(src, "case 'PLAYER_ACTION':", "case 'COMMUNITY_CARDS':").replace(
       /\/\*[\s\S]*?\*\//g,
       ''
     );
-    expect(body.length).toBeGreaterThan(0);
     expect(body).toContain('event.stage ??');
     // The bare live-state read must not be what feeds the persisted record.
     expect(body).not.toMatch(/const stage = hcState\?\.stage \|\| 'preflop';/);

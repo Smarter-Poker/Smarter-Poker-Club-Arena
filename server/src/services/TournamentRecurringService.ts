@@ -748,9 +748,14 @@ const OPEN_TABLE_WAIT_MS = 10 * 60 * 1000;
  * Ten minutes was chosen when nothing filled the seat properly; now that the
  * top-up genuinely seats horses, a shorter window keeps the board moving
  * without ever taking the seat out from under someone who is mid buy-in.
+ *
+ * RETUNED 45-90s (Dan 2026-09-01, verbatim): "THEY ARE SUPPOSED TO SEAT 2,
+ * WAIT ANYWHERE FROM 45-90 SECONDS FOR A HUMAN, BEFORE A HORSE JUMPS IN AND
+ * 'STARTS THE SPIN'." Same window for heads-up. The 60-180 range above was
+ * the 2026-08-23 spec; this one supersedes it.
  */
-const SEAT_FIRST_HUMAN_WINDOW_MIN_MS = 60 * 1000;
-const SEAT_FIRST_HUMAN_WINDOW_MAX_MS = 180 * 1000;
+const SEAT_FIRST_HUMAN_WINDOW_MIN_MS = 45 * 1000;
+const SEAT_FIRST_HUMAN_WINDOW_MAX_MS = 90 * 1000;
 
 function seatFirstHumanWindowMs(): number {
   const span = SEAT_FIRST_HUMAN_WINDOW_MAX_MS - SEAT_FIRST_HUMAN_WINDOW_MIN_MS;
@@ -870,7 +875,22 @@ export function seatFirstHeldEmpty(
   seats: number,
   nowMs: number = Date.now()
 ): boolean {
-  const frac = seats <= 2 ? 0.5 : 0.33;
+  /**
+   * THE 35% OPEN-TABLE RATE (Dan 2026-09-01, HARD RULE, verbatim):
+   * "SPINS SHOULD BE CAPPED IS 35% 'OPEN TABLE RATE' MEANING 35% OF THEM MAX
+   * CAN BE OPENED AND SAT AT BY HORSES. 65% SHOULD BE EMPTY BY HORSES ACROSS
+   * ALL CLUBS. SAME PERCENTAGE RULES APPLY FOR HEADS UP AS WELL, MAKE THAT A
+   * HARD RULE IN THIS CLUB, SHARK CLUB, AND CLUB JAQK."
+   *
+   * One fraction for BOTH formats and EVERY owner - house board, union
+   * boards, and standalone club boards alike. The previous split (33% of
+   * Spins held, 50% of Heads-Up held) is superseded. Held-empty means no
+   * opening horses at creation AND the top-up leaves it alone while nobody
+   * is seated; the instant a human sits, the hold releases and the game
+   * fills (see topUpWithHorses). seatFirstHoldRotates.test.ts pins both the
+   * literal fraction and the statistical share.
+   */
+  const frac = 0.65;
   const bucket = Math.floor(nowMs / SEAT_FIRST_EMPTY_BUCKET_MS);
   // Golden-ratio odd constant so the bucket spreads across the whole word
   // before the finalizer mixes it into the id's hash.
@@ -3074,15 +3094,21 @@ export class TournamentRecurringService {
        */
       // Dan 2026-08-26: a held-empty game opens with NO horses — its seats
       // are the invitation. topUpWithHorses fills it the moment a human sits.
-      // A club-owned board belongs to that club's actual membership. The
-      // house fleet may keep the house lobby liquid, but it cannot silently
-      // enroll itself in a player's newly created club merely because that
-      // owner enabled Spins or Heads-Up.
-      const isHouseBoard = tournament.club_id === this.houseOwner.clubId;
-      const opening =
-        isHouseBoard && !seatFirstHeldEmpty(tournament.id, seats)
-          ? openingHorsesForSeatFirst(seats)
-          : 0;
+      //
+      // EVERY OWNER'S BOARD OPENS THE SAME WAY (Dan 2026-09-01). This used to
+      // gate opening horses on the board being house-owned, so a club board's games ALWAYS
+      // opened with zero horses — every Deep Stack Spin sat 0/3 and every
+      // duel 0/2, looking dead in a lobby where the house board's games sat
+      // 2/3 and 1/2. The old comment feared the house fleet enrolling itself
+      // in a player's club; that isolation lives in the PICK, which is
+      // club-scoped (clubMemberIdsForTournament inside pickFreeHorses), with
+      // fn_seat_horse_in_seat_first_game's entry gate as the backstop — a
+      // club with no member horses still opens empty. The 65%-held-empty
+      // hard rule (seatFirstHeldEmpty) applies identically to house, union
+      // and standalone club boards.
+      const opening = !seatFirstHeldEmpty(tournament.id, seats)
+        ? openingHorsesForSeatFirst(seats)
+        : 0;
       const candidates = await this.pickFreeHorses(opening, false, tournament.id);
       let seated = 0;
       for (const horse of candidates) {
@@ -3956,8 +3982,8 @@ export class TournamentRecurringService {
        * points on the board.
        *
        * The isolation the old comment wanted is enforced by the PICK, not
-       * by refusal: pickFreeHorses(count, lanes, tournamentId) restricts
-       * candidates to the tournament's own club scope
+       * by refusal: the free-horse pick below restricts candidates to the
+       * tournament's own club scope
        * (clubMemberIdsForTournament), and the DB entry gate refuses
        * non-members as the backstop. A club with no member horses gets
        * nobody — exactly as isolated as before. A club whose horses ARE

@@ -53,18 +53,40 @@ function ids(n: number, salt = 'board'): string[] {
 const T0 = Date.UTC(2026, 7, 27, 12, 0, 0);
 
 describe('the share of the board held empty is still what Dan asked for', () => {
-  it('holds roughly a third of Spins at any given instant', () => {
-    const board = ids(600, 'spin');
-    const held = board.filter((id) => seatFirstHeldEmpty(id, 3, T0)).length;
-    expect(held / board.length).toBeGreaterThan(0.2);
-    expect(held / board.length).toBeLessThan(0.46);
+  /**
+   * THE 35% OPEN-TABLE RATE (Dan 2026-09-01, HARD RULE, verbatim): "SPINS
+   * SHOULD BE CAPPED IS 35% 'OPEN TABLE RATE' MEANING 35% OF THEM MAX CAN BE
+   * OPENED AND SAT AT BY HORSES. 65% SHOULD BE EMPTY BY HORSES ACROSS ALL
+   * CLUBS. SAME PERCENTAGE RULES APPLY FOR HEADS UP AS WELL, MAKE THAT A
+   * HARD RULE IN THIS CLUB, SHARK CLUB, AND CLUB JAQK."
+   *
+   * Supersedes the 2026-08-26 split (33% of Spins / 50% of Heads-Up held).
+   * One fraction, both formats, every owner. The literal pin below stops a
+   * refactor from quietly reintroducing a per-format or per-owner split; the
+   * statistical checks prove the hash actually delivers the share.
+   */
+  it('the fraction is literally 0.65, for every format and owner', () => {
+    const SRC = readFileSync(resolve(__dirname, './TournamentRecurringService.ts'), 'utf8');
+    const fn = SRC.slice(
+      SRC.indexOf('export function seatFirstHeldEmpty'),
+      SRC.indexOf('export function selectHorseCandidates')
+    );
+    expect(fn).toMatch(/const frac = 0\.65;/);
+    expect(fn).not.toMatch(/seats\s*<=\s*2\s*\?/);
   });
 
-  it('holds roughly half of Heads-Up at any given instant', () => {
+  it('holds ~65% of Spins at any given instant', () => {
+    const board = ids(600, 'spin');
+    const held = board.filter((id) => seatFirstHeldEmpty(id, 3, T0)).length;
+    expect(held / board.length).toBeGreaterThan(0.55);
+    expect(held / board.length).toBeLessThan(0.75);
+  });
+
+  it('holds ~65% of Heads-Up at any given instant', () => {
     const board = ids(600, 'hu');
     const held = board.filter((id) => seatFirstHeldEmpty(id, 2, T0)).length;
-    expect(held / board.length).toBeGreaterThan(0.37);
-    expect(held / board.length).toBeLessThan(0.63);
+    expect(held / board.length).toBeGreaterThan(0.55);
+    expect(held / board.length).toBeLessThan(0.75);
   });
 });
 
@@ -97,7 +119,15 @@ describe('no price point can be held empty forever', () => {
    * consecutive holds is a 1-in-a-million event per board, so this cannot flake,
    * but any LATCHING behaviour fails it immediately.
    */
-  it('a held board is fillable again within a few buckets, not eventually', () => {
+  it('a held board is fillable again within a bounded stretch, not eventually', () => {
+    /**
+     * Recalibrated for the 65% hold (was 33%): longer runs of held buckets
+     * are now the DESIGN — at any instant most of the board is deliberately
+     * empty — so the ceiling only guards against LATCHING (a board that
+     * correlates across buckets and never re-rolls). At p=0.65 across 400
+     * deterministic boards and 48 buckets, honest independence produces a
+     * worst run in the low twenties; a latch produces 48.
+     */
     const board = ids(400, 'spin');
     let worstRun = 0;
     let worstId = '';
@@ -113,7 +143,7 @@ describe('no price point can be held empty forever', () => {
       }
     }
     expect(worstRun, `board ${worstId} stayed held for ${worstRun} straight buckets`).toBeLessThan(
-      12
+      40
     );
   });
 

@@ -191,10 +191,10 @@ describe('horses take seats, not just places on a list', () => {
   });
 });
 
-describe('the last seat belongs to a human for a minute to three', () => {
-  it('the window is 60 to 180 seconds', () => {
-    expect(recurring).toMatch(/SEAT_FIRST_HUMAN_WINDOW_MIN_MS = 60 \* 1000/);
-    expect(recurring).toMatch(/SEAT_FIRST_HUMAN_WINDOW_MAX_MS = 180 \* 1000/);
+describe('the last seat belongs to a human for 45 to 90 seconds', () => {
+  it('the window is 45 to 90 seconds (Dan 2026-09-01: "WAIT ANYWHERE FROM 45-90 SECONDS FOR A HUMAN, BEFORE A HORSE JUMPS IN")', () => {
+    expect(recurring).toMatch(/SEAT_FIRST_HUMAN_WINDOW_MIN_MS = 45 \* 1000/);
+    expect(recurring).toMatch(/SEAT_FIRST_HUMAN_WINDOW_MAX_MS = 90 \* 1000/);
   });
 
   it('is randomised per game, not a fixed tick, and not with the banned RNG', () => {

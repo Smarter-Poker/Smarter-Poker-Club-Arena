@@ -55,9 +55,13 @@ describe('New account and new club isolation', () => {
     expect(recurring).toContain('MEMBERSHIP IS THE BOUNDARY, NOT THE HOUSE');
     expect(recurring).toContain('this.pickFreeHorses(poolWanted, false, tournamentId)');
     expect(recurring).toContain('clubMemberIdsForTournament');
-    // The held-empty rule still applies only to house boards at creation.
-    expect(recurring).toContain(
-      'const isHouseBoard = tournament.club_id === this.houseOwner.clubId'
-    );
+    /**
+     * Opening horses are gated on the 65% held-empty rule alone (Dan
+     * 2026-09-01) — the same rule for house, union and standalone club
+     * boards. A house-only opening gate here would re-strand every club
+     * board at zero horses; the isolation stays in the club-scoped pick.
+     */
+    expect(recurring).not.toMatch(/isHouseBoard\s*&&/);
+    expect(recurring).toContain('const opening = !seatFirstHeldEmpty(tournament.id, seats)');
   });
 });

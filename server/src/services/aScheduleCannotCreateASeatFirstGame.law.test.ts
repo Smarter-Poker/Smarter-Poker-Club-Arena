@@ -1,6 +1,6 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════
- *  A SPIN AND A HEADS-UP START ON PAID SEATS, NEVER ON A CLOCK
+ *  A SCHEDULE CANNOT CREATE A GAME THAT HAS NO SCHEDULE
  * ═══════════════════════════════════════════════════════════════════════════
  *
  * Dan, 2026-09-01, verbatim: "SPINS AND HEADS UP DO NOT HAVE SCHEDULED TIMES
@@ -17,6 +17,12 @@
  * moment the scheduled instant passed.
  *
  * Every pin below is that incident. None of them is a style preference.
+ *
+ * SCOPE. This file guards CREATION only. The START decision is already owned by
+ * server/src/tournament/seatFirstStartsOnSeatsNotClocks.law.test.ts on
+ * origin/main, and two law tests pinning one line of code is what the LAWS.md
+ * registry exists to prevent - so the start-gate pins that were drafted here
+ * were deleted rather than duplicated.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -27,7 +33,6 @@ const SERVER_SRC = join(__dirname, '..');
 const read = (rel: string) => readFileSync(join(SERVER_SRC, rel), 'utf8');
 
 const SCHEDULED = read('services/ScheduledTournamentService.ts');
-const GAME_SERVER = read('GameServer.ts');
 const SPIN_METRICS = read('services/SpinMetrics.ts');
 
 describe('a schedule cannot produce a game that has no schedule', () => {
@@ -61,20 +66,6 @@ describe('a schedule cannot produce a game that has no schedule', () => {
     expect(body).toContain('HEADS_UP_SEATS');
     // It must bail out, not merely notice.
     expect(body).toMatch(/if\s*\(\s*clonedVariant[\s\S]{0,120}\)\s*return;/);
-  });
-});
-
-describe('the start gate still reads seats, not the clock', () => {
-  it('a spin or a two-seat sng is started by paid seats alone', () => {
-    const cleaned = blankNonCode(GAME_SERVER);
-    expect(cleaned).toContain('isSngOrSpin ? seatFirstReady : maxReached || timeReached');
-  });
-
-  it('seatFirstReady counts PAID seats against the table size', () => {
-    const cleaned = blankNonCode(GAME_SERVER);
-    expect(cleaned).toMatch(
-      /seatFirstReady\s*=\s*isSngOrSpin[\s\S]{0,200}paidSeats\s*>=\s*tournament\.max_players/
-    );
   });
 });
 

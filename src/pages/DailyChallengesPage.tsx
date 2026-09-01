@@ -29,7 +29,7 @@ import {
   type DailyChallengeRewardVault,
 } from '../services/DailyChallengeService';
 import { useIsMounted } from '../hooks/useIsMounted';
-import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
+import { useMasterBusBroadcastChannel } from '../hooks/useMasterBusBroadcastChannel';
 import { useChallengeClockNow } from '../hooks/useChallengeClock';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { reportError } from '../utils/errorReporter';
@@ -828,12 +828,11 @@ export default function DailyChallengesPage() {
     []
   );
 
-  useMasterBusChannel({
+  useMasterBusBroadcastChannel({
     channelName: userId ? `daily-mission-revision:${userId}` : null,
-    table: 'daily_challenge_dashboard_revisions',
-    filter: userId ? `user_id=eq.${userId}` : null,
-    event: '*',
+    event: 'daily_mission_revision_changed',
     enabled: !!userId,
+    private: true,
     onPayload: scheduleRealtimeRefresh,
     onSubscriptionError: () => {
       realtimeStatusRef.current = 'degraded';

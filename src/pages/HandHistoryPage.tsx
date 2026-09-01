@@ -62,7 +62,7 @@ type HistoryFilter = 'all' | 'won' | 'lost' | 'big-pots';
    Order still matters: PLO8 must be tested before the PLO catch-all. */
 function toShareVariant(gameType: string | undefined): ShareableHand['variant'] {
   const g = (gameType || '').toUpperCase();
-  if (g.includes('PINEAPPLE')) return 'Pineapple';
+  if (g.includes('PINEAPPLE')) return 'Crazy Pineapple';
   if (g.includes('SHORT')) return 'Short Deck';
   if (g.includes('PLO8')) return 'PLO8';
   if (g.includes('PLO6')) return 'PLO6';

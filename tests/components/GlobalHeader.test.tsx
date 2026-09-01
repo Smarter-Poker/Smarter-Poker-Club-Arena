@@ -63,12 +63,10 @@ describe('GlobalHeader Component', () => {
     expect(screen.getByLabelText('Smarter.Poker Global Header')).toBeInTheDocument();
     expect(screen.queryByText('Club Arena')).not.toBeInTheDocument();
     expect(document.querySelector('img[src*="vault-iris-emblem"]')).not.toBeInTheDocument();
-    const approvedArtwork = document.querySelector(
-      'img[src*="global-header-command-center-v1.png"]'
-    );
+    const approvedArtwork = document.querySelector('img[src*="global-header-desktop.png"]');
     expect(approvedArtwork).toHaveAttribute(
       'src',
-      expect.stringContaining('images/global-header/global-header-command-center-v1.png')
+      expect.stringContaining('images/global-header/global-header-desktop.png')
     );
   });
 
@@ -76,13 +74,13 @@ describe('GlobalHeader Component', () => {
    * UPDATED 2026-08-19: these tests previously asserted that Back was hidden at
    * lobby depth and that Hub did not exist at all. Dan asked for the opposite —
    * "the club arena needs a back button and hub button inside the global
-   * header" — so GlobalHeader now renders the command center, Back and Hub
+   * header" — so GlobalHeader now renders the hamburger, Back and Hub
    * unconditionally and the `pageDepth` prop is gone (both real callers,
    * AppLayout and HomePage, already render <GlobalHeader /> with no props).
    * Depth-conditional assertions would now pin the exact behaviour that was
    * reported as a bug, so they are replaced with unconditional ones.
    */
-  it('always renders the command center, Back and Hub in the left slot', () => {
+  it('always renders the hamburger, Back and Hub in the left slot', () => {
     render(
       <MemoryRouter>
         <GlobalHeader />
@@ -93,11 +91,10 @@ describe('GlobalHeader Component', () => {
     expect(screen.getByRole('button', { name: /Go Back/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Go To The Hub/i })).toBeInTheDocument();
 
-    expect(
-      screen
-        .getByRole('button', { name: /Open Menu/i })
-        .querySelector('[data-command-grid="six-tile"]')
-    ).toBeInTheDocument();
+    expect(screen.getByAltText('Menu')).toHaveAttribute(
+      'src',
+      expect.stringContaining('images/global-header/menu.png')
+    );
     expect(screen.getByAltText('Back')).toHaveAttribute(
       'src',
       expect.stringContaining('images/global-header/back.png')

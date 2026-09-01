@@ -787,3 +787,37 @@
 .sw--passthrough * {
   pointer-events: none;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   A SHORT VIEWPORT MUST NOT CLIP THE REVEAL (2026-09-01)
+
+   This file had ZERO height-based media queries, and `.sw__tree` is pinned
+   at `top: -132px`. On a landscape phone - 375px of height is ordinary - the
+   starting tree rendered at roughly -10px and was clipped, so the 3-2-1 the
+   whole sequence is built around happened off screen.
+
+   Two steps rather than one continuous scale: the tree tucks back inside the
+   stage first, and only on a really short viewport does the disc shrink. The
+   result card is never scaled away, because it is the part that carries the
+   answer.
+   ───────────────────────────────────────────────────────────────────────── */
+@media (max-height: 560px) {
+  .sw__tree {
+    top: -72px;
+    transform: scale(0.8);
+    transform-origin: top center;
+  }
+}
+
+@media (max-height: 440px) {
+  .sw__tree {
+    top: -48px;
+    transform: scale(0.62);
+    transform-origin: top center;
+  }
+
+  .sw__disc-wrap {
+    transform: scale(0.78);
+    transform-origin: center;
+  }
+}

@@ -4040,6 +4040,13 @@ button.post-bb-overlay-button {
    A tap on an open Spin / Heads-Up seat used to spend money on the spot. This
    sheet is the gate between the tap and the debit, and it names the price.
    ═══════════════════════════════════════════════════════════════════════════ */
+/* A SHORT VIEWPORT MUST NOT PUT THE BUTTON OFF SCREEN (2026-09-01).
+
+   This was a fixed, centred flex box with no `overflow-y`. On a landscape
+   phone - 375px of height is common - the card is taller than the viewport,
+   so the confirm button sat below the fold with no way to reach it: the
+   player could see the buy-in and could not take it. Scrolling the wrapper
+   costs nothing on a tall screen and is the whole fix on a short one. */
 .seat-buyin-confirm {
   position: fixed;
   inset: 0;
@@ -4048,6 +4055,8 @@ button.post-bb-overlay-button {
   align-items: center;
   justify-content: center;
   padding: 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .seat-buyin-confirm__backdrop {
   position: absolute;

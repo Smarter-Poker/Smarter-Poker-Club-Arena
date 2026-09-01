@@ -833,8 +833,24 @@ export default function SpinWheel({
       className={`sw sw--${phase} ${tierClass(data.multiplier)}${scoped ? ' sw--scoped' : ''}${
         captureInput ? '' : ' sw--passthrough'
       }`}
-      role="dialog"
-      aria-modal="true"
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  NOT A DIALOG (2026-09-01)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * This carried `role="dialog" aria-modal="true"` and had no focusable
+       * control, no focus move and no way to dismiss it. `aria-modal` tells
+       * assistive tech to ignore EVERYTHING outside the element, so a screen
+       * reader announced "Spin Multiplier Draw, dialog" and then hid the rest
+       * of the table for the whole hold - in exchange for an overlay the
+       * player cannot interact with at all.
+       *
+       * A focus trap would be the fix if there were anything to focus. There
+       * is not: the wheel is a decoration that resolves itself. So it stops
+       * claiming to be a dialog, and the meaning is carried by the live region
+       * below, which was added on 2026-08-31 and already says the multiplier,
+       * the prize pool and who cashes.
+       */
       aria-label="Spin Multiplier Draw"
     >
       {/* Rendered from the first frame and never removed: a live region that

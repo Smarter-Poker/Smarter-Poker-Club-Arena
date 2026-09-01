@@ -20853,8 +20853,15 @@ export default function TablePage({
                 >
                   {spinOddsOpen ? 'Hide Multiplier Odds' : 'Show Multiplier Odds'}
                 </button>
+                {/* AN INCOMPLETE ARIA TABLE IS WORSE THAN NONE (2026-09-01).
+                    The odds grid was `role="table"` over plain divs with no
+                    `role="row"` and no `role="cell"` anywhere beneath it, so a
+                    screen reader announced a table and then found nothing in
+                    it. The visual layout is a grid and the content reads
+                    correctly in DOM order, so it is now allowed to be what it
+                    is rather than claiming a structure it does not have. */}
                 {spinOddsOpen && (
-                  <div className="seat-buyin-confirm__odds-table" role="table">
+                  <div className="seat-buyin-confirm__odds-table">
                     <div className="seat-buyin-confirm__odds-row seat-buyin-confirm__odds-row--head">
                       <span>Wheel</span>
                       <span>Prize Pool</span>

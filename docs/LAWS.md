@@ -78,3 +78,4 @@ whichever test the next agent notices first.
 | tests/no-dead-felt.law.test.ts                                    | A wait the player can see is filled: the Spin wheel holds the felt until the engine deals and says how long is left (Dan 2026-09-01)                             |
 | tests/a-wheel-belongs-to-its-own-table.law.test.ts                | A Spin wheel is scoped to its own tile and never covers or blocks the other three, and scoping is not suppression                                                |
 | tests/the-wheel-agrees-with-the-shared-clock.law.test.ts          | The Spin wheel's confetti, late-mount, speed preference and fallback deadline all agree with the engine's shared clock                                           |
+| tests/an-overlay-does-not-claim-what-it-is-not.law.test.ts        | No aria-modal on a non-interactive overlay, no role=table over plain divs, and a short viewport clips neither the reveal nor the buy-in button                   |

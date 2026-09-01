@@ -29,6 +29,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { HandController } from './HandController.js';
+import { sliceBetween } from '../testHelpers/sourceWindow.js';
 import type { HandConfig, HandEvent, SeatPlayer } from '../types.js';
 
 function mkPlayers(stacks: number[]): SeatPlayer[] {
@@ -159,9 +160,13 @@ describe('the consumer prefers the event over live state', () => {
       require('node:path').join(__dirname, 'ServerTableEngineHandEvents.ts'),
       'utf8'
     );
-    const at = src.indexOf("case 'PLAYER_ACTION':");
-    expect(at).toBeGreaterThan(-1);
-    const body = src.slice(at, at + 4000).replace(/\/\*[\s\S]*?\*\//g, '');
+    // Bounded by the case label that follows, not by a byte count — a fixed
+    // window drifts off the code it watches as comments accumulate
+    // (tests/unit/noFixedSizeSourceWindows.test.ts is the meta-guard).
+    const body = sliceBetween(src, "case 'PLAYER_ACTION':", '\n      case ').replace(
+      /\/\*[\s\S]*?\*\//g,
+      ''
+    );
     expect(body).toContain('event.stage ??');
     // The bare live-state read must not be what feeds the persisted record.
     expect(body).not.toMatch(/const stage = hcState\?\.stage \|\| 'preflop';/);

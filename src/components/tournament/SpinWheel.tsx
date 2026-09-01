@@ -140,6 +140,31 @@ export interface SpinWheelProps {
   data: SpinWheelData | null;
   onDone: () => void;
   playSounds?: boolean;
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  A WHEEL BELONGS TO ITS OWN TABLE (2026-09-01)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * `.sw` is `position: fixed; inset: 0`, so in tile view a Spin firing on
+   * one table painted over ALL FOUR and swallowed their input for the whole
+   * hold. You could be timed out on a table you could not see, behind a wheel
+   * you were not watching.
+   *
+   * The answer is not to suppress the wheel on an inactive tile - CLAUDE.md
+   * 10.6 says an animation plays every time it is owed, for its full
+   * duration, and it is owed on ITS table. The answer is that it stops
+   * escaping that table. `scoped` swaps fixed for absolute, and
+   * `.multi-table-grid__stage` is already `position: relative; overflow:
+   * hidden`, so the wheel is clipped to the tile it belongs to.
+   */
+  scoped?: boolean;
+  /**
+   * Whether this wheel may take pointer input. False on a tile the player is
+   * not looking at, so the click that SELECTS that tile reaches the cell
+   * underneath instead of being eaten by the overlay. The player moves their
+   * own view - the same principle as CLAUDE.md 10.6's no-auto-switch rule.
+   */
+  captureInput?: boolean;
 }
 
 type Phase = 'idle' | 'countdown' | 'chase' | 'result';
@@ -354,7 +379,13 @@ export function chaseCatchUp(
   return { litNow, remaining };
 }
 
-export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheelProps) {
+export default function SpinWheel({
+  data,
+  onDone,
+  playSounds = true,
+  scoped = false,
+  captureInput = true,
+}: SpinWheelProps) {
   const lockedDetail = useMemo(() => {
     const map = new Map<number, SpinLockedTier>();
     for (const m of data?.lockedMultipliers ?? []) map.set(m, { multiplier: m });
@@ -707,7 +738,9 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
 
   return (
     <div
-      className={`sw sw--${phase} ${tierClass(data.multiplier)}`}
+      className={`sw sw--${phase} ${tierClass(data.multiplier)}${scoped ? ' sw--scoped' : ''}${
+        captureInput ? '' : ' sw--passthrough'
+      }`}
       role="dialog"
       aria-modal="true"
       aria-label="Spin Multiplier Draw"

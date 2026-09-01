@@ -725,3 +725,33 @@
     animation: none;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   A WHEEL BELONGS TO ITS OWN TABLE (2026-09-01)
+
+   `.sw` is fixed to the viewport, which is right for a single table and
+   wrong for tile view: a Spin on one table painted over all four and
+   swallowed their input for the whole hold, so a player could be timed out
+   on a table they could not see behind a wheel they were not watching.
+
+   Scoped, it is absolute instead. `.multi-table-grid__stage` is already
+   `position: relative; overflow: hidden`, so the wheel is clipped to the
+   tile that owns it. The z-index drops to a local value for the same
+   reason - it only has to sit above its own felt, and 99997 inside a tile
+   is an invitation to escape it later.
+
+   The animation is NOT suppressed on an inactive tile. CLAUDE.md 10.6: an
+   animation plays every time it is owed, for its full duration, and it is
+   owed on its own table.
+   ───────────────────────────────────────────────────────────────────────── */
+.sw--scoped {
+  position: absolute;
+  z-index: 60;
+}
+
+/* On a tile the player is not looking at, the click that SELECTS that tile
+   must reach the cell underneath rather than being eaten by the overlay. */
+.sw--passthrough,
+.sw--passthrough * {
+  pointer-events: none;
+}

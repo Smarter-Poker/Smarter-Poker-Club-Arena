@@ -18900,6 +18900,13 @@ export default function TablePage({
           setSpinDraw(null);
         }}
         playSounds={ambientSoundsAllowed}
+        /* A wheel belongs to its own table. In tile view `.sw`'s fixed
+           full-viewport overlay painted over all four tiles and ate their
+           input for the whole hold; scoped to the tile it is clipped by
+           `.multi-table-grid__stage`. The animation still plays in full on
+           the tile that owns it - 10.6 says it is owed there. */
+        scoped={isMultiTable}
+        captureInput={!isMultiTable || isActive}
       />
 
       <DisconnectToast heroUserId={userId} disconnectStates={disconnectStates} />

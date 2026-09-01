@@ -3580,6 +3580,43 @@ export class GameServer {
           } catch (pgEx) {
             reportError(pgEx, 'GameServer.payout_guarantee_check_threw');
           }
+
+          // ── A CASH POT REACHES A PLAYER OR IT IS A BUG (2026-09-01) ──
+          // The cash half of the same question. Chips leaving the FELT were
+          // already watched (the 2026-08-25 seat-exit trigger, currently zero
+          // unaccounted); chips leaving a POT were not watched by anything.
+          // pot_size must equal rake + bbj + what the winners were awarded.
+          // Measured over the three days to 2026-09-01, 159,695 cash hands: no
+          // mismatches and nothing owed. Two hands recorded no winner at all,
+          // and both had their whole pot after rake go to the Bad Beat Jackpot
+          // (0.30 pot, 0.03 rake, 0.27 bbj) - fully accounted, so the check was
+          // corrected on its first live run to count only a no-winner hand that
+          // is still HOLDING chips. Healthy, and until now healthy unobserved,
+          // which is exactly where the vacant finishing places sat for ten
+          // weeks.
+          // Shares the hourly gate above deliberately: it asks the same
+          // question of the same money on the same pass, and a second timer
+          // for it would be ceremony.
+          try {
+            const { data: cp, error: cpErr } = await supabase.rpc(
+              'fn_cash_pot_conservation_check',
+              { p_since_hours: 24 }
+            );
+            if (cpErr) {
+              reportError(
+                new Error(`[GameServer] cash pot conservation check failed: ${cpErr.message}`),
+                'GameServer.cash_pot_check_failed'
+              );
+            } else if (Number(cp?.pot_not_distributed) > 0 || Number(cp?.no_winner_recorded) > 0) {
+              console.log(
+                `[GameServer] Cash pot conservation: ${cp.pot_not_distributed} hand(s) did not distribute ` +
+                  `(${cp.pot_not_distributed_chips} chips), ${cp.no_winner_recorded} with no winner ` +
+                  `(${cp.no_winner_recorded_chips} chips), out of ${cp.hands_checked} checked`
+              );
+            }
+          } catch (cpEx) {
+            reportError(cpEx, 'GameServer.cash_pot_check_threw');
+          }
         }
 
         // ── DUPLICATE-PLACE OVERPAY CHARGE (2026-08-28) ──

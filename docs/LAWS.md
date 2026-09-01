@@ -75,3 +75,34 @@ whichever test the next agent notices first.
 | server/src/tournament/aStalledTournamentIsNoticed.law.test.ts     | A RUNNING tournament that stops dealing is repaired, not left for hours                                                                                          |
 | server/src/tournament/seatFirstStartsOnSeatsNotClocks.law.test.ts | A Spin or a duel starts on seats sold, never on a scheduled time                                                                                                 |
 | server/src/tournament/headsUpIntegrityRulings.law.test.ts         | Dan's 2026-09-01 heads-up rulings: no RIT/insurance in tournaments, all-in hands survive a disconnect, no pause at two players, duel detection stays signal-only |
+
+## Server laws
+
+Added 2026-09-01. `tests/law-registry.law.test.ts` scanned `tests/` only, so
+twenty-one law tests under `server/src` — most of the money laws — were
+invisible to the registry that exists to stop two laws fighting. The scan now
+covers both trees.
+
+| Law test file                                                       | Guards                                                                    |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| server/src/engine/HandController.noFlopNoDrop.law.test.ts           | No flop, no drop: rake priced from the board, not from a flag             |
+| server/src/engine/HandController.staleRunout.law.test.ts            | A stale run-out cannot re-price a hand that already settled               |
+| server/src/engine/RakeBBJCollection.law.test.ts                     | Rake and BBJ collection (CLAUDE.md, Dan 2026-08-29)                       |
+| server/src/engine/SqueezeAndPagination.law.test.ts                  | The squeeze branch stays reachable and tuner feeds page over a unique key |
+| server/src/engine/StaleContinuationSweep.law.test.ts                | A continuation left behind by a restart is swept, not resumed blind       |
+| server/src/services/AlertsDoNotRepeat.law.test.ts                   | One open alert per thing that is wrong, not one per pass over it          |
+| server/src/services/PagedReadsAreDeterministic.law.test.ts          | A paged read orders by a unique key                                       |
+| server/src/services/spinsAreObservable.law.test.ts                  | A Spin's central equality is watched                                      |
+| server/src/services/tournamentsAreObservable.law.test.ts            | A tournament is visible to monitoring                                     |
+| server/src/tournament/EveryEarnerIsPaid.law.test.ts                 | Every player who earned a payout is paid, measured against the wallet     |
+| server/src/tournament/NoResultWithoutAHand.law.test.ts              | A recovery may not invent a podium for an event that never dealt          |
+| server/src/tournament/aGuaranteeIsAPromise.law.test.ts              | An advertised guarantee is funded and checked                             |
+| server/src/tournament/aSatelliteSeatIsAPayout.law.test.ts           | A satellite seat is a payout, and an unknown origin is not a "no"         |
+| server/src/tournament/aStalledTournamentIsNoticed.law.test.ts       | A tournament that stops dealing is noticed                                |
+| server/src/tournament/aStuckSatelliteGoesSomewhere.law.test.ts      | A stuck satellite takes one of its three exits                            |
+| server/src/tournament/aTournamentPayoutIsARecord.law.test.ts        | A payout is a record, not a column                                        |
+| server/src/tournament/blindsAndPayoutsFitTheTournament.law.test.ts  | Blinds and payout structure fit the tournament                            |
+| server/src/tournament/headsUpIntegrityRulings.law.test.ts           | Dan's Phase 5 rulings on heads-up behaviour                               |
+| server/src/tournament/payoutExactness.law.test.ts                   | Payouts are exact to the cent (Dan 2026-08-29)                            |
+| server/src/tournament/seatFirstStartsOnSeatsNotClocks.law.test.ts   | A Spin or Duel starts on seats sold, never on a clock                     |
+| server/src/tournament/theReconcilerTrustsWhatItCanProve.law.test.ts | The reconciler trusts what it can prove                                   |

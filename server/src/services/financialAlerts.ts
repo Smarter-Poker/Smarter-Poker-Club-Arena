@@ -47,12 +47,21 @@ export interface RaiseFinancialAlertResult {
  * @param source   dotted subsystem identifier, e.g. 'ServerTableEngine.insurance_ledger_write_failed'
  * @param message  human-readable one-liner for the operator
  * @param context  structured payload — include every id needed to reconstruct the event by hand
+ * @param dedupeKey optional. One OPEN alert per thing that is wrong, rather than
+ *   one per pass over it: when an unresolved alert from the same source already
+ *   carries this key, its id comes back and no second row is written. Pass the
+ *   id of the SUBJECT (a tournament, a club, a hand), never anything that moves
+ *   between passes — a key containing a timestamp or an amount dedupes nothing.
+ *   Measured 2026-09-01 before this existed: fn_close_settlement_period held 244
+ *   open rows describing ONE problem, and FeeReconciler.prize_disbursement 18
+ *   describing two. A critical that matters is one line among those.
  */
 export async function raiseFinancialAlert(
   severity: FinancialAlertSeverity,
   source: string,
   message: string,
-  context: Record<string, unknown> = {}
+  context: Record<string, unknown> = {},
+  dedupeKey?: string
 ): Promise<RaiseFinancialAlertResult> {
   try {
     const { data, error } = await supabase.rpc('fn_raise_server_financial_alert', {
@@ -60,6 +69,7 @@ export async function raiseFinancialAlert(
       p_source: source,
       p_message: message,
       p_context: context,
+      ...(dedupeKey ? { p_dedupe_key: dedupeKey } : {}),
     });
 
     if (error) {

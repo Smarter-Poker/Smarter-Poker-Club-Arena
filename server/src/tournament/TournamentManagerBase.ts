@@ -3963,6 +3963,68 @@ export abstract class TournamentManagerBase {
       const current = parsePayoutStructure(t?.payout_structure) ?? [];
       if (current.length === wanted) return;
 
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  A STRUCTURE MAY DEEPEN AT ANY TIME. IT MAY SHALLOW ONLY WHILE
+       *  NOTHING HAS BEEN PAID (2026-09-01)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * Everything above this line reasons about WIDENING, and the docblock
+       * says so. The condition is `!==`, so it narrows as well, and narrowing
+       * after a place has already been paid is a straight overpay: the places
+       * that remain renormalise over the WHOLE pool as though nothing had
+       * gone out, and whatever the dropped places were paid is on top.
+       *
+       * MEASURED LIVE, twice on 2026-09-01 alone, and the arithmetic is exact
+       * both times - the excess equals the sum of the dropped places:
+       *
+       *   Late Night Grind (PLO4) 38a107f4, pool 50.00
+       *     02:40:57  position 5 paid 3.21   (five-place structure)
+       *     ...structure fitted to three places...
+       *     02:47:41  position 3 paid 11.57
+       *     02:50:39  position 2 paid 16.09
+       *     02:50:43  position 1 paid 22.34  -> 1..3 = 50.00 exactly
+       *     disbursed 53.21 against a 50.00 pool. Excess 3.21.
+       *
+       *   Brunch Special PKO (PLO8) c27630fe, pool 180.00
+       *     positions 4 and 5 paid 4.00 and 2.80, then 1..3 paid 180.00.
+       *     disbursed 186.80. Excess 6.80 = 4.00 + 2.80.
+       *
+       * Over the 30 days to 2026-09-01 this class is 39 MTTs and 21 Spins.
+       *
+       * Keeping the current structure is the conservative branch and the one
+       * every other failure path here already takes: the advertised structure
+       * stands, the places already paid keep their money, and the reconciler
+       * pays the rest of the ladder out of what is left. The pool conserves.
+       */
+      if (wanted < current.length) {
+        const { data: paidRows, error: paidErr } = await supabase
+          .from('tournament_players')
+          .select('position')
+          .eq('tournament_id', this.tournamentId)
+          .gt('prize', 0)
+          .order('position', { ascending: false })
+          .limit(1);
+        // An unreadable list is UNKNOWN, and UNKNOWN never authorizes a
+        // narrowing that could strand a payment that has already happened.
+        if (paidErr) {
+          reportError(
+            new Error(
+              `[Tournament:${this.tournamentId.slice(0, 8)}] payout fit skipped - could not read which places have been paid (${paidErr.message}); the advertised ${current.length}-place structure stands`
+            ),
+            'Tournament.payout_fit_paid_places_unreadable'
+          );
+          return;
+        }
+        const deepestPaid = Number(paidRows?.[0]?.position ?? 0);
+        if (deepestPaid > wanted) {
+          console.log(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] Payout structure NOT narrowed ${current.length} -> ${wanted}: place ${deepestPaid} has already been paid, and dropping it would let the remaining places renormalise over a pool that is already short`
+          );
+          return;
+        }
+      }
+
       const widened = payoutStructureForField(field);
       const { error: writeErr } = await supabase
         .from('tournaments')

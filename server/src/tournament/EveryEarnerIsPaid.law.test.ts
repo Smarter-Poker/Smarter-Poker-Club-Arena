@@ -26,6 +26,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const migration = readFileSync(
   join(
@@ -129,6 +130,53 @@ describe('the sweep that pays cannot fail a player quietly', () => {
   it('still leaves satellites and spins alone', () => {
     expect(sweep).toMatch(/COALESCE\(t\.variant, ''\) <> 'satellite'/);
     expect(sweep).toMatch(/COALESCE\(t\.variant, ''\) <> 'spin'/);
+  });
+});
+
+describe('a structure may deepen at any time, and shallow only while nothing is paid', () => {
+  const base = readFileSync(join(__dirname, './TournamentManagerBase.ts'), 'utf8');
+
+  it('fitPayoutStructureToField refuses to drop a place that has been paid', () => {
+    // MEASURED LIVE twice on 2026-09-01, and the arithmetic is exact both
+    // times - the excess equals the sum of the dropped places:
+    //   Late Night Grind 38a107f4: position 5 paid 3.21, structure then fitted
+    //     to three places, positions 1..3 paid 50.00 = the whole pool.
+    //     Disbursed 53.21 against a 50.00 pool.
+    //   Brunch Special PKO c27630fe: positions 4 and 5 paid 4.00 and 2.80,
+    //     then 1..3 paid the whole 180.00. Disbursed 186.80.
+    // Over the 30 days to 2026-09-01 this class is 39 MTTs and 21 Spins.
+    // Bounded by the method, never by a byte count: a magic window drifts off
+    // the code it guards as comments are added, and the silent direction of
+    // that drift is a pin that passes while watching nothing.
+    const body = sliceMethod(base, 'protected async fitPayoutStructureToField');
+    expect(body.length).toBeGreaterThan(0);
+
+    // It only asks the question when it is about to NARROW.
+    expect(body).toContain('if (wanted < current.length)');
+    // The question is which places have already been paid.
+    expect(body).toMatch(/\.gt\('prize', 0\)/);
+    expect(body).toContain('const deepestPaid');
+    // And it stands down rather than narrowing past one.
+    expect(body).toContain('if (deepestPaid > wanted)');
+
+    // The refusal must come BEFORE the write, or it guards nothing.
+    const guardAt = body.indexOf('if (wanted < current.length)');
+    const writeAt = body.indexOf('payout_structure: JSON.stringify(widened)');
+    expect(writeAt).toBeGreaterThan(-1);
+    expect(guardAt).toBeLessThan(writeAt);
+  });
+
+  it('an unreadable paid-place list stands the structure down rather than guessing', () => {
+    expect(sliceMethod(base, 'protected async fitPayoutStructureToField')).toContain(
+      'Tournament.payout_fit_paid_places_unreadable'
+    );
+  });
+
+  it('widening is untouched', () => {
+    // Everything this function was written for still happens; only the
+    // narrowing direction gained a precondition.
+    expect(base).toContain('const widened = payoutStructureForField(field);');
+    expect(base).toContain('Tournament.payout_widen_field_unreadable');
   });
 });
 

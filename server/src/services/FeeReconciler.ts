@@ -567,11 +567,17 @@ export async function auditBBJDrift(
         `against the jackpot pool by neither this audit nor fn_bbj_repair_unbanked. ` +
         `Rising numbers here mean logHandHistory is failing and returning a null id.`;
       reportError(new Error(detail), 'FeeReconciler.bbj_unlinkable');
-      await raiseFinancialAlert('warning', 'FeeReconciler.bbj_unlinkable', detail, {
-        windowDays,
-        unlinkableRows,
-        unlinkableChips,
-      });
+      // One OPEN alert for this condition, not one per pass: it had filed 94
+      // rows describing 33 findings and was still filing. The numbers live in
+      // the context of whichever row is open; resolving it lets the next pass
+      // re-report the current figure.
+      await raiseFinancialAlert(
+        'warning',
+        'FeeReconciler.bbj_unlinkable',
+        detail,
+        { windowDays, unlinkableRows, unlinkableChips },
+        'bbj_unlinkable'
+      );
     }
 
     if (Math.abs(drift) > toleranceChips) {
@@ -580,12 +586,13 @@ export async function auditBBJDrift(
         `of BBJ contribution, bbj_contributions received ${received} (drift ${drift}). ` +
         `A positive drift means chips left pots and never reached the jackpot pool.`;
       reportError(new Error(detail), 'FeeReconciler.bbj_drift');
-      await raiseFinancialAlert('warning', 'FeeReconciler.bbj_drift', detail, {
-        windowDays,
-        booked,
-        received,
-        drift,
-      });
+      await raiseFinancialAlert(
+        'warning',
+        'FeeReconciler.bbj_drift',
+        detail,
+        { windowDays, booked, received, drift },
+        'bbj_drift'
+      );
     }
     return { booked, received, drift, unlinkableRows, unlinkableChips };
   } catch (err) {
@@ -904,12 +911,35 @@ export async function auditPrizeDisbursement(
         )
         .join('; ');
     reportError(new Error(detail), 'FeeReconciler.prize_disbursement');
-    await raiseFinancialAlert('critical', 'FeeReconciler.prize_disbursement', detail, {
-      windowHours,
-      violations: rows.length,
-      excessTotal: Number(excess.toFixed(2)),
-      rows: rows.slice(0, 50),
-    });
+    /**
+     * ONE OPEN ALERT PER EVENT, NOT ONE PER PASS (2026-09-01).
+     *
+     * This raised a single aggregate alert describing every row in the window,
+     * with no dedupe, on an hourly timer. The same two tournaments therefore
+     * filed the same finding eighteen times and were still filing it - a list
+     * of minutes rather than a list of problems, and a critical that matters
+     * is one line among them. One alert per tournament, keyed on the
+     * tournament id, so the row count is the number of events that are wrong.
+     */
+    for (const r of rows) {
+      await raiseFinancialAlert(
+        'critical',
+        'FeeReconciler.prize_disbursement',
+        `${r.name || r.tournament_id}: paid out ${r.disbursed} against a ${r.prize_pool} pool ` +
+          `(${r.variant}), ${r.excess} beyond pool plus acknowledged`,
+        {
+          windowHours,
+          tournament_id: r.tournament_id,
+          name: r.name,
+          variant: r.variant,
+          prize_pool: r.prize_pool,
+          disbursed: r.disbursed,
+          acknowledged: r.acknowledged,
+          excess: r.excess,
+        },
+        r.tournament_id
+      );
+    }
     return { violations: rows.length, excess };
   } catch (err) {
     reportError(err, 'FeeReconciler.prize_disbursement_threw');

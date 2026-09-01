@@ -42,7 +42,22 @@ function lawFilesUnder(dir: string): string[] {
 
 describe('the law registry (docs/LAWS.md)', () => {
   const registry = readFileSync(REGISTRY_PATH, 'utf8');
-  const lawFiles = lawFilesUnder(join(ROOT, 'tests')).map((p) => p.replace(/\\/g, '/'));
+  /**
+   * SERVER LAWS ARE LAWS TOO (2026-09-01).
+   *
+   * This scanned `tests/` only, and twenty-one `*.law.test.ts` files live under
+   * `server/src` - payoutExactness, aTournamentPayoutIsARecord,
+   * theReconcilerTrustsWhatItCanProve, aGuaranteeIsAPromise and the rest of the
+   * money laws among them. Every one of them was invisible to the registry this
+   * file exists to keep honest, which is precisely the condition that let two
+   * contradictory artwork laws coexist in different worktrees and start the
+   * revert war. A law nobody can see from the registry is a law the next agent
+   * cannot check against before writing its opposite.
+   */
+  const lawFiles = [
+    ...lawFilesUnder(join(ROOT, 'tests')),
+    ...lawFilesUnder(join(ROOT, 'server', 'src')),
+  ].map((p) => p.replace(/\\/g, '/'));
 
   it('exists and has a registry table', () => {
     expect(registry).toContain('## Registry');
@@ -58,9 +73,9 @@ describe('the law registry (docs/LAWS.md)', () => {
 
   it('lists no law file that does not exist (retire laws visibly)', () => {
     // Tolerates Prettier's column padding: any whitespace around the cell.
-    const listed = [...registry.matchAll(/\|\s*(tests\/\S+\.law\.test\.\w+)\s*\|/g)].map(
-      (m) => m[1]
-    );
+    const listed = [
+      ...registry.matchAll(/\|\s*((?:tests|server\/src)\/\S+\.law\.test\.\w+)\s*\|/g),
+    ].map((m) => m[1]);
     const ghosts = listed.filter((f) => !lawFiles.includes(f));
     expect(
       ghosts,

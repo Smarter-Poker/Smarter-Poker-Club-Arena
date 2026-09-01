@@ -172,7 +172,11 @@ interface TradeRecordRow {
   createdAt: string;
   type: string;
   amount: number;
-  direction: 'in' | 'out';
+  /** 'club' = the viewer is neither party; the row is visible through their
+   *  role (Dan 2026-09-01: bank roles see everything, agents see their
+   *  downline). Club rows render both names and stay out of the viewer's
+   *  IN / OUT totals. */
+  direction: 'in' | 'out' | 'club';
   counterparty: string;
 }
 
@@ -957,53 +961,58 @@ export default function CashierTradePage() {
     setRecordsLoading(true);
     setRecordsError(null);
     try {
-      const { data, error } = await supabase
-        .from('chip_transactions')
-        .select('id, created_at, transaction_type, amount, from_user_id, to_user_id, notes')
-        .eq('club_id', clubUuid)
-        .or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`)
-        .order('created_at', { ascending: false })
-        // Fetch one sentinel row so the UI only offers "Load Older Entries"
-        // when another page really exists. Initial wire cost stays at 51 rows.
-        .limit(recordsLimit + 1);
+      /* Dan 2026-09-01, binding: visibility is decided by ROLE, server-side,
+         the same for every wallet surface. Bank roles (owner, co-owner,
+         admin, super agent) see every club transaction; agents and sub
+         agents see their own downline; players see rows they are a party
+         to. The old query hardcoded from/to = viewer, so a club OWNER saw
+         two rows while the club-bank modal showed all 448.
+         fn_club_trade_ledger applies the matrix and returns names. */
+      const { data, error } = await supabase.rpc('fn_club_trade_ledger', {
+        p_club_id: clubUuid,
+        // One sentinel row so the UI only offers "Load Older Entries" when
+        // another page really exists. Initial wire cost stays at 51 rows.
+        p_limit: recordsLimit + 1,
+        p_offset: 0,
+      });
       if (!isMounted.current || seq !== recordSeqRef.current) return false;
       // A discarded error rendered as "No trades recorded yet", which is a
       // different statement from "we could not read them".
       if (error) throw error;
       const pageRows = (data || []).slice(0, recordsLimit);
-      const ids = new Set<string>();
-      for (const r of pageRows) {
-        if (r.from_user_id) ids.add(r.from_user_id);
-        if (r.to_user_id) ids.add(r.to_user_id);
-      }
-      const { data: profs, error: profilesError } = ids.size
-        ? await supabase
-            .from('profiles')
-            .select('id, display_name, username')
-            .in('id', Array.from(ids))
-        : { data: [], error: null };
-      // The ledger itself is authoritative. A profile outage must not hide
-      // the money rows, but reconciliation must report the degraded name
-      // surface rather than announcing complete success.
-      if (profilesError) reportError(profilesError, 'CashierTradePage.recordProfiles');
-      const nameOf = new Map((profs || []).map((p) => [p.id, p.display_name || p.username]));
       if (!isMounted.current || seq !== recordSeqRef.current) return false;
       setRecordsHasMore((data || []).length > recordsLimit);
       setRecords(
-        pageRows.map((r) => {
-          const out = r.from_user_id === user.id;
-          const other = out ? r.to_user_id : r.from_user_id;
+        pageRows.map((r: Record<string, unknown>) => {
+          const fromId = r.from_user_id as string | null;
+          const toId = r.to_user_id as string | null;
+          const fromName = (r.from_name as string) || 'Club';
+          const toName = (r.to_name as string) || 'Club';
+          // 'club' = the viewer is neither party; the row is visible through
+          // their role. Both names render, and the row stays out of the
+          // viewer's personal IN / OUT totals.
+          const direction =
+            fromId === user.id
+              ? ('out' as const)
+              : toId === user.id
+                ? ('in' as const)
+                : ('club' as const);
           return {
-            id: r.id,
-            createdAt: r.created_at,
+            id: r.id as string,
+            createdAt: r.created_at as string,
             type: (r.transaction_type as string) || 'transfer',
             amount: Number(r.amount) || 0,
-            direction: out ? ('out' as const) : ('in' as const),
-            counterparty: (other && nameOf.get(other)) || 'Club',
+            direction,
+            counterparty:
+              direction === 'out'
+                ? toName
+                : direction === 'in'
+                  ? fromName
+                  : `${fromName} → ${toName}`,
           };
         })
       );
-      return !profilesError;
+      return true;
     } catch (e) {
       reportError(e, 'CashierTradePage.records');
       if (isMounted.current && seq === recordSeqRef.current) {
@@ -2728,11 +2737,11 @@ export default function CashierTradePage() {
                     dialogTriggerRef.current = event.currentTarget;
                     setReceipt(r);
                   }}
-                  aria-label={`Open Receipt For ${r.direction === 'out' ? 'Payment To' : 'Payment From'} ${r.counterparty}, ${fmt(r.amount)} Chips`}
+                  aria-label={`Open Receipt For ${r.direction === 'out' ? 'Payment To' : r.direction === 'in' ? 'Payment From' : 'Club Movement'} ${r.counterparty}, ${fmt(r.amount)} Chips`}
                 >
                   <div className={styles.rowInfo}>
                     <span className={styles.rowName}>
-                      {r.direction === 'out' ? 'To ' : 'From '}
+                      {r.direction === 'out' ? 'To ' : r.direction === 'in' ? 'From ' : ''}
                       {r.counterparty}
                     </span>
                     <span className={styles.rowSub}>
@@ -2746,9 +2755,9 @@ export default function CashierTradePage() {
                     </span>
                   </div>
                   <span
-                    className={`${styles.rowBalance} ${r.direction === 'in' ? styles.amtIn : styles.amtOut}`}
+                    className={`${styles.rowBalance} ${r.direction === 'in' ? styles.amtIn : r.direction === 'out' ? styles.amtOut : ''}`}
                   >
-                    {r.direction === 'in' ? '+' : '-'}
+                    {r.direction === 'in' ? '+' : r.direction === 'out' ? '-' : ''}
                     {fmt(r.amount)}
                   </span>
                   <span className={styles.receiptCue}>Receipt</span>
@@ -3026,9 +3035,23 @@ export default function CashierTradePage() {
               </div>
             </div>
             <div className={styles.receiptAmount}>
-              <span>{receipt.direction === 'in' ? 'Incoming' : 'Outgoing'}</span>
-              <strong className={receipt.direction === 'in' ? styles.amtIn : styles.amtOut}>
-                {receipt.direction === 'in' ? '+' : '-'}
+              <span>
+                {receipt.direction === 'in'
+                  ? 'Incoming'
+                  : receipt.direction === 'out'
+                    ? 'Outgoing'
+                    : 'Club Movement'}
+              </span>
+              <strong
+                className={
+                  receipt.direction === 'in'
+                    ? styles.amtIn
+                    : receipt.direction === 'out'
+                      ? styles.amtOut
+                      : undefined
+                }
+              >
+                {receipt.direction === 'in' ? '+' : receipt.direction === 'out' ? '-' : ''}
                 {fmt(receipt.amount)}
               </strong>
               <small>Chips</small>
@@ -3039,7 +3062,13 @@ export default function CashierTradePage() {
                 <dd className={styles.integrityGood}>Recorded In Ledger</dd>
               </div>
               <div>
-                <dt>{receipt.direction === 'in' ? 'From' : 'To'}</dt>
+                <dt>
+                  {receipt.direction === 'in'
+                    ? 'From'
+                    : receipt.direction === 'out'
+                      ? 'To'
+                      : 'Between'}
+                </dt>
                 <dd>{receipt.counterparty}</dd>
               </div>
               <div>

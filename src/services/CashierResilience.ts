@@ -3,7 +3,10 @@ export interface CashierReceiptFields {
   createdAt: string;
   type: string;
   amount: number;
-  direction: 'in' | 'out';
+  /** 'club' = the viewer is neither party; visible through their role
+   *  (owner / co-owner / admin / super agent see everything, agents see
+   *  their downline). Renders both names, no +/- sign. */
+  direction: 'in' | 'out' | 'club';
   counterparty: string;
 }
 
@@ -187,7 +190,7 @@ const receiptLabel = (value: string): string =>
  * reference support and the ledger use to identify the exact movement.
  */
 export function cashierReceiptText(row: CashierReceiptFields, clubName: string): string {
-  const signedAmount = `${row.direction === 'in' ? '+' : '-'}${row.amount.toFixed(2)}`;
+  const signedAmount = `${row.direction === 'in' ? '+' : row.direction === 'out' ? '-' : ''}${row.amount.toFixed(2)}`;
   const recordedAt = new Date(row.createdAt);
   const recordedLabel = Number.isNaN(recordedAt.getTime())
     ? 'Unavailable'
@@ -198,7 +201,7 @@ export function cashierReceiptText(row: CashierReceiptFields, clubName: string):
     `Reference: ${row.id}`,
     `Recorded: ${recordedLabel}`,
     `Entry: ${receiptLabel(row.type) || 'Transfer'}`,
-    `${row.direction === 'in' ? 'From' : 'To'}: ${row.counterparty}`,
+    `${row.direction === 'in' ? 'From' : row.direction === 'out' ? 'To' : 'Between'}: ${row.counterparty}`,
     `Amount: ${signedAmount} Chips`,
     'Status: Recorded In Ledger',
   ].join('\n');

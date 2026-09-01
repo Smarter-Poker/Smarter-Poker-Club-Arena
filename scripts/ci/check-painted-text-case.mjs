@@ -57,11 +57,13 @@
  */
 
 import { readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
-import { join, extname } from 'node:path';
+import { join, extname, resolve } from 'node:path';
 import ts from 'typescript';
 
 const ROOT = new URL('../../', import.meta.url).pathname;
-const SRC = join(ROOT, 'src');
+const SRC = process.env.PAINTED_TEXT_SOURCE_DIR
+  ? resolve(process.env.PAINTED_TEXT_SOURCE_DIR)
+  : join(ROOT, 'src');
 const SKIP_DIRS = new Set(['node_modules', 'dist', '_to_delete', '__tests__', 'test-results']);
 const FIX = process.argv.includes('--fix');
 

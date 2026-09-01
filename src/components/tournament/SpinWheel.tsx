@@ -141,6 +141,31 @@ export interface SpinWheelProps {
   data: SpinWheelData | null;
   onDone: () => void;
   playSounds?: boolean;
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  A WHEEL BELONGS TO ITS OWN TABLE (2026-09-01)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * `.sw` is `position: fixed; inset: 0`, so in tile view a Spin firing on
+   * one table painted over ALL FOUR and swallowed their input for the whole
+   * hold. You could be timed out on a table you could not see, behind a wheel
+   * you were not watching.
+   *
+   * The answer is not to suppress the wheel on an inactive tile - CLAUDE.md
+   * 10.6 says an animation plays every time it is owed, for its full
+   * duration, and it is owed on ITS table. The answer is that it stops
+   * escaping that table. `scoped` swaps fixed for absolute, and
+   * `.multi-table-grid__stage` is already `position: relative; overflow:
+   * hidden`, so the wheel is clipped to the tile it belongs to.
+   */
+  scoped?: boolean;
+  /**
+   * Whether this wheel may take pointer input. False on a tile the player is
+   * not looking at, so the click that SELECTS that tile reaches the cell
+   * underneath instead of being eaten by the overlay. The player moves their
+   * own view - the same principle as CLAUDE.md 10.6's no-auto-switch rule.
+   */
+  captureInput?: boolean;
 }
 
 type Phase = 'idle' | 'countdown' | 'chase' | 'result';
@@ -355,7 +380,13 @@ export function chaseCatchUp(
   return { litNow, remaining };
 }
 
-export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheelProps) {
+export default function SpinWheel({
+  data,
+  onDone,
+  playSounds = true,
+  scoped = false,
+  captureInput = true,
+}: SpinWheelProps) {
   const lockedDetail = useMemo(() => {
     const map = new Map<number, SpinLockedTier>();
     for (const m of data?.lockedMultipliers ?? []) map.set(m, { multiplier: m });
@@ -484,8 +515,18 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
         : spinRevealTotalMs();
       const factor = budgetMs > 0 ? budgetMs / spinRevealTotalMs() : 1;
       /* Never stretch past the designed pace even when the server holds longer:
-         an over-long hold is dead air the engine owns, not slow motion. */
-      return Math.min(factor, 1);
+         an over-long hold is dead air the engine owns, not slow motion.
+         ─────────────────────────────────────────────────────────────────────
+         AND HONOUR THE PLAYER'S PREFERENCE (2026-09-01). `getAnimationSpeed()`
+         was consulted only on the no-shared-clock branch above, which never
+         happens in production - so the Animation Speed setting did nothing to
+         the wheel, while this component's own comment promised the opposite.
+         It joins the same one-sided clamp: a player may run the sequence
+         FASTER than the budget (their wheel lands early and the felt waits with
+         everyone else, and since 'no dead felt' the result card holds until the
+         engine deals), never slower, because slower means being dealt into a
+         hand while the wheel is still asking the question. */
+      return Math.min(factor, getAnimationSpeed(), 1);
     })();
 
     /**
@@ -499,7 +540,29 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
     /** Schedule against the shared clock: anything already past fires now. */
     const at = (offsetMs: number) => Math.max(0, offsetMs - elapsed);
 
-    setPhase('countdown');
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  A LATE ARRIVAL SEES THE RESULT, NOT A FLICKER (2026-09-01)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Every phase is scheduled through `at()`, which is
+     * `max(0, offset - elapsed)`. A client that mounts after the whole
+     * sequence has elapsed therefore resolves EVERY phase to zero: countdown,
+     * chase, result and exit all fire in the same tick. The player got a
+     * four-frame flash - and `onDone` stamps `markSpinRevealPlayed`, so that
+     * tab never showed the draw again. The defining moment of the format,
+     * spent on a flicker and then suppressed.
+     *
+     * If the sequence is already past its chase, there is nothing left to
+     * animate and the honest thing to show is the answer. Mount into
+     * `result`, hold it for the remaining time (and, since "no dead felt", at
+     * least until the engine deals), and let the exit happen normally.
+     */
+    const sequenceElapsedPastChase =
+      sharedClock &&
+      elapsed >= SPIN_REVEAL.LEAD_IN_MS + SPIN_REVEAL.COUNTDOWN_MS + SPIN_REVEAL.SPIN_MS;
+
+    setPhase(sequenceElapsedPastChase ? 'result' : 'countdown');
     setCount(COUNTDOWN_FROM);
     setTreeLit(0);
     setLitIndex(-1);
@@ -767,7 +830,9 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
 
   return (
     <div
-      className={`sw sw--${phase} ${tierClass(data.multiplier)}`}
+      className={`sw sw--${phase} ${tierClass(data.multiplier)}${scoped ? ' sw--scoped' : ''}${
+        captureInput ? '' : ' sw--passthrough'
+      }`}
       role="dialog"
       aria-modal="true"
       aria-label="Spin Multiplier Draw"
@@ -1000,8 +1065,29 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
 
       {phase === 'result' && celebration.confettiPieces > 0 && (
         <div className={`sw__confetti sw__confetti--${celebration.band}`} aria-hidden="true">
+          {/* ═══════════════════════════════════════════════════════════════
+              THE CELEBRATION HAS TO FIT ON THE SCREEN (2026-09-01)
+
+              `left: calc((var(--sw-c) * 4.16%) + 2%)` is 100/24: a spread
+              tuned by hand for 24 pieces. The tiers emit 16 / 32 / 48 / 72, so
+              every piece from index 24 up landed past 101.8% and was clipped -
+              a 50x and a 100x rendered IDENTICALLY to a 25x, which is the one
+              moment the format exists for. The delay had the same shape:
+              `index * 55ms` puts piece 71 at 3.905s against a 4.8s hold and a
+              1.8s fall, so the last pieces fell after the wheel had gone.
+
+              The count is now a variable, so the spread and the delay are
+              derived from how many pieces there actually are.
+              ═══════════════════════════════════════════════════════════════ */}
           {Array.from({ length: celebration.confettiPieces }, (_, i) => (
-            <span key={i} className="sw__conf" style={{ ['--sw-c' as string]: i }} />
+            <span
+              key={i}
+              className="sw__conf"
+              style={{
+                ['--sw-c' as string]: i,
+                ['--sw-c-total' as string]: celebration.confettiPieces,
+              }}
+            />
           ))}
         </div>
       )}

@@ -605,16 +605,28 @@
   overflow: hidden;
 }
 
+/* THE CELEBRATION HAS TO FIT ON THE SCREEN (2026-09-01).
+
+   `4.16%` is 100/24 - a spread hand-tuned for 24 pieces. The tiers emit
+   16 / 32 / 48 / 72, so every piece from index 24 up landed past 101.8% and
+   was clipped: a 50x and a 100x rendered IDENTICALLY to a 25x. `55ms` per
+   index had the same shape - piece 71 started at 3.905s against a 4.8s hold
+   and a 1.8s fall, so the tail fell after the wheel had gone.
+
+   Both are now derived from `--sw-c-total`, the actual piece count, with a
+   fallback of 24 so an older caller behaves exactly as before. The delay
+   spreads the whole burst across a fixed 900ms however many pieces there
+   are, which is what keeps the last piece inside the hold. */
 .sw__conf {
   position: absolute;
   top: -4%;
-  left: calc((var(--sw-c) * 4.16%) + 2%);
+  left: calc((var(--sw-c) / var(--sw-c-total, 24)) * 96% + 2%);
   width: 7px;
   height: 12px;
   border-radius: 2px;
   background: hsl(calc(var(--sw-c) * 47deg), 90%, 62%);
   animation: swConfFall 1.8s cubic-bezier(0.2, 0.6, 0.35, 1) both;
-  animation-delay: calc(var(--sw-c) * 55ms);
+  animation-delay: calc((var(--sw-c) / var(--sw-c-total, 24)) * 900ms);
 }
 
 @keyframes swConfFall {
@@ -744,4 +756,34 @@
   text-transform: uppercase;
   color: rgba(255, 255, 255, 0.72);
   font-variant-numeric: tabular-nums;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   A WHEEL BELONGS TO ITS OWN TABLE (2026-09-01)
+
+   `.sw` is fixed to the viewport, which is right for a single table and
+   wrong for tile view: a Spin on one table painted over all four and
+   swallowed their input for the whole hold, so a player could be timed out
+   on a table they could not see behind a wheel they were not watching.
+
+   Scoped, it is absolute instead. `.multi-table-grid__stage` is already
+   `position: relative; overflow: hidden`, so the wheel is clipped to the
+   tile that owns it. The z-index drops to a local value for the same
+   reason - it only has to sit above its own felt, and 99997 inside a tile
+   is an invitation to escape it later.
+
+   The animation is NOT suppressed on an inactive tile. CLAUDE.md 10.6: an
+   animation plays every time it is owed, for its full duration, and it is
+   owed on its own table.
+   ───────────────────────────────────────────────────────────────────────── */
+.sw--scoped {
+  position: absolute;
+  z-index: 60;
+}
+
+/* On a tile the player is not looking at, the click that SELECTS that tile
+   must reach the cell underneath rather than being eaten by the overlay. */
+.sw--passthrough,
+.sw--passthrough * {
+  pointer-events: none;
 }

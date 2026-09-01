@@ -701,6 +701,7 @@ import { adaptServiceHandToPanel, panelHandToShareable } from '../lib/handHistor
 import { useUserStore } from '../stores/useUserStore';
 import { resolveLobbyClubId, resolveLobbyClubIdSync } from '../utils/clubQuickLink';
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
+import { spinRevealToDealMs } from '../config/spinSpec';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // WINDOW-LEVEL LOCKS — TRUE singletons that survive module reloads, lazy-load
@@ -1142,6 +1143,23 @@ function buildSpinDrawFromRow(row: SpinDrawRow | null | undefined): SpinWheelDat
        SpinWheel skip to wherever the shared sequence already is instead of
        starting a private countdown from the top. */
     revealAtMs: revealAtMs ?? Date.now(),
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  ONE CLOCK, WHICHEVER PATH FOUND THE DRAW (2026-09-01)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * The socket path passes `hold_until` as `revealDeadlineMs`; this
+     * row-derived fallback passed nothing. So a client the socket never
+     * reached had no deadline, its speed clamp fell back to
+     * `spinRevealTotalMs()` and it could be out of step with the two seats
+     * that DID get the broadcast - the exact "three players, three wheels"
+     * failure the shared clock exists to prevent.
+     *
+     * The engine computes the hold as `revealAt + spinRevealToDealMs()`
+     * (TournamentManagerBase). Deriving it here from the same spec gives both
+     * paths the same number without inventing one.
+     */
+    revealDeadlineMs: (revealAtMs ?? Date.now()) + spinRevealToDealMs(),
   };
 }
 
@@ -18900,6 +18918,13 @@ export default function TablePage({
           setSpinDraw(null);
         }}
         playSounds={ambientSoundsAllowed}
+        /* A wheel belongs to its own table. In tile view `.sw`'s fixed
+           full-viewport overlay painted over all four tiles and ate their
+           input for the whole hold; scoped to the tile it is clipped by
+           `.multi-table-grid__stage`. The animation still plays in full on
+           the tile that owns it - 10.6 says it is owed there. */
+        scoped={isMultiTable}
+        captureInput={!isMultiTable || isActive}
       />
 
       <DisconnectToast heroUserId={userId} disconnectStates={disconnectStates} />

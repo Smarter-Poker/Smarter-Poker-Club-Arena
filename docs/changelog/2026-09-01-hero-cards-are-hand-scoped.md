@@ -108,6 +108,82 @@ live bundle at `/hub/club-arena/assets/TablePage-*.js` was fetched and contains
 `hole_card_push_refused`, `hero_card_board_collision` and
 `hole_card_channel_failed` - the three new telemetry tags. Not merged: running.
 
+## Follow-up the same day: the guards were switched off for the clients that needed them most
+
+A line-by-line pass over the subsystem after shipping the four doors found one
+live gap in the guards themselves, and it was the one that mattered.
+
+Both stale-hand checks read `heroHandRef`, and that ref was written in exactly
+ONE place: the `HAND_STARTED` handler.
+
+    door 1, the realtime push    currentHandNumber: heroHandRef.current
+    door 2, the recovery poll    heroHandRef.current > 0 && ...
+
+So every client that never receives that event - a mid-hand join, a reload, a
+dropped frame, the websocket sequence gap that fires `GAME_START` - ran the
+whole hand with the hand check DISABLED, leaving only the board check. Preflop
+there is no board, so there was nothing left at all. The clients most likely to
+be handed a stale row were the ones running unguarded.
+
+The cause had been sitting in the file, worked around twice without being read
+as a cause: `autoShowFiredHandRef` is initialised to `-1` with a comment saying
+"a client that joins mid-hand has heroHandRef 0 until its first HAND_STARTED",
+and the achievement fire is gated `hn > 0`, so a mid-hand-join hand never
+counted toward it.
+
+`tableState.handNumber` is server truth, is maintained from every engine
+snapshot rather than from one event, and was already trusted everywhere else.
+The ref seeds from it, FORWARD ONLY - a late or replayed snapshot must never
+lower the mark and re-admit a row this client has already moved past. Both
+workarounds stop being workarounds as a side effect.
+
+Also written down because the silence looked like an omission: a DELETE on the
+hole-card channel is ignored deliberately. `insert_hole_cards` prunes
+`hand_number < p_hand_number` on every deal, so the deletes this channel sees
+are the previous hand being tidied; clearing on one would blank a live hand at
+the moment the next is dealt.
+
+Shipped as PR #2535. The new pins were verified by MUTATION rather than by
+assumption: flipping `>` to `>=` fails two of the four, and restoring passes all
+eighteen.
+
+### Every write to the hero's holding, accounted for
+
+The audit that found it also enumerated the rest, so the next reader does not
+have to:
+
+| site                                    | what it does                               | status          |
+| --------------------------------------- | ------------------------------------------ | --------------- |
+| init                                    | `holeCards: []`                            | not a door      |
+| snapshot hold                           | keeps a holding across engine frames       | door 3, guarded |
+| villain showdown hold                   | opponent cards, not the hero's             | not a door      |
+| Pineapple discard splice                | removes one card from what is already held | not a door      |
+| realtime push                           | writes and OVERWRITES                      | door 1, guarded |
+| recovery poll                           | fills when empty                           | door 2, guarded |
+| `GAME_START` merge                      | carries forward on resync                  | door 4, guarded |
+| `HAND_STARTED` / unfold reset / the net | clear                                      | not doors       |
+
+No `TODO`, `FIXME`, `HACK` or stub marker remains anywhere in
+`TablePage.tsx`, `tableCardDisplay.ts`, `useUserTableSettings.ts` or
+`useMasterBusChannel.ts`.
+
+## Correction to an earlier recommendation of mine
+
+The first version of this entry said the engine should record what it dealt, so
+that "what did this player hold" is answerable for a hand that folded out.
+
+**That must not be done the way I implied.** Storing every dealt holding in
+`hand_history.hole_cards` would re-open a leak that was deliberately closed on
+2026-08-17, when 2,706 rows carrying 3,953 losing players' mucked holdings were
+readable in a single hour. The column is restricted to holdings the table
+actually SHOWED, and that restriction is a game-integrity rule, not an
+oversight. `ServerTableEngineSettlement` documents it at length.
+
+A forensic record is still possible, but it needs a store no player can read -
+service-role only - and it costs roughly 1.3 million rows a day at current
+volume, which is the same storage argument behind the horse hand-history
+retention Dan already ruled on. It is his call, not a drive-by.
+
 ## Not done, deliberately
 
 - **The engine does not record what it dealt.** See above. There is an

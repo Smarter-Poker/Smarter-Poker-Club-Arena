@@ -189,6 +189,8 @@ import {
 import { type HandRecord } from '../components/table/HandHistoryPanel';
 // [MIGRATION] timeBankEngine removed — server-authoritative (Step 5). Time bank via GameServerAPI + DB.
 import { usePlayerStats } from '../hooks/usePlayerStats';
+import { useMaintenanceBreak } from '../hooks/useMaintenanceBreak';
+import { MaintenanceBreakScreen } from '../components/table/MaintenanceBreakScreen';
 import { useTableSettings } from '../hooks/useTableSettings';
 import { useTableTimer } from '../hooks/useTableTimer';
 import { useTableChat } from '../hooks/useTableChat';
@@ -3227,6 +3229,21 @@ export default function TablePage({
   // tell the player once instead.
   const notFoundCountRef = useRef(0);
   const tableClosedToastShownRef = useRef(false);
+  /**
+   * The scheduled maintenance break (Dan 2026-09-01). Driven by the engine
+   * while a socket exists, by the local clock while it does not, and by the
+   * database for a browser that loaded during the outage. See
+   * hooks/useMaintenanceBreak.ts.
+   */
+  const {
+    maintenanceBreak,
+    ingestMaintenanceEvent,
+    refreshFromDb: refreshMaintenanceBreak,
+  } = useMaintenanceBreak();
+  // Read inside the 4404 effect without making it re-run on every countdown
+  // tick, which would reset the consecutive-close counter every second.
+  const maintenanceBreakRef = useRef(maintenanceBreak);
+  maintenanceBreakRef.current = maintenanceBreak;
   useEffect(() => {
     if (!engineLastError) return;
     if (engineLastError.code === 4404) {
@@ -3235,15 +3252,39 @@ export default function TablePage({
          table, and absolutely not the moment to tell a player mid-buy-in
          "This Table Is No Longer Running" (Dan 2026-08-28). */
       if (seatFirstOpenRef.current) return;
+      /* A 4404 DURING A MAINTENANCE BREAK IS THE BREAK, NOT A CLOSED TABLE
+         (Dan 2026-09-01). The engine restarts inside an announced five-minute
+         break and answers 4404 for the ~2 minutes its tables take to
+         rehydrate. Telling a player "This Table Is No Longer Running" in the
+         middle of a break we just promised them their seat would survive is
+         the single most alarming thing this page could say, and it is false.
+         The overlay is already up and counting; say nothing.
+
+         Also asks the database, because a browser that loaded DURING the
+         outage never received the announcement over a socket. */
+      if (maintenanceBreakRef.current.active) return;
       notFoundCountRef.current += 1;
       if (notFoundCountRef.current >= 3 && !tableClosedToastShownRef.current) {
+        // Claim the slot BEFORE the await so three more 4404s arriving during
+        // the round trip cannot queue three more of these.
         tableClosedToastShownRef.current = true;
-        heartbeatToastRef.current?.info?.('This Table Is No Longer Running');
+        void (async () => {
+          await refreshMaintenanceBreak();
+          if (maintenanceBreakRef.current.active) {
+            // It was a break after all. Release the slot so a genuine closure
+            // later in this session can still be announced.
+            tableClosedToastShownRef.current = false;
+            return;
+          }
+          heartbeatToastRef.current?.info?.('This Table Is No Longer Running');
+        })();
       }
     } else if (engineLastError.code !== undefined) {
       notFoundCountRef.current = 0;
     }
-  }, [engineLastError]);
+    // refreshMaintenanceBreak is a stable useCallback, so this still runs once
+    // per error rather than on every break countdown tick.
+  }, [engineLastError, refreshMaintenanceBreak]);
   useEffect(() => {
     if (engineWsStatus === 'connected') {
       notFoundCountRef.current = 0;
@@ -15235,6 +15276,20 @@ export default function TablePage({
         } as any);
         break;
       }
+      /**
+       * THE SCHEDULED MAINTENANCE BREAK (Dan 2026-09-01).
+       *
+       * Handed straight to the hook, which owns the countdown. Note there is
+       * no `return`/`break`-and-forget subtlety here: the payload carries an
+       * ABSOLUTE end instant, so once this fires the overlay keeps correct
+       * time on its own through the ~2 minutes when the engine that sent it
+       * no longer exists.
+       */
+      case 'MAINTENANCE_BREAK':
+      case 'MAINTENANCE_BREAK_ENDED': {
+        ingestMaintenanceEvent(evt.type, (evt.data ?? {}) as Record<string, unknown>);
+        break;
+      }
       case 'TABLE_BALANCE_EXECUTED': {
         const d = (evt.data ?? {}) as Record<string, unknown>;
         masterBus.emit('TABLE_BALANCE_EXECUTED', {
@@ -15366,7 +15421,9 @@ export default function TablePage({
         break;
       }
     }
-  }, [engineLastEvent]);
+    // ingestMaintenanceEvent is a stable useCallback; listed so the exhaustive
+    // deps rule does not have to be suppressed for it.
+  }, [engineLastEvent, ingestMaintenanceEvent]);
 
   // Supabase Realtime fallback: process lastEvent if engine WS is not connected.
   // When engine WS IS connected, it handles all events above; this block is
@@ -21925,6 +21982,22 @@ export default function TablePage({
             toast?.error?.('Could Not Build A Share Link For That Hand');
           }
         }}
+      />
+      {/* The maintenance break overlay (Dan 2026-09-01). Rendered here rather
+          than inside TableModalsLayer because it must survive the states that
+          layer is gated behind: it is up precisely when the engine socket is
+          gone and the table state is stale, which is the one moment the player
+          most needs to be told their seat is safe. */}
+      {/* One overlay, not four. MultiTablePage mounts up to four TablePages
+          at once and this layer is position:fixed, so without the isActive
+          gate a break would stack four identical full-screen dialogs on top
+          of each other. The break is platform-wide, so the foreground tile
+          speaks for all of them. */}
+      <MaintenanceBreakScreen
+        isVisible={maintenanceBreak.active && (!isMultiTable || isActive)}
+        phase={maintenanceBreak.phase}
+        breakEndsAtMs={maintenanceBreak.breakEndsAtMs}
+        reason={maintenanceBreak.reason}
       />
       <TableModalsLayer
         tableId={tableId}

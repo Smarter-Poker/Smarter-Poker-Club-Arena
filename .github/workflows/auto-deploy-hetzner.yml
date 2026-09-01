@@ -68,30 +68,44 @@ on:
   # Two scheduled windows a day replace that entirely -- merged engine code now
   # WAITS for the next window, by design, and the wait is the feature.
   #
-  # WHY TEN CRONS FOR FIVE WINDOWS. GitHub cron is UTC and has no notion of
-  # DST. 18, 22, 04, 10, 14 America/Chicago translate to two different UTC hour
-  # sets depending on CDT vs CST, so all ten fire and the window gate (first step)
-  # keeps only the five that are genuinely the correct local hours in Chicago.
+  # EVERY HOUR, ON THE :55 BREAK (Dan, 2026-09-01):
   #
-  # THREE TICKS PER WINDOW, NOT ONE (2026-08-31).
+  #   "program the engine restart to be every hour on the :55 instead of every
+  #   5 hours so nothing gets lost or orphaned from production improvements."
   #
-  # This fired once, at the top of each candidate hour, and a GitHub scheduled
-  # workflow is best-effort: under load it is delayed, and it is sometimes
-  # dropped outright. Miss the single tick and the whole one-hour window closes
-  # unused, so merged engine code waits FOUR MORE HOURS for the next one.
+  # The restart no longer happens whenever the runner shows up. It happens
+  # inside an ANNOUNCED FIVE MINUTE BREAK: the engine tells every table at :53
+  # to finish its hand, parks the whole platform at :55 and holds it there
+  # until :00 (server/src/maintenance/MaintenanceBreak.ts). The restart, and
+  # the ~2 minutes of table rehydration behind it, now fit entirely inside a
+  # window players were warned about, on tables with no cards in the air.
   #
-  # That is not hypothetical. On 2026-08-31 the 23:00 UTC tick (18:00 Chicago)
-  # never arrived. The engine served the same build for over three hours with
-  # the window standing open and twelve deploy runs reporting success having
-  # shipped nothing, while the insurance fix and the horse seat-call fix sat
-  # unlanded.
+  # WHY THE FIVE WINDOWS WENT AWAY. They existed because a restart was
+  # expensive and visible, so it was rationed - and the price of rationing it
+  # was merged engine code sitting unshipped for up to six hours. That is how
+  # a fix gets orphaned, and how two agents end up reasoning about different
+  # production builds while both believe they are looking at main. A restart
+  # nobody loses a hand to does not need rationing.
   #
-  # :00, :20 and :40 of each candidate hour. The window gate below still admits
-  # only the five correct Chicago hours, and the dedupe step still returns
-  # immediately once production serves the commit - so the extra ticks cost
-  # seconds each and buy two more chances at every window.
+  # AN HOURLY WINDOW IS NOT AN HOURLY RESTART. The dedupe step below returns
+  # immediately when production already serves this commit, so a window with
+  # nothing to ship costs one HTTP request. The engine bounces only when there
+  # is new code, and then it does so within the hour.
+  #
+  # THE TIME ZONE IS GONE, AND THAT IS A FEATURE. This used to need ten UTC
+  # cron hours to express five Chicago hours, plus a `TZ=America/Chicago`
+  # window gate, because GitHub cron has no notion of DST. Every hour is a
+  # window now, so there is nothing to convert and nothing to get wrong on the
+  # two days a year the clocks move.
+  #
+  # THREE TICKS, because a GitHub scheduled run is best-effort and is
+  # sometimes dropped outright (on 2026-08-31 one missed tick left the engine
+  # three hours stale). :40, :45 and :50 each give the runner time to check
+  # out, test and build before :55; whichever wins then sleeps in the break
+  # gate until the engine opens `maintenance.readyForRestart`. A dropped tick
+  # now costs an hour, not six.
   schedule:
-    - cron: '0,20,40 0,3,4,9,10,15,16,19,20,23 * * *'
+    - cron: '40,45,50 * * * *'
 
   # The override, and the only path that may restart outside a window:
   # a deliberate `force: true` dispatch. A plain dispatch -- which is what
@@ -101,7 +115,7 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: 'Restart NOW, outside the scheduled windows (and even while humans are seated)'
+        description: 'Restart NOW, without waiting for the :55 maintenance break (voids in-flight hands)'
         type: boolean
         default: false
       ref_sha:
@@ -140,36 +154,19 @@ jobs:
       # catch-up schedule nearly free, and it also absorbs redundant push
       # triggers (263 server-touching commits landed in the week before this
       # was written; every one was a full restart).
-      - name: Restart window — 6pm, 10pm, 4am, 10am, 2pm America/Chicago
-        id: window
-        run: |
-          # Chicago time, from the tz database on the runner, so DST is not a
-          # number anybody has to remember to change twice a year.
-          HOUR=$(TZ=America/Chicago date +%H)
-          LOCAL=$(TZ=America/Chicago date '+%Y-%m-%d %H:%M %Z')
-          FORCED="${{ github.event.inputs.force }}"
-          if [ "$FORCED" = "true" ]; then
-            echo "open=true" >> $GITHUB_OUTPUT
-            echo "::warning title=FORCED RESTART::force=true — restarting outside the scheduled windows ($LOCAL)."
-            exit 0
-          fi
-          case "$HOUR" in
-            18|22|04|10|14)
-              echo "open=true" >> $GITHUB_OUTPUT
-              echo "Restart window OPEN — $LOCAL." ;;
-            *)
-              echo "open=false" >> $GITHUB_OUTPUT
-              echo "::warning title=OUTSIDE THE RESTART WINDOW::$LOCAL is not a scheduled restart hour in Chicago. Nothing was deployed and the engine was not touched. Merged engine code lands at the next window; dispatch this workflow with force=true to land it now." ;;
-          esac
-
+      # THE CHICAGO WINDOW GATE IS GONE (Dan, 2026-09-01, "every hour on the
+      # :55 instead of every 5 hours"). Every hour is a window, so there is no
+      # hour to admit or refuse and no timezone to convert. What decides
+      # whether this run restarts anything is now, in order: the dedupe below
+      # (is there even new code), and the break gate further down (has the
+      # engine parked every table and said it is safe).
+      #
+      # `force: true` still exists and still means one thing: skip the break
+      # gate and restart now, outside the announced break. It is no longer an
+      # override for a window, because there is no window to override.
       - name: Skip if production already serves this commit
         id: dedupe
         run: |
-          if [ "${{ steps.window.outputs.open }}" != "true" ]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            echo "Outside the restart window — nothing to deploy."
-            exit 0
-          fi
           SHORT="${SHA:0:8}"
           BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
           VER=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || echo "")
@@ -364,118 +361,80 @@ jobs:
           echo "   root disk free: ${AVAIL}G"
           [ "$AVAIL" -ge 5 ] || { echo "::error::only ${AVAIL}G free on / — refusing to build"; exit 1; }
 
-      - name: Drain gate — do not void live hands
+      # ═══════════════════════════════════════════════════════════════════════
+      #  RESTART INSIDE THE ANNOUNCED BREAK (Dan, 2026-09-01)
+      # ═══════════════════════════════════════════════════════════════════════
+      #
+      # Dan: "A SCHEDULED PAUSE (LIKE A TOURNAMENT BREAK) WHERE 2 MIN BEFORE
+      # THE RESTART ALL TABLES FINISH THE HAND THEY ARE ON ... ENGINE RESTARTS
+      # AS SCHEDULED AND THE HANDS PICK RIGHT BACK UP."
+      #
+      # This step used to be a race and the two long comment blocks below record
+      # how it was lost. The gate polled for a moment when NO table was mid-hand,
+      # which on a fleet dealing ~290 hands a minute across ~120 tables never
+      # arrives, so every poll failed and the only path that ever actually
+      # deployed was a 45-minute staleness cap that restarted straight through
+      # live play anyway.
+      #
+      # The engine now DECLARES a stop instead of us hunting for one. At :53 it
+      # tells every table to finish its hand and start no new one; at :55 every
+      # table is parked and it opens `maintenance.readyForRestart` on /health.
+      # We wait for that flag. It is not a snapshot that can go stale between
+      # the read and the SIGTERM - the platform is held still, on purpose, for
+      # the whole five minutes, and the players were told at :53.
+      - name: Wait for the maintenance break to park every table
         id: drain
         if: steps.dedupe.outputs.skip != 'true'
         run: |
           echo "skip=false" >> $GITHUB_OUTPUT
           if [ "${{ github.event.inputs.force }}" = "true" ]; then
-            echo "force=true — skipping drain gate"; exit 0
+            echo "force=true — skipping the break gate"; exit 0
           fi
-          # A SCHEDULED WINDOW IS THE SANCTIONED RESTART TIME (2026-08-31).
-          #
-          # The poll below waits for handsInFlightTotal to reach zero, and the
-          # comments further down record why it never does on this platform: a
-          # fleet dealing ~290 hands a minute across ~120 tables is never
-          # empty, so all 16 attempts fail and the run exits green having
-          # shipped nothing. Measured the day this was written: three
-          # consecutive deploy runs reported success and left production on
-          # older code.
-          #
-          # With two windows a day that failure mode would mean the engine
-          # NEVER updates. Inside a window the deploy therefore proceeds, and
-          # hands are protected the way the staleness-cap path below already
-          # argues is sufficient and equal for everyone: GameServer.drainHands
-          # parks EVERY table at a hand boundary on SIGTERM -- horses included,
-          # which is what CLAUDE.md 10.5 requires -- inside docker stop -t 45.
-          if [ "${{ github.event_name }}" = "schedule" ]; then
-            echo "scheduled window — proceeding; the engine drains itself at a hand boundary on SIGTERM"
-            exit 0
-          fi
-          # FAILS CLOSED. Every read error used to collapse to 0 == "safe to
-          # restart", so a renamed field or a Cloudflare hiccup silently
-          # disabled the gate while printing a reassuring message. "Asked and
-          # got zero" and "could not ask" are now different outcomes.
-          UNREADABLE=0
-          for i in $(seq 1 16); do
+
+          # Poll for up to 14 minutes. We are dispatched at :40/:45/:50 and the
+          # flag opens at :55, so the wait is normally 5-15 minutes of sleeping
+          # and the budget has to cover the earliest tick.
+          READY=no
+          LEGACY=no
+          for i in $(seq 1 56); do
             BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
-            # Single-line python on purpose: a multi-line literal here would
-            # have column-0 lines, which terminate the YAML block scalar.
-            # HANDS, NOT PEOPLE (2026-08-27). This read humansSeatedTotal, so
-            # it waited for HUMANS to leave and let a horse's hand be voided
-            # without a second thought — the exclusion Dan banned (CLAUDE.md
-            # 10.5). It also waited for the wrong event: a table EMPTYING can
-            # take forever and, with horses seated, never happens, so the gate
-            # deferred for hours and then restarted under seated players
-            # anyway. A hand ends in about a minute. Wait for that instead and
-            # everyone is protected.
-            HANDS=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("handsInFlightTotal"); print("ERR" if v is None else v)' 2>/dev/null || echo ERR)
-            if [ "$HANDS" = "ERR" ]; then
-              UNREADABLE=$((UNREADABLE + 1))
-              echo "attempt $i/16: could NOT read handsInFlightTotal (${UNREADABLE} consecutive) — not assuming empty"
-              if [ "$UNREADABLE" -ge 4 ]; then
-                echo "::warning::handsInFlightTotal unreadable 4x — the drain gate is blind. Proceeding; the engine drains itself on SIGTERM (GameServer.drainHands), so hands are still protected."
-                exit 0
-              fi
-              sleep 15; continue
-            fi
-            UNREADABLE=0
-            if [ "$HANDS" -eq 0 ]; then echo "no hands in flight — safe to restart"; exit 0; fi
-            echo "attempt $i/16: $HANDS hand(s) in flight, waiting 30s..."
-            sleep 30
+            # Three outcomes, deliberately distinguished: ready / not ready /
+            # this engine predates the feature. Collapsing the third into the
+            # second would deadlock the very deploy that ships the feature.
+            STATE=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get("maintenance"); print("LEGACY" if m is None else ("READY" if m.get("readyForRestart") else "phase=%s remaining=%ss unparked=%s" % (m.get("phase"), int((m.get("remainingMs") or 0)/1000), m.get("unparkedTables"))))' 2>/dev/null || echo ERR)
+            case "$STATE" in
+              READY)  READY=yes; echo "attempt $i/56: break is running and every table is parked — restarting now"; break ;;
+              LEGACY) LEGACY=yes; echo "attempt $i/56: /health has no maintenance block"; break ;;
+              ERR)    echo "attempt $i/56: /health unreadable — retrying" ;;
+              *)      echo "attempt $i/56: waiting for the break — $STATE" ;;
+            esac
+            sleep 15
           done
-          # 2026-08-24: THE GATE NOW FAILS CLOSED. The old fallback here was
-          # "::warning:: proceeding" — with ~25 server-touching merges a day,
-          # that restarted the engine under seated humans over and over,
-          # voiding live hands and crashing tournaments mid-play. A deploy is
-          # deferrable; a player's hand is not.
-          #
-          # Bounded, though: an engine that has already run MAX_ENGINE_AGE_SEC
-          # without picking up new code is allowed one restart even with
-          # humans seated (SIGTERM drain still flushes state). Without the cap
-          # a table that never empties could pin production on stale code
-          # forever — including stale SECURITY fixes, which is worse than one
-          # interrupted hand. The hourly `schedule:` trigger retries the
-          # deferred deploy and lands it in the first empty window, so in
-          # practice the cap is rarely reached.
-          # 2026-08-28: WAS 21600 (6h), AND THAT CAP WAS THE ONLY PATH.
-          #
-          # The gate above waits for handsInFlightTotal to reach ZERO. On this
-          # platform that never happens: the horse fleet deals ~200 hands a
-          # minute across ~71 tables, so handsInFlightTotal sits near 70 at
-          # every instant of every day. All 16 polls fail, every time, and the
-          # staleness cap below is therefore not a rare backstop — it is the
-          # ONLY way a deploy ever lands. At six hours that meant the engine
-          # ran code up to six hours old while every run reported success.
-          # Measured 2026-08-28: engine pinned on 6aa60e39 for 3.5h across ~15
-          # merges, including the end-of-hand cadence change.
-          #
-          # This is the SAME defect the comment above records for
-          # humansSeatedTotal ("a table EMPTYING can take forever and, with
-          # horses seated, never happens") reproduced one level down: a fleet
-          # that always has hands in flight never reports zero either.
-          #
-          # Why a short cap is safe now: proceeding no longer voids hands. The
-          # engine drains itself on SIGTERM (GameServer.drainHands ->
-          # pauseAfterHand on every table, wait for hand boundaries), it runs
-          # on EVERY restart path, and engine-up.sh gives it `docker stop -t 45`
-          # of grace to finish. The wait loop above still takes a genuinely
-          # quiet window when one exists; this cap stops a busy fleet pinning
-          # production on stale code — including stale security fixes, which
-          # the note above already calls worse than one interrupted hand.
-          MAX_ENGINE_AGE_SEC=2700  # 45 minutes
-          BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
-          UPTIME=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); v=d.get("uptime"); print("ERR" if v is None else int(float(v)))' 2>/dev/null || echo ERR)
-          if [ "$UPTIME" = "ERR" ]; then
-            echo "::warning::Humans seated AND uptime unreadable — the gate is blind. Proceeding (old behaviour) so a broken /health cannot pin production on stale code."
+
+          if [ "$READY" = "yes" ]; then exit 0; fi
+
+          if [ "$LEGACY" = "yes" ]; then
+            # BOOTSTRAP ONLY, AND IT REMOVES ITSELF. The engine in production
+            # right now is older than this feature, so it can never open the
+            # flag and waiting for it would mean this commit — the one that
+            # ADDS the break — could never land. One legacy restart is taken on
+            # the old terms: SIGTERM still runs GameServer.drainHands, which
+            # parks every table at a hand boundary inside docker stop -t 45.
+            # From the next deploy onward /health carries the block and this
+            # branch is unreachable.
+            echo "::warning title=LEGACY ENGINE::/health has no maintenance block, so the running engine predates the scheduled break. Restarting on the old SIGTERM drain this once; subsequent deploys will wait for the announced break."
             exit 0
           fi
-          if [ "$UPTIME" -ge "$MAX_ENGINE_AGE_SEC" ]; then
-            echo "::warning title=PROCEEDING ON STALENESS CAP::Hands still in flight (normal for a continuously-dealing fleet), but the engine is ${UPTIME}s old (>= ${MAX_ENGINE_AGE_SEC}s cap) — proceeding. GameServer.drainHands parks tables at a hand boundary on SIGTERM, inside docker stop -t 45."
-            exit 0
-          fi
+
+          # FAILS CLOSED, and it can afford to. A missed window costs at most
+          # six hours of slightly older code; restarting outside the break puts
+          # the ~2 minute rehydration outage back in front of players who were
+          # never told, which is exactly what this whole change removes. If the
+          # break genuinely stops firing that is an engine bug and it should be
+          # loud, not routed around.
           echo "skip=true" >> $GITHUB_OUTPUT
-          echo "::notice::Deploy DEFERRED — hands are in flight and the engine is only ${UPTIME}s old. The hourly catch-up run will land this commit at the first hand boundary."
+          echo "::warning title=BREAK NEVER OPENED::The engine never reported maintenance.readyForRestart within 14 minutes, so nothing was deployed. Either the break did not fire (check the engine log for '[MaintenanceBreak]') or a table never parked. The next window retries; dispatch with force=true to restart outside the break."
+          exit 0
 
       - name: Pull the exact commit onto the host
         if: steps.dedupe.outputs.skip != 'true' && steps.drain.outputs.skip != 'true'
@@ -777,7 +736,7 @@ jobs:
           RUN_ACTOR: ${{ github.event_name }}
           REASON: >-
             ${{ steps.dedupe.outputs.skip == 'true' && 'coalesced or already serving this commit'
-             || steps.drain.outputs.skip == 'true' && 'outside the restart window, or hands still in flight'
+             || steps.drain.outputs.skip == 'true' && 'the maintenance break never opened for a restart'
              || steps.health.outputs.verified == 'true' && 'deployed and verified serving this commit'
              || 'run ended without a verified cutover' }}
         run: |

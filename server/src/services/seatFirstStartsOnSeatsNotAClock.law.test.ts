@@ -21,7 +21,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { blankNonCode, sliceMethod } from '../testHelpers/sourceWindow';
+import { blankNonCode, sliceMethod } from '../testHelpers/sourceWindow.js';
 
 const SERVER_SRC = join(__dirname, '..');
 const read = (rel: string) => readFileSync(join(SERVER_SRC, rel), 'utf8');

@@ -14,6 +14,7 @@ import { supabase } from '../lib/supabase';
 import { fetchGameCreationAccess } from '../services/GameAccessService';
 import {
   gameManagementService,
+  type ManagedGameCommandReceipt,
   type ManagedGameContractSummary,
   type ManagedGameContractVersion,
   type ManagedGameKind,
@@ -51,6 +52,7 @@ interface ManagedGame {
   maxBuyIn: number;
   buyIn: number;
   contract: ManagedGameContractSummary | null;
+  lastCommand: ManagedGameCommandReceipt | null;
 }
 
 const ACTIVE_STATUSES = new Set(['running', 'active', 'waiting', 'registering', 'late_reg']);
@@ -427,21 +429,24 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       ]);
       if (tableResult.error) throw tableResult.error;
       if (tournamentResult.error) throw tournamentResult.error;
-      const [tableContracts, tournamentContracts] = await Promise.all([
-        gameManagementService.getContracts(
-          'table',
-          (tableResult.data || []).map((row: any) => row.id)
-        ),
-        gameManagementService.getContracts(
-          'tournament',
-          (tournamentResult.data || []).map((row: any) => row.id)
-        ),
-      ]);
+      const tableIds = (tableResult.data || []).map((row: any) => row.id);
+      const tournamentIds = (tournamentResult.data || []).map((row: any) => row.id);
+      const [tableContracts, tournamentContracts, tableReceipts, tournamentReceipts] =
+        await Promise.all([
+          gameManagementService.getContracts('table', tableIds),
+          gameManagementService.getContracts('tournament', tournamentIds),
+          gameManagementService.getCommandReceipts('table', tableIds),
+          gameManagementService.getCommandReceipts('tournament', tournamentIds),
+        ]);
       const tableContractMap = new Map(
         tableContracts.map((contract) => [contract.gameId, contract])
       );
       const tournamentContractMap = new Map(
         tournamentContracts.map((contract) => [contract.gameId, contract])
+      );
+      const tableReceiptMap = new Map(tableReceipts.map((receipt) => [receipt.gameId, receipt]));
+      const tournamentReceiptMap = new Map(
+        tournamentReceipts.map((receipt) => [receipt.gameId, receipt])
       );
       const hostNames = Object.fromEntries(nextHosts.map((host) => [host.id, host.name]));
       const rows: ManagedGame[] = [
@@ -462,6 +467,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           maxBuyIn: Number(row.max_buy_in || 0),
           buyIn: 0,
           contract: tableContractMap.get(row.id) || null,
+          lastCommand: tableReceiptMap.get(row.id) || null,
         })),
         ...(tournamentResult.data || []).map((row: any) => ({
           id: row.id,
@@ -480,6 +486,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           maxBuyIn: 0,
           buyIn: Number(row.buy_in_amount || 0),
           contract: tournamentContractMap.get(row.id) || null,
+          lastCommand: tournamentReceiptMap.get(row.id) || null,
         })),
       ];
       setGames(rows);
@@ -552,7 +559,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     if (!confirmed) return;
     setBusyId(game.id);
     try {
-      await gameManagementService.close(game.kind, game.id);
+      await gameManagementService.close(game.kind, game.id, game.contract?.version);
       toast.success(
         game.kind === 'table' ? 'Empty table closed.' : 'Unregistered tournament cancelled.'
       );
@@ -757,6 +764,31 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                         )}
                       </div>
                     )}
+                    {game.lastCommand && (
+                      <div
+                        className={`${styles.commandReceipt} ${
+                          game.lastCommand.status === 'rejected' ||
+                          game.lastCommand.reconciliationState === 'version_drift'
+                            ? styles.commandRejected
+                            : ''
+                        }`}
+                        title={`Command ${game.lastCommand.commandId}`}
+                      >
+                        <span>
+                          {game.lastCommand.status === 'succeeded'
+                            ? 'Confirmed'
+                            : game.lastCommand.status}{' '}
+                          {game.lastCommand.action}
+                        </span>
+                        <code>{game.lastCommand.commandId.slice(0, 8)}</code>
+                        <span>
+                          V{game.lastCommand.versionBefore} → V{game.lastCommand.versionAfter}
+                        </span>
+                        {game.lastCommand.reconciliationState === 'version_drift' && (
+                          <span>Revision Check Failed</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className={styles.gameNumbers}>
                     <strong>
@@ -847,7 +879,12 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           onSave={async (patch) => {
             setBusyId(editing.id);
             try {
-              await gameManagementService.update(editing.kind, editing.id, patch);
+              await gameManagementService.update(
+                editing.kind,
+                editing.id,
+                patch,
+                editing.contract?.version
+              );
               toast.success('Game updated.');
               setEditing(null);
               await load();

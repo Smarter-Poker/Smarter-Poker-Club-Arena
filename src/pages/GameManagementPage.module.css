@@ -384,6 +384,41 @@
   border-color: #725e2d;
   color: #e5c46a;
 }
+.commandReceipt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  color: #5f899e;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.commandReceipt::before {
+  width: 6px;
+  height: 6px;
+  border: 1px solid #4eab80;
+  border-radius: 50%;
+  background: #173b2c;
+  box-shadow: 0 0 7px rgba(88, 222, 160, 0.5);
+  content: '';
+}
+.commandReceipt code {
+  color: #72caa5;
+  font: inherit;
+}
+.commandReceipt.commandRejected {
+  color: #d78b82;
+}
+.commandReceipt.commandRejected::before {
+  border-color: #b25b51;
+  background: #3f1d1a;
+  box-shadow: 0 0 7px rgba(255, 114, 100, 0.4);
+}
+.commandReceipt.commandRejected code {
+  color: #f0a096;
+}
 .gameNumbers {
   display: grid;
   text-align: center;

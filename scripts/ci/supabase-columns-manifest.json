@@ -932,6 +932,13 @@
       "user_id",
       "created_at"
     ],
+    "ca_alarm_drills": [
+      "id",
+      "run_at",
+      "pass",
+      "failing",
+      "results"
+    ],
     "ca_browser_definer_allowlist": [
       "proname",
       "reason",
@@ -1089,6 +1096,11 @@
       "window_hours",
       "failing",
       "result"
+    ],
+    "ca_guard_defs": [
+      "proname",
+      "def_hash",
+      "updated_at"
     ],
     "ca_guard_inventory": [
       "id",
@@ -1831,6 +1843,14 @@
       "rollout_percent",
       "updated_at",
       "updated_by"
+    ],
+    "club_financial_quarantine": [
+      "source_table",
+      "source_id",
+      "club_id",
+      "reason",
+      "row_data",
+      "quarantined_at"
     ],
     "club_financial_summary": [
       "id",
@@ -8425,6 +8445,12 @@
       "window_start",
       "request_count",
       "last_request_at"
+    ],
+    "rate_limits": [
+      "id",
+      "user_id",
+      "action",
+      "created_at"
     ],
     "raw_games": [
       "game_pk",

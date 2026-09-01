@@ -286,6 +286,10 @@
     "bus_event_log": [
       "event_type"
     ],
+    "ca_alarm_drills": [
+      "pass",
+      "results"
+    ],
     "ca_browser_definer_allowlist": [
       "proname",
       "reason"
@@ -362,6 +366,10 @@
       "pass",
       "window_hours",
       "result"
+    ],
+    "ca_guard_defs": [
+      "proname",
+      "def_hash"
     ],
     "ca_guard_inventory": [
       "kind",
@@ -655,6 +663,13 @@
     ],
     "club_entry_feature_flags": [
       "key"
+    ],
+    "club_financial_quarantine": [
+      "source_table",
+      "source_id",
+      "club_id",
+      "reason",
+      "row_data"
     ],
     "club_financial_summary": [
       "club_id",
@@ -2558,6 +2573,10 @@
     "rate_limit_buckets": [
       "bucket_key",
       "window_start"
+    ],
+    "rate_limits": [
+      "user_id",
+      "action"
     ],
     "raw_games": [
       "game_pk",

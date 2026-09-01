@@ -28,6 +28,7 @@
  * after it has finished - still yields the street the action was taken on.
  */
 import { describe, it, expect } from 'vitest';
+import { sliceBetween } from '../testHelpers/sourceWindow.js';
 import { HandController } from './HandController.js';
 import type { HandConfig, HandEvent, SeatPlayer } from '../types.js';
 
@@ -159,9 +160,26 @@ describe('the consumer prefers the event over live state', () => {
       require('node:path').join(__dirname, 'ServerTableEngineHandEvents.ts'),
       'utf8'
     );
-    const at = src.indexOf("case 'PLAYER_ACTION':");
-    expect(at).toBeGreaterThan(-1);
-    const body = src.slice(at, at + 4000).replace(/\/\*[\s\S]*?\*\//g, '');
+    /**
+     * 2026-09-01: THE WINDOW IS BOUNDED BY THE SWITCH, NOT BY 4000 BYTES.
+     *
+     * It was `src.slice(at, at + 4000)`, which `tests/unit/noFixedSizeSourceWindows`
+     * forbids and was right to: that test went red the moment this landed, and
+     * a red client suite skips `sync-to-world-hub`, so NOTHING PUBLISHED for
+     * the whole estate until it was fixed. The magic number fails in the quiet
+     * direction too - `case 'PLAYER_ACTION':` is a long handler with a long
+     * comment already inside it, and one more paragraph would have pushed
+     * `event.stage ??` past offset 4000 and turned this green pin blind.
+     *
+     * A case in a switch has no braces of its own here, so its honest end is
+     * where the next case at the same indent begins. That bound grows exactly
+     * as fast as the handler does and cannot be outrun by it.
+     */
+    const body = sliceBetween(src, "case 'PLAYER_ACTION':", '\n      case ').replace(
+      /\/\*[\s\S]*?\*\//g,
+      ''
+    );
+    expect(body.length).toBeGreaterThan(0);
     expect(body).toContain('event.stage ??');
     // The bare live-state read must not be what feeds the persisted record.
     expect(body).not.toMatch(/const stage = hcState\?\.stage \|\| 'preflop';/);

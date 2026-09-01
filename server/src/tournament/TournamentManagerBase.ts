@@ -4535,9 +4535,10 @@ export abstract class TournamentManagerBase {
     // TOURNEY-AUDIT 2026-07-24: persist the flag so a restart mid-add-on
     // restores it (resume() reads addon_period_triggered) instead of
     // re-broadcasting ADDON_PERIOD_START and losing finalizeAfterAddOn.
+    const addonPeriodStartedAt = new Date().toISOString();
     const addonPeriodEndsAt = new Date(Date.now() + 60_000).toISOString();
     if (this.tournamentCache) {
-      this.tournamentCache.addon_period_started_at = new Date().toISOString();
+      this.tournamentCache.addon_period_started_at = addonPeriodStartedAt;
       this.tournamentCache.addon_period_ends_at = addonPeriodEndsAt;
     }
     void Promise.resolve(
@@ -4545,7 +4546,7 @@ export abstract class TournamentManagerBase {
         .from('tournaments')
         .update({
           addon_period_triggered: true,
-          addon_period_started_at: new Date().toISOString(),
+          addon_period_started_at: addonPeriodStartedAt,
           addon_period_ends_at: addonPeriodEndsAt,
         })
         .eq('id', this.tournamentId)

@@ -3300,6 +3300,65 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     const isSatelliteFinish =
       (tournament as any)?.variant === 'satellite' ||
       ((tournament as any)?.tournament_type || '').toUpperCase() === 'SATELLITE';
+    /**
+     * THE GUARANTEE IS FUNDED HERE OR IT IS NEVER FUNDED (2026-08-31, phase 6).
+     *
+     * applyPrizeGuarantee had exactly two triggers, and between them they miss
+     * an entire shape of event:
+     *
+     *   start()          only when late_reg_levels <= 0
+     *   level change     only when currentLevel >= late_reg_levels
+     *
+     * An event with a late-reg window that FINISHES BELOW THAT LEVEL calls it
+     * ZERO times. The pool is never topped up, and the finish path below then
+     * prices every place off a pool the guarantee never reached.
+     *
+     * Measured before this was written: 12 completed events since 2026-08-29
+     * short of their guarantee with no overlay row, and TWELVE OF FOURTEEN
+     * died below their late-reg cap. Nine of them were freerolls, whose pool
+     * is 0 by construction and whose guarantee is therefore the ONLY money
+     * they ever have. Those nine ranked a full field - up to 326 players -
+     * stamped a winner, and paid zero chips to anybody.
+     *
+     * TournamentManagerBase's own comment promises `fn_sweep_unfunded_guarantees`
+     * as the safety net for exactly this. It was never written; the name
+     * appears nowhere else in the repo or the database. This is that net, put
+     * where it cannot be missed: the last moment before the money is priced.
+     *
+     * Deliberately NOT guarded on prize_pool > 0 or on buy_in_amount - those
+     * two conditions are precisely what made a freeroll invisible to every
+     * other check. The RPC is idempotent (it returns early on `finalized`) and
+     * settles to greatest(pool, guarantee), so a re-drive of an event that was
+     * already funded moves nothing.
+     *
+     * A failure here must never strand a finish, so it is caught: the event
+     * still completes and pays what its pool holds, and the shortfall is
+     * raised for a human rather than silently priced in.
+     */
+    if (
+      !isSatelliteFinish &&
+      Number((tournament as { guaranteed_prize?: number }).guaranteed_prize ?? 0) > 0
+    ) {
+      try {
+        const funded = await this.applyPrizeGuarantee('finish_fallback');
+        if (typeof funded === 'number' && funded > Number(tournament.prize_pool || 0)) {
+          // The RPC moved chips into the pool. Our row is a snapshot taken
+          // before that, so every price computed below would still use the
+          // old pool. Re-read it rather than trusting the local copy.
+          const { data: refreshed } = await supabase
+            .from('tournaments')
+            .select('prize_pool')
+            .eq('id', this.tournamentId)
+            .maybeSingle();
+          if (refreshed?.prize_pool != null) {
+            (tournament as { prize_pool?: number }).prize_pool = Number(refreshed.prize_pool);
+          }
+        }
+      } catch (guaranteeErr) {
+        reportError(guaranteeErr, 'Tournament.guarantee_finish_fallback_failed');
+      }
+    }
+
     let winnerPrize = 0;
     if (!isSatelliteFinish) {
       // resolvePayoutStructure returns the stored structure when it is usable
@@ -3367,6 +3426,45 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           'TournamentthistournamentIdslic.No_usable_payout_structure'
         );
       }
+    }
+
+    /**
+     * A WINNER PAID NOTHING MUST SAY SO (2026-08-31, phase 6).
+     *
+     * `if (winnerPrize > 0)` is the right guard for the credit and the wrong
+     * place to stop thinking. Every alert this path added on 2026-08-31 -
+     * winner_prize_credit_failed, prize_credit_failed - lives INSIDE this
+     * block, so it can only escalate a credit that was ATTEMPTED AND FAILED.
+     * A credit that is never attempted is silent.
+     *
+     * That silence is what let nine freerolls rank a full field (313 and 326
+     * players among them), stamp a winner, and pay zero chips with not one
+     * alert anywhere. Their pool was 0, so every price was 0, so this branch
+     * was simply skipped - and the Phase 2 detector could not see them either,
+     * because it filters on `prize_pool > 0`, the exact column the defect
+     * zeroes.
+     *
+     * Zero is a legitimate outcome for a play-money or unfunded event, so this
+     * is a WARNING, not a critical, and it never blocks the finish. But it is
+     * no longer nothing.
+     */
+    if (winnerPrize <= 0 && !isSatelliteFinish) {
+      const gtd = Number((tournament as { guaranteed_prize?: number }).guaranteed_prize ?? 0);
+      await raiseFinancialAlert(
+        gtd > 0 ? 'critical' : 'warning',
+        'Tournament.winner_paid_nothing',
+        gtd > 0
+          ? 'A tournament with an advertised guarantee crowned a winner and paid them nothing. The guarantee was never funded into the prize pool.'
+          : 'A tournament crowned a winner and paid them nothing, because its prize pool is zero.',
+        {
+          tournament_id: this.tournamentId,
+          tournament_name: (tournament as { name?: string }).name ?? null,
+          winner_id: winnerId,
+          prize_pool: Number(tournament.prize_pool || 0),
+          guaranteed_prize: gtd,
+          field_size: await this.finalFieldSize(),
+        }
+      );
     }
 
     if (winnerPrize > 0) {

@@ -12,6 +12,7 @@ import { supabase } from '../services/supabase.js';
 import { computePlacePrize } from './payoutMath.js';
 import { resolvePayoutStructure } from './payoutStructure.js';
 import { fieldIsStillLive } from './recoveryFieldGuard.js';
+import { chipsCannotRank, noHandWasEverDealt } from './recoveryRankEvidence.js';
 import { reportError } from '../services/errorReporter.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 
@@ -281,7 +282,12 @@ export async function recoverStuckCompletingTournaments(
       // structure makes computePlacePrize return 0 for every place). The spec
       // rebuilds it from the multiplier. Same rule as the two live payout
       // sites — see payoutStructure.ts.
-      .select('id, name, prize_pool, payout_structure, variant, tournament_type, spin_multiplier')
+      // started_at: NO RESULT WITHOUT A HAND (2026-09-01) needs to know how old
+      // the event is before it trusts an empty hand_history - see
+      // recoveryRankEvidence.ts on the 7-day horse-only prune.
+      .select(
+        'id, name, prize_pool, payout_structure, variant, tournament_type, spin_multiplier, started_at'
+      )
       .eq('status', 'COMPLETING');
     if (onlyTournamentId) q = q.eq('id', onlyTournamentId);
     const { data: stuck, error: stuckErr } = await q;
@@ -467,7 +473,8 @@ export async function recoverStuckCompletingTournaments(
               reason,
               alive_count: aliveCount ?? null,
               prize_pool: (t as { prize_pool?: number }).prize_pool ?? null,
-              satellite_target_id: (t as { satellite_target_id?: string }).satellite_target_id ?? null,
+              satellite_target_id:
+                (t as { satellite_target_id?: string }).satellite_target_id ?? null,
             }
           );
           reportError(
@@ -719,6 +726,85 @@ export async function recoverStuckCompletingTournaments(
               `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} "${t.name}" - all ${alive.length} surviving entrant(s) are still 'registered', so none of them has been dealt a card in this event. Ranking them by chips would invent a podium. Paying nobody; left COMPLETING for review.`
             ),
             'GameServer.recoverStuckCompleting_no_dealt_in_survivor'
+          );
+          continue;
+        }
+
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  NO RESULT WITHOUT A HAND (2026-09-01)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * The guard directly above asks whether any survivor is 'playing' and
+         * reads that as "somebody was dealt a card". It is a proxy for the real
+         * question and it is the wrong one: an event promotes its whole field
+         * to 'playing' the moment it starts, before a card exists. Seven events
+         * between 2026-08-15 and 2026-08-30 were ranked end to end here with
+         * `hand_history` empty and every survivor holding exactly
+         * `starting_chips` - 313 and 326 entrants in two of them - and 775.00
+         * chips were paid against those invented podiums. The full table, and
+         * why `fieldIsStillLive` abstained on a 313-player field, are in
+         * recoveryRankEvidence.ts.
+         *
+         * Two independent tests, because they fail in different weather.
+         *
+         * ONE - THE SORT MUST ACTUALLY SORT. `alive` is ordered by chips and
+         * places are handed out 1..N against that order. If every survivor
+         * holds the same stack to the chip, that order is whatever Postgres
+         * returned, not a result. This costs no query: the chips are already
+         * in `rows`, it is immune to the hand-history prune, and a genuine
+         * crash-at-finish never trips it (one survivor is skipped by design,
+         * and a real finish has a chip leader).
+         *
+         * TWO - AND NO HAND WAS DEALT AT ALL. Stated outright rather than
+         * inferred, for the case where stacks differ for some reason that is
+         * not poker. Bounded to events younger than the horse-only retention
+         * window, because past that an empty `hand_history` means the prune
+         * ran, not that nothing happened.
+         *
+         * REFUSING IS THE SAFE SIDE, exactly as for the two guards above: the
+         * tournament stays COMPLETING, which is where it already was, every
+         * step below is idempotent, the next pass retries, and the alert names
+         * the numbers so a human can settle it deliberately.
+         */
+        if (chipsCannotRank(alive)) {
+          reportError(
+            new Error(
+              `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} "${t.name}" - all ${alive.length} survivor(s) hold an identical stack of ${Math.floor(Number(alive[0]?.chips) || 0)} chips, so ranking them by chips would hand out places in arbitrary order. Paying nobody; left COMPLETING for review.`
+            ),
+            'GameServer.recoverStuckCompleting_chips_cannot_rank'
+          );
+          continue;
+        }
+
+        const { data: anyHand, error: handErr } = await supabase
+          .from('hand_history')
+          .select('id')
+          .eq('tournament_id', t.id)
+          .limit(1)
+          .maybeSingle();
+        // An unreadable hand list is UNKNOWN, and UNKNOWN never authorizes a
+        // payout on this path. Same stance as the player-field read above.
+        if (handErr) {
+          reportError(
+            new Error(
+              `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} "${t.name}" - hand list unreadable (${handErr.message}), so we cannot tell a finished event from one that never dealt. Paying nobody; left COMPLETING.`
+            ),
+            'GameServer.recoverStuckCompleting_hand_evidence_unreadable'
+          );
+          continue;
+        }
+        if (
+          noHandWasEverDealt({
+            startedAt: (t as { started_at?: string | null }).started_at ?? null,
+            anyHandDealt: Boolean(anyHand),
+          })
+        ) {
+          reportError(
+            new Error(
+              `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} "${t.name}" - not one hand was ever dealt in this event, so it has no result to pay. Ranking its ${alive.length} entrant(s) would invent one. Paying nobody; left COMPLETING for review.`
+            ),
+            'GameServer.recoverStuckCompleting_no_hand_ever_dealt'
           );
           continue;
         }

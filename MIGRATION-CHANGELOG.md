@@ -59,6 +59,95 @@ very failure it exists to report.
 
 CLAUDE.md §10.5 - no `is_horse` filter, no `p_include_horses`.
 
+## Cowork session 2026-08-31 - NOBODY WAS COUNTING THE CHIPS (Spins audit, phase 6)
+
+Every money guard in this estate watches the prize.
+`fn_tournament_money_conservation` proves collected = rake + payouts. The rake
+law proves the 8% is exactly 8%. `fn_spin_unpaid_check` proves the winner got
+paid. Eleven scheduled audits, and **not one of them counts the chips on the
+felt.**
+
+That is not a cosmetic gap. A chip mint moves no money at all - the prize pool
+is fixed the moment three players buy in - so `creditSeatStacks` could top a
+busted seat back up to a full starting stack and every single one of those
+audits would stay green. **The prize does not depend on the chip count. The
+WINNER does.** A player who was beaten, handed a fresh stack, can go on to take
+the money from the player who actually beat them, and no existing guard would
+ever say a word.
+
+Measured over the 6 hours before this shipped: **264 of 1,317 completed
+spin/sng games carried more chips than they were dealt**, worst single game off
+by 1,301 - one whole starting stack plus change.
+
+**Two migrations, applied and verified in production:**
+
+| Migration                                                  | What it adds                                                                                                                                                                                         |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `20260831234000_spin_chip_conservation_guard.sql`          | `fn_spin_chip_conservation_check(p_since_hours int default 6)` - compares `sum(tournament_players.chips)` against `seats × starting_chips` and raises a `critical` financial alert on any divergence |
+| `20260831234100_spin_chip_conservation_guard_schedule.sql` | pg_cron `spin_chip_conservation_hourly` at `49 * * * *`, under the house advisory lock, with an in-migration assertion that the job actually landed                                                  |
+
+**The scope is 'spin' and 'sng', and that limit is the point.** The first cut
+of this check measured every variant and reported 281 of 1,341 games broken,
+worst case off by 106,398 chips. That number was an artefact of the model, not
+a finding: for a multi-table tournament with late registration - 9 levels of it
+on a live freezeout sampled here - seats × starting_chips is simply not the
+expected chip total, because seats and stacks keep arriving after the clock
+starts. Shipping that would have taught whoever reads `financial_alerts` to
+close this alert unread, which is worse than having no alert at all.
+
+For spin and sng the identity is **exact**: across the 3,307 such games
+completed in the 24h before this shipped, zero had late registration, zero
+allowed re-entry or add-ons, and zero carried early-bird chips. The
+wallet-transaction exclusion is belt-and-braces on top - if a spin ever does
+get a rebuy, the check skips that game rather than guessing what the extra
+chips were worth.
+
+**Both branches were proven against production, in a transaction that rolled
+back.** With the real data the check returns `chips_minted` and raises the
+alert; with every in-window game corrected to conserve, the same call over 398
+games returns `verdict: pass` and raises nothing. The rollback was then
+confirmed by re-running against live data and getting the real numbers back.
+
+`tests/config/chipConservationGuardIsHonest.test.ts` pins the scope, the rebuy
+exclusion, the read-only shape (one INSERT, into `financial_alerts`, and no
+UPDATE or DELETE anywhere), the grants, and the schedule. Removing the variant
+scope turns it red.
+
+CLAUDE.md §10.5 - there is no `is_horse` filter and no `p_include_horses`
+parameter. A horse's chips are chips.
+
+**Verified against production after the engine fix landed.** The mint this guard
+was built to watch was fixed in `creditSeatStacks` and deployed at 20:21 UTC.
+Measured over the twelve hours around it, splitting on whether the game STARTED
+before or after that deploy:
+
+|               | games | minted  | destroyed | destroyed rate |
+| ------------- | ----- | ------- | --------- | -------------- |
+| before deploy | 1,803 | **413** | 49        | 2.72%          |
+| after deploy  | 630   | **0**   | 1         | 0.16%          |
+
+Minting went to zero, and chip loss fell by 94%. Independently corroborated by
+a guard nobody touched: `drift_incident:...tournament_mint_blocked` fired 25
+times in the 19:00 hour and 12 in the 20:00 hour, then **not once** in the three
+hours after the deploy.
+
+**The one remaining loss is a different bug, and this guard is what will keep
+reporting it.** In the single post-deploy case the engine's own final hand
+records the winner finishing with the full 900 chips while
+`tournament_players.chips` says 630 - a stale final-stack write, not lost chips.
+But that explanation does NOT generalise: across 57 short games in twelve hours,
+the engine's own last-hand stack sum agrees with the short total in **53** of
+them. The chips really did leave the felt during play in those. That is a
+pre-existing defect, separate from the mint, and it is not fixed here - it is
+now merely visible.
+
+**Still open, and deliberately not fixed here:** the same query pointed at
+multi-table variants shows large positive deltas that late registration does
+not obviously explain (a 24-seat freezeout with no re-entry, no add-on and no
+early-bird chips holding 826,398 against 720,000 dealt). That needs its own
+model of what an MTT's expected chip total is before anyone can call it a bug,
+and guessing at it inside this guard is exactly the mistake this scope avoids.
+
 ---
 
 ## Cowork session 2026-08-31 - THE OPERATOR CONSOLE WAS OPEN TO EVERY PLAYER (hardening phase 3 of 6)

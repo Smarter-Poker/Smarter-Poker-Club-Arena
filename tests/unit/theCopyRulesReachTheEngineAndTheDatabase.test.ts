@@ -156,13 +156,29 @@ describe('the live source still obeys both rules after the widening', () => {
     }
   };
 
-  it('check-title-case passes over src AND server/src', () => {
-    expect(run('scripts/ci/check-title-case.mjs')).toBe(0);
-  });
+  // Both of these SPAWN a checker that walks every file under src/ and
+  // server/src. Standalone that is ~2s; run alongside the other 40 files in
+  // this suite it measured 6.3s, and vitest's default timeout is 5s -- so the
+  // pin failed on a machine that was merely busy, which is a flake, not a
+  // finding. The work is real and bounded, so give it room rather than
+  // trimming what the checker reads.
+  const CHECKER_SPAWN_TIMEOUT_MS = 60_000;
 
-  it('check-ui-text still passes', () => {
-    expect(run('scripts/ci/check-ui-text.mjs')).toBe(0);
-  });
+  it(
+    'check-title-case passes over src AND server/src',
+    () => {
+      expect(run('scripts/ci/check-title-case.mjs')).toBe(0);
+    },
+    CHECKER_SPAWN_TIMEOUT_MS
+  );
+
+  it(
+    'check-ui-text still passes',
+    () => {
+      expect(run('scripts/ci/check-ui-text.mjs')).toBe(0);
+    },
+    CHECKER_SPAWN_TIMEOUT_MS
+  );
 });
 
 describe('the two gaps in how work reaches production', () => {
@@ -179,7 +195,7 @@ describe('the two gaps in how work reaches production', () => {
     expect(CI).toContain('::warning title=NO TESTS RAN::');
     // It must not be able to hide behind a skipped dependency.
     expect(CI).toMatch(/verdict:[\s\S]{0,400}if: always\(\)/);
-    expect(CI).toContain("needs: [changes, stub_gate, typecheck, unit, server]");
+    expect(CI).toContain('needs: [changes, stub_gate, typecheck, unit, server]');
   });
 
   it('and something actually verifies main on a schedule', () => {
@@ -237,12 +253,12 @@ describe('the database gate answers for both character bans', () => {
     // The first version of this gate matched the arrow block and the dingbat
     // star, so it reported '->' inside a HINT and '* NEW:' in a comment. A
     // gate that cries wolf gets deleted by the next agent.
-    expect(emojiPass).toContain("[\\U0001F000-\\U0001FAFF");
+    expect(emojiPass).toContain('[\\U0001F000-\\U0001FAFF');
     expect(emojiPass).not.toMatch(/\[\\u2190-\\u21ff/i);
   });
 
   it('exempts operator dashboards by name, never by pattern', () => {
-    expect(emojiPass).toContain("proname NOT IN (");
+    expect(emojiPass).toContain('proname NOT IN (');
     expect(emojiPass).toContain("'verify_home_games_health_core'");
     // A pattern would quietly grow to cover whatever somebody names next.
     expect(emojiPass).not.toMatch(/proname\s+(NOT\s+)?LIKE\s+'fn_ca_%'/i);

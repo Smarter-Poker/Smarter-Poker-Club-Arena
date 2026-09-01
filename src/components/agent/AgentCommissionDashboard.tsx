@@ -202,10 +202,17 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
         .eq('user_id', user.id)
         .maybeSingle();
 
+      // NO pending_commission here. Migration 20260902000001 DROPPED
+      // agents.pending_commission (a column no function or trigger ever
+      // wrote — it reported 26,859.87 while the ledger held 394,904.61), and
+      // this select was the one caller the sweep missed: it made the phantom-
+      // column gate red on every branch the moment the drop was applied. Each
+      // sub-agent's real figure is read below from the same ledger function
+      // the hero's own number uses.
       const { data: subAgentsData } = myAgent
         ? await supabase
             .from('agents')
-            .select('id, user_id, total_players, pending_commission, commission_rate, created_at')
+            .select('id, user_id, total_players, commission_rate, created_at')
             .eq('parent_agent_id', myAgent.id)
         : { data: null };
 
@@ -228,6 +235,25 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
           }
         }
 
+        // What each sub-agent is actually owed, from the ledger, via the same
+        // SECURITY DEFINER function the hero's own figure uses (RLS would
+        // silently zero a direct read of other members' agent_commissions
+        // rows). Sub-agent lists are small; a failed read shows 0 rather than
+        // sinking the whole dashboard.
+        const owedByUser: Record<string, number> = {};
+        if (clubId && subAgentUserIds.length > 0) {
+          await Promise.all(
+            subAgentUserIds.map(async (uid: string) => {
+              try {
+                owedByUser[uid] = await CommissionService.unsettledCommission(clubId, uid);
+              } catch (e) {
+                reportError(e, 'AgentCommissionDashboard.subAgentOwed');
+                owedByUser[uid] = 0;
+              }
+            })
+          );
+        }
+
         setSubAgents(
           subAgentsData.map((a: any) => ({
             id: a.id,
@@ -235,7 +261,7 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
               subProfileMap[a.user_id]?.display_name || a.user_id?.substring(0, 8) || 'Unknown',
             avatarUrl: subProfileMap[a.user_id]?.avatar_url || '',
             totalPlayers: a.total_players || 0,
-            totalCommission: a.pending_commission || 0,
+            totalCommission: owedByUser[a.user_id] || 0,
             commissionRate: a.commission_rate || 0,
             joinedAt: new Date(a.created_at),
           }))

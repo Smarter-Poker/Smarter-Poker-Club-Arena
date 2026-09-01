@@ -1000,6 +1000,32 @@ class TournamentService {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
+   * The player's live entry for a tournament, or null.
+   *
+   * Used only by the retry path in `registerPlayer`: after a retry answers
+   * `already_registered`, this is the row that call created. Deliberately
+   * narrow - it reads, it never writes, and it returns null rather than
+   * throwing so the caller can fall back to the ordinary error.
+   */
+  private async adoptExistingRegistration(
+    tournamentId: string,
+    userId: string
+  ): Promise<TournamentPlayer | null> {
+    const { data, error } = await supabase
+      .from('tournament_players')
+      .select(
+        'id, tournament_id, user_id, username, status, chips, table_id, position, prize, current_bounty, mystery_bounty_value, rebuys, registered_at, bounties_collected, bounty_winnings'
+      )
+      .eq('tournament_id', tournamentId)
+      .eq('user_id', userId)
+      .order('registered_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+    return data as unknown as TournamentPlayer;
+  }
+
+  /**
    * Register a player for a tournament
    */
   async registerPlayer(
@@ -1025,9 +1051,38 @@ class TournamentService {
     // the entry FEE to the rake_records fee ledger (what the finalize
     // settlement actually credits to the club/union), and bumps
     // current_players + prize_pool.
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  A RETRY MUST NOT TELL A PAID PLAYER THEY DID NOTHING (2026-09-01)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * `retryAsync` retries on fetch / network / timeout / 503 / 502 / 429.
+     * Every one of those can be raised for a request the server already
+     * COMMITTED - a dropped response is indistinguishable from a dropped
+     * request. So the second attempt lands on a tournament this player is now
+     * registered for, the RPC correctly answers `already_registered`, and the
+     * old code threw "Already registered for this tournament" at somebody
+     * whose buy-in had just been taken.
+     *
+     * The registration RPC has no idempotency key to dedupe on
+     * (`fn_register_for_tournament(p_tournament_id, p_seat_first_internal)`),
+     * and adding one means editing a large money function in place. It does
+     * not need one to fix THIS: if a retry happened and the answer is
+     * `already_registered`, the registration that exists is the one this call
+     * made. Find it and return it, exactly as the success path would.
+     *
+     * Without a retry the message stands unchanged - that case really is "you
+     * are already in this tournament", from another tab or an earlier click,
+     * and telling the player so is correct.
+     */
+    let didRetry = false;
     const { data: rpcResult, error: rpcError } = await retryAsync(
       () => supabase.rpc('fn_register_for_tournament', { p_tournament_id: tournamentId }),
-      3
+      3,
+      500,
+      () => {
+        didRetry = true;
+      }
     );
     if (rpcError) {
       throw new Error(`Tournament registration failed: ${rpcError.message}`);
@@ -1040,6 +1095,27 @@ class TournamentService {
       mystery_bounty?: number | null;
     } | null;
     if (!res?.ok || !res.registration_id) {
+      /* See the block above: after a retry, `already_registered` describes
+         work THIS call committed. Adopt it rather than reporting failure to a
+         player who has already paid. */
+      if (didRetry && res?.reason === 'already_registered') {
+        const adopted = await this.adoptExistingRegistration(tournamentId, userId);
+        if (adopted) {
+          reportError(
+            new Error(
+              `[TournamentService] registration retried and found ${tournamentId.slice(0, 8)} already registered - adopting the entry this call committed rather than reporting failure`
+            ),
+            'TournamentService.registration_retry_adopted'
+          );
+          masterBus.emit('BALANCE_UPDATED', { source: 'tournament_buyin', userId });
+          masterBus.emit('TOURNAMENT_REGISTERED', {
+            tournamentId,
+            userId,
+            clubId: tournament.club_id,
+          });
+          return adopted;
+        }
+      }
       throw new Error(registerReasonText(res?.reason));
     }
 

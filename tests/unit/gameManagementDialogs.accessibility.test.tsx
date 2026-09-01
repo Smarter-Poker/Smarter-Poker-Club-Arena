@@ -9,7 +9,11 @@ vi.mock('../../src/components/common/confirmDialog', () => ({
   confirmDialog: mocks.confirm,
 }));
 
-import { ContractHistoryDialog, EditGameDialog } from '../../src/pages/GameManagementPage';
+import {
+  ContractHistoryDialog,
+  EditGameDialog,
+  ScheduleCloseDialog,
+} from '../../src/pages/GameManagementPage';
 
 const game = {
   id: 'game-1',
@@ -50,6 +54,7 @@ const game = {
     },
   },
   lastCommand: null,
+  pendingSchedule: null,
 };
 
 function EditHarness({ onSave = vi.fn() }: { onSave?: (patch: unknown) => void }) {
@@ -128,5 +133,21 @@ describe('Table Management dialogs', () => {
     );
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('names the scheduled-close modal and submits an ISO execution time', () => {
+    const onSchedule = vi.fn();
+    render(
+      <ScheduleCloseDialog game={game} busy={false} onClose={vi.fn()} onSchedule={onSchedule} />
+    );
+
+    const dialog = screen.getByRole('dialog', { name: 'Schedule Close' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(screen.getByLabelText('Execute At')).toHaveAttribute('type', 'datetime-local');
+    fireEvent.change(screen.getByLabelText('Execute At'), {
+      target: { value: '2026-09-03T14:30' },
+    });
+    fireEvent.submit(dialog);
+    expect(onSchedule).toHaveBeenCalledWith(new Date('2026-09-03T14:30').toISOString());
   });
 });

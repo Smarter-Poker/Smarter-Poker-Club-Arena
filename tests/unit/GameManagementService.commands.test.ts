@@ -124,7 +124,6 @@ describe('GameManagementService command execution', () => {
       },
       error: null,
     });
-
     await expect(
       gameManagementService.update(
         'table',
@@ -172,18 +171,29 @@ describe('GameManagementService command execution', () => {
   });
 
   it('maps the scoped management health snapshot', async () => {
-    mocks.rpc.mockResolvedValueOnce({
-      data: {
-        ok: true,
-        latest_event_sequence: 44,
-        last_event_at: '2026-09-01T12:00:00Z',
-        events_last_hour: 8,
-        commands_last_24h: 5,
-        rejected_last_24h: 1,
-        integrity_alerts: 0,
-      },
-      error: null,
-    });
+    mocks.rpc
+      .mockResolvedValueOnce({
+        data: {
+          ok: true,
+          latest_event_sequence: 44,
+          last_event_at: '2026-09-01T12:00:00Z',
+          events_last_hour: 8,
+          commands_last_24h: 5,
+          rejected_last_24h: 1,
+          integrity_alerts: 0,
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: {
+          ok: true,
+          scheduled_pending: 2,
+          scheduled_rejected_24h: 1,
+          event_rows: 80,
+          retention_days: 30,
+        },
+        error: null,
+      });
 
     await expect(gameManagementService.getHealth('union', 'union-1')).resolves.toEqual({
       latestEventSequence: 44,
@@ -192,6 +202,10 @@ describe('GameManagementService command execution', () => {
       commandsLast24h: 5,
       rejectedLast24h: 1,
       integrityAlerts: 0,
+      scheduledPending: 2,
+      scheduledRejected24h: 1,
+      eventRows: 80,
+      retentionDays: 30,
     });
     expect(mocks.rpc).toHaveBeenCalledWith('fn_get_game_management_health', {
       p_scope: 'union',

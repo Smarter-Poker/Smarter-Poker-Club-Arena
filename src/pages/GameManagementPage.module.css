@@ -158,6 +158,36 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
+.scheduleRail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: #c8a65a;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.scheduleRail button {
+  padding: 4px 7px;
+  border: 1px solid rgba(200, 166, 90, 0.5);
+  color: #dfc784;
+  background: rgba(30, 22, 8, 0.72);
+  cursor: pointer;
+}
+.loadMore {
+  width: min(420px, calc(100% - 24px));
+  margin: 16px auto 4px;
+  padding: 12px 18px;
+  border: 1px solid #23628a;
+  color: #7ed4ff;
+  background: linear-gradient(180deg, rgba(11, 43, 64, 0.72), rgba(4, 12, 18, 0.94));
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
 .surfaceNav {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

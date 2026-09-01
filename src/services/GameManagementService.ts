@@ -68,6 +68,28 @@ export interface GameManagementHealth {
   commandsLast24h: number;
   rejectedLast24h: number;
   integrityAlerts: number;
+  scheduledPending: number;
+  scheduledRejected24h: number;
+  eventRows: number;
+  retentionDays: number;
+}
+
+export interface ManagedGameSchedule {
+  scheduleId: string;
+  executeAt: string;
+  status: 'scheduled' | 'executing' | 'succeeded' | 'rejected' | 'cancelled';
+}
+
+export interface ManagedGameListCursor {
+  sortAt: string;
+  kind: ManagedGameKind;
+  id: string;
+}
+
+export interface ManagedGameListResult {
+  items: any[];
+  counts: { total: number; live: number; scheduled: number };
+  nextCursor: ManagedGameListCursor | null;
 }
 
 interface ManagedGameCommandResult {
@@ -91,6 +113,43 @@ const numberValue = (value: unknown): number => {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
 };
+
+const ENGINE_BASE_URL =
+  (import.meta as unknown as { env: Record<string, string> }).env?.VITE_ENGINE_URL ??
+  'https://engine.smarter.poker';
+
+function engineAuthHeader(): Record<string, string> {
+  try {
+    const raw =
+      typeof localStorage !== 'undefined' ? localStorage.getItem('smarter-poker-auth') : null;
+    const token = raw ? (JSON.parse(raw) as { access_token?: string }).access_token : null;
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  } catch {
+    return {};
+  }
+}
+
+async function executeEngineAdminAction(
+  tableId: string,
+  action: 'pause' | 'resume'
+): Promise<void> {
+  const response = await fetch(`${ENGINE_BASE_URL}/admin/${action}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...engineAuthHeader() },
+    body: JSON.stringify({
+      tableId,
+      ...(action === 'pause' ? { reason: 'Table Management operator pause' } : {}),
+    }),
+  });
+  const result = (await response.json().catch(() => ({}))) as {
+    success?: boolean;
+    error?: string;
+  };
+  if (!response.ok || result.success === false) {
+    throw new Error(result.error || `Could not ${action} this table.`);
+  }
+  masterBus.emit('TABLE_UPDATED', { tableId, status: action === 'pause' ? 'paused' : 'running' });
+}
 
 function mapReadiness(raw: any): ManagedGameReadiness {
   return {
@@ -130,6 +189,9 @@ const MANAGEMENT_ERRORS: Record<string, string> = {
     'This command identifier was already used for different work. Refresh and try again.',
   invalid_request: 'This command was incomplete. Refresh and try again.',
   invalid_payload: 'One or more game settings are invalid.',
+  invalid_schedule: 'Choose a time from two minutes to one year from now.',
+  schedule_not_found: 'This scheduled command no longer exists.',
+  schedule_not_pending: 'This scheduled command has already started or finished.',
   contract_rule_blocked: 'This command conflicts with the published game rules.',
   command_failed: 'The command could not be completed.',
 };
@@ -222,14 +284,97 @@ async function executeCommand(
 }
 
 export const gameManagementService = {
-  async getHealth(scope: 'club' | 'union', scopeId: string): Promise<GameManagementHealth> {
-    const { data, error } = await supabase.rpc('fn_get_game_management_health', {
+  async pause(tableId: string): Promise<void> {
+    await executeEngineAdminAction(tableId, 'pause');
+  },
+
+  async resume(tableId: string): Promise<void> {
+    await executeEngineAdminAction(tableId, 'resume');
+  },
+
+  async list(
+    scope: 'club' | 'union',
+    scopeId: string,
+    cursor: ManagedGameListCursor | null = null
+  ): Promise<ManagedGameListResult> {
+    const { data, error } = await supabase.rpc('fn_list_managed_games', {
       p_scope: scope,
       p_scope_id: scopeId,
+      p_cursor: cursor?.sortAt || null,
+      p_cursor_kind: cursor?.kind || null,
+      p_cursor_id: cursor?.id || null,
+      p_limit: 100,
     });
-    if (error) throw new Error(error.message || 'Could not load management health.');
+    if (error) throw new Error(error.message || 'Could not load managed games.');
+    const result = data as any;
+    if (!result?.ok)
+      throw new Error(managementError(result?.reason || null) || 'Could not load managed games.');
+    return {
+      items: Array.isArray(result.items) ? result.items : [],
+      counts: {
+        total: numberValue(result.counts?.total),
+        live: numberValue(result.counts?.live),
+        scheduled: numberValue(result.counts?.scheduled),
+      },
+      nextCursor: result.next_cursor
+        ? {
+            sortAt: String(result.next_cursor.sort_at),
+            kind: result.next_cursor.kind as ManagedGameKind,
+            id: String(result.next_cursor.id),
+          }
+        : null,
+    };
+  },
+
+  async scheduleClose(
+    kind: ManagedGameKind,
+    gameId: string,
+    expectedVersion: number,
+    executeAt: string
+  ): Promise<ManagedGameSchedule> {
+    const { data, error } = await supabase.rpc('fn_schedule_managed_game_close', {
+      p_kind: kind,
+      p_game_id: gameId,
+      p_expected_version: expectedVersion,
+      p_execute_at: executeAt,
+    });
+    if (error) throw new Error(error.message || 'Could not schedule this command.');
+    const result = data as any;
+    const reason = managementError(resultError(result, 'Could not schedule this command.'));
+    if (reason) throw new Error(reason);
+    return {
+      scheduleId: String(result.schedule.schedule_id),
+      executeAt: String(result.schedule.execute_at),
+      status: result.schedule.status,
+    };
+  },
+
+  async cancelSchedule(scheduleId: string): Promise<void> {
+    const { data, error } = await supabase.rpc('fn_cancel_managed_game_schedule', {
+      p_schedule_id: scheduleId,
+    });
+    if (error) throw new Error(error.message || 'Could not cancel this schedule.');
+    const reason = managementError(resultError(data, 'Could not cancel this schedule.'));
+    if (reason) throw new Error(reason);
+  },
+
+  async getHealth(scope: 'club' | 'union', scopeId: string): Promise<GameManagementHealth> {
+    const [{ data, error }, { data: scaleData, error: scaleError }] = await Promise.all([
+      supabase.rpc('fn_get_game_management_health', {
+        p_scope: scope,
+        p_scope_id: scopeId,
+      }),
+      supabase.rpc('fn_get_game_management_scale_health', {
+        p_scope: scope,
+        p_scope_id: scopeId,
+      }),
+    ]);
+    if (error || scaleError)
+      throw new Error(error?.message || scaleError?.message || 'Could not load management health.');
     const result = data as Record<string, unknown> | null;
-    if (!result?.ok) throw new Error('Management health is not available for this scope.');
+    const scale = scaleData as Record<string, unknown> | null;
+    if (!result?.ok || !scale?.ok)
+      throw new Error('Management health is not available for this scope.');
     return {
       latestEventSequence: numberValue(result.latest_event_sequence),
       lastEventAt: typeof result.last_event_at === 'string' ? result.last_event_at : null,
@@ -237,6 +382,10 @@ export const gameManagementService = {
       commandsLast24h: numberValue(result.commands_last_24h),
       rejectedLast24h: numberValue(result.rejected_last_24h),
       integrityAlerts: numberValue(result.integrity_alerts),
+      scheduledPending: numberValue(scale.scheduled_pending),
+      scheduledRejected24h: numberValue(scale.scheduled_rejected_24h),
+      eventRows: numberValue(scale.event_rows),
+      retentionDays: numberValue(scale.retention_days),
     };
   },
 

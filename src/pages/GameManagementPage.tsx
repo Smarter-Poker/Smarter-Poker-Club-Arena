@@ -22,6 +22,7 @@ import {
   type ManagedGameContractVersion,
   type ManagedGameKind,
   type ManagedGamePatch,
+  type ManagedGameListCursor,
   type GameManagementHealth,
 } from '../services/GameManagementService';
 import { unionService } from '../services/UnionService';
@@ -57,6 +58,7 @@ interface ManagedGame {
   buyIn: number;
   contract: ManagedGameContractSummary | null;
   lastCommand: ManagedGameCommandReceipt | null;
+  pendingSchedule: { scheduleId: string; executeAt: string; status: string } | null;
 }
 
 const ACTIVE_STATUSES = new Set(['running', 'active', 'waiting', 'registering', 'late_reg']);
@@ -79,6 +81,69 @@ function formatTime(value: string | null): string {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+function toLocalDateTimeInput(value: Date): string {
+  return new Date(value.getTime() - value.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+}
+
+export function ScheduleCloseDialog({
+  game,
+  busy,
+  onClose,
+  onSchedule,
+}: {
+  game: ManagedGame;
+  busy: boolean;
+  onClose: () => void;
+  onSchedule: (executeAt: string) => void;
+}) {
+  const dialogRef = useFocusTrap<HTMLFormElement>(true);
+  const minimum = toLocalDateTimeInput(new Date(Date.now() + 2 * 60_000));
+  const [executeAt, setExecuteAt] = useState(
+    toLocalDateTimeInput(new Date(Date.now() + 60 * 60_000))
+  );
+  useDialogEscape(true, onClose, busy);
+  return (
+    <div className={styles.dialogBackdrop} role="presentation">
+      <form
+        ref={dialogRef}
+        className={styles.dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="schedule-close-title"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSchedule(new Date(executeAt).toISOString());
+        }}
+      >
+        <span className={styles.eyebrow}>Governed Lifecycle</span>
+        <h2 id="schedule-close-title">Schedule Close</h2>
+        <p>
+          {game.name} Will Close Only If Its Contract Is Unchanged And No Players Are Seated Or
+          Registered When The Command Runs.
+        </p>
+        <label>
+          Execute At
+          <input
+            type="datetime-local"
+            min={minimum}
+            value={executeAt}
+            onChange={(event) => setExecuteAt(event.target.value)}
+            required
+          />
+        </label>
+        <div className={styles.dialogActions}>
+          <button type="button" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button type="submit" className={styles.primary} disabled={busy || !executeAt}>
+            {busy ? 'Scheduling…' : 'Schedule Close'}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
 }
 
 export function EditGameDialog({
@@ -440,12 +505,16 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const [hosts, setHosts] = useState<HostClub[]>([]);
   const [hostClubId, setHostClubId] = useState('');
   const [games, setGames] = useState<ManagedGame[]>([]);
+  const [counts, setCounts] = useState({ total: 0, live: 0, scheduled: 0 });
+  const [nextCursor, setNextCursor] = useState<ManagedGameListCursor | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [view, setView] = useState<View>('all');
   const [surface, setSurface] = useState<ManagementSurface>('games');
   const [surfaceDirty, setSurfaceDirty] = useState(false);
   const [editing, setEditing] = useState<ManagedGame | null>(null);
+  const [scheduling, setScheduling] = useState<ManagedGame | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [contractGame, setContractGame] = useState<ManagedGame | null>(null);
   const [contractVersions, setContractVersions] = useState<ManagedGameContractVersion[]>([]);
@@ -471,6 +540,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       setHosts([]);
       setHostClubId('');
       setGames([]);
+      setCounts({ total: 0, live: 0, scheduled: 0 });
+      setNextCursor(null);
       setHealth(null);
       setSurfaceDirty(false);
     }
@@ -542,34 +613,12 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         nextHosts.some((host) => host.id === current) ? current : nextHosts[0]?.id || ''
       );
 
-      const tableQuery = supabase
-        .from('tables')
-        .select(
-          'id,club_id,name,status,game_variant,current_players,max_players,small_blind,big_blind,min_buy_in,max_buy_in,created_at,is_deleted'
-        )
-        .is('tournament_id', null)
-        .eq('is_deleted', false);
-      const tournamentQuery = supabase
-        .from('tournaments')
-        .select(
-          'id,club_id,name,status,game_type,variant,current_players,max_players,start_time,buy_in_amount,created_at'
-        );
-      if (scope === 'union') {
-        tableQuery.eq('union_id', resolvedScopeId);
-        tournamentQuery.eq('union_id', resolvedScopeId);
-      } else {
-        tableQuery.eq('club_id', resolvedScopeId).is('union_id', null);
-        tournamentQuery.eq('club_id', resolvedScopeId).is('union_id', null);
-      }
-      const [tableResult, tournamentResult] = await Promise.all([
-        tableQuery.order('created_at', { ascending: false }).limit(500),
-        tournamentQuery.order('start_time', { ascending: true }).limit(500),
-      ]);
+      const page = await gameManagementService.list(scope, resolvedScopeId);
       if (!isCurrent()) return;
-      if (tableResult.error) throw tableResult.error;
-      if (tournamentResult.error) throw tournamentResult.error;
-      const tableIds = (tableResult.data || []).map((row: any) => row.id);
-      const tournamentIds = (tournamentResult.data || []).map((row: any) => row.id);
+      const tableRows = page.items.filter((row: any) => row.kind === 'table');
+      const tournamentRows = page.items.filter((row: any) => row.kind === 'tournament');
+      const tableIds = tableRows.map((row: any) => row.id);
+      const tournamentIds = tournamentRows.map((row: any) => row.id);
       const [tableContracts, tournamentContracts, tableReceipts, tournamentReceipts] =
         await Promise.all([
           gameManagementService.getContracts('table', tableIds),
@@ -590,15 +639,15 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       );
       const hostNames = Object.fromEntries(nextHosts.map((host) => [host.id, host.name]));
       const rows: ManagedGame[] = [
-        ...(tableResult.data || []).map((row: any) => ({
+        ...tableRows.map((row: any) => ({
           id: row.id,
           kind: 'table' as const,
           name: row.name,
           status: row.status,
           clubId: row.club_id,
           hostName: hostNames[row.club_id] || resolvedScopeName,
-          variant: row.game_variant || 'NLH',
-          players: row.current_players || 0,
+          variant: row.variant || 'NLH',
+          players: row.players || 0,
           maxPlayers: row.max_players || 0,
           startTime: null,
           smallBlind: Number(row.small_blind || 0),
@@ -608,28 +657,44 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           buyIn: 0,
           contract: tableContractMap.get(row.id) || null,
           lastCommand: tableReceiptMap.get(row.id) || null,
+          pendingSchedule: row.pending_schedule
+            ? {
+                scheduleId: row.pending_schedule.schedule_id,
+                executeAt: row.pending_schedule.execute_at,
+                status: row.pending_schedule.status,
+              }
+            : null,
         })),
-        ...(tournamentResult.data || []).map((row: any) => ({
+        ...tournamentRows.map((row: any) => ({
           id: row.id,
           kind: 'tournament' as const,
           name: row.name,
           status: row.status,
           clubId: row.club_id,
           hostName: hostNames[row.club_id] || resolvedScopeName,
-          variant: row.game_type || row.variant || 'MTT',
-          players: row.current_players || 0,
+          variant: row.variant || 'MTT',
+          players: row.players || 0,
           maxPlayers: row.max_players || 0,
           startTime: row.start_time,
           smallBlind: 0,
           bigBlind: 0,
           minBuyIn: 0,
           maxBuyIn: 0,
-          buyIn: Number(row.buy_in_amount || 0),
+          buyIn: Number(row.buy_in || 0),
           contract: tournamentContractMap.get(row.id) || null,
           lastCommand: tournamentReceiptMap.get(row.id) || null,
+          pendingSchedule: row.pending_schedule
+            ? {
+                scheduleId: row.pending_schedule.schedule_id,
+                executeAt: row.pending_schedule.execute_at,
+                status: row.pending_schedule.status,
+              }
+            : null,
         })),
       ];
       setGames(rows);
+      setCounts(page.counts);
+      setNextCursor(page.nextCursor);
       try {
         const nextHealth = await gameManagementService.getHealth(scope, resolvedScopeId);
         if (isCurrent()) setHealth(nextHealth);
@@ -645,6 +710,81 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       if (isCurrent()) setLoading(false);
     }
   }, [clubId, scope, unionId, user?.id]);
+
+  const loadMore = useCallback(async () => {
+    if (!scopeId || !nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await gameManagementService.list(scope, scopeId, nextCursor);
+      const tableRows = page.items.filter((row: any) => row.kind === 'table');
+      const tournamentRows = page.items.filter((row: any) => row.kind === 'tournament');
+      const [tableContracts, tournamentContracts, tableReceipts, tournamentReceipts] =
+        await Promise.all([
+          gameManagementService.getContracts(
+            'table',
+            tableRows.map((row: any) => row.id)
+          ),
+          gameManagementService.getContracts(
+            'tournament',
+            tournamentRows.map((row: any) => row.id)
+          ),
+          gameManagementService.getCommandReceipts(
+            'table',
+            tableRows.map((row: any) => row.id)
+          ),
+          gameManagementService.getCommandReceipts(
+            'tournament',
+            tournamentRows.map((row: any) => row.id)
+          ),
+        ]);
+      const contractMap = new Map(
+        [...tableContracts, ...tournamentContracts].map((contract) => [
+          `${contract.gameId}`,
+          contract,
+        ])
+      );
+      const receiptMap = new Map(
+        [...tableReceipts, ...tournamentReceipts].map((receipt) => [`${receipt.gameId}`, receipt])
+      );
+      const hostNames = Object.fromEntries(hosts.map((host) => [host.id, host.name]));
+      const rows: ManagedGame[] = page.items.map((row: any) => ({
+        id: row.id,
+        kind: row.kind,
+        name: row.name,
+        status: row.status,
+        clubId: row.club_id,
+        hostName: hostNames[row.club_id] || scopeName,
+        variant: row.variant || (row.kind === 'table' ? 'NLH' : 'MTT'),
+        players: row.players || 0,
+        maxPlayers: row.max_players || 0,
+        startTime: row.start_time,
+        smallBlind: Number(row.small_blind || 0),
+        bigBlind: Number(row.big_blind || 0),
+        minBuyIn: Number(row.min_buy_in || 0),
+        maxBuyIn: Number(row.max_buy_in || 0),
+        buyIn: Number(row.buy_in || 0),
+        contract: contractMap.get(row.id) || null,
+        lastCommand: receiptMap.get(row.id) || null,
+        pendingSchedule: row.pending_schedule
+          ? {
+              scheduleId: row.pending_schedule.schedule_id,
+              executeAt: row.pending_schedule.execute_at,
+              status: row.pending_schedule.status,
+            }
+          : null,
+      }));
+      setGames((current) => {
+        const seen = new Set(current.map((game) => `${game.kind}:${game.id}`));
+        return [...current, ...rows.filter((game) => !seen.has(`${game.kind}:${game.id}`))];
+      });
+      setCounts(page.counts);
+      setNextCursor(page.nextCursor);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not load more games.');
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [hosts, loadingMore, nextCursor, scope, scopeId, scopeName, toast]);
 
   useEffect(() => {
     void load();
@@ -731,13 +871,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     [games, view]
   );
 
-  const liveCount = games.filter((game) => ACTIVE_STATUSES.has(game.status.toLowerCase())).length;
-  const scheduledCount = games.filter(
-    (game) =>
-      game.kind === 'tournament' &&
-      !ACTIVE_STATUSES.has(game.status.toLowerCase()) &&
-      !CLOSED_STATUSES.has(game.status.toLowerCase())
-  ).length;
+  const liveCount = counts.live;
+  const scheduledCount = counts.scheduled;
 
   const tournamentFormat =
     requestedCreate === 'spin' ? 'spin' : requestedCreate === 'sng' ? 'sng' : 'mtt_freezeout';
@@ -875,7 +1010,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
               <strong>{scheduledCount}</strong> Scheduled
             </span>
             <span>
-              <strong>{games.length}</strong> Total
+              <strong>{counts.total}</strong> Total
             </span>
           </div>
           <div className={styles.healthRail} aria-label="Management Health">
@@ -883,6 +1018,13 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             <span>{health?.rejectedLast24h ?? 0} Rejected</span>
             <span className={health?.integrityAlerts ? styles.healthAlert : undefined}>
               {health?.integrityAlerts ?? 0} Integrity Alerts
+            </span>
+            <span>{health?.scheduledPending ?? 0} Pending Schedules</span>
+            <span className={health?.scheduledRejected24h ? styles.healthAlert : undefined}>
+              {health?.scheduledRejected24h ?? 0} Schedule Rejects
+            </span>
+            <span title={`${health?.retentionDays ?? 30}-Day Realtime Retention`}>
+              {health?.eventRows ?? 0} Realtime Events
             </span>
           </div>
           <GameCreationActions managementPath={managementPath} />
@@ -1040,6 +1182,36 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                         )}
                       </div>
                     )}
+                    {game.pendingSchedule && (
+                      <div className={styles.scheduleRail}>
+                        <span>Close Scheduled</span>
+                        <strong>{formatTime(game.pendingSchedule.executeAt)}</strong>
+                        <button
+                          type="button"
+                          disabled={busyId === game.id}
+                          onClick={async () => {
+                            setBusyId(game.id);
+                            try {
+                              await gameManagementService.cancelSchedule(
+                                game.pendingSchedule!.scheduleId
+                              );
+                              toast.success('Scheduled close cancelled.');
+                              await load();
+                            } catch (error) {
+                              toast.error(
+                                error instanceof Error
+                                  ? error.message
+                                  : 'Could not cancel this schedule.'
+                              );
+                            } finally {
+                              setBusyId(null);
+                            }
+                          }}
+                        >
+                          Cancel Schedule
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <div className={styles.gameNumbers}>
                     <strong>
@@ -1081,6 +1253,65 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                       Edit
                     </button>
                     {game.kind === 'table' && !closed && <Link to={`/table/${game.id}`}>Open</Link>}
+                    {game.kind === 'table' && !closed && (
+                      <button
+                        type="button"
+                        disabled={busyId === game.id}
+                        onClick={async () => {
+                          const paused = game.status.toLowerCase() === 'paused';
+                          setBusyId(game.id);
+                          try {
+                            if (paused) await gameManagementService.resume(game.id);
+                            else await gameManagementService.pause(game.id);
+                            toast.success(
+                              paused ? 'Table resumed.' : 'Table will pause after this hand.'
+                            );
+                            await load();
+                          } catch (error) {
+                            toast.error(
+                              error instanceof Error
+                                ? error.message
+                                : `Could not ${paused ? 'resume' : 'pause'} this table.`
+                            );
+                          } finally {
+                            setBusyId(null);
+                          }
+                        }}
+                        title={
+                          game.status.toLowerCase() === 'paused'
+                            ? 'Resume Dealing'
+                            : 'Pause Safely After The Current Hand'
+                        }
+                      >
+                        {game.status.toLowerCase() === 'paused' ? 'Resume' : 'Pause'}
+                      </button>
+                    )}
+                    {!closed && !game.pendingSchedule && (
+                      <button
+                        onClick={() => {
+                          if (game.players > 0 || game.contract?.contractLocked) {
+                            toast.error(
+                              game.kind === 'table'
+                                ? 'Players must leave before a close can be scheduled.'
+                                : 'A registered tournament cannot be scheduled for cancellation.'
+                            );
+                            return;
+                          }
+                          setScheduling(game);
+                        }}
+                        disabled={busyId === game.id || !game.contract}
+                        aria-disabled={
+                          game.players > 0 || game.contract?.contractLocked ? true : undefined
+                        }
+                        title={
+                          game.players > 0 || game.contract?.contractLocked
+                            ? 'Occupied Or Registered Games Stay Locked'
+                            : 'Schedule A Guarded Future Close'
+                        }
+                      >
+                        Schedule
+                      </button>
+                    )}
                     {!closed && (
                       <button
                         className={styles.danger}
@@ -1104,6 +1335,16 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                 </article>
               );
             })}
+            {nextCursor && (
+              <button
+                type="button"
+                className={styles.loadMore}
+                onClick={() => void loadMore()}
+                disabled={loadingMore}
+              >
+                {loadingMore ? 'Loading More…' : `Load More · ${games.length} Of ${counts.total}`}
+              </button>
+            )}
           </section>
         ))}
 
@@ -1150,6 +1391,35 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
               await load();
             } catch (error) {
               toast.error(error instanceof Error ? error.message : 'Could not update the game.');
+            } finally {
+              setBusyId(null);
+            }
+          }}
+        />
+      )}
+
+      {scheduling && (
+        <ScheduleCloseDialog
+          game={scheduling}
+          busy={busyId === scheduling.id}
+          onClose={() => setScheduling(null)}
+          onSchedule={async (executeAt) => {
+            if (!scheduling.contract) return;
+            setBusyId(scheduling.id);
+            try {
+              await gameManagementService.scheduleClose(
+                scheduling.kind,
+                scheduling.id,
+                scheduling.contract.version,
+                executeAt
+              );
+              toast.success('Guarded close scheduled.');
+              setScheduling(null);
+              await load();
+            } catch (error) {
+              toast.error(
+                error instanceof Error ? error.message : 'Could not schedule this command.'
+              );
             } finally {
               setBusyId(null);
             }

@@ -2,6 +2,143 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-08-31 - THE OPERATOR CONSOLE WAS OPEN TO EVERY PLAYER (hardening phase 3 of 6)
+
+`fn_chip_integrity_report()` is the platform's money posture in seven rows. It
+is SECURITY DEFINER, so RLS does not apply to it, and `authenticated` could
+execute it. Any account that could log in could read this:
+
+```
+ledger_liveness        Ledger recording normally: 44662 rows in 24h.
+drift_since_baseline   0 member(s) drifting, worst 0.00.
+unpriced_tournaments   WARN 31 COMPLETED tournament(s) took a buy-in and
+                       earned no rake, ~13.30 uncollected.
+legacy_wallets_frozen  public.wallets holds 732591994.33 chips.
+```
+
+The total chip supply, the ledger's throughput, and a live list of **which
+invariant is currently unwatched**. An operator console is a fine thing to
+have. Serving it to the browser is reconnaissance.
+
+**Thirty-eight routines were in that shape** across three migrations, all
+applied and verified in production:
+
+1. **`20260831204718_the_operator_console_was_open_to_every_player`** closes
+   thirty-five platform-wide diagnostics: money integrity, grant auditing,
+   deal fairness, double-deal detection, BBJ gap decomposition, hand-history
+   bloat, and `fn_ungated_money_rpcs()` - the function that lists which money
+   RPCs have no gate, which a player could call. Zero of the thirty-five have a
+   browser caller. Three are called by the game server, which builds its client
+   with `SUPABASE_SERVICE_ROLE_KEY`; `fn_nit_evictions` is the eviction rule the
+   engine consults every hand, so its post-apply assertion does not read a
+   grant, it RUNS the function.
+
+2. **`20260831231249_three_handles_a_player_could_pull`** closes three with no
+   caller anywhere and a real cost if pulled. `sp_backfill_member_fee_rollup`
+   is a LOOP WITH COMMIT that runs until `p_seconds` elapses - any account
+   could pin a backend worker for as long as it liked.
+   `training_leaderboard_refresh` is an unbounded `REFRESH MATERIALIZED VIEW
+CONCURRENTLY` on demand. `sum_anti_farming_ips(p_ip, p_start)` sums the
+   anti-farming ledger for **an IP address the caller supplies**: an oracle
+   against the fraud system, letting a farmer ask whether an address is tracked
+   and tune around the answer.
+
+3. **`20260831231356_a_guard_where_the_definer_sweep_was`** is the half that
+   keeps it true. `fn_ca_browser_reachable_telemetry()` reports every SECURITY
+   DEFINER routine that is browser-executable, takes no identity argument,
+   never consults the caller, is not a trigger function, and is not recorded on
+   the new `ca_browser_definer_allowlist` with a written reason. Zero rows is
+   the healthy state.
+
+**`scripts/ci/check-telemetry-exposure.mjs` + `.github/workflows/telemetry-exposure.yml`**
+read it on every migration PR and twice a day.
+
+### Why this needed a guard and not just a sweep
+
+Another agent ran a phase-4 security sweep earlier the same day and wrote this
+in its own migration:
+
+> THE SURFACE GREW BACK WITHIN THE HOUR. Immediately after the phase-4 sweep
+> took the anon-executable SECURITY DEFINER count from 83 to 22, it read 23
+> again... This is not a criticism of that change; it is the default doing what
+> the default does. Postgres grants EXECUTE to PUBLIC on every new function and
+> Supabase publishes it as an RPC, so an operator watchdog is born public unless
+> someone says otherwise.
+
+That is the whole argument, already written down by somebody else. The default
+is open, so a closure with nothing re-reading it has a date on it. This is the
+fourth time this estate has been bitten by that shape, after the definer views
+that reopened in eight hours, `v_system_health_cron` watching three job-name
+prefixes out of seventy-five, and `check-ui-text` exempting four whole files.
+
+### One decision reversed on purpose
+
+That same phase-4 migration deliberately KEPT `authenticated` on
+`fn_tournament_metrics`, "so an admin dashboard that picks this up later is not
+broken by a guess". This phase revokes it. The reasoning is the continuation of
+their own: they described it as "precisely the thing that tells an outsider when
+the floor is degraded" and worried only about `anon`, but a logged-in account is
+still an outsider for a readout of how many tournaments are stuck. Nothing calls
+it from a browser today, and if a dashboard needs it later the fix is now a
+deliberate grant plus an allowlist row carrying its reason, rather than a guess
+left open in the meantime.
+
+### Why an allowlist is acceptable here
+
+Nineteen routines legitimately have this shape and must stay open: public
+leaderboards, the club name check the signup form calls on every keystroke, the
+nearby live games map, support search, the member-fee rollup the roster page
+nudges. An allowlist is exactly the decaying thing criticised above, so this one
+differs where it matters. Every row carries its REASON in the database under a
+`CHECK` constraint, adding a row is a migration that shows up in review, and the
+guard reports what is NOT on the list rather than trusting that somebody re-read
+it. Trigger functions are excluded by return type rather than by name, because
+seven of them matched and a list of names rots while a return type does not.
+
+### Verified live
+
+`0` unaccounted, `20` allowed with a reason, `fn_chip_integrity_report` and
+`sum_anti_farming_ips` closed to `authenticated`, the roster nudge still open,
+`fn_tournament_metrics` still returning its row to the game server.
+
+Red before green, three ways. A `GRANT` on `fn_chip_integrity_report` inside a
+rolled-back transaction moved the guard from 0 to 1 and production never saw it.
+A synthetic unscoped definer created and dropped drove the real CI script to
+exit 1 - and it was reported as reachable by `anon + authenticated`, because
+Postgres had granted PUBLIC on creation without anyone asking, which is the
+point. And a planted re-grant in a post-sweep migration file turns the repo pin
+red.
+
+### Postscript, 00:02 UTC: the guard's first real run went red
+
+`fn_ca_browser_reachable_telemetry()` shipped at 23:13. Its first run in CI, 49
+minutes later, failed on a function that did not exist when it was written:
+
+```
+fn_ca_migration_text                     stable    anon + authenticated
+                                         (p_version text)
+```
+
+It returns the full SQL text of any applied migration, by version, to anyone,
+including a visitor with no account. Every migration this platform has run: the
+money paths, the fraud rules, the security fixes, and the comments explaining
+what each one was defending against.
+
+Its own COMMENT, written by the agent who created it, says **"Read-only,
+service_role only."** That is what the author intended and believed. Postgres
+granted EXECUTE to PUBLIC on creation, Supabase published it as an RPC, nobody
+wrote the REVOKE, and it was anon-readable from birth while its own
+documentation said otherwise. It had been built hours earlier in response to
+this session's finding that 428 applied migrations have no file in the repo: a
+good tool, born public.
+
+Closed by `20260901000358_the_guard_caught_one_within_the_hour`. Zero callers
+anywhere; service_role keeps it, asserted by calling it rather than by reading
+its grant.
+
+This is the argument for the guard, made by the estate itself, inside an hour,
+without anybody going looking.
+
 ## Cowork session 2026-08-31 - NOTHING SCHEDULED FAILS SILENTLY (hardening phase 2 of 6)
 
 `sp_upcoming_tournament_pushes` runs every minute. It failed **4,017

@@ -45,10 +45,7 @@ const guardCode = guardSql
   .join('\n');
 
 /** The function body only, so header prose can say anything it likes. */
-const body = guardSql.slice(
-  guardSql.indexOf('AS $function$'),
-  guardSql.indexOf('$function$;'),
-);
+const body = guardSql.slice(guardSql.indexOf('AS $function$'), guardSql.indexOf('$function$;'));
 
 describe('the chip conservation guard measures only what it can measure', () => {
   it('restricts itself to the two fixed-entry variants', () => {
@@ -109,6 +106,8 @@ describe('the schedule points at the function it claims to', () => {
   });
 
   it('verifies the job landed instead of trusting cron.schedule', () => {
-    expect(scheduleSql).toMatch(/RAISE EXCEPTION 'spin_chip_conservation_hourly was not scheduled'/);
+    expect(scheduleSql).toMatch(
+      /RAISE EXCEPTION 'spin_chip_conservation_hourly was not scheduled'/
+    );
   });
 });

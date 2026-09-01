@@ -2,6 +2,98 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-09-01 - A LOGGED-IN BROWSER COULD RUN A LEDGER REPAIR
+
+`fn_ca_repair_write_failure` is SECURITY DEFINER, VOLATILE, and was executable
+by **`authenticated`** - any logged-in account. It takes a write-failure id, a
+counterparty type, a counterparty entity and a reason, and posts a correction
+against whichever ledger account those map to: `club_treasury`, `promo_wallet`,
+the player stores. It takes **no identity argument and never looks at who is
+calling**, so the caller's own identity places no limit on which failure it
+repairs or what it attributes the repair to.
+
+**The gate was already shouting.** `Telemetry Exposure` exists to catch exactly
+this shape, and it had been failing on EVERY branch in the repo - it asks the
+live database, not the branch, so one open routine reddens everybody's PR. That
+is how a real finding gets quietly reclassified as noise, and it is why this
+was found while chasing an unrelated CI failure on a Spins guard.
+
+**Nothing calls it.** Not the client, not the server, not pg_cron, and no other
+database function - `fn_ca_guard_watchlist` merely names it in an array of
+routines to watch. It is an operator tool that was left open, not a feature
+anyone is using, so closing it removes no capability from anyone.
+
+The grants applied are exactly what the gate's own remediation text prescribes,
+with the revoke asserted in-migration rather than trusted:
+
+```
+REVOKE ALL ... FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ... TO service_role;
+```
+
+Verified after applying: `[telemetry-exposure] no unscoped operator routine is
+reachable from a browser.`
+
+---
+
+
+## Cowork session 2026-08-31 - THE SWEEP DEADLOCKED ITSELF INTO DOING NOTHING (Spins audit, phase 7)
+
+For two and a half hours on 2026-08-31, **29 terminal tournaments finished with
+banked rake and were never settled.** 17 spins, 11 SNGs and one mystery bounty,
+holding **215.98 in union rake** the union was never paid. The oldest sat there
+from 20:33 while fifteen consecutive safety-net passes stepped over it.
+
+The safety net was running the whole time. `fn_sweep_unsettled_tournament_rake`
+is called by the engine every ten minutes, and it left exactly one clue behind:
+
+> Sweep could not settle tournament rake: **deadlock detected**
+
+**The batch size was the bug.** The whole sweep is ONE transaction, and every
+settlement inside it updates the same `club_wallets` row and the same union
+wallet. At `p_limit: 200` that is minutes of held row locks, against a live
+engine settling its own finishing tournaments on those exact rows. The sweep
+lost the deadlock, and because it is one transaction, losing meant rolling back
+every settlement it had already done - so a failing pass made **no progress at
+all**, and the next pass started from the same place and lost again.
+
+Ten per pass is about five seconds of locking, and at one pass per ten minutes
+it drains sixty events an hour against an arrival rate near one.
+
+**Nothing was watching.** `v_tournament_rake_attribution_gaps` is the estate's
+tournament-rake watcher and it opens `FROM tournament_rake_settlements r`. It
+can tell you a settlement credited nobody, or threw, or was never measured.
+What it structurally cannot tell you is that a settlement **does not exist** -
+an unsettled tournament has no row to start from. It sat at zero rows for the
+entire incident. Every settlement it could see was fine. The wrong ones were
+the ones that were not there.
+
+**Shipped:**
+
+| Change                                                      | What it does                                                                                                                                                                                        |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/src/GameServer.ts`                                  | Sweep batch `p_limit` 200 → 10, with the reasoning written next to the number                                                                                                                       |
+| `20260831_tournament_rake_settlement_guard.sql`             | `fn_tournament_rake_settlement_check(p_grace_minutes, p_since_days)` - drives off `tournaments`, finds terminal events with banked rake and no settlement row, `critical` at 5 events or 50 in rake |
+| `20260831_tournament_rake_settlement_guard_schedule.sql`    | pg_cron `tournament_rake_settlement_check_hourly` at `19 * * * *`, advisory-locked, asserting in-migration that the job landed                                                                      |
+| `server/src/tournament/rakeSweepBatchIsSmall.guard.test.ts` | Pins the batch at ≤ 25 and the history at ≥ 30 days. Raising it back to 200 turns CI red                                                                                                            |
+| `tests/config/rakeSettlementGuardSeesMissingRows.test.ts`   | 13 tests pinning the direction of the query, the grace window, the severity ladder and the read-only shape                                                                                          |
+
+**The backlog was drained.** All 29 events were settled through the platform's
+own idempotent settler in small batches, `source='sweep'`, and every settlement
+matches its `rake_records` sum exactly with zero attribution errors: 17 spins
+(134.88), 11 SNGs (36.10), one mystery bounty (45.00).
+
+**Both branches of the new guard were proven against production, in
+transactions that rolled back.** Live it returns `verdict: pass`; with the 29
+settlement rows removed it returns `rake_never_settled`, 215.98 unpaid, oldest
+`20:33:29` - the incident, reproduced exactly. Swapping the query back to drive
+from the settlements table turns the test red.
+
+The check **reports and repairs nothing.** Settling quietly here would hide the
+very failure it exists to report.
+
+CLAUDE.md §10.5 - no `is_horse` filter, no `p_include_horses`.
+
 ## Cowork session 2026-08-31 - NOBODY WAS COUNTING THE CHIPS (Spins audit, phase 6)
 
 Every money guard in this estate watches the prize.

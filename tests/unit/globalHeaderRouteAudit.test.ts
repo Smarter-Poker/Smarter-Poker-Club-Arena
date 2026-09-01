@@ -31,6 +31,7 @@ const INTENTIONAL_EXCEPTIONS = [
   '/sim',
   '/dev/footer',
   '/dev/customization',
+  '/dev/financial-decisions',
   'table/:tableId',
 ] as const;
 const intentionalExceptions = new Set<string>(INTENTIONAL_EXCEPTIONS);
@@ -39,7 +40,7 @@ describe('the complete route manifest inherits one global header', () => {
   it('discovers every current route, including dynamic and legacy redirect paths', () => {
     // 127 since phase 7 added clubs/:clubId/anti-cheat, the club-scoped door
     // onto AntiCheatPage that the operations rail links.
-    expect(allPaths).toHaveLength(128); // +1: financial-incidents (zero-drift drift dashboard)
+    expect(allPaths).toHaveLength(129); // +1: development-only financial decision harness
     expect(allPaths).toContain('clubs/:clubId/create-table/:gameType');
     expect(allPaths).toContain('messages/clubs/:conversationId');
     expect(allPaths).toContain('*');

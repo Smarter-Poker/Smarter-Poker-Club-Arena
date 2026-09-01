@@ -1,0 +1,290 @@
+/**
+ * MAINTENANCE BREAK SCREEN - Styles
+ *
+ * Mobile first (375px), then scaled up, per CLAUDE.md working rule 6.
+ *
+ * The layer follows the rule Dan set for the tournament break on 2026-08-30:
+ * a break is an in-screen popup over the table, NOT a page takeover. The felt,
+ * the lobby and the header stay visible and clickable behind it, so the layer
+ * is transparent and click-through and only the card itself accepts input.
+ */
+
+.maintenance-break {
+  position: fixed;
+  inset: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Above the felt, and above the tournament break screen (700): when a
+     restart lands inside a tournament break both are technically true, and
+     the maintenance one is the message that explains the blank table. */
+  z-index: 720;
+  animation: maintenanceBreakFadeIn 0.4s ease;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.maintenance-break__overlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(56, 132, 255, 0.12) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+@keyframes maintenanceBreakFadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.maintenance-break__content {
+  position: relative;
+  pointer-events: auto;
+  width: min(92%, 420px);
+  max-height: min(80vh, 80dvh);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 26px 18px 22px;
+  border-radius: 18px;
+  background: linear-gradient(165deg, #101b2d 0%, #0a1120 100%);
+  border: 1px solid rgba(96, 154, 255, 0.28);
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+  color: #e8eefc;
+}
+
+.maintenance-break__close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: #cfdcf5;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  line-height: 1;
+}
+
+/* No :hover anywhere. tests/no-hover-effects.law.test.ts forbids it across
+   Club Arena: this is a touch-first product and a hover state that only exists
+   on a mouse is a control that behaves differently depending on the device. */
+
+.maintenance-break__header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.maintenance-break__badge {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(56, 132, 255, 0.16);
+  border: 1px solid rgba(96, 154, 255, 0.4);
+  color: #9dc2ff;
+}
+
+.maintenance-break__title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+/* ── Timer ──────────────────────────────────────────────────────────────── */
+
+.maintenance-break__timer-container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.maintenance-break__timer-ring {
+  position: relative;
+  width: 148px;
+  height: 148px;
+}
+
+.maintenance-break__timer-ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.maintenance-break__ring-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 6;
+}
+
+.maintenance-break__ring-fill {
+  fill: none;
+  stroke: #4f9dff;
+  stroke-width: 6;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.9s linear;
+}
+
+.maintenance-break__timer-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 16px;
+  text-align: center;
+}
+
+.maintenance-break__time {
+  font-size: 30px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #ffffff;
+  line-height: 1;
+}
+
+.maintenance-break__time-label {
+  font-size: 9px;
+  line-height: 1.25;
+  letter-spacing: 0.04em;
+  color: #93a6c7;
+}
+
+.maintenance-break__progress-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: #4f9dff;
+  transition:
+    width 0.9s linear,
+    background-color 0.3s ease;
+  max-width: 100%;
+}
+
+/* ── Facts ──────────────────────────────────────────────────────────────── */
+
+.maintenance-break__facts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.maintenance-break__facts li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.maintenance-break__fact-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #dce7fb;
+}
+
+.maintenance-break__fact-body {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: #93a6c7;
+}
+
+.maintenance-break__reason {
+  margin: 0;
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #6d7f9e;
+  text-align: center;
+}
+
+/* ── Minimized badge ────────────────────────────────────────────────────── */
+
+.maintenance-break__minimized {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 721;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.maintenance-break__mini-badge {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #dce7fb;
+  background: rgba(16, 27, 45, 0.94);
+  border: 1px solid rgba(96, 154, 255, 0.45);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+}
+
+/* ── Wider screens ──────────────────────────────────────────────────────── */
+
+@media (min-width: 768px) {
+  .maintenance-break__content {
+    width: min(92%, 460px);
+    gap: 20px;
+    padding: 30px 24px 26px;
+  }
+
+  .maintenance-break__title {
+    font-size: 22px;
+  }
+
+  .maintenance-break__timer-ring {
+    width: 168px;
+    height: 168px;
+  }
+
+  .maintenance-break__time {
+    font-size: 34px;
+  }
+
+  .maintenance-break__time-label {
+    font-size: 10px;
+  }
+}
+
+/**
+ * Reduced motion collapses MOTION, never MEANING (CLAUDE.md 10.6). The
+ * countdown is duration-carrying information, so the ring and the bar keep
+ * updating; only the decorative fade is dropped.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .maintenance-break {
+    animation: none;
+  }
+}

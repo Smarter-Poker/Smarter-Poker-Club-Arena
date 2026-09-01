@@ -528,7 +528,19 @@ export type HandEvent =
       /** TRIPLE-BOARD BOMB POT 2026-08-27: the third board's new cards for this street. */
       cards3?: Card[];
     }
-  | { type: 'PLAYER_ACTION'; seat: number; action: ActionType; amount: number }
+  /* 2026-09-01: `stage` is carried ON the event, not looked up from live
+   * state when the event is handled. See the note in
+   * ServerTableEngineHandEvents' PLAYER_ACTION case - reading the mutable
+   * controller state at handler time stamped whole hands with whatever stage
+   * the hand had ENDED on. Optional so no emitter is silently wrong; the
+   * consumer falls back to the old read. */
+  | {
+      type: 'PLAYER_ACTION';
+      seat: number;
+      action: ActionType;
+      amount: number;
+      stage?: HandStage;
+    }
   | { type: 'POT_UPDATE'; pot: number; pots: Pot[] }
   | { type: 'TURN_CHANGE'; seat: number; availableActions: ActionType[] }
   | {

@@ -293,6 +293,19 @@ export abstract class TournamentManagerBase {
     return this.running;
   }
 
+  /**
+   * The tables this manager currently owns an engine for.
+   *
+   * Added 2026-09-01 so GameServer can bound `tournamentOwnedTables`, which
+   * had only ever been added to. Pruning that set against GameServer's own
+   * `tableEngines` alone would drop the hub room of a tournament table during
+   * the window where its manager is rebuilding the engine, which is precisely
+   * the case the set was created to protect.
+   */
+  getTableIds(): string[] {
+    return [...this.tableEngines.keys()];
+  }
+
   /** Reusable broadcast — single channel per tournament lifecycle */
   protected async broadcast(eventType: string, payload: any): Promise<void> {
     try {

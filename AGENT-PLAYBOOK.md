@@ -1,18 +1,21 @@
-# RULE 0 — "EM BARS" MEANS EM DASHES (—), NOT HAMBURGER BARS
+# RULE 0 - TWO DISTINCT USER RULES: EM DASHES AND M-BAR ARTWORK
 
-Dan, 2026-08-20: **"forbid the use of em bars anywhere."** He means the
-PUNCTUATION MARK, U+2014. It is a rule about the characters inside copy.
+The user has issued two separate binding rules. They must never be collapsed
+into one another:
 
-It says nothing about artwork or icons, and **it does not ban the hamburger
-menu.** Misreading it as "horizontal bars are banned" has removed the hamburger
-from every page of the app twice in two days (#2321, then #2429 after #2401
-reverted the first). Both times Dan opened the app and found a different icon
-where his menu button used to be. Both times the agent that did it believed it
-was enforcing a house rule.
+1. **No em dashes in player-facing copy.** "Em bars" in the copy-style request
+   means the U+2014 punctuation character. The shared copy transforms and CI
+   text gate enforce that rule.
+2. **No M bars or three-horizontal-line menu artwork.** In the later navigation
+   request the user explicitly banned M bars anywhere, including inside images.
+   No three-line glyph, SVG geometry, raster, composite header, or generated
+   bundle may restore hamburger bars. Navigation drawers keep their behavior
+   and accessible names, but their visible trigger is a command grid.
 
-**If the word "bars" leads you toward an icon, a raster, an SVG path or a
-header composite, you have misread it.** The hamburger is the menu. See
-`CLAUDE.md` §10.7 and `tests/hamburger-never-regresses.law.test.ts`.
+The artwork rule is enforced by
+`tests/unit/noThreeBarArtwork.law.test.ts`. Never replace it with a counter-law
+that requires hamburger bars. The six retired stable URLs remain absent and
+must stay cache-tombstoned in `public/sw-bus.js`.
 
 ---
 

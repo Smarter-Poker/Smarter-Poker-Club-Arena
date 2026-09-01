@@ -561,7 +561,7 @@
      the entire area, top to bottom and left to right, where it sits." Two
      halves: (a) 34px, the full pill height at this breakpoint — the trigger
      now spans the strip's inner height edge to edge (it was 32px, 2px shy);
-     (b) the icon-hamburger artwork itself was re-cropped in storage to its
+     (b) the legacy trigger artwork itself was re-cropped in storage to its
      visible bounds (the old canvas carried ~20% transparent margin on every
      side, which is why the glyph floated small inside the button). The 2px
      comes out of the 375px budget's documented 4px slack. */

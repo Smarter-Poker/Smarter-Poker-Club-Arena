@@ -21336,7 +21336,7 @@ export default function TablePage({
                 setIsSideMenuOpen(false);
               }}
             >
-              <span className="menu-item-icon">☰</span>
+              <span className="menu-item-icon">§</span>
               <span className="menu-item-label">Table Rules</span>
               <span className="menu-item-arrow">›</span>
             </button>

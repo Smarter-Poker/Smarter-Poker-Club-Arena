@@ -52,8 +52,9 @@ const DIRECT_UNION_COUNT =
   /from\(\s*['"]club_members['"]\s*\)[\s\S]{0,200}?count:\s*['"]exact['"][\s\S]{0,200}?\.in\(\s*['"]club_id['"]/;
 
 describe('ClubHomePage asks the database the right question', () => {
-  it('takes both member counts from the SECURITY DEFINER RPC', () => {
-    const uses = HOME.match(/supabase\s*\.?\s*\n?\s*\.rpc\(\s*'fn_get_club_member_count'/g) || [];
+  it('takes both member counts from the real-time SECURITY DEFINER RPC', () => {
+    const uses =
+      HOME.match(/supabase\s*\.?\s*\n?\s*\.rpc\(\s*'fn_get_club_realtime_member_count'/g) || [];
     expect(uses.length).toBe(2);
   });
 
@@ -65,7 +66,7 @@ describe('ClubHomePage asks the database the right question', () => {
     expect(HOME).not.toMatch(DIRECT_UNION_COUNT);
     // \s* : the call gained an `error:` binding on 2026-08-29 (round 9)
     // and Prettier wrapped it; the pin is about WHICH RPC, not line shape.
-    expect(HOME).toMatch(/rpc\(\s*'fn_batch_club_member_counts'/);
+    expect(HOME).toMatch(/rpc\(\s*'fn_batch_club_realtime_member_counts'/);
   });
 
   it('still sums the union without de-duplicating, as specified', () => {

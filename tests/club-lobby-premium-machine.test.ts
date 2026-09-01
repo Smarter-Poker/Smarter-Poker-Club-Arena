@@ -87,7 +87,7 @@ describe('responsive premium Club Arena', () => {
     expect(campaign).toBeGreaterThan(allStatuses);
     expect(launch).toBeGreaterThan(campaign);
     expect(games).toBeGreaterThan(launch);
-    expect(PAGE).toContain('noticeEditable && totalGameCount === 0');
+    expect(PAGE).toContain('noticeEditable && launchTasks.some((task) => !task.complete)');
   });
 
   it('builds the approved mobile welcome, owner message, identity/jackpot pair, and wallet accordion', () => {

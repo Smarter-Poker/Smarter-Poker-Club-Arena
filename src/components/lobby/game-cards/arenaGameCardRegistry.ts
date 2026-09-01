@@ -194,7 +194,14 @@ const mttV2 = skin(
   'shark-mtt-v2',
   'Shark MTT V2 - Premium Approved',
   presentation('mtt', 'desktop', 'mtt/shell-desktop-v2.webp', '1085 / 1450', 360, 'v2'),
-  presentation('mtt', 'mobile', 'mtt/shell-mobile-v2.webp', '1086 / 1448', 280, 'v2'),
+  presentation(
+    'mtt',
+    'mobile',
+    'mtt/shell-mobile-v4-reference-clean.png',
+    '1088 / 1445',
+    280,
+    'v4'
+  ),
   'approved'
 );
 const nlhV1 = skin(
@@ -209,7 +216,37 @@ const nlhV2 = skin(
   'shark-nlh-v2',
   'Shark NLH V2 - Premium Approved',
   presentation('nlh', 'desktop', 'nlh/shell-desktop-v2.webp', '1109 / 1418', 360, 'v2'),
-  presentation('nlh', 'mobile', 'nlh/shell-mobile-v2.webp', '1174 / 1339', 280, 'v2'),
+  presentation('nlh', 'mobile', 'nlh/shell-mobile-v4-reference-clean.png', '1 / 1', 280, 'v4'),
+  'approved'
+);
+const nlhPremiumV1 = skin(
+  'nlh',
+  'spade-nlh-premium-v1',
+  'Spade NLH Premium V1 - Approved',
+  presentation('nlh', 'desktop', 'nlh/shell-desktop-v2.webp', '1109 / 1418', 360, 'v2'),
+  presentation(
+    'nlh',
+    'mobile',
+    'nlh/spade-nlh-premium-v1/chassis.png',
+    '729 / 945',
+    280,
+    'premium-v1'
+  ),
+  'approved'
+);
+const nlhTallV2 = skin(
+  'nlh',
+  'shark-nlh-tall-v2',
+  'Shark NLH Tall Reference V2',
+  presentation('nlh', 'desktop', 'nlh/shell-desktop-v2.webp', '1109 / 1418', 360, 'v2'),
+  presentation(
+    'nlh',
+    'mobile',
+    'nlh/shell-mobile-v4-tall-reference.png',
+    '1099 / 1431',
+    280,
+    'v4-tall'
+  ),
   'approved'
 );
 const ploV1 = skin(
@@ -224,7 +261,14 @@ const ploV2 = skin(
   'shark-plo-v2',
   'Shark PLO V2 - Premium Approved',
   presentation('plo', 'desktop', 'plo/shell-desktop-v2.webp', '1148 / 1370', 360, 'v2'),
-  presentation('plo', 'mobile', 'plo/shell-mobile-v2.webp', '1111 / 1416', 280, 'v2'),
+  presentation(
+    'plo',
+    'mobile',
+    'plo/shell-mobile-v4-reference-clean.png',
+    '1117 / 1408',
+    280,
+    'v4'
+  ),
   'approved'
 );
 const spinsV1 = skin(
@@ -239,7 +283,14 @@ const spinsV2 = skin(
   'shark-spins-v2',
   'Shark Spins V2 - Premium Approved',
   presentation('spins', 'desktop', 'spins/shell-desktop-v2.webp', '1111 / 1416', 360, 'v2'),
-  presentation('spins', 'mobile', 'spins/shell-mobile-v2.webp', '1087 / 1446', 280, 'v2'),
+  presentation(
+    'spins',
+    'mobile',
+    'spins/shell-mobile-v4-reference-clean.png',
+    '1122 / 1402',
+    280,
+    'v4'
+  ),
   'approved'
 );
 const headsUpV1 = skin(
@@ -254,14 +305,21 @@ const headsUpV2 = skin(
   'shark-headsup-v2',
   'Shark Heads-Up V2 - Premium Approved',
   presentation('heads-up', 'desktop', 'heads-up/shell-desktop-v2.webp', '1085 / 1450', 360, 'v2'),
-  presentation('heads-up', 'mobile', 'heads-up/shell-mobile-v2.webp', '1015 / 1549', 280, 'v2'),
+  presentation(
+    'heads-up',
+    'mobile',
+    'heads-up/shell-mobile-v4-reference-clean.png',
+    '1087 / 1447',
+    280,
+    'v4'
+  ),
   'approved'
 );
 
 /** The one canonical source of truth for Club Arena lobby-card visual skins. */
 export const ARENA_GAME_CARD_TEMPLATE_REGISTRY: ArenaGameCardTemplateRegistry = {
   mtt: familyRegistry('mtt', mttV2.id, [mttV2, mttV1]),
-  nlh: familyRegistry('nlh', nlhV2.id, [nlhV2, nlhV1]),
+  nlh: familyRegistry('nlh', nlhPremiumV1.id, [nlhPremiumV1, nlhV2, nlhTallV2, nlhV1]),
   plo: familyRegistry('plo', ploV2.id, [ploV2, ploV1]),
   spins: familyRegistry('spins', spinsV2.id, [spinsV2, spinsV1]),
   'heads-up': familyRegistry('heads-up', headsUpV2.id, [headsUpV2, headsUpV1]),

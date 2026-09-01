@@ -210,3 +210,97 @@ export function heroCardsCollideWithBoard(
   }
   return false;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ONE RULE FOR "ARE THESE THE HERO'S CARDS, RIGHT NOW, AT THIS TABLE?"
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Dan 2026-09-01, on the J9h screenshot: how was it possible, and what makes
+   it impossible.
+
+   There are four doors into the hero's `holeCards`, and on 2026-08-31 only two
+   of them were guarded:
+
+     1. the realtime push from `table_hole_cards`   NO CHECKS AT ALL
+     2. the bounded recovery poll                    hand-checked + board-checked
+     3. the snapshot hold across engine frames       board-checked
+     4. the GAME_START full-state merge              NO CHECKS AT ALL
+
+   Door 1 is the one that matters most, because it is the only one that
+   OVERWRITES cards the hero can already see, and it fires on '*' - INSERT,
+   UPDATE and every re-push. A row for hand N arriving after hand N+1 has
+   begun repaints hand N's hand onto hand N+1's felt, and then door 3 keeps it
+   there. Guarding door 3 alone could never hold, because door 1 simply paints
+   it back on the next frame.
+
+   So the decision moves here, out of the component, where it is one function
+   with one test file. Every door asks the same question and gets the same
+   answer. A future door that forgets to ask is a test failure, not a hand.
+
+   The order of the checks is the order of certainty: identity first (a row for
+   another table is never ours), then emptiness, then the hand, then the board.
+   The board check is last because it is the only one that can be true of a
+   row that is otherwise perfectly legitimate - and when it is true, something
+   upstream is already wrong and the strongest available evidence wins. */
+export type HeroCardRejection = 'wrong-table' | 'no-cards' | 'stale-hand' | 'collides-with-board';
+
+export type HeroCardVerdict = { ok: true } | { ok: false; reason: HeroCardRejection };
+
+const ACCEPTED: HeroCardVerdict = { ok: true };
+
+export function heroHoleCardsAreForThisHand(args: {
+  /** table_id on the row, when the source carries one. */
+  rowTableId?: unknown;
+  /** The table this component is rendering. */
+  tableId?: unknown;
+  /** hand_number on the row, when the source carries one. */
+  rowHandNumber?: unknown;
+  /** The hand the client believes is live; 0 or undefined means "not known yet". */
+  currentHandNumber?: unknown;
+  cards: ReadonlyArray<{ rank?: unknown; suit?: unknown } | null | undefined> | null | undefined;
+  boards: ReadonlyArray<
+    ReadonlyArray<{ rank?: unknown; suit?: unknown } | null | undefined> | null | undefined
+  >;
+}): HeroCardVerdict {
+  const { rowTableId, tableId, rowHandNumber, currentHandNumber, cards, boards } = args;
+
+  /* Identity. The realtime channel is filtered server-side by table_id, so
+     this can only fire if that filter is ever lost - a shared channel key, a
+     bus that fans out, a hand-rolled fetch. It costs one string compare and it
+     is the difference between a bug and a bug nobody can explain. */
+  if (
+    typeof rowTableId === 'string' &&
+    typeof tableId === 'string' &&
+    rowTableId !== '' &&
+    tableId !== '' &&
+    rowTableId !== tableId
+  ) {
+    return { ok: false, reason: 'wrong-table' };
+  }
+
+  if (!Array.isArray(cards) || cards.length === 0) return { ok: false, reason: 'no-cards' };
+
+  /* The hand. Only a row from an OLDER hand is refused. A row from a NEWER one
+     is the next deal arriving before this client has processed HAND_STARTED,
+     and refusing it would blind the hero at the exact moment they are dealt
+     in - which is the worse bug, and the reason the hold fails open. An older
+     row can never be right, so it can never win. */
+  const rowHand =
+    typeof rowHandNumber === 'number' && Number.isFinite(rowHandNumber) ? rowHandNumber : 0;
+  const liveHand =
+    typeof currentHandNumber === 'number' && Number.isFinite(currentHandNumber)
+      ? currentHandNumber
+      : 0;
+  if (rowHand > 0 && liveHand > 0 && rowHand < liveHand) {
+    return { ok: false, reason: 'stale-hand' };
+  }
+
+  /* The board. Physical proof: a card cannot be in the hero's hand and on the
+     felt at the same time, so whatever produced this holding was reading an
+     expired hand. */
+  if (heroCardsCollideWithBoard(cards, ...boards)) {
+    return { ok: false, reason: 'collides-with-board' };
+  }
+
+  return ACCEPTED;
+}

@@ -3,8 +3,16 @@ name: CI — Build & Type Safety
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
+  # NO push TRIGGER. Removed 2026-09-01 (cost audit).
+  #
+  # The ruleset is squash-only with required checks, so the merge commit's
+  # tree is the PR head tree that every gate already passed. The only job the
+  # push event still ran was Post-Deploy Verification, a 2-4 minute CDN poll
+  # per merge - 2,653 push runs in August (~8,000 billed minutes) duplicating
+  # what post-deploy-e2e.yml (workflow_run on the publisher) and
+  # publish-watchdog.yml already verify against production. Post-Deploy
+  # Verification now runs on the schedules below instead. The daily
+  # "is main actually green" schedule remains the whole-branch safety net.
   schedule:
     # The production E2E used to run on every push to main. Club Arena merges
     # about nineteen times an hour, so it installed Playwright browsers and
@@ -164,6 +172,39 @@ jobs:
   # STEP 1: TypeScript compilation check (fast — ~40s)
   # ─────────────────────────────────────────────────────────────────────────────
 
+  # UNGATED ON PURPOSE, like typecheck and stub_gate above.
+  #
+  # noFixedSizeSourceWindows guards every source pin in the repo against being
+  # bounded by a magic number, because a window that can drift off the code it
+  # watches can also drift off it while staying GREEN. It earned that status on
+  # 2026-09-01: four byte-bounded windows landed on main inside two hours, and
+  # main's own CI never saw any of them, because the unit job is gated behind
+  # the changed files and a docs-only commit goes green in twelve seconds
+  # without running the suite. Main showed an unbroken wall of ticks while
+  # carrying a red test that failed on every branch touching src/ or tests/.
+  #
+  # It reads source and asserts on text. It needs no database, no build and no
+  # network, and it finishes in well under a second, so there is no reason for
+  # it to be behind a gate that can hide it.
+  source_windows:
+    name: Source Windows Are Structural
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - name: Every source pin is bounded by a structure
+        run: npx vitest run tests/unit/noFixedSizeSourceWindows.test.ts
+
   stub_gate:
     if: github.event_name == 'pull_request'
     name: Stub Gate
@@ -194,7 +235,9 @@ jobs:
     # when it takes twenty seconds.
     if: github.event_name == 'pull_request'
     name: TypeScript Check
-    runs-on: ubuntu-latest
+    # 2026-09-01 (cost audit): vars.CI_RUNNER routes to a self-hosted runner
+    # when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
 
     steps:
@@ -211,7 +254,19 @@ jobs:
           node-version: 20
           cache: npm
 
+      # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a
+      # hit. `nm-lite` is deliberately a DIFFERENT key from the full-install
+      # jobs: this install runs --ignore-scripts, and a scripts-less tree must
+      # never be restored into a job that relies on postinstall artifacts.
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-lite-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+
       - name: Install Dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
 
       - name: Record Start Time
@@ -771,7 +826,12 @@ jobs:
        (github.event_name == 'pull_request' &&
         (needs.changes.result != 'success' || needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')))
     name: Client Unit Tests (vitest)
-    runs-on: ubuntu-latest
+    # 2026-09-01 (cost audit): `vars.CI_RUNNER` routes this job to a
+    # self-hosted runner the moment Dan sets the repository variable (e.g. to
+    # `estate-linux`). Unset, it is exactly `ubuntu-latest` as before. A warm
+    # self-hosted runner turns this 12-minute job into ~2 minutes because
+    # node_modules survives between runs.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
 
     steps:
@@ -784,7 +844,20 @@ jobs:
           node-version: 20
           cache: npm
 
+      # 2026-09-01 (cost audit): caches the INSTALLED node_modules tree, not
+      # just the npm tarballs that `cache: npm` above keeps. Measured on this
+      # job: `npm ci` is 1-2 minutes of the 12; on a cache hit it is skipped
+      # entirely. The key includes the lockfile hash, so any dependency change
+      # misses and installs fresh - identical behaviour, minus the wait.
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-full-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+
       - name: Install Dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Run Test Suite
@@ -827,7 +900,9 @@ jobs:
        (github.event_name == 'pull_request' &&
         (needs.changes.result != 'success' || needs.changes.outputs.server == 'true')))
     name: Server Engine (typecheck + tests)
-    runs-on: ubuntu-latest
+    # 2026-09-01 (cost audit): vars.CI_RUNNER routes to a self-hosted runner
+    # when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
 
     defaults:
@@ -845,7 +920,16 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
 
+      # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a hit.
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: server/node_modules
+          key: nm-server-${{ runner.os }}-node22-${{ hashFiles('server/package-lock.json') }}
+
       - name: Install Dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
       # server/ is a separate package with its own tsconfig; the root typecheck
@@ -966,7 +1050,9 @@ jobs:
       always() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: Production Build
-    runs-on: ubuntu-latest
+    # 2026-09-01 (cost audit): vars.CI_RUNNER routes to a self-hosted runner
+    # when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
 
     steps:
@@ -986,7 +1072,17 @@ jobs:
           key: vite-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
           restore-keys: vite-${{ runner.os }}-
 
+      # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a
+      # hit. Shares `nm-full` with the unit job - both run a full npm ci.
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-full-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+
       - name: Install Dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Record Build Start
@@ -1192,7 +1288,7 @@ jobs:
         with:
           name: playwright-report
           path: playwright-report/
-          retention-days: 7
+          retention-days: 3 # 2026-09-01 cost audit: reports are read same-day or never
 
       - name: Report E2E Status
         if: always()
@@ -1239,7 +1335,11 @@ jobs:
     # declared `needs: build` for - that was ordering, and it cost a full Vite
     # production build on every merge, on top of the one build-for-world-hub.yml
     # already does to publish.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # 2026-09-01: was `push` to main - a CDN poll per merge, ~85 times a day,
+    # third in line behind post-deploy-e2e.yml and publish-watchdog.yml which
+    # both ask production the same question. The schedule keeps the smoke
+    # logic alive at 13 runs a day instead of 85.
+    if: github.event_name == 'schedule'
     name: Post-Deploy Verification
     runs-on: ubuntu-latest
     timeout-minutes: 5

@@ -12,7 +12,12 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = join(__dirname, '..');
-const read = (relativePath: string) => readFileSync(join(ROOT, relativePath), 'utf8');
+const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
+
+/** Strip block and line comments so a prose mention of "gear" cannot fail us. */
+const maskComments = (css: string) =>
+  css.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
 const sha256 = (relativePath: string) =>
   createHash('sha256')
     .update(readFileSync(join(ROOT, relativePath)))
@@ -140,6 +145,58 @@ describe('approved hamburger artwork never becomes a gear or substitute icon', (
       expect(instructions).toMatch(/em bars.*em dashes/is);
       expect(instructions).toMatch(/does not ban the hamburger/i);
       expect(instructions).toContain('tests/approvedHamburgerGearGuard.law.test.ts');
+    }
+  });
+});
+
+describe('no boxes over header or footer icons', () => {
+  /*
+   * Dan, 2026-09-01: "Remove any and all boxes that appear over any header or
+   * footer icon globally on every page and sub pages."
+   *
+   * club-engine.css paints `button:focus-visible { outline; box-shadow }` on
+   * every button in the app. On the chrome icons — which are transparent hit
+   * regions laid over baked artwork — that outline is a rectangle sitting on
+   * top of the icon. Safari on macOS matches :focus-visible after a plain mouse
+   * click, so it stuck there after every tap. Each chrome surface must override
+   * it, and the override must not itself draw a box.
+   */
+  const CHROME = [
+    ['src/components/navigation/GlobalHeader.module.css', '.artButton'],
+    ['src/components/navigation/FloatingHamburger.module.css', '.floatingButton'],
+    ['src/components/club/ClubBottomNav.module.css', '.navItem'],
+  ] as const;
+
+  it.each(CHROME)('%s kills the global focus ring on %s', (file, selector) => {
+    const css = maskComments(read(file));
+    const rule = new RegExp(
+      `\\${selector}:focus,\\s*\\${selector}:focus-visible\\s*\\{[^}]*outline:\\s*none[^}]*box-shadow:\\s*none[^}]*\\}`
+    );
+    expect(css, `${file} must neutralise the global ring on ${selector}`).toMatch(rule);
+  });
+
+  it('the chrome focus state is a glow, never an outline or a hard ring', () => {
+    for (const [file, selector] of CHROME) {
+      const css = maskComments(read(file));
+      const focusBlocks =
+        css.match(new RegExp(`\\${selector}:focus-visible\\s*\\{[^}]*\\}`, 'g')) ?? [];
+      expect(focusBlocks.length, `${file} lost its ${selector} focus state`).toBeGreaterThan(0);
+      const combined = focusBlocks.join('\n');
+      // Read the VALUES rather than pattern-matching around them: a negative
+      // lookahead after `\s*` backtracks to zero width and happily matches
+      // `outline: none`, which is the one value we are trying to allow.
+      const valuesOf = (prop: string) =>
+        [...combined.matchAll(new RegExp(`${prop}\\s*:\\s*([^;}]+)`, 'g'))].map((m) =>
+          m[1].trim().toLowerCase()
+        );
+      const boxy = [...valuesOf('outline'), ...valuesOf('box-shadow')].filter(
+        (value) => value !== 'none'
+      );
+      expect(boxy, `${file} still draws a box on ${selector}`).toEqual([]);
+      // Keyboard users must still be able to see where they are.
+      expect(combined, `${file} left ${selector} with no visible focus cue`).toMatch(
+        /radial-gradient/
+      );
     }
   });
 });

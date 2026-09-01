@@ -16,6 +16,13 @@ const publicationRepair = readFileSync(
   ),
   'utf8'
 );
+const publicationRefresh = readFileSync(
+  resolve(
+    __dirname,
+    '../supabase/migrations/20260902050000_daily_mission_realtime_publication_refresh.sql'
+  ),
+  'utf8'
+);
 const page = readFileSync(resolve(__dirname, '../src/pages/DailyChallengesPage.tsx'), 'utf8');
 const clock = readFileSync(resolve(__dirname, '../src/hooks/useChallengeClock.ts'), 'utf8');
 
@@ -46,6 +53,18 @@ describe('Daily Missions realtime and render-isolation contract', () => {
     expect(matchingVersions).toEqual([
       '20260901074500_daily_mission_revision_publication_repair.sql',
     ]);
+  });
+
+  it('refreshes stale Realtime relation state without exposing browser writes', () => {
+    expect(publicationRefresh).toContain('DROP TABLE public.daily_challenge_dashboard_revisions');
+    expect(publicationRefresh).toContain('ADD TABLE public.daily_challenge_dashboard_revisions');
+    expect(publicationRefresh).toContain('REPLICA IDENTITY FULL');
+    expect(publicationRefresh).toContain('FROM PUBLIC, anon, authenticated');
+    expect(publicationRefresh).toContain('TO authenticated, service_role');
+    expect(publicationRefresh).toContain("'INSERT,UPDATE,DELETE'");
+    expect(publicationRefresh.indexOf('DROP TABLE')).toBeLessThan(
+      publicationRefresh.indexOf('ADD TABLE')
+    );
   });
 
   it('subscribes through the recoverable MasterBus channel with a server-side user filter', () => {

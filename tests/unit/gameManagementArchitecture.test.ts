@@ -135,7 +135,8 @@ describe('club message management', () => {
 
   it('keeps the one-line lobby message separate from the long description', () => {
     expect(clubHome).toContain('lobby_message');
-    expect(clubHome).toContain('.update({ lobby_message: newDesc })');
+    expect(clubHome).toContain("supabase.rpc('fn_set_club_lobby_message'");
+    expect(clubHome).not.toContain('.update({ lobby_message: newDesc })');
     expect(migration).toContain('clubs_lobby_message_character_limit');
     expect(migration).toContain('fn_save_club_identity_messages');
     expect(migration).toContain('fn_manage_club_announcement');

@@ -447,7 +447,7 @@ export default function MintPage() {
             {result.ok ? (
               <>
                 <strong>
-                  {result.replayed ? 'Already minted with that key.' : 'Minted and recorded.'}
+                  {result.replayed ? 'Already Minted With That Key' : 'Minted And Recorded'}
                 </strong>
                 <span>
                   {money(result.amount)} {result.asset === 'diamonds' ? 'diamonds' : 'chips'} into{' '}

@@ -21,9 +21,7 @@
     "members": "legacy members alias — superseded by club_members",
     "message_read_receipts": "message read receipts — unbuilt (MessagingService)",
     "preflop_ranges": "preflop range storage — unbuilt (GTOQueryService)",
-    "scheduled_messages": "scheduled messages — unbuilt (MessagingService)",
-    "commission_records": "NOT an unbuilt feature: a REMOVED one. Dropped from the database, surfaced 2026-09-01 by regenerating the manifest truthfully. UI cleanup pending.",
-    "commission_history": "NOT an unbuilt feature: a REMOVED one. Dropped from the database, surfaced 2026-09-01 by regenerating the manifest truthfully. UI cleanup pending."
+    "scheduled_messages": "scheduled messages — unbuilt (MessagingService)"
   },
   "unbuiltFeatureRpcs": {
     "_comment": "RPCs referenced by shipped UI that were never created in the DB. Callers handle the error and degrade. Build the function -> the entry auto-clears.",
@@ -40,8 +38,7 @@
     "fn_bump_friend_challenge_progress": "BUILT 2026-07-29 (friend-challenge progress) — manifest update pending; remove after regen",
     "fn_club_tournament_stats": "leaderboard scalability",
     "buy_streak_freeze": "daily challenge streak freeze",
-    "fn_promo_wallet_send": "Migration is stealth applied",
-    "execute_commission_payout": "NOT an unbuilt feature: a REMOVED one. Dropped from the database by 20260317_rpc_signature_alignment_batch5 while CommissionService.executePayout still calls it, so every call has failed since March. It was invisible because the previous schema manifest still listed the function, and because that service's test mocks supabase.rpc, which answers happily for a function that does not exist. Surfaced 2026-09-01 by regenerating the manifest truthfully. No player is affected: nothing in the UI calls executePayout (grep -rn executePayout src finds only the definition). Recorded here rather than fixed inside a security PR, because the fix retires executePayout and then leaves COMMISSION_PAID with six subscribers and no publisher across AgentFinancialPortal, DynamicWallet, RateAuditPage, AgentPortalPage, CashierPage and ClubFinancialsPage, which is a product decision and its own change. REMOVE THIS ENTRY when that lands."
+    "fn_promo_wallet_send": "Migration is stealth applied"
   },
   "phantomColumns": {
     "_comment": "BUILT columns whose columns-manifest entry is pending regeneration (deploy blocked by PAT rotation 2026-07-29). Remove once the manifest is regenerated.",

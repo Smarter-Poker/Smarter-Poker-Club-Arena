@@ -165,6 +165,23 @@ The eighth, `fn_club_commission_accrued`, did not - the body applied through the
 migration API was missing two comment lines the file carries, and a comment is
 part of `prosrc`. `20260901133551` corrects it, and all eight are identical now.
 
+## One thing left open, on purpose
+
+`fn_agent_unsettled_commission(p_club_id, p_user_id)` is phase 6's, is SECURITY
+DEFINER, is granted to `authenticated`, and asks nothing about who is calling -
+so any logged-in member can read any agent's unclaimed total by user id. This
+phase does not lean on that (the Sub-Agents tab uses
+`fn_agent_downline_commission`, which answers only for the caller's own
+downline), but it does not fix it either.
+
+It is left alone deliberately. The obvious tightening - answer only for
+`auth.uid()` - would break `fn_club_set_member_role`, which calls it about the
+person whose role is changing rather than about the actor, and a half-tightening
+that silently returns 0 there would re-create the exact bug this phase came to
+fix. The right shape is "the caller, or staff of that club, or their own
+upline", and that is a decision with its own blast radius rather than a line in
+a conflict resolution.
+
 ## Three things I got wrong on the way, since they cost time
 
 **The role change is patched, not re-emitted.** The first version of this
@@ -184,3 +201,83 @@ and finished by hand.
 magic-number source windows from #2474, #2479 and #2464. Fix-first (CLAUDE.md
 section 4): bounded by structure instead, in this branch, because you cannot
 ship past a red suite anyway.
+
+## The Audit Pass After It, And What It Found
+
+Dan, after the phase shipped: _"MAKE SURE EVERYTHING FROM THE PREVIOUS PHASE WAS
+100% COMPLETED ... CHECK FOR ANY AND ALL BUGS, GAPS, STUBS, ERRORS, REGRESSIONS
+OR WIRING ISSUES ANYWHERE AND EVERYWHERE."_ Nine things, all fixed here.
+
+**Money that was never measured.** `ClubFinancialDashboard` drew a pie labelled
+"Commission Split" from a hardcoded constant: Club 50, Agents 30, Players 20.
+Three numbers nobody had ever measured, on a club owner's financials page, next
+to real ones. It reads the three ledgers now - `rake_records`,
+`fn_club_commission_accrued`, and rakeback in `chip_transactions`.
+
+**A line that was always zero.** The agent's "Commission Trends" chart fed
+`rake: 0` for every day and `FinancialChart` drew the rake series regardless, so
+an agent saw a flat green Rake line at zero beside their real commission. The
+series is a prop now, and that chart turns it off.
+
+**A number that could not be divided honestly.** The new split cannot use
+`club + agents + players` as its whole: commission books to the PLAYER's club
+(union law, `credit_agent_commission_from_rake`) while `rake_records` books to
+the TABLE's club. Measured while fixing it: SHARK CLUB's last rake row is
+2026-08-20, and its agents accrued **309,991.51** in the following week, all of
+it at another club's tables. Dividing by the sum would draw "Agents 100%". It
+divides by the club's own recorded rake, and shows zero when there is none -
+which is what that ledger knows, and what the Daily Rake chart beside it already
+showed.
+
+**A list that could not tell claimed from owed.** `AgentDashboardPage`'s
+Commission History showed every row identically. Before phase 6 that was fair -
+there was no way to claim. It carries a Claimed / Unclaimed column now, and the
+CSV export carries `settled_at` with it.
+
+**A migration applied but not committed.** `20260901134946
+phase7_definer_grants_are_written_down` went to production through the migration
+API and never reached the repo - exactly the state
+`check-applied-migrations-are-recorded` exists to catch. The file is here now.
+
+**Two more guard lists naming a dropped function.** Phase 7 took
+`atomic_pay_agent_settlement` off `fn_union_money_path_check` and
+`guard_wallet_balance_write`; the sweep found it still listed in
+`fn_club_arena_global_wallet_check` and `fn_union_overload_check`. Neither could
+raise a false alarm - both SELECT from `pg_proc`, and a dropped function returns
+no row - but a list naming things that cannot exist stops being read as a list
+of things that must. Migration `20260901190748`, with an assertion that no
+function anywhere still carries the name.
+
+**Three stale allowlist entries**, whose own text said to remove them when the
+cleanup landed (`"UI cleanup pending"`, `"REMOVE THIS ENTRY when that lands"`).
+It landed. Also `increment_agent_rake`, still named in the RLS verification
+harness after phase 7 dropped it.
+
+**Two names pointing at the wrong file.** Four World Hub comments cited
+club-arena migration `20260902070000`; this file was renamed to
+`20260901133348` to match the version it was applied under, and another agent
+has since created a `20260902070000` about something else entirely.
+
+**A figure computed and thrown away.** `settle-period`'s close now computes what
+the club actually paid its agents in the period - and never wrote it. Every row
+in `settlement_periods` reads `total_commissions_paid = 0.00`, before this phase
+and after it. It is written now.
+
+### What the sweep checked and found clean
+
+- No function, view or RLS policy in the database references
+  `pending_commission`, `commission_records` or `commission_history`. Zero.
+- The engine's accrual path is untouched and live: `fn_credit_agent_commissions_batch`
+  -> `credit_agent_commission_from_rake` -> `agent_commissions`. Commission rows
+  have kept arriving throughout (1,541,906 -> 1,551,419 claimable in two hours).
+- Fifteen stub functions still exist in the database (VIP points, achievements,
+  KYC, an old seat path). **None is called by shipped code in either repo** -
+  they are inert, and none is in this programme.
+- `settle-period`'s retired `pay` / `pay_all` actions have no caller: no cron,
+  no client, only the Zod enum that still permits the word.
+- The weekly credit invoice run is wired into the engine's weekly settler
+  (`fn_generate_all_credit_invoices`), so "square up weekly" has a scheduler.
+- The one agent still in the "not prepaid, no credit line" shape is Dan's own
+  SHARK CLUB row, holding 80,000 of float. Probed rolled back: it sends 100 fine
+  and refuses 90,000 with _"Your Agent Wallet Only Holds 79,900.00 Chips"_. The
+  phase 2 defect was about an EMPTY wallet; this row is not it.

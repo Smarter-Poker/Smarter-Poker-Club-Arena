@@ -84,6 +84,18 @@ export interface SpinMetricsSnapshot {
   unpaidSettlements: number;
   /** Spins where the pool booked a different multiplier than it paid. */
   bookingGaps: number;
+  /**
+   * Spins that ran, drew and paid without ever touching the reserve pool.
+   *
+   * bookingGaps cannot see these. Its predicate is guarded on the booked
+   * amount being non-null, so it only ever asks whether a BOOKED game paid
+   * more than it drew; a game with no ledger row at all is excluded from the
+   * count. On 2026-08-30 the backstop that books them began dying on the
+   * service_role statement timeout on every run, and 112 Spins paid 5,737.00
+   * in prizes out of a pool that never recorded them, while this platform's
+   * one booking number read zero.
+   */
+  unbookedSpins: number;
   /** Spins sitting open past their fill deadline. */
   unfilledWaits: number;
   /** Clubs whose reserve pool cannot cover the top tier. */
@@ -111,6 +123,7 @@ const EMPTY: SpinMetricsSnapshot = {
   attributionGaps: 0,
   unpaidSettlements: 0,
   bookingGaps: 0,
+  unbookedSpins: 0,
   unfilledWaits: 0,
   reserveThinClubs: 0,
   reserveMinBalance: null,
@@ -188,6 +201,7 @@ export class SpinMetrics {
         attributionGaps: n(row.attribution_gaps),
         unpaidSettlements: n(row.unpaid_settlements),
         bookingGaps: n(row.booking_gaps),
+        unbookedSpins: n(row.unbooked_spins),
         unfilledWaits: n(row.unfilled_waits),
         reserveThinClubs: n(row.reserve_thin_clubs),
         reserveMinBalance: f(row.reserve_min_balance),
@@ -293,6 +307,11 @@ export class SpinMetrics {
       'poker_spin_draw_booking_gaps',
       'Spins where the pool booked a different multiplier than it paid',
       s.bookingGaps
+    );
+    gauge(
+      'poker_spin_draw_unbooked',
+      'Spins that ran, drew and paid without ever booking a reserve ledger row. Above zero means the backstop sweep is not completing - the pool has no record of money it paid out.',
+      s.unbookedSpins
     );
     gauge(
       'poker_spin_unfilled_waits',

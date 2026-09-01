@@ -41,6 +41,7 @@ const seeded = (over: Partial<SpinMetricsSnapshot> = {}): SpinMetrics => {
     attributionGaps: 0,
     unpaidSettlements: 0,
     bookingGaps: 11,
+    unbookedSpins: 0,
     unfilledWaits: 1,
     reserveThinClubs: 0,
     reserveMinBalance: 63885.44,
@@ -172,13 +173,13 @@ describe('the spin alert rules are wired and reference only real gauges', () => 
   it('declares real rule groups - a file that alerts on nothing is worse than none', () => {
     const src = rules();
     expect(src).toContain('groups:');
-    expect(src.match(/- alert: /g)?.length ?? 0).toBeGreaterThanOrEqual(8);
+    expect(src.match(/- alert: /g)?.length ?? 0).toBeGreaterThanOrEqual(9);
   });
 
   it('every metric named in an expression is one the engine actually emits', () => {
     const emitted = seeded().toPrometheus().join('\n');
     const exprs = rules().match(/^\s*expr:\s*(.+)$/gm) ?? [];
-    expect(exprs.length).toBeGreaterThanOrEqual(8);
+    expect(exprs.length).toBeGreaterThanOrEqual(9);
     for (const line of exprs) {
       for (const metric of line.match(/poker_[a-z_0-9]+/g) ?? []) {
         expect(emitted, `${metric} is emitted by the engine`).toContain(metric);
@@ -193,6 +194,13 @@ describe('the spin alert rules are wired and reference only real gauges', () => 
       'SpinMetricsStale',
       'SpinPrizeUnpaid',
       'SpinDrawBookingGapOpened',
+      // The one SpinDrawBookingGapOpened is structurally blind to. Its SQL is
+      // guarded on the booked amount being non-null, so it only ever compares
+      // a BOOKED game against what it paid; a game with no reserve ledger row
+      // at all is outside the count. 112 of those ran on 2026-08-31 while the
+      // booking gauge read zero, because the backstop that books them was
+      // timing out on every run.
+      'SpinDrawNeverBooked',
       'RakeAttributionBacklog',
       'SpinRevealChronicallyLate',
       'SpinReservePoolThin',

@@ -123,6 +123,42 @@ groups:
             eleven closed rows this gauge deliberately cannot see.
           runbook: https://monitor.smarter.poker/runbooks/spin-booking-gap
 
+      # THE ONE THE BOOKING GAUGE ABOVE CANNOT SEE. SpinDrawBookingGapOpened
+      # is guarded, in SQL, on the booked amount being non-null: it asks only
+      # whether a game that WAS booked paid something different. A game with
+      # no reserve ledger row at all is excluded from that count entirely.
+      #
+      # That is not hypothetical. On 2026-08-30 the backstop that books them,
+      # /api/cron/spin-sweep, had its lookback widened to 14 days on the
+      # reasoning that an idempotent settle makes a wide window free. It made
+      # the pass exceed the eight-second service_role statement timeout
+      # instead, so every run for two days rolled back and booked nothing,
+      # 112 Spins paid 5,737.00 out of a pool with no record of them, and the
+      # booking gauge read 0 the whole time.
+      #
+      # Zero is the normal reading: every Spin books inline at settle. A single
+      # one standing for fifteen minutes means the backstop is not completing,
+      # which is the condition, not the symptom.
+      - alert: SpinDrawNeverBooked
+        expr: poker_spin_draw_unbooked > 0
+        for: 15m
+        labels:
+          severity: critical
+          component: spin
+        annotations:
+          summary: "{{ $value }} Spin(s) paid a prize the reserve pool never recorded"
+          description: |
+            A Spin ran, drew a multiplier and paid its player without a single
+            spin_reserve_ledger row. The players are not short - the prize
+            reached them - but the pool's books do not contain money that left
+            it, so every reserve total, every thin-pool decision and every
+            reconciliation reading from it is wrong by that amount.
+            fn_spin_sweep_unbooked settles these every 15 minutes from Open
+            Claw. Read the job's RESPONSE BODY, not its exit: the dispatcher
+            logs "executed successfully" for an HTTP 500. `remaining` in that
+            body is this same number.
+          runbook: https://monitor.smarter.poker/runbooks/spin-never-booked
+
       # Every row is a player who lost VIP points and an agent who lost
       # commission. The threshold is not zero: the settle path attributes
       # asynchronously and a handful in flight is normal. A standing hundred

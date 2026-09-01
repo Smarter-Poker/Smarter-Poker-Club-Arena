@@ -81,10 +81,24 @@
   pointer-events: none;
 }
 
+/* NO BOXES OVER HEADER ICONS (Dan, 2026-09-01, binding). The approved artwork
+   IS the icon and this button is a transparent hit region laid over it, so any
+   ring -- outline, box-shadow, or a bordered ::before -- is a rectangle drawn
+   on top of the picture of the icon. Safari on macOS matches :focus-visible on
+   a plain mouse click, so the ring stuck after every tap. Keyboard focus is a
+   soft radial glow instead: visible, no edges. */
+.artButton:focus,
 .artButton:focus-visible {
-  outline: 3px solid #20a9ff;
-  outline-offset: -3px;
-  box-shadow: 0 0 0 2px #000;
+  outline: none;
+  box-shadow: none;
+}
+
+.artButton:focus-visible {
+  background: radial-gradient(
+    closest-side,
+    rgba(32, 169, 255, 0.3),
+    rgba(32, 169, 255, 0) 78%
+  );
 }
 
 .artButton:active {

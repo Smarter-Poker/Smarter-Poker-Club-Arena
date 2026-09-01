@@ -53,7 +53,7 @@ import {
 } from '../components/lobby/lobbyEntries';
 import { tournamentService } from '../services/TournamentService';
 import { tableService } from '../services/TableService';
-import { getClubLevel, ClubLevelInfo } from '../utils/clubLevels';
+import { getClubLevelInfoFromMembers, ClubLevelInfo } from '../utils/clubLevels';
 import { useToast } from '../components/common/Toast';
 import { applyClubScope, inClubScope, type ClubScope } from '../utils/clubScope';
 import { waitlistService } from '../services/WaitlistService';
@@ -77,6 +77,7 @@ import { RakeReports } from '../components/admin/RakeReports';
 import SpinActivationPanel from '../components/club/SpinActivationPanel';
 import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
 import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
+import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
 import BBJInfoModal from '../components/bbj/BBJInfoModal';
 import { readLocalSession } from '../lib/authUtils';
 import { reportError } from '../utils/errorReporter';
@@ -661,6 +662,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   // ALL TRANSACTIONS AND OTHER AVAILABLE DATA WHEN CLICKED." The row opens the
   // member's own statement - a read-only view, so it is not an activeCashier.
   const [showPlayerWallet, setShowPlayerWallet] = useState(false);
+  const [showDiamondWallet, setShowDiamondWallet] = useState(false);
   /* LOBBY V2 follow-up (Dan's QA, 2026-08-22): the lobby landed on the MTT
      tab, a leftover from before All Games was a real tab. A club with no open
      MTTs therefore opened onto an empty screen blaming "filters" - every
@@ -873,6 +875,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     setDeleteTableConfirm({ show: false, tableId: null, tableName: null });
     setClubLevel(null);
     setJackpotAmount(0);
+    /* A playing count belongs to exactly one club scope. Leaving this state
+       intact during a route-param switch painted the previous club's live
+       number over a brand-new empty club until the next RPC completed. */
+    setPlayersPlaying(null);
     /* THE LISTS TOO. This reset cleared the viewer's role, level and jackpot
        but left `club`, `tables` and `tournaments` - the three things actually
        on screen - holding the previous club. Entering a club with no cached
@@ -960,6 +966,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   useEffect(() => {
     if (!clubId) return;
     let isMounted = true;
+    let playingRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
     const setupRealtime = async () => {
       const resolvedId = await resolveClubUUID(clubId);
@@ -1067,6 +1074,29 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         return inClubScope(row, rtScope);
       };
 
+      /* `tables.current_players` changes on every live seat transition. Use
+         that scoped realtime event as the trigger, but re-read the count from
+         get_club_home instead of adding deltas in the browser: distinct users,
+         union visibility and tournament seats are database rules and must not
+         be approximated by whichever card happened to update. Bursts (a table
+         opening or balancing several seats) collapse to one authoritative
+         recount. */
+      const refreshScopedPlaying = () => {
+        if (playingRefreshTimer) clearTimeout(playingRefreshTimer);
+        playingRefreshTimer = setTimeout(async () => {
+          const { data, error } = await supabase.rpc('get_club_home', {
+            p_club_key: resolvedId,
+          });
+          if (!isMounted) return;
+          if (error) {
+            reportError(error, 'ClubHomePage.players_playing_realtime_refresh_failed');
+            return;
+          }
+          const next = Number((data as { players_playing?: unknown } | null)?.players_playing);
+          if (Number.isFinite(next)) setPlayersPlaying(next);
+        }, 250);
+      };
+
       const handleTableChange = (payload: any) => {
         if (!isMounted) return;
         if (payload.eventType === 'UPDATE' && payload.new) {
@@ -1099,6 +1129,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         } else if (payload.eventType === 'DELETE' && payload.old) {
           setTables((prev) => prev.filter((t) => t.id !== (payload.old as any).id));
         }
+        refreshScopedPlaying();
       };
 
       const handleTournamentChange = (payload: any) => {
@@ -1229,6 +1260,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
 
     return () => {
       isMounted = false;
+      if (playingRefreshTimer) clearTimeout(playingRefreshTimer);
       // Drop the factory FIRST. Removing the channel while its factory is
       // still registered is an invitation for the health monitor to rebuild
       // the one we are deliberately tearing down.
@@ -1759,15 +1791,14 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           if (stale() || (getIsMounted && !getIsMounted())) return;
 
           /**
-           * PLAYERS CURRENTLY PLAYING (Dan, 2026-08-23): "the 0 players
-           * currently playing is a bug... every horse needs to be considered a
-           * current player, this an accumulation of all active players in all
-           * clubs total."
+           * PLAYERS CURRENTLY PLAYING.
            *
-           * clubs.online_count is a denormalised column nothing keeps current
-           * - it read 12 for JAQK and 0 for Shark and Midway while 579 seats
-           * were occupied. get_club_home counts the live seats themselves,
-           * horses included, across the whole platform.
+           * clubs.online_count is a denormalised column nothing keeps current,
+           * so get_club_home counts occupied live seats directly. The RPC now
+           * applies the same club/union visibility scope as the two game lists:
+           * a standalone club sees only its own players, and a union-attached
+           * club sees the players in the games available from that lobby.
+           * No club may inherit the platform-wide total from another room.
            *
            * SET BEFORE THE lobbyPainted GUARD, deliberately. That guard exists
            * to stop a stale SNAPSHOT OF THE LISTS painting over fresher rows;
@@ -1952,7 +1983,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          members does this club have - rather than how many of them this viewer
          is allowed to enumerate. */
       const liveMemberCountPromise = supabase
-        .rpc('fn_get_club_member_count', { p_club_id: resolvedId })
+        .rpc('fn_get_club_realtime_member_count', { p_club_id: resolvedId })
         .then(
           (r) => r,
           (error) => ({ data: null, error })
@@ -2145,13 +2176,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           cacheUnion(ucRow.union_id);
 
           // Get ALL club IDs in this union + member count in parallel
-          const [allUcResult, memberCountResult, unionResult] = await Promise.all([
+          const [allUcResult, memberCountResult] = await Promise.all([
             supabase.from('union_clubs').select('club_id').eq('union_id', unionId),
             // A CLUB's own count. Unions re-query below. Same RPC as the
             // standalone path above, for the same two reasons: a direct count
             // is RLS-filtered (0 for a non-member) and ~370x slower.
-            supabase.rpc('fn_get_club_member_count', { p_club_id: resolvedId }),
-            supabase.from('unions').select('name').eq('id', unionId).maybeSingle(),
+            supabase.rpc('fn_get_club_realtime_member_count', { p_club_id: resolvedId }),
           ]);
 
           // Do NOT throw on allUcResult or memberCountResult error.
@@ -2214,7 +2244,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                the RPC returns one row per club and a player in two clubs is two
                memberships, which is what unions.member_count holds. */
             const { data: perClub, error: perClubErr } = await supabase.rpc(
-              'fn_batch_club_member_counts',
+              'fn_batch_club_realtime_member_counts',
               {
                 p_club_ids: unionClubIds,
               }
@@ -2513,82 +2543,10 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          nothing - the club level below is derived server-side from the
          hierarchy thresholds on the club row. */
 
-      // Auto-recompute club level if stuck at default (1 or null)
-      // The RPC updates clubs.level in-place and returns VOID,
-      // so we re-read the level column after calling it.
-      // Session dedup: only fire the RPC once per session per club to avoid waste
-      let effectiveLevel = clubData.level || 1;
-      const levelRecomputeKey = `level_recomputed_${resolvedId}`;
-      /* Safari private mode and a sandboxed frame THROW on storage access
-         rather than returning null (the four cache helpers at the top of this
-         file all say so and all wrap). These two did not, and the throw landed
-         in the outer catch - which fires a red error toast over a lobby whose
-         tables and tournaments had already been set two hundred lines above. */
-      const levelRecomputeDone = (() => {
-        try {
-          return sessionStorage.getItem(levelRecomputeKey) != null;
-        } catch {
-          return false;
-        }
-      })();
-      if (effectiveLevel <= 1 && !levelRecomputeDone) {
-        try {
-          // Trigger server-side recompute (updates clubs.level in DB)
-          const { error: rpcErr } = await supabase.rpc('recompute_club_levels', {
-            p_club_id: resolvedId,
-          });
-          if (!rpcErr) {
-            try {
-              sessionStorage.setItem(levelRecomputeKey, '1');
-            } catch {
-              /* Dedupe is an optimisation; losing it costs one extra RPC. */
-            }
-            // Re-read the updated level from DB
-            const { data: refreshedClub, error: levelReadErr } = await supabase
-              .from('clubs')
-              .select(
-                'level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
-              )
-              .eq('id', resolvedId)
-              .maybeSingle();
-            // ROUND 9 (2026-08-29): a failed re-read left the badge at level 1
-            // with no trace - the recompute RPC had just SUCCEEDED, so the DB
-            // holds the real level and only this display missed it.
-            if (levelReadErr) {
-              reportError(levelReadErr, 'ClubHomePage.level_reread_failed', {
-                clubId: resolvedId,
-              });
-            }
-            if (refreshedClub && refreshedClub.level > 1) {
-              effectiveLevel = refreshedClub.level;
-              // Also update threshold values for accurate progress bar
-              clubData.hierarchy_units_rounded_up =
-                refreshedClub.hierarchy_units_rounded_up ?? clubData.hierarchy_units_rounded_up;
-              clubData.player_threshold_current =
-                refreshedClub.player_threshold_current ?? clubData.player_threshold_current;
-              clubData.player_threshold_next =
-                refreshedClub.player_threshold_next ?? clubData.player_threshold_next;
-              clubData.hierarchy_threshold_current =
-                refreshedClub.hierarchy_threshold_current ?? clubData.hierarchy_threshold_current;
-              clubData.hierarchy_threshold_next =
-                refreshedClub.hierarchy_threshold_next ?? clubData.hierarchy_threshold_next;
-            }
-          }
-        } catch (e) {
-          reportError(e, 'ClubHomePage');
-          // RPC not available — use default level
-        }
-      }
-
-      const levelInfo = getClubLevel({
-        level: effectiveLevel,
-        playerCount: clubData.member_count || 0,
-        hierarchyUnits: clubData.hierarchy_units_rounded_up || 0,
-        playerThresholdCurrent: clubData.player_threshold_current || 0,
-        playerThresholdNext: clubData.player_threshold_next || 0,
-        hierarchyThresholdCurrent: clubData.hierarchy_threshold_current || 0,
-        hierarchyThresholdNext: clubData.hierarchy_threshold_next || 0,
-      });
+      // Club Level Is A Pure Member-Count Fact. Never call the legacy dual-axis
+      // recompute here: that formula can level up a one-member club from its
+      // owner/admin hierarchy and produce a false celebration.
+      const levelInfo = getClubLevelInfoFromMembers(clubData.member_count || 0);
       if (getIsMounted && !getIsMounted()) return;
 
       /* Level-up celebration, decided OUTSIDE the updater.
@@ -4045,18 +4003,16 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       actionLabel: 'Create MTT',
       onAction: () => openCreationFor('MTT'),
     },
-    ...(openingSetupComplete && club.spins_enabled
-      ? [
-          {
-            id: 'spin',
-            label: 'Launch Your First Spin',
-            detail: 'Create A Three-Player Spin Event',
-            complete: tournamentKinds.includes('spin'),
-            actionLabel: 'Create Spin',
-            onAction: () => openCreationFor('SPIN'),
-          },
-        ]
-      : []),
+    {
+      id: 'spin',
+      label: 'Launch Your First Spin',
+      detail: club.spins_enabled
+        ? 'Create A Three-Player Spin Event'
+        : 'Enable And Fund Spins First',
+      complete: tournamentKinds.includes('spin'),
+      actionLabel: club.spins_enabled ? 'Create Spin' : 'Set Up Spins',
+      onAction: () => (club.spins_enabled ? openCreationFor('SPIN') : setShowOpeningWizard(true)),
+    },
     {
       id: 'heads-up',
       label: 'Launch Your First Heads Up Game',
@@ -4282,9 +4238,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               them; one wallet never gets access to the other. Union figures are
               managed on the union's own surfaces and appear nowhere here.
 
-              The compact lobby summary intentionally exposes only the three
-              role-approved balances requested for this surface. Every other
-              wallet remains available through its existing cashier flow. */}
+              The lobby exposes every balance authorized for the viewer's role;
+              each actionable row opens its matching ledger or cashier without
+              leaving the club lobby. */}
           {currentUserId && resolvedClubId && (
             <div className="lobby-top__wallet">
               <button
@@ -4337,7 +4293,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     onVisibleWalletCountChange={setVisibleWalletCount}
                     onBuyDiamonds={() => {
                       haptic.medium();
-                      navigate(`/clubs/${clubId}/detail`);
+                      setShowDiamondWallet(true);
                     }}
                     // Dan 2026-08-23: "if they click on Club Bank, that should
                     // open the Club Bank Cashier." The row only renders for owner,
@@ -4368,14 +4324,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                         balance,
                       });
                     }}
-                    onOpenClubRake={() => setUnionTreasuryModal('rake')}
-                    onOpenClubSpins={(balance) =>
-                      setUnionWalletModal({
-                        key: 'spin_reserve',
-                        label: 'Spins Treasury',
-                        balance,
-                      })
-                    }
+                    onOpenClubRake={() => setStandaloneRakeModal(true)}
+                    onOpenClubSpins={() => setStandaloneSpinsModal(true)}
                   />
                   <p className="lobby-top__house-welcome">
                     {club.tagline?.trim() || `Welcome To ${club.name}`}
@@ -4474,6 +4424,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         isOpen={showPlayerWallet}
         onClose={() => setShowPlayerWallet(false)}
         clubId={resolvedClubId || clubId || ''}
+      />
+      <DiamondWalletModal
+        isOpen={showDiamondWallet}
+        onClose={() => setShowDiamondWallet(false)}
+        onBuyClick={() => navigate('/vip')}
       />
       <BBJInfoModal
         isOpen={showBBJInfo}
@@ -4752,7 +4707,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           }
         />
 
-        {noticeEditable && totalGameCount === 0 && (
+        {noticeEditable && launchTasks.some((task) => !task.complete) && (
           <ClubLaunchProgress
             clubName={club.name}
             openingBank={Number(club.chip_treasury) || 0}

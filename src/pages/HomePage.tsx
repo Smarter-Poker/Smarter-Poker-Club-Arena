@@ -201,19 +201,9 @@ function HomePageInner() {
   });
 
   // Per-club stats for featured card rendering
-  const [clubStats, setClubStats] = useState<Record<string, ClubStats>>(() => {
-    try {
-      const cached = localStorage.getItem(STORAGE_KEYS.CLUB_STATS_CACHE);
-      const cacheTs = localStorage.getItem(STORAGE_KEYS.CLUB_STATS_CACHE_TS);
-      const isFresh = cacheTs && Date.now() - Number(cacheTs) < SWR_CACHE_TTL;
-      if (cached && isFresh) {
-        return JSON.parse(cached);
-      }
-    } catch {
-      /* ignore corrupt cache */
-    }
-    return {};
-  });
+  // Club-card totals are live facts. Never hydrate them from localStorage or
+  // fall back to denormalised clubs.member_count/online_count columns.
+  const [clubStats, setClubStats] = useState<Record<string, ClubStats>>({});
   // Guard: prevent welcome toast from firing before first server fetch completes
   const hasFetchedOnceRef = useRef(false);
 
@@ -791,12 +781,13 @@ function HomePageInner() {
       const aPinned = pinnedClubIds.includes(a.id) ? 1 : 0;
       const bPinned = pinnedClubIds.includes(b.id) ? 1 : 0;
       if (bPinned !== aPinned) return bPinned - aPinned;
-      const memberDiff = (b.member_count || 0) - (a.member_count || 0);
+      const memberDiff =
+        (clubStats[b.id]?.totalMembers ?? -1) - (clubStats[a.id]?.totalMembers ?? -1);
       if (memberDiff !== 0) return memberDiff;
       return (a.name || '').localeCompare(b.name || '');
     });
     return clubs;
-  }, [userClubs, pinnedClubIds, loadFailed, isLoading]);
+  }, [userClubs, pinnedClubIds, loadFailed, isLoading, clubStats]);
 
   // Stable string identity of club IDs — avoids .map().join() allocation on every render
   const displayClubIdsKey = useMemo(() => displayClubs.map((c) => c.id).join(','), [displayClubs]);
@@ -821,8 +812,14 @@ function HomePageInner() {
         // count of a club id that does not exist simply returns nothing for it,
         // and the lookup below is by id, so a superset is harmless. Both now
         // fly at once.
+        const memberCountsPromise = supabase
+          .rpc('fn_batch_club_realtime_member_counts', { p_club_ids: clubIds })
+          .then(
+            (r) => r,
+            (error) => ({ data: null, error })
+          );
         const activeCountsPromise = supabase
-          .rpc('fn_batch_active_player_counts', { p_club_ids: clubIds })
+          .rpc('fn_batch_club_realtime_active_counts', { p_club_ids: clubIds })
           .then(
             (r) => r,
             (error) => ({ data: null, error })
@@ -857,57 +854,22 @@ function HomePageInner() {
            throw that away and go back to the stale number - which then feeds
            BOTH the level ladder and the active-player clamp below, so one stale
            column silently wrongs three stats at once. */
-        const liveMemberCounts = new Map<string, number>(
-          displayClubs.map((c) => [c.id, Number(c.member_count) || 0])
-        );
+        const memberCountMap = new Map<string, number>();
+        try {
+          const { data: batchCounts } = await memberCountsPromise;
+          for (const r of batchCounts || [])
+            memberCountMap.set(r.club_id, Number(r.member_count) || 0);
+        } catch (e) {
+          reportError(e, 'HomePage.batchRealtimeMemberCounts');
+        }
 
         // Process each club in parallel
         await Promise.allSettled(
           clubRows.map(async (club: any) => {
-            const memberCount = Math.max(
-              Number(club.member_count) || 0,
-              liveMemberCounts.get(club.id) || 0
-            );
+            const memberCount = memberCountMap.get(club.id);
+            if (memberCount == null) return;
 
-            const activePlayers = activeCountMap.get(club.id) || 0;
-
-            // Auto-recompute club level if stuck at default
-            // Session dedup: only fire the RPC once per session per club
-            let effectiveLevel = club.level || 1;
-            const levelRecomputeKey = `level_recomputed_${club.id}`;
-            if (effectiveLevel <= 1 && !sessionStorage.getItem(levelRecomputeKey)) {
-              try {
-                const { error: rpcErr } = await supabase.rpc('recompute_club_levels', {
-                  p_club_id: club.id,
-                });
-                if (!rpcErr) {
-                  sessionStorage.setItem(levelRecomputeKey, '1');
-                  const { data: refreshed } = await supabase
-                    .from('clubs')
-                    .select(
-                      'level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
-                    )
-                    .eq('id', club.id)
-                    .maybeSingle();
-                  if (refreshed && refreshed.level > 1) {
-                    effectiveLevel = refreshed.level;
-                    club.hierarchy_units_rounded_up =
-                      refreshed.hierarchy_units_rounded_up ?? club.hierarchy_units_rounded_up;
-                    club.player_threshold_current =
-                      refreshed.player_threshold_current ?? club.player_threshold_current;
-                    club.player_threshold_next =
-                      refreshed.player_threshold_next ?? club.player_threshold_next;
-                    club.hierarchy_threshold_current =
-                      refreshed.hierarchy_threshold_current ?? club.hierarchy_threshold_current;
-                    club.hierarchy_threshold_next =
-                      refreshed.hierarchy_threshold_next ?? club.hierarchy_threshold_next;
-                  }
-                }
-              } catch (e) {
-                reportError(e, 'HomePage');
-                // RPC not available
-              }
-            }
+            const activePlayers = activeCountMap.get(club.id) ?? null;
 
             /* Dan 2026-08-20: "a true 'club level' level 1-55 that is
                determined based on how many players are inside a club."
@@ -920,8 +882,6 @@ function HomePageInner() {
                stored clubs.level) is left alone for the progress bars that
                still read the legacy threshold columns. */
             const clubLevel = getClubLevelFromMembers(memberCount);
-            void effectiveLevel;
-
             if (isMounted) {
               statsMap[club.id] = {
                 totalMembers: memberCount,
@@ -932,7 +892,11 @@ function HomePageInner() {
                    with tables running, which is the more alarming of the two
                    wrong answers. */
                 activePlayers:
-                  memberCount > 0 ? Math.min(activePlayers, memberCount) : activePlayers,
+                  activePlayers == null
+                    ? null
+                    : memberCount > 0
+                      ? Math.min(activePlayers, memberCount)
+                      : activePlayers,
               };
             }
           })
@@ -958,12 +922,21 @@ function HomePageInner() {
 
             if (realUnionIds.length === 0) throw new Error('No union_id FK found on union clubs');
 
-            const { data: unionRows } = await supabase
-              .from('unions')
-              .select(
-                'id, level, total_players, member_count, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
-              )
-              .in('id', realUnionIds);
+            const [unionRowsResult, unionMembersResult, unionActiveResult] = await Promise.all([
+              supabase
+                .from('unions')
+                .select(
+                  'id, level, total_players, member_count, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+                )
+                .in('id', realUnionIds),
+              supabase.rpc('fn_batch_union_realtime_member_counts', {
+                p_union_ids: realUnionIds,
+              }),
+              supabase.rpc('fn_batch_union_realtime_active_counts', {
+                p_union_ids: realUnionIds,
+              }),
+            ]);
+            const unionRows = unionRowsResult.data;
 
             if (unionRows && isMounted) {
               /* ── Dan 2026-08-20: "'active players' isn't working inside the
@@ -980,34 +953,34 @@ function HomePageInner() {
                  fn_union_active_player_counts answers for the union directly:
                  DISTINCT users across the union's own club row AND its member
                  clubs, in one query. */
+              const unionMemberMap: Record<string, number> = {};
               const unionActiveMap: Record<string, number> = {};
-              try {
-                const { data: unionCounts } = await supabase.rpc('fn_union_active_player_counts', {
-                  p_union_ids: realUnionIds,
-                });
-                for (const r of unionCounts || []) {
-                  unionActiveMap[(r as any).union_id] = Number((r as any).active_count) || 0;
-                }
-              } catch (e) {
-                reportError(e, 'HomePage.unionActiveCounts');
-              }
+              for (const r of unionMembersResult.data || [])
+                unionMemberMap[(r as any).union_id] = Number((r as any).member_count) || 0;
+              for (const r of unionActiveResult.data || [])
+                unionActiveMap[(r as any).union_id] = Number((r as any).active_count) || 0;
 
               for (const u of unionRows) {
                 const clubId = unionIdToClubId[u.id]; // Map back to clubs.id for statsMap
                 if (!clubId) continue;
-                const totalMembers = u.total_players || u.member_count || 0;
+                const totalMembers = unionMemberMap[u.id];
+                if (totalMembers == null) continue;
                 // Same 1-55 member ladder as a club — a union is measured by
                 // the players under it, on the same scale, so the two numbers
                 // sitting side by side on a carousel mean the same thing.
                 const clubLevel = getClubLevelFromMembers(totalMembers);
-                const unionActive = unionActiveMap[u.id] || 0;
+                const unionActive = unionActiveMap[u.id] ?? null;
                 statsMap[clubId] = {
                   totalMembers,
                   clubLevel,
                   // Same reasoning as the club clamp above: only clamp against a
                   // member count we actually have.
                   activePlayers:
-                    totalMembers > 0 ? Math.min(unionActive, totalMembers) : unionActive,
+                    unionActive == null
+                      ? null
+                      : totalMembers > 0
+                        ? Math.min(unionActive, totalMembers)
+                        : unionActive,
                 };
               }
             }
@@ -1018,9 +991,6 @@ function HomePageInner() {
 
         if (isMounted) {
           setClubStats(statsMap);
-          localStorage.setItem(STORAGE_KEYS.CLUB_STATS_CACHE, JSON.stringify(statsMap));
-          localStorage.setItem(STORAGE_KEYS.CLUB_STATS_CACHE_TS, String(Date.now()));
-
           // Lazy-backfill baked card images for clubs missing card_image_url
           const backfillTargets = displayClubs
             .filter((c) => c.logo_url && !c.card_image_url && c.club_id)

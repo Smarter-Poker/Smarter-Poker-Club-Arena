@@ -203,15 +203,15 @@ describe('start time', () => {
 });
 
 describe('payout structure choice (2026-08-22)', () => {
-  it('payout1/2/3 pay ~10/15/20% of a 100-player field', () => {
+  it('payout1/2/3 pay ~10/12.5/15% of a 100-player field', () => {
     const places = (choice: string) =>
       buildTournamentConfig({ ...base, maxPlayersRange: 100, payoutStructure: choice }, 'nlh')
         .payoutStructure.length;
     // These used to all fall through to autoSelectPayouts, making the four
     // choices identical. Now the choice is honoured.
     expect(places('payout1')).toBe(10);
-    expect(places('payout2')).toBe(15);
-    expect(places('payout3')).toBe(20);
+    expect(places('payout2')).toBe(13);
+    expect(places('payout3')).toBe(15);
   });
 
   it('each choice still totals 100 and pays fewer places than the field', () => {

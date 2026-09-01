@@ -286,6 +286,18 @@
     "bus_event_log": [
       "event_type"
     ],
+    "ca_alarm_drills": [
+      "pass",
+      "results"
+    ],
+    "ca_browser_definer_allowlist": [
+      "proname",
+      "reason"
+    ],
+    "ca_cert_accounts": [
+      "user_id",
+      "reason"
+    ],
     "ca_chip_baseline": [
       "club_id",
       "user_id",
@@ -320,8 +332,24 @@
       "user_id",
       "stat_date"
     ],
+    "ca_collusion_signals": [
+      "window_days",
+      "user_a",
+      "user_b",
+      "hands_together",
+      "gross_flow",
+      "net_flow",
+      "direction_ratio",
+      "both_cert"
+    ],
     "ca_ddl_events": [
       "command_tag"
+    ],
+    "ca_diamond_snapshots": [
+      "profile_diamonds",
+      "wallet_diamonds",
+      "cert_diamonds",
+      "total"
     ],
     "ca_drift_incidents": [
       "source",
@@ -333,6 +361,15 @@
     "ca_frozen_pool_baseline": [
       "pool",
       "frozen_total"
+    ],
+    "ca_gate_runs": [
+      "pass",
+      "window_hours",
+      "result"
+    ],
+    "ca_guard_defs": [
+      "proname",
+      "def_hash"
     ],
     "ca_guard_inventory": [
       "kind",
@@ -426,6 +463,10 @@
     ],
     "ca_money_rpc_registry": [
       "proname"
+    ],
+    "ca_op_claims": [
+      "op_id",
+      "fn_name"
     ],
     "ca_pending_promo_accruals": [
       "club_id",
@@ -622,6 +663,13 @@
     ],
     "club_entry_feature_flags": [
       "key"
+    ],
+    "club_financial_quarantine": [
+      "source_table",
+      "source_id",
+      "club_id",
+      "reason",
+      "row_data"
     ],
     "club_financial_summary": [
       "club_id",
@@ -1594,6 +1642,13 @@
       "player_action",
       "classification"
     ],
+    "hand_discards": [
+      "table_id",
+      "hand_number",
+      "user_id",
+      "seat_number",
+      "discarded_card"
+    ],
     "hand_histories": [
       "id",
       "table_id",
@@ -2518,6 +2573,10 @@
     "rate_limit_buckets": [
       "bucket_key",
       "window_start"
+    ],
+    "rate_limits": [
+      "user_id",
+      "action"
     ],
     "raw_games": [
       "game_pk",

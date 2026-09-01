@@ -61,6 +61,15 @@ const IGNORED_PATHS = [
   /^\.next\//,
   /^coverage\//,
   /__snapshots__\//,
+  // The Supabase manifests are GENERATED snapshots of the production schema
+  // (scripts/ci/gen-schema-manifest.mjs). Two agents regenerating at different
+  // moments legitimately produce byte-identical earlier snapshots, which reads
+  // to this check as a wholesale revert when it is just a stale regeneration
+  // race (first hit: PR #2346, a manifest matching its pre-#2404 state).
+  // Correctness of these files is enforced by the stronger live check --
+  // check-migrations-applied asks the production database directly -- so a
+  // "revert" here can never silently lose schema truth.
+  /^scripts\/ci\/supabase-(schema|columns|required-columns)-manifest\.json$/,
 ];
 
 const git = (...args) => {

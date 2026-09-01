@@ -1,0 +1,11 @@
+-- ZERO-DRIFT PHASE 5 - PROMO QUEUE + MIDWAY BURN-IN GATE (prod ~19:57 UTC;
+-- canonical body in prod schema_migrations - export via
+-- scripts/dev/export-applied-migrations.sh)
+-- ca_pending_promo_accruals + fn_ca_retry_promo_accruals + cron
+-- ca-promo-accrual-retry-10m: failed promo_apply_playthrough calls queue and
+-- re-drive instead of vanishing (same pattern as pending_fee_distributions).
+-- fn_ca_midway_burnin_gate(hours): the doc-05 §3 acceptance gate - eleven
+-- named pass/fail checks (criticals, unknowns, suspense, write failures,
+-- blocked tournament mints, failed/stuck settlements, checksum chain,
+-- structural guards, unregistered RPCs, supply explained); reopening Midway/
+-- Shark/JAQK requires pass:true over 24h of horse-only play post epoch-3.

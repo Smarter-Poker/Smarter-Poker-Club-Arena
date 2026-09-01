@@ -1303,7 +1303,7 @@ export default function DynamicWallet({
       // Named for what it IS to an owner: the wallet the Spin multipliers are
       // paid out of. NOT the union dashboard's "Spin Reserve" tile, which is
       // undeployed capital waiting to be seeded -- see useSpinsWallet.
-      label: 'Spins Wallet',
+      label: 'Spins Treasury',
       icon: 'treasury',
       value: animSpins,
       known: spins.state !== null,

@@ -1,0 +1,3 @@
+-- ca_phase5_settle_hand_stacks_absolute (prod 20260831195446). Canonical body lives in prod schema_migrations -
+-- replace this marker byte-exact via scripts/dev/export-applied-migrations.sh.
+-- Phase 5: absolute-stack variant of the hand settlement RPC - engine syncStacks adopts it with one added argument (see docs 06).

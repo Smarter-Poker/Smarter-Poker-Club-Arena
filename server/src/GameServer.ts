@@ -3206,13 +3206,28 @@ export class GameServer {
         // event completed by a path that predates the settler) is settled by
         // fn_sweep_unsettled_tournament_rake. Idempotent by PK claim, so it
         // can never double-pay a tournament something else settled. Every 10
-        // minutes — this is a safety net, not the primary path.
+        // minutes - this is a safety net, not the primary path.
+        //
+        // THE BATCH IS SMALL ON PURPOSE. 2026-08-31: this ran with p_limit 200
+        // and settled nothing for two and a half hours while 29 terminal events
+        // holding 215.98 in union rake piled up behind it. The whole sweep is
+        // ONE transaction, and every settlement inside it updates the SAME
+        // club_wallets row and the same union wallet. At 200 candidates that is
+        // minutes of held row locks, against a live engine settling its own
+        // finishing tournaments on those exact rows, so the sweep deadlocked,
+        // lost, and rolled back, every single pass. The alert it left behind
+        // said only "deadlock detected".
+        //
+        // Ten per pass is ~5s of locking, and at one pass per 10 minutes it
+        // drains 60 events an hour against a normal arrival rate near one. A
+        // backlog costs a little latency; a batch that deadlocks costs the
+        // whole sweep, forever, which is what actually happened.
         if (Date.now() - this.lastRakeSweepAt > 10 * 60 * 1000) {
           this.lastRakeSweepAt = Date.now();
           try {
             const { data: sweep, error: sweepErr } = await supabase.rpc(
               'fn_sweep_unsettled_tournament_rake',
-              { p_since_days: 60, p_limit: 200 }
+              { p_since_days: 60, p_limit: 10 }
             );
             if (sweepErr) {
               reportError(

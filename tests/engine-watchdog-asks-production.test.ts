@@ -63,8 +63,26 @@ describe('it fails in the safe direction', () => {
 
   it('gives the catch-up schedule a grace window before raising anything', () => {
     // One missed twenty-minute tick is ordinary. Three in a row is the failure.
+    //
+    // THE PIN MOVED, 2026-09-01. This used to assert the literal sentence
+    // "inside the ${GRACE_MIN}m grace window". The watchdog stopped saying it
+    // when the deadline became window-aware: the engine does not restart on
+    // merge, it restarts at $RESTART_HOURS Chicago, so a flat 45 minutes from
+    // the commit was never a deadline the platform was trying to meet and this
+    // fired every morning about a system behaving exactly as designed.
+    //
+    // The replacement is strictly MORE patient, and that is what is pinned now
+    // rather than a sentence: the deadline is the first restart window at or
+    // after the commit plus one deploy, floored at GRACE_MIN so it can never
+    // become less patient than the rule it replaced, and inside it the script
+    // says so and exits 0 without raising.
     expect(SH).toContain('GRACE_MIN="${GRACE_MIN:-45}"');
-    expect(SH).toContain('inside the ${GRACE_MIN}m grace window');
+    expect(SH).toContain('GRACE_DEADLINE=$(( REQ_EPOCH + GRACE_MIN * 60 ))');
+    expect(SH, 'the grace window must be a floor, never a ceiling').toContain(
+      '[ "$GRACE_DEADLINE" -gt "$DEADLINE" ] && DEADLINE=$GRACE_DEADLINE'
+    );
+    // Inside the window: report, and stop. Raising here is the bug this guards.
+    expect(SH).toMatch(/if \[ "\$NOW_EPOCH" -lt "\$DEADLINE" \]; then[\s\S]{0,900}?\n {2}exit 0\nfi/);
   });
 
   it('does not fail the job, because the alarm is the point', () => {

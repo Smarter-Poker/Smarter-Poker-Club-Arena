@@ -156,6 +156,7 @@ const XMTTPage = lazyWithRetry(() => import('./pages/XMTTPage'));
 const MarketplacePage = lazyWithRetry(() => import('./pages/MarketplacePage'));
 const UnionGamesPage = lazyWithRetry(() => import('./pages/UnionGamesPage'));
 const AdminDashboardPage = lazyWithRetry(() => import('./pages/AdminDashboardPage'));
+const MintPage = lazyWithRetry(() => import('./pages/MintPage'));
 const AgentDashboardPage = lazyWithRetry(() => import('./pages/AgentDashboardPage'));
 const UnionDashboardPage = lazyWithRetry(() => import('./pages/UnionDashboardPage'));
 const CommunityWorkspacePage = lazyWithRetry(() =>
@@ -1557,6 +1558,16 @@ function FullApp() {
                     <AuthGuard>
                       <PageErrorBoundary pageName="Financial Health">
                         <FinancialHealthPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="mint"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="The Mint">
+                        <MintPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

@@ -5439,7 +5439,6 @@ export default function TablePage({
   // coverageAmount param accepted for InsuranceModal compatibility but ignored — server is authoritative
   // FIX 89: Insurance accept with server-authoritative coverage percentage
   const handleInsuranceAccept = async (coverageAmount?: number) => {
-    setShowInsurance(false);
     if (tableId) {
       // coverageAmount from slider maps to coveragePercent on server
       // If not provided, defaults to 100% (full insurance)
@@ -5460,8 +5459,14 @@ export default function TablePage({
       const result = await respondToInsurance(tableId, 'accept', coveragePct);
       if (!result.success) {
         reportError(result.error, 'TablePage.Accept_failed');
+        toast?.error?.(result.error || 'Insurance Could Not Be Purchased');
+        return false;
       }
+      setShowInsurance(false);
+      return true;
     }
+    toast?.error?.('Table Is Not Ready');
+    return false;
   };
 
   // FIX 89: "Decline Now" — may be re-offered on later streets if equity shifts
@@ -5477,13 +5482,18 @@ export default function TablePage({
   // the engine and the engine recomputes it on accept; the client sends only
   // the decision.
   const handleInsuranceEvCashout = async () => {
-    setShowInsurance(false);
     if (tableId) {
       const result = await respondToInsurance(tableId, 'cashout');
       if (!result.success) {
         reportError(result.error, 'TablePage.Ev_cashout_failed');
+        toast?.error?.(result.error || 'Cash Out Could Not Be Completed');
+        return false;
       }
+      setShowInsurance(false);
+      return true;
     }
+    toast?.error?.('Table Is Not Ready');
+    return false;
   };
 
   // A decline is final: never re-offered on later streets. Per-street pacing
@@ -19311,6 +19321,7 @@ export default function TablePage({
                 isAvailable={isRabbitAvailable}
                 cardsAvailable={rabbitCardsAvailable}
                 rabbitDiamondCost={rabbitDiamondCost}
+                userId={userId === 'guest' ? null : userId}
                 onReveal={handleRabbitReveal}
               />
             )}

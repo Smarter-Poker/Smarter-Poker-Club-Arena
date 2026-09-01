@@ -14,7 +14,7 @@
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import React from 'react';
-import { render, cleanup, fireEvent } from '@testing-library/react';
+import { render, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import InsuranceModal, { type InsuranceOffer } from '../../src/components/table/InsuranceModal';
 
 afterEach(cleanup);
@@ -145,5 +145,36 @@ describe('EV cashout wiring', () => {
     expect(getAllByText('41.87').length).toBeGreaterThan(0);
     fireEvent.click(getByText('Cash Out'));
     expect(onEvCashout).toHaveBeenCalledWith(41.87);
+  });
+});
+
+describe('human decision safety', () => {
+  it('is a named modal dialog and Escape takes the same final-decline path', async () => {
+    const onClose = vi.fn();
+    const { getByRole } = renderModal({}, { onClose });
+    const dialog = getByRole('dialog', { name: 'All-In Insurance' });
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    expect(document.activeElement).toBe(dialog);
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  it('single-flights a same-frame double activation and re-enables after rejection', async () => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const onAccept = vi.fn(() => pending);
+    const { getByRole } = renderModal({}, { onAccept });
+    const insure = getByRole('button', { name: 'Insure' }) as HTMLButtonElement;
+
+    fireEvent.click(insure);
+    fireEvent.click(insure);
+    expect(onAccept).toHaveBeenCalledTimes(1);
+    expect(insure.disabled).toBe(true);
+
+    release();
+    await waitFor(() => expect(insure.disabled).toBe(false));
   });
 });

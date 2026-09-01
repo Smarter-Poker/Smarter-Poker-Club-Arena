@@ -1537,6 +1537,9 @@ jobs:
       - name: Table Studio real-component purchase, sync, and accessibility gate
         run: npm run test:e2e:customization
 
+      - name: Insurance and Rabbit Hunt 375px decision gate
+        run: npm run test:e2e:financial-decisions
+
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 5: AUTO-REVERT — DISABLED (was causing revert loops during migration)
   # ─────────────────────────────────────────────────────────────────────────────

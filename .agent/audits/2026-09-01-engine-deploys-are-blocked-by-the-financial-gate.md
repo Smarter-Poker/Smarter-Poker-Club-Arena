@@ -2,6 +2,77 @@
 
 **Status: reported, not fixed. This is a money path and the decision is Dan's.**
 
+## CORRECTION 2 (Dan, 2026-09-01) - THE DEPLOY MODEL CHANGED WHILE THIS WAS BEING WRITTEN
+
+**Both earlier versions of this file are now wrong about the schedule, and
+the second one was wrong the moment it was written.** Recording that plainly
+rather than editing the history quietly.
+
+Dan: _"WE DO DEPLOYMENTS EVERY HOUR ON THE :55 NOW."_ That superseded the
+2026-08-31 five-window rule, and #2527 landed the change at 13:00 UTC - while
+I was reading a checkout that predated it. So my "the next window is 14:00
+Chicago, 19:00 UTC" was describing a mechanism that no longer existed.
+
+**The model that is actually live.** `auto-deploy-hetzner.yml` runs at :40,
+:45 and :50 every hour (three ticks, because a GitHub scheduled run is
+best-effort). Each gives the runner time to check out, test and build before
+:55. The restart itself happens inside an ANNOUNCED FIVE MINUTE BREAK -
+tables are told at :53 to finish the hand, the platform parks at :55 and
+holds until :00 (`server/src/maintenance/MaintenanceBreak.ts`). There is no
+Chicago window gate and no time zone left to get wrong.
+
+**A bootstrap risk I checked and did NOT find.** The break gate waits for the
+engine to publish `maintenance.readyForRestart`, and the engine in production
+predated that feature - which would deadlock the very deploy that ships it.
+It does not: the gate distinguishes READY, LEGACY and timeout, and a LEGACY
+engine (no `maintenance` block in `/health`) is restarted once on the old
+SIGTERM drain. Whoever wrote #2527 had already thought of it.
+
+## THE REAL PROBLEM: THE HOURLY SCHEDULE WAS NOT FIRING
+
+The change is correct and it was not running. Measured at 18:36 UTC, the last
+20 runs of the workflow:
+
+    15:54 workflow_dispatch failure
+    15:37 workflow_dispatch failure
+    15:25 workflow_dispatch failure
+    14:58 schedule       success
+    12:15 workflow_dispatch success
+    ...
+
+The hourly cron landed at 13:00 UTC. Between then and 18:36 there should have
+been sixteen scheduled ticks (13:40 through 18:30). **Exactly one scheduled
+run happened in that entire period, at 14:58**, and it correctly skipped
+because 09:58 Chicago was not a window under the rules then in force.
+
+So the engine served the 03:54 image for **fourteen and a half hours** with
+five merged PRs waiting - which is precisely the orphaning Dan's change was
+made to stop. GitHub scheduled workflows are best-effort and can be dropped
+under load; the workflow's own comments say so, and three ticks an hour were
+meant to survive that. Three ticks do not help when none of them fire.
+
+**Resolved for today** by dispatching the workflow through the sanctioned
+path (a plain `workflow_dispatch`, no `force`, no gate bypassed) once the
+conservation gate had cleared on its own. Run 33544596087 succeeded at 18:43;
+the container was rebuilt at 18:42:01 and the new code is verified present
+and executing:
+
+    docker exec ... grep -c beyondGtoDepthCeiling /app/dist/engine/HorseLogic.js  -> 3
+    docker exec ... grep -c river_aggr_won /app/dist/services/HorseHandReview.js  -> 2
+    docker exec ... grep -c callersOfPreviousRaise /app/dist/engine/HorseLogic.js -> 3
+
+and, three minutes after the restart, the new counters are firing at live
+tables: v31_miss_depth_le50/le110/le300, v31_miss_street_turn/river,
+v32_miss_depth_le50/le300, v32_miss_street_flop/turn/river.
+
+**Still open, and it is not a one-off.** Nothing has been done about _why_ the
+schedule stopped firing. Until that is understood, the hourly model depends on
+someone noticing and dispatching by hand, which is the same failure the league
+runner had: a job that looks identical whether or not it is running.
+`publish-watchdog.yml` already alarms when production falls behind main - the
+question worth answering is whether it fired today and, if it did, why nothing
+acted on it.
+
 ## CORRECTION, added after the first version of this file
 
 The original text said deploys are blocked, full stop. That is incomplete in a

@@ -1836,13 +1836,16 @@ class MasterBusCore {
    * Get or create a Supabase channel — guarantees exactly one channel per key.
    * If a channel with the same key already exists, returns it.
    */
-  getOrCreateChannel(key: string): RealtimeChannel {
+  getOrCreateChannel(key: string, options?: { private?: boolean }): RealtimeChannel {
     // Every handout takes a reference; removeRegisteredChannel gives one back.
     this.channelRefs.set(key, (this.channelRefs.get(key) ?? 0) + 1);
     const existing = this.channelRegistry.get(key);
     if (existing) return existing;
 
-    const channel = supabase.channel(key);
+    const channel = supabase.channel(
+      key,
+      options?.private ? { config: { private: true } } : undefined
+    );
     this.channelRegistry.set(key, channel);
     // Emit REALTIME_CONNECTED so ConnectionIndicator knows we have live channels
     this.emit('REALTIME_CONNECTED', { channelName: key });

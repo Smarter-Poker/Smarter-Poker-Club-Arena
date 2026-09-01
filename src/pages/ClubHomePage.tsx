@@ -232,7 +232,6 @@ interface ClubData {
   name: string;
   slug?: string;
   description: string;
-  lobby_message?: string | null;
   tagline?: string | null;
   /* Dan 2026-09-01: the owner's custom / day's message, printed at the top of
      the lobby rail. Its own column so `tagline` stays the permanent identity
@@ -3905,17 +3904,21 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const saveClubNotice = () => {
     const newDesc = noticeDraft.replace(/\s+/g, ' ').trim().slice(0, CLUB_LOBBY_MESSAGE_MAX_LENGTH);
     const targetId = club.id;
-    setClub((prev) => (prev ? { ...prev, lobby_message: newDesc } : prev));
-    setIsEditingNotice(false);
     void (async () => {
-      const { error } = await supabase
-        .from('clubs')
-        .update({ lobby_message: newDesc })
-        .eq('id', targetId);
-      if (error) {
-        reportError(error, 'ClubHomePage.Notice_save_failed');
+      const { data, error } = await supabase.rpc('fn_set_club_lobby_message', {
+        p_club_id: targetId,
+        p_message: newDesc,
+      });
+      const result = (data || {}) as { ok?: boolean; lobby_message?: string | null };
+      if (error || !result.ok) {
+        reportError(
+          error || new Error('Club lobby message command was rejected'),
+          'ClubHomePage.Notice_save_failed'
+        );
         toast.error('Could Not Save The Welcome Message');
       } else {
+        setClub((prev) => (prev ? { ...prev, lobby_message: result.lobby_message ?? null } : prev));
+        setIsEditingNotice(false);
         toast.success('Welcome Message Updated');
       }
     })();

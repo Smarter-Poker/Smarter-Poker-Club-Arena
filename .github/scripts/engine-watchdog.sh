@@ -221,18 +221,28 @@ say "::warning title=ENGINE BEHIND::$REQ_SHORT has been on main for ${AGE_MIN}m 
 # has been dispatched" when the retry provably cannot do anything is worse than
 # an alarm that says nothing.
 DISPATCHED="no"
-NOW_HOUR=$(chicago_hour "$(date -u +%s)")
-NEXT_WINDOW_LOCAL=$(chicago_stamp "$(window_at_or_after "$(date -u +%s)")")
-if is_restart_hour "$NOW_HOUR"; then
+NOW_TS=$(date -u +%s)
+NEXT_WINDOW_EPOCH=$(window_at_or_after "$NOW_TS")
+NEXT_WINDOW_LOCAL=$(chicago_stamp "$NEXT_WINDOW_EPOCH")
+# Every hour is a restart window now, but the deploy's break gate only polls
+# for about 14 minutes before giving up with BREAK NEVER OPENED. A dispatch at
+# :10 therefore burns a runner for a quarter of an hour and provably ships
+# nothing - and an alarm claiming "a retry has been dispatched" when the retry
+# cannot work is worse than one that says nothing. Dispatch only when the next
+# :55 is close enough that the run will still be alive and waiting when the
+# break opens; otherwise say when the window comes and let the deploy's own
+# :40/:45/:50 crons take it.
+MINS_TO_WINDOW=$(( (NEXT_WINDOW_EPOCH - NOW_TS) / 60 ))
+if [ "$MINS_TO_WINDOW" -le 13 ]; then
   if gh workflow run "$DEPLOY_WORKFLOW" --repo "$REPO" --ref main >/dev/null 2>&1; then
     DISPATCHED="yes"
-    say "  dispatched $DEPLOY_WORKFLOW on main"
+    say "  dispatched $DEPLOY_WORKFLOW on main (${MINS_TO_WINDOW}m to the break)"
   else
     say "::error::could not dispatch $DEPLOY_WORKFLOW -- the engine is behind and this run could not even try to fix it."
   fi
 else
-  DISPATCHED="no - outside the restart window, where a dispatch ships nothing"
-  say "  not dispatching: $NOW_HOUR:00 Chicago is not a restart hour. Next window $NEXT_WINDOW_LOCAL."
+  DISPATCHED="no - the break at $NEXT_WINDOW_LOCAL is ${MINS_TO_WINDOW}m away, past the deploy's 14-minute wait budget"
+  say "  not dispatching: the break gate would give up before $NEXT_WINDOW_LOCAL. The deploy's own :40/:45/:50 crons cover that window."
 fi
 
 BODY=$(cat <<EOF

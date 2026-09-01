@@ -280,3 +280,83 @@ button.club-identity__line:focus-visible {
     transform: none;
   }
 }
+
+@media (max-width: 900px) {
+  .club-identity__details {
+    left: 42.5%;
+    right: 8.5%;
+  }
+
+  .club-identity__details h2 {
+    font-size: clamp(0.78rem, 6.5cqw, 1.35rem);
+  }
+
+  .club-identity__alias {
+    font-size: clamp(0.62rem, 4.1cqw, 1rem);
+  }
+
+  .club-identity__line {
+    padding-left: 6.5cqw;
+    font-size: clamp(0.58rem, 3.8cqw, 0.92rem);
+  }
+
+  .club-identity__level {
+    font-size: clamp(0.56rem, 3.5cqw, 0.88rem);
+  }
+}
+
+/* Compact identity bay inside the unified mobile lobby chassis. */
+@media (max-width: 900px) {
+  .lobby-top__identity .club-identity__details {
+    top: 17.5%;
+    right: 8%;
+    bottom: 27%;
+    left: 42.5%;
+  }
+
+  .lobby-top__identity .club-identity__details h2 {
+    font-size: clamp(10px, 3.4cqw, 15px);
+    line-height: 1;
+  }
+
+  .lobby-top__identity .club-identity__alias {
+    font-size: clamp(7px, 2.6cqw, 11px);
+  }
+
+  .lobby-top__identity .club-identity__line {
+    padding-left: 5cqw;
+    font-size: clamp(6px, 2.25cqw, 9px);
+  }
+
+  .lobby-top__identity .club-identity__level {
+    font-size: clamp(5px, 1.8cqw, 8px);
+  }
+
+  .lobby-top__identity .club-identity__footer {
+    right: 8%;
+    left: 43.5%;
+    top: 67%;
+  }
+
+  .lobby-top__identity .club-identity__playing {
+    bottom: 8%;
+    gap: 0.3em;
+    font-size: clamp(6px, 2.25cqw, 9px);
+  }
+
+  .lobby-top__identity .club-identity__playing strong {
+    font-size: 1.25em;
+  }
+
+  .lobby-top__identity .club-identity__share {
+    top: 0;
+    width: 26px;
+    height: 26px;
+    margin-top: 0;
+  }
+
+  .lobby-top__identity .club-identity__share svg {
+    width: 13px;
+    height: 13px;
+  }
+}

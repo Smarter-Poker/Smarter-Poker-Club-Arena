@@ -61,6 +61,7 @@ import { waitlistService } from '../services/WaitlistService';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { retryFetch } from '../utils/retryFetch';
 import './ClubHomePage.css';
+import '../components/lobby/ClubLobbyCommandTop.css';
 import { isFixedLimitVariant } from '../lib/bettingStructure';
 
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -127,6 +128,7 @@ const SHARK_CLUB_FALLBACK_LOGO = `${MEDIA_BASE}images/shark-club-logo.jpg`;
 // the live lobby DOM visible without its premium chassis or campaign artwork.
 const CLUB_LOBBY_ASSET_ROOT = `${import.meta.env.BASE_URL}assets/club-buttons/lobby`;
 const CLUB_LOBBY_CAMPAIGN = `${CLUB_LOBBY_ASSET_ROOT}/shark-club-championship-ad-v2.png`;
+const CLUB_LOBBY_CAMPAIGN_MOBILE = `${CLUB_LOBBY_ASSET_ROOT}/shark-club-championship-ad-mobile-v4.png`;
 
 /**
  * The order the Omaha tab groups its variants in (Dan 2026-08-25). Four cards
@@ -4067,7 +4069,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     launchTasks.some((task) => !task.complete && !task.skipped);
 
   return (
-    <div className="club-home">
+    <div className="club-home club-home--unified-mobile">
       <GlobalUXIndicators wsConnected={wsConnected} />
       {/* Dan 2026-08-19: the resume bar moved into the persistent multi-table
           layer (PersistentTableLayer in App.tsx), which now shows it on EVERY
@@ -4155,7 +4157,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             pokerAlias={currentUser?.display_name || currentUser?.username || 'Player'}
             clubId={club.club_id}
             playerId={currentUser?.player_number}
-            level={clubLevel?.level}
+            level={clubLevel?.level ?? 1}
             playersPlaying={playersPlaying}
             onCopyClubId={() => {
               navigator.clipboard.writeText(club.club_id.toString());
@@ -4715,14 +4717,19 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 navigate(`/clubs/${clubId}/announcements`);
               }}
             >
-              <img
-                src={club.banner_url || CLUB_LOBBY_CAMPAIGN}
-                alt={
-                  club.banner_url
-                    ? `${club.name} Promotion`
-                    : 'Shark Club Championship Series, 250,000 Guaranteed Main Event'
-                }
-              />
+              <picture className="club-lobby-command-top__campaign-picture">
+                {!club.banner_url && (
+                  <source media="(max-width: 900px)" srcSet={CLUB_LOBBY_CAMPAIGN_MOBILE} />
+                )}
+                <img
+                  src={club.banner_url || CLUB_LOBBY_CAMPAIGN}
+                  alt={
+                    club.banner_url
+                      ? `${club.name} Promotion`
+                      : 'Shark Club Championship Series, 250,000 Guaranteed Main Event'
+                  }
+                />
+              </picture>
             </button>
           }
         />

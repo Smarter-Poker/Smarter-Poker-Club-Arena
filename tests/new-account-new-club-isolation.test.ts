@@ -38,11 +38,26 @@ describe('New account and new club isolation', () => {
     expect(membershipMigration).toContain('trg_club_members_require_explicit_join');
   });
 
-  it('keeps automated house liquidity out of user-owned club boards', () => {
+  it('keeps foreign liquidity out of user-owned club boards via the club-scoped pick', () => {
+    /**
+     * The old mechanism was REFUSAL: topUpWithHorses returned 0 for any
+     * non-house tournament. Once activated clubs got their own seat-first
+     * boards (2026-09-01) that stranded every one of them at seats-1 —
+     * a Deep Stack heads-up opened with its one horse, the human window
+     * closed, and the forbidden top-up left 1/2-paid duels REGISTERING
+     * forever. The isolation now lives in the PICK: candidates are
+     * restricted to the tournament's own club members
+     * (clubMemberIdsForTournament inside pickFreeHorses and
+     * registerHorses), so house horses still never reach a user club's
+     * table — a club with no member horses gets nobody, exactly as
+     * isolated as before.
+     */
+    expect(recurring).toContain('MEMBERSHIP IS THE BOUNDARY, NOT THE HOUSE');
+    expect(recurring).toContain('this.pickFreeHorses(poolWanted, false, tournamentId)');
+    expect(recurring).toContain('clubMemberIdsForTournament');
+    // The held-empty rule still applies only to house boards at creation.
     expect(recurring).toContain(
       'const isHouseBoard = tournament.club_id === this.houseOwner.clubId'
     );
-    expect(recurring).toContain('!== this.houseOwner.clubId');
-    expect(recurring).toContain('return 0;');
   });
 });

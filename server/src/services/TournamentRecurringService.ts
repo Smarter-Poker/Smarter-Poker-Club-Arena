@@ -3940,17 +3940,31 @@ export class TournamentRecurringService {
         Number((tRow as { max_players?: number } | null)?.max_players ?? 0)
       );
 
-      // Membership is explicit. Automated liquidity is permitted on the
-      // platform house board only; a user-owned club fills its tournaments
-      // with users who joined that club through Join A Club.
-      if (String((tRow as { club_id?: string | null }).club_id ?? '') !== this.houseOwner.clubId) {
-        if (seatFirst) {
-          await supabase.rpc('fn_sync_seat_first_player_count', {
-            p_tournament_id: tournamentId,
-          });
-        }
-        return 0;
-      }
+      /**
+       * MEMBERSHIP IS THE BOUNDARY, NOT THE HOUSE (2026-09-01).
+       *
+       * This used to refuse every non-house tournament outright ("automated
+       * liquidity is permitted on the platform house board only", #2400).
+       * The isolation INTENT was right — never fill a club's game with
+       * horses that are not members of that club — but the mechanism was
+       * wrong, and once activated clubs got their own seat-first boards it
+       * stranded every one of them: a Deep Stack heads-up opened with its
+       * one horse, the human window closed, and the top-up was forbidden
+       * from seating the second seat. 1/2-paid duels and 2/3-paid spins sat
+       * REGISTERING forever, raising "SEAT-FIRST BOARD CANNOT FILL" every
+       * minute while looking alive in the lobby and covering their price
+       * points on the board.
+       *
+       * The isolation the old comment wanted is enforced by the PICK, not
+       * by refusal: pickFreeHorses(count, lanes, tournamentId) restricts
+       * candidates to the tournament's own club scope
+       * (clubMemberIdsForTournament), and the DB entry gate refuses
+       * non-members as the backstop. A club with no member horses gets
+       * nobody — exactly as isolated as before. A club whose horses ARE
+       * members (they pay the same buy-in from the same club wallet —
+       * section 10.5, horses are players) gets its games filled by its own
+       * players, the same way the house board always has.
+       */
 
       /**
        * MEASURE THE SHORTFALL IN THE UNIT THE START GATE READS.

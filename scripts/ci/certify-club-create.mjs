@@ -89,19 +89,25 @@ try {
     .eq('club_id', club.id)
     .eq('user_id', userId)
     .single();
-  if (membershipError || membership?.role !== 'owner' || membership?.status !== 'active') {
+  if (
+    membershipError ||
+    membership?.role !== 'owner' ||
+    membership?.status !== 'active' ||
+    Number(membership?.chip_balance) !== 0
+  ) {
     throw membershipError || new Error('Owner Membership Was Not Created Correctly.');
   }
 
   const { data: storedClub, error: storedClubError } = await admin
     .from('clubs')
-    .select('logo_url,avatar_url')
+    .select('logo_url,avatar_url,chip_treasury')
     .eq('id', club.id)
     .single();
   if (
     storedClubError ||
     storedClub?.logo_url !== publicLogo.publicUrl ||
-    storedClub?.avatar_url !== publicLogo.publicUrl
+    storedClub?.avatar_url !== publicLogo.publicUrl ||
+    Number(storedClub?.chip_treasury) !== 100000
   ) {
     throw storedClubError || new Error('The Selected Logo Was Not Stored On Both Identity Fields.');
   }

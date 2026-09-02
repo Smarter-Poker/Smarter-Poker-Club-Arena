@@ -34,7 +34,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { sliceStatement } from '../../../tests/helpers/sourceWindow.js';
+import { sliceBlockAfter } from '../testHelpers/sourceWindow.js';
 
 const SRC = readFileSync(join(__dirname, 'HorseFleetManager.ts'), 'utf8');
 
@@ -75,11 +75,9 @@ describe('the horse seeder sees every open table', () => {
     const body = seedAllTablesBody();
     expect(body).toMatch(/if\s*\(!tablePage\.complete\)/);
     // A partial list must abandon the cycle, never seed from what arrived.
-    /* The if-block itself, bounded by its matching brace. `slice(0, 600)`
-       here was a magic window: adding a comment inside the guard would push
-       the `return;` past 600 bytes and turn this red without the code
-       changing - or, worse, keep it green while watching nothing. */
-    expect(sliceStatement(body, 'if (!tablePage.complete)')).toContain('return;');
+    // Bounded by the if-block, never by a byte count: a fixed window went red
+    // for the whole estate on 2026-08-28 when comments moved the code past it.
+    expect(sliceBlockAfter(body, 'if (!tablePage.complete)')).toContain('return;');
   });
 
   it('never reintroduces an unpaged read of the open-table list', () => {

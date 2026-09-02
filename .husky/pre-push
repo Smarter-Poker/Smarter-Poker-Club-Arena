@@ -450,7 +450,7 @@ fi
 #     that the same commit's feature had just replaced.
 #
 # Each one blocked EVERY agent and every deploy until a human noticed, because
-# `npx vitest run tests/` in build-for-world-hub.yml is what publishes the
+# `npx vitest run tests/` in publish-club-arena.yml is what publishes the
 # bundle. This hook already enforces nine house rules about the CONTENT of a
 # push and never once ran the tests.
 #

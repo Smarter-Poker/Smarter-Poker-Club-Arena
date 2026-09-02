@@ -109,7 +109,7 @@ ${DETAIL}
 
 **Why nothing else told you.** \`publish-watchdog\`, \`estate-integrity\` and \`report-stuck-prs\` are all GitHub Actions workflows. When Actions dies they die with it, and the alarm system goes silent exactly when it matters. This check runs on the Mac from launchd for that reason — the REST API works fine during an Actions outage, only the runners are gone.
 
-**What is affected.** Everything. No PR can merge (required checks never report), and \`build-for-world-hub.yml\` is what publishes the Club Arena bundle — so nothing reaches smarter.poker by any route until this clears. Production keeps serving whatever last shipped.
+**What is affected.** Everything. No PR can merge (required checks never report), and \`publish-club-arena.yml\` is what publishes the Club Arena bundle — so nothing reaches smarter.poker by any route until this clears. Production keeps serving whatever last shipped.
 
 **Where to look, in order**
 

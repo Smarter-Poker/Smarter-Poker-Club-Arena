@@ -80,8 +80,10 @@ export interface PreflopCtx {
   mode?: 'cash' | 'tournament';
   /** V11: an ante is in play — opens/steals widen (dead money in every pot). */
   anteInPlay?: boolean;
-  /** V12: table format. Spins are 3-max winner-take-all hypers — every range
-   *  widens hard (chip EV only, shallow, high blind pressure). */
+  /** V12: table format. Spins are 3-max hypers — every range widens hard
+   *  (shallow, high blind pressure). NOT "winner-take-all": below 10x the
+   *  tier pays one place, but 10x pays 80/20 and 25x and up pay 80/12/8, and
+   *  that ladder is priced by `riskAdd` (HorseLogic.icmRisk), never here. */
   format?: 'cash' | 'mtt' | 'spin' | 'hu_sng';
   /** V12 ANTI-EXPLOIT: 0..1 — how hard the current raiser is TARGETING this
    *  horse specifically (HorseMind.targetingOf). A hunter's raises get less
@@ -334,8 +336,11 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   // Antes (tournaments, and any ante cash game) put dead money in every pot:
   // every open, steal, and jam range widens. Solver ante adjustments run
   // ~4-6 percentile points of extra width.
-  // V12: spins stack a second widen on top — 3-max winner-take-all hypers
-  // play far wider than full-ring MTT ranges at every stack depth.
+  // V12: spins stack a second widen on top — 3-max hypers play far wider
+  // than full-ring MTT ranges at every stack depth. The widen is a function
+  // of the STRUCTURE (three seats, shallow, 3-minute levels), which every
+  // tier shares; the payout ladder above 10x arrives instead through
+  // `ctx.riskAdd`, which tightens `t()` and shrinks `bluffBudget` above.
   const anteWiden = (ctx.anteInPlay ? 0.05 : 0) + (ctx.format === 'spin' ? 0.05 : 0);
   // True heads-up: exactly one live opponent and hero is in a blind. HU is a
   // different game — the SB/BTN opens ~75-85% and the BB defends the wide

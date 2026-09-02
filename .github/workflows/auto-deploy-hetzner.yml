@@ -391,22 +391,39 @@ jobs:
             echo "force=true — skipping the break gate"; exit 0
           fi
 
-          # Poll for up to 14 minutes. We are dispatched at :40/:45/:50 and the
-          # flag opens at :55, so the wait is normally 5-15 minutes of sleeping
-          # and the budget has to cover the earliest tick.
+          # Poll THROUGH the next break, however far away it is. The old
+          # budget was a flat 14 minutes on the theory that a :40/:45/:50
+          # dispatch reaches here just before :55 — but GitHub cron routinely
+          # fires late or collapses ticks, and the pre-deploy tests eat 15+
+          # minutes. Measured 2026-09-01: run 903 was the hour's ONLY tick
+          # (22:48), reached this step at :04 — nine minutes AFTER the break
+          # it was aiming for had ended — polled 14 minutes of dead air
+          # (phase=idle the whole way) and gave up 37 minutes before the next
+          # break. Six consecutive runs shipped nothing while merged fixes
+          # sat unshipped for six hours. The budget is now wall-clock aware:
+          # wait until the END of the next :55-:00 break window plus three
+          # minutes of parker slack, whatever minute this step starts at.
+          # Worst case ~63 minutes of runner sleep — cheap next to a six-hour
+          # publish freeze that nothing alarms on.
+          MIN=$(date -u +%-M); SEC=$(date -u +%-S)
+          if [ "$MIN" -lt 55 ]; then TO_BREAK=$(( (55 - MIN) * 60 - SEC )); else TO_BREAK=$(( (115 - MIN) * 60 - SEC )); fi
+          DEADLINE=$(( $(date +%s) + TO_BREAK + 300 + 180 ))
+          echo "next break opens in ~$(( TO_BREAK / 60 )) minute(s); polling until its window closes"
           READY=no
           LEGACY=no
-          for i in $(seq 1 56); do
+          i=0
+          while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+            i=$(( i + 1 ))
             BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
             # Three outcomes, deliberately distinguished: ready / not ready /
             # this engine predates the feature. Collapsing the third into the
             # second would deadlock the very deploy that ships the feature.
             STATE=$(echo "$BODY" | python3 -c 'import json,sys; d=json.load(sys.stdin); m=d.get("maintenance"); print("LEGACY" if m is None else ("READY" if m.get("readyForRestart") else "phase=%s remaining=%ss unparked=%s" % (m.get("phase"), int((m.get("remainingMs") or 0)/1000), m.get("unparkedTables"))))' 2>/dev/null || echo ERR)
             case "$STATE" in
-              READY)  READY=yes; echo "attempt $i/56: break is running and every table is parked — restarting now"; break ;;
-              LEGACY) LEGACY=yes; echo "attempt $i/56: /health has no maintenance block"; break ;;
-              ERR)    echo "attempt $i/56: /health unreadable — retrying" ;;
-              *)      echo "attempt $i/56: waiting for the break — $STATE" ;;
+              READY)  READY=yes; echo "attempt $i: break is running and every table is parked — restarting now"; break ;;
+              LEGACY) LEGACY=yes; echo "attempt $i: /health has no maintenance block"; break ;;
+              ERR)    echo "attempt $i: /health unreadable — retrying" ;;
+              *)      echo "attempt $i: waiting for the break — $STATE" ;;
             esac
             sleep 15
           done
@@ -433,7 +450,7 @@ jobs:
           # break genuinely stops firing that is an engine bug and it should be
           # loud, not routed around.
           echo "skip=true" >> $GITHUB_OUTPUT
-          echo "::warning title=BREAK NEVER OPENED::The engine never reported maintenance.readyForRestart within 14 minutes, so nothing was deployed. Either the break did not fire (check the engine log for '[MaintenanceBreak]') or a table never parked. The next window retries; dispatch with force=true to restart outside the break."
+          echo "::warning title=BREAK NEVER OPENED::The engine never reported maintenance.readyForRestart even though this run polled through a full :55-:00 break window, so nothing was deployed. The break did not fire, or a table never parked (check the engine log for '[MaintenanceBreak]' and its unparked-table list). The next window retries; dispatch with force=true to restart outside the break."
           exit 0
 
       - name: Pull the exact commit onto the host

@@ -26,8 +26,15 @@ class FakeEngine {
   holdBeforeNextHand = false;
   atGate = false;
   running = true;
+  /** Cards in the air. Defaults true so every existing case still exercises
+   *  the gate path; the idle-engine cases set it false explicitly. */
+  handInFlight = true;
   budgets: number[] = [];
   resumeCount = 0;
+
+  isBetweenHands(): boolean {
+    return !this.handInFlight;
+  }
 
   pauseAfterHand(maxWaitMs?: number, opts?: { beforeNextHand?: boolean }): void {
     this.paused = true;

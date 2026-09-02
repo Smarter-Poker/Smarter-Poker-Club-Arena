@@ -104,6 +104,8 @@ export interface PausableTableEngine {
   isWaitingForHandForHand(): boolean;
   isPausedByDesign(): boolean;
   isRunning(): boolean;
+  /** No cards in the air right now — see unparkedTables for why this counts as parked. */
+  isBetweenHands(): boolean;
 }
 
 export type MaintenanceBreakPhase = 'last_hand' | 'counting_down';
@@ -564,7 +566,28 @@ export class MaintenanceBreak {
     for (const [tableId, engine] of this.deps.engines()) {
       try {
         if (!engine.isRunning()) continue;
-        if (!engine.isWaitingForHandForHand()) out.push(tableId);
+        if (engine.isWaitingForHandForHand()) continue;
+        /**
+         * NO CARDS IN THE AIR IS PARKED (2026-09-01). An engine idling with
+         * no hand in flight — an empty catalog table a viewer woke, a table
+         * one horse short of dealing — never reaches `awaitPauseGate`
+         * because its deal loop is asleep in a wait branch, so
+         * `isWaitingForHandForHand()` stays false forever. On Deep Stack
+         * Society's 1,058-table catalog that left 124 idle engines counted
+         * as "not parked" at every single break, the restart gate never
+         * opened, and six consecutive deploy runs shipped nothing while the
+         * fixes for the club sat merged on main. The gate exists to protect
+         * A HAND (Dan's drain ruling: protect the hand, not the player); an
+         * engine whose handController is null has no hand to protect —
+         * restarting it destroys nothing, the same argument the stopped
+         * -engine exemption above already makes. A table mid-hand still
+         * parks through the gate: this test is only reached when
+         * `isWaitingForHandForHand()` is false, and with the break's pause
+         * flag raised the deal loop cannot start a NEW hand, so
+         * `isBetweenHands()` cannot flicker a dealing table past the gate.
+         */
+        if (engine.isBetweenHands()) continue;
+        out.push(tableId);
       } catch {
         // Unreadable engines are not counted against the gate; an engine that
         // throws on inspection is already being handled by the reapers.

@@ -895,15 +895,80 @@ export class HorseFleetManager {
         );
       }
 
+      // Precomputed per-table occupancy, used by the ordering below and the
+      // concentration budget. One pass over the seat list instead of a
+      // filter per comparison inside a sort.
+      const tableSeatInfo = new Map<string, { seats: number; human: boolean }>();
+      for (const s of allActiveSeats) {
+        const info = tableSeatInfo.get(s.table_id) ?? { seats: 0, human: false };
+        info.seats++;
+        if (!horseIdSet.has(s.user_id)) info.human = true;
+        tableSeatInfo.set(s.table_id, info);
+      }
+
       // V8: tables with a short-handed HUMAN seed first (never leave a human
-      // stranded); everything else keeps its natural order.
+      // stranded).
       const humanShort = (t: any): boolean => {
-        const seats = allActiveSeats.filter((x) => x.table_id === t.id);
-        return seats.some((x) => !horseIdSet.has(x.user_id)) && seats.length < 4;
+        const info = tableSeatInfo.get(t.id);
+        return !!info && info.human && info.seats < 4;
       };
-      const orderedTables = [...tables].sort(
-        (a, b) => Number(humanShort(b)) - Number(humanShort(a))
-      );
+
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  CONCENTRATION (Dan 2026-09-01: Deep Stack's lobby showed every
+       *  RUNNING game at 1/6 while Midway's showed 6/8, 5/9, 4/8)
+       * ═══════════════════════════════════════════════════════════════════
+       * The union floor concentrates by construction: ~27 tables, hundreds
+       * of horses, so every seeded table becomes a real field. A standalone
+       * club ships a CATALOG — Deep Stack lists 1,058 cash tables for 416
+       * member horses — and seeding them in natural order sprayed one horse
+       * onto each of a hundred tables: every game "running", none of them a
+       * game. Real rooms do the opposite: fill a table into a field, then
+       * open the next; most of the catalog stays OPEN and empty.
+       *
+       * Two rules deliver that:
+       *   1. ORDER: after human rescues, PARTIALLY-FILLED tables seed first
+       *      (most-seated first), so existing games grow into real fields
+       *      before any new table opens.
+       *   2. BUDGET: a club only OPENS a new (empty, humanless) table while
+       *      its horse-occupied cash-table count is under its budget —
+       *      roughly one live table per three active cash-lane member
+       *      horses, clamped to [4, 60]. A table with a human is always
+       *      served regardless of budget: a human never waits on a quota.
+       *      With no bankroll map this cycle there is no membership truth
+       *      to budget with, so the gate stands down (fail open).
+       */
+      const orderedTables = [...tables].sort((a, b) => {
+        const rescue = Number(humanShort(b)) - Number(humanShort(a));
+        if (rescue !== 0) return rescue;
+        return (tableSeatInfo.get(b.id)?.seats ?? 0) - (tableSeatInfo.get(a.id)?.seats ?? 0);
+      });
+
+      const clubAliveTables = new Map<string, number>();
+      const clubOpenBudget = new Map<string, number>();
+      if (bankrollsLoaded) {
+        for (const t of tables) {
+          const cid = (t as any).club_id as string | undefined;
+          if (!cid) continue;
+          if ((tableSeatInfo.get(t.id)?.seats ?? 0) > 0) {
+            clubAliveTables.set(cid, (clubAliveTables.get(cid) ?? 0) + 1);
+          }
+        }
+        const clubActiveCashMembers = new Map<string, number>();
+        for (const key of bankrolls.keys()) {
+          const sep = key.indexOf(':');
+          if (sep <= 0) continue;
+          const cid = key.slice(0, sep);
+          const hid = key.slice(sep + 1);
+          if (!horseIdSet.has(hid)) continue;
+          if (gameLaneFor(hid) === 'events') continue;
+          if (!isActiveNow(hid, hourUTC)) continue;
+          clubActiveCashMembers.set(cid, (clubActiveCashMembers.get(cid) ?? 0) + 1);
+        }
+        for (const [cid, n] of clubActiveCashMembers) {
+          clubOpenBudget.set(cid, Math.min(60, Math.max(4, Math.ceil(n / 3))));
+        }
+      }
 
       /* ── A HORSE ANSWERS A SEAT CALL ────────────────────────────────────
          Dan 2026-08-31, binding: "MAKE HORSES ANSWER A SEAT CALL... THEY
@@ -943,6 +1008,25 @@ export class HorseFleetManager {
           const tableOccupiedSeats = allActiveSeats.filter((s) => s.table_id === table.id);
           const occupiedNumbers = new Set(tableOccupiedSeats.map((s) => s.seat_number));
           const currentCount = occupiedNumbers.size;
+
+          // CONCENTRATION BUDGET (see the block above orderedTables): an
+          // EMPTY, humanless table only opens while the club is under its
+          // live-table budget. Partially-filled tables and any table with a
+          // human are always served. Ordering already put the fill-first
+          // tables ahead, so by the time an empty table is reached the
+          // budget reflects every game this cycle chose to keep alive.
+          const tClubId = (table as any).club_id as string | undefined;
+          if (
+            currentCount === 0 &&
+            bankrollsLoaded &&
+            tClubId &&
+            clubOpenBudget.has(tClubId) &&
+            !tableSeatInfo.get(table.id)?.human
+          ) {
+            const alive = clubAliveTables.get(tClubId) ?? 0;
+            if (alive >= (clubOpenBudget.get(tClubId) ?? Infinity)) continue;
+            clubAliveTables.set(tClubId, alive + 1);
+          }
 
           // ── V14 OCCUPANCY (Dan 2026-08-23) ────────────────────────────────
           // Every table used to carry ONE fixed target from DEFAULT_TABLES, so
@@ -1047,9 +1131,27 @@ export class HorseFleetManager {
                */
               const roll = bankrolls.get(`${table.club_id}:${h.id}`);
               if (roll === undefined) {
+                /**
+                 * A MISSING KEY IS A MISSING MEMBERSHIP (2026-09-01). The
+                 * bankroll map is loaded all-or-nothing (bankrollsLoaded is
+                 * false on any incomplete page, and this branch is inside
+                 * that guard), and it is keyed `${club_id}:${user_id}` over
+                 * every club with an open table — so inside a complete map,
+                 * an absent key means this horse has NO club_members row in
+                 * THIS table's club. The old `return true` fail-open sent
+                 * non-members to atomic_table_buyin, which refused every one
+                 * with "Insufficient balance" that seatHorse swallowed —
+                 * cross-club picks silently wasting most of a standalone
+                 * club's seeding cycle. (The 2026-08-31 outage this branch
+                 * used to guard against was WRONG KEYS — two hard-coded club
+                 * ids owning zero tables — not strict membership; the loader
+                 * derives club ids from the live table set now.) A horse
+                 * plays only in its own club — section 10.5's containment,
+                 * applied to the pick instead of the buy-in failure.
+                 */
                 rollUnknown++;
                 bankrollEvent('seat_fail_open_roll_unknown');
-                return true;
+                return false;
               }
               const ref = referenceBuyIn(
                 table.big_blind,
@@ -1560,7 +1662,8 @@ export class HorseFleetManager {
     // then clamp to the table's real limits.
     const step = table.big_blind * 5;
     const raw = table.big_blind * buyInBBFor(horseId);
-    let buyIn = Math.round(Math.max(minB, Math.min(maxB, Math.round(raw / step) * step)) * 100) / 100;
+    let buyIn =
+      Math.round(Math.max(minB, Math.min(maxB, Math.round(raw / step) * step)) * 100) / 100;
 
     /* NEVER BRING TOO MUCH OF THE ROLL TO ONE TABLE. The table's max buy-in is
        what the GAME allows, not what this bankroll should put at risk in a

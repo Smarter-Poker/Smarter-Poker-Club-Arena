@@ -14,7 +14,8 @@ This file is the changelog pointer required by CLAUDE.md 10.9.
 - #2622 `scripts/ci/provision-ci-box.sh` codifies the box (swap, GC, caps,
   sweeper, browser libs, tools).
 - #2633 psql on the box + routed-workflow tool audit + vitest default 4 workers.
-- #2636 (open at closeout) provisioner cannot wipe the crontab.
+- #2636 provisioner cannot wipe the crontab.
+- #2640 this handoff.
 
 ## Box
 

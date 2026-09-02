@@ -5,6 +5,8 @@
     "atomic_distribute_rake",
     "fn_backpay_unfinalised_bounty_pools",
     "fn_ca_completed_without_a_champion",
+    "fn_ca_fund_overlay_on_lock",
+    "fn_ca_overlay_shortfall",
     "fn_ca_prize_overpay_count",
     "fn_ca_prize_overpay_unexplained",
     "fn_ca_rake_distribution_mismatch",

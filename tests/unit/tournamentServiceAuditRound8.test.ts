@@ -101,9 +101,10 @@ describe('round 8: the start path cannot cancel a tournament off a failed read',
     expect(gate).toContain('Could not load the player list. Please try again.');
   });
 
-  it('the auto-cancel branch still exists below the guard (the guard did not eat it)', () => {
+  it('a short field waits without cancelling registered players', () => {
     expect(start).toContain('players.length < 3');
-    expect(start).toContain('await this.cancelTournament(');
+    expect(start).not.toContain('await this.cancelTournament(');
+    expect(start).toContain('Tournament Needs At Least 3 Players To Start');
   });
 });
 
@@ -186,11 +187,13 @@ describe('round 8: silent under-reports and confident zeros now leave a trace', 
     expect(sliceMethod(SRC, 'async checkTableMerge(')).toContain('merge_check_read_failed');
   });
 
-  it('the SNG autostart nudge and the cancel roster read report their failures', () => {
+  it('the SNG autostart nudge reports a failed freshness read', () => {
     expect(sliceMethod(SRC, 'async registerPlayer(')).toContain(
       'SNG_autostart_freshness_read_failed'
     );
-    expect(sliceMethod(SRC, 'async cancelTournament(')).toContain('cancel_roster_read_failed');
+    expect(sliceMethod(SRC, 'async cancelTournament(')).toContain(
+      "gameManagementService.close('tournament', tournamentId)"
+    );
   });
 
   it('the waitlist position display reports a failed read behind its null', () => {

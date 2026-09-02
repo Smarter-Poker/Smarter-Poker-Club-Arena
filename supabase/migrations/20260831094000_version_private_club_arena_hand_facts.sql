@@ -1,0 +1,13 @@
+-- UNRECOVERABLE STUB (2026-09-01 migration backfill).
+--
+-- This migration WAS applied to production at 20260831094000, but its SQL was not
+-- committed and supabase_migrations.schema_migrations.statements is EMPTY for
+-- it - the Supabase migration runner recorded the version with no statement
+-- text, so the exact SQL cannot be recovered from anywhere. Its EFFECT is live
+-- in the schema; this file exists only so the applied-migrations gate reflects
+-- reality (version recorded) rather than flagging a phantom gap forever.
+--
+-- If you need to know what it did, read the schema objects it touched (the
+-- name is the clue: "version_private_club_arena_hand_facts") against a nearby dated backup, or the PR that
+-- carried it. Do NOT invent SQL here and do NOT re-run anything.
+SELECT 'applied 20260831094000: version_private_club_arena_hand_facts (statements not preserved)' AS unrecoverable_backfill_note;

@@ -1,4 +1,9 @@
 import type { ArenaGameCardActions, ArenaGameCardData } from './arenaGameCardTypes';
+/* The empty-bay answer is shared, not local. This is the card in Dan's own
+   2026-09-02 screenshot - the layered NLH card a phone actually gets - and it
+   was printing a dash in bays where every LiveValue bay had already been
+   changed to print 0. See arenaGameCardTypes.ts. */
+import { zoneText } from './arenaGameCardTypes';
 import { ArenaPremiumTitle, ArenaPremiumValueText } from './ArenaPremiumText';
 import { NLH_PREMIUM_ASSETS, NLH_PREMIUM_ZONES, premiumZoneStyle } from './nlhPremiumTemplate';
 import './NlhPremiumCard.css';
@@ -74,7 +79,7 @@ export function NlhPremiumCard({ data, actions }: NlhPremiumCardProps) {
         data-zone="stakes"
         style={premiumZoneStyle(NLH_PREMIUM_ZONES.stakes)}
       >
-        <ArenaPremiumValueText>{data.stakes || '-'}</ArenaPremiumValueText>
+        <ArenaPremiumValueText>{zoneText('stakes', data.stakes)}</ArenaPremiumValueText>
       </div>
 
       <div
@@ -82,7 +87,7 @@ export function NlhPremiumCard({ data, actions }: NlhPremiumCardProps) {
         data-zone="players"
         style={premiumZoneStyle(NLH_PREMIUM_ZONES.players)}
       >
-        <ArenaPremiumValueText>{data.players || '-'}</ArenaPremiumValueText>
+        <ArenaPremiumValueText>{zoneText('players', data.players)}</ArenaPremiumValueText>
       </div>
 
       <div
@@ -90,7 +95,7 @@ export function NlhPremiumCard({ data, actions }: NlhPremiumCardProps) {
         data-zone="buyIn"
         style={premiumZoneStyle(NLH_PREMIUM_ZONES.buyIn)}
       >
-        <ArenaPremiumValueText>{data.buyIn || '-'}</ArenaPremiumValueText>
+        <ArenaPremiumValueText>{zoneText('buyIn', data.buyIn)}</ArenaPremiumValueText>
       </div>
 
       {actions.secondaryLabel && (

@@ -41,7 +41,7 @@
 
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
-import { isActiveNow, wantsTableChange } from './HorseBehavior.js';
+import { cashTableFill, isActiveNow, wantsTableChange } from './HorseBehavior.js';
 import {
   bankrollPolicyFor,
   referenceBuyIn,
@@ -150,7 +150,7 @@ export class HorseSessionRotator {
       const { data: chunk, error } = await supabase
         .from('table_seats')
         .select(
-          'table_id, user_id, seat_number, stack, joined_at, club_id, tables!inner(id, big_blind, tournament_id, status, max_players)'
+          'table_id, user_id, seat_number, stack, joined_at, club_id, tables!inner(id, big_blind, tournament_id, status)'
         )
         .is('left_at', null)
         .order('table_id', { ascending: true })
@@ -241,38 +241,8 @@ export class HorseSessionRotator {
       byTable.set(s.table_id, arr);
     }
 
-    /**
-     * THE YIELD (Dan 2026-09-02, cash occupancy law): "HORSES CAN FILL ALL
-     * SEATS, AND ONLY 'GET UP' WHEN A REAL HUMAN IS ON THE WAITING LIST."
-     * One batched read of the waiting lists for the tables this pass holds;
-     * whether a waiting entrant is a real human is settled by the same
-     * profiles read that verifies seat identity below.
-     */
-    const waitingByTable = new Map<string, string[]>();
-    try {
-      const tableIds = [...byTable.keys()];
-      if (tableIds.length > 0) {
-        const { data: wl } = await supabase
-          .from('table_waitlist')
-          .select('table_id, user_id, status')
-          .in('table_id', tableIds)
-          .in('status', ['waiting', 'notified']);
-        for (const w of wl ?? []) {
-          const row = w as { table_id: string; user_id: string };
-          const arr = waitingByTable.get(row.table_id) ?? [];
-          arr.push(row.user_id);
-          waitingByTable.set(row.table_id, arr);
-        }
-      }
-    } catch (err) {
-      reportError(err, 'HorseSessionRotator.waitlist_context');
-    }
-
-    // Verify horse identity in one query — seat holders AND waitlist entrants,
-    // so "a real human is waiting" is judged from the same source of truth.
-    const userIds = [
-      ...new Set([...seats.map((s) => s.user_id), ...[...waitingByTable.values()].flat()]),
-    ];
+    // Verify horse identity in one query.
+    const userIds = [...new Set(seats.map((s) => s.user_id))];
     const { data: horses } = await supabase
       .from('profiles')
       .select('id')
@@ -280,6 +250,32 @@ export class HorseSessionRotator {
       .eq('is_horse', true);
     const horseIds = new Set((horses || []).map((h) => h.id));
     const hourUTC = new Date().getUTCHours();
+
+    /* WHO IS WAITING FOR A SEAT (Dan 2026-09-02). The one reason a horse
+       stands up off a full table. Counted per table, humans only - horses do
+       not queue any more, and a horse in the count would make a horse stand up
+       for a horse.
+
+       Fails CLOSED at an empty map: if the queue cannot be read, nobody is
+       released. A person then waits one more 90-second cycle. Failing the
+       other way would stand a horse up off every table on the floor because
+       one query timed out. */
+    const humansWaiting = new Map<string, number>();
+    try {
+      const { data: queued, error: qErr } = await supabase
+        .from('table_waitlist')
+        .select('table_id, user_id, status')
+        .in('status', ['waiting', 'notified']);
+      if (qErr) throw new Error(qErr.message);
+      for (const row of queued ?? []) {
+        const r = row as { table_id?: string; user_id?: string };
+        if (!r.table_id || !r.user_id || horseIds.has(r.user_id)) continue;
+        humansWaiting.set(r.table_id, (humansWaiting.get(r.table_id) ?? 0) + 1);
+      }
+    } catch (err) {
+      reportError(err, 'HorseSessionRotator.humansWaiting');
+      humansWaiting.clear();
+    }
 
     // V8: end any due short breaks FIRST — sitting a horse back in is never
     // rate-limited.
@@ -300,25 +296,27 @@ export class HorseSessionRotator {
       // V8: tables with a HUMAN present are protected harder — never thin a
       // human's game below 5, and horse-only tables absorb most rotation.
       const humanPresent = tableSeats.some((x) => !horseIds.has(x.user_id));
-      /**
-       * THE YIELD (Dan 2026-09-02, cash occupancy law, verbatim): "HORSES CAN
-       * FILL ALL SEATS, AND ONLY 'GET UP' WHEN A REAL HUMAN IS ON THE WAITING
-       * LIST." A FULL table with a real human waiting departs exactly one
-       * horse this cycle — certain, no hazard math — through the same
-       * hand-boundary-safe leave path as every other departure, and the
-       * vacated seat goes to the queue head via fn_offer_open_seat.
-       *
-       * This SUPERSEDES the 2026-08-26 held-empty drain that used to live
-       * here: under the occupancy law there is no held-empty class of cash
-       * table any more (75% packed / 25% sporadic — see occupancyTargetFor),
-       * so the drain's trigger is gone with it.
-       */
-      const tRow = (tableSeats[0] as any).tables;
-      const tableFull =
-        Number(tRow?.max_players) > 0 && tableSeats.length >= Number(tRow.max_players);
-      const humanWaiting = (waitingByTable.get(tableId) ?? []).some((u) => !horseIds.has(u));
-      const yieldToHuman = tableFull && humanWaiting;
-      if (!yieldToHuman && tableSeats.length < (humanPresent ? 5 : 4)) continue;
+
+      /* ── A HORSE GETS UP FOR A PERSON, AND FOR NOTHING ELSE ──────────────
+         Dan 2026-09-02: "HORSES CAN FILL ALL SEATS, AND ONLY 'GET UP' WHEN A
+         REAL HUMAN IS ON THE WAITING LIST FOR 75% OF ALL GAMES."
+
+         `releaseWanted` is how many seats this table owes to people standing
+         in its queue right now. When it is above zero the departure is
+         CERTAIN, one per cycle, exactly like the held-empty drain this
+         replaced - somebody is waiting, so somebody stands up, and the 4-seat
+         floor below does not apply because making room is the point.
+
+         On a FULL table with nobody waiting, the discretionary departures are
+         skipped entirely further down: no table-hopping, no session-end
+         hazard. That is the other half of Dan's sentence, and without it the
+         floor drains itself back out of the seats this fills. The bankroll
+         departures - book a win, stop a loss - are NOT skipped: those are
+         money decisions, and a horse that plays past its stop-loss is a bug in
+         a different law. */
+      const releaseWanted = humansWaiting.get(tableId) ?? 0;
+      const fill = cashTableFill(tableId);
+      if (releaseWanted === 0 && tableSeats.length < (humanPresent ? 5 : 4)) continue;
 
       const engine = this.getEngine(tableId);
       if (!engine) continue; // no live engine — not our business
@@ -327,8 +325,10 @@ export class HorseSessionRotator {
       let best: { seat: (typeof tableSeats)[number]; p: number } | null = null;
       for (const seat of tableSeats) {
         if (!horseIds.has(seat.user_id)) continue;
-        // Yield to a waiting human: certain departure, one per cycle.
-        if (yieldToHuman) {
+        // Somebody is waiting: certain departure, one per cycle, no hazard
+        // math. The seat this frees is offered to the head of the queue by
+        // fn_offer_open_seat, exactly as it would be for any other departure.
+        if (releaseWanted > 0) {
           best = { seat, p: Number.POSITIVE_INFINITY };
           break;
         }
@@ -417,7 +417,17 @@ export class HorseSessionRotator {
         // next cycle, which is exactly the "and going to others" half.
         // Short-handed games shed players fastest, which is how a dying
         // table actually dies.
+        /* A FULL TABLE DOES NOT SHED PLAYERS (Dan 2026-09-02). Both of the
+           discretionary departures below - fancying a change of game, and the
+           session simply ending - are skipped on the 75% of tables that are
+           meant to sit full when nobody is queued for a seat. They still run
+           on the sparse quarter, which is where the floor's visible churn now
+           lives, and they still run the moment somebody is waiting (that path
+           is certain and returns above). */
+        const holdsFull = fill === 'full' && releaseWanted === 0;
+
         if (
+          !holdsFull &&
           minutes >= MIN_SESSION_MINUTES / 2 &&
           wantsTableChange(seat.user_id, tableId, tableSeats.length, minutes)
         ) {
@@ -469,6 +479,13 @@ export class HorseSessionRotator {
         if (!isActiveNow(seat.user_id, hourUTC)) p *= 1.6;
         // V8: rotation prefers horse-only tables — humans keep a stable game.
         if (humanPresent) p *= 0.5;
+
+        /* The session-end half of the 2026-09-02 hold. Zeroing the hazard
+           rather than skipping the seat keeps the loop's shape - the seat is
+           still the break candidate below, so a full table can still send
+           somebody for a five-minute break; it just does not send them
+           home. */
+        if (holdsFull) p = 0;
 
         if (!best || p > best.p) best = { seat, p };
       }

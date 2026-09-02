@@ -50,61 +50,50 @@ export function isActiveNow(horseId: string, hourUTC: number): boolean {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// V14 TABLE OCCUPANCY (Dan 2026-08-23, binding)
+// THE FLOOR IS FULL (Dan 2026-09-02, binding) — REPLACES THE 15% HELD-EMPTY RULE
 // ═══════════════════════════════════════════════════════════════════════════════
-// "SOME TABLES SHOULD BE FULL WITH HORSES WAITING, SOME SHOULD HAVE 2-3 OPEN
-//  SEATS, HORSES SHOULD BE RANDOMLY LEAVING GAMES, AND GOING TO OTHERS. THIS
-//  IS A MUST TO MAKE IT SEEM MORE REAL."
 //
-// Every table used to carry ONE fixed target (`horsesPerTable`), so the lobby
-// looked identical hour after hour: the same games at the same counts, every
-// one of them a seat or two short of full, none of them ever with a queue.
-// A real floor is lopsided — one game is the game everybody wants and has a
-// list, another is three-handed and looking for players.
+// Dan, verbatim: "HORSES CAN FILL ALL SEATS, AND ONLY 'GET UP' WHEN A REAL HUMAN
+// IS ON THE WAITING LIST FOR 75% OF ALL GAMES. THE OTHER 25% OF GAMES SHOULD
+// HAVE ANYWHERE FROM ONE, TO A FULL GAME. IT SHOULD BE SPARATIC, BUT HORSES NEED
+// TO BE OCCUPYING AT LEAST 75% OF ALL SEATS IN THE CASH GAMES, AND THEY SHOULD
+// BE PLAYING 4 TABLES AT ONCE!"
 //
-// A table's popularity therefore DRIFTS. It is deterministic per (table, time
-// bucket) rather than random per cycle, because a target that re-rolls every
-// 30 seconds would make seats thrash: horses would sit down and stand up
-// again for no visible reason. Slow drift reads as a table warming up or
-// dying off, which is what actually happens.
-
-export type TableVibe = 'hot' | 'busy' | 'steady' | 'quiet' | 'empty';
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// HELD-EMPTY TABLES (Dan 2026-08-26, binding)
-// ═══════════════════════════════════════════════════════════════════════════════
-// "THERE SHOULD ALWAYS BE A HANDFUL OF TABLES THAT ARE EMPTY, NOT EVERY TABLE
-//  SHOULD BE FULL. LEAVE 15% OF ALL CASH GAME TABLES EMPTY."
+// This supersedes two of Dan's own earlier rules, and both are DELETED rather
+// than left to argue with this one:
 //
-// A room where every game is populated reads as scripted — and gives a human
-// who wants to START a game nowhere to do it. So a deterministic 15% of cash
-// tables are held EMPTY: the fleet seats no horses there and queues none
-// behind them. The bucket is long (2h) so an empty table stays findable
-// instead of flickering, and the set rotates so it is not the same games
-// every day. The moment a HUMAN sits at one, it stops being held — the fleet
-// may then populate the game around them (occupancyTargetFor's humanSeated
-// pin already guarantees a playable table).
+//   - 2026-08-26, "LEAVE 15% OF ALL CASH GAME TABLES EMPTY". A held-empty table
+//     has ZERO seats filled, and the new rule's floor for the sparse quarter is
+//     ONE. The two cannot both be true, and an empty table cannot contribute to
+//     "at least 75% of all seats".
+//   - 2026-08-23, the five-way vibe drift (hot / busy / steady / quiet / empty),
+//     which put three quarters of the floor BELOW full by construction: steady
+//     left 2-3 seats open and quiet left 3-5, so the room could not reach 75%
+//     occupancy no matter how many horses were available.
+//
+// What replaces them is deliberately simpler, because the new rule is simpler.
+// A table is one of two things for the length of a long bucket:
+//
+//   FULL      (75%) — every seat taken. Horses do not drift out of these. The
+//                     ONLY thing that opens a seat is a real human joining the
+//                     waiting list, and then exactly as many seats open as
+//                     there are humans waiting.
+//   SPORADIC  (25%) — anywhere from one seat to a full game, re-rolled on the
+//                     bucket, so a quarter of the room is visibly uneven.
+//
+// The bucket is LONG (three hours). A table's character is meant to read as a
+// game that is full today, not as a seat count that flickers: anything shorter
+// and horses stand up and sit down for no reason a watching player can see,
+// which is the thrash the original drift comment warned about.
 
-/** How long a held-empty cash table stays empty before the set rotates. */
-export const EMPTY_BUCKET_MS = 2 * 60 * 60_000;
+/** Fraction of cash tables that sit FULL of horses. Dan 2026-09-02. */
+export const CASH_FULL_FRACTION = 0.75;
 
-/** Fraction of cash tables held empty at any time. */
-export const CASH_EMPTY_FRACTION = 0.15;
+/** How long a table keeps its full/sporadic character before re-rolling. */
+export const FILL_BUCKET_MS = 3 * 60 * 60_000;
 
-/**
- * A REAL AVALANCHE, BECAUSE THE ROTATION DEPENDS ON IT (2026-08-30).
- *
- * `horseHash` is a weak multiply-add (`h * 31 + c`), and consecutive bucket
- * numbers are the most structured input there is. Folding the bucket into the
- * hashed string advanced the hash by roughly +1 per bucket, so `h % 100`
- * WALKED through the held-empty band one step per two hours instead of
- * re-rolling: a table that entered the <15 band stayed held for ~15
- * consecutive buckets — about 30 hours — which is how a whole variant's room
- * went dark for a day. seatFirstHeldEmpty in TournamentRecurringService hit
- * the identical bug and fixed it the identical way: the murmur3 finalizer,
- * so every output bit depends on every input bit and each bucket re-rolls
- * independently.
- */
+export type TableFill = 'full' | 'sporadic';
+
 export function mix32(x: number): number {
   let h = x >>> 0;
   h = (h ^ (h >>> 16)) >>> 0;
@@ -116,34 +105,20 @@ export function mix32(x: number): number {
 }
 
 /**
- * A VARIANT MUST NEVER GO FULLY DARK (2026-08-30). The 15% hold is a
- * per-table decision, so when a variant config has exactly ONE open table, a
- * held roll turns the entire variant off — nothing in the lobby, nothing for
- * a human to join, which is the opposite of what the hold exists for. The
- * fleet seeder knows the live table list, so each cycle it publishes the set
- * of tables that are currently the only open one for their variant config,
- * and the hold never applies to those. A registry rather than a query,
- * because this module stays dependency-free so unit tests can import it
- * without the supabase client (which fatals without env credentials).
+ * Is this table one of the 75% that sits full?
+ *
+ * Deterministic in (tableId, bucket) so every engine instance agrees and the
+ * answer holds still long enough to be worth acting on. The murmur3 finalizer
+ * is not decoration: `horseHash` is a weak multiply-add, and folding a
+ * consecutive bucket number into it advances the hash by about +1 per bucket,
+ * so a table WALKS through the band one step at a time instead of re-rolling.
+ * That bug held a whole variant's room dark for thirty hours when it was the
+ * held-empty rule; it would hold a table sparse for just as long now.
  */
-const soleOpenCashTables = new Set<string>();
-
-export function setSoleOpenCashTables(ids: Iterable<string>): number {
-  soleOpenCashTables.clear();
-  for (const id of ids) if (id) soleOpenCashTables.add(id);
-  return soleOpenCashTables.size;
-}
-
-export function cashTableHeldEmpty(tableId: string, nowMs: number = Date.now()): boolean {
-  // The only open table for its variant config is never held empty — a held
-  // sole table is a variant with no game at all. See setSoleOpenCashTables.
-  if (soleOpenCashTables.has(tableId)) return false;
-  const bucket = Math.floor(nowMs / EMPTY_BUCKET_MS);
-  // Golden-ratio odd constant spreads the bucket across the whole word before
-  // the finalizer mixes it into the id's hash — same scheme as
-  // seatFirstHeldEmpty, for the same reason (see mix32 above).
-  const seed = (horseHash(`${tableId}:empty`) ^ Math.imul(bucket, 0x9e3779b1)) >>> 0;
-  return mix32(seed) % 100 < CASH_EMPTY_FRACTION * 100;
+export function cashTableFill(tableId: string, nowMs: number = Date.now()): TableFill {
+  const bucket = Math.floor(nowMs / FILL_BUCKET_MS);
+  const seed = (horseHash(`${tableId}:fill`) ^ Math.imul(bucket, 0x9e3779b1)) >>> 0;
+  return mix32(seed) % 100 < CASH_FULL_FRACTION * 100 ? 'full' : 'sporadic';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -321,80 +296,52 @@ export function stakeBandAllows(horseId: string, bigBlind: number): boolean {
   return stakeBandFor(horseId) === stakeBandForBigBlind(bigBlind);
 }
 
-/** How long a table keeps its current popularity before drifting. */
-export const VIBE_BUCKET_MS = 22 * 60_000;
-
 /**
- * A table's popularity right now. Deterministic in (tableId, bucket) so every
- * engine instance agrees and the value holds still long enough to be read.
- */
-export function tableVibe(tableId: string, nowMs: number = Date.now()): TableVibe {
-  const bucket = Math.floor(nowMs / VIBE_BUCKET_MS);
-  const h = horseHash(`${tableId}:${bucket}`);
-  const roll = h % 100;
-  if (roll < 22) return 'hot'; // full, with a list
-  if (roll < 52) return 'busy'; // full or one off it
-  if (roll < 82) return 'steady'; // a couple of open seats
-  return 'quiet'; // short-handed, visibly looking for players
-}
-
-/**
- * How many horses this table wants seated right now, and how many should be
- * queued behind it. `humanSeated` pins a table to at least a playable game —
- * a human's table never goes quiet underneath them.
- */
-/**
- * ═══════════════════════════════════════════════════════════════════════════
- *  THE CASH OCCUPANCY LAW (Dan 2026-09-02, binding, verbatim):
+ * How many horses this table wants seated right now.
  *
- *  "HORSES CAN FILL ALL SEATS, AND ONLY 'GET UP' WHEN A REAL HUMAN IS ON THE
- *   WAITING LIST FOR 75% OF ALL GAMES. THE OTHER 25% OF GAMES SHOULD HAVE
- *   ANYWHERE FROM ONE, TO A FULL GAME. IT SHOULD BE SPARATIC, BUT HORSES
- *   NEED TO BE OCCUPYING AT LEAST 75% OF ALL SEATS IN THE CASH GAMES, AND
- *   THEY SHOULD BE PLAYING 4 TABLES AT ONCE!"
- * ═══════════════════════════════════════════════════════════════════════════
+ * THE ONLY THING THAT OPENS A SEAT ON A FULL TABLE IS A HUMAN IN THE QUEUE
+ * (Dan 2026-09-02). `humansWaiting` is subtracted from the target, so the
+ * fleet's ordinary "seat up to target" loop becomes the release mechanism:
+ * three humans on the list means three fewer horse seats wanted, and the
+ * rotator stands exactly that many horses up. No separate eviction path, and
+ * nothing that can evict a horse for any other reason.
  *
- * So, per table, deterministically in (tableId, bucket):
- *   - PACKED (75% of tables): every seat filled by horses. A horse only
- *     leaves when a real human is on the waiting list — that yield lives in
- *     HorseSessionRotator, which departs exactly one horse when a full table
- *     has a human waiting.
- *   - SPORADIC (25% of tables): anywhere from one seat to a full game,
- *     drifting per bucket.
- * Packed at 100% plus sporadic averaging ~half keeps total horse occupancy
- * comfortably above the 75%-of-all-seats floor by construction.
- *
- * SUPERSEDED by this law, both from 2026-08-26: the 15% held-EMPTY share of
- * cash tables (a packed room where a horse stands up for every waiting human
- * IS the always-somewhere-to-sit property, delivered better), and the
- * hot/busy/steady/quiet vibe targets (the 75/25 split is the shape of the
- * room now; tableVibe still colors the waiting list on packed tables).
- * cashTableHeldEmpty is no longer consulted here — the sole-open protection
- * and the rotator keep their own uses.
+ * `humanSeated` still pins a table to a playable game — a human's table never
+ * goes short underneath them — and it outranks the sparse roll, because a
+ * human sitting down is the one signal that a game is wanted.
  */
 export function occupancyTargetFor(
   tableId: string,
   maxPlayers: number,
   humanSeated: boolean = false,
-  nowMs: number = Date.now()
-): { seatTarget: number; waitTarget: number; vibe: TableVibe } {
-  const vibe = tableVibe(tableId, nowMs);
-  const bucket = Math.floor(nowMs / VIBE_BUCKET_MS);
-  const h = horseHash(`${tableId}:${bucket}:seats`);
-  const packedRoll = mix32((horseHash(`${tableId}:packed`) ^ Math.imul(bucket, 0x9e3779b1)) >>> 0);
-
+  nowMs: number = Date.now(),
+  humansWaiting: number = 0
+): { seatTarget: number; waitTarget: number; fill: TableFill } {
+  const fill = cashTableFill(tableId, nowMs);
   let seatTarget: number;
-  let waitTarget = 0;
-  if (packedRoll % 100 < 75) {
-    // PACKED: full, and hot tables also show a short queue behind the game.
+  if (fill === 'full') {
     seatTarget = maxPlayers;
-    if (vibe === 'hot') waitTarget = 1 + (h % 3);
   } else {
-    // SPORADIC: one to a full game, drifting per bucket.
+    /* One seat to a full game, re-rolled on the long bucket. `1 +` is the
+       floor Dan named: a sparse table still has SOMEBODY at it, which is what
+       separates this from the empty tables this rule replaced. */
+    const h = horseHash(`${tableId}:${Math.floor(nowMs / FILL_BUCKET_MS)}:seats`);
     seatTarget = 1 + (h % Math.max(1, maxPlayers));
   }
   if (humanSeated) seatTarget = Math.max(seatTarget, Math.min(maxPlayers, 4));
-  return { seatTarget: Math.max(1, Math.min(maxPlayers, seatTarget)), waitTarget, vibe };
+
+  /* Room for the queue. Only ever reduces the target, never below one seat —
+     a table emptied of horses cannot deal the game the human queued for. */
+  if (humansWaiting > 0) {
+    seatTarget = Math.max(1, seatTarget - humansWaiting);
+  }
+
+  /* Horses do not queue any more (waitTarget is always 0, and the fleet
+     prunes horse rows out of every waiting list). A queue used to be
+     decoration on a full table; under this rule it is a signal that a real
+     person wants in, and a horse standing in it would both delay that person
+     and make "is a human waiting" unanswerable. */
+  return { seatTarget: Math.max(1, Math.min(maxPlayers, seatTarget)), waitTarget: 0, fill };
 }
 
 /**

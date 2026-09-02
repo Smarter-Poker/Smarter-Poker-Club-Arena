@@ -26,6 +26,7 @@ import styles from './UnionDetailPage.module.css';
 import { useToast } from '../components/common/Toast';
 import ConfirmModal from '../components/common/ConfirmModal';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
+import GameCreationActions from '../components/club/GameCreationActions';
 import { ensureMidwayUnionSetup } from '../services/HorseOrchestrator';
 import { getUnionLevel, getClubLevel } from '../utils/clubLevels';
 import { reportError } from '../utils/errorReporter';
@@ -737,9 +738,18 @@ export default function UnionDetailPage() {
           <p>{union.description}</p>
         </div>
         <div className={styles.headerActions}>
-          <button className={styles.applyButton} onClick={handleApplyClick} disabled={applying}>
-            {applying ? 'Applying...' : 'Apply To Join'}
-          </button>
+          {union.ownerId === user?.id ? (
+            <>
+              <Link className={styles.managementButton} to={`/unions/${unionId}/table-management`}>
+                Table Management
+              </Link>
+              <GameCreationActions managementPath={`/unions/${unionId}/table-management`} compact />
+            </>
+          ) : (
+            <button className={styles.applyButton} onClick={handleApplyClick} disabled={applying}>
+              {applying ? 'Applying...' : 'Apply To Join'}
+            </button>
+          )}
         </div>
       </div>
 

@@ -28,6 +28,11 @@ describe('Club Arena Every-Word Capitalization Law', () => {
     expect(enumToTitleCase('request_to_join')).toBe('Request To Join');
   });
 
+  // 20s, not the 5s default (2026-09-01). This spawns check-title-case.mjs
+  // TWICE as child processes (scan, then --fix). The scan is I/O-heavy, and
+  // under three concurrent vitest suites it ran 1.7s standalone but tipped
+  // past 5s and timed out - a flaky red that cost green re-runs. The work is
+  // the same; only the ceiling was wrong.
   it('enforces static copy in attributes, render expressions, and component registries', () => {
     const directory = mkdtempSync(join(tmpdir(), 'club-arena-title-case-'));
     temporaryDirectories.push(directory);
@@ -75,5 +80,5 @@ describe('Club Arena Every-Word Capitalization Law', () => {
     expect(fixed).toContain("`${count} Lvl${count === 1 ? '' : 's'} Left`");
     expect(fixed).toContain('title="spring_spins_push"');
     expect(fixed).toContain('user@example.com');
-  });
+  }, 20000);
 });

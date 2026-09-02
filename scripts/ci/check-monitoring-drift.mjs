@@ -217,6 +217,35 @@ if (existsSync(resolve(DIR, 'alertmanager.yml'))) {
   }
 }
 
+// ── 6. Every scrape job that ever existed still exists ──────────────────────
+//
+// 2026-08-31: the live host carried a `turn_relay` scrape job that had been
+// added directly on engine-01 on 2026-08-28 and NEVER COMMITTED. deploy.sh
+// resets the host to the repo, so the next deploy would have silently deleted
+// voice monitoring - and checks 1-5 could not see it, because they verify rule
+// files and mounts, not scrape targets. A rules file that loads perfectly
+// against a job nobody is scraping alerts on nothing.
+//
+// This pin cannot detect a job added on the host and never committed (nothing
+// in the repo can). What it CAN do is make deleting one a deliberate act: to
+// drop a job you must also drop it here, in a diff a reviewer will see.
+const REQUIRED_SCRAPE_JOBS = [
+  'prometheus',
+  'node_engine01',
+  'engine_game_server',
+  'turn_relay',
+];
+{
+  const jobs = [...prom.matchAll(/^\s*-?\s*job_name:\s*['"]?([\w.-]+)/gm)].map((m) => m[1]);
+  for (const job of REQUIRED_SCRAPE_JOBS) {
+    if (!jobs.includes(job)) {
+      errors.push(
+        `prometheus.yml no longer scrapes "${job}". Every alert rule written against that target now evaluates against no data, which reads as healthy. If the job was retired on purpose, remove it from REQUIRED_SCRAPE_JOBS in this file too.`
+      );
+    }
+  }
+}
+
 if (errors.length) {
   console.error('\nFAIL: monitoring wiring is broken.\n');
   for (const e of errors) console.error(`  - ${e}`);

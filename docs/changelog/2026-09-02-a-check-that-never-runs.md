@@ -97,3 +97,32 @@ And one I made twice: the back-payment's LIMIT bounded the CANDIDATE rows
 instead of the QUALIFYING ones, so the dry run reported zero against a set I
 had just measured at 34 - the identical mistake as "a limit must bound the work
 not the view", which I had fixed in another function four hours earlier.
+
+## Correction: I paid the right totals in the wrong shape
+
+The guarantee back-payment distributed each shortfall pro-rata to what a player
+had _already_ been paid, and counted bounty credits in that basis. Bounty money
+is funded from `bounty_pool` and is not part of the prize structure, so a
+player who won many bounties took a large share of the _prize_ shortfall.
+
+The guarantee totals were right and the per-place shape was wrong. On "Bounty
+Builder Turbo" place 1 finished on 323.33 against a 200.00 entitlement while
+places 2 to 5 were left 133.33 short between them. `fn_payout_guarantee_check`
+raised 22 criticals within seconds of the back-payment, correctly.
+
+The authoritative distribution is `tournaments.payout_structure` - what the
+player was promised, and what every payout detector measures against. Remedied
+with the platform's own reconciler rather than a third distribution rule: it
+tops up anyone short of their structure entitlement and never claws back, which
+matches the standing ruling that the extra chips are not the concern. 34 events
+reconciled, 4 left short by 0.39 chips in total, which is last-place rounding.
+
+`fn_ca_backpay_guarantee_shortfalls` no longer distributes anything. It funds
+the pool from the main bank, raises `prize_pool` to the guarantee, writes the
+ledger row, and hands distribution to the reconciler - which owns the
+structure, writes its own payout records, and carries a per-place idempotency
+key so it cannot double-pay.
+
+Run as a procedure committing per event, because the first attempt was a DO
+block, deadlocked against the live engine on `club_members`, and lost the whole
+batch.

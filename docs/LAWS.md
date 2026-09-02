@@ -128,3 +128,4 @@ covers both trees.
 | server/src/tournament/eliminationSweepReadsAreIndexed.law.test.ts   | The bust sweep reads through indexes and pages on a unique key, never scanning every live seat               |
 | server/src/tournament/ABountyPoolBelongsToAPlayer.law.test.ts       | A funded bounty pool settles to the champion on every completion path, including the stuck-COMPLETING rescue |
 | server/src/services/MoneyChecksProveTheyRan.law.test.ts             | Every money check records that it ran, and something notices when one stops                                  |
+| server/src/tournament/ASeatNobodyPaidFor.law.test.ts                | A seat in a paid event was paid for, by one of four named sources and no other                               |

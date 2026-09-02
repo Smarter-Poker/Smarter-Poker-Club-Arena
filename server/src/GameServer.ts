@@ -3701,6 +3701,54 @@ export class GameServer {
           }
 
           /**
+           * ── A SEAT NOBODY PAID FOR (2026-09-02, Phase 2) ──
+           *
+           * Every check above asks whether the money that came IN reached the
+           * players it was owed to. This one asks the question underneath
+           * them: did it come in at all.
+           *
+           * It happened 464 times, across 81 events, between 2026-08-19 00:01
+           * and 2026-08-20 23:45 - horses seeded into fields rather than
+           * registered into them, no wallet debit and no chip_transactions
+           * row, and across the 39 completed events in that window exactly one
+           * rake row, which proves the register functions never ran. Those
+           * events took 6.00 chips of entry and paid out 1,734.00.
+           *
+           * THE CAUSE WAS FIXED BEFORE THIS EXISTED, and not by this phase:
+           * fn_register_horse_for_tournament started charging horses real
+           * chips on 2026-08-19, and the last unfunded seat on the platform
+           * was created the following night. What was missing is that nothing
+           * would have noticed it running, and nothing would notice it coming
+           * back. That is all this is.
+           *
+           * The four ways a seat is legitimately paid for are ENUMERATED in
+           * the function - a wallet debit, a satellite seat award, a day past
+           * the first, a freeroll - never inferred from what looks reasonable.
+           * A check that decides for itself what counts as legitimate will
+           * eventually excuse the next leak too.
+           */
+          try {
+            const { data: ue, error: ueErr } = await supabase.rpc('fn_uncollected_entry_check', {
+              p_since_hours: 24,
+            });
+            if (ueErr) {
+              reportError(
+                new Error(`[GameServer] uncollected entry check failed: ${ueErr.message}`),
+                'GameServer.uncollected_entry_check_failed'
+              );
+            } else if (Number(ue?.uncollected_entries) > 0) {
+              console.log(
+                `[GameServer] Uncollected entries: ${ue.uncollected_entries} seat(s) across ` +
+                  `${ue.events} event(s) hold a place in a paid tournament with no entry paid for them ` +
+                  `(${ue.chips} chips), out of ${ue.seats_checked} checked`
+              );
+            }
+            await this.recordMoneyCheckRun('fn_uncollected_entry_check', ue);
+          } catch (ueEx) {
+            reportError(ueEx, 'GameServer.uncollected_entry_check_threw');
+          }
+
+          /**
            * ── AND WHETHER ANY OF THEM ACTUALLY RAN (2026-09-02, Phase 1) ──
            *
            * The board, and a deduped critical for anything that has gone quiet.

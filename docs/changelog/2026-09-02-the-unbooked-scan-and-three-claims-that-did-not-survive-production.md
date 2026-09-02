@@ -23,12 +23,12 @@ Measured on production, before and after (the after includes a one-off
 `VACUUM (ANALYZE)` on `spin_reserve_ledger`, whose stale visibility map was
 costing 3,131 heap fetches per call):
 
-| path | before | after |
-| ---- | ------ | ----- |
-| `fn_spin_metrics` `ub` CTE (24h) | 877 ms | **252 ms** |
-| sweep scan (14d, what the cron passes) | 1244 ms | 983 ms |
-| heap fetches, ledger anti-join | 16,340 | 59 |
-| planner cost, 24h | 14,061 | 1,501 |
+| path                                   | before  | after      |
+| -------------------------------------- | ------- | ---------- |
+| `fn_spin_metrics` `ub` CTE (24h)       | 877 ms  | **252 ms** |
+| sweep scan (14d, what the cron passes) | 1244 ms | 983 ms     |
+| heap fetches, ledger anti-join         | 16,340  | 59         |
+| planner cost, 24h                      | 14,061  | 1,501      |
 
 The metrics win is the real one. The sweep's own window genuinely has to look at
 33,770 rows, so its gain is the heap fetches rather than the walk - but that is
@@ -52,7 +52,7 @@ Changing it would have been a no-op that read like a fix.
 **2. `booking_gaps` is not blind.** Issue #2454 reports that
 `v_spin_draw_booking_gaps` guards on `d.drawn is not null` and so cannot see a
 spin with no reserve row at all. True, and correct: that view asks whether a
-*booked* spin paid more than it drew. "Was it booked at all" is a different
+_booked_ spin paid more than it drew. "Was it booked at all" is a different
 question and `fn_spin_metrics` already answers it separately, as
 `unbooked_spins`. Two questions, two numbers, both published.
 
@@ -68,15 +68,15 @@ credits alone, that looks like 3,135 rows and ~23,700 chips across the bounty
 variants. It is a join artefact. Bounties credit under their own category, and
 satellites award a seat rather than chips. Counting all three award mechanisms:
 
-| variant | payout rows | unaccounted |
-| ------- | ----------- | ----------- |
-| spin | 36,272 | 0 |
-| sng | 29,082 | 0 |
-| bounty | 6,834 | 0 |
-| freezeout | 5,595 | 0 |
-| mystery_bounty | 3,581 | 0 |
-| progressive_bounty | 3,582 | 22 rows worth 0.00 |
-| satellite | 60 | 23 rows, all 23 registered into `satellite_target_id` |
+| variant            | payout rows | unaccounted                                           |
+| ------------------ | ----------- | ----------------------------------------------------- |
+| spin               | 36,272      | 0                                                     |
+| sng                | 29,082      | 0                                                     |
+| bounty             | 6,834       | 0                                                     |
+| freezeout          | 5,595       | 0                                                     |
+| mystery_bounty     | 3,581       | 0                                                     |
+| progressive_bounty | 3,582       | 22 rows worth 0.00                                    |
+| satellite          | 60          | 23 rows, all 23 registered into `satellite_target_id` |
 
 Every satellite winner was registered into the target event. `paid_at` is
 truthful everywhere.

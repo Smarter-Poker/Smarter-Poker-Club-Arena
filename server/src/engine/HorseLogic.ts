@@ -87,7 +87,7 @@ import {
   GTO_MAX_DEPTH_BB,
 } from './GtoPostflop.js';
 import { gtoStreetAdviceV31 } from './GtoPostflopV31.js';
-import { gtoFacingDefense } from './GtoFacingDefenseV32.js';
+import { gtoFacingDefense, realizationFactor } from './GtoFacingDefenseV32.js';
 // V7 split: evaluators + Monte Carlo equity + preflop scores live in
 // HorseEval.ts (extracted verbatim; zero behavior change).
 import {
@@ -1480,7 +1480,12 @@ export class HorseLogic {
       // CASE B — BB facing an SB all-in: call or fold IS the whole decision,
       // so the chart answers at any charted depth. Effective stack is the
       // smaller side: calling 25bb against an 8bb jam is an 8bb decision.
-      if (position === 'bb' && raises >= 1 && raiserPosition === 'sb' && oppsLeft === 1) {
+      // V34 (2026-09-02): `raises >= 1` let the chart answer an SB jam that
+      // was a 3-BET over an open (UTG opened, SB shoved, UTG folded) — the
+      // sb_push chart prices an SB open-jam into an unopened pot, a far wider
+      // range than a reshove over a raise, so the BB called those off too
+      // wide. The chart answers only the spot it was solved for.
+      if (position === 'bb' && raises === 1 && raiserPosition === 'sb' && oppsLeft === 1) {
         const raiserAllIn = history.some((a) => a.seat === lastRaiserSeat && a.action === 'all_in');
         if (raiserAllIn && toCall > 0) {
           // currentBet is the SB's total commitment — an all-in, so his stack.
@@ -1686,6 +1691,9 @@ export class HorseLogic {
           ? player.cards.filter((hc) => hc.rank === 'A').length >= 2
           : undefined,
       v13: opts.v13 !== false,
+      // V34: the button is not a second cutoff. classifyPosition merges the
+      // two into 'late'; the dealer seat tells them apart exactly.
+      isButton: gs.dealerSeat !== undefined && player.seat === gs.dealerSeat,
       rand: fastRandom,
     });
     // V20 proof-of-receipt: the M-zone wiring reached the preflop engine.
@@ -2570,6 +2578,16 @@ export class HorseLogic {
           : 'foldToRaise';
 
     const useV11 = opts.v11 !== false;
+    // V10 RAKE: below the cap the pot we stand to win is taxed ~10%, so price
+    // marginal calls against the raked pot, not the raw one. Above the cap
+    // (large pots) the drag is zero and this reduces to honest pot odds.
+    // V11: tournaments rake the buy-in, not the pot — pot odds are honest.
+    // V34: computed here, above the solver consult, so V32 prices the same
+    // raked pot the heuristic call line does.
+    const rakeMarg = useRake10 && !isTournamentMode(gs) ? rakeDrag(pot, gs.bigBlind) : 0;
+    /** V34: the solver said CALL with a drawing hand; the semi-bluff raise
+     *  gates below get first refusal, and the call is guaranteed after them. */
+    let solverCall32 = false;
     // ═══ V32 FACING A BET — the solver's own betting range (2026-08-30) ═══
     // Phase 2 of 7. V29/V30/V31 answer only with the LEAD; this is the other
     // half. The bettor's open-node cell gives P(bet at this size | holding)
@@ -2648,6 +2666,17 @@ export class HorseLogic {
         (opts.v33DepthCeiling ?? true) !== false && beyondGtoDepthCeiling(stackBB32);
       if (tooDeep32 && telemetryOn(opts)) noteFire('gto_skip_too_deep');
 
+      // V34: a drawing hand — no pair yet, but real equity from the runout.
+      // It realizes a little better than its raw number (implied odds, and
+      // it is the hand that keeps improving), and it is the hand the
+      // semi-bluff raise gates below were written for.
+      const drawy32 =
+        cat <= 1 && drawsLive && equity >= (street === 'flop' ? 0.3 : 0.2) && equity < 0.55;
+      const realization32 = realizationFactor({
+        street,
+        inPosition: ip,
+        drawy: drawy32,
+      });
       const defense = tooDeep32
         ? null
         : gtoFacingDefense({
@@ -2661,6 +2690,12 @@ export class HorseLogic {
             toCall,
             rawBetFraction: rawPotBefore32 > 0 ? bettorWager32 / rawPotBefore32 : undefined,
             rand: fastRandom,
+            realization: realization32,
+            rakeMarg,
+            // Tournament: the survival premium, scaled by the share of the
+            // stack this call risks (V24's rule: ICM prices a bust, and a
+            // call worth 3% of a stack cannot bust anybody).
+            riskPremium: risk > 0 && stack > 0 ? risk * Math.sqrt(Math.min(1, toCall / stack)) : 0,
           });
       if (defense) {
         if (defense.action === 'pass_strong') {
@@ -2668,7 +2703,20 @@ export class HorseLogic {
           // fall through: the aggression layers play this hand
         } else if (defense.action === 'call') {
           if (telemetryOn(opts)) noteFire('v32_defend_call');
-          return { action: 'call', amount: toCall, thinkTime: 0 };
+          // V34: the layer only ever answered fold-or-call, so while a cell
+          // existed the fleet never once check-raised a flush draw or
+          // re-raised a combo draw heads-up in hold'em: every semi-bluff
+          // raise line below was unreachable. A solver call with a DRAW now
+          // falls through with the call guaranteed - the raise gates roll
+          // first, and if they pass, the call stands. Made hands still
+          // return here: a raise with those is the aggression layers' job
+          // and they are consulted at pass_strong.
+          if (drawy32 && !isRiver) {
+            solverCall32 = true;
+            if (telemetryOn(opts)) noteFire('v34_defend_draw_passthrough');
+          } else {
+            return { action: 'call', amount: toCall, thinkTime: 0 };
+          }
         } else {
           if (telemetryOn(opts)) noteFire('v32_defend_fold');
           return { action: 'fold', thinkTime: 0 };
@@ -3205,11 +3253,7 @@ export class HorseLogic {
     }
 
     // ═══ Facing a bet ═══
-    // V10 RAKE: below the cap the pot we stand to win is taxed ~10%, so price
-    // marginal calls against the raked pot, not the raw one. Above the cap
-    // (large pots) the drag is zero and this reduces to honest pot odds.
-    // V11: tournaments rake the buy-in, not the pot — pot odds are honest.
-    const rakeMarg = useRake10 && !isTournamentMode(gs) ? rakeDrag(pot, gs.bigBlind) : 0;
+    // (V10 rake drag `rakeMarg` is computed above the V32 consult — V34.)
 
     // ═══ V29 GTO FLOP DEFENSE — REMOVED 2026-08-29, the same day it
     // shipped. ═══ The consult assumed the warehouse held facing-a-bet
@@ -3534,7 +3578,9 @@ export class HorseLogic {
           ? { action: 'call', amount: toCall, thinkTime: 0 }
           : { action: 'all_in', thinkTime: 0 };
       }
-      if (eq15 >= required) return { action: 'call', amount: toCall, thinkTime: 0 };
+      // V34: a solver-approved draw call is honored here too — the committed
+      // bar must never fold a hand the solver's own range priced as a call.
+      if (eq15 >= required || solverCall32) return { action: 'call', amount: toCall, thinkTime: 0 };
       return { action: 'fold', thinkTime: 0 };
     }
 
@@ -3691,6 +3737,12 @@ export class HorseLogic {
       const raiseToAmt = currentBet + (pot + toCall) * (1.0 + fastRandom() * 0.3);
       return this.raiseTo(raiseToAmt * params.sizingMultiplier, player, gs, vi);
     }
+
+    // V34: every raise gate above has had its roll. The solver's range said
+    // this draw is a call at this price, and that answer outranks the
+    // heuristic price test below (which prices the same call against a
+    // preflop-band range rather than the range that actually bet).
+    if (solverCall32) return { action: 'call', amount: toCall, thinkTime: 0 };
 
     // Call when the price is right. Margin scales with bet size; draws get a
     // small implied-odds allowance before the river. V3: a maniac's bets need
@@ -4287,7 +4339,9 @@ export class HorseLogic {
     // folding to a raise - it was half of how folds reached 180ms.
     if (simple && stage === 'preflop' && !facingBet) think *= 0.8;
     if (aggressive) think *= 1.1;
-    const headsUp = gs.players.filter((p) => !p.is_folded).length === 2;
+    // V34: a sitting-out seat is not a player to think about — the same
+    // filter every other heads-up read in this file applies.
+    const headsUp = gs.players.filter((p) => !p.is_folded && !p.is_sitting_out).length === 2;
     if (headsUp) think *= 0.85;
 
     // ═══ V24 FLOORS ═══ applied after every multiplier, because the tempo

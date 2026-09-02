@@ -80,6 +80,7 @@ import { isMaintenanceFrozen } from './maintenance/freezeState.js';
 import { raiseEngineAlert, resolveEngineAlert } from './services/engineAlerts.js';
 import { MaintenanceBreak } from './maintenance/MaintenanceBreak.js';
 import { createSupabaseMaintenanceBreakStore } from './maintenance/maintenanceBreakStore.js';
+import { runThawInstallments } from './maintenance/thawInstallments.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
 import { isWakeableCashTable } from './services/onDemandTableWake.js';
 // 2026-08-16: single-owner table leases + per-process identity. See
@@ -447,15 +448,53 @@ export class GameServer {
     // duration, so "picks back up exactly as it was" is true of the CLOCKS
     // and not only of the chips. fn_thaw_platform is idempotent per freeze -
     // two engines racing at :00 cannot shift the clocks twice.
+    // PHASE 2 (2026-09-02): the break's own measurements, one row per break,
+    // so ca_break_scorecards can show what the GATE saw (unparked at
+    // countdown, peak, when readyForRestart first opened) and not only what
+    // hand_history reveals from outside. Insert-only; a failure is reported
+    // by MaintenanceBreak and never delays the resume.
+    recordOutcome: async (o) => {
+      const { error } = await supabase.from('engine_maintenance_break_log').insert({
+        break_started_at: new Date(o.breakStartedAtMs).toISOString(),
+        break_ended_at: new Date(o.breakEndedAtMs).toISOString(),
+        unparked_at_countdown: o.unparkedAtCountdown,
+        peak_unparked: o.peakUnparked,
+        ready_for_restart_at:
+          o.readyForRestartAtMs === null ? null : new Date(o.readyForRestartAtMs).toISOString(),
+        tables_resumed: o.tablesResumed,
+        thaw_ok: o.thawOk,
+        engine_version:
+          process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
+      });
+      if (error) throw new Error(error.message);
+    },
+    // PHASE 4 (2026-09-02): the thaw runs in INSTALLMENTS. fn_thaw_platform
+    // checkpoints each completed step in engine_maintenance_thaws.shifted and
+    // returns complete:false when it has used its own ~4s budget, so no single
+    // call can hit PostgREST's 8s cap the way the one-statement thaw did
+    // (19.9s before the #2703 indexes; a timeout still at 20:00 after them).
+    // runThawInstallments calls again until complete, and retries a call that
+    // died - a timed-out call committed nothing, so the retry is exactly
+    // right. Idempotent per freeze and per step on the database side.
     thaw: async (freezeStartedAtMs, frozenSeconds) => {
-      const { data, error } = await supabase.rpc('fn_thaw_platform', {
+      const args = {
         p_freeze_started: new Date(freezeStartedAtMs).toISOString(),
         p_frozen_seconds: frozenSeconds,
         p_thawed_by:
           process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
-      });
-      if (error) throw new Error(error.message);
-      console.log('[MaintenanceBreak] thaw:', JSON.stringify(data));
+      };
+      const summary = await runThawInstallments(
+        async () => {
+          const { data, error } = await supabase.rpc('fn_thaw_platform', args);
+          if (error) throw new Error(error.message);
+          return (data ?? {}) as Record<string, unknown>;
+        },
+        { log: (line) => console.log(line) }
+      );
+      console.log(
+        `[MaintenanceBreak] thaw: complete in ${summary.calls} call(s), ${summary.errors} error(s):`,
+        JSON.stringify(summary.last?.shifted ?? null)
+      );
     },
   });
   /**

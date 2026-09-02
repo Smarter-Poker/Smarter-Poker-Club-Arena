@@ -206,3 +206,13 @@ BEGIN
     IF v_probe IS NULL THEN RAISE EXCEPTION 'readiness returned nothing for a real row'; END IF;
   END IF;
 END $$;;
+
+-- ── Grants restated with the declarations above ────────────────────────────
+-- A migration file is a replay script. CREATE OR REPLACE preserves grants in
+-- an existing database, but replayed into a fresh one it would create these
+-- with PUBLIC's default EXECUTE -- and this function returns club treasury
+-- balances. Nothing calls it but its own trigger, which runs as the definer.
+REVOKE ALL ON FUNCTION public.fn_tournament_management_readiness(uuid) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_tournament_management_readiness(uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.fn_safe_jsonb_array(text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_safe_jsonb_array(text) TO service_role, authenticated;

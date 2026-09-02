@@ -18,9 +18,8 @@ This file is the changelog pointer required by CLAUDE.md 10.9.
 
 ## Box
 
-`estate-ci-1` resized cpx31 -> cpx41 (8 vCPU / 16 GB, Ashburn), 8 CA runners
-
-- 2 WH runners, `VITEST_MAX_WORKERS=4`, 3 GB heap, 8 GB swap, nightly GC.
+`estate-ci-1` resized cpx31 -> cpx41 (8 vCPU / 16 GB, Ashburn); eight CA runners
+and two WH runners; `VITEST_MAX_WORKERS=4`, 3 GB heap, 8 GB swap, nightly GC.
 
 ## Measured
 

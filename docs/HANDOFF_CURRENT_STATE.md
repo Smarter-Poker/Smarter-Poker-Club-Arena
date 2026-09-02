@@ -226,11 +226,11 @@ Engine (typecheck + tests)" job.
 
 supabase/migrations/\*.sql
 All DB changes. This session's migrations (all APPLIED live, see section 18):
-20260902194500 the_thaw_stops_reading_every_tournament_ever_played (#2703, thaw indexes)
+20260902194600 the_thaw_stops_reading_every_tournament_ever_played (#2703, thaw indexes)
 20260902203100 engine_restart_phase1_scorecard_freezeproof_dispatcher
 20260902204600 engine_restart_phase1_deploy_start_marker
 20260902211500 engine_restart_phase1_review_fixes
-20260902213000 engine_restart_phase2_the_gate_counts_a_live_hand
+20260902213100 engine_restart_phase2_the_gate_counts_a_live_hand
 
 docs/ENGINE-RESTART-PROGRAMME.md The 9-phase plan (on main). READ IT.
 docs/HANDOFF_CURRENT_STATE.md This file.
@@ -345,7 +345,7 @@ table_seats.stack as postgres). A 55006 WAS witnessed inside the 19:57 window
 this way.
 
 THE THAW (fn_thaw_platform, migration 20260902091000 + the index fix
-20260902194500): shifts every in-flight absolute deadline forward by the
+20260902194600): shifts every in-flight absolute deadline forward by the
 frozen duration (sit_out_at, waitlist holds, tournament addon/level clocks,
 chip_transactions.reversible_until, bounty reveal, rebuy prompts, bomb-pot due)
 so "picks back up exactly as it was" is true of the CLOCKS. It is idempotent
@@ -402,7 +402,7 @@ WORKSTREAM A - THE THAW FINALLY SUCCEEDS (#2703, MERGE STATE: PR OPEN).
 - Fix: three partial indexes (idx_tournaments_addon_period_open,
   idx_tables_bomb_pot_due, idx_chip_transactions_reversible_open). Created LIVE
   with CREATE INDEX CONCURRENTLY at 19:47 UTC (blocked no writer); all three
-  indisvalid=true. Recorded as migration 20260902194500. Also proved (pg_temp
+  indisvalid=true. Recorded as migration 20260902194600. Also proved (pg_temp
   fn + pg_sleep) that a function-level SET statement_timeout does NOT extend a
   running RPC - the comments in RakebackSettlerService (600s) and index.ts
   (30s) are WRONG about that.
@@ -476,7 +476,7 @@ WORKSTREAM C - PHASE 2: THE GATE COUNTS A LIVE HAND (in PR #2715, OPEN).
 - The break measures itself: new recordOutcome dep hands out
   {unparkedAtCountdown, peakUnparked, readyForRestartAtMs, tablesResumed,
   thawOk}; GameServer writes engine_maintenance_break_log; the scorecard reads
-  it (the 4 new columns). Migration 20260902213000 (the table + the 4 columns +
+  it (the 4 new columns). Migration 20260902213100 (the table + the 4 columns +
   the updated scorecard fn). APPLIED live.
 - Pins: 6 restart-gate tests FAIL on origin/main's MaintenanceBreak.ts, 34/34
   PASS here. MaintenanceBreak.test.ts added to the required Server Engine
@@ -599,7 +599,7 @@ club-arena-zero-drift and -round2 for that state.
   phase idle, freeze-build true. THIS BUILD LACKS the Phase 2 dealing-loop fix
   and #2713 - it still deals ~3000 hands/break and still reaps horses at boot.
   It will be replaced at the 23:55 window by the escalation.
-- Migrations applied live (all): 20260902194500, 203100, 204600, 211500, 213000. engine_maintenance_break_log has 0 rows (its writer deploys with
+- Migrations applied live (all): 20260902194600, 203100, 204600, 211500, 213000. engine_maintenance_break_log has 0 rows (its writer deploys with
   #2715). engine_maintenance_thaws has 2 rows today (thaw now works).
 - Crons live: ca-break-scorecard @ :12, ca-deploy-dispatch @ :41 (disarmed),
   ca-deploy-run-marker-prune @ 04:23, ca-freeze-mark-post @ :00,
@@ -632,7 +632,7 @@ PHASE 1 (PR #2710, MERGED to main; DB objects applied):
 | docs/ENGINE-RESTART-PROGRAMME.md | Merged | the 9-phase plan | yes |
 
 THAW INDEXES (PR #2703, OPEN; indexes applied live):
-| supabase/migrations/20260902194500_the_thaw_stops_reading_every_tournament_ever_played.sql | In-PR+Applied | 3 partial indexes so the thaw fits in 8s | yes |
+| supabase/migrations/20260902194600_the_thaw_stops_reading_every_tournament_ever_played.sql | In-PR+Applied | 3 partial indexes so the thaw fits in 8s | yes |
 
 PHASES 2+3 (PR #2715, OPEN; migration applied live):
 | server/src/maintenance/MaintenanceBreak.ts | In-PR | gate=live hand; recordOutcome; staggered resume | yes |
@@ -640,7 +640,7 @@ PHASES 2+3 (PR #2715, OPEN; migration applied live):
 | server/src/engine/ServerTableEngineDealing.ts | In-PR | both dealing park gates consult maintenancePaused | yes |
 | server/src/GameServer.ts | In-PR | recordOutcome writes engine_maintenance_break_log | yes |
 | .github/workflows/ci.yml | In-PR | MaintenanceBreak.test.ts in the required regression step | yes |
-| supabase/migrations/20260902213000_engine_restart_phase2_the_gate_counts_a_live_hand.sql | In-PR+Applied | engine_maintenance_break_log + 4 scorecard cols + updated fn | yes |
+| supabase/migrations/20260902213100_engine_restart_phase2_the_gate_counts_a_live_hand.sql | In-PR+Applied | engine_maintenance_break_log + 4 scorecard cols + updated fn | yes |
 | scripts/ci/schema-manifest.d/cowork-restart-phase2.json | In-PR | schema fragment (declares fn_ca_record_break_scorecard) | yes |
 | docs/changelog/2026-09-02-phase2-the-gate-counts-a-live-hand.md | In-PR | changelog | yes |
 | docs/changelog/2026-09-02-phase3-the-resume-is-staggered.md | In-PR | changelog | yes |
@@ -890,7 +890,7 @@ New scorecard columns (Phase 2): unparked_at_countdown, peak_unparked,
 ready_for_restart_at, gate_opened.
 
 Migrations APPLIED to production (verified in supabase*migrations.schema*
-migrations): 20260902194500, 20260902203100, 20260902204600, 20260902211500, 20260902213000. Every migration is self-contained (carries its own REVOKEs).
+migrations): 20260902194600, 20260902203100, 20260902204600, 20260902211500, 20260902213100. Every migration is self-contained (carries its own REVOKEs).
 Applied via psql as postgres. ROLLBACK of the DDL was NOT separately tested,
 but every function/table is idempotent (CREATE OR REPLACE / IF NOT EXISTS) and
 every logic change was proven in a rolled-back transaction BEFORE applying.

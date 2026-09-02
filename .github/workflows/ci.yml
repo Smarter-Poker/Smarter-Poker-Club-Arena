@@ -951,8 +951,11 @@ jobs:
 
       # BLOCKING. Named explicitly so it is obvious in the job log which
       # regressions are being defended, and so deleting them is a visible diff.
-      - name: Freeze + watchdog regression suite
-        run: npx vitest run src/engine/FreezeRegression.test.ts src/engine/TableWatchdog.test.ts --reporter=verbose
+      # PHASE 2 (2026-09-02): the restart gate's pins ride the named regression
+      # step, not only the full suite, so a #2537-class regression that outdates
+      # them is a named red line on a required check.
+      - name: Freeze + watchdog + restart-gate regression suite
+        run: npx vitest run src/engine/FreezeRegression.test.ts src/engine/TableWatchdog.test.ts src/maintenance/MaintenanceBreak.test.ts --reporter=verbose
 
       - name: Full server test suite
         run: npm test

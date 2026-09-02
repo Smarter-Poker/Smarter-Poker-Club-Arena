@@ -12,6 +12,7 @@ import {
   MaintenanceBreak,
   type MaintenanceBreakStore,
   type PersistedMaintenanceBreak,
+  type MaintenanceBreakOutcome,
 } from './MaintenanceBreak.js';
 
 /**
@@ -44,6 +45,20 @@ class FakeEngine {
   }
   isParkedBetweenHands(): boolean {
     return this.atGate;
+  }
+  /** Cards in the air. The real engine: handController !== null. */
+  handInFlight = false;
+  isBetweenHands(): boolean {
+    return !this.handInFlight;
+  }
+  /** A hand is dealt: cards in the air, the loop is nowhere near the gate. */
+  deal(): void {
+    this.handInFlight = true;
+    this.atGate = false;
+  }
+  /** The hand settles. The loop is still in flight (sleep, seat read, broadcast). */
+  finishHand(): void {
+    this.handInFlight = false;
   }
   isRunning(): boolean {
     return this.running;
@@ -86,13 +101,17 @@ function build(engineCount = 3) {
   for (let i = 0; i < engineCount; i++) engines.set(`t${i}`, new FakeEngine());
   const store = new FakeStore();
   const emitted: Array<{ tableId: string; payload: Record<string, unknown> }> = [];
+  const outcomes: MaintenanceBreakOutcome[] = [];
   const mb = new MaintenanceBreak({
     engines: () => engines.entries() as any,
     isRunning: () => true,
     emit: (tableId, payload) => emitted.push({ tableId, payload }),
     store,
+    recordOutcome: async (o) => {
+      outcomes.push(o);
+    },
   });
-  return { mb, engines, store, emitted };
+  return { mb, engines, store, emitted, outcomes };
 }
 
 const parkAll = (engines: Map<string, FakeEngine>) => engines.forEach((e) => e.park());
@@ -186,55 +205,87 @@ describe('the countdown', () => {
 });
 
 describe('the restart gate', () => {
-  it('stays shut until every single table has reached the pause gate', async () => {
+  /**
+   * PHASE 2 (2026-09-02): THE GATE COUNTS A LIVE HAND, NOT A RAISED HAND.
+   *
+   * The gate has been wrong three times (see unparkedTables). The third: it
+   * asked "has the loop reached the pause-gate promise" - so a table in its
+   * 5s sleep, its seat read, or its idle broadcast, with no cards out, held
+   * the gate shut. On the 17:55 break of 2026-09-02, with ZERO hands dealt
+   * inside it, 64-70 such tables kept readyForRestart false for the whole
+   * five minutes; the deploy gave up at :00 and restarted on live tables at
+   * 18:02. The gate had never once opened on a real break.
+   *
+   * The honest question is "are there cards in the air". These tests never
+   * call park(): reaching the gate is not what matters.
+   */
+  it('stays shut while any table has a hand in flight, and opens the moment the last one settles', async () => {
     const { mb, engines } = build(3);
+    const list = [...engines.values()];
+    list.forEach((e) => e.deal());
     await mb.announceLastHand();
     await mb.beginCountdown();
 
     expect(mb.readyForRestart()).toBe(false);
 
-    const list = [...engines.values()];
-    list[0].park();
-    list[1].park();
+    list[0].finishHand();
+    list[1].finishHand();
     // One table still mid-hand is enough to refuse the restart. Losing a
-    // deploy window costs six hours of slightly older code; restarting here
+    // deploy window costs an hour of slightly older code; restarting here
     // voids somebody's hand.
     expect(mb.readyForRestart()).toBe(false);
 
-    list[2].park();
+    list[2].finishHand();
+    // No table has reached the pause gate. None needs to: nothing is in the
+    // air, so nothing can be lost.
+    expect(list.every((e) => !e.atGate)).toBe(true);
     expect(mb.readyForRestart()).toBe(true);
   });
 
-  it('opens for a QUIET table, which parks in the start-up loop not the deal loop', async () => {
+  it('opens for a QUIET table that never reaches the gate at all', async () => {
     /**
-     * FOUND BY AUDIT BEFORE THIS SHIPPED, and it would have made the whole
-     * feature inert. The gate first used `isWaitingForHandForHand()`, which is
-     * only ever true for a table that reached the gate from the DEALING loop.
-     * A table below minPlayersToDeal sits in the start-up wait loop instead,
-     * and GameServer deliberately starts engines for exactly those tables.
-     *
-     * So every quiet table counted as unparked forever, the gate could never
-     * open, and the deploy would have waited fourteen minutes and given up -
-     * every hour, permanently, with nothing ever shipping except force=true,
-     * which restarts on live tables. The symptom would have been the straggler
-     * warning naming the same table ids every hour.
-     *
-     * `isParkedBetweenHands()` accepts a park from either loop, so this test
-     * is the difference between the feature working and doing nothing.
+     * The production bug. A quiet table waits in the start-up loop; it only
+     * checks the pause every 5s and spends the rest in a seat read, an idle
+     * broadcast and a sleep. Under the second gate it counted as unparked
+     * the whole time. It has no hand; it holds nothing.
      */
     const { mb, engines } = build(2);
     await mb.announceLastHand();
     await mb.beginCountdown();
+    expect([...engines.values()].every((e) => !e.atGate)).toBe(true);
+    expect(mb.readyForRestart()).toBe(true);
+  });
 
-    // Neither table ever sees a hand; they park from the wait loop.
-    parkAll(engines);
+  it('does not open on a raised hand: a table AT the gate with cards still out keeps it shut', async () => {
+    /**
+     * Defensive: if a future refactor ever makes the gate flag and the hand
+     * disagree, cards in the air must win. This is the "too loose" failure
+     * of the first gate, pinned from the other side.
+     */
+    const { mb, engines } = build(1);
+    const e = [...engines.values()][0];
+    e.deal();
+    e.park(); // claims to be at the gate
+    await mb.announceLastHand();
+    await mb.beginCountdown();
+    expect(mb.readyForRestart()).toBe(false);
+    e.finishHand();
+    expect(mb.readyForRestart()).toBe(true);
+  });
+
+  it('ignores a stopped engine: it has no hand to protect', async () => {
+    const { mb, engines } = build(2);
+    const list = [...engines.values()];
+    list[0].deal();
+    list[0].running = false;
+    await mb.announceLastHand();
+    await mb.beginCountdown();
     expect(mb.readyForRestart()).toBe(true);
   });
 
   it('shuts again once too little break remains to finish a restart inside it', async () => {
-    const { mb, engines } = build(1);
+    const { mb } = build(1);
     await mb.announceLastHand();
-    parkAll(engines);
     await mb.beginCountdown();
     expect(mb.readyForRestart()).toBe(true);
 
@@ -248,6 +299,27 @@ describe('the restart gate', () => {
     const { mb } = build();
     expect(mb.readyForRestart()).toBe(false);
     expect(mb.isActive()).toBe(false);
+  });
+
+  it('measures itself: unparked at countdown, the peak, and when it first opened', async () => {
+    const { mb, engines, outcomes } = build(3);
+    const list = [...engines.values()];
+    list[0].deal();
+    list[1].deal();
+    await mb.announceLastHand();
+    await mb.beginCountdown();
+    expect(mb.readyForRestart()).toBe(false); // 2 in flight
+    list[2].deal(); // a third starts one (should not happen under maintenancePaused, but measure it)
+    expect(mb.readyForRestart()).toBe(false); // 3 in flight - the peak
+    list.forEach((e) => e.finishHand());
+    expect(mb.readyForRestart()).toBe(true);
+    vi.advanceTimersByTime(MaintenanceBreak.BREAK_DURATION_MS + 1000);
+    await mb.end();
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0].unparkedAtCountdown).toBe(2);
+    expect(outcomes[0].peakUnparked).toBe(3);
+    expect(outcomes[0].readyForRestartAtMs).not.toBeNull();
+    expect(outcomes[0].tablesResumed).toBe(3);
   });
 });
 
@@ -431,6 +503,72 @@ describe('the end of the break', () => {
   });
 });
 
+describe('the resume is staggered, not a burst (phase 3)', () => {
+  /**
+   * At :00 every table used to resume in one synchronous loop, so all ~250
+   * dealing loops hit a 2-core database in the same instant. The first batch
+   * resumes immediately; the rest roll out RESUME_STAGGER_MS apart. Uses a
+   * controllable setTimer so the batches can be driven by hand.
+   */
+  function buildBig(engineCount: number) {
+    const engines = new Map<string, FakeEngine>();
+    for (let i = 0; i < engineCount; i++) engines.set(`t${i}`, new FakeEngine());
+    const store = new FakeStore();
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    const mb = new MaintenanceBreak({
+      engines: () => engines.entries() as any,
+      isRunning: () => true,
+      emit: () => {},
+      store,
+      setTimer: ((fn: () => void, ms: number) => {
+        timers.push({ fn, ms });
+        return 0 as unknown as NodeJS.Timeout;
+      }) as any,
+    });
+    return { mb, engines, timers };
+  }
+
+  it('resumes the first batch immediately and schedules the rest in batches', async () => {
+    const N = MaintenanceBreak.RESUME_BATCH_SIZE * 3; // three batches
+    const { mb, engines, timers } = buildBig(N);
+    await mb.announceLastHand();
+    await mb.beginCountdown();
+    vi.advanceTimersByTime(MaintenanceBreak.BREAK_DURATION_MS + 1000);
+    const beforeEnd = timers.length;
+    await mb.end();
+
+    const list = [...engines.values()];
+    const resumedNow = list.filter((e) => e.resumeCount > 0).length;
+    // Exactly the first batch is up synchronously.
+    expect(resumedNow).toBe(MaintenanceBreak.RESUME_BATCH_SIZE);
+    // The other two batches are scheduled by end(), at increasing delays.
+    const resumeTimers = timers.slice(beforeEnd);
+    expect(resumeTimers).toHaveLength(2);
+    expect(resumeTimers[0].ms).toBeLessThan(resumeTimers[1].ms);
+
+    // Firing the scheduled batches brings the whole fleet up.
+    for (const t of resumeTimers) t.fn();
+    expect(list.every((e) => e.resumeCount > 0)).toBe(true);
+  });
+
+  it('drops a scheduled batch from a superseded break', async () => {
+    const N = MaintenanceBreak.RESUME_BATCH_SIZE * 2;
+    const { mb, engines, timers } = buildBig(N);
+    await mb.announceLastHand();
+    await mb.beginCountdown();
+    vi.advanceTimersByTime(MaintenanceBreak.BREAK_DURATION_MS + 1000);
+    const beforeEnd = timers.length;
+    await mb.end();
+    const resumeTimers = timers.slice(beforeEnd);
+    // A new break begins (bumps the resume token) before the stale batch fires.
+    await mb.announceLastHand();
+    const before = [...engines.values()].map((e) => e.resumeCount);
+    for (const t of resumeTimers) t.fn(); // stale batch - must be dropped
+    const after = [...engines.values()].map((e) => e.resumeCount);
+    expect(after).toEqual(before);
+  });
+});
+
 describe('surviving the restart', () => {
   it('re-parks every table for what is LEFT of a break the previous engine declared', async () => {
     const { mb, engines, store } = build(3);
@@ -596,6 +734,41 @@ describe('the schedule', () => {
  * So these run against the REAL engine. A stub cannot catch a stub's
  * optimism.
  */
+describe('the dealing loop parks for the break, not only the wait loop', () => {
+  /**
+   * PHASE 2 (2026-09-02). #2537 gave the break its own authority
+   * (maintenancePaused) so hand-for-hand could not lift it, and wired the new
+   * flag into the start-up wait loop and (via #2695) into isPausedByDesign().
+   * It did NOT wire it into the two park gates in the DEALING loop, which
+   * still read handForHandPaused alone - so a table that was dealing never
+   * parked, only quiet tables did. Measured 21:53-21:57 on the build carrying
+   * #2695: 722 / 738 / 663 / 423 hands a minute through the last-hand call,
+   * against 161 / 5 / 0 on the last build that parked via hand-for-hand.
+   *
+   * Source-level, like the other pause laws: every park gate in the dealing
+   * loop must consult maintenancePaused.
+   */
+  it('every awaitPauseGate call in the dealing loop is guarded by maintenancePaused', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const { dirname, join } = await import('node:path');
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(join(here, '../engine/ServerTableEngineDealing.ts'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    const sites = [...src.matchAll(/await this\.awaitPauseGate\(\)/g)];
+    expect(sites.length, 'the dealing loop has two park gates').toBeGreaterThanOrEqual(2);
+    for (const m of sites) {
+      const guard = src.slice(Math.max(0, m.index! - 220), m.index!);
+      expect(
+        guard,
+        'a park gate that ignores maintenancePaused deals through the break: ' +
+          guard.trim().slice(-120)
+      ).toMatch(/maintenancePaused/);
+    }
+  });
+});
+
 describe('the real engine treats a maintenance pause as paused', () => {
   const TBL = 'aaaaaaaa-1111-2222-3333-444444444444';
 
@@ -604,45 +777,76 @@ describe('the real engine treats a maintenance pause as paused', () => {
   // 10s test budget, so the first case in this block timed out while the four
   // behind it (module already cached) passed. Pay the load once, in setup,
   // with a budget that is about loading and not about the pause predicate.
+  // The FIRST construction is expensive too: the constructor pulls in the
+  // Supabase client and the rest of the engine's lazily-initialised services,
+  // and on the shared 4-vCPU runner box that alone has exceeded the 10s budget
+  // (2026-09-02 22:33 UTC, run 33689794287: the import was already hoisted and
+  // the first case still timed out). Pay it here, once, so every case below
+  // measures the pause predicate and nothing else.
   let ServerTableEngine: any;
   beforeAll(async () => {
     ({ ServerTableEngine } = await import('../engine/ServerTableEngine.js'));
+    new ServerTableEngine(TBL);
   }, 120_000);
 
-  it('is not paused before anything asks it to be', async () => {
-    const e = new ServerTableEngine(TBL) as any;
-    expect(e.isPausedByDesign()).toBe(false);
-  });
+  // A generous per-case budget for the same reason: none of these cases does
+  // any real work, but a saturated runner can stall any of them for seconds.
+  const SLOW_RUNNER_MS = 60_000;
 
-  it('is paused by design while the maintenance break holds it', async () => {
-    const e = new ServerTableEngine(TBL) as any;
-    e.pauseForMaintenance(300_000);
-    expect(
-      e.isPausedByDesign(),
-      'the turn loop and the table watchdog both read this. False here means the ' +
-        'break deals hands through itself and the watchdog rebuilds every parked table.'
-    ).toBe(true);
-  });
+  it(
+    'is not paused before anything asks it to be',
+    async () => {
+      const e = new ServerTableEngine(TBL) as any;
+      expect(e.isPausedByDesign()).toBe(false);
+    },
+    SLOW_RUNNER_MS
+  );
 
-  it('stops being paused when the break lifts', async () => {
-    const e = new ServerTableEngine(TBL) as any;
-    e.pauseForMaintenance(300_000);
-    e.resumeFromMaintenance();
-    expect(e.isPausedByDesign()).toBe(false);
-  });
+  it(
+    'is paused by design while the maintenance break holds it',
+    async () => {
+      const e = new ServerTableEngine(TBL) as any;
+      e.pauseForMaintenance(300_000);
+      expect(
+        e.isPausedByDesign(),
+        'the turn loop and the table watchdog both read this. False here means the ' +
+          'break deals hands through itself and the watchdog rebuilds every parked table.'
+      ).toBe(true);
+    },
+    SLOW_RUNNER_MS
+  );
 
-  it('still reports the hand-for-hand pause it always did', async () => {
-    // The maintenance authority is additive; it must not shadow the original.
-    const e = new ServerTableEngine(TBL) as any;
-    e.pauseAfterHand(120_000);
-    expect(e.isPausedByDesign()).toBe(true);
-  });
+  it(
+    'stops being paused when the break lifts',
+    async () => {
+      const e = new ServerTableEngine(TBL) as any;
+      e.pauseForMaintenance(300_000);
+      e.resumeFromMaintenance();
+      expect(e.isPausedByDesign()).toBe(false);
+    },
+    SLOW_RUNNER_MS
+  );
 
-  it('a hand-for-hand resume cannot unpause a table the break is holding', async () => {
-    // The reason the break got its own authority in the first place.
-    const e = new ServerTableEngine(TBL) as any;
-    e.pauseForMaintenance(300_000);
-    e.resumeDealing();
-    expect(e.isPausedByDesign()).toBe(true);
-  });
+  it(
+    'still reports the hand-for-hand pause it always did',
+    async () => {
+      // The maintenance authority is additive; it must not shadow the original.
+      const e = new ServerTableEngine(TBL) as any;
+      e.pauseAfterHand(120_000);
+      expect(e.isPausedByDesign()).toBe(true);
+    },
+    SLOW_RUNNER_MS
+  );
+
+  it(
+    'a hand-for-hand resume cannot unpause a table the break is holding',
+    async () => {
+      // The reason the break got its own authority in the first place.
+      const e = new ServerTableEngine(TBL) as any;
+      e.pauseForMaintenance(300_000);
+      e.resumeDealing();
+      expect(e.isPausedByDesign()).toBe(true);
+    },
+    SLOW_RUNNER_MS
+  );
 });

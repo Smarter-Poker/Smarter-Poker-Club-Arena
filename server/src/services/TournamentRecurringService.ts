@@ -297,6 +297,7 @@ const PAYOUT_STRUCTURES = {
 import {
   SPIN_TIERS,
   SPIN_STACKS,
+  SPIN_SEATS,
   SPIN_SPEED_LABELS,
   spinBlindsForLevel,
   type SpinSpeed,
@@ -1510,7 +1511,15 @@ const SNG_CONFIGS: SNGConfig[] = SNG_BOARD_SHAPES.flatMap((shape) =>
  * SNGs are NOT this. They carry their own max_players (6 in production) and
  * must keep reading it from their config.
  */
-export const SPIN_SEATS = 3;
+/* RE-EXPORTED, NOT REDECLARED (2026-09-02).
+   This was `= 3` written out a second time, in a file that already imports
+   SPIN_TIERS / SPIN_STACKS / spinBlindsForLevel from the same spec. Two
+   sources of truth for the seat count is worse here than almost anywhere
+   else: the whole multiplier distribution is built on
+   E[multiplier] = seats x (1 - rake_rate), so a divergence would not look
+   like a bug, it would look like a slightly wrong house edge. Importers of
+   this name keep working. */
+export { SPIN_SEATS };
 
 /**
  * Seats the cash room keeps, per live cash table, before the Spin and

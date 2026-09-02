@@ -106,9 +106,28 @@ describe('the drawn multiplier reaches the row, or keeps trying', () => {
 });
 
 describe('the reveal asks the hub to hold it (D3)', () => {
-  it('the wheel event carries its own replay deadline', () => {
-    const emit = sliceEnclosingBlock(CODE, "type: 'spin_reveal'");
-    expect(emit).toMatch(/replay_until:\s*holdUntil/);
+  it('the wheel event carries its own replay deadline, and it is the REAL one', () => {
+    /* PIN MOVED, NOT WEAKENED (2026-09-02, §10.6). It read
+       `/replay_until:\s*holdUntil/`. The engine holds dealing until
+       `effectiveHold = Math.max(holdUntil, now + spinPostRevealMs())`, so
+       pinning the PLANNED hold pinned the bug: on the overrun path the hub
+       dropped the replay packet while the cards were still legally undealt,
+       and a player reconnecting in that window lost the reveal entirely.
+       The deadline must be the hold the engine actually keeps. */
+    /* THERE ARE TWO PACKETS AND THEY ARE NOT THE SAME (2026-09-02). The
+       first `type: 'spin_reveal'` in this file is the EARLY emit, fired
+       before the engine exists; the second is the main pass. The old pin
+       sliced occurrence 0 and asserted `holdUntil`, which passed against
+       either - so it never noticed they had to differ. Both are pinned now,
+       each to the deadline it actually owes. */
+    const early = sliceEnclosingBlock(CODE, "type: 'spin_reveal'", 0);
+    expect(early).toMatch(
+      /replay_until: Math\.max\(holdUntil, Date\.now\(\) \+ spinPostRevealMs\(\)\)/
+    );
+
+    const main = sliceEnclosingBlock(CODE, "type: 'spin_reveal'", 1);
+    expect(main).toMatch(/replay_until:\s*effectiveHold/);
+    expect(main).not.toMatch(/replay_until:\s*holdUntil\b/);
   });
 
   it('the post-reveal beats carry one too, ending when dealing may start', () => {

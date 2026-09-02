@@ -1697,7 +1697,18 @@ export abstract class TournamentManagerBase {
                 reveal_lag_ms: this.spinRevealLagMs,
                 prize_pool: prizePool,
                 timestamp: revealAt,
-                replay_until: holdUntil,
+                /* THE REPLAY WINDOW COVERS THE HOLD THE ENGINE WILL ACTUALLY
+                   KEEP, NOT THE ONE PLANNED HERE (fixed 2026-09-02).
+
+                   This read `holdUntil`, but the pass further down extends the
+                   hold to `Math.max(holdUntil, now + spinPostRevealMs())` so
+                   the post-reveal beats always have room. The hub drops a
+                   replay packet once `replay_until` passes, so on exactly the
+                   bad day the extension exists for, a player reconnecting
+                   between the planned hold and the real one got NO reveal at
+                   all while the cards were still legally undealt. Same floor,
+                   computed the same way. */
+                replay_until: Math.max(holdUntil, Date.now() + spinPostRevealMs()),
               });
             } catch (err) {
               /* The reveal is theatre; it must never stop a game starting. */
@@ -1785,10 +1796,16 @@ export abstract class TournamentManagerBase {
           }
         }
 
-        // Structure scales with the drawn tier: 300 chips and 1-minute
-        // levels at 2x, 500 chips and 5-minute levels at 500x. Since the
-        // draw moved to start, creation writes only a smallest-tier
-        // placeholder, so the blinds MUST be rewritten here — before
+        // BLINDS scale with the drawn tier. THE STACK DOES NOT, and has not
+        // since 2026-09-01: it is a property of the BOARD (Turbo 300, Deep
+        // Stack 1000, spinSpec SPIN_STACKS), written at creation and held by
+        // the seat from the moment the buy-in is paid. This comment used to
+        // read "300 chips at 2x, 500 chips at 500x", describing the retired
+        // behaviour where the wheel decided how many chips you played with.
+        // The code below never did that; the sentence did, and spinSpec warns
+        // in as many words not to reintroduce it. Since the draw moved to
+        // start, creation writes only a smallest-tier placeholder, so the
+        // blinds MUST be rewritten here — before
         // createTablesAndSeatPlayers below reads them — or a 500x would run
         // on 1-minute levels.
         const spinBlinds = Array.from({ length: 12 }, (_, i) => {
@@ -1933,10 +1950,13 @@ export abstract class TournamentManagerBase {
       /**
        * SEAT-FIRST STACK SYNC — but NOT yet, if a wheel is about to turn.
        *
-       * A player who sat down before the game started holds a RESERVATION at
-       * zero chips: stack depth is a property of the tier, and spin tiers run
-       * 300/400/500, so there is no honest number to seat them with until the
-       * draw lands.
+       * A player who sat down before the game started used to hold a
+       * RESERVATION at zero chips, because stack depth was read off the drawn
+       * tier and there was no honest number to seat them with until the wheel
+       * landed. THAT IS RETIRED. The stack belongs to the board (Turbo 300,
+       * Deep Stack 1000), it is known before anybody sits, and Dan's rule is
+       * that it appears the instant the buy-in is paid: "as soon as they buy
+       * in 300 chips should appear in their action box (not 0)".
        *
        * Dan 2026-08-21: "AFTER THE SPIN COMPLETES, CHIP STACKS GET ADDED,
        * BUTTON RANDOMLY ASSIGNED AND THE SPIN STARTS." Crediting here — which
@@ -2114,7 +2134,15 @@ export abstract class TournamentManagerBase {
                * has, so a client that loads late shortens its own sequence
                * instead of being dealt over.
                */
-              hold_until: holdUntil,
+              /* `effectiveHold`, not `holdUntil` (fixed 2026-09-02). The
+                 comment above says this is "the same number
+                 `holdDealingUntil` was just given, so it is the contract and
+                 not a description of one" - and it was not: the engine was
+                 held to `effectiveHold` while the client was told
+                 `holdUntil`. On the overrun path, the only path where the two
+                 differ, the client clamped against a deadline the engine had
+                 already abandoned. */
+              hold_until: effectiveHold,
               /** How far the broadcast slipped behind the third payment. */
               reveal_lag_ms: this.spinRevealLagMs,
               prize_pool: Number(tournament.prize_pool) || 0,
@@ -2129,7 +2157,7 @@ export abstract class TournamentManagerBase {
                * multiplier. Past `holdUntil` the wheel is meaningless (cards
                * are out), so the hub drops it on its own; there is no log.
                */
-              replay_until: holdUntil,
+              replay_until: effectiveHold,
             });
           } catch (err) {
             // The reveal is theatre; it must never stop a game from starting.
@@ -3184,8 +3212,16 @@ export abstract class TournamentManagerBase {
             timestamp: Date.now(),
             replay_until: replayUntil, // D3
           });
-        } catch {
-          /* theatre */
+        } catch (err) {
+          /* Still never fatal - a lost beat must not stop a game. But it is
+             REPORTED now (2026-09-02). This was a bare `catch { }`, so when
+             beat 1 failed the player's chips simply appeared in the next state
+             diff with no cue and no trace, which is the exact outcome the
+             comment above says this scheduling exists to prevent. An animation
+             that silently does not play is a bug by the animation law (10.6);
+             one that silently does not play AND leaves no evidence cannot even
+             be found. */
+          reportError(err, 'Tournament.' + this.tournamentId.slice(0, 8) + '.spin_chips_emit');
         }
       }
     });

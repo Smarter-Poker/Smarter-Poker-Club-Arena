@@ -893,9 +893,12 @@ export class ScheduledTournamentService {
      * stamped `tournament_type = 'SPIN'`. One schedule does exactly that --
      * "Spin Royale", active, every 30 minutes -- with `blindPreset:
      * "HYPER_TURBO"`, an MTT ladder that opens at 50/100 with a 15 ante and
-     * doubles from there. A Spin's stack is written at DRAW time from
-     * SPIN_TIERS, so the draw handed those games a 300-chip stack against a
-     * 100 big blind.
+     * doubles from there. A Spin's stack came from SPIN_TIERS at DRAW time
+     * when this was written, so the draw handed those games a 300-chip stack
+     * against a 100 big blind. (The stack now comes from the BOARD at
+     * creation — SPIN_STACKS, Turbo 300 or Deep Stack 1000 — which changes
+     * where the number is written, not the arithmetic that broke these
+     * games.)
      *
      * Measured on production, every completed Spin Royale over three days:
      *

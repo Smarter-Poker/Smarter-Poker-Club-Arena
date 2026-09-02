@@ -98,8 +98,19 @@ describe('every wallet credit in the server carries an idempotency key', () => {
        from the row it locked. That is the property this file is about, moved
        into the database where the lock is - so the site is gone and the rule
        is stronger. The floor exists to catch the regex silently matching
-       nothing; it is not a target. */
-    expect(sites.length).toBeGreaterThanOrEqual(9);
+       nothing; it is not a target.
+
+       LOWERED 9 -> 1 on 2026-09-02 (chip accounting standard, Lane A2), and
+       again it is sites REMOVED, not a regex that rotted. The eight tournament
+       `fn_credit_and_log` sites (place at bust, place 1 at finish, bubble
+       protection, late-reg top-up, final-table deal, cancel refund, recovery
+       places + top-ups, satellite cash) all became
+       `settleTournamentObligation()` -> `fn_settle_tournament_obligation`,
+       which derives its idempotency key from the obligation row it settles.
+       The one site left is the cash-table add-on refund via
+       `atomic_credit_wallet_and_log`. The single-path rule for tournaments is
+       pinned server-side by OneSettlePathForTournamentMoney.law.test.ts. */
+    expect(sites.length).toBeGreaterThanOrEqual(1);
   });
 
   for (const s of sites) {

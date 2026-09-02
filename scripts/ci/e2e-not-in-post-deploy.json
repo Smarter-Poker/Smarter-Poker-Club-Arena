@@ -1,0 +1,103 @@
+{
+  "_comment": [
+    "Spec files under tests/e2e/ that the post-deploy production run does NOT invoke.",
+    "",
+    "WHY THIS FILE EXISTS (2026-09-02). post-deploy-e2e.yml selects its specs by",
+    "NAME. On the day this was written, 19 of the 34 spec files at the top level of",
+    "tests/e2e were not named anywhere in it, so they had never run against",
+    "production even once - and nothing said so. The workflow's own comment warns",
+    "about exactly this shape ('nine route suites stayed invisible one level down'),",
+    "and the fix applied there was to pass a DIRECTORY. The top level kept its",
+    "hand-written list, so the hole reopened one file at a time.",
+    "",
+    "Four of the nineteen were regression nets Dan asked for BY NAME after a live",
+    "complaint - seat-first-entry ('I STILL CAN'T EVEN SIT DOWN AND PLAY'),",
+    "live-animations ('now do a real live e2e browser test of everything'),",
+    "hero-cards-no-glitch (bug list item 4) and multi-table (the PokerBros-parity",
+    "net). They were written, merged, and then never run after a deploy.",
+    "",
+    "THIS IS A RATCHET, NOT AN ESCAPE HATCH - the same rule as",
+    "e2e-may-skip-entirely.json next to it. A file listed here is a standing",
+    "admission that production is not covered by it. The number goes DOWN.",
+    "",
+    "tests/unit/everyProductionSpecIsWiredOrDeclared.test.ts fails the build when a",
+    "spec is neither invoked by the workflow nor listed here, so a twentieth file",
+    "cannot be added beside these and quietly never run.",
+    "",
+    "Paths are relative to tests/e2e, exactly as they appear on disk."
+  ],
+  "notInvoked": [
+    {
+      "file": "club-mobile-wallet-reach.spec.ts",
+      "reason": "UNAUDITED. Found by the 2026-09-02 sweep, owner unknown. Needs someone to confirm it can run against production before it is wired in."
+    },
+    {
+      "file": "customization-controls.spec.ts",
+      "reason": "UNAUDITED. Overlaps production-customization-realtime.spec.ts, which IS invoked; may be redundant rather than missing."
+    },
+    {
+      "file": "customization-studios.spec.ts",
+      "reason": "UNAUDITED. Same overlap question as customization-controls.spec.ts."
+    },
+    {
+      "file": "diamond-checkout-mobile.spec.ts",
+      "reason": "Touches a real payment surface. Must not be added to a post-deploy run without deciding what it is allowed to spend."
+    },
+    {
+      "file": "financial-decision-human-path.spec.ts",
+      "reason": "Touches money decisions. Same constraint as diamond-checkout-mobile.spec.ts."
+    },
+    {
+      "file": "flop-fan-open.spec.ts",
+      "reason": "UNAUDITED layout net. Needs a live table with a flop, so it may belong with the fixture-dependent suites rather than the read-only sweep."
+    },
+    {
+      "file": "footer-visual-regression.spec.ts",
+      "reason": "UNAUDITED. Screenshot comparison; needs a baseline story before it can gate a deploy."
+    },
+    {
+      "file": "hero-card-row.spec.ts",
+      "reason": "UNAUDITED layout net for the hero card row. Wiring it in would have covered the 2026-08-31 J9h incident surface."
+    },
+    {
+      "file": "hero-cards-no-glitch.spec.ts",
+      "reason": "UNAUDITED. Written for Dan's bug list item 4 ('cards glitch once before display') and never run after a deploy since."
+    },
+    {
+      "file": "live-animations.spec.ts",
+      "reason": "UNAUDITED. Written for Dan 2026-08-20 ('now do a real live e2e browser test of everything'). Needs a live table, so it likely needs a fixture-aware invocation rather than the read-only sweep."
+    },
+    {
+      "file": "multi-table.spec.ts",
+      "reason": "UNAUDITED. The stated regression net for the PokerBros-parity work; needs seats at more than one table."
+    },
+    {
+      "file": "pot-above-chips.spec.ts",
+      "reason": "UNAUDITED layout net. Needs a live pot."
+    },
+    {
+      "file": "raise-panel-covers-chat.spec.ts",
+      "reason": "UNAUDITED layout net. Needs a seated player with the raise panel open."
+    },
+    {
+      "file": "seat-first-entry.spec.ts",
+      "reason": "SEATS A PLAYER. Written for Dan 2026-08-28 ('I STILL CAN'T EVEN SIT DOWN AND PLAY'). It buys in, so it cannot join the read-only sweep without deciding what it is allowed to spend."
+    },
+    {
+      "file": "spin-wheel-on-a-phone.spec.ts",
+      "reason": "Enters a Spin, which costs a real buy-in. Same constraint as seat-first-entry.spec.ts."
+    },
+    {
+      "file": "table-proportions.spec.ts",
+      "reason": "References localhost - it is a dev-server spec, not a production contract. This one is arguably correct to leave out."
+    },
+    {
+      "file": "tap-sweep-rules.spec.ts",
+      "reason": "UNAUDITED. Needs a seated table to sweep taps across."
+    },
+    {
+      "file": "top-rail-seat.spec.ts",
+      "reason": "UNAUDITED layout net. Needs a seated table."
+    }
+  ]
+}

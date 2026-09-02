@@ -309,7 +309,7 @@ import { retryAsync } from '../utils/retryAsync';
 import { safeErrorMessage, shouldSurfaceError } from '../utils/safeErrorMessage';
 import { serverNow } from '../utils/serverClock';
 // Dan 2026-08-21, item 15: hero's live hand strength under their seat box.
-import { bestFive, cardKey } from '../utils/handEvaluator';
+import { bestFive, cardKey, isPineappleVariant } from '../utils/handEvaluator';
 // Dan 2026-08-21, items 11 + 16: the client's post-hand hold comes from the
 // same animation spec the engine derives its own hold from, so the table can
 // never clear the winner before the pot has finished travelling to them.
@@ -7161,11 +7161,14 @@ export default function TablePage({
      showGtoAdvisor, and no JSX ever read any of the three — so the advisor
      could not be opened, and the state re-rendered the whole table for
      nobody. `sessionRake` sat beside it, never set and never read.
-     src/services/GTOQueryService.ts itself is untouched and still exported
-     from the services barrel; only this page's import of it is gone, which
-     also takes it out of the table's bundle. If the advisor is wanted, it
-     comes back as a rendered panel with a trigger, not as four unreachable
-     identifiers. */
+     UPDATE 2026-09-01: src/services/GTOQueryService.ts is now DELETED. That
+     audit left the service exported from the barrel with no consumer, and it
+     queried three tables - gto_solutions, preflop_ranges, gto_solve_queue -
+     that do not exist in production, so it could not have worked had anything
+     called it. The live GTO data is elsewhere (gto_postflop_compact,
+     gto_scenarios, solved_spots_gold), so no capability is lost. If the advisor
+     is wanted, it comes back as a rendered panel with a trigger, over tables
+     that exist. */
 
   // [MIGRATION] handleHandComplete REMOVED — FIX 181
   // Rake calculation and waterfall execution are server-authoritative (Bible V8 Law 1.4).
@@ -15969,9 +15972,16 @@ export default function TablePage({
         }
       }
       if (best) {
-        if (best.n >= 4) strength = 'Four of a Kind';
-        else if (best.n === 3) strength = 'Three of a Kind';
-        else if (best.n === 2) strength = 'Pair';
+        /* PINEAPPLE 2026-09-01: three in the hand, two of them survive the
+           discard, so trips preflop is a hand that cannot be played and must
+           not be named. Capped rather than special-cased so the rest of this
+           branch - the high-card wording below included - is untouched. See
+           isPineappleVariant in handEvaluator.ts for the same rule on the
+           flop. */
+        const holdable = isPineappleVariant(heroHandVariant) ? Math.min(best.n, 2) : best.n;
+        if (holdable >= 4) strength = 'Four of a Kind';
+        else if (holdable === 3) strength = 'Three of a Kind';
+        else if (holdable === 2) strength = 'Pair';
         else {
           const high = ranks.reduce((a, b) => (RANK_ORDER(b) > RANK_ORDER(a) ? b : a));
           strength = `${RANK_WORD(high)} High`;

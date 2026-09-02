@@ -117,12 +117,30 @@ jobs:
   # bundle from shipping. It just stops adding its five minutes to the build's
   # two.
   # ═════════════════════════════════════════════════════════════════════════
+  # SHARDED 2026-09-02 to unblock publishing. This suite is the authoritative
+  # gate on the bundle (a red test still stops the sync via `needs` below), and
+  # it ran ~11 minutes on one 2-core runner. sync-to-world-hub waits for it, so
+  # every publish took ~18 minutes end to end - slower than the merge rate, so
+  # production perpetually lagged and intermediate publish runs were cancelled
+  # ("last 3 pushes haven't published"). Nothing was ever lost: main is durable
+  # and the publisher converges to the latest. But the LAG is the bug.
+  #
+  # Four shards run in parallel, so wall clock drops to ~3 minutes and the whole
+  # publish pipeline to ~7. The gate is exactly as strong: sync-to-world-hub
+  # `needs: [build-and-store, client-tests]`, and `needs` on a matrix waits for
+  # EVERY shard, so one red shard still stops the bundle. fail-fast cancels the
+  # siblings the moment one fails, which is what a gate wants. The self-hosted
+  # runner (CI_RUNNER) will make even this near-instant; until then, shard.
   client-tests:
     needs: publish-needed
     if: needs.publish-needed.outputs.skip != 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        shard: [1, 2, 3, 4]
     env:
       HUSKY: '0'
     steps:
@@ -135,11 +153,22 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      # Cache the installed tree so npm ci is skipped on a hit - ~2 min off
+      # each shard. Keyed on the lockfile, so any dependency change installs
+      # fresh; identical behaviour, minus the wait.
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-bfwh-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+
       - name: Install dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
-      - name: Client tests must pass before the bundle ships
-        run: npx vitest run tests/
+      - name: Client tests must pass before the bundle ships (shard ${{ matrix.shard }}/4)
+        run: npx vitest run tests/ --shard=${{ matrix.shard }}/4
 
   build-and-store:
     needs: publish-needed

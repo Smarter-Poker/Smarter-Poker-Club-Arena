@@ -135,6 +135,34 @@ describe('LAW: the hamburger is linked to the club you are inside', () => {
   });
 });
 
+describe('LAW: switching club keeps the page you are on', () => {
+  /* Mirrors HamburgerMenu.handleSwitchClub. The drawer's club switcher used
+     to be reachable only from a `/clubs/…` path, where "go to that club's
+     lobby" was the whole of switching. Now that the drawer holds its club
+     across `?club=`-scoped pages, answering "show me this in the other club"
+     by throwing the page away is the same fault as dropping the club, just
+     pointed the other way. */
+  const switchTarget = (pathname: string, search: string, nextClub: string) => {
+    if (isClubScopedGlobalRoute(pathname)) {
+      const params = new URLSearchParams(search);
+      params.set(CLUB_CONTEXT_PARAM, nextClub);
+      return `${pathname}?${params.toString()}`;
+    }
+    return `/clubs/${nextClub}`;
+  };
+
+  it('stays on a club-scoped page and swaps the club', () => {
+    expect(switchTarget('/leaderboard', '?club=club-jaqk&period=week', CLUB)).toBe(
+      `/leaderboard?club=${CLUB}&period=week`
+    );
+  });
+
+  it('still goes to the lobby from anywhere that is not club-scoped', () => {
+    expect(switchTarget('/profile', '', CLUB)).toBe(`/clubs/${CLUB}`);
+    expect(switchTarget('/clubs/club-jaqk/members', '', CLUB)).toBe(`/clubs/${CLUB}`);
+  });
+});
+
 describe('LAW: a page resolves the club the URL actually names', () => {
   const clubs = [
     { id: '11111111-1111-4111-8111-111111111111', slug: 'club-jaqk', club_id: 10001 },

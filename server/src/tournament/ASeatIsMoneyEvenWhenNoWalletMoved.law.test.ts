@@ -49,8 +49,15 @@ const MIG = (f: string) =>
  * success - which is exactly what happened twice to the Phase 2 file before
  * the guard below existed.
  */
-const LIVE_BODY_MIGRATION = '20260902155525';
-const SOURCE = MIG('20260902155525_a_seat_is_money_even_when_no_wallet_moved.sql');
+const LIVE_BODY_MIGRATION = '20260902160019';
+const SOURCE = MIG('20260902160019_a_seat_is_money_even_when_no_wallet_moved.sql');
+
+/**
+ * The follow-up that made the seat term affordable. It is a SEPARATE
+ * migration on purpose: the delta change is the contract, this is the index
+ * that lets the contract run inside a statement timeout.
+ */
+const INDEX_FIX = MIG('20260902164610_the_seat_term_was_scanning_every_payout_ever_made.sql');
 
 const DELTA = sliceSqlStatement(
   SOURCE,
@@ -143,6 +150,54 @@ describe('the scan can see the events the delta now balances', () => {
     // must not ride along on this one.
     expect(SCAN).toContain("'spin'");
     expect(SCAN).toMatch(/Reserve Pool/);
+  });
+});
+
+describe('the seat term stays affordable', () => {
+  /**
+   * THIS IS NOT A PERFORMANCE NICETY, IT IS THE CHECK STAYING ALIVE.
+   *
+   * seat_income filters on a metadata key that tournament_payouts has no index
+   * for. Without the partial index it seq-scans all 85,331 payout rows PER
+   * TOURNAMENT - 3,736 buffers a time, against a hourly job that evaluates
+   * 5,108 events. Measured on 2026-09-02, that took down BOTH
+   * tourney_money_conservation_hourly and, worse,
+   * ca-pay-backed-payout-shortfalls-hourly, which is the job that pays players
+   * a backed shortfall. Both had been green all day; both failed on the first
+   * run after the delta changed.
+   *
+   * Drop this index and the money checks stop running again, silently, because
+   * their heartbeat is stamped by a different wire entirely.
+   */
+  it('a partial index serves the metadata lookup the delta does', () => {
+    expect(INDEX_FIX).toContain('idx_tournament_payouts_satellite_target');
+    expect(INDEX_FIX).toMatch(
+      /ON public\.tournament_payouts \(\(metadata->>'satellite_target_id'\)\)/
+    );
+    // Partial, so it stays 23 rows rather than 85,331.
+    expect(INDEX_FIX).toMatch(/WHERE source = 'satellite_seat'/);
+  });
+
+  it('the index the delta depends on is the index the delta queries', () => {
+    // The predicate and the indexed expression must be written the same way,
+    // or the planner will not use it and nothing will say so.
+    const indexed = /metadata->>'satellite_target_id'/;
+    expect(DELTA).toMatch(indexed);
+    expect(INDEX_FIX).toMatch(indexed);
+  });
+
+  it('says out loud why it exists, so it survives the dead-index sweep', () => {
+    // This estate drops never-scanned indexes. An index with no stated reason
+    // is a candidate; one that names the cron it keeps alive is not.
+    // Anchored to line start: an unanchored match also passes on a COMMENTED-OUT
+    // `-- COMMENT ON INDEX ...`, which is a pin that cannot fail. Second time
+    // this exact shape has slipped through in this file; negative control is
+    // the only thing that catches it.
+    expect(INDEX_FIX).toMatch(/^COMMENT ON INDEX public\.idx_tournament_payouts_satellite_target/m);
+  });
+
+  it('asserts the index moved no number', () => {
+    expect(INDEX_FIX).toContain('the index changed a number');
   });
 });
 

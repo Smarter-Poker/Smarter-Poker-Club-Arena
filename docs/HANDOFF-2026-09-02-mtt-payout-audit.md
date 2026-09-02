@@ -43,7 +43,7 @@ pushed. Phase 4 has not been started.**
 > **SUPERSEDED 2026-09-02 — PHASE 4 IS COMPLETE.** Commits `b557cb5f1`
 > (migration + law) and `c1181a5ae` (changelog), pushed to the same branch and
 > the same PR #2551. Migration
-> `20260902155525_a_seat_is_money_even_when_no_wallet_moved` is applied and
+> `20260902160019_a_seat_is_money_even_when_no_wallet_moved` is applied and
 > md5-verified against `pg_proc`. Server 3,665/329, client 11,461/836, both
 > `tsc` clean, law registry green, definer gate OK. Next unit of work is
 > **Phase 5 of 6**. Everything below this line still describes Phases 1-3

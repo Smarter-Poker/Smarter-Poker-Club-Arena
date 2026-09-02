@@ -74,7 +74,7 @@ arithmetic and left the blindness in place.
 
 ## What shipped
 
-`20260902155525_a_seat_is_money_even_when_no_wallet_moved.sql`
+`20260902160019_a_seat_is_money_even_when_no_wallet_moved.sql`
 
 1. The delta learns both halves of a seat: `seat_income` on the target (found
    through `metadata->>'satellite_target_id'`, because the payout row belongs
@@ -130,6 +130,54 @@ less. The third reader is the scan, which pays nothing.
   funding it. Same class as the seat - money out with no money in - but it is
   engine-side promotional funding and belongs to whoever owns promotions. Named
   rather than guessed at.
+
+## The fix broke two hourly money jobs, and this is the correction
+
+**Found by the phase gate, an hour after claiming Phase 4 complete.** The
+migration was correct and cost two jobs their next run.
+
+`seat_income` filters on `metadata->>'satellite_target_id'`, and
+`tournament_payouts` is indexed on `tournament_id`, `(tournament_id, position)`,
+`(user_id, paid_at)` and `idempotency_key` - and on nothing that serves that
+predicate. So the term seq-scanned all 85,331 payout rows **per tournament
+evaluated**: 3,736 buffers a time, against an hourly job that evaluates 5,108
+events. About 19.1 million buffer hits for one term.
+
+Two jobs died on the first run after 16:00:19, both of them green all day:
+
+| pg_cron job                             | before                        | after       |
+| --------------------------------------- | ----------------------------- | ----------- |
+| 144 `tourney_money_conservation_hourly` | 18.5s 17.6s 24.8s 22.7s 25.8s | **timeout** |
+| 231 `ca-pay-backed-payout-shortfalls`   | 40s 46s 43s 86s               | **timeout** |
+
+231 is the job that **pays players** a backed shortfall, so one hourly cycle of
+back-pay did not happen. Nothing is permanently lost - the job is hourly and
+idempotent and the next healthy run pays whatever is still owed - but it is a
+missed cycle and it is written down as one rather than rounded off.
+
+Job 229 (cash pot) also failed in that window and is **not** this: it failed at
+15:34, half an hour _before_ the migration, inside a `hand_history` query, and
+recovered by itself at 16:34. Not every red job in the window is yours.
+
+Fixed by `20260902164610` - one partial expression index, 23 qualifying rows.
+Measured on the same query and row: **3,736 buffers / 987.9 ms to 4 buffers /
+0.24 ms**. Across 400 events of the real window the two seat terms now cost
+about 5 buffers each per event, roughly a tenth of the delta's total cost,
+where before the index they were seventy times the whole rest of the query.
+
+### Two things this exposed that are not mine to close
+
+**The heartbeat could not have caught it.** `money_check_heartbeat` is stamped
+by the GameServer pass, which has never run - all seven rows still read
+`run_count = 0`. But these checks are driven by **pg_cron**, jobs 144 and 231,
+and they have been running hourly all along. So the Phase 1 conclusion that "no
+money check runs automatically" is true only of the GameServer wire: a check can
+be running hourly, and failing hourly, while its heartbeat says it has never
+run. Recorded for the Phase 1 owner rather than widened here.
+
+**I measured wall clock and nearly trusted it.** The extrapolation said ~69s
+against a 120s cap, which looked fine and means nothing on this database.
+Buffers are what settled it: +11% on the check's cost, not +170%.
 
 ## What went wrong on the way
 

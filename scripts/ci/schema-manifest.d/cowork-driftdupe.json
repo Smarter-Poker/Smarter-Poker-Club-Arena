@@ -1,5 +1,0 @@
-{
-  "_owner": "agent/cowork-driftdupe/fix/one-page-per-finding (2026-09-01). Applied to production as migration one_page_per_finding_not_one_per_row. Verified live by rolled-back probes: two incident rows for one finding raise once, three rows resolve once, an amount that jitters is silent, a severity change pages immediately, and a resolved finding that recurs pages again.",
-  "tables": ["ca_incident_notify_ledger"],
-  "functions": ["fn_ca_finding_key"]
-}

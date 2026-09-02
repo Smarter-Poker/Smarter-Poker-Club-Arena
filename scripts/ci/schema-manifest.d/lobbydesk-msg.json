@@ -1,5 +1,0 @@
-{
-  "_owner": "fix/club-lobby-owner-message",
-  "functions": ["fn_set_club_lobby_message"],
-  "columns": { "clubs": ["lobby_message", "lobby_message_updated_at"] }
-}

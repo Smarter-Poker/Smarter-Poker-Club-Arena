@@ -1,6 +1,0 @@
-{
-  "_owner": "fix/an-alarm-that-fails-says-so",
-  "tables": ["ca_incident_file_failures"],
-  "functions": ["fn_ca_escalate_reconcile_criticals"],
-  "columns": {}
-}

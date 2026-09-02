@@ -639,12 +639,12 @@ export default function TableConfigPage() {
 
   // PERMISSION GATE: who is allowed to build a game for this club.
   //
-  // This page is the standalone-club builder. Union-managed clubs create games
-  // from the union console, never from an individual club lobby.
+  // The same builder is reached from a standalone club or from the union
+  // console. fn_game_creation_access distinguishes an authorized union
+  // operator from the member club's own staff.
   const [access, setAccess] = useState<GameCreationAccess | null>(null);
   const checkingAccess = access === null;
-  const unionManagedClub = Boolean(access?.unionId) || access?.reason === 'union_only';
-  const canBuildHere = access?.allowed === true && !unionManagedClub;
+  const canBuildHere = access?.allowed === true;
 
   // ── CRITICAL: Reset per-club state when navigating between clubs ──
   useEffect(() => {
@@ -674,10 +674,7 @@ export default function TableConfigPage() {
       }
       if (!isMounted) return;
       setAccess(result);
-      if (result.unionId || result.reason === 'union_only') {
-        toast.info('This Club Is Managed By A Union. Create Games From The Union Console.');
-        navigate(`/clubs/${clubId}`);
-      } else if (!result.allowed) {
+      if (!result.allowed) {
         toast.error(gameCreationDeniedMessage(result));
         navigate(`/clubs/${clubId}`);
       }
@@ -1048,8 +1045,10 @@ export default function TableConfigPage() {
 
   const buildTableData = (resolvedClubId?: string) => ({
     club_id: resolvedClubId || clubId,
-    // This route is standalone-only; union games are created by the union console.
-    union_id: null,
+    // Standalone games remain club-scoped. A union operator reaches this same
+    // builder from Table Management, and the authoritative access answer
+    // supplies the union stamped onto the new game.
+    union_id: access?.unionId || null,
     name: config.name,
     // FORMAT, not variant (2026-08-30 audit). tables.game_type is the table
     // FORMAT ('cash' | 'tournament') platform-wide: HorseFleetManager writes

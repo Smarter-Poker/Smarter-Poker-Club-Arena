@@ -90,3 +90,38 @@ describe('the check cannot share a failure domain with what it watches', () => {
     expect(SCRIPT).toMatch(/if \(last === undefined\) continue;/);
   });
 });
+
+describe('the wedge heals itself (added 2026-09-01, the day it happened live)', () => {
+  // Every CA schedule went silent for 2.5h after workflow-file churn while
+  // World Hub fired normally: the repo-level registration wedge. The proven
+  // manual fix was disable+enable per workflow; the script now applies it.
+
+  it('distinguishes the wedge from a dropped tick by simultaneity', () => {
+    expect(SCRIPT).toMatch(/WEDGE_MIN\s*=\s*Number\(process\.env\.SCHEDULE_WEDGE_MIN \|\| 3\)/);
+    expect(SCRIPT).toMatch(/late\.length >= WEDGE_MIN/);
+  });
+
+  it('heals by re-registering: disable then enable, enable never left undone', () => {
+    expect(SCRIPT).toContain("/disable`, 'PUT'");
+    expect(SCRIPT).toContain("/enable`, 'PUT'");
+    // The retry that guarantees a workflow is never left disabled by a
+    // half-failed cycle.
+    expect(SCRIPT).toMatch(
+      /if \(!on\.ok\) await api\(`\/actions\/workflows\/\$\{wf\.id\}\/enable`, 'PUT'\);/
+    );
+  });
+
+  it('leaves deliberately disabled workflows alone', () => {
+    expect(SCRIPT).toMatch(/wf\.state !== 'active'/);
+  });
+
+  it('will not flap: the audit issue is the cooldown memory', () => {
+    expect(SCRIPT).toMatch(/REHEAL_COOLDOWN_H/);
+    expect(SCRIPT).toContain('labels=cron-wedge');
+    expect(SCRIPT).toContain('Cron registration wedge');
+  });
+
+  it('the heal is loud - an issue, not a step summary nobody reads', () => {
+    expect(SCRIPT).toMatch(/api\(`\/issues`, 'POST'/);
+  });
+});

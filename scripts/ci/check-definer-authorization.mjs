@@ -140,7 +140,25 @@ function changedMigrations(base) {
   return out
     .split('\n')
     .map((l) => l.trim())
-    .filter((l) => l.startsWith(DIR) && l.endsWith('.sql'));
+    .filter((l) => l.startsWith(DIR) && l.endsWith('.sql'))
+    // BACKFILL EXEMPTION (2026-09-01). A file whose first line marks it as a
+    // recovered record of an ALREADY-APPLIED migration is history, not new
+    // work. It cannot introduce a new definer: the function is already live in
+    // whatever state later migrations left it, and THAT live grant - not this
+    // file's historical creation-time GRANT - is what a browser can actually
+    // reach. Judging a backfill on its own creation-time grants produces false
+    // positives against production truth (verified 2026-09-01). New
+    // declarations are unaffected, and live grants stay covered by
+    // audit-live-definer-exposure.mjs (which asks production directly) and by
+    // this gate on every genuinely new migration. Marker is machine-written by
+    // scripts/ci/backfill-unrecorded-migrations.mjs.
+    .filter((f) => {
+      try {
+        return !/^--\s*(BACKFILLED|UNRECOVERABLE STUB)\b/.test(readFileSync(join(REPO, f), 'utf8'));
+      } catch {
+        return true; // unreadable: check it rather than skip it
+      }
+    });
 }
 
 /** Comments carry no behaviour, and a comment that merely NAMES auth.uid()

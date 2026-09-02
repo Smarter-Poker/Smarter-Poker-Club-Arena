@@ -73,7 +73,9 @@ const BASELINE = new Map<string, number>([
   ['src/services/ClubsService.ts', 5],
   ['src/services/PromotionService.ts', 2],
   ['src/services/CreditService.ts', 5],
-  ['src/pages/ClubDetailPage.tsx', 5],
+  // 5 -> 4: the legacy optimistic table delete and its unchecked reload were
+  // removed when all operator closes moved behind fn_close_managed_game.
+  ['src/pages/ClubDetailPage.tsx', 4],
   ['src/services/FriendSuggestionService.ts', 1],
   ['src/services/CreditRequestService.ts', 4],
   ['src/services/ChipFlowService.ts', 4],

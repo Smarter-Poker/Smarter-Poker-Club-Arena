@@ -1574,6 +1574,14 @@
   font-size: 0.86rem;
 }
 
+.lobby-controls__operator-actions {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px !important;
+}
+
 .lobby-controls .game-bar {
   gap: 10px;
   padding: 12px 12px 10px 16px;
@@ -1774,7 +1782,14 @@
   }
 
   .lobby-controls__heading {
+    align-items: stretch;
+    flex-direction: column;
     padding: 12px 11px 9px 14px;
+  }
+
+  .lobby-controls__operator-actions {
+    align-items: stretch;
+    flex-direction: column !important;
   }
 
   .lobby-controls__title {

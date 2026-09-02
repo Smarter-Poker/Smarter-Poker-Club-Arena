@@ -236,11 +236,21 @@ describe('neither reaper treats a deliberately paused table as a zombie', () => 
       'utf8'
     );
     const fn = ENGINE.slice(ENGINE.indexOf('isPausedByDesign(): boolean'));
+    /* Resolved with #2705, which fixed the same red pin concurrently by
+       re-pinning all three terms as one adjacent sequence. That is the shape
+       that has now broken twice: #2695 inserted `maintenancePaused` between
+       the original two and turned a correct improvement into a red build. A
+       fourth authority would do it again.
+
+       So each term is required on its own, with nothing said about order or
+       neighbours, plus one assertion that they are joined by || and never &&.
+       Checked that this still catches the regressions the pin exists for:
+       deleting `maintenancePaused` (the exact 1204-hands bug) fails it, and
+       flipping the || to && fails it. */
     const body = fn.slice(0, fn.indexOf('\n  }'));
     expect(body).toMatch(/this\.handForHandPaused/);
     expect(body).toMatch(/this\.maintenancePaused/);
     expect(body).toMatch(/this\.tableFSM\.state === 'paused'/);
-    // Any of them is enough to be paused by design - never all of them at once.
     expect(body).not.toMatch(/&&/);
   });
 });

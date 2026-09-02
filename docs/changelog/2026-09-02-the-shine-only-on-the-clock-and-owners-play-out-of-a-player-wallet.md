@@ -84,12 +84,10 @@ Wired into:
 
 ## Also in this PR
 
-`tests/config/walletCreditIntegrity.test.ts`: the pin on a boot-time
-`atomic_seat_cashout_locked` call moved to "the boot path performs no cash-out
-of its own". #2713 deleted that block (correctly: horses keep their seats
-across a restart) without moving this pin, which left main's client suite red
-and blocked the publish of #2696. The hunk is identical to the one in #2717 so
-the two merge cleanly in either order.
+The pin in `tests/config/walletCreditIntegrity.test.ts` on a boot-time
+`atomic_seat_cashout_locked` call had main's client suite red after #2713 and
+blocked the publish of #2696. This branch carried the same move as #2717;
+#2718 landed it first, so this PR takes main's version of the file unchanged.
 
 ## Verification
 

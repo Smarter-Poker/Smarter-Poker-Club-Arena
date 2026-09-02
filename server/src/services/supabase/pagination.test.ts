@@ -207,7 +207,8 @@ describe('fetchAllRows', () => {
     // Paging cannot advance without it, and silently looping the first page
     // forever would be far worse than stopping.
     const { rows, complete } = await fetchAllRows(
-      (_c, want) => Promise.resolve({ data: Array.from({ length: want }, () => ({})), error: null }),
+      (_c, want) =>
+        Promise.resolve({ data: Array.from({ length: want }, () => ({})), error: null }),
       { label: 'test' }
     );
     expect(complete).toBe(false);

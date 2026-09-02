@@ -36,6 +36,108 @@ function makeWorkspace(overrides: Partial<ClubWorkspaceValue> = {}): ClubWorkspa
   };
 }
 
+describe('a capability that is not yet known is not a denial', () => {
+  /* 2026-09-02. ClubWorkspaceContext hands out CLOSED_CAPABILITIES for every
+     status that is not `ready`, `loading` included. ClubCapabilityGuard read
+     that as a decision and told the OWNER of a club "This Tool Is Restricted",
+     on every cold load of a finance or control route.
+
+     Not theoretical: the E2E account is owner of SHARK CLUB, and the
+     Playwright snapshot from run 33567090010 caught the permission gate
+     rendered on /clubs/shark-club/data for it. The suite then sat on that gate
+     for its full 60s poll and went red. Warm caches hid it from everyone else.
+
+     The three cases below are the whole contract. */
+  beforeEach(() => {
+    workspace = makeWorkspace();
+  });
+
+  it('does not deny an owner while the workspace is still loading', () => {
+    // Exactly the production shape: role not resolved yet, so every capability
+    // reads closed.
+    workspace = makeWorkspace({
+      status: 'loading',
+      loading: true,
+      clubRole: null,
+      isClubStaff: false,
+      canViewFinance: false,
+      canControlClub: false,
+    });
+    render(
+      <MemoryRouter initialEntries={['/clubs/club-1/finance']}>
+        <Routes>
+          <Route
+            path="/clubs/:clubId/finance"
+            element={
+              <ClubCapabilityGuard>
+                <div>finance surface</div>
+              </ClubCapabilityGuard>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+    expect(screen.queryByText(/This Tool Is Restricted/i)).toBeNull();
+  });
+
+  it('and does not flash the surface either, because undecided is not allowed', () => {
+    // Rendering children while undecided would show a finance page to someone
+    // who may turn out not to be allowed to see it. Neither answer is correct
+    // yet, so neither is rendered.
+    workspace = makeWorkspace({
+      status: 'loading',
+      loading: true,
+      clubRole: null,
+      isClubStaff: false,
+      canViewFinance: false,
+      canControlClub: false,
+    });
+    render(
+      <MemoryRouter initialEntries={['/clubs/club-1/finance']}>
+        <Routes>
+          <Route
+            path="/clubs/:clubId/finance"
+            element={
+              <ClubCapabilityGuard>
+                <div>finance surface</div>
+              </ClubCapabilityGuard>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+    expect(screen.queryByText('finance surface')).toBeNull();
+  });
+
+  it('still denies once the answer is actually known', () => {
+    // The guard must not become permissive. A resolved workspace that says no
+    // is a real denial and still renders the gate.
+    workspace = makeWorkspace({
+      status: 'ready',
+      loading: false,
+      clubRole: 'member',
+      isClubStaff: false,
+      canViewFinance: false,
+      canControlClub: false,
+    });
+    render(
+      <MemoryRouter initialEntries={['/clubs/club-1/finance']}>
+        <Routes>
+          <Route
+            path="/clubs/:clubId/finance"
+            element={
+              <ClubCapabilityGuard>
+                <div>finance surface</div>
+              </ClubCapabilityGuard>
+            }
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+    expect(screen.getByText(/This Tool Is Restricted/i)).toBeInTheDocument();
+  });
+});
+
 describe('club route guards', () => {
   beforeEach(() => {
     workspace = makeWorkspace();

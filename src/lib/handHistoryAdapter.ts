@@ -13,7 +13,7 @@
 import type { HandRecord as ServiceHandRecord } from '../services/HandHistoryService';
 import type { HandRecord as PanelHandRecord } from '../components/table/HandHistoryPanel';
 import type { ShareableHand, ShareableCard, ShareableAction } from '../components/table/ShareHand';
-import { toCardCodes } from '../utils/cardCode';
+import { toCardCodes, toCardCode } from '../utils/cardCode';
 
 /**
  * Dan 2026-08-15 — HandRecord adapter (build fix).
@@ -81,6 +81,15 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
             | 'allin'
             | 'discard',
           amount: a.amount,
+          /* PHASE 4 COMPLETION 2026-09-01: the viewer's own thrown card, as a
+             canonical code because that is the only card shape this panel
+             renders. `toCardCode` because the store writes the suit as a WORD
+             (`{rank:'9',suit:'hearts'}`) and taking the last character of that
+             would print the nine of hearts as a spade - the exact bug that
+             produced `UNDEFINE` on the board, see utils/cardCode.ts. Undefined
+             on every other player's discard: the service only ever fills it
+             for rows RLS let this viewer read. */
+          discardedCard: a.discarded_card ? toCardCode(a.discarded_card) : undefined,
         })),
       pot: 0, // not stored per street — only the final pot is persisted
     }))

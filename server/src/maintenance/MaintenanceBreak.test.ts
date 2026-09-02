@@ -7,7 +7,7 @@
  * process that declared it". Those three are what is pinned.
  */
 
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll, vi, afterEach } from 'vitest';
 import {
   MaintenanceBreak,
   type MaintenanceBreakStore,
@@ -599,14 +599,22 @@ describe('the schedule', () => {
 describe('the real engine treats a maintenance pause as paused', () => {
   const TBL = 'aaaaaaaa-1111-2222-3333-444444444444';
 
+  // Loading the real engine is the expensive part, not the assertions. On a
+  // busy CI runner the first dynamic import alone has taken longer than the
+  // 10s test budget, so the first case in this block timed out while the four
+  // behind it (module already cached) passed. Pay the load once, in setup,
+  // with a budget that is about loading and not about the pause predicate.
+  let ServerTableEngine: any;
+  beforeAll(async () => {
+    ({ ServerTableEngine } = await import('../engine/ServerTableEngine.js'));
+  }, 120_000);
+
   it('is not paused before anything asks it to be', async () => {
-    const { ServerTableEngine } = await import('../engine/ServerTableEngine.js');
     const e = new ServerTableEngine(TBL) as any;
     expect(e.isPausedByDesign()).toBe(false);
   });
 
   it('is paused by design while the maintenance break holds it', async () => {
-    const { ServerTableEngine } = await import('../engine/ServerTableEngine.js');
     const e = new ServerTableEngine(TBL) as any;
     e.pauseForMaintenance(300_000);
     expect(
@@ -617,7 +625,6 @@ describe('the real engine treats a maintenance pause as paused', () => {
   });
 
   it('stops being paused when the break lifts', async () => {
-    const { ServerTableEngine } = await import('../engine/ServerTableEngine.js');
     const e = new ServerTableEngine(TBL) as any;
     e.pauseForMaintenance(300_000);
     e.resumeFromMaintenance();
@@ -626,7 +633,6 @@ describe('the real engine treats a maintenance pause as paused', () => {
 
   it('still reports the hand-for-hand pause it always did', async () => {
     // The maintenance authority is additive; it must not shadow the original.
-    const { ServerTableEngine } = await import('../engine/ServerTableEngine.js');
     const e = new ServerTableEngine(TBL) as any;
     e.pauseAfterHand(120_000);
     expect(e.isPausedByDesign()).toBe(true);
@@ -634,7 +640,6 @@ describe('the real engine treats a maintenance pause as paused', () => {
 
   it('a hand-for-hand resume cannot unpause a table the break is holding', async () => {
     // The reason the break got its own authority in the first place.
-    const { ServerTableEngine } = await import('../engine/ServerTableEngine.js');
     const e = new ServerTableEngine(TBL) as any;
     e.pauseForMaintenance(300_000);
     e.resumeDealing();

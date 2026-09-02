@@ -36,6 +36,7 @@ import { isVibrationPreferred, setVibrationAllowed } from '../../utils/vibration
 import { AvatarGallery } from '../customization/AvatarGallery';
 import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { CLUB_ARENA_SUPPORT_NAV, getClubArenaNavigation } from '../../config/clubArenaNavigation';
+import { CLUB_CONTEXT_PARAM, isClubScopedGlobalRoute } from '../../utils/clubScopedPath';
 import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
 import { capture } from '../../lib/analytics';
 import { fetchQuickLinkClubs, type QuickLinkClub } from '../../utils/clubQuickLink';
@@ -238,7 +239,21 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
      — slug stays slug, which is Dan's "THE SLUGS MUST MATCH". */
   const clubId = workspace.routeClubId;
   const clubRole = workspace.clubRole;
-  const effectivePlatformStaff = clubId ? workspace.isPlatformStaff : isPlatformStaff;
+  /* EITHER READER MAY SAY YES; NEITHER MAY VETO. This was
+     `clubId ? workspace.isPlatformStaff : isPlatformStaff`, which was safe
+     only while `clubId` meant "on a /clubs/… path". Now that it is also true
+     on `/leaderboard?club=…`, that ternary would hand the whole decision to
+     the workspace on ordinary global pages — and the workspace reports
+     `isPlatformStaff: false` while it is still loading, and again if its
+     authorization read fails. An admin would have watched Platform Operations
+     blink out of their drawer on every club-scoped page, and lose it outright
+     on a network stumble.
+
+     The two are independent reads of the same `profiles.role` column, so OR
+     is not a widening of trust: it is two witnesses to one fact, and this
+     drawer is navigation rather than an authorization boundary (the route and
+     API guards are what actually enforce /admin). */
+  const effectivePlatformStaff = workspace.isPlatformStaff || isPlatformStaff;
   const navigationGroups = getClubArenaNavigation({
     clubId,
     clubRole,
@@ -634,6 +649,31 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     onClose();
   };
 
+  /**
+   * Switch club without losing the page you are on.
+   *
+   * This select used to be reachable only from a `/clubs/…` path, so sending
+   * the player to that club's lobby was the whole of "switch club". Now that
+   * the drawer keeps its club across `?club=`-scoped pages, the same control
+   * appears on Leaderboards, Wallet and Marketplace — and jumping to the
+   * lobby from there would answer "show me this in the other club" by
+   * throwing away the page, which is the same class of fault as the bug this
+   * branch fixes, just in the other direction.
+   *
+   * So: on a club-scoped global page, swap the club and STAY. Anywhere else,
+   * the lobby remains the right destination.
+   */
+  const handleSwitchClub = (nextClubUUID: string) => {
+    if (!nextClubUUID) return;
+    if (isClubScopedGlobalRoute(location.pathname)) {
+      const params = new URLSearchParams(location.search);
+      params.set(CLUB_CONTEXT_PARAM, nextClubUUID);
+      handleNavigate(`${location.pathname}?${params.toString()}`);
+      return;
+    }
+    handleNavigate(`/clubs/${nextClubUUID}`);
+  };
+
   // Table Studio is a modal destination, not content inside the command
   // drawer. Hand ownership to it in the same click: leaving the drawer open
   // puts its higher stacking layer and focus trap over the studio, so every
@@ -1003,7 +1043,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
               <span>Club Context</span>
               <select
                 value={workspace.clubUUID || ''}
-                onChange={(event) => handleNavigate(`/clubs/${event.target.value}`)}
+                onChange={(event) => handleSwitchClub(event.target.value)}
               >
                 {clubChoices.map((club) => (
                   <option key={club.id} value={club.id}>

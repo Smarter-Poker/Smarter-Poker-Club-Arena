@@ -606,15 +606,23 @@ export default function LeaderboardPage() {
          while the address bar keeps the slug Dan reads. */
       const requestedClubId = readClubContextParam(location.search);
       const requestedClub = findClubByParam(clubs, requestedClubId);
+
+      /* An unmatched param is NOT the same as no param: the URL named a club
+         this viewer is not in (left the club, wrong account, stale link).
+         Falling back to `clubs[0]` silently is what made the original fault
+         invisible, so say so instead of just substituting.
+
+         THE TOAST FIRES HERE, NOT INSIDE THE UPDATER BELOW. A `setState`
+         updater must be pure — React may invoke it more than once for a
+         single update — so a toast raised inside one is a duplicate-render
+         bug waiting for the next React upgrade. The Toast layer's dedupe
+         would have hidden it, which is worse: hidden, not absent. */
+      if (requestedClubId && !requestedClub) {
+        toast.error('That Club Leaderboard Is Not Available To You. Showing Your Clubs Instead.');
+      }
+
       setSelectedClubId((currentClubId) => {
         if (requestedClub) return requestedClub.id;
-        /* An unmatched param is NOT the same as no param: the URL named a
-           club this viewer is not in (left the club, wrong account, stale
-           link). Falling back to `clubs[0]` there is what made the original
-           fault invisible, so say so instead of silently substituting. */
-        if (requestedClubId) {
-          toast.error('That Club Leaderboard Is Not Available To You. Showing Your Clubs Instead.');
-        }
         if (clubs.some((club) => club.id === currentClubId)) return currentClubId;
         return clubs[0]?.id || null;
       });

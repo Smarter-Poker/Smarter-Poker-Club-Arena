@@ -28,6 +28,15 @@
  * attempt — writes neither. These tests pin that no prize, bounty or refund
  * path drifts back to the two-call shape.
  *
+ * 2026-09-02 (chip accounting standard, Lane A2): the engine no longer calls
+ * `fn_credit_and_log` at all. Every tournament credit goes through
+ * `settleTournamentObligation` -> `fn_settle_tournament_obligation`, which
+ * settles an obligation row the database keys itself and writes the credit,
+ * `tournament_payouts` and `wallet_transactions` in one transaction. The
+ * engine-side pins below now guard THAT shape; the database-side pins on the
+ * 2026-08-22 migration are unchanged, because `fn_credit_and_log` is still the
+ * primitive other (non-tournament) paths rely on.
+ *
  * Source-level, like spinEngineWiring: exercising the real thing needs a live
  * Postgres, three seated players and a race.
  */
@@ -61,54 +70,61 @@ describe('prize ledger idempotency — the engine side', () => {
       expect(code).not.toMatch(/rpc\(\s*'log_wallet_transaction'/);
     });
 
-    it(`${path} pays through fn_credit_and_log, not credit_player_wallet`, () => {
+    it(`${path} pays through the obligation helper, never a credit primitive`, () => {
+      // 2026-09-02: every tournament credit is settleTournamentObligation.
+      // The three primitives are banned from the engine (server-side law:
+      // server/src/tournament/OneSettlePathForTournamentMoney.law.test.ts).
       expect(code).not.toMatch(/rpc\(\s*'credit_player_wallet'/);
+      expect(code).not.toMatch(/rpc\(\s*'fn_credit_and_log'/);
+      expect(code).not.toMatch(/rpc\(\s*'fn_credit_player_wallet_once'/);
+      expect(code).toMatch(/settleTournamentObligation\(/);
     });
   }
 
-  it('every fn_credit_and_log call supplies a key, a category and a description', () => {
+  it('every settleTournamentObligation call supplies a kind, a source and a memo', () => {
     for (const path of PAYOUT_SOURCES) {
       const code = tsCode(read(path));
-      // Each call site, from the opening brace to its closing `});`.
-      const calls = code.match(/rpc\(\s*'fn_credit_and_log',\s*\{[\s\S]*?\n\s*\}\);/g) ?? [];
-      expect(calls.length, `${path} should pay through fn_credit_and_log`).toBeGreaterThan(0);
+      // Each call site, from the opening brace of its input to the closing `}`.
+      const calls =
+        code.match(/settleTournamentObligation\(\s*supabase\s*,\s*\{[\s\S]*?\n\s*\}/g) ?? [];
+      expect(calls.length, `${path} should pay through settleTournamentObligation`).toBeGreaterThan(
+        0
+      );
       for (const call of calls) {
-        expect(call, `${path}: missing p_idempotency_key`).toMatch(/p_idempotency_key:/);
-        expect(call, `${path}: missing p_category`).toMatch(/p_category:/);
-        expect(call, `${path}: missing p_description`).toMatch(/p_description:/);
+        expect(call, `${path}: missing kind`).toMatch(/\bkind:/);
+        expect(call, `${path}: missing source`).toMatch(/\bsource:/);
+        // `memo` is the wallet_transactions description (see settleObligation.ts
+        // for why it is not called `description`).
+        expect(call, `${path}: missing memo`).toMatch(/\bmemo:/);
+        expect(call, `${path}: missing userId`).toMatch(/\buserId\b/);
+        expect(call, `${path}: missing amount`).toMatch(/\bamount\b/);
       }
     }
   });
 
-  it('the recovery watchdog still shares the finish path key format', () => {
+  it('the recovery watchdog and the finish path settle the SAME place obligation', () => {
     // If these two ever diverge the credit stops deduping and the double
     // PAYMENT of 2026-07-28 comes back — which is worse than the double entry.
     //
-    // UPDATED 2026-08-28: the shared format is now PLACE-scoped,
-    // `tourney:{id}:prize:place:{position}`. It used to carry the user, which
-    // meant it deduped a repeated USER and not a repeated PLACE — so two
-    // different players stamped with the same place produced two different keys
-    // and both were paid. That is not hypothetical: Union PKO Afternoon (PLO4)
-    // 4f42d847 credited "Tournament prize: position 2" twice, an hour apart, to
-    // two players, and disbursed 720.00 against a 600.00 pool. Neither payment
-    // was mispriced — a late arrival shifted the field, the first player was
-    // renumbered 2nd -> 3rd, and the new 2nd place was paid place 2 again.
-    // This assertion pins the fix: no prize key may name a player.
+    // 2026-08-28 made the shared key PLACE-scoped after Union PKO Afternoon
+    // (PLO4) 4f42d847 paid place 2 twice to two players (720.00 against a
+    // 600.00 pool). 2026-09-02 moved that place-scoping into the database:
+    // (tournament_id, 'place', N) is UNIQUE on tournament_obligations, and
+    // both paths settle that row. No engine file builds a `tourney:` key any
+    // more, so there is no format left to drift.
     const recovery = tsCode(read('server/src/tournament/tournamentRecovery.ts'));
     const eliminations = tsCode(read('server/src/tournament/TournamentManagerEliminations.ts'));
-    expect(recovery).toMatch(/`tourney:\$\{t\.id\}:prize:place:\$\{[^}]+\}`/);
-    expect(eliminations).toMatch(/`tourney:\$\{this\.tournamentId\}:prize:place:\$\{position\}`/);
-    expect(eliminations).toMatch(/`tourney:\$\{this\.tournamentId\}:prize:place:1`/);
+    expect(recovery).toMatch(/\{ kind: 'place', place \}/);
+    expect(eliminations).toMatch(/kind:\s*'place',\s*place:\s*position,/);
+    expect(eliminations).toMatch(/kind:\s*'place',\s*place:\s*1,/);
 
-    // And neither path may reintroduce a user-scoped key.
     for (const [name, src] of [
       ['recovery', recovery],
       ['eliminations', eliminations],
+      ['manager', tsCode(read('server/src/tournament/TournamentManager.ts'))],
     ] as const) {
-      for (const key of src.match(/`tourney:[^`]*:prize:[^`]*`/g) ?? []) {
-        if (!key.includes('${')) continue; // prose in comments, not a real key
-        expect(key, `${name}: user-scoped prize key`).toContain(':prize:place:');
-      }
+      const built = (src.match(/`tourney:[^`]*`/g) ?? []).filter((k) => k.includes('${'));
+      expect(built, `${name}: builds its own idempotency key`).toEqual([]);
     }
   });
 });

@@ -25,6 +25,14 @@
  * only the per-cell drill-down does, and its examples are now hands that were
  * actually played.
  *
+ * RULED ON BY DAN, 2026-09-01, when the question was put to him directly:
+ * KEEP THE BUCKET LABEL. He was shown all three options - keep it, strip it and
+ * build an anonymous tally to replace the denominator, or strip it and lose the
+ * chart - and chose to keep it. So the line below is not a compromise somebody
+ * settled for, it is the answer. Do not reopen it, and do not "finish the job"
+ * by stripping `hand_class`: a rule that fails open is worse than the thing it
+ * was guarding against, and nit eviction fails open.
+ *
  * TWO ENFORCEMENTS, because one of them can be edited by anybody:
  *   the writer      server/src/services/supabase/handFacts.ts
  *   the database    trg_ca_hand_facts_strip_unpaid_holding

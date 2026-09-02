@@ -368,6 +368,11 @@ jobs:
     # accumulating — which is the failure mode this cleanup exists to end.
     permissions:
       contents: write
+      # actions: write is for the convergence chain at the end of this job —
+      # it dispatches the next publish itself rather than leaving the remainder
+      # to a cron. workflow_dispatch is the documented exception to "events
+      # raised by GITHUB_TOKEN do not start workflows", so this genuinely runs.
+      actions: write
 
     steps:
       # This job does not inherit the source checkout from build-and-store.
@@ -582,3 +587,64 @@ jobs:
           echo "### Sync Complete" >> $GITHUB_STEP_SUMMARY
           echo "Club Arena \`dist/\` → World Hub \`public/hub/club-arena/\`" >> $GITHUB_STEP_SUMMARY
           echo "Commit: \`${{ needs.publish-needed.outputs.target_sha }}\`" >> $GITHUB_STEP_SUMMARY
+
+      # ═══════════════════════════════════════════════════════════════════════
+      # CONVERGE NOW, DO NOT WAIT FOR A CRON — added 2026-09-02.
+      #
+      # Resolving the tip of main at the START of a run (see publish-needed)
+      # means no commit is ever skipped. It does NOT mean no commit ever waits:
+      # main keeps moving while this build runs, and everything merged during
+      # those ~7 minutes was still sitting there until the next push, the */30
+      # catch-up or the watchdog. Measured over the last 100 publisher runs,
+      # the worst gap between two SUCCESSFUL publishes was 154 minutes.
+      #
+      # So the publish closes its own loop. If main has moved past what this
+      # run just shipped, it dispatches the next publish itself, immediately.
+      #
+      # WHY THIS TERMINATES. The chain fires on one condition only: main is
+      # strictly ahead of the sha just published. The chained run publishes
+      # that newer tip and asks again; when main stops moving the answer is
+      # "converged" and the chain ends. It cannot outpace the merge rate,
+      # because it produces at most one run per merge — exactly what the push
+      # trigger already produced. It is a convergence loop with a real fixed
+      # point, not a retry loop with a counter.
+      #
+      # It is also the net that covers a push which never triggered a run at
+      # all: a commit carrying [skip ci] starts no publisher (454fa1da4 on main
+      # did exactly this), and this step picks it up on the next publish
+      # without caring how it got there.
+      #
+      # Never fails the job. A publish that succeeded must not be marked failed
+      # because the follow-up dispatch could not be sent; the cron and the
+      # watchdog are still behind it.
+      # ═══════════════════════════════════════════════════════════════════════
+      - name: Converge - chain another publish if main moved while this one built
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -u
+          PUBLISHED="${{ needs.publish-needed.outputs.target_sha }}"
+          TIP=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha 2>/dev/null || echo "")
+
+          if [ -z "$TIP" ]; then
+            echo "::warning::Could not read the tip of main to check for convergence. The catch-up cron and publish-watchdog still cover this."
+            exit 0
+          fi
+
+          if [ "$TIP" = "$PUBLISHED" ]; then
+            echo "CONVERGED: production is being served ${PUBLISHED:0:7}, which is the tip of main."
+            echo "- Converged on \`${PUBLISHED:0:7}\` (tip of main)" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+
+          AHEAD=$(gh api "repos/${{ github.repository }}/compare/${PUBLISHED}...${TIP}" \
+                    --jq .ahead_by 2>/dev/null || echo "?")
+          echo "::notice::main is ${AHEAD} commit(s) past ${PUBLISHED:0:7} - chaining the next publish now rather than waiting for the catch-up."
+          echo "- main moved ${AHEAD} commit(s) to \`${TIP:0:7}\` during this build; chained the next publish" >> $GITHUB_STEP_SUMMARY
+
+          if gh workflow run "build-for-world-hub.yml" --repo "${{ github.repository }}" --ref main; then
+            echo "chained publish dispatched for ${TIP:0:7}"
+          else
+            echo "::warning::Chain dispatch failed. The */30 catch-up and publish-watchdog remain."
+          fi

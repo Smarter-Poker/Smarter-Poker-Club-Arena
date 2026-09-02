@@ -112,6 +112,48 @@ describe('No commit left behind: the publisher converges on main', () => {
   });
 });
 
+describe('No commit left behind: the publish closes its own loop', () => {
+  it('chains another publish when main moved while this one built', () => {
+    const yml = repo(PUBLISHER);
+    // Resolving the tip at the START stops a commit being SKIPPED. It does not
+    // stop one WAITING - main keeps moving during the ~7 minute build, and
+    // over the last 100 runs the worst gap between two successful publishes
+    // was 154 minutes. The chain is what removes the wait.
+    expect(yml).toMatch(/- name: Converge - chain another publish if main moved/);
+    expect(yml).toMatch(/gh workflow run "build-for-world-hub\.yml"/);
+    // It must dispatch on the CONDITION that main is ahead, never blindly.
+    expect(yml).toMatch(/if \[ "\$TIP" = "\$PUBLISHED" \]/);
+    expect(yml).toMatch(/CONVERGED/);
+  });
+
+  it('the chain can actually dispatch - the job declares actions: write', () => {
+    // Comments are stripped first. The permissions block is introduced by a
+    // comment that contains the words "actions: write", and matching that
+    // made this pin pass with the permission REMOVED - caught by mutating the
+    // sync job and watching the law stay green. A grant is a line of YAML,
+    // never a sentence about one.
+    const yml = repo(PUBLISHER);
+    const sync = yml.slice(yml.indexOf('  sync-to-world-hub:'));
+    const perms = sync
+      .slice(sync.indexOf('permissions:'), sync.indexOf('steps:'))
+      .split('\n')
+      .filter((line) => !/^\s*#/.test(line));
+    expect(perms.some((line) => /^\s+actions: write\s*$/.test(line))).toBe(true);
+    // and the grant it already had must survive
+    expect(perms.some((line) => /^\s+contents: write\s*$/.test(line))).toBe(true);
+  });
+
+  it('a failed chain never fails a publish that already succeeded', () => {
+    // The bundle is live at this point. Marking the run red because the
+    // follow-up dispatch could not be sent would turn a success into a false
+    // alarm, and the cron plus the watchdog are still behind it.
+    const yml = repo(PUBLISHER);
+    const step = yml.slice(yml.indexOf('- name: Converge - chain another publish'));
+    expect(step).toMatch(/::warning::Chain dispatch failed/);
+    expect(step).not.toMatch(/exit 1/);
+  });
+});
+
 describe('No commit left behind: the watchdog keeps healing', () => {
   it('retries more than once', () => {
     const sh = repo(WATCHDOG);
@@ -132,6 +174,57 @@ describe('No commit left behind: the watchdog keeps healing', () => {
     const sh = repo(WATCHDOG);
     expect(sh).toMatch(/-ge "\$MAX_RETRIES"/);
     expect(sh).toMatch(/not transient/);
+  });
+
+  it('escalates in-app when healing is spent, because it must not auto-ship a broken bundle', () => {
+    // The honest limit of automation: a bundle that does not build must not be
+    // published anyway. So the guarantee is "never silently forgotten", and
+    // that requires the alarm to reach a person, not just a repository.
+    const sh = repo(WATCHDOG);
+    expect(sh).toMatch(/escalate_in_app\(\)/);
+    expect(sh).toMatch(/fn_raise_notification/);
+    // Called exactly where healing runs out.
+    const exhausted = sh.slice(sh.indexOf('-ge "$MAX_RETRIES"'));
+    expect(exhausted).toMatch(/escalate_in_app "/);
+  });
+
+  it('a missing credential degrades the escalation, never fails the watchdog', () => {
+    const sh = repo(WATCHDOG);
+    const fn = sh.slice(sh.indexOf('escalate_in_app() {'), sh.indexOf('# ── DID THE MERGE'));
+    expect(fn).toMatch(/skipping the in-app escalation/);
+    expect(fn).toMatch(/return 0/);
+  });
+
+  it('the workflow actually supplies what the escalation needs', () => {
+    const yml = repo('.github/workflows/publish-watchdog.yml');
+    expect(yml).toMatch(/SUPABASE_URL:/);
+    expect(yml).toMatch(
+      /SUPABASE_SERVICE_ROLE_KEY: \$\{\{ secrets\.SUPABASE_SERVICE_ROLE_KEY \}\}/
+    );
+  });
+});
+
+describe('No commit left behind: a commit cannot suppress its own publish', () => {
+  it('the skip-marker guard exists and covers every form GitHub honours', () => {
+    const guard = repo('scripts/ci/check-no-skip-markers.mjs');
+    for (const form of ['skip[ _-]ci', 'ci[ _-]skip', 'skip[ _-]actions', 'no[ _-]ci', 'NO_CI']) {
+      expect(guard).toContain(form);
+    }
+  });
+
+  it('the pre-push hook actually runs it', () => {
+    // A guard nothing invokes is a comment. Every other check in this repo
+    // that mattered was wired into the hook, and this one is the only thing
+    // that PREVENTS the gap rather than recovering from it.
+    const hook = repo('.husky/pre-push');
+    expect(hook).toContain('scripts/ci/check-no-skip-markers.mjs');
+    expect(hook).toMatch(/BLOCKED: a commit would suppress its own publish/);
+  });
+
+  it('fails open on an unreadable range, and keeps a deliberate override', () => {
+    const guard = repo('scripts/ci/check-no-skip-markers.mjs');
+    expect(guard).toMatch(/could not read.*skipping/s);
+    expect(guard).toContain('CA_ALLOW_SKIP_MARKER');
   });
 });
 

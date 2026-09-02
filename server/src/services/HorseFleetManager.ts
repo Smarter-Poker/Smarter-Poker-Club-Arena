@@ -549,21 +549,79 @@ export class HorseFleetManager {
       // Get all active cash tables
       // AUDIT V2 (2026-07-23): club_id selected here — the old code re-queried
       // tables once per table inside the seeding loop (N+1) just to read it.
-      const { data: tables, error: tablesError } = await supabase
-        .from('tables')
-        .select(
-          'id, name, max_players, small_blind, big_blind, game_variant, club_id, min_buy_in, max_buy_in, current_players, created_at'
-        )
-        .is('tournament_id', null)
-        .in('status', ['waiting', 'running']);
+      //
+      // 2026-09-02: AND IT IS PAGED, for the same reason the seat map below is.
+      // This was a bare .select() with no paging and no ordering, so PostgREST
+      // capped it at db-max-rows (1,000) WITHOUT erroring — the identical
+      // silent truncation that was found and fixed for `table_seats` on
+      // 2026-08-20, thirty lines further down, and never applied to the query
+      // that feeds it.
+      //
+      // The seat fix made the consequence invisible rather than removing it. A
+      // truncated SEAT map makes occupied seats read as empty, which fails
+      // loudly: ~150,000 duplicate-key buy-ins a day. A truncated TABLE list
+      // fails silently in the opposite direction — a table the seeder never
+      // received is not "empty", it does not exist, so nothing is attempted
+      // and nothing is logged. The floor simply never fills and no error is
+      // ever raised to say why.
+      //
+      // Measured on 2026-09-02: 1,134 live non-tournament tables against a
+      // 1,000 cap, so 134 were invisible. Unordered PostgREST reads come back
+      // in physical order, which tracks insertion, so the truncated tail is
+      // always the NEWEST tables — the worst possible 134 to lose, because a
+      // table nobody has sat at yet is precisely the one that needs seeding.
+      // Every one of the 45 Midway Union micro tables created that morning
+      // ranked 1090-1134 and none of them was ever offered a horse: the floor
+      // was hand-packed, drained on the next engine restart, and never
+      // refilled, while Deep Stack Society (older, inside the first 1,000)
+      // seeded normally all day. That contrast is what the truncation looks
+      // like from the outside, and it reads as "the seeder ignores this club".
+      //
+      // Ordered by id and keyset-paged, so the cap cannot apply and the page
+      // boundary cannot skip a row when a table opens or closes mid-read.
+      const tablePage = await fetchAllRows<{
+        id: string;
+        name: string;
+        max_players: number;
+        small_blind: number;
+        big_blind: number;
+        game_variant: string;
+        club_id: string;
+        min_buy_in: number | null;
+        max_buy_in: number | null;
+        current_players: number | null;
+        created_at: string;
+      }>(
+        (cursor, want) => {
+          let q = supabase
+            .from('tables')
+            .select(
+              'id, name, max_players, small_blind, big_blind, game_variant, club_id, min_buy_in, max_buy_in, current_players, created_at'
+            )
+            .is('tournament_id', null)
+            .in('status', ['waiting', 'running'])
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
+        { label: 'HorseFleet.openTables', maxRows: 50_000 }
+      );
 
-      if (tablesError || !tables) {
-        const errMsg =
-          tablesError?.message ||
-          (typeof tablesError === 'object' ? JSON.stringify(tablesError) : String(tablesError));
-        reportError(new Error(errMsg), 'HorseFleet.Failed_to_fetch_tables');
+      // FAIL CLOSED, exactly as the seat map does. A partial table list is not
+      // a smaller floor, it is a floor with holes in it that nothing will ever
+      // report — so a cycle skipped here costs 30 seconds, while a cycle run
+      // from a half-read list silently strands whichever tables fell off the
+      // end until someone notices by hand.
+      if (!tablePage.complete) {
+        console.warn(
+          '[HorseFleet] Seeding cycle SKIPPED - the open-table list came back ' +
+            'incomplete, and seeding from a partial list leaves the newest ' +
+            'tables permanently unseeded.'
+        );
         return;
       }
+      const tables = tablePage.rows;
 
       /* THE SOLE-OPEN REGISTRY IS GONE WITH THE RULE IT PROTECTED (2026-09-02).
          It existed so the 15% held-empty hold could never switch off a variant

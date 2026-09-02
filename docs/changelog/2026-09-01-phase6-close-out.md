@@ -121,7 +121,7 @@ other agents are shipping - and never recorded a declaration. So the database
 has been right and the repository has been lying about it for three days, with
 the guard correctly shouting and every server test run red for it.
 
-`20260902020000_v30_batch_floor_declaration_matches_production.sql` is the
+`20260903010000_v30_batch_floor_declaration_matches_production.sql` is the
 repository catching up: `pg_get_functiondef` of the live function, byte for
 byte. It is deliberately NOT applied by hand - there is nothing to change, and
 the only effect would be a PostgREST schema reload, about 28 seconds on this

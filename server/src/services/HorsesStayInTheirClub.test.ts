@@ -24,6 +24,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceStatement } from '../testHelpers/sourceWindow.js';
 
 const SRC = readFileSync(join(process.cwd(), 'src/services/TournamentRecurringService.ts'), 'utf8');
 
@@ -183,9 +184,10 @@ describe('seat-first games are filled from their own club', () => {
 describe('the empty-pool warning names every bucket', () => {
   it('prints the club exclusion alongside the others', () => {
     /* lastIndexOf, because the phrase also appears in the doc comment above
-       the helper - the first match is prose, the last is the code. */
-    const at = SRC.lastIndexOf('registerHorses found no candidates');
-    const WARN = SRC.slice(at, at + 400);
+       the helper - the first match is prose, the last is the code. From there
+       the window is the STATEMENT the phrase lives in, never a byte count. */
+    const NEEDLE = 'registerHorses found no candidates';
+    const WARN = sliceStatement(SRC.slice(SRC.lastIndexOf(NEEDLE)), NEEDLE);
     expect(WARN).toContain('at-capacity/entered ${busyDropped}');
     expect(WARN).toContain('not-a-club-member ${clubDropped}');
     expect(WARN).toContain('lane/window-excluded ${laneDropped}');

@@ -7161,11 +7161,14 @@ export default function TablePage({
      showGtoAdvisor, and no JSX ever read any of the three — so the advisor
      could not be opened, and the state re-rendered the whole table for
      nobody. `sessionRake` sat beside it, never set and never read.
-     src/services/GTOQueryService.ts itself is untouched and still exported
-     from the services barrel; only this page's import of it is gone, which
-     also takes it out of the table's bundle. If the advisor is wanted, it
-     comes back as a rendered panel with a trigger, not as four unreachable
-     identifiers. */
+     UPDATE 2026-09-01: src/services/GTOQueryService.ts is now DELETED. That
+     audit left the service exported from the barrel with no consumer, and it
+     queried three tables - gto_solutions, preflop_ranges, gto_solve_queue -
+     that do not exist in production, so it could not have worked had anything
+     called it. The live GTO data is elsewhere (gto_postflop_compact,
+     gto_scenarios, solved_spots_gold), so no capability is lost. If the advisor
+     is wanted, it comes back as a rendered panel with a trigger, over tables
+     that exist. */
 
   // [MIGRATION] handleHandComplete REMOVED — FIX 181
   // Rake calculation and waterfall execution are server-authoritative (Bible V8 Law 1.4).

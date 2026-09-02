@@ -29,6 +29,20 @@ whichever test the next agent notices first.
   means EM DASHES (U+2014) in player-facing copy — a punctuation rule, not an
   artwork rule. The law is `approvedHamburgerGearGuard.law.test.ts`. The
   retired counter-law (`noThreeBarArtwork.law.test.ts`) must not come back.
+- **Unpaid hands (resolved 2026-09-01, Dan, PR #2554):** Dan's rule is
+  "MUCKED HANDS SHOULDN'T BE RECORDED AND TRACKED, ONLY HANDS WHERE THE HERO
+  PUTS CHIPS IN POT." Applied to `ca_hand_facts`, which stored `hole_cards` on
+  every dealt hand including hands folded for free (640 of 2,265 rows, 28%).
+  **The exact holding is gone** and is stripped at the database by
+  `trg_ca_hand_facts_strip_unpaid_holding`. **The 169-bucket `hand_class` label
+  STAYS, and Dan chose this explicitly when the question was put to him.**
+  Do not "finish the job" by stripping it too: it is not decoration, it is the
+  DENOMINATOR of two things. `fn_nit_check` judges NIT Game eviction on
+  `avg(vpip)` across every row a player has, and `ca_player_hand_grid`'s default
+  view is `hands_vpip / hands` per class. Remove the label and the chart reads
+  100% everywhere while nit eviction quietly stops evicting - a rule that fails
+  OPEN, which nobody notices. The law is
+  `noCardsForHandsNobodyPaidInto.law.test.ts`.
 - **Horses are players (2026-08-27):** no `is_horse` exclusion anywhere except
   identification and the horse's input device. See CLAUDE.md 10.5.
 
@@ -50,6 +64,7 @@ whichever test the next agent notices first.
 | tests/config/weightedContributedRake.law.test.ts                    | Weighted-contributed rake schedule                                                                                                                               |
 | tests/footer-stays-on-the-footer.law.test.ts                        | Footer placement                                                                                                                                                 |
 | tests/hero-avatar-opens-hero-hub.law.test.ts                        | Hero avatar navigation                                                                                                                                           |
+| tests/loose-sql-is-not-live-ammunition.law.test.ts                | Loose SQL in supabase/ outside migrations/ carries no DDL and names no dropped object                                                                            |
 | tests/no-invented-money-on-an-agent-screen.law.test.ts              | Agent and club money screens show measured figures only                                                                                                          |
 | tests/no-auto-table-switch.law.test.ts                              | Never auto-change tables (CLAUDE.md 10.6)                                                                                                                        |
 | tests/no-hover-effects.law.test.ts                                  | No hover-dependent UI                                                                                                                                            |

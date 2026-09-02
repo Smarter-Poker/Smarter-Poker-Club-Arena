@@ -513,6 +513,21 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
         </div>
       )}
 
+      {/* PHASE 7 AUDIT. The Summary panel is gated on `summary &&`, which is
+          right - a failed read must never render four zero cards, because a
+          zero on this screen means "you earned nothing" and the agent cannot
+          tell it from "we could not ask". But the gate rendered NOTHING at
+          all: a blank tab with no explanation and no way back. Say what
+          happened and offer the retry. */}
+      {activeTab === 'summary' && !summary && (
+        <div className="empty-state">
+          <p>Your Commission Summary Could Not Be Loaded.</p>
+          <button className="payout-btn" onClick={() => loadDataRef.current()}>
+            Try Again
+          </button>
+        </div>
+      )}
+
       {/* Records Tab */}
       {activeTab === 'records' && (
         <div className="agent-commission__records">

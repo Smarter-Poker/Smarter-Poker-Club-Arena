@@ -1,0 +1,101 @@
+# An agent's book is not public reading
+
+2026-09-02. The last item phase 7 left open, closed.
+
+## The hole
+
+`fn_agent_unsettled_commission(p_club_id, p_user_id)` was `SECURITY DEFINER`,
+granted `EXECUTE` to `authenticated`, and carried **no authorization check at
+all**. Any logged-in user could pass any other user's id and any club id and be
+told exactly what that club still owed that person.
+
+RLS on `agent_commissions` is correct and would have refused the same read — an
+agent reads their own rows, a union overseer reads the clubs they oversee. The
+definer function walked straight past it.
+
+Phase 7 recorded this as open rather than fixing it, because the obvious fix
+(restrict to `auth.uid()`) breaks `fn_club_set_member_role`: the role-change
+path calls this function to report what the club owes the person whose role is
+changing, and that person is by definition not the caller.
+
+## The fix is the split, not the restriction
+
+Two different reads were wearing one function:
+
+1. **The caller's own read.** `CommissionService.unsettledCommission` passes
+   `user.id`, always. It is the only client caller in the repo.
+2. **The officer's read**, inside `fn_club_set_member_role` — itself
+   `SECURITY DEFINER`, and it has _already_ authorized its actor through
+   `fn_club_grantable_roles` before it gets there.
+
+So the role-change path reads the sum inline, and the RPC gets the guard it
+should always have had. The report cannot regress on the guard, because it no
+longer depends on it. Same `SELECT`, same partial index
+(`agent_commissions_unsettled_idx`).
+
+`fn_agent_may_read_commission(p_club_id, p_user_id)` is the predicate, split
+out on its own so the client can ask "may I" without provoking an error, and so
+the next commission surface reuses it instead of inventing a fifth definition
+of who may look. It admits four kinds of caller:
+
+- **yourself**, in any club;
+- **a club officer** — admin, co-owner or owner (`fn_role_rank` ≥ 5). The person
+  who can change your role can see what you are owed;
+- **your upline**, at any depth (`fn_is_agent_ancestor`) — the same relationship
+  `fn_agent_downline_commission` already reports on, so it grants nothing new;
+- **the service role**.
+
+Everyone else gets `42501`. **Not a zero.** A zero is indistinguishable from
+"owes nothing", and a caller who is not entitled to the figure is not entitled
+to know which of the two it is. A null argument gets `22023` rather than being
+treated as a wildcard.
+
+## Verified against production, in transactions that were rolled back
+
+| Caller                                    | Result                           |
+| ----------------------------------------- | -------------------------------- |
+| service role                              | 434.95                           |
+| the agent, reading their own book         | 434.95                           |
+| the club owner, reading that agent's book | 434.95                           |
+| an unrelated logged-in user               | refused 42501                    |
+| logged out                                | refused 42501                    |
+| null club id                              | refused 22023                    |
+| role change, ledger holding 123.45        | report says 123.45, success true |
+
+Then applied, and re-verified live: predicate exists, RPC guarded,
+`fn_club_set_member_role` no longer names the RPC anywhere, `anon` cannot
+execute, `authenticated` can, migration recorded.
+
+## Two things the rehearsal caught before production did
+
+1. **`pg_get_function_identity_arguments` strips DEFAULTs.**
+   `fn_club_set_member_role` has four, so `CREATE OR REPLACE` fed the identity
+   form dies with `42P13`, _cannot remove parameter defaults from existing
+   function_. `pg_get_function_arguments` is the correct one. This would have
+   been a failed apply against production.
+2. **The comment I inserted named the RPC**, and the migration's own assertion
+   proves the call is gone by searching the source for that name — so a comment
+   mentioning it is indistinguishable from a call. Phase 7 hit this exact trap
+   patching this exact function; it is now written down inside the patch.
+
+Both are pinned by the law, so the next agent editing this migration cannot
+reintroduce either.
+
+## One improvement to the page while it was open
+
+The Summary panel is gated on `summary &&`, which is right: four zero cards on
+a failed read are indistinguishable from "you earned nothing", and removing
+exactly that class of lie is what the phase 7 audit was for. But the gate
+rendered **nothing at all** — a blank tab, no explanation, no way back. It now
+says the summary could not be loaded and offers Try Again. (`setOwed(null)` on
+a failed unclaimed read was already correct and is now pinned too.)
+
+## Law
+
+`tests/an-agents-book-is-not-public-reading.law.test.ts`, registered in
+`docs/LAWS.md`. Sixteen pins across five groups: the read is guarded and
+refuses rather than zeroing; one definition of who may look, admitting exactly
+four kinds of caller; the role-change report is patched rather than re-emitted,
+keeps its parameter defaults, reads the ledger inline, and its comment does not
+name the RPC; grants are written down and `anon` is revoked; the client only
+ever asks about itself and surfaces a refusal rather than reading it as zero.

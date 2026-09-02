@@ -216,13 +216,32 @@ describe('neither reaper treats a deliberately paused table as a zombie', () => 
     expect(10 * 60 * 1000).toBeGreaterThan(5 * 60 * 1000 + 2 * 60 * 1000);
   });
 
-  it('isPausedByDesign covers both a break pause and hand-for-hand', () => {
+  /**
+   * Each disjunct is asserted on its own, deliberately.
+   *
+   * This used to be one regex requiring `handForHandPaused` and the FSM check
+   * to sit next to each other. #2695 inserted `maintenancePaused` between them
+   * - the fix for 1204 hands dealt inside a maintenance break - and left this
+   * test red on main, because the predicate had become MORE correct in a shape
+   * the regex forbade. A guard that fails when the thing it guards is improved
+   * teaches people to delete it.
+   *
+   * So: require every term to be present, and say nothing about their order or
+   * their neighbours. Adding a fifth reason a table is paused on purpose should
+   * not have to come back here.
+   */
+  it('isPausedByDesign covers hand-for-hand, a maintenance break, and the FSM', () => {
     const ENGINE = readFileSync(
       resolve(__dirname, '../../server/src/engine/ServerTableEngineBase.ts'),
       'utf8'
     );
     const fn = ENGINE.slice(ENGINE.indexOf('isPausedByDesign(): boolean'));
-    expect(fn).toMatch(/handForHandPaused \|\| this\.tableFSM\.state === 'paused'/);
+    const body = fn.slice(0, fn.indexOf('\n  }'));
+    expect(body).toMatch(/this\.handForHandPaused/);
+    expect(body).toMatch(/this\.maintenancePaused/);
+    expect(body).toMatch(/this\.tableFSM\.state === 'paused'/);
+    // Any of them is enough to be paused by design - never all of them at once.
+    expect(body).not.toMatch(/&&/);
   });
 });
 

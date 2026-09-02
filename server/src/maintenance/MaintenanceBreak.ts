@@ -237,6 +237,22 @@ export class MaintenanceBreak {
    */
   static readonly MIN_REMAINING_FOR_RESTART_MS = 3 * 60 * 1000;
 
+  /**
+   * PHASE 3 (2026-09-02): the resume is staggered, not a single burst.
+   *
+   * resumeEveryEngine used to wake every table in one synchronous loop, so at
+   * :00 all ~250 dealing loops hit a 2-core database in the same instant -
+   * loading seats, blinds and stacks - which is a large part of the 10-20
+   * minute recovery Dan watched ("100% of the time says reconnecting to the
+   * table"). The first batch resumes immediately (so a small fleet, and every
+   * test fleet, is fully up at once); the rest roll out RESUME_STAGGER_MS
+   * apart. Every table still receives exactly one resumeFromMaintenance; the
+   * only change is that some wake a few seconds later, gentler on the database
+   * than the herd, never harsher.
+   */
+  static readonly RESUME_BATCH_SIZE = 25;
+  static readonly RESUME_STAGGER_MS = 750;
+
   private phase: MaintenanceBreakPhase | 'idle' = 'idle';
   private announcedAt = 0;
   /** When counting_down began - the instant the thaw measures from. */
@@ -245,6 +261,8 @@ export class MaintenanceBreak {
   private unparkedAtCountdown = 0;
   private peakUnparked = 0;
   private readyForRestartAtMs: number | null = null;
+  /** Bumped each break; a scheduled resume batch from a superseded break is dropped. */
+  private resumeToken = 0;
   private breakEndsAt = 0;
   private reason = 'Scheduled Engine Maintenance';
 
@@ -657,28 +675,59 @@ export class MaintenanceBreak {
   }
 
   private resumeEveryEngine(): number {
-    let n = 0;
+    // Collect the tables this break is responsible for resuming, in order.
+    const resumable: Array<[string, PausableTableEngine]> = [];
     for (const [tableId, engine] of this.deps.engines()) {
       try {
-        // Leave a table another authority is still holding. See
-        // MaintenanceBreakDeps.shouldStayPaused - a tournament add-on break
-        // can outlast this one, and resuming it here would deal that event
-        // back into play while its own clock still has it on break.
         if (this.deps.shouldStayPaused?.(tableId)) {
           console.log(
             `[MaintenanceBreak] Leaving ${tableId} paused - its tournament is still on a break of its own.`
           );
           continue;
         }
-        engine.resumeFromMaintenance();
-        n++;
+        resumable.push([tableId, engine]);
       } catch (err) {
-        // Keep going. One table that refuses to resume must not strand the
-        // rest of the platform on a break that is over.
-        console.warn(`[MaintenanceBreak] could not resume table ${tableId}`, err);
+        console.warn(`[MaintenanceBreak] could not inspect table ${tableId} for resume`, err);
       }
     }
-    return n;
+
+    const token = ++this.resumeToken;
+    const B = MaintenanceBreak.RESUME_BATCH_SIZE;
+
+    const resumeOne = (tableId: string, engine: PausableTableEngine): void => {
+      try {
+        engine.resumeFromMaintenance();
+      } catch (err) {
+        // One table that refuses to resume must not strand the rest.
+        console.warn(`[MaintenanceBreak] could not resume table ${tableId}`, err);
+      }
+    };
+
+    // Batch 0 resumes NOW, synchronously: a small fleet (and every test fleet)
+    // is fully up before end() returns, and there is no visible stagger below
+    // the batch size.
+    for (const [id, engine] of resumable.slice(0, B)) resumeOne(id, engine);
+
+    // The remaining batches roll out RESUME_STAGGER_MS apart, in the
+    // background. A batch from a superseded break (resumeToken changed) is
+    // dropped rather than waking a table the next break is holding.
+    const rest = resumable.slice(B);
+    for (let i = 0; i < rest.length; i += B) {
+      const batch = rest.slice(i, i + B);
+      const delay = (i / B + 1) * MaintenanceBreak.RESUME_STAGGER_MS;
+      this.setTimer(() => {
+        // Drop a stale batch: a newer break has superseded this rollout
+        // (resumeToken bumped), or a break is once again active and holding
+        // these tables (phase left idle). Waking them now would deal a table
+        // back into a break it is supposed to be paused in.
+        if (this.resumeToken !== token || this.phase !== 'idle') return;
+        for (const [id, engine] of batch) resumeOne(id, engine);
+      }, delay);
+    }
+
+    // Every table in `resumable` receives exactly one resume; the count is
+    // honest at call time even though the later batches wake shortly after.
+    return resumable.length;
   }
 
   /**

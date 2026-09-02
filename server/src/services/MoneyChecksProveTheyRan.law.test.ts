@@ -28,7 +28,7 @@ import { sliceMethod } from '../testHelpers/sourceWindow.js';
 const migration = readFileSync(
   join(
     __dirname,
-    '../../../supabase/migrations/20260902010000_a_check_that_never_runs_looks_like_a_check_finding_nothing.sql'
+    '../../../supabase/migrations/20260902012048_a_check_that_never_runs_looks_like_a_check_finding_nothing.sql'
   ),
   'utf8'
 );
@@ -113,6 +113,20 @@ describe('the board is read after the checks have stamped', () => {
   it('a failure to read the board is reported', () => {
     expect(gameServer).toContain('GameServer.money_check_health_failed');
     expect(gameServer).toContain('GameServer.money_check_health_threw');
+  });
+
+  it('the board read is NOT nested inside another check try block', () => {
+    // The first draft put it inside the bounty back-pay's try, so a throw from
+    // THAT rpc skipped the health read entirely - the one instrument whose job
+    // is to notice when a check stops, silenced by a check stopping. Same
+    // watchdog-shares-a-failure-domain mistake this estate wrote down about
+    // publish-watchdog. The bounty catch must close BEFORE the health try opens.
+    const bountyCatchAt = gameServer.indexOf(
+      "reportError(bbEx, 'GameServer.bounty_backpay_threw')"
+    );
+    const healthAt = gameServer.indexOf("'fn_money_check_health'");
+    expect(bountyCatchAt).toBeGreaterThan(-1);
+    expect(healthAt).toBeGreaterThan(bountyCatchAt);
   });
 });
 

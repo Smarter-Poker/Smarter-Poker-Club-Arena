@@ -3696,31 +3696,42 @@ export class GameServer {
               );
             }
             await this.recordMoneyCheckRun('fn_backpay_unfinalised_bounty_pools', bb);
-
-            // ── AND WHETHER ANY OF THEM ACTUALLY RAN (2026-09-02, Phase 1) ──
-            // The board, and a deduped critical for anything that has gone
-            // quiet. It sits at the END of the hourly pass on purpose: by the
-            // time it reads the heartbeats, every check above has just stamped
-            // its own, so a stale row means that check genuinely did not run
-            // rather than that this one got there first.
-            try {
-              const { data: mh, error: mhErr } = await supabase.rpc('fn_money_check_health', {});
-              if (mhErr) {
-                reportError(
-                  new Error(`[GameServer] money check health failed: ${mhErr.message}`),
-                  'GameServer.money_check_health_failed'
-                );
-              } else if (Number(mh?.stale) > 0) {
-                console.log(
-                  `[GameServer] Money check health: ${mh.stale} of ${mh.checks} check(s) stale, ` +
-                    `${mh.never_run} never run`
-                );
-              }
-            } catch (mhEx) {
-              reportError(mhEx, 'GameServer.money_check_health_threw');
-            }
           } catch (bbEx) {
             reportError(bbEx, 'GameServer.bounty_backpay_threw');
+          }
+
+          /**
+           * ── AND WHETHER ANY OF THEM ACTUALLY RAN (2026-09-02, Phase 1) ──
+           *
+           * The board, and a deduped critical for anything that has gone quiet.
+           * Last in the hourly pass on purpose: by the time it reads the
+           * heartbeats, every check above has just stamped its own, so a stale
+           * row means that check genuinely did not run rather than that this
+           * one got there first.
+           *
+           * ITS OWN SIBLING BLOCK, NOT NESTED INSIDE THE ONE ABOVE. The first
+           * draft of this put it inside the bounty back-pay's `try`, which
+           * meant a throw from THAT rpc skipped the health read entirely - the
+           * one instrument whose whole job is to notice when a check stops,
+           * silenced by a check stopping. That is the watchdog-shares-a-failure-
+           * domain mistake this estate already wrote down about publish-watchdog,
+           * reproduced two hours after quoting it.
+           */
+          try {
+            const { data: mh, error: mhErr } = await supabase.rpc('fn_money_check_health', {});
+            if (mhErr) {
+              reportError(
+                new Error(`[GameServer] money check health failed: ${mhErr.message}`),
+                'GameServer.money_check_health_failed'
+              );
+            } else if (Number(mh?.stale) > 0) {
+              console.log(
+                `[GameServer] Money check health: ${mh.stale} of ${mh.checks} check(s) stale, ` +
+                  `${mh.never_run} never run`
+              );
+            }
+          } catch (mhEx) {
+            reportError(mhEx, 'GameServer.money_check_health_threw');
           }
         }
 

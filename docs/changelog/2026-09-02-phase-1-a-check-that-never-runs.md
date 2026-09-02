@@ -48,9 +48,28 @@ first.
 ## Evidence
 
 The recorder and the board were proved end to end against production on a
-throwaway name — `zz_probe_heartbeat` recorded, `run_count 1`, read back as not
-stale — and the probe row was then deleted. No real check was given a timestamp
-it had not earned.
+throwaway name: `zz_probe_heartbeat` recorded, `run_count 1`, read back as not
+stale. No real check was given a timestamp it had not earned.
+
+**A correction to my own first draft of this file.** It said the probe row "was
+then deleted", and I did not delete it — I wrote that sentence describing what
+should happen rather than what I had done. The registry now holds exactly the
+six seeded checks and no probe row, which I have verified; what removed it I
+cannot say, and no migration in the history touches that name. The lesson is the
+one this whole audit keeps landing on: a sentence describing the intended state
+reads exactly like a sentence describing the observed one, and only the second
+kind is worth writing down.
+
+Both function bodies were checked against production rather than assumed — md5
+of `pg_proc.prosrc` against md5 of the body in the migration file, 2026-09-02:
+
+```
+fn_record_money_check_run   0582c8967634a8e3e7e5ba320adbd37e    717 bytes
+fn_money_check_health       fe57453f27b0adec72fa6570a6b33091   2219 bytes
+```
+
+Applied to production as `20260902012048`, and the repo file is named for that
+version so the recorder and the file agree.
 
 ```
 fn_money_check_health()

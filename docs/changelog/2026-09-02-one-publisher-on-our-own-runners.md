@@ -105,10 +105,20 @@ this branch) sitting on the remote with no route to `main`.
 
 The namespace was the wrong proxy. The AGE gate is the real safety: a branch
 under a day old with commits ahead of main is somebody who stopped one step
-short today, whatever they named it. Both now open a pull request for ANY
-young branch, excluding only the namespaces that are never proposals
-(`backup/`, `ci-marker/`, `build/`, `dependabot/`, `renovate/`,
-`sentry-autofix/`, `revert-*`). Months-old branches are still only reported.
+short today, whatever they named it. `agent-open-pr.yml` now opens a pull
+request for ANY new branch, excluding only the namespaces that are never
+proposals (`backup/`, `ci-marker/`, `build/`, `dependabot/`, `renovate/`,
+`sentry-autofix/`, `revert-*`).
+
+The 30-minute orphan sweep in `report-stuck-prs.sh` has the same `agent/*`
+limit and the same fix is owed there - but that file is one of the
+byte-identical SHARED_FILES `estate-integrity.sh` checks across all seven
+repos, so it cannot be changed in this repo alone. It is done as a separate
+seven-repo change, together with the other shared-file gap found today: a
+pull request whose head has **no CI run at all** is never re-triggered by
+autopilot (`LAST=none` matches neither refresh condition), so it sits "left to
+merge" forever - eight of the oldest open pull requests are in exactly that
+state.
 
 CLAUDE.md 1.1 was rewritten. It had been telling agents that the deploy path
 was a local script that in fact never pushes, to `git push` to a protected

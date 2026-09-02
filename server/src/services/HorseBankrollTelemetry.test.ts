@@ -98,31 +98,24 @@ describe('WIRING - the module exists and something calls it', () => {
   });
 
   /**
-   * REWRITTEN 2026-09-01 — the fail-open became a membership refusal, and
-   * the reason the old pin existed no longer applies. The 2026-08-31 outage
-   * this pin guarded against ("emptied the cash floor for forty minutes")
-   * was caused by WRONG KEYS: the bankroll map was keyed on two hard-coded
-   * club ids that owned zero cash tables, so every lookup missed and the
-   * then-refusal refused everybody. The loader has derived its club ids
-   * from the LIVE TABLE SET ever since (pinned below), and the map is
-   * loaded all-or-nothing behind `bankrollsLoaded` — so inside a complete
-   * map, an absent `${club_id}:${user_id}` key means exactly one thing:
-   * this horse is NOT a member of this table's club. Sending non-members
-   * to atomic_table_buyin just made the RPC refuse them one network
-   * round-trip later, silently, wasting most of a standalone club's
-   * seeding cycle (Deep Stack, 416 members among ~1,000 fleet horses:
-   * most picks failed). A horse plays only in its own club — the
-   * containment now lives at the pick.
+   * THE LOAD-BEARING ONE. An unreadable bankroll means no bankroll opinion:
+   * `atomic_table_buyin` still refuses a seat the balance cannot cover, so
+   * this gate decides which games are SENSIBLE, never which are possible.
+   * The line that made this a refusal emptied the cash floor for forty
+   * minutes. Counting it must not turn it back into one, so the pin asserts
+   * the counter and the `return true` are adjacent.
+   *
+   * 2026-09-02: a proposed membership-refusal here (return false) was
+   * REVERTED — it collided with HorseBankrollGateClubs.test.ts, which pins
+   * the same outage lesson, and it was never needed: a non-member's pick is
+   * turned into a harmless refused attempt by the buy-in RPC, and club
+   * containment for club-owned games lives in the pick's membership scope
+   * and the DB entry gate, not here.
    */
-  it('refuses a missing membership at the pick, with the counter adjacent', () => {
+  it('counts the fail-open WITHOUT turning it back into a refusal', () => {
     expect(FLEET).toMatch(
-      /rollUnknown\+\+;\s*bankrollEvent\('seat_fail_open_roll_unknown'\);\s*return false;/
+      /rollUnknown\+\+;\s*bankrollEvent\('seat_fail_open_roll_unknown'\);\s*return true;/
     );
-  });
-
-  it('the loader derives club ids from the live table set, which is what makes strictness safe', () => {
-    expect(FLEET).toMatch(/const clubIdsToLoad = new Set<string>\(this\.clubIds\);/);
-    expect(FLEET).toMatch(/if \(cid\) clubIdsToLoad\.add\(cid\);/);
   });
 
   it('counts a genuine refusal at the refusal itself', () => {

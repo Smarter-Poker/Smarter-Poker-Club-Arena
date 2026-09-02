@@ -1140,26 +1140,25 @@ export class HorseFleetManager {
               const roll = bankrolls.get(`${table.club_id}:${h.id}`);
               if (roll === undefined) {
                 /**
-                 * A MISSING KEY IS A MISSING MEMBERSHIP (2026-09-01). The
-                 * bankroll map is loaded all-or-nothing (bankrollsLoaded is
-                 * false on any incomplete page, and this branch is inside
-                 * that guard), and it is keyed `${club_id}:${user_id}` over
-                 * every club with an open table — so inside a complete map,
-                 * an absent key means this horse has NO club_members row in
-                 * THIS table's club. The old `return true` fail-open sent
-                 * non-members to atomic_table_buyin, which refused every one
-                 * with "Insufficient balance" that seatHorse swallowed —
-                 * cross-club picks silently wasting most of a standalone
-                 * club's seeding cycle. (The 2026-08-31 outage this branch
-                 * used to guard against was WRONG KEYS — two hard-coded club
-                 * ids owning zero tables — not strict membership; the loader
-                 * derives club ids from the live table set now.) A horse
-                 * plays only in its own club — section 10.5's containment,
-                 * applied to the pick instead of the buy-in failure.
+                 * AN UNKNOWN ROLL IS UNKNOWN, NOT ZERO — 2026-08-31, and
+                 * refusing a seat here emptied the entire cash floor for 40
+                 * minutes. The doctrine of this whole layer is that a
+                 * bankroll we cannot read means NO BANKROLL OPINION —
+                 * `atomic_table_buyin` still refuses a seat the balance
+                 * cannot cover, so this gate decides which games are
+                 * SENSIBLE, never which are possible. A missing key is most
+                 * often a non-member of THIS table's club, and the buy-in RPC
+                 * turns that into a harmless refused attempt; refusing here
+                 * instead is the one failure mode that CAN empty the floor,
+                 * so it stays fail-open (HorseBankrollGateClubs.test.ts pins
+                 * exactly this, and it encodes the outage). Club containment
+                 * for club-owned games is enforced where it belongs — the
+                 * membership scope of the pick and the DB entry gate — not by
+                 * turning an unreadable roll into a seat refusal.
                  */
                 rollUnknown++;
                 bankrollEvent('seat_fail_open_roll_unknown');
-                return false;
+                return true;
               }
               const ref = referenceBuyIn(
                 table.big_blind,

@@ -76,8 +76,14 @@ describe('the shape of the product', () => {
   });
 
   it('opens the rungs and variants the board actually runs', () => {
-    expect([...HEADS_UP_BUYINS]).toEqual([1, 2, 5, 10, 20, 25, 50, 100]);
-    expect([...HEADS_UP_GAME_TYPES]).toEqual(['nlh', 'plo4']);
+    // Dan's locked seat-first Master Directive (2026-09-01): the Heads-Up
+    // board is 9 buy-ins x 4 games x 4 depth bands = 144 queues. 20 was
+    // retired from the ladder; plo5 and short_deck were added to the games.
+    // seatFirstLadders.test.ts pins the same 144 shape from the config that
+    // is generated off these two arrays; this test moved to match the
+    // shipped spec (both headsUpSpec copies are byte-identical on it).
+    expect([...HEADS_UP_BUYINS]).toEqual([1, 2, 5, 10, 25, 50, 100, 250, 500]);
+    expect([...HEADS_UP_GAME_TYPES]).toEqual(['nlh', 'plo4', 'plo5', 'short_deck']);
   });
 });
 

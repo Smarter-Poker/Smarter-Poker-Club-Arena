@@ -61,3 +61,31 @@ scrape_configs:
           app: club-arena-engine
     scrape_interval: 15s
     scrape_timeout: 10s
+
+  # ── RESTORED FROM THE LIVE HOST, 2026-08-31 ──────────────────────────────
+  # This job was added directly on engine-01 on 2026-08-28 and never committed.
+  # The repo is the source of truth that deploy.sh resets the host to, so the
+  # next `deploy.sh` run would have SILENTLY DELETED voice monitoring — and
+  # check-monitoring-drift.mjs cannot see it, because it verifies rule files
+  # and mounts, not scrape jobs. Copied back verbatim from the running config.
+  # Club Arena TURN relay (club-arena-turn, 178.156.160.206) — added 2026-08-28.
+  # Voice is relay-only by design (it hides every player's IP from every other
+  # player), so this box is a single point of failure for voice. Nothing was
+  # watching it until now.
+  #
+  # node_exporter here also carries a TEXTFILE metric,
+  # club_arena_turn_allocation_ok, written every 2 minutes by
+  # turn-probe.timer on that host. That probe mints a real HMAC credential and
+  # performs an actual allocation. A plain port check would stay green if the
+  # shared secret on the relay and the one in the engine's .env drifted apart,
+  # which is a silent failure: the engine would hand players credentials
+  # coturn rejects and voice would die looking like a network fault.
+  - job_name: turn_relay
+    static_configs:
+      - targets: ['178.156.160.206:9100']
+        labels:
+          host: club-arena-turn
+          role: turn
+          app: coturn
+    scrape_interval: 30s
+    scrape_timeout: 10s

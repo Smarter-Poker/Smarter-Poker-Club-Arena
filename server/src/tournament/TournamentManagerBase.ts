@@ -1826,7 +1826,15 @@ export abstract class TournamentManagerBase {
           prize_pool: prizePool,
           spin_multiplier: spinMultiplier,
           is_premium_spin: spinMultiplier >= 100,
-          starting_chips: tier?.startingStack ?? tournament.starting_chips,
+          /* THE STACK IS NOT WRITTEN HERE ANY MORE (Dan, 2026-09-01).
+             It used to read `tier?.startingStack ?? tournament.starting_chips`,
+             so the wheel decided how many chips the players had -- 300, 1000 or
+             5000 depending on what it landed on. That is retired: the stack
+             belongs to the board (Turbo 300, Deep Stack 1000, spinSpec
+             SPIN_STACKS), it is written at creation, and the seat holds it from
+             the moment the buy-in is paid. Re-adding it here would put the seat
+             back to guessing until the draw lands. */
+          starting_chips: tournament.starting_chips,
           blind_structure: spinBlinds,
           payout_structure: (tier?.payouts ?? [1]).map((pct, i) => ({
             place: i + 1,
@@ -1887,7 +1895,8 @@ export abstract class TournamentManagerBase {
         // it must agree with what was just written — the DB write alone would
         // leave this start running on the placeholder structure.
         tournament.blind_structure = spinBlinds;
-        if (tier?.startingStack) tournament.starting_chips = tier.startingStack;
+        // The stack came from the board and is already on the row; the draw
+        // does not change it (see spinRowPatch above).
         if (this.tournamentCache) {
           this.tournamentCache.blind_structure = spinBlinds;
           this.tournamentCache.spin_multiplier = spinMultiplier;

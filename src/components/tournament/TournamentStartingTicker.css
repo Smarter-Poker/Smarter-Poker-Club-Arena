@@ -57,7 +57,7 @@
   align-items: center;
 }
 .mtt-ticker__track:focus-visible {
-  outline: 2px solid #00d4ff;
+  outline: 2px solid var(--ticker-accent, #00d4ff);
   outline-offset: -2px;
 }
 
@@ -66,14 +66,14 @@
   align-items: center;
   white-space: nowrap;
   will-change: transform;
-  animation: mttScroll 22s linear infinite;
+  animation: mttScroll var(--ticker-speed, 22s) linear infinite;
 }
 
 .mtt-ticker__msg {
   padding: 0 28px;
   font-size: 0.78rem;
   font-weight: 700;
-  color: #eaf4ff;
+  color: var(--ticker-text, #eaf4ff);
   letter-spacing: 0.01em;
 }
 
@@ -88,7 +88,7 @@
   cursor: pointer;
 }
 .mtt-ticker__close:focus-visible {
-  outline: 2px solid #00d4ff;
+  outline: 2px solid var(--ticker-accent, #00d4ff);
   outline-offset: -2px;
 }
 

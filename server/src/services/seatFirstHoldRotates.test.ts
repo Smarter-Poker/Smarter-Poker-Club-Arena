@@ -38,7 +38,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { seatFirstHeldEmpty, SEAT_FIRST_EMPTY_BUCKET_MS } from './TournamentRecurringService.js';
-import { EMPTY_BUCKET_MS } from './HorseBehavior.js';
+import { FILL_BUCKET_MS } from './HorseBehavior.js';
 
 // A stable, structured id set — uuids, which is what this hash actually sees.
 function ids(n: number, salt = 'board'): string[] {
@@ -130,7 +130,13 @@ describe('no price point can be held empty forever', () => {
     /* A cash table is long-lived, so a 2h hold is a fraction of its life. A
        Spin instance lives minutes, so a 2h hold outlives many whole games —
        which is precisely how one roll ossified a price point for a day. */
-    expect(SEAT_FIRST_EMPTY_BUCKET_MS).toBeLessThan(EMPTY_BUCKET_MS);
+    /* 2026-09-02: the cash sibling this is compared against is no longer the
+       held-empty bucket - Dan's new occupancy rule replaced the hold with a
+       full/sporadic character on a THREE-HOUR bucket. The property here is
+       unchanged and still the point: a seat-first hold must rotate FASTER than
+       the cash-table character does, because a Spin board that holds still for
+       hours is a price point nobody can buy. */
+    expect(SEAT_FIRST_EMPTY_BUCKET_MS).toBeLessThan(FILL_BUCKET_MS);
     expect(SEAT_FIRST_EMPTY_BUCKET_MS).toBeGreaterThanOrEqual(5 * 60_000);
   });
 });

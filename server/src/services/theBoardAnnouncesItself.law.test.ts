@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { sliceDollarQuoted, sliceMethod } from '../../../tests/helpers/sourceWindow';
+/* The server's own mirror, not tests/helpers/. The server tsconfig sets
+   rootDir to ./src, so importing across that boundary fails the server
+   typecheck with TS6059 - which is exactly how this arrived red. The two
+   files are kept byte-identical below the marker in the mirror. */
+import { sliceDollarQuoted, sliceMethod } from '../testHelpers/sourceWindow';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════

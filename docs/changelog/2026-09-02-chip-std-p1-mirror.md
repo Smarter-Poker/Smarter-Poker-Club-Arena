@@ -103,10 +103,11 @@ whoever owns that branch, not a file this lane should overwrite.
 `20260902204600_engine_restart_phase1_deploy_start_marker` and
 `20260902211500_engine_restart_phase1_review_fixes` are recorded in
 `schema_migrations` with EMPTY `statements` (applied by a path that does not
-record the text). Their source files exist on
-`feat/engine-restart-programme-phase-1` at the same paths and will land with
-that branch; inventing an UNRECOVERABLE STUB here would only conflict with the
-real files. Also `20260902215043_owners_and_co_owners_play_out_of_a_player_wallet_admins_do_not`
+record the text). Their source files existed on
+`feat/engine-restart-programme-phase-1` at the same paths; inventing an
+UNRECOVERABLE STUB here would only have conflicted with the real files, and
+that branch merged to main before this one was pushed, so all three are now
+recorded. Also `20260902215043_owners_and_co_owners_play_out_of_a_player_wallet_admins_do_not`
 was applied by another lane WHILE this export ran (it was not in the 21:45
 list) and is that lane's to commit.
 

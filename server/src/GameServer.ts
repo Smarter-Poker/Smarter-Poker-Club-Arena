@@ -3732,7 +3732,16 @@ export class GameServer {
           try {
             const { data: sbp, error: sbpErr } = await supabase.rpc(
               'fn_backpay_spin_unpaid_winners',
-              { p_apply: true, p_limit: 200 }
+              // p_since_hours EXPLICIT (2026-08-31). This call had been
+              // failing on EVERY invocation with 57014 statement timeout:
+              // the RPC read the unbounded v_spin_unpaid_settlements three
+              // times, ~2.4s each, against an 8s service_role limit, so the
+              // safety net under "a prize left the bank and landed nowhere"
+              // had not run in production. It now sweeps a window it can
+              // finish. Six hours covers thirty-six passes of this ten-minute
+              // loop; anything older than that is not a repair, it is an
+              // audit, and an audit passes its own window.
+              { p_apply: true, p_limit: 200, p_since_hours: 6 }
             );
             if (sbpErr) {
               reportError(

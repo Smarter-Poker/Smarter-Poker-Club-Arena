@@ -503,6 +503,72 @@ describe('the end of the break', () => {
   });
 });
 
+describe('the resume is staggered, not a burst (phase 3)', () => {
+  /**
+   * At :00 every table used to resume in one synchronous loop, so all ~250
+   * dealing loops hit a 2-core database in the same instant. The first batch
+   * resumes immediately; the rest roll out RESUME_STAGGER_MS apart. Uses a
+   * controllable setTimer so the batches can be driven by hand.
+   */
+  function buildBig(engineCount: number) {
+    const engines = new Map<string, FakeEngine>();
+    for (let i = 0; i < engineCount; i++) engines.set(`t${i}`, new FakeEngine());
+    const store = new FakeStore();
+    const timers: Array<{ fn: () => void; ms: number }> = [];
+    const mb = new MaintenanceBreak({
+      engines: () => engines.entries() as any,
+      isRunning: () => true,
+      emit: () => {},
+      store,
+      setTimer: ((fn: () => void, ms: number) => {
+        timers.push({ fn, ms });
+        return 0 as unknown as NodeJS.Timeout;
+      }) as any,
+    });
+    return { mb, engines, timers };
+  }
+
+  it('resumes the first batch immediately and schedules the rest in batches', async () => {
+    const N = MaintenanceBreak.RESUME_BATCH_SIZE * 3; // three batches
+    const { mb, engines, timers } = buildBig(N);
+    await mb.announceLastHand();
+    await mb.beginCountdown();
+    vi.advanceTimersByTime(MaintenanceBreak.BREAK_DURATION_MS + 1000);
+    const beforeEnd = timers.length;
+    await mb.end();
+
+    const list = [...engines.values()];
+    const resumedNow = list.filter((e) => e.resumeCount > 0).length;
+    // Exactly the first batch is up synchronously.
+    expect(resumedNow).toBe(MaintenanceBreak.RESUME_BATCH_SIZE);
+    // The other two batches are scheduled by end(), at increasing delays.
+    const resumeTimers = timers.slice(beforeEnd);
+    expect(resumeTimers).toHaveLength(2);
+    expect(resumeTimers[0].ms).toBeLessThan(resumeTimers[1].ms);
+
+    // Firing the scheduled batches brings the whole fleet up.
+    for (const t of resumeTimers) t.fn();
+    expect(list.every((e) => e.resumeCount > 0)).toBe(true);
+  });
+
+  it('drops a scheduled batch from a superseded break', async () => {
+    const N = MaintenanceBreak.RESUME_BATCH_SIZE * 2;
+    const { mb, engines, timers } = buildBig(N);
+    await mb.announceLastHand();
+    await mb.beginCountdown();
+    vi.advanceTimersByTime(MaintenanceBreak.BREAK_DURATION_MS + 1000);
+    const beforeEnd = timers.length;
+    await mb.end();
+    const resumeTimers = timers.slice(beforeEnd);
+    // A new break begins (bumps the resume token) before the stale batch fires.
+    await mb.announceLastHand();
+    const before = [...engines.values()].map((e) => e.resumeCount);
+    for (const t of resumeTimers) t.fn(); // stale batch - must be dropped
+    const after = [...engines.values()].map((e) => e.resumeCount);
+    expect(after).toEqual(before);
+  });
+});
+
 describe('surviving the restart', () => {
   it('re-parks every table for what is LEFT of a break the previous engine declared', async () => {
     const { mb, engines, store } = build(3);

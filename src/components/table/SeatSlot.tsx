@@ -116,36 +116,23 @@ const TENSE_AT_PERCENT = 33;
  * Derived rather than random so a seat's rhythm survives re-renders — a random
  * phase would resample on every mount and make avatars visibly jump.
  */
-/** Holo sweep period. Must match the duration in `.seat__avatar--holo::after`. */
-const HOLO_CYCLE_S = 7;
-
 function breathingStyle(seatNumber: number): React.CSSProperties {
   // 3.4s - 5.0s. Prime-ish spread so seats drift apart instead of re-syncing.
   const duration = 3.4 + ((seatNumber * 7) % 9) * 0.2;
   const delay = -((seatNumber * 13) % 40) * 0.1;
 
-  /**
-   * The holo sweep needs its OWN phase, not the breathing's.
-   *
-   * Reusing --sp-breath-delay looked fine and was measurably wrong: that value
-   * spans only 1.1s-3.9s, which is a good spread across a ~4s breath but a poor
-   * one across a 7s sweep. All nine VIPs would flash inside a single narrow
-   * window and then sit dark together — the synchronised-machinery look the
-   * per-seat phase exists to prevent, just on a longer clock.
-   *
-   * `(seat * 4) % 9` is a permutation of 0..8, so the nine phases land EVENLY
-   * across the full cycle and, because it is a permutation rather than a ramp,
-   * physically adjacent seats get distant phases. A plain `seat / 9` ramp would
-   * also be even but would sweep round the table like a lighthouse.
-   */
-  const holoDelay = -(((seatNumber * 4) % 9) / 9) * HOLO_CYCLE_S;
-
   return {
     ['--sp-breath-dur' as string]: `${duration.toFixed(2)}s`,
     ['--sp-breath-delay' as string]: `${delay.toFixed(2)}s`,
-    ['--sp-holo-delay' as string]: `${holoDelay.toFixed(2)}s`,
+    /* --sp-holo-delay is no longer an idle phase. Since Dan 2026-09-02 the
+       shine is an on-the-clock cue set on the acting seat's avatar element
+       (see holoOnClockDelayMs in the render), not ambient life spread round
+       the table. */
   };
 }
+
+/** The shine waits this long on the clock before its first sweep (Dan 2026-09-02). */
+const HOLO_ON_CLOCK_MS = 3_000;
 
 /** How long the "it's on you" posture change plays. Matches spAvatarAlert. */
 const ALERT_MS = 480;
@@ -1110,7 +1097,12 @@ export const SeatSlot = memo(
        disappear" means on a screen that cannot see the packet in flight.
        Keyed by the turn's start stamp so re-renders mid-turn reuse the same
        anchor instead of re-anchoring (which would freeze the ring). */
-    const turnPaintAnchorRef = useRef<{ key: number; baseElapsedMs: number } | null>(null);
+    const turnPaintAnchorRef = useRef<{
+      key: number;
+      baseElapsedMs: number;
+      /** Time left until 3s on the clock, frozen at this client's first paint of the turn. */
+      holoDelayMs: number;
+    } | null>(null);
     useEffect(() => {
       return () => {
         if (peekTimerRef.current) clearTimeout(peekTimerRef.current);
@@ -1766,7 +1758,7 @@ export const SeatSlot = memo(
      * artwork, so over a rig — which draws its own, moving pixels — the mask and
      * the character would no longer agree. A rigged avatar carries its own look.
      */
-    const showHolo = isVipBust && !avatarBroken && !rigActive;
+    const holoEligible = isVipBust && !avatarBroken && !rigActive;
     // The hero can now be clicked to open the profile modal.
     const avatarClickable = !!onAvatarClick;
 
@@ -1900,6 +1892,22 @@ export const SeatSlot = memo(
     // unavailable so the prior JS-driven visual still shows.
     let timerStyle: React.CSSProperties | undefined;
     let timerKey: number | string = 'no-turn';
+    /* THE SHINE IS AN "ON THE CLOCK" CUE, NOT AMBIENT LIFE (Dan 2026-09-02):
+       "THE SHINE EFFECT THAT GOES OVER EVERY PLAYER EVERY COUPLE OF SECONDS
+       ... SHOULD ONLY APPEAR WHEN IT'S A PLAYER'S TURN, AND THEY HAVE BEEN ON
+       THE CLOCK FOR AT LEAST 3 SECONDS. IT SHOULD NEVER APPEAR ON IDLE PLAYERS,
+       OR PLAYERS IF THE ACTION ISN'T ON THEM."
+
+       The holo scan line used to run on every VIP seat forever (7s cycle,
+       phased per seat, so somewhere on the table a player was lit every
+       second or two). It is now armed only for the seat that is acting, and
+       its animation-delay is the time LEFT until three seconds on the clock -
+       measured on the engine's clock through the same elapsed figure the
+       countdown ring uses, so a mid-turn rejoin with five seconds already
+       gone shines at once rather than restarting the wait. null = not on the
+       clock = no class, no pseudo-element, nothing to see. A turn the engine
+       has not stamped a deadline on waits the full three seconds. */
+    let holoOnClockDelayMs: number | null = isActingNow ? HOLO_ON_CLOCK_MS : null;
     if (isActingNow && turnDeadlineMs && turnDeadlineMs > 0) {
       // ── Dan 2026-08-20: "the yellow countdown timer is not 15 seconds — it
       //    needs to be exactly 15 seconds long to make the yellow disappear."
@@ -1953,9 +1961,17 @@ export const SeatSlot = memo(
       const TURN_PAINT_LATENCY_ALLOWANCE_MS = 3_000;
       const anchorKey = turnStartTimeMs || turnDeadlineMs;
       if (turnPaintAnchorRef.current?.key !== anchorKey) {
+        const baseAtFirstPaint = rawElapsedMs <= TURN_PAINT_LATENCY_ALLOWANCE_MS ? rawElapsedMs : 0;
         turnPaintAnchorRef.current = {
           key: anchorKey,
-          baseElapsedMs: rawElapsedMs <= TURN_PAINT_LATENCY_ALLOWANCE_MS ? rawElapsedMs : 0,
+          baseElapsedMs: baseAtFirstPaint,
+          /* Frozen ONCE per turn. animation-delay is read by the browser
+             when the class mounts; feeding it a value that shrinks on every
+             countdown tick would re-time a running animation and bring the
+             sweep forward of the three seconds Dan asked for. A rejoin with
+             more than three seconds already gone (base 0, elapsed large)
+             lands at 0 and shines at once. */
+          holoDelayMs: Math.max(0, HOLO_ON_CLOCK_MS - (rawElapsedMs - baseAtFirstPaint)),
         };
       }
       const baseElapsedMs = Math.min(
@@ -1964,6 +1980,7 @@ export const SeatSlot = memo(
       );
       const effDurationMs = durationMs - baseElapsedMs;
       const elapsedMs = Math.max(0, rawElapsedMs - baseElapsedMs);
+      holoOnClockDelayMs = turnPaintAnchorRef.current.holoDelayMs;
       // Dan 2026-08-15: the yellow countdown is a full 15 seconds. On a normal
       // 15s turn that is the entire clock (never goes red); when a time bank
       // extends the turn, yellow still owns the first 15s and the borrowed
@@ -2032,6 +2049,9 @@ export const SeatSlot = memo(
         '--timer-progress': `${timerProgress}%`,
       } as React.CSSProperties;
     }
+    // Eligible art (VIP bust, not broken, not rigged) AND on the clock. Never
+    // an idle seat, never a seat the action is not on.
+    const showHolo = holoEligible && holoOnClockDelayMs !== null;
 
     return (
       <div
@@ -2205,6 +2225,7 @@ export const SeatSlot = memo(
           )}
 
         {/* Avatar Circle — large, sits on top of info box */}
+        {/* showHolo: eligible art AND on the clock - see holoOnClockDelayMs. */}
         {/* Bible V8 §11.1: show_avatars toggle */}
         <div
           /* `--rigged` hands ALL motion to the rig. Without it a rigged avatar
@@ -2255,7 +2276,15 @@ export const SeatSlot = memo(
             style={
               showHolo || bustGain !== 1
                 ? ({
-                    ...(showHolo ? { '--sp-avatar-src': `url("${avatarUrl}")` } : null),
+                    ...(showHolo
+                      ? {
+                          '--sp-avatar-src': `url("${avatarUrl}")`,
+                          // Overrides the per-seat idle phase from breathingStyle:
+                          // the first sweep lands exactly three seconds on the
+                          // clock (see holoOnClockDelayMs), then every 7s after.
+                          '--sp-holo-delay': `${holoOnClockDelayMs ?? HOLO_ON_CLOCK_MS}ms`,
+                        }
+                      : null),
                     ...(bustGain !== 1 ? { '--sp-bust-gain': bustGain } : null),
                   } as React.CSSProperties)
                 : undefined

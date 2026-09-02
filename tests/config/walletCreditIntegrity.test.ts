@@ -239,8 +239,30 @@ describe('the startup cash-out is accounted for', () => {
      credit to match. `atomic_seat_cashout_locked` credits and vacates in ONE
      transaction and derives its key from the row it locked, so every seat
      produces its own matchable ledger row and there is no window to die in. */
-  it('boot-time cash-outs go through the one locked cash-out RPC', () => {
-    expect(gs).toMatch(/rpc\(\s*'atomic_seat_cashout_locked'/);
+  /* ── REPLACED AGAIN 2026-09-02, because the boot cash-out no longer exists ──
+     #2713 deleted the block this pinned. cleanupStaleData() cashed out and
+     vacated every HORSE seat at every cash table on every boot and then reset
+     those horses to available, so the fleet re-seeded fresh ones into the
+     holes: measured at the 20:55 break, "Cashed out and vacated 383 seat(s)
+     ... (78575.13 chips returned to club wallets)" across 223 cash tables.
+     Horses are players (CLAUDE.md 10.5), and a seat row IS the persisted
+     state - the engine rebuilds every table from table_seats on boot.
+
+     So there is no boot cash-out to route through the locked RPC, and pinning
+     one kept main red for a fix that was correct. The rule this test defends -
+     no cash-out may credit chips without a matchable ledger row and a vacated
+     seat in the same transaction - has not gone away; it moved. GameServer
+     must now perform NO cash-out at all, and the single remaining path lives
+     in server/src/services/supabase/seats.ts, where seats.guard.test.ts holds
+     it to `atomic_seat_cashout_locked` and to crediting nothing itself.
+
+     Asserting the absence is strictly stronger here than asserting the old
+     presence: it fails if anyone reintroduces a boot-time credit by any route,
+     not just if they stop using one particular RPC name. */
+  it('the boot path performs no cash-out of its own', () => {
+    expect(gs).not.toMatch(/atomic_seat_cashout_locked/);
+    expect(gs).not.toMatch(/atomic_credit_wallet_and_log/);
+    expect(gs).not.toMatch(/credit_player_wallet/);
   });
 
   it('the aggregate key that made a retry look like destruction is gone', () => {

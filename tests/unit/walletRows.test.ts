@@ -64,8 +64,12 @@ describe('club wallet rows by role', () => {
     }
   });
 
-  it('the four bank roles add the Club Bank, in a union', () => {
-    for (const r of BANK_ROLES) {
+  /* Dan 2026-09-02: "ALL CLUB OWNERS AND CO-OWNERS SHOULD HAVE A PLAYER WALLET
+     (ADMIN'S SHOULD NOT)." The admin is the one bank role with no player
+     wallet; the three others keep it, because it is the wallet a seat is
+     bought with. */
+  it('the four bank roles add the Club Bank, in a union - and only the admin has no player wallet', () => {
+    for (const r of ['owner', 'co_owner', 'super_agent'] as const) {
       expect(clubWalletRows(r, { standalone: false })).toEqual([
         'club_bank',
         'promo_wallet',
@@ -73,10 +77,15 @@ describe('club wallet rows by role', () => {
         'player_wallet',
       ]);
     }
+    expect(clubWalletRows('admin', { standalone: false })).toEqual([
+      'club_bank',
+      'promo_wallet',
+      'agent_wallet',
+    ]);
   });
 
   it('a STANDALONE club also shows its own Rake Treasury', () => {
-    for (const r of BANK_ROLES) {
+    for (const r of ['owner', 'co_owner', 'super_agent'] as const) {
       expect(clubWalletRows(r, { standalone: true })).toEqual([
         'club_bank',
         'promo_wallet',
@@ -85,6 +94,21 @@ describe('club wallet rows by role', () => {
         'rake_treasury',
         'backup_bbj',
       ]);
+    }
+    expect(clubWalletRows('admin', { standalone: true })).toEqual([
+      'club_bank',
+      'promo_wallet',
+      'agent_wallet',
+      'rake_treasury',
+      'backup_bbj',
+    ]);
+  });
+
+  it('REGRESSION (Dan 2026-09-02): an admin never receives a player wallet, an owner or co-owner always does', () => {
+    for (const standalone of [true, false]) {
+      expect(clubWalletRows('admin', { standalone })).not.toContain('player_wallet');
+      expect(clubWalletRows('owner', { standalone })).toContain('player_wallet');
+      expect(clubWalletRows('co_owner', { standalone })).toContain('player_wallet');
     }
   });
 
@@ -123,7 +147,13 @@ describe('compact lobby wallet rows by role', () => {
     }
   );
 
-  it.each(['owner', 'co_owner', 'admin', 'super_agent'] as const)(
+  it.each(['owner', 'co_owner'] as const)(
+    'shows %s the Club Bank and their Player Wallet beneath Diamonds (Dan 2026-09-02)',
+    (role) => {
+      expect(clubLobbyWalletRows(role)).toEqual(['club_bank', 'player_wallet']);
+    }
+  );
+  it.each(['admin', 'super_agent'] as const)(
     'shows %s the Club Bank and Agent Wallet beneath Diamonds',
     (role) => {
       expect(clubLobbyWalletRows(role)).toEqual(['club_bank', 'agent_wallet']);

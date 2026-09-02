@@ -53,11 +53,36 @@ describe('CI box provisioning', () => {
     expect(sh).toMatch(/pgrep -f "\$d\/bin\/Runner\.Worker"/);
   });
 
+  it('can never wipe the crontab - every cron edit goes through cron_set and is read back', () => {
+    // Second run of this script on the box emptied root's crontab: under
+    // `set -e -o pipefail`, `( crontab -l | grep -v KEY; echo LINE ) | crontab -`
+    // aborts inside the subshell when grep matches nothing (KEY was the only
+    // entry), the echo never runs, and crontab receives an empty document. The
+    // nightly GC vanished. Read-modify-write through a variable, then read back.
+    const sh = repo(PROVISION);
+    expect(sh).toMatch(/^cron_set\(\) \{/m);
+    expect(sh).toMatch(/grep -v -- "\$key" \|\| true/);
+    expect(sh).toMatch(/crontab -l \| grep -qF -- "\$line" \|\| \{ echo " {3}FATAL/);
+    // The dangerous idiom must not appear in the top-level script's CODE.
+    // Comments are stripped first: the helper's own header quotes the idiom
+    // to explain why it is banned, and a pin that matched the explanation
+    // would fail on the fix itself (the actions:write pin made that mistake).
+    const topLevel = sh
+      .replace(/cat > \/usr\/local\/bin\/[^\n]*<<'EOF'[\s\S]*?\nEOF\n/g, '')
+      .split('\n')
+      .filter((l) => !/^\s*#/.test(l))
+      .join('\n');
+    expect(topLevel).not.toMatch(/\( crontab -l[^\n]*; echo[^\n]*\) \| crontab -/);
+    // Both cron installs use the helper.
+    expect(sh).toMatch(/cron_set ci-gc\.sh /);
+    expect(sh).toMatch(/cron_set ci-restart-idle /);
+  });
+
   it('is idempotent by construction - every install is guarded', () => {
     const sh = repo(PROVISION);
     expect(sh).toMatch(/swapon --show --noheadings \| grep -q/);
-    expect(sh).toMatch(/grep -v ci-gc\.sh/);
-    expect(sh).toMatch(/grep -v ci-restart-idle/);
+    expect(sh).toMatch(/cron_set ci-gc\.sh /);
+    expect(sh).toMatch(/cron_set ci-restart-idle /);
     expect(sh).toMatch(/command -v node >\/dev\/null/);
     expect(sh).toMatch(/command -v gh >\/dev\/null/);
   });

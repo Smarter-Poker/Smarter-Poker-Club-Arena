@@ -32,7 +32,17 @@ on:
     # 2026-09-01 (cost audit): */30 -> hourly. The workflow_run trigger above
     # fires after every publish attempt, and the publisher itself now carries
     # a */30 catch-up cron - three overlapping nets at */30 was two too many.
-    - cron: '19 * * * *'
+    #
+    # 2026-09-02: the :42 tick exists for the ENGINE watchdog that runs in
+    # this workflow, not for the publisher. On 2026-09-01/02 the deploy
+    # workflow's own :40/:45/:50 crons were dropped by GitHub for HOURS at a
+    # stretch, and the engine watchdog's only sweep at :19 sits 36 minutes
+    # from the :55 break - beyond the deploy's 14-minute break-gate budget,
+    # so its dispatch gate rightly refuses to burn a runner then. A sweep at
+    # :42 is 13 minutes out: when the engine is behind and every cron was
+    # dropped, THIS dispatch is alive and waiting when the break opens. A
+    # dropped cron now costs nothing instead of an hour.
+    - cron: '19,42 * * * *'
   workflow_dispatch:
 
 permissions:

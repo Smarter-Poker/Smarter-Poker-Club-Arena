@@ -156,7 +156,7 @@ describe('the engine deploy tells the truth when it skips', () => {
     // outside an announced break, so a plain dispatch still waits.
     const gate = HETZNER.slice(
       HETZNER.indexOf('Wait for the maintenance break'),
-      HETZNER.indexOf('Pull the exact commit')
+      HETZNER.indexOf('Cut over to the new image')
     );
     expect(gate).toMatch(/github\.event\.inputs\.force/);
     expect(gate).toMatch(/skipping the break gate/);
@@ -178,7 +178,7 @@ describe('the engine deploy tells the truth when it skips', () => {
      */
     const gate = HETZNER.slice(
       HETZNER.indexOf('Wait for the maintenance break'),
-      HETZNER.indexOf('Pull the exact commit')
+      HETZNER.indexOf('Cut over to the new image')
     );
     expect(gate).toMatch(/maintenance/);
     expect(gate).toMatch(/readyForRestart/);
@@ -199,7 +199,7 @@ describe('the engine deploy tells the truth when it skips', () => {
     // on the old SIGTERM drain, and the branch is unreachable afterwards.
     const gate = HETZNER.slice(
       HETZNER.indexOf('Wait for the maintenance break'),
-      HETZNER.indexOf('Pull the exact commit')
+      HETZNER.indexOf('Cut over to the new image')
     );
     expect(gate).toMatch(/LEGACY/);
     expect(gate).toMatch(/drainHands/);

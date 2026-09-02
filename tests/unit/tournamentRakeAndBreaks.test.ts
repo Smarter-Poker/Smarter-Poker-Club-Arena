@@ -314,8 +314,16 @@ describe('the engine pause outlasts the break', () => {
   });
 
   it('the extended budget is released on resume', () => {
-    const resume = ENGINE.slice(ENGINE.indexOf('resumeDealing()'));
-    expect(resume).toMatch(/pauseMaxWaitMs = null/);
+    // MOVED, NOT REMOVED (2026-09-01). `resumeDealing` and the new
+    // `resumeFromMaintenance` share their tail, so the three lines that let
+    // the gate go live in `releasePauseGate`. The budget must still be
+    // dropped there — a break's multi-minute window inherited by the next
+    // hand-for-hand pause is the 2026-08-19 bug in reverse.
+    const release = ENGINE.slice(ENGINE.indexOf('private releasePauseGate()'));
+    expect(release).toMatch(/pauseMaxWaitMs = null/);
+    expect(ENGINE.slice(ENGINE.indexOf('resumeDealing(): void {'))).toMatch(
+      /this\.releasePauseGate\(\)/
+    );
   });
 });
 
@@ -576,8 +584,38 @@ describe('a paused table parks whatever it was doing', () => {
   });
 
   it('resuming clears the hold, so the next pause is judged on its own terms', () => {
+    /**
+     * The clearing MOVED, it did not go away (2026-09-01). `resumeDealing()`
+     * and the new `resumeFromMaintenance()` both end by releasing the gate, so
+     * the three lines they shared live in `releasePauseGate()` and this reads
+     * them there. Pinning the body of one caller would have gone red for a
+     * refactor that changed no behaviour — and `npx vitest run tests/` is the
+     * step that publishes the bundle, so a cosmetic red here stops every
+     * deploy on the platform.
+     */
+    const release = sliceMethod(ENGINE_BASE, 'releasePauseGate()');
+    expect(release).toMatch(/this\.holdBeforeNextHand = false/);
+    expect(release).toMatch(/this\.pauseMaxWaitMs = null/);
+    // And resumeDealing must still route through it rather than half-resuming.
     const resume = sliceMethod(ENGINE_BASE, 'resumeDealing()');
-    expect(resume).toMatch(/this\.holdBeforeNextHand = false/);
+    expect(resume).toMatch(/this\.releasePauseGate\(\)/);
+  });
+
+  it('hand-for-hand cannot lift a maintenance break', () => {
+    /**
+     * Two independent pause authorities, and the reason is a bug this would
+     * otherwise reintroduce: hand-for-hand's 500ms sync loop calls
+     * resumeDealing() the moment every table is waiting, which during a
+     * maintenance break is immediately. Without this early return it dealt a
+     * hand inside the break AND destroyed the break's pause budget on the way
+     * through, so the table self-resumed two minutes into a five minute break.
+     */
+    const resume = sliceMethod(ENGINE_BASE, 'resumeDealing()');
+    expect(resume).toMatch(/if \(this\.maintenancePaused\)/);
+    // The maintenance resume is the mirror image: it must not lift a
+    // hand-for-hand pause it did not set.
+    const maint = sliceMethod(ENGINE_BASE, 'resumeFromMaintenance()');
+    expect(maint).toMatch(/if \(this\.handForHandPaused\) return/);
   });
 
   it('the park is what areAllTablesParked reads, so an idle table counts', () => {

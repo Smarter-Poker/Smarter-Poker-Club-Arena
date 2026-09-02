@@ -871,3 +871,57 @@ is deleted** — the backup branch and the stash are both printed at the end.
 World Hub note: that clone already carries an equivalent hook, but only in
 `.git/hooks/` — untracked, so it dies on any fresh clone. This repo's version is
 committed precisely so it cannot be lost that way.
+
+---
+
+## 13. THE HOURLY MAINTENANCE BREAK AND THE PLATFORM FREEZE (Dan 2026-09-01, BINDING)
+
+**The engine restarts at :55 of EVERY hour, inside an announced five-minute
+break, and the whole platform freezes for it.** If you read anything - in this
+repo, another repo, or a stale worktree - saying the engine restarts at 7am
+and 7pm, or in five Chicago windows, that text is OLD. This section wins.
+(That is exactly how the hamburger revert war ran for two days: a stale copy
+taught the next agent to "fix" the current behaviour back.)
+
+Dan, verbatim: "program the engine restart to be every hour on the :55 ...
+THE ENTIRE PLATFORM NEEDS TO FREEZE FOR THE 5 MINUTES, NO BUY INS, NO CHIP
+MOVEMENTS ... HORSES SHOULD NOT STAND UP OR ROTATE, EVERYTHING JUST FREEZES,
+THEN PICKS BACK UP EXACTLY AS IT WAS."
+
+The timeline: :53 every table is told to finish its hand (`MaintenanceBreak`
+announces, `pauseForMaintenance` parks each engine at the top of its loop).
+:55 every table is parked, the 5:00 countdown starts, `/health` opens
+`maintenance.readyForRestart`, and the deploy workflow - which built the
+image BEFORE the gate, while play continued - cuts over. ~:58 the new engine
+boots, adopts the persisted break row and re-parks its fleet. :00 the thaw
+(`fn_thaw_platform`) gives every in-flight deadline back the frozen minutes,
+then every table resumes together.
+
+Rules that follow from it, all enforced:
+
+1. **The freeze lives in Postgres** (`zz_freeze_guard` BEFORE triggers on the
+   seven money/seat tables + `fn_platform_frozen`), because the engine is
+   dead for ~2 of the 5 minutes and pg_cron does not stop with it. Do not
+   move it into engine memory; that guard is absent exactly when needed.
+2. **Whoever paused a table resumes it.** The maintenance break and
+   hand-for-hand are independent authorities (`maintenancePaused` vs
+   `handForHandPaused`); never let one lift the other's pause.
+3. **Never gate a table on `tables.status = 'paused'`** -
+   `cash_tables_needing_engine` abandons it. The break is the single row in
+   `engine_maintenance_break`.
+4. **Deadlines are thawed, not burned.** If you add a wall-clock deadline a
+   player can lose to (a hold, a window, a prompt), add it to
+   `fn_thaw_platform` in the same PR, or a five-minute break silently eats it.
+5. **Sweeps check `isMaintenanceFrozen()`** before moving money or seats.
+   A new periodic sweep that moves either gets the gate in the same PR.
+6. **Fleet-level alert rules carry the break guard**
+   (`unless max_over_time(poker_maintenance_break_active[6m]) == 1`), or they
+   page hourly about a stop we scheduled.
+7. **The constants are law**: `tests/the-break-clocks-agree.law.test.ts` pins
+   the :55 minute, cron ticks, freeze ceiling and windows across all five
+   surfaces. If you deliberately change one, change them together with the
+   law, in one commit.
+
+Full history and rationale: `docs/changelog/2026-09-01-scheduled-maintenance-break.md`
+and `docs/changelog/2026-09-01-total-platform-freeze.md`. Remaining backlog:
+issue #2563.

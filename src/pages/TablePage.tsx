@@ -190,6 +190,7 @@ import { type HandRecord } from '../components/table/HandHistoryPanel';
 // [MIGRATION] timeBankEngine removed — server-authoritative (Step 5). Time bank via GameServerAPI + DB.
 import { usePlayerStats } from '../hooks/usePlayerStats';
 import { useMaintenanceBreak } from '../hooks/useMaintenanceBreak';
+import { platformFrozenMessage } from '../utils/platformFrozen';
 import { MaintenanceBreakScreen } from '../components/table/MaintenanceBreakScreen';
 import { useTableSettings } from '../hooks/useTableSettings';
 import { useTableTimer } from '../hooks/useTableTimer';
@@ -309,7 +310,7 @@ import { retryAsync } from '../utils/retryAsync';
 import { safeErrorMessage, shouldSurfaceError } from '../utils/safeErrorMessage';
 import { serverNow } from '../utils/serverClock';
 // Dan 2026-08-21, item 15: hero's live hand strength under their seat box.
-import { bestFive, cardKey } from '../utils/handEvaluator';
+import { bestFive, cardKey, isPineappleVariant } from '../utils/handEvaluator';
 // Dan 2026-08-21, items 11 + 16: the client's post-hand hold comes from the
 // same animation spec the engine derives its own hold from, so the table can
 // never clear the winner before the pot has finished travelling to them.
@@ -15972,9 +15973,16 @@ export default function TablePage({
         }
       }
       if (best) {
-        if (best.n >= 4) strength = 'Four of a Kind';
-        else if (best.n === 3) strength = 'Three of a Kind';
-        else if (best.n === 2) strength = 'Pair';
+        /* PINEAPPLE 2026-09-01: three in the hand, two of them survive the
+           discard, so trips preflop is a hand that cannot be played and must
+           not be named. Capped rather than special-cased so the rest of this
+           branch - the high-card wording below included - is untouched. See
+           isPineappleVariant in handEvaluator.ts for the same rule on the
+           flop. */
+        const holdable = isPineappleVariant(heroHandVariant) ? Math.min(best.n, 2) : best.n;
+        if (holdable >= 4) strength = 'Four of a Kind';
+        else if (holdable === 3) strength = 'Three of a Kind';
+        else if (holdable === 2) strength = 'Pair';
         else {
           const high = ranks.reduce((a, b) => (RANK_ORDER(b) > RANK_ORDER(a) ? b : a));
           strength = `${RANK_WORD(high)} High`;
@@ -16210,6 +16218,17 @@ export default function TablePage({
         if (error || !res.ok) {
           const reason = error?.message || res.reason || '';
           setSeatFirstConfirm(null);
+
+          /* THE FREEZE REFUSAL IS NOT AN ERROR (Dan 2026-09-01). During the
+             :55 maintenance break every seat and chip write is refused in
+             Postgres by the freeze guard. Showing a player the raw refusal
+             would read as something broken; the truth is a break they were
+             told about, and a seat they can take in a few minutes. */
+          const frozenMsg = platformFrozenMessage(error);
+          if (frozenMsg) {
+            toast?.info?.(frozenMsg);
+            return;
+          }
 
           /* D8 (2026-08-25): `game_already_started` is not a stale table, it
              is THIS table, running. It was in the stale set, so a viewer who

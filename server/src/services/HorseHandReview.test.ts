@@ -297,6 +297,56 @@ describe('river aggression is recorded on both outcomes', () => {
     expect(tags).toEqual([]);
   });
 
+  const riverWarLine = [
+    { action: 'bet', stage: 'river', amount: 40 },
+    { action: 'raise', stage: 'river', amount: 120 },
+  ];
+
+  it('a WON river raise war is recorded, so the war tag has a denominator', () => {
+    const tags = detectLeaks({
+      netBB: 90,
+      invested: 160,
+      bigBlind: 2,
+      variant: 'nlh',
+      holeCards: [c('A', h), c('K', d)],
+      board: [c('K', s), c('T', s), c('4', s), c('7', d), c('2', h)],
+      heroActions: riverWarLine,
+      wentToShowdown: true,
+    });
+    expect(tags).toContain('river_raise_war_won');
+    expect(tags).not.toContain('river_raise_war');
+  });
+
+  it('the same war that loses is still tagged river_raise_war', () => {
+    const tags = detectLeaks({
+      netBB: -90,
+      invested: 160,
+      bigBlind: 2,
+      variant: 'nlh',
+      holeCards: [c('A', h), c('K', d)],
+      board: [c('K', s), c('T', s), c('4', s), c('7', d), c('2', h)],
+      heroActions: riverWarLine,
+      wentToShowdown: true,
+    });
+    expect(tags).toContain('river_raise_war');
+    expect(tags).not.toContain('river_raise_war_won');
+  });
+
+  it('a single winning river bet is NOT a war', () => {
+    const tags = detectLeaks({
+      netBB: 60,
+      invested: 50,
+      bigBlind: 2,
+      variant: 'nlh',
+      holeCards: [c('A', h), c('K', d)],
+      board: [c('K', s), c('T', s), c('4', s), c('7', d), c('2', h)],
+      heroActions: riverBetLine,
+      wentToShowdown: true,
+    });
+    expect(tags).toContain('river_aggr_won');
+    expect(tags).not.toContain('river_raise_war_won');
+  });
+
   it('the self-tuner cannot mistake the win record for a leak', () => {
     // The tuner reads tags by exact name. If river_aggr_won ever appeared in
     // one of those gates, a PROFITABLE river would tighten the horse - the
@@ -306,5 +356,6 @@ describe('river aggression is recorded on both outcomes', () => {
       'utf8'
     );
     expect(tuner).not.toContain('river_aggr_won');
+    expect(tuner).not.toContain('river_raise_war_won');
   });
 });

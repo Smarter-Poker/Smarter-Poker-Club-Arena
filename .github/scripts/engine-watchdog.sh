@@ -129,6 +129,55 @@ close_issue() {
   gh_write "close issue #$n (engine caught up)" issue close "$n" --repo "$REPO" || true
 }
 
+# ── THE TRAIN, NOT JUST THE CARGO (added 2026-09-02, after the outage) ──────
+# Staleness asks "is a server commit waiting". The 2026-09-02 outage began
+# with main going red on a MIGRATIONS-ONLY merge: nothing server-touching was
+# queued, REQ equaled SERVED, and this watchdog said OK for hours while the
+# deploy workflow's own test gate refused every window that was coming. A
+# broken train with no cargo is still a broken train. Two consecutive real
+# failures (cancelled runs are superseded dispatches, not verdicts) raise one
+# self-closing issue that names the failing step, so the reader starts at the
+# cause instead of rediscovering it from the Actions tab.
+TRAIN_TITLE="Engine watchdog: the hourly deploy train is failing"
+train_check() {
+  local RUNS latest prev url rid step n
+  RUNS=$(gh run list --repo "$REPO" --workflow "$DEPLOY_WORKFLOW" --limit 12 \
+    --json conclusion,status,url,databaseId \
+    --jq '[.[] | select(.status=="completed" and .conclusion!="cancelled")] | .[0:2]' 2>/dev/null || echo "")
+  latest=$(printf '%s' "$RUNS" | jq -r '.[0].conclusion // "none"' 2>/dev/null || echo none)
+  prev=$(printf '%s' "$RUNS" | jq -r '.[1].conclusion // "none"' 2>/dev/null || echo none)
+  url=$(printf '%s' "$RUNS" | jq -r '.[0].url // ""' 2>/dev/null || echo "")
+  if [ "$latest" = "failure" ] && [ "$prev" = "failure" ]; then
+    rid=$(printf '%s' "$RUNS" | jq -r '.[0].databaseId // ""' 2>/dev/null || echo "")
+    step=$(gh run view "$rid" --repo "$REPO" --json jobs \
+      --jq '[.jobs[].steps[] | select(.conclusion=="failure")][0].name // "unknown step"' 2>/dev/null || echo "unknown step")
+    say "::warning title=DEPLOY TRAIN FAILING::the last two completed deploy runs failed. Latest failing step: $step"
+    n=$(find_issue "$TRAIN_TITLE")
+    if [ -n "${n:-}" ]; then
+      gh_write "comment on #$n" issue comment "$n" --repo "$REPO" \
+        --body "Still failing. Latest failing step: **$step**. $url" || true
+    else
+      gh_write "open the train issue" issue create --repo "$REPO" --title "$TRAIN_TITLE" --body "The last two completed (non-cancelled) runs of \`$DEPLOY_WORKFLOW\` FAILED.
+
+| | |
+| --- | --- |
+| latest failing step | **$step** |
+| latest run | $url |
+
+A failing train strands every merge whether or not the engine is currently behind. On 2026-09-02 main went red on a migrations-only merge while nothing server-touching was queued: the staleness alarm had nothing to say, and every window for the next three hours was already lost. Start at the failing step above - it is the gate that is refusing, and the gate is usually right (fix main, never the gate).
+
+This issue closes itself on the first completed deploy run that succeeds." || true
+    fi
+  elif [ "$latest" = "success" ]; then
+    n=$(find_issue "$TRAIN_TITLE")
+    if [ -n "${n:-}" ]; then
+      gh_write "comment on #$n" issue comment "$n" --repo "$REPO" \
+        --body "Recovered. The latest completed deploy run succeeded. Closing." || true
+      gh_write "close issue #$n (train recovered)" issue close "$n" --repo "$REPO" || true
+    fi
+  fi
+}
+
 # ── 1. What SHOULD the engine be running? ───────────────────────────────────
 #
 # The newest commit touching server/, minus the paths auto-deploy-hetzner
@@ -158,6 +207,10 @@ except Exception:
 
 say "main needs : $REQ_SHORT ($REQ_TIME, ${AGE_MIN}m ago)"
 say "engine has : ${SERVED:-<unreadable>}"
+
+# Train health runs on EVERY sweep, before any early exit: a broken train
+# with an up-to-date engine is precisely the state the early exits hide.
+train_check
 
 if [ -z "${SERVED:-}" ]; then
   # Availability is a different alarm with a different owner. Guessing "behind"
@@ -221,18 +274,28 @@ say "::warning title=ENGINE BEHIND::$REQ_SHORT has been on main for ${AGE_MIN}m 
 # has been dispatched" when the retry provably cannot do anything is worse than
 # an alarm that says nothing.
 DISPATCHED="no"
-NOW_HOUR=$(chicago_hour "$(date -u +%s)")
-NEXT_WINDOW_LOCAL=$(chicago_stamp "$(window_at_or_after "$(date -u +%s)")")
-if is_restart_hour "$NOW_HOUR"; then
+NOW_TS=$(date -u +%s)
+NEXT_WINDOW_EPOCH=$(window_at_or_after "$NOW_TS")
+NEXT_WINDOW_LOCAL=$(chicago_stamp "$NEXT_WINDOW_EPOCH")
+# Every hour is a restart window now, but the deploy's break gate only polls
+# for about 14 minutes before giving up with BREAK NEVER OPENED. A dispatch at
+# :10 therefore burns a runner for a quarter of an hour and provably ships
+# nothing - and an alarm claiming "a retry has been dispatched" when the retry
+# cannot work is worse than one that says nothing. Dispatch only when the next
+# :55 is close enough that the run will still be alive and waiting when the
+# break opens; otherwise say when the window comes and let the deploy's own
+# :40/:45/:50 crons take it.
+MINS_TO_WINDOW=$(( (NEXT_WINDOW_EPOCH - NOW_TS) / 60 ))
+if [ "$MINS_TO_WINDOW" -le 13 ]; then
   if gh workflow run "$DEPLOY_WORKFLOW" --repo "$REPO" --ref main >/dev/null 2>&1; then
     DISPATCHED="yes"
-    say "  dispatched $DEPLOY_WORKFLOW on main"
+    say "  dispatched $DEPLOY_WORKFLOW on main (${MINS_TO_WINDOW}m to the break)"
   else
     say "::error::could not dispatch $DEPLOY_WORKFLOW -- the engine is behind and this run could not even try to fix it."
   fi
 else
-  DISPATCHED="no - outside the restart window, where a dispatch ships nothing"
-  say "  not dispatching: $NOW_HOUR:00 Chicago is not a restart hour. Next window $NEXT_WINDOW_LOCAL."
+  DISPATCHED="no - the break at $NEXT_WINDOW_LOCAL is ${MINS_TO_WINDOW}m away, past the deploy's 14-minute wait budget"
+  say "  not dispatching: the break gate would give up before $NEXT_WINDOW_LOCAL. The deploy's own :40/:45/:50 crons cover that window."
 fi
 
 BODY=$(cat <<EOF

@@ -41,7 +41,8 @@ interface SubAgent {
   username: string;
   avatarUrl: string;
   totalPlayers: number;
-  totalCommission: number;
+  /** Unclaimed commission. `null` means the read failed, NOT that it is zero. */
+  totalCommission: number | null;
   commissionRate: number;
   joinedAt: Date;
 }
@@ -245,12 +246,19 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
       // that answers ONLY for the caller's own downline, rather than one that
       // will report any user id it is handed.
       const downlineOwed: Record<string, number> = {};
+      // PHASE 7 AUDIT (2026-09-02). `downlineFailed` exists because the catch
+      // below used to leave downlineOwed empty, and every sub agent card then
+      // rendered `0` - "the club owes this downline nothing" - which is
+      // indistinguishable from the truth and is exactly the class of lie the
+      // rest of this phase removed. A failed read renders Unavailable now.
+      let downlineFailed = false;
       if (myAgent) {
         try {
           for (const row of await CommissionService.downlineCommission(clubId)) {
             downlineOwed[row.agentId] = row.unclaimed;
           }
         } catch (e) {
+          downlineFailed = true;
           reportError(e, 'AgentCommissionDashboard.downline');
         }
       }
@@ -281,7 +289,7 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
               subProfileMap[a.user_id]?.display_name || a.user_id?.substring(0, 8) || 'Unknown',
             avatarUrl: subProfileMap[a.user_id]?.avatar_url || '',
             totalPlayers: a.total_players || 0,
-            totalCommission: downlineOwed[a.id] || 0,
+            totalCommission: downlineFailed ? null : (downlineOwed[a.id] ?? 0),
             commissionRate: a.commission_rate || 0,
             joinedAt: new Date(a.created_at),
           }))
@@ -513,6 +521,21 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
         </div>
       )}
 
+      {/* PHASE 7 AUDIT. The Summary panel is gated on `summary &&`, which is
+          right - a failed read must never render four zero cards, because a
+          zero on this screen means "you earned nothing" and the agent cannot
+          tell it from "we could not ask". But the gate rendered NOTHING at
+          all: a blank tab with no explanation and no way back. Say what
+          happened and offer the retry. */}
+      {activeTab === 'summary' && !summary && (
+        <div className="empty-state">
+          <p>Your Commission Summary Could Not Be Loaded.</p>
+          <button className="payout-btn" onClick={() => loadDataRef.current()}>
+            Try Again
+          </button>
+        </div>
+      )}
+
       {/* Records Tab */}
       {activeTab === 'records' && (
         <div className="agent-commission__records">
@@ -578,8 +601,17 @@ export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
                   </div>
                   {/* Unclaimed, not lifetime: what the club still owes this
                       downline, which is the figure their upline can act on. */}
-                  <span className="earnings" title="Unclaimed Commission">
-                    {agent.totalCommission.toLocaleString()}
+                  <span
+                    className="earnings"
+                    title={
+                      agent.totalCommission === null
+                        ? 'This Figure Could Not Be Loaded'
+                        : 'Unclaimed Commission'
+                    }
+                  >
+                    {agent.totalCommission === null
+                      ? 'Unavailable'
+                      : agent.totalCommission.toLocaleString()}
                   </span>
                 </div>
               ))}

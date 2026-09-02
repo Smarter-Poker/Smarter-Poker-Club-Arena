@@ -283,9 +283,28 @@ describe('ClubDataPage', () => {
 
   it('exports the exact prepared game snapshot instead of only the visible page', async () => {
     const secondRow = { ...snapshot.rows[0], id: 'game-2', name: 'Shark Table Two' };
+
+    // THE COLD READ IS HELD OPEN BY THE TEST, NOT BY A TIMER (2026-09-02).
+    //
+    // This used to `await setTimeout(50)` and then assert, one line below the
+    // render, that the export button is disabled. That is a race against the
+    // wall clock: `findByRole` polls, and on a loaded CI worker the first poll
+    // can land after the 50ms has already elapsed - at which point the button
+    // is legitimately enabled and the assertion fails on a branch that changed
+    // nothing. Measured 2026-09-02: this test failed in CI while passing three
+    // times out of three locally, and `main` itself was red on the same suite.
+    //
+    // A deferred promise removes the clock from the assertion entirely. The
+    // read cannot finish until the test says so, so "disabled during the cold
+    // read" is now a fact rather than a hope, however slow the runner is.
+    let releaseSnapshot!: () => void;
+    const snapshotGate = new Promise<void>((resolve) => {
+      releaseSnapshot = resolve;
+    });
+
     rpcMock.mockImplementation(async (fn: string) => {
       if (fn === 'ca_club_data_snapshot') {
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await snapshotGate;
         return { data: snapshot, error: null };
       }
       if (fn === 'ca_club_union_invoices') return { data: [], error: null };
@@ -311,8 +330,10 @@ describe('ClubDataPage', () => {
     const exportButton = await screen.findByRole('button', { name: 'Export As CSV' });
     // The control exists during the cold snapshot read but is intentionally
     // disabled. Clicking it before the ledger is verified is a no-op in the
-    // browser, which a fast local runner can hide by finishing the read first.
+    // browser, and the gate above guarantees the read is still open here, so
+    // this assertion no longer depends on how fast the runner is.
     expect(exportButton).toBeDisabled();
+    releaseSnapshot();
     await waitFor(() => expect(exportButton).toBeEnabled(), { timeout: 10_000 });
     fireEvent.click(exportButton);
 

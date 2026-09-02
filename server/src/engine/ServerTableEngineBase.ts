@@ -2705,7 +2705,31 @@ export abstract class ServerTableEngineBase {
    * final-table bubble.
    */
   isPausedByDesign(): boolean {
-    return this.handForHandPaused || this.tableFSM.state === 'paused';
+    // THE MAINTENANCE BREAK IS A PAUSE BY DESIGN, AND FORGETTING THAT DEALT
+    // 1204 HANDS INSIDE ONE (2026-09-02).
+    //
+    // #2537 split the break out of `pauseAfterHand` into its own authority so
+    // hand-for-hand could not lift it. `pauseAfterHand` sets
+    // `handForHandPaused`, which is what this predicate reads;
+    // `pauseForMaintenance` deliberately does not. So the new authority was
+    // wired into the new gate in the start-up loop and into nothing else, and
+    // this predicate - the one the TURN loop actually consults
+    // (ServerTableEngineTurns) - kept answering false all the way through a
+    // break.
+    //
+    // Measured on the first armed break, 18:55-19:00: 1204 hands dealt,
+    // against 0 in each of the two breaks on the build before it and 1299 in a
+    // normal five minutes. The break had stopped stopping play.
+    //
+    // It also explains the hourly `watchdog_kill_rebuild` wave (#2651):
+    // GameServer's `parkedOnPurpose` is this same predicate, so every table
+    // held by a break looked like a stalled table to the watchdog, which
+    // killed and rebuilt it.
+    //
+    // A table the maintenance break is holding is paused on purpose. That is
+    // the whole meaning of this function, so it belongs here rather than at
+    // each of the four call sites.
+    return this.handForHandPaused || this.maintenancePaused || this.tableFSM.state === 'paused';
   }
 
   /** Ms spent in the current by-design pause; 0 when not paused. */

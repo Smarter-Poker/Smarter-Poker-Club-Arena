@@ -63,7 +63,7 @@ const countsByFile = (): Map<string, number> => {
 
 /** Frozen 2026-08-30 (Community Command Center). 262 occurrences. Only ever shrink. */
 const BASELINE = new Map<string, number>([
-  ['src/services/HorseOrchestrator.ts', 11],
+  ['src/services/HorseOrchestrator.ts', 8],
   // 13 -> 12: phase 3 of 7 removed distributeFromTreasury, distributeChips and
   // transferToAgent, and rewired transferToPlayer onto fn_agent_wallet_send.
   ['src/services/AgentService.ts', 12],
@@ -73,7 +73,9 @@ const BASELINE = new Map<string, number>([
   ['src/services/ClubsService.ts', 5],
   ['src/services/PromotionService.ts', 2],
   ['src/services/CreditService.ts', 5],
-  ['src/pages/ClubDetailPage.tsx', 5],
+  // 5 -> 4: the legacy optimistic table delete and its unchecked reload were
+  // removed when all operator closes moved behind fn_close_managed_game.
+  ['src/pages/ClubDetailPage.tsx', 4],
   ['src/services/FriendSuggestionService.ts', 1],
   ['src/services/CreditRequestService.ts', 4],
   ['src/services/ChipFlowService.ts', 4],
@@ -101,7 +103,9 @@ const BASELINE = new Map<string, number>([
   ['src/pages/CashierTradePage.tsx', 0],
   ['src/pages/AntiCheatPage.tsx', 3],
   ['src/components/wallet/ChipMintModal.tsx', 3],
-  ['src/components/agent/AgentCommissionDashboard.tsx', 3],
+  // 3 -> 2 in phase 7: the sub-agent read that discarded its error is gone with
+  // the dropped column it was reading, and its replacement binds the error.
+  ['src/components/agent/AgentCommissionDashboard.tsx', 2],
   ['src/utils/settlementLock.ts', 2],
   ['src/stores/useHeaderDataStore.ts', 2],
   ['src/services/WalletService.ts', 2],
@@ -113,7 +117,6 @@ const BASELINE = new Map<string, number>([
   ['src/services/MembershipService.ts', 2],
   ['src/services/LeaderboardService.ts', 2],
   ['src/services/HydraService.ts', 2],
-  ['src/services/GTOQueryService.ts', 2],
   ['src/services/FinancialExportService.ts', 2],
   ['src/services/BonusService.ts', 2],
   ['src/services/AchievementTriggerService.ts', 1],
@@ -132,7 +135,7 @@ const BASELINE = new Map<string, number>([
   ['src/components/bbj/BBJTicker.tsx', 2],
   ['src/components/agent/PlayerInviteModal.tsx', 2],
   ['src/components/agent/AgentPromoPanel.tsx', 2],
-  ['src/components/agent/AgentAnalyticsDashboard.tsx', 2],
+  ['src/components/agent/AgentAnalyticsDashboard.tsx', 1],
   ['src/components/admin/ArenaLedger.tsx', 2],
   ['src/utils/unionScope.ts', 1],
   // 1 -> 0 on 2026-08-29. The discarded read was in filterByPreferences(),

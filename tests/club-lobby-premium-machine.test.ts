@@ -114,9 +114,9 @@ describe('responsive premium Club Arena', () => {
   it('builds the approved mobile welcome, owner message, identity/jackpot pair, and wallet accordion', () => {
     expect(PAGE).toContain('className="club-mobile-welcome"');
     expect(PAGE).toContain('className={`club-mobile-owner-message');
-    expect(PAGE).toContain('const CLUB_DESCRIPTION_MAX_LENGTH = 72');
-    expect(PAGE).toContain('maxLength={CLUB_DESCRIPTION_MAX_LENGTH}');
-    expect(PAGE).toContain('.slice(0, CLUB_DESCRIPTION_MAX_LENGTH)');
+    expect(PAGE).toContain('const CLUB_LOBBY_MESSAGE_MAX_LENGTH = 72');
+    expect(PAGE).toContain('maxLength={CLUB_LOBBY_MESSAGE_MAX_LENGTH}');
+    expect(PAGE).toContain('.slice(0, CLUB_LOBBY_MESSAGE_MAX_LENGTH)');
     expect(PAGE).toContain('className="lobby-wallets-trigger"');
     expect(PAGE).toContain('aria-expanded={walletsExpanded}');
     expect(PAGE).toContain('data-expanded={walletsExpanded}');
@@ -143,8 +143,13 @@ describe('responsive premium Club Arena', () => {
     expect(PAGE_CSS).toMatch(
       /\.lobby-wallets-content\[data-expanded='true'\]\s*\{[^}]*visibility:\s*visible[^}]*pointer-events:\s*auto/s
     );
+    /* The 44px now comes from an invisible `::after` band instead of from the
+       button itself. Sizing the BUTTON to 44x44px made it 61% of the card's
+       height at 375px and pushed the copy icon out of its painted frame, which
+       is the mobile distortion Dan reported on 2026-09-01. The band gives the
+       same thumb target and paints nothing. See ClubIdentityCard.css. */
     expect(IDENTITY_CSS).toMatch(
-      /@media \(pointer: coarse\)[\s\S]*?\.club-identity__share\s*\{[^}]*width:\s*44px[^}]*height:\s*44px/s
+      /\.club-identity__share::after\s*\{[^}]*width:\s*max\(100%, 44px\)[^}]*height:\s*max\(100%, 44px\)/s
     );
   });
 
@@ -158,7 +163,16 @@ describe('responsive premium Club Arena', () => {
   it('shows every role-authorized wallet on both desktop and mobile', () => {
     expect(PAGE).toContain('showAllLobbyWallets');
     expect(PAGE).toContain('onVisibleWalletCountChange={setVisibleWalletCount}');
-    expect(PAGE.indexOf('className="lobby-top__house-welcome"')).toBeGreaterThan(
+    /* The club message strip used to be the LAST child of the wallet stack and
+       this line pinned it there. Dan moved it on 2026-09-01 - "the 'welcome to
+       club jaqk' thats on the bottom of the wallets should be at the top above
+       the club card" - so the assertion is inverted rather than deleted: it now
+       pins that <ClubOwnerMessage> leads the rail, ahead of both the club card
+       and the wallets. The strip itself lives in
+       components/club/ClubOwnerMessage.tsx and keeps the same class name. */
+    expect(PAGE).toContain('<ClubOwnerMessage');
+    expect(PAGE.indexOf('<ClubOwnerMessage')).toBeLessThan(PAGE.indexOf('<ClubIdentityCard'));
+    expect(PAGE.indexOf('<ClubOwnerMessage')).toBeLessThan(
       PAGE.indexOf('onVisibleWalletCountChange={setVisibleWalletCount}')
     );
     expect(WALLET).toContain('showAllLobbyWallets?: boolean');

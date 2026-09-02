@@ -306,6 +306,25 @@ export abstract class TournamentManagerBase {
     return [...this.tableEngines.keys()];
   }
 
+  /**
+   * Is this tournament on a break of its own right now?
+   *
+   * Added 2026-09-01 for the maintenance break, which resumes EVERY table on
+   * the platform when it ends. Without this it would also resume a tournament
+   * that is still on a break of a different length - an add-on break runs up
+   * to ten minutes (`addon_break_minutes`), so one starting near :55 outlives
+   * the five-minute maintenance break and its tables would be dealt back into
+   * play while the tournament clock still says they are away.
+   *
+   * Read-only, and deliberately the ONLY thing exposed: whoever paused a table
+   * is responsible for resuming it, and this lets a second pause authority ask
+   * "is somebody else still holding this" without being able to answer for
+   * them.
+   */
+  isOnBreak(): boolean {
+    return this.onBreak;
+  }
+
   /** Reusable broadcast — single channel per tournament lifecycle */
   protected async broadcast(eventType: string, payload: any): Promise<void> {
     try {
@@ -1807,7 +1826,15 @@ export abstract class TournamentManagerBase {
           prize_pool: prizePool,
           spin_multiplier: spinMultiplier,
           is_premium_spin: spinMultiplier >= 100,
-          starting_chips: tier?.startingStack ?? tournament.starting_chips,
+          /* THE STACK IS NOT WRITTEN HERE ANY MORE (Dan, 2026-09-01).
+             It used to read `tier?.startingStack ?? tournament.starting_chips`,
+             so the wheel decided how many chips the players had -- 300, 1000 or
+             5000 depending on what it landed on. That is retired: the stack
+             belongs to the board (Turbo 300, Deep Stack 1000, spinSpec
+             SPIN_STACKS), it is written at creation, and the seat holds it from
+             the moment the buy-in is paid. Re-adding it here would put the seat
+             back to guessing until the draw lands. */
+          starting_chips: tournament.starting_chips,
           blind_structure: spinBlinds,
           payout_structure: (tier?.payouts ?? [1]).map((pct, i) => ({
             place: i + 1,
@@ -1868,7 +1895,8 @@ export abstract class TournamentManagerBase {
         // it must agree with what was just written — the DB write alone would
         // leave this start running on the placeholder structure.
         tournament.blind_structure = spinBlinds;
-        if (tier?.startingStack) tournament.starting_chips = tier.startingStack;
+        // The stack came from the board and is already on the row; the draw
+        // does not change it (see spinRowPatch above).
         if (this.tournamentCache) {
           this.tournamentCache.blind_structure = spinBlinds;
           this.tournamentCache.spin_multiplier = spinMultiplier;

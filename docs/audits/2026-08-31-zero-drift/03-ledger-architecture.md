@@ -61,13 +61,13 @@ insurance_balance), `union_wallets` (six wallets), `unions` (six legacy columns)
 
 The GUC contract (transaction-local, read by both writers):
 
-| GUC | Meaning |
-|-----|---------|
-| `app.ledger_category` | category for rows journaled in this transaction |
-| `app.ledger_counterparty` / `app.ledger_counterparty_entity` | the other side of the movement |
-| `app.ledger_correlation` / `app.ledger_settlement` / `app.ledger_idempotency_key` | stamped onto rows by the enrich trigger |
-| `app.ledger_autoskip_<table>` = '1' | this transaction self-journals that table (set it, do the update, set '0') |
-| `app.ledger_maintenance` | authorizes+logs a journal mutation (incident ref required) |
+| GUC                                                                               | Meaning                                                                    |
+| --------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `app.ledger_category`                                                             | category for rows journaled in this transaction                            |
+| `app.ledger_counterparty` / `app.ledger_counterparty_entity`                      | the other side of the movement                                             |
+| `app.ledger_correlation` / `app.ledger_settlement` / `app.ledger_idempotency_key` | stamped onto rows by the enrich trigger                                    |
+| `app.ledger_autoskip_<table>` = '1'                                               | this transaction self-journals that table (set it, do the update, set '0') |
+| `app.ledger_maintenance`                                                          | authorizes+logs a journal mutation (incident ref required)                 |
 
 Undeclared movements default to `category='adjustment'` against `settlement_suspense` - visible,
 measured daily, incident-raised. The felt (`table_seats.stack`) is deliberately NOT per-update

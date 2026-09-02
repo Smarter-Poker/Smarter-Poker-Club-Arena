@@ -11,19 +11,45 @@ const commandCss = readFileSync(
 const table = readFileSync(resolve(__dirname, '../../src/components/lobby/LobbyTable.tsx'), 'utf8');
 const css = readFileSync(resolve(__dirname, '../../src/components/lobby/LobbyTable.css'), 'utf8');
 const tableConfig = readFileSync(resolve(__dirname, '../../src/pages/TableConfigPage.tsx'), 'utf8');
+const gameCreationGuard = readFileSync(
+  resolve(__dirname, '../../src/components/auth/GameCreationGuard.tsx'),
+  'utf8'
+);
+const management = readFileSync(
+  resolve(__dirname, '../../src/pages/GameManagementPage.tsx'),
+  'utf8'
+);
+const creationActions = readFileSync(
+  resolve(__dirname, '../../src/components/club/GameCreationActions.tsx'),
+  'utf8'
+);
 
 describe('club lobby creation controls', () => {
   it('shows creation only to authorized standalone clubs', () => {
     expect(page).toContain('const canCreateClubGames = noticeEditable && !unionManagedClub');
-    expect(page).toContain("canCreateClubGames && gameType !== 'ALL'");
-    expect(page).toContain('showCreateTournament && canCreateClubGames');
-    expect(tableConfig).toContain("access?.reason === 'union_only'");
-    expect(tableConfig).toContain('access?.allowed === true && !unionManagedClub');
-    expect(tableConfig).toContain('Create Games From The Union Console');
+    expect(page).toContain('canCreateClubGames && (');
+    expect(page).toContain('GameCreationActions');
+    expect(gameCreationGuard).toContain('fetchGameCreationAccess');
+    expect(gameCreationGuard).toContain('if (!access.allowed)');
+    expect(tableConfig).toContain('const canBuildHere = access?.allowed === true');
   });
 
   it('keeps the desktop selector deck sticky and mobile controls inside the approved chassis', () => {
-    const desktop = commandCss.slice(commandCss.lastIndexOf('@media (min-width: 901px)'));
+    /* FIND THE BLOCK BY THE RULE IT OWNS, NOT BY BEING LAST (2026-09-01).
+       This used to slice from `lastIndexOf('@media (min-width: 901px)')`, which
+       is a guess about file order rather than a statement about the deck lock.
+       The campaign-bay fix appended a SECOND desktop block below this one and
+       the pin went red while `display: contents` had not moved a character.
+       Anchoring on `.club-lobby-machine > .club-lobby-command-top` asserts the
+       same three declarations about the block that actually declares them, so
+       appending another desktop block cannot make this lie in either
+       direction. */
+    const deckAnchor = commandCss.indexOf('.club-lobby-machine > .club-lobby-command-top {');
+    expect(deckAnchor).toBeGreaterThan(-1);
+    const deckOpen = commandCss.lastIndexOf('@media (min-width: 901px)', deckAnchor);
+    expect(deckOpen).toBeGreaterThan(-1);
+    const deckEnd = commandCss.indexOf('@media', deckOpen + 1);
+    const desktop = commandCss.slice(deckOpen, deckEnd === -1 ? undefined : deckEnd);
     expect(desktop).toContain('display: contents');
     expect(desktop).toContain('position: sticky');
     expect(desktop).toContain('top: 0');
@@ -38,10 +64,16 @@ describe('club lobby creation controls', () => {
     );
   });
 
-  it('keeps cash and tournament creation on their existing flows', () => {
-    expect(page).toContain('setShowCreateTournament(true)');
-    expect(page).toContain('navigate(`/clubs/${clubId}/create-table/${routeVariant}`)');
-    expect(page).toContain('CREATE_LABEL_FOR[gameType]');
+  it('routes every creation action through canonical table management', () => {
+    expect(creationActions).toContain("{ target: 'table', label: 'Add Table' }");
+    expect(creationActions).toContain("{ target: 'event', label: 'Event' }");
+    expect(creationActions).toContain("{ target: 'spin', label: 'Spins' }");
+    expect(creationActions).toContain("{ target: 'sng', label: 'Sit N Go' }");
+    expect(creationActions).toContain('`${managementPath}?create=${action.target}`');
+    expect(management).toContain(
+      '<CreateTablePage clubIdOverride={hostClubId} onBack={clearCreate} />'
+    );
+    expect(management).toContain('<CreateTournamentModal');
   });
 
   it('retains union-scoped cash and tournament loading for attached clubs', () => {

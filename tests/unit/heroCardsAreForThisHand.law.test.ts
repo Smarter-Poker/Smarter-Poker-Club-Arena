@@ -241,3 +241,41 @@ describe('LAW: every door into the hero holding asks the question', () => {
     expect(SRC).not.toMatch(/function heroHoleCardsAreForThisHand/);
   });
 });
+
+describe('LAW: the hand number does not wait for an event that may never arrive', () => {
+  const SRC = readFileSync(resolve(__dirname, '../../src/pages/TablePage.tsx'), 'utf8');
+
+  it('is seeded from the authoritative snapshot, not only from HAND_STARTED', () => {
+    /* Both stale-hand guards are gated on this ref being non-zero, and it used
+       to be written in exactly one place - the HAND_STARTED handler. A client
+       that never receives that event (mid-hand join, reload, dropped frame, the
+       sequence gap that fires GAME_START) therefore ran the whole hand with the
+       hand check DISABLED, leaving only the board check. Preflop there is no
+       board, so there was nothing left. */
+    const seed = sliceCall(SRC, 'const hn = tableState.handNumber');
+    expect(seed).toBeTruthy();
+    expect(SRC).toMatch(
+      /const hn = tableState\.handNumber \?\? 0;\s*\n\s*if \(hn > heroHandRef\.current\) heroHandRef\.current = hn;/
+    );
+  });
+
+  it('moves FORWARD only, so a replayed snapshot cannot re-admit an old row', () => {
+    // `>=` here would let a late frame for the previous hand lower the mark and
+    // hand door 1 back the row it had just refused.
+    expect(SRC).not.toMatch(/if \(hn >= heroHandRef\.current\) heroHandRef\.current = hn;/);
+  });
+
+  it('HAND_STARTED still sets it, because the event is the earliest signal', () => {
+    expect(SRC).toMatch(/if \(hn > 0\) heroHandRef\.current = hn;/);
+  });
+
+  it('a DELETE on the hole-card channel is ignored, on purpose and in writing', () => {
+    /* insert_hole_cards prunes `hand_number < p_hand_number` on every deal, so
+       the deletes this channel sees are the PREVIOUS hand being tidied. Acting
+       on one would blank a live hand at the moment the next is dealt. The
+       comment exists so nobody "fixes" the silence into a clear. */
+    const handler = sliceCall(SRC, 'const handleHoleCardPayload = useCallback');
+    expect(handler).toMatch(/DELETE carries no `new`/);
+    expect(handler).toMatch(/Do not "fix" this into a clear/);
+  });
+});

@@ -203,6 +203,34 @@ export function isOmahaVariant(variant: string | null | undefined): boolean {
   return raw.startsWith('plo') || raw.startsWith('flo') || raw.includes('omaha');
 }
 
+/**
+ * A variant where a player is dealt three cards and must throw one away.
+ *
+ * 2026-09-01: THE LABEL UNDER THE HERO'S SEAT WAS NAMING A HAND THEY CANNOT
+ * HAVE. Crazy Pineapple deals three hole cards and the discard comes AFTER the
+ * flop, so for the whole discard window the hero is holding three cards with a
+ * board down - and `bestFive`'s Hold'em branch takes any five of those eight.
+ * Hold 9h 9d 9s on an A-K-2 flop and it printed "Three of a Kind", at the exact
+ * moment the player was choosing which card to throw, for a hand that cannot
+ * survive the throw. The same window is the one place this label matters.
+ *
+ * The rule is the server's own, from `pineappleDiscardChoice.ts`: "after the
+ * discard the hand plays exactly like holdem" with the two cards you kept. So
+ * the honest answer is the best hand over the three ways to keep two, which is
+ * what the branch in bestFive below computes.
+ *
+ * OFC is excluded by name. It shares the word and none of the rules, it has no
+ * live tables (measured 2026-09-01: 0 of 111,582), and if it ever comes back it
+ * must not silently inherit this.
+ */
+export function isPineappleVariant(variant: string | null | undefined): boolean {
+  const raw = String(variant || '')
+    .toLowerCase()
+    .trim();
+  if (raw.startsWith('ofc')) return false;
+  return raw.includes('pineapple');
+}
+
 function nameFor(score: HandScore, shortDeck = false): string {
   if (score.category === CATEGORY.STRAIGHT_FLUSH) {
     return score.tiebreak[0] === 14 ? 'Royal Flush' : 'Straight Flush';
@@ -237,6 +265,18 @@ export function bestFive(
     const boardTriples = combinations(b, 3);
     candidates = [];
     for (const hp of holePairs) for (const bt of boardTriples) candidates.push([...hp, ...bt]);
+  } else if (isPineappleVariant(variant) && h.length > 2) {
+    /* Three in the hand and one of them is leaving. Score the best of the
+       three hands that can actually survive the discard - keep two, then play
+       them exactly as Hold'em, using either, one or neither. This is a NO-OP
+       after the discard, where h.length is 2 and the branch below is reached
+       unchanged, so it only ever affects the window it exists for. */
+    const keepPairs = combinations(h, 2);
+    candidates = [];
+    for (const kp of keepPairs) {
+      for (const five of combinations([...kp, ...b], 5)) candidates.push(five);
+    }
+    if (candidates.length === 0) return null;
   } else {
     const all = [...h, ...b];
     if (all.length < 5) return null;

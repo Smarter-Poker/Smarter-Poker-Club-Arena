@@ -189,6 +189,8 @@ import {
 import { type HandRecord } from '../components/table/HandHistoryPanel';
 // [MIGRATION] timeBankEngine removed — server-authoritative (Step 5). Time bank via GameServerAPI + DB.
 import { usePlayerStats } from '../hooks/usePlayerStats';
+import { useMaintenanceBreak } from '../hooks/useMaintenanceBreak';
+import { MaintenanceBreakScreen } from '../components/table/MaintenanceBreakScreen';
 import { useTableSettings } from '../hooks/useTableSettings';
 import { useTableTimer } from '../hooks/useTableTimer';
 import { useTableChat } from '../hooks/useTableChat';
@@ -307,7 +309,7 @@ import { retryAsync } from '../utils/retryAsync';
 import { safeErrorMessage, shouldSurfaceError } from '../utils/safeErrorMessage';
 import { serverNow } from '../utils/serverClock';
 // Dan 2026-08-21, item 15: hero's live hand strength under their seat box.
-import { bestFive, cardKey } from '../utils/handEvaluator';
+import { bestFive, cardKey, isPineappleVariant } from '../utils/handEvaluator';
 // Dan 2026-08-21, items 11 + 16: the client's post-hand hold comes from the
 // same animation spec the engine derives its own hold from, so the table can
 // never clear the winner before the pot has finished travelling to them.
@@ -3227,6 +3229,21 @@ export default function TablePage({
   // tell the player once instead.
   const notFoundCountRef = useRef(0);
   const tableClosedToastShownRef = useRef(false);
+  /**
+   * The scheduled maintenance break (Dan 2026-09-01). Driven by the engine
+   * while a socket exists, by the local clock while it does not, and by the
+   * database for a browser that loaded during the outage. See
+   * hooks/useMaintenanceBreak.ts.
+   */
+  const {
+    maintenanceBreak,
+    ingestMaintenanceEvent,
+    refreshFromDb: refreshMaintenanceBreak,
+  } = useMaintenanceBreak();
+  // Read inside the 4404 effect without making it re-run on every countdown
+  // tick, which would reset the consecutive-close counter every second.
+  const maintenanceBreakRef = useRef(maintenanceBreak);
+  maintenanceBreakRef.current = maintenanceBreak;
   useEffect(() => {
     if (!engineLastError) return;
     if (engineLastError.code === 4404) {
@@ -3235,15 +3252,39 @@ export default function TablePage({
          table, and absolutely not the moment to tell a player mid-buy-in
          "This Table Is No Longer Running" (Dan 2026-08-28). */
       if (seatFirstOpenRef.current) return;
+      /* A 4404 DURING A MAINTENANCE BREAK IS THE BREAK, NOT A CLOSED TABLE
+         (Dan 2026-09-01). The engine restarts inside an announced five-minute
+         break and answers 4404 for the ~2 minutes its tables take to
+         rehydrate. Telling a player "This Table Is No Longer Running" in the
+         middle of a break we just promised them their seat would survive is
+         the single most alarming thing this page could say, and it is false.
+         The overlay is already up and counting; say nothing.
+
+         Also asks the database, because a browser that loaded DURING the
+         outage never received the announcement over a socket. */
+      if (maintenanceBreakRef.current.active) return;
       notFoundCountRef.current += 1;
       if (notFoundCountRef.current >= 3 && !tableClosedToastShownRef.current) {
+        // Claim the slot BEFORE the await so three more 4404s arriving during
+        // the round trip cannot queue three more of these.
         tableClosedToastShownRef.current = true;
-        heartbeatToastRef.current?.info?.('This Table Is No Longer Running');
+        void (async () => {
+          await refreshMaintenanceBreak();
+          if (maintenanceBreakRef.current.active) {
+            // It was a break after all. Release the slot so a genuine closure
+            // later in this session can still be announced.
+            tableClosedToastShownRef.current = false;
+            return;
+          }
+          heartbeatToastRef.current?.info?.('This Table Is No Longer Running');
+        })();
       }
     } else if (engineLastError.code !== undefined) {
       notFoundCountRef.current = 0;
     }
-  }, [engineLastError]);
+    // refreshMaintenanceBreak is a stable useCallback, so this still runs once
+    // per error rather than on every break countdown tick.
+  }, [engineLastError, refreshMaintenanceBreak]);
   useEffect(() => {
     if (engineWsStatus === 'connected') {
       notFoundCountRef.current = 0;
@@ -5398,7 +5439,6 @@ export default function TablePage({
   // coverageAmount param accepted for InsuranceModal compatibility but ignored — server is authoritative
   // FIX 89: Insurance accept with server-authoritative coverage percentage
   const handleInsuranceAccept = async (coverageAmount?: number) => {
-    setShowInsurance(false);
     if (tableId) {
       // coverageAmount from slider maps to coveragePercent on server
       // If not provided, defaults to 100% (full insurance)
@@ -5419,8 +5459,14 @@ export default function TablePage({
       const result = await respondToInsurance(tableId, 'accept', coveragePct);
       if (!result.success) {
         reportError(result.error, 'TablePage.Accept_failed');
+        toast?.error?.(result.error || 'Insurance Could Not Be Purchased');
+        return false;
       }
+      setShowInsurance(false);
+      return true;
     }
+    toast?.error?.('Table Is Not Ready');
+    return false;
   };
 
   // FIX 89: "Decline Now" — may be re-offered on later streets if equity shifts
@@ -5436,13 +5482,18 @@ export default function TablePage({
   // the engine and the engine recomputes it on accept; the client sends only
   // the decision.
   const handleInsuranceEvCashout = async () => {
-    setShowInsurance(false);
     if (tableId) {
       const result = await respondToInsurance(tableId, 'cashout');
       if (!result.success) {
         reportError(result.error, 'TablePage.Ev_cashout_failed');
+        toast?.error?.(result.error || 'Cash Out Could Not Be Completed');
+        return false;
       }
+      setShowInsurance(false);
+      return true;
     }
+    toast?.error?.('Table Is Not Ready');
+    return false;
   };
 
   // A decline is final: never re-offered on later streets. Per-street pacing
@@ -5689,6 +5740,37 @@ export default function TablePage({
   // fetch fn is exposed so HAND_STARTED can re-arm it (recovering a dropped
   // realtime insert) after clearing stale cards.
   const heroHandRef = useRef<number>(0);
+  /* ═══ AND IT MUST NOT WAIT FOR AN EVENT THAT MAY NEVER ARRIVE ═══════════
+     Dan 2026-09-01, finishing the J9h work.
+
+     `heroHandRef` was written in exactly ONE place: the HAND_STARTED handler.
+     Every client that never receives that event - a mid-hand join, a reload,
+     a dropped frame, the websocket sequence gap that fires GAME_START - sat on
+     0 for the rest of the hand. Two comments in this file already work around
+     the symptom rather than the cause (`autoShowFiredHandRef` is initialised to
+     -1 precisely because 0 read as "already fired").
+
+     What made it worth fixing today is that BOTH stale-hand guards are gated on
+     it being non-zero:
+
+       door 1, the realtime push  currentHandNumber: heroHandRef.current
+       door 2, the recovery poll  heroHandRef.current > 0 && ...
+
+     So the very clients most likely to be handed a stale row - the ones that
+     just reloaded or joined mid-hand - were the ones running with the hand
+     check disabled, leaving only the board check. Preflop, with no board, there
+     is nothing left to catch it. That is the reported bug with the flop removed.
+
+     `tableState.handNumber` is server truth and is already trusted everywhere
+     else; it is maintained from every engine snapshot, not from one event. So
+     seed from it, and FORWARD ONLY - a late or replayed snapshot must never be
+     able to lower the mark and re-admit a row this client has already moved
+     past. Achievements and the auto-show guard read the same ref and stop
+     missing a mid-hand-join hand as a side effect. */
+  useEffect(() => {
+    const hn = tableState.handNumber ?? 0;
+    if (hn > heroHandRef.current) heroHandRef.current = hn;
+  }, [tableState.handNumber]);
   const heroCardFetchRef = useRef<(() => void) | null>(null);
   // Achievement/challenge wiring: accumulate the hero's outcome across a hand's
   // server events (dealt-in at card populate, showdown, per-pot win) and fire
@@ -7079,11 +7161,14 @@ export default function TablePage({
      showGtoAdvisor, and no JSX ever read any of the three — so the advisor
      could not be opened, and the state re-rendered the whole table for
      nobody. `sessionRake` sat beside it, never set and never read.
-     src/services/GTOQueryService.ts itself is untouched and still exported
-     from the services barrel; only this page's import of it is gone, which
-     also takes it out of the table's bundle. If the advisor is wanted, it
-     comes back as a rendered panel with a trigger, not as four unreachable
-     identifiers. */
+     UPDATE 2026-09-01: src/services/GTOQueryService.ts is now DELETED. That
+     audit left the service exported from the barrel with no consumer, and it
+     queried three tables - gto_solutions, preflop_ranges, gto_solve_queue -
+     that do not exist in production, so it could not have worked had anything
+     called it. The live GTO data is elsewhere (gto_postflop_compact,
+     gto_scenarios, solved_spots_gold), so no capability is lost. If the advisor
+     is wanted, it comes back as a rendered panel with a trigger, over tables
+     that exist. */
 
   // [MIGRATION] handleHandComplete REMOVED — FIX 181
   // Rake calculation and waterfall execution are server-authoritative (Bible V8 Law 1.4).
@@ -8150,6 +8235,12 @@ export default function TablePage({
   // Callback for handling new hole cards
   const handleHoleCardPayload = useCallback(
     (payload: any) => {
+      /* DELETE carries no `new`, so it falls through here and is IGNORED, and
+         that is deliberate. `insert_hole_cards` prunes rows with
+         `hand_number < p_hand_number` on every deal, so the deletes this
+         channel sees are the previous hand being tidied away. Clearing the
+         hero's holding on one would blank a live hand at the exact moment the
+         next one is dealt. Do not "fix" this into a clear. */
       const row = payload.new;
       if (row && row.user_id === userId && row.cards) {
         /* ═══ THE DOOR THAT HAD NO LOCK (Dan 2026-09-01) ═══════════════════
@@ -15235,6 +15326,20 @@ export default function TablePage({
         } as any);
         break;
       }
+      /**
+       * THE SCHEDULED MAINTENANCE BREAK (Dan 2026-09-01).
+       *
+       * Handed straight to the hook, which owns the countdown. Note there is
+       * no `return`/`break`-and-forget subtlety here: the payload carries an
+       * ABSOLUTE end instant, so once this fires the overlay keeps correct
+       * time on its own through the ~2 minutes when the engine that sent it
+       * no longer exists.
+       */
+      case 'MAINTENANCE_BREAK':
+      case 'MAINTENANCE_BREAK_ENDED': {
+        ingestMaintenanceEvent(evt.type, (evt.data ?? {}) as Record<string, unknown>);
+        break;
+      }
       case 'TABLE_BALANCE_EXECUTED': {
         const d = (evt.data ?? {}) as Record<string, unknown>;
         masterBus.emit('TABLE_BALANCE_EXECUTED', {
@@ -15366,7 +15471,9 @@ export default function TablePage({
         break;
       }
     }
-  }, [engineLastEvent]);
+    // ingestMaintenanceEvent is a stable useCallback; listed so the exhaustive
+    // deps rule does not have to be suppressed for it.
+  }, [engineLastEvent, ingestMaintenanceEvent]);
 
   // Supabase Realtime fallback: process lastEvent if engine WS is not connected.
   // When engine WS IS connected, it handles all events above; this block is
@@ -15865,9 +15972,16 @@ export default function TablePage({
         }
       }
       if (best) {
-        if (best.n >= 4) strength = 'Four of a Kind';
-        else if (best.n === 3) strength = 'Three of a Kind';
-        else if (best.n === 2) strength = 'Pair';
+        /* PINEAPPLE 2026-09-01: three in the hand, two of them survive the
+           discard, so trips preflop is a hand that cannot be played and must
+           not be named. Capped rather than special-cased so the rest of this
+           branch - the high-card wording below included - is untouched. See
+           isPineappleVariant in handEvaluator.ts for the same rule on the
+           flop. */
+        const holdable = isPineappleVariant(heroHandVariant) ? Math.min(best.n, 2) : best.n;
+        if (holdable >= 4) strength = 'Four of a Kind';
+        else if (holdable === 3) strength = 'Three of a Kind';
+        else if (holdable === 2) strength = 'Pair';
         else {
           const high = ranks.reduce((a, b) => (RANK_ORDER(b) > RANK_ORDER(a) ? b : a));
           strength = `${RANK_WORD(high)} High`;
@@ -19254,6 +19368,7 @@ export default function TablePage({
                 isAvailable={isRabbitAvailable}
                 cardsAvailable={rabbitCardsAvailable}
                 rabbitDiamondCost={rabbitDiamondCost}
+                userId={userId === 'guest' ? null : userId}
                 onReveal={handleRabbitReveal}
               />
             )}
@@ -21925,6 +22040,22 @@ export default function TablePage({
             toast?.error?.('Could Not Build A Share Link For That Hand');
           }
         }}
+      />
+      {/* The maintenance break overlay (Dan 2026-09-01). Rendered here rather
+          than inside TableModalsLayer because it must survive the states that
+          layer is gated behind: it is up precisely when the engine socket is
+          gone and the table state is stale, which is the one moment the player
+          most needs to be told their seat is safe. */}
+      {/* One overlay, not four. MultiTablePage mounts up to four TablePages
+          at once and this layer is position:fixed, so without the isActive
+          gate a break would stack four identical full-screen dialogs on top
+          of each other. The break is platform-wide, so the foreground tile
+          speaks for all of them. */}
+      <MaintenanceBreakScreen
+        isVisible={maintenanceBreak.active && (!isMultiTable || isActive)}
+        phase={maintenanceBreak.phase}
+        breakEndsAtMs={maintenanceBreak.breakEndsAtMs}
+        reason={maintenanceBreak.reason}
       />
       <TableModalsLayer
         tableId={tableId}

@@ -8,7 +8,7 @@
  *   2. EV Cashout — take guaranteed equity payout at slight rake discount
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { haptic, soundService } from '../../services/SoundService';
 import { masterBus } from '../../core/MasterBus';
 import { CardImage } from './CardImage';
@@ -72,13 +72,13 @@ export interface InsuranceOffer {
 
 export interface InsuranceModalProps {
   isOpen: boolean;
-  onClose: () => void;
-  onAccept: (coverageAmount: number) => void;
-  onDecline: () => void;
+  onClose: () => void | boolean | Promise<void | boolean>;
+  onAccept: (coverageAmount: number) => void | boolean | Promise<void | boolean>;
+  onDecline: () => void | boolean | Promise<void | boolean>;
   /** FIX 89: "Decline for Hand" — never re-offered on later streets.
    * If omitted, only "Decline Now" button is shown. */
-  onDeclineForHand?: () => void;
-  onEvCashout?: (cashoutAmount: number) => void;
+  onDeclineForHand?: () => void | boolean | Promise<void | boolean>;
+  onEvCashout?: (cashoutAmount: number) => void | boolean | Promise<void | boolean>;
   offer: InsuranceOffer;
   timeRemaining?: number;
   currency?: string;
@@ -118,6 +118,9 @@ export function InsuranceModal({
 }: InsuranceModalProps) {
   const [activeTab, setActiveTab] = useState<ModalTab>('insurance');
   const [mounted, setMounted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const actionInFlightRef = useRef(false);
+  const modalRef = useRef<HTMLDivElement>(null);
   // POKERBROS PARITY 2026-08-26: a LIVE countdown. The prop used to be a
   // static number that rendered "15s" for the whole window; the reference
   // popup visibly counts down to its auto-decline.
@@ -141,8 +144,34 @@ export function InsuranceModal({
     } else {
       setMounted(false);
       setActiveTab('insurance');
+      setIsSubmitting(false);
+      actionInFlightRef.current = false;
     }
   }, [isOpen]);
+
+  // A timed financial choice must be announced as a real dialog and receive
+  // focus without placing it on the purchase button. Escape follows the same
+  // final-decline path as the visible No button; it never dismisses only the
+  // pixels while leaving an offer unanswered on the server.
+  useEffect(() => {
+    if (!isOpen) return;
+    modalRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || actionInFlightRef.current) return;
+      event.preventDefault();
+      actionInFlightRef.current = true;
+      setIsSubmitting(true);
+      void Promise.resolve(onClose()).finally(() => {
+        actionInFlightRef.current = false;
+        setIsSubmitting(false);
+      });
+    };
+    // Capture before the table's global Escape handlers. Those close menus and
+    // stop propagation; without capture, the visible insurance dialog never
+    // receives the key and the server offer remains unanswered.
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [isOpen, onClose]);
 
   // Countdown ticks once per second while open; re-arms when a later street's
   // offer replaces this one (offer identity changes).
@@ -237,22 +266,39 @@ export function InsuranceModal({
   const evRakeAmount = useMemo(() => evRaw - evCashoutAmount, [evRaw, evCashoutAmount]);
 
   // FIX 187: Insurance accept is a financial decision — dedicated sound + haptic
+  const runDecision = useCallback(
+    async (decision: () => void | boolean | Promise<void | boolean>) => {
+      // React state is not a same-frame mutex. The ref closes the gap between
+      // a touch and the render that disables the buttons, so a fast double tap
+      // cannot send two financial decisions.
+      if (actionInFlightRef.current) return;
+      actionInFlightRef.current = true;
+      setIsSubmitting(true);
+      try {
+        await decision();
+      } finally {
+        actionInFlightRef.current = false;
+        setIsSubmitting(false);
+      }
+    },
+    []
+  );
+
   const handleAccept = useCallback(() => {
     soundService.playInsurancePurchase();
-    onAccept(coverageAmount);
-  }, [coverageAmount, onAccept]);
+    void runDecision(() => onAccept(coverageAmount));
+  }, [coverageAmount, onAccept, runDecision]);
 
   const handleDecline = useCallback(() => {
     soundService.playInsuranceDecline();
-    onDecline();
-  }, [onDecline]);
+    void runDecision(onDecline);
+  }, [onDecline, runDecision]);
 
   // FIX 89: "Decline for Hand" — player won't be re-offered insurance on later streets
   const handleDeclineForHand = useCallback(() => {
     haptic.light();
-    if (onDeclineForHand) onDeclineForHand();
-    else onDecline(); // Fallback if prop not provided
-  }, [onDeclineForHand, onDecline]);
+    void runDecision(onDeclineForHand ?? onDecline);
+  }, [onDeclineForHand, onDecline, runDecision]);
 
   const handleEvCashout = useCallback(() => {
     haptic.medium();
@@ -263,8 +309,8 @@ export function InsuranceModal({
       cashoutAmount: evCashoutAmount,
       equityPercent: offer.equityPercent,
     });
-    onEvCashout?.(evCashoutAmount);
-  }, [evCashoutAmount, offer.equityPercent, onEvCashout]);
+    if (onEvCashout) void runDecision(() => onEvCashout(evCashoutAmount));
+  }, [evCashoutAmount, offer.equityPercent, onEvCashout, runDecision]);
 
   // Fee slider grid. MICRO-STAKES MONEY MATH 2026-08-26: cents below 100
   // chips, whole chips above — same convention as the raise slider.
@@ -279,7 +325,13 @@ export function InsuranceModal({
   return (
     <div className="insurance-overlay">
       <div
+        ref={modalRef}
         className="insurance-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="insurance-modal-title"
+        aria-busy={isSubmitting}
+        tabIndex={-1}
         style={{
           opacity: mounted ? 1 : 0,
           transform: mounted ? 'translateY(0)' : 'translateY(8px)',
@@ -290,12 +342,14 @@ export function InsuranceModal({
         <div className="insurance-modal__header">
           <div className="insurance-modal__title-row">
             <span className="insurance-modal__icon">⛨</span>
-            <h2 className="insurance-modal__title">
+            <h2 id="insurance-modal-title" className="insurance-modal__title">
               {activeTab === 'insurance' ? 'All-In Insurance' : 'EV Cashout'}
             </h2>
           </div>
           <span
             className={`insurance-modal__timer ${secondsLeft <= 5 ? 'insurance-modal__timer--urgent' : ''}`}
+            role="timer"
+            aria-label={`${secondsLeft} Seconds Remaining`}
           >
             {secondsLeft}s
           </span>
@@ -329,6 +383,7 @@ export function InsuranceModal({
           {evCashoutAvailable && (
             <div className="insurance-modal__tabs">
               <button
+                type="button"
                 className={`insurance-modal__tab ${activeTab === 'insurance' ? 'insurance-modal__tab--active' : ''}`}
                 onClick={() => {
                   haptic.light();
@@ -338,6 +393,7 @@ export function InsuranceModal({
                 ⛨ Insurance
               </button>
               <button
+                type="button"
                 className={`insurance-modal__tab ${activeTab === 'ev-cashout' ? 'insurance-modal__tab--active' : ''}`}
                 onClick={() => {
                   haptic.light();
@@ -468,6 +524,7 @@ export function InsuranceModal({
                 {/* The reference's two hedging presets */}
                 <div className="insurance-modal__presets">
                   <button
+                    type="button"
                     className={`insurance-modal__preset ${feeAmount === breakEvenFee ? 'insurance-modal__preset--active' : ''}`}
                     onClick={() => {
                       haptic.light();
@@ -478,6 +535,7 @@ export function InsuranceModal({
                     Break Even
                   </button>
                   <button
+                    type="button"
                     className={`insurance-modal__preset ${feeAmount === constantProfitFee ? 'insurance-modal__preset--active' : ''}`}
                     onClick={() => {
                       haptic.light();
@@ -577,15 +635,19 @@ export function InsuranceModal({
           /* A decline is FINAL for the hand (Dan 2026-08-26). */
           <div className="insurance-modal__actions">
             <button
+              type="button"
               className="insurance-modal__btn insurance-modal__btn--decline"
               onClick={handleDeclineForHand}
+              disabled={isSubmitting}
               title="Decline Insurance For The Rest Of This Hand"
             >
               No
             </button>
             <button
+              type="button"
               className="insurance-modal__btn insurance-modal__btn--accept"
               onClick={handleAccept}
+              disabled={isSubmitting}
             >
               Insure
             </button>
@@ -594,14 +656,18 @@ export function InsuranceModal({
         {activeTab === 'ev-cashout' && evCashoutAvailable && (
           <div className="insurance-modal__actions">
             <button
+              type="button"
               className="insurance-modal__btn insurance-modal__btn--decline"
               onClick={handleDecline}
+              disabled={isSubmitting}
             >
               Play It Out
             </button>
             <button
+              type="button"
               className="insurance-modal__btn insurance-modal__btn--cashout"
               onClick={handleEvCashout}
+              disabled={isSubmitting}
             >
               Cash Out
             </button>

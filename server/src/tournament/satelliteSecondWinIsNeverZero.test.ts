@@ -79,9 +79,10 @@ describe('a satellite winner who already holds a seat', () => {
     expect(AWARD).toContain('held_from_this_satellite === false');
   });
 
-  it('pays under the same stable place key, so a re-drive of this pass dedupes', () => {
-    const keys =
-      AWARD.match(/tourney:\$\{this\.tournamentId\}:prize:place:\$\{w\.position\}/g) || [];
+  it('pays on the same stable place obligation, so a re-drive of this pass dedupes', () => {
+    // 2026-09-02: the place key became the obligation (tournament, 'place',
+    // N), UNIQUE in the database - the same dedupe, now a constraint.
+    const keys = AWARD.match(/\{ kind: 'place', place: Number\(w\.position\) \}/g) || [];
     // The registration-failure branch and the already-held branch must share it.
     expect(keys.length).toBeGreaterThanOrEqual(2);
   });

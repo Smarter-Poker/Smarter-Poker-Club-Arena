@@ -570,3 +570,74 @@ describe('the schedule', () => {
     expect(ms).toBeGreaterThan(0);
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE BREAK MUST STOP THE DEAL, ON THE REAL ENGINE (2026-09-02)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The header of this file promises "no table deals during the break". On the
+ * first break that ever ran armed, 18:55-19:00, production dealt 1204 hands -
+ * against 0 in each of the two breaks on the build before it, and 1299 in a
+ * normal five minutes. The break had stopped stopping play.
+ *
+ * Everything above this line passed the whole time, because the stub engine
+ * these tests drive models the pause the way the break INTENDS it. The real
+ * engine has a second predicate, `isPausedByDesign()`, which is what the turn
+ * loop consults - and #2537 split the break into its own `maintenancePaused`
+ * authority without teaching that predicate about it. `pauseAfterHand` sets
+ * `handForHandPaused`, which the predicate reads; `pauseForMaintenance`
+ * deliberately does not, so it answered false all the way through a break.
+ *
+ * The same predicate is GameServer's `parkedOnPurpose`, so every table the
+ * break held also looked stalled to the table watchdog, which killed and
+ * rebuilt it - the hourly :00 wave in #2651.
+ *
+ * So these run against the REAL engine. A stub cannot catch a stub's
+ * optimism.
+ */
+describe('the real engine treats a maintenance pause as paused', () => {
+  const TBL = 'aaaaaaaa-1111-2222-3333-444444444444';
+
+  it('is not paused before anything asks it to be', async () => {
+    const { ServerTableEngine } = await import('../engine/ServerTableEngine.js');
+    const e = new ServerTableEngine(TBL) as any;
+    expect(e.isPausedByDesign()).toBe(false);
+  });
+
+  it('is paused by design while the maintenance break holds it', async () => {
+    const { ServerTableEngine } = await import('../engine/ServerTableEngine.js');
+    const e = new ServerTableEngine(TBL) as any;
+    e.pauseForMaintenance(300_000);
+    expect(
+      e.isPausedByDesign(),
+      'the turn loop and the table watchdog both read this. False here means the ' +
+        'break deals hands through itself and the watchdog rebuilds every parked table.'
+    ).toBe(true);
+  });
+
+  it('stops being paused when the break lifts', async () => {
+    const { ServerTableEngine } = await import('../engine/ServerTableEngine.js');
+    const e = new ServerTableEngine(TBL) as any;
+    e.pauseForMaintenance(300_000);
+    e.resumeFromMaintenance();
+    expect(e.isPausedByDesign()).toBe(false);
+  });
+
+  it('still reports the hand-for-hand pause it always did', async () => {
+    // The maintenance authority is additive; it must not shadow the original.
+    const { ServerTableEngine } = await import('../engine/ServerTableEngine.js');
+    const e = new ServerTableEngine(TBL) as any;
+    e.pauseAfterHand(120_000);
+    expect(e.isPausedByDesign()).toBe(true);
+  });
+
+  it('a hand-for-hand resume cannot unpause a table the break is holding', async () => {
+    // The reason the break got its own authority in the first place.
+    const { ServerTableEngine } = await import('../engine/ServerTableEngine.js');
+    const e = new ServerTableEngine(TBL) as any;
+    e.pauseForMaintenance(300_000);
+    e.resumeDealing();
+    expect(e.isPausedByDesign()).toBe(true);
+  });
+});

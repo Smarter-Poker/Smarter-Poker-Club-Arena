@@ -120,6 +120,33 @@ describe('the bar stretches across the top', () => {
     expect(header).toContain('padding-top: env(safe-area-inset-top, 0px)');
   });
 
+  it('blacks out the safe-area padding so nothing scrolls above the header', () => {
+    /*
+     * Dan, 2026-09-02, with a screenshot of the club lobby's own rows sitting
+     * above the header behind the status bar: "THE HEADER MUST ALWAYS BE AT THE
+     * TOP, AND NOTHING SHOULD EVER APPEAR, OR BE DISPLAYED ABOVE IT IN THE
+     * PADDING AREA ABOVE IT. THAT SHOULD BE BLACK AND NEVER SHOW ANYTHING ABOVE
+     * IT."
+     *
+     * This does NOT reopen the rule above it. `.header` still paints nothing -
+     * the band is a pseudo-element sized to exactly the padding, so the artwork
+     * canvas and the left/right insets stay bare, and the only pixels that
+     * gained a fill are the ones Dan asked to be black. The two pins are
+     * deliberately adjacent: whoever comes to relax one must read the other.
+     */
+    const band = ruleBody(CSS, '.header::before');
+    expect(band).toContain('height: env(safe-area-inset-top, 0px)');
+    expect(band).toContain('background: #000');
+    expect(band).toContain('top: 0');
+    // A band that swallowed clicks would eat the top edge of the hamburger.
+    expect(band).toContain('pointer-events: none');
+    // The installed-app override pads by max(inset, 24px); the band must say
+    // the same thing or it leaves a sliver uncovered exactly there.
+    expect(CSS).toMatch(
+      /@media \(display-mode: standalone\)[\s\S]*?\.header::before\s*\{[\s\S]*?height: max\(env\(safe-area-inset-top, 0px\), 24px\)/
+    );
+  });
+
   it('is not capped by a max-width anywhere in the file', () => {
     // A max-width on .header would reinstate the floating pill by another route.
     expect(ruleBody(CSS, '.header')).not.toContain('max-width');

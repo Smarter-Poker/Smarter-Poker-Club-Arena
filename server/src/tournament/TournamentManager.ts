@@ -11,6 +11,7 @@
 import { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import { supabase } from '../services/supabase.js';
 import { planSatelliteAwards } from './satelliteAwardPlan.js';
+import { settleTournamentObligation } from './settleObligation.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { isSatelliteTargetOpen, satelliteTicketCost } from './satelliteTargetOpen.js';
 import { type BalancerTable, type MoveInstruction } from '../engine/TableBalancer.js';
@@ -767,33 +768,36 @@ export class TournamentManager extends TournamentManagerEliminations {
     // A3 FIX (2026-07-28): satellite cash payouts are re-driveable. Errors are
     // swallowed by the caller, which leaves the tournament stuck in COMPLETING;
     // the watchdog (`recoverStuckCompletingTournaments`) then re-pays finishers
-    // under `tourney:{id}:prize:{user}:{position}` - keys this path never wrote.
-    // Every payCash call site now supplies a key, and the position-prize sites
-    // use the watchdog's exact format so the two paths dedupe against each other.
+    // for their places - so the position-cash sites settle the SAME obligation
+    // row the watchdog does, (tournament, 'place', N), and the two paths cannot
+    // pay a place twice.
+    //
+    // ONE SETTLE PATH (2026-09-02): `fn_credit_and_log` under a hand-built
+    // `tourney:` key is gone. The ticket-value fallbacks are 'place'
+    // obligations keyed on the finishing place; the remainder is a
+    // 'satellite_remainder' obligation keyed on the user, in its own
+    // namespace on purpose - `nextFinisher` can be a player who was already
+    // paid a place, and the remainder must not dedupe against that.
     const payCash = async (
       userId: string,
       amount: number,
       desc: string,
-      idempotencyKey: string
+      obligation: { kind: 'place'; place: number } | { kind: 'satellite_remainder' }
     ) => {
       if (amount <= 0) return;
-      // LEDGER-INTEGRITY 2026-08-22: credit and ledger row under one key.
-      // These sites share `tourney:{id}:prize:{user}:{place}` with the
-      // stuck-COMPLETING watchdog deliberately, so the credit deduped — but
-      // the log used to run regardless and wrote a prize row for money that
-      // was never moved.
-      const { error } = await supabase.rpc('fn_credit_and_log', {
-        p_user_id: userId,
-        p_amount: amount,
-        p_idempotency_key: idempotencyKey,
-        p_category: 'prize',
-        p_description: desc,
-        p_related_entity_id: this.tournamentId,
+      const res = await settleTournamentObligation(supabase, {
+        tournamentId: this.tournamentId,
+        kind: obligation.kind,
+        place: obligation.kind === 'place' ? obligation.place : null,
+        userId,
+        amount,
+        source: 'engine.processSatelliteAwards',
+        memo: desc,
       });
-      if (error) {
+      if (!res.ok) {
         reportError(
           new Error(
-            `[Satellite:${this.tournamentId.slice(0, 8)}] cash credit failed: ${error.message}`
+            `[Satellite:${this.tournamentId.slice(0, 8)}] cash credit failed: ${res.refused_reason}${res.transport_error ? ` (${res.transport_error})` : ''}`
           ),
           'Tournament.satellite_cash_failed'
         );
@@ -807,7 +811,7 @@ export class TournamentManager extends TournamentManagerEliminations {
         ranked[0].user_id,
         pool,
         `Satellite payout (no target seats available): ${tournament?.name || 'satellite'}`,
-        `tourney:${this.tournamentId}:prize:place:${ranked[0].position}`
+        { kind: 'place', place: Number(ranked[0].position) }
       );
       await supabase
         .from('tournament_players')
@@ -864,7 +868,7 @@ export class TournamentManager extends TournamentManagerEliminations {
             w.user_id,
             ticketCost,
             `Satellite seat fallback (registration failed): ${target.name || 'target'}`,
-            `tourney:${this.tournamentId}:prize:place:${w.position}`
+            { kind: 'place', place: Number(w.position) }
           );
         } else if (
           seat?.ok === true &&
@@ -893,7 +897,7 @@ export class TournamentManager extends TournamentManagerEliminations {
             w.user_id,
             ticketCost,
             `Satellite seat already held - ticket value paid in cash: ${target.name || 'target'}`,
-            `tourney:${this.tournamentId}:prize:place:${w.position}`
+            { kind: 'place', place: Number(w.position) }
           );
           console.log(
             `[Satellite:${this.tournamentId.slice(0, 8)}] Seat already held elsewhere - ticket cashed: ${w.user_id.slice(0, 8)}`
@@ -943,7 +947,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           w.user_id,
           ticketCost,
           `Satellite ticket cashed (target unavailable): ${tournament?.name || 'satellite'}`,
-          `tourney:${this.tournamentId}:prize:place:${w.position}`
+          { kind: 'place', place: Number(w.position) }
         );
       }
       const { error: prizeStampErr } = await supabase
@@ -972,11 +976,11 @@ export class TournamentManager extends TournamentManagerEliminations {
         nextFinisher.user_id,
         remainder,
         `Satellite remainder payout: ${tournament?.name || 'satellite'}`,
-        // Deliberately a DIFFERENT namespace from the position prize above:
+        // Deliberately a DIFFERENT obligation kind from the place prize above:
         // `nextFinisher` falls back to `ranked[awardCount - 1]`, who may already
-        // have been paid under `prize:{user}:{position}`. Reusing that key would
-        // silently swallow the remainder instead of deduping a double-pay.
-        `tourney:${this.tournamentId}:satremainder:${nextFinisher.user_id}:${nextFinisher.position}`
+        // have been paid their place. Settling the place row again would
+        // silently swallow the remainder instead of paying it.
+        { kind: 'satellite_remainder' }
       );
     }
     if (targetOpen && target && awardCount > 0) {

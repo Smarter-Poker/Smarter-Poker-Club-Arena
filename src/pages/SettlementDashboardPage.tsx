@@ -186,6 +186,8 @@ export default function SettlementDashboardPage() {
   const [visibleRows, setVisibleRows] = useState<Set<number>>(new Set());
 
   const loadingRef = useRef(false);
+  // debounce timer for the agent_commissions realtime firehose (see below)
+  const commissionReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadData = useCallback(async () => {
     if (loadingRef.current) return;
@@ -336,6 +338,19 @@ export default function SettlementDashboardPage() {
 
   // Real-time subscription on agent_commissions (the live per-hand commission
   // ledger — sweep #3: agent_settlements never existed in the schema)
+  //
+  // DEBOUNCED (2026-09-01). agent_commissions is a PER-HAND ledger: 1,539,684 rows
+  // since 2026-05-01, averaging 0.40 chips each, and 1,878,396 lifetime writes -
+  // the highest write volume of any table in the supabase_realtime publication.
+  // This handler used to call loadData() raw, once per inserted row, while the six
+  // masterBus subscriptions directly above it were all debounced 500-2000ms. The
+  // in-flight guard at the top of loadData() dropped the overlapping ones, so this
+  // was never as bad on the client as it looks - but it re-armed a full reload on
+  // every commission row, and a settlement dashboard does not need per-hand
+  // granularity to be correct.
+  //
+  // 2000ms matches the BALANCE_UPDATED and TRANSACTION_LOGGED subscriptions above,
+  // which carry the same kind of money-movement news.
   useEffect(() => {
     const channelKey = 'settlement-dashboard-rt';
     const channel = masterBus.getOrCreateChannel(channelKey);
@@ -343,7 +358,13 @@ export default function SettlementDashboardPage() {
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'agent_commissions' },
-        () => loadData()
+        () => {
+          if (commissionReloadTimer.current) clearTimeout(commissionReloadTimer.current);
+          commissionReloadTimer.current = setTimeout(() => {
+            commissionReloadTimer.current = null;
+            loadData();
+          }, 2000);
+        }
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
@@ -355,6 +376,10 @@ export default function SettlementDashboardPage() {
         }
       });
     return () => {
+      if (commissionReloadTimer.current) {
+        clearTimeout(commissionReloadTimer.current);
+        commissionReloadTimer.current = null;
+      }
       masterBus.removeRegisteredChannel(channelKey);
     };
   }, [loadData]);

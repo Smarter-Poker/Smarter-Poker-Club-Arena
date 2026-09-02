@@ -20,6 +20,25 @@
  *   those clubs belongs to. A player is never told about an event they cannot
  *   enter.
  *
+ * WHAT THIS BAR IS ALLOWED TO SAY (Dan 2026-09-01, verbatim: "the ticker needs
+ * to be adjusted to only announce when a MTT Is starting, and only if an
+ * overlay alert is in the last level of late registration, and has less then
+ * 50% of the prize pool of the guarantee yet registered")
+ *
+ *   1. AN MTT IS STARTING. A scheduled MTT inside the five-minute window
+ *      below, in a club the player belongs to. Spins and heads-up games have
+ *      never been announced here and still are not.
+ *   2. AN OVERLAY ALERT, and only when BOTH of Dan's conditions hold: the
+ *      event is on the LAST LEVEL of late registration, and the field has paid
+ *      in LESS THAN 50% of the guarantee. Both gates are enforced in
+ *      utils/overlayAnnouncements (isInLastLateRegLevel and
+ *      MAX_REGISTERED_FRACTION), which is also where the reasoning is written
+ *      down.
+ *
+ *   There is no third thing, and adding one is a product decision rather than
+ *   an implementation detail. Two queries feed this component and they are the
+ *   two above.
+ *
  * TIMING
  *   Polls every 30s for events with a start time inside the next 5 minutes and
  *   a pre-start status (ANNOUNCED / REGISTERING), then counts down locally
@@ -31,7 +50,7 @@
  *   does not silence the next event, and it does not follow you into tomorrow.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { formatGameTitle } from '../../utils/formatGameTitle';
@@ -40,12 +59,23 @@ import { reportError } from '../../utils/errorReporter';
 import { busToast } from '../../core/MasterBus';
 import { measureTopChromeBottom, TOP_CHROME_SELECTORS } from './topChrome';
 import { useTableSettings } from '../../hooks/useTableSettings';
+import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
+import {
+  DEFAULT_TICKER_SETTINGS,
+  tickerManagementService,
+} from '../../services/TickerManagementService';
+import { resolveClubUUID } from '../../utils/clubIdResolver';
 import {
   rankOverlayAnnouncements,
   overlayMessage,
   type OverlayAnnouncement,
   type OverlayCandidate,
 } from '../../utils/overlayAnnouncements';
+/* The value comes from the small extracted module and the row shape is a
+   type-only import, so this root-mounted ticker does not pull the whole
+   lobby view-model into the entry bundle every player downloads. */
+import { lateRegEndMs } from '../lobby/lateRegWindow';
+import type { LobbyTournamentRow } from '../lobby/lobbyEntries';
 import './TournamentStartingTicker.css';
 
 /** How far ahead an event counts as "about to start". */
@@ -66,6 +96,14 @@ interface UpcomingTournament {
   buyIn: number;
   registered: number;
   isRegistered: boolean;
+}
+
+interface OperationalTickerMessage {
+  id: string;
+  source: 'registration_closing' | 'guarantees' | 'table_openings' | 'winner_results';
+  message: string;
+  tournamentId?: string;
+  tableId?: string;
 }
 
 function readDismissed(): Set<string> {
@@ -101,6 +139,10 @@ export function TournamentStartingTicker() {
      early return — hook order must stay stable (same rule as atLiveTable
      below). */
   const { settings: tickerSettings } = useTableSettings();
+  const [managedTicker, setManagedTicker] = useState(DEFAULT_TICKER_SETTINGS);
+  const [tickerScopeRevision, setTickerScopeRevision] = useState(0);
+  const [customDismissed, setCustomDismissed] = useState(false);
+  const [serviceDismissed, setServiceDismissed] = useState(false);
   /* The live ticker belongs on active tables and inside a club's live lobby.
      The club route matters: its desktop reference reserves this exact strip
      below the global header, and suppressing it there left no ticker band at
@@ -109,10 +151,55 @@ export function TournamentStartingTicker() {
   const atLiveTable = location.pathname.startsWith('/table');
   const atClubLobby = /^\/clubs\/[^/]+(?:\/lobby)?\/?$/.test(location.pathname);
   const onTickerRoute = atLiveTable || atClubLobby;
+
+  useMasterBusSubscription('TICKER_SETTINGS_CHANGED', () => {
+    setTickerScopeRevision((value) => value + 1);
+  });
+
+  useEffect(() => {
+    if (!onTickerRoute) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        let clubUuid: string | null = null;
+        let unionUuid: string | null = null;
+        const clubMatch = location.pathname.match(/^\/clubs\/([^/]+)/);
+        const tableMatch = location.pathname.match(/^\/table\/([^/]+)/);
+        if (clubMatch) {
+          clubUuid = await resolveClubUUID(clubMatch[1]);
+          const { data, error } = await supabase
+            .from('clubs')
+            .select('union_id')
+            .eq('id', clubUuid)
+            .maybeSingle();
+          if (error) throw error;
+          unionUuid = data?.union_id || null;
+        } else if (tableMatch) {
+          const { data, error } = await supabase
+            .from('tables')
+            .select('club_id,union_id')
+            .eq('id', tableMatch[1])
+            .maybeSingle();
+          if (error) throw error;
+          clubUuid = data?.club_id || null;
+          unionUuid = data?.union_id || null;
+        }
+        const next = await tickerManagementService.get(unionUuid ? null : clubUuid, unionUuid);
+        if (!cancelled) setManagedTicker(next);
+      } catch (error) {
+        reportError(error, 'TournamentStartingTicker.loadManagedSettings');
+        if (!cancelled) setManagedTicker(DEFAULT_TICKER_SETTINGS);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [location.pathname, onTickerRoute, tickerScopeRevision]);
   const [upcoming, setUpcoming] = useState<UpcomingTournament[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [dismissed, setDismissed] = useState<Set<string>>(readDismissed);
   const [overlays, setOverlays] = useState<OverlayAnnouncement[]>([]);
+  const [operationalMessages, setOperationalMessages] = useState<OperationalTickerMessage[]>([]);
   const [overlayDismissed, setOverlayDismissed] = useState<Set<string>>(() => {
     try {
       return new Set<string>(JSON.parse(sessionStorage.getItem(OVERLAY_DISMISS_KEY) || '[]'));
@@ -316,13 +403,19 @@ export function TournamentStartingTicker() {
         /* Dan 2026-08-26: overlays are announced ONLY for events currently
            running — a future event's shortfall is a field that has not
            arrived, not an overlay. ANNOUNCED/REGISTERING are gone from the
-           status list, and the row now carries blind_structure +
-           level_started_at so overlayFor can place the 75%-of-late-reg
-           gate exactly (it fails closed without them). */
+           status list.
+
+           Dan 2026-09-01 narrowed it again: an overlay is announced only on
+           the LAST LEVEL of late registration and only when the field has paid
+           in under half the guarantee. Both gates live in overlayFor. The gate
+           is now a level comparison rather than a wall-clock fraction of the
+           late-reg window, so `blind_structure` and `level_started_at` are no
+           longer selected — `current_level` and `late_reg_levels` are the whole
+           question, and they were already here. */
         const overlayPromise = supabase
           .from('tournaments')
           .select(
-            'id, name, status, start_time, guaranteed_prize, prize_pool, current_players, buy_in_amount, late_reg_levels, late_reg_mins, started_at, current_level, max_players, blind_structure, level_started_at'
+            'id, name, status, start_time, guaranteed_prize, prize_pool, current_players, buy_in_amount, late_reg_levels, late_reg_mins, started_at, current_level, max_players'
           )
           .in('club_id', clubIds)
           .eq('tournament_type', 'MTT')
@@ -331,11 +424,102 @@ export function TournamentStartingTicker() {
           .order('guaranteed_prize', { ascending: false })
           .limit(25);
 
-        const [{ data, error }, myRegs, overlayRes] = await Promise.all([
-          upcomingPromise,
-          registrationsPromise,
-          overlayPromise,
+        const operationsPromise = Promise.all([
+          supabase
+            .from('tournaments')
+            .select(
+              'id,name,status,start_time,started_at,ended_at,updated_at,guaranteed_prize,prize_pool,current_players,late_reg_levels,late_reg_mins,current_level,blind_structure,level_started_at,max_players'
+            )
+            .in('club_id', clubIds)
+            .in('status', [
+              'ANNOUNCED',
+              'REGISTERING',
+              'RUNNING',
+              'LATE_REG',
+              'LATE_REGISTRATION',
+              'COMPLETED',
+            ])
+            .order('updated_at', { ascending: false })
+            .limit(80),
+          supabase
+            .from('tables')
+            .select('id,name,status,game_variant,created_at')
+            .in('club_id', clubIds)
+            .is('tournament_id', null)
+            .eq('is_deleted', false)
+            .in('status', ['waiting', 'running'])
+            .gte('created_at', new Date(Date.now() - 10 * 60_000).toISOString())
+            .order('created_at', { ascending: false })
+            .limit(10),
         ]);
+
+        const [{ data, error }, myRegs, overlayRes, [opsTournamentRes, opsTableRes]] =
+          await Promise.all([
+            upcomingPromise,
+            registrationsPromise,
+            overlayPromise,
+            operationsPromise,
+          ]);
+
+        if (!cancelled) {
+          const current = Date.now();
+          const messages: OperationalTickerMessage[] = [];
+          for (const row of opsTournamentRes.data || []) {
+            const status = String(row.status || '').toUpperCase();
+            const starts = new Date(row.start_time || 0).getTime();
+            if (
+              managedTicker.sources.registration_closing &&
+              ['RUNNING', 'LATE_REG', 'LATE_REGISTRATION'].includes(status)
+            ) {
+              const closes = lateRegEndMs(row as unknown as LobbyTournamentRow);
+              if (closes && closes > current && closes - current <= 5 * 60_000) {
+                messages.push({
+                  id: `reg-${row.id}`,
+                  source: 'registration_closing',
+                  tournamentId: row.id,
+                  message: `${row.name} Registration Closes In ${countdown(closes - current)}`,
+                });
+              }
+            }
+            if (
+              managedTicker.sources.guarantees &&
+              ['ANNOUNCED', 'REGISTERING'].includes(status) &&
+              Number(row.guaranteed_prize || 0) > 0 &&
+              starts > current &&
+              starts - current <= 2 * 60 * 60_000
+            ) {
+              messages.push({
+                id: `gtd-${row.id}`,
+                source: 'guarantees',
+                tournamentId: row.id,
+                message: `${Number(row.guaranteed_prize).toLocaleString()} Guaranteed · ${row.name} · ${Number(row.current_players || 0).toLocaleString()} Entered`,
+              });
+            }
+            const ended = new Date(row.ended_at || 0).getTime();
+            if (
+              managedTicker.sources.winner_results &&
+              status === 'COMPLETED' &&
+              ended > current - 10 * 60_000
+            ) {
+              messages.push({
+                id: `result-${row.id}`,
+                source: 'winner_results',
+                tournamentId: row.id,
+                message: `${row.name} Is Complete · ${Number(row.prize_pool || 0).toLocaleString()} Prize Pool · Results Available`,
+              });
+            }
+          }
+          if (managedTicker.sources.table_openings) {
+            for (const row of opsTableRes.data || [])
+              messages.push({
+                id: `table-${row.id}`,
+                source: 'table_openings',
+                tableId: row.id,
+                message: `New ${String(row.game_variant || 'Poker').toUpperCase()} Table Open · ${row.name} · Seats Available`,
+              });
+          }
+          setOperationalMessages(messages.slice(0, 8));
+        }
 
         if (!cancelled) {
           if (overlayRes.error) {
@@ -409,21 +593,38 @@ export function TournamentStartingTicker() {
       stopPoll();
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [loadScope]);
+  }, [
+    loadScope,
+    managedTicker.sources.guarantees,
+    managedTicker.sources.registration_closing,
+    managedTicker.sources.table_openings,
+    managedTicker.sources.winner_results,
+  ]);
 
   // ── Local 1s countdown. Only runs while something is actually showing. ──
   const live = useMemo(
     () =>
-      upcoming.filter(
+      (managedTicker.sources.starting_soon ? upcoming : []).filter(
         (t) => !dismissed.has(t.id) && t.startsAt - now <= LEAD_MS && t.startsAt - now > -30_000
       ),
-    [upcoming, dismissed, now]
+    [upcoming, dismissed, now, managedTicker.sources.starting_soon]
   );
 
   const liveOverlays = useMemo(
-    () => overlays.filter((o) => !overlayDismissed.has(o.id)),
-    [overlays, overlayDismissed]
+    () =>
+      (managedTicker.sources.overlays ? overlays : []).filter((o) => !overlayDismissed.has(o.id)),
+    [overlays, overlayDismissed, managedTicker.sources.overlays]
   );
+  const customMessages =
+    managedTicker.sources.custom_messages && !customDismissed ? managedTicker.customMessages : [];
+  const serviceMessages =
+    managedTicker.sources.maintenance && !serviceDismissed ? managedTicker.serviceMessages : [];
+  useEffect(() => {
+    setCustomDismissed(false);
+  }, [managedTicker.customMessages]);
+  useEffect(() => {
+    setServiceDismissed(false);
+  }, [managedTicker.serviceMessages]);
 
   const notifiedRef = useRef<Record<string, { fiveMin: boolean; ninetySec: boolean }>>({});
   const upcomingRef = useRef(upcoming);
@@ -512,9 +713,14 @@ export function TournamentStartingTicker() {
        - the player turned the ticker off in table or Club Arena settings
          (Dan 2026-08-28, one shared store). */
   const barVisible =
-    (live.length > 0 || liveOverlays.length > 0) &&
+    (live.length > 0 ||
+      liveOverlays.length > 0 ||
+      operationalMessages.length > 0 ||
+      serviceMessages.length > 0 ||
+      customMessages.length > 0) &&
     onTickerRoute &&
-    tickerSettings.showTicker !== false;
+    tickerSettings.showTicker !== false &&
+    managedTicker.enabled;
 
   /* ── PUBLISH THE HEIGHT SO THE ACTION TAB CAN START BELOW IT ───────────────
      Dan 2026-08-30: "THE TICKER MUST ALWAYS BE AT THE VERY TOP OF THE PAGE,
@@ -581,35 +787,55 @@ export function TournamentStartingTicker() {
      has not changed - so when both have something to say, the overlay takes
      the bar and the countdown waits for the next poll. */
   const showingOverlay = liveOverlays.length > 0;
+  const showingOperational = !showingOverlay && live.length === 0 && operationalMessages.length > 0;
+  const showingService =
+    !showingOverlay && live.length === 0 && !showingOperational && serviceMessages.length > 0;
+  const showingCustom =
+    !showingOverlay &&
+    !showingOperational &&
+    !showingService &&
+    live.length === 0 &&
+    customMessages.length > 0;
 
   // One bar. If two events land in the same window the marquee carries both
   // rather than stacking bars over the felt.
   const primary = showingOverlay ? null : live[0];
   const primaryOverlay = showingOverlay ? liveOverlays[0] : null;
+  const primaryOperational = showingOperational ? operationalMessages[0] : null;
 
   /* Whichever source owns the bar, the click target, the title and the close
      button all have to point at THAT event. Resolving them once here keeps the
      JSX below from having to branch in five places - and keeps the union rule
      intact: `/tournaments/:id`, never a club id. */
-  const targetId = primaryOverlay ? primaryOverlay.id : primary?.id;
-  const targetName = primaryOverlay ? primaryOverlay.name : primary?.name || 'Tournament';
+  const targetId = primaryOverlay
+    ? primaryOverlay.id
+    : primary?.id || primaryOperational?.tournamentId;
+  const targetName = primaryOverlay
+    ? primaryOverlay.name
+    : primary?.name || primaryOperational?.message || serviceMessages[0] || 'Club Update';
 
   // Dan 2026-08-21: house popup rule applies here too - First Letter Of
   // Every Word Capitalized, hyphenated words included ("Buy-In 22").
   const message = showingOverlay
     ? liveOverlays.map((o) => formatPopupText(overlayMessage(o))).join('        •        ')
-    : live
-        .map((t) =>
-          formatPopupText(
-            `${formatGameTitle(t.name)} starts in ${countdown(t.startsAt - now)}` +
-              (t.buyIn > 0 ? ` · buy-in ${t.buyIn.toLocaleString()}` : ' · freeroll') +
-              // "entered", not "registered": this is tournaments.current_players,
-              // a registration COUNTER that is incremented on entry and never
-              // decremented, so it is an entry total and not a live head count.
-              ` · ${t.registered.toLocaleString()} entered`
-          )
-        )
-        .join('        •        ');
+    : showingOperational
+      ? operationalMessages.map((item) => formatPopupText(item.message)).join('        •        ')
+      : showingCustom
+        ? customMessages.map(formatPopupText).join('        •        ')
+        : showingService
+          ? serviceMessages.map(formatPopupText).join('        •        ')
+          : live
+              .map((t) =>
+                formatPopupText(
+                  `${formatGameTitle(t.name)} starts in ${countdown(t.startsAt - now)}` +
+                    (t.buyIn > 0 ? ` · buy-in ${t.buyIn.toLocaleString()}` : ' · freeroll') +
+                    // "entered", not "registered": this is tournaments.current_players,
+                    // a registration COUNTER that is incremented on entry and never
+                    // decremented, so it is an entry total and not a live head count.
+                    ` · ${t.registered.toLocaleString()} entered`
+                )
+              )
+              .join('        •        ');
 
   return (
     <div
@@ -623,7 +849,20 @@ export function TournamentStartingTicker() {
          (headerBottom > 0) the header has already paid that inset, and paying
          it twice turned a 34px strip into a ~90px band on notched iPhones.
          Only the strip that actually touches top: 0 owes the inset. */
-      style={{ top: headerBottom, paddingTop: headerBottom > 0 ? 0 : undefined }}
+      style={
+        {
+          top: headerBottom,
+          paddingTop: headerBottom > 0 ? 0 : undefined,
+          background: managedTicker.backgroundColor,
+          color: managedTicker.textColor,
+          borderBottomColor: managedTicker.accentColor,
+          fontFamily:
+            managedTicker.fontFamily === 'System' ? 'system-ui' : managedTicker.fontFamily,
+          '--ticker-speed': `${managedTicker.speedSeconds}s`,
+          '--ticker-text': managedTicker.textColor,
+          '--ticker-accent': managedTicker.accentColor,
+        } as CSSProperties
+      }
     >
       <span
         className={
@@ -633,12 +872,25 @@ export function TournamentStartingTicker() {
               }`
             : 'mtt-ticker__flag'
         }
+        style={{ color: managedTicker.accentColor }}
       >
         {primaryOverlay
           ? primaryOverlay.tier === 'live'
             ? 'OVERLAY'
             : 'POTENTIAL OVERLAY'
-          : 'STARTING SOON'}
+          : showingCustom
+            ? 'CLUB UPDATE'
+            : showingService
+              ? 'SERVICE NOTICE'
+              : showingOperational
+                ? primaryOperational?.source === 'registration_closing'
+                  ? 'REG CLOSING'
+                  : primaryOperational?.source === 'guarantees'
+                    ? 'GUARANTEED'
+                    : primaryOperational?.source === 'table_openings'
+                      ? 'TABLE OPEN'
+                      : 'RESULTS'
+                : 'STARTING SOON'}
       </span>
 
       {/* Dan 2026-08-23: "if you click the ticker for the tournament running,
@@ -660,7 +912,8 @@ export function TournamentStartingTicker() {
         className="mtt-ticker__track"
         onClick={() => {
           if (targetId) navigate(`/tournaments/${targetId}`);
-          else navigate('/tournaments');
+          else if (primaryOperational?.tableId) navigate(`/table/${primaryOperational.tableId}`);
+          else if (!showingCustom && !showingService) navigate('/tournaments');
         }}
         title={`Register For ${formatGameTitle(targetName)}`}
       >
@@ -677,7 +930,16 @@ export function TournamentStartingTicker() {
 
       <button
         className="mtt-ticker__close"
-        onClick={() => (primaryOverlay ? dismissOverlay(primaryOverlay.id) : dismiss(primary!.id))}
+        onClick={() => {
+          if (primaryOverlay) dismissOverlay(primaryOverlay.id);
+          else if (primary) dismiss(primary.id);
+          else if (primaryOperational)
+            setOperationalMessages((items) =>
+              items.filter((item) => item.id !== primaryOperational.id)
+            );
+          else if (showingService) setServiceDismissed(true);
+          else if (showingCustom) setCustomDismissed(true);
+        }}
         aria-label={`Dismiss The Announcement For ${targetName}`}
       >
         ×

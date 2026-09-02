@@ -122,11 +122,21 @@
   align-self: start;
 }
 
+/* THE CLUB MESSAGE STRIP (Dan 2026-09-01).
+   Moved out of the wallet stack to the first row of `.lobby-top`, and promoted
+   from a <p> to a <button> - so the margin now sits BELOW it (it leads the
+   rail rather than trailing the wallets) and the rule carries the button reset
+   a bare element did not need. Everything else about how it draws is
+   unchanged, deliberately: Dan asked for it to move and to become clickable,
+   not to look like something else. */
 .lobby-top__house-welcome {
+  display: block;
   width: 100%;
-  margin: 7px 0 0;
-  padding: 5px 10px;
+  margin: 0 0 8px;
+  padding: 6px 10px;
   overflow: hidden;
+  cursor: pointer;
+  text-align: center;
   border: 1px solid rgb(74 145 202 / 32%);
   background: linear-gradient(180deg, rgb(10 24 36 / 92%), rgb(2 7 11 / 98%));
   color: #36aaff;
@@ -140,6 +150,11 @@
   text-shadow: 0 0 7px rgb(32 157 255 / 35%);
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+.lobby-top__house-welcome:focus-visible {
+  outline: 2px solid #65c4ff;
+  outline-offset: 2px;
 }
 
 .lobby-top__identity {
@@ -1559,6 +1574,14 @@
   font-size: 0.86rem;
 }
 
+.lobby-controls__operator-actions {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px !important;
+}
+
 .lobby-controls .game-bar {
   gap: 10px;
   padding: 12px 12px 10px 16px;
@@ -1759,7 +1782,14 @@
   }
 
   .lobby-controls__heading {
+    align-items: stretch;
+    flex-direction: column;
     padding: 12px 11px 9px 14px;
+  }
+
+  .lobby-controls__operator-actions {
+    align-items: stretch;
+    flex-direction: column !important;
   }
 
   .lobby-controls__title {
@@ -2589,6 +2619,13 @@
     grid-row: 1;
     min-width: 0;
     height: 100%;
+    /* A flex column since 2026-09-01: the club message strip is a sibling ABOVE
+       `.lobby-top__main`, and `.lobby-top__main` claims `height: 100%`. As a
+       plain block that made the rail overflow by exactly the strip's height on
+       every desktop viewport. As a column the strip takes its own row and the
+       wallet stack takes the rest. */
+    display: flex;
+    flex-direction: column;
     padding: 0;
     overflow-x: hidden;
     overflow-y: auto;
@@ -2603,7 +2640,9 @@
   }
 
   .lobby-top__main {
-    height: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: auto;
     display: flex;
     flex-direction: column;
     align-items: stretch;
@@ -2654,9 +2693,13 @@
     min-height: 0;
   }
 
-  .lobby-top__wallet .lobby-top__house-welcome {
+  /* The strip left the wallet column on 2026-09-01; it is the rail's first
+     row now, so the desktop spacing is stated against `.lobby-top` itself.
+     Left as a scoped rule rather than deleted outright because this block is
+     the desktop rail's own sizing pass and the margin belongs with it. */
+  .lobby-top > .lobby-top__house-welcome {
     flex: 0 0 auto;
-    margin: 6px 3px 3px;
+    margin: 3px 3px 7px;
   }
 
   .lobby-top__wallet .dw__rows {

@@ -21,10 +21,10 @@ when it merged.
 Measured on the live floor after #2430 was in main, for the 416-account
 population built for a standalone club:
 
-| where                                  | open seats |
-|----------------------------------------|-----------:|
-| cash tables in another club            |          0 |
-| tournament tables in another club      |        173 |
+| where                             | open seats |
+| --------------------------------- | ---------: |
+| cash tables in another club       |          0 |
+| tournament tables in another club |        173 |
 
 Zero on cash is the same result #2430 measured, and for the same reason:
 `atomic_table_buyin` debits `club_members.chip_balance`, so a non-member

@@ -73,7 +73,9 @@ const BASELINE = new Map<string, number>([
   ['src/services/ClubsService.ts', 5],
   ['src/services/PromotionService.ts', 2],
   ['src/services/CreditService.ts', 5],
-  ['src/pages/ClubDetailPage.tsx', 5],
+  // 5 -> 4: the legacy optimistic table delete and its unchecked reload were
+  // removed when all operator closes moved behind fn_close_managed_game.
+  ['src/pages/ClubDetailPage.tsx', 4],
   ['src/services/FriendSuggestionService.ts', 1],
   ['src/services/CreditRequestService.ts', 4],
   ['src/services/ChipFlowService.ts', 4],
@@ -101,7 +103,9 @@ const BASELINE = new Map<string, number>([
   ['src/pages/CashierTradePage.tsx', 0],
   ['src/pages/AntiCheatPage.tsx', 3],
   ['src/components/wallet/ChipMintModal.tsx', 3],
-  ['src/components/agent/AgentCommissionDashboard.tsx', 3],
+  // 3 -> 2 in phase 7: the sub-agent read that discarded its error is gone with
+  // the dropped column it was reading, and its replacement binds the error.
+  ['src/components/agent/AgentCommissionDashboard.tsx', 2],
   ['src/utils/settlementLock.ts', 2],
   ['src/stores/useHeaderDataStore.ts', 2],
   ['src/services/WalletService.ts', 2],

@@ -81,7 +81,12 @@ describe('the reveal is emitted on the draw', () => {
       'prize_pool: prizePool',
       'reveal_at: revealAt',
       'hold_until: holdUntil',
-      'replay_until: holdUntil',
+      /* The EARLY packet still announces the planned hold - three wheels turn
+         on those numbers and moving them is worse - but its REPLAY window has
+         to cover the hold the engine will actually keep, or a reconnect inside
+         the extension finds the packet already dropped. Pin moved 2026-09-02
+         with the fix, per §10.6. */
+      'replay_until: Math.max(holdUntil, Date.now() + spinPostRevealMs())',
     ]) {
       expect(emitBlock, `${field} missing from the early packet`).toContain(field);
     }

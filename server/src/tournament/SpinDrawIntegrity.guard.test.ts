@@ -34,6 +34,7 @@ import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { sliceEnclosingBlock } from '../testHelpers/sourceWindow.js';
+import { applySpinDrawPatch } from './spinDrawSync.js';
 
 const BASE = fs.readFileSync(
   path.join(process.cwd(), 'src/tournament/TournamentManagerBase.ts'),
@@ -106,14 +107,101 @@ describe('the drawn multiplier reaches the row, or keeps trying', () => {
 });
 
 describe('the reveal asks the hub to hold it (D3)', () => {
-  it('the wheel event carries its own replay deadline', () => {
-    const emit = sliceEnclosingBlock(CODE, "type: 'spin_reveal'");
-    expect(emit).toMatch(/replay_until:\s*holdUntil/);
+  it('the wheel event carries its own replay deadline, and it is the REAL one', () => {
+    /* PIN MOVED, NOT WEAKENED (2026-09-02, §10.6). It read
+       `/replay_until:\s*holdUntil/`. The engine holds dealing until
+       `effectiveHold = Math.max(holdUntil, now + spinPostRevealMs())`, so
+       pinning the PLANNED hold pinned the bug: on the overrun path the hub
+       dropped the replay packet while the cards were still legally undealt,
+       and a player reconnecting in that window lost the reveal entirely.
+       The deadline must be the hold the engine actually keeps. */
+    /* THERE ARE TWO PACKETS AND THEY ARE NOT THE SAME (2026-09-02). The
+       first `type: 'spin_reveal'` in this file is the EARLY emit, fired
+       before the engine exists; the second is the main pass. The old pin
+       sliced occurrence 0 and asserted `holdUntil`, which passed against
+       either - so it never noticed they had to differ. Both are pinned now,
+       each to the deadline it actually owes. */
+    const early = sliceEnclosingBlock(CODE, "type: 'spin_reveal'", 0);
+    expect(early).toMatch(
+      /replay_until: Math\.max\(holdUntil, Date\.now\(\) \+ spinPostRevealMs\(\)\)/
+    );
+
+    const main = sliceEnclosingBlock(CODE, "type: 'spin_reveal'", 1);
+    expect(main).toMatch(/replay_until:\s*effectiveHold/);
+    expect(main).not.toMatch(/replay_until:\s*holdUntil\b/);
   });
 
   it('the post-reveal beats carry one too, ending when dealing may start', () => {
     expect(CODE).toMatch(/const replayUntil = revealAt \+ spinRevealToDealMs\(\)/);
     const post = CODE.slice(CODE.indexOf('private scheduleSpinPostReveal'));
     expect(post.match(/replay_until:\s*replayUntil/g) ?? []).toHaveLength(2);
+  });
+});
+
+describe('the draw reaches memory WHOLE (2026-08-31)', () => {
+  /* THE DEFECT: the sync-back after the row write was a hand-written list of
+     field names, and it copied four of the patch's five fields. The one it
+     dropped was `payout_structure`, so a started Spin's `tournamentCache` kept
+     the pre-draw winner-take-all placeholder for the whole game, and
+     recalculateEliminatedPrizes - which reads that cache - topped players up
+     against a different structure than the one that had paid them.
+
+     These pins are deliberately NOT a list of today's five field names. A list
+     is exactly what failed: it was right until the next field arrived and
+     nothing complained when one was forgotten. Instead: the helper must copy
+     whatever it is handed, and the draw site must hand it the whole patch. */
+
+  it('applySpinDrawPatch copies EVERY key, including one it has never seen', () => {
+    const patch = {
+      prize_pool: 30,
+      spin_multiplier: 10,
+      blind_structure: [{ level: 1 }],
+      payout_structure: [
+        { place: 1, percentage: 80 },
+        { place: 2, percentage: 20 },
+      ],
+      // The sixth field this test exists for: nothing in the helper knows its
+      // name, so it can only arrive by being copied wholesale.
+      some_field_added_next_year: 'must land too',
+    };
+    const tournament: Record<string, unknown> = { prize_pool: 3, spin_multiplier: null };
+    const cache: Record<string, unknown> = {};
+    applySpinDrawPatch(patch, tournament, cache);
+    for (const key of Object.keys(patch)) {
+      expect(tournament[key], `tournament.${key}`).toEqual((patch as any)[key]);
+      expect(cache[key], `cache.${key}`).toEqual((patch as any)[key]);
+    }
+  });
+
+  it('skips an absent cache rather than throwing, because a sync must never fail a start', () => {
+    expect(() => applySpinDrawPatch({ a: 1 }, null, undefined)).not.toThrow();
+  });
+
+  it('the draw site hands over the whole patch, and names no field twice', () => {
+    // The sync window: from the patch write to the registration migration that
+    // follows it.
+    const from = CODE.indexOf('applySpinDrawPatch(');
+    expect(from, 'the sync site must call applySpinDrawPatch').toBeGreaterThan(0);
+    const window = CODE.slice(from, CODE.indexOf("from('tournament_players')", from));
+
+    // Both in-memory copies are targets of the same call.
+    expect(window).toMatch(/spinRowPatch/);
+    expect(window).toMatch(/this\.tournamentCache/);
+
+    // And nothing here re-copies a field by name - the shape that dropped
+    // payout_structure. Any `tournament.x =` or `this.tournamentCache.x =`
+    // inside the sync window is the regression.
+    expect(window).not.toMatch(/this\.tournamentCache\.\w+\s*=/);
+    expect(window).not.toMatch(/\btournament\.\w+\s*=[^=]/);
+  });
+
+  it('the patch itself still carries the payout structure that was drawn', () => {
+    const patch = CODE.slice(
+      CODE.indexOf('const spinRowPatch = {'),
+      CODE.indexOf('let spinRowWritten')
+    );
+    expect(patch).toMatch(/payout_structure:/);
+    // Derived from the drawn tier, never a literal winner-take-all.
+    expect(patch).toMatch(/tier\?\.payouts/);
   });
 });

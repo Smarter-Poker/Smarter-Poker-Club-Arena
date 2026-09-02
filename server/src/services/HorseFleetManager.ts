@@ -14,6 +14,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
@@ -28,11 +29,30 @@ import { bankrollEvent, bankrollSummaryLine } from './HorseBankrollTelemetry.js'
 import {
   buyInBBFor,
   gameLaneFor,
+  horseHash,
   isActiveNow,
   occupancyTargetFor,
   stakeBandAllows,
   stakeBandForBigBlind,
 } from './HorseBehavior.js';
+
+/**
+ * Everything `resolveSeatClub` needs to answer "which wallet pays for this
+ * horse at this table", built once per seeding cycle. See the note on the
+ * `union_clubs` read in seedAllTables for why it exists.
+ */
+interface SeatClubContext {
+  /** The clubs whose wallets may pay for a seat at this table (the DB rule). */
+  eligibleClubsFor: (t: { club_id?: string | null; union_id?: string | null }) => string[];
+  /** The scope a "one club at a time" seat is held in: the union, else the club. */
+  tableScope: (t: { club_id?: string | null; union_id?: string | null }) => string;
+  /** horse id -> scope -> the club its EARLIEST open seat in that scope draws from. */
+  seatClubInScope: Map<string, Map<string, string>>;
+  /** horse id -> the clubs it holds an active/approved membership in. */
+  memberships: Map<string, Set<string>>;
+  /** false when the membership read was incomplete this cycle: unknown, not empty. */
+  known: boolean;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -187,6 +207,7 @@ export class HorseFleetManager {
   private isRunning = false;
   private seedInterval: ReturnType<typeof setInterval> | null = null;
   private seeding = false; // Prevents concurrent seeding
+  private overrunTicks = 0; // 30s ticks dropped because the previous cycle was still running
   private clubIndex = 0;
   private clubIds = [SHARK_CLUB_ID, JAQK_CLUB_ID];
 
@@ -225,6 +246,18 @@ export class HorseFleetManager {
     // Overlap guard — see HorseLifecycleManager. seedAllTables has its own
     // `seeding` flag, so this is belt-and-braces for the wrapper.
     this.seedInterval = setInterval(() => {
+      // THE FREEZE (Dan 2026-09-01): seeding is a seat INSERT and a buy-in -
+      // chips moving under a break screen. The felt refills on the first
+      // cycle after the thaw, thirty seconds into resumed play at most.
+      if (isMaintenanceFrozen()) return;
+      /* A tick that finds the previous cycle still running is DROPPED by the
+         `seeding` guard inside seedAllTables. Count it here so the cycle can
+         say, when it finally ends, how many refills it cost - on 2026-09-02 a
+         cycle ran for 47 minutes and nothing said so. */
+      if (this.seeding) {
+        this.overrunTicks++;
+        return;
+      }
       this.seedAllTables().catch((err) => reportError(err, 'HorseFleet.Seed_cycle_error'));
     }, 30000);
 
@@ -301,37 +334,71 @@ export class HorseFleetManager {
    * 'cleared'. Human rows are NEVER touched here — a person's place in line
    * is theirs until they sit, leave, or their seat offer expires.
    *
-   * `keep` is the TOTAL queue size the table should show; humans count
-   * toward it first, horses fill the remainder.
+   * 2026-09-02, twice over. Horses no longer queue at all (waitTarget is 0
+   * everywhere - see occupancyTargetFor), so "prune to the target" became
+   * "clear every horse row". And this used to run once PER TABLE inside the
+   * seeding loop: one SELECT per table, in sequence, 1,131 tables, on a
+   * database answering in seconds - a 47-minute cycle measured on the live
+   * engine, during which the floor only drained. It is now ONE read of every
+   * live waitlist row and one batched UPDATE, before the loop.
+   *
+   * Human rows are NEVER touched here — a person's place in line is theirs
+   * until they sit, leave, or their seat offer expires.
    */
-  private async pruneHorseWaitlist(
-    tableId: string,
-    keep: number,
-    horseIdSet: Set<string>
-  ): Promise<void> {
+  private async pruneHorseWaitlist(horseIdSet: Set<string>): Promise<void> {
     try {
       const { data, error } = await supabase
         .from('table_waitlist')
-        .select('id, user_id, position, status')
-        .eq('table_id', tableId)
+        .select('id, user_id, status')
         .in('status', ['waiting', 'notified']);
       if (error) throw new Error(error.message);
-      const rows = data ?? [];
-      const humanCount = rows.filter((r) => !horseIdSet.has(r.user_id as string)).length;
-      const horseKeep = Math.max(0, keep - humanCount);
-      const horseRows = rows
+      const excess = (data ?? [])
         .filter((r) => horseIdSet.has(r.user_id as string))
-        .sort((a, b) => (Number(a.position) || 0) - (Number(b.position) || 0));
-      if (horseRows.length <= horseKeep) return;
-      const excess = horseRows.slice(horseKeep).map((r) => r.id);
-      const { error: updErr } = await supabase
-        .from('table_waitlist')
-        .update({ status: 'cleared' })
-        .in('id', excess);
-      if (updErr) throw new Error(updErr.message);
+        .map((r) => r.id as string);
+      if (excess.length === 0) return;
+      // Chunked so the request line stays sane if a queue ever inflates again
+      // (10,004 horse rows on 2026-08-31).
+      for (let i = 0; i < excess.length; i += 200) {
+        const { error: updErr } = await supabase
+          .from('table_waitlist')
+          .update({ status: 'cleared' })
+          .in('id', excess.slice(i, i + 200));
+        if (updErr) throw new Error(updErr.message);
+      }
     } catch (err) {
       reportError(err, 'HorseFleet.pruneHorseWaitlist');
     }
+  }
+
+  /**
+   * THE WALLET THAT PAYS FOR THIS HORSE AT THIS TABLE - the engine's copy of
+   * `fn_seat_club_for_user`, so the roll it gates on, the buy-in it sizes and
+   * the p_club_id it sends are all the same wallet the database debits.
+   *
+   *   a club id  - the wallet; passed to atomic_table_buyin as p_club_id
+   *   null       - no membership of this horse can pay here: NOT A CANDIDATE
+   *   undefined  - the membership map did not load this cycle: unknown, and
+   *                the database decides alone (fail open, like the bankroll
+   *                gate - a read that failed must never empty the floor)
+   *
+   * Order mirrors the function: a seat already held in this scope wins, then
+   * a stable pick among the memberships that qualify. The pick is the engine's
+   * own hash rather than the database's, which is why it is SENT as p_club_id
+   * instead of merely predicted.
+   */
+  private resolveSeatClub(
+    ctx: SeatClubContext,
+    table: { club_id?: string | null; union_id?: string | null },
+    horseId: string
+  ): string | null | undefined {
+    const eligible = ctx.eligibleClubsFor(table);
+    if (eligible.length === 0) return null;
+    const held = ctx.seatClubInScope.get(horseId)?.get(ctx.tableScope(table));
+    if (held && eligible.includes(held)) return held;
+    if (!ctx.known) return undefined;
+    const mine = eligible.filter((c) => ctx.memberships.get(horseId)?.has(c));
+    if (mine.length === 0) return null;
+    return mine[horseHash(horseId) % mine.length];
   }
 
   private async ensureAllTablesExist(): Promise<void> {
@@ -540,25 +607,140 @@ export class HorseFleetManager {
   private async seedAllTables(): Promise<void> {
     if (this.seeding) return; // Prevent concurrent seeding
     this.seeding = true;
+    const cycleStartedAt = Date.now();
     try {
       // Get all active cash tables
       // AUDIT V2 (2026-07-23): club_id selected here — the old code re-queried
       // tables once per table inside the seeding loop (N+1) just to read it.
-      const { data: tables, error: tablesError } = await supabase
-        .from('tables')
-        .select(
-          'id, name, max_players, small_blind, big_blind, game_variant, club_id, min_buy_in, max_buy_in, current_players, created_at'
-        )
-        .is('tournament_id', null)
-        .in('status', ['waiting', 'running']);
+      //
+      // 2026-09-02: AND IT IS PAGED, for the same reason the seat map below is.
+      // This was a bare .select() with no paging and no ordering, so PostgREST
+      // capped it at db-max-rows (1,000) WITHOUT erroring — the identical
+      // silent truncation that was found and fixed for `table_seats` on
+      // 2026-08-20, thirty lines further down, and never applied to the query
+      // that feeds it.
+      //
+      // The seat fix made the consequence invisible rather than removing it. A
+      // truncated SEAT map makes occupied seats read as empty, which fails
+      // loudly: ~150,000 duplicate-key buy-ins a day. A truncated TABLE list
+      // fails silently in the opposite direction — a table the seeder never
+      // received is not "empty", it does not exist, so nothing is attempted
+      // and nothing is logged. The floor simply never fills and no error is
+      // ever raised to say why.
+      //
+      // Measured on 2026-09-02: 1,134 live non-tournament tables against a
+      // 1,000 cap, so 134 were invisible. Unordered PostgREST reads come back
+      // in physical order, which tracks insertion, so the truncated tail is
+      // always the NEWEST tables — the worst possible 134 to lose, because a
+      // table nobody has sat at yet is precisely the one that needs seeding.
+      // Every one of the 45 Midway Union micro tables created that morning
+      // ranked 1090-1134 and none of them was ever offered a horse: the floor
+      // was hand-packed, drained on the next engine restart, and never
+      // refilled, while Deep Stack Society (older, inside the first 1,000)
+      // seeded normally all day. That contrast is what the truncation looks
+      // like from the outside, and it reads as "the seeder ignores this club".
+      //
+      // Ordered by id and keyset-paged, so the cap cannot apply and the page
+      // boundary cannot skip a row when a table opens or closes mid-read.
+      const tablePage = await fetchAllRows<{
+        id: string;
+        name: string;
+        max_players: number;
+        small_blind: number;
+        big_blind: number;
+        game_variant: string;
+        club_id: string;
+        min_buy_in: number | null;
+        max_buy_in: number | null;
+        current_players: number | null;
+        created_at: string;
+        union_id: string | null;
+      }>(
+        (cursor, want) => {
+          let q = supabase
+            .from('tables')
+            .select(
+              'id, name, max_players, small_blind, big_blind, game_variant, club_id, union_id, min_buy_in, max_buy_in, current_players, created_at'
+            )
+            .is('tournament_id', null)
+            .in('status', ['waiting', 'running'])
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
+        { label: 'HorseFleet.openTables', maxRows: 50_000 }
+      );
 
-      if (tablesError || !tables) {
-        const errMsg =
-          tablesError?.message ||
-          (typeof tablesError === 'object' ? JSON.stringify(tablesError) : String(tablesError));
-        reportError(new Error(errMsg), 'HorseFleet.Failed_to_fetch_tables');
+      // FAIL CLOSED, exactly as the seat map does. A partial table list is not
+      // a smaller floor, it is a floor with holes in it that nothing will ever
+      // report — so a cycle skipped here costs 30 seconds, while a cycle run
+      // from a half-read list silently strands whichever tables fell off the
+      // end until someone notices by hand.
+      if (!tablePage.complete) {
+        console.warn(
+          '[HorseFleet] Seeding cycle SKIPPED - the open-table list came back ' +
+            'incomplete, and seeding from a partial list leaves the newest ' +
+            'tables permanently unseeded.'
+        );
         return;
       }
+      const tables = tablePage.rows;
+
+      /* WHO MAY SIT WHERE (Dan 2026-09-02, verbatim: "FREE THEM TO PLAY OPENLY
+         INSIDE THE DEEP STACK SOCIETY ONLY. THEY HAVE NO AFFILIATION OR ARE A
+         PART OF THE MIDWAY UNION.")
+
+         A horse sits where its wallet is, and the database already knows the
+         rule: `fn_seat_club_for_user` resolves a standalone club's table to a
+         membership in THAT club, and a union table to a membership in one of
+         the union's member clubs (`union_clubs`) - never the union's own club
+         row. This map is the engine's copy of that rule, read fresh every
+         cycle so a club joining or leaving a union is honoured within 30s.
+
+         MEASURED 2026-09-02, and this is why it exists. The seeder drew its
+         candidates from the whole fleet and keyed every bankroll lookup on
+         `table.club_id`. For a Midway Union table that key is the union's own
+         club row, which 261 of the 584 Midway horses hold no membership in and
+         which no Deep Stack horse holds at all - so for every one of them the
+         roll read as ZERO, `computeHorseBuyIn` sized a zero buy-in, and the
+         seat it had been picked for was silently skipped for the cycle. The
+         log said "bankroll gate skipped for 84,954 horse/table pairs". Midway
+         was seating 22 horses an hour against Deep Stack's 198, with 476 of
+         its 576 seats empty.
+
+         Fails CLOSED like the reads above it: a cycle that cannot learn who
+         belongs where would either seat nobody in a union or seat everybody
+         everywhere, and both are worse than waiting 30 seconds. */
+      const unionClubs = new Map<string, string[]>();
+      {
+        const { data: ucRows, error: ucErr } = await supabase
+          .from('union_clubs')
+          .select('union_id, club_id');
+        if (ucErr) {
+          reportError(new Error(ucErr.message), 'HorseFleet.union_clubs_read_failed');
+          console.warn(
+            '[HorseFleet] Seeding cycle SKIPPED - the union membership map could not be read.'
+          );
+          return;
+        }
+        for (const r of ucRows ?? []) {
+          const row = r as { union_id?: string | null; club_id?: string | null };
+          if (!row.union_id || !row.club_id) continue;
+          if (!unionClubs.has(row.union_id)) unionClubs.set(row.union_id, []);
+          unionClubs.get(row.union_id)!.push(row.club_id);
+        }
+        for (const list of unionClubs.values()) list.sort();
+      }
+      /* The clubs whose wallets may pay for a seat at this table: the member
+         clubs of its union, else the club itself. The database's rule, mirrored. */
+      const eligibleClubsFor = (t: {
+        club_id?: string | null;
+        union_id?: string | null;
+      }): string[] => {
+        if (t.union_id) return unionClubs.get(t.union_id) ?? [];
+        return t.club_id ? [t.club_id] : [];
+      };
 
       /* THE SOLE-OPEN REGISTRY IS GONE WITH THE RULE IT PROTECTED (2026-09-02).
          It existed so the 15% held-empty hold could never switch off a variant
@@ -593,6 +775,8 @@ export class HorseFleetManager {
         table_id: string;
         seat_number: number;
         stack: number | null;
+        club_id: string | null;
+        joined_at: string | null;
       }>(
         (cursor, want) => {
           // KEYSET, not OFFSET. `.range()` paging re-reads the table under a
@@ -603,7 +787,7 @@ export class HorseFleetManager {
           // constantly in a live room. `id > cursor` has no such window.
           let q = supabase
             .from('table_seats')
-            .select('id, user_id, table_id, seat_number, stack')
+            .select('id, user_id, table_id, seat_number, stack, club_id, joined_at')
             .is('left_at', null)
             .order('id', { ascending: true })
             .limit(want);
@@ -696,6 +880,10 @@ export class HorseFleetManager {
        * this layer decides which games are SENSIBLE, not which are possible.
        */
       const bankrolls = new Map<string, number>();
+      /* The same rows, read the other way round: which clubs each horse
+         belongs to. This is what decides whether a horse is a CANDIDATE for a
+         table at all - see resolveSeatClub. */
+      const memberships = new Map<string, Set<string>>();
       let bankrollsLoaded = false;
       // Horses the gate could not price this cycle. LOUD, because the silent
       // version of this number is what cost the floor 40 minutes.
@@ -745,6 +933,10 @@ export class HorseFleetManager {
         for (const t of tables) {
           const cid = (t as { club_id?: string | null }).club_id;
           if (cid) clubIdsToLoad.add(cid);
+          // A union table's wallets live in the union's MEMBER clubs, which
+          // own no tables of their own (JAQK and SHARK own zero) and so were
+          // never loaded: 261 Midway horses had no roll on this map.
+          for (const c of eligibleClubsFor(t)) clubIdsToLoad.add(c);
         }
 
         let allComplete = true;
@@ -759,6 +951,8 @@ export class HorseFleetManager {
                 .from('club_members')
                 .select('user_id, club_id, chip_balance')
                 .eq('club_id', clubId)
+                // The only two statuses fn_seat_club_for_user will pay from.
+                .in('status', ['active', 'approved'])
                 .order('user_id', { ascending: true })
                 .limit(want);
               if (cursor) q = q.gt('user_id', cursor);
@@ -773,12 +967,15 @@ export class HorseFleetManager {
           for (const r of brPage.rows) {
             const v = Number(r.chip_balance);
             if (Number.isFinite(v)) bankrolls.set(`${r.club_id}:${r.user_id}`, v);
+            if (!memberships.has(r.user_id)) memberships.set(r.user_id, new Set());
+            memberships.get(r.user_id)!.add(r.club_id);
           }
         }
         if (allComplete) {
           bankrollsLoaded = true;
         } else {
           bankrolls.clear();
+          memberships.clear();
           console.warn(
             '[HorseFleet] bankroll read incomplete - seating this cycle without the bankroll gate.'
           );
@@ -901,12 +1098,56 @@ export class HorseFleetManager {
          This is the only input to the 2026-09-02 release rule. */
       const humansWaitingByTable = await this.humansWaitingByTable(horseIdSet);
 
+      /* HORSES DO NOT QUEUE ANY MORE (Dan 2026-09-02): every horse row comes
+         out of every waiting list, on a full table as much as a sparse one.
+         Done ONCE for the whole floor, here, rather than once per table inside
+         the loop below - that was one round trip per table, 1,131 of them in
+         sequence, and on a saturated database it is what stretched a 30-second
+         cycle to 47 minutes. See the cycle-duration warning in finally. */
+      await this.pruneHorseWaitlist(horseIdSet);
+
+      /* WHERE EACH HORSE IS ALREADY REPRESENTING A CLUB, per scope. The seat
+         it holds decides its wallet for a second seat in the same union
+         (fn_seat_club_for_user_membership_unchecked, Dan 2026-08-21 "one club
+         at a time"), and the engine must reach the same answer the database
+         will, or it gates on one roll and the database debits another. The
+         EARLIEST open seat wins, exactly as the function orders by joined_at. */
+      const tableScope = (t: { club_id?: string | null; union_id?: string | null }): string =>
+        t.union_id ?? t.club_id ?? '';
+      const tableById = new Map(tables.map((t) => [t.id, t] as const));
+      const seatClubInScope = new Map<string, Map<string, string>>();
+      const seatJoinedAt = new Map<string, number>();
+      for (const seat of allActiveSeats) {
+        const t = tableById.get(seat.table_id);
+        if (!t || !seat.club_id) continue;
+        const scope = tableScope(t);
+        const joined = Date.parse(seat.joined_at ?? '') || Number.MAX_SAFE_INTEGER;
+        const key = `${seat.user_id}:${scope}`;
+        const prev = seatJoinedAt.get(key);
+        if (prev !== undefined && prev <= joined) continue;
+        seatJoinedAt.set(key, joined);
+        if (!seatClubInScope.has(seat.user_id)) seatClubInScope.set(seat.user_id, new Map());
+        seatClubInScope.get(seat.user_id)!.set(scope, seat.club_id);
+      }
+      const membership: SeatClubContext = {
+        eligibleClubsFor,
+        tableScope,
+        seatClubInScope,
+        memberships,
+        known: bankrollsLoaded,
+      };
+      // Horse/table pairs refused because the horse holds no membership that
+      // can pay for that table. Loud, like rollUnknown: the silent version of
+      // this number is what hid the Midway floor for a day.
+      let clubDropped = 0;
+
       const claimed = await this.claimOfferedSeats(
         tables,
         allActiveSeats,
         bankrolls,
         bankrollsLoaded,
-        horseIdSet
+        horseIdSet,
+        membership
       );
       if (claimed > 0) {
         console.log(`[HorseFleet] ${claimed} horse(s) answered a seat call`);
@@ -946,7 +1187,7 @@ export class HorseFleetManager {
             Date.now(),
             humansWaiting
           );
-          const { waitTarget, fill } = target;
+          const { fill } = target;
           let { seatTarget } = target;
           // Activity floor (see fleetBoost above). A full table is already at
           // max and cannot be lifted; this only ever helps a sparse one.
@@ -964,12 +1205,11 @@ export class HorseFleetManager {
           // rows to zero — including the case where the vibe target is below
           // max. Humans in the queue are never touched.
           /* HORSES DO NOT QUEUE ANY MORE (Dan 2026-09-02). waitTarget is 0 for
-             every table now, so every horse row comes out of every waiting
-             list, on a full table as much as a sparse one. A waiting list is
-             the signal that a real person wants in, and it has to mean only
-             that: a horse standing in the queue both delays that person and
-             makes "is a human waiting" unanswerable. */
-          await this.pruneHorseWaitlist(table.id, waitTarget, horseIdSet);
+             every table now, and the horse rows were cleared floor-wide above,
+             before this loop, in one round trip. A waiting list is the signal
+             that a real person wants in, and it has to mean only that: a horse
+             standing in the queue both delays that person and makes "is a
+             human waiting" unanswerable. */
           if (currentCount >= seatTarget) continue;
           let seatsNeeded = seatTarget - currentCount;
 
@@ -1008,6 +1248,16 @@ export class HorseFleetManager {
             // 64 of 210 horses were sitting across multiple stakes in 48
             // hours, one of them at 0.10/0.20 and 25.00/50.00 both.
             if (!stakeBandAllows(h.id, table.big_blind)) return false;
+            /* A HORSE PLAYS INSIDE ITS OWN CLUB (Dan 2026-09-02): only a horse
+               whose membership can pay for this table is a candidate for it.
+               `null` is "no such membership" and excludes; `undefined` is
+               "the map did not load" and lets the database decide, exactly as
+               the bankroll gate fails open below. See resolveSeatClub. */
+            const seatClub = this.resolveSeatClub(membership, table, h.id);
+            if (seatClub === null) {
+              clubDropped++;
+              return false;
+            }
             /**
              * BANKROLL GATE (Dan 2026-08-31). A stake band says which games a
              * horse has EARNED; the bankroll says which it can AFFORD. Both
@@ -1039,7 +1289,7 @@ export class HorseFleetManager {
                * lookup for a real table missed and every horse was refused,
                * at every table, every cycle. See the loader for the rest.
                */
-              const roll = bankrolls.get(`${table.club_id}:${h.id}`);
+              const roll = seatClub ? bankrolls.get(`${seatClub}:${h.id}`) : undefined;
               if (roll === undefined) {
                 rollUnknown++;
                 bankrollEvent('seat_fail_open_roll_unknown');
@@ -1114,9 +1364,6 @@ export class HorseFleetManager {
             continue;
           }
 
-          // Table's club_id for rake routing (fetched with the table list above)
-          const clubId = (table as any).club_id || JAQK_CLUB_ID;
-
           // Seat each horse at an ACTUAL empty seat
           let seated = 0;
           for (let i = 0; i < selectedHorses.length; i++) {
@@ -1125,7 +1372,19 @@ export class HorseFleetManager {
             // V8 BUY-IN VARIANCE, in ONE place. Shared with claimOfferedSeats,
             // so a horse answering a seat call brings exactly what it would
             // have brought to a seat it was seeded into. See computeHorseBuyIn.
-            const buyIn = this.computeHorseBuyIn(table, horse.id, bankrolls, bankrollsLoaded);
+            /* The wallet this seat draws from - the same club the candidate
+               filter gated on, the same club the buy-in is sized against, and
+               the club handed to atomic_table_buyin as p_club_id so the
+               database honours it rather than hashing its own choice. */
+            const seatClub = this.resolveSeatClub(membership, table, horse.id);
+            if (seatClub === null) continue;
+            const buyIn = this.computeHorseBuyIn(
+              table,
+              horse.id,
+              bankrolls,
+              bankrollsLoaded,
+              seatClub
+            );
             if (buyIn <= 0) continue;
 
             /**
@@ -1142,7 +1401,7 @@ export class HorseFleetManager {
              * value it could not read is the bug that emptied the cash floor.
              */
             if (bankrollsLoaded) {
-              const roll = bankrolls.get(`${table.club_id}:${horse.id}`);
+              const roll = seatClub ? bankrolls.get(`${seatClub}:${horse.id}`) : undefined;
               if (
                 roll !== undefined &&
                 !canOpenAnotherTable({
@@ -1163,7 +1422,7 @@ export class HorseFleetManager {
               seatNumber,
               buyIn,
               table.name,
-              clubId
+              seatClub ?? null
             );
             if (success) {
               seated++;
@@ -1200,6 +1459,12 @@ export class HorseFleetManager {
         console.warn(
           `[HorseFleet] bankroll gate skipped for ${rollUnknown} horse/table pairs - ` +
             `no membership row for that club. Seating proceeded (fail-open).`
+        );
+      }
+      if (clubDropped > 0) {
+        console.log(
+          `[HorseFleet] ${clubDropped} horse/table pairs excluded - the horse holds no ` +
+            `membership that can pay for that table (a horse plays inside its own club).`
         );
       }
 
@@ -1266,6 +1531,23 @@ export class HorseFleetManager {
     } catch (err: any) {
       reportError(err, 'HorseFleet.seedAllTables_error');
     } finally {
+      /* THE CADENCE IS THE FEATURE. "Every 30 seconds" was the claim in start()
+         and 47 minutes was the measurement (2026-09-02, engine log: cycle
+         began 18:08:35, "Seated 80" at 18:55:53) - one waitlist query per
+         table, sequentially, for 1,131 tables, on a saturated database. The
+         floor decayed for the whole gap and every hand-packed table drained
+         with nothing refilling it. A slow cycle is a bug in its own right, so
+         it announces itself. */
+      const cycleSeconds = Math.round((Date.now() - cycleStartedAt) / 1000);
+      if (this.overrunTicks > 0 || cycleSeconds > 60) {
+        console.warn(
+          `[HorseFleet] Seeding cycle took ${cycleSeconds}s and ${this.overrunTicks} 30s tick(s) ` +
+            'were dropped while it ran - the floor was not refilled for that long.'
+        );
+      } else {
+        console.log(`[HorseFleet] Seeding cycle took ${cycleSeconds}s`);
+      }
+      this.overrunTicks = 0;
       this.seeding = false;
     }
   }
@@ -1477,7 +1759,8 @@ export class HorseFleetManager {
     allActiveSeats: Array<{ user_id: string; table_id: string; seat_number: number }>,
     bankrolls: Map<string, number>,
     bankrollsLoaded: boolean,
-    horseIdSet: Set<string>
+    horseIdSet: Set<string>,
+    membership: SeatClubContext
   ): Promise<number> {
     let claimed = 0;
     try {
@@ -1524,7 +1807,17 @@ export class HorseFleetManager {
         }
         if (seatNumber < 0) continue;
 
-        const buyIn = this.computeHorseBuyIn(table, offer.user_id, bankrolls, bankrollsLoaded);
+        // Same wallet rule as the seeding loop: a horse answers a seat call
+        // with the club that can pay for it, or does not answer at all.
+        const seatClub = this.resolveSeatClub(membership, table, offer.user_id);
+        if (seatClub === null) continue;
+        const buyIn = this.computeHorseBuyIn(
+          table,
+          offer.user_id,
+          bankrolls,
+          bankrollsLoaded,
+          seatClub
+        );
         if (buyIn <= 0) continue;
 
         const ok = await this.seatHorse(
@@ -1533,7 +1826,7 @@ export class HorseFleetManager {
           seatNumber,
           buyIn,
           table.name,
-          table.club_id
+          seatClub ?? null
         );
         if (!ok) continue;
 
@@ -1561,7 +1854,8 @@ export class HorseFleetManager {
     table: any,
     horseId: string,
     bankrolls: Map<string, number>,
-    bankrollsLoaded: boolean
+    bankrollsLoaded: boolean,
+    seatClub: string | null | undefined
   ): number {
     const minB = Number(table.min_buy_in) || table.big_blind * 40;
     const maxB = Number(table.max_buy_in) || table.big_blind * 200;
@@ -1577,7 +1871,11 @@ export class HorseFleetManager {
        single seat - a 400 max is not an instruction to a horse with 3,000 to
        its name. */
     if (bankrollsLoaded) {
-      const roll = bankrolls.get(`${table.club_id}:${horseId}`) ?? 0;
+      /* Keyed on the club that will actually PAY (resolveSeatClub), never on
+         `table.club_id`: for a union table that is the union's own club row,
+         where no wallet ever lives, so the roll read as zero and every union
+         horse was sized a zero buy-in and skipped (2026-09-02). */
+      const roll = (seatClub ? bankrolls.get(`${seatClub}:${horseId}`) : undefined) ?? 0;
       const capped = bankrollBuyIn({
         bankroll: roll,
         desired: buyIn,
@@ -1602,7 +1900,7 @@ export class HorseFleetManager {
     seatNumber: number,
     buyIn: number,
     tableName: string,
-    clubId: string
+    clubId: string | null
   ): Promise<boolean> {
     try {
       // ROUND 34 FIX: Direct UPDATE on public.wallets is rejected by the
@@ -1613,14 +1911,18 @@ export class HorseFleetManager {
       // check, debit, seat insert, audit log, and tables.current_players
       // bump — and is whitelisted, so a single call replaces the manual
       // 4-step sequence below.
-      void clubId; // kept in caller signature for downstream use; RPC reads it
-      // from tables(id).club_id transitively.
+      // p_club_id is the wallet the engine gated and sized this seat on
+      // (resolveSeatClub). fn_seat_club_for_user honours it when the horse
+      // really is a member there, so the database debits the roll the engine
+      // reasoned about instead of hashing its own pick. Null when the
+      // membership map did not load: then the database decides alone.
       const { error: rpcErr } = await supabase.rpc('atomic_table_buyin', {
         p_user_id: horseId,
         p_table_id: tableId,
         p_seat_number: seatNumber,
         p_amount: buyIn,
         p_auto_rebuy: false,
+        p_club_id: clubId,
       });
 
       if (rpcErr) {

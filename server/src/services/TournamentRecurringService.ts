@@ -14,6 +14,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 import nodeCrypto from 'node:crypto';
@@ -297,6 +298,7 @@ const PAYOUT_STRUCTURES = {
 import {
   SPIN_TIERS,
   SPIN_STACKS,
+  SPIN_SEATS,
   SPIN_SPEED_LABELS,
   spinBlindsForLevel,
   type SpinSpeed,
@@ -1061,6 +1063,54 @@ export const MTT_PRESTART_MAX_HORSES = 24;
 export const MTT_PRESTART_MAX_STEP = 6;
 
 /**
+ * HOW LONG BEFORE ITS OWN START A RECURRING EVENT IS PUBLISHED.
+ *
+ * THIS IS THE NUMBER THAT WAS PAYING THE OVERLAY. The ramp above is built for
+ * a 72-hour window and adds at most MTT_PRESTART_MAX_STEP entrants per tick,
+ * no oftener than every 45 seconds (GameServer.lastMttRampAt). The two
+ * recurring creators handed it 60 SECONDS (createTournament) and 5 MINUTES
+ * (createXMTT), so the build had one tick and seven ticks respectively - a
+ * ceiling of 6 and 42 entrants no matter how many horses were free.
+ *
+ * Measured on 5 days of completed guaranteed events before this change:
+ *
+ *   published < 10 min ahead   299 events   58.5% overlaid   24,495.40 paid
+ *   published > 24 h ahead      38 events   10.5% overlaid      420.00 paid
+ *
+ * and the >24h group's pools OVERSHOOT their guarantees on average (1,920.77
+ * pool against 1,060.53 guaranteed). Same ramp, same fleet, same horses. The
+ * only difference is how long it had to run.
+ *
+ * It was never a capacity problem, which is the wrong diagnosis this replaces:
+ * 392 of the union's 584 horses carry a tournament lane and each may play four
+ * games, so ~1,568 tournament slots were sitting idle while the club paid
+ * overlay out of treasury.
+ *
+ * 30 MINUTES, not 72 hours. The ramp's window is a CEILING, not a target - the
+ * squared curve means an event published three days out sits at one entrant
+ * for most of that time, and the recurring board is a rolling one whose
+ * duplicate guard keys on "an instance of this name is already REGISTERING".
+ * Publishing a whole day ahead would hold the next instance of every recurring
+ * event behind the current one and thin the board. 30 minutes is 40 ticks =
+ * 240 entrants of headroom, against a largest current recurring requirement of
+ * 56 (Union Grand Championship, 2,500 guaranteed at a 45 prize share).
+ *
+ * It also makes the lobby honest. An event that appears 60 seconds before it
+ * starts cannot be joined by a human who is not already staring at the board.
+ */
+export const MTT_PUBLISH_LEAD_MS = 30 * 60 * 1000;
+
+/**
+ * How often one tournament may be ramped. Mirrors the throttle in
+ * GameServer.discoverTournaments (`now - lastRamp >= 45_000`), and exists here
+ * so mttPrestartHorseTarget can work out how many ticks are left before the
+ * gun without a database or a clock. If the GameServer throttle ever changes,
+ * change this with it - they are the same number and a test pins that the
+ * ramp can cover a guarantee inside the published lead.
+ */
+export const MTT_PRESTART_TICK_MS = 45 * 1000;
+
+/**
  * Does this format start on SEATS BOUGHT rather than on registrations?
  *
  * Deliberately BROADER than isSeatFirstFormat, and deliberately not merged
@@ -1387,8 +1437,20 @@ export function mttPrestartHorseTarget(opts: {
   // Already there (or ahead, if humans turned up). Nothing to do.
   if (onCurve <= current) return 0;
 
-  // Walk toward the curve rather than jumping to it. Still never past the
-  // curve, so the leave-a-seat and pool-cap guarantees above still hold.
+  /* Walk toward the curve rather than jumping to it. Still never past the
+     curve, so the leave-a-seat and pool-cap guarantees above still hold.
+
+     THE STEP IS NOT WHERE A GUARANTEE GETS COVERED (2026-09-02). An earlier
+     draft of the overlay fix let a guaranteed event step past
+     MTT_PRESTART_MAX_STEP once the clock ran short - "cover the promise, the
+     pacing matters less". The pinned test one screen up refused it, correctly:
+     at T-1s a 20,000 guarantee wants 107 entrants, and registerHorses buys in
+     ONE HORSE PER SEQUENTIAL RPC inside the same 5-second loop that decides
+     when every other tournament starts. That is the stall the cap was added to
+     prevent, and a guarantee is not worth re-introducing it.
+
+     A short clock is not something to out-run here. It is something not to
+     create: see MTT_PUBLISH_LEAD_MS. */
   return Math.min(onCurve, current + MTT_PRESTART_MAX_STEP);
 }
 
@@ -1510,7 +1572,15 @@ const SNG_CONFIGS: SNGConfig[] = SNG_BOARD_SHAPES.flatMap((shape) =>
  * SNGs are NOT this. They carry their own max_players (6 in production) and
  * must keep reading it from their config.
  */
-export const SPIN_SEATS = 3;
+/* RE-EXPORTED, NOT REDECLARED (2026-09-02).
+   This was `= 3` written out a second time, in a file that already imports
+   SPIN_TIERS / SPIN_STACKS / spinBlindsForLevel from the same spec. Two
+   sources of truth for the seat count is worse here than almost anywhere
+   else: the whole multiplier distribution is built on
+   E[multiplier] = seats x (1 - rake_rate), so a divergence would not look
+   like a bug, it would look like a slightly wrong house edge. Importers of
+   this name keep working. */
+export { SPIN_SEATS };
 
 /**
  * Seats the cash room keeps, per live cash table, before the Spin and
@@ -1858,7 +1928,14 @@ export class TournamentRecurringService {
     );
 
     // Tournament check: every 5 minutes
-    this.tournamentInterval = setInterval(() => this.checkAndLaunchTournaments(), 5 * 60 * 1000);
+    // THE FREEZE (Dan 2026-09-01) gates every launcher below: launching a
+    // game registers and seats horses, which is buy-ins - chip movement. A
+    // board slot that stays empty for five extra minutes refills on the first
+    // tick after the thaw.
+    this.tournamentInterval = setInterval(
+      () => (isMaintenanceFrozen() ? undefined : this.checkAndLaunchTournaments()),
+      5 * 60 * 1000
+    );
 
     /**
      * A BOARD IS REFILLED AS FAST AS IT DRAINS.
@@ -1884,11 +1961,20 @@ export class TournamentRecurringService {
      * overwhelmingly common case, and its BURST cap still bounds a cold start
      * to 12 creations per tick.
      */
-    this.sngInterval = setInterval(() => this.checkAndLaunchSNGs(), BOARD_REFILL_INTERVAL_MS);
-    this.spinInterval = setInterval(() => this.checkAndLaunchSpins(), BOARD_REFILL_INTERVAL_MS);
+    this.sngInterval = setInterval(
+      () => (isMaintenanceFrozen() ? undefined : this.checkAndLaunchSNGs()),
+      BOARD_REFILL_INTERVAL_MS
+    );
+    this.spinInterval = setInterval(
+      () => (isMaintenanceFrozen() ? undefined : this.checkAndLaunchSpins()),
+      BOARD_REFILL_INTERVAL_MS
+    );
 
     // XMTT check: every 5 minutes
-    this.xmttInterval = setInterval(() => this.checkAndLaunchXMTTs(), 5 * 60 * 1000);
+    this.xmttInterval = setInterval(
+      () => (isMaintenanceFrozen() ? undefined : this.checkAndLaunchXMTTs()),
+      5 * 60 * 1000
+    );
 
     // Run checks immediately on start
     this.checkAndLaunchTournaments();
@@ -2470,7 +2556,10 @@ export class TournamentRecurringService {
     hostClubId: string
   ): Promise<{ tournamentId: string | null; registered: number }> {
     try {
-      const startTime = new Date(Date.now() + 5 * 60 * 1000);
+      // Published MTT_PUBLISH_LEAD_MS ahead so the pre-start ramp has a window
+      // to build the field in. At the old 5 minutes it had 7 ticks (42
+      // entrants) and this event needs 56 to cover its guarantee.
+      const startTime = new Date(Date.now() + MTT_PUBLISH_LEAD_MS);
       const dbGameType = dbGameTypeFor(config.gameVariant, 'createXMTT');
 
       const isBountyType =
@@ -2695,9 +2784,13 @@ export class TournamentRecurringService {
     config: TournamentConfig
   ): Promise<{ tournamentId: string | null; registered: number }> {
     try {
-      // MTTs keep their own 60s lead-in. OPEN_TABLE_WAIT_MS is the seat-held
-      // wait for spins and SNGs only - an MTT is a scheduled event by nature.
-      const startTime = new Date(Date.now() + 60 * 1000);
+      // An MTT is a scheduled event by nature, so it gets a real publication
+      // lead rather than the seat-held wait spins and SNGs use
+      // (OPEN_TABLE_WAIT_MS). This was 60 seconds, which gave the pre-start
+      // ramp exactly ONE tick - a hard ceiling of MTT_PRESTART_MAX_STEP
+      // entrants - and is why guaranteed recurring events were finishing their
+      // registration under-funded and paying overlay. See MTT_PUBLISH_LEAD_MS.
+      const startTime = new Date(Date.now() + MTT_PUBLISH_LEAD_MS);
       const dbGameType = dbGameTypeFor(config.gameVariant, 'createMTT');
 
       const isBountyType =
@@ -3420,20 +3513,82 @@ export class TournamentRecurringService {
    * refusing to seat on an unreadable page would starve every board on the
    * platform, which is a worse failure than the one being fixed.
    */
+  /**
+   * Who may be registered into this tournament's field.
+   *
+   * A CLUB'S EVENT DRAWS FROM ITS CLUB. A UNION'S EVENT DRAWS FROM ITS UNION
+   * (2026-09-02). The membership rule added on 2026-09-01 - correctly, to stop
+   * Deep Stack Society's standalone population wandering into the union's
+   * schedule - resolved every tournament to the single `club_id` row it hangs
+   * off. That is right for a standalone club and WRONG for a union event,
+   * because a union event hangs off the union's OWN club row while the horses
+   * live in the union's MEMBER clubs.
+   *
+   * Measured on Midway Union the day this was written:
+   *
+   *   Midway Union club row          323 horses
+   *   Club JAQK + SHARK CLUB         584 horses  (392 tournament-lane)
+   *
+   *   candidates for a union event, host-club rule ......  28
+   *   candidates for a union event, union-wide rule ..... 203
+   *
+   * Twenty-eight. That is the pool the entire union schedule was drawing from,
+   * and it is why `registerHorses found no candidates` was the engine's most
+   * frequent tournament log line while 392 tournament-lane horses sat idle -
+   * and, alongside the publication-lead bug, why guaranteed events were closing
+   * registration under-funded and paying overlay out of treasury.
+   *
+   * The isolation the 2026-09-01 rule exists to enforce is UNCHANGED: a
+   * standalone club (`union_id IS NULL`, which is what Deep Stack Society is
+   * and is meant to be) still resolves to exactly its own membership, because
+   * the union branch below is only taken when the tournament carries a union.
+   *
+   * FAILS OPEN on an unreadable page, like every other gate in this file: a
+   * partial read is not an empty club, and refusing to register on a failed
+   * read starves every event on the platform.
+   */
   private async clubMemberIdsForTournament(tournamentId: string): Promise<Set<string> | null> {
     const hostClub = await supabase
       .from('tournaments')
-      .select('club_id')
+      .select('club_id, union_id')
       .eq('id', tournamentId)
       .maybeSingle();
     const hostClubId = (hostClub.data as { club_id?: string } | null)?.club_id;
+    const unionId = (hostClub.data as { union_id?: string } | null)?.union_id;
     if (!hostClubId) return null;
+
+    /* The clubs whose members may enter. For a standalone club that is the one
+       host club and nothing else. For a union event it is every club in the
+       union, plus the union's own club row (which holds members of its own and
+       is the row the event itself hangs off). */
+    let clubIds: string[] = [hostClubId];
+    if (unionId) {
+      const [owned, joined] = await Promise.all([
+        supabase.from('clubs').select('id').eq('union_id', unionId),
+        supabase.from('union_clubs').select('club_id').eq('union_id', unionId),
+      ]);
+      // An unreadable union map must not silently narrow the pool back to the
+      // host club - that is the bug being fixed. Decline the pass instead and
+      // let the caller fail open.
+      if (owned.error || joined.error) return null;
+      const ids = new Set<string>([hostClubId]);
+      for (const r of owned.data ?? []) {
+        const id = (r as { id?: string }).id;
+        if (id) ids.add(id);
+      }
+      for (const r of joined.data ?? []) {
+        const id = (r as { club_id?: string }).club_id;
+        if (id) ids.add(id);
+      }
+      clubIds = [...ids];
+    }
+
     const memberPage = await fetchAllRows<{ user_id: string }>(
       (cursor, want) => {
         let q = supabase
           .from('club_members')
           .select('user_id')
-          .eq('club_id', hostClubId)
+          .in('club_id', clubIds)
           .order('user_id', { ascending: true })
           .limit(want);
         if (cursor) q = q.gt('user_id', cursor);
@@ -4509,9 +4664,15 @@ export class TournamentRecurringService {
       if (!horses || horses.length === 0) {
         // Say WHY the pool came up empty — "added NONE" with no numbers is
         // how this starved silently for a day.
+        /* clubDropped was counted here and never printed, so the single
+           largest exclusion was invisible: the line read "fleet 1000,
+           at-capacity 215, lane 108" and left the reader to conclude the other
+           677 simply did not exist. Print every bucket - the numbers only help
+           if they add up. */
         console.warn(
           `[TournamentRecurring] registerHorses found no candidates: fleet ${poolAll.length}, ` +
-            `at-capacity/entered ${busyDropped}, lane/window-excluded ${laneDropped}`
+            `at-capacity/entered ${busyDropped}, not-a-club-member ${clubDropped}, ` +
+            `lane/window-excluded ${laneDropped}`
         );
         return 0;
       }

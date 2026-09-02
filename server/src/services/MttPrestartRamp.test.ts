@@ -18,6 +18,8 @@ import {
   MTT_PRESTART_RAMP_MS,
   MTT_PRESTART_MAX_HORSES,
   MTT_PRESTART_MAX_STEP,
+  MTT_PRESTART_TICK_MS,
+  MTT_PUBLISH_LEAD_MS,
 } from './TournamentRecurringService.js';
 
 const MIN = 60 * 1000;
@@ -346,5 +348,136 @@ describe('a GUARANTEE decides the field, not the default cap', () => {
       deepStack({ msUntilStart: 6 * 24 * 60 * 60 * 1000, currentPlayers: 0 })
     );
     expect(ask).toBe(0);
+  });
+});
+
+/**
+ * THE PUBLICATION LEAD IS PART OF THE RAMP (2026-09-02).
+ *
+ * The ramp was never broken. It was being handed 60 seconds (createTournament)
+ * or 5 minutes (createXMTT) to do a job sized for 72 hours, and a per-tick step
+ * of MTT_PRESTART_MAX_STEP every MTT_PRESTART_TICK_MS turns that into a hard
+ * entrant ceiling that no amount of free horses can lift.
+ *
+ * Measured over 5 days of completed guaranteed events: 299 published under ten
+ * minutes ahead were overlaid 58.5% of the time for 24,495.40, while the 38
+ * published more than a day ahead were overlaid 10.5% of the time for 420.00 -
+ * same ramp, same fleet.
+ *
+ * These replay the ramp tick by tick rather than asserting on one call, because
+ * the bug only exists across ticks: every individual call was returning exactly
+ * what it was asked for.
+ */
+const replayRamp = (leadMs: number, ev: { gtd: number; prizeShare: number; seats: number }) => {
+  let current = 0;
+  let pool = 0;
+  for (let t = leadMs; t > 0; t -= MTT_PRESTART_TICK_MS) {
+    const ask = mttPrestartHorseTarget({
+      msUntilStart: t,
+      maxPlayers: ev.seats,
+      variant: 'freezeout',
+      currentPlayers: current,
+      guaranteedPrize: ev.gtd,
+      prizePool: pool,
+      buyInPrizeShare: ev.prizeShare,
+    });
+    if (ask <= current) continue;
+    pool += (ask - current) * ev.prizeShare;
+    current = ask;
+  }
+  return { entrants: current, pool };
+};
+
+/* The largest guarantee on the recurring board: Union Grand Championship
+   (NLH), 2,500 guaranteed, 45 to the prize side, 200 seats. It paid 910.00 of
+   overlay on 2026-08-30 having been published 4.8 minutes before its own gun. */
+const GRAND = { gtd: 2500, prizeShare: 45, seats: 200 };
+
+describe('mttPrestartHorseTarget - the publication lead', () => {
+  it('covers the biggest recurring guarantee within MTT_PUBLISH_LEAD_MS', () => {
+    const { pool } = replayRamp(MTT_PUBLISH_LEAD_MS, GRAND);
+    expect(pool).toBeGreaterThanOrEqual(GRAND.gtd);
+  });
+
+  it('could not cover it at the 60 second lead this replaces', () => {
+    /* The regression itself. One tick, MTT_PRESTART_MAX_STEP entrants, and a
+       guarantee needing 56. If this ever starts passing, the step cap or the
+       tick interval moved and the lead should be re-derived, not the test. */
+    const { pool } = replayRamp(60 * 1000, GRAND);
+    expect(pool).toBeLessThan(GRAND.gtd);
+  });
+
+  it('leaves the pacing alone when there is time - six a tick, as before', () => {
+    /* Far enough out that the curve, not the guarantee, is the binding
+       constraint: the step must still be the honest MTT_PRESTART_MAX_STEP. */
+    const ask = mttPrestartHorseTarget({
+      msUntilStart: MTT_PUBLISH_LEAD_MS,
+      maxPlayers: GRAND.seats,
+      variant: 'freezeout',
+      currentPlayers: 0,
+      guaranteedPrize: GRAND.gtd,
+      prizePool: 0,
+      buyInPrizeShare: GRAND.prizeShare,
+    });
+    expect(ask).toBe(MTT_PRESTART_MAX_STEP);
+  });
+});
+
+describe('mttPrestartHorseTarget - the step cap survives a guarantee', () => {
+  /**
+   * The first draft of the lead fix ALSO let a guaranteed event step past
+   * MTT_PRESTART_MAX_STEP when the clock ran short. "one tick is a STEP, never
+   * a jump to the goal" above caught it, and it was right to: registerHorses
+   * buys in one horse per sequential RPC inside the same 5-second loop that
+   * starts every other tournament, so a 107-entrant jump is a platform stall,
+   * not a funded guarantee. These pin that the cap holds under a guarantee at
+   * every distance, so nobody re-derives that shortcut from the overlay
+   * numbers in the commit message.
+   */
+  it('holds at MTT_PRESTART_MAX_STEP however short the clock and however big the guarantee', () => {
+    for (const sec of [1, 5, 30, 60, 120, 600]) {
+      const ask = mttPrestartHorseTarget({
+        msUntilStart: sec * 1000,
+        maxPlayers: GRAND.seats,
+        variant: 'freezeout',
+        currentPlayers: 0,
+        guaranteedPrize: 250000,
+        prizePool: 0,
+        buyInPrizeShare: GRAND.prizeShare,
+      });
+      expect(ask).toBeLessThanOrEqual(MTT_PRESTART_MAX_STEP);
+    }
+  });
+
+  it('still never asks past seats - 1', () => {
+    for (let sec = 1; sec <= 120; sec++) {
+      expect(
+        mttPrestartHorseTarget({
+          msUntilStart: sec * 1000,
+          maxPlayers: 12,
+          variant: 'freezeout',
+          currentPlayers: 0,
+          guaranteedPrize: 100000,
+          prizePool: 0,
+          buyInPrizeShare: 1,
+        })
+      ).toBeLessThanOrEqual(11);
+    }
+  });
+
+  it('is still silent for seat-first formats, guarantee or not', () => {
+    for (const variant of ['spin', 'sng']) {
+      expect(
+        mttPrestartHorseTarget({
+          msUntilStart: 30 * 1000,
+          maxPlayers: 3,
+          variant,
+          currentPlayers: 0,
+          guaranteedPrize: 5000,
+          prizePool: 0,
+          buyInPrizeShare: 10,
+        })
+      ).toBe(0);
+    }
   });
 });

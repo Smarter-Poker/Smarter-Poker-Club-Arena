@@ -28,7 +28,9 @@ import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import haptic from '../services/HapticService';
-import GameCreationActions from '../components/club/GameCreationActions';
+import GameCreationActions, {
+  type GameCreationTarget,
+} from '../components/club/GameCreationActions';
 import ClubLaunchProgress, { type ClubLaunchTask } from '../components/club/ClubLaunchProgress';
 import ClubOpeningWizard from '../components/club/ClubOpeningWizard';
 import { clubOpeningSetupService } from '../services/ClubOpeningSetupService';
@@ -95,6 +97,7 @@ import {
 } from '../components/lobby/lobbyViewPrefs';
 import { useUserStore } from '../stores/useUserStore';
 import ClubLobbyCommandTop from '../components/lobby/ClubLobbyCommandTop';
+import MaintenanceBreakBanner from '../components/common/MaintenanceBreakBanner';
 import HouseAdCard from '../components/ads/HouseAdCard';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
@@ -480,6 +483,38 @@ const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
   { key: 'SPIN', label: 'SPINS' },
   { key: 'SNG', label: 'HEADS UP' },
 ];
+
+/**
+ * THE CREATE BUTTON BELONGS TO THE TAB YOU ARE LOOKING AT (Dan 2026-09-02).
+ *
+ * "THE ADD TABLE BUTTONS SHOULD NEVER DISPLAY ON THE ALL FIELD AND THERE
+ * SHOULD ONLY BE ONE BUTTON, AND THEY SHOULD BE INDEPENDENT TO THE FIELD. MTT
+ * RECEIVES THE + EVENT BUTTON. NLH RECEIVES THE + ADD TABLE BUTTON, PLO
+ * RECEIVES THE + ADD TABLE BUTTON, SPINS RECEIVES THE + SPINS BUTTON AND HEADS
+ * UP RECEIVES THE + SIT N GO BUTTON."
+ *
+ * LIMIT is the one tab Dan did not name. It is a cash board - it lists the
+ * same `tables` rows NLH and PLO do, and `table-management?create=table` is
+ * the screen that builds them - so Add Table is the only creation it could
+ * mean, and giving it nothing would be the one tab with a missing control.
+ * Named explicitly rather than caught by a default so that a game type added
+ * later shows NO button until somebody decides which one it earns, instead of
+ * silently inheriting a cash table.
+ */
+const CREATE_TARGET_FOR_TAB: Record<GameType, GameCreationTarget | null> = {
+  ALL: null,
+  MTT: 'event',
+  HOLDEM: 'table',
+  OMAHA: 'table',
+  LIMIT: 'table',
+  SPIN: 'spin',
+  SNG: 'sng',
+  /* MIXED is in the GameType union but has no tab in GAME_TYPE_TABS, so this
+     entry is unreachable today. It is written as null rather than 'table'
+     because if a Mixed board is ever surfaced, no button is the honest
+     starting point - somebody chooses what it creates, deliberately. */
+  MIXED: null,
+};
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'recommended', label: 'Recommended' },
@@ -976,6 +1011,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     if (!clubId) return;
     let isMounted = true;
     let playingRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let occupancyTimer: ReturnType<typeof setInterval> | null = null;
 
     const setupRealtime = async () => {
       const resolvedId = await resolveClubUUID(clubId);
@@ -1088,10 +1124,18 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          be approximated by whichever card happened to update. Bursts (a table
          opening or balancing several seats) collapse to one authoritative
          recount. */
+      /* ONE NUMBER, ONE LIGHT CALL (2026-09-02). This re-called get_club_home -
+         the entire lobby payload, 1.8 s mean under RLS - every 250 ms of table
+         churn, just to read `players_playing`. With 1,131 open cash tables
+         changing on every seat transition that was ~70 calls a minute around
+         the clock and 26% of all database time on the platform, and the
+         database it saturated is the one every hand and buy-in queues behind.
+         get_club_players_playing answers the same question in ~50 ms, and two
+         seconds of debounce turns a burst of seat events into one recount. */
       const refreshScopedPlaying = () => {
         if (playingRefreshTimer) clearTimeout(playingRefreshTimer);
         playingRefreshTimer = setTimeout(async () => {
-          const { data, error } = await supabase.rpc('get_club_home', {
+          const { data, error } = await supabase.rpc('get_club_players_playing', {
             p_club_key: resolvedId,
           });
           if (!isMounted) return;
@@ -1099,9 +1143,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             reportError(error, 'ClubHomePage.players_playing_realtime_refresh_failed');
             return;
           }
-          const next = Number((data as { players_playing?: unknown } | null)?.players_playing);
+          const next = Number(data);
           if (Number.isFinite(next)) setPlayersPlaying(next);
-        }, 250);
+        }, 2_000);
       };
 
       const handleTableChange = (payload: any) => {
@@ -1239,6 +1283,83 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
        * channel is live again. `firstSubscribe` keeps the initial SUBSCRIBED
        * from firing a second fetch on top of the one already in flight.
        */
+      /* THE LOBBY DOES NOT DEPEND ON REALTIME TO BE RIGHT (Dan 2026-09-02:
+         "FIX THE REAL TIME CONNECTION FOR THE MIDWAY UNION, CLUB JAQK AND
+         SHARK CLUB ... ANY AND ALL NEW CLUBS ... MUST HAVE ALL REAL TIME
+         CHANNELS AND FUNCTIONALITY WIRED INTO THEM FROM THE START").
+
+         The postgres_changes stream above is one decoder reading every byte of
+         WAL this platform writes - measured 2.1 MB/s, ~180 GB a day at 220k
+         hands - and its replication slot was 46 MB behind and growing (124 MB
+         four minutes later). Every seat-count tick the lobby receives through
+         it arrives a minute or more late, for every club alike, and there is
+         no per-club switch anywhere that could make one club's stream fresher
+         than another's. So the cards stop trusting the stream for occupancy:
+         every 20 seconds, while the tab is visible, the page re-reads the four
+         columns that change - id, current_players, status, max_players - for
+         the same scope the fetch uses (one indexed query, ~100 ms), patches
+         them onto the rows on screen, and asks for a full reload only when an
+         OCCUPIED table it has never seen turns up (a new game) or a known one
+         has closed. The stream still delivers the instant case when it is
+         healthy; this is the floor under it, and it is wired into every club
+         by construction because it is the lobby's own behaviour, not a
+         per-club setting. */
+      const pollOccupancy = async () => {
+        if (!isMounted) return;
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+        const q = supabase
+          .from('tables')
+          .select('id, current_players, status, max_players, club_id, union_id, is_private');
+        applyClubScope(q, rtScope);
+        const { data, error } = await q
+          .eq('is_deleted', false)
+          .not('status', 'in', '("closed","deleted")')
+          .is('tournament_id', null)
+          .order('current_players', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(QUERY_LIMITS.LIST);
+        if (!isMounted) return;
+        if (error) {
+          reportError(error, 'ClubHomePage.occupancy_poll_failed');
+          return;
+        }
+        const rows = (data ?? []) as Array<{
+          id: string;
+          current_players: number | null;
+          status: string | null;
+          max_players: number | null;
+        }>;
+        const fresh = new Map(rows.map((r) => [String(r.id), r]));
+        let needsReload = false;
+        setTables((prev) => {
+          const known = new Set(prev.map((t) => String(t.id)));
+          for (const r of rows) {
+            if (!known.has(String(r.id)) && Number(r.current_players ?? 0) > 0) needsReload = true;
+          }
+          let changed = false;
+          const next = prev.map((t) => {
+            const r = fresh.get(String(t.id));
+            if (!r) return t;
+            const cp = Number(r.current_players ?? 0);
+            if (
+              Number((t as any).current_players ?? 0) === cp &&
+              (t as any).status === r.status &&
+              Number((t as any).max_players ?? 0) === Number(r.max_players ?? 0)
+            ) {
+              return t;
+            }
+            changed = true;
+            return { ...t, current_players: cp, status: r.status, max_players: r.max_players };
+          });
+          return changed ? (next as typeof prev) : prev;
+        });
+        if (needsReload) void loadClubData(() => isMounted);
+        refreshScopedPlaying();
+      };
+      occupancyTimer = setInterval(() => {
+        void pollOccupancy();
+      }, 20_000);
+
       let firstSubscribe = true;
       channel.subscribe((status: string, err?: Error) => {
         /* Every other handler in this effect checks isMounted; this one did
@@ -1268,6 +1389,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     return () => {
       isMounted = false;
       if (playingRefreshTimer) clearTimeout(playingRefreshTimer);
+      if (occupancyTimer) clearInterval(occupancyTimer);
       // Drop the factory FIRST. Removing the channel while its factory is
       // still registered is an invitation for the health monitor to rebuild
       // the one we are deliberately tearing down.
@@ -2366,6 +2488,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
            The group form below is what `.in()` builds for itself. */
         .not('status', 'in', '("closed","deleted")')
         .is('tournament_id', null)
+        /* A LIVE GAME MUST NEVER BE TRUNCATED AWAY (2026-09-02). See the note
+           on TableService.getClubTables: ordering by created_at alone under
+           the 200-row cap hid 41 of Deep Stack Society's 51 running tables,
+           and this page then ran every filter tab client-side over the
+           truncated list, so PLO/NLH/etc each read as an empty club. */
+        .order('current_players', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(QUERY_LIMITS.LIST);
 
@@ -4118,16 +4246,32 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               </button>
             </div>
           ) : (
+            /* LIVE FOR EVERY VIEWER, NOT JUST STAFF (Dan 2026-09-02).
+               The second club message on a phone - <ClubOwnerMessage>'s
+               `.lobby-top__house-welcome` trigger - is hidden below 900px now
+               (ClubHomePage.css), and that trigger was the only way a player
+               who cannot edit could open the message in full or reach the
+               club's announcements from the lobby. This strip carries both
+               jobs on a phone: staff still open the inline editor, everyone
+               else goes where the rail's panel would have sent them. Removing
+               a duplicate must not quietly remove a destination. */
             <button
               type="button"
               className="club-mobile-owner-message__copy"
-              disabled={!noticeEditable}
               onClick={() => {
-                if (!noticeEditable) return;
+                if (!noticeEditable) {
+                  navigate(`/clubs/${clubId}/announcements`);
+                  return;
+                }
                 setNoticeDraft(club.lobby_message || '');
                 setIsEditingNotice(true);
               }}
               title={club.lobby_message || 'Add A One-Line Club Message'}
+              aria-label={
+                noticeEditable
+                  ? `Club Message: ${club.lobby_message?.trim() || 'None Set'}. Open To Edit`
+                  : `Club Message: ${club.lobby_message?.trim() || 'None Set'}. Open Club Announcements`
+              }
             >
               {club.lobby_message?.trim() || 'Add A One-Line Club Message'}
             </button>
@@ -4484,6 +4628,11 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         data-opening-checklist={showLaunchChecklist || undefined}
         aria-label={`${club.name} Game Lobby`}
       >
+        {/* The lobby must tell the same truth as the felt during the :55
+            maintenance break (Dan 2026-09-01): without this it shows live
+            counts and working Join buttons for a platform that is
+            deliberately standing still. Renders nothing outside a break. */}
+        <MaintenanceBreakBanner />
         <ClubLobbyCommandTop
           welcome={
             <div
@@ -4561,6 +4710,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     <GameCreationActions
                       managementPath={`/clubs/${clubId}/table-management`}
                       compact
+                      only={CREATE_TARGET_FOR_TAB[gameType]}
+                      desktopOnly
                       onNavigate={(path) => navigate(path)}
                     />
                   )}

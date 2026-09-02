@@ -14,6 +14,7 @@
  */
 
 import { supabase, atomicCashout } from './supabase.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 
@@ -63,6 +64,9 @@ export class HorseLifecycleManager {
     // freeze event. (This module's own comment at the double-refund fix
     // records the same hazard.)
     this.intervalHandle = setInterval(() => {
+      // THE FREEZE (Dan 2026-09-01): the lifecycle pass stands horses up and
+      // reaps seats. Nothing it does cannot wait out the break.
+      if (isMaintenanceFrozen()) return;
       if (this.cycleRunning) return;
       this.cycleRunning = true;
       void Promise.resolve(this.performMaintenanceCycle()).finally(() => {

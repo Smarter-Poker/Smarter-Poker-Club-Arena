@@ -178,6 +178,20 @@ Baseline immediately after apply, widened detector, trailing 6h (engine fix
 not yet deployed): 13 of 2,179 games minted 5,615 chips, worst +1000,
 `lost_final_write 0`, `chips_moved_in_play 13`.
 
+## Companion migration - grants only, applied
+
+`20260902183000_conservation_definers_stay_closed` (production version
+`20260902183255`). `scripts/ci/check-definer-authorization.mjs` blocked the
+push: it reads a branch's migrations and treats a declared SECURITY DEFINER
+writer as browser-reachable until a REVOKE naming PUBLIC, anon and
+authenticated closes it. Production's ACL for both functions was read back
+before the file was written and both were already `{postgres, service_role}`
+only - `CREATE OR REPLACE FUNCTION` preserves the ACL, so the first migration
+opened nothing. The companion states the REVOKE/GRANT in the repo so the
+declaration carries its own authorization. Applying it changed nothing
+(ACL re-read after apply: identical). GRANT/REVOKE are not in
+`pgrst_ddl_watch`, so no schema-cache reload was triggered.
+
 ## Post-apply evidence for the verifier
 
 The engine half deploys with the merge (Hetzner auto-deploy on `server/**`).

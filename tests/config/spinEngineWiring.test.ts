@@ -234,23 +234,29 @@ describe('the draw sets the prize and the payout shape - never the stack', () =>
     // The level timer and table creation read the in-memory object; a
     // DB-only write would leave this start running placeholder blinds.
     //
-    // PIN MOVED 2026-09-02, because the mechanism was replaced and this pin
-    // was not moved with it - so `main` sat red on a required check.
+    // PIN MOVED 2026-09-02, because the mechanism was replaced and this pin was
+    // not moved with it - so `main` sat red on a required check. Resolved here
+    // as the UNION of two independent fixes for the same red main; neither side
+    // is dropped.
     //
-    // It used to require the per-field copy `tournament.blind_structure =
-    // spinBlinds`. That hand-written list of field names copied FOUR of the
-    // patch's five fields: it dropped `payout_structure`, so a started Spin's
-    // cache kept the pre-draw winner-take-all placeholder for the life of the
-    // game and `recalculateEliminatedPrizes` topped up eliminated players
-    // against a different structure than the one that had paid them - 80/20
-    // versus 100/0 on a 10x.
+    // The direct `tournament.blind_structure = spinBlinds` assignment was
+    // refactored into `applySpinDrawPatch(spinRowPatch, tournament, cache)`,
+    // which generically copies EVERY key of spinRowPatch (including
+    // blind_structure) onto both in-memory targets. `blind_structure:
+    // spinBlinds` is still in the patch object (pinned by the test above), and
+    // SpinDrawIntegrity.guard.test.ts pins that applySpinDrawPatch copies every
+    // key. Together they are the same guarantee.
     //
-    // `applySpinDrawPatch` copies EVERY key of the patch onto both the
-    // in-memory tournament and the cache, so the patch is the only list there
-    // is and a sixth field is synced by construction. Asserting the old string
-    // would demand the bug back; the source comment beside the call says in
-    // as many words "Never re-introduce a per-field copy here".
-    expect(engine).toMatch(/applySpinDrawPatch\(/);
+    // WHY THE OLD STRING IS NOT SIMPLY RE-DEMANDED: the hand-written per-field
+    // copy it pinned took FOUR of the patch's five fields. It dropped
+    // `payout_structure`, so a started Spin's cache kept the pre-draw
+    // winner-take-all placeholder for the life of the game and
+    // `recalculateEliminatedPrizes` topped up eliminated players against a
+    // structure that had not paid them - 80/20 versus 100/0 on a 10x. Asserting
+    // the old string would demand that bug back, and the source comment beside
+    // the call says in as many words "Never re-introduce a per-field copy here".
+    expect(engine).toMatch(/applySpinDrawPatch\s*\(/);
+    expect(engine).toMatch(/applySpinDrawPatch\([^)]*spinRowPatch/);
     expect(engine).toMatch(/import \{ applySpinDrawPatch \} from '\.\/spinDrawSync\.js'/);
     // Both copies reached, not just the in-memory object.
     expect(engine).toMatch(/applySpinDrawPatch\([\s\S]{0,400}?this\.tournamentCache/);

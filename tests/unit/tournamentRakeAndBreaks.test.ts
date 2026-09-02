@@ -222,7 +222,12 @@ describe('neither reaper treats a deliberately paused table as a zombie', () => 
       'utf8'
     );
     const fn = ENGINE.slice(ENGINE.indexOf('isPausedByDesign(): boolean'));
-    expect(fn).toMatch(/handForHandPaused \|\| this\.tableFSM\.state === 'paused'/);
+    /* #2695 (2026-09-02): the maintenance break is a pause by design too -
+       1204 hands were dealt inside one because this predicate did not say so.
+       The pin moved with the mechanism; it now requires all three authorities. */
+    expect(fn).toMatch(
+      /this\.handForHandPaused \|\| this\.maintenancePaused \|\| this\.tableFSM\.state === 'paused'/
+    );
   });
 });
 

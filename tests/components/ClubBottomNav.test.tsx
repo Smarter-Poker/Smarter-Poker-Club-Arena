@@ -113,16 +113,24 @@ describe('ClubBottomNav approved footer contract', () => {
     expect(labels()).toEqual(LABELS);
   });
 
-  it('uses the existing club-scoped destinations when a club is known', async () => {
+  /* UPDATED 2026-09-02 with the change it pins. This expected `/marketplace`
+     and `/stats` bare, which was the footer's real behaviour and is now a bug
+     by Dan's rule: "IF YOU ARE A PART OF MULTIPLE CLUBS (OR UNIONS) IT SHOULD
+     ALWAYS BE OPEN TO THAT SPECIFIC CLUB." Those two cells have no
+     club-scoped ROUTE, so they were left global while the four around them
+     carried the club — the same footer both keeping and dropping the club
+     depending on which cell you pressed. Both pages read `?club=`, so the
+     club now rides in the query. See tests/the-menu-stays-in-the-club.law.test.ts. */
+  it('carries the known club on every destination, by path or by query', async () => {
     await renderAt('/', CLUB);
 
     expect(hrefs()).toEqual([
       `/clubs/${CLUB}/settings`,
       `/clubs/${CLUB}/members`,
       `/clubs/${CLUB}/cashier`,
-      '/marketplace',
+      `/marketplace?club=${CLUB}`,
       `/clubs/${CLUB}/data`,
-      '/stats',
+      `/stats?club=${CLUB}`,
     ]);
   });
 

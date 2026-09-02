@@ -14,6 +14,7 @@ import {
   readCachedQuickLinkClubs,
   resolveTargetClub,
 } from '../../utils/clubQuickLink';
+import { withClubContext } from '../../utils/clubScopedPath';
 import { clubIdFromPath } from './clubIdFromPath';
 import { activeTabForPath, type TabKey } from './clubBottomNavTabs';
 import styles from './ClubBottomNav.module.css';
@@ -70,9 +71,18 @@ export default function ClubBottomNav({ clubId }: ClubBottomNavProps) {
       { key: 'profile', label: 'Settings', to: clubRoot ? `${clubRoot}/settings` : '/settings' },
       { key: 'players', label: 'Players', to: clubRoot ? `${clubRoot}/members` : '/players' },
       { key: 'cashier', label: 'Cashier', to: clubRoot ? `${clubRoot}/cashier` : '/cashier' },
-      { key: 'marketplace', label: 'Market', to: '/marketplace' },
+      /* Market and Stats have no club-scoped ROUTE, so they used to be
+         hardcoded global while the four cells around them were club-aware —
+         the same footer both keeping and dropping the club depending on which
+         cell you pressed. Both pages read `?club=`, and `resolvedClubId` was
+         already sitting right here; `withClubContext` supplies it. */
+      {
+        key: 'marketplace',
+        label: 'Market',
+        to: withClubContext('/marketplace', resolvedClubId),
+      },
       { key: 'data', label: 'Data', to: clubRoot ? `${clubRoot}/data` : '/data' },
-      { key: 'stats', label: 'Stats', to: '/stats' },
+      { key: 'stats', label: 'Stats', to: withClubContext('/stats', resolvedClubId) },
     ];
   }, [resolvedClubId]);
 

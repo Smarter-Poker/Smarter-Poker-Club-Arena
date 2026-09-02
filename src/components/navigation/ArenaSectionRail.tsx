@@ -3,14 +3,26 @@ import {
   getActiveArenaSectionPath,
   getArenaSectionNavigation,
 } from '../../config/arenaSectionNavigation';
+import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
+import { withClubContext } from '../../utils/clubScopedPath';
 import styles from './ArenaSectionRail.module.css';
 
 export default function ArenaSectionRail() {
   const location = useLocation();
+  /* This is the rail in Dan's 2026-09-02 screenshot — PLAY RECORDS / OVERVIEW
+     / TOURNAMENTS / RESULTS / HANDS / SESSIONS / LEADERBOARDS. Its items are
+     module-level constants with no club in scope, so every tab was a one-way
+     door out of the club: arrive at Leaderboards carrying Deep Stack Society,
+     click Sessions, and the club is gone. Reading the workspace here keeps
+     the whole strip inside whichever club the current URL names. */
+  const { routeClubId } = useClubWorkspace();
   const section = getArenaSectionNavigation(location.pathname);
 
   if (!section) return null;
 
+  /* Active state is matched on the BARE path, before the club is stamped —
+     `getActiveArenaSectionPath` compares pathnames, and a query string would
+     never equal one. Stamping happens only on the `to` prop below. */
   const activePath = getActiveArenaSectionPath(location.pathname, section.items);
 
   return (
@@ -31,7 +43,7 @@ export default function ArenaSectionRail() {
               <li key={item.path}>
                 <Link
                   className={`${styles.item} ${isActive ? styles.active : ''}`}
-                  to={item.path}
+                  to={withClubContext(item.path, routeClubId)}
                   aria-current={isActive ? 'page' : undefined}
                 >
                   {item.label}

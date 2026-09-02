@@ -1,3 +1,5 @@
+import { withClubContext } from '../utils/clubScopedPath';
+
 export interface ClubArenaNavItem {
   label: string;
   path: string;
@@ -53,6 +55,26 @@ export function getClubNavigationCapabilities(
  * Secondary tools remain reachable from the page that owns them (wallet,
  * tournament lobby, club dashboard, etc.), while old URLs stay supported by
  * redirects in App.tsx.
+ *
+ * ── EVERY DESTINATION CARRIES THE CLUB (Dan, 2026-09-02, binding) ──────────
+ *
+ * "WHEN YOU GO TO THE HAMBURGER MENU INSIDE ANY CLUB, THAT ENTIRE HAMBURGER
+ *  MENU NEEDS TO BE LINKED TO THAT CLUB."
+ *
+ * This builder already had `clubPath()` and used it for Club Lobby, Table
+ * Management, Operations and Cashier — four of sixteen. The other twelve were
+ * hardcoded global strings even when `clubId` was right there in scope, so
+ * opening Leaderboards from inside Deep Stack Society handed the page nothing
+ * and it guessed `clubs[0]`, which was Club JAQK.
+ *
+ * The fix is not twelve more template literals. Every item's path is passed
+ * through `withClubContext` at the bottom of this function, which stamps
+ * `?club=<the identifier the route is already using>` onto exactly the routes
+ * that render club-scoped data (`CLUB_SCOPED_GLOBAL_ROUTES`) and leaves the
+ * rest — `/profile`, `/settings`, `/legal/*` — alone. Adding a destination to
+ * this file therefore cannot forget the club; forgetting is no longer a thing
+ * an author does, which is the only kind of fix that survives contact with a
+ * repo this many agents write to.
  */
 export function getClubArenaNavigation({
   clubId,
@@ -209,10 +231,16 @@ export function getClubArenaNavigation({
        * AgentDashboardPage is eight tabs of agent operations (Overview,
        * Players, Cashouts, Commissions, Score, Analytics, Promo, Credit) and
        * was reachable only by typing /agent-dashboard, while
-       * agent_commissions carried 1,490,109 rows against 113 agents. It
-       * resolves its own club, so the path stays global; the entry is gated
-       * with the rest of the staff tools because agents and super agents are
-       * club staff and owners oversee them.
+       * agent_commissions carried 1,490,109 rows against 113 agents. The
+       * entry is gated with the rest of the staff tools because agents and
+       * super agents are club staff and owners oversee them.
+       *
+       * The path stays global, but it is no longer CONTEXT-FREE: this comment
+       * used to end "it resolves its own club, so the path stays global",
+       * and what the page actually did was take `mems[0].club_id` — the first
+       * row of an unordered membership query. An agent working two clubs got
+       * whichever one Postgres returned first. `withClubContext` now stamps
+       * the club the player is standing in, and the page prefers it.
        */
       operationItems.push({
         label: 'Agent Dashboard',
@@ -254,7 +282,23 @@ export function getClubArenaNavigation({
     });
   }
 
-  return groups;
+  /* THE ONE PLACE THE CLUB IS ATTACHED. Done here rather than at each item so
+     a destination added later cannot be added club-blind — the failure mode
+     that produced the reported bug. `withClubContext` is a no-op for paths
+     that are already club-scoped (`/clubs/…`), for personal routes, and when
+     there is no club in play, so this line is safe to apply to everything.
+
+     `external` items are stamped too. The one that carries the flag is
+     Messages, and `external` describes its DESTINATION (the World Hub
+     messenger) rather than its route: it navigates in-app to
+     `NavigateToMessenger`, which reads `?club=` and forwards it to the Hub as
+     `clubId`. Skipping it would drop the club at the last hop, which is the
+     bug wearing a different hat. The flag only chooses the arrow glyph. */
+  if (!clubId) return groups;
+  return groups.map((group) => ({
+    ...group,
+    items: group.items.map((item) => ({ ...item, path: withClubContext(item.path, clubId) })),
+  }));
 }
 
 export const CLUB_ARENA_SUPPORT_NAV: ClubArenaNavItem[] = [

@@ -51,8 +51,13 @@ const cleanEnv = (extra: Record<string, string> = {}): NodeJS.ProcessEnv => {
   return env;
 };
 
+// Identity is passed per command with -c and NEVER written with `git config`:
+// the first version of this test wrote user.name=test into whatever
+// repository git resolved to, and that turned out to be the real one, shared
+// by every worktree on the machine. Nothing here may persist anything.
+const IDENTITY = ['-c', 'user.name=test', '-c', 'user.email=test@example.com'];
 const git = (...args: string[]) =>
-  execFileSync('git', args, {
+  execFileSync('git', [...IDENTITY, ...args], {
     cwd: repo,
     env: cleanEnv(),
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -82,8 +87,6 @@ beforeAll(() => {
   if (top !== want) {
     throw new Error(`refusing to run: git resolved to ${top}, not the fixture ${want}`);
   }
-  git('config', 'user.email', 'test@example.com');
-  git('config', 'user.name', 'test');
   // v1, then v2, then a commit that puts the file back to EXACTLY v1. The
   // detector's definition of a revert is "restored to the content it had
   // before a prior commit changed it" (a bare deletion is deliberately not

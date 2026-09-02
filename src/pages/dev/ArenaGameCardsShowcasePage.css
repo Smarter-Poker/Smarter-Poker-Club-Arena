@@ -253,10 +253,9 @@
   gap: 0;
 }
 
-.agc-mobile-page .club-identity__share svg {
-  width: 15px;
-  height: 15px;
-}
+/* The share icon sizes itself from the card (3.75cqw). A pixel override here
+   made this showcase lie about what the real card does at this width, which is
+   the whole point of a showcase. See the header of ClubIdentityCard.css. */
 
 .agc-mobile-page .lobby-wallets-trigger__icon {
   background: url('/hub/club-arena/assets/club-buttons/wallets/square/wallet-player-wallet-square-v1.webp')

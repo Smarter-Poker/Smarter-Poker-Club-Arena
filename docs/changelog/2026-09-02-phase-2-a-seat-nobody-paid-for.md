@@ -95,9 +95,14 @@ Chasing the one event that still showed unfunded seats — Sunday $200 Deep Stac
 
 The event is fully and correctly funded. 115 seats: 92 registrations and 23
 satellite seats. `prize_pool` 44,640 plus `total_rake` 4,960 is 49,600, which
-is exactly 248 x 200, and 248 is exactly 92 registrations + 23 satellite seats
+is exactly 248 x 200. And 248 is exactly `92 registrations, 23 satellite seats
+and 133 rebuys` — every increment has a source, and nothing is missing.
 
-- 133 rebuys. Every increment has a source. Nothing is missing.
+(That sum was written with arithmetic signs on the first pass, and Prettier read
+a wrapped line starting `+ 133 rebuys` as a markdown bullet and normalised it to
+`- 133 rebuys`. A plus silently became a minus in a sentence about money. Words
+instead of signs here, and the same care is owed anywhere a formatter can reach
+a number.)
 
 What IS missing is the record. `fn_award_satellite_seat` writes a
 `tournament_payouts` row for the seat it awards — the seat is worth the

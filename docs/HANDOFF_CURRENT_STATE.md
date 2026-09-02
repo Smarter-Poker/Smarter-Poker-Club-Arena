@@ -272,6 +272,102 @@ then probe Option 1 in a rolled-back transaction.
 
 ---
 
+## §0.10 THE UNION PAGE: WHAT DAN CAUGHT, AND WHAT IT EXPOSED (2026-09-02)
+
+Dan sent the Midway Union lobby and said the treasury holds far more than the
+320.82 this handoff claimed. **He is right. The 320.82 was wrong and I repeated
+it from §19 without checking.** Here is the verified position.
+
+### Every tile on that page, reconciled against its real source
+
+| Tile               |         Page | Source of truth                               |         DB value | Verdict         |
+| ------------------ | -----------: | --------------------------------------------- | ---------------: | --------------- |
+| Union Bank         |    72,277.84 | `union_wallets.chip_balance`                  |        72,277.84 | exact           |
+| Rake Treasury      | 1,935,150.49 | `union_wallets.rake_wallet`                   |     1,935,379.56 | live drift only |
+| Bad Beat Jackpot   |    98,119.81 | `bbj_pools.main_balance` (union row)          |        98,120.04 | live drift only |
+| Back Up BBJ Wallet |    26,744.17 | `bbj_pools.backup_balance`                    |        26,744.65 | live drift only |
+| Promo Wallet       |    37,656.30 | `union_wallets.promo_wallet`                  |        37,656.78 | live drift only |
+| Spins Treasury     |    60,764.12 | `spin_bonus_pools.balance` (owner_kind union) |        60,823.00 | live drift only |
+| **LEVEL**          |       **25** | member ladder                                 | **should be 33** | **BUG, fixed**  |
+
+The small deltas are seconds of live play between the screenshot and the query.
+The page is healthy. **The level was not.**
+
+### The 320.82, corrected
+
+The number never described the union. The spin double-credit landed in
+`clubs.chip_treasury` for the Midway Union **house-club row**
+(`fade0000-…-0001`, club_id 55555): **1,793 rows, 8,538.48**, 05:02Z to 14:52Z
+on 2026-09-02. That row now holds **0.66**, because the chips flowed onward.
+
+The union's money is a different set of accounts entirely: 1,935,379.56 rake
+treasury and 72,277.84 bank, in `union_wallets`. Saying "Midway Union's
+treasury holds 320.82" conflated a nearly-empty house-club treasury with a
+union holding two million chips.
+
+**B1 restated honestly:** the over-credited account is the house-club treasury
+(0.66), so a straight reversal there still goes negative — the original concern
+was right about the shape and wrong about the amount and the account name. The
+union, however, can absorb 8,538.48 without noticing. **Which pool books the
+correction is Dan's call, not an agent's**, and it is the only thing still
+blocking B1.
+
+### The level bug, root-caused and fixed
+
+`fn_club_level_for_members(1177) = 33`. The page rendered **25**, which is the
+ladder level for **328** — the union's own house-club roster.
+
+`ClubHomePage` summed `fn_batch_club_realtime_member_counts` over
+`unionClubIds`. The COUNT was SECURITY DEFINER and RLS-proof; **the LIST was
+not.** `union_clubs` carries policy `union_clubs_read`, admitting a row only if
+the viewer is a union admin, owns that club, or is a member of it:
+
+```
+union admin / member of both ... [JAQK, SHARK] -> 1,177  -> level 33
+member of one club ............. [that one]    ->   584  -> level 29
+member of neither .............. fallback      ->   328  -> level 25
+```
+
+So **the union's level depended on who was looking at it.**
+
+The fallback is the worst case and it was invisible: `unionClubIds` initialises
+to `[resolvedId]`, which for a union lobby is the union's own house club — the
+row the surrounding comment correctly says must never be counted as the union.
+`unionClubIds.length > 0` therefore could never be false, and the fallback was
+waved through as a successful read.
+
+**Fix:** call `fn_batch_union_realtime_member_counts([unionId])` — SECURITY
+DEFINER, takes the union id, resolves its clubs server-side, returns 1,177 for
+every viewer. It already existed, and `HomePage.tsx` already used it, which is
+exactly why the home page and the union lobby disagreed about the same union.
+
+Pinned by `tests/unit/unionLevelIsTheUnions.test.ts` (4 tests): the RPC is
+union-scoped, the union total is never derived from the club list again, the
+always-true guard cannot return, and the ladder still puts 1,177 at 33 and 328
+at 25.
+
+### Two things checked and cleared (not bugs)
+
+- **`union_wallets.spin_reserve_wallet = 0`** is correct, not dead. It is _idle_
+  seed capital; the deployed capital lives in `spin_bonus_pools.balance`. Both
+  surfaces already add the two and label them "Deployed / Idle".
+- **The `unions` legacy wallet columns** (`chip_balance`, `rake_wallet`,
+  `bbj_wallet`, `promo_wallet`, `main_bbj_balance`, `backup_bbj_balance`,
+  `insurance_balance`) are all **0.00** while `union_wallets` holds the real
+  money. No client code and no RPC reads them, so nothing is currently wrong.
+
+### One latent risk worth Dan knowing about
+
+`increment_union_chip_balance` writes to `unions.chip_balance` — one of the dead
+columns above. It currently has **zero callers** in SQL, client or engine, so it
+is dormant rather than leaking. But if anything ever calls it, the chips land in
+a column no surface reads, and they would simply disappear from every balance on
+the platform. Worth dropping or repointing at `union_wallets` in a future pass.
+
+---
+
+---
+
 ## §0.5 Board state, measured (supersedes "fourteen remain")
 
 `financial_alerts WHERE resolved = false`: **845 total, 403 critical, 429 raised in the last 24h.**

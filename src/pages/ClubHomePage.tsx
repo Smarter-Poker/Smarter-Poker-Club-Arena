@@ -2229,50 +2229,56 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
            * Fired as its own await AFTER unionClubIds is known, deliberately
            * not blocking the tables/tournaments queries below.
            */
-          if (clubData.is_union && unionClubIds.length > 0) {
-            /* SUMMED FROM THE SECURITY DEFINER RPC, not counted off the table.
-               A direct count here is RLS-filtered, and the filter does not
-               remove a club from the sum - it removes ROWS, so the union total
-               silently becomes "members of this union that I personally may
-               enumerate". Measured for a real admin of one of the two clubs,
-               who can see both rows in union_clubs and therefore reaches this
-               block:
+          if (clubData.is_union && unionId) {
+            /* ASK THE UNION FOR ITS OWN TOTAL, NOT A LIST THE VIEWER CAN SEE
+               (2026-09-02).
 
-                 union header showed ....... 593
-                 truth ..................... 1,172   (584 JAQK + 588 Shark)
-                 fn_batch_club_member_counts 1,172
+               This block used to sum `fn_batch_club_realtime_member_counts`
+               over `unionClubIds`. The COUNTS were security-definer and so
+               RLS-proof, which is what the comment above was proud of - but
+               the LIST was not. `union_clubs` carries policy
+               `union_clubs_read`, which admits a row only if the viewer is a
+               union admin, owns that club, or is a member of it. So the list
+               was the viewer's view of the union, and the sum inherited it:
 
-               That is the same number Dan caught being wrong on 2026-08-23
-               ("less than the 551 people playing in it at the time"). The fix
-               then corrected WHICH clubs get counted; it could not have fixed
-               this, because the count itself was never the union's - it was
-               the viewer's view of it.
+                 union admin / member of both ... [JAQK, SHARK] -> 1,177
+                 member of one club ............. [that one]    ->   584 or 593
+                 member of neither .............. []            ->   fell back
+
+               and the fallback is the worst case, because `unionClubIds` is
+               initialised to `[resolvedId]` at the top of this function. For a
+               union lobby `resolvedId` IS the union's own house-club row
+               (Midway Union, club_id 55555, 328 members) - the row the comment
+               above correctly says must NOT be counted as the union. So the
+               guard `unionClubIds.length > 0` could never be false, the
+               fallback looked like a successful read, and the union published
+               328 members and a level badge of 25.
+
+               Midway is level 33 on 1,177 members. It rendered 25, which is
+               the ladder level for 328 - that is how Dan caught it.
+
+               `fn_batch_union_realtime_member_counts` is SECURITY DEFINER,
+               takes the union id directly, and resolves the union's clubs
+               server-side, so every viewer gets the same number. It already
+               existed and HomePage.tsx already used it, which is why the home
+               page and the union lobby disagreed about the same union.
 
                Still summed WITHOUT de-duplication, exactly as specified above:
-               the RPC returns one row per club and a player in two clubs is two
-               memberships, which is what unions.member_count holds. */
-            const { data: perClub, error: perClubErr } = await supabase.rpc(
-              'fn_batch_club_realtime_member_counts',
-              {
-                p_club_ids: unionClubIds,
-              }
+               a player in two clubs is two memberships, which is what
+               unions.member_count holds (1,177 = 584 JAQK + 593 Shark). */
+            const { data: unionRows, error: unionCountErr } = await supabase.rpc(
+              'fn_batch_union_realtime_member_counts',
+              { p_union_ids: [unionId] }
             );
-            // ROUND 9 (2026-08-29): keeping the previous count on a failed
-            // read is the right fallback; doing it silently is not. The
-            // header quietly showing a stale union total is the exact shape
-            // Dan caught on 2026-08-23.
-            if (perClubErr) {
-              reportError(perClubErr, 'ClubHomePage.union_member_counts_read_failed');
+            // A failed read keeps the previous value, but never silently:
+            // a stale union total is the exact shape Dan caught on 2026-08-23.
+            if (unionCountErr) {
+              reportError(unionCountErr, 'ClubHomePage.union_member_counts_read_failed');
             }
-            const unionMembers = Array.isArray(perClub)
-              ? perClub.reduce(
-                  (sum: number, row: { member_count: number | string }) =>
-                    sum + Number(row.member_count ?? 0),
-                  0
-                )
-              : null;
+            const unionRow = Array.isArray(unionRows) ? unionRows[0] : null;
+            const unionMembers = unionRow ? Number(unionRow.member_count ?? NaN) : NaN;
             if (getIsMounted && !getIsMounted()) return;
-            if (unionMembers != null && Number.isFinite(unionMembers)) {
+            if (Number.isFinite(unionMembers) && unionMembers > 0) {
               setClub((prev) => (prev ? { ...prev, member_count: unionMembers } : prev));
               // The level badge is derived from clubData further down; keep the
               // two from disagreeing the way the header and the record did.

@@ -34,6 +34,55 @@ ISSUE_TITLE="Publish watchdog: production is not serving main"
 say() { echo "$@"; }
 summary() { echo "$@" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"; }
 
+# ── ESCALATION OF LAST RESORT (added 2026-09-02) ───────────────────────────
+# Automatic healing cannot be unconditional. If the bundle genuinely does not
+# build, the right outcome is NOT to ship it anyway - shipping a broken client
+# to every player is worse than lagging. So the guarantee this watchdog can
+# actually make is: nothing pending is ever silently forgotten.
+#
+# Which means that when the retries are spent, the alarm has to reach a person
+# rather than a repository. A GitHub issue is a place Dan does not live; the
+# in-app notification is. This mirrors estate-digest.mjs, which delivers to the
+# same recipient list.
+#
+# Silent no-op when the credentials are absent, so this can never be the reason
+# a watchdog run fails.
+escalate_in_app() {
+  [ -n "${SUPABASE_URL:-}" ] && [ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ] || {
+    say "no Supabase credentials in this run - skipping the in-app escalation."
+    return 0
+  }
+  RECIPS=$(curl -fsS --max-time 20 \
+    "${SUPABASE_URL}/rest/v1/ca_incident_recipients?scope=eq.platform&active=eq.true&select=user_id" \
+    -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+    -H "authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" 2>/dev/null \
+    | jq -r '.[].user_id' 2>/dev/null | sort -u || echo "")
+  [ -n "$RECIPS" ] || { say "no active platform recipients - in-app escalation has nobody to reach."; return 0; }
+
+  SENT=0
+  # NOT `UID`. It is readonly in bash, so `for UID in ...` aborts the function
+  # with exit 127 - caught by executing this against a stub rather than by
+  # reading it, which is the whole reason the escalation is behaviour-tested.
+  for RECIP in $RECIPS; do
+    # Title Case, no em dashes: house popup rules (CLAUDE.md 5.7).
+    if curl -fsS --max-time 20 -X POST "${SUPABASE_URL}/rest/v1/rpc/fn_raise_notification" \
+        -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
+        -H "authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
+        -H 'content-type: application/json' \
+        -d "$(jq -n --arg u "$RECIP" --arg m "$1" '{
+              p_user_id:$u,
+              p_type:"publish_stranded",
+              p_title:"Publish Needs A Human",
+              p_message:$m,
+              p_link:"/hub/club-arena/",
+              p_data:{source:"publish-watchdog.sh"}
+            }')" >/dev/null 2>&1; then
+      SENT=$((SENT + 1))
+    fi
+  done
+  say "in-app escalation delivered to ${SENT} recipient(s)."
+}
+
 # A watchdog whose alarm fails silently is not a watchdog. Every write here
 # goes through this: `gh ... >/dev/null 2>&1 && say "opened an issue"` prints
 # nothing at all when the write fails, which is how report-stuck-prs.sh found
@@ -214,6 +263,9 @@ elif [ "${ALREADY_RETRIED:-0}" -ge "$MAX_RETRIES" ]; then
   RETRY_NOTE="
 
 All ${MAX_RETRIES} automatic retries are used for this sha and production is still behind, so the cause is not transient. Read the publish run before dispatching another. (Cancelled attempts are not counted — every one of these ran to a verdict and did not fix it.)"
+  # Healing is spent and the build is genuinely broken. Auto-shipping it would
+  # be worse than lagging, so this is the point where a person has to know.
+  escalate_in_app "Main \`${HEAD_SHORT}\` Is ${AGE_MIN} Minutes Old And Production Still Serves \`${SERVED_SHORT:-Unknown}\`. ${MAX_RETRIES} Automatic Retries Are Spent, So This Needs A Human."
 fi
 
 BODY="Production is not serving main, and it is past the ${LAG_BUDGET_MIN}-minute budget.

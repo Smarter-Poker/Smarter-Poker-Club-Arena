@@ -215,6 +215,16 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
       FAIL=1
     fi
   fi
+  # A commit carrying [skip ci] starts NO workflow run, so the bundle is never
+  # built and production keeps serving the previous one with nothing red
+  # anywhere. Every other net in the estate RECOVERS from that; this one
+  # prevents it. Real precedent: 454fa1da4.
+  if [ -f scripts/ci/check-no-skip-markers.mjs ]; then
+    if ! node scripts/ci/check-no-skip-markers.mjs; then
+      echo "[club-arena pre-push] BLOCKED: a commit would suppress its own publish"
+      FAIL=1
+    fi
+  fi
   # A SECURITY DEFINER function that writes and that a browser can call must
   # consult the request. Nineteen did not on 2026-08-27; one let any member
   # rewrite a club's member_count, another pays chips. Scoped to the migrations

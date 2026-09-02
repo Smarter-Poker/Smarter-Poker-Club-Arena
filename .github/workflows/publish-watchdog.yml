@@ -84,6 +84,12 @@ jobs:
           # alarm is not a watchdog.
           GH_TOKEN_ISSUES: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          # Last-resort escalation once the automatic retries are spent. A
+          # broken bundle must not auto-ship, so the guarantee is that nobody
+          # has to notice on their own. Absent credentials degrade to the
+          # issue alone; they never fail the run.
+          SUPABASE_URL: https://kuklfnapbkmacvwxktbh.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: bash .github/scripts/publish-watchdog.sh
 
   # ───────────────────────────────────────────────────────────────────────────

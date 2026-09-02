@@ -53,16 +53,75 @@ describe('CI box provisioning', () => {
     expect(sh).toMatch(/pgrep -f "\$d\/bin\/Runner\.Worker"/);
   });
 
+  it('can never wipe the crontab - every cron edit goes through cron_set and is read back', () => {
+    // Second run of this script on the box emptied root's crontab: under
+    // `set -e -o pipefail`, `( crontab -l | grep -v KEY; echo LINE ) | crontab -`
+    // aborts inside the subshell when grep matches nothing (KEY was the only
+    // entry), the echo never runs, and crontab receives an empty document. The
+    // nightly GC vanished. Read-modify-write through a variable, then read back.
+    const sh = repo(PROVISION);
+    expect(sh).toMatch(/^cron_set\(\) \{/m);
+    expect(sh).toMatch(/grep -v -- "\$key" \|\| true/);
+    expect(sh).toMatch(/crontab -l \| grep -qF -- "\$line" \|\| \{ echo " {3}FATAL/);
+    // The dangerous idiom must not appear in the top-level script's CODE.
+    // Comments are stripped first: the helper's own header quotes the idiom
+    // to explain why it is banned, and a pin that matched the explanation
+    // would fail on the fix itself (the actions:write pin made that mistake).
+    const topLevel = sh
+      .replace(/cat > \/usr\/local\/bin\/[^\n]*<<'EOF'[\s\S]*?\nEOF\n/g, '')
+      .split('\n')
+      .filter((l) => !/^\s*#/.test(l))
+      .join('\n');
+    expect(topLevel).not.toMatch(/\( crontab -l[^\n]*; echo[^\n]*\) \| crontab -/);
+    // Both cron installs use the helper.
+    expect(sh).toMatch(/cron_set ci-gc\.sh /);
+    expect(sh).toMatch(/cron_set ci-restart-idle /);
+  });
+
   it('is idempotent by construction - every install is guarded', () => {
     const sh = repo(PROVISION);
     expect(sh).toMatch(/swapon --show --noheadings \| grep -q/);
-    expect(sh).toMatch(/grep -v ci-gc\.sh/);
-    expect(sh).toMatch(/grep -v ci-restart-idle/);
+    expect(sh).toMatch(/cron_set ci-gc\.sh /);
+    expect(sh).toMatch(/cron_set ci-restart-idle /);
     expect(sh).toMatch(/command -v node >\/dev\/null/);
     expect(sh).toMatch(/command -v gh >\/dev\/null/);
   });
 
   it('the runner setup script sends you here', () => {
     expect(repo('scripts/ci/setup-selfhosted-runner.sh')).toContain('provision-ci-box.sh');
+  });
+
+  it('installs every CLI a routed workflow shells out to', () => {
+    // The first post-deploy-e2e run on the box failed on a step that had never
+    // failed on hosted: "psql: command not found". A hosted image ships
+    // hundreds of tools; this box ships what the provisioner installs, so the
+    // provisioner has to know what the workflows call. Scan them and check.
+    const workflows = [
+      '.github/workflows/ci.yml',
+      '.github/workflows/build-for-world-hub.yml',
+      '.github/workflows/post-deploy-e2e.yml',
+    ]
+      .map(repo)
+      .join('\n');
+    const provision = repo(PROVISION);
+    // Tools that are not on a bare Ubuntu image and that workflows invoke.
+    for (const tool of ['psql', 'gh', 'jq']) {
+      if (new RegExp(`(^|[ |;(\`])${tool}( |$)`, 'm').test(workflows)) {
+        expect(provision, `${tool} is called by a workflow but not installed`).toMatch(
+          new RegExp(
+            `(apt-get install[^\\n]*\\b${tool === 'psql' ? 'postgresql-client' : tool}\\b|install -y -qq ${tool})`
+          )
+        );
+      }
+    }
+    // and the provisioner audits itself at the end
+    expect(provision).toMatch(/routed-workflow tool audit/);
+  });
+
+  it('defaults vitest to 4 workers - measured, not guessed', () => {
+    // cap=2 under load: the lone full suite ran 11m+ (hosted: 12.9m, no gain).
+    // cap=4 on a calm 8-core box: 3.1m. 8 x 4 = 32 threads is 4x oversubscribed
+    // at the absolute worst moment and typical concurrency is 2-4 jobs.
+    expect(repo(PROVISION)).toMatch(/VITEST_WORKERS="\$\{VITEST_WORKERS:-4\}"/);
   });
 });

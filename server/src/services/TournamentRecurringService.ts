@@ -14,6 +14,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 import nodeCrypto from 'node:crypto';
@@ -297,6 +298,7 @@ const PAYOUT_STRUCTURES = {
 import {
   SPIN_TIERS,
   SPIN_STACKS,
+  SPIN_SEATS,
   SPIN_SPEED_LABELS,
   spinBlindsForLevel,
   type SpinSpeed,
@@ -1510,7 +1512,15 @@ const SNG_CONFIGS: SNGConfig[] = SNG_BOARD_SHAPES.flatMap((shape) =>
  * SNGs are NOT this. They carry their own max_players (6 in production) and
  * must keep reading it from their config.
  */
-export const SPIN_SEATS = 3;
+/* RE-EXPORTED, NOT REDECLARED (2026-09-02).
+   This was `= 3` written out a second time, in a file that already imports
+   SPIN_TIERS / SPIN_STACKS / spinBlindsForLevel from the same spec. Two
+   sources of truth for the seat count is worse here than almost anywhere
+   else: the whole multiplier distribution is built on
+   E[multiplier] = seats x (1 - rake_rate), so a divergence would not look
+   like a bug, it would look like a slightly wrong house edge. Importers of
+   this name keep working. */
+export { SPIN_SEATS };
 
 /**
  * Seats the cash room keeps, per live cash table, before the Spin and
@@ -1858,7 +1868,14 @@ export class TournamentRecurringService {
     );
 
     // Tournament check: every 5 minutes
-    this.tournamentInterval = setInterval(() => this.checkAndLaunchTournaments(), 5 * 60 * 1000);
+    // THE FREEZE (Dan 2026-09-01) gates every launcher below: launching a
+    // game registers and seats horses, which is buy-ins - chip movement. A
+    // board slot that stays empty for five extra minutes refills on the first
+    // tick after the thaw.
+    this.tournamentInterval = setInterval(
+      () => (isMaintenanceFrozen() ? undefined : this.checkAndLaunchTournaments()),
+      5 * 60 * 1000
+    );
 
     /**
      * A BOARD IS REFILLED AS FAST AS IT DRAINS.
@@ -1884,11 +1901,20 @@ export class TournamentRecurringService {
      * overwhelmingly common case, and its BURST cap still bounds a cold start
      * to 12 creations per tick.
      */
-    this.sngInterval = setInterval(() => this.checkAndLaunchSNGs(), BOARD_REFILL_INTERVAL_MS);
-    this.spinInterval = setInterval(() => this.checkAndLaunchSpins(), BOARD_REFILL_INTERVAL_MS);
+    this.sngInterval = setInterval(
+      () => (isMaintenanceFrozen() ? undefined : this.checkAndLaunchSNGs()),
+      BOARD_REFILL_INTERVAL_MS
+    );
+    this.spinInterval = setInterval(
+      () => (isMaintenanceFrozen() ? undefined : this.checkAndLaunchSpins()),
+      BOARD_REFILL_INTERVAL_MS
+    );
 
     // XMTT check: every 5 minutes
-    this.xmttInterval = setInterval(() => this.checkAndLaunchXMTTs(), 5 * 60 * 1000);
+    this.xmttInterval = setInterval(
+      () => (isMaintenanceFrozen() ? undefined : this.checkAndLaunchXMTTs()),
+      5 * 60 * 1000
+    );
 
     // Run checks immediately on start
     this.checkAndLaunchTournaments();

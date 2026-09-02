@@ -33,6 +33,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import { buyInFor, rakeRateFor, wholeChips } from '../config/buyIn.js';
 import { TournamentRecurringService } from './TournamentRecurringService.js';
@@ -439,7 +440,14 @@ export class ScheduledTournamentService {
     }
     this.isRunning = true;
     console.log('[ScheduledTournaments] Service started - polling every 60s');
-    this.pollTimer = setInterval(() => void this.poll(), POLL_INTERVAL_MS);
+    // THE FREEZE (Dan 2026-09-01): starting a scheduled event registers and
+    // seats its field. An event whose start time falls inside the break
+    // starts on the first poll after the thaw, up to a minute late - which is
+    // also exactly when its players are back at the felt to see it.
+    this.pollTimer = setInterval(() => {
+      if (isMaintenanceFrozen()) return;
+      void this.poll();
+    }, POLL_INTERVAL_MS);
     void this.poll();
   }
 
@@ -893,9 +901,12 @@ export class ScheduledTournamentService {
      * stamped `tournament_type = 'SPIN'`. One schedule does exactly that --
      * "Spin Royale", active, every 30 minutes -- with `blindPreset:
      * "HYPER_TURBO"`, an MTT ladder that opens at 50/100 with a 15 ante and
-     * doubles from there. A Spin's stack is written at DRAW time from
-     * SPIN_TIERS, so the draw handed those games a 300-chip stack against a
-     * 100 big blind.
+     * doubles from there. A Spin's stack came from SPIN_TIERS at DRAW time
+     * when this was written, so the draw handed those games a 300-chip stack
+     * against a 100 big blind. (The stack now comes from the BOARD at
+     * creation — SPIN_STACKS, Turbo 300 or Deep Stack 1000 — which changes
+     * where the number is written, not the arithmetic that broke these
+     * games.)
      *
      * Measured on production, every completed Spin Royale over three days:
      *

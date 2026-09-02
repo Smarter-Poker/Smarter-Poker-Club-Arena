@@ -74,6 +74,30 @@ Worth naming, because four of them were mine and the targeted suites were green:
    its wheel finished. Wrong in the most believable way possible: a number that
    looks right. Cleared on `tournamentId` change, and pinned.
 
+## Item 1 is withdrawn, because Dan fixed it better
+
+I shipped a range: before the wheel turned, a Spin card printed
+`300-5,000` from `SPIN_TIERS` instead of the seeded 300, and `stackDepthLabel`
+returned nothing rather than deriving "Turbo" from a placeholder.
+
+While that was in flight, main landed Dan's ruling:
+
+> "we used to award more chips depending on if its a higher multiplier... we
+> are no longer doing that, once a player sits down and 'buys in' they either
+> get 300 chips for a turbo, or 1000 chips for a deep stack."
+
+`SpinTierSpec.startingStack` is **gone**, the 5,000 band is retired, and the
+stack is now a property of the BOARD - two numbers, neither depending on the
+draw, both known at buy-in. That fixes the defect at its root rather than at
+the card, and it fixes something my change could not: the seat could not hold
+a real stack when the player paid, because the number did not exist until the
+wheel landed.
+
+So my fix is not merely redundant, it is now WRONG - a range advertises
+uncertainty about a number that is certain. `spinStartingStackRange()`, the
+adapter's range branch, the `stackDepthLabel` guard and the law test are all
+removed. Nothing of mine survives on item 1, which is the correct outcome.
+
 ## One thing I wrote and then deleted, on purpose
 
 While this branch was in flight another agent shipped `src/hooks/useFocusTrap.ts`

@@ -211,4 +211,12 @@ begin
 end;
 $function$;
 
+-- The live grants, restated so a fresh apply of this file reproduces them
+-- (measured 2026-09-02: anon false, authenticated false, service_role true).
+-- Without these lines a from-scratch CREATE would default EXECUTE to PUBLIC
+-- on a SECURITY DEFINER writer that never asks who is calling - the exact
+-- shape the definer-authorization guard exists to refuse.
+REVOKE ALL ON FUNCTION public.fn_aggregate_gto_street_next(text, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_aggregate_gto_street_next(text, integer) TO service_role;
+
 COMMIT;

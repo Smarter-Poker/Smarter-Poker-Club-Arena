@@ -96,10 +96,16 @@ describe('the heartbeat is written by the driver, not by the check', () => {
 
 describe('the board is read after the checks have stamped', () => {
   it('fn_money_check_health runs at the end of the hourly pass', () => {
-    const healthAt = gameServer.indexOf("supabase.rpc(\n                'fn_money_check_health'");
+    // Matched on the RPC name alone, never on its surrounding whitespace:
+    // Prettier collapsed this call onto one line the first time another agent
+    // touched GameServer, and a pin that reads formatting fails on a change
+    // that means nothing - the same mistake in a different costume as the
+    // fixed-size source window this repo already outlawed.
+    const healthAt = gameServer.indexOf("'fn_money_check_health'");
     const lastStampAt = gameServer.indexOf(
       "this.recordMoneyCheckRun('fn_backpay_unfinalised_bounty_pools'"
     );
+    expect(healthAt).toBeGreaterThan(-1);
     expect(lastStampAt).toBeGreaterThan(-1);
     expect(healthAt).toBeGreaterThan(lastStampAt);
   });

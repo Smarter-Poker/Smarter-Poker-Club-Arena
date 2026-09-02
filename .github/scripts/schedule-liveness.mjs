@@ -266,12 +266,29 @@ async function selfHeal(late) {
    */
   const all = scheduledWorkflows();
   const cycled = [];
+  const deferred = [];
   for (const w of all) {
     const wfRes = await api(`/actions/workflows/${encodeURIComponent(w.file)}`);
     if (!wfRes.ok) continue;
     const wf = await wfRes.json();
     if (wf.state !== 'active') {
       say(`[schedule-liveness] ${w.file} is '${wf.state}' - deliberately off, leaving it alone.`);
+      continue;
+    }
+    /**
+     * NEVER CYCLE A WORKFLOW THAT IS RUNNING (2026-09-02, learned the hard way).
+     * Disabling a workflow CANCELS its in-flight runs. Cycling by hand at 16:32
+     * killed the CI run on the pull request that was fixing a red main, and had
+     * the timing been a minute different it would have cancelled a
+     * build-for-world-hub publish instead - this heal exists to protect
+     * publishing, so cancelling one to fix the schedule would be the cure
+     * causing the disease. A workflow that is mid-run is also demonstrably
+     * registered enough to run, so it is the least urgent one to cycle anyway.
+     * It gets cycled on the next attempt, when it is idle.
+     */
+    if (await isBusy(wf.id)) {
+      deferred.push(w.file);
+      say(`[schedule-liveness] ${w.file} has a run in flight - not cycling it, that would cancel the run.`);
       continue;
     }
     const off = await api(`/actions/workflows/${wf.id}/disable`, 'PUT');
@@ -305,6 +322,14 @@ async function selfHeal(late) {
     `Cycled ${cycled.length} scheduled workflow(s) to force GitHub to re-register their crons:`,
     '',
     ...cycled.map((f) => `- \`${f}\``),
+    ...(deferred.length
+      ? [
+          '',
+          `Left alone because they had a run in flight (disabling cancels runs), to be cycled next attempt:`,
+          '',
+          ...deferred.map((f) => `- \`${f}\``),
+        ]
+      : []),
   ];
 
   if (decision.act === 'retry') {
@@ -345,6 +370,25 @@ async function selfHeal(late) {
     ].join('\n'),
   }).catch(() => {});
   say(`[schedule-liveness] wedge heal complete: cycled ${cycled.length}, issue filed.`);
+}
+
+/**
+ * Is this workflow currently running anything? Disabling it would cancel that
+ * run, so the answer decides whether it is safe to cycle.
+ *
+ * Fails CLOSED: if the API cannot be read, treat the workflow as busy and
+ * leave it alone. A missed cycle costs one more attempt; a wrong cycle costs a
+ * cancelled publish.
+ */
+async function isBusy(workflowId) {
+  for (const status of ['in_progress', 'queued']) {
+    const res = await api(`/actions/workflows/${workflowId}/runs?status=${status}&per_page=1`);
+    if (!res.ok) return true;
+    const body = await res.json().catch(() => null);
+    if (!body) return true;
+    if ((body.total_count || 0) > 0) return true;
+  }
+  return false;
 }
 
 /**

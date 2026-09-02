@@ -224,3 +224,48 @@ describe('the healer never buys silence for a heal it did not perform', () => {
     expect(src).toMatch(/Enable is the half that must not be left undone/);
   });
 });
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE CURE MUST NOT CAUSE THE DISEASE (2026-09-02)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * MEASURED, on myself. Cycling the 15 scheduled workflows by hand at 16:32 to
+ * clear the wedge CANCELLED the in-flight CI run on the pull request that was
+ * fixing a red main - "The operation was canceled" after 40+ passing files.
+ * Disabling a workflow cancels its runs, and `build-for-world-hub.yml` is in
+ * the cycle list, so a heal timed a minute differently would have cancelled a
+ * publish. A heal that exists to protect publishing must not be able to cancel
+ * one.
+ *
+ * A workflow that is mid-run is also, by definition, registered enough to run,
+ * so it is the least urgent thing in the list to cycle. It waits for the next
+ * attempt.
+ */
+describe('the heal never cancels a run to fix a schedule', () => {
+  const src = readFileSync(resolve(__dirname, '../.github/scripts/schedule-liveness.mjs'), 'utf8');
+
+  it('skips any workflow that has a run in flight', () => {
+    expect(src).toMatch(/if \(await isBusy\(wf\.id\)\)/);
+    const i = src.indexOf('if (await isBusy(wf.id))');
+    expect(src.slice(i, i + 300)).toMatch(/continue;/);
+  });
+
+  it('asks about both in_progress and queued runs', () => {
+    expect(src).toMatch(/\['in_progress', 'queued'\]/);
+  });
+
+  it('fails CLOSED - an unreadable API means busy, never free-to-cycle', () => {
+    const i = src.indexOf('async function isBusy(');
+    const body = src.slice(i, src.indexOf('\n}', i));
+    // Every early exit inside isBusy on an API problem must return true.
+    expect(body).toMatch(/if \(!res\.ok\) return true;/);
+    expect(body).toMatch(/if \(!body\) return true;/);
+    expect(body).not.toMatch(/if \(!res\.ok\) return false;/);
+  });
+
+  it('reports what it deferred, so a skipped cycle is visible not silent', () => {
+    expect(src).toMatch(/deferred\.push\(w\.file\)/);
+    expect(src).toMatch(/Left alone because they had a run in flight/);
+  });
+});

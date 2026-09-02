@@ -89,3 +89,22 @@ All 15 active scheduled workflows were disabled and re-enabled to force
 re-registration, and all 15 confirmed `active` afterwards. The estate should
 not wait for code review to get its crons back. That is remediation of the
 live incident; this change is so the next one does not need a person.
+
+## And the remedy must not cause the disease
+
+Cycling the 15 workflows by hand at 16:32 **cancelled the in-flight CI run on
+the pull request that was fixing the red main**. "The operation was canceled",
+after more than forty passing test files. Disabling a workflow cancels its
+runs, and `build-for-world-hub.yml` is in the cycle list, so a heal timed a
+minute differently would have cancelled a publish. A heal whose whole purpose
+is to protect publishing must not be able to cancel one.
+
+The healer now skips any workflow with an `in_progress` or `queued` run, lists
+what it deferred, and cycles those on the next attempt. `isBusy` fails CLOSED:
+if the API cannot be read the workflow is treated as busy and left alone,
+because a missed cycle costs one more attempt while a wrong cycle costs a
+cancelled publish. A workflow that is mid-run is in any case demonstrably
+registered enough to run, so it is the least urgent thing in the list.
+
+Two more mutations verified red: removing the busy check, and making `isBusy`
+fail open. 26 of 26 pins green.

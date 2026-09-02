@@ -17,11 +17,17 @@
  * position it believed at the time; a later arrival shifted the field, the
  * first player was renumbered from 2nd to 3rd, and the new 2nd place was paid
  * place 2 all over again. Renumbering the RECORD cannot un-send a credit, so
- * the fix has to be at the key: keyed on the place, the second payment is a
- * no-op regardless of who holds it or which code path pays it.
+ * the fix (2026-08-28) was at the key: keyed on the place, the second payment
+ * is a no-op regardless of who holds it or which code path pays it.
  *
- * These assert the SOURCE, because the defect is a key format that must never
- * come back, and it has to hold across all four paying paths at once.
+ * 2026-09-02 (chip accounting standard, Lane A2): the key moved out of the
+ * engine and into the database. Every tournament credit now goes through
+ * `settleTournamentObligation`, which settles the obligation row
+ * (tournament_id, kind, place) — UNIQUE by constraint — and the RPC derives
+ * the ledger key from that row. There is no `tourney:` string left for a
+ * refactor to get wrong. What these pins now assert is the same property in
+ * its new home: every 'place' settle carries a PLACE, and no paying path
+ * builds a key of its own.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -35,47 +41,58 @@ const PAYING_PATHS = [
 ];
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), 'utf8');
+const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 /**
- * Real template-literal prize keys only.
- *
- * The `${` requirement matters: comments in these files quote the OLD broken
- * format as `tourney:{id}:prize:{user}:{place}` to explain what went wrong, and
- * that prose is worth keeping. Documentation of a fixed bug is not the bug. A
- * key the engine actually builds always interpolates something.
+ * Every settleTournamentObligation({...}) argument object in a file, brace to
+ * brace. Each is one obligation being settled.
  */
-const prizeKeys = (src: string): string[] =>
-  (src.match(/`tourney:[^`]*:prize:[^`]*`/g) ?? []).filter((k) => k.includes('${'));
+const settleCalls = (src: string): string[] =>
+  code(src).match(/settleTournamentObligation\(\s*supabase\s*,\s*\{[\s\S]*?\n\s*\}/g) ?? [];
 
-describe('the prize idempotency key is scoped to the place, not the player', () => {
+/** Real template-literal keys only (a `${` means the engine builds it). */
+const tourneyKeys = (src: string): string[] =>
+  (code(src).match(/`tourney:[^`]*`/g) ?? []).filter((k) => k.includes('${'));
+
+describe('a place is paid once: the place obligation, not a hand-built key', () => {
   for (const path of PAYING_PATHS) {
-    it(`${path} keys every prize on the place`, () => {
-      const keys = prizeKeys(read(path));
-      expect(keys.length).toBeGreaterThan(0); // this file does pay prizes
-      for (const k of keys) {
-        expect(k, `user-scoped prize key still present: ${k}`).toContain(':prize:place:');
-      }
+    it(`${path} settles through the one helper`, () => {
+      expect(settleCalls(read(path)).length).toBeGreaterThan(0); // this file does pay
     });
 
-    it(`${path} interpolates no user id into a prize key`, () => {
-      for (const k of prizeKeys(read(path))) {
-        // A user id in the key is what let one place be paid twice.
-        expect(k).not.toMatch(/prize:\$\{[^}]*(user|winner|Id)[^}]*\}/i);
+    it(`${path} builds no tourney: idempotency key of its own`, () => {
+      // A key built here is a second opinion about what was paid. The
+      // database holds the only one.
+      expect(tourneyKeys(read(path))).toEqual([]);
+    });
+
+    it(`${path} gives every 'place' settle a place`, () => {
+      const src = read(path);
+      for (const call of settleCalls(src)) {
+        // Either the literal kind is 'place' / 'late_reg_adjustment', or the
+        // kind is a variable that the call sites resolve — in which case the
+        // call must still forward a `place:` field.
+        const isPlaceKind = /kind:\s*'(place|late_reg_adjustment)'/.test(call);
+        const isUserKind =
+          /kind:\s*'(bubble_protection|final_table_deal|refund|satellite_remainder|mystery_bounty|bounty|bounty_residual|seat)'/.test(
+            call
+          );
+        if (isUserKind) continue;
+        expect(
+          /\bplace:/.test(call),
+          `${path}: a ${isPlaceKind ? "'place'" : 'variable-kind'} settle without a place:\n${call}`
+        ).toBe(true);
       }
     });
   }
 
-  it('every paying path agrees on one format, so they dedupe against each other', () => {
-    // The recovery watchdog and the finish path must collide with the
-    // elimination path on purpose — that is what makes a retry a no-op.
-    const shapes = new Set<string>();
-    for (const path of PAYING_PATHS) {
-      for (const k of prizeKeys(read(path))) {
-        shapes.add(k.replace(/\$\{[^}]+\}/g, '${}'));
-      }
-    }
-    for (const s of shapes) {
-      expect(s, `unexpected prize key shape: ${s}`).toMatch(/:prize:place:/);
-    }
+  it('the finish path and the recovery watchdog settle the SAME obligation for place 1', () => {
+    // They must collide on purpose — that is what makes a retry a no-op.
+    const eliminations = read('server/src/tournament/TournamentManagerEliminations.ts');
+    const recovery = read('server/src/tournament/tournamentRecovery.ts');
+    expect(
+      settleCalls(eliminations).some((c) => /kind:\s*'place'[\s\S]*place:\s*1\b/.test(c))
+    ).toBe(true);
+    expect(code(recovery)).toMatch(/\{ kind: 'place', place \}/);
   });
 });

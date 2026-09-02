@@ -17,9 +17,11 @@
 #                    run; a persistent one does not, so without this the box
 #                    fills and every CI job on the estate fails at once.
 #   3. fair share  - a systemd drop-in on EVERY runner unit capping vitest at
-#                    2 workers and node at a 3 GB heap. Uncapped, eight
-#                    concurrent vitest runs forked a worker per core (64 on 8
-#                    cores, load 69-75 measured) and every job was starved.
+#                    a DERIVED worker cap and node at a 3 GB heap. Uncapped,
+#                    eight concurrent vitest runs forked a worker per core (64
+#                    on 8 cores, load 69-75 measured) and every job starved.
+#                    A fixed cap of 4 starved them again at load 44 (see the
+#                    note above the derivation); the cap now follows the box.
 #   4. sweeper     - applies a changed drop-in to busy runners as they go idle,
 #                    never killing a job; removes itself when done.
 #   5. browsers    - chromium + webkit system libraries, installed once, so
@@ -38,11 +40,37 @@ set -euo pipefail
 [ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
 
 SWAP_GB="${SWAP_GB:-8}"
-VITEST_WORKERS="${VITEST_WORKERS:-2}"
+# VITEST_WORKERS is DERIVED below, once the runner count is known. Setting it
+# here would be the bug this replaced: a constant tuned for one job on an
+# idle box, applied to ten runners at once. Export it to override.
 NODE_HEAP_MB="${NODE_HEAP_MB:-3072}"
 PLAYWRIGHT_VERSION="${PLAYWRIGHT_VERSION:-1.58.0}"
 
 say() { printf '\n== %s\n' "$*"; }
+
+# ── cron_set KEY LINE: install LINE as the one entry containing KEY ──────────
+# Written after this script WIPED the box crontab on its second run.
+#
+# The obvious idiom, ( crontab -l | grep -v KEY; echo LINE ) | crontab -, is a
+# trap under `set -e -o pipefail`: when KEY is the ONLY entry, `grep -v` matches
+# nothing and exits 1, the subshell aborts before the echo, and `crontab -`
+# receives an empty document. The nightly GC vanished and the script died with
+# no "done" line. It had worked on the first run only because a second entry
+# happened to exist. A helper that reads, edits in a variable, writes, and then
+# READS BACK is not clever; it is the only shape that cannot lose the table.
+cron_set() {
+  local key="$1" line="$2" cur new
+  cur=$(crontab -l 2>/dev/null || true)
+  new=$(printf '%s\n' "$cur" | grep -v -- "$key" || true)
+  printf '%s\n%s\n' "$new" "$line" | sed '/^$/d' | crontab -
+  crontab -l | grep -qF -- "$line" || { echo "   FATAL: crontab write for $key did not stick"; exit 1; }
+}
+cron_del() {
+  local key="$1" cur new
+  cur=$(crontab -l 2>/dev/null || true)
+  new=$(printf '%s\n' "$cur" | grep -v -- "$key" || true)
+  printf '%s\n' "$new" | sed '/^$/d' | crontab - 2>/dev/null || true
+}
 
 # ── 1. swap ──────────────────────────────────────────────────────────────────
 say "swap (${SWAP_GB} GB)"
@@ -76,12 +104,34 @@ LOG=/var/log/ci-gc.log
 tail -c 200000 $LOG > $LOG.tmp && mv $LOG.tmp $LOG
 EOF
 chmod +x /usr/local/bin/ci-gc.sh
-( crontab -l 2>/dev/null | grep -v ci-gc.sh; echo "17 4 * * * /usr/local/bin/ci-gc.sh" ) | crontab -
-echo "   cron: $(crontab -l | grep -c ci-gc.sh) entry"
+cron_set ci-gc.sh "17 4 * * * /usr/local/bin/ci-gc.sh"
+echo "   cron: $(crontab -l | grep -c ci-gc.sh) entry (verified)"
 
 # ── 3. fair-share drop-in on every runner unit ───────────────────────────────
-say "fair-share drop-ins (VITEST_MAX_WORKERS=${VITEST_WORKERS}, heap ${NODE_HEAP_MB} MB)"
+#
+# THE CAP IS DERIVED FROM THE BOX, NOT TYPED IN. This was `${VITEST_WORKERS:-4}`
+# and the 4 was measured honestly - one job, idle box, 12.9 min down to 3.1.
+# It was never measured against the case that actually happens: on 2026-09-02
+# NINE jobs ran at once, each entitled to 4 workers, and 26 vitest processes
+# fought over 8 cores at load 44. Jobs did not merely slow down, they FAILED -
+# a 150-hand simulation that takes 967 ms on a laptop measured 12342 ms and
+# blew a 10 s ceiling, turning main red and stopping the publisher. A queued
+# job waits harmlessly; a starved job times out. Fewer workers is therefore
+# not just cheaper, it is more correct.
+#
+# So: total workers across every runner is held near 2x cores, and the
+# per-runner share falls out of that. A resize fixes the cap by itself.
+# Floor 2, because 1 makes a lone job pointlessly serial. Ceiling 4, because
+# that is the measured knee - past it a single job stops getting faster.
 UNITS=$(systemctl list-units 'actions.runner.*' --all --no-legend | awk '{print $1}')
+UNIT_N=$(printf '%s\n' "$UNITS" | grep -c . || true)
+[ "${UNIT_N:-0}" -gt 0 ] || UNIT_N=1
+DERIVED=$(( $(nproc) * 2 / UNIT_N ))
+[ "$DERIVED" -lt 2 ] && DERIVED=2
+[ "$DERIVED" -gt 4 ] && DERIVED=4
+VITEST_WORKERS="${VITEST_WORKERS:-$DERIVED}"
+say "fair-share drop-ins (VITEST_MAX_WORKERS=${VITEST_WORKERS}, heap ${NODE_HEAP_MB} MB)"
+echo "   $(nproc) cores / $UNIT_N runners -> $VITEST_WORKERS workers each, $(( UNIT_N * VITEST_WORKERS )) peak"
 n=0
 for svc in $UNITS; do
   mkdir -p "/etc/systemd/system/$svc.d"
@@ -91,6 +141,21 @@ for svc in $UNITS; do
 [Service]
 Environment=VITEST_MAX_WORKERS=${VITEST_WORKERS}
 Environment=NODE_OPTIONS=--max-old-space-size=${NODE_HEAP_MB}
+# RUNNER_ENVIRONMENT IS SET BY US BECAUSE THIS RUNNER BUILD DOES NOT SET IT.
+# GitHub documents it as a default variable, so three test files already relax
+# their wall clock with
+#   10_000 * (process.env.RUNNER_ENVIRONMENT === 'self-hosted' ? 3 : 1)
+# and every one of them was a silent no-op on this box: the string
+# RUNNER_ENVIRONMENT appears ZERO times in Runner.Worker.dll and
+# Runner.Common.dll of the installed runner (checked 2026-09-02), so the
+# ternary always took the hosted branch ON the self-hosted box. The proof it
+# left behind is a failure that reads "Test timed out in 10000ms" where a
+# working multiplier would have said 30000ms. That one turned main red and
+# stopped the publisher.
+# Setting it here is not a lie - this IS a self-hosted runner - and nothing
+# overrides it, precisely because the runner never writes the name at all.
+# It repairs every existing user of the idiom and every future copy of it.
+Environment=RUNNER_ENVIRONMENT=self-hosted
 EOF
   n=$((n+1))
 done
@@ -104,7 +169,36 @@ cat > /usr/local/bin/ci-restart-idle-runners.sh <<'EOF'
 # A runner is mid-job iff a Runner.Worker lives under its directory. Restart
 # only the others, so a changed unit takes effect with zero jobs lost. Removes
 # itself from cron once every runner has restarted since the stamp.
+# ONE SWEEPER AT A TIME. The provisioner runs this directly AND installs it on
+# a */5 cron, so two copies raced on 2026-09-02 and the log shows the same
+# runner "restarted idle" twice in the same second.
+exec 9>/var/lock/ci-restart-idle.lock
+flock -n 9 || exit 0
+
 MARK=/var/lib/ci-runner-env.stamp; [ -f $MARK ] || touch $MARK
+
+# IS THIS RUNNER SAFE TO RESTART?
+#
+# The old test was `pgrep -f "$d/bin/Runner.Worker"` alone, and it had a race
+# that cost real jobs on 2026-09-02: between the Listener ACCEPTING a job and
+# the Worker process appearing there is a window in which the runner is
+# committed to work but shows no Worker. The sweeper looked in exactly that
+# window, called the runner idle and restarted it. Two CI jobs died with "The
+# runner has received a shutdown signal", which reads like an infrastructure
+# blip and is actually this script. A sweeper whose whole promise is "never
+# kills a job" must not have a window.
+#
+# The second test closes it: a runner that has ACCEPTED a job has already
+# written into its own _work tree, before any Worker exists. So anything
+# touched there in the last two minutes means hands off, Worker or not.
+# Cheap, no token, and it fails toward leaving the runner alone.
+runner_busy() {
+  local d="$1"
+  pgrep -f "$d/bin/Runner.Worker" >/dev/null && return 0
+  [ -n "$(find "$d/_work" -maxdepth 3 -newermt '-120 seconds' -print -quit 2>/dev/null)" ] && return 0
+  return 1
+}
+
 left=0
 for d in /home/ci/actions-runner-*; do
   name=$(basename "$d" | sed 's/actions-runner-//')
@@ -112,14 +206,19 @@ for d in /home/ci/actions-runner-*; do
   [ -n "$svc" ] || continue
   since=$(systemctl show -p ActiveEnterTimestamp --value "$svc" | xargs -I{} date -d {} +%s 2>/dev/null || echo 0)
   [ "$since" -gt "$(stat -c %Y $MARK)" ] && continue
-  if pgrep -f "$d/bin/Runner.Worker" >/dev/null; then left=$((left+1)); continue; fi
+  if runner_busy "$d"; then left=$((left+1)); continue; fi
+  # Look twice, a few seconds apart. A job accepted between the check and the
+  # restart is the only remaining way to lose one, and this shrinks that to
+  # the width of a single systemctl call.
+  sleep 3
+  if runner_busy "$d"; then left=$((left+1)); continue; fi
   systemctl restart "$svc" && echo "$(date -u +%FT%TZ) restarted idle $name" >> /var/log/ci-runner-env.log
 done
-[ $left -eq 0 ] && { crontab -l | grep -v ci-restart-idle-runners | crontab -; echo "$(date -u +%FT%TZ) all runners on new env; sweeper removed" >> /var/log/ci-runner-env.log; }
+[ $left -eq 0 ] && { ( crontab -l 2>/dev/null | grep -v ci-restart-idle-runners || true ) | sed "/^$/d" | crontab -; echo "$(date -u +%FT%TZ) all runners on new env; sweeper removed" >> /var/log/ci-runner-env.log; }
 EOF
 chmod +x /usr/local/bin/ci-restart-idle-runners.sh
 touch /var/lib/ci-runner-env.stamp
-( crontab -l 2>/dev/null | grep -v ci-restart-idle; echo "*/5 * * * * /usr/local/bin/ci-restart-idle-runners.sh" ) | crontab -
+cron_set ci-restart-idle "*/5 * * * * /usr/local/bin/ci-restart-idle-runners.sh"
 /usr/local/bin/ci-restart-idle-runners.sh || true
 echo "   armed; restarted idle runners now, busy ones roll over within 5 min"
 
@@ -128,17 +227,56 @@ say "tools"
 if ! command -v node >/dev/null; then
   curl -fsSL https://deb.nodesource.com/setup_20.x -o /tmp/ns.sh && bash /tmp/ns.sh >/dev/null && apt-get install -y -qq nodejs >/dev/null
 fi
-apt-get install -y -qq jq >/dev/null 2>&1 || true
+# jq for the watchdogs; psql because post-deploy-e2e certifies the cashier
+# database contract with it and a hosted runner ships it preinstalled - the
+# first routed run on this box failed with "psql: command not found" on a step
+# that had never failed on hosted. Everything a routed workflow shells out to
+# must be here, or moving the job is a regression dressed as a saving.
+apt-get install -y -qq jq postgresql-client unzip zip >/dev/null 2>&1 || true
 if ! command -v gh >/dev/null; then
   curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg
   echo "deb [arch=amd64 signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
   apt-get update -qq >/dev/null && apt-get install -y -qq gh >/dev/null
 fi
-printf '   node %s | gh %s | jq %s\n' "$(node -v)" "$(gh --version | head -1 | awk '{print $3}')" "$(jq --version)"
+printf '   node %s | gh %s | jq %s | psql %s\n' "$(node -v)" "$(gh --version | head -1 | awk '{print $3}')" "$(jq --version)" "$(psql --version | awk '{print $3}')"
+
+# ── 5b. every binary a routed workflow shells out to must exist here ─────────
+# A hosted runner ships hundreds of tools; this box ships what is installed.
+# Scanning the workflows is the only way to know the set stays complete.
+say "routed-workflow tool audit"
+MISSING=""
+for t in psql gh jq curl git node npm npx python3 ssh; do command -v "$t" >/dev/null || MISSING="$MISSING $t"; done
+[ -z "$MISSING" ] && echo "   every CLI the workflows call is present" || { echo "   MISSING:$MISSING"; exit 1; }
 
 # ── 6. browser system libraries (once; the binaries cache under ~ci) ─────────
 say "playwright system deps (chromium + webkit)"
-npx --yes "playwright@${PLAYWRIGHT_VERSION}" install-deps chromium webkit >/tmp/pwdeps.log 2>&1 && echo "   ok" || { echo "   FAILED - see /tmp/pwdeps.log"; tail -3 /tmp/pwdeps.log; }
+# DO NOT TRUST THE EXIT CODE HERE. `playwright install-deps` shells out to
+# apt-get, which returns non-zero on a perfectly healthy box - held packages,
+# "8 not upgraded", a warning on a repo it does not need. On 2026-09-02 this
+# printed "FAILED - see /tmp/pwdeps.log" while the log said, in full,
+# "0 upgraded, 0 newly installed, 0 to remove": every library was already
+# present and both browsers ran fine. An operator chasing that non-problem is
+# exactly the cost a false alarm has, and a provisioner that cries wolf is one
+# people stop reading.
+#
+# So the install still runs, and then the RESULT is verified: every browser
+# binary Playwright has unpacked must resolve all of its shared libraries.
+# That is the thing we actually care about, it is what breaks a routed job,
+# and it is true or false regardless of what apt felt about it.
+npx --yes "playwright@${PLAYWRIGHT_VERSION}" install-deps chromium webkit >/tmp/pwdeps.log 2>&1 || true
+PW_CACHE="${PW_CACHE:-/home/ci/.cache/ms-playwright}"
+missing=$(
+  find "$PW_CACHE" -type f \( -name chrome -o -name headless_shell -o -name MiniBrowser \) 2>/dev/null |
+  while read -r bin; do ldd "$bin" 2>/dev/null | grep -F "not found" | sed "s|^|$(basename "$(dirname "$bin")")/$(basename "$bin"): |"; done
+)
+bins=$(find "$PW_CACHE" -type f \( -name chrome -o -name headless_shell -o -name MiniBrowser \) 2>/dev/null | wc -l)
+if [ -z "$missing" ] && [ "$bins" -gt 0 ]; then
+  echo "   ok - $bins browser binary(ies), every shared library resolves"
+elif [ "$bins" -eq 0 ]; then
+  echo "   no browsers unpacked yet under $PW_CACHE - a Playwright job will install them on first run"
+else
+  echo "   FAILED - browser binaries are missing shared libraries:"; printf '%s\n' "$missing" | sed 's/^/     /' | head -20
+fi
 
 say "done"
 echo "   cores $(nproc) | mem $(free -g | awk '/Mem:/{print $2}')G | swap $(free -g | awk '/Swap:/{print $2}')G | disk $(df -h / | awk 'NR==2{print $4}') free"

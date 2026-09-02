@@ -47,8 +47,19 @@ groups:
       # ── The engine cannot report on itself if it is gone ────────────────
       # Replaces the dead `up{job="engine_pm2"}` rule. This job label is the
       # one in the live scrape config.
+      # ── THE :55 BREAK IS NOT AN OUTAGE (Dan 2026-09-01, to-do #2563) ────
+      # The engine restarts inside a five-minute announced break every hour,
+      # so for up to ~2 minutes of every hour the process is deliberately
+      # down. `unless max_over_time(poker_maintenance_break_active[6m]) == 1`
+      # suppresses the rule while a break was active in the last six minutes:
+      # max_over_time reads through the scrape gap (the series would otherwise
+      # go stale the moment the engine dies, which is exactly when the guard
+      # is needed). Six minutes covers the 5-minute break plus margin; a REAL
+      # outage keeps firing the moment the window ages out.
       - alert: EngineScrapeDown
-        expr: up{job="engine_game_server"} == 0
+        expr: |
+          up{job="engine_game_server"} == 0
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 1m
         labels:
           severity: critical
@@ -75,8 +86,11 @@ groups:
             per-table alert would catch.
 
       # ── Composite liveness, useful as a single dashboard stat ───────────
+      # Break-guarded like EngineScrapeDown above, same rationale.
       - alert: EngineLivenessDead
-        expr: poker_engine_liveness == 0
+        expr: |
+          poker_engine_liveness == 0
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 2m
         labels:
           severity: critical
@@ -93,6 +107,7 @@ groups:
         expr: |
           sum(increase(poker_hands_dealt_total[10m])) == 0
           and sum(poker_active_players) > 1
+          unless max_over_time(poker_maintenance_break_active[6m]) == 1
         for: 10m
         labels:
           severity: critical

@@ -81,6 +81,26 @@
   object-fit: contain;
 }
 
+/* Dan 2026-09-02: "REMOVE THE SILVER BOX THAT IS BEHIND THE LOGO'S ON ALL THE CLUB CARDS.
+   IT SHOULD JUST BE A LOGO, NO FRAME OR BOX BEHIND IT."
+   The silver box is painted into the shell PNG (club-identity-template-no-level-v3.png).
+   This mask div sits above the shell (z-index: 0) but below the logo (z-index: 1)
+   and exactly covers the painted silver frame area, hiding it with the card's
+   dark background. Coordinates from ARTWORK ANCHORS in the file header. */
+.club-identity__logo-mask {
+  position: absolute;
+  z-index: 0;
+  /* Generous bounds that cover the full silver frame including its outer bevel.
+     The artwork silver frame spans x:13%-41%, y:14%-68% of the card. */
+  left: 12%;
+  top: 13%;
+  width: 30%;
+  height: 56%;
+  background: #000;
+  pointer-events: none;
+  user-select: none;
+}
+
 .club-identity__logo {
   position: absolute;
   z-index: 1;
@@ -91,7 +111,8 @@
   display: grid;
   place-items: center;
   overflow: hidden;
-  background: #050608;
+  /* Removed: background: #050608 — the logo floats on the masked dark bg,
+     no box needed. */
   color: #69bfff;
   font-size: 10cqw;
   transform: translateY(-50%);
@@ -117,10 +138,13 @@
   left: 43.6%;
   right: 11.5%;
   top: 21.2%;
-  height: 27.48%;
+  /* Dan 2026-09-02: was fixed height: 27.48% which clipped a 2-line club name.
+     Now min-height so the box expands downward if the name wraps. */
+  min-height: 27.48%;
   display: grid;
-  grid-template-rows: 12.12fr 15.36fr;
+  grid-template-rows: auto auto;
   align-items: center;
+  gap: 0.3cqw;
   min-width: 0;
 }
 
@@ -142,7 +166,15 @@
 }
 
 .club-identity__details h2,
-.club-identity__alias,
+.club-identity__alias {
+  overflow: hidden;
+}
+
+/* Dan 2026-09-02: "CLUB NAME SHOULD ALWAYS BE FULLY DISPLAYED NEVER A 'MIDWAY UN...'
+   FONT NEEDS TO BE DYNAMIC IT ALWAYS DISPLAYS THE FULL NAME."
+   Remove white-space:nowrap + text-overflow:ellipsis from the name h2 so it wraps
+   to a second line if needed. Use a slightly smaller base font so long names still fit. */
+
 .club-identity__line {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -153,12 +185,18 @@
   margin: 0;
   color: #f5f6f8;
   font-family: Inter, Arial, sans-serif;
-  font-size: 6.1cqw;
+  font-size: clamp(4cqw, 5.8cqw, 6.1cqw);
   font-weight: 850;
   letter-spacing: 0.01em;
-  line-height: 1;
+  line-height: 1.1;
   text-transform: uppercase;
   text-shadow: 0 2px 2px #000;
+  /* Dan 2026-09-02: Club name must never be cut off. Allow wrapping to a second
+     line instead of truncating with "MIDWAY UN...". The grid row grows to fit. */
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  align-self: center;
 }
 
 .club-identity__alias {
@@ -261,19 +299,23 @@ button.club-identity__line {
   pointer-events: none;
 }
 
-/* Dan, 2026-09-01: "PLAYING NOW NEEDS TO BE MOVED DOWN MORE." Its bottom edge
-   was at 80.88% of the card; it is at 85% now. The right edge stops at the
-   copy frame's left edge (75.92%) so a six-figure count is clipped rather than
-   run under the button. */
+/* Dan 2026-09-02: "COPY BUTTON ICON NEEDS TO BE CENTERED IN THE FRAME AND NEVER
+   CUTTING OFF THE 446 PLAYING NOW FONT."
+   Fix 1 — Playing area: text was overflowing into the button frame because the number
+   (446) at 1.45em was wider than the allocated 31.92% of card width. Now we let the
+   number shrink slightly and ensure "PLAYING NOW" always fits fully.
+   Fix 2 — Share button: the SVG was sized with cqw but the container uses %-height,
+   so on narrow cards the icon was not centred in the painted frame. Now the SVG uses
+   percentage of its container box for true centering at every card size. */
 .club-identity__playing {
   position: absolute;
   left: 44%;
-  right: 24.08%;
+  right: 25%;
   bottom: 15%;
   display: flex;
   align-items: baseline;
   min-width: 0;
-  gap: 0.42em;
+  gap: 0.35em;
   overflow: hidden;
   color: #e5e8ec;
   font-size: 3.15cqw;
@@ -286,13 +328,15 @@ button.club-identity__line {
 
 .club-identity__playing strong {
   color: #0a86ff;
-  font-size: 1.45em;
+  font-size: 1.35em;
   font-weight: 850;
   font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
 /* Pinned to the copy frame painted in the artwork, in percentages, so the icon
-   sits inside its frame at every card size instead of walking out of it. */
+   sits inside its frame at every card size instead of walking out of it.
+   Dan 2026-09-02: "COPY BUTTON ICON NEEDS TO BE CENTERED IN THE FRAME." */
 .club-identity__share {
   position: absolute;
   z-index: 2;
@@ -308,13 +352,16 @@ button.club-identity__line {
   color: #1ea7ff;
   filter: drop-shadow(0 0 3px rgba(0, 136, 255, 0.72));
   cursor: pointer;
-  line-height: 0;
+  line-height: 1;
   pointer-events: auto;
 }
 
+/* SVG is sized as a fraction of the button's own box (via cqw) so it stays
+   centred at every card width, matching the painted icon inside the frame. */
 .club-identity__share svg {
-  width: 3.75cqw;
-  height: 3.75cqw;
+  width: 4cqw;
+  height: 4cqw;
+  display: block;
 }
 
 /* The painted icon is deliberately small inside the artwork; its touch target

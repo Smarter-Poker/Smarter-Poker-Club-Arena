@@ -1,5 +1,21 @@
 # Club Arena -- Agent Instructions
 
+## ↗ RESUMING THE ENGINE-RESTART PROGRAMME? READ `docs/HANDOFF_CURRENT_STATE.md`
+
+If you are picking up the hourly `:55` maintenance break / platform freeze /
+engine restart work, the current state, every measured baseline, the open
+defects and the exact next actions are in
+[`docs/HANDOFF_CURRENT_STATE.md`](./docs/HANDOFF_CURRENT_STATE.md).
+
+Read it before touching `server/src/maintenance/**`,
+`server/src/engine/ServerTableEngineBase.ts`,
+`.github/workflows/auto-deploy-hetzner.yml` or
+`.github/scripts/engine-watchdog.sh`. It records three separate guards that
+read as armed while being unreachable, and one trap where a metric reaching
+zero means the opposite of success.
+
+---
+
 ## ↗ START HERE: `AGENT-PLAYBOOK.md`
 
 **Before this file, before anything: read [`AGENT-PLAYBOOK.md`](./AGENT-PLAYBOOK.md).**
@@ -41,33 +57,57 @@ platform plan wins.
 Club Arena is a Vite + React SPA that lives inside the smarter.poker Next.js app.
 It deploys through the World Hub repo, NOT directly.
 
-### 1.1 The Only Deploy Path (Phase U5.4 — one script, one push)
+### 1.1 How your work reaches production (rewritten 2026-09-02 - read this, it changed)
+
+There is exactly ONE route from a commit to a player, and every step of it is
+automatic. Your job ends at step 2.
+
+1. **Work on a branch in your own worktree.** Any name is fine - `fix/<slug>`
+   is the convention. Never commit on `main`; it is a protected mirror.
+2. **Push the branch** over SSH (`git push origin HEAD:refs/heads/<branch>`).
+   **That is the end of your job.** Do not open the pull request yourself, do
+   not merge, do not watch CI (10.8.3). Report the branch name and stop.
+3. `agent-open-pr.yml` opens the pull request within seconds of the branch
+   appearing - for ANY branch name, not only `agent/*` (that was the gap that
+   stranded three agents' finished work on 2026-09-02).
+4. `agent-autopilot.yml` enables squash auto-merge. The required checks run on
+   the estate's own Hetzner runners (`vars.CI_RUNNER`), and GitHub merges when
+   they are green. Red checks never merge (5.8).
+5. **`publish-club-arena.yml` publishes.** On merge it builds the bundle,
+   runs the four-way sharded test gate, and pushes `dist/` into the World Hub
+   repo's `public/hub/club-arena/` with a GitHub App token. Vercel then deploys
+   the World Hub, which is what serves `smarter.poker/hub/club-arena`. It runs
+   on the Hetzner box too, so the only path to production no longer depends on
+   GitHub's hosted pool.
+6. **Verify** by reading, never by assuming:
+   `curl -s https://smarter.poker/hub/club-arena/build-info.json` - `ca_sha`
+   must equal the squash commit on `main`. Nothing else counts as deployed.
+
+**Three nets catch a publish that fails, all automatic:** the `*/30` catch-up
+cron inside the publisher, `publish-watchdog.yml` (re-dispatches up to three
+times, then raises an in-app notification), and the orphan sweep in
+`agent-autopilot.yml` that opens a pull request for any branch under a day old
+that has none. If production is behind `main` for more than ~25 minutes,
+something is genuinely broken - read the watchdog issue it filed.
+
+**There is no second publisher.** `build-for-world-hub.yml` was deleted on
+2026-09-02; for ninety minutes both existed on separate concurrency groups and
+every merge ran two full publishes. `tests/no-commit-left-behind.law.test.ts`
+now counts publishers and requires exactly one. Club Arena cannot bypass the
+World Hub: `club-arena/vercel.json` has `deploymentEnabled: false` on purpose,
+and the bundle is served from the World Hub's `public/`.
+
+**Local preview only, NOT a deploy path:**
 
 ```bash
 cd ~/Documents/Smarter-Poker-World-Hub
 bash scripts/sync-club-arena.sh "feat(ca): <describe what changed>"
 ```
 
-That script builds CA with NODE_ENV=production, copies the new build to the Hub, and stages it for local preview.
-
-**To actually deploy to production:**
-
-1. Commit your changes in the `club-arena` repository.
-2. `git push` to `main` in `club-arena`.
-3. A GitHub Action (`build-for-world-hub.yml`) will automatically build and sync it to the World Hub repository, which triggers the Vercel deploy.
-
-`SENTRY_AUTH_TOKEN/ORG/PROJECT` are read from `~/Documents/club-arena/.env` if
-not already exported. Bulky static dirs (`cards/`, `images/`, `club-logos/`,
-`videos/`) are preserved — they're not in a fresh build.
-
-**Legacy names** still work but just forward to the canonical script:
-
-- `WH scripts/build-club-arena.sh` → `sync-club-arena.sh`
-- `CA scripts/sync-to-world-hub.sh` → `sync-club-arena.sh`
-
-For post-deploy verification that production is serving your commit, follow up
-with `bash scripts/git-safe-push.sh` in the WH repo — but `sync-club-arena.sh`
-already exits non-zero on build/push failure.
+That builds CA with NODE_ENV=production and stages it into the Hub for local
+preview. It does not push and cannot publish; its "Pushed" line is a vestige.
+`SENTRY_AUTH_TOKEN/ORG/PROJECT` come from `~/Documents/club-arena/.env`.
+Legacy names `build-club-arena.sh` and `sync-to-world-hub.sh` forward to it.
 
 ### 1.1.5 SERVER-SIDE PROTECTION (APPLIED - this section is history)
 
@@ -307,7 +347,7 @@ Do NOT audit 10 items and then ask "what should I fix?" -- fix them as you go.
 ---
 
 8. NEVER PUSH A RED TEST (Dan 2026-08-21, binding). `npx vitest run tests/` in
-   `build-for-world-hub.yml` is what PUBLISHES the bundle. A failing test does
+   `publish-club-arena.yml` is what PUBLISHES the bundle. A failing test does
    not fail a report - it stops the World Hub sync for every agent and every
    deploy, until a human notices. On 2026-08-21 that happened four times in one
    day, and every one was a test pushed alongside the feature it was meant to
@@ -871,3 +911,57 @@ is deleted** — the backup branch and the stash are both printed at the end.
 World Hub note: that clone already carries an equivalent hook, but only in
 `.git/hooks/` — untracked, so it dies on any fresh clone. This repo's version is
 committed precisely so it cannot be lost that way.
+
+---
+
+## 13. THE HOURLY MAINTENANCE BREAK AND THE PLATFORM FREEZE (Dan 2026-09-01, BINDING)
+
+**The engine restarts at :55 of EVERY hour, inside an announced five-minute
+break, and the whole platform freezes for it.** If you read anything - in this
+repo, another repo, or a stale worktree - saying the engine restarts at 7am
+and 7pm, or in five Chicago windows, that text is OLD. This section wins.
+(That is exactly how the hamburger revert war ran for two days: a stale copy
+taught the next agent to "fix" the current behaviour back.)
+
+Dan, verbatim: "program the engine restart to be every hour on the :55 ...
+THE ENTIRE PLATFORM NEEDS TO FREEZE FOR THE 5 MINUTES, NO BUY INS, NO CHIP
+MOVEMENTS ... HORSES SHOULD NOT STAND UP OR ROTATE, EVERYTHING JUST FREEZES,
+THEN PICKS BACK UP EXACTLY AS IT WAS."
+
+The timeline: :53 every table is told to finish its hand (`MaintenanceBreak`
+announces, `pauseForMaintenance` parks each engine at the top of its loop).
+:55 every table is parked, the 5:00 countdown starts, `/health` opens
+`maintenance.readyForRestart`, and the deploy workflow - which built the
+image BEFORE the gate, while play continued - cuts over. ~:58 the new engine
+boots, adopts the persisted break row and re-parks its fleet. :00 the thaw
+(`fn_thaw_platform`) gives every in-flight deadline back the frozen minutes,
+then every table resumes together.
+
+Rules that follow from it, all enforced:
+
+1. **The freeze lives in Postgres** (`zz_freeze_guard` BEFORE triggers on the
+   seven money/seat tables + `fn_platform_frozen`), because the engine is
+   dead for ~2 of the 5 minutes and pg_cron does not stop with it. Do not
+   move it into engine memory; that guard is absent exactly when needed.
+2. **Whoever paused a table resumes it.** The maintenance break and
+   hand-for-hand are independent authorities (`maintenancePaused` vs
+   `handForHandPaused`); never let one lift the other's pause.
+3. **Never gate a table on `tables.status = 'paused'`** -
+   `cash_tables_needing_engine` abandons it. The break is the single row in
+   `engine_maintenance_break`.
+4. **Deadlines are thawed, not burned.** If you add a wall-clock deadline a
+   player can lose to (a hold, a window, a prompt), add it to
+   `fn_thaw_platform` in the same PR, or a five-minute break silently eats it.
+5. **Sweeps check `isMaintenanceFrozen()`** before moving money or seats.
+   A new periodic sweep that moves either gets the gate in the same PR.
+6. **Fleet-level alert rules carry the break guard**
+   (`unless max_over_time(poker_maintenance_break_active[6m]) == 1`), or they
+   page hourly about a stop we scheduled.
+7. **The constants are law**: `tests/the-break-clocks-agree.law.test.ts` pins
+   the :55 minute, cron ticks, freeze ceiling and windows across all five
+   surfaces. If you deliberately change one, change them together with the
+   law, in one commit.
+
+Full history and rationale: `docs/changelog/2026-09-01-scheduled-maintenance-break.md`
+and `docs/changelog/2026-09-01-total-platform-freeze.md`. Remaining backlog:
+issue #2563.

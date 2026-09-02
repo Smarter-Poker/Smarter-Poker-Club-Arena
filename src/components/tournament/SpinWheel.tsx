@@ -37,7 +37,11 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { soundService } from '../../services/SoundService';
-import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
+import {
+  ANIMATION_SPEED_MIN,
+  getAnimationSpeed,
+  prefersReducedMotion,
+} from '../../utils/animationSpeed';
 import { fireVibration } from '../../utils/vibrationGate';
 import { reportError } from '../../utils/errorReporter';
 import {
@@ -474,10 +478,31 @@ export default function SpinWheel({ data, onDone, playSounds = true }: SpinWheel
       const budgetMs = Number.isFinite(deadline)
         ? Math.max(0, deadline - revealAt - spinPostRevealMs())
         : spinRevealTotalMs();
-      const factor = budgetMs > 0 ? budgetMs / spinRevealTotalMs() : 1;
-      /* Never stretch past the designed pace even when the server holds longer:
-         an over-long hold is dead air the engine owns, not slow motion. */
-      return Math.min(factor, 1);
+      /* WHEN THE BUDGET IS ALREADY GONE, RUN AS FAST AS THE SETTING ALLOWS,
+         NOT AS SLOW AS POSSIBLE (fixed 2026-09-02).
+
+         This read `: 1` — so a deadline that had ALREADY PASSED produced a
+         factor of 1 and, through the clamp below, the LONGEST sequence the
+         component can play. The one case where compression is mandatory was
+         the one case that got none, and the cards landed on a wheel still
+         turning. Measured on production the same day: 87% of Spins revealed
+         outside their 3-second window, so this was not a rare branch. */
+      const factor = budgetMs > 0 ? budgetMs / spinRevealTotalMs() : ANIMATION_SPEED_MIN;
+
+      /* THE PLAYER'S CHOSEN SPEED IS HONOURED, WHICH IS THE LAW (10.6).
+
+         This read `Math.min(factor, 1)`, and the hard-coded 1 discarded the
+         Animation Speed preference on every real reveal: `getAnimationSpeed()`
+         above is only reached when there is NO shared clock, and every live
+         reveal has one. A player set to 0.25x watched the same sequence as
+         everyone else. The comment fifteen lines up already promised the
+         correct behaviour — "Faster than the budget is allowed: that player's
+         wheel lands early and the felt simply waits" — it simply was not
+         implemented. Taking the min of the two keeps the one-sided cap exactly
+         as described: faster than the budget is honoured, slower is refused,
+         because slower means being dealt into a hand while the wheel is still
+         asking the question. */
+      return Math.min(factor, getAnimationSpeed());
     })();
 
     /**

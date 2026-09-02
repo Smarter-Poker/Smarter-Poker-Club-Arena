@@ -869,6 +869,86 @@ export async function requeueUnbankedCashRake(
  * cause and with Dan named as the decision owner for any clawback), so this
  * speaks only for NEW drift. Read-only: it reports, it never repairs.
  */
+/**
+ * ONE SHORTFALL, ONE PAYMENT (2026-09-02).
+ *
+ * A tournament prize obligation can be topped up by more than one repair
+ * path. `overlay_backpay`, `reconcile` and `spin_backpay` all exist to find a
+ * player who was paid less than they were owed and make them whole. Each one
+ * builds its idempotency key out of its OWN name:
+ *
+ *   tourney:<tid>:overlay_backpay:<uid>
+ *   tourney:<tid>:prize:<uid>:<place>:reconcile
+ *
+ * Those are the SAME DEBT under two different names, so
+ * uq_tournament_payouts_idempotency_key cannot see them as one and both pay.
+ * The key is namespaced by the repairer instead of by the thing repaired.
+ *
+ * Measured when this was written: 57 completed events in seven days paid out
+ * more prize money than their pool, 3,808.52 chips, and 56 obligations were
+ * provably this pattern. It is invisible to auditPrizeDisbursement above,
+ * which only reports that an event over-paid IN TOTAL and never says why -
+ * this one names the player, the place and the two paths that both paid.
+ *
+ * NOT a bounty problem, despite bounty events dominating the excess list. A
+ * knockout pays into wallet_transactions.category = 'bounty', which the prize
+ * audit never counts; on the worst offender bounty reconciled exactly
+ * (1,020.00 paid against a 1,020.00 pool). Bounty sources are excluded from
+ * this check for the same reason: a player who busts four opponents correctly
+ * receives four equal payments at one finishing position.
+ *
+ * Reports, never repairs. Deciding whether an over-payment is clawed back
+ * from a player is Dan's call, not an auto-repair loop's.
+ */
+export async function auditDoublePaidObligations(
+  windowHours = 24
+): Promise<{ violations: number; excess: number } | null> {
+  try {
+    const { data, error } = await supabase.rpc('fn_tournament_double_paid_obligations', {
+      p_hours: windowHours,
+    });
+    if (error) {
+      reportError(error, 'FeeReconciler.double_paid_query_failed');
+      return null;
+    }
+    const rows = (data ?? []) as Array<{
+      tournament_id: string;
+      tournament_name: string;
+      player_id: string;
+      finish_position: number;
+      amount: number;
+      payments: number;
+      sources: string;
+      excess_chips: number;
+    }>;
+    if (rows.length === 0) return { violations: 0, excess: 0 };
+
+    const excess = rows.reduce((s, r) => s + (Number(r.excess_chips) || 0), 0);
+    const detail =
+      `DOUBLE_PAID_OBLIGATION: ${rows.length} prize obligation(s) in the last ${windowHours}h ` +
+      `were settled by more than one repair path (${excess.toFixed(2)} chips paid twice): ` +
+      rows
+        .slice(0, 10)
+        .map(
+          (r) =>
+            `${r.tournament_id.slice(0, 8)} "${r.tournament_name}" place ${r.finish_position} ` +
+            `player ${String(r.player_id).slice(0, 8)} ${r.amount} x${r.payments} via ${r.sources}`
+        )
+        .join('; ');
+    reportError(new Error(detail), 'FeeReconciler.double_paid_obligation');
+    await raiseFinancialAlert('critical', 'FeeReconciler.double_paid_obligation', detail, {
+      windowHours,
+      violations: rows.length,
+      excessTotal: Number(excess.toFixed(2)),
+      rows: rows.slice(0, 50),
+    });
+    return { violations: rows.length, excess };
+  } catch (err) {
+    reportError(err, 'FeeReconciler.double_paid_threw');
+    return null;
+  }
+}
+
 export async function auditPrizeDisbursement(
   windowHours = 24
 ): Promise<{ violations: number; excess: number } | null> {

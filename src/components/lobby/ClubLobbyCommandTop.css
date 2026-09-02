@@ -1267,8 +1267,37 @@
     grid-column: span 3;
   }
 
+  /* ═══════════════════════════════════════════════════════════════════════
+     MOBILE CAMPAIGN BAY — THE FRAME IS THE AD'S SHAPE (Dan 2026-09-02)
+     -----------------------------------------------------------------------
+     "THE LIVE DYNAMIC ADD IS CUT OFF ON THE BOTTOM, MAKE SURE THE FRAME
+     ALLOWS THE ENTIRE FRAME AND ADD TO BE DISPLAYED."
+
+     Desktop was fixed on 2026-09-01 (#2517); the phone kept two faults that
+     between them sliced the buy-in line off the bottom of the artwork.
+
+       THE RATIO WAS ON THE PADDED BOX. `aspect-ratio` sizes the BORDER box,
+       so a well carrying `padding: 5px 10px 7px` and a 1px top border offered
+       its child a content box 13px SHORTER and 20px NARROWER than 2172/302.
+       The art needs (W - 20) / 7.19 of height and was given W / 7.19 - 13,
+       so it was always ~10px too tall for the space it was told to fill.
+
+       THE <picture> STAYED INLINE. An inline box ignores `height: 100%`, so
+       the img's own `height: 100%` had no definite parent height to resolve
+       against, fell back to its intrinsic height, and `object-fit: contain` -
+       which cannot crop - never got the chance to letterbox. The well's
+       `overflow: hidden` did the cropping instead.
+
+     Both are answered the same way: the ratio moves onto the button, the
+     element that actually draws the frame around the art, so frame and
+     artwork are the same shape by construction and the well is free to be
+     exactly as tall as its contents. `contain` stays as the guarantee for a
+     club's own `banner_url`, which can be any shape at all - worst case is
+     black at the sides, never a headline with its bottom sliced off. */
   .club-lobby-command-top__campaign {
-    aspect-ratio: 2172 / 302;
+    height: auto;
+    min-height: 0;
+    aspect-ratio: auto;
     padding: 5px 10px 7px;
     border-top: 1px solid #26323b;
   }
@@ -1281,15 +1310,24 @@
     min-height: 0;
   }
 
+  .club-lobby-command-top__campaign-picture {
+    display: block;
+  }
+
   .club-lobby-command-top__campaign-button {
+    display: block;
+    height: auto;
     min-height: 0;
+    aspect-ratio: 2172 / 302;
     padding: 0;
     border: 1px solid #34434e;
   }
 
   .club-lobby-command-top__campaign-button img {
+    display: block;
     min-height: 0;
     object-fit: contain;
+    object-position: center;
     clip-path: none;
   }
 }
@@ -1423,8 +1461,14 @@
     grid-column: span 3;
   }
 
+  /* The ratio belongs to the frame, not the padded well - full reasoning on
+     the block further down this file (Dan 2026-09-02, "THE LIVE DYNAMIC ADD
+     IS CUT OFF ON THE BOTTOM"). Stated here too so this earlier copy cannot
+     quietly re-crop the ad if the cascade is ever reordered. */
   .club-lobby-command-top__campaign {
-    aspect-ratio: 2172 / 302;
+    height: auto;
+    min-height: 0;
+    aspect-ratio: auto;
     padding: 5px 10px 7px;
     border-top: 1px solid #26323b;
   }
@@ -1438,6 +1482,10 @@
   }
 
   .club-lobby-command-top__campaign-button {
+    display: block;
+    height: auto;
+    min-height: 0;
+    aspect-ratio: 2172 / 302;
     padding: 0;
     border: 1px solid #34434e;
     background: #000;
@@ -1460,7 +1508,15 @@
   .club-lobby-machine {
     width: calc(100% - 8px);
     max-width: none;
-    margin: 0 4px calc(18px + var(--bottom-nav-clearance, 74px));
+    /* THE BOTTOM NAV IS RESERVED ONCE, BY THE PAGE (Dan 2026-09-02).
+       `.club-home` already pads by `var(--bottom-nav-clearance) + 12px` in
+       ClubHomePage.css, and the club lobby is a flush route so the shell adds
+       none. A second full clearance here stacked ~210px of black under the
+       last game card for a 78px bar - "THERE IS TOO MUCH PADDING AT THE
+       BOTTOM ... MOVE IT SO ITS TRULY AT THE BOTTOM OF THE PAGE". What
+       belongs to this element is the gap between the machine and whatever
+       follows it, and that is 18px. */
+    margin: 0 4px 18px;
     overflow: visible;
   }
 
@@ -1604,7 +1660,8 @@
   .club-lobby-machine {
     width: calc(100% - 8px);
     margin-left: 4px;
-    margin-bottom: calc(18px + var(--bottom-nav-clearance, 74px));
+    /* One reservation, and it is `.club-home`'s - see the 900px block above. */
+    margin-bottom: 18px;
   }
 
   .club-lobby-command-top__controls {
@@ -1964,7 +2021,8 @@
   .club-lobby-machine {
     width: calc(100% - 8px);
     max-width: none;
-    margin: 0 4px calc(18px + var(--bottom-nav-clearance, 74px));
+    /* One reservation, and it is `.club-home`'s - see the 900px block above. */
+    margin: 0 4px 18px;
   }
 
   .club-lobby-command-top {
@@ -2039,8 +2097,13 @@
     display: block;
   }
 
+  /* `fill` stretched the ad to whatever shape this earlier bay happened to
+     be. It is overridden further down, but a superseded rule that distorts
+     the artwork is one cascade reorder away from shipping - and the ad is
+     never distorted any more than it is cropped (Dan 2026-09-02). */
   .club-lobby-command-top__campaign-button img {
-    object-fit: fill;
+    object-fit: contain;
+    object-position: center;
   }
 
   .club-lobby-machine > .club-home__games--v2 {
@@ -2057,7 +2120,8 @@
   .club-lobby-machine {
     width: calc(100% - 8px);
     margin-left: 4px;
-    margin-bottom: calc(18px + var(--bottom-nav-clearance, 74px));
+    /* One reservation, and it is `.club-home`'s - see the 900px block above. */
+    margin-bottom: 18px;
   }
 }
 
@@ -2177,8 +2241,37 @@
     grid-column: span 3;
   }
 
+  /* ═══════════════════════════════════════════════════════════════════════
+     MOBILE CAMPAIGN BAY — THE FRAME IS THE AD'S SHAPE (Dan 2026-09-02)
+     -----------------------------------------------------------------------
+     "THE LIVE DYNAMIC ADD IS CUT OFF ON THE BOTTOM, MAKE SURE THE FRAME
+     ALLOWS THE ENTIRE FRAME AND ADD TO BE DISPLAYED."
+
+     Desktop was fixed on 2026-09-01 (#2517); the phone kept two faults that
+     between them sliced the buy-in line off the bottom of the artwork.
+
+       THE RATIO WAS ON THE PADDED BOX. `aspect-ratio` sizes the BORDER box,
+       so a well carrying `padding: 5px 10px 7px` and a 1px top border offered
+       its child a content box 13px SHORTER and 20px NARROWER than 2172/302.
+       The art needs (W - 20) / 7.19 of height and was given W / 7.19 - 13,
+       so it was always ~10px too tall for the space it was told to fill.
+
+       THE <picture> STAYED INLINE. An inline box ignores `height: 100%`, so
+       the img's own `height: 100%` had no definite parent height to resolve
+       against, fell back to its intrinsic height, and `object-fit: contain` -
+       which cannot crop - never got the chance to letterbox. The well's
+       `overflow: hidden` did the cropping instead.
+
+     Both are answered the same way: the ratio moves onto the button, the
+     element that actually draws the frame around the art, so frame and
+     artwork are the same shape by construction and the well is free to be
+     exactly as tall as its contents. `contain` stays as the guarantee for a
+     club's own `banner_url`, which can be any shape at all - worst case is
+     black at the sides, never a headline with its bottom sliced off. */
   .club-lobby-command-top__campaign {
-    aspect-ratio: 2172 / 302;
+    height: auto;
+    min-height: 0;
+    aspect-ratio: auto;
     padding: 5px 10px 7px;
     border-top: 1px solid #26323b;
   }
@@ -2191,15 +2284,24 @@
     min-height: 0;
   }
 
+  .club-lobby-command-top__campaign-picture {
+    display: block;
+  }
+
   .club-lobby-command-top__campaign-button {
+    display: block;
+    height: auto;
     min-height: 0;
+    aspect-ratio: 2172 / 302;
     padding: 0;
     border: 1px solid #34434e;
   }
 
   .club-lobby-command-top__campaign-button img {
+    display: block;
     min-height: 0;
     object-fit: contain;
+    object-position: center;
     clip-path: none;
   }
 }

@@ -36,7 +36,7 @@ import { sliceBetween } from '../helpers/sourceWindow';
 const wf = (n: string) => readFileSync(resolve(__dirname, `../../.github/workflows/${n}`), 'utf8');
 
 const HETZNER = wf('auto-deploy-hetzner.yml');
-const SYNC = wf('build-for-world-hub.yml');
+const SYNC = wf('publish-club-arena.yml');
 
 /** Reads the every-N-minutes cron cadence out of a workflow. */
 function cronEveryMinutes(yaml: string): number | null {
@@ -105,19 +105,28 @@ describe('the engine deploy tells the truth when it skips', () => {
     expect(triggers).toMatch(/^\s{2}workflow_dispatch:/m);
   });
 
-  it('gets three chances at the :55 break of EVERY hour', () => {
+  it('gets one tick before the :55 break of EVERY hour, and the watchdog covers a dropped one', () => {
     /**
      * REPLACED THE FIVE-WINDOW SCHEDULE (Dan 2026-09-01): "program the engine
      * restart to be every hour on the :55 instead of every 5 hours so nothing
      * gets lost or orphaned from production improvements."
      *
-     * The ticks sit before :55 so the runner is checked out, tested and built
+     * The tick sits before :55 so the runner is checked out, tested and built
      * by the time the engine parks the platform; the break gate then does the
-     * waiting. Three of them because a GitHub scheduled run is best-effort and
-     * is sometimes dropped outright - a dropped tick now costs an hour rather
-     * than the six it used to.
+     * waiting.
+     *
+     * ONE tick, not three (2026-09-02). There were three because a GitHub
+     * scheduled run is best-effort and is sometimes dropped. Measured since:
+     * GitHub delivers about 10% of this repo's scheduled runs, so tripling the
+     * asks was tripling the demand that gets it throttled, and on 2026-09-02
+     * all three were dropped every hour from 14:42. The redundancy moved to
+     * publish-watchdog's schedule-liveness check, which runs on workflow_run
+     * many times an hour and dispatches this workflow the moment it is more
+     * than an hour since it last ran by any trigger. That is pinned in
+     * tests/schedule-liveness.test.ts; what is pinned here is that the one
+     * tick is still hourly and still lands before :55.
      */
-    expect(HETZNER).toMatch(/cron: '40,45,50 \* \* \* \*'/);
+    expect(HETZNER).toMatch(/cron: '45 \* \* \* \*'/);
     expect(cronEveryMinutes(HETZNER)).toBeNull();
 
     const [, minutes, hours] = HETZNER.match(/cron: '([0-9,]+) ([^ ]+) \* \* \*'/)!;
@@ -156,7 +165,7 @@ describe('the engine deploy tells the truth when it skips', () => {
     // outside an announced break, so a plain dispatch still waits.
     const gate = HETZNER.slice(
       HETZNER.indexOf('Wait for the maintenance break'),
-      HETZNER.indexOf('Pull the exact commit')
+      HETZNER.indexOf('Cut over to the new image')
     );
     expect(gate).toMatch(/github\.event\.inputs\.force/);
     expect(gate).toMatch(/skipping the break gate/);
@@ -178,7 +187,7 @@ describe('the engine deploy tells the truth when it skips', () => {
      */
     const gate = HETZNER.slice(
       HETZNER.indexOf('Wait for the maintenance break'),
-      HETZNER.indexOf('Pull the exact commit')
+      HETZNER.indexOf('Cut over to the new image')
     );
     expect(gate).toMatch(/maintenance/);
     expect(gate).toMatch(/readyForRestart/);
@@ -199,7 +208,7 @@ describe('the engine deploy tells the truth when it skips', () => {
     // on the old SIGTERM drain, and the branch is unreachable afterwards.
     const gate = HETZNER.slice(
       HETZNER.indexOf('Wait for the maintenance break'),
-      HETZNER.indexOf('Pull the exact commit')
+      HETZNER.indexOf('Cut over to the new image')
     );
     expect(gate).toMatch(/LEGACY/);
     expect(gate).toMatch(/drainHands/);

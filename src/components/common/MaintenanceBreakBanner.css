@@ -1,0 +1,61 @@
+/* Maintenance break lobby banner. Mobile first (375px). No :hover -
+   tests/no-hover-effects.law.test.ts forbids it platform-wide. */
+
+.maintenance-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  margin: 8px 10px;
+  border-radius: 10px;
+  background: linear-gradient(160deg, #12203a 0%, #0c1526 100%);
+  border: 1px solid rgba(96, 154, 255, 0.4);
+  color: #dce7fb;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.maintenance-banner__dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4f9dff;
+  animation: maintenanceBannerPulse 1.6s ease-in-out infinite;
+}
+
+.maintenance-banner__text {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes maintenanceBannerPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Reduced motion collapses motion, never meaning (CLAUDE.md 10.6): the text
+   and countdown stay; only the pulse stops. */
+@media (prefers-reduced-motion: reduce) {
+  .maintenance-banner__dot {
+    animation: none;
+  }
+}
+
+/* The :50-:55 heads-up: quieter than the live break - informational, not
+   urgent - so the dot does not pulse and the border dims. */
+.maintenance-banner--upcoming {
+  border-color: rgba(96, 154, 255, 0.22);
+  background: linear-gradient(160deg, #101a2e 0%, #0b1322 100%);
+}
+
+.maintenance-banner--upcoming .maintenance-banner__dot {
+  animation: none;
+  opacity: 0.55;
+}

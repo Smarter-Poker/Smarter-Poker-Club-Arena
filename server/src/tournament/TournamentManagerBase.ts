@@ -3751,6 +3751,9 @@ export abstract class TournamentManagerBase {
     if (this.onBreak) return;
     this.revivingTables = true;
     try {
+      // A table missing from the map is invisible to every loop below, so it
+      // has to be put back before any of them run. See adoptEnginelessTables.
+      await this.adoptEnginelessTables();
       for (const [tableId, engine] of this.tableEngines) {
         // Belt and braces alongside the onBreak guard above: a table parked on
         // purpose (break OR hand-for-hand) is healthy — but only for as long as
@@ -3793,6 +3796,119 @@ export abstract class TournamentManagerBase {
       reportError(err, 'Tournament.' + this.tournamentId.slice(0, 8) + '.revive_sweep_threw');
     } finally {
       this.revivingTables = false;
+    }
+  }
+
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   *  A TABLE THIS PROCESS FORGOT IS A TABLE NOBODY DEALS (2026-09-02)
+   * ════════════════════════════════════════════════════════════════════════
+   *
+   * The sweep above was written on 2026-08-15 for precisely the failure its
+   * own comment names: "the reaper deleted it from the map and NOTHING
+   * recreated it". It does not cover that. It iterates `this.tableEngines`,
+   * so the one state it was built for -- the map entry GONE -- is the single
+   * state it cannot see.
+   *
+   * Measured live 2026-09-02, "$100 Freeroll 6:00 AM" (3e8e2afa):
+   *
+   *   table 10   status 'waiting'   6 live seats   63 hands, then silence
+   *   table 22   status 'running'   1 live seat    loopPhase start_wait_for_players
+   *
+   * /health listed table 22 and did not list table 10 at all. Six players and
+   * their stacks sat frozen for three hours and eleven minutes under a RUNNING
+   * tournament while every guard on the platform reported healthy, because
+   * every one of them walks the engine map:
+   *
+   *   reviveDeadTableEngines  iterates tableEngines - no entry, no revive
+   *   checkTableBalance       iterates tableEngines - saw ONE table, so its
+   *                                                   `size <= 1` early return
+   *                                                   fired and the field was
+   *                                                   never consolidated
+   *   absorbOrphanedSeats     skips OPEN tables     - 'waiting' is open, so
+   *                                                   the six were left alone
+   *   reopen sweep            only reopens 'closed' - declined
+   *   stalledTableCount       counts engines        - reported 0
+   *
+   * A table that is open in the database and absent from the map is invisible
+   * to all five, and nothing on the platform can end that state. The repair is
+   * the one the balancer would have made had it been able to see the felt:
+   * give the table its dealer back and let the existing consolidation run on
+   * the next cycle.
+   *
+   * Deliberately narrow, because an engine is not free:
+   *   - only tables of THIS tournament, which this process already leads;
+   *   - only rows that are open and not deleted;
+   *   - only rows that still hold a LIVE SEAT. A forgotten empty row deals to
+   *     nobody, so adopting one buys an engine for no player;
+   *   - at most ADOPT_BUDGET a pass, on the 20-second liveness cadence.
+   *
+   * Every read fails CLOSED: an unreadable board adopts nothing, never
+   * "adopt everything". The map slot is written before `start()` resolves, so
+   * the next pass twenty seconds later cannot build a second dealer for the
+   * same felt -- the duplicate-dealer failure `registerTableEngine` documents.
+   */
+  protected async adoptEnginelessTables(): Promise<void> {
+    const ADOPT_BUDGET = 4;
+
+    const { data: rows, error } = await supabase
+      .from('tables')
+      .select('id, status, is_deleted')
+      .eq('tournament_id', this.tournamentId)
+      .in('status', ['running', 'waiting', 'active']);
+    if (error) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] engineless-table scan failed: ${error.message} - adopting nothing this pass`
+        ),
+        'Tournament.adopt_scan_failed'
+      );
+      return;
+    }
+
+    const candidates = (rows ?? [])
+      .filter((r: any) => r?.is_deleted !== true)
+      .map((r: any) => String(r?.id ?? ''))
+      .filter((id: string) => id.length > 0 && !this.tableEngines.has(id));
+    if (candidates.length === 0) return;
+
+    const { data: seatRows, error: seatErr } = await supabase
+      .from('table_seats')
+      .select('table_id')
+      .in('table_id', candidates)
+      .is('left_at', null);
+    if (seatErr) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] engineless-table seat read failed: ${seatErr.message} - adopting nothing this pass`
+        ),
+        'Tournament.adopt_seat_read_failed'
+      );
+      return;
+    }
+
+    const occupied = new Set((seatRows ?? []).map((s: any) => String(s?.table_id ?? '')));
+    // Sorted so two passes, or two processes, pick the same tables in the same
+    // order rather than each adopting a different slice of the same backlog.
+    const adoptable = candidates.filter((id: string) => occupied.has(id)).sort();
+    if (adoptable.length === 0) return;
+
+    for (const tableId of adoptable.slice(0, ADOPT_BUDGET)) {
+      if (this.tableEngines.has(tableId)) continue;
+      const engine = new ServerTableEngine(tableId);
+      engine.setHub(tableStateHub);
+      this.tableEngines.set(tableId, engine);
+      this.gameServer.registerTableEngine(tableId, engine);
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] adopted engineless table ${tableId.slice(0, 8)} - it held live seats, had no dealer, and no sweep could see it`
+        ),
+        'Tournament.adopted_engineless_table',
+        { tableId }
+      );
+      engine
+        .start()
+        .catch((err) => reportError(err, 'Tournament.adopted_table_start_failed', { tableId }));
     }
   }
 

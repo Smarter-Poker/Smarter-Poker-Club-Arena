@@ -84,11 +84,18 @@ export interface ManagedGameListCursor {
   sortAt: string;
   kind: ManagedGameKind;
   id: string;
+  /**
+   * The priority bucket the row sits in - 0 live, 1 scheduled, 2 closed. It is
+   * the FIRST key the board orders by, so it is also the first key of the
+   * keyset cursor: without it, paging past the end of the live games would
+   * restart from the beginning of the next bucket instead of continuing.
+   */
+  bucket: number;
 }
 
 export interface ManagedGameListResult {
   items: any[];
-  counts: { total: number; live: number; scheduled: number };
+  counts: { total: number; live: number; scheduled: number; closed: number };
   nextCursor: ManagedGameListCursor | null;
 }
 
@@ -304,6 +311,7 @@ export const gameManagementService = {
       p_cursor_kind: cursor?.kind || null,
       p_cursor_id: cursor?.id || null,
       p_limit: 100,
+      p_cursor_bucket: cursor?.bucket ?? null,
     });
     if (error) throw new Error(error.message || 'Could not load managed games.');
     const result = data as any;
@@ -315,12 +323,14 @@ export const gameManagementService = {
         total: numberValue(result.counts?.total),
         live: numberValue(result.counts?.live),
         scheduled: numberValue(result.counts?.scheduled),
+        closed: numberValue(result.counts?.closed),
       },
       nextCursor: result.next_cursor
         ? {
             sortAt: String(result.next_cursor.sort_at),
             kind: result.next_cursor.kind as ManagedGameKind,
             id: String(result.next_cursor.id),
+            bucket: numberValue(result.next_cursor.bucket),
           }
         : null,
     };

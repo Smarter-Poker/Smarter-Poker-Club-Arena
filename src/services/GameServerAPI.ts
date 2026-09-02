@@ -153,6 +153,17 @@ export interface ActionResult {
    */
   immediate?: boolean;
   /**
+   * CHIP STANDARD C1 (2026-09-02): /leave replies set this when the engine is
+   * NOT going to cash the seat out itself and the browser must - no engine is
+   * running for the table, or the engine never had this player in its hand
+   * roster (a reserved seat). Absent on a between-hands leave a live engine
+   * acknowledged: there the engine cashes out after settlement persists the
+   * final stack, and a browser cash-out would race it with a stale one.
+   * Older engines say the same thing with `note` on the no-engine reply.
+   */
+  clientCashout?: boolean;
+  note?: string;
+  /**
    * Cashier audit 2026-08-27: /addchips replies have ALWAYS carried these two
    * and the client threw them away. `applied` is what the engine actually
    * debited after capping to the seat's headroom — ask for 5,000 with 1,200

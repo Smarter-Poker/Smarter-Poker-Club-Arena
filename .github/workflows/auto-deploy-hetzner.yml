@@ -153,6 +153,23 @@ jobs:
         with:
           ref: ${{ github.event.inputs.ref_sha || github.sha }}
 
+      # PHASE 1 (2026-09-02): record that this run STARTED, before tests. The
+      # DB-side dispatcher at :41 reads this to know a run is already in flight
+      # for the coming window, so it does not fire a duplicate. Best-effort:
+      # a failure here must never stop a deploy.
+      - name: Record that this deploy run started
+        if: always()
+        continue-on-error: true
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TARGET_SHA: ${{ github.event.inputs.ref_sha || github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ACTOR: ${{ github.event_name }}
+        run: |
+          [ -z "$DATABASE_URL" ] && { echo "::warning::no DATABASE_URL; start not recorded"; exit 0; }
+          npm ls pg >/dev/null 2>&1 || npm i pg@8 --no-save --no-audit --no-fund >/dev/null 2>&1 || true
+          node scripts/ci/record-engine-deploy-start.mjs || echo "::warning::deploy-start not recorded"
+
       # 2026-08-24: DEDUPE. A restart is not free — it disconnects every
       # player and voids in-flight hands — so an engine already serving this
       # exact commit must not be bounced again. This is what makes the hourly

@@ -738,10 +738,20 @@ jobs:
       # and this name is unmissable there. Cheap, needs no new permissions,
       # and cannot itself fail the deploy.
       - name: 'DID NOT DEPLOY — this run shipped nothing'
-        if: steps.dedupe.outputs.skip == 'true' || steps.drain.outputs.skip == 'true'
+        if: steps.window.outputs.open == 'false' || steps.dedupe.outputs.skip == 'true' || steps.drain.outputs.skip == 'true'
         run: |
+          # 2026-08-31: THE REASON MUST NAME THE GATE THAT ACTUALLY HELD.
+          # The restart-window gate shipped without being added here, so a run
+          # blocked by the window reported "coalescing - the engine restarted
+          # too recently", which was simply untrue: the engine had been up for
+          # 45 minutes, well past the spacing threshold. Anyone reading that
+          # warning goes and investigates the spacing gate, and the spacing
+          # gate is fine. A wrong reason costs more than no reason, because it
+          # is confidently wrong and it is the first thing anybody reads.
           REASON="already serving this commit"
-          if [ "${{ steps.drain.outputs.skip }}" = "true" ]; then
+          if [ "${{ steps.window.outputs.open }}" = "false" ]; then
+            REASON="outside the 7am/7pm America/Chicago restart window — dispatch with force=true to land it now"
+          elif [ "${{ steps.drain.outputs.skip }}" = "true" ]; then
             REASON="drain gate — hands are still in flight"
           elif [ "${{ steps.dedupe.outputs.skip }}" = "true" ]; then
             REASON="coalescing — the engine restarted too recently, or it is already on this commit"

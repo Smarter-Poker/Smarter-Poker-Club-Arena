@@ -17,15 +17,37 @@ test.describe('Club Data production experience', () => {
 
     await page.goto(new URL(CLUB_DATA_PATH, configuredBase).toString());
     await page.waitForLoadState('domcontentloaded');
+    /* THE PERMISSION GATE IS A THIRD OUTCOME, AND IT USED TO BE A TIMEOUT.
+       Run 33567090010 went red here with "Timeout 60000ms exceeded while
+       waiting on the predicate", which says nothing at all. The artifact said
+       everything: the page had rendered "This Tool Is Restricted - Your
+       Current Club Role Does Not Include Finance Access" to an account that
+       is the OWNER of this club. The cause was ClubCapabilityGuard reading
+       "not yet loaded" as "denied" (fixed 2026-09-02); the reason it cost an
+       hour to find is that the suite reported a stopwatch instead of a
+       verdict. Poll for the gate too, then name it. */
+    const gate = () => page.getByRole('heading', { name: /This Tool Is Restricted/i });
     await expect
       .poll(
         async () =>
           page.url().includes('/auth') ||
-          (await page.getByRole('heading', { name: /Read The Room/i }).count()) > 0,
+          (await page.getByRole('heading', { name: /Read The Room/i }).count()) > 0 ||
+          (await gate().count()) > 0,
         { timeout: 60_000 }
       )
       .toBe(true);
     test.skip(page.url().includes('/auth'), 'authenticated Club Data session is not configured');
+    /* Deliberately a FAILURE, not a skip. An account that cannot see this page
+       is either a real regression in the capability guard or a real regression
+       in the account's role, and both are worth a red build. See
+       docs/audit/2026-08-31-e2e-that-can-report-a-verdict.md on why silent
+       skips are the thing this suite was rebuilt to stop. */
+    expect(
+      await gate().count(),
+      'Club Data rendered its permission gate for the E2E account. Either the ' +
+        'capability guard is denying before the workspace resolves, or the ' +
+        'account lost its club role.'
+    ).toBe(0);
     await expect(page.getByRole('heading', { name: /Read The Room/i })).toBeVisible({
       timeout: 60_000,
     });

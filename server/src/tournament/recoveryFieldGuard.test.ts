@@ -82,7 +82,8 @@ describe('the guard is actually wired into the rescue', () => {
 
   it('decides BEFORE any credit is issued', () => {
     const guard = RECOVERY.indexOf('fieldIsStillLive');
-    const credit = RECOVERY.indexOf('fn_credit_and_log');
+    // 2026-09-02: the credit is settleTournamentObligation (one settle path).
+    const credit = RECOVERY.indexOf('settleTournamentObligation(supabase');
     expect(guard).toBeGreaterThan(-1);
     expect(credit).toBeGreaterThan(-1);
     expect(guard).toBeLessThan(credit);

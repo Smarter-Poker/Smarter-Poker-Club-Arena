@@ -195,15 +195,42 @@ const touchMap = buildTouchMap('HEAD');
 // past this guard (2026-08-31). Approval must come from outside the commit.
 const APPROVED = process.env.REVERT_APPROVED === 'true';
 
+/**
+ * THE LABEL IS THE APPROVAL (2026-09-02).
+ *
+ * This used to be `if (announced && APPROVED) continue;` per commit - the
+ * label exempted a commit only if its message ALSO contained the word
+ * "revert". CLAUDE.md 10.8.2 and this workflow's own issue text both promise
+ * "apply the label and the check passes"; neither mentions the message. So a
+ * human-approved pull request whose commits were not worded as a revert - a
+ * redundant workflow file being deleted, say - stayed blocked with the label
+ * on, and the only escape was editing the commit message, which 10.8.2
+ * forbids. A gate whose approved path cannot be taken is a lock.
+ *
+ * Measured on #2676: label applied 18:41, guard re-ran on `labeled` at 18:42
+ * with REVERT_APPROVED=true in its environment, exit 1.
+ *
+ * The label is a human's approval of the PULL REQUEST they read. It is not
+ * conditional on how any commit inside it was phrased. When it is present,
+ * say what is being waved through and stop.
+ */
+if (APPROVED) {
+  console.log(
+    `revert-approved label present: ${range.length} commit(s) in this pull request ` +
+      'are approved by a human and are not scanned for restored files.'
+  );
+  process.exit(0);
+}
+
 const findings = [];
 
 for (const commit of range) {
   const message = bodyOf(commit);
   const announced = /revert/i.test(message) || message.includes('[allow-revert]');
-  if (announced && APPROVED) continue;
-  // Announced but NOT approved: keep scanning. If the commit turns out to
-  // actually restore prior states, it is reported below with instructions to
-  // request the label rather than silently waved through.
+  // Announcing a revert in the message changes nothing on its own (an agent
+  // wrote it into its own message to get past this on 2026-08-31). If the
+  // commit actually restores prior state it is reported below with
+  // instructions to request the label, never waved through.
 
   const allChanged = (git('diff-tree', '--no-commit-id', '--name-only', '-r', commit) || '')
     .split('\n')

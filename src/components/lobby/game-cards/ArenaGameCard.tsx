@@ -165,6 +165,28 @@ function PremiumHeader({
   );
 }
 
+/**
+ * The bays that hold a NUMBER, and therefore read 0 while they wait.
+ *
+ * Dan 2026-09-02: "THE GAME CARDS SHOULD NEVER SAY UNAVAILABLE, THEY SHOULD
+ * HAVE 0'S UNTIL THE CARD LOADS."
+ *
+ * Listed rather than applied to every zone, because 0 is only an honest
+ * placeholder where a count belongs. A missing variant, format or start time
+ * is not zero of anything, and printing "0" over the game type would be a
+ * worse lie than the dash it replaced. Those bays keep the dash.
+ */
+const NUMERIC_ZONES = new Set([
+  'buyIn',
+  'currentLevel',
+  'guarantee',
+  'maxPayout',
+  'players',
+  'registered',
+  'stakes',
+  'startingStack',
+]);
+
 function LiveValue({
   className,
   value,
@@ -183,7 +205,7 @@ function LiveValue({
       {icon && (
         <span className={`agc-value-medallion agc-value-medallion--${icon}`} aria-hidden="true" />
       )}
-      {children || <strong>{value || '-'}</strong>}
+      {children || <strong>{value || (NUMERIC_ZONES.has(zone) ? '0' : '-')}</strong>}
     </div>
   );
 }
@@ -420,7 +442,14 @@ const familyRenderers: Record<
 function stateLabel(state: ArenaGameDataState) {
   if (state === 'loading') return 'Loading Game';
   if (state === 'updating') return 'Updating';
-  if (state === 'error') return 'Game Unavailable';
+  /* WAS 'Game Unavailable' (Dan 2026-09-02): "THE GAME CARDS SHOULD NEVER SAY
+     UNAVAILABLE." A failed refresh does not make the game unavailable - the
+     card is still showing figures, either the ones it was last given or the
+     ones the lobby cache remembered, so what actually happened is that they
+     stopped being current. That is the same thing 'stale' means, and it is
+     what the card should say rather than telling a player a running table is
+     gone. */
+  if (state === 'error') return 'Last Known Game State';
   if (state === 'offline') return 'Offline';
   if (state === 'stale') return 'Last Known Game State';
   return null;

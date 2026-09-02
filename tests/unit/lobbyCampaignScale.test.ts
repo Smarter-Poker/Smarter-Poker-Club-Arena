@@ -33,6 +33,36 @@ const PAGE = readFileSync(resolve(ROOT, 'src/pages/ClubHomePage.tsx'), 'utf8');
  * a desktop block below it. `.club-lobby-command-top__campaign` alone is not
  * an anchor: eighteen blocks declare it.
  */
+/**
+ * Every `@media (max-width: ...)` body in the sheet, concatenated.
+ *
+ * Written as a brace matcher rather than a `split` because this stylesheet
+ * interleaves its breakpoints - `min-width: 901px` appears at four separate
+ * points, the first of them BEFORE any of the mobile campaign rules - so
+ * slicing on the desktop query would silently examine an empty string and
+ * pass. It also carries three copies of the mobile campaign bay, and the
+ * cascade between them has been reordered before, so the pins below are
+ * deliberately stated against all of them at once.
+ */
+function mobileMediaBodies(css: string): string {
+  const bodies: string[] = [];
+  const opener = /@media ([^{]+)\{/g;
+  let match: RegExpExecArray | null;
+  while ((match = opener.exec(css))) {
+    if (!/max-width/.test(match[1])) continue;
+    let depth = 1;
+    let i = opener.lastIndex;
+    for (; i < css.length && depth > 0; i += 1) {
+      if (css[i] === '{') depth += 1;
+      else if (css[i] === '}') depth -= 1;
+    }
+    bodies.push(css.slice(opener.lastIndex, i));
+  }
+  return bodies.join('\n');
+}
+
+const MOBILE = mobileMediaBodies(TOP_CSS);
+
 const bayAnchor = TOP_CSS.indexOf('DESKTOP CAMPAIGN BAY');
 const bayOpen = TOP_CSS.indexOf('@media (min-width: 901px)', bayAnchor);
 const bayEnd = TOP_CSS.indexOf('@media', bayOpen + 1);
@@ -52,6 +82,42 @@ describe('desktop lobby campaign bay', () => {
     expect(finalDesktop).not.toMatch(
       /\.club-lobby-command-top__campaign-button img\s*\{[^}]*object-fit:\s*cover/s
     );
+  });
+
+  it('never lets a phone bay put the ratio on a padded box again', () => {
+    /*
+     * Dan, 2026-09-02: "THE LIVE DYNAMIC ADD IS CUT OFF ON THE BOTTOM, MAKE
+     * SURE THE FRAME ALLOWS THE ENTIRE FRAME AND ADD TO BE DISPLAYED."
+     *
+     * The pins above did not cover the phone, which cropped for a different
+     * reason. `aspect-ratio` sizes the BORDER box, so a well carrying
+     * `padding: 5px 10px 7px` offered its child a content box 13px shorter
+     * and 20px narrower than 2172/302 - about 10px less height than the
+     * artwork needs at that width. The ratio belongs on the button, the
+     * element that draws the frame around the art, so frame and artwork are
+     * the same shape by construction.
+     */
+    expect(MOBILE).not.toMatch(
+      /\.club-lobby-command-top__campaign\s*\{[^}]*aspect-ratio:\s*2172 \/ 302/s
+    );
+    expect(MOBILE).toMatch(
+      /\.club-lobby-command-top__campaign-button\s*\{[^}]*aspect-ratio:\s*2172 \/ 302/s
+    );
+  });
+
+  it('gives the phone bay a block <picture>, so contain has a height to work with', () => {
+    /*
+     * An inline <picture> ignores `height: 100%`, so the img fell back to its
+     * intrinsic height and overflowed the bay. `object-fit: contain` cannot
+     * crop - but the well's `overflow: hidden` can, and that is what did it.
+     */
+    expect(MOBILE).toMatch(/\.club-lobby-command-top__campaign-picture\s*\{[^}]*display:\s*block/s);
+  });
+
+  it('never distorts the ad either: no object-fit: fill anywhere', () => {
+    // Stretching the artwork to the bay is the same defect as cropping it,
+    // wearing a different word.
+    expect(TOP_CSS).not.toMatch(/object-fit:\s*fill/);
   });
 
   it('serves the tight crop at every width, not only below 900px', () => {

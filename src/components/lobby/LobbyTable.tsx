@@ -1366,8 +1366,70 @@ export default function LobbyTable({
     [sorted, selectedId, keyboardFocusId, onActivate]
   );
 
+  const sortableColumns = columns.filter((col) => col.sortable);
+
   return (
     <>
+      {/* ═══════════════════════════════════════════════════════════════════
+          MOBILE SORT BAR — the phone's copy of the column headings
+          -------------------------------------------------------------------
+          Dan 2026-09-02: "THERE IS NOT FILTERS FOR THE GAME CARDS BELOW, LIKE
+          THERE IS ON DESK TOP, YOU NEED TO ADD THAT TO THE BOTTOM, RIGHT
+          BELOW THE DYNAMIC ADD, SO MOBILE USERS CAN FILTER AND DISPLAY THE
+          RESULTS ACCORDINGLY."
+
+          Below 900px this file stops being a table - `thead` is display:none
+          and every row becomes a card - so GAME / STAKES / VARIANT / PLAYERS /
+          BUY-IN / STATUS, which on a monitor ARE the sort control, had no
+          phone equivalent at all. The board could be ordered on a desktop and
+          not on a phone.
+
+          Built from `columns` and driven by `handleHeaderClick` deliberately,
+          rather than as a parallel control: same keys, same asc/desc flip,
+          same per-club per-tab memory, and the chip set changes with the tab
+          exactly as the heading row does. A second implementation would be a
+          second set of bugs, and would drift the first time a column moved.
+
+          POSITION IS LOAD-BEARING. This renders BEFORE
+          `.arena-lobby-card-list`, never between the list and
+          `.lobby-table-wrap`: LobbyTable.css hides the desktop table on a
+          phone with the ADJACENT-SIBLING selector
+          `.arena-lobby-card-list + .lobby-table-wrap`, so anything inserted
+          between those two would put the dense table back on every phone. */}
+      {sortableColumns.length > 0 && (
+        <div className="lobby-sortbar" role="toolbar" aria-label="Sort Games">
+          <span className="lobby-sortbar__eyebrow">Sort</span>
+          <div className="lobby-sortbar__chips">
+            {sortableColumns.map((col) => {
+              const active = sort?.key === col.key;
+              return (
+                <button
+                  key={col.key}
+                  type="button"
+                  className={`lobby-sortbar__chip${active ? ' is-active' : ''}`}
+                  aria-pressed={active}
+                  onClick={() => handleHeaderClick(col)}
+                >
+                  {col.label}
+                  <span className="lobby-sortbar__mark" aria-hidden="true">
+                    {active ? (sort!.dir === 'asc' ? '▴' : '▾') : '▴▾'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {/* The scroller below announces the sort, but it is display:none on a
+              phone and a hidden element announces nothing - so on the one
+              surface that has just gained a sort control, sorting was silent. */}
+          <span className="sr-only" role="status" aria-live="polite">
+            {sort
+              ? `Sorted By ${columns.find((c) => c.key === sort.key)?.label || sort.key}, ${
+                  sort.dir === 'asc' ? 'Ascending' : 'Descending'
+                }`
+              : 'Default Order'}
+          </span>
+        </div>
+      )}
       <div className="arena-lobby-card-list" aria-label={`Game Cards, ${sorted.length} Games`}>
         {sorted.map((entry) => (
           <ArenaLobbyGameCard

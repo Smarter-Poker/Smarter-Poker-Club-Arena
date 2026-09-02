@@ -23,6 +23,7 @@ import { buildPrizeLadder, prizeRankOf, isMysteryCollectMode } from './mysteryPr
 import { attributeKnockout } from './knockoutAttribution.js';
 import { TournamentManagerBase } from './TournamentManagerBase.js';
 import { computePlacePrize } from './payoutMath.js';
+import { settleTournamentObligation, TRANSPORT_REFUSAL } from './settleObligation.js';
 import {
   resolvePayoutStructure,
   parsePayoutStructure,
@@ -1617,52 +1618,28 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     await this.releaseTournamentSeat(userId);
 
     if (prize > 0) {
-      // Retry prize credit up to 3 times with exponential backoff
-      let creditSuccess = false;
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        // LEDGER-INTEGRITY 2026-08-22: credit AND ledger row under one
-        // idempotency key. This used to be `credit_player_wallet` followed by
-        // an unconditional `log_wallet_transaction`; the credit deduped
-        // against the recovery watchdog and the log did not, so a raced
-        // finish wrote a second prize row for chips nobody received.
-        const { error: creditErr } = await supabase.rpc('fn_credit_and_log', {
-          p_user_id: userId,
-          p_amount: prize,
-          // P1 FIX (2026-07-24): idempotency key so a committed-but-timed-out
-          // credit is a no-op on the next retry attempt (no double prize mint),
-          // and so the recovery path dedupes against this main path — SAME format
-          // (`tourney:{id}:prize:place:{position}`).
-          //
-          // PLACE-SCOPED, NOT USER-SCOPED (2026-08-28). This key used to be
-          // `...:prize:{user}:{position}`, so it deduped a repeated USER and
-          // not a repeated PLACE — two different players stamped the same
-          // place produced two different keys and BOTH were paid. Observed
-          // live the same day: Union PKO Afternoon (PLO4) 4f42d847 paid
-          // `position 2` twice, an hour apart, to two players, and disbursed
-          // 720.00 against a 600.00 pool — 120% of the prize pool, the extra
-          // being exactly one place-2 prize. The engine had priced each
-          // payment correctly for the position it believed at the time; a
-          // later arrival shifted the field and the real 2nd place was then
-          // paid again. Keying on the PLACE makes a second payment for a
-          // place a no-op no matter who holds it or which path pays it.
-          p_idempotency_key: `tourney:${this.tournamentId}:prize:place:${position}`,
-          p_category: 'prize',
-          p_description: `Tournament prize: position ${position}`,
-          p_related_entity_id: this.tournamentId,
-        });
-        if (!creditErr) {
-          creditSuccess = true;
-          break;
-        }
-        reportError(
-          new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Prize credit attempt ${attempt}/3 failed for ${userId.slice(0, 8)}: ${creditErr.message}`
-          ),
-          'TournamentthistournamentIdslic.Prize_credit_attempt_attempt3_'
-        );
-        if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1000));
-      }
-      if (!creditSuccess) {
+      // ONE SETTLE PATH (chip standard 3.2 step 5, 2026-09-02). This used to
+      // be a 3x retry loop around `fn_credit_and_log` keyed
+      // `tourney:{id}:prize:place:{position}` - place-scoped since 2026-08-28,
+      // when Union PKO Afternoon (PLO4) 4f42d847 paid `position 2` twice to two
+      // players and disbursed 720.00 against a 600.00 pool. The place-scoping
+      // survives, but it now lives in the database: `tournament_obligations`
+      // is UNIQUE on (tournament, 'place', N), the RPC pays only what that row
+      // has not paid yet, and the recovery watchdog settles the same row. The
+      // helper carries the transport retry (3 attempts, same back-off) and
+      // never retries a refusal.
+      const settled = await settleTournamentObligation(supabase, {
+        tournamentId: this.tournamentId,
+        kind: 'place',
+        place: position,
+        userId,
+        amount: prize,
+        source: 'engine.eliminatePlayer',
+        memo: `Tournament prize: position ${position}`,
+      });
+      // A refusal (escrow short) has already raised its own critical alert in
+      // the helper; the alert below is for the database never answering.
+      if (!settled.ok && settled.refused_reason === TRANSPORT_REFUSAL) {
         reportError(
           new Error(
             `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Prize credit FAILED after 3 retries for ${userId.slice(0, 8)} - ${prize} chips lost`
@@ -1691,7 +1668,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             user_id: userId,
             place: position,
             prize,
-            idempotency_key: `tourney:${this.tournamentId}:prize:place:${position}`,
+            obligation: { kind: 'place', place: position },
+            transport_error: settled.transport_error ?? null,
           }
         );
       }
@@ -1728,21 +1706,22 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           refund > 0
         ) {
           this.bubbleProtectionPaid = true;
-          // LEDGER-INTEGRITY 2026-08-22: credit AND ledger row under one
-          // idempotency key via fn_credit_and_log — never a credit followed by
-          // a separately-gated log (see the prize path above for why).
-          const { error: bpErr } = await supabase.rpc('fn_credit_and_log', {
-            p_user_id: userId,
-            p_amount: refund,
-            p_idempotency_key: `tourney:${this.tournamentId}:bubbleprotection:${userId}`,
-            p_category: 'refund',
-            p_description: `Bubble protection: buy-in returned (bubbled at position ${position})`,
-            p_related_entity_id: this.tournamentId,
+          // ONE SETTLE PATH (2026-09-02): a user-keyed obligation of kind
+          // 'bubble_protection' - UNIQUE on (tournament, kind, user), so the
+          // per-user dedupe the old `bubbleprotection:{user}` key gave is now
+          // a database constraint rather than a string.
+          const bp = await settleTournamentObligation(supabase, {
+            tournamentId: this.tournamentId,
+            kind: 'bubble_protection',
+            userId,
+            amount: refund,
+            source: 'engine.eliminatePlayer',
+            memo: `Bubble protection: buy-in returned (bubbled at position ${position})`,
           });
-          if (bpErr) {
+          if (!bp.ok) {
             reportError(
               new Error(
-                `[Tournament:${this.tournamentId.slice(0, 8)}] Bubble protection credit FAILED for ${userId.slice(0, 8)}: ${bpErr.message}`
+                `[Tournament:${this.tournamentId.slice(0, 8)}] Bubble protection credit FAILED for ${userId.slice(0, 8)}: ${bp.refused_reason}${bp.transport_error ? ` (${bp.transport_error})` : ''}`
               ),
               'Tournament.bubble_protection_credit_failed'
             );
@@ -2885,23 +2864,34 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
           `[Tournament:${this.tournamentId.slice(0, 8)}] Prize recalc: ${player.user_id.slice(0, 8)} pos ${player.position} - old: ${player.prize}, new: ${correctPrize}, diff: +${difference}`
         );
 
-        // Credit the difference
-        // LEDGER-INTEGRITY 2026-08-22: one key covers the credit and its row.
-        const { error: creditErr } = await supabase.rpc('fn_credit_and_log', {
-          p_user_id: player.user_id,
-          p_amount: difference,
-          // A3 FIX (2026-07-28): the self-healing `prize` write below only runs
-          // when the credit succeeds, so a committed-but-timed-out credit leaves
-          // the old prize recorded and the next recalc pass credits the same
-          // difference again. Key on the exact adjustment being made (distinct
-          // `prizeadj` namespace so it never collides with the position prize).
-          p_idempotency_key: `tourney:${this.tournamentId}:prizeadj:${player.user_id}:${player.position}:${correctPrize}`,
-          p_category: 'prize',
-          p_description: `Tournament prize adjustment (late reg pool finalized): position ${player.position}`,
-          p_related_entity_id: this.tournamentId,
+        /**
+         * ONE SETTLE PATH (2026-09-02): THE AMOUNT IS WHAT IS OWED, NOT THE
+         * DIFFERENCE, AND IT IS NOT IN THE KEY.
+         *
+         * This used to credit `difference` under
+         * `tourney:{id}:prizeadj:{user}:{place}:{correctPrize}` - the amount
+         * baked into the key so a re-run with the same figure deduped. The
+         * flip side (docs/CHIP-ACCOUNTING-STANDARD.md 2.2, payer 4) is that a
+         * re-run with a DIFFERENT figure was a brand-new key and a brand-new
+         * payment on top of the old one, and nothing reconciled the two.
+         *
+         * The obligation row for this place is keyed (tournament,
+         * 'late_reg_adjustment', place). We tell it the NEW correct prize; it
+         * raises `amount_owed` to that and pays only `owed - already paid`.
+         * The database computes the delta, so there is no amount to put in a
+         * key and no second key to invent.
+         */
+        const adj = await settleTournamentObligation(supabase, {
+          tournamentId: this.tournamentId,
+          kind: 'late_reg_adjustment',
+          place: Number(player.position),
+          userId: player.user_id,
+          amount: correctPrize,
+          source: 'engine.recalculateEliminatedPrizes',
+          memo: `Tournament prize adjustment (late reg pool finalized): position ${player.position}`,
         });
 
-        if (!creditErr) {
+        if (adj.ok) {
           // Update the recorded prize.
           // PAYOUT-INTEGRITY 2026-08-25: the idempotency key above is keyed on
           // `correctPrize`, so an unrecorded top-up cannot be re-credited — but
@@ -2925,7 +2915,7 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         } else {
           reportError(
             new Error(
-              `[Tournament:${this.tournamentId.slice(0, 8)}] Prize recalc credit FAILED for ${player.user_id.slice(0, 8)}: ${creditErr.message}`
+              `[Tournament:${this.tournamentId.slice(0, 8)}] Prize recalc credit FAILED for ${player.user_id.slice(0, 8)}: ${adj.refused_reason}${adj.transport_error ? ` (${adj.transport_error})` : ''}`
             ),
             'TournamentthistournamentIdslic.Prize_recalc_credit_FAILED_for'
           );
@@ -3158,21 +3148,22 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     for (const p of payoutRows as Array<{ user_id: string; amount: number }>) {
       const amount = Math.max(0, Number(p.amount) || 0);
       if (amount <= 0) continue;
-      // LEDGER-INTEGRITY 2026-08-22: single fn_credit_and_log call — credit
-      // and ledger row share the idempotency key, so a raced settle can never
-      // double-log or double-pay a deal share.
-      const { error: creditErr } = await supabase.rpc('fn_credit_and_log', {
-        p_user_id: p.user_id,
-        p_amount: amount,
-        p_idempotency_key: `tourney:${this.tournamentId}:ftd:${p.user_id}`,
-        p_category: 'prize',
-        p_description: 'Final table deal (even chip chop)',
-        p_related_entity_id: this.tournamentId,
+      // ONE SETTLE PATH (2026-09-02): a user-keyed 'final_table_deal'
+      // obligation - UNIQUE on (tournament, kind, user) - replaces the
+      // `tourney:{id}:ftd:{user}` key. A raced settle still cannot double-pay
+      // a deal share; the guarantee is now a constraint, not a string.
+      const share = await settleTournamentObligation(supabase, {
+        tournamentId: this.tournamentId,
+        kind: 'final_table_deal',
+        userId: p.user_id,
+        amount,
+        source: 'engine.settleFinalTableDeal',
+        memo: 'Final table deal (even chip chop)',
       });
-      if (creditErr) {
+      if (!share.ok) {
         reportError(
           new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: deal credit FAILED for ${p.user_id.slice(0, 8)}: ${creditErr.message}`
+            `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: deal credit FAILED for ${p.user_id.slice(0, 8)}: ${share.refused_reason}${share.transport_error ? ` (${share.transport_error})` : ''}`
           ),
           'Tournament.final_table_deal_credit_failed'
         );
@@ -3552,38 +3543,23 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
     }
 
     if (winnerPrize > 0) {
-      // Retry winner prize credit up to 3 times
-      let creditSuccess = false;
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        // LEDGER-INTEGRITY 2026-08-22: one key covers the credit and its row.
-        const { error: creditErr } = await supabase.rpc('fn_credit_and_log', {
-          p_user_id: winnerId,
-          p_amount: winnerPrize,
-          // A3 FIX (2026-07-28): closes TWO double-pay drivers at once.
-          // (a) the 3x retry loop around this call, and (b) the stuck-COMPLETING
-          // watchdog (`recoverStuckCompletingTournaments`) which pays place 1
-          // under exactly `tourney:{id}:prize:{user}:1` - a key this path never
-          // wrote, so the winner could be paid twice across the two paths.
-          // Using the identical format makes them dedupe against each other.
-          p_idempotency_key: `tourney:${this.tournamentId}:prize:place:1`,
-          p_category: 'prize',
-          p_description: `Tournament winner prize: 1st place`,
-          p_related_entity_id: this.tournamentId,
-        });
-        if (!creditErr) {
-          creditSuccess = true;
-          break;
-        }
-        reportError(
-          new Error(
-            `[Tournament:${this.tournamentId.slice(0, 8)}] Winner prize credit attempt ${attempt}/3 failed: ${creditErr.message}`
-          ),
-          'TournamentthistournamentIdslic.Winner_prize_credit_attempt_at'
-        );
-        if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 1000));
-      }
+      // ONE SETTLE PATH (2026-09-02). The 3x retry loop around
+      // `fn_credit_and_log` keyed `tourney:{id}:prize:place:1` is now the
+      // obligation (tournament, 'place', 1): this path, the stuck-COMPLETING
+      // watchdog and the reconciler all settle the SAME row, so the winner
+      // cannot be paid twice across paths whatever key each of them used to
+      // carry. Transport retry lives in the helper; a refusal is never retried.
+      const settled = await settleTournamentObligation(supabase, {
+        tournamentId: this.tournamentId,
+        kind: 'place',
+        place: 1,
+        userId: winnerId,
+        amount: winnerPrize,
+        source: 'engine.finishTournament',
+        memo: `Tournament winner prize: 1st place`,
+      });
 
-      if (!creditSuccess) {
+      if (!settled.ok && settled.refused_reason === TRANSPORT_REFUSAL) {
         reportError(
           new Error(
             `[Tournament:${this.tournamentId.slice(0, 8)}] CRITICAL: Winner prize credit FAILED after 3 retries for ${winnerId.slice(0, 8)} - ${winnerPrize} chips lost`
@@ -3601,7 +3577,8 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
             user_id: winnerId,
             place: 1,
             prize: winnerPrize,
-            idempotency_key: `tourney:${this.tournamentId}:prize:place:1`,
+            obligation: { kind: 'place', place: 1 },
+            transport_error: settled.transport_error ?? null,
           }
         );
       }

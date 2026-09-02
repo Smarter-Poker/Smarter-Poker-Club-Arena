@@ -1,7 +1,7 @@
 {
   "_owner": "feat/engine-restart-programme-phase-2",
   "tables": ["engine_maintenance_break_log"],
-  "functions": [],
+  "functions": ["fn_ca_record_break_scorecard"],
   "columns": {
     "ca_break_scorecards": [
       "unparked_at_countdown",

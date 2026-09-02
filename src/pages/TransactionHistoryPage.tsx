@@ -18,7 +18,10 @@ import { formatDateTime as formatDate } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import { formatPopupText } from '../utils/popupStyle';
-import { describeChipTransaction } from '../components/wallet/describeChipTransaction';
+import {
+  describeChipTransaction,
+  WALLET_MOVE_TYPES,
+} from '../components/wallet/describeChipTransaction';
 
 interface Transaction {
   id: string;
@@ -209,7 +212,15 @@ export default function TransactionHistoryPage() {
       else if (filter === 'withdrawals')
         query = query.in('transaction_type', ['cash_out', 'withdrawal']);
       else if (filter === 'transfers')
-        query = query.in('transaction_type', ['transfer_in', 'transfer_out', 'agent_transfer']);
+        // The Transfers filter used to list three legacy labels and none of
+        // the types the cashier actually writes, so every agent wallet send,
+        // club bank send and claim back fell out of it (Dan 2026-09-02).
+        query = query.in('transaction_type', [
+          'transfer_in',
+          'transfer_out',
+          'agent_transfer',
+          ...WALLET_MOVE_TYPES,
+        ]);
       else if (filter === 'rake') query = query.in('transaction_type', ['rake', 'rakeback']);
 
       if (dateFrom) query = query.gte('created_at', new Date(dateFrom).toISOString());

@@ -15,7 +15,7 @@
  * bucket: 0 live, 1 scheduled, 2 closed. These tests pin that the page reads
  * it rather than re-deriving it, because re-deriving it is the bug.
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { act } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -194,5 +194,30 @@ describe('the board classifies games by the server bucket', () => {
     await clickTab('closed');
     expect(screen.getByText('Tuesday Deepstack')).toBeInTheDocument();
     expect(screen.queryByText('Friday Deep Stack')).not.toBeInTheDocument();
+  });
+
+  /**
+   * Open, Pause, Schedule and Close were all gated on the game being unfinished
+   * and Edit was not, so a closed game could be renamed and re-limited from the
+   * board. Nothing downstream refused it either: fn_update_managed_game never
+   * looks at a table's status. A closed game is history and is read-only here.
+   */
+  it('does not offer Edit on a finished game', async () => {
+    await renderBoard();
+    await clickTab('closed');
+
+    // Climb from the game's name to the ancestor that actually carries its
+    // action row, rather than guessing a tag name for the card.
+    let card: HTMLElement | null = screen.getByText('Tuesday Deepstack');
+    while (card && card.querySelectorAll('button').length === 0) {
+      card = card.parentElement;
+    }
+    expect(card, 'no action row found for the closed game').toBeTruthy();
+    const labels = within(card as HTMLElement)
+      .queryAllByRole('button')
+      .map((b) => b.textContent?.trim().toLowerCase());
+    expect(labels).not.toContain('edit');
+    // Contract is history and stays reachable, so this is not "no buttons".
+    expect(labels).toContain('contract');
   });
 });

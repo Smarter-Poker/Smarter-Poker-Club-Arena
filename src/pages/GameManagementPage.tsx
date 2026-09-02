@@ -1311,30 +1311,39 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                     >
                       Contract
                     </button>
-                    <button
-                      onClick={() => {
-                        if (game.kind === 'tournament' && game.contract?.contractLocked) {
-                          toast.error(
-                            'This tournament cannot be modified after a player has registered.'
-                          );
-                          return;
+                    {/*
+                      Open, Pause, Schedule and Close are all gated on !closed
+                      and Edit was not, so a finished game could be renamed and
+                      re-limited from the board. Nothing downstream refuses it:
+                      fn_update_managed_game never looks at the status for a
+                      table. A closed game is history, so it is read-only here.
+                    */}
+                    {!closed && (
+                      <button
+                        onClick={() => {
+                          if (game.kind === 'tournament' && game.contract?.contractLocked) {
+                            toast.error(
+                              'This tournament cannot be modified after a player has registered.'
+                            );
+                            return;
+                          }
+                          setEditing(game);
+                        }}
+                        disabled={busyId === game.id}
+                        title={
+                          game.kind === 'tournament' && game.contract?.contractLocked
+                            ? 'Locked After The First Registration'
+                            : 'Edit Game'
                         }
-                        setEditing(game);
-                      }}
-                      disabled={busyId === game.id}
-                      title={
-                        game.kind === 'tournament' && game.contract?.contractLocked
-                          ? 'Locked After The First Registration'
-                          : 'Edit Game'
-                      }
-                      aria-disabled={
-                        game.kind === 'tournament' && game.contract?.contractLocked
-                          ? true
-                          : undefined
-                      }
-                    >
-                      Edit
-                    </button>
+                        aria-disabled={
+                          game.kind === 'tournament' && game.contract?.contractLocked
+                            ? true
+                            : undefined
+                        }
+                      >
+                        Edit
+                      </button>
+                    )}
                     {game.kind === 'table' && !closed && <Link to={`/table/${game.id}`}>Open</Link>}
                     {game.kind === 'table' && !closed && (
                       <button

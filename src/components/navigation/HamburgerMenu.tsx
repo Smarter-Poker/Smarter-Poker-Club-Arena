@@ -219,9 +219,25 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     }
   });
 
-  const match = location.pathname.match(/^\/clubs\/([a-zA-Z0-9-]+)/);
-  const clubId = match ? match[1] : null;
-  const clubRole = clubId === workspace.routeClubId ? workspace.clubRole : null;
+  /* ── THE MENU STAYS INSIDE THE CLUB YOU ARE INSIDE ────────────────────────
+     Dan, 2026-09-02: "IF YOU ARE A PART OF MULTIPLE CLUBS (OR UNIONS) IT
+     SHOULD ALWAYS BE OPEN TO THAT SPECIFIC CLUB."
+
+     This read `location.pathname` alone, so the drawer only knew which club
+     it was in while standing on a `/clubs/…` URL. The moment you took one
+     club-scoped link — Leaderboards, Wallet, Marketplace, all of which live
+     at global paths — `clubId` went null, every subsequent link in the drawer
+     was rebuilt without a club, and the context select and staff sections
+     disappeared. The club survived exactly one hop.
+
+     `workspace.routeClubId` is the existing reader that already looks at BOTH
+     the path and `?club=` (ClubWorkspaceContext.getRouteClubId), and the
+     provider is mounted above this component. Using it means the drawer holds
+     the club across every page in the club-scoped set, and the identifier it
+     hands to `getClubArenaNavigation` is the same string the URL is carrying
+     — slug stays slug, which is Dan's "THE SLUGS MUST MATCH". */
+  const clubId = workspace.routeClubId;
+  const clubRole = workspace.clubRole;
   const effectivePlatformStaff = clubId ? workspace.isPlatformStaff : isPlatformStaff;
   const navigationGroups = getClubArenaNavigation({
     clubId,

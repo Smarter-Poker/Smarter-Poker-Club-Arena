@@ -1378,7 +1378,7 @@ jobs:
   post-deploy-check:
     # It waits for Vercel and curls smarter.poker. It never used the build it
     # declared `needs: build` for - that was ordering, and it cost a full Vite
-    # production build on every merge, on top of the one build-for-world-hub.yml
+    # production build on every merge, on top of the one publish-club-arena.yml
     # already does to publish.
     # 2026-09-01: was `push` to main - a CDN poll per merge, ~85 times a day,
     # third in line behind post-deploy-e2e.yml and publish-watchdog.yml which

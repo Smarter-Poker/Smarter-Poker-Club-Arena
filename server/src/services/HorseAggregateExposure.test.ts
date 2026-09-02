@@ -81,7 +81,10 @@ describe('WIRING - the two details that would silently disable the gate', () => 
    * and nothing would fail.
    */
   it('the seat read carries the STACK, or exposure cannot be summed', () => {
-    expect(FLEET).toMatch(/\.select\('id, user_id, table_id, seat_number, stack'\)/);
+    /* 2026-09-02: the select also carries club_id and joined_at now (the
+       seat's wallet, for resolveSeatClub). The pin is on STACK being read,
+       not on the column list being exactly these four. */
+    expect(FLEET).toMatch(/\.select\('id, user_id, table_id, seat_number, stack(?:, [a-z_]+)*'\)/);
     expect(FLEET).toMatch(/stack: number \| null;/);
   });
 

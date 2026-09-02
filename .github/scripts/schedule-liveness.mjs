@@ -566,16 +566,50 @@ summary.push(
 
 // Several overdue at once is not dropped ticks - it is the registration
 // wedge, and that one this script now repairs itself (see selfHeal above).
-if (late.length >= WEDGE_MIN) {
-  await selfHeal(late);
-}
-
 /**
- * Whether or not the registration cycle worked, the WORK is still overdue, and
- * this runs on `workflow_run` so it is here now. Re-registering a cron is not
- * the same as doing the thing the cron was for.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE ROOT CAUSE, MEASURED (2026-09-02 evening), AND WHY THE ORDER BELOW
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Every `schedule:` in Club Arena adds up to ~324 scheduled runs a day. Over
+ * the 48 hours to 18:45 UTC GitHub delivered 65 - about 10%. World Hub asks
+ * for ~129 a day and was delivered 19%. The seven repos together ask for
+ * roughly 700+ a day. GitHub's own docs say the schedule event is best-effort
+ * and that under load "some queued jobs may be dropped"; measured here, most
+ * of them are, all the time, and the busiest repo is dropped hardest - today
+ * to zero from 14:42.
+ *
+ * Nothing about registration was ever wrong. Disabling and re-enabling
+ * workflows (this file's original remedy, and 15 cycled by hand at 16:32)
+ * changed nothing, because there was nothing to re-register - and it CANCELS
+ * that workflow's in-flight runs, which killed a CI run on the pull request
+ * fixing a red main. The estate had also been compensating for the drops by
+ * asking for MORE ticks (three per hour for one deploy), which under
+ * fair-share throttling only deepens the drop.
+ *
+ * So the remedy is not to re-register the cron. It is to stop needing it:
+ * this check runs on `workflow_run`, which GitHub delivers reliably many times
+ * an hour, and `workflow_dispatch` is delivered reliably too. When a scheduled
+ * workflow has not run by ANY trigger inside its promised interval, it is
+ * dispatched. That is the first and normally only action taken here.
+ *
+ * Cycling registrations is kept as code, off by default. It fixed one wedge
+ * on 2026-09-01 and nothing since; set SCHEDULE_CYCLE_REGISTRATIONS=1 on the
+ * workflow to bring it back if a future wedge turns out to be a real
+ * registration fault rather than this one.
  */
-await dispatchStarved(late);
+const sent = await dispatchStarved(late);
+
+if (late.length >= WEDGE_MIN) {
+  if (process.env.SCHEDULE_CYCLE_REGISTRATIONS === '1') {
+    await selfHeal(late);
+  } else {
+    say(
+      `[schedule-liveness] ${late.length} scheduled workflow(s) overdue; ${sent} dispatched directly. ` +
+        'Registration cycling is off (see the root-cause note above).'
+    );
+  }
+}
 
 if (process.env.GITHUB_STEP_SUMMARY) {
   const { appendFileSync } = await import('node:fs');

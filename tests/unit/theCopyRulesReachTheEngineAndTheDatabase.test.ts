@@ -193,11 +193,11 @@ describe('the two gaps in how work reaches production', () => {
   });
 
   it('the deploy window cannot be closed by one dropped cron tick', () => {
-    // GitHub schedules are best-effort, so one tick per window is one dropped
-    // tick away from a lost window. Three ticks per hour, and since Dan moved
-    // the restart to every hour (2026-09-01) a lost window costs an hour
-    // rather than the four-to-six it used to.
-    expect(DEPLOY).toContain("- cron: '40,45,50 * * * *'");
+    // One tick per hour (2026-09-02; it was three). GitHub delivers ~10% of
+    // this repo's scheduled runs, so extra ticks only deepened the throttle.
+    // A dropped tick is now caught by publish-watchdog's schedule-liveness
+    // check, which dispatches the deploy directly off workflow_run.
+    expect(DEPLOY).toContain("- cron: '45 * * * *'");
   });
 
   it('a deploy that shipped nothing is a warning, not a notice', () => {

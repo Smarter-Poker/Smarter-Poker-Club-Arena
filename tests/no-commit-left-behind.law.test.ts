@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -42,7 +42,7 @@ import { describe, expect, it } from 'vitest';
 
 const repo = (p: string) => readFileSync(resolve(__dirname, '..', p), 'utf8');
 
-const PUBLISHER = '.github/workflows/build-for-world-hub.yml';
+const PUBLISHER = '.github/workflows/publish-club-arena.yml';
 const ENGINE = '.github/workflows/auto-deploy-hetzner.yml';
 const WATCHDOG = '.github/scripts/publish-watchdog.sh';
 
@@ -106,9 +106,39 @@ describe('No commit left behind: the publisher converges on main', () => {
   it('does not cancel a running publish', () => {
     // cancel-in-progress: true deadlocked publishing on 2026-08-21 - every
     // build was killed before its sync step and production froze for hours.
+    //
+    // The group NAME is deliberately not pinned any more. It was
+    // `build-world-hub`, then `build-world-hub-g2` when a wedged group had to
+    // be abandoned, and now `publish-club-arena` on the workflow that replaced
+    // it. Pinning the name made this test fail on a rename that was itself the
+    // remedy. What matters, and all that is pinned, is that a running publish
+    // is never cancelled.
     expect(repo(PUBLISHER)).toMatch(
-      /concurrency:\s*\n\s*group: build-world-hub[^\n]*\n\s*cancel-in-progress: false/
+      /concurrency:\s*\n\s*group: [^\n]*\n\s*cancel-in-progress: false/
     );
+  });
+
+  it('is the ONLY publisher - a second one would not serialise with it', () => {
+    /**
+     * MEASURED 2026-09-02. For about ninety minutes build-for-world-hub.yml and
+     * publish-club-arena.yml both existed and both fired on every push to main,
+     * on SEPARATE concurrency groups. Nothing serialised them: two full builds
+     * of the same commit, two pushes to the World Hub, and the older one still
+     * on billed hosted runners.
+     *
+     * A second publisher is not a safety net, it is a race. The nets are the
+     * catch-up cron, publish-watchdog's re-dispatch, and the tip-of-main
+     * convergence - all of which live inside this one workflow.
+     */
+    const workflows = readdirSync(resolve(__dirname, '../.github/workflows'));
+    const publishers = workflows.filter((f) => {
+      if (!/\.ya?ml$/.test(f)) return false;
+      const y = readFileSync(resolve(__dirname, '../.github/workflows', f), 'utf8');
+      return /sync-to-world-hub:/.test(y) && /jobs:/.test(y);
+    });
+    expect(publishers, `expected exactly one publisher, found: ${publishers.join(', ')}`).toEqual([
+      'publish-club-arena.yml',
+    ]);
   });
 });
 
@@ -120,7 +150,7 @@ describe('No commit left behind: the publish closes its own loop', () => {
     // over the last 100 runs the worst gap between two successful publishes
     // was 154 minutes. The chain is what removes the wait.
     expect(yml).toMatch(/- name: Converge - chain another publish if main moved/);
-    expect(yml).toMatch(/gh workflow run "build-for-world-hub\.yml"/);
+    expect(yml).toMatch(/gh workflow run "publish-club-arena\.yml"/);
     // It must dispatch on the CONDITION that main is ahead, never blindly.
     expect(yml).toMatch(/if \[ "\$TIP" = "\$PUBLISHED" \]/);
     expect(yml).toMatch(/CONVERGED/);

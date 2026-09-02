@@ -27,6 +27,7 @@ import { supabase, getAuthUser } from '../lib/supabase';
 import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
+import { useCoalescedRefresh } from '../hooks/useCoalescedRefresh';
 import haptic from '../services/HapticService';
 import GameCreationActions, {
   type GameCreationTarget,
@@ -1712,10 +1713,44 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     [updateViewPrefs]
   );
 
-  const handleMemberUpdate = useCallback(() => {
-    setAgentSetupRevision((revision) => revision + 1);
-    loadClubDataRef.current();
-  }, []);
+  /* A CHIP TICK IS NOT A REASON TO RELOAD THE CLUB (Dan 2026-09-02): "CLUBS
+     SHOULD NOT BE 'RANDOMLY REFRESHING' ON THERE OWN, IT FEELS LIKE A BUG OR
+     GLITCH THAT SHOULDN'T HAPPEN ... FIX IT FOR EVERY PAGE AND SUB PAGE OF THE
+     CLUB ARENA."
+
+     Every row in club_members carries that member's chip_balance, and that
+     column moves on every buy-in and every cash-out at every table in the club.
+     This handler ran a FULL loadClubData on each payload - the whole lobby
+     payload, get_club_home included - so on a live floor the club rebuilt
+     itself every few seconds under the player's cursor. It is also a large part
+     of why get_club_home sat near the top of the database's cost table.
+
+     Postgres cannot tell us which column moved: club_members uses the default
+     replica identity, so an UPDATE payload carries the new row and no previous
+     row to diff it against, and REPLICA IDENTITY FULL would multiply the WAL
+     volume that is already the realtime pipeline's bottleneck. So the roster is
+     re-read on a floor rather than on an event - at most once every 30 seconds,
+     never while the tab is hidden, once on return. A join or a departure is
+     rare and structural, so those still refresh promptly.
+
+     The agent-setup revision still bumps on every payload: it is a counter, it
+     costs nothing, and the agent panel reads its own data off it. */
+  const memberRefresh = useCoalescedRefresh(() => loadClubDataRef.current(), {
+    minIntervalMs: 30_000,
+  });
+
+  const handleMemberUpdate = useCallback(
+    (payload: { eventType?: string } | undefined) => {
+      setAgentSetupRevision((revision) => revision + 1);
+      const eventType = payload?.eventType ?? 'UPDATE';
+      if (eventType === 'INSERT' || eventType === 'DELETE') {
+        memberRefresh.refreshNow();
+        return;
+      }
+      memberRefresh.request();
+    },
+    [memberRefresh]
+  );
 
   useMasterBusChannel({
     channelName: clubId ? `club-members-${clubId}` : null,

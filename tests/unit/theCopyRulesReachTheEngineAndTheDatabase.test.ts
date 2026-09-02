@@ -156,29 +156,13 @@ describe('the live source still obeys both rules after the widening', () => {
     }
   };
 
-  // Both of these SPAWN a checker that walks every file under src/ and
-  // server/src. Standalone that is ~2s; run alongside the other 40 files in
-  // this suite it measured 6.3s, and vitest's default timeout is 5s -- so the
-  // pin failed on a machine that was merely busy, which is a flake, not a
-  // finding. The work is real and bounded, so give it room rather than
-  // trimming what the checker reads.
-  const CHECKER_SPAWN_TIMEOUT_MS = 60_000;
+  it('check-title-case passes over src AND server/src', () => {
+    expect(run('scripts/ci/check-title-case.mjs')).toBe(0);
+  }, 15_000);
 
-  it(
-    'check-title-case passes over src AND server/src',
-    () => {
-      expect(run('scripts/ci/check-title-case.mjs')).toBe(0);
-    },
-    CHECKER_SPAWN_TIMEOUT_MS
-  );
-
-  it(
-    'check-ui-text still passes',
-    () => {
-      expect(run('scripts/ci/check-ui-text.mjs')).toBe(0);
-    },
-    CHECKER_SPAWN_TIMEOUT_MS
-  );
+  it('check-ui-text still passes', () => {
+    expect(run('scripts/ci/check-ui-text.mjs')).toBe(0);
+  }, 15_000);
 });
 
 describe('the two gaps in how work reaches production', () => {

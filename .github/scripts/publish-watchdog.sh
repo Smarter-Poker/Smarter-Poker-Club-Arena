@@ -166,31 +166,54 @@ if [ "$RUN_STATUS" = "in_progress" ] || [ "$RUN_STATUS" = "queued" ]; then
   exit 0
 fi
 
-# ── Self-heal, exactly once per sha ────────────────────────────────────────
-# The failures that strand a publish are overwhelmingly transient or one-shot
-# (a cancelled run, a rejected push, a 5xx). Re-running fixes those without a
-# human. Re-running twice fixes nothing and hides a real fault, so the retry is
-# capped by asking whether a manual dispatch for THIS sha already exists.
+# ── Self-heal, up to MAX_RETRIES per sha ───────────────────────────────────
+# The failures that strand a publish are overwhelmingly transient (a cancelled
+# run, a rejected push, a 5xx, a runner outage). Re-running fixes those without
+# a human. The cap exists so a GENUINELY broken build cannot be dispatched
+# forever — it is a stop on noise, not a stop on healing.
+#
+# 2026-09-02 — TWO CORRECTIONS, both of which stranded real commits:
+#
+#   1. The cap was ONE. A single transient failure followed by a second
+#      unrelated one meant the watchdog gave up and only filed an issue, so
+#      main sat unpublished until a human dispatched by hand. That is the
+#      "my last 3 pushes have not published" report. The cap is 3 now.
+#
+#   2. A CANCELLED retry counted against the cap. A cancellation carries no
+#      information about brokenness — it means a newer push superseded the
+#      run, which is the publisher working correctly. Burning the one retry on
+#      it was how a healthy repo talked itself out of healing. Cancelled and
+#      skipped attempts are no longer counted; only attempts that actually ran
+#      to a verdict are evidence of a fault.
+#
+# Retrying is also cheap and safe now: the publisher resolves the tip of main
+# itself, so a dispatch converges the whole backlog, and its dedupe makes an
+# already-current cycle one curl.
+MAX_RETRIES="${MAX_RETRIES:-3}"
 ALREADY_RETRIED=$(gh run list --repo "$REPO" --workflow "$PUBLISH_WORKFLOW" \
-                    --event workflow_dispatch --limit 30 --json headSha \
-                    --jq "[.[] | select(.headSha == \"$HEAD_SHA\")] | length" 2>/dev/null || echo 0)
+                    --event workflow_dispatch --limit 30 --json headSha,conclusion \
+                    --jq "[.[]
+                           | select(.headSha == \"$HEAD_SHA\")
+                           | select(.conclusion != \"cancelled\")
+                           | select(.conclusion != \"skipped\")] | length" 2>/dev/null || echo 0)
 
 RETRY_NOTE=""
-if [ "$NOT_ANCESTOR" = "0" ] && [ "${ALREADY_RETRIED:-0}" -eq 0 ]; then
+if [ "$NOT_ANCESTOR" = "0" ] && [ "${ALREADY_RETRIED:-0}" -lt "$MAX_RETRIES" ]; then
+  ATTEMPT=$((ALREADY_RETRIED + 1))
   if gh workflow run "$PUBLISH_WORKFLOW" --repo "$REPO" --ref main >/dev/null 2>&1; then
-    say "re-dispatched $PUBLISH_WORKFLOW for main — one automatic retry."
+    say "re-dispatched $PUBLISH_WORKFLOW for main — automatic retry ${ATTEMPT} of ${MAX_RETRIES}."
     RETRY_NOTE="
 
-**One automatic retry has been dispatched.** If the next watchdog pass still finds production behind, the cause is not transient and this issue will say so."
+**Automatic retry ${ATTEMPT} of ${MAX_RETRIES} has been dispatched.** The publisher converges on the tip of \`main\`, so this retry ships every pending commit, not just this one. If retries run out and production is still behind, the cause is not transient and this issue will say so."
   else
     RETRY_NOTE="
 
 An automatic retry was attempted and the dispatch itself failed — check the token's \`actions: write\`."
   fi
-elif [ "${ALREADY_RETRIED:-0}" -gt 0 ]; then
+elif [ "${ALREADY_RETRIED:-0}" -ge "$MAX_RETRIES" ]; then
   RETRY_NOTE="
 
-An automatic retry was **already used** for this sha and production is still behind, so the cause is not transient. Read the publish run before dispatching another."
+All ${MAX_RETRIES} automatic retries are used for this sha and production is still behind, so the cause is not transient. Read the publish run before dispatching another. (Cancelled attempts are not counted — every one of these ran to a verdict and did not fix it.)"
 fi
 
 BODY="Production is not serving main, and it is past the ${LAG_BUDGET_MIN}-minute budget.

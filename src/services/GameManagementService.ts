@@ -302,7 +302,14 @@ export const gameManagementService = {
   async list(
     scope: 'club' | 'union',
     scopeId: string,
-    cursor: ManagedGameListCursor | null = null
+    cursor: ManagedGameListCursor | null = null,
+    /**
+     * Restrict the page to one priority bucket - 0 live, 1 scheduled, 2 closed.
+     * This is what makes a board tab a QUERY rather than a filter over whichever
+     * page happened to load; null is the All tab. The counts come back
+     * unfiltered either way, so the header always describes the whole scope.
+     */
+    bucket: number | null = null
   ): Promise<ManagedGameListResult> {
     const { data, error } = await supabase.rpc('fn_list_managed_games', {
       p_scope: scope,
@@ -312,6 +319,7 @@ export const gameManagementService = {
       p_cursor_id: cursor?.id || null,
       p_limit: 100,
       p_cursor_bucket: cursor?.bucket ?? null,
+      p_bucket: bucket,
     });
     if (error) throw new Error(error.message || 'Could not load managed games.');
     const result = data as any;

@@ -1,6 +1,8 @@
 {
-  "_owner": "fix/the-board-opens-on-the-live-floor",
+  "_owner": "fix/the-board-opens-on-the-live-floor + tabs are queries",
   "tables": [],
-  "functions": ["fn_list_managed_games"],
+  "functions": [
+    "fn_list_managed_games"
+  ],
   "columns": {}
 }

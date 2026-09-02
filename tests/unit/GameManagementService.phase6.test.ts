@@ -60,6 +60,7 @@ describe('GameManagementService Phase 6 RPC contracts', () => {
       p_cursor_id: null,
       p_limit: 100,
       p_cursor_bucket: null,
+      p_bucket: null,
     });
     expect(result.counts).toEqual({ total: 140, live: 7, scheduled: 12, closed: 121 });
     expect(result.nextCursor).toEqual({
@@ -103,6 +104,7 @@ describe('GameManagementService Phase 6 RPC contracts', () => {
       p_cursor_id: 'game-9',
       p_limit: 100,
       p_cursor_bucket: 1,
+      p_bucket: null,
     });
   });
 

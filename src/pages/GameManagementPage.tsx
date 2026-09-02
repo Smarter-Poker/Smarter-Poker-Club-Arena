@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import GameCreationActions, {
@@ -74,6 +74,20 @@ interface ManagedGame {
 const BUCKET_LIVE = 0;
 const BUCKET_SCHEDULED = 1;
 const BUCKET_CLOSED = 2;
+/**
+ * Which bucket each tab asks the server for. `all` asks for every bucket.
+ *
+ * These used to be applied here, with games.filter(...), over the ONE page of
+ * 100 rows that happened to be loaded - which stopped working the moment the
+ * list became bucket-ordered, because then page 1 is entirely live games and
+ * the Scheduled and Closed tabs had nothing local to find. A tab is a query.
+ */
+const VIEW_BUCKET: Record<View, number | null> = {
+  all: null,
+  running: BUCKET_LIVE,
+  scheduled: BUCKET_SCHEDULED,
+  closed: BUCKET_CLOSED,
+};
 const CREATE_TARGETS = new Set<GameCreationTarget>(['table', 'event', 'spin', 'sng']);
 const GAME_REFRESH_EVENTS = [
   'TABLE_CREATED',
@@ -533,6 +547,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const [health, setHealth] = useState<GameManagementHealth | null>(null);
   const loadEpochRef = useRef(0);
   const loadedRouteRef = useRef('');
+  const loadedViewRef = useRef<View>('all');
   // One load at a time, with at most one queued behind it, and a stable handle
   // so the queued one can be started from inside load's own `finally`.
   const loadInFlightRef = useRef(false);
@@ -585,6 +600,15 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       // the board, so this can never be served silently: without the spinner the
       // operator reads the empty board as "this club has no games".
       const routeChanged = loadedRouteRef.current !== routeKey;
+      // Switching tabs asks a different question of the server, so the rows on
+      // screen belong to the previous answer. Clear them and show the spinner
+      // rather than leaving the old tab's games under the new tab's heading.
+      const viewChanged = loadedViewRef.current !== view;
+      if (viewChanged) {
+        loadedViewRef.current = view;
+        setGames([]);
+        setNextCursor(null);
+      }
       if (routeChanged) {
         loadedRouteRef.current = routeKey;
         setAllowed(null);
@@ -597,7 +621,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         setHealth(null);
         setSurfaceDirty(false);
       }
-      if (!silent || routeChanged) setLoading(true);
+      if (!silent || routeChanged || viewChanged) setLoading(true);
       setLoadError(null);
       try {
         let resolvedScopeId: string;
@@ -665,7 +689,12 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           nextHosts.some((host) => host.id === current) ? current : nextHosts[0]?.id || ''
         );
 
-        const page = await gameManagementService.list(scope, resolvedScopeId);
+        const page = await gameManagementService.list(
+          scope,
+          resolvedScopeId,
+          null,
+          VIEW_BUCKET[view]
+        );
         if (!isCurrent()) return;
         const tableRows = page.items.filter((row: any) => row.kind === 'table');
         const tournamentRows = page.items.filter((row: any) => row.kind === 'tournament');
@@ -781,7 +810,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         }
       }
     },
-    [clubId, scope, unionId, user?.id]
+    [clubId, scope, unionId, user?.id, view]
   );
   loadRef.current = load;
 
@@ -803,7 +832,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     if (!scopeId || !nextCursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const page = await gameManagementService.list(scope, scopeId, nextCursor);
+      const page = await gameManagementService.list(scope, scopeId, nextCursor, VIEW_BUCKET[view]);
       const tableRows = page.items.filter((row: any) => row.kind === 'table');
       const tournamentRows = page.items.filter((row: any) => row.kind === 'tournament');
       const [tableContracts, tournamentContracts, tableReceipts, tournamentReceipts] =
@@ -873,7 +902,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     } finally {
       setLoadingMore(false);
     }
-  }, [hosts, loadingMore, nextCursor, scope, scopeId, scopeName, toast]);
+  }, [hosts, loadingMore, nextCursor, scope, scopeId, scopeName, toast, view]);
 
   useEffect(() => {
     void load();
@@ -943,16 +972,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     onResync: () => void load(true),
   });
 
-  const filteredGames = useMemo(
-    () =>
-      games.filter((game) => {
-        if (view === 'running') return game.bucket === BUCKET_LIVE;
-        if (view === 'closed') return game.bucket === BUCKET_CLOSED;
-        if (view === 'scheduled') return game.bucket === BUCKET_SCHEDULED;
-        return true;
-      }),
-    [games, view]
-  );
+  // The server returned exactly this tab's bucket, so there is nothing left to
+  // filter. Kept as a named value because the render reads it in several places.
+  const filteredGames = games;
 
   const liveCount = counts.live;
   const scheduledCount = counts.scheduled;

@@ -20,7 +20,7 @@ import { act } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ page: null as any }));
+const mocks = vi.hoisted(() => ({ page: null as any, buckets: [] as (number | null)[] }));
 
 vi.mock('../../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: { id: 'operator-1' } }),
@@ -60,7 +60,27 @@ vi.mock('../../src/components/common/Toast', () => ({
 }));
 vi.mock('../../src/services/GameManagementService', () => ({
   gameManagementService: {
-    list: async () => mocks.page,
+    /*
+       Models the server, which is where the filtering now lives: the tab is a
+       QUERY. A mock that ignored the bucket and returned everything would let
+       a client-side filter pass this suite while the real board showed the
+       wrong tab's games.
+    */
+    list: async (
+      _scope: string,
+      _scopeId: string,
+      _cursor: unknown = null,
+      bucket: number | null = null
+    ) => {
+      mocks.buckets.push(bucket);
+      return {
+        ...mocks.page,
+        items:
+          bucket === null
+            ? mocks.page.items
+            : mocks.page.items.filter((row: any) => row.bucket === bucket),
+      };
+    },
     getContracts: async () => [],
     getCommandReceipts: async () => [],
     getHealth: async () => ({
@@ -157,6 +177,29 @@ const clickTab = async (label: string) => {
 describe('the board classifies games by the server bucket', () => {
   beforeEach(() => {
     mocks.page = PAGE;
+    mocks.buckets = [];
+  });
+
+  /**
+   * The mechanism, pinned separately from its effects.
+   *
+   * The tabs used to filter `games` in the page. That is invisible to a test
+   * whose fixture happens to contain a row of every bucket - which is exactly
+   * why the real regression shipped. Asserting that the SERVER is asked for the
+   * tab's bucket is the thing that cannot pass while the filtering is local.
+   */
+  it('asks the server for the tab, rather than filtering what it already has', async () => {
+    await renderBoard();
+    expect(mocks.buckets, 'the All tab must not restrict the bucket').toEqual([null]);
+
+    await clickTab('scheduled');
+    expect(mocks.buckets.at(-1), 'the Scheduled tab must query bucket 1').toBe(1);
+
+    await clickTab('closed');
+    expect(mocks.buckets.at(-1), 'the Closed tab must query bucket 2').toBe(2);
+
+    await clickTab('running');
+    expect(mocks.buckets.at(-1), 'the Running tab must query bucket 0').toBe(0);
   });
 
   it('counts a tournament that has not started as scheduled, not live', async () => {

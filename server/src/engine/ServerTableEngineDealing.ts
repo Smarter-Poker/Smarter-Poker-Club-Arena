@@ -2658,11 +2658,22 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
     const now = Date.now();
     const removed: string[] = [];
 
+    /* CHIP STANDARD C3 (2026-09-02): the in-memory `pendingAddOns` map only
+       knows about add-ons THIS engine debited. A bust rebuy is debited by the
+       browser's atomic_table_rebuy call and lands only as an unresolved
+       `table_pending_addons` row (kind 'rebuy'), so the map cannot see it.
+       Ask the ledger for every broke seat before releasing any of them; a
+       hit also requests the sweep that delivers the chips. An unreadable
+       ledger (null) is "maybe owed", and nobody is stood up on a maybe - the
+       grace timer keeps running and the next tick asks again. */
+    const owed = await this.usersWithPendingLedgerChips(broke.map((p) => p.user_id));
+    if (owed === null) return;
+
     for (const player of broke) {
       /* Money already on its way to this seat. `pendingAddOns` is the queue
          processPendingAddOns drains a few lines above; a player in it has been
          DEBITED already and is owed their chips, not their seat taken away. */
-      if (this.pendingAddOns.has(player.user_id)) {
+      if (this.pendingAddOns.has(player.user_id) || owed.has(player.user_id)) {
         this.bustedSince.delete(player.user_id);
         continue;
       }

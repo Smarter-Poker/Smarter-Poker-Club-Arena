@@ -52,6 +52,38 @@ import { reportError } from '../errorReporter.js';
 /** PostgREST refuses to return more than db-max-rows in one response. */
 export const POSTGREST_PAGE = 1000;
 
+/**
+ * A TRANSIENT TIMEOUT IS NOT AN ANSWER (2026-09-02).
+ *
+ * Every caller of this module is written to fail CLOSED on `complete: false` -
+ * correctly, because acting on half a read is the truncation bug this module
+ * exists to eliminate. But that made a single dropped packet expensive out of
+ * all proportion: one `supabase_timeout` on page one and the caller abandons
+ * its entire cycle.
+ *
+ * Measured on the live engine, 2026-09-02:
+ *
+ *   [TournamentRecurring.registerHorses.page_failed] Error: supabase_timeout
+ *   [TournamentRecurring] registerHorses skipped: fleet read incomplete
+ *
+ * That is a whole tournament-filling pass thrown away because one HTTP request
+ * to read a 1,000-row fleet timed out.
+ *
+ * A page read is IDEMPOTENT - same cursor, same filter, no side effects - so
+ * re-asking is free of the hazard that makes retrying a WRITE dangerous
+ * (CLAUDE.md 11.5). Retry it. Fail closed only when the database genuinely
+ * will not answer.
+ *
+ * Three attempts with a short backoff, deliberately: this runs inside the
+ * 5-second discovery tick, so the total added latency on a doomed read is
+ * bounded at PAGE_RETRY_BACKOFF_MS summed - 600ms - rather than allowed to
+ * grow with a longer schedule.
+ */
+export const PAGE_ATTEMPTS = 3;
+export const PAGE_RETRY_BACKOFF_MS = [200, 400] as const;
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 /** The subset of the PostgREST builder this module drives. */
 export type PageQuery<T> = PromiseLike<{ data: T[] | null; error: unknown }>;
 
@@ -67,6 +99,11 @@ export interface FetchAllOptions {
   maxRows?: number;
   /** Column carrying the keyset cursor. Must be unique and orderable. */
   idKey?: string;
+  /**
+   * Attempts per page before the read is declared incomplete. 1 disables the
+   * retry entirely. See PAGE_ATTEMPTS for why the default is not 1.
+   */
+  pageAttempts?: number;
 }
 
 export interface FetchAllResult<T> {
@@ -93,6 +130,7 @@ export async function fetchAllRows<T extends Record<string, unknown>>(
   const pageSize = Math.max(1, Math.min(opts.pageSize ?? POSTGREST_PAGE, POSTGREST_PAGE));
   const maxRows = opts.maxRows ?? 100_000;
   const idKey = opts.idKey ?? 'id';
+  const attempts = Math.max(1, opts.pageAttempts ?? PAGE_ATTEMPTS);
   const out: T[] = [];
   let cursor: string | null = null;
 
@@ -100,9 +138,23 @@ export async function fetchAllRows<T extends Record<string, unknown>>(
     // Never ask for more than the ceiling allows, so maxRows is exact rather
     // than "the next multiple of pageSize above it".
     const want = Math.min(pageSize, maxRows - out.length);
-    const { data, error } = await makeQuery(cursor, want);
+
+    /* Re-ask on failure rather than abandoning the read. `makeQuery` is
+       documented to return a FRESH builder each call, and the cursor is
+       unchanged, so every attempt is the identical request. */
+    let data: T[] | null = null;
+    let error: unknown = null;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      ({ data, error } = await makeQuery(cursor, want));
+      if (!error) break;
+      if (attempt < attempts) {
+        await sleep(PAGE_RETRY_BACKOFF_MS[attempt - 1] ?? PAGE_RETRY_BACKOFF_MS[PAGE_RETRY_BACKOFF_MS.length - 1]);
+      }
+    }
 
     if (error) {
+      // Only the FINAL failure is reported. Alarming on each attempt would
+      // turn one flaky page into three alarms and bury the real signal.
       reportError(error, `${opts.label}.page_failed`);
       return { rows: out, complete: false };
     }

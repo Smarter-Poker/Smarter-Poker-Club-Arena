@@ -233,7 +233,25 @@ describe('the draw sets the prize and the payout shape - never the stack', () =>
   it('start updates the IN-MEMORY structure too, not just the row', () => {
     // The level timer and table creation read the in-memory object; a
     // DB-only write would leave this start running placeholder blinds.
-    expect(engine).toMatch(/tournament\.blind_structure\s*=\s*spinBlinds/);
+    //
+    // THIS PIN MOVED, 2026-09-02. It used to match the literal
+    // `tournament.blind_structure = spinBlinds`, one line of a hand-written
+    // per-field copy. That copy listed FOUR of the patch's five fields and
+    // silently dropped `payout_structure`, so a started Spin's cache kept the
+    // pre-draw winner-take-all placeholder for the life of the game. The fix
+    // replaced the whole list with applySpinDrawPatch, which copies EVERY key
+    // of the patch by construction - a strictly stronger guarantee than the
+    // line this used to look for. The mechanism was replaced without moving
+    // the pin, so the pin went red on a repo whose behaviour had improved,
+    // and it stopped the publisher for every agent until it was moved.
+    //
+    // The property is unchanged and is now pinned in two halves: the blinds
+    // the draw computed are IN the patch, and the patch is applied onto the
+    // in-memory `tournament` object. Neither half alone is sufficient.
+    expect(engine).toMatch(/blind_structure:\s*spinBlinds/);
+    expect(engine).toMatch(/applySpinDrawPatch\(\s*spinRowPatch[\s\S]{0,200}?\btournament\b/);
+    // And the retired shape must not grow back beside the new one.
+    expect(engine).not.toMatch(/tournament\.blind_structure\s*=\s*spinBlinds/);
   });
 
   it('creation writes an honest placeholder, not a fake tier', () => {

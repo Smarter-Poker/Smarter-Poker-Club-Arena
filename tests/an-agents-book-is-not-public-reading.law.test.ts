@@ -52,6 +52,13 @@ const DASHBOARD = fs.readFileSync(
   path.join(process.cwd(), 'src/components/agent/AgentCommissionDashboard.tsx'),
   'utf8'
 );
+const SWEEP = fs.readFileSync(
+  path.join(
+    process.cwd(),
+    'supabase/migrations/20260902013900_two_more_definers_that_answered_anybody.sql'
+  ),
+  'utf8'
+);
 
 describe('the read is guarded', () => {
   it('the RPC asks the predicate before it answers', () => {
@@ -164,6 +171,47 @@ describe('grants are written down, not inherited', () => {
     expect(MIGRATION).toMatch(
       /RAISE EXCEPTION 'anon can still execute fn_agent_unsettled_commission'/
     );
+  });
+});
+
+describe('the two other definers that answered anybody stay shut', () => {
+  // Found by sweeping for the SHAPE of this hole. Neither had a caller that
+  // needed `authenticated`, so neither got a guard - they got the grant taken
+  // away, which is smaller and cannot be got wrong.
+  it.each([
+    ['sum_agent_volume', 'uuid, uuid, timestamptz'],
+    ['fn_club_rakeback_margin_violations', 'uuid'],
+  ])('%s is revoked from authenticated and anon', (fn, args) => {
+    expect(SWEEP).toMatch(
+      new RegExp(`REVOKE ALL ON FUNCTION public\\.${fn}\\(${args}\\) FROM authenticated;`)
+    );
+    expect(SWEEP).toMatch(
+      new RegExp(`REVOKE ALL ON FUNCTION public\\.${fn}\\(${args}\\) FROM anon;`)
+    );
+  });
+
+  it('and kept for the service role, which is what actually calls them', () => {
+    // agent-analytics.js reaches sum_agent_volume through getSupabase().
+    // Revoking service_role too would break that route.
+    expect(SWEEP).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.sum_agent_volume\(uuid, uuid, timestamptz\) TO service_role;/
+    );
+    expect(SWEEP).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.fn_club_rakeback_margin_violations\(uuid\) TO service_role;/
+    );
+    expect(SWEEP).toMatch(/service_role lost EXECUTE on sum_agent_volume/);
+  });
+
+  it('and the migration refuses to apply if either grant survived', () => {
+    expect(SWEEP).toMatch(/authenticated can still execute sum_agent_volume/);
+    expect(SWEEP).toMatch(/authenticated can still execute fn_club_rakeback_margin_violations/);
+  });
+
+  it('a REVOKE-only migration fires no schema-cache reload, and says so', () => {
+    // GRANT/REVOKE are not in pgrst_ddl_watch's list. CLAUDE.md Production DDL
+    // policy, rule 5. Nothing here may grow a CREATE/ALTER without moving.
+    expect(SWEEP).not.toMatch(/\b(CREATE|ALTER)\s+(TABLE|INDEX|TYPE|TRIGGER|PUBLICATION)\b/i);
+    expect(SWEEP).toMatch(/does NOT fire pgrst_ddl_watch/);
   });
 });
 

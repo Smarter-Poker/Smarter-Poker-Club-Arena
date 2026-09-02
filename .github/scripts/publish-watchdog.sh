@@ -214,7 +214,7 @@ fi
 
 # ── Over budget. What did the publish workflow actually do for this sha? ────
 RUN=$(gh run list --repo "$REPO" --workflow "$PUBLISH_WORKFLOW" --limit 30 \
-        --json databaseId,headSha,status,conclusion,event,url \
+        --json databaseId,headSha,status,conclusion,event,url,createdAt \
         --jq "[.[] | select(.headSha == \"$HEAD_SHA\")] | .[0]" 2>/dev/null || echo "")
 RUN_STATUS=$(printf '%s' "$RUN" | jq -r '.status // "none"' 2>/dev/null || echo none)
 RUN_CONCL=$(printf '%s' "$RUN"  | jq -r '.conclusion // "none"' 2>/dev/null || echo none)
@@ -222,9 +222,41 @@ RUN_URL=$(printf '%s' "$RUN"    | jq -r '.url // ""' 2>/dev/null || echo "")
 RUN_EVENT=$(printf '%s' "$RUN"  | jq -r '.event // ""' 2>/dev/null || echo "")
 say "publish run for $HEAD_SHORT: status=$RUN_STATUS conclusion=$RUN_CONCL event=$RUN_EVENT"
 
-if [ "$RUN_STATUS" = "in_progress" ] || [ "$RUN_STATUS" = "queued" ]; then
-  say "a publish run for this sha is still $RUN_STATUS — letting it finish."
+RUN_CREATED=$(printf '%s' "$RUN" | jq -r '.createdAt // ""' 2>/dev/null || echo "")
+RUN_AGE_MIN=0
+if [ -n "$RUN_CREATED" ]; then
+  RUN_EPOCH=$(date -u -d "$RUN_CREATED" +%s 2>/dev/null || echo 0)
+  [ "$RUN_EPOCH" -gt 0 ] && RUN_AGE_MIN=$(( (NOW - RUN_EPOCH) / 60 ))
+fi
+
+# A RUN THAT NEVER STARTS MUST NOT BUY SILENCE FOREVER.
+#
+# This used to be `status = in_progress OR queued -> exit 0`, unbounded, and
+# on 2026-09-02 that turned the watchdog off during a real outage. GitHub can
+# leave a run in a pre-queued limbo it will never allocate: four of them exist
+# in this repo right now, the oldest ~21h, and NEITHER the cancel endpoint nor
+# force-cancel will clear them - both answer 409 "Cannot cancel a workflow run
+# that has not been queued yet". One of those zombies was the watchdog's OWN
+# retry, dispatched for the sha production was stuck behind, so every later
+# cycle found a "queued" run for that sha and cheerfully let it finish. It was
+# never going to finish. Production sat an hour behind main with the one
+# mechanism built to notice it reporting all clear.
+#
+# in_progress is still trusted without a clock: a real build takes ~7 minutes
+# and killing a slow one helps nobody. queued is trusted only up to the same
+# budget the lag itself gets - a run that has not been allocated inside the
+# budget is not going to be, and the honest response is to dispatch another
+# one, which lands in the same concurrency group and supersedes it.
+if [ "$RUN_STATUS" = "in_progress" ]; then
+  say "a publish run for this sha is still in_progress — letting it finish."
   exit 0
+fi
+if [ "$RUN_STATUS" = "queued" ] && [ "$RUN_AGE_MIN" -le "$LAG_BUDGET_MIN" ]; then
+  say "a publish run for this sha is queued (${RUN_AGE_MIN}m, inside the ${LAG_BUDGET_MIN}m budget) — letting it start."
+  exit 0
+fi
+if [ "$RUN_STATUS" = "queued" ]; then
+  say "publish run for $HEAD_SHORT has been QUEUED ${RUN_AGE_MIN}m without starting (budget ${LAG_BUDGET_MIN}m) — treating it as stuck and healing."
 fi
 
 # ── Self-heal, up to MAX_RETRIES per sha ───────────────────────────────────

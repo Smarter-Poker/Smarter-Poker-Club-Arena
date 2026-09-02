@@ -28,7 +28,9 @@ import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import haptic from '../services/HapticService';
-import GameCreationActions from '../components/club/GameCreationActions';
+import GameCreationActions, {
+  type GameCreationTarget,
+} from '../components/club/GameCreationActions';
 import ClubLaunchProgress, { type ClubLaunchTask } from '../components/club/ClubLaunchProgress';
 import ClubOpeningWizard from '../components/club/ClubOpeningWizard';
 import { clubOpeningSetupService } from '../services/ClubOpeningSetupService';
@@ -481,6 +483,38 @@ const GAME_TYPE_TABS: { key: GameType; label: string }[] = [
   { key: 'SPIN', label: 'SPINS' },
   { key: 'SNG', label: 'HEADS UP' },
 ];
+
+/**
+ * THE CREATE BUTTON BELONGS TO THE TAB YOU ARE LOOKING AT (Dan 2026-09-02).
+ *
+ * "THE ADD TABLE BUTTONS SHOULD NEVER DISPLAY ON THE ALL FIELD AND THERE
+ * SHOULD ONLY BE ONE BUTTON, AND THEY SHOULD BE INDEPENDENT TO THE FIELD. MTT
+ * RECEIVES THE + EVENT BUTTON. NLH RECEIVES THE + ADD TABLE BUTTON, PLO
+ * RECEIVES THE + ADD TABLE BUTTON, SPINS RECEIVES THE + SPINS BUTTON AND HEADS
+ * UP RECEIVES THE + SIT N GO BUTTON."
+ *
+ * LIMIT is the one tab Dan did not name. It is a cash board - it lists the
+ * same `tables` rows NLH and PLO do, and `table-management?create=table` is
+ * the screen that builds them - so Add Table is the only creation it could
+ * mean, and giving it nothing would be the one tab with a missing control.
+ * Named explicitly rather than caught by a default so that a game type added
+ * later shows NO button until somebody decides which one it earns, instead of
+ * silently inheriting a cash table.
+ */
+const CREATE_TARGET_FOR_TAB: Record<GameType, GameCreationTarget | null> = {
+  ALL: null,
+  MTT: 'event',
+  HOLDEM: 'table',
+  OMAHA: 'table',
+  LIMIT: 'table',
+  SPIN: 'spin',
+  SNG: 'sng',
+  /* MIXED is in the GameType union but has no tab in GAME_TYPE_TABS, so this
+     entry is unreachable today. It is written as null rather than 'table'
+     because if a Mixed board is ever surfaced, no button is the honest
+     starting point - somebody chooses what it creates, deliberately. */
+  MIXED: null,
+};
 
 const SORT_OPTIONS: { key: SortKey; label: string }[] = [
   { key: 'recommended', label: 'Recommended' },
@@ -4119,16 +4153,32 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               </button>
             </div>
           ) : (
+            /* LIVE FOR EVERY VIEWER, NOT JUST STAFF (Dan 2026-09-02).
+               The second club message on a phone - <ClubOwnerMessage>'s
+               `.lobby-top__house-welcome` trigger - is hidden below 900px now
+               (ClubHomePage.css), and that trigger was the only way a player
+               who cannot edit could open the message in full or reach the
+               club's announcements from the lobby. This strip carries both
+               jobs on a phone: staff still open the inline editor, everyone
+               else goes where the rail's panel would have sent them. Removing
+               a duplicate must not quietly remove a destination. */
             <button
               type="button"
               className="club-mobile-owner-message__copy"
-              disabled={!noticeEditable}
               onClick={() => {
-                if (!noticeEditable) return;
+                if (!noticeEditable) {
+                  navigate(`/clubs/${clubId}/announcements`);
+                  return;
+                }
                 setNoticeDraft(club.lobby_message || '');
                 setIsEditingNotice(true);
               }}
               title={club.lobby_message || 'Add A One-Line Club Message'}
+              aria-label={
+                noticeEditable
+                  ? `Club Message: ${club.lobby_message?.trim() || 'None Set'}. Open To Edit`
+                  : `Club Message: ${club.lobby_message?.trim() || 'None Set'}. Open Club Announcements`
+              }
             >
               {club.lobby_message?.trim() || 'Add A One-Line Club Message'}
             </button>
@@ -4567,6 +4617,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                     <GameCreationActions
                       managementPath={`/clubs/${clubId}/table-management`}
                       compact
+                      only={CREATE_TARGET_FOR_TAB[gameType]}
+                      desktopOnly
                       onNavigate={(path) => navigate(path)}
                     />
                   )}

@@ -61,6 +61,7 @@ import {
   auditRakeAttributionDrift,
   auditSatelliteConservation,
   auditPrizeDisbursement,
+  auditDoublePaidObligations,
   requeueUnbankedCashRake,
   auditGuaranteesKept,
 } from './services/FeeReconciler.js';
@@ -1593,6 +1594,12 @@ export class GameServer {
           // other check precisely because the outage reset overwrote that
           // snapshot while the wallet ledger kept the truth.
           await auditPrizeDisbursement(24);
+          // One shortfall, one payment (2026-09-02): the check above says an
+          // event over-paid; this one says WHY, by naming the obligation that
+          // two different repair paths both settled. Their idempotency keys
+          // are namespaced by the repairer rather than by the debt, so the
+          // unique index cannot see them as the same payment.
+          await auditDoublePaidObligations(24);
           // Guarantee kept (2026-08-31, phase 6): a COMPLETED event that
           // advertised a guaranteed prize must actually have PAID it. Nothing
           // in this estate asked that question - every other guarantee check

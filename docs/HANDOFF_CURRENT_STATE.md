@@ -31,12 +31,21 @@ what was intended.**
 A six-phase plan was agreed. **Phases 1, 2 and 3 are complete, verified and
 pushed. Phase 4 has not been started.**
 
+> **SUPERSEDED 2026-09-02 — PHASE 4 IS COMPLETE.** Commits `b557cb5f1`
+> (migration + law) and `c1181a5ae` (changelog), pushed to the same branch and
+> the same PR #2551. Migration
+> `20260902155525_a_seat_is_money_even_when_no_wallet_moved` is applied and
+> md5-verified against `pg_proc`. Server 3,665/329, client 11,461/836, both
+> `tsc` clean, law registry green, definer gate OK. Next unit of work is
+> **Phase 5 of 6**. Everything below this line still describes Phases 1-3
+> accurately; only the Phase 4 rows have been updated in place.
+
 | Phase  | Subject                                            | State              |
 | ------ | -------------------------------------------------- | ------------------ |
 | 1 of 6 | Prove the money checks are actually running        | CONFIRMED COMPLETE |
 | 2 of 6 | Buy-ins that were never collected                  | CONFIRMED COMPLETE |
 | 3 of 6 | Multi-day / XMTT flight advancement                | CONFIRMED COMPLETE |
-| 4 of 6 | Re-entries and add-ons reaching the prize pool     | NOT STARTED        |
+| 4 of 6 | Re-entries and add-ons reaching the prize pool     | CONFIRMED COMPLETE |
 | 5 of 6 | Mystery bounty chests, draw by draw                | NOT STARTED        |
 | 6 of 6 | Exact-cent allocation replacing the 0.05 tolerance | NOT STARTED        |
 
@@ -507,24 +516,24 @@ apply and there are no locked visual references to honour.**
 
 ## 9. FUNCTIONAL AND ARCHITECTURAL DECISIONS
 
-| Area                                      | State                                          | Note                                                                                  |
-| ----------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------- |
-| MTT payout guarantee                      | **Implemented**                                | `fn_payout_guarantee_check`, 4 counters, all reporting 0 at handoff                   |
-| Bounty pool settlement on the rescue path | **Implemented**                                | `tournamentRecovery.ts` settles before flipping COMPLETED                             |
-| Payout structure narrowing                | **Implemented**                                | `TournamentManagerBase.fitPayoutStructureToField` refuses to narrow past a paid place |
-| No result without a hand                  | **Implemented**                                | `recoveryRankEvidence.ts` — `chipsCannotRank`, `noHandWasEverDealt`                   |
-| Uncollected entry detection               | **Implemented**                                | `fn_uncollected_entry_check`, 4 enumerated exemptions                                 |
-| Money-check heartbeat                     | **Implemented in DB, NOT YET RUNNING**         | engine has not restarted                                                              |
-| Alert dedupe                              | **Implemented in DB, engine side NOT SHIPPED** | proven by natural experiment §6.5                                                     |
-| Multi-day / flights                       | **DOES NOT EXIST, refused at the DB**          | all 7 columns                                                                         |
-| Satellite seat as a payout                | **Implemented + back-filled**                  | 23 rows, 4,600.00 chips                                                               |
-| Cash pot conservation                     | **Implemented**                                | 48h cap, measured                                                                     |
-| Re-entries / add-ons reaching the pool    | **NOT STARTED — Phase 4**                      | population in §20                                                                     |
-| Mystery bounty chests                     | **NOT STARTED — Phase 5**                      |                                                                                       |
-| Exact-cent allocation                     | **NOT STARTED — Phase 6**                      | currently a 0.05 tolerance in `earner_not_paid`                                       |
-| Rakeback settlement                       | **BLOCKED ON DAN**                             | cause fixed in PR #1084; 281,108.01 chips owed                                        |
-| Overpay clawback                          | **REJECTED BY DAN**                            | 19,665.23 chips across 65 events; club absorbs                                        |
-| Hand-history retention asymmetry          | **DECIDED BY DAN, DO NOT CHANGE**              | 7 days for horse-only hands                                                           |
+| Area                                      | State                                          | Note                                                                                                                                    |
+| ----------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| MTT payout guarantee                      | **Implemented**                                | `fn_payout_guarantee_check`, 4 counters, all reporting 0 at handoff                                                                     |
+| Bounty pool settlement on the rescue path | **Implemented**                                | `tournamentRecovery.ts` settles before flipping COMPLETED                                                                               |
+| Payout structure narrowing                | **Implemented**                                | `TournamentManagerBase.fitPayoutStructureToField` refuses to narrow past a paid place                                                   |
+| No result without a hand                  | **Implemented**                                | `recoveryRankEvidence.ts` — `chipsCannotRank`, `noHandWasEverDealt`                                                                     |
+| Uncollected entry detection               | **Implemented**                                | `fn_uncollected_entry_check`, 4 enumerated exemptions                                                                                   |
+| Money-check heartbeat                     | **Implemented in DB, NOT YET RUNNING**         | engine has not restarted                                                                                                                |
+| Alert dedupe                              | **Implemented in DB, engine side NOT SHIPPED** | proven by natural experiment §6.5                                                                                                       |
+| Multi-day / flights                       | **DOES NOT EXIST, refused at the DB**          | all 7 columns                                                                                                                           |
+| Satellite seat as a payout                | **Implemented + back-filled**                  | 23 rows, 4,600.00 chips                                                                                                                 |
+| Cash pot conservation                     | **Implemented**                                | 48h cap, measured                                                                                                                       |
+| Re-entries / add-ons reaching the pool    | **DONE — Phase 4** (2026-09-02)                | rebuy fees reconcile 7,679/7,679; the satellite seat was invisible to conservation on BOTH sides and now is not; satellites are scanned |
+| Mystery bounty chests                     | **NOT STARTED — Phase 5**                      |                                                                                                                                         |
+| Exact-cent allocation                     | **NOT STARTED — Phase 6**                      | currently a 0.05 tolerance in `earner_not_paid`                                                                                         |
+| Rakeback settlement                       | **BLOCKED ON DAN**                             | cause fixed in PR #1084; 281,108.01 chips owed                                                                                          |
+| Overpay clawback                          | **REJECTED BY DAN**                            | 19,665.23 chips across 65 events; club absorbs                                                                                          |
+| Hand-history retention asymmetry          | **DECIDED BY DAN, DO NOT CHANGE**              | 7 days for horse-only hands                                                                                                             |
 
 ---
 
@@ -1099,7 +1108,12 @@ SELECT check_name, run_count, last_run_at FROM money_check_heartbeat ORDER BY ch
 7. **Do NOT modify:** anything listed in §11 without reading its law test and
    changelog; any other worktree; the schema manifests.
 
-8. **Resume at:** Phase 4 of 6 — re-entries and add-ons reaching the prize pool
+8. **Resume at:** Phase 5 of 6 — mystery bounty chests, draw by draw. PHASE 4 IS
+   DONE (2026-09-02, commits b557cb5f1 + c1181a5ae; see
+   `docs/changelog/2026-09-02-phase-4-a-seat-is-money-even-when-no-wallet-moved.md`).
+   Do NOT redo it, and do NOT "fix" the three residual satellite deltas: one is
+   a 108.00 club-absorbed overpay under Dan's no-clawback ruling, and the other
+   two (-1.00, -0.50) are Phase 6's exact-cent question.
    (§20 item 3, §21 Phase 3).
 
 ---

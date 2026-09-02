@@ -7618,12 +7618,25 @@ export default function TablePage({
     releaseBustHold,
   ]);
 
+  /* CHIP STANDARD C3 (2026-09-02): ONE idempotency key per bust event and
+     amount, reused across retries. This minted `crypto.randomUUID()` on every
+     attempt, so the exact window the key exists for - the RPC committed, the
+     response was lost, the player tapped Rebuy again - debited the wallet a
+     second time. The key is held here until a rebuy SUCCEEDS (a later bust is
+     a new event and gets a new key); a retry with a different amount is a
+     different purchase and gets its own key, because the RPC answers a
+     replayed key with the balance and moves nothing. */
+  const bustRebuyKeyRef = useRef<{ amount: number; key: string } | null>(null);
+
   const confirmBustRebuy = useCallback(
     async (amount: number) => {
       if (!tableId || !userId) return;
       setBustRebuyProcessing(true);
       try {
-        const idempotencyKey = crypto.randomUUID();
+        if (!bustRebuyKeyRef.current || bustRebuyKeyRef.current.amount !== amount) {
+          bustRebuyKeyRef.current = { amount, key: crypto.randomUUID() };
+        }
+        const idempotencyKey = bustRebuyKeyRef.current.key;
         const payload = {
           p_user_id: userId,
           p_table_id: tableId,
@@ -7649,6 +7662,8 @@ export default function TablePage({
           setBustRebuyProcessing(false);
           return;
         }
+        // The purchase landed; the next bust is a new event with a new key.
+        bustRebuyKeyRef.current = null;
         toast?.success(`Rebought for ${amount.toLocaleString()}`);
         setBustRebuyOpen(false);
         // Guard so a zero-stack state immediately after the RPC succeeds

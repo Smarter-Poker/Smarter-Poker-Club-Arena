@@ -21,10 +21,10 @@ adding at most `MTT_PRESTART_MAX_STEP` (6) entrants per tick, no oftener than
 every 45 seconds (`GameServer.lastMttRampAt`). Both recurring creators were
 publishing their events moments before the gun:
 
-| creator            | lead        | ticks available | entrant ceiling |
-| ------------------ | ----------- | --------------- | --------------- |
-| `createTournament` | 60 seconds  | 1               | 6               |
-| `createXMTT`       | 5 minutes   | ~7              | ~42             |
+| creator            | lead       | ticks available | entrant ceiling |
+| ------------------ | ---------- | --------------- | --------------- |
+| `createTournament` | 60 seconds | 1               | 6               |
+| `createXMTT`       | 5 minutes  | ~7              | ~42             |
 
 A 72-hour ramp was being given 60 seconds. No number of free horses can lift a
 ceiling set by ticks.
@@ -33,10 +33,10 @@ ceiling set by ticks.
 
 Completed guaranteed events, 5 days to 2026-09-02:
 
-| published            | events | overlaid | total overlay | avg pool | avg guarantee |
-| -------------------- | ------ | -------- | ------------- | -------- | ------------- |
-| < 10 min before start | 299   | 58.5%    | 24,495.40     | 368.10   | 295.74        |
-| > 24 h before start   | 38    | 10.5%    | 420.00        | 1,920.77 | 1,060.53      |
+| published             | events | overlaid | total overlay | avg pool | avg guarantee |
+| --------------------- | ------ | -------- | ------------- | -------- | ------------- |
+| < 10 min before start | 299    | 58.5%    | 24,495.40     | 368.10   | 295.74        |
+| > 24 h before start   | 38     | 10.5%    | 420.00        | 1,920.77 | 1,060.53      |
 
 Same ramp, same fleet, same horses. The group with time to run **overshoots**
 its guarantees; the group without it pays overlay 58.5% of the time.

@@ -13,17 +13,17 @@ That is correct for a standalone club and wrong for a union event, because a
 union event hangs off the union's OWN club row while the horses live in the
 union's MEMBER clubs.
 
-| | horses |
-| --- | --- |
-| `Midway Union` club row (what the filter used) | 323 |
+|                                                      | horses                            |
+| ---------------------------------------------------- | --------------------------------- |
+| `Midway Union` club row (what the filter used)       | 323                               |
 | Club JAQK + SHARK CLUB (where the fleet actually is) | 584, of which 392 tournament-lane |
 
 Candidates for a live union event, measured today:
 
-| rule | candidates |
-| --- | --- |
-| host club only (shipped 2026-09-01) | **28** |
-| union-wide (this change) | **203** |
+| rule                                | candidates |
+| ----------------------------------- | ---------- |
+| host club only (shipped 2026-09-01) | **28**     |
+| union-wide (this change)            | **203**    |
 
 Twenty-eight. That is the pool the union's entire tournament schedule was
 drawing from, and `[TournamentRecurring] registerHorses found no candidates`

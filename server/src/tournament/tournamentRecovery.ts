@@ -140,30 +140,43 @@ export async function refundAndCloseCancelledTournament(
       // everything else -- despite the comment above this block already
       // stating that ignoring rebuys/add-ons/re-entries was the old bug.
       // (Re-entries are written with category 'rebuy'.)
-      let paid = 0;
+      let gross = 0;
+      let refunded = 0;
       for (const t of txRows ?? []) {
         if (
           t.type === 'debit' &&
           (t.category === 'tournament_buyin' || t.category === 'rebuy' || t.category === 'addon')
         ) {
-          paid += Number(t.amount || 0);
+          gross += Number(t.amount || 0);
         } else if (t.type === 'credit' && t.category === 'refund') {
-          paid -= Number(t.amount || 0);
+          refunded += Number(t.amount || 0);
         }
       }
-      paid = Math.round(paid * 100) / 100;
-      if (paid <= 0) continue; // never paid (legacy free entry) or already refunded
+      gross = Math.round(gross * 100) / 100;
+      refunded = Math.round(refunded * 100) / 100;
+      if (gross <= 0) continue; // never paid (legacy free entry)
+      if (gross - refunded <= 0) continue; // already refunded in full
 
       // ONE SETTLE PATH (2026-09-02): a user-keyed 'refund' obligation,
       // UNIQUE on (tournament, 'refund', user). Every cancel-refund path
       // (startup pre-start sweep, SNG lifecycle sweep, this helper) delegates
       // here and settles the same row, so a re-run refunds nobody twice - the
       // dedupe the old `cancelrefund:{row.id}` key gave, as a constraint.
+      //
+      // THE AMOUNT IS THE GROSS ENTITLEMENT, NOT THE NET (phase 1.5,
+      // 2026-09-02). fn_settle_tournament_obligation takes the TOTAL owed and
+      // pays the difference: when it first meets a refund obligation it seeds
+      // amount_paid from this player's prior refund credits for this
+      // tournament, exactly the credits subtracted above. Passing the net
+      // (gross - prior refunds) as the total therefore counted every earlier
+      // partial refund twice: gross 20, refunded 5 -> total 15, seeded paid 5
+      // -> it paid 10, and the player was 5 short. The total is what the
+      // player paid; the function already knows what came back.
       const refund = await settleTournamentObligation(supabase, {
         tournamentId,
         kind: 'refund',
         userId: row.user_id,
-        amount: paid,
+        amount: gross,
         source: 'engine.refundAndCloseCancelledTournament',
         memo: `${refundReason}: ${fullT?.name || tournamentName || 'tournament'}`,
       });

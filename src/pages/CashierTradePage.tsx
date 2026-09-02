@@ -78,6 +78,7 @@ import { useToast } from '../components/common/Toast';
 import WalletCashierModal from '../components/wallet/WalletCashierModal';
 import { DEFAULT_CASHIER_WALLET, secondsLeftFromServer } from '../components/wallet/cashierModes';
 import { canSeeClubBank, canHoldAgentWallet } from '../components/wallet/walletRows';
+import { describeChipTransaction, walletRoute } from '../components/wallet/describeChipTransaction';
 import styles from './CashierTradePage.module.css';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -174,6 +175,14 @@ interface TradeRecordRow {
   amount: number;
   direction: 'in' | 'out';
   counterparty: string;
+  /**
+   * Dan 2026-09-02: a ledger line must say which wallet the chips left and
+   * which they entered, whatever the role. "Agent Wallet To Player Wallet".
+   * Null when the row is not a wallet move (a buy-in, rake, a payout).
+   */
+  route: string | null;
+  /** The full sentence for the receipt: "KINGFISH Sent 500 From ... To ...". */
+  narrative: string | null;
 }
 
 interface ChipRequestRow {
@@ -959,7 +968,9 @@ export default function CashierTradePage() {
     try {
       const { data, error } = await supabase
         .from('chip_transactions')
-        .select('id, created_at, transaction_type, amount, from_user_id, to_user_id, notes')
+        .select(
+          'id, created_at, transaction_type, amount, from_user_id, to_user_id, notes, metadata'
+        )
         .eq('club_id', clubUuid)
         .or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`)
         .order('created_at', { ascending: false })
@@ -1000,6 +1011,8 @@ export default function CashierTradePage() {
             amount: Number(r.amount) || 0,
             direction: out ? ('out' as const) : ('in' as const),
             counterparty: (other && nameOf.get(other)) || 'Club',
+            route: walletRoute(r),
+            narrative: describeChipTransaction(r, nameOf, user.id),
           };
         })
       );
@@ -1398,7 +1411,9 @@ export default function CashierTradePage() {
       if (recordDirection !== 'all' && row.direction !== recordDirection) return false;
       if (!q) return true;
       return (
-        row.counterparty.toLowerCase().includes(q) || txLabel(row.type).toLowerCase().includes(q)
+        row.counterparty.toLowerCase().includes(q) ||
+        txLabel(row.type).toLowerCase().includes(q) ||
+        (row.route ?? '').toLowerCase().includes(q)
       );
     });
   }, [records, recordDirection, recordQuery]);
@@ -2736,7 +2751,8 @@ export default function CashierTradePage() {
                       {r.counterparty}
                     </span>
                     <span className={styles.rowSub}>
-                      {txLabel(r.type)} &middot;{' '}
+                      {txLabel(r.type)}
+                      {r.route ? <> &middot; {r.route}</> : null} &middot;{' '}
                       {new Date(r.createdAt).toLocaleString([], {
                         month: 'short',
                         day: 'numeric',
@@ -3046,6 +3062,18 @@ export default function CashierTradePage() {
                 <dt>Entry</dt>
                 <dd>{txLabel(receipt.type)}</dd>
               </div>
+              {receipt.route ? (
+                <div>
+                  <dt>Wallets</dt>
+                  <dd>{receipt.route}</dd>
+                </div>
+              ) : null}
+              {receipt.narrative ? (
+                <div>
+                  <dt>Summary</dt>
+                  <dd>{receipt.narrative}</dd>
+                </div>
+              ) : null}
               <div>
                 <dt>Recorded</dt>
                 <dd>

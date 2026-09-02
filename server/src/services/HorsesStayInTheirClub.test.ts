@@ -46,9 +46,12 @@ describe('the club membership read', () => {
     );
   });
 
-  it('loads that club members, paged, so a big club cannot be truncated', () => {
+  it('loads those clubs members, paged, so a big club cannot be truncated', () => {
     expect(HELPER).toContain("from('club_members')");
-    expect(HELPER).toContain("eq('club_id', hostClubId)");
+    /* WAS eq('club_id', hostClubId). A union event hangs off the union's own
+       club row while its horses live in the union's MEMBER clubs, so a single
+       host club is the wrong set for it - see the union describe below. */
+    expect(HELPER).toContain("in('club_id', clubIds)");
     expect(HELPER).toContain('fetchAllRows');
     expect(HELPER).toContain("idKey: 'user_id'");
   });
@@ -63,6 +66,51 @@ describe('the club membership read', () => {
   it('returns null rather than an empty club when it cannot answer', () => {
     expect(HELPER).toMatch(/if \(!hostClubId\) return null;/);
     expect(HELPER).toMatch(/if \(!memberPage\.complete\) return null;/);
+  });
+});
+
+/**
+ * A UNION'S EVENT DRAWS FROM THE UNION (2026-09-02).
+ *
+ * The membership rule above is right and stays. What it got wrong was the SET:
+ * it resolved every tournament to the one `club_id` row it hangs off, and a
+ * union event hangs off the union's own club row while the horses live in the
+ * union's member clubs. On Midway Union that meant a schedule serving 584
+ * horses drew from the 323 on the union row, of whom 28 were free - measured,
+ * not estimated - while `registerHorses found no candidates` became the
+ * engine's most frequent tournament log line.
+ *
+ * The isolation is untouched: the union branch is only taken when the
+ * tournament carries a union_id, so a standalone club (Deep Stack Society)
+ * still resolves to exactly its own membership.
+ */
+describe('a union event draws from the whole union, a standalone club from itself', () => {
+  it('reads the union off the tournament, not just the club', () => {
+    expect(HELPER).toContain("select('club_id, union_id')");
+    expect(HELPER).toMatch(/const unionId = \(hostClub\.data as \{ union_id\?: string \} \| null\)\?\.union_id;/);
+  });
+
+  it('starts from the host club alone - that is a standalone club is whole answer', () => {
+    expect(HELPER).toMatch(/let clubIds: string\[\] = \[hostClubId\];/);
+  });
+
+  it('widens to the union clubs ONLY when the event carries a union', () => {
+    expect(HELPER).toMatch(/if \(unionId\) \{/);
+    expect(HELPER).toContain("from('clubs').select('id').eq('union_id', unionId)");
+    expect(HELPER).toContain("from('union_clubs').select('club_id').eq('union_id', unionId)");
+  });
+
+  it('keeps the host club in the set even when the union map is read', () => {
+    // The union's own club row holds members of its own and is the row the
+    // event hangs off; dropping it would trade one starvation for another.
+    expect(HELPER).toMatch(/const ids = new Set<string>\(\[hostClubId\]\);/);
+  });
+
+  it('declines rather than silently narrowing back to the host club', () => {
+    // Returning the host club alone on a failed union read would re-create the
+    // exact bug this fixes, and do it invisibly. null means "no opinion" and
+    // the caller fails open.
+    expect(HELPER).toMatch(/if \(owned\.error \|\| joined\.error\) return null;/);
   });
 });
 
@@ -119,5 +167,25 @@ describe('seat-first games are filled from their own club', () => {
 
   it('leaves the pool alone when the club cannot be resolved', () => {
     expect(PICK).toMatch(/: fleetIds;/);
+  });
+});
+
+/**
+ * THE NUMBERS HAVE TO ADD UP.
+ *
+ * `clubDropped` was counted and never printed, so for a day the engine's own
+ * diagnostic read "fleet 1000, at-capacity 215, lane 108" and invited the
+ * reader to conclude the missing 677 did not exist. They were the single
+ * largest exclusion and the one that mattered.
+ */
+describe('the empty-pool warning names every bucket', () => {
+  it('prints the club exclusion alongside the others', () => {
+    /* lastIndexOf, because the phrase also appears in the doc comment above
+       the helper - the first match is prose, the last is the code. */
+    const at = SRC.lastIndexOf('registerHorses found no candidates');
+    const WARN = SRC.slice(at, at + 400);
+    expect(WARN).toContain('at-capacity/entered ${busyDropped}');
+    expect(WARN).toContain('not-a-club-member ${clubDropped}');
+    expect(WARN).toContain('lane/window-excluded ${laneDropped}');
   });
 });

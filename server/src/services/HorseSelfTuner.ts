@@ -577,6 +577,17 @@ const PAGE_SIZE = 1000;
 
 let checkTimer: NodeJS.Timeout | null = null;
 let lastRunDate: string | null = null;
+/*
+ * ── 2026-09-02: why `lastRunDate = null` in the catch never bought a retry ──
+ * runSelfTune's catch clears lastRunDate so the next tick can try again. The
+ * next tick then reached the stand-down branch below, which set
+ * `lastRunDate = today` - and the day was shut for good, 30 minutes before the
+ * stale claim it was waiting on became takeable. Measured: self_tuner claimed
+ * 2026-09-01 and 2026-09-02, hit `canceling statement due to statement
+ * timeout` both times, and wrote zero rows on both days. The stand-down keeps
+ * its own memo now and only suppresses the repeated log line.
+ */
+let lastStandDownDate: string | null = null;
 let running = false;
 
 /**
@@ -615,8 +626,10 @@ async function maybeRunSelfTune(): Promise<void> {
   // V13.1: one claim, one runner — otherwise both instances stream 120,000
   // hand_history rows at the same time.
   if (!(await claimNightlyJob('self_tuner', today))) {
-    lastRunDate = today;
-    console.log(`[HorseSelfTuner] run ${today} claimed by another instance - standing down`);
+    if (lastStandDownDate !== today) {
+      lastStandDownDate = today;
+      console.log(`[HorseSelfTuner] run ${today} claimed by another instance - standing down`);
+    }
     return;
   }
   lastRunDate = today;

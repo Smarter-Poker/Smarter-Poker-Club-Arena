@@ -1,4 +1,5 @@
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo } from 'react';
+import { readFigures, rememberFigures } from '../../../lib/lobbyFigureCache';
 import type { LobbyEntry } from '../lobbyEntries';
 import { lobbyPlayerStateOf as playerStateOf, type LobbyRowContext } from '../lobbyCardContext';
 import { arenaGameCardDataFromEntry } from './arenaGameCardAdapter';
@@ -107,6 +108,28 @@ export function arenaGameCardActionsForEntry(
   };
 }
 
+/**
+ * The card fields worth remembering between visits.
+ *
+ * Counts and amounts only. `status`, `statusLabel` and `startTime` are
+ * deliberately absent: a remembered STATE is a lie the moment it is stale -
+ * "Registering" over a tournament that has since started would send a player
+ * at a closed door - whereas a remembered COUNT is merely a little behind, and
+ * is corrected by the next update a second later.
+ */
+const CACHED_FIGURE_KEYS = [
+  'players',
+  'registered',
+  'stakes',
+  'buyIn',
+  'guarantee',
+  'startingStack',
+  'currentLevel',
+  'currentBlinds',
+  'maxPayout',
+  'topPrize',
+] as const;
+
 export const ArenaLobbyGameCard = memo(function ArenaLobbyGameCard({
   entry,
   ctx,
@@ -121,8 +144,42 @@ export const ArenaLobbyGameCard = memo(function ArenaLobbyGameCard({
   const data = useMemo(() => {
     const normalized = arenaGameCardDataFromEntry(entry);
     const playerState = playerStateOf(entry, ctx);
-    return { ...normalized, registeredByViewer: playerState === 'registered' };
+    const cached = readFigures(`game:${entry.id}`);
+
+    /* THE LAST NUMBER WE KNEW, RATHER THAN NOTHING (Dan 2026-09-02).
+       "THIS SHOULD HAVE A CACHE FEATURE, THAT ALWAYS SAVES THE LAST KNOWN
+       NUMBERS, SAVED AS THE DEFAULT, AND UPDATES WHEN IT HAS THE REAL NUMBERS
+       UPDATED."
+
+       Only fields the adapter left undefined are filled - a live figure always
+       wins, so a table that genuinely empties shows 0/6 and never a
+       remembered 3/6. The zero underneath this is in ArenaGameCard's
+       LiveValue: cache first, then 0, and never the word Unavailable. */
+    const remembered: Partial<typeof normalized> = {};
+    for (const key of CACHED_FIGURE_KEYS) {
+      if (normalized[key] === undefined && cached[key]) {
+        remembered[key] = cached[key];
+      }
+    }
+
+    return {
+      ...normalized,
+      ...remembered,
+      registeredByViewer: playerState === 'registered',
+    };
   }, [entry, ctx]);
+
+  /* Write-through, in an effect rather than in the memo above: a memo runs
+     during render and React may run it twice, and storage writes are not the
+     business of a render pass. `rememberFigures` skips absent values, so a
+     card that arrives without its stakes does not erase the stakes we had. */
+  useEffect(() => {
+    rememberFigures(
+      `game:${entry.id}`,
+      Object.fromEntries(CACHED_FIGURE_KEYS.map((key) => [key, data[key]]))
+    );
+  }, [entry.id, data]);
+
   const actions = useMemo(() => arenaGameCardActionsForEntry(entry, ctx), [entry, ctx]);
 
   return (

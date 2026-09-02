@@ -1,0 +1,14 @@
+-- fn_payout_guarantee_check gains a fourth independent failure:
+-- `bounty_pool_retained`, an event whose funded bounty pool reached no player.
+-- Applied on its own a minute after 20260901194756 and folded into
+-- 20260901131129, which carries the whole function. Re-applying that file
+-- reproduces this state exactly; its header records the md5 of the deployed
+-- body (9d06324aa69260cdeb985d7111209674, 11379 bytes, checked 2026-09-01).
+--
+-- WHY IT WAS MISSING. The check reconciled the PRIZE pool and reported, over
+-- 150 days, that every earner was paid. True, and half the money: a bounty
+-- event funds a second pool out of the same buy-in and nothing asked about it.
+-- 38 completed events were holding 1,931.24 chips of it.
+--
+-- This file exists so the applied-migrations recorder can find the name it
+-- recorded. The statement it ran is the CREATE OR REPLACE in 20260901131129.

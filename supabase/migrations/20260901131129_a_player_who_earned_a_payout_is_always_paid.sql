@@ -52,10 +52,13 @@
 -- bodies in this file were then checked against production rather than
 -- assumed - md5 of pg_proc.prosrc against md5 of the body in this file,
 -- 2026-09-01:
---   fn_payout_guarantee_check        c8c2e7eca158e7278967a0be875c8147  8810 bytes
+--   fn_payout_guarantee_check        9d06324aa69260cdeb985d7111209674 11379 bytes
 --   fn_pay_backed_payout_shortfalls  a528ce2103f371fb1f4f565dffb7589c  7361 bytes
--- (the first hash moved when 20260901133x re-applied the check with the
---  five-cent tolerance; it is re-verified above at that new value)
+-- The first hash has moved twice as the check earned corrections, and is
+-- re-verified at each: c8c2e7ec when 20260901133841 gave it the five-cent
+-- tolerance, and 9d06324a when 20260901200x gave it the bounty pool. Only the
+-- latest is checked in; the earlier values are recorded so a reader can tell
+-- drift from a deliberate change.
 -- Only the bodies can match byte for byte; pg_get_functiondef rewrites the
 -- signature and the SET clauses into its own layout.
 --
@@ -85,6 +88,8 @@ DECLARE
   v_short_chips numeric := 0;
   v_gap      integer := 0;
   v_gap_chips numeric := 0;
+  v_bounty   integer := 0;
+  v_bounty_chips numeric := 0;
   v_alerts   integer := 0;
   v_row      record;
 BEGIN
@@ -202,6 +207,45 @@ BEGIN
     IF FOUND THEN v_alerts := v_alerts + 1; END IF;
   END LOOP;
 
+  /* THE OTHER POOL (2026-09-01). Everything above reconciles the PRIZE pool,
+     and a bounty event funds a SECOND pool out of the same buy-in. Nothing
+     asked whether that one was paid out, and 38 completed events were holding
+     1,931.24 chips of it - 34 of them completed by the stuck-COMPLETING
+     watchdog, which settled the rake and never touched bounties. The rule the
+     platform already had is that whatever is left settles to the champion;
+     fn_backpay_unfinalised_bounty_pools re-drives it. This is the check that
+     makes the failure visible rather than the repair. */
+  FOR v_row IN
+    SELECT t.id, t.name, t.club_id, t.ended_at,
+           round(COALESCE(t.bounty_pool, 0), 2) AS pool,
+           COALESCE((SELECT round(sum(w.amount), 2) FROM public.wallet_transactions w
+                      WHERE w.related_entity_id = t.id AND w.type = 'credit'
+                        AND w.category = 'bounty'), 0) AS paid
+      FROM public.tournaments t
+     WHERE t.status = 'COMPLETED'
+       AND t.ended_at >= v_since
+       AND COALESCE(t.bounty_pool, 0) > 0
+  LOOP
+    CONTINUE WHEN v_row.paid + 0.01 >= v_row.pool;
+    v_bounty := v_bounty + 1;
+    v_bounty_chips := v_bounty_chips + (v_row.pool - v_row.paid);
+    INSERT INTO public.financial_alerts (severity, source, message, context)
+    SELECT 'critical', 'fn_payout_guarantee_check',
+           format('%s funded a %s bounty pool and paid out %s, so %s chips of it reached no player',
+                  COALESCE(v_row.name, v_row.id::text), v_row.pool, v_row.paid,
+                  round(v_row.pool - v_row.paid, 2)),
+           jsonb_build_object('kind','bounty_pool_retained','tournament_id',v_row.id,
+             'club_id',v_row.club_id,'bounty_pool',v_row.pool,'paid',v_row.paid,
+             'retained',round(v_row.pool - v_row.paid, 2),'ended_at',v_row.ended_at,
+             'detail','the residual settles to the champion; fn_backpay_unfinalised_bounty_pools re-drives it. No money was moved by this check')
+     WHERE NOT EXISTS (SELECT 1 FROM public.financial_alerts fa
+                        WHERE fa.source = 'fn_payout_guarantee_check'
+                          AND fa.resolved IS NOT TRUE
+                          AND fa.context->>'kind' = 'bounty_pool_retained'
+                          AND fa.context->>'tournament_id' = v_row.id::text);
+    IF FOUND THEN v_alerts := v_alerts + 1; END IF;
+  END LOOP;
+
   SELECT count(*), COALESCE(round(sum(gap), 2), 0) INTO v_gap, v_gap_chips
     FROM (
       SELECT t.id,
@@ -241,6 +285,8 @@ BEGIN
     'vacant_paid_place_chips', round(v_vac_chips, 2),
     'earners_not_paid', v_short,
     'earners_not_paid_chips', round(v_short_chips, 2),
+    'bounty_pool_retained_events', v_bounty,
+    'bounty_pool_retained_chips', round(v_bounty_chips, 2),
     'paid_but_unrecorded_events', v_gap,
     'paid_but_unrecorded_chips', v_gap_chips,
     'alerts_raised', v_alerts);

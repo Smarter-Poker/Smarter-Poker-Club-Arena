@@ -991,6 +991,75 @@ export async function recoverStuckCompletingTournaments(
           reportError(rakeEx, 'GameServer.recoverStuckCompleting_rake_settle_threw');
         }
 
+        /**
+         * ═══════════════════════════════════════════════════════════════════
+         *  3.6 SETTLE THE BOUNTY POOL, FOR THE SAME REASON AS THE RAKE
+         *      (2026-09-01)
+         * ═══════════════════════════════════════════════════════════════════
+         *
+         * finishTournament settles whatever is left in a funded bounty pool to
+         * the champion - their own uncollected head plus any residue the draw
+         * left - and this path did not. So every bounty event the watchdog
+         * rescued left that money in the pool, belonging to a player, paid to
+         * nobody, with nothing anywhere saying so.
+         *
+         * MEASURED. 38 completed bounty events hold 1,931.24 chips of unpaid
+         * pool. NOT ONE of them has a champion bounty payment; 650 of the 673
+         * healthy ones do. 34 of the 38 were completed by this function - the
+         * other four are a separate, much rarer shape. The winner of Union PKO
+         * Afternoon d2625870 on 2026-09-01 is owed 121.57 and still carries an
+         * uncollected 41.25 head to prove the settlement never ran.
+         *
+         * fn_finalize_bounty_pool is idempotent on `tourney:{id}:ownbounty:{winner}`
+         * and pays only `bounty_pool - what the ledger already shows paid`, so
+         * calling it here cannot double-pay against a finish that already did
+         * it; it only closes the hole where nobody did. Non-fatal, like the
+         * rake above: a failure is reported and the back-pay sweep re-drives.
+         */
+        try {
+          const { data: champRow } = await supabase
+            .from('tournament_players')
+            .select('user_id')
+            .eq('tournament_id', t.id)
+            .eq('status', 'winner')
+            .limit(1)
+            .maybeSingle();
+          const championId = (champRow as { user_id?: string } | null)?.user_id ?? null;
+          if (championId) {
+            const { data: fin, error: finErr } = await supabase.rpc('fn_finalize_bounty_pool', {
+              p_tournament_id: t.id,
+              p_winner_user_id: championId,
+            });
+            if (finErr) {
+              reportError(
+                new Error(
+                  `[GameServer] recoverStuckCompleting: bounty pool finalisation failed for ${t.id.slice(0, 8)}: ${finErr.message} - the back-pay sweep will re-drive`
+                ),
+                'GameServer.recoverStuckCompleting_bounty_finalise_failed'
+              );
+            } else {
+              const residual = Number((fin as { residual?: number } | null)?.residual || 0);
+              const paidTo = (fin as { paid_to?: string } | null)?.paid_to ?? null;
+              if (residual > 0 && paidTo) {
+                console.log(
+                  `[GameServer] recoverStuckCompleting: champion ${championId.slice(0, 8)} collected the remaining bounty pool on ${t.id.slice(0, 8)}: ${residual}`
+                );
+              } else if (residual > 0) {
+                // Reported, not swallowed: a positive residual with nobody paid
+                // is the exact silence this block exists to end.
+                reportError(
+                  new Error(
+                    `[GameServer] recoverStuckCompleting: ${t.id.slice(0, 8)} "${t.name}" has ${residual} chips of bounty pool owed and fn_finalize_bounty_pool paid nobody`
+                  ),
+                  'GameServer.recoverStuckCompleting_bounty_residual_unpaid'
+                );
+              }
+            }
+          }
+        } catch (bountyEx) {
+          reportError(bountyEx, 'GameServer.recoverStuckCompleting_bounty_finalise_threw');
+        }
+
         // 4. Complete (CAS-guarded)
         // PAYOUT-INTEGRITY 2026-08-25: the completion is the claim that
         // everything above landed. A discarded error printed "Recovered ..."

@@ -3617,6 +3617,42 @@ export class GameServer {
           } catch (cpEx) {
             reportError(cpEx, 'GameServer.cash_pot_check_threw');
           }
+
+          // ── A BOUNTY POOL BELONGS TO A PLAYER TOO (2026-09-01) ──
+          // The check above reports a bounty pool that reached no player; this
+          // settles it. fn_finalize_bounty_pool is idempotent on
+          // `tourney:{id}:ownbounty:{winner}` and pays only what the ledger
+          // still shows unpaid, to the champion the event already recorded, so
+          // re-driving it can never double-pay - it only finishes what stopped
+          // halfway. An event with no champion is alerted, never guessed at.
+          //
+          // The hole it closes: recoverStuckCompletingTournaments settled the
+          // rake and never touched bounties, so every event the watchdog
+          // rescued stranded its pool. 38 events were holding 1,931.24 chips;
+          // 34 of them came through that path. The engine-side fix is in
+          // tournamentRecovery, and this is the net under it.
+          try {
+            const { data: bb, error: bbErr } = await supabase.rpc(
+              'fn_backpay_unfinalised_bounty_pools',
+              { p_apply: true, p_limit: 200 }
+            );
+            if (bbErr) {
+              reportError(
+                new Error(`[GameServer] bounty pool back-pay failed: ${bbErr.message}`),
+                'GameServer.bounty_backpay_failed'
+              );
+            } else if (
+              Number(bb?.events_settled) > 0 ||
+              Number(bb?.events_without_a_champion) > 0
+            ) {
+              console.log(
+                `[GameServer] Bounty pool back-pay: ${bb.events_settled} event(s) settled ${bb.chips_settled} chips to their champion, ` +
+                  `${bb.events_without_a_champion} with no champion (${bb.chips_without_a_champion} chips) left for a human`
+              );
+            }
+          } catch (bbEx) {
+            reportError(bbEx, 'GameServer.bounty_backpay_threw');
+          }
         }
 
         // ── DUPLICATE-PLACE OVERPAY CHARGE (2026-08-28) ──

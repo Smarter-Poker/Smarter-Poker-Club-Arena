@@ -67,6 +67,16 @@ describe('the check exists and asks all three questions', () => {
     expect(migration).toContain("'paid_but_unrecorded'");
   });
 
+  it('reconciles the BOUNTY pool as well as the prize pool', () => {
+    // A bounty event funds a second pool out of the same buy-in and nothing
+    // asked whether it was paid out. 38 completed events were holding 1,931.24
+    // chips of it; 34 came through the stuck-COMPLETING watchdog, which settles
+    // the rake and never touched bounties.
+    expect(migration).toContain("'bounty_pool_retained'");
+    expect(migration).toMatch(/w\.category = 'bounty'/);
+    expect(migration).toContain("'bounty_pool_retained_events'");
+  });
+
   it('moves no money: it has no credit call of any kind', () => {
     const fnStart = migration.indexOf(
       'CREATE OR REPLACE FUNCTION public.fn_payout_guarantee_check'

@@ -24,6 +24,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceStatement } from '../testHelpers/sourceWindow.js';
 
 const SRC = readFileSync(join(process.cwd(), 'src/services/TournamentRecurringService.ts'), 'utf8');
 
@@ -87,7 +88,9 @@ describe('the club membership read', () => {
 describe('a union event draws from the whole union, a standalone club from itself', () => {
   it('reads the union off the tournament, not just the club', () => {
     expect(HELPER).toContain("select('club_id, union_id')");
-    expect(HELPER).toMatch(/const unionId = \(hostClub\.data as \{ union_id\?: string \} \| null\)\?\.union_id;/);
+    expect(HELPER).toMatch(
+      /const unionId = \(hostClub\.data as \{ union_id\?: string \} \| null\)\?\.union_id;/
+    );
   });
 
   it('starts from the host club alone - that is a standalone club is whole answer', () => {
@@ -181,9 +184,10 @@ describe('seat-first games are filled from their own club', () => {
 describe('the empty-pool warning names every bucket', () => {
   it('prints the club exclusion alongside the others', () => {
     /* lastIndexOf, because the phrase also appears in the doc comment above
-       the helper - the first match is prose, the last is the code. */
-    const at = SRC.lastIndexOf('registerHorses found no candidates');
-    const WARN = SRC.slice(at, at + 400);
+       the helper - the first match is prose, the last is the code. From there
+       the window is the STATEMENT the phrase lives in, never a byte count. */
+    const NEEDLE = 'registerHorses found no candidates';
+    const WARN = sliceStatement(SRC.slice(SRC.lastIndexOf(NEEDLE)), NEEDLE);
     expect(WARN).toContain('at-capacity/entered ${busyDropped}');
     expect(WARN).toContain('not-a-club-member ${clubDropped}');
     expect(WARN).toContain('lane/window-excluded ${laneDropped}');

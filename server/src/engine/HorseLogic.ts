@@ -117,6 +117,9 @@ import {
   straightTop,
 } from './HorseEval.js';
 import { anteOrbitCostBB } from './AnteMath.js';
+// V35 (2026-09-02): the games are different games — per-variant preflop width
+// and postflop temperament, one row per game. See HorseVariantProfile.ts.
+import { variantPostflopProfile, variantPreflopShift } from './HorseVariantProfile.js';
 
 // BUG 020 FIX (2026-04-15) — round chip amounts to whole cents so horse decisions
 // don't pollute hand_history.actions with 15-digit floats. Bible V8 §2.6.
@@ -192,6 +195,9 @@ interface StyleParams {
   thinkRange: [number, number];
   /** V18: stable per-horse sizing-family bias (0..1; 0.5 = neutral). */
   familyBias?: number;
+  /** V35: variant call-down adjustment added to `respect` (fixed limit calls
+   *  lighter — the pot always lays the price). 0 = none. */
+  callRespect?: number;
 }
 
 const STYLE_PARAMS: Record<HorseStyle, StyleParams> = {
@@ -1187,19 +1193,26 @@ export class HorseLogic {
     const toCall = Math.max(0, gs.currentBet - player.bet);
 
     // V8: per-variant style overlays. The five styles were tuned on NLH;
-    // Omaha punishes slowplay (equities swing too hard street to street) and
-    // rewards preflop discipline, so PLO variants trim bluff/slowplay volume
-    // and tighten a notch. Short deck trims bluffs slightly (equities run
-    // closer). The 'balanced' style also caps its slowplay — live telemetry
-    // showed it giving away free cards at the worst rate in the fleet.
+    // Omaha punishes slowplay (equities swing too hard street to street), so
+    // PLO variants trim bluff/slowplay volume. Short deck trims bluffs
+    // slightly (equities run closer). The 'balanced' style also caps its
+    // slowplay — live telemetry showed it giving away free cards at the worst
+    // rate in the fleet.
+    //
+    // V35 (2026-09-02): the numbers come from HorseVariantProfile, one row per
+    // game, so PLO4/5/6 no longer share one bluff trim (six cards connect with
+    // every board; the bluff volume drops with each card), fixed limit gets
+    // the overlay it never had (bluffs do not work at one-bet-into-six), and
+    // the Omaha "tighten 1.03" is GONE: PLO plays MORE hands than hold'em, not
+    // fewer, and the preflop width now lives in the same profile as a bar
+    // shift instead of a multiplier fighting the quantile map.
+    const vpost = variantPostflopProfile(gs.gameVariant);
     if (opts.v8 !== false) {
-      if (vi.isOmaha) {
-        params.bluffFreq *= 0.8;
-        params.slowplayFreq *= 0.8;
-        params.tightness *= 1.03;
-      } else if (vi.isShortDeck) {
-        params.bluffFreq *= 0.9;
-      }
+      params.bluffFreq *= vpost.bluffMul;
+      params.slowplayFreq *= vpost.slowplayMul;
+      params.checkRaiseFreq *= vpost.checkRaiseMul;
+      params.tightness *= vpost.tightnessMul;
+      params.callRespect = vpost.callRespect;
       if (styleName === 'balanced') {
         params.slowplayFreq = Math.min(params.slowplayFreq, 0.14);
       }
@@ -1417,6 +1430,9 @@ export class HorseLogic {
       player.cards.length === 2 &&
       !vi.isOmaha &&
       !vi.isShortDeck &&
+      // V35: the charts are NO-LIMIT push/fold — a fixed-limit game has no
+      // jam to consult them for.
+      !vi.isFixedLimit &&
       gs.straddleActive !== true
     ) {
       const hand = gtoHandClass(player.cards[0], player.cards[1]);
@@ -1694,6 +1710,9 @@ export class HorseLogic {
       // V34: the button is not a second cutoff. classifyPosition merges the
       // two into 'late'; the dealer seat tells them apart exactly.
       isButton: gs.dealerSeat !== undefined && player.seat === gs.dealerSeat,
+      // V35: the game's own preflop width (PLO wider opens, narrower 3-bets;
+      // 6+ wider still; fixed limit widest). Rides the v8 variant flag.
+      variantShift: opts.v8 !== false ? variantPreflopShift(gs.gameVariant) : undefined,
       rand: fastRandom,
     });
     // V20 proof-of-receipt: the M-zone wiring reached the preflop engine.
@@ -2608,6 +2627,13 @@ export class HorseLogic {
       initiative !== 'hero' &&
       (street === 'flop' || street === 'turn' || street === 'river') &&
       player.cards.length === 2 &&
+      // V35: the cells are HOLD'EM cells — two dealt cards, no-limit. After
+      // the pineapple discard a hand holds two cards too, but every range at
+      // the table was the best two of three, and fixed limit has no bet size
+      // to read; both used to pass this gate and were answered from the
+      // wrong game.
+      vi.holeCount === 2 &&
+      !vi.isFixedLimit &&
       !vi.isOmaha &&
       !vi.isShortDeck &&
       // NOT oppCount: `Math.max(1, opponents.length)` reads 1 even when the
@@ -2748,6 +2774,9 @@ export class HorseLogic {
           : (opts.v30GtoTurnRiver ?? true) !== false) &&
         (street === 'flop' || street === 'turn' || street === 'river') &&
         player.cards.length === 2 &&
+        // V35: hold'em cells for hold'em hands only (see the V32 gate).
+        vi.holeCount === 2 &&
+        !vi.isFixedLimit &&
         !vi.isOmaha &&
         !vi.isShortDeck &&
         oppCount === 1 &&
@@ -3761,7 +3790,8 @@ export class HorseLogic {
       drawsLive && equity >= 0.25 && dominationPenalty === 0 && !loOnly23
         ? 0.04 + (useV23Var && vi.isShortDeck ? 0.02 : 0)
         : 0;
-    let respect = 2 - exploit.callDownMod; // maniac 0.8, neutral 1, passive 1.15
+    // V35: fixed limit calls lighter — the pot always lays the price.
+    let respect = 2 - exploit.callDownMod + (params.callRespect ?? 0); // maniac 0.8, neutral 1, passive 1.15
     if (dangered) respect += 0.15;
     // V12 ANTI-EXPLOIT: when the CURRENT street's bettor has been hunting
     // this horse specifically, their bets carry less real strength than the

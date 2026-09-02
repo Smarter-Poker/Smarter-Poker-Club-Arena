@@ -156,6 +156,18 @@ export interface PreflopCtx {
    * about a player behind it. Undefined = unknown, treated as the cutoff.
    */
   isButton?: boolean;
+  /**
+   * V35 (2026-09-02): per-variant bar shifts (HorseVariantProfile). PLO opens
+   * and defends wider but 3-bets narrower; 6+ wider still; fixed limit
+   * widest. Undefined = hold'em (zero shift), which is also the ablation.
+   */
+  variantShift?: {
+    open: number;
+    threeBet: number;
+    fourBet: number;
+    coldCall: number;
+    bbDefend: number;
+  };
 }
 
 const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
@@ -360,6 +372,8 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   const BAR_CAP = 0.965;
   const t = (x: number) => Math.min(BAR_CAP, clamp01(x * ctx.tightness + ctx.riskAdd));
   const tCall = (x: number) => Math.min(BAR_CAP, clamp01(x * ctx.tightness + riskScaled));
+  // V35: the game's own width. Zero for hold'em and for every ablation.
+  const vs35 = ctx.variantShift ?? { open: 0, threeBet: 0, fourBet: 0, coldCall: 0, bbDefend: 0 };
   const strength = raw;
   const bluffBudget = ctx.bluffFreq * ctx.aggression * Math.max(0.4, 1 - 4 * ctx.riskAdd);
 
@@ -747,7 +761,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       position === 'late' && ctx.isButton === true ? OPEN_THRESH_BUTTON : OPEN_THRESH[position];
     const fullRingEarly = position === 'early' && (ctx.tableSize ?? 6) >= 8 ? 0.06 : 0;
     let openThresh = t(baseOpen + fullRingEarly) + Math.min(limpers, 3) * 0.03;
-    openThresh += depthTighten - depthLoosen - anteWiden;
+    openThresh += depthTighten - depthLoosen - anteWiden + vs35.open;
     // V10 LIMP ISOLATION: weak limpers are the softest spot in cash poker.
     // Rather than only tightening (and sizing up) against them, ATTACK in
     // position — widen the raise floor so more hands isolate the limp(s). The
@@ -768,7 +782,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     // raises ~40% and limps a band below that (the mix right after this);
     // only a genuinely two-handed table opens the 0.24 range.
     const trueHu = headsUp && (ctx.tableSize ?? 2) <= 2;
-    if (bvb) openThresh = t(trueHu ? 0.24 : 0.3) + depthTighten - anteWiden;
+    if (bvb) openThresh = t(trueHu ? 0.24 : 0.3) + depthTighten - anteWiden + vs35.open;
 
     if (strength >= openThresh) {
       // V20 ORANGE ZONE (M 6-10): there is no raise-fold — a standard open
@@ -846,24 +860,25 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   // ── Facing a single raise ──
   if (raises === 1) {
     const vs = raiserPosition ?? 'middle';
-    let threeBetThresh = t(THREEBET_VS[vs] - (ctx.aggression - 1) * 0.08);
+    let threeBetThresh = t(THREEBET_VS[vs] - (ctx.aggression - 1) * 0.08) + vs35.threeBet;
     // V24: a CALL of a single raise continues the hand, it does not commit
     // the stack - so it carries the price-scaled survival premium (tCall),
     // not the full one. See the note on riskScaled above.
-    let callThresh = tCall(CALL_VS[vs]) + callers * 0.025 + depthTighten - depthLoosen;
+    let callThresh =
+      tCall(CALL_VS[vs]) + callers * 0.025 + depthTighten - depthLoosen + vs35.coldCall;
 
     // Blinds facing a LATE steal prefer 3-bet-or-fold over cold-calling
     // out of position: shift part of the call band into the 3-bet.
     const blindVsSteal = (position === 'sb' || position === 'bb') && vs === 'late';
     if (blindVsSteal) {
-      threeBetThresh = t(0.7 - (ctx.aggression - 1) * 0.08);
+      threeBetThresh = t(0.7 - (ctx.aggression - 1) * 0.08) + vs35.threeBet;
       callThresh += position === 'sb' ? 0.05 : 0;
     }
     // V11 HEADS-UP DEFENSE: the SB/BTN opens most hands HU, so the BB defends
     // the wide majority — folding 50%+ of hands to a HU open is pure surrender.
     if (headsUp && position === 'bb') {
-      threeBetThresh = t(0.64 - (ctx.aggression - 1) * 0.08);
-      callThresh = t(0.3);
+      threeBetThresh = t(0.64 - (ctx.aggression - 1) * 0.08) + vs35.threeBet;
+      callThresh = t(0.3) + vs35.bbDefend;
     }
     // V11 TOURNAMENT MID-STACK (16-25bb): flatting raises OOP torches stack
     // utility — shift the marginal-call band into 3-bet-or-fold.
@@ -881,6 +896,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     }
     const bbDiscount = position === 'bb' ? 0.06 : 0;
     const priceOK = toCall <= Math.max(bb * 12, stack * 0.12);
+    const tourney3betTrim = isTourney && stackBB <= 40 ? 0.5 : 0;
 
     // V16 PLO POLARITY: percentile strength double-counts pretty side cards;
     // real PLO 3-bet ranges are anchored on AAxx. With the layer on, AA
@@ -903,7 +919,11 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
         return { a: 'call' }; // trap
       }
       const ip = position === 'late' || (vs === 'sb' && position === 'bb');
-      const mult = (ip ? 3.0 : 3.8) + callers * 1.0 + rand() * 0.4;
+      // V35: a tournament 3-bet at 40bb or less is smaller (2.5x in position,
+      // ~3.2x out) — the stack behind it is what makes the size, and a cash
+      // 3.8x from a 30bb stack is a third of it. Solver MTT 3-bets sit at
+      // 2.3-2.6x IP / 3-3.5x OOP at those depths.
+      const mult = (ip ? 3.0 : 3.8) - tourney3betTrim + callers * 1.0 + rand() * 0.4;
       return { a: 'raiseTo', to: currentBet * mult * ctx.sizingMultiplier };
     }
 
@@ -921,7 +941,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       // observable sizing tell (fold to the big one, call the small one).
       // Bluffs now mirror the value sizing shape, a shade under it.
       const ipSq = position === 'late';
-      const mult = (ipSq ? 2.9 : 3.7) + callers * 1.0 + rand() * 0.4;
+      const mult = (ipSq ? 2.9 : 3.7) - tourney3betTrim + callers * 1.0 + rand() * 0.4;
       return { a: 'raiseTo', to: currentBet * mult * ctx.sizingMultiplier };
     }
 
@@ -942,7 +962,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       rand() < bluffFreqHere
     ) {
       const ip = position === 'late';
-      const mult = (ip ? 3.0 : 3.8) + rand() * 0.4;
+      const mult = (ip ? 3.0 : 3.8) - tourney3betTrim + rand() * 0.4;
       return { a: 'raiseTo', to: currentBet * mult * ctx.sizingMultiplier };
     }
 
@@ -1012,7 +1032,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
      */
     if (position === 'bb' && toCall <= bb * 2.5) {
       const steal = vs === 'late';
-      const bbFloor = (steal ? 0.22 : 0.3) - (ctx.anteInPlay ? 0.03 : 0);
+      const bbFloor = (steal ? 0.22 : 0.3) - (ctx.anteInPlay ? 0.03 : 0) + vs35.bbDefend;
       if (strength >= bbFloor) return { a: 'call' };
     }
     return { a: 'fold' };
@@ -1039,7 +1059,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
         ? Math.min(0.05, (stackBB - 120) / 2600)
         : 0;
     const fourBetThresh =
-      t(0.93 - (ctx.aggression - 1) * 0.04) - 0.04 * hunted3 - 0.03 * sq + deepT;
+      t(0.93 - (ctx.aggression - 1) * 0.04) - 0.04 * hunted3 - 0.03 * sq + deepT + vs35.fourBet;
     const callThresh = t(ip ? 0.74 : 0.78) - 0.03 * hunted3 - 0.02 * sq + deepT * 0.5;
 
     // ═══ V25 NEVER RAISE-FOLD A COMMITTED PLO STACK ═══════════════════

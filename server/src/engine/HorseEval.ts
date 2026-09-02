@@ -30,7 +30,7 @@ import {
   isHiLoVariant,
   isShortDeckVariant,
 } from './VariantRules.js';
-import { isPotLimitVariant } from './BettingStructure.js';
+import { isPotLimitVariant, isFixedLimitVariant } from './BettingStructure.js';
 
 const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 
@@ -115,6 +115,8 @@ export type VariantInfo = {
   isHiLo: boolean;
   isShortDeck: boolean;
   isPotLimit: boolean;
+  /** V35: fixed-limit betting (flh, flo8) — the brain plays a different game. */
+  isFixedLimit: boolean;
   /** MC iterations per street decision (budgeted for <15ms total) */
   iterations: number;
 };
@@ -134,6 +136,7 @@ export function variantInfo(gameVariant: string): VariantInfo {
     isHiLo: isHiLoVariant(v),
     isShortDeck: isShortDeckVariant(v),
     isPotLimit: isPotLimitVariant(v),
+    isFixedLimit: isFixedLimitVariant(v),
     // V28 AUDIT FIX (2026-08-29): hi-lo tested AFTER the plo5/plo6 literals
     // (so a future plo5/plo6 hi-lo string takes the right branch), and raised
     // from 140 to 220 — each hi-lo iteration returns hi*0.5 + lo*0.5 with
@@ -340,6 +343,39 @@ for (let i = 0; i < 5; i++)
 const omahaScratch: Card[] = new Array(5);
 
 /** Omaha high: exactly 2 hole + 3 board. Bigger = better. */
+/**
+ * ═══ V35 PINEAPPLE (2026-09-02): THREE CARDS, TWO PLAY ═══════════════════
+ *
+ * simulateEquity used to score a pineapple hand as hole + board, best five of
+ * EIGHT — all three hole cards live to the river. They are not: one is thrown
+ * away before the turn, so the truth is the best TWO-card keep, and the
+ * eight-card read overstated every three-card combination (a three-card
+ * flush draw that "makes" a flush with all three, a 3-card straight draw
+ * using all three, trips in the hand plus one on board reading as a boat
+ * when only two of the trips can be kept). Measured on the flop, the
+ * overstatement ran up to ~8 equity points on exactly the coordinated
+ * holdings a pineapple horse most needs to price honestly.
+ *
+ * Both hero and opponents hold three on the flop and are scored the same way.
+ * Three evaluations of seven cards instead of one of eight; only on the one
+ * street where three cards are held.
+ */
+const pineappleScratch: Card[] = new Array(7);
+export function scoreBestTwoOfThree(hole: Card[], board: Card[], shortDeck: boolean): number {
+  let best = 0;
+  const n = board.length;
+  for (let k = 0; k < n; k++) pineappleScratch[2 + k] = board[k];
+  for (let i = 0; i < 3; i++) {
+    for (let j = i + 1; j < 3; j++) {
+      pineappleScratch[0] = hole[i];
+      pineappleScratch[1] = hole[j];
+      const sc = scoreHoldem(pineappleScratch, 2 + n, shortDeck);
+      if (sc > best) best = sc;
+    }
+  }
+  return best;
+}
+
 export function scoreOmahaHi(hole: Card[], board: Card[]): number {
   const pairs = PAIR_COMBOS[hole.length] || PAIR_COMBOS[4];
   let best = 0;
@@ -1563,6 +1599,9 @@ export function simulateEquity(
     let heroHi: number;
     if (vi.isOmaha) {
       heroHi = scoreOmahaHi(holeCards, board);
+    } else if (holeCards.length === 3) {
+      // V35 pineapple: only two of the three ever play.
+      heroHi = scoreBestTwoOfThree(holeCards, board, vi.isShortDeck);
     } else {
       // Hero cards + board evaluated as best-5-of-N
       const all = holeCards.concat(board);
@@ -1777,6 +1816,8 @@ export function simulateEquity(
       let oppHi: number;
       if (vi.isOmaha) {
         oppHi = scoreOmahaHi(oppCards, board);
+      } else if (oppHole === 3) {
+        oppHi = scoreBestTwoOfThree(oppCards, board, vi.isShortDeck);
       } else {
         const all = oppCards.concat(board);
         oppHi = scoreHoldem(all, all.length, vi.isShortDeck);

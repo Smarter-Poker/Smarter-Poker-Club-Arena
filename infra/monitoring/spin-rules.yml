@@ -159,6 +159,41 @@ groups:
             body is this same number.
           runbook: https://monitor.smarter.poker/runbooks/spin-never-booked
 
+      # THE OUTAGE NOTHING COULD SEE.
+      #
+      # On 2026-09-01 every INSERT into `tournaments` raised 42804 for four
+      # hours - a text column COALESCEd against '[]'::jsonb inside the
+      # AFTER INSERT readiness guard - and the platform created no game of any
+      # kind. Every alert in this file stayed silent and every one of them was
+      # CORRECT: unbooked_spins was 0 because no Spin ran to be unbooked,
+      # booking_gaps likewise, fairness was healthy over the earlier draws, the
+      # pool was not thin. They all measure the games that exist.
+      #
+      # This is the pair that can see an empty factory, and it takes BOTH
+      # halves to be honest about it. A room with no boards open and nothing
+      # starting is a quiet night and must never page anyone; a room with
+      # boards OPEN and nothing starting for half an hour is the failure that
+      # happened. Normal cadence is around a hundred Spins an hour.
+      - alert: SpinFleetProducingNothing
+        expr: poker_spin_seconds_since_last_start > 1800 and poker_spin_open_boards > 0
+        for: 5m
+        labels:
+          severity: critical
+          component: spin
+        annotations:
+          summary: "No Spin has started in {{ $value }}s while boards sit open"
+          description: |
+            Spin boards are in REGISTERING and none has started for over half
+            an hour. Seats may be filling and still nothing runs. Look FIRST at
+            whether the platform can create a tournament at all - on
+            2026-09-01 the cause was every INSERT into `tournaments` failing in
+            an AFTER INSERT trigger, which no other alert here could see.
+            Reproduce it by cloning a live row inside a transaction you roll
+            back; the error and its call site come back together.
+            Check `[ScheduledTournaments.insert_failed]` in the engine log and
+            `fn_tournament_management_readiness` for a text/jsonb mismatch.
+          runbook: https://monitor.smarter.poker/runbooks/spin-fleet-stalled
+
       # Every row is a player who lost VIP points and an agent who lost
       # commission. The threshold is not zero: the settle path attributes
       # asynchronously and a handful in flight is normal. A standing hundred

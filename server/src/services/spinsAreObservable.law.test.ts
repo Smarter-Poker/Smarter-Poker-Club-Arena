@@ -42,6 +42,8 @@ const seeded = (over: Partial<SpinMetricsSnapshot> = {}): SpinMetrics => {
     unpaidSettlements: 0,
     bookingGaps: 11,
     unbookedSpins: 0,
+    secondsSinceLastStart: 12,
+    openBoards: 9,
     unfilledWaits: 1,
     reserveThinClubs: 0,
     reserveMinBalance: 63885.44,
@@ -173,13 +175,13 @@ describe('the spin alert rules are wired and reference only real gauges', () => 
   it('declares real rule groups - a file that alerts on nothing is worse than none', () => {
     const src = rules();
     expect(src).toContain('groups:');
-    expect(src.match(/- alert: /g)?.length ?? 0).toBeGreaterThanOrEqual(9);
+    expect(src.match(/- alert: /g)?.length ?? 0).toBeGreaterThanOrEqual(10);
   });
 
   it('every metric named in an expression is one the engine actually emits', () => {
     const emitted = seeded().toPrometheus().join('\n');
     const exprs = rules().match(/^\s*expr:\s*(.+)$/gm) ?? [];
-    expect(exprs.length).toBeGreaterThanOrEqual(9);
+    expect(exprs.length).toBeGreaterThanOrEqual(10);
     for (const line of exprs) {
       for (const metric of line.match(/poker_[a-z_0-9]+/g) ?? []) {
         expect(emitted, `${metric} is emitted by the engine`).toContain(metric);
@@ -201,6 +203,10 @@ describe('the spin alert rules are wired and reference only real gauges', () => 
       // booking gauge read zero, because the backstop that books them was
       // timing out on every run.
       'SpinDrawNeverBooked',
+      // The one that can see an empty factory. Every other alert in the file
+      // measures games that exist, so all of them stayed green through the
+      // four-hour outage on 2026-09-01 when no game could be created at all.
+      'SpinFleetProducingNothing',
       'RakeAttributionBacklog',
       'SpinRevealChronicallyLate',
       'SpinReservePoolThin',

@@ -96,6 +96,17 @@ export interface SpinMetricsSnapshot {
    * one booking number read zero.
    */
   unbookedSpins: number;
+  /**
+   * How long since a Spin last began, in seconds.
+   *
+   * Every other number here measures the games that EXIST. On 2026-09-01
+   * every INSERT into `tournaments` failed for four hours and all of them
+   * stayed green while the platform produced nothing at all. This is the one
+   * that can see an empty factory.
+   */
+  secondsSinceLastStart: number | null;
+  /** Spin boards sitting in REGISTERING. Pairs with the number above. */
+  openBoards: number;
   /** Spins sitting open past their fill deadline. */
   unfilledWaits: number;
   /** Clubs whose reserve pool cannot cover the top tier. */
@@ -124,6 +135,8 @@ const EMPTY: SpinMetricsSnapshot = {
   unpaidSettlements: 0,
   bookingGaps: 0,
   unbookedSpins: 0,
+  secondsSinceLastStart: null,
+  openBoards: 0,
   unfilledWaits: 0,
   reserveThinClubs: 0,
   reserveMinBalance: null,
@@ -202,6 +215,8 @@ export class SpinMetrics {
         unpaidSettlements: n(row.unpaid_settlements),
         bookingGaps: n(row.booking_gaps),
         unbookedSpins: n(row.unbooked_spins),
+        secondsSinceLastStart: f(row.seconds_since_last_start),
+        openBoards: n(row.open_boards),
         unfilledWaits: n(row.unfilled_waits),
         reserveThinClubs: n(row.reserve_thin_clubs),
         reserveMinBalance: f(row.reserve_min_balance),
@@ -312,6 +327,21 @@ export class SpinMetrics {
       'poker_spin_draw_unbooked',
       'Spins that ran, drew and paid without ever booking a reserve ledger row. Above zero means the backstop sweep is not completing - the pool has no record of money it paid out.',
       s.unbookedSpins
+    );
+    /* LIVENESS. Emitted unconditionally, including the zero: a fleet that has
+       just produced a Spin must say so, or "no data" and "nothing started in
+       four hours" look the same to the alert. */
+    if (s.secondsSinceLastStart !== null) {
+      gauge(
+        'poker_spin_seconds_since_last_start',
+        'Seconds since a Spin last began. Reads healthy at zero and grows without bound while the fleet produces nothing - the one number that could see the 2026-09-01 outage, where every tournament INSERT failed and every other gauge stayed green.',
+        s.secondsSinceLastStart
+      );
+    }
+    gauge(
+      'poker_spin_open_boards',
+      'Spin boards sitting in REGISTERING. Pairs with the staleness above: boards open and nothing starting is a fault, no boards open is a quiet room.',
+      s.openBoards
     );
     gauge(
       'poker_spin_unfilled_waits',

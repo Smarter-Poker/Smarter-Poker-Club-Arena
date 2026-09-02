@@ -144,7 +144,7 @@ describe('Club Arena runtime asset retention', () => {
 
   it('checks out the sync helper and invokes it once after the publish verdict', async () => {
     const workflow = await readFile(
-      path.join(process.cwd(), '.github', 'workflows', 'build-for-world-hub.yml'),
+      path.join(process.cwd(), '.github', 'workflows', 'publish-club-arena.yml'),
       'utf8'
     );
     const scriptCalls = workflow.match(

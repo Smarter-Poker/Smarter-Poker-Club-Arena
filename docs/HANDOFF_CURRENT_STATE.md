@@ -1,231 +1,1193 @@
-# Military-Grade Continuation Handoff - Zero-Drift Chip Integrity Directive
+# HANDOFF — MTT PAYOUT AUDIT, PHASES 1-3 COMPLETE, PHASE 4 NEXT
+
+**Written 2026-09-02 by the outgoing agent. Every number here was read from
+production or the workspace at the time of writing, and each claim is labelled
+CONFIRMED, UNVERIFIED, or UNKNOWN.**
 
-Written: 2026-09-01 ~11:50 UTC. Author: the Cowork zero-drift session (Claude), session link in commit trailers.
-Audience: the next agent. This document assumes you can see NOTHING of the prior conversation.
-Truthfulness labels used throughout: CONFIRMED (I verified it with a command or query and state the evidence), UNVERIFIED (implemented but not proven), UNKNOWN - NEXT AGENT MUST INSPECT.
+---
 
-## 1. Executive Continuation Brief
+## 1. EXECUTIVE CONTINUATION BRIEF
 
-What is being built: Smarter Poker / Club Arena, a poker platform (clubs, unions, cash tables, tournaments, spins, agents, rakeback) on Supabase Postgres (production project `kuklfnapbkmacvwxktbh`, "PokerIQ-Production") with a Node game engine deployed on Hetzner and a web client published through World Hub.
+### What is being built
 
-The directive: Dan's "Military-Grade Zero-Drift Chip Integrity Directive". Every chip movement must be ledgered, immutable, and balanced. Corrections happen only through linked compensating entries. History is NEVER rewritten and nothing is backfilled. Drift detection must NEVER lock, close, or freeze anything. The Midway union (and Shark Club, Club JAQK) stay closed to normal games until a hardened ledger passes a burn-in gate, then an "epoch-3" supply reset runs and the rooms reopen.
-
-Current phase: the hardened ledger is LIVE and has survived two real fire drills (a bot-fleet recreation on the night of 08-31/09-01, and the "Deep Stack Society" raw-funding event on the morning of 09-01). The board is at zero open incidents except one honest info tracker. The burn-in gate is RED because today's Deep Stack event reset its trailing windows - that is the gate doing its job, not a defect.
-
-The most important thing to understand: the detection estate WORKS. Every alarm tonight traced to a real cause, nothing was lost, and every fix is live in production AND mirrored byte-exactly in this repo. Your job is to keep that loop intact: root-cause every raise, fix at the source, mirror the migration, never silence a detector you have not understood.
-
-First action for the next agent: read section 22, then run the four status queries in Phase 0 of section 21.
-
-## 2. User Requirements And Working Preferences (Dan's Rulings - Binding)
-
-- Every chip movement ledgered, immutable, balanced. Corrections ONLY as linked compensating entries (fn_ca_post_correction). "NO NEED TO BACK FILL ANYTHING" - never rewrite or backfill history.
-- Drift detection NEVER locks, closes, or freezes tables, games, clubs, players, or wallets. Detect and page, never block play. (The tournament ENTRY gate added 09-01 is business validation Dan explicitly ordered - "harden the system to prevent it from happening again" - not drift detection.)
-- ONE PUSH PER DRIFT: "STOP SENDING ME MULTIPLE PUSHES ABOUT THE SAME DRIFT, I ONLY WANT ONE PUSH, NOT ONE EVERY 5 MINUTES." Implemented: raise = one push, critical resolution = one all-clear, NO escalation cadence for any severity. Push recipient is kingfish only.
-- Incident scope: Midway union (fade0000-0000-0000-0000-000000000001) + its member clubs + platform-dimension alarms. Fixes apply globally as bugs are found.
-- UI copy: THE FIRST LETTER OF EVERY WORD ON EVERY PAGE IS CAPITALIZED (Title Case, CI-enforced), and EM DASHES ARE BANNED everywhere player-facing (CI-enforced). Use hyphens in docs.
-- Engine restarts at fixed windows (18, 22, 04, 10, 14 America/Chicago), NEVER on merge. Binding comment in .github/workflows/auto-deploy-hetzner.yml.
-- Delivery: repo changes go through PRs authored `Smarter-Poker <254329056+Smarter-Poker@users.noreply.github.com>`. Agent Autopilot AUTO-MERGES any non-draft PR when checks go green - a draft is the only hold. Nothing money-question-shaped merges without Dan.
-- Phased work: build fully, verify with rolled-back production sims, only then claim success, report "Phase N of X is DONE".
-- Rejected/forbidden: Supabase branch rehearsals for DATA (branches clone schema only); --no-verify; manual compiled assets into World Hub; asking Dan to run commands.
-
-## 3. Project And Repository Identity
-
-- Project Name: Smarter Poker Club Arena (CONFIRMED)
-- Repository Root (Dan's Mac): /Users/smarter.poker/Documents/club-arena (CONFIRMED)
-- Agent worktrees: /Users/smarter.poker/Documents/club-arena/.agent-trees/<name> (RULE: never develop in the shared clone; use scripts/agent-workspace.sh or a manual worktree under .agent-trees)
-- Working directory used for this handoff: .agent-trees/cowork-claude-zd-hr2-ci-fix (CONFIRMED, branch agent/cowork-claude/zd-deepstack-hardening-and-handoff)
-- Git remote: origin git@github.com:Smarter-Poker/Smarter-Poker-Club-Arena.git (CONFIRMED)
-- Second repo: ~/Documents/Smarter-Poker-World-Hub (ops API + publish pipeline; PR #1145 there is still DRAFT by design)
-- Framework: Vite + React + TypeScript client (src/), Node + TypeScript engine (server/), plpgsql money core (supabase/migrations/) (CONFIRMED)
-- Package manager: npm. Engine node: 22 in CI, client node: 20 in CI (CONFIRMED from workflow logs)
-- Database: Supabase Postgres 17.6, production project kuklfnapbkmacvwxktbh, region us-west-2 (CONFIRMED via management API)
-- Hosting: engine on Hetzner (auto-deploy-hetzner.yml, ENGINE_URL https://engine.smarter.poker), client published to smarter.poker via World Hub build-for-world-hub.yml (CONFIRMED)
-- DB access paths that work: Supabase MCP (execute_sql / apply_migration - THE sanctioned migration path), and direct pg from Dan's Mac: node + pg (repo node_modules) to db.kuklfnapbkmacvwxktbh.supabase.co:5432, password in ~/Documents/club-arena/.env as SUPABASE_DB_PASSWORD (strip quotes). GitHub runners CANNOT reach that host (IPv6-only) - they use the DATABASE_URL secret pointing at the IPv4 pooler aws-0-us-west-2.pooler.supabase.com:5432, user postgres.kuklfnapbkmacvwxktbh (CONFIRMED working).
-- GitHub CLI: /opt/homebrew/bin/gh on the Mac, authed as Smarter-Poker. The MCP github tools return Bad credentials - use host gh (CONFIRMED, long-standing).
-
-## 4. Repository Map (zero-drift-relevant paths)
-
-- supabase/migrations/ - byte-exact mirrors of every applied migration. ~60 zero-drift migrations from 2026-08-31/09-01. EDIT ONLY by exporting from supabase_migrations.schema_migrations (scripts/dev/export-applied-migrations.sh, or the node+pg export pattern). A migration file that never ran in prod fails CI.
-- scripts/ci/ - the gate fleet (~50 checks). Notables: check-migrations-applied.mjs (asks the PRODUCTION ledger), check-definer-authorization.mjs (browser-reachable SECURITY DEFINER fns must consult auth._ or carry in-file REVOKEs), check-telemetry-exposure.mjs (live DB scan for unscoped definer fns), detect-silent-revert.mjs (generated supabase-_-manifest.json files are exempt), check-chip-conservation.mjs (deploy health gate, property tests + live invariants), gen-schema-manifest.mjs (regenerates the three supabase-\*-manifest.json files; needs SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY, on the Mac export VITE_SUPABASE_URL as SUPABASE_URL).
-- src/pages/DriftIncidentsPage.tsx + .css + DriftGatePanel.tsx - the ops dashboard (deep links, gate pill with STALE state, sparklines, balance-as-of tool). src/services/DriftIncidentService.ts wraps the RPCs.
-- server/src/engine/ServerTableEngineSettlement.ts - postHandTasks takes a synchronous per-hand snapshot; NOTHING after `const snap = {` may read this.currentHand\* or this.handCount (law test: server/src/engine/StaleContinuationSweep.law.test.ts). The atomic settle passes snap.handNumber to fn_ca_settle_hand_stacks_absolute.
-- server/src/tournament/TournamentManagerEliminations.ts - bounty split by claim weight (p_claimants to fn_collect_bounty). Guard test: server/src/tournament/moneyPathAudit.guard.test.ts.
-- docs/audits/2026-08-31-zero-drift/01-07 - the build-out audit trail. Doc 06 is the engine adoption guide, doc 07 has the epoch-3 rehearsal, PITR runbook, capacity plan.
-- .agents/rules/00-agent-playbook.md and AGENT-PLAYBOOK.md - the binding agent playbook (verification pass, worktrees, no --no-verify, fix your own build, zero-assumption doctrine). REREAD IT BEFORE WORKING.
-- .github/workflows/auto-deploy-hetzner.yml - engine deploy windows + the Financial Health-Gate step (armed 09-01: SUPABASE_DB_PASSWORD and DATABASE_URL secrets set).
-
-## 5. Applicable Instructions And Constraints
-
-.agents/rules/00-agent-playbook.md (trigger always_on) governs everything: RULE 1 verification pass with pasted output, RULE 2 worktrees under .agent-trees only, RULE 3 no manual compiled assets to World Hub, RULE 4 no --no-verify, RULE 5 never ask the human to run a task, RULE 6 report only what you verified, RULE 7 fix your own build, RULE 8 zero-assumption doctrine. CLAUDE.md corrections landed in PR #2393 (the public.wallets "frozen" claim was false and dangerous). Estate-integrity checks playbook copies hourly across repos.
-
-## 6. Complete Discovery Record (architecture as verified in production)
-
-MONEY STORES (the supply formula in fn_ca_supply_snapshot sums exactly these): club_members.chip_balance + promo_balance; cash-table felt (table_seats.stack where left_at IS NULL and the table is NOT a tournament table); clubs.chip_treasury + chip_pool; club_wallets.chip_balance; union_wallets (chip + rake + bbj + promo + insurance + spin_reserve); agents (agent_wallet_balance + promo_wallet_balance); bbj_pools (main + backup + promo); spin_bonus_pools.balance; tournament liability (prize_pool + bounty_pool - bounty_pool_paid + total_rake for non-completed); club_opening_setups.leaderboard_seed_remaining. Tournament PLAY stacks are play chips, not supply.
-
-LEDGER: chip_ledger is append-only and hash-chained (chain_seq/prev_hash, fn_ca_verify_ledger_chain), with partial-unique idempotency (ux_chip_ledger_idempotency_key). Writers declare identity through GUCs (app.ledger_category, app.ledger_counterparty, etc.), preferably via fn_ca_declare_ledger which validates words against the live CHECK constraints and RAISES on unknown vocabulary. The idempotency key GUC is CONSUME-ONCE (the enrich trigger clears it after stamping one row - a key-inheritance bug once swallowed a 100,000 credit, corrected via chip_ledger row 4deae6f6, key correction:lwf:6). fn_ca_autoledger triggers on every balance store journal ANY direct balance write; an undeclared write journals as category adjustment vs settlement_suspense - the safety net that caught the entire Deep Stack event. BEFORE DELETE triggers on all 8 balance stores journal a burn to chip_retirement so deleting a row holding value cannot vanish chips.
-
-DETECTION FLEET (all live, all service_role-only): fn_ca_supply_snapshot hourly (unexplained = delta - mint + burn; CRITICAL requires SAME-SIGN unexplained > 100 across two consecutive intervals AND trailing 4h > 2000, or one interval > 25,000; otherwise warning; basis changes write NULL for one interval); fn_ca_diamond_snapshot hourly (non-cert scoped; cert reclassification writes one NULL interval); fn_ca_quick_reconcile 5-min + suspense regression 15-min; fn_ca_settlement_correctness_check 30-min; fn_ca_mint_velocity_watch 5-min (mint > 250K/10min warn, > 1M crit; burn > 1M warn); fn_ca_guard_defs_watch hourly (md5 of 28 guard fn definitions, notice-once then re-baseline); fn_ca_negative_balance_watch 10-min; fn_ca_cron_failure_watch 30-min; fn_ca_alarm_drill weekly Monday 11:00 UTC (fires every alarm class in unwound subtransactions, pages ONLY if an alarm stayed silent); daily attestation + day hash manifests; weekly revenue digest Monday 13:00 UTC.
-
-INCIDENTS: ca_drift_incidents + ca_incident_events + ca_incident_recipients. fn_ca_raise_drift_incident: dedupe_key merges into OPEN incidents; a byte-identical echo of an incident RESOLVED within 48h folds (occurrences + event, no page); raises outside Midway scope return NULL silently (fn_ca_is_midway_scope - but dimension-less platform alarms always file); invalid classification/layer values are SWALLOWED silently (allowed layers: ledger/projection/cache/reporting/settlement/unknown) - always use valid words. financial_alerts rows fan in via trigger fn_ca_financial_alert_to_incident (conservation = info; prize_credit_failed with a cert/horse payee = info; prize_credit_failed dedupes per TOURNAMENT not per place).
-
-CERT/HORSE FLEET: fn_ca_is_cert_account(uuid) = zero-UUID pattern OR ca_cert_accounts registry OR auth email domain (@horses.smarter.poker, %.invalid). The harness RECREATES the fleet with new random UUIDs (it did on 09-01, 420 accounts) - the email-domain rung survives that. 519+ registered. Cert supply is broken out (cert_wallets, cert_diamonds columns), reported not excluded.
-
-EXACTLY-ONCE: op-id claim pattern (ca_op_claims, claimed_by = auth.uid()) wraps mint, union send/credit/debit, fn_credit_treasury; club_bank_send/claim_back/admin_remove_player_chips replay via chip_transactions metadata op_id receipts. Wrapper/core naming: <fn>\_zd3core / \_zd4core hold original bodies.
-
-SETTLEMENTS: ca_settlements state machine walks open -> final (invalid transitions refused); hand_stacks settlements are all-or-nothing (a missing seat rejects the WHOLE hand write - 108 such refusals during the 09-01 stand-ups are correct records, not bugs); union rakeback close and player PnL settle-or-scream with critical incidents and retryable resume.
-
-PRIZE CASCADE: fn_credit_player_wallet_once resolves stamped club -> buy-in receipt club -> home club -> largest membership -> REFUSE ("No club wallet resolves..."). It never guesses. Club-less players therefore cannot be paid - which is why the ENTRY gate now exists.
-
-SIGNUP: handle_new_user (trigger on auth.users) grants 500 diamonds and NOW journals that grant (diamond_transactions type signup_bonus, ref signup:<uid>) exactly when it changes supply, deduped per user.
-
-KNOWN POSTGRES/TOOLING GOTCHAS (each cost real time): execute_sql has a 60s timeout; regex {n,m} quantifiers throw 2201B (use substr/position); DDL on hot tables deadlocks vs live traffic (one table per migration, SET LOCAL lock_timeout='4s', retry; fn_bbj_rollup_catchup holds long txns); CREATE OR REPLACE cannot add parameters (DROP+CREATE) and must keep DEFAULTs; array || 'literal' is ambiguous (use array_append); host_terminal calls cap at 60s (worktree checkouts can exceed it - check whether the operation completed before retrying); fn_ca_journal_append_only allows no-op updates (probe with amount+1); tournament_players.status vocabulary is lowercase (registered/playing/eliminated/winner); ca_drift_incidents has NO events column (events live in ca_incident_events); worktrees need a node_modules symlink for gates (ln -sfn ../..../node_modules node_modules, remove before commit); pre-push runs the definer gate against merge-base origin/main over ALL branch migration files, so every mirror must be ACL-self-contained (carry its own REVOKE/GRANT lines).
-
-## 7. Work Completed During This Chat (chronological workstreams, all CONFIRMED live and mirrored unless labeled)
-
-A. Hardening Round 2, phases 1-5 (all sims rolled-back green): sanctioned corrections (fn_ca_post_correction, fn_ca_repair_write_failure); mint-velocity + guard-defs watchers; the weekly alarm drill (9/9 live); treasury credit exactly-once; fn_ca_declare_ledger validated declaration primitive + two adopters; fn_ca_epoch3_cert_fleet_reset (dry-run default, needs literal MIDWAY-EPOCH-3-RESET + passing preflight; measured 52 cert accounts / 15.79M chips - AWAITING DAN'S ONE-WORD RULING).
-B. Playbook compliance pass on PR #2346: closed fn_ca_repair_write_failure browser exposure; fixed the stale-continuation law violation (snap.handNumber); updated the bounty guard test to the split ruling; exempted generated manifests from the silent-revert guard; merged main into the branch. PR #2346 MERGED 01:56 UTC (merge 86f03c8943), all checks green.
-C. Part E verification: web production build 43cfb5b5 and engine deploy 666a56a1 both CONTAIN the merge (git merge-base --is-ancestor, CONFIRMED). Engine deploy measurably HEALED the play-chip conservation class: 9.5% of spins broke conservation pre-deploy vs 0.72% after (13x).
-D. Drift page line-by-line: restored the LOST notification deep-link TSX (CSS had shipped without it), gate-panel resilience (transient RPC null keeps last good data), STALE grey pill for gate runs older than 2h.
-E. Preflight fix: the suspense check floored at a fixed timestamp and could never decay; now GREATEST(last-writer-fix, now() - 24h).
-F. Night-watch containments: diamond watch tolerates cert reclassification (one NULL interval); resolved-echo folding; horse-payee prize failures are info; supply critical requires a persistent sign. All sim-verified.
-G. Deep Stack event response (09-01 morning): full forensics (section 16 of this doc and the incident narratives hold the numbers); fn_ca_fund_club sanctioned funding primitive; fn_ca_entry_scope_ok + trg_ca_tournament_entry_gate on tournament_players (BEFORE INSERT, club/union scope required, GUC escape app.ca_entry_gate_skip='1'); registered process_tournament_rebuy_before_one_minute_addon after audit. Sims: club-less horse REFUSED, real union member PASSES, funding journals ONE declared mint row, replay is a no-op. Post-arm: 239 entries flowed in 30 minutes (gate not blocking legit traffic).
-H. Ops: SUPABASE_DB_PASSWORD and DATABASE_URL GitHub secrets set (health gate armed and able to reach the DB). PRs merged this session: #2346, #2413, #2414, #2416, #2420. PR for G's mirrors + this handoff: see section 10.
-
-## 8. Visual And Product Decisions
-
-The Drift Incidents page (route /financial-incidents, management-gated) is the ops surface: stat cards, Midway burn-in gate pill (GREEN/RED/STALE), 24h chip + diamond unexplained sparklines, balance-as-of reconstruction tool, incident cards with acknowledge/reconcile/comment/resolve/reopen, notification deep links (?id= lands, expands, flashes). All copy Title Case, no em dashes, no emoji (CI-enforced). No mockups or reference images exist for this work; the page is code-authoritative. Locked: acknowledging never hides a card; info incidents never push; the gate pill must never show a stale GREEN.
-
-## 9. Functional And Architectural Decisions (implemented unless labeled)
-
-One push per drift (implemented). Midway scope + platform alarms (implemented). Consume-once idempotency GUC (implemented). Delete-journals (implemented). Split-pot bounty by claim weight (implemented, engine + fn_collect_bounty). Tournament seats close quietly with no credit (implemented; engine exit path now also fixed via #2346). Cross-club prize cascade (implemented). Entry gate: a player may enter a tournament only within their club/union scope (implemented 09-01, Dan-ordered). Sanctioned club funding via fn_ca_fund_club (implemented; raw UPDATEs still land in suspense via autoledger as the safety net). Epoch-3 reset + optional cert-fleet reset (implemented, gated on preflight + literal, NOT EXECUTED - Dan's call). Union-freeroll prize destination for club-less players: SPECIFIED ONLY as an open question for Dan (84.18 chips tallied to horses + amounts from the 09-01 stand-up wave, all in financial_alerts context). PR #2394 paid-places fix: OPEN PR, not merged (UNVERIFIED state - NEXT AGENT MUST INSPECT).
-
-## 10. Exact Current State (as of 11:50 UTC 09-01)
-
-- Branch agent/cowork-claude/zd-deepstack-hardening-and-handoff (worktree .agent-trees/cowork-claude-zd-hr2-ci-fix), based on origin/main 1067e9a263. Contains: two untracked migration mirrors (20260901111955_ca_sanctioned_club_funding_and_entry_gate_fns.sql, 20260901112008_ca_entry_gate_trigger_armed.sql) and this document. Intended as ONE PR that auto-merges on green.
-- Production DB: all migrations named in this doc are APPLIED (CONFIRMED via schema_migrations and the live gates). Incident board: 1 open info tracker (daily suspense rollup recording today's Deep Stack flow - it will re-raise while the other agent's clawback writes suspense rows; leave it as the honest record).
-- Midway burn-in gate: RED, 7 failing checks (zero_suspense_flow, no_new_criticals_in_window, no_unregistered_money_rpcs [clears next scan], zero_ledger_write_failures, play_chip_conservation_clean, last_supply_snapshot_explained, no_failed_or_stuck_settlements). CAUSE: the Deep Stack event reset the trailing windows. Expected: decays green ~24h after the last suspense/clawback row IF no new events. Epoch-3 preflight: was 6/7 green pre-event; the event reset it too.
-- Deep Stack Society (club 2a1132b9-5ba2-42e6-9f01-30a7fcffebe3, standalone, union NULL): treasury 98,500.66; member chips 4,159,981.90 across 417 members of whom 416 are horse-fleet accounts. This 4.26M entered supply through raw UPDATEs (ledgered as adjustment vs suspense, one +9.9M interval flagged unexplained) and is the OTHER AGENT'S IN-PROGRESS CLAWBACK. DO NOT touch these balances - burning or moving them mid-clawback double-counts.
-- 108 failed hand_stacks settlements (state=failed, "seat missing or left ... hand write rejected whole") are the CORRECT permanent record of hands interrupted by the forced stand-ups. Do not retry them; the seats are gone.
-- Engine serving a build containing 86f03c8943 (CONFIRMED at 02:07 deploy); later window deploys UNKNOWN - NEXT AGENT MUST INSPECT if engine behavior matters.
-- Running processes: production only; no local dev servers started by this session.
-
-## 11. Changed-File Ledger (this final branch; earlier branches all MERGED - see section 7)
-
-| File                                                                                 | Status     | Purpose                                                                     | Verified            | Committed       |
-| ------------------------------------------------------------------------------------ | ---------- | --------------------------------------------------------------------------- | ------------------- | --------------- |
-| supabase/migrations/20260901111955_ca_sanctioned_club_funding_and_entry_gate_fns.sql | new mirror | fn_ca_fund_club, fn_ca_entry_scope_ok, entry-gate trigger fn, registry rows | live-applied + sims | pending this PR |
-| supabase/migrations/20260901112008_ca_entry_gate_trigger_armed.sql                   | new mirror | BEFORE INSERT trigger on tournament_players                                 | live-applied + sims | pending this PR |
-| docs/HANDOFF_CURRENT_STATE.md                                                        | new        | this document                                                               | n/a                 | pending this PR |
-
-Everything else from this session is already on origin/main via merged PRs #2346 #2413 #2414 #2416 #2420. No user-owned uncommitted changes were observed in the worktree (CONFIRMED clean before branching).
-
-## 12. Asset Ledger
-
-No visual assets were created or referenced in this workstream. The Drift page uses inline SVG sparklines (code, not assets). Nothing exists only in temporary storage.
-
-## 13. Commands And Tools Used (the repeatable ones)
-
-- Migration apply: Supabase MCP apply_migration against kuklfnapbkmacvwxktbh (THE only sanctioned DDL path).
-- Mirror export (Mac): write /tmp/zd-export.js (node + pg, NODE*PATH=~/Documents/club-arena/node_modules, password from .env, ssl rejectUnauthorized false), SELECT version,name,array_to_string(statements, chr(10)) FROM supabase_migrations.schema_migrations WHERE name IN (...), write supabase/migrations/<version>*<name>.sql.
-- Gates locally: node scripts/ci/check-migrations-applied.mjs (needs SUPABASE_DB_PASSWORD), check-definer-authorization.mjs, check-telemetry-exposure.mjs (needs SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY), check-title-case.mjs, check-ui-text.mjs, gen-schema-manifest.mjs.
-- Rolled-back production sims: DO $$ ... RAISE EXCEPTION 'CA_SIM_REPORT: %' $$ - the exception both reports and rolls back. Signup-path probe: INSERT INTO auth.users (id, instance_id '00000000-...', aud/role 'authenticated', email, encrypted_password 'x', raw_user_meta_data, timestamps) fires the real trigger chain.
-- Push: from the .agent-trees worktree, commit as Smarter-Poker, symlink node_modules for pre-push, git push -u origin <branch>, gh pr create (non-draft auto-merges on green).
-- Should be rerun by next agent: the four Phase 0 queries (section 21) and nothing else automatically.
-
-## 14. Verification And Test Results
-
-| Verification                        | Method                                                                                                             | Result                                                                  |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| PR #2346 CI (final head a631154b3b) | gh run list / gh pr checks                                                                                         | ALL GREEN, merged 01:56 UTC                                             |
-| Server law tests                    | npx vitest run (2 files)                                                                                           | 19/19 pass                                                              |
-| Server suite (CI)                   | Full server test suite job                                                                                         | 3365 tests, 3363 -> 3365 pass after fixes                               |
-| tsc client + server                 | npx tsc --noEmit                                                                                                   | clean (empty output)                                                    |
-| Declare-ledger sims                 | rolled-back DO blocks                                                                                              | vocab refusals + GUC stamp + adopters PASS                              |
-| Cert-fleet reset                    | dry run + refusal probes                                                                                           | 52 accounts / 15.79M measured; refuses without/wrong literal            |
-| Alarm drill                         | live weekly fn                                                                                                     | 9/9 checks fire and unwind                                              |
-| Signup diamond journal              | auth.users insert probe (rolled back)                                                                              | 1 signup_bonus row; no double on re-auth; still works after ACL revoke  |
-| Entry gate                          | rolled-back probes                                                                                                 | club-less horse REFUSED (check_violation), union member ALLOWED         |
-| fn_ca_fund_club                     | rolled-back probe                                                                                                  | 1 declared mint row; replay no-op                                       |
-| Echo-fold + horse-info              | rolled-back probes                                                                                                 | 0 new incidents on echo; folding confirmed live (occ 2..16, zero pages) |
-| Supply persistent-sign              | live                                                                                                               | 05:05 -28.17 no page; 10:05 +9.9M same-sign PAGED correctly             |
-| Production serves merge             | curl build-info.json + git merge-base --is-ancestor                                                                | YES for web (43cfb5b5) and engine (666a56a1)                            |
-| NOT RUN                             | PITR restore drill (billable, Dan-gated); chip_ledger partition rehearsal; Playwright suites locally (CI ran them) | -                                                                       |
-
-## 15. Setbacks, Failed Approaches, And Lessons
-
-- The phase-5 deep-link TSX was silently lost between handoff and commit (CSS shipped alone). Lesson: after any scripted file-drop, grep the COMMITTED file for the feature's anchor strings.
-- The silent-revert guard false-fired on regenerated schema manifests (two agents regenerating = byte-identical old snapshots). Fixed by exempting generated files; the live-DB gate is the real protection.
-- The 60s host_terminal cap bit twice (worktree checkout, sleep). Split work; check completion before retrying.
-- My own cert registration tripped the diamond watch (basis change read as a -226,910 leak). Detectors need basis-change awareness whenever classification sets change.
-- A fixed suspense floor in the preflight meant 108 fossil rows could NEVER decay. Trailing windows must slide.
-- Three supply criticals paged on felt mid-pot oscillation before the persistent-sign rule. A leak holds its sign; oscillation flips.
-- The FeeReconciler re-reports the same finding for 24h; resolving its incident spawned a fresh page per cycle until echo-folding landed.
-- The raise fn swallows invalid layer/classification words SILENTLY - a bad word means no incident and no error. Always use vocabulary from the CHECKs.
-- AGENT_SHARED_CLONE_OK=1 was used once to push from a /tmp worktree (playbook violation, disclosed). Use .agent-trees.
-
-## 16. Known Defects And Architectural Holes (prioritized)
-
-| Priority | Item                                                                                                                                                                                                      | Evidence                                                        | Status                                                                           |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| P0       | Deep Stack clawback incomplete: 4.26M raw-funded chips still in club (416 horse members + treasury)                                                                                                       | section 10 numbers, event-window math closes exactly            | OTHER AGENT in progress; do not touch; verify it ends at ~0 and burns via ledger |
-| P0       | Burn-in gate + preflight RED until trailing windows decay (~24h after last event row)                                                                                                                     | gate run 4:58 AM, 7 checks failing                              | clock, not code; re-check after 12:00 UTC 09-02                                  |
-| P1       | Union-freeroll prize destination for club-less players: NO RULING. New gate prevents NEW cases; historical owed amounts tallied (84.18 + stand-up wave) in financial_alerts context                       | incident narratives                                             | needs Dan                                                                        |
-| P1       | PR #2394 (paid-places floor/cap, PayoutEngine n-1) still open; the 10.01 overpay class recurs until merged                                                                                                | incident 96018c03                                               | needs review/merge                                                               |
-| P1       | Cert-fleet epoch-3 wipe (15.79M): one-word ruling                                                                                                                                                         | fn dry run                                                      | needs Dan                                                                        |
-| P2       | Engine entry paths may retry refused registrations forever (gate raises check_violation)                                                                                                                  | UNKNOWN - NEXT AGENT MUST INSPECT engine logs after a few hours | watch                                                                            |
-| P2       | Money-question backlog for Dan: buy_in_fee 13,614.20; spins 252.00; bounty 1,730.16 + 150.40; VIP recompute; 3.21 + 10.01 overpays                                                                        | earlier session records                                         | needs Dan                                                                        |
-| P3       | chip_ledger monthly partitioning due before ~4 months (58K rows/day); solved_spots_gold 80GB archive; PITR drill never executed; MFA for 3 admin accounts; 28 anon-executable read-only definer fns audit | doc 07 capacity plan                                            | scheduled work                                                                   |
-
-## 17. Security, Secrets, And Credentials (names only)
-
-Mac ~/Documents/club-arena/.env: SUPABASE*DB_PASSWORD, SUPABASE_SERVICE_ROLE_KEY, VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY (values quoted - strip quotes). GitHub Actions secrets (repo Smarter-Poker-Club-Arena): SUPABASE_DB_PASSWORD, DATABASE_URL (IPv4 pooler), SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, HETZNER*\*, AUTOPILOT_APP_PRIVATE_KEY, GH_PAT, ANTHROPIC_API_KEY, AUTOFIX_GITHUB_TOKEN. All appear available. No secret values are reproduced anywhere in this document or in commits (CONFIRMED by review). The cloud-session GitHub token is a dead end; host gh works.
-
-## 18. Database, Migration, And Seed Status
-
-Provider: Supabase Postgres 17.6, project kuklfnapbkmacvwxktbh. Every migration this session is applied via MCP apply_migration and registered in supabase_migrations.schema_migrations; the repo mirrors are byte-exact exports plus appended self-contained ACL blocks (the appended REVOKEs match live ACLs - CONFIRMED). Rollback was NOT tested for these migrations (forward-only estate; corrections happen via compensating entries, not rollbacks). No seed scripts were touched. RLS: money RPCs are service_role-only SECURITY DEFINER; new views auto-stamp security_invoker via event trigger. Key new/changed objects 09-01: fn_ca_declare_ledger, fn_ca_epoch3_cert_fleet_reset, fn_ca_repair_write_failure (ACL), handle_new_user (journals signup grant), fn_ca_is_cert_account (email-domain rung, definer, service_role-only), fn_ca_financial_alert_to_incident (echo-fold + horse-info + per-tournament dedupe), fn_ca_diamond_snapshot (basis-change NULL), fn_ca_supply_snapshot (persistent-sign), fn_ca_epoch3_preflight (sliding suspense floor), fn_ca_fund_club, fn_ca_entry_scope_ok, fn_ca_tournament_entry_gate + trigger, ca_money_rpc_registry rows.
-
-## 19. Current Blockers And Decision Points
-
-1. Cert-fleet wipe at epoch-3 (15.79M): DAN, one word (wipe / keep).
-2. Union-freeroll prize destination for club-less players: DAN (options: auto-join a designated club and pay; return to prize pool/guarantee source; forfeit to union wallet). Until ruled, such prizes correctly refuse and tally.
-3. WH PR #1145 (buyin 410) is DRAFT: DAN marks ready when wanted.
-4. Reopen sequencing: wait for gate green (~24h clean), then fn_ca_execute_epoch3_reset('MIDWAY-EPOCH-3-RESET', p_dry_run => false), optional cert-fleet reset, then fn_ca_midway_burnin_gate(24) green, then reopen. ALL Dan-gated.
-5. Deep Stack disposition after clawback: if the club should exist legitimately, fund it via fn_ca_fund_club with a reason; if not, the other agent's burn path closes the books.
-
-## 20. Remaining Work
-
-CRITICAL: verify Deep Stack clawback completion (balances ~0, burns ledgered); watch entry-gate refusals in engine logs; re-run preflight + burn-in gate after 12:00 UTC 09-02.
-HIGH: Dan's ruling items (section 19); merge or close PR #2394; post-reopen migration of ALL money callers onto fn_ca_declare_ledger; engine-side registration UX for gate refusals (surface "join a club in this union" to the player).
-MEDIUM: chip_ledger partition rehearsal on a schema branch; solved_spots_gold archive; PITR drill; MFA for 3 admin accounts; 28 anon-executable definer read fns audit; re-count never-scanned indexes after stats age.
-LOW/OPTIONAL: Drift page severity filter; per-entity nightly ledger-replay sampling; collusion detector tuning beyond v1.
-
-## 21. Prioritized Next-Phase Execution Plan
-
-Phase 0 - Recover And Verify (30 min): run (a) SELECT count(\*) FROM ca_drift_incidents WHERE status<>'resolved'; (b) SELECT public.fn_ca_epoch3_preflight(); (c) SELECT jsonb_build_object('treasury',c.chip_treasury,'members',(SELECT sum(cm.chip_balance) FROM club_members cm WHERE cm.club_id=c.id)) FROM clubs c WHERE c.id='2a1132b9-5ba2-42e6-9f01-30a7fcffebe3'; (d) gh pr list --author Smarter-Poker --state open. Root-cause anything open before proceeding. Completion: you can explain every open incident.
-Phase 1 - Protect Completed Work: confirm the PR carrying this document merged; confirm supabase/migrations mirrors match schema_migrations names (node scripts/ci/check-migrations-applied.mjs). Never edit mirror files by hand except appending ACL blocks that match live.
-Phase 2 - Deep Stack Closure: when clawback ends, verify event books close (supply delta vs 08:05 baseline explained by ledgered burns + any fn_ca_fund_club issuance); resolve the daily suspense tracker with the final numbers.
-Phase 3 - Gate Green Path: after 24h clean, preflight 7/7 -> burn-in gate green -> present Dan the reopen numbers. Do NOT advance floors to force it.
-Phase 4 - Rulings Implementation: whichever answers Dan gives (cert wipe, freeroll prizes, money backlog), implement via compensating entries + migrations, sim first, mirror always.
-Phase 5 - Scheduled Hardening: partitioning rehearsal, archive, PITR drill, definer audit, MFA.
-Every phase: rolled-back sims before claiming success, mirrors through the gates, one-push discipline, board to zero with narratives.
-
-## 22. Exact First Actions For The Next Agent
-
-1. Read .agents/rules/00-agent-playbook.md end to end.
-2. Read this document end to end, then docs/audits/2026-08-31-zero-drift/05-07.
-3. cd ~/Documents/club-arena && git fetch origin && eval "$(bash scripts/agent-workspace.sh <you> <slug>)" (worktrees only).
-4. Run the four Phase 0 queries (section 21) via the Supabase MCP.
-5. Do NOT touch Deep Stack Society balances, do NOT retry the 108 failed hand_stacks settlements, do NOT advance any detection floor without a writer-fix justification, do NOT execute any epoch-3 function without Dan's explicit go.
-6. Resume at: Phase 0, then whichever of section 19's decision points Dan has answered.
-
-## 23. Acceptance Criteria ("done" for this phase of the directive)
-
-Board at zero non-info incidents with every resolution carrying a root cause; supply and diamond snapshots unexplained ~0 outside declared basis changes; preflight 7/7 and burn-in gate green over a genuine clean 24h; every applied migration mirrored and merged; no browser-reachable unscoped definer routine (telemetry gate green); entry gate refusing out-of-scope registrations while real entries flow; Deep Stack books closed by ledgered burns or sanctioned issuance; pushes to Dan: at most one per real drift; epoch-3 reset executed only by Dan's hand.
-
-## 24. Recommended Commit Strategy
-
-This branch ships as ONE commit/PR (two mirrors + this doc) - they are one workstream. Future work: one migration-mirror set per PR, engine changes separate from DB mirrors unless coupled, docs ride with the work they describe, never mix money-question implementations for different rulings in one PR.
-
-## 25. Final Continuation Summary
-
-Stopping point: all drifts from the bot-fleet night and the Deep Stack morning are root-caused, fixed at the source, sim-verified, live in production, and mirrored; the board holds one honest info tracker; the burn-in gate is red on purpose while the event ages out. First work: Phase 0 verification, then Deep Stack clawback closure. Most important locked requirements: no backfills, one push per drift, detection never blocks play, mirrors always. Greatest technical risk: someone "fixing" the red gate by advancing floors instead of letting the burn-in mean something. Greatest data-integrity risk: touching Deep Stack balances while the other agent's clawback is mid-flight. Decisions still requiring Dan: cert-fleet wipe, freeroll prize destination, money backlog, WH #1145, and the reset itself. To continue without restarting discovery: this document plus docs/audits/2026-08-31-zero-drift/ plus the incident narratives in ca_drift_incidents ARE the discovery - read them, verify Phase 0, and build forward.
+Club Arena is a Vite + React 19 + TypeScript SPA served inside the
+smarter.poker Next.js app, with a server-authoritative Node poker engine on
+Hetzner and Supabase (PostgreSQL) as the system of record. This work is **not**
+feature development. It is a **money audit** of tournament payouts.
+
+### The business objective, in Dan's words
+
+> "IT IS AN ABSOLUTE MUST THAT PLAYERS ALWAYS 100% GET PAID OUT OF EVERY SINGLE
+> MTT, SPIN OR HEADS UP THEY PLAY (IF THEY EARNED A PAYOUT)."
+
+Everything in this workstream serves that sentence. The method that emerged and
+must continue: **find where money can go missing, prove it with production
+evidence, fix the cause, ship a detector so it cannot recur unseen, pin the
+detector with a law test, and write down what was actually observed rather than
+what was intended.**
+
+### Current phase
+
+A six-phase plan was agreed. **Phases 1, 2 and 3 are complete, verified and
+pushed. Phase 4 has not been started.**
+
+| Phase  | Subject                                            | State              |
+| ------ | -------------------------------------------------- | ------------------ |
+| 1 of 6 | Prove the money checks are actually running        | CONFIRMED COMPLETE |
+| 2 of 6 | Buy-ins that were never collected                  | CONFIRMED COMPLETE |
+| 3 of 6 | Multi-day / XMTT flight advancement                | CONFIRMED COMPLETE |
+| 4 of 6 | Re-entries and add-ons reaching the prize pool     | NOT STARTED        |
+| 5 of 6 | Mystery bounty chests, draw by draw                | NOT STARTED        |
+| 6 of 6 | Exact-cent allocation replacing the 0.05 tolerance | NOT STARTED        |
+
+### The single most important thing to understand
+
+**The engine has not restarted onto any of this code.** All seven money checks
+show `run_count = 0` in `money_check_heartbeat` (CONFIRMED by query). The
+database functions are live and correct; the `GameServer` code that _calls_
+them hourly sits in an unmerged PR. The engine restarts on Dan's 7am/7pm
+window, and deploys only when a merge to `main` touches `server/**`.
+
+This single fact explains three things that otherwise look like bugs:
+
+1. All seven heartbeats read stale / never-run.
+2. `FeeReconciler` alerts are still accumulating unkeyed (112 open rows for one
+   subject) even though the dedupe fix is written.
+3. Nothing is automatically back-paying, so shortfall conditions accumulate.
+
+**Do not "fix" any of those three. They are one pending deploy.**
+
+### First action for the next agent
+
+Go to **Section 22**. It is an executable checklist. In short: verify the
+worktree is clean and pushed, confirm PR #2551's state, then begin Phase 4 by
+reconciling `prize_pool + total_rake` against entries + rebuys + add-ons per
+event.
+
+---
+
+## 2. USER REQUIREMENTS AND WORKING PREFERENCES
+
+These are binding. Several are recorded in `CLAUDE.md` and several were given
+directly in conversation.
+
+### Non-negotiable, from CLAUDE.md
+
+| Rule                                      | Source                         | Meaning                                                                                                                                                                                               |
+| ----------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Horses are players**                    | CLAUDE.md 10.5, Dan 2026-08-27 | Never write `is_horse` to exclude a horse from anything a human gets. Verbatim: _"HORSES ARE NEVER EVER DISCLUDED BY DESIGN ON ANYTHING!"_ The test is **"is it identical"**, not "is it equivalent". |
+| **No clawback from players**              | Dan 2026-08-28                 | Overpaid players keep it; the hosting club absorbs.                                                                                                                                                   |
+| **Never spend real chips to test a rule** | CLAUDE.md 11.5                 | Probe money paths inside a transaction you ROLL BACK. Helpers in `pg_temp`, never `public`. Never DELETE a `table_seats` row.                                                                         |
+| **Never push a red test**                 | CLAUDE.md 5.8, Dan 2026-08-21  | A failing test stops the World Hub publish for every agent. Use `it.skip()` with a note, never a red commit.                                                                                          |
+| **Never rebase main**                     | CLAUDE.md 12                   | Use `git merge origin/main`. A hook refuses rebase.                                                                                                                                                   |
+| **Never `--no-verify`**                   | CLAUDE.md 11.0                 | The pre-push hook is the gate.                                                                                                                                                                        |
+| **Never sit in a loop watching CI**       | CLAUDE.md 10.8.3               | Push, report the PR number, end. One final check is fine.                                                                                                                                             |
+| **"Em bars" means em dashes**             | CLAUDE.md 10.7                 | A _copy_ rule about U+2014 in player-facing text. It says nothing about artwork. Do not ban the hamburger menu.                                                                                       |
+| **No emoji in source**                    | CLAUDE.md 5.3                  | Breaks the SWC compiler.                                                                                                                                                                              |
+| **Popups: Title Case, no em dashes**      | CLAUDE.md 5.7                  | Enforced in `src/utils/popupStyle.ts`.                                                                                                                                                                |
+| **Animations must always play**           | CLAUDE.md 10.6                 | No toggle may disable one.                                                                                                                                                                            |
+| **Never auto-change tables**              | CLAUDE.md 10.6                 | Moving `activeIndex` without a user gesture is forbidden.                                                                                                                                             |
+| **Own changelog file**                    | CLAUDE.md 10.9                 | `docs/changelog/YYYY-MM-DD-<slug>.md`. Never append to `MIGRATION-CHANGELOG.md`.                                                                                                                      |
+| **Commit author**                         | WH CLAUDE.md 2.2 CHECK 15      | Must be `Smarter-Poker <254329056+Smarter-Poker@users.noreply.github.com>` or Vercel refuses to build.                                                                                                |
+| **One DDL transaction per change**        | CLAUDE.md 2, DDL policy        | Each DDL fires a ~28s PostgREST schema reload. Batch related DDL.                                                                                                                                     |
+| **Laws live in docs/LAWS.md**             | CLAUDE.md 10.8                 | Every `*.law.test.*` needs a row. Never resolve two conflicting laws by writing a third — STOP and ask Dan.                                                                                           |
+
+### Working style Dan has repeatedly enforced
+
+- **Verify on real hardware. "It compiles" is not verification.**
+- **Do it right, not fast. However long it takes.**
+- **When corrected, change course immediately.** Do not defend a rejected path.
+- **Never ask permission for obvious work.**
+- **Write it down.**
+
+### The methodological standard this workstream converged on
+
+Dan did not state these as rules; they emerged from repeatedly catching my own
+errors, and the next agent should treat them as binding because every one of
+them caught a real defect:
+
+1. **Verify the instrument before believing the reading.** A query returning
+   zero may mean the query is broken. Always run a positive control against a
+   known-bad window.
+2. **Distinguish "I did this" from "this should happen."** A sentence
+   describing intent reads identically to one describing observation. Only the
+   second is worth writing.
+3. **Wall-clock timings on this database are noise.** Load swings measurements
+   by 10x. Use `EXPLAIN (ANALYZE, BUFFERS)` and compare **buffers**, which load
+   does not move.
+4. **An absence assertion must match the CODE form of a name, not the bare
+   word** — the bare word also appears in the prose explaining the removal.
+   This defect occurred **three times** in one session.
+5. **A pin whose slice begins on the line containing the asserted string cannot
+   fail.** Negative-control every new pin by mutating the source and confirming
+   it goes red.
+
+### What the user explicitly asked for, repeatedly
+
+After each phase: _"MAKE SURE EVERYTHING FROM THE PREVIOUS PHASE WAS 100%
+COMPLETED, FINISHED EVERY STEP AND IT WAS PUSHED AND PUBLISHED, CHECK FOR ANY
+AND ALL BUGS, GAPS, STUBS, ERRORS, REGRESSIONS OR WIRING ISSUES ANYWHERE AND
+EVERYWHERE AND FIX ANY ISSUES BEFORE MOVING ONTO PHASE N."_
+
+**Treat the verification pass as a mandatory phase gate, not a formality.** It
+found three real faults after Phase 1, three after Phase 2, and three after
+Phase 3 — every single time.
+
+---
+
+## 3. PROJECT AND REPOSITORY IDENTITY
+
+| Field                     | Value                                                                      | Status                                      |
+| ------------------------- | -------------------------------------------------------------------------- | ------------------------------------------- |
+| Project Name              | Club Arena (inside smarter.poker)                                          | CONFIRMED                                   |
+| Repository Root           | `/Users/smarter.poker/Documents/.agent-trees/club-arena/swarm-mtt-payouts` | CONFIRMED (`git rev-parse --show-toplevel`) |
+| Current Working Directory | same as root                                                               | CONFIRMED                                   |
+| Git Repository            | `Smarter-Poker/Smarter-Poker-Club-Arena`                                   | CONFIRMED                                   |
+| Current Branch            | `agent/swarm-mtt-payouts/phase7-no-result-without-a-hand`                  | CONFIRMED                                   |
+| Remote Name               | `origin`, over SSH (`git@github.com`)                                      | CONFIRMED                                   |
+| Primary Framework         | Vite + React 19 + TypeScript, React Router v7                              | CONFIRMED (CLAUDE.md 8)                     |
+| Engine                    | Node.js + TypeScript in `server/`                                          | CONFIRMED                                   |
+| Package Manager           | npm                                                                        | CONFIRMED                                   |
+| Test Runner               | vitest (client v4.0.18, server v2.1.9 — two different versions)            | CONFIRMED from run output                   |
+| Database                  | Supabase PostgreSQL, project ref `kuklfnapbkmacvwxktbh`                    | CONFIRMED                                   |
+| Hosting (frontend)        | Vercel project `hub-vanguard` via the World Hub repo                       | CONFIRMED (CLAUDE.md 1.2)                   |
+| Hosting (engine)          | Hetzner VPS, PM2, auto-deploy on merge to `main` touching `server/**`      | CONFIRMED (CLAUDE.md 11.1)                  |
+| Node                      | via nvm; **NOT on the default PATH**                                       | CONFIRMED                                   |
+
+**Branch name is misleading.** It says `phase7-no-result-without-a-hand`,
+which was the original Phase 7 task from a previous agent's handoff. The branch
+has since carried the entire 6-phase audit. Do not rename it — PR #2551 is
+attached to it.
+
+---
+
+## 4. REPOSITORY MAP
+
+Only paths relevant to continuation. `[MOD]` = modified by this work,
+`[NEW]` = created by this work.
+
+```
+swarm-mtt-payouts/                    <- repo root, this worktree
+├── CLAUDE.md                          Agent law for this repo. READ FIRST.
+├── AGENT-PLAYBOOK.md                  Byte-identical across 7 repos. Worktree/push/PR flow.
+├── MIGRATION-LAW.md                   11 laws governing the server-authoritative migration.
+├── docs/
+│   ├── LAWS.md                  [MOD] Registry of every *.law.test.*. 75 rows.
+│   │                                  CONFLICTS ON EVERY MERGE FROM MAIN (see §15).
+│   ├── HANDOFF_CURRENT_STATE.md [NEW] This document.
+│   └── changelog/
+│       ├── README.md                  Why each agent writes its own file.
+│       ├── 2026-09-01-a-bounty-pool-belongs-to-a-player-too.md      [NEW]
+│       ├── 2026-09-01-the-last-unwatched-money.md                   [NEW]
+│       ├── 2026-09-02-phase-1-a-check-that-never-runs.md            [NEW]
+│       ├── 2026-09-02-phase-2-a-seat-nobody-paid-for.md             [NEW]
+│       └── 2026-09-02-phase-3-multi-day-does-not-exist.md           [NEW]
+├── server/src/
+│   ├── GameServer.ts            [MOD] THE HOURLY MONEY-CHECK PASS LIVES HERE.
+│   │                                  7 checks + health board, ~line 3540-3760.
+│   │                                  Private helper recordMoneyCheckRun() ~line 360.
+│   ├── testHelpers/sourceWindow.ts    sliceMethod/sliceSqlStatement/etc.
+│   │                                  MIRROR of tests/helpers/sourceWindow.ts.
+│   │                                  Magic-number windows are outlawed; use these.
+│   ├── services/
+│   │   ├── financialAlerts.ts   [MOD] raiseFinancialAlert(..., dedupeKey?)
+│   │   ├── FeeReconciler.ts     [MOD] per-tournament keyed alerts
+│   │   ├── AlertsDoNotRepeat.law.test.ts        [NEW]
+│   │   └── MoneyChecksProveTheyRan.law.test.ts  [NEW] 13 pins, Phase 1
+│   └── tournament/
+│       ├── tournamentRecovery.ts     [MOD] chips/hand evidence guards + bounty settle
+│       ├── TournamentManagerBase.ts  [MOD] payout structure cannot narrow past a paid place
+│       ├── recoveryRankEvidence.ts   (created earlier in the workstream)
+│       ├── NoResultWithoutAHand.law.test.ts       (earlier)
+│       ├── EveryEarnerIsPaid.law.test.ts    [MOD]
+│       ├── ABountyPoolBelongsToAPlayer.law.test.ts  [NEW]
+│       ├── ASeatNobodyPaidFor.law.test.ts   [NEW] 25 pins, Phase 2. SEE §15.
+│       └── MultiDayIsRefusedUntilItIsBuilt.law.test.ts [NEW] 8 pins, Phase 3
+├── supabase/migrations/          10 [NEW] files — see §11 ledger
+├── scripts/ci/
+│   ├── check-definer-authorization.mjs   Blocks browser-reachable SECURITY DEFINER writers.
+│   │                                     Diffs vs HEAD~1 — sees only COMMITTED migrations.
+│   └── schema-manifest.d/                Declare new schema here, NEVER hand-edit the manifests.
+└── tests/law-registry.law.test.ts [MOD] Scans tests/ AND server/src for law files.
+```
+
+**Do not edit** `scripts/ci/supabase-schema-manifest.json` or
+`supabase-columns-manifest.json` — they are nightly snapshots and the biggest
+source of merge conflict in this repo.
+
+---
+
+## 5. APPLICABLE INSTRUCTIONS AND CONSTRAINTS
+
+Read in this order before editing anything:
+
+1. **`AGENT-PLAYBOOK.md`** (repo root) — how to ship without losing work; where
+   every credential lives (the place, never the value).
+2. **`CLAUDE.md`** (repo root) — the repo's binding law. Sections that matter
+   most here: **1.2.5** (PR-only merges), **2** (Production DDL policy),
+   **5.8** (never push a red test), **10.5** (horses are players), **10.8**
+   (law registry, never wait on CI), **11.0** (which environment you are in),
+   **11.5** (never spend real chips to test a rule), **12** (never rebase main).
+3. **`docs/LAWS.md`** — the law registry and the resolved-conflicts list.
+4. **`docs/changelog/README.md`** — why each agent writes its own file.
+5. **`MIGRATION-LAW.md`** — governs the server-authoritative migration.
+
+### Conflicts and ambiguities the next agent will hit
+
+| Conflict                                                                                                                                | Resolution                                                                                                                                                |
+| --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CLAUDE.md §1.1.5 says server-side protection is "prepared, not yet active"; §1.2.5 says it is ACTIVE and verified against the live API. | **§1.2.5 wins.** Believe the API. Main is protected; PR is the only path.                                                                                 |
+| `.husky/pre-push` check 0 says rulesets are disabled.                                                                                   | **Stale.** Same as above.                                                                                                                                 |
+| CLAUDE.md §11.1 describes a cloud sandbox with no network.                                                                              | **Not this environment.** §11.0 applies: `mcp__counselors__host_terminal` exists, so this is Dan's Mac. Real bash, SSH works, `api.github.com` reachable. |
+| The `mcp__github__*` MCP                                                                                                                | Returns `Bad credentials`. Do not build a plan around it. Use `curl` + the token in `~/Documents/club-arena/.env`.                                        |
+
+---
+
+## 6. COMPLETE DISCOVERY RECORD
+
+Everything below was learned by inspection during this work. **This section
+exists so the next agent does not repeat the discovery.**
+
+### 6.1 How a tournament entry is actually paid for
+
+There are **four** registration paths, and they do not behave alike:
+
+| Function                           | Creates seat | Debits wallet                                    | Writes `chip_transactions` | Writes `wallet_transactions`               | Increments pool/rake |
+| ---------------------------------- | ------------ | ------------------------------------------------ | -------------------------- | ------------------------------------------ | -------------------- |
+| `fn_register_for_tournament`       | yes          | yes                                              | yes                        | **yes** (`related_entity_id` = tournament) | yes                  |
+| `fn_register_horse_for_tournament` | yes          | yes                                              | yes                        | **yes**                                    | yes                  |
+| `fn_award_satellite_seat`          | yes          | **no** (the seat IS the prize)                   | no                         | no                                         | yes                  |
+| `atomic_tournament_register`       | yes          | **yes, directly on `club_members.chip_balance`** | **NO**                     | **NO**                                     | **no**               |
+
+**`atomic_tournament_register` is a live architectural hole.** It moves money
+with no ledger row of either kind. It has had **no caller since 2026-08-15**
+(replaced by `fn_register_for_tournament`; the only remaining reference is an
+explanatory comment at `src/services/TournamentService.ts:1008`). It sits on
+the `fn_union_law_check` watch list, so **retiring it belongs to that
+workstream, not this one.** `fn_uncollected_entry_check` names it as a known
+blind spot inside its own alert payload.
+
+**Key detail:** `atomic_deduct_wallet_and_log` writes `chip_transactions` with
+**no `tournament_id` column** — the link is a name string in `notes`. Only
+`log_wallet_transaction` carries `related_entity_id`. That is why
+`wallet_transactions` is the joinable evidence and `chip_transactions` is the
+second, independent witness.
+
+### 6.2 The evidence-start date — critical
+
+`wallet_transactions` has carried `category='tournament_buyin'` **only since
+2026-08-19**, when `log_wallet_transaction` was wired into the register path.
+
+**Before that date, an absent debit proves the LOGGER was absent, not that
+nobody paid.** 22,981 perfectly healthy seats sit behind it. Any query that
+reaches back past 2026-08-19 and treats a missing `wallet_transactions` row as
+an unpaid entry will report a catastrophe that never happened. I made this
+mistake on the first pass and it produced a false 22,981-seat figure.
+
+`fn_uncollected_entry_check` asserts this with a constant
+`c_evidence_start = 2026-08-19 00:00:00+00` and refuses any window that starts
+earlier.
+
+### 6.3 `is_xmtt` does NOT mean multi-day
+
+It is set as `is_xmtt: !!schedule.union_id`. **It means UNION event.** 815 rows
+carry it. I read it as "multi-day" in Phase 2 and had to correct it in Phase 3.
+
+### 6.4 Multi-day flight advancement does not exist
+
+CONFIRMED by query across every tournament ever created:
+
+```
+parent_tournament_id ........ 0
+survivors_advance_to ........ 0
+flight_end_chips_snapshot ... 0
+flight_number ............... 0
+day_number > 1 .............. 0
+total_days > 1 .............. 0
+```
+
+Nothing in the client, engine or database writes any of the five structure
+columns. `fn_generate_recurring_home_games` mentions `day_number` but it is a
+local `v_day_number` for day-of-week on `commander_home_groups` — a different
+table entirely.
+
+On 2026-08-26 a prior agent replaced a working "Multi-Day MTT" toggle (which
+badged the lobby and changed nothing about how the event ran) with
+"NOT AVAILABLE YET" plus `trg_tournaments_refuse_unbuilt_multi_day`. See
+`src/lib/tournamentFromTableConfig.ts:350` and
+`src/pages/TableConfigPage.tsx:2777` for their notes.
+
+### 6.5 The alert dedupe architecture
+
+`fn_raise_server_financial_alert(severity, source, message, context, dedupe_key)`
+stores the key in `context->>'dedupe_key'` and returns an existing open row's id
+rather than inserting a duplicate.
+
+**Natural experiment CONFIRMED at handoff time:**
+
+| Source                                                    | Open rows | Carrying a dedupe key |
+| --------------------------------------------------------- | --------- | --------------------- |
+| `fn_money_check_health` (raises from **inside** the DB)   | 7         | **7**                 |
+| `FeeReconciler.bbj_unlinkable` (raised by the **engine**) | 112       | **0**                 |
+| `FeeReconciler.bbj_drift` (engine)                        | 30        | **0**                 |
+| `fn_tournament_money_conservation` (engine-driven)        | 115       | **0**                 |
+
+Same function, same database, different caller. **The mechanism is proven; the
+engine has not shipped.** Do not "fix" the dedupe.
+
+### 6.6 Database performance facts, measured
+
+- The service_role statement timeout is **8 seconds**.
+- `rake_records` has **no index on `source`**. A 30-day scan filtered on
+  `source` walks the `created_at` index discarding 644,620 rows.
+- **Wall clock on this database is unreliable.** The identical query measured
+  722ms / 13,494ms / 2,873ms / 1,968ms / 691ms / 7,471ms in interleaved A/B
+  runs seconds apart. **Use `EXPLAIN (ANALYZE, BUFFERS)` and compare buffers.**
+- Every DDL statement fires `pgrst_ddl_watch` → a ~28s PostgREST schema-cache
+  reload on this database (~970 relations, ~2,700 functions).
+- An index was added by this work:
+  `idx_tournament_players_registered_at` on `tournament_players(registered_at)`.
+
+### 6.7 Existing money-check inventory (7 registered)
+
+| Check                                 | Interval (min) | Purpose                                                                                 |
+| ------------------------------------- | -------------- | --------------------------------------------------------------------------------------- |
+| `fn_payout_guarantee_check`           | 60             | vacant paid places, unpaid earners, retained bounty pools, unrecorded payouts           |
+| `fn_cash_pot_conservation_check`      | 60             | pot = rake + bbj + awarded, per completed cash hand. **Capped at 48h** (168h timed out) |
+| `fn_backpay_unfinalised_bounty_pools` | 60             | settles a funded bounty pool a completed event never paid                               |
+| `fn_pay_backed_payout_shortfalls`     | 60             | pays what an event still owes                                                           |
+| `fn_uncollected_entry_check`          | 60             | **[NEW, Phase 2]** seats with no auditable entry payment                                |
+| `fn_detect_results_without_a_hand`    | 360            | a result no poker produced                                                              |
+| `fn_tournament_money_conservation`    | 360            | per-event money in vs out                                                               |
+
+Plus `fn_money_check_health(stale_multiple)` — the board, read **last** in the
+hourly pass, in its own `try` block.
+
+### 6.8 Technical debt and holes discovered but NOT fixed
+
+| Hole                                                                                                                                                                                        | Evidence                                                                    | Owner                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------- |
+| `atomic_tournament_register` moves money with zero ledger rows                                                                                                                              | function body read                                                          | `fn_union_law_check` workstream          |
+| **Nothing guards default grants on NEW TABLES.** `check-definer-authorization` guards functions only. Every table created since that gate carries `anon`/`authenticated` grants unexamined. | found when `money_check_heartbeat` came up with `arwdxtm` for browser roles | unowned — **recommend raising with Dan** |
+| `public.wallets` is frozen with 732,591,994.33 chips stranded; nothing reads it                                                                                                             | CLAUDE.md 11.5                                                              | pre-existing                             |
+| Hand-history retention is 7 days for horse-only hands                                                                                                                                       | Dan's explicit ruling 2026-08-27                                            | **DO NOT "FIX"**                         |
+| `docs/LAWS.md` conflicts on every single merge from main                                                                                                                                    | 3 for 3 this session                                                        | see §15                                  |
+
+---
+
+## 7. WORK COMPLETED DURING THIS CHAT
+
+### Workstream A — Phase 1: prove the money checks are running
+
+**Problem:** the audit ended with six checks reporting zero, and there was no
+evidence any of them had ever run. Precedent: Open Claw fired
+`/api/cron/rakeback-period-settle` weekly at a handler that had never been
+written; every fire 404'd silently and **281,108.01 chips** of player rakeback
+accrued behind it.
+
+**Shipped:**
+
+- `money_check_heartbeat` table, **seeded with the expected set** so a check
+  that never fires reads as _missing_, not as _nothing_.
+- `fn_record_money_check_run(check, result)` — stamped by the **driver**, not
+  the check. Never throws.
+- `fn_money_check_health(stale_multiple)` — the board, one deduped critical per
+  quiet check.
+- Wired into `GameServer.ts`: six stamps + the health read.
+
+**Migrations:** `20260902012048`, `20260902013940`
+**Verification found 3 faults after I called it done:**
+
+1. The health read was **nested inside the bounty back-pay's `try`** — the
+   watchdog-shares-a-failure-domain mistake, two hours after quoting it. Moved
+   to a sibling block, pinned.
+2. `money_check_heartbeat` was created with schema-default grants giving `anon`
+   and `authenticated` full read **and write**. Inert under RLS-with-no-policies
+   but live the moment anyone adds a policy. Revoked.
+3. The changelog claimed a probe row "was then deleted" — **I never ran that
+   delete.** Corrected honestly.
+
+### Workstream B — Phase 2: a seat nobody paid for
+
+**Diagnosis (all CONFIRMED against production):** 464 seats across 81 events,
+2,530.80 chips of entry, **all between 2026-08-19 00:01 and 2026-08-20 23:45**,
+none since. Horses were **seeded** into fields rather than registered. Two
+independent witnesses agree: no `wallet_transactions` debit and no
+`chip_transactions` row. `rake_records` proves the register functions never ran
+— across the 39 COMPLETED events in that window there is **exactly one** rake
+row, from `fn_spin_settle_game`. Those events collected 6.00 chips of entry and
+0.00 in fees, and paid out 1,734.00 in prizes (1,373.00 of it guaranteed money
+the club had already promised).
+
+**Instrument check performed before believing it:** the `chip_transactions`
+matcher found **11,626 of 11,626 (100%)** for seats that provably have a
+`wallet_transactions` row, and 0 of 464 for those that do not.
+
+**The cause was already fixed, and not by me.**
+`fn_register_horse_for_tournament` began charging horses real chips on
+2026-08-19; the last unfunded seat was created the following night. **No engine
+change was made.** Re-fixing a fixed bug is how a repo acquires two laws
+demanding opposite things.
+
+**The live finding:** `fn_award_satellite_seat` writes a `tournament_payouts`
+row for the seat it awards. That block landed in migration `20260831192927` at
+2026-08-31 19:29. The last satellite seat was awarded 2026-08-30 20:10.
+**The block had never once executed.** Zero `source='satellite_seat'` rows
+existed platform-wide. **23 seats worth 4,600.00 chips** of prize value were
+absent from the payout ledger. Back-filled from the rake row
+`fn_award_satellite_seat` itself wrote, under the key the live function uses.
+A re-drive writes **0 rows** — proved inside a rolled-back transaction.
+
+**Shipped:** `fn_uncollected_entry_check` with **four enumerated exemptions**
+(wallet debit / satellite seat award / day-past-the-first / freeroll),
+registered in the heartbeat, stamped by GameServer, deduped alert, moves no
+money, bounded at 48h, refuses windows before 2026-08-19.
+
+**Migrations:** `20260902041336`, `20260902050552`
+**Verification found 3 faults:**
+
+1. **The awards CTE looked back 30 days** and needed 6 hours. Premise disproven:
+   `fn_award_satellite_seat` writes the rake row and the roster row in the same
+   statement — verified on all 23 awards, `created_at` equals `registered_at`
+   exactly, worst gap **0.000000 seconds**. Buffers: **231,267 → 90,202**.
+2. **I nearly shipped a 6x-worse rewrite** justified by wall-clock noise
+   (539,362 buffers vs 90,202). Discarded. See §15.
+3. A law pin was **vacuous** — it sliced from the line containing the string it
+   asserted.
+
+### Workstream C — Phase 3: multi-day does not exist
+
+**Finding:** there are no flights (see §6.4). Nothing to reconcile, nobody to
+pay.
+
+**The real work:** `trg_tournaments_refuse_unbuilt_multi_day` fired on
+`UPDATE OF is_multi_day, total_days` — the two columns that paint the **lobby
+badge** — and left open the five that would **structure** a flight. Proved in a
+rolled-back transaction:
+
+```
+is_multi_day = true ............ REFUSED, 0A000
+total_days   = 3 ............... REFUSED, 0A000
+day_number = 2 ................. NOT GUARDED
+parent_tournament_id ........... NOT GUARDED
+survivors_advance_to ........... NOT GUARDED
+flight_number = 2 .............. NOT GUARDED
+flight_end_chips_snapshot ...... NOT GUARDED
+```
+
+A half-built flight has no badge to warn anyone, nothing to advance a survivor,
+**and it would have switched on Phase 2's day-2 exemption**, excusing seats from
+the was-this-paid-for check for a Day 2 that does not exist.
+
+**Shipped:** the guard widened to all seven columns, on the function **and** in
+the trigger's `UPDATE OF` list (a trigger that does not name a column never
+fires on an update touching only it). Plus a correction to Phase 2's own
+predicate, which read the union flag as multi-day.
+
+**Migrations:** `20260902052302`, `20260902052604`
+**Verification found 3 faults** — see §15 (the pin-staleness cascade).
+
+---
+
+## 8. VISUAL AND PRODUCT DECISIONS
+
+**NOT APPLICABLE TO THIS WORKSTREAM.** No UI, component, asset, image,
+breakpoint, typography, colour or responsive work was performed or discussed.
+No reference images were supplied. No `src/components/**` or `src/pages/**`
+file was modified.
+
+The only client-side files _read_ (never edited) were
+`src/lib/tournamentFromTableConfig.ts` and `src/pages/TableConfigPage.tsx`,
+to establish that the multi-day toggle had been deliberately removed.
+
+**If the next agent is asked for UI work, none of this workstream's decisions
+apply and there are no locked visual references to honour.**
+
+---
+
+## 9. FUNCTIONAL AND ARCHITECTURAL DECISIONS
+
+| Area                                      | State                                          | Note                                                                                  |
+| ----------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------- |
+| MTT payout guarantee                      | **Implemented**                                | `fn_payout_guarantee_check`, 4 counters, all reporting 0 at handoff                   |
+| Bounty pool settlement on the rescue path | **Implemented**                                | `tournamentRecovery.ts` settles before flipping COMPLETED                             |
+| Payout structure narrowing                | **Implemented**                                | `TournamentManagerBase.fitPayoutStructureToField` refuses to narrow past a paid place |
+| No result without a hand                  | **Implemented**                                | `recoveryRankEvidence.ts` — `chipsCannotRank`, `noHandWasEverDealt`                   |
+| Uncollected entry detection               | **Implemented**                                | `fn_uncollected_entry_check`, 4 enumerated exemptions                                 |
+| Money-check heartbeat                     | **Implemented in DB, NOT YET RUNNING**         | engine has not restarted                                                              |
+| Alert dedupe                              | **Implemented in DB, engine side NOT SHIPPED** | proven by natural experiment §6.5                                                     |
+| Multi-day / flights                       | **DOES NOT EXIST, refused at the DB**          | all 7 columns                                                                         |
+| Satellite seat as a payout                | **Implemented + back-filled**                  | 23 rows, 4,600.00 chips                                                               |
+| Cash pot conservation                     | **Implemented**                                | 48h cap, measured                                                                     |
+| Re-entries / add-ons reaching the pool    | **NOT STARTED — Phase 4**                      | population in §20                                                                     |
+| Mystery bounty chests                     | **NOT STARTED — Phase 5**                      |                                                                                       |
+| Exact-cent allocation                     | **NOT STARTED — Phase 6**                      | currently a 0.05 tolerance in `earner_not_paid`                                       |
+| Rakeback settlement                       | **BLOCKED ON DAN**                             | cause fixed in PR #1084; 281,108.01 chips owed                                        |
+| Overpay clawback                          | **REJECTED BY DAN**                            | 19,665.23 chips across 65 events; club absorbs                                        |
+| Hand-history retention asymmetry          | **DECIDED BY DAN, DO NOT CHANGE**              | 7 days for horse-only hands                                                           |
+
+---
+
+## 10. EXACT CURRENT STATE
+
+All CONFIRMED at the time of writing.
+
+```
+Branch          agent/swarm-mtt-payouts/phase7-no-result-without-a-hand
+HEAD            dd852fb83  "merge origin/main, resolving the LAWS.md registry by union"
+Remote HEAD     dd852fb83  (identical — nothing unpushed)
+git status      clean; no staged, unstaged, untracked or generated files
+vs origin/main  1 behind, 33 ahead
+PR              #2551, state=open, mergeable=true, mergeable_state=blocked, 33 commits
+```
+
+`mergeable_state=blocked` means required checks have not all reported. It is
+**not** a conflict. `dirty` would be a conflict.
+
+```
+Server tests    3652 passed / 328 files      CONFIRMED
+Client tests    11460 passed / 836 files     CONFIRMED
+Server tsc      clean                        CONFIRMED
+Client tsc      clean                        CONFIRMED
+Law registry    78 assertions, 75 rows       CONFIRMED
+Definer gate    OK                           CONFIRMED
+```
+
+**Running processes:** no dev server, no preview, no build. One stray vitest-ish
+process matched a loose grep; nothing this work started is still running.
+
+**Database:** all 6 migrations applied and recorded. All function bodies
+md5-verified against `pg_proc.prosrc` — see §11.
+
+**Deployment:** frontend deploys via the World Hub on merge to `main`; engine
+deploys on merge touching `server/**`. **Neither has happened for this branch.**
+
+---
+
+## 11. CHANGED-FILE LEDGER
+
+Verified with `git diff --name-status $(git merge-base origin/main HEAD)...HEAD`.
+
+| File                                                                 | Status | Purpose                                       | What changed                                                                                            | Verified                       | Committed |
+| -------------------------------------------------------------------- | ------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------ | --------- |
+| `server/src/GameServer.ts`                                           | MOD    | hourly money-check pass                       | added `recordMoneyCheckRun()` helper, 7 stamps, health read as a sibling block, the Phase 2 check block | tests + index-order assertions | yes       |
+| `server/src/services/financialAlerts.ts`                             | MOD    | alert sender                                  | optional `dedupeKey` param                                                                              | tests                          | yes       |
+| `server/src/services/FeeReconciler.ts`                               | MOD    | fee/BBJ audit                                 | per-tournament keyed alerts                                                                             | tests                          | yes       |
+| `server/src/tournament/tournamentRecovery.ts`                        | MOD    | stuck-COMPLETING rescue                       | chips/hand evidence guards; bounty pool settled before COMPLETED                                        | tests                          | yes       |
+| `server/src/tournament/TournamentManagerBase.ts`                     | MOD    | payout structure fitting                      | refuses to narrow past a paid place                                                                     | tests                          | yes       |
+| `server/src/tournament/EveryEarnerIsPaid.law.test.ts`                | MOD    | law                                           | extended                                                                                                | run                            | yes       |
+| `tests/law-registry.law.test.ts`                                     | MOD    | law registry                                  | scans `server/src` too                                                                                  | run                            | yes       |
+| `docs/LAWS.md`                                                       | MOD    | law registry                                  | +5 rows; merged by union 3x                                                                             | registry test                  | yes       |
+| `server/src/services/MoneyChecksProveTheyRan.law.test.ts`            | NEW    | Phase 1 law, 13 pins                          | —                                                                                                       | run                            | yes       |
+| `server/src/services/AlertsDoNotRepeat.law.test.ts`                  | NEW    | alert-noise law                               | —                                                                                                       | run                            | yes       |
+| `server/src/tournament/ABountyPoolBelongsToAPlayer.law.test.ts`      | NEW    | bounty law                                    | —                                                                                                       | run                            | yes       |
+| `server/src/tournament/ASeatNobodyPaidFor.law.test.ts`               | NEW    | Phase 2 law, 25 pins                          | —                                                                                                       | run + negative controls        | yes       |
+| `server/src/tournament/MultiDayIsRefusedUntilItIsBuilt.law.test.ts`  | NEW    | Phase 3 law, 8 pins                           | —                                                                                                       | run + negative controls        | yes       |
+| `docs/changelog/2026-09-01-a-bounty-pool-belongs-to-a-player-too.md` | NEW    | changelog                                     | —                                                                                                       | —                              | yes       |
+| `docs/changelog/2026-09-01-the-last-unwatched-money.md`              | NEW    | changelog + **correction**                    | —                                                                                                       | —                              | yes       |
+| `docs/changelog/2026-09-02-phase-1-a-check-that-never-runs.md`       | NEW    | changelog                                     | —                                                                                                       | —                              | yes       |
+| `docs/changelog/2026-09-02-phase-2-a-seat-nobody-paid-for.md`        | NEW    | changelog                                     | —                                                                                                       | —                              | yes       |
+| `docs/changelog/2026-09-02-phase-3-multi-day-does-not-exist.md`      | NEW    | changelog                                     | —                                                                                                       | —                              | yes       |
+| `supabase/migrations/20260901192531_*.sql`                           | NEW    | cash pot check, 48h cap                       | applied earlier                                                                                         | md5                            | yes       |
+| `supabase/migrations/20260901193047_*.sql`                           | NEW    | close repaired findings                       | applied earlier                                                                                         | —                              | yes       |
+| `supabase/migrations/20260901194756_*.sql`                           | NEW    | bounty back-pay                               | applied earlier                                                                                         | md5                            | yes       |
+| `supabase/migrations/20260901195005_*.sql`                           | NEW    | guarantee check + bounty                      | applied earlier                                                                                         | —                              | yes       |
+| `supabase/migrations/20260901131129_*.sql`                           | MOD    | guarantee check                               | —                                                                                                       | md5                            | yes       |
+| `supabase/migrations/20260902012048_*.sql`                           | NEW    | heartbeat + recorder + board                  | Phase 1                                                                                                 | md5                            | yes       |
+| `supabase/migrations/20260902013940_*.sql`                           | NEW    | heartbeat table service_role only             | Phase 1 fix                                                                                             | applied                        | yes       |
+| `supabase/migrations/20260902041336_*.sql`                           | NEW    | uncollected entry check + satellite back-fill | Phase 2                                                                                                 | md5                            | yes       |
+| `supabase/migrations/20260902050552_*.sql`                           | NEW    | awards lookback 30d → 6h                      | Phase 2 fix                                                                                             | md5                            | yes       |
+| `supabase/migrations/20260902052302_*.sql`                           | NEW    | multi-day guard widened to 7 columns          | Phase 3                                                                                                 | md5                            | yes       |
+| `supabase/migrations/20260902052604_*.sql`                           | NEW    | union flag is not multi-day                   | Phase 3                                                                                                 | md5                            | yes       |
+
+**No user-owned or unrelated changes exist in this worktree.** The tree is
+clean. Other agents work in **separate worktrees** (`git worktree list` shows
+~20). Do not touch them.
+
+### Function bodies — repo file vs production, md5 CONFIRMED
+
+| Function                                  | md5                                | bytes |
+| ----------------------------------------- | ---------------------------------- | ----- |
+| `fn_uncollected_entry_check`              | `a0100e602a1042d2cded3d9f184b956b` | 8111  |
+| `fn_tournaments_refuse_unbuilt_multi_day` | `428b31045fc54a32e6207a6c15200cf5` | 1700  |
+| `fn_record_money_check_run`               | `0582c8967634a8e3e7e5ba320adbd37e` | 717   |
+| `fn_money_check_health`                   | `fe57453f27b0adec72fa6570a6b33091` | 2219  |
+| `fn_cash_pot_conservation_check`          | `0e3898647e1fb5b4bcac56077d06b3a5` | 5111  |
+| `fn_backpay_unfinalised_bounty_pools`     | `9e57c98a3c5234acf461bfa19d33c179` | 2768  |
+| `fn_payout_guarantee_check`               | `9d06324aa69260cdeb985d7111209674` | 11379 |
+
+---
+
+## 12. ASSET LEDGER
+
+**NO VISUAL ASSETS WERE CREATED, MODIFIED, UPLOADED, APPROVED OR REJECTED.**
+No images, icons, frames, headers, footers, logos or game-card references are
+involved. Nothing is in temporary storage. There is no asset at risk.
+
+---
+
+## 13. COMMANDS AND TOOLS USED
+
+All run from `/Users/smarter.poker/Documents/.agent-trees/club-arena/swarm-mtt-payouts`.
+
+**Node is not on the default PATH.** Every command must be prefixed:
+
+```bash
+export PATH="$HOME/.nvm/versions/node/$(ls ~/.nvm/versions/node | tail -1)/bin:$PATH"
+```
+
+| Command                                           | Purpose                 | Result                                 | Changes files | Rerun?                     |
+| ------------------------------------------------- | ----------------------- | -------------------------------------- | ------------- | -------------------------- |
+| `cd server && npx tsc --noEmit`                   | server type check       | clean                                  | no            | yes, before every push     |
+| `cd server && npx vitest run --reporter=dot`      | server suite (~25s)     | 3652 pass                              | no            | yes                        |
+| `npx tsc --noEmit`                                | client type check       | clean                                  | no            | yes                        |
+| `npx vitest run --reporter=dot`                   | client suite (~26s)     | 11460 pass                             | no            | yes                        |
+| `npx vitest run tests/law-registry.law.test.ts`   | law registry            | 78 pass                                | no            | after any law change       |
+| `node scripts/ci/check-definer-authorization.mjs` | definer gate            | OK                                     | no            | after any migration commit |
+| `git merge origin/main`                           | sync (**never rebase**) | conflicts on `docs/LAWS.md` every time | yes           | as needed                  |
+| `git push`                                        | push (hook runs ~3 min) | see §15                                | no            | yes                        |
+| `curl … /repos/…/pulls/2551`                      | PR state                | see §10                                | no            | once at end                |
+
+**Migrations** were applied with the Supabase MCP `apply_migration` tool, never
+raw `execute_sql` (CLAUDE.md requires migrations for auditability).
+
+**`gh` is NOT installed.** Use `curl` with `GITHUB_TOKEN` from
+`~/Documents/club-arena/.env`.
+
+**`setsid` does NOT exist on macOS.** Attempts to use it silently failed. Use
+`nohup … & disown`.
+
+---
+
+## 14. VERIFICATION AND TEST RESULTS
+
+| Verification                        | Method                                        | Result                                  | Phase | Follow-up                      |
+| ----------------------------------- | --------------------------------------------- | --------------------------------------- | ----- | ------------------------------ |
+| Server type check                   | `npx tsc --noEmit`                            | PASS                                    | 1,2,3 | —                              |
+| Client type check                   | `npx tsc --noEmit`                            | PASS                                    | 1,2,3 | —                              |
+| Server unit tests                   | `npx vitest run`                              | **3652 pass, 328 files**                | 3     | —                              |
+| Client unit tests                   | `npx vitest run`                              | **11460 pass, 836 files**               | 3     | —                              |
+| Law registry                        | vitest                                        | **78 assertions pass**                  | 3     | —                              |
+| Definer authorization gate          | `check-definer-authorization.mjs`             | OK                                      | 2,3   | only sees committed migrations |
+| Function body vs production         | md5 of `pg_proc.prosrc`                       | **all 7 match**                         | 1,2,3 | —                              |
+| Positive control (Phase 2)          | known-bad window                              | **464 / 81 / 2,530.80**                 | 2     | asserted inside the migration  |
+| Instrument control (Phase 2)        | matcher vs known-good seats                   | **11,626/11,626 = 100%**                | 2     | —                              |
+| Idempotency (satellite back-fill)   | rolled-back re-drive                          | **0 rows**                              | 2     | —                              |
+| Guard refusal (Phase 3)             | rolled-back probe, 7 columns                  | **all refuse 0A000**                    | 3     | asserted inside the migration  |
+| Guard non-interference              | clone of **every** stored column, rolled back | **inserts cleanly**                     | 3     | —                              |
+| Guard in production                 | live insert rate over 9.4h                    | **3,900 inserts, 3 via scheduled path** | 3     | —                              |
+| Negative control: multi-day pin     | mutate each branch                            | **all 7 discriminate**                  | 3     | —                              |
+| Negative control: try-block pin     | mutate GameServer                             | **fails as required**                   | 2     | —                              |
+| Negative control: stale-pointer pin | point at older migrations                     | **fails as required**                   | 3     | —                              |
+| Prose-only pin sweep                | script over both law files                    | 9/35 → **5/32**, remaining 5 deliberate | 3     | —                              |
+
+### NOT TESTED — the next agent must know this
+
+| Not tested                                                             | Why                                              | Risk                                                                             |
+| ---------------------------------------------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------- |
+| **The GameServer hourly pass has never executed**                      | engine has not restarted                         | HIGH — the wiring is unproven at runtime. All 7 heartbeats read `run_count = 0`. |
+| **`fn_award_satellite_seat`'s payout-record block has never executed** | no satellite seat awarded since 2026-08-31 19:29 | MEDIUM — the first real award will be its first run                              |
+| End-to-end / Playwright                                                | not run locally                                  | covered by CI on the PR                                                          |
+| Production build (`next build`)                                        | belongs to the World Hub repo                    | covered by CI                                                                    |
+| Migration rollback                                                     | **never executed**                               | MEDIUM — each migration has a written ROLLBACK section, none exercised           |
+| Visual / responsive / accessibility                                    | no UI work                                       | none                                                                             |
+
+---
+
+## 15. SETBACKS, FAILED APPROACHES, AND LESSONS
+
+**This is the most valuable section. Every item cost real time.**
+
+### 15.1 I nearly shipped a 6x-worse query rewrite on noise
+
+Wall-clock said the restructure took 11.4s → 833ms. I wrote it, and the
+migration's own budget assertion refused it twice (11,413ms, then 19,956ms with
+a different approach). Running A/B **in the same statement**:
+
+```
+722ms / 13,494ms   then   2,873ms / 1,968ms   then   691ms / 7,471ms
+```
+
+Interleaved, so neither ordering nor caching explains it. On **buffers**:
+restructure **539,362** vs original **90,202** — six times worse. **Discarded
+the whole rewrite; kept only the one clause that was demonstrably wrong.**
+
+**Lesson: on this database, never justify a change with wall clock. Use
+`EXPLAIN (ANALYZE, BUFFERS)`.**
+
+### 15.2 Never put a wall-clock assertion in a migration
+
+My first two attempts asserted "must complete in under 4000ms". Under load that
+fails randomly, and a flaky gate teaches everyone to re-run migrations until
+they pass. **Assert structure, not stopwatch.**
+
+### 15.3 The self-refusing assertion — three times
+
+Asserting a name is **absent** from a function body by matching the bare word
+fails, because the bare word also appears in the prose explaining the removal.
+
+- `'%30 days%'` matched my own comment → migration refused itself
+- `'%is_xmtt%'` matched my own comment → migration refused itself
+- The multi-day pin matched `is_multi_day` in the **error message**, so deleting
+  its branch left the pin **green** — the dangerous direction
+
+**Lesson: match the CODE form — `interval '30 days'`, `t.is_xmtt`,
+`v_field := 'is_multi_day';`.**
+
+### 15.4 The pin-staleness cascade (Phase 3 verification)
+
+1. A prose-only sweep found 9 of 35 positive assertions matched only comments.
+2. Repairing the exemption pin (labels must sit on the clause they name) made
+   `ASeatNobodyPaidFor.law.test.ts` **fail** — it was still reading
+   `20260902050552` while production ran `20260902052604`.
+3. **Every assertion in that file had been passing against a body production
+   had stopped running** — the exact failure the file's own header warns about,
+   in a note I wrote hours earlier and did not follow.
+4. Correcting the pointer surfaced a **third** staleness: the day-2 pin still
+   matched the pre-Phase-3 inline shape.
+
+**Fix: a note asking a human to remember is not a guard.** There is now a pin
+that scans the migrations directory, takes the newest file defining the
+function, and fails if it is not the one the pins read.
+
+### 15.5 A contaminated guard probe that passed for the wrong reason
+
+I first probed `trg_tournaments_refuse_unbuilt_multi_day` against a COMPLETED
+tournament. The **lifecycle lock** ("cannot be modified after a player has
+registered") refused the write first, and a guard that had never been exercised
+looked like it was working. **Only a row with no registrants can test it.**
+
+### 15.6 Prettier turned a plus into a minus in a money sentence
+
+A wrapped changelog line began `+ 133 rebuys`; markdown read it as a bullet and
+Prettier normalised it to `- 133 rebuys`. **In a sentence about money.** Write
+arithmetic in words in prose, or keep operators off line starts.
+
+### 15.7 A false 123,638.57-chip alarm
+
+Bounties credit under category `'bounty'`, not `'prize'`. The real figure was
+76.70. **Always enumerate the categories before summing.**
+
+### 15.8 A false 22,981-seat alarm
+
+Reached back past 2026-08-19 where the logger did not exist. See §6.2.
+
+### 15.9 Shell/tooling traps on this Mac
+
+| Trap                                                         | Symptom                                                                                | Workaround                                                                                    |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `setsid` does not exist on macOS                             | detached jobs silently die                                                             | `nohup … & disown`                                                                            |
+| A timed-out `host_terminal` call **kills the process group** | pre-push hook's test runner dies mid-flight; left **10 orphaned `git push` processes** | launch detached, then poll with **instant** commands only — never `sleep` in the polling call |
+| Pre-push hook takes ~3 minutes                               | exceeds the call timeout                                                               | launch detached, poll                                                                         |
+| `gh` not installed                                           | —                                                                                      | `curl` + token from `~/Documents/club-arena/.env`                                             |
+| `hstore` extension not installed                             | a clone probe failed                                                                   | use a dynamic column list from `information_schema`                                           |
+
+### 15.10 `docs/LAWS.md` conflicts on every merge — 3 for 3
+
+Both sides append rows to the same table. **Resolution recipe that worked all
+three times:** take the **union keyed on the law file path**, after checking
+that no law appears on both sides with a _different_ description (that would be
+two laws demanding opposite things — STOP and ask Dan; zero occurred).
+
+I also found **main was red**: `spinRepairsCanFinish.law.test.ts` existed with
+no registry row. Fixed under fix-first, since you cannot ship past it anyway.
+
+### 15.11 An unsubstantiated claim I made and had to retract
+
+The Phase 1 changelog said a probe row "was then deleted." **I never ran that
+delete.** I wrote intent as observation. Corrected in the file.
+
+The Phase 0 changelog claimed alert noise cut "244 → 1 and 18 → 2". That
+measured rows I had **resolved**, not a condition I had **stopped** — the fix
+is engine-side and has not shipped, so it re-accumulated to 112. A correction
+block was added to that changelog.
+
+---
+
+## 16. KNOWN DEFECTS AND ARCHITECTURAL HOLES
+
+| Priority | Defect / hole                                                      | Evidence                                                              | Impact                                                                        | Recommended fix                                                                | Status                                                                                           |
+| -------- | ------------------------------------------------------------------ | --------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| **P0**   | **Engine has not restarted onto any of this code**                 | all 7 heartbeats `run_count = 0`                                      | no money check is running automatically; no dedupe; no auto back-pay          | merge PR #2551; engine deploys on merge touching `server/**`; restarts 7am/7pm | OPEN — awaiting merge                                                                            |
+| **P1**   | `atomic_tournament_register` moves money with **zero** ledger rows | function body                                                         | a seat it creates is unauditable; would false-positive in the Phase 2 check   | retire it — **belongs to the `fn_union_law_check` workstream**                 | OPEN, documented in the check's alert                                                            |
+| **P1**   | **Nothing guards default grants on NEW TABLES**                    | `money_check_heartbeat` shipped with `anon`/`authenticated` `arwdxtm` | any new table is browser-writable the moment a permissive RLS policy is added | extend `check-definer-authorization` to tables, or add a sibling gate          | OPEN — **recommend raising with Dan**                                                            |
+| **P2**   | 64 stale `earner_not_paid` alert rows                              | check now reports **0**; 64 open rows remain from the 05:13 run       | alert-board noise; could mislead the next reader                              | resolve the 64 rows, or let the engine's next pass supersede them              | OPEN — **no money is missing**, proved: 2,300.00 pooled vs 2,300.01 credited, 0 events underpaid |
+| **P2**   | `FeeReconciler` alerts unkeyed and accumulating (112 + 30 open)    | 0 of them carry `dedupe_key`                                          | alert-board noise                                                             | same as P0 — one deploy                                                        | OPEN                                                                                             |
+| **P2**   | Migration rollbacks never exercised                                | no rollback run                                                       | a bad rollback is discovered during an incident                               | rehearse one in a rolled-back transaction                                      | OPEN                                                                                             |
+| **P3**   | `docs/LAWS.md` conflicts on every merge                            | 3 for 3                                                               | merge friction for every agent                                                | consider one row per file per line with a stable sort, or split the table      | OPEN                                                                                             |
+| **P3**   | 5 prose-only law pins remain                                       | sweep script                                                          | they cannot fail on a code change                                             | acceptable — they hold immutable migration text to its recorded form           | ACCEPTED                                                                                         |
+| **P3**   | `rake_records` has no index on `source`                            | EXPLAIN                                                               | any `source`-filtered scan is expensive                                       | consider a partial index if Phase 4+ needs it                                  | OPEN                                                                                             |
+
+### Money questions that are OPEN and are Dan's to decide
+
+| Item                      | Amount                        | State                                                                                                                                                     |
+| ------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Rakeback owed to players  | **281,108.01 chips**, 3 clubs | cause fixed in PR #1084; cron next fires Mon 2026-09-07; 75,802.74 fundable now, 205,305.27 needs funding. **Awaiting Dan's word to trigger settlement.** |
+| Overpaid duplicate places | 19,665.23 chips, 65 events    | **Dan ruled no clawback**; the hosting club absorbs. Closed.                                                                                              |
+| Spin/SNG chip drift       | issue #2406                   | 691/691 recorded champions won their final hand, so no wrong winners. Open, low priority.                                                                 |
+
+---
+
+## 17. SECURITY, SECRETS, AND CREDENTIALS
+
+**No secret values appear in this document, in any committed file, or in any
+command output recorded here.**
+
+| Name                                      | Where configured              | Used by                 | Available?              |
+| ----------------------------------------- | ----------------------------- | ----------------------- | ----------------------- |
+| `GITHUB_TOKEN`                            | `~/Documents/club-arena/.env` | PR API calls via `curl` | YES — confirmed working |
+| `SENTRY_AUTH_TOKEN` / `_ORG` / `_PROJECT` | `~/Documents/club-arena/.env` | Club Arena build        | UNVERIFIED this session |
+| `SUPABASE_SERVICE_ROLE_KEY`               | Hetzner engine env            | engine (bypasses RLS)   | not touched             |
+| `CRON_SECRET`                             | Open Claw dispatcher + Vercel | cron auth               | not touched             |
+| Supabase access                           | via the Supabase MCP tool     | migrations + queries    | YES — confirmed working |
+
+**No credential was exposed.** Pushes use SSH (`git@github.com`); no token
+appears in any remote URL. `AGENT-PLAYBOOK.md` documents where every credential
+lives (the place, never the value).
+
+Secret scanning runs in the push path and blocks the two GitHub personal-access
+token prefixes. (Those literal prefixes are deliberately not written out here:
+the scanner matches on file content, so quoting them in a document would block
+the document's own push.)
+
+---
+
+## 18. DATABASE, MIGRATION, AND SEED STATUS
+
+**Provider:** Supabase PostgreSQL, project ref `kuklfnapbkmacvwxktbh`.
+**There is no separate local database. All work was against PRODUCTION.**
+
+### Migrations applied by this work — all CONFIRMED recorded
+
+| Version          | Name                                                         | Applied |
+| ---------------- | ------------------------------------------------------------ | ------- |
+| `20260902012048` | `a_check_that_never_runs_looks_like_a_check_finding_nothing` | yes     |
+| `20260902013940` | `the_heartbeat_table_is_service_role_only`                   | yes     |
+| `20260902041336` | `a_seat_nobody_paid_for`                                     | yes     |
+| `20260902050552` | `the_awards_lookback_was_a_month_and_needed_six_hours`       | yes     |
+| `20260902052302` | `a_half_guarded_feature_is_a_feature_that_can_be_half_built` | yes     |
+| `20260902052604` | `is_xmtt_means_union_event_not_multi_day`                    | yes     |
+
+(Four more from earlier in the workstream: `20260901192531`, `20260901193047`,
+`20260901194756`, `20260901195005`.)
+
+**Every repo migration filename matches its recorded version.** This was a
+Phase 1 defect that was fixed; keep it true.
+
+### Objects created
+
+- **Table `money_check_heartbeat`** — columns `check_name` (PK),
+  `expected_interval_minutes`, `last_run_at`, `last_result` (jsonb),
+  `run_count`, `registered_at`, `note`. RLS **enabled, no policies**. Grants:
+  `postgres` + `service_role` only. **Seeded with 7 rows** (the expected check
+  set) — the seeding is the point; a check with no row reads as nothing rather
+  than as missing.
+- **Index `idx_tournament_players_registered_at`** on
+  `tournament_players(registered_at)`.
+- **Functions:** `fn_record_money_check_run`, `fn_money_check_health`,
+  `fn_uncollected_entry_check`. All `SECURITY DEFINER`,
+  `SET search_path TO 'public','pg_temp'`, **revoked from PUBLIC/anon/
+  authenticated**, granted to `service_role` only.
+- **Trigger `trg_tournaments_refuse_unbuilt_multi_day`** — rewritten to
+  `BEFORE INSERT OR UPDATE OF` **all seven** multi-day columns.
+
+### Data written (the only rows this work inserted)
+
+**23 rows into `tournament_payouts`**, `source='satellite_seat'`,
+`recorded_by='phase2_backfill'`, total **4,600.00 chips**. Every field
+reconstructed from the `rake_records` row `fn_award_satellite_seat` itself
+wrote. Keyed `tourney:{satellite_id}:seat:{user_id}` — the same key the live
+function uses, so a re-drive writes nothing (**proved: 0 rows, rolled back**).
+
+**No chips were moved to or from any wallet by this work.**
+
+### Rollback
+
+Every migration carries a written `ROLLBACK` section. **None has been
+executed.** UNVERIFIED.
+
+### Seeds
+
+`money_check_heartbeat` seeding uses `ON CONFLICT (check_name) DO UPDATE` —
+**idempotent**. CONFIRMED.
+
+### Production-data risk
+
+All work was on production. The DDL policy (one transaction per change; no DDL
+probes; batch related migrations) was followed. Two migrations were refused by
+their own assertions and re-applied — each refusal was a **failed apply that
+changed nothing**, not a partial state.
+
+---
+
+## 19. CURRENT BLOCKERS AND DECISION POINTS
+
+### Blocker 1 — PR #2551 is not merged (TECHNICAL, resolves itself)
+
+- **Blocked:** every runtime behaviour in this workstream.
+- **Evidence:** `mergeable_state=blocked`, all heartbeats `run_count = 0`.
+- **Options:** (a) let autopilot merge it — **recommended**, it is the
+  documented flow; (b) merge by hand once checks are green.
+- **Do NOT** sit and watch CI (CLAUDE.md 10.8.3).
+
+### Blocker 2 — rakeback settlement (REQUIRES DAN'S AUTHORITY)
+
+- **281,108.01 chips owed to players across 3 clubs.** 75,802.74 fundable now;
+  205,305.27 needs funding.
+- Cause fixed in PR #1084; the cron next fires **Monday 2026-09-07**.
+- **This is money owed to real players and it is the largest open item in the
+  entire audit.** It is a funding decision, not a technical one.
+
+### Decision point 3 — the new-table grant hole (RECOMMEND RAISING)
+
+Nothing guards default grants on new tables. Options: extend
+`check-definer-authorization`; add a sibling gate; or accept and document.
+**Recommend putting it to Dan** — it is a security posture decision.
+
+### Decision point 4 — the 64 stale alert rows (LOW, AGENT MAY DECIDE)
+
+The check reports 0; the rows are from a superseded run. Safe to resolve them
+with a note. **No money is missing** — proved. Do not pay against them; paying
+would double-pay 836.79 chips.
+
+---
+
+## 20. REMAINING WORK
+
+### CRITICAL
+
+1. **Merge PR #2551** so the engine picks up the money-check wiring.
+2. **Rakeback settlement** — Dan's decision, 281,108.01 chips.
+
+### HIGH PRIORITY
+
+3. **Phase 4 of 6 — re-entries and add-ons reach the prize pool.**
+   Population CONFIRMED over the last 14 days:
+
+   | Category           | Rows    | Chips        |
+   | ------------------ | ------- | ------------ |
+   | `tournament_buyin` | 175,173 | 3,827,567.60 |
+   | `rebuy`            | 12,888  | 71,776.70    |
+   | `addon`            | 8,022   | 50,810.00    |
+
+   Core question: does `prize_pool + total_rake` reconcile per event against
+   entries + rebuys + add-ons + satellite seats? A worked precedent exists —
+   Sunday $200 Deep Stack: `44,640 + 4,960 = 49,600 = 248 x 200`, and
+   `248 = 92 registrations + 23 satellite seats + 133 rebuys`. Exact.
+
+4. **Phase 5 of 6 — mystery bounty chests, draw by draw.**
+5. **Phase 6 of 6 — exact-cent allocation** replacing the 0.05 tolerance in
+   `earner_not_paid`.
+
+### MEDIUM
+
+6. Retire or ledger-ise `atomic_tournament_register` (other workstream).
+7. Close the new-table grant hole.
+8. Rehearse one migration rollback.
+9. Resolve the 64 stale alert rows.
+
+### LOW / OPTIONAL
+
+10. Reduce `docs/LAWS.md` merge friction.
+11. Consider a partial index on `rake_records(source)`.
+12. Spin/SNG chip drift (issue #2406).
+
+---
+
+## 21. PRIORITIZED NEXT-PHASE EXECUTION PLAN
+
+### Phase 0 — Recover and verify current state (do this first, ~5 min)
+
+- **Objective:** confirm nothing drifted since this handoff.
+- **Steps:** §22 checklist.
+- **Completion:** clean tree, `local == remote`, both suites green.
+- **Risk:** another agent merged to main; `docs/LAWS.md` will conflict.
+
+### Phase 1 — Protect completed work
+
+- Do **not** revert, "tidy", or re-fix anything in §7. Each item has a law test
+  and a changelog entry.
+- Do **not** re-fix the horse-seeding leak (already fixed 2026-08-19).
+- Do **not** "fix" the stale heartbeats or unkeyed alerts — one pending deploy.
+- Do **not** touch other agents' worktrees.
+
+### Phase 2 — Merge and confirm the deploy
+
+- Confirm PR #2551 merges. After the engine restarts (7am/7pm), verify
+  `money_check_heartbeat.run_count > 0` for all seven.
+- **This is the single highest-value action available.**
+
+### Phase 3 — Phase 4 of 6 diagnosis
+
+- **Inspect:** `process_tournament_rebuy`, the add-on path, `fn_tournament_entry_split`,
+  `tournaments.prize_pool` / `total_rake` / `bounty_pool`.
+- **Reconcile per event:** `prize_pool + total_rake` vs the sum of every entry,
+  rebuy, add-on and satellite seat.
+- **Mandatory:** run a **positive control** against a known-bad window before
+  believing any zero.
+- **Completion:** the population is explained, or a defect is proven with
+  evidence.
+
+### Phase 4 — Fix the cause, if there is one
+
+- Fix at source. Do not re-fix something already fixed.
+- Probe money paths **inside a rolled-back transaction** (CLAUDE.md 11.5).
+
+### Phase 5 — Ship the detector
+
+- Registered in `money_check_heartbeat`, stamped by `GameServer` in its **own**
+  `try` block **before** the health read, deduped alert, **moves no money**,
+  bounded window, structure assertions (**never wall-clock**), positive control
+  inside the migration.
+
+### Phase 6 — Law test + registry
+
+- Pins must read the **live** migration, and include a **stale-pointer guard**
+  like the one in `ASeatNobodyPaidFor.law.test.ts`.
+- **Negative-control every new pin.**
+- Add the row to `docs/LAWS.md` in the same commit.
+
+### Phase 7 — Verify and document
+
+- md5 the function body against `pg_proc.prosrc`.
+- Both suites + both tsc + definer gate.
+- Changelog in `docs/changelog/YYYY-MM-DD-<slug>.md`, recording **observed**
+  results, including anything that went wrong.
+
+### Phase 8 — Commit, push, report
+
+- Correct author. Never `--no-verify`. Push detached, poll with instant
+  commands. Report the PR number and **stop**.
+
+---
+
+## 22. EXACT FIRST ACTIONS FOR THE NEXT AGENT
+
+```bash
+# 1. Enter the worktree
+cd /Users/smarter.poker/Documents/.agent-trees/club-arena/swarm-mtt-payouts
+
+# 2. Node is NOT on the default PATH — do this in every shell
+export PATH="$HOME/.nvm/versions/node/$(ls ~/.nvm/versions/node | tail -1)/bin:$PATH"
+
+# 3. Confirm state
+git status --short --branch
+git rev-parse --abbrev-ref HEAD          # expect agent/swarm-mtt-payouts/phase7-no-result-without-a-hand
+git log --oneline -3                      # expect dd852fb83 at the tip
+git ls-remote origin agent/swarm-mtt-payouts/phase7-no-result-without-a-hand | cut -c1-9
+```
+
+4. **Read, in this order:** `AGENT-PLAYBOOK.md`, `CLAUDE.md`, `docs/LAWS.md`,
+   this file, then `docs/changelog/2026-09-02-phase-3-multi-day-does-not-exist.md`.
+
+5. **Check PR #2551:**
+
+```bash
+TOKEN=$(grep -m1 '^GITHUB_TOKEN=' ~/Documents/club-arena/.env | cut -d= -f2- | tr -d '"'\'' ')
+curl -s -H "Authorization: Bearer $TOKEN" \
+  "https://api.github.com/repos/Smarter-Poker/Smarter-Poker-Club-Arena/pulls/2551" \
+  | python3 -c "import json,sys;p=json.load(sys.stdin);print(p['state'],p.get('mergeable_state'),p.get('commits'))"
+```
+
+6. **Confirm the engine deploy state** (the P0 blocker) — via the Supabase MCP:
+
+```sql
+SELECT check_name, run_count, last_run_at FROM money_check_heartbeat ORDER BY check_name;
+-- run_count 0 across all seven = the engine still has not restarted onto this code
+```
+
+7. **Do NOT modify:** anything listed in §11 without reading its law test and
+   changelog; any other worktree; the schema manifests.
+
+8. **Resume at:** Phase 4 of 6 — re-entries and add-ons reaching the prize pool
+   (§20 item 3, §21 Phase 3).
+
+---
+
+## 23. ACCEPTANCE CRITERIA
+
+### For Phase 4 (the next unit of work)
+
+- [ ] The rebuy/add-on population is fully explained against production data.
+- [ ] Any discrepancy is proven with a positive control, not merely observed.
+- [ ] If a cause exists it is fixed at source, or explicitly deferred with an owner.
+- [ ] A detector exists, is registered in `money_check_heartbeat`, is stamped by
+      `GameServer` in its own `try` block before the health read, moves no money,
+      and files one deduped alert.
+- [ ] A law test exists, reads the **live** migration, has a stale-pointer
+      guard, and every new pin is negative-controlled.
+- [ ] The law is registered in `docs/LAWS.md` in the same commit.
+- [ ] Function body md5 matches `pg_proc.prosrc`.
+- [ ] Server and client suites and both `tsc` are green.
+- [ ] `check-definer-authorization` passes.
+- [ ] A changelog records **observed** results, including failures.
+- [ ] Committed with the correct author, pushed, PR number reported.
+
+### For the overall audit
+
+- [ ] Every player who earned a payout has been paid, provably, across MTT,
+      Spin and Heads-Up.
+- [ ] Every money check runs on a timer and proves it ran.
+- [ ] Every detector moves no money and is separate from every back-pay.
+- [ ] No `is_horse` exclusion anywhere except identification and the horse's
+      input device.
+- [ ] Every claim in every changelog is an observation, not an intention.
+- [ ] The rakeback decision is made and executed.
+
+---
+
+## 24. RECOMMENDED COMMIT STRATEGY
+
+| #   | Message                                                                      | Files                                                                   | Tests required first                           |
+| --- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------- |
+| 1   | `docs(handoff): continuation state for the MTT payout audit at Phase 4 of 6` | `docs/HANDOFF_CURRENT_STATE.md`                                         | law registry (a new doc adds no law)           |
+| 2   | `feat(money): <phase 4 finding stated as a fact>`                            | the phase-4 migration + `GameServer.ts` + the law test + `docs/LAWS.md` | server + client suites, both tsc, definer gate |
+| 3   | `docs(changelog): phase 4 of 6 - <slug>`                                     | `docs/changelog/2026-09-0X-*.md`                                        | none                                           |
+| 4   | `fix(...): <whatever the verification pass finds>`                           | as needed                                                               | full re-run                                    |
+
+**Never mix a migration with an unrelated fix.** **Never commit a red test.**
+
+---
+
+## 25. FINAL CONTINUATION SUMMARY
+
+**Exact stopping point:** Phases 1, 2 and 3 of the six-phase MTT payout audit
+are complete, verified against production, committed and pushed. Branch
+`agent/swarm-mtt-payouts/phase7-no-result-without-a-hand` at **`dd852fb83`**,
+clean, in sync with its remote, PR **#2551** open with 33 commits and
+`mergeable=true`. Phase 4 has not been started.
+
+**Work on first:** confirm PR #2551 lands (it is the P0 blocker — nothing this
+workstream built is _running_ until the engine restarts onto it), then begin
+Phase 4 by reconciling `prize_pool + total_rake` per event against entries,
+rebuys, add-ons and satellite seats.
+
+**Most important locked requirements:** players always get paid; horses are
+players in every respect; no clawback from players; never spend real chips to
+test a rule; never push a red test; never rebase main; never `--no-verify`;
+commits authored `Smarter-Poker <254329056+…>`.
+
+**Greatest technical risk:** the entire hourly money-check pass has **never
+executed**. All seven heartbeats read `run_count = 0`. The wiring is verified by
+tests and source-order assertions but is **unproven at runtime**. The first
+restart after the merge is the moment to watch.
+
+**Greatest visual risk:** none. No UI work exists in this workstream.
+
+**Greatest data-integrity risk:** `atomic_tournament_register` can still move
+money with no ledger row of any kind. It is dead code today, on another
+workstream's watch list, and named as a blind spot inside the Phase 2 check's
+own alert — but it remains callable by `service_role`.
+
+**Decisions that still require Dan:** the **281,108.01 chips** of player
+rakeback (funding decision, cron fires Monday 2026-09-07), and whether to close
+the new-table default-grant hole.
+
+**How to continue without restarting discovery:** everything learned is in
+§6 (discovery), §15 (failed approaches and lessons) and §16 (defects). The
+method that works on this codebase is in §2 under "the methodological standard":
+verify the instrument before believing the reading, distinguish what you did
+from what should happen, use buffers rather than wall clock, match code forms
+rather than bare words in assertions, and negative-control every pin. Read
+§22, run those commands, and pick up at Phase 4. Nothing in §7 needs to be
+redone, and re-doing any of it risks reintroducing a bug that is already closed.

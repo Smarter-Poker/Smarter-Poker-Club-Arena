@@ -17,6 +17,24 @@ it.
 
 ---
 
+## ↗ IF YOU ARE PICKING UP THE MTT PAYOUT AUDIT: `docs/HANDOFF_CURRENT_STATE.md`
+
+A six-phase audit of tournament payouts is in progress on the branch
+`agent/swarm-mtt-payouts/phase7-no-result-without-a-hand` (PR #2551).
+**Phases 1-3 are complete, verified and pushed. Phase 4 of 6 is next.**
+
+[`docs/HANDOFF_CURRENT_STATE.md`](./docs/HANDOFF_CURRENT_STATE.md) is the
+continuation document: what was discovered, what shipped, what is still
+running against production, every failed approach worth not repeating, and an
+executable first-actions checklist.
+
+**The one thing to know before touching any of it:** the engine has not
+restarted onto that work, so all seven rows in `money_check_heartbeat` read
+`run_count = 0`. That is a pending deploy, not a bug. Do not "fix" the stale
+heartbeats or the unkeyed alerts.
+
+---
+
 ALL agents (Claude, AntiGravity, Cowork, any AI) MUST read this file at session start.
 This is the single source of truth for **this repo**. Updated 2026-04-28.
 

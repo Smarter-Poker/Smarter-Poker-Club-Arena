@@ -63,6 +63,27 @@ id; the two BBJ conditions carry a stable key each. The backlog is resolved
 where it only repeated: **244 → 1** and **18 → 2**, open alerts platform-wide
 **~723 → 464**.
 
+> **CORRECTION, 2026-09-02, written while verifying Phase 2 — the paragraph
+> above measured a backlog I had just resolved, not a condition I had stopped.**
+> The dedupe key is passed from the ENGINE, and the engine has not restarted
+> onto this code (it restarts on the 7am/7pm window; PR #2551 is still open).
+> So the noise came straight back: `FeeReconciler.bbj_unlinkable` is at **102
+> open rows for ONE subject** again, `bbj_drift` at 30, `prize_disbursement` at
+> 11, and open alerts platform-wide are back to **648**.
+>
+> The mechanism itself is proven, and the evidence is a clean natural
+> experiment. `fn_money_check_health` raises its alerts from INSIDE the
+> database, so it already passes the key: **7 open rows, 7 distinct keys, 7
+> carrying a key.** Every engine-driven source: **0 carrying a key.** Same
+> function, same database, different caller — the only difference is which
+> code is running.
+>
+> Nothing here needs fixing. What needed fixing was the sentence, which said
+> "the backlog is resolved" in a tone that reads as "the condition is over".
+> Resolving rows is housekeeping; the condition ends when the engine restarts.
+> The money-check heartbeat shipped the next day exists precisely so this
+> distinction is visible without anybody having to notice it by hand.
+
 `fn_close_settlement_period` is NOT fixed at source and this says so rather than
 pretending. It INSERTs into `financial_alerts` directly instead of going through
 the RPC, so it does not pick up the key, and it is a treasury function in another

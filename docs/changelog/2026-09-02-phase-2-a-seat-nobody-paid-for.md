@@ -149,8 +149,34 @@ read. The index is worth keeping — it is the term that grows with the roster �
 but it is not what makes this check fast, and whoever next hunts a slow run
 here should look at `wallet_transactions` first.
 
-22 new pins in `ASeatNobodyPaidFor.law.test.ts`, registered in `docs/LAWS.md`
-(registry now 69 assertions).
+22 new pins in `ASeatNobodyPaidFor.law.test.ts`, registered in `docs/LAWS.md`.
+Post-merge with `origin/main`: server **3623/3623**, client **11407/11407**,
+both `tsc --noEmit` clean, `check-definer-authorization` OK on the committed
+migration, law registry **74 assertions**.
+
+A re-drive of the back-fill was proved harmless the way section 11.5 requires,
+inside a transaction that was rolled back: the identical INSERT writes **0
+rows**. And no satellite seat has been awarded since the record block landed
+(0 awards after 2026-08-31 19:29), so the live path is still unproven by
+execution — the first real award will be its first run.
+
+## Two things found on the way that are not this phase's work
+
+**Main was red on `tests/law-registry.law.test.ts`.**
+`server/src/services/spinRepairsCanFinish.law.test.ts` is on `main` with no row
+in the registry, which is exactly what that test exists to refuse. Fixed here
+rather than routed around, per fix-first: you cannot ship past a red main
+anyway. The row is described from the law's own header, not guessed at.
+
+**The alert-noise fix from the previous phase has not shipped, and the record
+said otherwise.** `2026-09-01-the-last-unwatched-money.md` reported the backlog
+cut to 244 -> 1 and 18 -> 2. That measured rows I had just resolved, not a
+condition I had stopped: the dedupe key is passed from the ENGINE, which has
+not restarted onto that code, so `FeeReconciler.bbj_unlinkable` is back to 102
+open rows for a single subject. A correction is now written into that file. The
+evidence is a clean natural experiment — `fn_money_check_health` raises from
+inside the database and its 7 open alerts carry 7 distinct keys; every
+engine-driven source carries none.
 
 ## What this phase did NOT do, and why
 

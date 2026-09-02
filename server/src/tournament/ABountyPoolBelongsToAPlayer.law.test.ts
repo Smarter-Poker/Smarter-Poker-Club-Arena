@@ -79,8 +79,21 @@ describe('the back-pay never picks a recipient', () => {
     expect(migration).not.toContain('fn_credit_and_log');
   });
 
-  it('it skips an event that is already square', () => {
-    expect(migration).toContain('CONTINUE WHEN r.wallet_bounty + 0.01 >= r.pool;');
+  it('the limit caps the work, not how far back it can look', () => {
+    // The first version scanned `ORDER BY ended_at DESC LIMIT 200` and tested
+    // "is it unpaid" AFTER the limit. With thousands of bounty events that
+    // means an old debt can be pushed permanently out of reach by newer events
+    // completing - the identical head-of-line defect this audit had just
+    // documented in fn_pay_backed_payout_shortfalls, reintroduced two hours
+    // later. Another agent caught it in production the same day.
+    expect(migration).toContain('WHERE wallet_bounty + 0.01 < pool');
+    expect(migration).toContain('ORDER BY ended_at ASC NULLS LAST');
+    // And the filter must sit INSIDE the scan, before the limit, or the order
+    // alone buys nothing.
+    const filterAt = migration.indexOf('WHERE wallet_bounty + 0.01 < pool');
+    const limitAt = migration.indexOf('LIMIT GREATEST(p_limit, 1)');
+    expect(filterAt).toBeGreaterThan(-1);
+    expect(limitAt).toBeGreaterThan(filterAt);
   });
 
   it('it is dry-runnable and closed to browser roles', () => {

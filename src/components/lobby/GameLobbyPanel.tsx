@@ -1044,7 +1044,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                 className="glp__deletebtn"
                 onClick={() => onDeleteTable(entry.id)}
               >
-                Delete Table
+                Close Table
               </button>
             )}
             {/**

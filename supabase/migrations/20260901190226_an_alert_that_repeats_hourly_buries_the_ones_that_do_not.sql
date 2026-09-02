@@ -1,40 +1,7 @@
--- ═══════════════════════════════════════════════════════════════════════════
---  AN ALERT THAT REPEATS HOURLY BURIES THE ONES THAT DO NOT (2026-09-01)
--- ═══════════════════════════════════════════════════════════════════════════
---
--- fn_raise_server_financial_alert inserts unconditionally. Every hourly check
--- that finds the same unfixed thing therefore files it again, and the alert
--- table stops being a list of problems and becomes a list of minutes.
---
--- Measured on the open (unresolved) set, 2026-09-01:
---
---   source                                    open rows   subjects   repeats
---   fn_close_settlement_period                      244          1     244.0
---   FeeReconciler.prize_disbursement                 18          2       9.0
---   drift_incident:fn_ca_money_rpc_drift             10          1      10.0
---   drift_incident:fn_ca_guard_defs_watch             8          1       8.0
---   drift_incident:atomic_credit_wallet_and_log      38         10       3.8
---   FeeReconciler.bbj_unlinkable                     94         33       2.8
---
--- Two of those sources account for more open rows than every genuinely
--- distinct finding on the platform put together, and a critical that matters
--- is one line among them.
---
--- THE FIX IS ONE OPTIONAL PARAMETER. p_dedupe_key: when an UNRESOLVED alert
--- from the same source already carries that key, return ITS id and insert
--- nothing. The caller's contract is unchanged - a uuid still means "durably
--- recorded", which is true, because it is. Callers that pass nothing behave
--- exactly as they do today, so this cannot break anything that already works.
---
--- WHY NOT RETURN NULL FOR A DUPLICATE. NULL is the throttle signal, and the
--- server wrapper escalates a throttled CRITICAL to Sentry on the grounds that
--- it was never recorded. A deduped alert WAS recorded. Returning NULL would
--- move the noise from one system to another rather than removing it.
---
--- ROLLBACK
---   Restore the four-argument body from the migration that introduced it; the
---   new five-argument form can be dropped with
---   DROP FUNCTION IF EXISTS public.fn_raise_server_financial_alert(text,text,text,jsonb,text);
+-- BACKFILLED 2026-09-01 from supabase_migrations.schema_migrations.statements.
+-- Applied to production 20260901190226; the .sql file was never committed at the
+-- time (see docs/changelog and issue: unrecorded-migration backfill). Content is
+-- byte-exact to what ran. Do NOT re-apply; it is already live.
 
 CREATE OR REPLACE FUNCTION public.fn_raise_server_financial_alert(
   p_severity text,
@@ -111,10 +78,6 @@ REVOKE ALL ON FUNCTION public.fn_raise_server_financial_alert(text, text, text, 
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_raise_server_financial_alert(text, text, text, jsonb, text) TO service_role;
 
-/* The four-argument overload is dropped so no caller can silently keep the
-   old behaviour by arity. Every existing call site passes four arguments or
-   fewer BY NAME through PostgREST, which resolves to the new function because
-   p_dedupe_key has a default. */
 DROP FUNCTION IF EXISTS public.fn_raise_server_financial_alert(text, text, text, jsonb);
 
 DO $$

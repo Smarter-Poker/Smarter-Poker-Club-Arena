@@ -55,6 +55,7 @@ import { shouldShowClubFooter } from './components/club/clubFooterVisibility';
 // Auth Guards
 import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
 import ClubMemberGuard from './components/auth/ClubMemberGuard';
+import GameCreationGuard from './components/auth/GameCreationGuard';
 import TOSGuard from './components/legal/TOSGuard';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 
@@ -69,6 +70,7 @@ const ClubDataPage = lazyWithRetry(() => import('./pages/club/ClubDataPage'));
 const ClubOperationsPage = lazyWithRetry(() => import('./pages/club/ClubOperationsPage'));
 const CreateTablePage = lazyWithRetry(() => import('./pages/CreateTablePage'));
 const TableConfigPage = lazyWithRetry(() => import('./pages/TableConfigPage'));
+const GameManagementPage = lazyWithRetry(() => import('./pages/GameManagementPage'));
 const AgentManagementPage = lazyWithRetry(() => import('./pages/AgentManagementPage'));
 const TournamentPage = lazyWithRetry(() => import('./pages/TournamentPage'));
 const TournamentDetails = lazyWithRetry(() => import('./pages/tournament/TournamentDetails'));
@@ -705,9 +707,21 @@ function FullApp() {
                   path="clubs/:clubId/create-table"
                   element={
                     <AuthGuard>
-                      <ClubMemberGuard>
+                      <GameCreationGuard>
                         <PageErrorBoundary pageName="Create Table">
                           <CreateTablePage />
+                        </PageErrorBoundary>
+                      </GameCreationGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/table-management"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Table Management">
+                          <GameManagementPage scope="club" />
                         </PageErrorBoundary>
                       </ClubMemberGuard>
                     </AuthGuard>
@@ -717,11 +731,11 @@ function FullApp() {
                   path="clubs/:clubId/create-table/:gameType"
                   element={
                     <AuthGuard>
-                      <ClubMemberGuard>
+                      <GameCreationGuard>
                         <PageErrorBoundary pageName="Table Config">
                           <TableConfigPage />
                         </PageErrorBoundary>
-                      </ClubMemberGuard>
+                      </GameCreationGuard>
                     </AuthGuard>
                   }
                 />
@@ -921,6 +935,16 @@ function FullApp() {
                     <AuthGuard>
                       <PageErrorBoundary pageName="Union Operations">
                         <UnionDashboardPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="unions/:unionId/table-management"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Union Table Management">
+                        <GameManagementPage scope="union" />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }

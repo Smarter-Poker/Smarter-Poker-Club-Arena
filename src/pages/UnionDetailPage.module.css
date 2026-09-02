@@ -116,7 +116,25 @@
 }
 
 .headerActions {
+  display: grid;
+  gap: 9px;
+  justify-items: end;
   flex-shrink: 0;
+}
+
+.managementButton {
+  padding: 10px 16px;
+  border: 1px solid #45b8f4;
+  border-radius: 5px;
+  color: #eefaff;
+  background: linear-gradient(180deg, #155278, #082234);
+  font:
+    800 12px/1 Rajdhani,
+    Inter,
+    sans-serif;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  text-transform: uppercase;
 }
 
 .applyButton {

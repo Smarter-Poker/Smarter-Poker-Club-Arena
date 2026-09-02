@@ -7,8 +7,8 @@
 -- money: a bounty event funds a SECOND pool out of the same buy-in, and nothing
 -- asked whether that one was paid out.
 --
--- It is not. 38 completed bounty events hold 1,931.24 chips of bounty pool that
--- never reached a player, and it is still happening daily - two events on
+-- It is not. 38 completed bounty events held 1,931.24 chips of bounty pool that
+-- never reached a player, and it was still happening daily - two events on
 -- 2026-09-01, three on 2026-08-31.
 --
 -- ── WHOSE MONEY IT IS, AND WHY IT STAYED ─────────────────────────────────
@@ -22,7 +22,7 @@
 -- NOT ONE of the 38 short events has one. 34 of them were completed by
 -- recoverStuckCompletingTournaments, which pays the prize structure, settles
 -- the rake, and never touched the bounty pool. The winner of Union PKO
--- Afternoon d2625870 is owed 121.57 and still carries an uncollected 41.25
+-- Afternoon d2625870 was owed 121.57 and still carried an uncollected 41.25
 -- head to prove the settlement never ran. The engine fix that closes that path
 -- ships alongside this migration.
 --
@@ -31,52 +31,61 @@
 -- it pays only `bounty_pool - what the ledger shows already paid`. Re-driving
 -- it cannot double-pay; it can only finish what stopped halfway.
 --
--- 37 of the 38 have a champion recorded and are payable: 1,907.24 chips. The
--- one that does not (24.00 chips) is alerted and left for a human, because a
--- residual with no recipient is a question, not a payment.
+-- 37 of the 38 had a champion recorded and were payable: 1,907.24 chips, all
+-- settled. The one that does not (24.00 chips) is alerted and left for a human,
+-- because a residual with no recipient is a question, not a payment.
+--
+-- ── THE SCAN ORDER IS NOT COSMETIC, AND IT WAS FIXED BY SOMEBODY ELSE ────
+--
+-- The first version of this scanned `ORDER BY ended_at DESC LIMIT 200` and
+-- applied the "is it unpaid" test AFTER the limit. With thousands of bounty
+-- events that means the limit caps how far BACK it can look rather than how
+-- much work one run does, so an old debt can be pushed permanently out of reach
+-- by newer events completing - the identical head-of-line defect this audit had
+-- just documented in fn_pay_backed_payout_shortfalls, reintroduced two hours
+-- later in a new function. Another agent caught it in production and fixed it
+-- the same day: the unpaid test moved into the scan, and the order flipped to
+-- oldest debt first. Their version is what is deployed and what is below.
 --
 -- ROLLBACK
 --   DROP FUNCTION IF EXISTS public.fn_backpay_unfinalised_bounty_pools(boolean, integer);
---   (fn_payout_guarantee_check reverts to 20260901131129 + its two corrections)
 
--- ───────────────────────────────────────────────────────────────────────────
--- 1. THE REPAIR. Idempotent, dry-runnable, and it never picks a recipient.
--- ───────────────────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.fn_backpay_unfinalised_bounty_pools(
-  p_apply boolean DEFAULT false,
-  p_limit integer DEFAULT 200
-)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public', 'pg_temp'
+CREATE OR REPLACE FUNCTION public.fn_backpay_unfinalised_bounty_pools(p_apply boolean DEFAULT false, p_limit integer DEFAULT 200)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE
-  r          record;
-  v_res      jsonb;
-  v_events   integer := 0;
-  v_paid     numeric := 0;
-  v_orphan   integer := 0;
-  v_orphan_chips numeric := 0;
-  v_alerts   integer := 0;
+  r record; v_res jsonb;
+  v_events integer := 0; v_paid numeric := 0;
+  v_orphan integer := 0; v_orphan_chips numeric := 0; v_alerts integer := 0;
 BEGIN
   FOR r IN
-    SELECT t.id, t.name, t.club_id,
-           round(COALESCE(t.bounty_pool, 0), 2) AS pool,
-           COALESCE((SELECT round(sum(w.amount), 2) FROM public.wallet_transactions w
-                      WHERE w.related_entity_id = t.id AND w.type = 'credit'
-                        AND w.category = 'bounty'), 0) AS wallet_bounty,
-           (SELECT tp.user_id FROM public.tournament_players tp
-             WHERE tp.tournament_id = t.id AND tp.status = 'winner'
-             LIMIT 1) AS champion
-      FROM public.tournaments t
-     WHERE t.status = 'COMPLETED'
-       AND COALESCE(t.bounty_pool, 0) > 0
-     ORDER BY t.ended_at DESC NULLS LAST
+    WITH scanned AS (
+      SELECT t.id, t.name, t.club_id, t.ended_at,
+             round(COALESCE(t.bounty_pool, 0), 2) AS pool,
+             COALESCE((SELECT round(sum(w.amount), 2)
+                         FROM public.wallet_transactions w
+                        WHERE w.related_entity_id = t.id
+                          AND w.type = 'credit'
+                          AND w.category = 'bounty'), 0) AS wallet_bounty,
+             (SELECT tp.user_id FROM public.tournament_players tp
+               WHERE tp.tournament_id = t.id AND tp.status = 'winner'
+               LIMIT 1) AS champion
+        FROM public.tournaments t
+       WHERE t.status = 'COMPLETED'
+         AND COALESCE(t.bounty_pool, 0) > 0
+    )
+    SELECT * FROM scanned
+     -- the unpaid test is part of the SCAN now, so the limit below caps how
+     -- much work one run does instead of how far back it can look
+     WHERE wallet_bounty + 0.01 < pool
+     -- oldest debt first: a pool that has been owed longest is settled first,
+     -- and can never be pushed out of reach by newer events completing
+     ORDER BY ended_at ASC NULLS LAST
      LIMIT GREATEST(p_limit, 1)
   LOOP
-    CONTINUE WHEN r.wallet_bounty + 0.01 >= r.pool;
-
     IF r.champion IS NULL THEN
       v_orphan := v_orphan + 1;
       v_orphan_chips := v_orphan_chips + (r.pool - r.wallet_bounty);

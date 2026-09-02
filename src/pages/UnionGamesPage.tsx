@@ -21,6 +21,8 @@ import { fmt, fmtChips } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
+import GameCreationActions from '../components/club/GameCreationActions';
+import { unionService } from '../services/UnionService';
 
 const formatDate = (ts: string | null) => {
   if (!ts) return '-';
@@ -96,6 +98,7 @@ export default function UnionGamesPage() {
   const [loading, setLoading] = useState(true);
   const [unionId, setUnionId] = useState<string | null>(paramUnionId || null);
   const [unionName, setUnionName] = useState('');
+  const [canManageGames, setCanManageGames] = useState(false);
 
   // Tournaments
   const [tournaments, setTournaments] = useState<UnionTournament[]>([]);
@@ -117,6 +120,7 @@ export default function UnionGamesPage() {
   useEffect(() => {
     setTab('tournaments');
     setTournFilter('all');
+    setCanManageGames(false);
     loadingRef.current = false;
   }, [paramUnionId]);
 
@@ -235,6 +239,9 @@ export default function UnionGamesPage() {
 
       if (targetUnion && isMounted) {
         setUnionId(targetUnion);
+        const operator = await unionService.isUnionAdmin(targetUnion, user.id);
+        if (!isMounted) return;
+        setCanManageGames(operator);
         loadUnionData(targetUnion);
       } else if (isMounted) {
         toast.error('No union found.');
@@ -383,6 +390,17 @@ export default function UnionGamesPage() {
         ]}
         actions={
           <>
+            {unionId && canManageGames && (
+              <>
+                <Link to={`/unions/${unionId}/table-management`} className={styles.btnGhost}>
+                  Table Management
+                </Link>
+                <GameCreationActions
+                  managementPath={`/unions/${unionId}/table-management`}
+                  compact
+                />
+              </>
+            )}
             {unionId && (
               <Link to={`/unions/${unionId}`} className={styles.btnGhost}>
                 Union

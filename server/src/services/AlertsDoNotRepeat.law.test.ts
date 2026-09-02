@@ -27,7 +27,18 @@ const dedupeMigration = readFileSync(
   join(migrations, '20260901190226_an_alert_that_repeats_hourly_buries_the_ones_that_do_not.sql'),
   'utf8'
 );
+/**
+ * The cash check ran three times and each migration holds the version that ran
+ * at that moment, so a replay reproduces production rather than ending on the
+ * first draft. `cashMigration` is therefore the LAST one - the body production
+ * is running. `cashOrigin` is the first, which created the function and carries
+ * its grants; CREATE OR REPLACE does not reset an ACL, so they are not repeated.
+ */
 const cashMigration = readFileSync(
+  join(migrations, '20260901192531_the_cash_pot_check_is_bounded_at_forty_eight_hours.sql'),
+  'utf8'
+);
+const cashOrigin = readFileSync(
   join(migrations, '20260901190656_a_cash_pot_reaches_a_player_or_it_is_a_bug.sql'),
   'utf8'
 );
@@ -119,8 +130,8 @@ describe('the cash pot check', () => {
     expect(gameServer).toContain('p_since_hours: 24');
   });
 
-  it('is closed to browser roles', () => {
-    expect(cashMigration).toMatch(
+  it('is closed to browser roles by the migration that created it', () => {
+    expect(cashOrigin).toMatch(
       /REVOKE ALL ON FUNCTION public\.fn_cash_pot_conservation_check\(integer\)\s*\n?\s*FROM PUBLIC, anon, authenticated;/
     );
   });

@@ -2067,29 +2067,38 @@ export class TournamentRecurringService {
     await this.withBoardTick('sng', async () => {
       await this.repairSeatFirstGames();
 
-      const budget = { left: BURST };
       await this.ensureBoardOpen(
         'sng',
         SNG_CONFIGS,
         (c, o) => this.createSNG(c as any, o),
         this.houseOwner,
-        budget
+        { left: BURST }
       );
 
       /* Dan 2026-09-01 (Deep Stack Society directive): heads-up and SNG
        * boards for activated club owners, exactly the way the Spin pass
-       * already does it -- the house board first so it is never starved,
-       * then one owner board per activated owner. activatedSpinOwners()
-       * is the platform's one "this owner has switched club games on and
-       * funded them" signal; a standalone club like Deep Stack (11192)
-       * activates via fn_spin_activate and gets its own SNG/heads-up
-       * board on the same tick, same budget, same repair pass.
+       * already does it -- the house board first, then one owner board per
+       * activated owner. activatedSpinOwners() is the platform's one "this
+       * owner has switched club games on and funded them" signal; a
+       * standalone club like Deep Stack (11192) activates via
+       * fn_spin_activate and gets its own SNG/heads-up board on the same
+       * tick, same repair pass.
+       *
+       * ONE BUDGET PER OWNER, NOT ONE SHARED (2026-09-02). The budget used to
+       * be a single BURST shared across the house and every owner, house
+       * first. Midway completes spins faster than 12 per tick can refill, so
+       * the house board reported "38 still to fill" on every tick, consumed
+       * all 12 creations, and the loop below hit `budget.left <= 0` before
+       * Deep Stack's turn - EVERY tick. Deep Stack's spin board starved to
+       * zero open queues and stayed there. BURST exists to bound one owner's
+       * cold-start burst so a tick cannot stall the deal loop; that bound is
+       * still honored per owner, and withBoardTick already refuses to
+       * overlap ticks, so per-owner budgets cannot pile up.
        *
        * maxStake clamps the buy-ins an owner's board offers, mirroring
        * the Spin rule: never list a price point the owner did not sign
        * up for. */
       for (const owner of await this.activatedSpinOwners()) {
-        if (budget.left <= 0) break;
         const affordable = SNG_CONFIGS.filter((c) => c.buyIn <= owner.maxStake);
         if (affordable.length === 0) continue;
         await this.ensureBoardOpen(
@@ -2097,7 +2106,7 @@ export class TournamentRecurringService {
           affordable,
           (c, o) => this.createSNG(c as any, o),
           owner,
-          budget
+          { left: BURST }
         );
       }
     });
@@ -2211,8 +2220,15 @@ export class TournamentRecurringService {
       // covered" below, so skipping this would leave the board wedged.
       await this.repairSeatFirstGames();
 
-      // ONE budget for the whole pass. See BURST.
-      const budget = { left: BURST };
+      // ONE BUDGET PER OWNER (2026-09-02). This was one BURST shared across
+      // the house and every activated owner, house first - and that starved
+      // every club board. Midway completes Spins faster than 12 creations per
+      // tick can refill, so the house board logged "38 still to fill" every
+      // tick, spent all 12, and the owner loop broke on `budget.left <= 0`
+      // before Deep Stack was ever reached. Its Spin board sat at ZERO open
+      // queues indefinitely. BURST bounds one owner's cold start so a tick
+      // cannot stall the deal loop; that bound holds per owner below, and
+      // withBoardTick refuses to overlap ticks, so budgets cannot pile up.
 
       // The house board first: it serves every player who is not in a club
       // that has activated Spins, so it must never be starved by owner boards.
@@ -2221,11 +2237,10 @@ export class TournamentRecurringService {
         SPIN_CONFIGS,
         (c, o) => this.createSpin(c as any, o),
         this.houseOwner,
-        budget
+        { left: BURST }
       );
 
       for (const owner of await this.activatedSpinOwners()) {
-        if (budget.left <= 0) break;
         // Only the price points this owner's seed can actually cover. The
         // required seed is two top-tier jackpots at their largest stake, so
         // offering a bigger buy-in than they seeded for would advertise a
@@ -2237,7 +2252,7 @@ export class TournamentRecurringService {
           affordable,
           (c, o) => this.createSpin(c as any, o),
           owner,
-          budget
+          { left: BURST }
         );
       }
     });

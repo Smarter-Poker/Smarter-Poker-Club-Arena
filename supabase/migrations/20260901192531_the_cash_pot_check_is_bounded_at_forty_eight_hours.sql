@@ -31,8 +31,12 @@
 -- production is running, and a comment that is one filename out of date is a
 -- smaller problem than a file that no longer proves what it claims.
 --
--- The REVOKE/GRANT for this function is in 20260901190656, which created it.
--- CREATE OR REPLACE does not reset an ACL, so it is not repeated here.
+-- The REVOKE/GRANT is repeated at the bottom. CREATE OR REPLACE does not reset
+-- an ACL and production already holds exactly this grant, so those two
+-- statements change nothing there. They are here because
+-- check-definer-authorization reads each migration on its own and is right to:
+-- a file that declares a SECURITY DEFINER function should say on its face who
+-- may call it, rather than making the reader go and find the file that did.
 --
 -- ROLLBACK
 --   Re-apply 20260901190917, which holds the previous body.
@@ -149,3 +153,7 @@ BEGIN
     'conditions_alerted', v_alerts);
 END;
 $function$;
+
+REVOKE ALL ON FUNCTION public.fn_cash_pot_conservation_check(integer)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_cash_pot_conservation_check(integer) TO service_role;

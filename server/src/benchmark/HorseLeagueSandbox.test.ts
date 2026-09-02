@@ -82,11 +82,25 @@ describe('HorseMind V12.2 - sandbox isolation', () => {
 // The 80-hand truncation check measured 7548ms in the same run, i.e. it was
 // one contended run away from falling over for the same reason.
 //
-// Only the WALL CLOCK is relaxed, and only on the slow runner class. Every
-// assertion in this file is untouched, and hand counts are untouched - cutting
-// hands would widen stderr and quietly weaken what these tests actually pin.
-// A genuine hang still trips the ceiling on every hardware class.
-const SIM_TIMEOUT_MS = 10_000 * (process.env.RUNNER_ENVIRONMENT === 'self-hosted' ? 3 : 1);
+// Only the WALL CLOCK is relaxed. Every assertion in this file is untouched,
+// and hand counts are untouched - cutting hands would widen stderr and quietly
+// weaken what these tests actually pin. A genuine hang is unbounded, so it
+// still trips this ceiling on every hardware class.
+//
+// THE MULTIPLIER ABOVE WAS A NO-OP, and this is the correction (2026-09-02).
+// It read `process.env.RUNNER_ENVIRONMENT === 'self-hosted' ? 3 : 1`, which
+// does not resolve inside the vitest process: the very next run on
+// estate-ci-8 reported "Test timed out in 10000ms", not 30000ms, so the
+// ternary took the hosted branch ON THE SELF-HOSTED BOX and the mitigation
+// never applied to the failure it was written for. Same shape as the
+// VITEST_MAX_THREADS cap that vitest 4 ignored: a fix that reads correctly,
+// ships, and changes nothing.
+//
+// So the ceiling is unconditional now. Conditioning it bought only "fail
+// faster on a hosted runner", which is worth nothing, and cost a red main
+// that blocked the publisher for every agent in the estate. 60s is ~5x the
+// 12342ms actually measured under contention.
+const SIM_TIMEOUT_MS = 60_000;
 
 describe('HorseLeague V12.2 - sandbox-mode simulator integrity', () => {
   it('a sandboxed matchup leaves live HorseMind completely untouched', async () => {

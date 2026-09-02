@@ -1063,6 +1063,54 @@ export const MTT_PRESTART_MAX_HORSES = 24;
 export const MTT_PRESTART_MAX_STEP = 6;
 
 /**
+ * HOW LONG BEFORE ITS OWN START A RECURRING EVENT IS PUBLISHED.
+ *
+ * THIS IS THE NUMBER THAT WAS PAYING THE OVERLAY. The ramp above is built for
+ * a 72-hour window and adds at most MTT_PRESTART_MAX_STEP entrants per tick,
+ * no oftener than every 45 seconds (GameServer.lastMttRampAt). The two
+ * recurring creators handed it 60 SECONDS (createTournament) and 5 MINUTES
+ * (createXMTT), so the build had one tick and seven ticks respectively - a
+ * ceiling of 6 and 42 entrants no matter how many horses were free.
+ *
+ * Measured on 5 days of completed guaranteed events before this change:
+ *
+ *   published < 10 min ahead   299 events   58.5% overlaid   24,495.40 paid
+ *   published > 24 h ahead      38 events   10.5% overlaid      420.00 paid
+ *
+ * and the >24h group's pools OVERSHOOT their guarantees on average (1,920.77
+ * pool against 1,060.53 guaranteed). Same ramp, same fleet, same horses. The
+ * only difference is how long it had to run.
+ *
+ * It was never a capacity problem, which is the wrong diagnosis this replaces:
+ * 392 of the union's 584 horses carry a tournament lane and each may play four
+ * games, so ~1,568 tournament slots were sitting idle while the club paid
+ * overlay out of treasury.
+ *
+ * 30 MINUTES, not 72 hours. The ramp's window is a CEILING, not a target - the
+ * squared curve means an event published three days out sits at one entrant
+ * for most of that time, and the recurring board is a rolling one whose
+ * duplicate guard keys on "an instance of this name is already REGISTERING".
+ * Publishing a whole day ahead would hold the next instance of every recurring
+ * event behind the current one and thin the board. 30 minutes is 40 ticks =
+ * 240 entrants of headroom, against a largest current recurring requirement of
+ * 56 (Union Grand Championship, 2,500 guaranteed at a 45 prize share).
+ *
+ * It also makes the lobby honest. An event that appears 60 seconds before it
+ * starts cannot be joined by a human who is not already staring at the board.
+ */
+export const MTT_PUBLISH_LEAD_MS = 30 * 60 * 1000;
+
+/**
+ * How often one tournament may be ramped. Mirrors the throttle in
+ * GameServer.discoverTournaments (`now - lastRamp >= 45_000`), and exists here
+ * so mttPrestartHorseTarget can work out how many ticks are left before the
+ * gun without a database or a clock. If the GameServer throttle ever changes,
+ * change this with it - they are the same number and a test pins that the
+ * ramp can cover a guarantee inside the published lead.
+ */
+export const MTT_PRESTART_TICK_MS = 45 * 1000;
+
+/**
  * Does this format start on SEATS BOUGHT rather than on registrations?
  *
  * Deliberately BROADER than isSeatFirstFormat, and deliberately not merged
@@ -1389,8 +1437,20 @@ export function mttPrestartHorseTarget(opts: {
   // Already there (or ahead, if humans turned up). Nothing to do.
   if (onCurve <= current) return 0;
 
-  // Walk toward the curve rather than jumping to it. Still never past the
-  // curve, so the leave-a-seat and pool-cap guarantees above still hold.
+  /* Walk toward the curve rather than jumping to it. Still never past the
+     curve, so the leave-a-seat and pool-cap guarantees above still hold.
+
+     THE STEP IS NOT WHERE A GUARANTEE GETS COVERED (2026-09-02). An earlier
+     draft of the overlay fix let a guaranteed event step past
+     MTT_PRESTART_MAX_STEP once the clock ran short - "cover the promise, the
+     pacing matters less". The pinned test one screen up refused it, correctly:
+     at T-1s a 20,000 guarantee wants 107 entrants, and registerHorses buys in
+     ONE HORSE PER SEQUENTIAL RPC inside the same 5-second loop that decides
+     when every other tournament starts. That is the stall the cap was added to
+     prevent, and a guarantee is not worth re-introducing it.
+
+     A short clock is not something to out-run here. It is something not to
+     create: see MTT_PUBLISH_LEAD_MS. */
   return Math.min(onCurve, current + MTT_PRESTART_MAX_STEP);
 }
 
@@ -2496,7 +2556,10 @@ export class TournamentRecurringService {
     hostClubId: string
   ): Promise<{ tournamentId: string | null; registered: number }> {
     try {
-      const startTime = new Date(Date.now() + 5 * 60 * 1000);
+      // Published MTT_PUBLISH_LEAD_MS ahead so the pre-start ramp has a window
+      // to build the field in. At the old 5 minutes it had 7 ticks (42
+      // entrants) and this event needs 56 to cover its guarantee.
+      const startTime = new Date(Date.now() + MTT_PUBLISH_LEAD_MS);
       const dbGameType = dbGameTypeFor(config.gameVariant, 'createXMTT');
 
       const isBountyType =
@@ -2721,9 +2784,13 @@ export class TournamentRecurringService {
     config: TournamentConfig
   ): Promise<{ tournamentId: string | null; registered: number }> {
     try {
-      // MTTs keep their own 60s lead-in. OPEN_TABLE_WAIT_MS is the seat-held
-      // wait for spins and SNGs only - an MTT is a scheduled event by nature.
-      const startTime = new Date(Date.now() + 60 * 1000);
+      // An MTT is a scheduled event by nature, so it gets a real publication
+      // lead rather than the seat-held wait spins and SNGs use
+      // (OPEN_TABLE_WAIT_MS). This was 60 seconds, which gave the pre-start
+      // ramp exactly ONE tick - a hard ceiling of MTT_PRESTART_MAX_STEP
+      // entrants - and is why guaranteed recurring events were finishing their
+      // registration under-funded and paying overlay. See MTT_PUBLISH_LEAD_MS.
+      const startTime = new Date(Date.now() + MTT_PUBLISH_LEAD_MS);
       const dbGameType = dbGameTypeFor(config.gameVariant, 'createMTT');
 
       const isBountyType =

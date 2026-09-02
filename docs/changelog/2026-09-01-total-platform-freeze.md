@@ -126,7 +126,7 @@ The migration-file audit said ~30 legacy money RPCs were browser-callable.
 The live database, measured with `has_function_privilege`, said: anon 0,
 authenticated 1 - `fn_union_distribute_promo`, no caller anywhere. A prior
 hardening pass had closed the rest invisibly. Migration
-`20260902110000_the_vault_door_closes_on_the_legacy_money_rpcs` closed the
+`20260902110500_the_vault_door_closes_on_the_legacy_money_rpcs` closed the
 one live exposure and made the state explicit on all 29 overloads (REVOKE
 browsers, GRANT service_role), verified after: anon 0 / authenticated 0 /
 service_role 29 of 29. All nine World Hub API callers of these names were

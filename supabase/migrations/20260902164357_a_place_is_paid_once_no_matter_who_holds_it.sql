@@ -339,3 +339,28 @@ BEGIN
     'clean', (jsonb_array_length(v_actions) = 0 AND jsonb_array_length(v_issues) = 0));
 END;
 $function$;
+
+-- ----------------------------------------------------------------------------
+--  WHO MAY CALL IT (applied to production 2026-09-02 as its own migration,
+--  20260902_the_payout_reconciler_states_who_may_call_it; a no-op there, and
+--  that is the point).
+--
+--  Production already restricts both functions to postgres and service_role,
+--  but only as an ACL applied out of band. It was nowhere in the migrations, so
+--  a database rebuilt from this repo would create a SECURITY DEFINER function
+--  that moves prize money, takes `p_apply` as a parameter, and carries the
+--  default PUBLIC EXECUTE. Both are engine-side repair passes; nobody in a
+--  browser should ever call either. PUBLIC is named alongside the roles because
+--  revoking a role while PUBLIC still holds the grant reads as a fix and does
+--  nothing.
+-- ----------------------------------------------------------------------------
+
+REVOKE ALL ON FUNCTION public.fn_tournament_payout_reconcile(uuid, boolean)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_tournament_payout_reconcile(uuid, boolean)
+  TO service_role;
+
+REVOKE ALL ON FUNCTION public.fn_tournament_payout_sweep(integer, boolean, integer)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_tournament_payout_sweep(integer, boolean, integer)
+  TO service_role;

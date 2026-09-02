@@ -97,4 +97,37 @@ describe('a stalled tournament is noticed', () => {
     );
     expect(prune).toContain('tm.getTableIds()');
   });
+
+  /**
+   * "$100 Freeroll 6:00 AM" (3e8e2afa) on 2026-09-02: table 10 open in the
+   * database with six live seats, absent from the engine map, absent from
+   * /health, silent for three hours under a RUNNING tournament. Five guards
+   * looked at it and all five reported healthy, because all five walk the
+   * map. The liveness sweep must put a forgotten table BACK in the map before
+   * it walks it, or the state it was written for stays unreachable.
+   */
+  it('adopts an open tournament table that has live seats and no engine', () => {
+    const base = read('src/tournament/TournamentManagerBase.ts');
+
+    expect(base).toContain('protected async adoptEnginelessTables');
+    // Adopted before the map walk, or the walk sees the same nothing it saw
+    // for three hours.
+    const sweep = base.slice(base.indexOf('protected async reviveDeadTableEngines'));
+    const adopt = sweep.indexOf('await this.adoptEnginelessTables();');
+    const walk = sweep.indexOf('for (const [tableId, engine] of this.tableEngines)');
+    expect(adopt).toBeGreaterThan(-1);
+    expect(walk).toBeGreaterThan(adopt);
+
+    const method = base.slice(
+      base.indexOf('protected async adoptEnginelessTables'),
+      base.indexOf('protected async adoptEnginelessTables') + 4000
+    );
+    // Only felt that still holds a player, and only through the one
+    // registration path -- a second dealer on one table is its own outage.
+    expect(method).toContain(".is('left_at', null)");
+    expect(method).toContain('this.gameServer.registerTableEngine(tableId, engine)');
+    // Reads fail closed: an unreadable board adopts nothing.
+    expect(method).toContain('Tournament.adopt_scan_failed');
+    expect(method).toContain('Tournament.adopt_seat_read_failed');
+  });
 });

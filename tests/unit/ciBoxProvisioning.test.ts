@@ -35,6 +35,23 @@ describe('CI box provisioning', () => {
     expect(dist).toContain('VITEST_MAX_WORKERS');
   });
 
+  it('exports RUNNER_ENVIRONMENT, because this runner build never does', () => {
+    // Three test files relax their wall clock with
+    //   10_000 * (process.env.RUNNER_ENVIRONMENT === 'self-hosted' ? 3 : 1)
+    // and all three were silent no-ops: the string RUNNER_ENVIRONMENT appears
+    // ZERO times in Runner.Worker.dll and Runner.Common.dll of the installed
+    // runner (checked 2026-09-02). GitHub documents the variable, so it keeps
+    // getting reached for; this box simply never set it, and the ternary took
+    // the hosted branch ON the self-hosted box every time. The evidence is a
+    // failure reading "Test timed out in 10000ms" where a working multiplier
+    // would have said 30000ms - it turned main red and stopped the publisher.
+    //
+    // Setting it in the drop-in is not a lie, this IS self-hosted, and nothing
+    // overrides it because the runner never writes the name. Remove this line
+    // and those three timeouts silently tighten back to 10s.
+    expect(repo(PROVISION)).toMatch(/Environment=RUNNER_ENVIRONMENT=self-hosted/);
+  });
+
   it('bounds the heap but leaves tsc enough room', () => {
     const m = repo(PROVISION).match(/NODE_HEAP_MB="\$\{NODE_HEAP_MB:-(\d+)\}"/);
     expect(m).not.toBeNull();

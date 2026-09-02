@@ -141,6 +141,21 @@ for svc in $UNITS; do
 [Service]
 Environment=VITEST_MAX_WORKERS=${VITEST_WORKERS}
 Environment=NODE_OPTIONS=--max-old-space-size=${NODE_HEAP_MB}
+# RUNNER_ENVIRONMENT IS SET BY US BECAUSE THIS RUNNER BUILD DOES NOT SET IT.
+# GitHub documents it as a default variable, so three test files already relax
+# their wall clock with
+#   10_000 * (process.env.RUNNER_ENVIRONMENT === 'self-hosted' ? 3 : 1)
+# and every one of them was a silent no-op on this box: the string
+# RUNNER_ENVIRONMENT appears ZERO times in Runner.Worker.dll and
+# Runner.Common.dll of the installed runner (checked 2026-09-02), so the
+# ternary always took the hosted branch ON the self-hosted box. The proof it
+# left behind is a failure that reads "Test timed out in 10000ms" where a
+# working multiplier would have said 30000ms. That one turned main red and
+# stopped the publisher.
+# Setting it here is not a lie - this IS a self-hosted runner - and nothing
+# overrides it, precisely because the runner never writes the name at all.
+# It repairs every existing user of the idiom and every future copy of it.
+Environment=RUNNER_ENVIRONMENT=self-hosted
 EOF
   n=$((n+1))
 done

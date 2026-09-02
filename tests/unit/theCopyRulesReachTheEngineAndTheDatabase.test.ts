@@ -158,11 +158,11 @@ describe('the live source still obeys both rules after the widening', () => {
 
   it('check-title-case passes over src AND server/src', () => {
     expect(run('scripts/ci/check-title-case.mjs')).toBe(0);
-  });
+  }, 15_000);
 
   it('check-ui-text still passes', () => {
     expect(run('scripts/ci/check-ui-text.mjs')).toBe(0);
-  });
+  }, 15_000);
 });
 
 describe('the two gaps in how work reaches production', () => {

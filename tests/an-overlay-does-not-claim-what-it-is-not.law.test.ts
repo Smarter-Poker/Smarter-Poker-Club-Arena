@@ -64,18 +64,22 @@ describe('an overlay does not claim what it is not', () => {
 
   it('the buy-in sheet holds focus, since it claims aria-modal', () => {
     const trap = read('src/hooks/useFocusTrap.ts');
-    // The whole contract, not a third of it: first focus in, Tab wrapping
-    // both ways, focus restored on close. A partial trap is its own bug.
-    expect(trap).toContain('first.focus()');
-    expect(trap).toContain('e.shiftKey');
-    expect(trap).toContain('lastItem.focus()');
-    expect(trap).toContain('firstItem.focus()');
-    expect(trap).toContain('document.contains(restore)');
+    /* The hook is the one already on main - another agent shipped it while
+       this was in flight, and it is at least as complete as the one written
+       here, so that one was deleted rather than kept alongside it. What is
+       pinned is the CONTRACT, not an implementation: first focus in, Tab
+       wrapping both ways, focus restored on close. A partial trap is its own
+       bug, which is why the sheet having only Escape was the defect. */
+    expect(trap).toContain('previousFocusRef');
+    expect(trap).toContain('firstFocusable');
+    expect(trap).toContain('lastFocusable');
+    expect(trap).toMatch(/shiftKey/);
     // Wired to the sheet, and only while it is open.
     expect(table).toContain('ref={seatBuyInTrapRef}');
     expect(table).toContain('useFocusTrap(!!seatFirstBuyIn && seatFirstConfirm !== null)');
-    // The hook must NOT close on Escape: only the caller knows that closing
-    // is refused while a debit is in flight.
+    /* The hook must NOT close on Escape: only the sheet knows that closing is
+       refused while a debit is in flight, and a hook that closed it anyway
+       would spend money and then hide the result. */
     expect(trap).not.toContain("'Escape'");
   });
 

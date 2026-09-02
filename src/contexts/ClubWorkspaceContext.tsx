@@ -294,10 +294,16 @@ export function ClubWorkspaceProvider({ children }: { children: ReactNode }) {
     const refresh = () => void load(false);
     const unsubClub = masterBus.subscribeDebounced('CLUB_UPDATED', refresh, 300);
     const unsubRole = masterBus.subscribeDebounced('MEMBER_ROLE_CHANGED', refresh, 150);
+    const unsubManagement = masterBus.subscribeDebounced(
+      'GAME_MANAGEMENT_ACCESS_CHANGED',
+      refresh,
+      100
+    );
     return () => {
       cancelled = true;
       unsubClub();
       unsubRole();
+      unsubManagement();
     };
   }, [isHydrating, revision, routeClubId, user?.id]);
 

@@ -53,9 +53,11 @@ describe('round 9: TableService', () => {
     expect(block).toContain('sessionStorage.getItem(unionCacheKey)');
   });
 
-  it('the deleteTable count fallback reports both of its failure legs', () => {
-    expect(TABLE_SERVICE).toContain('deleteTable_count_fallback_read_failed');
-    expect(TABLE_SERVICE).toContain('deleteTable_count_fallback_update_failed');
+  it('the legacy delete entry point delegates to the authoritative close command', () => {
+    const block = sliceBlockAfter(TABLE_SERVICE, 'async deleteTable(');
+    expect(block).toContain("gameManagementService.close('table', tableId)");
+    expect(block).not.toContain(".from('tables')");
+    expect(block).not.toContain("status: 'deleted'");
   });
 });
 

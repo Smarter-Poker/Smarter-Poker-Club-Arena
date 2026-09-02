@@ -74,6 +74,21 @@ Worth naming, because four of them were mine and the targeted suites were green:
    its wheel finished. Wrong in the most believable way possible: a number that
    looks right. Cleared on `tournamentId` change, and pinned.
 
+## One thing I wrote and then deleted, on purpose
+
+While this branch was in flight another agent shipped `src/hooks/useFocusTrap.ts`
+on main - the same hook, at least as complete as the one written here (it also
+handles focus sitting on a non-focusable part of the modal, which mine did
+not). The merge conflicted on that file.
+
+Main's copy is the one that survives. Mine is deleted rather than kept beside
+it under another name: two focus traps is the shape of problem CLAUDE.md 10.7
+is about, and RULE 12's "write into the canonical thing" applies to a hook as
+much as to infrastructure. The buy-in sheet is wired to theirs, and the law
+test now pins the CONTRACT - first focus in, Tab wrapping both ways, focus
+restored, and no Escape handling inside the hook - rather than my
+implementation of it.
+
 ## Verification
 
 - `npx tsc --noEmit`, client and server: clean.

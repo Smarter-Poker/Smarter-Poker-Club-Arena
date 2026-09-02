@@ -94,6 +94,16 @@ Byte proof: live `prosrc` before md5 `320090dd647b849719b960ab8d025f5f` / 5,904 
 `diff live new` additions only; `RAISE EXCEPTION` 1 -> 1; ACL `{postgres=X,service_role=X}`
 before and after (asserted in the post-apply DO block, which ran green).
 
+Companion `supabase/migrations/20260902224500_the_declaring_functions_state_their_grants.sql`
+(`schema_migrations` version `20260902224318`, applied 22:43:18 UTC): REVOKE from PUBLIC, anon,
+authenticated and GRANT to service_role for the five service-only functions the three
+declaration migrations redefine (spin settle, both sweeps, the horse door, the credit funnel).
+Production already held exactly that ACL (`{postgres=X,service_role=X}` on all five, read before
+and after: unchanged), so it is a no-op against the database; it exists because
+`check-definer-authorization` (the pre-push gate) reads the branch, not production, and a
+CREATE OR REPLACE that says nothing about grants reads as EXECUTE to PUBLIC. Same shape as
+`20260902203500_db_payers_state_their_grants`.
+
 ## 3. Probes (BEGIN ... ROLLBACK; nothing kept)
 
 Tournament `fe8eac13` (Night Owl Special NLH, REGISTERING, 22 entrants), member `56315bf9`.

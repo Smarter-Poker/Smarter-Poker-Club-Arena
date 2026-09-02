@@ -299,6 +299,8 @@ export class GameServer {
    */
   private readonly processStartedAt: number = Date.now();
   private tournamentEngines: Map<string, TournamentManager> = new Map();
+  /** Realtime channel for `seat_first_ready`. See subscribeSeatFirstReady(). */
+  private seatFirstChannel: { unsubscribe: () => void } | null = null;
   /**
    * Dan 2026-08-23: last time the MTT pre-start horse ramp ran per tournament.
    *
@@ -4281,7 +4283,95 @@ export class GameServer {
    * start() itself re-validates the field and the payments, so a retry
    * against a game that stood down for a real reason stands down again.
    */
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  THE BOARD ANNOUNCES ITSELF (Dan, 2026-09-02)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Dan's rule: the wheel plays one second after the last buy-in, three at the
+   * outside. discoverSeatFirstStarts below could never honour that, and the
+   * reason was not the draw or the animation - it was that nothing TELLS the
+   * engine a board is full. It goes looking, on a loop that calls itself a
+   * one-second poll and is not one. Measured on production, one pass:
+   *
+   *     REGISTERING seat-first tournaments .............  0.475 s
+   *     their live tables, .in(tournament_id, 85 uuids)   4.029 s
+   *     their live seats ...............................  0.944 s
+   *                                                      -------
+   *                                            per pass   5.448 s
+   *
+   * so the true cadence is about six and a half seconds and a board that fills
+   * just after a pass waits a whole cycle. Four Spins observed filling seconds
+   * apart drew eight seconds apart, in a queue.
+   *
+   * Collapsing those three round trips into one RPC made the QUERY 76 ms - and
+   * then the same RPC measured 1.9 s, 10.0 s and 4.1 s through PostgREST on
+   * three consecutive calls. That is the finding that settles the design: the
+   * query is no longer the cost, the ROUND TRIP is, and no poll over that
+   * transport can honour a one-second promise.
+   *
+   * So fn_sync_seat_first_player_count now broadcasts `seat_first_ready` in the
+   * same transaction that commits the seat which fills the board - the same
+   * hook that funds the treasury, reached by both the human and the horse
+   * seating paths. This listens for it and starts that game immediately.
+   *
+   * The poll STAYS. It is the backstop for a dropped socket, and it is why
+   * this is safe to ship: the worst case is exactly today's behaviour.
+   */
+  private subscribeSeatFirstReady(): void {
+    if (this.seatFirstChannel) return;
+    try {
+      const ch = supabase
+        .channel('seat_first')
+        .on('broadcast', { event: 'seat_first_ready' }, (msg: unknown) => {
+          const payload = (msg as { payload?: { tournament_id?: unknown } } | undefined)?.payload;
+          const id = payload?.tournament_id ? String(payload.tournament_id) : '';
+          if (id) this.startSeatFirstNow(id);
+        });
+      void ch.subscribe();
+      this.seatFirstChannel = ch as unknown as { unsubscribe: () => void };
+      console.log('[GameServer] seat-first push: listening for seat_first_ready');
+    } catch (err) {
+      // Never fatal. The poll below still finds the board, just later.
+      console.warn('[GameServer] seat-first push subscribe failed:', err);
+    }
+  }
+
+  /**
+   * Start a seat-first game the instant its board announces itself.
+   *
+   * Deliberately the SAME guards the poll uses, in the same order: a stale
+   * engine entry is cleared, a live one wins, and the manager is created and
+   * started exactly once. The two paths race by design - whichever reaches the
+   * board first starts it, and `tournamentEngines` is the arbiter. There is no
+   * await between the check and the set, so one manager per id is structural.
+   */
+  private startSeatFirstNow(id: string): void {
+    try {
+      const held = this.tournamentEngines.get(id);
+      if (held && !held.isRunning()) {
+        this.tournamentEngines.delete(id);
+      }
+      if (this.tournamentEngines.has(id)) return;
+
+      console.log(`[GameServer] Push-starting seat-first game ${id.slice(0, 8)}`);
+      const tm = new TournamentManager(id, this);
+      this.tournamentEngines.set(id, tm);
+      tm.start()
+        .then(() => this.holdIfBreakIsRunning(tm))
+        .catch((err) => {
+          reportError(err, 'GameServer.seat_first_push_start_failed');
+          this.tournamentEngines.delete(id);
+        });
+    } catch (err) {
+      reportError(err, 'GameServer.seat_first_push_start_error');
+    }
+  }
+
   private async discoverSeatFirstStarts(): Promise<void> {
+    // Push first, poll second. The poll below is only the backstop.
+    this.subscribeSeatFirstReady();
+
     while (this.running) {
       try {
         const { data: registering, error: registeringErr } = await supabase

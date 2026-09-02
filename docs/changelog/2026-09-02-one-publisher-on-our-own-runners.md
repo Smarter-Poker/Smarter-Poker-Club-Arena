@@ -92,3 +92,25 @@ sync pushes with `wh-token || WORLD_HUB_SYNC_TOKEN`, both preferring a **GitHub
 App installation token** that is minted per run and cannot be revoked with a
 PAT. The PAT is only a fallback. Keep it that way: if the App is ever removed
 and the estate falls back to a PAT, one leaked transcript stops all publishing.
+
+## And the reason agents' work was stranding: the docs and the automation disagreed
+
+CLAUDE.md 11.0 tells every agent to claim a worktree as `fix/<slug>`.
+`agent-open-pr.yml` opened a pull request only for branches starting with
+`agent/`, and the orphan sweep in `report-stuck-prs.sh` auto-opened only
+`agent/*` too. So an agent that did exactly what the docs said pushed a
+`fix/...` branch and got nothing - and on 2026-09-02, when every PAT on the Mac
+was revoked at once, that was three agents' finished, tested work (including
+this branch) sitting on the remote with no route to `main`.
+
+The namespace was the wrong proxy. The AGE gate is the real safety: a branch
+under a day old with commits ahead of main is somebody who stopped one step
+short today, whatever they named it. Both now open a pull request for ANY
+young branch, excluding only the namespaces that are never proposals
+(`backup/`, `ci-marker/`, `build/`, `dependabot/`, `renovate/`,
+`sentry-autofix/`, `revert-*`). Months-old branches are still only reported.
+
+CLAUDE.md 1.1 was rewritten. It had been telling agents that the deploy path
+was a local script that in fact never pushes, to `git push` to a protected
+`main`, and that a deleted workflow would publish. It now describes the one
+real route, where the agent's job ends, the three nets, and how to verify.

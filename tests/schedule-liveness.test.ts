@@ -344,13 +344,24 @@ describe('a wedged cron does not stop the work from happening', () => {
 describe('the starved-work dispatcher is wired in and bounded', () => {
   const src = readFileSync(resolve(__dirname, '../.github/scripts/schedule-liveness.mjs'), 'utf8');
 
-  it('runs after the heal, on every wedge, not only when the heal worked', () => {
-    expect(src).toMatch(/await dispatchStarved\(late\);/);
-    // It must sit OUTSIDE the `if (late.length >= WEDGE_MIN)` heal block's
-    // success path - the work is overdue whether or not re-registration took.
-    const heal = src.indexOf('await selfHeal(late);');
+  it('runs FIRST, unconditionally - it is the remedy, and cycling is off by default', () => {
+    /**
+     * MEASURED 2026-09-02: GitHub delivers ~10% of this repo's scheduled runs
+     * (65 of ~650 over 48h) and 19% of World Hub's. That is load throttling,
+     * not a registration fault, so disabling and re-enabling workflows fixed
+     * nothing and cancelled in-flight runs while trying. Dispatching the
+     * starved work off workflow_run is the whole remedy now; the cycle is
+     * kept as code behind SCHEDULE_CYCLE_REGISTRATIONS=1 and nothing else.
+     */
+    expect(src).toMatch(/const sent = await dispatchStarved\(late\);/);
     const disp = src.indexOf('await dispatchStarved(late);');
-    expect(disp).toBeGreaterThan(heal);
+    const heal = src.indexOf('await selfHeal(late);');
+    expect(disp).toBeGreaterThan(-1);
+    expect(disp).toBeLessThan(heal);
+    // and the cycle only runs when a human has switched it back on
+    const gate = src.indexOf("process.env.SCHEDULE_CYCLE_REGISTRATIONS === '1'");
+    expect(gate).toBeGreaterThan(-1);
+    expect(gate).toBeLessThan(heal);
   });
 
   it('caps how many it starts in one pass', () => {

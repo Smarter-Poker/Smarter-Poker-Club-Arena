@@ -98,14 +98,19 @@ on:
   # window now, so there is nothing to convert and nothing to get wrong on the
   # two days a year the clocks move.
   #
-  # THREE TICKS, because a GitHub scheduled run is best-effort and is
-  # sometimes dropped outright (on 2026-08-31 one missed tick left the engine
-  # three hours stale). :40, :45 and :50 each give the runner time to check
-  # out, test and build before :55; whichever wins then sleeps in the break
-  # gate until the engine opens `maintenance.readyForRestart`. A dropped tick
-  # now costs an hour, not six.
+  # ONE TICK (2026-09-02). This was three - :40, :45, :50 - because a GitHub
+  # scheduled run is best-effort and one missed tick had left the engine three
+  # hours stale on 2026-08-31. Measured since: GitHub delivers about 10% of
+  # this repo's scheduled runs, so tripling the asks was tripling the demand
+  # that gets it throttled, and today all three were dropped every hour from
+  # 14:42. Redundancy now lives in publish-watchdog's schedule-liveness check,
+  # which runs on `workflow_run` many times an hour and dispatches this
+  # workflow directly the moment it is more than an hour since it last ran by
+  # any trigger. A dropped tick costs minutes, and asks GitHub for nothing.
+  # :45 gives the runner time to check out, test and build before :55; the
+  # winner then sleeps in the break gate until `maintenance.readyForRestart`.
   schedule:
-    - cron: '40,45,50 * * * *'
+    - cron: '45 * * * *'
 
   # The override, and the only path that may restart outside a window:
   # a deliberate `force: true` dispatch. A plain dispatch -- which is what

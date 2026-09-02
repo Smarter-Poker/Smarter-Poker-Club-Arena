@@ -1150,6 +1150,18 @@ jobs:
         # eagerly. See the header of the script for the measurements.
         run: node scripts/ci/bundle-size.mjs
 
+      # ── Who Pays For First Paint ─────────────────────────────────────────
+      - name: Entry Chunk Is A Reviewed List
+        # `always()` rather than `success()` on purpose: the step above gates a
+        # SIZE, this one gates WHO PAYS, and the second answer is most wanted
+        # exactly when the first has just gone red. On 2026-09-01 the size gate
+        # failed on the whole-app ceiling while the real defect - operator-only
+        # code newly landing in the chunk every player downloads before first
+        # paint - sat underneath it, invisible, and passed its own limit at
+        # 309kB against 320kB. It was found by diffing two sourcemaps by hand.
+        if: always()
+        run: node scripts/ci/entry-chunk-delta.mjs dist
+
       # Real browser performance and responsive budgets. This replaces the old
       # file-count step that was labelled Lighthouse but never opened a page.
       - name: Install Performance Browser

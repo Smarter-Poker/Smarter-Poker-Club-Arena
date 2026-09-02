@@ -123,6 +123,7 @@ whichever test the next agent notices first.
 | tests/the-ladder-is-complete-and-people-are-told.law.test.ts    | VIP ladder completeness + notification                                                                                                    |
 | tests/the-last-wrong-account-path.law.test.ts                   | Account path correctness                                                                                                                  |
 | tests/the-last-wrong-account-path.law.test.ts                   | Account path correctness                                                                                                                  |
+| tests/the-spin-ladder-is-one-ladder.law.test.ts                 | A Spin pays the ladder its multiplier owes, and the engine and database copies of it never drift                                          |
 | tests/unit/allInShowsAndBustsClear.law.test.ts                  | All-in showdown and bust display                                                                                                          |
 | tests/unit/allInShowsAndBustsClear.law.test.ts                  | All-in showdown and bust display                                                                                                          |
 | tests/unit/heroCardsAreForThisHand.law.test.ts                  | Hero holdings shown only for this hand at this table                                                                                      |

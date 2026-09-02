@@ -1011,6 +1011,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     if (!clubId) return;
     let isMounted = true;
     let playingRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let occupancyTimer: ReturnType<typeof setInterval> | null = null;
 
     const setupRealtime = async () => {
       const resolvedId = await resolveClubUUID(clubId);
@@ -1123,10 +1124,18 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          be approximated by whichever card happened to update. Bursts (a table
          opening or balancing several seats) collapse to one authoritative
          recount. */
+      /* ONE NUMBER, ONE LIGHT CALL (2026-09-02). This re-called get_club_home -
+         the entire lobby payload, 1.8 s mean under RLS - every 250 ms of table
+         churn, just to read `players_playing`. With 1,131 open cash tables
+         changing on every seat transition that was ~70 calls a minute around
+         the clock and 26% of all database time on the platform, and the
+         database it saturated is the one every hand and buy-in queues behind.
+         get_club_players_playing answers the same question in ~50 ms, and two
+         seconds of debounce turns a burst of seat events into one recount. */
       const refreshScopedPlaying = () => {
         if (playingRefreshTimer) clearTimeout(playingRefreshTimer);
         playingRefreshTimer = setTimeout(async () => {
-          const { data, error } = await supabase.rpc('get_club_home', {
+          const { data, error } = await supabase.rpc('get_club_players_playing', {
             p_club_key: resolvedId,
           });
           if (!isMounted) return;
@@ -1134,9 +1143,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             reportError(error, 'ClubHomePage.players_playing_realtime_refresh_failed');
             return;
           }
-          const next = Number((data as { players_playing?: unknown } | null)?.players_playing);
+          const next = Number(data);
           if (Number.isFinite(next)) setPlayersPlaying(next);
-        }, 250);
+        }, 2_000);
       };
 
       const handleTableChange = (payload: any) => {
@@ -1274,6 +1283,83 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
        * channel is live again. `firstSubscribe` keeps the initial SUBSCRIBED
        * from firing a second fetch on top of the one already in flight.
        */
+      /* THE LOBBY DOES NOT DEPEND ON REALTIME TO BE RIGHT (Dan 2026-09-02:
+         "FIX THE REAL TIME CONNECTION FOR THE MIDWAY UNION, CLUB JAQK AND
+         SHARK CLUB ... ANY AND ALL NEW CLUBS ... MUST HAVE ALL REAL TIME
+         CHANNELS AND FUNCTIONALITY WIRED INTO THEM FROM THE START").
+
+         The postgres_changes stream above is one decoder reading every byte of
+         WAL this platform writes - measured 2.1 MB/s, ~180 GB a day at 220k
+         hands - and its replication slot was 46 MB behind and growing (124 MB
+         four minutes later). Every seat-count tick the lobby receives through
+         it arrives a minute or more late, for every club alike, and there is
+         no per-club switch anywhere that could make one club's stream fresher
+         than another's. So the cards stop trusting the stream for occupancy:
+         every 20 seconds, while the tab is visible, the page re-reads the four
+         columns that change - id, current_players, status, max_players - for
+         the same scope the fetch uses (one indexed query, ~100 ms), patches
+         them onto the rows on screen, and asks for a full reload only when an
+         OCCUPIED table it has never seen turns up (a new game) or a known one
+         has closed. The stream still delivers the instant case when it is
+         healthy; this is the floor under it, and it is wired into every club
+         by construction because it is the lobby's own behaviour, not a
+         per-club setting. */
+      const pollOccupancy = async () => {
+        if (!isMounted) return;
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+        const q = supabase
+          .from('tables')
+          .select('id, current_players, status, max_players, club_id, union_id, is_private');
+        applyClubScope(q, rtScope);
+        const { data, error } = await q
+          .eq('is_deleted', false)
+          .not('status', 'in', '("closed","deleted")')
+          .is('tournament_id', null)
+          .order('current_players', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(QUERY_LIMITS.LIST);
+        if (!isMounted) return;
+        if (error) {
+          reportError(error, 'ClubHomePage.occupancy_poll_failed');
+          return;
+        }
+        const rows = (data ?? []) as Array<{
+          id: string;
+          current_players: number | null;
+          status: string | null;
+          max_players: number | null;
+        }>;
+        const fresh = new Map(rows.map((r) => [String(r.id), r]));
+        let needsReload = false;
+        setTables((prev) => {
+          const known = new Set(prev.map((t) => String(t.id)));
+          for (const r of rows) {
+            if (!known.has(String(r.id)) && Number(r.current_players ?? 0) > 0) needsReload = true;
+          }
+          let changed = false;
+          const next = prev.map((t) => {
+            const r = fresh.get(String(t.id));
+            if (!r) return t;
+            const cp = Number(r.current_players ?? 0);
+            if (
+              Number((t as any).current_players ?? 0) === cp &&
+              (t as any).status === r.status &&
+              Number((t as any).max_players ?? 0) === Number(r.max_players ?? 0)
+            ) {
+              return t;
+            }
+            changed = true;
+            return { ...t, current_players: cp, status: r.status, max_players: r.max_players };
+          });
+          return changed ? (next as typeof prev) : prev;
+        });
+        if (needsReload) void loadClubData(() => isMounted);
+        refreshScopedPlaying();
+      };
+      occupancyTimer = setInterval(() => {
+        void pollOccupancy();
+      }, 20_000);
+
       let firstSubscribe = true;
       channel.subscribe((status: string, err?: Error) => {
         /* Every other handler in this effect checks isMounted; this one did
@@ -1303,6 +1389,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     return () => {
       isMounted = false;
       if (playingRefreshTimer) clearTimeout(playingRefreshTimer);
+      if (occupancyTimer) clearInterval(occupancyTimer);
       // Drop the factory FIRST. Removing the channel while its factory is
       // still registered is an invitation for the health monitor to rebuild
       // the one we are deliberately tearing down.
@@ -2401,6 +2488,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
            The group form below is what `.in()` builds for itself. */
         .not('status', 'in', '("closed","deleted")')
         .is('tournament_id', null)
+        /* A LIVE GAME MUST NEVER BE TRUNCATED AWAY (2026-09-02). See the note
+           on TableService.getClubTables: ordering by created_at alone under
+           the 200-row cap hid 41 of Deep Stack Society's 51 running tables,
+           and this page then ran every filter tab client-side over the
+           truncated list, so PLO/NLH/etc each read as an empty club. */
+        .order('current_players', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(QUERY_LIMITS.LIST);
 

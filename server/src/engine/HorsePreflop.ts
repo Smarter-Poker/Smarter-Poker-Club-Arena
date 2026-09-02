@@ -148,6 +148,14 @@ export interface PreflopCtx {
   omahaAA?: boolean;
   /** PRNG supplied by the caller (fast xorshift) */
   rand: () => number;
+  /**
+   * V34 (2026-09-02): hero is ON THE BUTTON. classifyPosition folds the
+   * cutoff and the button into one 'late' bucket, and the two seats opened
+   * the same 23% of hands - solver button ranges are nearly twice the
+   * cutoff's, because the button is the only seat that never has to worry
+   * about a player behind it. Undefined = unknown, treated as the cutoff.
+   */
+  isButton?: boolean;
 }
 
 const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
@@ -161,13 +169,37 @@ const AOF_MAX_TIGHTEN = 0.3;
 
 const PUSH_FOLD_MAX_BB = 22;
 
+/**
+ * ═══ V34 (2026-09-02): THE SCALE IS NOT A PERCENTILE, SO READ THE TABLE ═══
+ *
+ * holdemPreflopScore is a hand-tuned ladder, and every other variant is mapped
+ * ONTO it by quantile (HorseEval), so one number means the same hand rank in
+ * every game — but the number is not "top X%". Measured over all 1,326
+ * two-card combos, the share of hands AT OR ABOVE a bar is:
+ *
+ *     bar   0.62  0.58  0.55  0.52  0.48  0.46  0.42  0.40  0.34  0.30  0.27  0.24
+ *     top   12%   13%   16%   18%   20%   21%   23%   25%   35%   39%   42%   48%
+ *
+ * Read against that table, the old opens were: UTG 12%, HJ 17%, CO 23% and
+ * the BUTTON also 23% - the fleet opened the button like a cutoff and folded
+ * it 77% of the time, while a 6-max solver opens the button ~45%. The blinds
+ * then over-folded the steals nobody was making. Every bar below is now
+ * chosen FROM the table against a solver target, and the button is its own
+ * seat (PreflopCtx.isButton) instead of a second cutoff.
+ *
+ * Targets (6-max, 100bb, chip EV):  UTG ~15%, HJ ~20%, CO ~26%, BTN ~42%,
+ * SB (folded to) ~40% raise plus a limp mix.  Full ring tightens UTG below
+ * (see the tableSize adjustment where the bar is applied).
+ */
 const OPEN_THRESH: Record<PreflopPosition, number> = {
-  early: 0.62,
-  middle: 0.54,
-  late: 0.42,
+  early: 0.56, // ~15% (was 0.62 = 12%)
+  middle: 0.48, // ~20% (was 0.54 = 17%)
+  late: 0.4, // cutoff ~25% (was 0.42 = 23%); the button is set separately
   sb: 0.44, // V7: SB opens wider than V2's 0.50 — folds win the BB outright
   bb: 0.42,
 };
+/** V34: the button opens ~42% of hands (bar 0.27 on the table above). */
+const OPEN_THRESH_BUTTON = 0.27;
 
 /**
  * How wide the 3-bet gets against an open from each position. Late opens are
@@ -459,7 +491,31 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     ? bb * 3.5
     : Math.min(stack, 3 * currentBet + Math.max(0, pot - currentBet));
   const commitRatio = stack > 0 ? potRaiseCost / stack : 1;
-  const ploCommitZone = ploT && commitRatio >= 0.25;
+  /**
+   * ═══ V34 (2026-09-02): A COMMITMENT ZONE IS ABOUT RAISING, NOT CALLING ═══
+   *
+   * The zone was one gate for both shapes of decision, and at 0.25 it
+   * swallowed the entire mid-stack tournament: with 24bb behind, a pot
+   * re-raise over a 2.2x open costs ~8bb (34% of the stack), so every PLO
+   * blind at 20-30bb was routed into "pot it or fold" and the CALL - the play
+   * the big blind makes with most of its range at 3.4:1 - did not exist.
+   * Measured before this change, PLO4/6/8 tournament at 25bb, BB facing a
+   * button open: fold 82-86%, raise 14-18%, CALL 0%. The V24 price defense
+   * that the single-raise branch carries for exactly this spot was never
+   * reached.
+   *
+   * Opening a pot keeps the 0.25 gate: first in, limping is banned anyway, so
+   * raise-or-fold is the only menu and the bar just has to be a stack-off
+   * bar. FACING a raise, the zone applies only when the pot re-raise really
+   * is the stack (>= 45% of it) or the call alone is a quarter of the stack;
+   * everything shallower falls through to the price-aware branches below,
+   * which still reshove the right hands (V25 Omaha reshove, <= 25bb).
+   */
+  const ploCommitZone =
+    ploT &&
+    (unopened
+      ? commitRatio >= 0.25
+      : commitRatio >= 0.45 || (stack > 0 && Math.min(toCall, stack) / stack >= 0.25));
   // Already-invested commitment: chips in the middle this hand as a share of
   // everything hero started with. Past ~30% a fold surrenders a stake big
   // enough that folding is worse than the worst call.
@@ -683,7 +739,14 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
 
   // ── Unopened pot (or limpers only) ──
   if (unopened) {
-    let openThresh = t(OPEN_THRESH[position]) + Math.min(limpers, 3) * 0.03;
+    // V34: the button is its own seat; and 'early' at a full ring is three
+    // seats deep (UTG, UTG+1, UTG+2), where a solver opens ~11-13%, not the
+    // 6-max lojack's ~15%. tableSize carries the dealt-in count when the
+    // M-zone layer is wired (it always is live).
+    const baseOpen =
+      position === 'late' && ctx.isButton === true ? OPEN_THRESH_BUTTON : OPEN_THRESH[position];
+    const fullRingEarly = position === 'early' && (ctx.tableSize ?? 6) >= 8 ? 0.06 : 0;
+    let openThresh = t(baseOpen + fullRingEarly) + Math.min(limpers, 3) * 0.03;
     openThresh += depthTighten - depthLoosen - anteWiden;
     // V10 LIMP ISOLATION: weak limpers are the softest spot in cash poker.
     // Rather than only tightening (and sizing up) against them, ATTACK in
@@ -699,7 +762,13 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     // V11: TRUE heads-up (a 2-handed game, not just blinds left in a ring
     // hand) plays wider still — the SB/BTN opens the large majority of hands.
     const bvb = position === 'sb' && ctx.oppsLeft === 1;
-    if (bvb) openThresh = t(headsUp ? 0.24 : 0.36) + depthTighten - anteWiden;
+    // V34: `headsUp` is true in an unopened pot at ANY table size
+    // (raiserPosition is null first-in), so a full-ring small blind folded
+    // to opened 76% like a heads-up button. A ring SB against one big blind
+    // raises ~40% and limps a band below that (the mix right after this);
+    // only a genuinely two-handed table opens the 0.24 range.
+    const trueHu = headsUp && (ctx.tableSize ?? 2) <= 2;
+    if (bvb) openThresh = t(trueHu ? 0.24 : 0.3) + depthTighten - anteWiden;
 
     if (strength >= openThresh) {
       // V20 ORANGE ZONE (M 6-10): there is no raise-fold — a standard open
@@ -920,7 +989,32 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     if (ctx.isOmaha && ctx.ploPriceDefense === true) callBar = Math.max(0.28, callBar);
 
     if (strength >= callBar && priceOK) return { a: 'call' };
-    if (position === 'bb' && toCall <= bb * 2.5 && strength >= 0.3) return { a: 'call' };
+    /**
+     * ═══ V34 (2026-09-02): THE BIG BLIND DEFENDS ITS BLIND ═══════════════
+     *
+     * This price catch is what actually sets the big blind's defence (the
+     * CALL_VS bars above it are stricter than 0.3 for every raiser seat), and
+     * 0.3 is ~39% of hands on the scale, regardless of who opened. Measured
+     * against a 2.5x button open: fold 62%. A solver big blind folds ~40%
+     * to that raise and ~30% to a 2.2x ante-tournament open, because the
+     * pot is laying 3.4:1 and the button's range is half junk. Folding 62%
+     * is the single easiest leak at a table to exploit: min-raise every
+     * button.
+     *
+     * The catch now widens with the RAISER'S position - a steal is defended
+     * wider than an under-the-gun open - and with an ante in play. Against
+     * early opens 0.3 (~39%) stays: the solver folds ~60% there too.
+     *
+     *     vs early/middle   0.30  (~39% continue incl. 3-bets)
+     *     vs late steal     0.22  (~54%; measured 47% fold vs a 2.5x open)
+     *     vs the SB         handled by the heads-up defence above
+     *     ante in play      -0.03 on top
+     */
+    if (position === 'bb' && toCall <= bb * 2.5) {
+      const steal = vs === 'late';
+      const bbFloor = (steal ? 0.22 : 0.3) - (ctx.anteInPlay ? 0.03 : 0);
+      if (strength >= bbFloor) return { a: 'call' };
+    }
     return { a: 'fold' };
   }
 

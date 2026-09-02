@@ -1186,6 +1186,9 @@ export default function LobbyTable({
     () => readSort(clubId, category) ?? defaultSortFor(category)
   );
   const bodyRef = useRef<HTMLTableSectionElement>(null);
+  /* Which chip of the mobile sort toolbar owns the single tab stop. */
+  const sortChipsRef = useRef<HTMLDivElement>(null);
+  const [sortFocus, setSortFocus] = useState(0);
   /* Which row the keyboard is on. Deliberately separate from `selectedId`:
      selecting a row opens (and for a running MTT, navigates), and arrowing
      through a list must not do either. */
@@ -1368,6 +1371,48 @@ export default function LobbyTable({
 
   const sortableColumns = columns.filter((col) => col.sortable);
 
+  /**
+   * Roving focus for the mobile sort toolbar.
+   *
+   * Focus is moved imperatively rather than by rendering `autoFocus`, because
+   * the chips are a horizontal scroller: `focus()` brings the target into view
+   * on its own, which is the behaviour a keyboard user wants when the sixth
+   * chip is off the right edge of a 375px phone.
+   */
+  const moveSortFocus = (nextIndex: number) => {
+    const count = sortableColumns.length;
+    if (count === 0) return;
+    const wrapped = ((nextIndex % count) + count) % count;
+    setSortFocus(wrapped);
+    sortChipsRef.current?.querySelectorAll<HTMLButtonElement>('button')[wrapped]?.focus();
+  };
+
+  const handleSortbarKeyDown = (e: React.KeyboardEvent) => {
+    const current = Math.min(sortFocus, sortableColumns.length - 1);
+    switch (e.key) {
+      case 'ArrowRight':
+        e.preventDefault();
+        moveSortFocus(current + 1);
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        moveSortFocus(current - 1);
+        break;
+      case 'Home':
+        e.preventDefault();
+        moveSortFocus(0);
+        break;
+      case 'End':
+        e.preventDefault();
+        moveSortFocus(sortableColumns.length - 1);
+        break;
+      default:
+      /* Enter and Space are the button's own business; anything else belongs
+         to the page. Deliberately NOT swallowed: the grid below listens for
+         its own keys and only acts when the event started on itself. */
+    }
+  };
+
   return (
     <>
       {/* ═══════════════════════════════════════════════════════════════════
@@ -1397,10 +1442,23 @@ export default function LobbyTable({
           `.arena-lobby-card-list + .lobby-table-wrap`, so anything inserted
           between those two would put the dense table back on every phone. */}
       {sortableColumns.length > 0 && (
-        <div className="lobby-sortbar" role="toolbar" aria-label="Sort Games">
+        <div
+          className="lobby-sortbar"
+          role="toolbar"
+          aria-label="Sort Games"
+          aria-orientation="horizontal"
+          /* A toolbar is a COMPOSITE widget: ARIA expects ONE tab stop for the
+             whole group, with the arrow keys moving inside it. Shipping the
+             role without that contract told a screen reader "arrows work here"
+             and then ignored them, and left six separate tab stops in the
+             middle of the lobby for a keyboard user to walk through on the way
+             to the games. The roving tabindex below gives the role what it
+             promises. */
+          onKeyDown={handleSortbarKeyDown}
+        >
           <span className="lobby-sortbar__eyebrow">Sort</span>
-          <div className="lobby-sortbar__chips">
-            {sortableColumns.map((col) => {
+          <div className="lobby-sortbar__chips" ref={sortChipsRef}>
+            {sortableColumns.map((col, index) => {
               const active = sort?.key === col.key;
               return (
                 <button
@@ -1408,6 +1466,12 @@ export default function LobbyTable({
                   type="button"
                   className={`lobby-sortbar__chip${active ? ' is-active' : ''}`}
                   aria-pressed={active}
+                  /* The chip set changes with the tab, so a remembered index
+                     can outlive the list it pointed into. Clamped rather than
+                     reset, so the cursor stays roughly where the hand left
+                     it. */
+                  tabIndex={index === Math.min(sortFocus, sortableColumns.length - 1) ? 0 : -1}
+                  onFocus={() => setSortFocus(index)}
                   onClick={() => handleHeaderClick(col)}
                 >
                   {col.label}

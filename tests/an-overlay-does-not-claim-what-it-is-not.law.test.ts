@@ -62,6 +62,23 @@ describe('an overlay does not claim what it is not', () => {
     expect(short).toContain('.sw__tree');
   });
 
+  it('the buy-in sheet holds focus, since it claims aria-modal', () => {
+    const trap = read('src/hooks/useFocusTrap.ts');
+    // The whole contract, not a third of it: first focus in, Tab wrapping
+    // both ways, focus restored on close. A partial trap is its own bug.
+    expect(trap).toContain('first.focus()');
+    expect(trap).toContain('e.shiftKey');
+    expect(trap).toContain('lastItem.focus()');
+    expect(trap).toContain('firstItem.focus()');
+    expect(trap).toContain('document.contains(restore)');
+    // Wired to the sheet, and only while it is open.
+    expect(table).toContain('ref={seatBuyInTrapRef}');
+    expect(table).toContain('useFocusTrap(!!seatFirstBuyIn && seatFirstConfirm !== null)');
+    // The hook must NOT close on Escape: only the caller knows that closing
+    // is refused while a debit is in flight.
+    expect(trap).not.toContain("'Escape'");
+  });
+
   it('the buy-in sheet can always reach its own button', () => {
     const sheet = tableCss.slice(
       tableCss.indexOf('.seat-buyin-confirm {'),

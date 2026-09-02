@@ -427,10 +427,33 @@ describe('spins say what they pay and how they play (Dan 5)', () => {
     expect(seatsTakenLabel(spin({ current_players: 3 }))).toBe('3/3');
   });
 
-  it('calls a 300-chip spin a turbo and a 1,000-chip spin a deepstack', () => {
-    expect(stackDepthLabel(spin({ starting_chips: 300 }))).toBe('Turbo');
-    expect(stackDepthLabel(spin({ starting_chips: 1000 }))).toBe('Deepstack');
-    expect(stackDepthLabel(spin({ starting_chips: 5000 }))).toBe('Deepstack');
+  /**
+   * REPLACED 2026-09-01, deliberately (CLAUDE.md rule 8: a behaviour I chose
+   * to change, and its pin, move in the same commit).
+   *
+   * This used to assert `stackDepthLabel(spin({ starting_chips: 300 }))` is
+   * 'Turbo' on an UNDRAWN spin, which pinned the bug rather than the rule:
+   * `starting_chips` is SEEDED at 300 by the recycler and rewritten to the
+   * drawn tier's stack at draw time. So every Spin card called itself Turbo
+   * while 12.6% of games deal 1,000 or 5,000 - and a 100x is 5,000 chips at
+   * 250 big blinds, which is the opposite of Turbo.
+   *
+   * The rule, and what is pinned now: before the wheel turns there is no
+   * honest depth label, so there is none. After it, the column is the truth
+   * and reads exactly as it always did.
+   */
+  it('refuses to name a depth it has not drawn, and names it once it has', () => {
+    // Undrawn: REGISTERING, no multiplier. The seed says 300 and it means
+    // nothing.
+    expect(stackDepthLabel(spin({ starting_chips: 300 }))).toBeNull();
+    expect(stackDepthLabel(spin({ starting_chips: 5000 }))).toBeNull();
+
+    // Drawn: the game has started, so the column is the real stack.
+    const drawn = (chips: number) =>
+      spin({ starting_chips: chips, status: 'RUNNING', spin_multiplier: 3 });
+    expect(stackDepthLabel(drawn(300))).toBe('Turbo');
+    expect(stackDepthLabel(drawn(1000))).toBe('Deepstack');
+    expect(stackDepthLabel(drawn(5000))).toBe('Deepstack');
   });
 
   it('offers Watch, not Sit Down, once there is no seat to buy', () => {

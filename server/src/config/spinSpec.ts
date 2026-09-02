@@ -264,6 +264,26 @@ export const SPIN_TIERS: SpinTierSpec[] = [
  * happen, and this one had already drifted. Summing the ladder makes the two
  * incapable of disagreeing: retune a tier and the denominator follows.
  */
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A SPIN'S STACK IS NOT KNOWN UNTIL THE WHEEL HAS TURNED (2026-09-01)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `tournaments.starting_chips` is SEEDED at 300 by the recycler and rewritten
+ * to the drawn tier's stack at draw time. Every lobby surface read the raw
+ * column, so every Spin card said "300 chips" and derived "Turbo" from it -
+ * while 12.6% of games actually deal 1,000 or 5,000. A 100x is 5,000 chips at
+ * 250 big blinds, which is the OPPOSITE of Turbo, and a seated player watched
+ * the stack jump from 300 with no explanation.
+ *
+ * Before the draw the honest answer is the RANGE, and it comes from the same
+ * table the draw itself uses.
+ */
+export function spinStartingStackRange(): { min: number; max: number } {
+  const stacks = SPIN_TIERS.map((t) => t.startingStack).filter((n) => Number.isFinite(n) && n > 0);
+  return { min: Math.min(...stacks), max: Math.max(...stacks) };
+}
+
 export const SPIN_FREQ_DENOMINATOR: number = SPIN_TIERS.reduce((sum, t) => sum + t.freq, 0);
 
 /**

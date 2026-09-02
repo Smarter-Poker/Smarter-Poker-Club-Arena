@@ -703,6 +703,7 @@ import { resolveLobbyClubId, resolveLobbyClubIdSync } from '../utils/clubQuickLi
 import { relayTournamentEvent } from '../services/tournamentEventBridge';
 import { spinRevealToDealMs } from '../config/spinSpec';
 import SeatFillDots from '../components/table/SeatFillDots';
+import { useFocusTrap } from '../hooks/useFocusTrap';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // WINDOW-LEVEL LOCKS — TRUE singletons that survive module reloads, lazy-load
@@ -1426,6 +1427,7 @@ export default function TablePage({
    * can say what the multiplier is worth. See the wheel's onDone.
    */
   const [spinPrizePool, setSpinPrizePool] = useState<number>(0);
+
   /**
    * D1: has THIS mount already put the wheel on screen? The sessionStorage
    * stamp records only a COMPLETED reveal, so this in-memory ref is what stops
@@ -4273,6 +4275,24 @@ export default function TablePage({
    * until the player confirms the price, and nothing is charged until they do.
    */
   const [seatFirstConfirm, setSeatFirstConfirm] = useState<number | null>(null);
+
+  /** Focus containment for the seat buy-in sheet. See useFocusTrap. */
+  const seatBuyInTrapRef = useFocusTrap(!!seatFirstBuyIn && seatFirstConfirm !== null);
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  A NEW GAME DOES NOT INHERIT THE LAST ONE'S FACTS (2026-09-01)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * `spinPrizePool` is captured from one tournament and this component
+   * survives the next one starting on the same table - Spins recycle a table
+   * in seconds. Without this the badge would carry the PREVIOUS game's prize
+   * into the new one until its wheel finished, which is wrong in the most
+   * believable way possible: a number that looks right.
+   */
+  useEffect(() => {
+    setSpinPrizePool(0);
+  }, [tableState.tournamentId]);
   /* ENHANCEMENT 2026-08-29: the multiplier odds ladder on the Spin buy-in
      sheet. Collapsed by default (the sheet has to fit 375px with the Buy In
      button above the fold); resets closed whenever the sheet closes so the
@@ -20851,7 +20871,14 @@ export default function TablePage({
           until Buy In is pressed and the debit succeeds.
           ═══════════════════════════════════════════════════════════════════════ */}
       {seatFirstBuyIn && seatFirstConfirm !== null && (
-        <div className="seat-buyin-confirm" role="dialog" aria-modal="true">
+        /* A MODAL THAT CLAIMS aria-modal MUST ACTUALLY HOLD FOCUS
+           (2026-09-01). This sheet had Escape and nothing else: focus stayed
+           on the felt behind it, which `aria-modal` had just told assistive
+           tech does not exist. useFocusTrap does the whole contract - first
+           focus in, Tab wrapping both ways, focus restored on close - and
+           deliberately does NOT close on Escape, because only this component
+           knows that closing is refused while a debit is in flight. */
+        <div className="seat-buyin-confirm" role="dialog" aria-modal="true" ref={seatBuyInTrapRef}>
           <div
             className="seat-buyin-confirm__backdrop"
             onClick={() => !seatFirstPending && setSeatFirstConfirm(null)}

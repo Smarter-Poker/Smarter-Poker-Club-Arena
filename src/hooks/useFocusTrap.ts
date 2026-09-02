@@ -1,91 +1,90 @@
+import { useEffect, useRef } from 'react';
+
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  useFocusTrap — Trap keyboard focus inside a container
- * ═══════════════════════════════════════════════════════════════════════════════
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A MODAL THAT CLAIMS aria-modal MUST ACTUALLY HOLD FOCUS (2026-09-01)
+ * ═══════════════════════════════════════════════════════════════════════════
  *
- * When active, Tab/Shift+Tab cycling is trapped inside the container ref.
- * Focus is moved to the first focusable element on mount, and restored
- * to the previously focused element on unmount.
+ * The seat buy-in sheet is `role="dialog" aria-modal="true"` over the whole
+ * table. `aria-modal` tells assistive tech to ignore everything outside it, so
+ * a keyboard or screen-reader user whose focus was still on the felt behind it
+ * was tabbing through elements their software had just been told do not exist.
+ * It had Escape, and Escape alone is the half of the contract that is easy.
  *
- * Usage:
- *   const trapRef = useFocusTrap(isOpen);
- *   return <div ref={trapRef}>...modal content...</div>
+ * This is the other half, and it is deliberately the whole of it - a partial
+ * trap is its own bug:
+ *
+ *   1. FIRST FOCUS moves into the dialog when it opens, so the player starts
+ *      where the software says they are;
+ *   2. TAB WRAPS at both ends, forwards and backwards, so focus cannot leave
+ *      an element that has been declared the only thing on screen;
+ *   3. FOCUS IS RESTORED to whatever had it when the dialog opened. Without
+ *      this, closing a sheet drops focus onto <body> and a keyboard user has
+ *      to tab from the top of the page to get back to the seat they were
+ *      looking at.
+ *
+ * Deliberately NOT here: closing on Escape. The caller owns that, because only
+ * the caller knows when closing is allowed - the buy-in sheet refuses while a
+ * debit is in flight, and a hook that closed it anyway would spend money and
+ * then hide the result.
  */
-
-import { useRef, useEffect, useCallback } from 'react';
-
-const FOCUSABLE_SELECTORS =
-  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-export function useFocusTrap(isActive: boolean) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key !== 'Tab' || !containerRef.current) return;
-
-    const focusableElements =
-      containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS);
-    if (focusableElements.length === 0) return;
-
-    const firstFocusable = focusableElements[0];
-    const lastFocusable = focusableElements[focusableElements.length - 1];
-
-    /* FOCUS OUTSIDE THE TRAP IS THE COMMON CASE, NOT AN EDGE ONE.
-       This only ever intervened when focus was sitting on the first or the
-       last focusable element. Tap any non-focusable part of a modal - a
-       heading, a hint paragraph, a section's padding - and activeElement
-       becomes <body>; the next Tab then matched neither branch, so the browser
-       walked on to the first tabbable element in document order, which is the
-       page BEHIND the portal. aria-modal does not stop keyboard focus, so the
-       trap simply leaked. */
-    if (!containerRef.current.contains(document.activeElement)) {
-      e.preventDefault();
-      (e.shiftKey ? lastFocusable : firstFocusable).focus();
-      return;
-    }
-
-    if (e.shiftKey) {
-      // Shift+Tab: wrap from first → last
-      if (document.activeElement === firstFocusable) {
-        e.preventDefault();
-        lastFocusable.focus();
-      }
-    } else {
-      // Tab: wrap from last → first
-      if (document.activeElement === lastFocusable) {
-        e.preventDefault();
-        firstFocusable.focus();
-      }
-    }
-  }, []);
+export function useFocusTrap(active: boolean) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const restoreToRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    if (!isActive || !containerRef.current) return;
+    if (!active) return;
+    const container = containerRef.current;
+    if (!container) return;
 
-    // Remember what was focused before the trap
-    previousFocusRef.current = document.activeElement as HTMLElement;
+    restoreToRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
-    // Focus the first focusable element inside the container
-    const focusableElements =
-      containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS);
-    let rafId: number | null = null;
-    if (focusableElements.length > 0) {
-      // Small delay to allow the modal animation to start
-      rafId = requestAnimationFrame(() => {
-        focusableElements[0]?.focus();
-      });
+    const focusable = () =>
+      Array.from(
+        container.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+
+    /* First focus: the first control, or the container itself so the reader
+       announces the dialog rather than leaving focus outside it. */
+    const first = focusable()[0];
+    if (first) first.focus();
+    else {
+      container.setAttribute('tabindex', '-1');
+      container.focus();
     }
 
-    document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      if (rafId !== null) cancelAnimationFrame(rafId);
-      document.removeEventListener('keydown', handleKeyDown);
-      // Restore focus to the previously focused element
-      previousFocusRef.current?.focus();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const items = focusable();
+      if (items.length === 0) {
+        e.preventDefault();
+        return;
+      }
+      const firstItem = items[0];
+      const lastItem = items[items.length - 1];
+      const activeEl = document.activeElement as HTMLElement | null;
+      if (e.shiftKey && (activeEl === firstItem || !container.contains(activeEl))) {
+        e.preventDefault();
+        lastItem.focus();
+      } else if (!e.shiftKey && (activeEl === lastItem || !container.contains(activeEl))) {
+        e.preventDefault();
+        firstItem.focus();
+      }
     };
-  }, [isActive, handleKeyDown]);
+
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown, true);
+      const restore = restoreToRef.current;
+      /* Only restore to something still in the document. A seat that was
+         removed while the sheet was open must not pull focus to a detached
+         node, which parks it on <body> with no announcement. */
+      if (restore && document.contains(restore)) restore.focus();
+    };
+  }, [active]);
 
   return containerRef;
 }

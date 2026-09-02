@@ -1140,6 +1140,7 @@ jobs:
 
       # ── Bundle Size Tracking ─────────────────────────────────────────────
       - name: Track Bundle Size
+        id: bundle_size
         if: success()
         # Measures INITIAL LOAD (what a user downloads to open the app) and
         # gates on it, then reports whole-app size against a bloat ceiling.
@@ -1158,8 +1159,14 @@ jobs:
         # failed on the whole-app ceiling while the real defect - operator-only
         # code newly landing in the chunk every player downloads before first
         # paint - sat underneath it, invisible, and passed its own limit at
-        # 309kB against 320kB. It was found by diffing two sourcemaps by hand.
-        if: always()
+        # 309kB against 320kB. It was found by hand, after the fact.
+        #
+        # Runs when the build succeeded, AND specifically when the size gate
+        # above is the thing that went red - which is when "who is paying for
+        # this" is most worth answering. Not always(): if the BUILD failed
+        # there is no dist to measure, and turning one clear failure into two
+        # helps nobody.
+        if: success() || steps.bundle_size.conclusion == 'failure'
         run: node scripts/ci/entry-chunk-delta.mjs dist
 
       # Real browser performance and responsive budgets. This replaces the old

@@ -96,3 +96,30 @@ numbers so the decision can be made on evidence instead of on a guess.
 
 Nothing in this changelog changes behaviour. The bundle-delta gate committed
 alongside it is separate and self-contained.
+
+## Postscript: the gate failed its own pull request, and why
+
+The first version of `entry-chunk-delta.mjs` read the module list out of the
+entry chunk's **sourcemap**. It passed locally and failed CI immediately with
+`index-Kq1SvQtS-v6.js has no sourcemap`.
+
+The reason is in `vite.config.ts`: the Sentry plugin uploads sourcemaps and then
+deletes them (`filesToDeleteAfterUpload`), and it is gated on
+`NODE_ENV=production && SENTRY_AUTH_TOKEN`. That is precisely CI and never a
+developer machine. So the gate was reading an artifact that exists only where it
+was written and never where it runs.
+
+Rollup knows the chunk's modules without any sourcemap, so it is asked directly:
+an `entry-module-manifest` plugin writes `.entry-modules.json` on `writeBundle`,
+before Sentry can delete anything and outside `dist/` so the list never ships to
+players. The baseline is 202 modules rather than the sourcemap's 156, because
+Rollup's own ledger is the complete one.
+
+Verified after the change: the gate passes at parity, and removing two modules
+from the baseline still reproduces the 2026-09-01 leak by name.
+
+The step condition was tightened at the same time. `always()` would have fired
+even when the BUILD failed, where there is no `dist` to measure - turning one
+clear failure into two. It now runs on success, or specifically when the size
+gate above is the step that went red, which is when "who is paying for this" is
+most worth answering.

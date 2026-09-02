@@ -52,7 +52,7 @@
  *         node scripts/ci/entry-chunk-delta.mjs [dist] --update
  * Exit:   0 clean · 1 an unreviewed module in the entry · 2 script error
  */
-import { readFileSync, writeFileSync, existsSync, readdirSync, appendFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import path from 'node:path';
 
@@ -61,44 +61,48 @@ const UPDATE = process.argv.includes('--update');
 const ASSETS = path.join(DIST, 'assets');
 const BASELINE = path.join('scripts', 'ci', 'entry-chunk-baseline.json');
 
-/** Machine-independent module id. Sourcemap sources are relative to the chunk
- *  and differ by checkout depth, so anchor them on the parts that are stable. */
-function normalise(source) {
-  const nm = source.lastIndexOf('node_modules/');
-  if (nm !== -1) return 'node_modules/' + source.slice(nm + 'node_modules/'.length);
-  const src = source.lastIndexOf('/src/');
-  if (src !== -1) return 'src/' + source.slice(src + '/src/'.length);
-  return source.replace(/^(\.\.\/)+/, '');
-}
+/**
+ * WHERE THE MODULE LIST COMES FROM, AND WHY NOT THE SOURCEMAP.
+ *
+ * The first version of this gate read the entry chunk's sourcemap. That worked
+ * on a developer machine and could never have worked in CI: the Sentry plugin
+ * uploads sourcemaps and then DELETES them from dist/, and it only runs when
+ * SENTRY_AUTH_TOKEN is set, which is exactly CI and never local. The gate
+ * passed locally and failed its own pull request with "has no sourcemap".
+ *
+ * Rollup knows the chunk's modules without any of that, so vite.config.ts
+ * writes them to .entry-modules.json on writeBundle - before Sentry can
+ * delete anything, and outside dist/ so the list never ships to players.
+ */
+const MANIFEST = '.entry-modules.json';
 
 function entryChunk() {
   if (!existsSync(ASSETS)) {
-    console.error(`[entry-chunk] no ${ASSETS} — did the build run?`);
+    console.error(`[entry-chunk] no ${ASSETS} - did the build run?`);
     process.exit(2);
   }
-  const js = readdirSync(ASSETS).filter((f) => /^index-[^/]*\.js$/.test(f));
-  if (js.length !== 1) {
+  if (!existsSync(MANIFEST)) {
     console.error(
-      `[entry-chunk] expected exactly one index-*.js in ${ASSETS}, found ${js.length}. ` +
-        'The entry chunk is no longer identifiable and this gate would be measuring the wrong file.'
+      `[entry-chunk] ${MANIFEST} is missing. It is written by the ` +
+        'entry-module-manifest plugin in vite.config.ts during the build. ' +
+        'Run the build before this gate; do not silence it by skipping the check.'
     );
     process.exit(2);
   }
-  const file = path.join(ASSETS, js[0]);
-  const map = file + '.map';
-  if (!existsSync(map)) {
-    console.error(
-      `[entry-chunk] ${js[0]} has no sourcemap. This gate reads the module list out of it; ` +
-        'without it a leak into first paint is invisible. Do not silence this by skipping the check.'
-    );
+  const manifest = JSON.parse(readFileSync(MANIFEST, 'utf8'));
+  const file = path.join(ASSETS, path.basename(manifest.entry || ''));
+  if (!existsSync(file)) {
+    console.error(`[entry-chunk] ${MANIFEST} names ${manifest.entry}, which is not in ${ASSETS}.`);
     process.exit(2);
   }
-  const buf = readFileSync(file);
-  const sources = JSON.parse(readFileSync(map, 'utf8')).sources || [];
+  if (!Array.isArray(manifest.modules) || manifest.modules.length === 0) {
+    console.error('[entry-chunk] the manifest lists no src modules - the measurement is broken, not the bundle.');
+    process.exit(2);
+  }
   return {
-    name: js[0],
-    gz: gzipSync(buf, { level: 9 }).length,
-    modules: sources.map(normalise).filter((s) => s.startsWith('src/')).sort(),
+    name: path.basename(file),
+    gz: gzipSync(readFileSync(file), { level: 9 }).length,
+    modules: [...manifest.modules].sort(),
   };
 }
 

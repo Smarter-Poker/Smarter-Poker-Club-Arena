@@ -169,3 +169,4 @@ _to_delete/
 __pycache__/
 *.pyc
 .dr-backups/
+.entry-modules.json

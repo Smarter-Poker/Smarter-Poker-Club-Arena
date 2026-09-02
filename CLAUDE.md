@@ -5,7 +5,10 @@
 If you are picking up the hourly `:55` maintenance break / platform freeze /
 engine restart work, the current state, every measured baseline, the open
 defects and the exact next actions are in
-[`docs/HANDOFF_CURRENT_STATE.md`](./docs/HANDOFF_CURRENT_STATE.md).
+[`docs/HANDOFF_CURRENT_STATE.md`](./docs/HANDOFF_CURRENT_STATE.md) - a 9-phase
+programme; phases 1-3 built (phase 1 merged + live, phases 2+3 in PR #2715),
+next is phase 4 (thaw installments). The plan is
+[`docs/ENGINE-RESTART-PROGRAMME.md`](./docs/ENGINE-RESTART-PROGRAMME.md).
 
 Read it before touching `server/src/maintenance/**`,
 `server/src/engine/ServerTableEngineBase.ts`,

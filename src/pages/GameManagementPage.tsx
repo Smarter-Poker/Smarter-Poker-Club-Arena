@@ -522,194 +522,269 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const [health, setHealth] = useState<GameManagementHealth | null>(null);
   const loadEpochRef = useRef(0);
   const loadedRouteRef = useRef('');
+  // One load at a time, with at most one queued behind it, and a stable handle
+  // so the queued one can be started from inside load's own `finally`.
+  const loadInFlightRef = useRef(false);
+  const rerunRef = useRef(false);
+  // The queued load inherits the LOUDEST request that was folded into it. A
+  // silent refresh coalesced behind another silent refresh stays silent, but
+  // an operator arriving - a route change, a Try Again - must still get the
+  // spinner it would have got had nothing been in flight. Losing this is how
+  // coalescing turns one bug into a quieter one.
+  const rerunSilentRef = useRef(true);
+  const mountedRef = useRef(true);
+  const loadRef = useRef<(silent?: boolean) => void>(() => {});
 
   const managementPath =
     scope === 'union' ? `/unions/${unionId}/table-management` : `/clubs/${clubId}/table-management`;
 
   const clearCreate = () => setSearchParams({}, { replace: true });
 
-  const load = useCallback(async () => {
-    if (!user?.id) return;
-    const requestId = ++loadEpochRef.current;
-    const isCurrent = () => loadEpochRef.current === requestId;
-    const routeKey = `${scope}:${scope === 'union' ? unionId || '' : clubId || ''}`;
-    if (loadedRouteRef.current !== routeKey) {
-      loadedRouteRef.current = routeKey;
-      setAllowed(null);
-      setScopeId(null);
-      setHosts([]);
-      setHostClubId('');
-      setGames([]);
-      setCounts({ total: 0, live: 0, scheduled: 0 });
-      setNextCursor(null);
-      setHealth(null);
-      setSurfaceDirty(false);
-    }
-    setLoading(true);
-    setLoadError(null);
-    try {
-      let resolvedScopeId: string;
-      let resolvedScopeName: string;
-      let nextHosts: HostClub[];
-      if (scope === 'club') {
-        resolvedScopeId = await resolveClubUUID(clubId || '');
-        const [access, clubResult] = await Promise.all([
-          fetchGameCreationAccess(resolvedScopeId),
-          supabase.from('clubs').select('id,name').eq('id', resolvedScopeId).maybeSingle(),
-        ]);
-        if (!isCurrent()) return;
-        // A member club is operated from its union console, even for a union
-        // owner who technically has authority over the underlying rows.
-        const standaloneAccess = access.allowed && !access.unionId;
-        setAllowed(standaloneAccess);
-        if (!standaloneAccess) {
-          setScopeId(resolvedScopeId);
-          setHosts([]);
-          setGames([]);
-          setHealth(null);
-          setSurfaceDirty(false);
-          setLoading(false);
-          return;
-        }
-        if (clubResult.error || !clubResult.data)
-          throw clubResult.error || new Error('Club not found');
-        resolvedScopeName = clubResult.data.name;
-        setScopeName(resolvedScopeName);
-        nextHosts = [{ id: resolvedScopeId, name: clubResult.data.name }];
-      } else {
-        if (!unionId) throw new Error('Union not found');
-        resolvedScopeId = unionId;
-        const canManage = await unionService.isUnionAdmin(unionId, user.id);
-        if (!isCurrent()) return;
-        setAllowed(canManage);
-        if (!canManage) {
-          setScopeId(unionId);
-          setHosts([]);
-          setGames([]);
-          setHealth(null);
-          setSurfaceDirty(false);
-          setLoading(false);
-          return;
-        }
-        const [unionResult, hostResult] = await Promise.all([
-          supabase.from('unions').select('id,name').eq('id', unionId).maybeSingle(),
-          supabase.from('union_clubs').select('club_id, clubs(name)').eq('union_id', unionId),
-        ]);
-        if (!isCurrent()) return;
-        if (unionResult.error || !unionResult.data)
-          throw unionResult.error || new Error('Union not found');
-        if (hostResult.error) throw hostResult.error;
-        resolvedScopeName = unionResult.data.name;
-        setScopeName(resolvedScopeName);
-        nextHosts = (hostResult.data || []).map((row: any) => ({
-          id: row.club_id,
-          name: row.clubs?.name || 'Union Club',
-        }));
+  /**
+   * @param silent A background refresh - realtime, the master bus, or a command
+   *   that just succeeded - rather than an operator arriving. It must never put
+   *   an already-rendered board back behind the loading state.
+   */
+  const load = useCallback(
+    async (silent = false) => {
+      if (!user?.id) return;
+      // Coalesce instead of stacking. Every management event for this scope
+      // arrives here as a refresh, and the feed is not quiet: Deep Stack Society
+      // alone wrote ~19,900 game_management_events in one hour (5.5 a second),
+      // because every running tournament emits one on each row update. A full
+      // load is five sequential round trips and was measured at ~11 seconds
+      // against production, so refreshes were starting every 2-4 seconds and
+      // running five deep. Each one re-asserted setLoading(true) on entry, while
+      // the epoch guard let only a load still current at the END clear the flag
+      // or publish its rows - and with a newer load always in flight, none ever
+      // was. The page sat on "Loading Live Game Controls..." indefinitely with
+      // every counter reading 0, while the header, which is set before the first
+      // long await, read correctly. That combination is the signature of this
+      // bug; if you see it again, look here first.
+      if (loadInFlightRef.current) {
+        rerunRef.current = true;
+        if (!silent) rerunSilentRef.current = false;
+        return;
       }
-
-      setScopeId(resolvedScopeId);
-      setHosts(nextHosts);
-      setHostClubId((current) =>
-        nextHosts.some((host) => host.id === current) ? current : nextHosts[0]?.id || ''
-      );
-
-      const page = await gameManagementService.list(scope, resolvedScopeId);
-      if (!isCurrent()) return;
-      const tableRows = page.items.filter((row: any) => row.kind === 'table');
-      const tournamentRows = page.items.filter((row: any) => row.kind === 'tournament');
-      const tableIds = tableRows.map((row: any) => row.id);
-      const tournamentIds = tournamentRows.map((row: any) => row.id);
-      const [tableContracts, tournamentContracts, tableReceipts, tournamentReceipts] =
-        await Promise.all([
-          gameManagementService.getContracts('table', tableIds),
-          gameManagementService.getContracts('tournament', tournamentIds),
-          gameManagementService.getCommandReceipts('table', tableIds),
-          gameManagementService.getCommandReceipts('tournament', tournamentIds),
-        ]);
-      if (!isCurrent()) return;
-      const tableContractMap = new Map(
-        tableContracts.map((contract) => [contract.gameId, contract])
-      );
-      const tournamentContractMap = new Map(
-        tournamentContracts.map((contract) => [contract.gameId, contract])
-      );
-      const tableReceiptMap = new Map(tableReceipts.map((receipt) => [receipt.gameId, receipt]));
-      const tournamentReceiptMap = new Map(
-        tournamentReceipts.map((receipt) => [receipt.gameId, receipt])
-      );
-      const hostNames = Object.fromEntries(nextHosts.map((host) => [host.id, host.name]));
-      const rows: ManagedGame[] = [
-        ...tableRows.map((row: any) => ({
-          id: row.id,
-          kind: 'table' as const,
-          name: row.name,
-          status: row.status,
-          clubId: row.club_id,
-          hostName: hostNames[row.club_id] || resolvedScopeName,
-          variant: row.variant || 'NLH',
-          players: row.players || 0,
-          maxPlayers: row.max_players || 0,
-          startTime: null,
-          smallBlind: Number(row.small_blind || 0),
-          bigBlind: Number(row.big_blind || 0),
-          minBuyIn: Number(row.min_buy_in || 0),
-          maxBuyIn: Number(row.max_buy_in || 0),
-          buyIn: 0,
-          contract: tableContractMap.get(row.id) || null,
-          lastCommand: tableReceiptMap.get(row.id) || null,
-          pendingSchedule: row.pending_schedule
-            ? {
-                scheduleId: row.pending_schedule.schedule_id,
-                executeAt: row.pending_schedule.execute_at,
-                status: row.pending_schedule.status,
-              }
-            : null,
-        })),
-        ...tournamentRows.map((row: any) => ({
-          id: row.id,
-          kind: 'tournament' as const,
-          name: row.name,
-          status: row.status,
-          clubId: row.club_id,
-          hostName: hostNames[row.club_id] || resolvedScopeName,
-          variant: row.variant || 'MTT',
-          players: row.players || 0,
-          maxPlayers: row.max_players || 0,
-          startTime: row.start_time,
-          smallBlind: 0,
-          bigBlind: 0,
-          minBuyIn: 0,
-          maxBuyIn: 0,
-          buyIn: Number(row.buy_in || 0),
-          contract: tournamentContractMap.get(row.id) || null,
-          lastCommand: tournamentReceiptMap.get(row.id) || null,
-          pendingSchedule: row.pending_schedule
-            ? {
-                scheduleId: row.pending_schedule.schedule_id,
-                executeAt: row.pending_schedule.execute_at,
-                status: row.pending_schedule.status,
-              }
-            : null,
-        })),
-      ];
-      setGames(rows);
-      setCounts(page.counts);
-      setNextCursor(page.nextCursor);
+      loadInFlightRef.current = true;
+      const requestId = ++loadEpochRef.current;
+      const isCurrent = () => loadEpochRef.current === requestId;
+      const routeKey = `${scope}:${scope === 'union' ? unionId || '' : clubId || ''}`;
+      // A different club or union than the one on screen. The reset below empties
+      // the board, so this can never be served silently: without the spinner the
+      // operator reads the empty board as "this club has no games".
+      const routeChanged = loadedRouteRef.current !== routeKey;
+      if (routeChanged) {
+        loadedRouteRef.current = routeKey;
+        setAllowed(null);
+        setScopeId(null);
+        setHosts([]);
+        setHostClubId('');
+        setGames([]);
+        setCounts({ total: 0, live: 0, scheduled: 0 });
+        setNextCursor(null);
+        setHealth(null);
+        setSurfaceDirty(false);
+      }
+      if (!silent || routeChanged) setLoading(true);
+      setLoadError(null);
       try {
-        const nextHealth = await gameManagementService.getHealth(scope, resolvedScopeId);
-        if (isCurrent()) setHealth(nextHealth);
-      } catch (healthError) {
-        reportError(healthError, 'GameManagementPage.health');
-        if (isCurrent()) setHealth(null);
+        let resolvedScopeId: string;
+        let resolvedScopeName: string;
+        let nextHosts: HostClub[];
+        if (scope === 'club') {
+          resolvedScopeId = await resolveClubUUID(clubId || '');
+          const [access, clubResult] = await Promise.all([
+            fetchGameCreationAccess(resolvedScopeId),
+            supabase.from('clubs').select('id,name').eq('id', resolvedScopeId).maybeSingle(),
+          ]);
+          if (!isCurrent()) return;
+          // A member club is operated from its union console, even for a union
+          // owner who technically has authority over the underlying rows.
+          const standaloneAccess = access.allowed && !access.unionId;
+          setAllowed(standaloneAccess);
+          if (!standaloneAccess) {
+            setScopeId(resolvedScopeId);
+            setHosts([]);
+            setGames([]);
+            setHealth(null);
+            setSurfaceDirty(false);
+            setLoading(false);
+            return;
+          }
+          if (clubResult.error || !clubResult.data)
+            throw clubResult.error || new Error('Club not found');
+          resolvedScopeName = clubResult.data.name;
+          setScopeName(resolvedScopeName);
+          nextHosts = [{ id: resolvedScopeId, name: clubResult.data.name }];
+        } else {
+          if (!unionId) throw new Error('Union not found');
+          resolvedScopeId = unionId;
+          const canManage = await unionService.isUnionAdmin(unionId, user.id);
+          if (!isCurrent()) return;
+          setAllowed(canManage);
+          if (!canManage) {
+            setScopeId(unionId);
+            setHosts([]);
+            setGames([]);
+            setHealth(null);
+            setSurfaceDirty(false);
+            setLoading(false);
+            return;
+          }
+          const [unionResult, hostResult] = await Promise.all([
+            supabase.from('unions').select('id,name').eq('id', unionId).maybeSingle(),
+            supabase.from('union_clubs').select('club_id, clubs(name)').eq('union_id', unionId),
+          ]);
+          if (!isCurrent()) return;
+          if (unionResult.error || !unionResult.data)
+            throw unionResult.error || new Error('Union not found');
+          if (hostResult.error) throw hostResult.error;
+          resolvedScopeName = unionResult.data.name;
+          setScopeName(resolvedScopeName);
+          nextHosts = (hostResult.data || []).map((row: any) => ({
+            id: row.club_id,
+            name: row.clubs?.name || 'Union Club',
+          }));
+        }
+
+        setScopeId(resolvedScopeId);
+        setHosts(nextHosts);
+        setHostClubId((current) =>
+          nextHosts.some((host) => host.id === current) ? current : nextHosts[0]?.id || ''
+        );
+
+        const page = await gameManagementService.list(scope, resolvedScopeId);
+        if (!isCurrent()) return;
+        const tableRows = page.items.filter((row: any) => row.kind === 'table');
+        const tournamentRows = page.items.filter((row: any) => row.kind === 'tournament');
+        const tableIds = tableRows.map((row: any) => row.id);
+        const tournamentIds = tournamentRows.map((row: any) => row.id);
+        const [tableContracts, tournamentContracts, tableReceipts, tournamentReceipts] =
+          await Promise.all([
+            gameManagementService.getContracts('table', tableIds),
+            gameManagementService.getContracts('tournament', tournamentIds),
+            gameManagementService.getCommandReceipts('table', tableIds),
+            gameManagementService.getCommandReceipts('tournament', tournamentIds),
+          ]);
+        if (!isCurrent()) return;
+        const tableContractMap = new Map(
+          tableContracts.map((contract) => [contract.gameId, contract])
+        );
+        const tournamentContractMap = new Map(
+          tournamentContracts.map((contract) => [contract.gameId, contract])
+        );
+        const tableReceiptMap = new Map(tableReceipts.map((receipt) => [receipt.gameId, receipt]));
+        const tournamentReceiptMap = new Map(
+          tournamentReceipts.map((receipt) => [receipt.gameId, receipt])
+        );
+        const hostNames = Object.fromEntries(nextHosts.map((host) => [host.id, host.name]));
+        const rows: ManagedGame[] = [
+          ...tableRows.map((row: any) => ({
+            id: row.id,
+            kind: 'table' as const,
+            name: row.name,
+            status: row.status,
+            clubId: row.club_id,
+            hostName: hostNames[row.club_id] || resolvedScopeName,
+            variant: row.variant || 'NLH',
+            players: row.players || 0,
+            maxPlayers: row.max_players || 0,
+            startTime: null,
+            smallBlind: Number(row.small_blind || 0),
+            bigBlind: Number(row.big_blind || 0),
+            minBuyIn: Number(row.min_buy_in || 0),
+            maxBuyIn: Number(row.max_buy_in || 0),
+            buyIn: 0,
+            contract: tableContractMap.get(row.id) || null,
+            lastCommand: tableReceiptMap.get(row.id) || null,
+            pendingSchedule: row.pending_schedule
+              ? {
+                  scheduleId: row.pending_schedule.schedule_id,
+                  executeAt: row.pending_schedule.execute_at,
+                  status: row.pending_schedule.status,
+                }
+              : null,
+          })),
+          ...tournamentRows.map((row: any) => ({
+            id: row.id,
+            kind: 'tournament' as const,
+            name: row.name,
+            status: row.status,
+            clubId: row.club_id,
+            hostName: hostNames[row.club_id] || resolvedScopeName,
+            variant: row.variant || 'MTT',
+            players: row.players || 0,
+            maxPlayers: row.max_players || 0,
+            startTime: row.start_time,
+            smallBlind: 0,
+            bigBlind: 0,
+            minBuyIn: 0,
+            maxBuyIn: 0,
+            buyIn: Number(row.buy_in || 0),
+            contract: tournamentContractMap.get(row.id) || null,
+            lastCommand: tournamentReceiptMap.get(row.id) || null,
+            pendingSchedule: row.pending_schedule
+              ? {
+                  scheduleId: row.pending_schedule.schedule_id,
+                  executeAt: row.pending_schedule.execute_at,
+                  status: row.pending_schedule.status,
+                }
+              : null,
+          })),
+        ];
+        setGames(rows);
+        setCounts(page.counts);
+        setNextCursor(page.nextCursor);
+        try {
+          const nextHealth = await gameManagementService.getHealth(scope, resolvedScopeId);
+          if (isCurrent()) setHealth(nextHealth);
+        } catch (healthError) {
+          reportError(healthError, 'GameManagementPage.health');
+          if (isCurrent()) setHealth(null);
+        }
+      } catch (error) {
+        if (!isCurrent()) return;
+        reportError(error, 'GameManagementPage.load');
+        setLoadError(error instanceof Error ? error.message : 'Could not load games.');
+      } finally {
+        loadInFlightRef.current = false;
+        // Unconditional. The in-flight guard means the load that reaches this
+        // line is the only one running, so it is always the one that raised the
+        // flag. Gating this on isCurrent() is exactly what starved it before.
+        setLoading(false);
+        if (rerunRef.current && mountedRef.current) {
+          rerunRef.current = false;
+          const rerunSilent = rerunSilentRef.current;
+          rerunSilentRef.current = true;
+          // A refresh arrived mid-flight. Serve it once, at the volume it asked
+          // for. Deferred so this load's own state updates commit first.
+          setTimeout(() => {
+            if (mountedRef.current) loadRef.current(rerunSilent);
+          }, 0);
+        } else {
+          rerunRef.current = false;
+          rerunSilentRef.current = true;
+        }
       }
-    } catch (error) {
-      if (!isCurrent()) return;
-      reportError(error, 'GameManagementPage.load');
-      setLoadError(error instanceof Error ? error.message : 'Could not load games.');
-    } finally {
-      if (isCurrent()) setLoading(false);
-    }
-  }, [clubId, scope, unionId, user?.id]);
+    },
+    [clubId, scope, unionId, user?.id]
+  );
+  loadRef.current = load;
+
+  // Unmounting retires every load still in flight. Bumping the epoch is what
+  // makes isCurrent() false for them, so a request that resolves after the
+  // operator has left publishes nothing and starts no follow-on work.
+  useEffect(() => {
+    // Re-armed on mount, not just initialised at declaration: StrictMode mounts,
+    // unmounts and remounts, and a flag only ever set to false would leave the
+    // remounted page unable to serve a coalesced refresh for the rest of its life.
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      loadEpochRef.current += 1;
+    };
+  }, []);
 
   const loadMore = useCallback(async () => {
     if (!scopeId || !nextCursor || loadingMore) return;
@@ -834,7 +909,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   useMasterBusSubscriptions(
     [...GAME_REFRESH_EVENTS],
     () => {
-      void load();
+      void load(true);
     },
     { debounce: 350 }
   );
@@ -842,7 +917,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   useMasterBusSubscriptions(
     ['GAME_MANAGEMENT_ACCESS_CHANGED'],
     () => {
-      void load();
+      void load(true);
     },
     { debounce: 100 }
   );
@@ -851,7 +926,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     scope,
     scopeId: scopeId || '',
     enabled: allowed === true && Boolean(scopeId),
-    onResync: () => void load(),
+    onResync: () => void load(true),
   });
 
   const filteredGames = useMemo(
@@ -930,7 +1005,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       toast.success(
         game.kind === 'table' ? 'Empty table closed.' : 'Unregistered tournament cancelled.'
       );
-      await load();
+      await load(true);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not close the game.');
     } finally {
@@ -1196,7 +1271,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                                 game.pendingSchedule!.scheduleId
                               );
                               toast.success('Scheduled close cancelled.');
-                              await load();
+                              await load(true);
                             } catch (error) {
                               toast.error(
                                 error instanceof Error
@@ -1266,7 +1341,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                             toast.success(
                               paused ? 'Table resumed.' : 'Table will pause after this hand.'
                             );
-                            await load();
+                            await load(true);
                           } catch (error) {
                             toast.error(
                               error instanceof Error
@@ -1388,7 +1463,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
               );
               toast.success('Game updated.');
               setEditing(null);
-              await load();
+              await load(true);
             } catch (error) {
               toast.error(error instanceof Error ? error.message : 'Could not update the game.');
             } finally {
@@ -1415,7 +1490,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
               );
               toast.success('Guarded close scheduled.');
               setScheduling(null);
-              await load();
+              await load(true);
             } catch (error) {
               toast.error(
                 error instanceof Error ? error.message : 'Could not schedule this command.'

@@ -4790,6 +4790,11 @@ export class GameServer {
 
   /** Per-game throttle for fillPartialSeatFirstGame - one attempt per 12s. */
   private lastHumanFillAt = new Map<string, number>();
+  /**
+   * Consecutive top-ups that came back short, per game. Drives the backoff in
+   * fillPartialSeatFirstGame; cleared the moment a top-up fills the board.
+   */
+  private seatFirstFillMisses = new Map<string, number>();
   /** Per-game throttle for the human-waiting alarm - one report per 60s. */
   private lastHumanWaitReportAt = new Map<string, number>();
 
@@ -4819,7 +4824,28 @@ export class GameServer {
   ): Promise<void> {
     const now = Date.now();
     const last = this.lastHumanFillAt.get(tournamentId) ?? 0;
-    if (now - last < 12_000) return;
+    /* BACK OFF A BOARD THAT WILL NOT FILL (2026-09-02).
+
+       Measured on the live engine: 96 Deep Stack Society seat-first boards
+       (heads-up and 3-max) with their human window closed 2.5 to 25 HOURS
+       ago, each retried here every 12 s and each coming back "top-up added 0
+       of 1 needed" - 400 refusals per five minutes. Every attempt is two
+       RPCs, fn_sync_seat_first_player_count (160 ms) and
+       fn_seat_horse_in_seat_first_game (849 ms): 278,970 and 21,781 calls
+       since the 09-01 stats reset, ~7 calls a second, roughly a whole core of
+       a two-core database spent re-asking a question whose answer had not
+       changed since yesterday. That is the same database every hand, every
+       buy-in and every socket handshake was queueing behind.
+
+       So a board that keeps coming back short is asked less and less often:
+       12 s, 24 s, 48 s ... up to ten minutes, and the counter resets the
+       moment a top-up fills it. Only the WINDOW-CLOSED trigger backs off. A
+       board with a HUMAN in a seat keeps the 12 s cadence - Dan 2026-08-29,
+       a human is never left waiting - and if that board cannot fill either,
+       seat_first_human_waiting still says so once a minute. */
+    const misses = windowClosed ? (this.seatFirstFillMisses.get(tournamentId) ?? 0) : 0;
+    const interval = Math.min(12_000 * 2 ** Math.min(misses, 6), 10 * 60_000);
+    if (now - last < interval) return;
     this.lastHumanFillAt.set(tournamentId, now);
 
     /* ROUND 15 OPTIMISATION. When the human window has already closed the
@@ -4894,6 +4920,14 @@ export class GameServer {
   ): Promise<void> {
     const added = await this.tournamentRecurring.topUpWithHorses(tournamentId, seats);
     const shortfall = seats - paid;
+    // See the backoff in fillPartialSeatFirstGame: a filled board forgets its
+    // misses, a short one counts another.
+    if (added >= shortfall) this.seatFirstFillMisses.delete(tournamentId);
+    else
+      this.seatFirstFillMisses.set(
+        tournamentId,
+        (this.seatFirstFillMisses.get(tournamentId) ?? 0) + 1
+      );
     if (added > 0) {
       console.log(
         `[GameServer] Seat-first fill: +${added} horse(s) into ${tournamentId.slice(0, 8)} ` +

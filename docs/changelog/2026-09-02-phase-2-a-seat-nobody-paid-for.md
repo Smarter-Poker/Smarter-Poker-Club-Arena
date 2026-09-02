@@ -160,6 +160,59 @@ rows**. And no satellite seat has been awarded since the record block landed
 (0 awards after 2026-08-31 19:29), so the live path is still unproven by
 execution — the first real award will be its first run.
 
+## What the verification pass found, after the phase was called done
+
+Three things, all mine, all real.
+
+**1. The awards lookback was a month and needed six hours.** The
+satellite-award CTE looked back 30 days on the reasoning that a seat might be
+awarded long before its target event runs — which confuses the target's START
+with the seat's CREATION. `fn_award_satellite_seat` writes the rake row and the
+roster row in the same statement, verified on all 23 awards: `created_at`
+equals `registered_at` exactly, worst gap 0.000000 seconds. `rake_records` has
+no index on `source`, so the month walked the `created_at` index discarding
+644,620 rows to find 23. On shared buffers, **231,267 before, 90,202 after**.
+Corrected in `20260902050552`.
+
+**And I nearly shipped a six-times-worse rewrite along with it.** The first two
+attempts also restructured the whole query, on wall-clock timings that said
+11.4s before and 833ms after. Those timings were database load. Run A/B in the
+same statement, seconds apart, the two forms gave 722ms/13,494ms, then
+2,873ms/1,968ms, then 691ms/7,471ms — the variance swamped the difference and
+it was interleaved, so neither ordering nor caching explains it. On buffers,
+which load does not move, the restructure came out at **539,362 — six times
+worse** than the shape it replaced, because the planner switches to a nested
+loop with 256,732 heap fetches. The restructure is discarded; only the clause
+that is demonstrably wrong changed. The migration's assertions are structural
+for the same reason: a wall-clock gate would fail whenever the database is
+busy, and a flaky gate teaches everyone to re-run migrations until they pass.
+
+**2. One of my own law pins was vacuous.** `runs in its own try block` sliced
+from the line `const { data: ue, error: ueErr } = await supabase` and asserted
+the slice contained `fn_uncollected_entry_check` — but the RPC name is on that
+very line, so it could not fail while the code existed at all. It tested
+nothing while its name claimed to verify try-block isolation: the exact
+property Phase 1's verification caught me getting wrong. It now compares four
+positions (open < stamp < catch < health read), and a negative control proves
+it discriminates — mutating `GameServer.ts` to nest the health read before the
+catch makes it fail, as it must.
+
+**3. The pins were reading a superseded migration.** Every structural assertion
+read the body from `20260902041336`, which stopped being the live body the
+moment the lookback was corrected. That is the stale-worktree mistake in a
+different costume — green assertions describing something no longer deployed.
+They now read the migration that holds the live body, with a note saying to
+move the pointer whenever the function changes again.
+
+Also recorded, not fixed: **`atomic_tournament_register` debits
+`club_members.chip_balance` directly and writes neither `chip_transactions` nor
+`wallet_transactions`**, so a seat it created would be reported as unpaid
+despite the player having paid. It has had no caller since 2026-08-15, when
+`fn_register_for_tournament` replaced it, and it sits on the
+`fn_union_law_check` watch list — so retiring it belongs to that workstream,
+not to this phase. The check now names the blind spot in its own alert, where
+whoever reads the alert will be standing.
+
 ## Two things found on the way that are not this phase's work
 
 **Main was red on `tests/law-registry.law.test.ts`.**

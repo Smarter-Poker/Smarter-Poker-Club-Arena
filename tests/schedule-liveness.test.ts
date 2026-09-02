@@ -27,6 +27,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceBlockAfter } from './helpers/sourceWindow';
 import {
   maxGapMinutes,
   healDecision,
@@ -207,8 +208,9 @@ describe('the healer never buys silence for a heal it did not perform', () => {
 
   it('returns without filing a cooldown marker when nothing was cycled', () => {
     expect(src).toMatch(/if \(cycled\.length === 0\)/);
-    const i = src.indexOf('if (cycled.length === 0)');
-    const block = src.slice(i, i + 500);
+    // Bounded by the if-block itself, never by a byte count (see
+    // tests/helpers/sourceWindow.ts for why a fixed window cost a publish outage).
+    const block = sliceBlockAfter(src, 'if (cycled.length === 0)');
     expect(block).toMatch(/not filing a cooldown marker/i);
     expect(block).toMatch(/return;/);
   });
@@ -251,8 +253,7 @@ describe('the heal never cancels a run to fix a schedule', () => {
 
   it('skips any workflow that has a run in flight', () => {
     expect(src).toMatch(/if \(await isBusy\(wf\.id\)\)/);
-    const i = src.indexOf('if (await isBusy(wf.id))');
-    expect(src.slice(i, i + 300)).toMatch(/continue;/);
+    expect(sliceBlockAfter(src, 'if (await isBusy(wf.id))')).toMatch(/continue;/);
   });
 
   it('asks about both in_progress and queued runs', () => {

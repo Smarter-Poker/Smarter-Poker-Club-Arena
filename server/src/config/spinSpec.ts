@@ -817,10 +817,13 @@ export const SPIN_REVEAL = {
    * COMPLETES, CHIP STACKS GET ADDED, BUTTON RANDOMLY ASSIGNED AND THE SPIN
    * STARTS."
    *
-   * This beat exists because a seat is a RESERVATION until the multiplier is
-   * known — a player holds it at zero chips, since the stack depth is a
-   * property of the tier that has not been drawn yet (spins run 300/400/500).
-   * Crediting the seats before the reveal, which is what used to happen, meant
+   * This beat exists for the CUE, not because the number is unknown. It used
+   * to be the latter: a seat was a RESERVATION at zero chips because stack
+   * depth was read off a tier nobody had drawn yet. That is retired — the
+   * stack belongs to the board (SPIN_STACKS: Turbo 300, Deep Stack 1000), it
+   * is known before anybody sits, and the seat holds it from the moment the
+   * buy-in is paid. What survives is the THEATRE: the chips must be SEEN to
+   * land after the wheel. Crediting the seats before the reveal meant
    * stacks appeared on the felt while the wheel was still turning: the table
    * had quietly answered the question the wheel was in the middle of asking.
    */

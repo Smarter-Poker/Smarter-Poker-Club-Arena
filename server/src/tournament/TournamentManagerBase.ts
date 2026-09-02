@@ -1785,10 +1785,16 @@ export abstract class TournamentManagerBase {
           }
         }
 
-        // Structure scales with the drawn tier: 300 chips and 1-minute
-        // levels at 2x, 500 chips and 5-minute levels at 500x. Since the
-        // draw moved to start, creation writes only a smallest-tier
-        // placeholder, so the blinds MUST be rewritten here — before
+        // BLINDS scale with the drawn tier. THE STACK DOES NOT, and has not
+        // since 2026-09-01: it is a property of the BOARD (Turbo 300, Deep
+        // Stack 1000, spinSpec SPIN_STACKS), written at creation and held by
+        // the seat from the moment the buy-in is paid. This comment used to
+        // read "300 chips at 2x, 500 chips at 500x", describing the retired
+        // behaviour where the wheel decided how many chips you played with.
+        // The code below never did that; the sentence did, and spinSpec warns
+        // in as many words not to reintroduce it. Since the draw moved to
+        // start, creation writes only a smallest-tier placeholder, so the
+        // blinds MUST be rewritten here — before
         // createTablesAndSeatPlayers below reads them — or a 500x would run
         // on 1-minute levels.
         const spinBlinds = Array.from({ length: 12 }, (_, i) => {
@@ -1933,10 +1939,13 @@ export abstract class TournamentManagerBase {
       /**
        * SEAT-FIRST STACK SYNC — but NOT yet, if a wheel is about to turn.
        *
-       * A player who sat down before the game started holds a RESERVATION at
-       * zero chips: stack depth is a property of the tier, and spin tiers run
-       * 300/400/500, so there is no honest number to seat them with until the
-       * draw lands.
+       * A player who sat down before the game started used to hold a
+       * RESERVATION at zero chips, because stack depth was read off the drawn
+       * tier and there was no honest number to seat them with until the wheel
+       * landed. THAT IS RETIRED. The stack belongs to the board (Turbo 300,
+       * Deep Stack 1000), it is known before anybody sits, and Dan's rule is
+       * that it appears the instant the buy-in is paid: "as soon as they buy
+       * in 300 chips should appear in their action box (not 0)".
        *
        * Dan 2026-08-21: "AFTER THE SPIN COMPLETES, CHIP STACKS GET ADDED,
        * BUTTON RANDOMLY ASSIGNED AND THE SPIN STARTS." Crediting here — which

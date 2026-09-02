@@ -664,6 +664,81 @@ be pruned (pushed branches lose nothing — the commits live on origin).
 
 ---
 
+## 10.9 YOU DECIDE THE MONEY (Dan, 2026-09-02, BINDING)
+
+**Dan, verbatim: "YOU HAVE FULL CONTROL TO MAKE ANY AND ALL DECISIONS ON WHAT
+SHOULD BE DONE WITH REAL MONEY AND REAL CHIP SCENARIOS. ALL CLAUDE AGENTS CAN
+CHOOSE THE BEST OPTION THATS RECOMMENDED AND MAKE ALL CHANGES WITHOUT ASKING
+ME, IF THEY HAVE A CLEAR PATH OF CORRECTION AND RECONCILIATION."**
+
+This ends the holding pattern where an agent finds a broken payout, writes a
+careful paragraph explaining it, files it "for Dan", and leaves the money
+frozen. That pattern has a cost and the cost is paid by players: on 2026-09-02
+three tournaments sat frozen at once and the oldest had been unpaid for fifteen
+hours, entirely because the last agent to look at it decided the money was
+somebody else's call. It was not. It is yours.
+
+### What the grant covers
+
+Unpaid prizes, wrong finishing positions, refunds owed, shortfall back-pay,
+stranded stacks, a tournament that cannot end itself, a ledger that does not
+balance because of a platform defect. Find it, decide it, ship it, and say
+plainly what you did. You do not open with a question.
+
+### A path is CLEAR only when all five of these hold
+
+1. **The outcome is READ, not assumed.** You can state what actually happened
+   from rows in this database. "Probably" is not evidence. The invented
+   `is_horse` filter in section 10.5 is what an assumption dressed as a
+   decision looks like, and it cost 39 events their entire rake attribution.
+2. **Nobody is paid twice.** The credit goes through the platform's own
+   idempotent path (`fn_tournament_payout_reconcile`, `fn_credit_and_log`, and
+   the per-user prize keys). Never hand-write a wallet row.
+3. **Nothing is taken back from a player for our mistake.** Overpay that our
+   defect caused is absorbed by the house, reported, and left alone. The
+   reconciler already refuses to claw back; do not out-clever it.
+4. **You proved it in a transaction you rolled back first.** Section 11.5 is
+   not softened by this grant, it is what makes the grant safe. The numbers you
+   commit are the numbers the probe returned, and the migration asserts them so
+   it aborts if the board moved underneath you.
+5. **You can write the paragraph.** One paragraph naming every affected player
+   and why they got what they got. If you cannot write it, you do not
+   understand the case well enough to settle it.
+
+If any of the five fails you do not have a clear path. THEN it goes to Dan, and
+it goes as options with their costs and your recommendation, never as a
+question.
+
+### When the evidence disagrees with itself, prefer the witness that was there
+
+Settling the 12:00 AM freeroll, re-deriving all 215 finishing places from
+`eliminated_at` moved players by up to three places and would have paid 168.51
+in top-ups on a pool that already had 282.06 out the door. The live engine had
+watched each of those players bust and recorded the order as it happened; the
+timestamps had not. The recorded order was kept and ONE player was inserted into
+it. A reconstruction that disagrees with the witness is a reconstruction that is
+wrong.
+
+### The record is part of the fix, not paperwork after it
+
+A settlement is finished when all four exist: the migration (with its reasoning
+in the header, not just its SQL), the changelog under `docs/changelog/`, the
+`financial_alerts` row resolved with a `resolution` note saying what was
+accepted and why, and the engine fix that stops it happening again. A payment
+with no explanation attached is the next agent's mystery.
+
+### Still Dan's, and only Dan's
+
+- **Anything that sets what players are owed in FUTURE events**: prices, rake,
+  guarantees, payout structures, retention policy. Fixing what a past event
+  owes is yours. Deciding what the next one owes is his.
+- **Money leaving the platform**: withdrawals, payment providers, anything a
+  bank sees.
+- **Rewriting or deleting a settled record to make a number look tidy.** Correct
+  it forward, with a row that says what changed. Never edit history quiet.
+
+---
+
 ## 11. AGENT NETWORK + DEPLOY PLAYBOOK
 
 ### 11.0 FIRST: WHICH ENVIRONMENT ARE YOU IN? (added 2026-09-01, binding)

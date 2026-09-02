@@ -17,17 +17,17 @@ and the next agent see what production already runs.
    shared `tournament_obligations` interface).
 3. `supabase/migrations/20260902191500_a_place_is_paid_once_the_settle_function_the_engine_already_calls.sql`
    - applied 19:16 UTC as `20260902191644`. Creates `tournament_obligations`
-   (UNIQUE per tournament/kind/place and per tournament/kind/user) and
-   `fn_settle_tournament_obligation`: upsert the obligation (owed only rises),
-   pay `min(amount, owed - paid)` through `fn_credit_and_log` under
-   `obl:<obligation>:<paid-so-far>`, refuse a second user on a paid place,
-   refuse a second place for the same finisher, refuse a prize-pool kind that
-   would take the event past its `prize_pool` (`escrow_short`). PR #2671's
-   engine code calls it; the engine build carrying #2671 is cutting over as
-   this is written (deploy run 33674643549).
+     (UNIQUE per tournament/kind/place and per tournament/kind/user) and
+     `fn_settle_tournament_obligation`: upsert the obligation (owed only rises),
+     pay `min(amount, owed - paid)` through `fn_credit_and_log` under
+     `obl:<obligation>:<paid-so-far>`, refuse a second user on a paid place,
+     refuse a second place for the same finisher, refuse a prize-pool kind that
+     would take the event past its `prize_pool` (`escrow_short`). PR #2671's
+     engine code calls it; the engine build carrying #2671 is cutting over as
+     this is written (deploy run 33674643549).
 4. `supabase/migrations/20260902194500_bounty_rows_do_not_count_against_the_prize_pool.sql`
    - applied 19:47 UTC. Found during the cutover watch, before any engine
-   build called the function in production.
+     build called the function in production.
 
 ## What was observed (item 4)
 
@@ -83,3 +83,29 @@ against `pg_proc`): `fn_tournament_payout_reconcile`,
 `fn_mystery_bounty_pay`. The R3 trigger does not exist. `ca_payout_freeze`
 (the kill switch the function already consults) does not exist. Those are the
 next PRs.
+
+## Addendum, 20:55 UTC - the payout record keeps its class
+
+`20260902205000_the_payout_record_keeps_its_class.sql`, applied 20:53 UTC. Third
+finding of the cutover watch, still before any engine build had called the
+function live (production served `14b9d8940` until the deploy escalation fires;
+`tournament_obligations` 0 rows, `ca_money_path_violations` all
+`authenticator / PostgREST`).
+
+`tournament_payouts.source` is the CLASS of a payment and the detectors filter
+on it (`fn_tournament_guarantee_check` and `fn_tournament_double_paid_obligations`
+whitelist; `fn_payout_guarantee_check` blacklists the bounty classes). The
+function passed the caller's `p_source` through, and the engine passes its own
+provenance (`engine.finishTournament` ...). Pre-apply probe, rolled back:
+engine-sourced settle wrote `source = 'engine.finishTournament'`; the guarantee
+check would have read that place as unpaid from the first engine payout.
+
+Post-apply probe (NLH Heads-Up 2 `be94502b`, place 1, rolled back, pool raised
+by 2.00 inside the transaction): `engine.finishTournament` for 1.00 -> row
+`structure` 1.00; `late_reg_adjustment` for 1.50 -> row `late_reg_adjustment`
+0.50 (the difference); `reconcile` for 2.00 -> row `reconcile` 0.50. One
+obligation row, three keys `tourney:<tid>:obl:<id>:<0|100|150>`, obligation
+provenance kept on `tournament_obligations.source`.
+
+This file carries the whole live body, including Lane A3's key rename (PR
+#2709) and the bounty exclusion list above.

@@ -2007,6 +2007,19 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // brain averages per-board equity, exactly what the pot pays on.
       communityCards2: fullState?.communityCards2 ?? [],
       communityCards3: fullState?.communityCards3 ?? [],
+      // BOMB POTS 2026-09-02 (V36): tell the brain this hand is a bomb pot.
+      // Every range at the table is RANDOM (there was no preflop street to
+      // narrow it), the pot is antes, and on a multi-board hand every pot
+      // layer splits per board. The brain used to infer "multi-board" from
+      // communityCards2 and could not see a single-board bomb pot at all -
+      // so it consulted hold'em solver cells built for single-raised-pot
+      // ranges, and read a first-to-act bettor as the preflop aggressor.
+      bombPot: this.currentHandBombPot != null,
+      boardCount:
+        this.currentHandBombPot?.board_count ??
+        1 +
+          ((fullState?.communityCards2?.length ?? 0) > 0 ? 1 : 0) +
+          ((fullState?.communityCards3?.length ?? 0) > 0 ? 1 : 0),
       pot: state.pot,
       currentBet: state.currentBet,
       minRaise: state.minRaise,

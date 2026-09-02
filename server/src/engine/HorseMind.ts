@@ -775,6 +775,13 @@ export class HorseMind {
 
     let raisesBefore = 0;
     let line: 'none' | 'limp' | 'call' | 'open' | 'threebet' | 'fourbet' | 'check' = 'none';
+    // V36 (2026-09-02): a BOMB POT has no preflop street. Every hand at the
+    // table is a random deal, which is the right BASE — but the postflop
+    // narrowing below still applies, and it never did: `line` stayed 'none'
+    // and the function returned null, so a player who bet the flop, barrelled
+    // the turn and bombed the river of a bomb pot was still sampled from all
+    // 1,326 combos. sawPreflop tells the two cases apart.
+    let sawPreflop = false;
     // V5 (2026-07-24): dynamic hand reading — postflop actions keep narrowing
     // the band. V7: the narrowing is BET-SIZE AWARE via an exact pot replay —
     // a pot-sized turn barrel narrows far more than a min-bet. Per-street the
@@ -791,6 +798,7 @@ export class HorseMind {
         a.action === 'raise' ||
         (a.action === 'all_in' && a.isFullRaise === true);
       const anyChips = isAggr || a.action === 'call' || a.action === 'all_in';
+      if (a.stage === 'preflop') sawPreflop = true;
       if (a.stage !== curStreet) {
         curStreet = a.stage;
         streetBets = new Map();
@@ -875,38 +883,45 @@ export class HorseMind {
     }
     void bigBlind;
 
-    if (line === 'none') return null;
+    // V36: no preflop street (a bomb pot) and this player has acted postflop
+    // — a random starting hand, narrowed by what they did with it.
+    const anteOnly = !sawPreflop && (streetWeight.size > 0 || postStagesActed.size > 0);
+    if (line === 'none' && !anteOnly) return null;
 
     let lo: number;
     let hi: number;
-    switch (line) {
-      case 'limp':
-        lo = 0.15;
-        hi = 0.72; // speculative + traps; excludes pure junk & most premiums
-        break;
-      case 'call':
-        lo = 0.3;
-        hi = 0.86; // calling a raise: playables, minus junk, minus most 4-bet hands
-        break;
-      case 'open':
-        lo = 0.4;
-        hi = 1.0;
-        break;
-      case 'threebet':
-        lo = 0.62;
-        hi = 1.0;
-        break;
-      case 'fourbet':
-        // V28: the 4-bet/5-bet tier — premiums plus the occasional bluff.
-        lo = 0.86;
-        hi = 1.0;
-        break;
-      case 'check':
-      default:
-        lo = 0.0;
-        hi = 0.8; // BB free check: capped range
-        break;
-    }
+    if (line === 'none') {
+      lo = 0;
+      hi = 1;
+    } else
+      switch (line) {
+        case 'limp':
+          lo = 0.15;
+          hi = 0.72; // speculative + traps; excludes pure junk & most premiums
+          break;
+        case 'call':
+          lo = 0.3;
+          hi = 0.86; // calling a raise: playables, minus junk, minus most 4-bet hands
+          break;
+        case 'open':
+          lo = 0.4;
+          hi = 1.0;
+          break;
+        case 'threebet':
+          lo = 0.62;
+          hi = 1.0;
+          break;
+        case 'fourbet':
+          // V28: the 4-bet/5-bet tier — premiums plus the occasional bluff.
+          lo = 0.86;
+          hi = 1.0;
+          break;
+        case 'check':
+        default:
+          lo = 0.0;
+          hi = 0.8; // BB free check: capped range
+          break;
+      }
 
     // Adjust by observed tendencies (confidence-weighted).
     const s = this.stats.get(userId);

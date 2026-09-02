@@ -688,6 +688,17 @@ GRANT EXECUTE ON FUNCTION public.fn_rake_spec_canonical()                       
 GRANT EXECUTE ON FUNCTION public.fn_rake_spec_checksum()                                                                     TO service_role;
 GRANT EXECUTE ON FUNCTION public.fn_rake_spec_self_check()                                                                   TO service_role;
 
+-- fn_rake_bbj_invariants is SECURITY DEFINER (kept from the live body it
+-- replaces, so the pg_cron wrapper fn_rake_bbj_audit keeps working) and reads
+-- rake_records past RLS. Its ACL was already closed by the migration that
+-- first declared it, and CREATE OR REPLACE preserves an ACL - verified live
+-- 2026-09-02 18:5x UTC: proacl {postgres=X,service_role=X}, anon and
+-- authenticated cannot execute it. These two lines say so in THIS file, so
+-- the static definer-authorization gate (which reads only the file, not
+-- pg_proc) can see the closure. They are a no-op against production.
+REVOKE ALL ON FUNCTION public.fn_rake_bbj_invariants(integer)                                                                FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.fn_rake_bbj_invariants(integer)                                                             TO service_role;
+
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 7. POST-APPLY ASSERTIONS. The transaction aborts if the spec this file
 --    builds is not the spec the engine was compiled with, or is not

@@ -4453,10 +4453,33 @@ export class GameServer {
   private async repairOrphanedTournamentSeats(): Promise<void> {
     if (this.tournamentEngines.size === 0) return;
 
+    /**
+     * How long without a hand before a tournament counts as stalled for the
+     * purposes of moving a player off OPEN felt. Well past a synchronized
+     * break (last hand at :55 then five minutes) and past any legitimate
+     * pause, because the licence this grants - moving a seat while a hand
+     * could in principle be running - is only safe when one provably is not.
+     */
+    const STALLED_FOR_CONSOLIDATION_MS = 20 * 60 * 1000;
+    const stalledCutoff = new Date(Date.now() - STALLED_FOR_CONSOLIDATION_MS).toISOString();
+
     for (const [tournamentId, tm] of this.tournamentEngines) {
       if (!tm.isRunning()) continue;
       try {
-        const moved = await tm.absorbOrphanedSeats();
+        /* One bounded read per live tournament: has it dealt recently? An
+           unreadable answer is NOT a stall - it leaves `stalled` false and the
+           pass does only the closed-table repair, which needs no such licence. */
+        let stalled = false;
+        const { data: recentHand, error: recentErr } = await supabase
+          .from('hand_history')
+          .select('id')
+          .eq('tournament_id', tournamentId)
+          .gt('started_at', stalledCutoff)
+          .limit(1);
+        if (!recentErr && Array.isArray(recentHand) && recentHand.length === 0) {
+          stalled = true;
+        }
+        const moved = await tm.absorbOrphanedSeats({ stalled });
         if (moved > 0) {
           console.warn(
             `[GameServer] Orphaned-seat repair: ${moved} stranded player(s) moved back onto open felt in tournament ${tournamentId.slice(0, 8)}`

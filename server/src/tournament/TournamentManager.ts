@@ -25,6 +25,7 @@ import { maxSeatsFor as maxSeatsTheDeckAllows } from '../engine/VariantRules.js'
 import { mayTakeSeat } from './seatClaim.js';
 import {
   planOrphanReseats,
+  planStalledConsolidation,
   describeUnmovableOrphans,
   type OrphanTableRow,
   type OrphanSeatRow,
@@ -325,7 +326,7 @@ export class TournamentManager extends TournamentManagerEliminations {
    * Both reads fail CLOSED. An unreadable board is UNKNOWN, never "nobody is
    * stranded" and never "everybody is".
    */
-  public async absorbOrphanedSeats(): Promise<number> {
+  public async absorbOrphanedSeats(opts?: { stalled?: boolean }): Promise<number> {
     const { data: tableRows, error: tableErr } = await supabase
       .from('tables')
       .select('id, status, is_deleted, max_players')
@@ -341,6 +342,19 @@ export class TournamentManager extends TournamentManagerEliminations {
     if (seatErr || !seatRows) return 0;
 
     const moves = planOrphanReseats(tableRows as OrphanTableRow[], seatRows as OrphanSeatRow[]);
+
+    /**
+     * TWO PLAYERS, TWO TABLES, NOBODY CAN DEAL. A different shape from the
+     * orphan above and the same outcome: see planStalledConsolidation. Only
+     * offered when the caller has established the tournament is stalled, so no
+     * hand can be in flight for a move to carry a pre-hand stack out of.
+     */
+    const consolidation = planStalledConsolidation({
+      tables: tableRows as OrphanTableRow[],
+      liveSeats: seatRows as OrphanSeatRow[],
+      stalled: opts?.stalled === true,
+      minPlayersToDeal: 2,
+    });
 
     const { duplicateSeat, noChips } = describeUnmovableOrphans(
       tableRows as OrphanTableRow[],
@@ -363,12 +377,22 @@ export class TournamentManager extends TournamentManagerEliminations {
       );
     }
 
-    if (moves.length === 0) return 0;
+    if (moves.length === 0 && consolidation.length === 0) return 0;
 
-    console.warn(
-      `[Tournament:${this.tournamentId.slice(0, 8)}] ${moves.length} player(s) stranded on a closed table - moving them to open felt so the tournament can deal again`
-    );
-    return this.executePlayerMoves(moves);
+    let moved = 0;
+    if (moves.length > 0) {
+      console.warn(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] ${moves.length} player(s) stranded on a closed table - moving them to open felt so the tournament can deal again`
+      );
+      moved += await this.executePlayerMoves(moves);
+    }
+    if (consolidation.length > 0) {
+      console.warn(
+        `[Tournament:${this.tournamentId.slice(0, 8)}] stalled with its field spread over open tables none of which can deal - consolidating ${consolidation.length} player(s) onto one`
+      );
+      moved += await this.executePlayerMoves(consolidation);
+    }
+    return moved;
   }
 
   protected async executePlayerMoves(moves: MoveInstruction[]): Promise<number> {

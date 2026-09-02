@@ -202,6 +202,144 @@ export function planOrphanReseats(
 }
 
 /**
+ * =========================================================================
+ *  TWO PLAYERS, TWO TABLES, NOBODY CAN DEAL (2026-09-02)
+ * =========================================================================
+ *
+ * The second live stall of the same night, and a DIFFERENT shape from the one
+ * above:
+ *
+ *   "$100 Freeroll - 6:00 PM"  (f1b134c0)
+ *     status RUNNING, 314 hands dealt, then nothing for 35 minutes
+ *     2 players still 'playing', 2 live seats
+ *     TWO OPEN TABLES - one player on each
+ *
+ * Nothing here is orphaned: both seats are on open felt, so the repair above
+ * plans nothing. And neither table can deal, because a table needs two.
+ *
+ * This is the balancer's job - `checkTableBalance` breaks a table and moves
+ * its players - and the balancer had not done it for thirty-five minutes.
+ * Whether its manager is wedged or its cycle is not firing cannot be
+ * diagnosed from here; what can be said is that the outcome is identical to
+ * the orphan case, and so is the repair.
+ *
+ * WHY THIS IS SAFE, AND WHY IT IS GATED ON A STALL. Moving a player off an
+ * OPEN table is dangerous in a way that moving one off a CLOSED table is not:
+ * a hand may be in flight, and `executePlayerMoves` reads the seat stack, so
+ * a move mid-hand carries a pre-hand stack (the 2026-07-19 incident). The
+ * balancer guards that with `waitForHandComplete`.
+ *
+ * So this is offered ONLY for a tournament the caller has already established
+ * is stalled - no hand dealt for a long time - where no hand can be in
+ * flight to disturb. `stalled` is not a hint; it is the whole licence.
+ */
+export interface ConsolidationInput {
+  /** Every table row this tournament owns. */
+  tables: OrphanTableRow[];
+  /** Every seat with `left_at IS NULL` on those tables. */
+  liveSeats: OrphanSeatRow[];
+  /**
+   * The caller's finding that this tournament has not dealt for long enough
+   * that no hand can be in flight. Without it, nothing is planned at all.
+   */
+  stalled: boolean;
+  /** Seats a table needs before it can deal. Two, everywhere on this platform. */
+  minPlayersToDeal?: number;
+}
+
+/**
+ * Bring a stalled, scattered field back onto one table.
+ *
+ * Refuses unless ALL of these hold, and each is a test:
+ *
+ *   - the caller says the tournament is stalled;
+ *   - more than one table is open, so there is something to consolidate;
+ *   - NO open table currently holds enough players to deal. If one does, the
+ *     game can play on and this must keep its hands off it - that is the
+ *     balancer's ordinary work, done with its own hand-boundary guard;
+ *   - every live player fits on the destination.
+ *
+ * The destination is the open table that already holds the most players, ties
+ * broken by id, so the fewest people move and two engines planning the same
+ * repair plan the same one.
+ */
+export function planStalledConsolidation(input: ConsolidationInput): MoveInstruction[] {
+  const minToDeal = Math.max(2, Math.trunc(input.minPlayersToDeal ?? 2));
+  if (!input.stalled) return [];
+
+  const openTables = (input.tables ?? []).filter((t) => isOpenTable(t));
+  if (openTables.length < 2) return [];
+
+  const openIds = new Set(openTables.map((t) => String(t.id)));
+  const seatsOnOpen = (input.liveSeats ?? []).filter((s) => openIds.has(String(s.table_id)));
+
+  const byTable = new Map<string, OrphanSeatRow[]>();
+  for (const t of openTables) byTable.set(String(t.id), []);
+  for (const seat of seatsOnOpen) byTable.get(String(seat.table_id))?.push(seat);
+
+  /* If any open table can already deal, the game is not blocked on seating and
+     this is not its problem. Leave it to the balancer, which waits for a hand
+     boundary before it moves anybody. */
+  for (const [, seats] of byTable) {
+    if (seats.length >= minToDeal) return [];
+  }
+
+  /* A player holding two live seats is a money question, not a seating one -
+     the same stance the orphan planner takes. */
+  const seatCount = new Map<string, number>();
+  for (const seat of seatsOnOpen) {
+    const id = String(seat.user_id);
+    seatCount.set(id, (seatCount.get(id) ?? 0) + 1);
+  }
+  if ([...seatCount.values()].some((n) => n > 1)) return [];
+
+  const destination = openTables.slice().sort((a, b) => {
+    const an = byTable.get(String(a.id))?.length ?? 0;
+    const bn = byTable.get(String(b.id))?.length ?? 0;
+    if (an !== bn) return bn - an; // most populated first: fewest moves
+    return String(a.id).localeCompare(String(b.id));
+  })[0];
+  if (!destination) return [];
+
+  const destId = String(destination.id);
+  const destMax = (() => {
+    const n = Number(destination.max_players);
+    return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_SEATS;
+  })();
+  if (seatsOnOpen.length > destMax) return []; // they do not all fit; not this repair's call
+
+  const taken = new Set<number>();
+  for (const seat of byTable.get(destId) ?? []) {
+    const n = Number(seat.seat_number);
+    if (Number.isFinite(n)) taken.add(n);
+  }
+
+  const plans: MoveInstruction[] = [];
+  for (const seat of seatsOnOpen) {
+    if (String(seat.table_id) === destId) continue;
+    let toSeat = 0;
+    for (let n = 1; n <= destMax; n++) {
+      if (!taken.has(n)) {
+        toSeat = n;
+        break;
+      }
+    }
+    if (toSeat === 0) break;
+    const fromSeat = Number(seat.seat_number);
+    plans.push({
+      playerId: String(seat.user_id),
+      fromTableId: String(seat.table_id),
+      fromSeat: Number.isFinite(fromSeat) ? fromSeat : 0,
+      toTableId: destId,
+      toSeat,
+      reason: 'stalled_field_consolidation',
+    });
+    taken.add(toSeat);
+  }
+  return plans;
+}
+
+/**
  * The players this repair deliberately will not move, so the caller can say so
  * out loud instead of silently doing nothing. Both shapes are money decisions
  * that belong to a human or to the elimination path, never to a sweep.

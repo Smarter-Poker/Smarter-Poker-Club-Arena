@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   planOrphanReseats,
+  planStalledConsolidation,
   describeUnmovableOrphans,
   isOpenTable,
   MAX_ORPHAN_RESEATS_PER_PASS,
@@ -148,5 +149,128 @@ describe('planOrphanReseats', () => {
     const seats = [seat('t2', 'p1', 1, '11481.50')];
 
     expect(planOrphanReseats(tables, seats)).toHaveLength(1);
+  });
+});
+
+/**
+ * TWO PLAYERS, TWO TABLES, NOBODY CAN DEAL (2026-09-02).
+ *
+ * The second live stall of the same night, a different shape from the orphan:
+ * "$100 Freeroll - 6:00 PM" (f1b134c0), RUNNING, 314 hands then nothing for 35
+ * minutes, two players still playing, two live seats, TWO OPEN TABLES with one
+ * player on each. Nothing is orphaned, so the planner above sees nothing - and
+ * neither table can deal, because a table needs two.
+ *
+ * Moving a player off OPEN felt is dangerous in a way that moving one off a
+ * closed table is not: a hand may be in flight and `executePlayerMoves` reads
+ * the seat stack, which is the 2026-07-19 pre-hand-stack incident. So `stalled`
+ * is not a hint, it is the entire licence, and every refusal below exists to
+ * keep this off a game that can still play.
+ */
+describe('planStalledConsolidation', () => {
+  const open = (id: string, max = 9): OrphanTableRow => ({
+    id,
+    status: 'running',
+    max_players: max,
+  });
+  const seat = (table_id: string, user_id: string, seat_number: number): OrphanSeatRow => ({
+    table_id,
+    user_id,
+    seat_number,
+    stack: 1000,
+  });
+
+  it('brings the 6:00 PM freeroll back together', () => {
+    const plan = planStalledConsolidation({
+      tables: [open('tA'), open('tB')],
+      liveSeats: [seat('tA', 'p1', 4), seat('tB', 'p2', 2)],
+      stalled: true,
+    });
+    expect(plan).toHaveLength(1);
+    // tA and tB hold one each, so the tie breaks by id: tA is the destination.
+    expect(plan[0]).toMatchObject({
+      playerId: 'p2',
+      fromTableId: 'tB',
+      toTableId: 'tA',
+      reason: 'stalled_field_consolidation',
+    });
+  });
+
+  it('does NOTHING unless the caller says the tournament is stalled', () => {
+    expect(
+      planStalledConsolidation({
+        tables: [open('tA'), open('tB')],
+        liveSeats: [seat('tA', 'p1', 1), seat('tB', 'p2', 1)],
+        stalled: false,
+      })
+    ).toEqual([]);
+  });
+
+  it('keeps its hands off a table that can already deal', () => {
+    // Two on tA means the game is not blocked on seating. That is the
+    // balancer's ordinary work, and the balancer waits for a hand boundary.
+    expect(
+      planStalledConsolidation({
+        tables: [open('tA'), open('tB')],
+        liveSeats: [seat('tA', 'p1', 1), seat('tA', 'p2', 2), seat('tB', 'p3', 1)],
+        stalled: true,
+      })
+    ).toEqual([]);
+  });
+
+  it('has nothing to do with one table open', () => {
+    expect(
+      planStalledConsolidation({
+        tables: [open('tA')],
+        liveSeats: [seat('tA', 'p1', 1)],
+        stalled: true,
+      })
+    ).toEqual([]);
+  });
+
+  it('moves the fewest people: the most populated table wins', () => {
+    const plan = planStalledConsolidation({
+      tables: [open('tSmall'), open('tBig')],
+      // Neither can deal at a 3-handed floor, and tBig already holds two.
+      liveSeats: [seat('tSmall', 'p1', 1), seat('tBig', 'p2', 1), seat('tBig', 'p3', 2)],
+      stalled: true,
+      minPlayersToDeal: 3,
+    });
+    expect(plan).toHaveLength(1);
+    expect(plan[0]).toMatchObject({ playerId: 'p1', toTableId: 'tBig' });
+  });
+
+  it('never seats two people in the same chair', () => {
+    const plan = planStalledConsolidation({
+      tables: [open('tA'), open('tB'), open('tC')],
+      liveSeats: [seat('tA', 'p1', 1), seat('tB', 'p2', 1), seat('tC', 'p3', 1)],
+      stalled: true,
+      minPlayersToDeal: 4,
+    });
+    const dests = plan.map((m) => `${m.toTableId}:${m.toSeat}`);
+    expect(new Set(dests).size).toBe(dests.length);
+    expect(dests).not.toContain('tA:1');
+  });
+
+  it('stands down when a player holds two live seats', () => {
+    // Which of two stacks is real is a money question, not a seating one.
+    expect(
+      planStalledConsolidation({
+        tables: [open('tA'), open('tB')],
+        liveSeats: [seat('tA', 'twice', 1), seat('tB', 'twice', 1)],
+        stalled: true,
+      })
+    ).toEqual([]);
+  });
+
+  it('stands down when the field does not fit on the destination', () => {
+    expect(
+      planStalledConsolidation({
+        tables: [open('tA', 2), open('tB', 2), open('tC', 2)],
+        liveSeats: [seat('tA', 'p1', 1), seat('tB', 'p2', 1), seat('tC', 'p3', 1)],
+        stalled: true,
+        minPlayersToDeal: 4,
+      })
+    ).toEqual([]);
   });
 });

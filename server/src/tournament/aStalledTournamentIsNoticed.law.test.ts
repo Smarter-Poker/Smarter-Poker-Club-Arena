@@ -41,6 +41,32 @@ describe('a stalled tournament is noticed', () => {
     expect(src).toMatch(/Date\.now\(\) - this\.lastOrphanSeatSweepAt > 60 \* 1000/);
   });
 
+  /**
+   * TWO PLAYERS, TWO TABLES, NOBODY CAN DEAL (2026-09-02). The second live
+   * stall of the same night: "$100 Freeroll - 6:00 PM", 314 hands then nothing
+   * for 35 minutes, two players on two OPEN tables, one each, neither able to
+   * deal. Nothing orphaned, so the closed-table repair sees nothing.
+   *
+   * Moving a player off OPEN felt can carry a pre-hand stack (2026-07-19), so
+   * the licence is the stall itself and it must be established by a READ, not
+   * assumed.
+   */
+  it('consolidates a stalled field only when it has proved the stall', () => {
+    const src = read(GAME_SERVER);
+
+    expect(src).toContain('STALLED_FOR_CONSOLIDATION_MS');
+    expect(src).toContain('absorbOrphanedSeats({ stalled })');
+    // Proved by a bounded read of hand_history, and an unreadable answer is
+    // NOT a stall - it must leave the licence withheld.
+    const block = src.slice(
+      src.indexOf('const STALLED_FOR_CONSOLIDATION_MS'),
+      src.indexOf('absorbOrphanedSeats({ stalled })')
+    );
+    expect(block).toContain("from('hand_history')");
+    expect(block).toContain('let stalled = false;');
+    expect(block).toContain('!recentErr');
+  });
+
   it('moves stranded players only through executePlayerMoves', () => {
     const manager = read('src/tournament/TournamentManager.ts');
 
@@ -54,6 +80,7 @@ describe('a stalled tournament is noticed', () => {
       manager.indexOf('protected async executePlayerMoves')
     );
     expect(absorb).toContain('this.executePlayerMoves(moves)');
+    expect(absorb).toContain('this.executePlayerMoves(consolidation)');
     expect(absorb).not.toMatch(/from\('table_seats'\)[\s\S]{0,80}\.update\(/);
     expect(absorb).not.toMatch(/from\('table_seats'\)[\s\S]{0,80}\.insert\(/);
   });

@@ -128,6 +128,50 @@ the only effect would be a PostgREST schema reload, about 28 seconds on this
 database, which 503s live traffic (the DDL policy written after the 2026-08-31
 PGRST002 outage). It applies harmlessly on the next migration push.
 
+## Two more live stalls, found by looking at production rather than at the diff
+
+Both are the Phase 4 family and neither was covered by what Phase 4 shipped.
+
+### A manager that has held a finish for fifteen minutes is not finishing it
+
+`Sunday Deep Stack Satellite $10` (e210486c) at 01:05 UTC: variant satellite,
+23 entrants, **207 chips of prize pool**, 448 hands dealt, ONE survivor, ZERO
+payout records, sixteen minutes in COMPLETING - and **not one incident naming
+it in two hours**. Every branch of the stuck-COMPLETING recovery reports;
+silence is what proves it was never reached.
+
+The recovery skips any row a `TournamentManager` still holds. That is right for
+the seconds a finish takes and was unbounded after that, so a wedged manager
+held its row out of reach of the only thing that could rescue it.
+
+Past three times the dwell (15 minutes) the manager is stopped, dropped, and
+the row goes to the recovery - which is idempotent and shares its ledger keys
+with the finish path, so a manager that wakes up mid-rescue cannot double-pay.
+A row never seen before is never called wedged, so a first sighting cannot tear
+a manager off a healthy finish.
+
+### Two players, two tables, nobody can deal
+
+`$100 Freeroll - 6:00 PM` (f1b134c0) at 01:20 UTC: RUNNING, 314 hands then
+nothing for 35 minutes, two players still playing, two live seats, and **two
+OPEN tables with one player on each**.
+
+Nothing is orphaned, so the closed-table repair plans nothing - and neither
+table can deal, because a table needs two. This is the balancer's job and the
+balancer had not done it for thirty-five minutes.
+
+`planStalledConsolidation` brings the field onto one table. Moving a player off
+OPEN felt is dangerous in a way that moving one off a closed table is not - a
+hand may be in flight and `executePlayerMoves` reads the seat stack, which is
+the 2026-07-19 pre-hand-stack incident - so the stall is the entire licence and
+it is proved by a bounded read of `hand_history`, not assumed. An unreadable
+answer is NOT a stall.
+
+It refuses on every axis that could put it on a game which can still play: no
+stall, one table, ANY open table already able to deal, a player holding two
+live seats, or a field that does not fit on the destination. The destination is
+the most populated open table, so the fewest people move.
+
 ## Verification
 
 - `npx tsc --noEmit`, client and server: clean.

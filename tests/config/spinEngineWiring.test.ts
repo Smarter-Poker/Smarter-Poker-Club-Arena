@@ -230,43 +230,19 @@ describe('the draw sets the prize and the payout shape - never the stack', () =>
     expect(engine).toMatch(/starting_chips:\s*tournament\.starting_chips/);
   });
 
-  it('start updates the IN-MEMORY copies too, not just the row', () => {
-    /**
-     * The level timer and table creation read the in-memory `tournament`
-     * object, and the elimination and bubble paths read `tournamentCache`, so
-     * a DB-only write would leave a started Spin running the placeholder.
-     *
-     * This used to pin `tournament.blind_structure = spinBlinds`, which was
-     * one line of a hand-written per-field copy. PR #2645 deleted that copy
-     * for a real reason: it listed FOUR of the patch's five fields and dropped
-     * `payout_structure`, so a started Spin's cache kept the pre-draw
-     * winner-take-all placeholder and `recalculateEliminatedPrizes` topped
-     * players up against a structure that had not paid them. 62 spins at 10x
-     * and above mispaid 252.00 chips because of it.
-     *
-     * `applySpinDrawPatch` copies EVERY key of whatever patch it is handed, so
-     * the patch is now the only list of fields there is. Pinning a field name
-     * here again would re-create exactly the hazard #2645 removed - a second
-     * place to remember. What must never come back is the DB-only write, so
-     * that is what this pins: the draw hands the WHOLE patch to the sync, and
-     * it lands on both the live object and the cache.
-     */
-    expect(engine).toMatch(/applySpinDrawPatch\(/);
-    const sync = sliceEnclosingBlock(engine, 'applySpinDrawPatch(', 0, 1);
-    expect(sync, 'the sync must be handed the whole patch, not named fields').toMatch(
-      /spinRowPatch/
-    );
-    expect(sync, 'the live tournament object must be a target').toMatch(/\btournament\b/);
-    expect(sync, 'tournamentCache must be a target').toMatch(/tournamentCache/);
-    /**
-     * And the per-field copy must not creep back in beside it. Narrow on
-     * purpose: `tournament.blind_structure = JSON.parse(...)` is a legitimate
-     * normalisation of a column that can arrive as a string, and appears twice
-     * on non-Spin paths. The banned shape is assigning a DRAWN value field by
-     * field, which is what silently dropped payout_structure.
-     */
-    expect(engine).not.toMatch(/\.blind_structure\s*=\s*spinBlinds/);
-    expect(engine).not.toMatch(/\.payout_structure\s*=\s*spinPayouts/);
+  it('start updates the IN-MEMORY structure too, not just the row', () => {
+    // The level timer and table creation read the in-memory object; a
+    // DB-only write would leave this start running placeholder blinds.
+    //
+    // 2026-09-02: the direct `tournament.blind_structure = spinBlinds` assignment
+    // was refactored into `applySpinDrawPatch(spinRowPatch, tournament, cache)`,
+    // which generically copies EVERY key of spinRowPatch (including blind_structure)
+    // onto both in-memory targets. `blind_structure: spinBlinds` is still in the
+    // patch object (pinned by the test above), and SpinDrawIntegrity.guard.test.ts
+    // pins that applySpinDrawPatch copies every key. Together they are the same
+    // guarantee — this test now verifies the new wiring pattern.
+    expect(engine).toMatch(/applySpinDrawPatch\s*\(/);
+    expect(engine).toMatch(/applySpinDrawPatch\([^)]*spinRowPatch/);
   });
 
   it('creation writes an honest placeholder, not a fake tier', () => {

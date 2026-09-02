@@ -1,42 +1,14 @@
--- ═══════════════════════════════════════════════════════════════════════════
--- SEAT-FIRST HEALER INSIDE EIGHT SECONDS (2026-09-01, v3 — the version that
--- runs in production; applied as 20260901181911)
--- ───────────────────────────────────────────────────────────────────────────
--- Third apply of the same fix in one hour. The story, so nobody repeats it:
---
--- THE OUTAGE. At ~12:55 UTC the whole platform's seat-first boards opened a
--- fresh set of queues — 96 of them (Deep Stack's 32 spins, Midway's spins and
--- heads-ups) — at a moment when opener seating could not succeed (Deep
--- Stack's 416 horses were still benched behind the green-light latch, and the
--- old engine's fleet-wide picks were being refused by the club-scope entry
--- gate). Every queue got its joinable table and ZERO opening horses. A
--- joinable husk COVERS its price point in ensureBoardOpen, so the board never
--- reopens the config; a seat-first game with no openers never fills, so it
--- never leaves REGISTERING. Result: no spins, no heads-up, anywhere, for
--- five hours — the boards looked open and were all dead.
---
--- v1 (20260901181246) taught fn_repair_seat_first_games the new husk class
---   (joinable table, short of openers) and club-scoped the pick — but timed
---   out: the engine calls it as service_role (statement_timeout pinned 8s)
---   and ~1,000 per-horse fn_ca_entry_scope_ok evaluations per husk blew it.
--- v2 (20260901181626) tried a function-level SET statement_timeout — which
---   cannot work: the timer is checked from the START of the statement.
--- v3 (this file) makes the healer fast: the scope test is the equivalent
---   set-based membership predicate driven off club_members' user_id index,
---   the game's union looked up once per husk, batch clamped to 6 per call.
---   Verified live: 6 games / 12 openers healed per 30-second engine tick.
---
--- The healer now repairs BOTH husk classes:
---   Class A: REGISTERING seat-first game with no table row at all
---     → create the table, seat openers, fresh 60–180s human window.
---   Class B: joinable table short of opening horses (seated < seats-1)
---     → seat the shortfall, fresh window. A human already seated counts
---       toward the field and is never displaced.
--- And its pick honors two laws: the bench latch (horse_status='available'
--- only) and club containment (a horse is only picked for a game its own
--- membership scope admits — the exact test the entry gate enforces, so a
--- pick can never select a horse the gate would refuse).
--- ═══════════════════════════════════════════════════════════════════════════
+-- BACKFILLED 2026-09-01 from supabase_migrations.schema_migrations.statements.
+-- Applied to production 20260901181911; the .sql file was never committed at the
+-- time (see docs/changelog and issue: unrecorded-migration backfill). Content is
+-- byte-exact to what ran. Do NOT re-apply; it is already live.
+
+-- SEAT-FIRST HEALER INSIDE EIGHT SECONDS (2026-09-01, v3). statement_timeout
+-- is checked against the START of the top-level statement, so v2's
+-- function-level SET could not help; the healer must simply be fast. The cost
+-- was ~1,000 per-horse fn_ca_entry_scope_ok evaluations per husk; replaced
+-- with the equivalent set-based membership predicate driven off club_members'
+-- user_id index, the game club's union looked up once per husk.
 
 BEGIN;
 
@@ -88,18 +60,13 @@ BEGIN
                  < GREATEST(COALESCE(NULLIF(t.max_players, 0), 3) - 1, 0))
        )
      ORDER BY t.created_at
-     -- Clamped batch: small enough that a call always finishes inside the
-     -- 8-second service_role ceiling; the 30-second tick supplies throughput.
      LIMIT LEAST(GREATEST(p_limit, 0), 6)
   LOOP
     v_seats := COALESCE(NULLIF(v_t.max_players, 0), 3);
 
     IF v_t.joinable_table_id IS NULL
        AND NOT EXISTS (SELECT 1 FROM public.tables tb3 WHERE tb3.tournament_id = v_t.id) THEN
-      -- Class A: no table at all. Mirrors createOpenSeatTable exactly:
-      -- status 'waiting' so the engine has nothing to deal yet, and
-      -- tournament_id set so cash discovery (tournament_id IS NULL) can
-      -- never pick it up.
+      -- Class A: no table at all. Mirrors createOpenSeatTable exactly.
       v_level := COALESCE((v_t.blind_structure::jsonb)->0, '{}'::jsonb);
       v_sb := COALESCE((v_level->>'smallBlind')::numeric, 10);
       v_bb := COALESCE((v_level->>'bigBlind')::numeric, 20);
@@ -139,14 +106,10 @@ BEGIN
 
     v_seated := 0;
 
-    -- Every seat but one: two horses on a Spin, one on a heads-up. The last
-    -- seat belongs to a human.
     FOR v_horse IN
       SELECT p.id
         FROM public.profiles p
        WHERE p.is_horse = true
-         -- The bench latch is honored: a benched horse is never repaired
-         -- into a seat.
          AND p.horse_status = 'available'
          AND (v_t.club_id IS NULL OR EXISTS (
            SELECT 1
@@ -185,9 +148,7 @@ BEGIN
       END IF;
     END LOOP;
 
-    -- A FRESH HUMAN WINDOW, not the one that expired hours ago. Only when
-    -- the repair actually changed something: rewinding the clock on a game
-    -- this pass did not touch would keep a full table from ever starting.
+    -- Fresh 60-180s human window, only when the repair changed something.
     IF v_seated > 0 OR v_t.joinable_table_id IS NULL THEN
       v_window := 60 + floor(random() * 121)::int;
       UPDATE public.tournaments
@@ -204,15 +165,11 @@ BEGIN
 END;
 $fn$;
 
--- The engine's service role is the only caller.
 REVOKE ALL ON FUNCTION public.fn_repair_seat_first_games(integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.fn_repair_seat_first_games(integer) FROM anon;
 REVOKE ALL ON FUNCTION public.fn_repair_seat_first_games(integer) FROM authenticated;
 GRANT EXECUTE ON FUNCTION public.fn_repair_seat_first_games(integer) TO service_role;
 
--- ───────────────────────────────────────────────────────────────────────────
--- ASSERTIONS (abort the transaction if the fix is not what it claims)
--- ───────────────────────────────────────────────────────────────────────────
 DO $$
 DECLARE v_def text;
 BEGIN

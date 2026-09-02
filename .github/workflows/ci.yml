@@ -93,7 +93,9 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   changes:
     name: What changed
-    runs-on: ubuntu-latest
+    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
+    # runner when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 3
     if: github.event_name == 'pull_request'
     # The gh call below is a 403 without this. GITHUB_TOKEN defaults to read on
@@ -194,7 +196,9 @@ jobs:
   # it to be behind a gate that can hide it.
   source_windows:
     name: Source Windows Are Structural
-    runs-on: ubuntu-latest
+    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
+    # runner when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 6
     steps:
       - name: Checkout
@@ -214,7 +218,9 @@ jobs:
   stub_gate:
     if: github.event_name == 'pull_request'
     name: Stub Gate
-    runs-on: ubuntu-latest
+    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
+    # runner when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -980,7 +986,9 @@ jobs:
   # surfaces in the run header without anyone thinking to open the logs.
   verdict:
     name: What this run verified
-    runs-on: ubuntu-latest
+    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
+    # runner when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 2
     if: always()
     needs: [changes, stub_gate, typecheck, unit, server]
@@ -1208,7 +1216,9 @@ jobs:
     # Moved off push:main to the two-hourly schedule above.
     if: github.event_name == 'schedule'
     name: Live Production E2E
-    runs-on: ubuntu-latest
+    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
+    # runner when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 25
 
     steps:
@@ -1226,8 +1236,18 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      # --with-deps needs root to apt-get the browser's system libraries. The
+      # self-hosted box has them baked in by provision-ci-box.sh and the ci user
+      # is not root, so ask for them only on a GitHub-hosted runner. Keyed on
+      # runner.environment, NOT on vars.CI_RUNNER: that variable is set
+      # repo-wide, so it is true even for a job still pinned to ubuntu-latest.
       - name: Install Playwright Browsers
-        run: npx playwright install --with-deps chromium
+        run: |
+          if [ "${{ runner.environment }}" = "self-hosted" ]; then
+            npx playwright install chromium
+          else
+            npx playwright install --with-deps chromium
+          fi
 
       - name: Wait for Production Deploy
         run: |
@@ -1366,7 +1386,9 @@ jobs:
     # logic alive at 13 runs a day instead of 85.
     if: github.event_name == 'schedule'
     name: Post-Deploy Verification
-    runs-on: ubuntu-latest
+    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
+    # runner when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
 
     steps:
@@ -1470,8 +1492,16 @@ jobs:
       - name: Install Dependencies
         run: npm ci --ignore-scripts
 
+      # See the note on the Live Production E2E install step. This job is still
+      # pinned to ubuntu-latest (it failed on the 4-core box), so this branch
+      # must resolve from the runner it is actually on, not from vars.CI_RUNNER.
       - name: Install Chromium and WebKit
-        run: npx playwright install chromium webkit --with-deps
+        run: |
+          if [ "${{ runner.environment }}" = "self-hosted" ]; then
+            npx playwright install chromium webkit
+          else
+            npx playwright install chromium webkit --with-deps
+          fi
 
       - name: Build this commit
         env:

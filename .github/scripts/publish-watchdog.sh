@@ -194,6 +194,18 @@ fi
 # ── Inside the budget: a build is probably still in flight ─────────────────
 if [ "$NOT_ANCESTOR" = "0" ] && [ "$AGE_MIN" -lt "$LAG_BUDGET_MIN" ]; then
   say "main's HEAD is only ${AGE_MIN}m old and the budget is ${LAG_BUDGET_MIN}m — a build is probably still running. Not alarming."
+  # This state IS recovery. The healthy path above closes the alarm only on
+  # serving EXACTLY head, and on a main that merges every few minutes that
+  # moment never coincides with a sweep - so issue #2566 sat open for hours
+  # after the non-ancestor anomaly it described had resolved, teaching
+  # everyone the alarm means nothing. Ancestor lag within budget means the
+  # conditions that file the issue (non-ancestor, or over-budget) are gone.
+  N=$(find_issue "$ISSUE_TITLE")
+  if [ -n "${N:-}" ]; then
+    gh_write "comment on #$N" issue comment "$N" --repo "$REPO" \
+      --body "Recovered. Production is serving \`${SERVED_SHORT:-?}\`, an ancestor of main, ${AGE_MIN}m inside the ${LAG_BUDGET_MIN}m budget - ordinary publish lag, resolving itself. Closing." || true
+    gh_write "close issue #$N (recovered to ordinary lag)" issue close "$N" --repo "$REPO" || true
+  fi
   summary "### Publish watchdog: in flight"
   summary ""
   summary "main \`$HEAD_SHORT\` is ${AGE_MIN}m old; production serves \`${SERVED_SHORT:-?}\`. Within the ${LAG_BUDGET_MIN}m budget."

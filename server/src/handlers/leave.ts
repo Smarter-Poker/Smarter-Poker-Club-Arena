@@ -56,6 +56,10 @@ export async function handleLeave(
       return sendJSON(res, 200, {
         success: true,
         immediate: true,
+        // CHIP STANDARD C1 (2026-09-02): the explicit hand-over. The browser
+        // cashes out ONLY when this is set (or `note` is, for older builds);
+        // on every other acknowledged leave the engine owns the cash-out.
+        clientCashout: true,
         note: 'No engine running, client handles DB cleanup',
       });
     }

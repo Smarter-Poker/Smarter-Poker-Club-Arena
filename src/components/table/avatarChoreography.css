@@ -430,6 +430,14 @@
    PULSE, NOT STROBE. The sweep takes ~1.4s of a 7s cycle and the band sits
    parked off-screen for the rest. A continuously travelling line on nine seats
    would be the most distracting thing on the table.
+   ONLY ON THE CLOCK (Dan 2026-09-02): "IT SHOULD ONLY APPEAR WHEN IT'S A
+   PLAYER'S TURN, AND THEY HAVE BEEN ON THE CLOCK FOR AT LEAST 3 SECONDS. IT
+   SHOULD NEVER APPEAR ON IDLE PLAYERS, OR PLAYERS IF THE ACTION ISN'T ON
+   THEM." The class is applied by SeatSlot.tsx to the ACTING seat only, and
+   --sp-holo-delay is the time left until three seconds on the clock, so the
+   first sweep lands at exactly 3s and repeats every 7s while the turn lasts.
+   Nothing here runs on an idle seat any more; the state gating below stays as
+   the belt to that braces.
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .seat__avatar--holo {
@@ -489,13 +497,13 @@
   opacity: 0;
 
   animation: spAvatarHolo calc(7s * var(--animation-speed, 1)) linear infinite;
-  /* Its OWN phase, not the breathing's. --sp-breath-delay spans 1.1s-3.9s,
-     which is a fine spread across a ~4s breath and a poor one across a 7s
-     sweep: every VIP would flash inside one narrow window and then go dark
-     together. --sp-holo-delay is spread evenly over the full cycle by a
-     permutation, so adjacent seats also get distant phases. Set alongside the
-     breathing values by breathingStyle() in SeatSlot.tsx. */
-  animation-delay: var(--sp-holo-delay, 0s);
+  /* Dan 2026-09-02: the sweep is an "on the clock" cue, not ambient life.
+     The class is only present on the acting seat, and --sp-holo-delay is the
+     time left until that player has been on the clock for three seconds,
+     frozen at first paint of the turn by SeatSlot.tsx. It used to be a
+     per-seat idle phase spread over the cycle by a permutation, which is
+     exactly what made "every player, every couple of seconds". */
+  animation-delay: var(--sp-holo-delay, 3s);
 }
 
 /* Percentages beyond 0-100% extrapolate, which is what carries the band fully

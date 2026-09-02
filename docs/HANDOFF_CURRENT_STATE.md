@@ -7,6 +7,98 @@ Evidence timestamps are UTC.
 
 ---
 
+---
+
+# STATUS UPDATE — 2026-09-02 17:15 UTC
+
+**This section supersedes §1 (Executive Continuation Brief) and §10 (Exact Current State).
+Everything from §2 onward — the requirements, the discovery record, the laws, the environment
+notes — is still accurate and is still the thing to read first.**
+
+## What changed
+
+**#2537 is merged** (`0f47ad069`). It was red on one test out of 3583: the
+`HorseLeagueSandbox` self-play test hit `Test timed out in 10000ms` after 12342ms. That was a
+runner-class artifact, not a regression — the same commit runs that test in 944ms on an idle
+machine, and the file is not touched by the PR. Fixed at the ceiling rather than the
+assertion, and the whole file was audited rather than only the test that went red
+(`never truncates a street` was at 7548ms and would have fallen next).
+
+**The deadlock §1 predicted is real, and was then found to be worse than predicted.**
+
+1. Every deploy fail-closes. `ca_engine_deploy_attempts` has 15:00, 15:20, 15:41, all
+   `shipped=false`, all "the maintenance break never opened for a restart". Confirmed cause:
+   the deployed engine predates #2537, so 38-108 tables never park and `readyForRestart`
+   never becomes true. Watched live at 16:53-17:00: `phase=last_hand` with 108 unparked,
+   settling to 40 that never parked at all.
+
+2. **The escape hatch was dead.** The escalation gates on
+   `BREAK_RUNNING=yes && BEHIND_MIN >= 190`. `BEHIND_MIN` was computed with local git,
+   but `actions/checkout` uses `fetch-depth: 1`, so the live commit object is never on the
+   runner. The gate printed `could not date the live commit (93d167b5) - treating as
+not-stale`, `BEHIND_MIN` stayed **0**, and the condition could never be true — on every
+   run since it was written. Measured on run `33656444491` with production 798 minutes
+   behind and a break actively running: it still shipped nothing.
+   Fixed in **#2663** by resolving the commit date through the GitHub API (which also
+   resolves the abbreviated sha `/health` reports — `git fetch origin <abbrev>` cannot, and
+   was verified failing against a real `--depth=1` clone).
+
+**Two production defects found while verifying, filed as #2651.** The half-shipped break is
+doing measurable hourly damage:
+
+- `watchdog_kill_rebuild` fires **~480 times a day, 99.2% of it at minute :00**
+  (`engine_recovery_events`, 24h). The break log explains it: `91 table(s) had not parked`
+  at 10:55, `100` at 11:55. Unparked tables get resumed into a state where the loop ticks
+  but deals nothing, and the per-table watchdog rebuilds them.
+- **`sp-autoheal` restarts the engine unannounced**, outside any break — 16:09:18 today with
+  no deploy (`engine_leader` shows the new instance at 16:09:51). Recurring: 08-30 ×8,
+  08-31, 09-01 ×3, 09-02. Most attempts log `Restarting container ... failed`, meaning its
+  45s stop timeout is cutting `drainHands` short. This is precisely the harm the :55 window
+  exists to eliminate, arriving from a component outside the programme.
+
+That gives a much better acceptance test than a green deploy: **after the first armed window,
+`watchdog_kill_rebuild` at :00 should fall from 11-90 to ~0 and `N table(s) had not parked`
+should disappear from the break log.** Do not touch autoheal until that is measured —
+changing infra to mask a symptom already being fixed is the wrong order.
+
+## Also closed
+
+- **Estate drift #2190** — `AGENT-PLAYBOOK.md` existed in two versions. Club Arena alone
+  carried RULE 0 (the em-dash / hamburger rule that stopped the menu being deleted a third
+  time). Propagated verbatim to the other six; all seven now hash `bc131cb9745235f4`,
+  Estate Integrity is green for the first time since 08-31, and #2190 closed itself at
+  16:39:17. §9's "estate pin not done" and §19's UNKNOWN are both resolved.
+- **#2659** — `HorseOmahaDiscipline.test.ts` had no explicit timeout anywhere and its
+  `plo6 6-max` test measured **10041ms against the 10000ms ceiling**. It was the next one to
+  fall. Merged.
+- **Register defect 5 is closed, not open.** The WIP snapshot guard IS installed and running
+  every 600s — 2452 `refs/wip/*` refs, worktrees included. The refs are under `refs/wip/`,
+  not `refs/snapshots/`, and the launchd label is `poker.agent-wip-snapshot`; check with
+  `bash scripts/install-wip-snapshot-agent.sh --status`.
+
+## Corrections to this document
+
+- §7 item 11 lists four scheduled tasks. **None of them existed in the app's scheduler** —
+  including the 15:25 backstop said to cover 15:55. There was no coverage. Do not trust that
+  list; run `list_scheduled_tasks` and look.
+- §16 defect 5 (dirty worktrees losable) — closed, see above.
+- §10's "15:25 backstop armed" — never existed.
+
+## Where it stands
+
+Production is still on `93d167b5`, ~14h behind, freeze build NOT aboard. #2663 is the last
+blocker; once it merges, the first window whose gate poll overlaps :55 should escalate and
+ship. **Gate timing is tight and matters:** the poll runs only 14 minutes and opens ~6-7
+minutes after dispatch, so a run must be dispatched at roughly :41 to cover :55. The :40 cron
+dropped at 16:40 today, so do not assume the schedule fires.
+
+The freeze itself remains unverified — `engine_maintenance_break` is still empty (the old
+build never writes it) and there are no `engine_maintenance_thaws` rows. All 7 `zz_freeze_guard`
+triggers exist and are enabled, `fn_platform_frozen()` returns false, and `fn_db_now()` matches
+wall clock, so the machinery is armed and dormant exactly as designed.
+
+---
+
 ## 1. Executive Continuation Brief
 
 **What is being built:** an invisible hourly engine restart for the Club Arena poker platform.

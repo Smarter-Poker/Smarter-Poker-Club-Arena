@@ -498,6 +498,8 @@ jobs:
       - name: Wait for the maintenance break to park every table
         id: drain
         if: steps.dedupe.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           echo "skip=false" >> $GITHUB_OUTPUT
           if [ "${{ github.event.inputs.force }}" = "true" ]; then
@@ -520,9 +522,42 @@ jobs:
           # cancelled run, and it is the number a human would ask for.
           LIVE=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null \
             | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version") or "")' 2>/dev/null || echo "")
+          #
+          # THE CHECKOUT IS SHALLOW, AND THAT SILENTLY DISARMED THE ESCAPE
+          # HATCH (2026-09-02). actions/checkout defaults to fetch-depth: 1, so
+          # the only commit object on the runner is the one being deployed.
+          # Dating the LIVE sha with local git therefore ALWAYS failed,
+          # BEHIND_MIN stayed 0, and `BEHIND_MIN >= STALE_MIN` below could
+          # never be true. The escalation was unreachable on every run since it
+          # was written, while reading as though it were armed.
+          #
+          # Measured on run 33656444491: production had served 93d167b5 for 798
+          # minutes, a break WAS running, 40 tables never parked - and the gate
+          # printed "could not date the live commit (93d167b5) - treating as
+          # not-stale" and shipped nothing. The engine carrying the fix for the
+          # unparked tables was stranded behind those same unparked tables.
+          #
+          # `git fetch origin <sha>` does NOT rescue it: /health reports an
+          # ABBREVIATED sha and fetch requires a full one ("couldn't find
+          # remote ref 93d167b5", verified against a real depth-1 clone).
+          # The API resolves the abbreviation and returns the commit date in
+          # one call, needs no history, and cannot be defeated by clone depth.
+          # Local git stays as the fast path for when history happens to be
+          # there. If both fail we keep BEHIND_MIN=0 and fail closed, which is
+          # the safe direction.
           BEHIND_MIN=0
+          LIVE_CT=""
           if [ -n "$LIVE" ] && git cat-file -e "${LIVE}^{commit}" 2>/dev/null; then
-            BEHIND_MIN=$(( ( $(date -u +%s) - $(git show -s --format=%ct "$LIVE") ) / 60 ))
+            LIVE_CT=$(git show -s --format=%ct "$LIVE")
+          elif [ -n "$LIVE" ]; then
+            LIVE_CT=$(curl -sf --max-time 10 \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/commits/${LIVE}" 2>/dev/null \
+              | python3 -c 'import json,sys,datetime; d=json.load(sys.stdin); print(int(datetime.datetime.fromisoformat(d["commit"]["committer"]["date"].replace("Z","+00:00")).timestamp()))' 2>/dev/null || echo "")
+          fi
+          if [ -n "$LIVE_CT" ]; then
+            BEHIND_MIN=$(( ( $(date -u +%s) - LIVE_CT ) / 60 ))
             echo "production serves $LIVE, committed ${BEHIND_MIN}m ago"
           else
             echo "could not date the live commit ($LIVE) - treating as not-stale"

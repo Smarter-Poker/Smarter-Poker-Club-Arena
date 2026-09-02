@@ -17,6 +17,26 @@ import { seedFastRandom, omahaPreflopScore, omahaNutStatus } from './HorseEval.j
 import type { Card, SeatPlayer, ActionRecord } from '../types.js';
 
 const c = (rank: string, suit: string): Card => ({ rank, suit }) as Card;
+
+// RUNNER-CLASS TIMEOUT. Same defect as the HorseLogic fuzz bound above it in
+// spirit, and the one that actually went red in HorseLeagueSandbox on
+// 2026-09-02: these are compute-bound simulations measured against the 10s
+// global in vitest.config.ts, and the estate moved CI to self-hosted runners
+// (estate-ci-1, 4 vCPU, up to 8 concurrent jobs) where the same code runs at
+// roughly 2x wall clock.
+//
+// This file had NO explicit bound anywhere, and on the 2026-09-02 self-hosted
+// run "plo6 6-max 100bb" measured 10041ms against that 10000ms ceiling. It
+// passed, but only just - it is the closest test in the server suite to going
+// red for a reason that says nothing about the code. Its neighbours measured
+// 7988ms, 7097ms, 6770ms and 5589ms.
+//
+// Only the WALL CLOCK moves, and only on the slow runner class. No assertion,
+// hand count or trial count is touched: shrinking the simulations would make
+// them cheaper by making them prove less, which is the opposite of the point.
+// A genuine hang still trips the ceiling on every hardware class.
+const SUITE_TIMEOUT_MS = 10_000 * (process.env.RUNNER_ENVIRONMENT === 'self-hosted' ? 3 : 1);
+
 const h = 'hearts';
 const d = 'diamonds';
 const s = 'spades';
@@ -156,20 +176,28 @@ describe('the nine-high flush does not pay off the bigger flush', () => {
     return HorseLogic.decide(hero, gs, 'balanced', {}, { mind: false });
   }
 
-  it('never raises or jams into the river raise', () => {
-    for (let seed = 1; seed <= 300; seed++) {
-      const dec = play(seed * 7919);
-      expect(['fold', 'call']).toContain(dec.action);
-    }
-  });
+  it(
+    'never raises or jams into the river raise',
+    () => {
+      for (let seed = 1; seed <= 300; seed++) {
+        const dec = play(seed * 7919);
+        expect(['fold', 'call']).toContain(dec.action);
+      }
+    },
+    SUITE_TIMEOUT_MS
+  );
 
-  it('folds the clear majority of the time', () => {
-    let folds = 0;
-    for (let seed = 1; seed <= 300; seed++) {
-      if (play(seed * 104729).action === 'fold') folds++;
-    }
-    expect(folds / 300).toBeGreaterThan(0.6);
-  });
+  it(
+    'folds the clear majority of the time',
+    () => {
+      let folds = 0;
+      for (let seed = 1; seed <= 300; seed++) {
+        if (play(seed * 104729).action === 'fold') folds++;
+      }
+      expect(folds / 300).toBeGreaterThan(0.6);
+    },
+    SUITE_TIMEOUT_MS
+  );
 });
 
 /** The check-shove: plo4 turn, hero checked a small flush, opponent bet pot,
@@ -179,34 +207,38 @@ describe('the small flush check-calls instead of check-shoving', () => {
   const board = [c('Q', h), c('8', h), c('3', h), c('J', cl)];
   const hole = [c('7', h), c('5', h), c('K', d), c('9', s)];
 
-  it('never converts the call into a jam', () => {
-    for (let seed = 1; seed <= 300; seed++) {
-      seedFastRandom(seed * 6151);
-      const history: ActionRecord[] = [
-        { seat: 1, userId: 'hero', action: 'check', amount: 0, timestamp: 1, stage: 'turn' },
-        { seat: 2, userId: 'opp2', action: 'bet', amount: 100, timestamp: 2, stage: 'turn' },
-      ] as ActionRecord[];
-      const hero = mkPlayer({ cards: hole, stack: 120 });
-      const gs: HorseGameStateV2 = {
-        players: [hero, opp(2, { bet: 100, stack: 400 })],
-        communityCards: board,
-        pot: 200,
-        currentBet: 100,
-        minRaise: 100,
-        lastRaise: 100,
-        stage: 'turn',
-        gameVariant: 'plo4',
-        bigBlind: 2,
-        dealerSeat: 2,
-        actionHistory: history,
-        gameMode: 'cash',
-        format: 'cash',
-      } as HorseGameStateV2;
-      const dec = HorseLogic.decide(hero, gs, 'balanced', {}, { mind: false });
-      expect(dec.action).not.toBe('all_in');
-      expect(dec.action).not.toBe('raise');
-    }
-  });
+  it(
+    'never converts the call into a jam',
+    () => {
+      for (let seed = 1; seed <= 300; seed++) {
+        seedFastRandom(seed * 6151);
+        const history: ActionRecord[] = [
+          { seat: 1, userId: 'hero', action: 'check', amount: 0, timestamp: 1, stage: 'turn' },
+          { seat: 2, userId: 'opp2', action: 'bet', amount: 100, timestamp: 2, stage: 'turn' },
+        ] as ActionRecord[];
+        const hero = mkPlayer({ cards: hole, stack: 120 });
+        const gs: HorseGameStateV2 = {
+          players: [hero, opp(2, { bet: 100, stack: 400 })],
+          communityCards: board,
+          pot: 200,
+          currentBet: 100,
+          minRaise: 100,
+          lastRaise: 100,
+          stage: 'turn',
+          gameVariant: 'plo4',
+          bigBlind: 2,
+          dealerSeat: 2,
+          actionHistory: history,
+          gameMode: 'cash',
+          format: 'cash',
+        } as HorseGameStateV2;
+        const dec = HorseLogic.decide(hero, gs, 'balanced', {}, { mind: false });
+        expect(dec.action).not.toBe('all_in');
+        expect(dec.action).not.toBe('raise');
+      }
+    },
+    SUITE_TIMEOUT_MS
+  );
 });
 
 /** Regression guard: the NUT flush stays aggressive. Discipline must not
@@ -298,51 +330,59 @@ describe('board demotes the nuts', () => {
 /** plo6 league smoke: the variant-generic playHand deals 6 cards, enforces
  *  pot-limit, and conserves chips with zero illegal actions. */
 describe('league hands are legal and conserve chips across every V16 configuration', () => {
-  it('plo6 6-max 100bb: 100 hands, zero illegal, chips conserved', async () => {
-    const { playHand } = await import('../benchmark/HorseLeague.js');
-    const counters = { illegal: 0, truncated: 0 };
-    for (let hnd = 0; hnd < 100; hnd++) {
-      const net = playHand(
-        4242 + hnd * 7919,
-        (hnd % 6) + 1,
-        () => ({}),
-        counters,
-        undefined,
-        'plo6'
-      );
-      const sum = net.reduce((a, b) => a + b, 0);
-      expect(Math.abs(sum)).toBeLessThan(1e-6);
-    }
-    expect(counters.illegal).toBe(0);
-  });
-
-  it('heads-up, 40bb, plo8 and short_deck deals all stay legal and conserved', async () => {
-    const { playHand } = await import('../benchmark/HorseLeague.js');
-    const configs: Array<{ variant: string; seats: number; stackBB: number }> = [
-      { variant: 'nlh', seats: 2, stackBB: 100 },
-      { variant: 'nlh', seats: 6, stackBB: 40 },
-      { variant: 'plo8', seats: 6, stackBB: 100 },
-      { variant: 'short_deck', seats: 6, stackBB: 100 },
-      { variant: 'plo4', seats: 2, stackBB: 60 },
-    ];
-    for (const cfg of configs) {
+  it(
+    'plo6 6-max 100bb: 100 hands, zero illegal, chips conserved',
+    async () => {
+      const { playHand } = await import('../benchmark/HorseLeague.js');
       const counters = { illegal: 0, truncated: 0 };
-      for (let hnd = 0; hnd < 60; hnd++) {
+      for (let hnd = 0; hnd < 100; hnd++) {
         const net = playHand(
-          9000 + hnd * 6151,
-          (hnd % cfg.seats) + 1,
+          4242 + hnd * 7919,
+          (hnd % 6) + 1,
           () => ({}),
           counters,
           undefined,
-          cfg.variant,
-          cfg.seats,
-          cfg.stackBB
+          'plo6'
         );
-        expect(net).toHaveLength(cfg.seats);
         const sum = net.reduce((a, b) => a + b, 0);
         expect(Math.abs(sum)).toBeLessThan(1e-6);
       }
       expect(counters.illegal).toBe(0);
-    }
-  });
+    },
+    SUITE_TIMEOUT_MS
+  );
+
+  it(
+    'heads-up, 40bb, plo8 and short_deck deals all stay legal and conserved',
+    async () => {
+      const { playHand } = await import('../benchmark/HorseLeague.js');
+      const configs: Array<{ variant: string; seats: number; stackBB: number }> = [
+        { variant: 'nlh', seats: 2, stackBB: 100 },
+        { variant: 'nlh', seats: 6, stackBB: 40 },
+        { variant: 'plo8', seats: 6, stackBB: 100 },
+        { variant: 'short_deck', seats: 6, stackBB: 100 },
+        { variant: 'plo4', seats: 2, stackBB: 60 },
+      ];
+      for (const cfg of configs) {
+        const counters = { illegal: 0, truncated: 0 };
+        for (let hnd = 0; hnd < 60; hnd++) {
+          const net = playHand(
+            9000 + hnd * 6151,
+            (hnd % cfg.seats) + 1,
+            () => ({}),
+            counters,
+            undefined,
+            cfg.variant,
+            cfg.seats,
+            cfg.stackBB
+          );
+          expect(net).toHaveLength(cfg.seats);
+          const sum = net.reduce((a, b) => a + b, 0);
+          expect(Math.abs(sum)).toBeLessThan(1e-6);
+        }
+        expect(counters.illegal).toBe(0);
+      }
+    },
+    SUITE_TIMEOUT_MS
+  );
 });

@@ -1,4 +1,33 @@
-name: Build for World Hub Sync
+# ─────────────────────────────────────────────────────────────────────────────
+# PUBLISH CLUB ARENA — the publisher, on a workflow entry GitHub will schedule,
+# and on runners we own.
+#
+# WHY THIS FILE EXISTS (2026-09-02). build-for-world-hub.yml stopped being
+# scheduled by GitHub at 16:33 UTC. Six runs sat at `queued` with ZERO jobs
+# created and `updated_at == created_at`, for up to fifty minutes, while every
+# other workflow in this repo - CI, Silent Revert Guard, detect-rewind - picked
+# up runners normally in the same minutes. It was not runner capacity and it
+# was not the concurrency group: #2664 moved the group to `-g2-` and a fresh
+# dispatch against the new group still produced zero jobs. Merging #2654 did
+# not even CREATE a run. Neither cancel, force-cancel nor delete would clear
+# the stuck runs - GitHub answers 409 "Cannot cancel a workflow run that has
+# not been queued yet" and 403 on delete. The wedge is on the workflow ENTRY,
+# and the only thing that escapes an entry is a different path.
+#
+# Production sat on one bundle for 80 minutes because of it.
+#
+# TWO CHANGES FROM THE FILE IT COPIES, AND ONLY TWO:
+#   1. This path, so GitHub schedules it.
+#   2. runs-on reads vars.CI_RUNNER, so publishing runs on the Hetzner box we
+#      own. That is the real lesson here: the one workflow that MUST run for
+#      anything to reach players was the one with no path off GitHub's hosted
+#      pool. Unset CI_RUNNER and it falls back to ubuntu-latest unchanged.
+#
+# Everything else - the tip-of-main convergence, the four-way sharded gate,
+# the retry, the refusal to publish a bundle older than the one deployed - is
+# byte-identical to build-for-world-hub.yml and must stay that way.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Publish Club Arena
 
 on:
   push:
@@ -74,7 +103,7 @@ on:
 # COMMIT LEFT BEHIND" in publish-needed), so a late one either publishes the
 # current tip or the sync step refuses it as older than what is deployed.
 concurrency:
-  group: build-world-hub-g2-${{ github.ref }}
+  group: publish-club-arena-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -90,7 +119,7 @@ jobs:
   # looks stuck - deduping either would be the publish bug this exists to
   # prevent.
   publish-needed:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: read
     outputs:
@@ -213,7 +242,7 @@ jobs:
   client-tests:
     needs: publish-needed
     if: needs.publish-needed.outputs.skip != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: read
     strategy:
@@ -254,7 +283,7 @@ jobs:
   build-and-store:
     needs: publish-needed
     if: needs.publish-needed.outputs.skip != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     permissions:
       # read is enough now: this job uploads an artifact instead of pushing a
       # branch, so it no longer writes to the repository at all.
@@ -324,7 +353,7 @@ jobs:
           {
             "ca_sha": "${{ needs.publish-needed.outputs.target_sha }}",
             "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "built_by": "build-for-world-hub.yml",
+            "built_by": "publish-club-arena.yml",
             "run_id": "${{ github.run_id }}"
           }
           JSON
@@ -389,7 +418,7 @@ jobs:
     # writes) must be that one, or production would report serving a commit it
     # is not actually serving.
     needs: [publish-needed, build-and-store, client-tests]
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     # Needed by the sync-branch cleanup at the end of this job. build-and-store
     # already declares this because it PUSHES the branch; without it here the
     # matching delete silently no-ops behind its `|| true` and the refs keep
@@ -671,7 +700,7 @@ jobs:
           echo "::notice::main is ${AHEAD} commit(s) past ${PUBLISHED:0:7} - chaining the next publish now rather than waiting for the catch-up."
           echo "- main moved ${AHEAD} commit(s) to \`${TIP:0:7}\` during this build; chained the next publish" >> $GITHUB_STEP_SUMMARY
 
-          if gh workflow run "build-for-world-hub.yml" --repo "${{ github.repository }}" --ref main; then
+          if gh workflow run "publish-club-arena.yml" --repo "${{ github.repository }}" --ref main; then
             echo "chained publish dispatched for ${TIP:0:7}"
           else
             echo "::warning::Chain dispatch failed. The */30 catch-up and publish-watchdog remain."

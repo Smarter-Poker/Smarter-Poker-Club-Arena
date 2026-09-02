@@ -89,7 +89,12 @@ export function clubWalletRows(
   }
 
   // 4. Player Wallet
-  rows.push('player_wallet');
+  // Dan 2026-09-02: "ALL CLUB OWNERS AND CO-OWNERS SHOULD HAVE A PLAYER
+  // WALLET (ADMIN'S SHOULD NOT). I KNOW WE'VE SAID THEY SHOULDN'T PREVIOUSLY,
+  // BUT NOW I'M SEEING THE VALUE IN IT." An admin runs the club's money and
+  // never plays out of it; everyone else, owners included, has the one wallet
+  // that actually buys into a game.
+  if (r !== 'admin') rows.push('player_wallet');
 
   // And the rest if applicable
   if (canSeeClubBank(r)) {
@@ -118,6 +123,10 @@ export function clubWalletRows(
 export function clubLobbyWalletRows(role: unknown): WalletRowKey[] {
   const r = normaliseRole(role);
 
+  // Dan 2026-09-02: an owner or co-owner plays out of a player wallet, so the
+  // glance surface leads with the bank and the wallet they can sit down with.
+  // An admin has no player wallet, so the bank and the agent wallet remain.
+  if (r === 'owner' || r === 'co_owner') return ['club_bank', 'player_wallet'];
   if (canSeeClubBank(r)) return ['club_bank', 'agent_wallet'];
   if (isAgentRole(r)) return ['agent_wallet', 'player_wallet'];
   return ['player_wallet'];

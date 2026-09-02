@@ -1,4 +1,47 @@
-name: Build for World Hub Sync
+# ─────────────────────────────────────────────────────────────────────────────
+# PUBLISH CLUB ARENA — the publisher, on a workflow entry GitHub will schedule,
+# and on runners we own.
+#
+# WHY THIS FILE EXISTS (2026-09-02). build-for-world-hub.yml stopped being
+# scheduled by GitHub at 16:33 UTC. Six runs sat at `queued` with ZERO jobs
+# created and `updated_at == created_at`, for up to fifty minutes, while every
+# other workflow in this repo - CI, Silent Revert Guard, detect-rewind - picked
+# up runners normally in the same minutes. It was not runner capacity and it
+# was not the concurrency group: #2664 moved the group to `-g2-` and a fresh
+# dispatch against the new group still produced zero jobs. Merging #2654 did
+# not even CREATE a run. Neither cancel, force-cancel nor delete would clear
+# the stuck runs - GitHub answers 409 "Cannot cancel a workflow run that has
+# not been queued yet" and 403 on delete. The wedge is on the workflow ENTRY,
+# and the only thing that escapes an entry is a different path.
+#
+# Production sat on one bundle for 80 minutes because of it.
+#
+# TWO CHANGES FROM THE FILE IT COPIES, AND ONLY TWO:
+#   1. This path, so GitHub schedules it.
+#   2. runs-on reads vars.CI_RUNNER, so publishing runs on the Hetzner box we
+#      own. That is the real lesson here: the one workflow that MUST run for
+#      anything to reach players was the one with no path off GitHub's hosted
+#      pool. Unset CI_RUNNER and it falls back to ubuntu-latest unchanged.
+#
+# Everything else - the tip-of-main convergence, the four-way sharded gate,
+# the retry, the refusal to publish a bundle older than the one deployed - was
+# copied from build-for-world-hub.yml unchanged.
+#
+# THAT FILE IS GONE NOW (2026-09-02, later the same day). For about ninety
+# minutes both files existed and BOTH fired on every push to main, on separate
+# concurrency groups, so nothing serialised them: two full builds of the same
+# commit, two pushes to the World Hub, and the old one still on billed hosted
+# runners. Verified identical before deleting - 320 non-comment lines each,
+# zero difference once name, path, group and runs-on were normalised.
+#
+# THIS IS NOW THE ONLY PUBLISHER. There is no second path to production. The
+# nets that catch it when it fails - publish-watchdog.sh's re-dispatch, the
+# */30 catch-up above, and the laws in tests/ - were all still pointing at the
+# deleted file and were repointed here in the same commit. If you ever add a
+# second publisher again, give it the SAME concurrency group as this one or
+# they will not serialise.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Publish Club Arena
 
 on:
   push:
@@ -45,8 +88,36 @@ on:
 # allowed to finish. The group therefore holds at most one in-flight build
 # plus the newest queued commit, and each wave of pushes converges on
 # publishing the latest main instead of publishing nothing at all.
+#
+# THE GROUP KEY CARRIES A GENERATION, AND THIS IS WHY (2026-09-02).
+#
+# MEASURED. From 16:07 to 17:05 UTC four commits merged to main and NOT ONE
+# push-triggered publish run was created. `Main Rewind Guard`, which triggers on
+# the same pushes, fired for every one of them, so pushes were being delivered
+# and this workflow alone stopped receiving them. At the same time three
+# `workflow_dispatch` runs (3036, 3037, 3038) sat `queued` with ZERO jobs, and
+# the API refused to cancel any of them: "Cannot cancel a workflow run that has
+# not been queued yet." Two more had been in that state since the previous
+# evening, one of them for 21 hours.
+#
+# Three runs pending in one group is already impossible under the rule below -
+# a new run cancels the older PENDING one, so the group holds at most one
+# in-flight plus one waiting. Three of them, none running, none cancellable,
+# means the GROUP ITSELF was wedged rather than busy. Nothing was executing to
+# release it and nothing could be cancelled to clear it.
+#
+# There is no API to reset a concurrency group. What there is, is the key: a run
+# only queues behind runs sharing its group name, so changing the name gives
+# every future run a clean group. That is what the generation is for. If this
+# ever happens again, bump it - and say in the commit which runs were stuck, so
+# the next person can tell a wedge from a busy queue.
+#
+# The old group is left to whatever GitHub eventually does with those runs. They
+# are harmless if they ever wake: every run publishes the TIP of main (see "NO
+# COMMIT LEFT BEHIND" in publish-needed), so a late one either publishes the
+# current tip or the sync step refuses it as older than what is deployed.
 concurrency:
-  group: build-world-hub-${{ github.ref }}
+  group: publish-club-arena-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -62,7 +133,7 @@ jobs:
   # looks stuck - deduping either would be the publish bug this exists to
   # prevent.
   publish-needed:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: read
     outputs:
@@ -185,7 +256,7 @@ jobs:
   client-tests:
     needs: publish-needed
     if: needs.publish-needed.outputs.skip != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: read
     strategy:
@@ -226,7 +297,7 @@ jobs:
   build-and-store:
     needs: publish-needed
     if: needs.publish-needed.outputs.skip != 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     permissions:
       # read is enough now: this job uploads an artifact instead of pushing a
       # branch, so it no longer writes to the repository at all.
@@ -296,7 +367,7 @@ jobs:
           {
             "ca_sha": "${{ needs.publish-needed.outputs.target_sha }}",
             "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "built_by": "build-for-world-hub.yml",
+            "built_by": "publish-club-arena.yml",
             "run_id": "${{ github.run_id }}"
           }
           JSON
@@ -361,7 +432,7 @@ jobs:
     # writes) must be that one, or production would report serving a commit it
     # is not actually serving.
     needs: [publish-needed, build-and-store, client-tests]
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     # Needed by the sync-branch cleanup at the end of this job. build-and-store
     # already declares this because it PUSHES the branch; without it here the
     # matching delete silently no-ops behind its `|| true` and the refs keep
@@ -643,7 +714,7 @@ jobs:
           echo "::notice::main is ${AHEAD} commit(s) past ${PUBLISHED:0:7} - chaining the next publish now rather than waiting for the catch-up."
           echo "- main moved ${AHEAD} commit(s) to \`${TIP:0:7}\` during this build; chained the next publish" >> $GITHUB_STEP_SUMMARY
 
-          if gh workflow run "build-for-world-hub.yml" --repo "${{ github.repository }}" --ref main; then
+          if gh workflow run "publish-club-arena.yml" --repo "${{ github.repository }}" --ref main; then
             echo "chained publish dispatched for ${TIP:0:7}"
           else
             echo "::warning::Chain dispatch failed. The */30 catch-up and publish-watchdog remain."

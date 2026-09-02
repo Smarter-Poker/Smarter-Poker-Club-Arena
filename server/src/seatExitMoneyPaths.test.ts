@@ -18,7 +18,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { sliceEnclosingBlock, sliceMethod } from './testHelpers/sourceWindow.js';
+import { sliceMethod } from './testHelpers/sourceWindow.js';
 
 const ROOT = process.cwd();
 const GS = fs.readFileSync(path.join(ROOT, 'src/GameServer.ts'), 'utf8');
@@ -30,39 +30,56 @@ function stripComments(src: string): string {
 
 const GS_CODE = stripComments(GS);
 
-describe('GameServer boot sweep - chips leave the felt the way everyone else does', () => {
-  /* Bounded by the structure it is about, never by a byte count - a window
-     that can drift off the end of what it guards can also drift off it while
-     staying green. See tests/unit/noFixedSizeSourceWindows.test.ts. */
-  const sweep = sliceEnclosingBlock(GS_CODE, 'let cashedOut = 0;');
+describe('GameServer boot - horses keep their seats across a restart (Dan 2026-09-02, CLAUDE.md 10.5)', () => {
+  /* The boot path used to cash out and vacate every HORSE seat at every cash
+     table, and the fleet then re-seeded fresh horses into the holes: measured
+     on the 2026-09-02 20:55 break as 383 seats / 78,575.13 chips off the felt
+     in one boot, every one a horse, zero humans. A seat row is the persisted
+     state for horse and human alike; nothing on the boot path may remove one. */
+  const cleanup = sliceMethod(GS_CODE, 'private async cleanupStaleData(');
 
-  it('cashes each seat out through the locked RPC', () => {
-    expect(sweep).toMatch(/rpc\(\s*'atomic_seat_cashout_locked'/);
-    expect(sweep).toMatch(/p_seat_number:\s*seat\.seat_number/);
+  it('the boot path is still there to be measured', () => {
+    expect(cleanup.length).toBeGreaterThan(200);
+    expect(cleanup).toContain("horse_status: 'available'");
   });
 
-  it('never issues a table_seats DELETE', () => {
+  it('does not cash out any seat on boot', () => {
+    expect(cleanup).not.toMatch(/atomic_seat_cashout_locked/);
+    expect(cleanup).not.toMatch(/atomic_credit_wallet_and_log/);
+    expect(cleanup).not.toMatch(/credit_player_wallet/);
+  });
+
+  it('the only seat release left on the boot path is the finished-tournament orphan sweep', () => {
+    // That sweep releases the seats of tables whose tournament is already
+    // over - horse and human alike - and is not what this test is about.
+    expect(cleanup).toContain('orphan seat release failed');
+    expect(cleanup).not.toMatch(/staleSweep\.seats/);
+  });
+
+  it('nothing on the boot path tells a horse apart from a human (10.5)', () => {
+    // No horse id list, no is_horse filter on a seat write, no horseIdSet.
+    // The horse_status reset above is a health-reporting flag the fleet
+    // ignores for seating, and touches no seat.
+    expect(cleanup).not.toMatch(/horseIdSet|horseIdList|horsePage/);
+    expect(cleanup).not.toMatch(/from\('table_seats'\)[\s\S]{0,400}is_horse/);
+  });
+
+  it('does not build a horse list to treat horses differently from humans', () => {
+    // 10.5: the only legitimate horse branch is the one that MAKES a horse
+    // equal (seating, funding, steering). A list of horses gathered so they
+    // can be removed is the bug this test exists to stop coming back.
+    expect(cleanup).not.toMatch(/staleSweep\.horses/);
+    expect(cleanup).not.toMatch(/canSweepSeats/);
+  });
+
+  it('never issues a table_seats DELETE anywhere in GameServer', () => {
     /* CLAUDE.md 11.5: deleting a seat row skips the refund and destroys the
-       chips. A vacated seat (left_at set) is the audit trail, and
-       atomic_table_buyin clears the rathole rows it needs to reuse a number. */
+       chips. A vacated seat (left_at set) is the audit trail. */
     expect(GS_CODE).not.toMatch(/from\('table_seats'\)[\s\S]{0,200}\.delete\(/);
   });
 
-  it('does not credit a wallet itself', () => {
-    /* A credit outside the RPC is a second transaction, and the second
-       transaction is what the aggregate key made invisible on retry. */
-    expect(sweep).not.toMatch(/atomic_credit_wallet_and_log/);
-    expect(sweep).not.toMatch(/credit_player_wallet/);
-  });
-
   it('the aggregate startup-cashout idempotency key is gone', () => {
-    // Keyed on a set of seat ids, so a re-run of the same set was deduped into
-    // silence while the seats were deleted regardless.
     expect(GS_CODE).not.toMatch(/startup-cashout:/);
-  });
-
-  it('does not stamp left_at itself', () => {
-    expect(sweep).not.toMatch(/left_at:\s*new Date\(\)/);
   });
 });
 

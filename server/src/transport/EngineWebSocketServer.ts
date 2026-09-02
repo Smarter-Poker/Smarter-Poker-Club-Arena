@@ -336,7 +336,29 @@ export class EngineWebSocketServer {
             socket.destroy();
             return;
           }
-          const viewerAccess = await this.authorizeViewer(tableId, auth.userId);
+          /* THE FOUR GATES RUN TOGETHER (2026-09-02). They were awaited one
+             after another - viewer access, then the blacklist, then restrict
+             observers, then the IP rule - each its own round trip to the
+             database, five or six in a row. Measured from a browser against
+             production while the database was saturated: 7.4 s, 10.7 s and
+             10.7 s from `new WebSocket` to `open`, against a client handshake
+             timeout of 15 s, so a slow afternoon turned every table into
+             "Connecting To The Table" and some into a reconnect loop. None
+             of the four depends on another's answer - each is a pure
+             function of (table, user, ip) - so they are asked at once and
+             judged in the original order, with the same outcome for every
+             combination of answers. Only ensureTable, which can START an
+             engine, still waits for the verdicts. */
+          const [viewerAccess, banned, observerRestricted, ipConflict] = await Promise.all([
+            this.authorizeViewer(tableId, auth.userId),
+            // Belt-and-suspenders: never reject a legit connection on a
+            // blacklist-check error.
+            this.isBannedFromTable(tableId, auth.userId).catch(() => false),
+            this.isRestrictedObserver(tableId, auth.userId),
+            // Same rule as the blacklist gate: a failure to CHECK must never
+            // become a refusal.
+            this.isIpConflict(tableId, auth.userId, clientIp).catch(() => false),
+          ]);
           if (!viewerAccess.allowed) {
             const status =
               viewerAccess.reason === 'table_not_found'
@@ -374,22 +396,16 @@ export class EngineWebSocketServer {
           // even open a connection to the table, so they can't see other
           // players' actions / chat / etc. Belt-and-suspenders relative to
           // the buyin gate at /api/club-arena/buyin.
-          try {
-            const banned = await this.isBannedFromTable(tableId, auth.userId);
-            if (banned) {
-              socket.write(
-                'HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
-              );
-              socket.destroy();
-              return;
-            }
-          } catch {
-            // Belt-and-suspenders: never reject legit connections on a
-            // blacklist-check error. Log and proceed.
+          if (banned) {
+            socket.write(
+              'HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+            );
+            socket.destroy();
+            return;
           }
 
           // Restrict Observers: a table may be seats-only (Dan 2026-08-25).
-          if (await this.isRestrictedObserver(tableId, auth.userId)) {
+          if (observerRestricted) {
             socket.write(
               'HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
             );
@@ -409,17 +425,12 @@ export class EngineWebSocketServer {
           //     counts, or a proxy misconfiguration would lock out the room;
           //   • whoever is already connected keeps their seat. This refuses
           //     the arriving connection, it never drops a seated player.
-          try {
-            if (await this.isIpConflict(tableId, auth.userId, clientIp)) {
-              socket.write(
-                'HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
-              );
-              socket.destroy();
-              return;
-            }
-          } catch {
-            // Same rule as the blacklist gate: a failure to CHECK must never
-            // become a refusal.
+          if (ipConflict) {
+            socket.write(
+              'HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+            );
+            socket.destroy();
+            return;
           }
 
           // Round 67/190: log connection IP to action_audit_logs so the

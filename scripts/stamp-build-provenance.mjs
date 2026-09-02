@@ -91,7 +91,7 @@ const info = {
 };
 
 if (!existsSync(DIST)) mkdirSync(DIST, { recursive: true });
-// NOTE the filename. build-for-world-hub.yml writes its own dist/build-info.json
+// NOTE the filename. publish-club-arena.yml writes its own dist/build-info.json
 // AFTER `npm run build` returns (ca_sha / built_at / built_by / run_id), so
 // writing there would be silently clobbered in CI. ca-provenance.json is ours
 // alone and survives; the two files coexist and the deploy gate reads both.

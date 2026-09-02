@@ -14,6 +14,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 import { clampSeatsForVariant, maxSeatsForVariant } from '../config/tableSeating.js';
@@ -225,6 +226,10 @@ export class HorseFleetManager {
     // Overlap guard — see HorseLifecycleManager. seedAllTables has its own
     // `seeding` flag, so this is belt-and-braces for the wrapper.
     this.seedInterval = setInterval(() => {
+      // THE FREEZE (Dan 2026-09-01): seeding is a seat INSERT and a buy-in -
+      // chips moving under a break screen. The felt refills on the first
+      // cycle after the thaw, thirty seconds into resumed play at most.
+      if (isMaintenanceFrozen()) return;
       this.seedAllTables().catch((err) => reportError(err, 'HorseFleet.Seed_cycle_error'));
     }, 30000);
 

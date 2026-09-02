@@ -72,6 +72,22 @@ describe('HorseMind V12.2 - sandbox isolation', () => {
   });
 });
 
+// vitest.config.ts sets a global testTimeout of 10s. That was calibrated on
+// GitHub-hosted runners; the estate moved CI to self-hosted runners on
+// 2026-09-02 (estate-ci-1, 4 vCPU, up to 8 concurrent jobs on one box), where
+// the same simulator runs at roughly 2x wall clock from CPU contention. On
+// 2026-09-02 the 150-hand mind-on self-play measured 12342ms against that 10s
+// ceiling and timed out - not an assertion failure, and not a regression: this
+// PR does not touch the simulator, the numbers moved because the hardware did.
+// The 80-hand truncation check measured 7548ms in the same run, i.e. it was
+// one contended run away from falling over for the same reason.
+//
+// Only the WALL CLOCK is relaxed, and only on the slow runner class. Every
+// assertion in this file is untouched, and hand counts are untouched - cutting
+// hands would widen stderr and quietly weaken what these tests actually pin.
+// A genuine hang still trips the ceiling on every hardware class.
+const SIM_TIMEOUT_MS = 10_000 * (process.env.RUNNER_ENVIRONMENT === 'self-hosted' ? 3 : 1);
+
 describe('HorseLeague V12.2 - sandbox-mode simulator integrity', () => {
   it('a sandboxed matchup leaves live HorseMind completely untouched', async () => {
     HorseMind.observe(liveHand(500), []);
@@ -116,12 +132,16 @@ describe('HorseLeague V12.2 - sandbox-mode simulator integrity', () => {
     expect(r1.stderr).toBe(r2.stderr);
   });
 
-  it('self-play (identical configs) measures near zero with the mind on', async () => {
-    // Each pass keeps its own sandbox, so identical configs evolve identical
-    // memories and the duplicate seat swap kills any systematic edge.
-    const r = await runMatchup({ name: 'mirror', a: {}, b: {}, mind: 'sandbox' }, 150, 1234);
-    expect(Math.abs(r.bb100)).toBeLessThan(Math.max(30, 4 * r.stderr));
-  });
+  it(
+    'self-play (identical configs) measures near zero with the mind on',
+    async () => {
+      // Each pass keeps its own sandbox, so identical configs evolve identical
+      // memories and the duplicate seat swap kills any systematic edge.
+      const r = await runMatchup({ name: 'mirror', a: {}, b: {}, mind: 'sandbox' }, 150, 1234);
+      expect(Math.abs(r.bb100)).toBeLessThan(Math.max(30, 4 * r.stderr));
+    },
+    SIM_TIMEOUT_MS
+  );
 
   it('EVERY standing matchup is sandboxed, and the legacy ablation is complete', () => {
     // V12.3: sandboxing is no longer opt-in — running a league hand against
@@ -155,11 +175,15 @@ describe('HorseLeague V12.2 - sandbox-mode simulator integrity', () => {
     expect(fastRandom()).toBe(before);
   });
 
-  it('never truncates a street, and never lets an unpaid bet reach showdown', async () => {
-    const r = await runMatchup({ name: 't', a: {}, b: { v11: false } }, 80, 31);
-    expect(r.truncatedStreets).toBe(0);
-    expect(r.illegalActions).toBe(0);
-  });
+  it(
+    'never truncates a street, and never lets an unpaid bet reach showdown',
+    async () => {
+      const r = await runMatchup({ name: 't', a: {}, b: { v11: false } }, 80, 31);
+      expect(r.truncatedStreets).toBe(0);
+      expect(r.illegalActions).toBe(0);
+    },
+    SIM_TIMEOUT_MS
+  );
 
   it('validates sizings even when the caller passes no counters', () => {
     // Validation used to be gated on `counters` being present, so the

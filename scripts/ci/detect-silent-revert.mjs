@@ -24,9 +24,14 @@
  * touched that file inside the lookback window. A hit means this commit put
  * the file back to its pre-P state.
  *
- * That is precise. It does not guess, it does not diff line ranges, and its
- * only false positive is a revert the author actually meant — which is why
- * saying so in the commit message is the escape hatch.
+ * That is precise. It does not guess and it does not diff line ranges. Two
+ * escape classes exist: a revert the author actually meant (the commit
+ * message + label hatch below), and — found live on PR #2537, 2026-09-01 — a
+ * branch commit on a CONCURRENT lineage that matches a main commit's
+ * pre-state because both lineages carried byte-identical content under
+ * different shas (CLAUDE.md section 12). The second is handled structurally:
+ * a finding only stands if the undone change is also ABSENT from HEAD,
+ * because squash-only merges mean HEAD's tree is the only thing that ships.
  *
  * ESCAPE HATCHES
  *   - paths in IGNORED_PATHS (build output, lockfiles, generated bundles)
@@ -104,6 +109,38 @@ const subjectOf = (sha) => git('log', '-1', '--format=%s', sha) || '(no subject)
 const bodyOf = (sha) => git('log', '-1', '--format=%B', sha) || '';
 
 const blobAt = (sha, file) => git('rev-parse', `${sha}:${file}`);
+
+/**
+ * Does `prior`'s change to `file` still exist in the tree that will actually
+ * merge (HEAD)? Three tiers, cheapest first:
+ *   1. HEAD holds prior's pre-state byte-for-byte  -> the revert ships: NO.
+ *   2. HEAD holds prior's result byte-for-byte     -> fully present: YES.
+ *   3. Diverged since: prior's diff for the file reverse-applies cleanly to
+ *      the checked-out tree iff its lines are still there               -> YES;
+ *      anything else stays a finding (conservative: an unprovable survival
+ *      is treated as a revert, never the other way around).
+ */
+const priorChangeSurvivesAtHead = (prior, file) => {
+  const headBlob = blobAt('HEAD', file);
+  if (headBlob === null) return false; // deleted at HEAD: prior's change is gone
+  if (headBlob === blobAt(`${prior}~1`, file)) return false;
+  if (headBlob === blobAt(prior, file)) return true;
+  try {
+    const patch = execFileSync('git', ['diff', `${prior}~1`, prior, '--', file], {
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    if (!patch.trim()) return false;
+    execFileSync('git', ['apply', '--reverse', '--check', '-'], {
+      input: patch,
+      encoding: 'utf8',
+      stdio: ['pipe', 'ignore', 'ignore'],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 /**
  * One history walk, not one per file. `git log --name-only` over the window
@@ -202,6 +239,24 @@ for (const commit of range) {
       if (!priorBlob || priorBlob === beforeBlob) continue; // `prior` did not change it
 
       if (newBlob === beforeBlob) {
+        // An intermediate state is not a revert unless it SHIPS. Pull
+        // requests here merge by squash only (ruleset `main protection`), so
+        // what lands on main is HEAD's tree, not this commit's. And
+        // concurrent lineages in this repo routinely hold byte-identical
+        // content under DIFFERENT shas (CLAUDE.md section 12: the GitHub-MCP
+        // push path re-creates the same content under a new sha) — so a
+        // branch commit authored BEFORE `prior` even existed can match
+        // prior's pre-state without ever having seen, let alone undone,
+        // prior's change. First live hit: PR #2537 was flagged for "undoing"
+        // f48c48216, a fix committed an HOUR AFTER the flagged commit on a
+        // lineage it was never part of, while HEAD carried the fix intact —
+        // and because the flagged commit's message did not say "revert", no
+        // human label could clear it.
+        // The discriminating question is: does prior's change survive at
+        // HEAD? If yes, nothing is lost by merging; if no, this is exactly
+        // the stale-checkout clobber this guard exists for (902d8b2b shipped
+        // its stale content, so it still fails this test).
+        if (priorChangeSurvivesAtHead(prior, file)) continue;
         findings.push({
           commit: commit.slice(0, 9),
           commitSubject: subjectOf(commit),

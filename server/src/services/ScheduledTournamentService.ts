@@ -33,6 +33,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import { buyInFor, rakeRateFor, wholeChips } from '../config/buyIn.js';
 import { TournamentRecurringService } from './TournamentRecurringService.js';
@@ -439,7 +440,14 @@ export class ScheduledTournamentService {
     }
     this.isRunning = true;
     console.log('[ScheduledTournaments] Service started - polling every 60s');
-    this.pollTimer = setInterval(() => void this.poll(), POLL_INTERVAL_MS);
+    // THE FREEZE (Dan 2026-09-01): starting a scheduled event registers and
+    // seats its field. An event whose start time falls inside the break
+    // starts on the first poll after the thaw, up to a minute late - which is
+    // also exactly when its players are back at the felt to see it.
+    this.pollTimer = setInterval(() => {
+      if (isMaintenanceFrozen()) return;
+      void this.poll();
+    }, POLL_INTERVAL_MS);
     void this.poll();
   }
 

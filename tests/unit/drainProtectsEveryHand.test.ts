@@ -94,7 +94,7 @@ describe('the deploy gate waits on hands, never on humanity', () => {
     const src = wf();
     const gate = src.slice(
       src.indexOf('Wait for the maintenance break'),
-      src.indexOf('Pull the exact commit')
+      src.indexOf('Cut over to the new image')
     );
     expect(gate).toMatch(/readyForRestart/);
     expect(gate).not.toMatch(/d\.get\("humansSeatedTotal"\)/);
@@ -105,7 +105,10 @@ describe('the deploy gate waits on hands, never on humanity', () => {
     // A gate reading a field nobody publishes is a gate that is permanently
     // blind — this pins the two ends together.
     const gs = read('server/src/GameServer.ts');
-    expect(gs).toMatch(/maintenance: this\.maintenanceBreak\.snapshot\(\)/);
+    // Phase 1 (to-do #2563 item 4) widened the block to carry the measured
+    // clock skew alongside the break snapshot, so the pin now requires BOTH:
+    // the snapshot spread and the skew field riding with it.
+    expect(gs).toMatch(/maintenance: \{ \.\.\.this\.maintenanceBreak\.snapshot\(\), dbClockSkewMs/);
     expect(read('server/src/maintenance/MaintenanceBreak.ts')).toMatch(/readyForRestart\(\)/);
   });
 

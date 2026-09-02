@@ -84,6 +84,11 @@ export function ClubIdentityCard({
         <img src={CLUB_IDENTITY_SHELL} alt="" />
       </picture>
 
+      {/* Covers the silver square frame painted into the shell artwork — Dan 2026-09-02:
+          "REMOVE THE SILVER BOX THAT IS BEHIND THE LOGO'S ON ALL THE CLUB CARDS.
+          IT SHOULD JUST BE A LOGO, NO FRAME OR BOX BEHIND IT." */}
+      <div className="club-identity__logo-mask" aria-hidden="true" />
+
       <div className="club-identity__logo">
         {logoUrl ? <img src={logoUrl} alt={`${clubName} Logo`} loading="lazy" /> : logoFallback}
       </div>

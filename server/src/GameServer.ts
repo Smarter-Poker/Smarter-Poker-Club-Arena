@@ -447,6 +447,26 @@ export class GameServer {
     // duration, so "picks back up exactly as it was" is true of the CLOCKS
     // and not only of the chips. fn_thaw_platform is idempotent per freeze -
     // two engines racing at :00 cannot shift the clocks twice.
+    // PHASE 2 (2026-09-02): the break's own measurements, one row per break,
+    // so ca_break_scorecards can show what the GATE saw (unparked at
+    // countdown, peak, when readyForRestart first opened) and not only what
+    // hand_history reveals from outside. Insert-only; a failure is reported
+    // by MaintenanceBreak and never delays the resume.
+    recordOutcome: async (o) => {
+      const { error } = await supabase.from('engine_maintenance_break_log').insert({
+        break_started_at: new Date(o.breakStartedAtMs).toISOString(),
+        break_ended_at: new Date(o.breakEndedAtMs).toISOString(),
+        unparked_at_countdown: o.unparkedAtCountdown,
+        peak_unparked: o.peakUnparked,
+        ready_for_restart_at:
+          o.readyForRestartAtMs === null ? null : new Date(o.readyForRestartAtMs).toISOString(),
+        tables_resumed: o.tablesResumed,
+        thaw_ok: o.thawOk,
+        engine_version:
+          process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
+      });
+      if (error) throw new Error(error.message);
+    },
     thaw: async (freezeStartedAtMs, frozenSeconds) => {
       const { data, error } = await supabase.rpc('fn_thaw_platform', {
         p_freeze_started: new Date(freezeStartedAtMs).toISOString(),

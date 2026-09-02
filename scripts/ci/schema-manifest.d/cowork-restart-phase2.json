@@ -1,0 +1,13 @@
+{
+  "_owner": "feat/engine-restart-programme-phase-2",
+  "tables": ["engine_maintenance_break_log"],
+  "functions": [],
+  "columns": {
+    "ca_break_scorecards": [
+      "unparked_at_countdown",
+      "peak_unparked",
+      "ready_for_restart_at",
+      "gate_opened"
+    ]
+  }
+}

@@ -12,6 +12,7 @@ import {
   MaintenanceBreak,
   type MaintenanceBreakStore,
   type PersistedMaintenanceBreak,
+  type MaintenanceBreakOutcome,
 } from './MaintenanceBreak.js';
 
 /**
@@ -44,6 +45,20 @@ class FakeEngine {
   }
   isParkedBetweenHands(): boolean {
     return this.atGate;
+  }
+  /** Cards in the air. The real engine: handController !== null. */
+  handInFlight = false;
+  isBetweenHands(): boolean {
+    return !this.handInFlight;
+  }
+  /** A hand is dealt: cards in the air, the loop is nowhere near the gate. */
+  deal(): void {
+    this.handInFlight = true;
+    this.atGate = false;
+  }
+  /** The hand settles. The loop is still in flight (sleep, seat read, broadcast). */
+  finishHand(): void {
+    this.handInFlight = false;
   }
   isRunning(): boolean {
     return this.running;
@@ -86,13 +101,17 @@ function build(engineCount = 3) {
   for (let i = 0; i < engineCount; i++) engines.set(`t${i}`, new FakeEngine());
   const store = new FakeStore();
   const emitted: Array<{ tableId: string; payload: Record<string, unknown> }> = [];
+  const outcomes: MaintenanceBreakOutcome[] = [];
   const mb = new MaintenanceBreak({
     engines: () => engines.entries() as any,
     isRunning: () => true,
     emit: (tableId, payload) => emitted.push({ tableId, payload }),
     store,
+    recordOutcome: async (o) => {
+      outcomes.push(o);
+    },
   });
-  return { mb, engines, store, emitted };
+  return { mb, engines, store, emitted, outcomes };
 }
 
 const parkAll = (engines: Map<string, FakeEngine>) => engines.forEach((e) => e.park());
@@ -186,55 +205,87 @@ describe('the countdown', () => {
 });
 
 describe('the restart gate', () => {
-  it('stays shut until every single table has reached the pause gate', async () => {
+  /**
+   * PHASE 2 (2026-09-02): THE GATE COUNTS A LIVE HAND, NOT A RAISED HAND.
+   *
+   * The gate has been wrong three times (see unparkedTables). The third: it
+   * asked "has the loop reached the pause-gate promise" - so a table in its
+   * 5s sleep, its seat read, or its idle broadcast, with no cards out, held
+   * the gate shut. On the 17:55 break of 2026-09-02, with ZERO hands dealt
+   * inside it, 64-70 such tables kept readyForRestart false for the whole
+   * five minutes; the deploy gave up at :00 and restarted on live tables at
+   * 18:02. The gate had never once opened on a real break.
+   *
+   * The honest question is "are there cards in the air". These tests never
+   * call park(): reaching the gate is not what matters.
+   */
+  it('stays shut while any table has a hand in flight, and opens the moment the last one settles', async () => {
     const { mb, engines } = build(3);
+    const list = [...engines.values()];
+    list.forEach((e) => e.deal());
     await mb.announceLastHand();
     await mb.beginCountdown();
 
     expect(mb.readyForRestart()).toBe(false);
 
-    const list = [...engines.values()];
-    list[0].park();
-    list[1].park();
+    list[0].finishHand();
+    list[1].finishHand();
     // One table still mid-hand is enough to refuse the restart. Losing a
-    // deploy window costs six hours of slightly older code; restarting here
+    // deploy window costs an hour of slightly older code; restarting here
     // voids somebody's hand.
     expect(mb.readyForRestart()).toBe(false);
 
-    list[2].park();
+    list[2].finishHand();
+    // No table has reached the pause gate. None needs to: nothing is in the
+    // air, so nothing can be lost.
+    expect(list.every((e) => !e.atGate)).toBe(true);
     expect(mb.readyForRestart()).toBe(true);
   });
 
-  it('opens for a QUIET table, which parks in the start-up loop not the deal loop', async () => {
+  it('opens for a QUIET table that never reaches the gate at all', async () => {
     /**
-     * FOUND BY AUDIT BEFORE THIS SHIPPED, and it would have made the whole
-     * feature inert. The gate first used `isWaitingForHandForHand()`, which is
-     * only ever true for a table that reached the gate from the DEALING loop.
-     * A table below minPlayersToDeal sits in the start-up wait loop instead,
-     * and GameServer deliberately starts engines for exactly those tables.
-     *
-     * So every quiet table counted as unparked forever, the gate could never
-     * open, and the deploy would have waited fourteen minutes and given up -
-     * every hour, permanently, with nothing ever shipping except force=true,
-     * which restarts on live tables. The symptom would have been the straggler
-     * warning naming the same table ids every hour.
-     *
-     * `isParkedBetweenHands()` accepts a park from either loop, so this test
-     * is the difference between the feature working and doing nothing.
+     * The production bug. A quiet table waits in the start-up loop; it only
+     * checks the pause every 5s and spends the rest in a seat read, an idle
+     * broadcast and a sleep. Under the second gate it counted as unparked
+     * the whole time. It has no hand; it holds nothing.
      */
     const { mb, engines } = build(2);
     await mb.announceLastHand();
     await mb.beginCountdown();
+    expect([...engines.values()].every((e) => !e.atGate)).toBe(true);
+    expect(mb.readyForRestart()).toBe(true);
+  });
 
-    // Neither table ever sees a hand; they park from the wait loop.
-    parkAll(engines);
+  it('does not open on a raised hand: a table AT the gate with cards still out keeps it shut', async () => {
+    /**
+     * Defensive: if a future refactor ever makes the gate flag and the hand
+     * disagree, cards in the air must win. This is the "too loose" failure
+     * of the first gate, pinned from the other side.
+     */
+    const { mb, engines } = build(1);
+    const e = [...engines.values()][0];
+    e.deal();
+    e.park(); // claims to be at the gate
+    await mb.announceLastHand();
+    await mb.beginCountdown();
+    expect(mb.readyForRestart()).toBe(false);
+    e.finishHand();
+    expect(mb.readyForRestart()).toBe(true);
+  });
+
+  it('ignores a stopped engine: it has no hand to protect', async () => {
+    const { mb, engines } = build(2);
+    const list = [...engines.values()];
+    list[0].deal();
+    list[0].running = false;
+    await mb.announceLastHand();
+    await mb.beginCountdown();
     expect(mb.readyForRestart()).toBe(true);
   });
 
   it('shuts again once too little break remains to finish a restart inside it', async () => {
-    const { mb, engines } = build(1);
+    const { mb } = build(1);
     await mb.announceLastHand();
-    parkAll(engines);
     await mb.beginCountdown();
     expect(mb.readyForRestart()).toBe(true);
 
@@ -248,6 +299,27 @@ describe('the restart gate', () => {
     const { mb } = build();
     expect(mb.readyForRestart()).toBe(false);
     expect(mb.isActive()).toBe(false);
+  });
+
+  it('measures itself: unparked at countdown, the peak, and when it first opened', async () => {
+    const { mb, engines, outcomes } = build(3);
+    const list = [...engines.values()];
+    list[0].deal();
+    list[1].deal();
+    await mb.announceLastHand();
+    await mb.beginCountdown();
+    expect(mb.readyForRestart()).toBe(false); // 2 in flight
+    list[2].deal(); // a third starts one (should not happen under maintenancePaused, but measure it)
+    expect(mb.readyForRestart()).toBe(false); // 3 in flight - the peak
+    list.forEach((e) => e.finishHand());
+    expect(mb.readyForRestart()).toBe(true);
+    vi.advanceTimersByTime(MaintenanceBreak.BREAK_DURATION_MS + 1000);
+    await mb.end();
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0].unparkedAtCountdown).toBe(2);
+    expect(outcomes[0].peakUnparked).toBe(3);
+    expect(outcomes[0].readyForRestartAtMs).not.toBeNull();
+    expect(outcomes[0].tablesResumed).toBe(3);
   });
 });
 

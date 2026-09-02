@@ -147,3 +147,23 @@ sync step still refuses to publish anything older than what is deployed.
 Four more mutations verified red: allowing a self-dispatch, measuring staleness
 over schedule-only runs, unwiring the dispatcher, and removing the cap. 36 of
 36 pins green.
+
+## The root cause, measured, and why cycling is now off
+
+Every `schedule:` in Club Arena adds up to ~324 scheduled runs a day. Over the
+48 hours to 18:45 UTC GitHub delivered **65 - about 10%**. World Hub asks for
+~129 a day and was delivered **19%**. Across the seven repos the estate asks
+for 700+ a day. GitHub's docs call the schedule event best-effort and say that
+under load "some queued jobs may be dropped"; measured here, most are, all the
+time, and the busiest repo is dropped hardest - today to zero from 14:42.
+
+Nothing about registration was ever wrong, which is why cycling never fixed it
+and why a brand-new workflow file created at 17:31 never got a scheduled run
+either. The estate had also been compensating by asking for MORE ticks (three
+an hour for one engine deploy), which under fair-share throttling deepens the
+drop. `auto-deploy-hetzner.yml` is back to one tick.
+
+The remedy is to stop needing the cron: dispatch starved work off
+`workflow_run`, which GitHub delivers reliably many times an hour. That is now
+the first and normally only action. Registration cycling is kept as code
+behind `SCHEDULE_CYCLE_REGISTRATIONS=1`, off by default.

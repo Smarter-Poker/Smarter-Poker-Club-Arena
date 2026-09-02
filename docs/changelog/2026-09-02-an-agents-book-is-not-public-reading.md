@@ -81,14 +81,26 @@ execute, `authenticated` can, migration recorded.
 Both are pinned by the law, so the next agent editing this migration cannot
 reintroduce either.
 
-## One improvement to the page while it was open
+## Two improvements to the page while it was open
 
-The Summary panel is gated on `summary &&`, which is right: four zero cards on
-a failed read are indistinguishable from "you earned nothing", and removing
-exactly that class of lie is what the phase 7 audit was for. But the gate
-rendered **nothing at all** — a blank tab, no explanation, no way back. It now
-says the summary could not be loaded and offers Try Again. (`setOwed(null)` on
-a failed unclaimed read was already correct and is now pinned too.)
+Both are the same defect the phase 7 audit exists to remove — a failed read
+rendering as a number — found by reading the component line by line.
+
+1. **The Summary tab went blank on a failed read.** The panel is gated on
+   `summary &&`, which is right: four zero cards are indistinguishable from
+   "you earned nothing". But the gate rendered _nothing at all_ — a blank tab,
+   no explanation, no way back. It now says the summary could not be loaded and
+   offers Try Again. (`setOwed(null)` on a failed unclaimed read was already
+   correct and is pinned now too.)
+
+2. **A failed downline read showed every sub-agent as owed 0.** The `catch`
+   around `CommissionService.downlineCommission` left `downlineOwed` empty, and
+   `downlineOwed[a.id] || 0` then rendered `0` on every sub-agent card — "the
+   club owes this downline nothing", which an upline cannot tell from the
+   truth, and which they would act on. `totalCommission` is `number | null`
+   now: `null` means the read failed and renders **Unavailable**, `0` still
+   means owes nothing. `|| 0` is pinned out, because it collapses the two back
+   together.
 
 ## Then I swept for the shape of it, and found two more
 

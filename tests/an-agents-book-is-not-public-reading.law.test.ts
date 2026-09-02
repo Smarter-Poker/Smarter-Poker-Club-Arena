@@ -237,6 +237,21 @@ describe('the client only ever asks about itself', () => {
     );
   });
 
+  it('a failed downline read says Unavailable, never zero', () => {
+    // The catch used to leave downlineOwed empty, and every sub agent card then
+    // rendered 0 - "the club owes this downline nothing" - indistinguishable
+    // from the truth. null means "could not read", 0 means "owes nothing".
+    expect(DASHBOARD).toMatch(/totalCommission: number \| null;/);
+    expect(DASHBOARD).toMatch(/let downlineFailed = false;/);
+    expect(DASHBOARD).toMatch(/downlineFailed = true;/);
+    expect(DASHBOARD).toMatch(
+      /totalCommission: downlineFailed \? null : \(downlineOwed\[a\.id\] \?\? 0\),/
+    );
+    expect(DASHBOARD).toMatch(/\? 'Unavailable'/);
+    // `|| 0` would turn a genuine zero and a failure back into the same thing.
+    expect(DASHBOARD).not.toMatch(/totalCommission: downlineOwed\[a\.id\] \|\| 0/);
+  });
+
   it('and a failed summary says so instead of rendering a blank tab', () => {
     // The panel is gated on `summary &&`, which is right: four zero cards on a
     // failed read are indistinguishable from "you earned nothing". But the

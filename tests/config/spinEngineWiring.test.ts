@@ -233,7 +233,30 @@ describe('the draw sets the prize and the payout shape - never the stack', () =>
   it('start updates the IN-MEMORY structure too, not just the row', () => {
     // The level timer and table creation read the in-memory object; a
     // DB-only write would leave this start running placeholder blinds.
-    expect(engine).toMatch(/tournament\.blind_structure\s*=\s*spinBlinds/);
+    //
+    // PIN MOVED 2026-09-02, because the mechanism was replaced and this pin
+    // was not moved with it - so `main` sat red on a required check.
+    //
+    // It used to require the per-field copy `tournament.blind_structure =
+    // spinBlinds`. That hand-written list of field names copied FOUR of the
+    // patch's five fields: it dropped `payout_structure`, so a started Spin's
+    // cache kept the pre-draw winner-take-all placeholder for the life of the
+    // game and `recalculateEliminatedPrizes` topped up eliminated players
+    // against a different structure than the one that had paid them - 80/20
+    // versus 100/0 on a 10x.
+    //
+    // `applySpinDrawPatch` copies EVERY key of the patch onto both the
+    // in-memory tournament and the cache, so the patch is the only list there
+    // is and a sixth field is synced by construction. Asserting the old string
+    // would demand the bug back; the source comment beside the call says in
+    // as many words "Never re-introduce a per-field copy here".
+    expect(engine).toMatch(/applySpinDrawPatch\(/);
+    expect(engine).toMatch(/import \{ applySpinDrawPatch \} from '\.\/spinDrawSync\.js'/);
+    // Both copies reached, not just the in-memory object.
+    expect(engine).toMatch(/applySpinDrawPatch\([\s\S]{0,400}?this\.tournamentCache/);
+    // And the per-field copy stays gone.
+    expect(engine).not.toMatch(/tournament\.blind_structure\s*=\s*spinBlinds/);
+    expect(engine).not.toMatch(/tournament\.payout_structure\s*=\s*/);
   });
 
   it('creation writes an honest placeholder, not a fake tier', () => {

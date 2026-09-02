@@ -38,11 +38,35 @@ set -euo pipefail
 [ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
 
 SWAP_GB="${SWAP_GB:-8}"
-VITEST_WORKERS="${VITEST_WORKERS:-2}"
+VITEST_WORKERS="${VITEST_WORKERS:-4}"
 NODE_HEAP_MB="${NODE_HEAP_MB:-3072}"
 PLAYWRIGHT_VERSION="${PLAYWRIGHT_VERSION:-1.58.0}"
 
 say() { printf '\n== %s\n' "$*"; }
+
+# ── cron_set KEY LINE: install LINE as the one entry containing KEY ──────────
+# Written after this script WIPED the box crontab on its second run.
+#
+# The obvious idiom, ( crontab -l | grep -v KEY; echo LINE ) | crontab -, is a
+# trap under `set -e -o pipefail`: when KEY is the ONLY entry, `grep -v` matches
+# nothing and exits 1, the subshell aborts before the echo, and `crontab -`
+# receives an empty document. The nightly GC vanished and the script died with
+# no "done" line. It had worked on the first run only because a second entry
+# happened to exist. A helper that reads, edits in a variable, writes, and then
+# READS BACK is not clever; it is the only shape that cannot lose the table.
+cron_set() {
+  local key="$1" line="$2" cur new
+  cur=$(crontab -l 2>/dev/null || true)
+  new=$(printf '%s\n' "$cur" | grep -v -- "$key" || true)
+  printf '%s\n%s\n' "$new" "$line" | sed '/^$/d' | crontab -
+  crontab -l | grep -qF -- "$line" || { echo "   FATAL: crontab write for $key did not stick"; exit 1; }
+}
+cron_del() {
+  local key="$1" cur new
+  cur=$(crontab -l 2>/dev/null || true)
+  new=$(printf '%s\n' "$cur" | grep -v -- "$key" || true)
+  printf '%s\n' "$new" | sed '/^$/d' | crontab - 2>/dev/null || true
+}
 
 # ── 1. swap ──────────────────────────────────────────────────────────────────
 say "swap (${SWAP_GB} GB)"
@@ -76,8 +100,8 @@ LOG=/var/log/ci-gc.log
 tail -c 200000 $LOG > $LOG.tmp && mv $LOG.tmp $LOG
 EOF
 chmod +x /usr/local/bin/ci-gc.sh
-( crontab -l 2>/dev/null | grep -v ci-gc.sh; echo "17 4 * * * /usr/local/bin/ci-gc.sh" ) | crontab -
-echo "   cron: $(crontab -l | grep -c ci-gc.sh) entry"
+cron_set ci-gc.sh "17 4 * * * /usr/local/bin/ci-gc.sh"
+echo "   cron: $(crontab -l | grep -c ci-gc.sh) entry (verified)"
 
 # ── 3. fair-share drop-in on every runner unit ───────────────────────────────
 say "fair-share drop-ins (VITEST_MAX_WORKERS=${VITEST_WORKERS}, heap ${NODE_HEAP_MB} MB)"
@@ -115,11 +139,11 @@ for d in /home/ci/actions-runner-*; do
   if pgrep -f "$d/bin/Runner.Worker" >/dev/null; then left=$((left+1)); continue; fi
   systemctl restart "$svc" && echo "$(date -u +%FT%TZ) restarted idle $name" >> /var/log/ci-runner-env.log
 done
-[ $left -eq 0 ] && { crontab -l | grep -v ci-restart-idle-runners | crontab -; echo "$(date -u +%FT%TZ) all runners on new env; sweeper removed" >> /var/log/ci-runner-env.log; }
+[ $left -eq 0 ] && { ( crontab -l 2>/dev/null | grep -v ci-restart-idle-runners || true ) | sed "/^$/d" | crontab -; echo "$(date -u +%FT%TZ) all runners on new env; sweeper removed" >> /var/log/ci-runner-env.log; }
 EOF
 chmod +x /usr/local/bin/ci-restart-idle-runners.sh
 touch /var/lib/ci-runner-env.stamp
-( crontab -l 2>/dev/null | grep -v ci-restart-idle; echo "*/5 * * * * /usr/local/bin/ci-restart-idle-runners.sh" ) | crontab -
+cron_set ci-restart-idle "*/5 * * * * /usr/local/bin/ci-restart-idle-runners.sh"
 /usr/local/bin/ci-restart-idle-runners.sh || true
 echo "   armed; restarted idle runners now, busy ones roll over within 5 min"
 
@@ -128,13 +152,26 @@ say "tools"
 if ! command -v node >/dev/null; then
   curl -fsSL https://deb.nodesource.com/setup_20.x -o /tmp/ns.sh && bash /tmp/ns.sh >/dev/null && apt-get install -y -qq nodejs >/dev/null
 fi
-apt-get install -y -qq jq >/dev/null 2>&1 || true
+# jq for the watchdogs; psql because post-deploy-e2e certifies the cashier
+# database contract with it and a hosted runner ships it preinstalled - the
+# first routed run on this box failed with "psql: command not found" on a step
+# that had never failed on hosted. Everything a routed workflow shells out to
+# must be here, or moving the job is a regression dressed as a saving.
+apt-get install -y -qq jq postgresql-client unzip zip >/dev/null 2>&1 || true
 if ! command -v gh >/dev/null; then
   curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg
   echo "deb [arch=amd64 signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
   apt-get update -qq >/dev/null && apt-get install -y -qq gh >/dev/null
 fi
-printf '   node %s | gh %s | jq %s\n' "$(node -v)" "$(gh --version | head -1 | awk '{print $3}')" "$(jq --version)"
+printf '   node %s | gh %s | jq %s | psql %s\n' "$(node -v)" "$(gh --version | head -1 | awk '{print $3}')" "$(jq --version)" "$(psql --version | awk '{print $3}')"
+
+# ── 5b. every binary a routed workflow shells out to must exist here ─────────
+# A hosted runner ships hundreds of tools; this box ships what is installed.
+# Scanning the workflows is the only way to know the set stays complete.
+say "routed-workflow tool audit"
+MISSING=""
+for t in psql gh jq curl git node npm npx python3 ssh; do command -v "$t" >/dev/null || MISSING="$MISSING $t"; done
+[ -z "$MISSING" ] && echo "   every CLI the workflows call is present" || { echo "   MISSING:$MISSING"; exit 1; }
 
 # ── 6. browser system libraries (once; the binaries cache under ~ci) ─────────
 say "playwright system deps (chromium + webkit)"

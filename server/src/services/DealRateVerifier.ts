@@ -60,6 +60,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import { raiseEngineAlert, resolveEngineAlert } from './engineAlerts.js';
 
@@ -256,6 +257,30 @@ export class DealRateVerifier {
 
   /** Exposed for tests; the timer calls this. */
   async check(): Promise<void> {
+    /**
+     * A PLATFORM-WIDE FREEZE IS NOT A FLEET COLLAPSE (Dan 2026-09-01).
+     *
+     * During the :55 maintenance break every table is parked on purpose, so
+     * both of this class's questions - "is the fleet above the floor?" and
+     * "are dealing tables producing hands?" - have a denominator of zero for
+     * five legitimate minutes. The first attempt at handling this fed the
+     * verifier an empty table list from GameServer, which was WORSE than
+     * nothing: an empty list IS the below-floor condition, so it primed
+     * `ClubArenaFleetFloorLost` (critical) to fire on the third tick of
+     * every single break, hourly, forever.
+     *
+     * The check is skipped outright instead, and the counters are reset so a
+     * pre-break streak cannot resume where it left off and fire one tick
+     * after the thaw on evidence gathered before the freeze.
+     */
+    if (isMaintenanceFrozen()) {
+      this.belowFloorChecks = 0;
+      this.silentChecks = 0;
+      this.handsInWindow = null;
+      this.lastCheckedAt = Date.now();
+      return;
+    }
+
     const tableIds = this.dealingTableIds();
     this.tablesExpectedDealing = tableIds.length;
 

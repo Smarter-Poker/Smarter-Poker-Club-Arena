@@ -82,8 +82,20 @@ describe('a board refills one tick at a time', () => {
 
   it('keeps the cadence that made the guard necessary', () => {
     expect(code).toMatch(/const\s+BOARD_REFILL_INTERVAL_MS\s*=\s*30\s*\*\s*1000\s*;/);
-    expect(code).toMatch(/checkAndLaunchSpins\(\),\s*BOARD_REFILL_INTERVAL_MS/);
-    expect(code).toMatch(/checkAndLaunchSNGs\(\),\s*BOARD_REFILL_INTERVAL_MS/);
+    /* RESHAPED 2026-09-01 (freeze phase C): every launcher tick is now
+       wrapped in the maintenance-freeze gate -
+         () => (isMaintenanceFrozen() ? undefined : this.checkAndLaunchX())
+       - because launching a game registers and seats horses, which is chip
+       movement during a break players were told nothing moves in. The pins
+       below now REQUIRE the gate as well as the cadence: dropping either one
+       re-ships a real bug (the ten-minute board drought, or chips moving
+       mid-break). */
+    expect(code).toMatch(
+      /isMaintenanceFrozen\(\) \? undefined : this\.checkAndLaunchSpins\(\)\),\s*BOARD_REFILL_INTERVAL_MS/
+    );
+    expect(code).toMatch(
+      /isMaintenanceFrozen\(\) \? undefined : this\.checkAndLaunchSNGs\(\)\),\s*BOARD_REFILL_INTERVAL_MS/
+    );
   });
 
   it('keeps the burst cap -- the guard bounds overlap, not batch size', () => {

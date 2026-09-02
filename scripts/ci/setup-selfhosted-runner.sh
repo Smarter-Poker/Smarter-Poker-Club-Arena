@@ -13,7 +13,7 @@
 #
 # BOX-LEVEL TUNING LIVES IN scripts/ci/provision-ci-box.sh (run it as root,
 # once, and again after adding runners): swap, nightly GC, the per-runner
-# fair-share caps (VITEST_MAX_WORKERS=2, 3 GB heap), the idle-restart sweeper,
+# fair-share caps (VITEST_MAX_WORKERS=4, 3 GB heap), the idle-restart sweeper,
 # browser system libraries, gh/jq/node. Eight runners on one box without it
 # sat at load 69-75 and starved every job (2026-09-02).
 #

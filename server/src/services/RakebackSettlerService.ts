@@ -40,6 +40,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import { sharesForRakeRecord, sharesForRakeRecordWithLedger } from './rakeAllocation.js';
 
@@ -297,6 +298,10 @@ export class RakebackSettlerService {
       )
     );
     this.intervalHandle = setInterval(() => {
+      // THE FREEZE (Dan 2026-09-01): settlement credits commissions and
+      // rakeback - chip movement by definition. A 30-minute cadence loses
+      // nothing to a 5-minute wait.
+      if (isMaintenanceFrozen()) return;
       this.runSettlement().catch((e: any) =>
         reportError(
           new Error(e?.message || JSON.stringify(e) || String(e)),

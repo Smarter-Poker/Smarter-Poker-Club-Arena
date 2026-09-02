@@ -64,8 +64,10 @@ describe('Club Arena Tournament Board lobby design', () => {
     expect(identityCardCss).toMatch(
       /\.club-identity__share::after\s*\{[^}]*width:\s*max\(100%, 44px\)[^}]*height:\s*max\(100%, 44px\)/s
     );
+    /* Dan 2026-09-02: SVG size updated 3.75cqw → 4cqw to properly centre
+       the icon inside the painted button frame at every card width. */
     expect(identityCardCss).toMatch(
-      /\.club-identity__share svg\s*\{[^}]*width:\s*3\.75cqw[^}]*height:\s*3\.75cqw/s
+      /\.club-identity__share svg\s*\{[^}]*width:\s*4cqw[^}]*height:\s*4cqw/s
     );
     /* No breakpoint may rearrange this card, and no painted size may stop
        scaling. A `clamp()` with a rem or px bound is a rearrangement waiting

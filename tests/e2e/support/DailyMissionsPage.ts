@@ -11,6 +11,42 @@ import type { TemporaryCustomizationAccount } from './temporaryCustomizationAcco
 
 export const DAILY_MISSIONS_RESPONSE_TIMEOUT = 60_000;
 
+/* ═══ READING A PAGE THAT IS STILL MOVING (2026-09-02) ════════════════════
+   `production-daily-missions.spec.ts` failed on EVERY post-deploy run with
+
+     Error: page.evaluate: Execution context was destroyed, most likely
+     because of a navigation
+       at support/DailyMissionsPage.ts:123
+
+   and that is a defect in this harness, not in production. `signIn` navigates
+   with `waitUntil: 'domcontentloaded'`, which returns while the SPA is still
+   settling its own auth redirect, and then reads `localStorage` - so the
+   context the read was issued against is torn down under it.
+
+   The read is correct and worth keeping; it is the check that the run is
+   signed in as the RESERVED account and not as somebody else, which is the
+   one thing standing between a production certification and it mutating the
+   wrong player. So the read is retried through the navigation rather than
+   removed, and ONLY for the destroyed-context family of errors - a real
+   failure (wrong account, bad JSON) still throws on the first attempt. */
+const NAVIGATION_ATE_THE_CONTEXT =
+  /Execution context was destroyed|Target closed|frame was detached|Most likely the page has been closed/i;
+
+async function evaluateThroughNavigation<R>(page: Page, fn: () => R): Promise<R> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    try {
+      await page.waitForLoadState('domcontentloaded', { timeout: 15_000 }).catch(() => {});
+      return await page.evaluate(fn);
+    } catch (error) {
+      if (!NAVIGATION_ATE_THE_CONTEXT.test(String(error))) throw error;
+      lastError = error;
+      await page.waitForTimeout(400);
+    }
+  }
+  throw lastError;
+}
+
 export class DailyMissionsPage {
   readonly page: Page;
   readonly baseURL: string;
@@ -110,7 +146,9 @@ export class DailyMissionsPage {
       await page.waitForURL((url) => !url.pathname.includes('/auth'), { timeout: 45_000 });
     }
 
-    await page.evaluate(() => localStorage.setItem('club_arena_welcome_accepted', 'true'));
+    await evaluateThroughNavigation(page, () =>
+      localStorage.setItem('club_arena_welcome_accepted', 'true')
+    );
     if (new URL(page.url()).pathname !== notificationsURL.pathname) {
       await page.goto(notificationsURL.toString(), {
         waitUntil: 'domcontentloaded',
@@ -120,7 +158,7 @@ export class DailyMissionsPage {
     if (page.url().includes('/auth')) {
       throw new Error(`Temporary Daily Missions account ${account.id} did not remain signed in.`);
     }
-    const authenticatedUserId = await page.evaluate(() => {
+    const authenticatedUserId = await evaluateThroughNavigation(page, () => {
       try {
         const session = JSON.parse(localStorage.getItem('smarter-poker-auth') || 'null');
         return session?.user?.id || session?.currentSession?.user?.id || '';

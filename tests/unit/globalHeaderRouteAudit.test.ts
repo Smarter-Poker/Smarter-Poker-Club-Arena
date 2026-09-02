@@ -40,14 +40,14 @@ describe('the complete route manifest inherits one global header', () => {
   it('discovers every current route, including dynamic and legacy redirect paths', () => {
     // 127 since phase 7 added clubs/:clubId/anti-cheat, the club-scoped door
     // onto AntiCheatPage that the operations rail links.
-    expect(allPaths).toHaveLength(131); // +2 management consoles, +1 financial decision harness
+    expect(allPaths).toHaveLength(132); // +2 management consoles, +1 financial decision harness, +1 The Mint
     expect(allPaths).toContain('clubs/:clubId/create-table/:gameType');
     expect(allPaths).toContain('messages/clubs/:conversationId');
     expect(allPaths).toContain('*');
   });
 
   it('puts every shell route under AppLayout', () => {
-    expect(shellPaths).toHaveLength(122); // +2: club and union table-management consoles
+    expect(shellPaths).toHaveLength(123); // +2: club and union table-management consoles, +1 The Mint
     expect(APP_LAYOUT).toContain('{showGlobalHeader && <GlobalHeader />}');
   });
 
@@ -61,7 +61,7 @@ describe('the complete route manifest inherits one global header', () => {
       (path) => !applicable.has(path) && !intentionalExceptions.has(path)
     );
 
-    expect(applicable.size).toBe(123); // +2: club and union table-management consoles
+    expect(applicable.size).toBe(124); // +2: club and union table-management consoles, +1 The Mint
     expect(unclassified).toEqual([]);
   });
 

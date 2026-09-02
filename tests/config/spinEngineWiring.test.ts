@@ -231,9 +231,26 @@ describe('the draw sets the prize and the payout shape - never the stack', () =>
   });
 
   it('start updates the IN-MEMORY structure too, not just the row', () => {
-    // The level timer and table creation read the in-memory object; a
+    // The level timer and table creation read the in-memory object, and
+    // tournamentCache is what the elimination and bubble paths read; a
     // DB-only write would leave this start running placeholder blinds.
-    expect(engine).toMatch(/tournament\.blind_structure\s*=\s*spinBlinds/);
+    //
+    // THE PIN MOVED WHEN THE MECHANISM DID (2026-09-02). This used to require
+    // the literal `tournament.blind_structure = spinBlinds`, one line of a
+    // hand-written per-field copy. That copy listed FOUR of the patch's five
+    // fields and silently dropped `payout_structure`, so a started Spin's
+    // cache kept the pre-draw winner-take-all placeholder for the life of the
+    // game. It was replaced by applySpinDrawPatch, which copies EVERY key of
+    // the patch onto both copies by construction. Pinning the retired line
+    // was demanding the return of the bug, and it is what made main red.
+    // Pin the guarantee instead: the whole patch reaches BOTH copies.
+    expect(engine).toMatch(/applySpinDrawPatch\(/);
+    const call = engine.slice(engine.indexOf('applySpinDrawPatch('));
+    expect(call).toMatch(/spinRowPatch/);
+    expect(call).toMatch(/tournament\b/);
+    expect(call).toMatch(/tournamentCache/);
+    // And the per-field copy must never come back - that is the actual defect.
+    expect(engine).not.toMatch(/tournament\.blind_structure\s*=\s*spinBlinds/);
   });
 
   it('creation writes an honest placeholder, not a fake tier', () => {

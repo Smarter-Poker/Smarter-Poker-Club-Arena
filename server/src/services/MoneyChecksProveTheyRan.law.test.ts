@@ -141,6 +141,26 @@ describe('it is a check, not a cure', () => {
     expect(migration).toMatch(/r\.check_name\);/);
   });
 
+  it('the heartbeat TABLE is closed to browser roles too, not just the function', () => {
+    // Found in verification, not in writing. The table was created with the
+    // schema default grants, which hand anon and authenticated full read AND
+    // write. RLS with no policies made that inert - until the day somebody adds
+    // a permissive policy for a status tile, at which point a browser could
+    // stamp a heartbeat for a check that never ran, through the very table
+    // built to make that impossible.
+    const grants = readFileSync(
+      join(
+        __dirname,
+        '../../../supabase/migrations/20260902013940_the_heartbeat_table_is_service_role_only.sql'
+      ),
+      'utf8'
+    );
+    expect(grants).toMatch(
+      /REVOKE ALL ON TABLE public\.money_check_heartbeat FROM PUBLIC, anon, authenticated;/
+    );
+    expect(grants).toContain('lost row level security');
+  });
+
   it('both functions are closed to browser roles', () => {
     expect(migration).toMatch(
       /REVOKE ALL ON FUNCTION public\.fn_record_money_check_run\(text, jsonb\)\s*\n?\s*FROM PUBLIC, anon, authenticated;/

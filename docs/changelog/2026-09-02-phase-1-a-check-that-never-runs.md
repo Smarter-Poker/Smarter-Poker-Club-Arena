@@ -85,3 +85,27 @@ them. This is the first time that fact has been visible anywhere.
 - `tsc --noEmit` clean, 11 new pins in `MoneyChecksProveTheyRan.law.test.ts`,
   registered in `docs/LAWS.md` (registry now 67 assertions).
 - The check moves no money, and the law test pins that it never can.
+
+## What the verification pass found, after the phase was called done
+
+Two things, both mine, both real.
+
+**The health read shared a failure domain with a check.** The first draft put
+the `fn_money_check_health` call inside the bounty back-pay's `try`, so a throw
+from THAT rpc skipped the health read entirely — the one instrument whose whole
+job is to notice when a check stops, silenced by a check stopping. That is the
+watchdog-shares-a-failure-domain mistake this estate already wrote down about
+`publish-watchdog`, reproduced within two hours of quoting it. It is its own
+sibling block now, and a pin holds it there.
+
+**The heartbeat table was granted to browser roles.** `money_check_heartbeat`
+was created with the schema's default grants, which on this database hand `anon`
+and `authenticated` full read _and write_. RLS is on and there are no policies,
+so those grants are inert today — but the day somebody adds a permissive policy
+for a status tile, a browser could stamp a heartbeat for a check that never ran,
+through the very table built to make that impossible. Revoked in
+`20260902013940`, with the assertion that RLS is still on.
+
+Worth knowing beyond this phase: `check-definer-authorization` guards new
+FUNCTIONS this way and **nothing guards new TABLES**. Every table created since
+that gate was written has carried those default grants unexamined.

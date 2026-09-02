@@ -164,3 +164,20 @@ $ npx vitest run tests/law-registry.law.test.ts tests/unit/migrationVersionUniqu
   the ones the logs named on the current heads.
 
 ## Final status check
+
+22:47 UTC, one check, no loop. This PR is #2726. None of the seven has merged
+yet: every head is `mergeable: true, blocked` with `CI - Build & Type Safety`
+queued or in progress on the estate runners (the queue was ~40 minutes deep
+all evening; runs started at 22:03 were still running at 22:40). Telemetry
+Exposure and Silent Revert Guard are green on each. They auto-merge on green.
+
+| PR    | Head        | CI at 22:47 |
+| ----- | ----------- | ----------- |
+| #2709 | `750ba96e6` | queued      |
+| #2688 | `a511198b0` | in progress |
+| #2692 | `a26c87d3e` | queued      |
+| #2693 | `ae755c5a2` | in progress |
+| #2684 | `8bdb621c2` | queued      |
+| #2721 | `2a861ed21` | queued      |
+| #2722 | `35bfbceef` | queued      |
+| #2726 | this branch | queued      |

@@ -1,6 +1,7 @@
 {
   "_owner": "fix/a-correction-is-not-a-mint",
   "tables": [
+    "ca_check_sweep_exemptions",
     "ca_diamond_balance_audit",
     "ca_frozen_pool_deletions",
     "ca_ratchet_baselines",
@@ -10,8 +11,12 @@
     "atomic_distribute_rake",
     "fn_backpay_unfinalised_bounty_pools",
     "fn_ca_audit_diamond_change",
+    "fn_ca_backpay_guarantee_shortfalls",
     "fn_ca_completed_without_a_champion",
+    "fn_ca_conservation_sweep",
     "fn_ca_fund_overlay_on_lock",
+    "fn_ca_orphaned_checks",
+    "fn_ca_orphaned_checks_watch",
     "fn_ca_overlay_shortfall",
     "fn_ca_payout_structure",
     "fn_ca_prize_overpay_count",
@@ -28,7 +33,9 @@
     "fn_ca_tournament_conservation_confirm",
     "fn_ca_tournament_settlement_mismatch",
     "fn_ca_tournament_underpaid_count",
+    "fn_chip_integrity_report",
     "fn_emit_managed_game_row_event",
+    "fn_spin_book_entry",
     "fn_tournament_payout_reconcile",
     "record_rake"
   ],

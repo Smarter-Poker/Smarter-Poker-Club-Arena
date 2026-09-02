@@ -151,13 +151,21 @@ Two jobs died on the first run after 16:00:19, both of them green all day:
 | 231 `ca-pay-backed-payout-shortfalls`   | 40s 46s 43s 86s               | **timeout** |
 
 231 is the job that **pays players** a backed shortfall, so one hourly cycle of
-back-pay did not happen. Nothing is permanently lost - the job is hourly and
-idempotent and the next healthy run pays whatever is still owed - but it is a
-missed cycle and it is written down as one rather than rounded off.
+back-pay did not happen. It is written down as a missed cycle rather than
+rounded off - and then it was measured rather than assumed: the newest row in
+`tournament_payout_backfill_log` is **2026-08-29 12:40**, so that job has found
+nothing to pay for four days and the missed run had nothing to pay. No player
+was owed anything across the outage window.
 
 Job 229 (cash pot) also failed in that window and is **not** this: it failed at
 15:34, half an hour _before_ the migration, inside a `hand_history` query, and
 recovered by itself at 16:34. Not every red job in the window is yours.
+
+**Both jobs recovered on their next scheduled run**, which is the only proof
+that counts: 144 succeeded at 17:12 in 57.4s, 231 at 17:26 in 88.5s, both
+inside the 120s cap. 88.5s looks slow until you check the instrument - 231 had
+already run 40s, 46s, 43s and **86s** _before_ this change existed, so a 2x
+swing is this database's normal and the recovery timing is unremarkable.
 
 Fixed by `20260902164610` - one partial expression index, 23 qualifying rows.
 Measured on the same query and row: **3,736 buffers / 987.9 ms to 4 buffers /

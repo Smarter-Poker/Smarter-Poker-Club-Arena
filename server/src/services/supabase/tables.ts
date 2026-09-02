@@ -221,6 +221,27 @@ export async function syncStacks(
         );
         return;
       }
+      /* chip-std Lane F (2026-09-02): a CONSERVATION refusal is not a transport
+         failure. The database has just said that these stacks, written
+         absolutely, would mint or destroy chips on this table (for a
+         tournament table: the named seats would no longer sum to what they
+         summed to before the hand). Falling through to the per-seat loop
+         would persist exactly the total that was refused, seat by seat, with
+         no lock and no check - the fallback exists for a database that could
+         not be reached, not for one that answered "no". Report it and leave
+         the pre-hand stacks standing; the drift incident the RPC filed
+         carries the numbers. */
+      const refusal = String((data as { error?: unknown } | null)?.error ?? '');
+      if (!error && /^conservation violation/i.test(refusal)) {
+        reportError(
+          new Error(
+            `[DB] hand-stack settle REFUSED for table ${tableId} hand ${handNumber}: ${refusal} ` +
+              `- not falling back to per-seat writes; pre-hand stacks stand`
+          ),
+          'DB.settle_hand_stacks_conservation_refused'
+        );
+        return;
+      }
       reportError(
         new Error(
           `[DB] atomic hand-stack settle declined for table ${tableId} hand ${handNumber} ` +

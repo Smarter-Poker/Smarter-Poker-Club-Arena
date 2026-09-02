@@ -1574,6 +1574,14 @@
   font-size: 0.86rem;
 }
 
+.lobby-controls__operator-actions {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px !important;
+}
+
 .lobby-controls .game-bar {
   gap: 10px;
   padding: 12px 12px 10px 16px;
@@ -1774,7 +1782,14 @@
   }
 
   .lobby-controls__heading {
+    align-items: stretch;
+    flex-direction: column;
     padding: 12px 11px 9px 14px;
+  }
+
+  .lobby-controls__operator-actions {
+    align-items: stretch;
+    flex-direction: column !important;
   }
 
   .lobby-controls__title {
@@ -2170,6 +2185,40 @@
   .agc-mobile-page .club-mobile-owner-message__copy {
     min-height: 24px;
     font-size: clamp(7px, 1.95vw, 9px);
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     ONE CLUB MESSAGE ON A PHONE, NOT TWO (Dan 2026-09-02)
+     -----------------------------------------------------------------------
+     "ON MOBILE, THE CLUB MESSAGE DISPLAYS TWICE, IT SHOULD ONLY BE ONCE,
+     REMOVE THE DUPLICATE."
+
+     Two elements print `club.lobby_message`, and both are in the tree at
+     every width:
+
+       .club-mobile-owner-message   ClubHomePage's own strip, written FOR the
+                                    phone and styled by the rules just above -
+                                    the thin blue line under the club name.
+       .lobby-top__house-welcome    <ClubOwnerMessage>'s trigger, promoted to
+                                    the first row of the desktop rail on
+                                    2026-09-01 ("should be at the top above
+                                    the club card"). Below 900px the rail
+                                    collapses into this same vertical stack.
+
+     So Dan saw "WEST COAST GRINDERS" twice, a few pixels apart. The rail
+     trigger is the one that goes, because the strip above it is load-bearing:
+     its 2px left and right borders ARE two of the mobile chassis rails, and
+     hiding it would open a gap in the frame between the welcome plate and
+     `.lobby-top`.
+
+     Nothing is lost by hiding it. The component stays mounted and keeps
+     owning the panel, the save path and the announcements link; the strip is
+     now a live control for every viewer (ClubHomePage.tsx), so a player who
+     cannot edit still taps the message and lands on the club's
+     announcements - the same destination the rail's panel offers. */
+  .club-home--unified-mobile .lobby-top > .lobby-top__house-welcome,
+  .agc-mobile-page .lobby-top > .lobby-top__house-welcome {
+    display: none;
   }
 
   .club-home--unified-mobile .lobby-top,
@@ -2726,10 +2775,23 @@
     overflow-x: clip;
     /* Use the page-clearance contract, not the artwork height. The latter
        omits the home-indicator inset and left a populated lobby's last image
-       25px beneath the fixed nav in the authenticated production audit. A
-       full coarse-pointer target of breathing room also absorbs late image
-       layout without making the final row unreachable. */
-    padding-bottom: calc(var(--bottom-nav-clearance, 74px) + 44px);
+       25px beneath the fixed nav in the authenticated production audit.
+
+       THE CLEARANCE IS COUNTED ONCE (Dan 2026-09-02): "THERE IS TOO MUCH
+       PADDING AT THE BOTTOM ... MOVE IT SO ITS TRULY AT THE BOTTOM OF THE
+       PAGE." The bar itself never moved - it is `position: fixed; bottom: 0`
+       in ClubBottomNav.module.css - but the lobby reserved room for it twice
+       and then padded that: this rule at clearance + 44px, and
+       `.club-lobby-machine` at clearance + 18px in ClubLobbyCommandTop.css.
+       On a notched phone that is ~210px of black between the last game card
+       and a 78px bar, which reads exactly as a footer floating in a field of
+       background.
+
+       One reservation lives here, where the page's own bottom is; the machine
+       below keeps only its 18px visual gap. 12px, not 44px: the breathing
+       room the old comment wanted is real, but a full coarse-pointer target
+       of it is a band, not a gap. Last card to bar is 30px now. */
+    padding-bottom: calc(var(--bottom-nav-clearance, 74px) + 12px);
     background: #000;
   }
 

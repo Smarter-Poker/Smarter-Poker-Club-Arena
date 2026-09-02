@@ -8,37 +8,10 @@
     "users": "alias for auth.users after schema switch in some services"
   },
   "unbuiltFeatureTables": {
-    "_comment": "Product features whose UI ships but whose backend table was never built. Each read/write is wrapped in try/catch and degrades to an empty state (verified). Build the table -> the entry auto-clears. Do NOT let this list grow without a matching product decision.",
-    "arena_sessions": "GTO/arena training subsystem — unbuilt",
-    "clawback_audit_log": "agent clawback audit — unbuilt (AgentAnalyticsDashboard degrades to empty)",
-    "club_activity": "club activity feed — unbuilt (ClubActivityFeed degrades to empty)",
-    "club_challenges": "club challenges — unbuilt",
-    "club_invites": "club invites — unbuilt",
-    "gto_solutions": "GTO solver storage — unbuilt (GTOQueryService)",
-    "gto_solve_queue": "GTO solve queue — unbuilt (GTOQueryService)",
-    "hand_results": "legacy hand-results read — superseded by hand_history (HorseOrchestrator)",
-    "invites": "generic invites — unbuilt (MessagingService)",
-    "members": "legacy members alias — superseded by club_members",
-    "message_read_receipts": "message read receipts — unbuilt (MessagingService)",
-    "preflop_ranges": "preflop range storage — unbuilt (GTOQueryService)",
-    "scheduled_messages": "scheduled messages — unbuilt (MessagingService)"
+    "_comment": "EMPTY, and it should stay that way. Every table formerly listed here either exists in production now or had its only caller removed as dead code on 2026-09-01 (GTOQueryService, HorseOrchestrator.trackHorsePerformance, and the unreachable clawback state in AgentAnalyticsDashboard). An entry here is a .from() that silently returns nothing at runtime; the gate exists to stop new ones. This list may only ever SHRINK."
   },
   "unbuiltFeatureRpcs": {
-    "_comment": "RPCs referenced by shipped UI that were never created in the DB. Callers handle the error and degrade. Build the function -> the entry auto-clears.",
-    "bulk_add_vip_points": "VIP position-stats subsystem — unbuilt",
-    "bulk_update_position_stats": "player position-stats subsystem — unbuilt",
-    "claim_lucky_wheel_spin": "lucky wheel — unbuilt (BonusService)",
-    "get_message_reactions": "message reactions read — unbuilt (MessagingService)",
-    "increment_bonus_progress": "bonus progress — unbuilt (BonusService)",
-    "join_flash_pool": "flash pools — unbuilt (FlashPoolPage)",
-    "record_arena_session": "arena training — unbuilt (ArenaTrainingController)",
-    "verify_ledger_totals": "optional ledger-verify RPC — ChipFlowService has a working client-side paginated fallback",
-    "promote_next_waitlisted_player": "intentionally absent — the engine's notifyWaitlistSeatOpen (server/src, sweep 6) is the AUTHORITATIVE cash-table waitlist promoter on a seat-open event. TableService's client-side best-effort call no-ops when the RPC is missing (error handled); creating the RPC would double-seat/double-notify against the server path.",
-    "fn_respond_friend_challenge": "BUILT 2026-07-29 (friend-challenge accept/decline) — schema manifest update pending the PAT-rotation deploy fix; remove after manifest regen",
-    "fn_bump_friend_challenge_progress": "BUILT 2026-07-29 (friend-challenge progress) — manifest update pending; remove after regen",
-    "fn_club_tournament_stats": "leaderboard scalability",
-    "buy_streak_freeze": "daily challenge streak freeze",
-    "fn_promo_wallet_send": "Migration is stealth applied"
+    "_comment": "EMPTY, and it should stay that way. Every RPC formerly listed here either exists in production now or has no caller left in src/ or server/src/. An entry here is a .rpc() call that fails at runtime; the gate exists to stop new ones."
   },
   "phantomColumns": {
     "_comment": "BUILT columns whose columns-manifest entry is pending regeneration (deploy blocked by PAT rotation 2026-07-29). Remove once the manifest is regenerated.",

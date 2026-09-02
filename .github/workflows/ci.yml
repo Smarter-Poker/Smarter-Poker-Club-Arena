@@ -93,7 +93,9 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   changes:
     name: What changed
-    runs-on: ubuntu-latest
+    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
+    # runner when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 3
     if: github.event_name == 'pull_request'
     # The gh call below is a 403 without this. GITHUB_TOKEN defaults to read on
@@ -164,9 +166,15 @@ jobs:
             echo "::notice::build/config change - running everything"
             exit 0
           fi
+          # supabase/migrations/ counts as touching server AND tests: law
+          # tests in both suites read the migration FILES (the GTO batch-floor
+          # guard, migration-version uniqueness). On 2026-09-02 a migrations-only
+          # backfill PR (#2580) merged with the server suite skipped, turned the
+          # clobber-era floor into the newest clamp declaration, and every
+          # hourly deploy after it was refused by its own test gate.
           echo "src=$(has '^src/')"       >> "$GITHUB_OUTPUT"
-          echo "server=$(has '^server/')" >> "$GITHUB_OUTPUT"
-          echo "tests=$(has '^tests/')"   >> "$GITHUB_OUTPUT"
+          echo "server=$(has '^(server/|supabase/migrations/)')" >> "$GITHUB_OUTPUT"
+          echo "tests=$(has '^(tests/|supabase/migrations/)')"   >> "$GITHUB_OUTPUT"
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 1: TypeScript compilation check (fast — ~40s)
@@ -188,7 +196,9 @@ jobs:
   # it to be behind a gate that can hide it.
   source_windows:
     name: Source Windows Are Structural
-    runs-on: ubuntu-latest
+    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
+    # runner when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 6
     steps:
       - name: Checkout
@@ -208,7 +218,9 @@ jobs:
   stub_gate:
     if: github.event_name == 'pull_request'
     name: Stub Gate
-    runs-on: ubuntu-latest
+    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
+    # runner when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -974,7 +986,9 @@ jobs:
   # surfaces in the run header without anyone thinking to open the logs.
   verdict:
     name: What this run verified
-    runs-on: ubuntu-latest
+    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
+    # runner when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 2
     if: always()
     needs: [changes, stub_gate, typecheck, unit, server]
@@ -1140,6 +1154,7 @@ jobs:
 
       # ── Bundle Size Tracking ─────────────────────────────────────────────
       - name: Track Bundle Size
+        id: bundle_size
         if: success()
         # Measures INITIAL LOAD (what a user downloads to open the app) and
         # gates on it, then reports whole-app size against a bloat ceiling.
@@ -1149,6 +1164,24 @@ jobs:
         # correct code-splitting score exactly as badly as shipping the code
         # eagerly. See the header of the script for the measurements.
         run: node scripts/ci/bundle-size.mjs
+
+      # ── Who Pays For First Paint ─────────────────────────────────────────
+      - name: Entry Chunk Is A Reviewed List
+        # `always()` rather than `success()` on purpose: the step above gates a
+        # SIZE, this one gates WHO PAYS, and the second answer is most wanted
+        # exactly when the first has just gone red. On 2026-09-01 the size gate
+        # failed on the whole-app ceiling while the real defect - operator-only
+        # code newly landing in the chunk every player downloads before first
+        # paint - sat underneath it, invisible, and passed its own limit at
+        # 309kB against 320kB. It was found by hand, after the fact.
+        #
+        # Runs when the build succeeded, AND specifically when the size gate
+        # above is the thing that went red - which is when "who is paying for
+        # this" is most worth answering. Not always(): if the BUILD failed
+        # there is no dist to measure, and turning one clear failure into two
+        # helps nobody.
+        if: success() || steps.bundle_size.conclusion == 'failure'
+        run: node scripts/ci/entry-chunk-delta.mjs dist
 
       # Real browser performance and responsive budgets. This replaces the old
       # file-count step that was labelled Lighthouse but never opened a page.
@@ -1183,7 +1216,9 @@ jobs:
     # Moved off push:main to the two-hourly schedule above.
     if: github.event_name == 'schedule'
     name: Live Production E2E
-    runs-on: ubuntu-latest
+    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
+    # runner when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 25
 
     steps:
@@ -1201,8 +1236,18 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      # --with-deps needs root to apt-get the browser's system libraries. The
+      # self-hosted box has them baked in by provision-ci-box.sh and the ci user
+      # is not root, so ask for them only on a GitHub-hosted runner. Keyed on
+      # runner.environment, NOT on vars.CI_RUNNER: that variable is set
+      # repo-wide, so it is true even for a job still pinned to ubuntu-latest.
       - name: Install Playwright Browsers
-        run: npx playwright install --with-deps chromium
+        run: |
+          if [ "${{ runner.environment }}" = "self-hosted" ]; then
+            npx playwright install chromium
+          else
+            npx playwright install --with-deps chromium
+          fi
 
       - name: Wait for Production Deploy
         run: |
@@ -1333,7 +1378,7 @@ jobs:
   post-deploy-check:
     # It waits for Vercel and curls smarter.poker. It never used the build it
     # declared `needs: build` for - that was ordering, and it cost a full Vite
-    # production build on every merge, on top of the one build-for-world-hub.yml
+    # production build on every merge, on top of the one publish-club-arena.yml
     # already does to publish.
     # 2026-09-01: was `push` to main - a CDN poll per merge, ~85 times a day,
     # third in line behind post-deploy-e2e.yml and publish-watchdog.yml which
@@ -1341,7 +1386,9 @@ jobs:
     # logic alive at 13 runs a day instead of 85.
     if: github.event_name == 'schedule'
     name: Post-Deploy Verification
-    runs-on: ubuntu-latest
+    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
+    # runner when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
 
     steps:
@@ -1445,8 +1492,16 @@ jobs:
       - name: Install Dependencies
         run: npm ci --ignore-scripts
 
+      # See the note on the Live Production E2E install step. This job is still
+      # pinned to ubuntu-latest (it failed on the 4-core box), so this branch
+      # must resolve from the runner it is actually on, not from vars.CI_RUNNER.
       - name: Install Chromium and WebKit
-        run: npx playwright install chromium webkit --with-deps
+        run: |
+          if [ "${{ runner.environment }}" = "self-hosted" ]; then
+            npx playwright install chromium webkit
+          else
+            npx playwright install chromium webkit --with-deps
+          fi
 
       - name: Build this commit
         env:

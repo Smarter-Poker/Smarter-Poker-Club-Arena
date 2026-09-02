@@ -2,12 +2,50 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
 import path from 'path';
+import { writeFileSync } from 'fs';
 
 // https://vite.dev/config/
 export default defineConfig({
   base: '/hub/club-arena/',
   plugins: [
     react(),
+
+    /**
+     * ENTRY MODULE MANIFEST — what every player downloads before first paint.
+     *
+     * scripts/ci/entry-chunk-delta.mjs gates the module list of the entry
+     * chunk against a committed baseline, so operator-only code cannot drift
+     * into first paint unnoticed (it did on 2026-09-01, at a cost of ~190kB
+     * raw). It originally read that list out of the entry chunk's sourcemap,
+     * which worked locally and could never have worked in CI: the Sentry
+     * plugin below uploads sourcemaps and then DELETES them from dist/, and it
+     * only runs when SENTRY_AUTH_TOKEN is set, which is exactly CI and never a
+     * developer's machine.
+     *
+     * Rollup already knows the answer, so ask it. Written on writeBundle
+     * rather than emitted into the bundle so the list never ships to players.
+     */
+    {
+      name: 'entry-module-manifest',
+      writeBundle(_options: unknown, bundle: Record<string, unknown>) {
+        const chunk = Object.values(bundle).find(
+          (c) =>
+            (c as { type?: string; isEntry?: boolean }).type === 'chunk' &&
+            (c as { isEntry?: boolean }).isEntry
+        ) as { fileName?: string; modules?: Record<string, unknown> } | undefined;
+        if (!chunk?.modules) return;
+        const modules = Object.keys(chunk.modules)
+          .map((id) => id.replace(/\\/g, '/'))
+          .filter((id) => id.includes('/src/') && !id.includes('/node_modules/'))
+          .map((id) => 'src/' + id.slice(id.lastIndexOf('/src/') + 5))
+          .filter((id) => !id.includes('\0'))
+          .sort();
+        writeFileSync(
+          path.resolve('.entry-modules.json'),
+          JSON.stringify({ entry: chunk.fileName, modules }, null, 2) + '\n'
+        );
+      },
+    },
 
     // Sentry source-map upload + release tagging (Phase U5.1, task #133).
     // Gated on NODE_ENV=production AND SENTRY_AUTH_TOKEN so dev builds stay fast.

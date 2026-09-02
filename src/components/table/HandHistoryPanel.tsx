@@ -17,6 +17,20 @@ export interface HandHistoryAction {
   playerId: string;
   action: 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'allin' | 'discard';
   amount?: number;
+  /**
+   * PHASE 4 COMPLETION 2026-09-01 — the card this player threw, as a canonical
+   * code, and only ever present on the VIEWER'S OWN discard.
+   *
+   * Crazy Pineapple's one extra decision was the one thing this panel could
+   * not tell you: it printed "discard" and stopped. Phase 4 fixed that on the
+   * standalone replay only, which is not the surface anybody uses mid-session.
+   *
+   * The privacy is enforced in Postgres, not here: `hand_discards` is read
+   * through `hand_discards_read_own`, so the adapter can only ever fill this
+   * for the viewer. Undefined on every opponent's discard, on every hand
+   * played before 2026-09-01, and on every non-discard action.
+   */
+  discardedCard?: string;
 }
 
 export interface HandHistoryStreet {
@@ -410,6 +424,8 @@ function HandEntry({
                     {a.amount != null && (
                       <span className="hh-entry__action-amount">{formatAmount(a.amount)}</span>
                     )}
+                    {/* Only ever yours - see HandHistoryAction.discardedCard. */}
+                    {a.discardedCard && <CardChip code={a.discardedCard} />}
                   </div>
                 ))}
               </div>

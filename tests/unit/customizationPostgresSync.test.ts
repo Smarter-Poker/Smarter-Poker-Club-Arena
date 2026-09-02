@@ -52,6 +52,26 @@ const binding = (table: string, event: string) => {
 };
 
 describe('customization postgres sync', () => {
+  it('invalidates management access from a recipient-filtered database event', () => {
+    const access = binding('game_management_events', 'INSERT');
+    expect(access.config.filter).toBe('recipient_id=eq.user-1');
+    access.handler({
+      new: {
+        event_type: 'management_access_changed',
+        scope_kind: 'club',
+        scope_id: 'club-1',
+        club_id: 'club-1',
+      },
+    });
+
+    expect(emit).toHaveBeenCalledWith('GAME_MANAGEMENT_ACCESS_CHANGED', {
+      scope: 'club',
+      scopeId: 'club-1',
+      clubId: 'club-1',
+      userId: 'user-1',
+    });
+  });
+
   it('repaints table art and card-back controls from another device', () => {
     binding('user_theme_settings', 'UPDATE').handler({
       eventType: 'UPDATE',

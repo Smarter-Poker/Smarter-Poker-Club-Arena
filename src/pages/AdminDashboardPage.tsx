@@ -386,7 +386,6 @@ function DashboardTab({ clubId }: { clubId: string }) {
       // User-initiated: fast response (500ms)
       masterBus.subscribeDebounced('TABLE_CREATED', load, 500),
       masterBus.subscribeDebounced('TABLE_UPDATED', load, 500),
-      masterBus.subscribeDebounced('TABLE_DELETED', load, 500),
       masterBus.subscribeDebounced('TABLE_CLOSED', load, 500),
       masterBus.subscribeDebounced('ADMIN_ACTION', load, 500),
       masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', load, 500),

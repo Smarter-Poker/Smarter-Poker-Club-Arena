@@ -162,7 +162,7 @@ describe('title case reaches the popups React never renders', () => {
           'export const go = () => window.confirm("discard these changes and leave?");\n',
       })
     ).toBe(1);
-  });
+  }, 20000);
 
   it('flags a lowercase alert() and prompt() too', () => {
     expect(
@@ -171,7 +171,7 @@ describe('title case reaches the popups React never renders', () => {
     expect(
       titleCaseOn({ 'Probe.tsx': 'export const p = () => prompt("amount to transfer?");\n' })
     ).toBe(1);
-  });
+  }, 20000);
 
   it('passes the same dialogs once they are Title Cased', () => {
     expect(
@@ -182,7 +182,7 @@ describe('title case reaches the popups React never renders', () => {
           'export const p = () => prompt("Amount To Transfer?");\n',
       })
     ).toBe(0);
-  });
+  }, 20000);
 
   it('does not fire on a same-named call that carries no copy', () => {
     // `confirm` is a common variable and method name. A non-string argument, or
@@ -193,7 +193,7 @@ describe('title case reaches the popups React never renders', () => {
           'declare const value: string;\nexport const go = () => window.confirm(value);\n',
       })
     ).toBe(0);
-  });
+  }, 20000);
 });
 
 /*

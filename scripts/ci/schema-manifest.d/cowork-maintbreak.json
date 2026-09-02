@@ -1,5 +1,16 @@
 {
   "_owner": "feat/maintenance-break",
-  "tables": ["engine_maintenance_break"],
-  "functions": ["fn_maintenance_break_state"]
+  "tables": ["engine_maintenance_break", "engine_maintenance_thaws"],
+  "functions": [
+    "fn_db_now",
+    "fn_freeze_bypass_active",
+    "fn_maintenance_break_state",
+    "fn_maintenance_week_report",
+    "fn_platform_frozen",
+    "fn_refuse_while_frozen",
+    "fn_thaw_platform"
+  ],
+  "columns": {
+    "engine_maintenance_break": ["enforce_freeze"]
+  }
 }

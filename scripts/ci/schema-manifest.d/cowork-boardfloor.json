@@ -1,0 +1,6 @@
+{
+  "_owner": "fix/the-board-opens-on-the-live-floor",
+  "tables": [],
+  "functions": ["fn_list_managed_games"],
+  "columns": {}
+}

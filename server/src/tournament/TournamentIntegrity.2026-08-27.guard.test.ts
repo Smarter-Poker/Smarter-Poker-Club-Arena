@@ -122,10 +122,25 @@ describe('A3: the spin reveal', () => {
 
   it('exposes the hold to the client as an absolute instant', () => {
     const emit = sliceEnclosingBlock(BASE, "type: 'spin_reveal'");
+    /* Both now carry `effectiveHold` (moved 2026-09-02 with the fix, §10.6).
+       The comment beside hold_until in the engine calls it "the same number
+       holdDealingUntil was just given, so it is the contract and not a
+       description of one" - and it was not, because the engine was held to
+       effectiveHold and the client was told holdUntil. This pins the contract
+       the comment always claimed. */
+    // The EARLY packet keeps announcing the planned hold on purpose: three
+    // wheels are already turning on those numbers, and moving a shared moment
+    // is worse than a slightly short budget (the client is allowed to finish
+    // early). Its replay window still has to cover the real hold.
     expect(emit).toMatch(/hold_until:\s*holdUntil/);
     expect(emit).toMatch(/reveal_at:\s*revealAt/);
-    // The hub retention still ends at the same instant (D3, 2026-08-25).
-    expect(emit).toMatch(/replay_until:\s*holdUntil/);
+
+    // The MAIN packet is the contract: the number the client is told must BE
+    // the number holdDealingUntil was given. It was not until 2026-09-02 -
+    // the engine held to effectiveHold and told the client holdUntil.
+    const main = sliceEnclosingBlock(BASE, "type: 'spin_reveal'", 1);
+    expect(main).toMatch(/hold_until:\s*effectiveHold/);
+    expect(main).toMatch(/replay_until:\s*effectiveHold/);
   });
 
   it('MEASURES the gap instead of letting it come off the wheel', () => {

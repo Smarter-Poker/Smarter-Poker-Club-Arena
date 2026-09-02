@@ -33,6 +33,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import { buyInFor, rakeRateFor, wholeChips } from '../config/buyIn.js';
 import { TournamentRecurringService } from './TournamentRecurringService.js';
@@ -425,6 +426,13 @@ export class ScheduledTournamentService {
    */
   private readonly horseSeeder = new TournamentRecurringService();
 
+  /**
+   * Schedules already refused for naming a seat-first format, so the refusal
+   * is reported once rather than on every poll of a schedule that will never
+   * be spawnable.
+   */
+  private readonly refusedSeatFirstSchedules = new Set<string>();
+
   start(): void {
     if (this.isRunning) {
       console.log('[ScheduledTournaments] Already running');
@@ -432,7 +440,14 @@ export class ScheduledTournamentService {
     }
     this.isRunning = true;
     console.log('[ScheduledTournaments] Service started - polling every 60s');
-    this.pollTimer = setInterval(() => void this.poll(), POLL_INTERVAL_MS);
+    // THE FREEZE (Dan 2026-09-01): starting a scheduled event registers and
+    // seats its field. An event whose start time falls inside the break
+    // starts on the first poll after the thaw, up to a minute late - which is
+    // also exactly when its players are back at the felt to see it.
+    this.pollTimer = setInterval(() => {
+      if (isMaintenanceFrozen()) return;
+      void this.poll();
+    }, POLL_INTERVAL_MS);
     void this.poll();
   }
 
@@ -816,6 +831,51 @@ export class ScheduledTournamentService {
     const isSatellite = type === 'satellite';
     const isBountyType = ['bounty', 'progressive_bounty', 'mystery_bounty'].includes(type);
 
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  A SPIN AND A HEADS-UP HAVE NO SCHEDULED TIME (Dan, 2026-09-01, BINDING)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Dan, verbatim: "SPINS AND HEADS UP DO NOT HAVE SCHEDULED TIMES THEY
+     * START WHEN 3 PLAYERS HAVE BOUGHT IN AND PAID FOR SPINS, AND WHEN TWO
+     * PLAYERS FOR HEADS UP."
+     *
+     * This is not a preference, it is what the format IS, and this path could
+     * not honour it even by accident. Everything it writes is clock-shaped: a
+     * TIMED schedule spawns at an `HH:MM` from start_times_utc, an INTERVAL
+     * schedule at now + 5 minutes, and the restart clone at ended_at +
+     * restart_every_minutes.
+     *
+     * Worse than wrong, it produced games that could not run. A seat-first
+     * game is started by GameServer on paid seats alone -- `shouldStart =
+     * isSngOrSpin ? seatFirstReady : maxReached || timeReached` -- and
+     * seatFirstReady counts seats on an OPEN SEAT TABLE. Only
+     * TournamentRecurringService.createSpin / createSNG create that table.
+     * This path never has, so a row it spawned was invisible to the seat-first
+     * gate and deliberately excluded from the clock gate: unstartable by both.
+     * The live example was "Spin Royale", every 30 minutes, at a 25-chip stake
+     * the Spin board does not even offer.
+     *
+     * The board is the creator for both formats and it runs continuously.
+     * There is nothing for a schedule to add.
+     */
+    const isHeadsUpShape = isSng && clampInt(cfg.maxPlayers, 2, 10000, 0) <= HEADS_UP_SEATS;
+    if (isSpin || isHeadsUpShape) {
+      if (!this.refusedSeatFirstSchedules.has(schedule.id)) {
+        this.refusedSeatFirstSchedules.add(schedule.id);
+        reportError(
+          new Error(
+            `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} asks for a ` +
+              `${isSpin ? 'Spin' : 'heads-up'}, which has no scheduled time - it starts when ` +
+              `${isSpin ? 'three players have' : 'two players have'} bought in. The board creates ` +
+              `these continuously (TournamentRecurringService). Deactivate the schedule row.`
+          ),
+          'ScheduledTournaments.seat_first_format_refused'
+        );
+      }
+      return null;
+    }
+
     const gameVariant = String(cfg.gameVariant ?? 'nlh').toLowerCase();
     const dbGameType = GAME_TYPE_MAP[gameVariant] || 'NLH';
 
@@ -841,9 +901,12 @@ export class ScheduledTournamentService {
      * stamped `tournament_type = 'SPIN'`. One schedule does exactly that --
      * "Spin Royale", active, every 30 minutes -- with `blindPreset:
      * "HYPER_TURBO"`, an MTT ladder that opens at 50/100 with a 15 ante and
-     * doubles from there. A Spin's stack is written at DRAW time from
-     * SPIN_TIERS, so the draw handed those games a 300-chip stack against a
-     * 100 big blind.
+     * doubles from there. A Spin's stack came from SPIN_TIERS at DRAW time
+     * when this was written, so the draw handed those games a 300-chip stack
+     * against a 100 big blind. (The stack now comes from the BOARD at
+     * creation — SPIN_STACKS, Turbo 300 or Deep Stack 1000 — which changes
+     * where the number is written, not the arithmetic that broke these
+     * games.)
      *
      * Measured on production, every completed Spin Royale over three days:
      *
@@ -1279,6 +1342,22 @@ export class ScheduledTournamentService {
 
   private async maybeRestartTournament(old: Record<string, unknown>): Promise<void> {
     if (!old.ended_at || !old.club_id || !old.name) return;
+
+    /**
+     * A SEAT-FIRST FORMAT IS NEVER RESTARTED ON A CLOCK (Dan, 2026-09-01).
+     *
+     * This clone writes `start_time = max(now + 2min, ended_at +
+     * restart_every_minutes)`, which is a scheduled time by construction, and
+     * it copies the row's columns without ever creating the open-seat table
+     * the seat-first start gate counts. A cloned Spin or heads-up is therefore
+     * a game that cannot start: invisible to the seat gate, excluded from the
+     * clock gate. The board already replaces both continuously the moment one
+     * finishes, which is what "restart" was reaching for.
+     */
+    const clonedVariant = String(old.variant ?? '').toLowerCase();
+    const clonedSeats = Number(old.max_players ?? 0);
+    if (clonedVariant === 'spin' || (clonedSeats > 0 && clonedSeats <= HEADS_UP_SEATS)) return;
+
     const endedAt = new Date(String(old.ended_at));
 
     // Never while a same-named event is live in the same club.

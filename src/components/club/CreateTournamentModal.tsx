@@ -6,6 +6,12 @@ import {
   PAYOUT_STRUCTURES,
   SPIN_MULTIPLIERS,
 } from '../../services/TournamentService';
+import {
+  SPIN_TIERS,
+  SPIN_SEATS,
+  expectedMultiplier,
+  impliedHouseEdge,
+} from '../../config/spinSpec';
 import { maxSeatsTheDeckAllows } from '../../config/tableSeating';
 import { capPaidPlaces, fieldCapFor, minPlayersFor } from '../../lib/tournamentFieldRules';
 import styles from './CreateTournamentModal.module.css';
@@ -1085,17 +1091,28 @@ export default function CreateTournamentModal({
             {format === 'spin' && (
               <div className={styles.col}>
                 <div className={styles.formGroup}>
-                  <label>Spin Type</label>
-                  <select
-                    className={styles.select}
-                    value={spinType}
-                    onChange={(e) => setSpinType(e.target.value as 'standard' | 'hyper')}
-                  >
-                    <option value="standard">Standard (EV: 2.24X)</option>
-                    <option value="hyper">Hyper (EV: 2.33X)</option>
-                  </select>
+                  {/*
+                    THIS WAS A CHOICE BETWEEN TWO IDENTICAL THINGS, PRICED WRONG
+                    (removed 2026-09-02).
+
+                    `SPIN_MULTIPLIERS.standard` and `.hyper` are the SAME array
+                    (TournamentService), nothing persists the selection, and
+                    there is no `spin_config` column for it to land in - so the
+                    control changed nothing an operator could observe. It also
+                    advertised two different expected values, 2.24X and 2.33X,
+                    for one distribution whose real expectation is
+                    seats x (1 - rake_rate) = 2.7638. 2.24 is verbatim the
+                    retired table that spinSpec was written to kill, so the
+                    screen told an operator the house edge was 25.3% when it is
+                    8%.
+
+                    Replaced with the one true number, COMPUTED from the live
+                    tier table rather than typed, so it cannot drift again the
+                    next time a tier changes.
+                  */}
+                  <label>Spin Payout Table</label>
                   <span className={styles.helperText}>
-                    Hyper Spins Have Higher Variance Multipliers
+                    {`One Table, ${SPIN_TIERS.length} Multipliers. Expected Return ${expectedMultiplier().toFixed(2)}X Per Buy In Across ${SPIN_SEATS} Seats, A House Edge Of ${(impliedHouseEdge() * 100).toFixed(1)}%.`}
                   </span>
                 </div>
               </div>

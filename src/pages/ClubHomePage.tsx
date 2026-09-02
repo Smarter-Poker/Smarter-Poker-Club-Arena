@@ -1123,10 +1123,18 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
          be approximated by whichever card happened to update. Bursts (a table
          opening or balancing several seats) collapse to one authoritative
          recount. */
+      /* ONE NUMBER, ONE LIGHT CALL (2026-09-02). This re-called get_club_home -
+         the entire lobby payload, 1.8 s mean under RLS - every 250 ms of table
+         churn, just to read `players_playing`. With 1,131 open cash tables
+         changing on every seat transition that was ~70 calls a minute around
+         the clock and 26% of all database time on the platform, and the
+         database it saturated is the one every hand and buy-in queues behind.
+         get_club_players_playing answers the same question in ~50 ms, and two
+         seconds of debounce turns a burst of seat events into one recount. */
       const refreshScopedPlaying = () => {
         if (playingRefreshTimer) clearTimeout(playingRefreshTimer);
         playingRefreshTimer = setTimeout(async () => {
-          const { data, error } = await supabase.rpc('get_club_home', {
+          const { data, error } = await supabase.rpc('get_club_players_playing', {
             p_club_key: resolvedId,
           });
           if (!isMounted) return;
@@ -1134,9 +1142,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             reportError(error, 'ClubHomePage.players_playing_realtime_refresh_failed');
             return;
           }
-          const next = Number((data as { players_playing?: unknown } | null)?.players_playing);
+          const next = Number(data);
           if (Number.isFinite(next)) setPlayersPlaying(next);
-        }, 250);
+        }, 2_000);
       };
 
       const handleTableChange = (payload: any) => {

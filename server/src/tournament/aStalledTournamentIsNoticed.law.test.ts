@@ -77,6 +77,32 @@ describe('a stalled tournament is noticed', () => {
   });
 
   /**
+   * A MANAGER THAT HAS HELD A FINISH FOR FIFTEEN MINUTES IS NOT FINISHING IT
+   * (2026-09-02). The recovery skips any row a manager still holds, which is
+   * right for the seconds a finish takes and was unbounded after that - so a
+   * wedged manager held its row out of reach of the only thing that could
+   * rescue it. Found live: a satellite with 23 entrants, 207 chips of pool,
+   * 448 hands, one survivor, zero payout records, sixteen minutes in
+   * COMPLETING, and no incident naming it.
+   */
+  it('takes a wedged manager off a finish it is not finishing', () => {
+    const src = read(GAME_SERVER);
+
+    expect(src).toContain('isCompletingWedged');
+    expect(src).toContain('COMPLETING_WEDGED_MS');
+    expect(src).toContain("'GameServer.completing_manager_wedged'");
+    // Stopped and DROPPED, or the very next line skips it again.
+    const block = src.slice(
+      src.indexOf('const wedged ='),
+      src.indexOf('if (!this.tournamentEngines.has(stuck.id)) {')
+    );
+    expect(block).toContain('wedgedTm?.stop()');
+    expect(block).toContain('this.tournamentEngines.delete(stuck.id)');
+    // The escalation is strictly later than the dwell that lets recovery act.
+    expect(src).toContain('dueIds.has(String(stuck.id))');
+  });
+
+  /**
    * `tournamentOwnedTables` was add-only for the life of the process. On a
    * board that creates roughly 7,000 tournament tables a day that is an
    * unbounded set, and worse than the memory: a dead table id in it tells the

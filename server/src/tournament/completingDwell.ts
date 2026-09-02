@@ -37,6 +37,45 @@
 /** Dan's rule, and the one the comment always claimed was implemented. */
 export const COMPLETING_DWELL_MS = 5 * 60 * 1000;
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A MANAGER THAT HAS HELD A FINISH FOR FIFTEEN MINUTES IS NOT FINISHING IT
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The recovery above skips any row a TournamentManager still holds, on the
+ * reasoning that the manager is mid-finish and will get there. That is right
+ * for the seconds a finish takes and wrong forever after, and there was no
+ * "forever after" - a wedged manager held its row out of reach of the one
+ * thing that could rescue it, silently, with no upper bound.
+ *
+ * Found live on 2026-09-02: `Sunday Deep Stack Satellite $10` (e210486c),
+ * 23 entrants, 207 chips of prize pool, 448 hands dealt, ONE survivor, ZERO
+ * payout records, sixteen minutes in COMPLETING - and not one incident raised
+ * naming it in two hours, which is what says the recovery never reached it.
+ * Every branch of that recovery reports; silence means it was skipped.
+ *
+ * Three times the dwell is the escalation point. It is far past any legitimate
+ * finish (the finish path moves money in seconds) and far short of the hours
+ * these rows have historically sat. Past it the manager is stopped, dropped
+ * and the row is recovered by the same idempotent path that shares its ledger
+ * keys with the finish - so even a manager that wakes up mid-rescue cannot
+ * double-pay.
+ */
+export const COMPLETING_WEDGED_MS = 3 * COMPLETING_DWELL_MS;
+
+/**
+ * Has this row been COMPLETING long enough that a manager still holding it is
+ * the problem rather than the reason to wait?
+ */
+export function isCompletingWedged(
+  firstSeenAt: number | undefined,
+  now: number,
+  wedgedMs: number = COMPLETING_WEDGED_MS
+): boolean {
+  if (firstSeenAt === undefined) return false;
+  return now - firstSeenAt >= wedgedMs;
+}
+
 export interface CompletingDwellResult {
   /** Rows watched long enough that recovery may act on them. */
   due: string[];

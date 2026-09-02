@@ -89,6 +89,45 @@ test now pins the CONTRACT - first focus in, Tab wrapping both ways, focus
 restored, and no Escape handling inside the hook - rather than my
 implementation of it.
 
+## main was red before I got here, and is not any more
+
+`server/src/services/GtoAggregationFloor.test.ts` has been failing on
+`origin/main` since 2026-08-30. Verified in a pristine detached worktree of
+`origin/main`, so this is not a regression from any of the work above -
+CLAUDE.md rule 8 says fixing a red main comes first, and you cannot ship past
+it in any case because the server suite is a required check.
+
+The guard is right and the failure is true:
+
+> the newest migration DECLARING the aggregator's batch clamp is
+> `20260830053917_v30_revert_lateral_optimization_it_was_slower.sql`, and it
+> declares `greatest(200, ...)` while `GtoAggregationDriver` sends 100.
+
+That is exactly the clobber #1855 wrote the guard for. The lateral-optimization
+revert restored the whole function body from a copy predating #1849 and carried
+the old floor back with it. A floor above what the driver sends rounds every
+call up to 200, which is the measured timeout cliff - about 8 seconds, one call
+in three cancelled with 57014.
+
+**But production is already correct.** Read live:
+
+```
+v_batch integer := greatest(25, least(5000, coalesce(p_batch, 1500)));
+```
+
+Somebody patched the live function surgically - reading `prosrc` and replacing
+the text, which the guard's own comment calls the safe way to touch it while
+other agents are shipping - and never recorded a declaration. So the database
+has been right and the repository has been lying about it for three days, with
+the guard correctly shouting and every server test run red for it.
+
+`20260902020000_v30_batch_floor_declaration_matches_production.sql` is the
+repository catching up: `pg_get_functiondef` of the live function, byte for
+byte. It is deliberately NOT applied by hand - there is nothing to change, and
+the only effect would be a PostgREST schema reload, about 28 seconds on this
+database, which 503s live traffic (the DDL policy written after the 2026-08-31
+PGRST002 outage). It applies harmlessly on the next migration push.
+
 ## Verification
 
 - `npx tsc --noEmit`, client and server: clean.

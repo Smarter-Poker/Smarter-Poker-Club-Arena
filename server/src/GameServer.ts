@@ -73,7 +73,11 @@ import { tableStateHub } from './transport/TableStateHub.js';
 // GameServer had four tournament-cancel paths; all four are gone. Nothing in
 // this file cancels a tournament any more — it fills, resumes or settles.
 import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
-import { selectCompletingDue } from './tournament/completingDwell.js';
+import {
+  selectCompletingDue,
+  isCompletingWedged,
+  COMPLETING_WEDGED_MS,
+} from './tournament/completingDwell.js';
 import { TournamentManager } from './tournament/TournamentManager.js';
 import { MaintenanceBreak } from './maintenance/MaintenanceBreak.js';
 import { createSupabaseMaintenanceBreakStore } from './maintenance/maintenanceBreakStore.js';
@@ -3281,8 +3285,46 @@ export class GameServer {
           );
           this.completingFirstSeenAt = dwell.seenAt;
           const dueIds = new Set(dwell.due);
+          const nowMs = Date.now();
           for (const stuck of stuckTournaments || []) {
             if (!dueIds.has(String(stuck.id))) continue;
+            /**
+             * A MANAGER THAT HAS HELD A FINISH FOR FIFTEEN MINUTES IS NOT
+             * FINISHING IT (2026-09-02).
+             *
+             * Skipping a row a manager still holds is right for the seconds a
+             * finish takes and wrong forever after, and there was no forever
+             * after: a wedged manager held its row out of reach of the only
+             * thing that could rescue it, with no upper bound.
+             *
+             * Found live: a satellite with 23 entrants, 207 chips of prize
+             * pool, 448 hands dealt, one survivor and ZERO payout records,
+             * sixteen minutes into COMPLETING - and no incident naming it,
+             * which is what proves the recovery never reached it.
+             *
+             * Past three times the dwell the manager is stopped and dropped so
+             * the recovery below can run. It is idempotent and shares its
+             * ledger keys with the finish path, so a manager that wakes up
+             * mid-rescue cannot double-pay.
+             */
+            const wedged =
+              this.tournamentEngines.has(stuck.id) &&
+              isCompletingWedged(this.completingFirstSeenAt.get(String(stuck.id)), nowMs);
+            if (wedged) {
+              const wedgedTm = this.tournamentEngines.get(stuck.id);
+              reportError(
+                new Error(
+                  `[GameServer] ${stuck.id.slice(0, 8)} "${stuck.name}" has been COMPLETING for over ${Math.round(COMPLETING_WEDGED_MS / 60000)} minutes with a manager still holding it. A finish takes seconds; stopping the manager and handing the row to the recovery.`
+                ),
+                'GameServer.completing_manager_wedged'
+              );
+              try {
+                wedgedTm?.stop();
+              } catch (stopErr) {
+                reportError(stopErr, 'GameServer.completing_wedged_stop_failed');
+              }
+              this.tournamentEngines.delete(stuck.id);
+            }
             if (!this.tournamentEngines.has(stuck.id)) {
               // No active engine managing this tournament - it's truly stuck.
               // TOURNEY-AUDIT 2026-07-24: recovery now PAYS remaining players

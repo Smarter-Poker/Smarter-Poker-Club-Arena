@@ -44,7 +44,9 @@ merge with both counters, and persists two more reads that were memory-only by
 design and reset on every deploy for exactly the players they exist for:
 the V23 fold-to-river-bet frequency and the V28 check counters behind the
 self-image. Applied to production; `HorseMindPersistence` flushes and hydrates
-all six.
+all six. `20260902233214_upsert_horse_mind_stats_is_engine_only` states the
+service_role-only grant explicitly (live was already closed; the definer gate
+reads migration text).
 
 ### Preflop ranges were read against a scale that is not a percentile
 

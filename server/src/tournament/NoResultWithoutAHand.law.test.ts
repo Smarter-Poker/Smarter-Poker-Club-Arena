@@ -102,7 +102,9 @@ describe('the guards are wired where they can guard something', () => {
   it('both tests run before the loop that credits places', () => {
     const chipsAt = src.indexOf('if (chipsCannotRank(alive))');
     const handAt = src.indexOf('noHandWasEverDealt({');
-    const payAt = src.indexOf('`tourney:${t.id}:prize:place:${place}`');
+    // 2026-09-02: places settle as the obligation (tournament, 'place', N)
+    // through settleTournamentObligation; that call is the pay marker.
+    const payAt = src.indexOf("{ kind: 'place', place }");
     expect(chipsAt).toBeGreaterThan(-1);
     expect(handAt).toBeGreaterThan(-1);
     expect(payAt).toBeGreaterThan(-1);

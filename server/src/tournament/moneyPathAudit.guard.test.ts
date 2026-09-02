@@ -136,27 +136,39 @@ describe('no money path writes a ledger row it did not earn', () => {
 });
 
 describe('the recovery watchdog cannot pay money it has no right to', () => {
-  it('tops up under its own key, not the one that already paid the place', () => {
+  it('tops up on its own obligation, not the one that already paid the place', () => {
     /**
      * The ITM top-up used `tourney:{id}:prize:place:{N}` -- the key
      * eliminatePlayer already paid that place under. The comment said "recorded
      * with a zero prize" but the condition is `owed > recorded`, so it also
      * fires on a PARTIAL shortfall: the pool grew, more is owed, and the
-     * smaller amount has already been paid under that key. fn_credit_and_log
-     * deduped the credit to nothing, the boolean was discarded, and the next
-     * statement stamped `prize = owed` -- a payment recorded that never
-     * happened, invisible to every later pass.
+     * smaller amount has already been paid under that key. The credit deduped
+     * to nothing, the boolean was discarded, and the next statement stamped
+     * `prize = owed` -- a payment recorded that never happened, invisible to
+     * every later pass.
      *
-     * `prizeadj` carries the AMOUNT, so a different amount is a different key.
+     * 2026-08-29 fixed it with a `prizeadj` key carrying the AMOUNT. The chip
+     * standard (2026-09-02) replaced that with an obligation of its own kind:
+     * (tournament, 'late_reg_adjustment', N) is told the full amount OWED and
+     * the database pays only the unpaid part. The top-up must settle THAT
+     * kind, never 'place', and must pass `owed` (what is owed), not `diff`.
      */
-    expect(RECOVERY).toMatch(/prizeadj:\$\{r\.user_id\}:\$\{r\.position\}:\$\{owed\}/);
+    // RECOVERY is comment-stripped, so anchor on the step-3 loop's own guard.
+    const topUp = RECOVERY.slice(RECOVERY.indexOf("if (r.status !== 'eliminated' || !r.position)"));
+    expect(topUp).toMatch(/\{ kind: 'late_reg_adjustment', place: Number\(r\.position\) \}/);
+    expect(topUp).toMatch(/await credit\(\s*r\.user_id,\s*owed,/);
+    expect(topUp).not.toMatch(/prizeadj:/);
   });
 
   it('knows whether the credit actually moved chips', () => {
-    // fn_credit_and_log's boolean is the only signal distinguishing "already
-    // done" from "just done", and it was thrown away.
+    // The RPC's `paid` (chips moved by THIS call) is the only signal
+    // distinguishing "already done" from "just done", and the old boolean
+    // was thrown away. The wrapper must return it, and must THROW on a
+    // refusal rather than let the prize stamp below record a payment that
+    // was refused.
     expect(RECOVERY).toMatch(/Promise<boolean>/);
-    expect(RECOVERY).toMatch(/return data === true;/);
+    expect(RECOVERY).toMatch(/return res\.paid > 0;/);
+    expect(RECOVERY).toMatch(/if \(!res\.ok\) \{\s*throw new Error/);
   });
 
   it('refuses to pay structure cash on a satellite', () => {

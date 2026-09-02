@@ -13,7 +13,7 @@ echo "Waiting for main to trigger World Hub Sync..."
 sleep 10
 LATEST_RUN=""
 while true; do
-  LATEST_RUN=$(gh run list --workflow build-for-world-hub.yml --branch main --json databaseId,status --jq '.[0].databaseId')
+  LATEST_RUN=$(gh run list --workflow publish-club-arena.yml --branch main --json databaseId,status --jq '.[0].databaseId')
   if [ -n "$LATEST_RUN" ]; then
     echo "Found run $LATEST_RUN"
     break

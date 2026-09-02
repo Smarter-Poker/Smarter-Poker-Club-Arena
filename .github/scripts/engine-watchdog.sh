@@ -242,10 +242,44 @@ fi
 # for a deploy to finish. Before that the engine is behind exactly as designed
 # and there is nothing to report.
 NOW_EPOCH=$(date -u +%s)
-WINDOW_EPOCH=$(window_at_or_after "$REQ_EPOCH")
-WINDOW_START=$(( WINDOW_EPOCH > REQ_EPOCH ? WINDOW_EPOCH : REQ_EPOCH ))
+
+# ── THE CLOCK STARTS WHEN PRODUCTION FELL BEHIND, NOT AT THE NEWEST MERGE ────
+#
+# 2026-09-02: this watchdog stayed quiet through FOURTEEN HOURS of stranded
+# engine code, reporting "Behind by design" on every run, while production sat
+# on 93d167b5 and the deploy fail-closed at every window.
+#
+# The arithmetic did it. Both deadlines were anchored to REQ_EPOCH - the
+# NEWEST engine commit on main - so every new engine merge pushed the deadline
+# forward another GRACE_MIN. This fleet merges engine changes far more often
+# than every 45 minutes, so NOW was permanently less than DEADLINE and the
+# alarm/dispatch branch below was unreachable. A busy repo muted its own
+# staleness alarm, and the busier it got the quieter it became.
+#
+# The honest anchor is the OLDEST engine commit production does not have: the
+# moment it actually fell behind. That instant does not move when someone
+# merges again, so the grace is spent once rather than renewed forever.
+#
+# REQ_SHORT stays the thing we ask FOR (the newest commit, what main needs) -
+# only the clock changes.
+BEHIND_SINCE_EPOCH=$REQ_EPOCH
+if [ -n "${SERVED:-}" ] && git cat-file -e "${SERVED}^{commit}" 2>/dev/null; then
+  FIRST_UNSHIPPED=$(git log --reverse --format=%H "${SERVED}..origin/main" -- \
+    'server/**' ':(exclude)server/**/*.test.ts' ':(exclude)server/sim/**' 2>/dev/null | head -1)
+  if [ -n "${FIRST_UNSHIPPED:-}" ]; then
+    BEHIND_SINCE_EPOCH=$(git show -s --format=%ct "$FIRST_UNSHIPPED")
+    say "behind since: $(git show -s --format=%cI "$FIRST_UNSHIPPED") ($(( ( NOW_EPOCH - BEHIND_SINCE_EPOCH ) / 60 ))m), first engine commit the engine does not have"
+  fi
+else
+  # Cannot resolve what production serves, so we cannot tell when it fell
+  # behind. Fall back to the old anchor: quieter, never louder.
+  say "cannot resolve the served commit locally - holding the grace against $REQ_SHORT as before"
+fi
+
+WINDOW_EPOCH=$(window_at_or_after "$BEHIND_SINCE_EPOCH")
+WINDOW_START=$(( WINDOW_EPOCH > BEHIND_SINCE_EPOCH ? WINDOW_EPOCH : BEHIND_SINCE_EPOCH ))
 DEADLINE=$(( WINDOW_START + DEPLOY_MIN * 60 ))
-GRACE_DEADLINE=$(( REQ_EPOCH + GRACE_MIN * 60 ))
+GRACE_DEADLINE=$(( BEHIND_SINCE_EPOCH + GRACE_MIN * 60 ))
 [ "$GRACE_DEADLINE" -gt "$DEADLINE" ] && DEADLINE=$GRACE_DEADLINE
 WINDOW_LOCAL=$(chicago_stamp "$WINDOW_EPOCH")
 

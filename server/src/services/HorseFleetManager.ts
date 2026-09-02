@@ -1097,6 +1097,23 @@ export class HorseFleetManager {
           // 2. Not exceeding 4 max tables
           const MAX_TABLES_PER_HORSE = 4;
           const candidateHorses = validHorses.filter((h) => {
+            /**
+             * A HORSE PLAYS ONLY AT ITS OWN CLUB'S TABLES (Dan 2026-09-02,
+             * verbatim: "HORSES ARE ASSIGNED TO SPECIFIC CLUBS, NOT GLOBAL ...
+             * ASSIGNED TO THE TABLES AVAILABLE IN THAT CLUB").
+             *
+             * The bankroll map is loaded all-or-nothing (bankrollsLoaded) and
+             * keyed `${club_id}:${user_id}` over every club with an open
+             * table, so when it is loaded a horse that IS a member of THIS
+             * table's club always has a key. A POSITIVE membership include
+             * here (member = has key) scopes cash seeding to the club's own
+             * horses cleanly, BEFORE the affordability gate below — distinct
+             * from that gate's unknown-roll fail-open (which stays, for the
+             * unreadable-map case). This is the club-scoping Dan asked for;
+             * the 75% occupancy law (occupancyTargetFor, per table) then
+             * applies to every club's tables from its own member pool.
+             */
+            if (bankrollsLoaded && !bankrolls.has(`${table.club_id}:${h.id}`)) return false;
             // Dan 2026-08-26 game lanes: a third of the stable plays events
             // only (tournaments / spins / heads-up) and never sits at cash.
             if (gameLaneFor(h.id) === 'events') return false;

@@ -201,6 +201,117 @@ export function healDecision({ recentIssue, attempts = 0, now = Date.now(), cool
   return { act: 'retry', attempt: attempts + 1, why: `heal #${attempts} on #${recentIssue.number} did not restore ticks - schedules are still overdue, so retrying` };
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  RE-REGISTERING A CRON IS NOT THE SAME AS DOING THE WORK
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * MEASURED, 2026-09-02. The automated heal cycled registrations at 14:56 and
+ * ticks did not come back. A wider cycle of all 15 by hand at 16:32 did not
+ * bring them back either. Meanwhile `push`, `pull_request` and
+ * `workflow_dispatch` all fired normally all afternoon, and githubstatus said
+ * Actions was operational. So the wedge is specifically in SCHEDULE delivery,
+ * and cycling registrations is a remedy that sometimes works on it.
+ *
+ * The estate does not actually need the cron. It needs THE WORK the cron
+ * stands for - above all `build-for-world-hub`'s every-30-minute retry, which
+ * is the net that catches a publish that failed. `workflow_dispatch` demonstrably
+ * still works, and this check already runs on `workflow_run`, which fires many
+ * times an hour whatever the scheduler is doing. So when a scheduled workflow
+ * has not run by ANY means inside the interval it promises, run it.
+ *
+ * This is the difference between a watchdog that reports a wedge and one that
+ * survives it.
+ *
+ * GUARDS, because a dispatcher that loops is worse than a silent cron:
+ *  - only workflows whose file declares `workflow_dispatch`;
+ *  - never this workflow itself, which would be a self-trigger loop;
+ *  - never one with a run already in flight;
+ *  - staleness measured over runs of EVERY event, not just `schedule`, so a
+ *    workflow this function already rescued is not rescued again a minute
+ *    later - that is what makes the loop converge;
+ *  - a hard cap per run.
+ */
+const MAX_DISPATCH = Number(process.env.MAX_STARVED_DISPATCH || 4);
+const SELF_WORKFLOW = process.env.SELF_WORKFLOW_FILE || 'publish-watchdog.yml';
+
+export function dispatchDecision({
+  file,
+  declaresDispatch,
+  isSelf,
+  busy,
+  minutesSinceAnyRun,
+  expectedGapMin,
+}) {
+  if (isSelf) return { dispatch: false, why: `${file} is this workflow - dispatching it would loop` };
+  if (!declaresDispatch)
+    return { dispatch: false, why: `${file} has no workflow_dispatch trigger - cannot be run by hand` };
+  if (busy) return { dispatch: false, why: `${file} already has a run in flight` };
+  if (minutesSinceAnyRun !== null && minutesSinceAnyRun < expectedGapMin)
+    return {
+      dispatch: false,
+      why: `${file} ran ${minutesSinceAnyRun}m ago by some other trigger, inside its ${expectedGapMin}m interval - not starved`,
+    };
+  return { dispatch: true, why: `${file} has not run by any trigger in ${minutesSinceAnyRun === null ? 'ever' : minutesSinceAnyRun + 'm'}, past its ${expectedGapMin}m interval` };
+}
+
+/** When did this workflow last run, by ANY trigger? null = never. */
+async function lastAnyRun(file) {
+  const res = await api(`/actions/workflows/${encodeURIComponent(file)}/runs?per_page=1`);
+  if (!res.ok) return undefined;
+  const body = await res.json().catch(() => null);
+  if (!body) return undefined;
+  const run = body.workflow_runs?.[0];
+  return run ? Date.parse(run.created_at) : null;
+}
+
+/** Run the work the wedged crons stand for. Best effort; never fails the job. */
+async function dispatchStarved(late) {
+  const branchRes = await api('');
+  const branch = branchRes.ok ? (await branchRes.json()).default_branch || 'main' : 'main';
+  let sent = 0;
+  for (const w of late) {
+    if (sent >= MAX_DISPATCH) {
+      say(`[schedule-liveness] dispatch cap ${MAX_DISPATCH} reached; the rest wait for the next run.`);
+      break;
+    }
+    const text = readFileSync(join(DIR, w.file), 'utf8');
+    const declaresDispatch = /^\s*workflow_dispatch:/m.test(text);
+    const last = await lastAnyRun(w.file);
+    const minutesSinceAnyRun =
+      last === undefined ? 0 : last === null ? null : Math.round((Date.now() - last) / 60000);
+    const busy = last === undefined ? true : await isBusy(w.file);
+    const d = dispatchDecision({
+      file: w.file,
+      declaresDispatch,
+      isSelf: w.file === SELF_WORKFLOW,
+      busy,
+      minutesSinceAnyRun,
+      expectedGapMin: w.expectedGapMin,
+    });
+    if (!d.dispatch) {
+      say(`[schedule-liveness] not dispatching: ${d.why}`);
+      continue;
+    }
+    const res = await api(`/actions/workflows/${encodeURIComponent(w.file)}/dispatches`, 'POST', {
+      ref: branch,
+    });
+    if (res.ok) {
+      sent += 1;
+      say(`[schedule-liveness] DISPATCHED ${w.file} - ${d.why}`);
+      summary.push(`- Dispatched \`${w.file}\` by hand: its schedule is wedged and the work was overdue.`);
+    } else {
+      say(`[schedule-liveness] could not dispatch ${w.file} (${res.status})`);
+    }
+  }
+  if (sent > 0) {
+    say(
+      `::warning title=SCHEDULES WEDGED, WORK DISPATCHED ANYWAY::${sent} overdue workflow(s) were started by hand because their cron is not firing.`
+    );
+  }
+  return sent;
+}
+
 async function selfHeal(late) {
   // The wedge issue is the memory that survives between runs.
   let recentIssue = null;
@@ -380,9 +491,11 @@ async function selfHeal(late) {
  * leave it alone. A missed cycle costs one more attempt; a wrong cycle costs a
  * cancelled publish.
  */
-async function isBusy(workflowId) {
+async function isBusy(workflowIdOrFile) {
+  // The API accepts either the numeric id or the workflow file name here.
+  const ref = encodeURIComponent(String(workflowIdOrFile));
   for (const status of ['in_progress', 'queued']) {
-    const res = await api(`/actions/workflows/${workflowId}/runs?status=${status}&per_page=1`);
+    const res = await api(`/actions/workflows/${ref}/runs?status=${status}&per_page=1`);
     if (!res.ok) return true;
     const body = await res.json().catch(() => null);
     if (!body) return true;
@@ -456,6 +569,13 @@ summary.push(
 if (late.length >= WEDGE_MIN) {
   await selfHeal(late);
 }
+
+/**
+ * Whether or not the registration cycle worked, the WORK is still overdue, and
+ * this runs on `workflow_run` so it is here now. Re-registering a cron is not
+ * the same as doing the thing the cron was for.
+ */
+await dispatchStarved(late);
 
 if (process.env.GITHUB_STEP_SUMMARY) {
   const { appendFileSync } = await import('node:fs');

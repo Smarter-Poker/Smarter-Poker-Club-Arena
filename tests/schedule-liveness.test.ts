@@ -27,7 +27,11 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { maxGapMinutes, healDecision } from '../.github/scripts/schedule-liveness.mjs';
+import {
+  maxGapMinutes,
+  healDecision,
+  dispatchDecision,
+} from '../.github/scripts/schedule-liveness.mjs';
 
 const ROOT = resolve(__dirname, '..');
 const SCRIPT = readFileSync(resolve(ROOT, '.github/scripts/schedule-liveness.mjs'), 'utf8');
@@ -267,5 +271,97 @@ describe('the heal never cancels a run to fix a schedule', () => {
   it('reports what it deferred, so a skipped cycle is visible not silent', () => {
     expect(src).toMatch(/deferred\.push\(w\.file\)/);
     expect(src).toMatch(/Left alone because they had a run in flight/);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  RE-REGISTERING A CRON IS NOT THE SAME AS DOING THE WORK (2026-09-02)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * MEASURED. The automated heal cycled registrations at 14:56 and ticks did not
+ * return. A wider cycle of all 15 by hand at 16:32 did not bring them back
+ * either. Through all of it `push`, `pull_request` and `workflow_dispatch`
+ * fired normally and githubstatus reported Actions operational, so the wedge is
+ * specifically in SCHEDULE delivery and re-registration is a remedy that only
+ * sometimes works on it.
+ *
+ * The estate does not need the cron. It needs the WORK - above all
+ * `build-for-world-hub`'s 30-minute retry, the net that catches a publish that
+ * failed. That afternoon production sat three commits behind main with the net
+ * dead. `workflow_dispatch` still worked the whole time.
+ *
+ * So the check now runs the starved work itself. These pin the guards, because
+ * a dispatcher that loops is worse than a silent cron.
+ */
+describe('a wedged cron does not stop the work from happening', () => {
+  const base = {
+    file: 'build-for-world-hub.yml',
+    declaresDispatch: true,
+    isSelf: false,
+    busy: false,
+    minutesSinceAnyRun: 323,
+    expectedGapMin: 30,
+  };
+
+  it('dispatches a workflow starved past its own interval', () => {
+    // The real 16:29 measurement: 323 minutes against a 30 minute promise.
+    expect(dispatchDecision(base).dispatch).toBe(true);
+  });
+
+  it('dispatches one that has never run at all', () => {
+    expect(dispatchDecision({ ...base, minutesSinceAnyRun: null }).dispatch).toBe(true);
+  });
+
+  it('NEVER dispatches itself - that is the loop', () => {
+    const d = dispatchDecision({ ...base, file: 'publish-watchdog.yml', isSelf: true });
+    expect(d.dispatch).toBe(false);
+    expect(d.why).toMatch(/loop/);
+  });
+
+  it('measures staleness over EVERY trigger, so a rescue is not repeated', () => {
+    // This is what makes the workflow_run loop converge: once dispatched, the
+    // workflow has run recently by SOME trigger and is no longer starved.
+    const d = dispatchDecision({ ...base, minutesSinceAnyRun: 5 });
+    expect(d.dispatch).toBe(false);
+    expect(d.why).toMatch(/not starved/);
+  });
+
+  it('will not dispatch a workflow that is already running', () => {
+    expect(dispatchDecision({ ...base, busy: true }).dispatch).toBe(false);
+  });
+
+  it('will not dispatch one that has no workflow_dispatch trigger', () => {
+    // ci.yml is the real example: no dispatch trigger, and four jobs gated on
+    // github.event_name == 'schedule' that a manual run would skip anyway.
+    const d = dispatchDecision({ ...base, file: 'ci.yml', declaresDispatch: false });
+    expect(d.dispatch).toBe(false);
+    expect(d.why).toMatch(/no workflow_dispatch/);
+  });
+});
+
+describe('the starved-work dispatcher is wired in and bounded', () => {
+  const src = readFileSync(resolve(__dirname, '../.github/scripts/schedule-liveness.mjs'), 'utf8');
+
+  it('runs after the heal, on every wedge, not only when the heal worked', () => {
+    expect(src).toMatch(/await dispatchStarved\(late\);/);
+    // It must sit OUTSIDE the `if (late.length >= WEDGE_MIN)` heal block's
+    // success path - the work is overdue whether or not re-registration took.
+    const heal = src.indexOf('await selfHeal(late);');
+    const disp = src.indexOf('await dispatchStarved(late);');
+    expect(disp).toBeGreaterThan(heal);
+  });
+
+  it('caps how many it starts in one pass', () => {
+    expect(src).toMatch(/MAX_DISPATCH/);
+    expect(src).toMatch(/if \(sent >= MAX_DISPATCH\)/);
+  });
+
+  it('dispatches against the repository default branch, not a guess', () => {
+    expect(src).toMatch(/default_branch/);
+  });
+
+  it('treats an unreadable run history as busy rather than dispatching blind', () => {
+    expect(src).toMatch(/last === undefined \? true : await isBusy/);
   });
 });

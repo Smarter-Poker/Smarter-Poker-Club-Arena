@@ -169,4 +169,23 @@ _to_delete/
 __pycache__/
 *.pyc
 .dr-backups/
+
+# ── Agent scratch that keeps landing in the shared clone ──────────────────
+# Found 2026-09-02 in ~/Documents/club-arena: a 5.8MB arm64 `actionlint`
+# binary sitting untracked and UNIGNORED in the repo root, next to a
+# `pr_list.txt` and a `scan-labels.tmp.mjs`, left behind by the Actions cost
+# audit. One `git add -A` from anybody and the binary is in the history for
+# good, and history is the one place you cannot delete a 5.8MB mistake from
+# cheaply.
+#
+# The tools themselves are fine to download - pin them here rather than ask
+# every agent to remember to clean up after itself, which is the instruction
+# that has never once worked.
+/actionlint
+/pr_list.txt
+/scan-labels.tmp.mjs
+*.tmp.mjs
+
+# Written by the entry-module-manifest plugin in vite.config.ts each build;
+# read by scripts/ci/entry-chunk-delta.mjs. Build output, never committed.
 .entry-modules.json

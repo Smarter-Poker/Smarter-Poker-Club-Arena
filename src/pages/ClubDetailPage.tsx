@@ -35,6 +35,7 @@ import { retryFetch } from '../utils/retryFetch';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import { reportError } from '../utils/errorReporter';
 import { fetchAllRows } from '../utils/fetchAllRows';
+import { gameManagementService } from '../services/GameManagementService';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -702,7 +703,7 @@ export default function ClubDetailPage() {
       masterBus.subscribeDebounced('CLUB_SETTINGS_UPDATED', handler, 300),
       masterBus.subscribeDebounced('AGENT_UPDATED', handler, 500),
       masterBus.subscribeDebounced('TABLE_CREATED', handler, 300),
-      masterBus.subscribeDebounced('TABLE_DELETED', handler, 300),
+      masterBus.subscribeDebounced('TABLE_CLOSED', handler, 300),
     ];
     return () => {
       isMounted = false;
@@ -1479,7 +1480,7 @@ export default function ClubDetailPage() {
                               });
                             }}
                             disabled={deletingTableId === table.id}
-                            title="Delete Table"
+                            title="Close Table"
                           >
                             {deletingTableId === table.id ? '...' : '✕'}
                           </button>
@@ -1946,82 +1947,28 @@ export default function ClubDetailPage() {
         </div>
       )}
 
-      {/* Confirm Modal for Table Deletion */}
+      {/* Confirm Modal for Table Closure */}
       <ConfirmModal
         isOpen={deleteTableConfirm.show}
-        title="Delete Table"
-        message={`Delete table "${deleteTableConfirm.tableName || ''}"? This cannot be undone.`}
+        title="Close Table"
+        message={`Close table "${deleteTableConfirm.tableName || ''}"? It can only close after every player has left.`}
         variant="danger"
-        confirmText="Delete"
+        confirmText="Close Table"
         onConfirm={async () => {
           if (deleteTableConfirm.tableId) {
             const id = deleteTableConfirm.tableId;
             setDeleteTableConfirm({ show: false, tableId: null, tableName: null });
             setDeletingTableId(id);
             try {
-              // Phase 13: Optimistic delete — instantly remove from UI, then confirm with server
-              const deletedTable = tables.find((t) => t.id === id);
-              await masterBus.executeOptimistic(
-                'TABLE_UPDATED',
-                { tableId: id, status: 'deleted' },
-                async () => {
-                  setTables((prev) => prev.filter((t) => t.id !== id));
-                  // SECURITY: Scope deletion to current club to prevent cross-club table deletion
-                  // FIX: Resolve clubId to UUID — tables store UUID club_id, not integer
-                  const resolvedClubId = clubId ? await resolveClubUUID(clubId) : '';
-                  const { error } = await supabase
-                    .from('tables')
-                    /* PHANTOM COLUMN FIX 2026-08-27: `tables` has no
-                       `is_active` column, so every delete 400'd, threw, and
-                       rolled the row back into the list — a club owner could
-                       not delete a table from this screen at all. status +
-                       is_deleted IS the soft delete. */
-                    .update({
-                      status: 'deleted',
-                      is_deleted: true,
-                      updated_at: new Date().toISOString(),
-                    })
-                    .eq('id', id)
-                    .eq('club_id', resolvedClubId);
-                  if (error) throw error;
-                },
-                // Rollback payload: restore the table on failure
-                deletedTable ? { tableId: id, status: deletedTable.status || 'active' } : undefined
-              );
-              masterBus.emit('TABLE_DELETED', { tableId: id, clubId: clubId || undefined });
-              // #5: Optimistic table count decrement
+              await gameManagementService.close('table', id);
+              setTables((prev) => prev.filter((table) => table.id !== id));
               setClub((prev) =>
                 prev ? { ...prev, tableCount: Math.max(0, prev.tableCount - 1) } : null
               );
-              toast.success('Table deleted');
+              toast.success('Table Closed');
             } catch (err) {
-              // Rollback: re-add the table to the list
-              reportError(err, 'ClubDetailPage.Failed_to_delete_table');
-              toast.error('Failed to delete table');
-              // Force reload to restore accurate state
-              if (clubId) {
-                const resolvedId = await resolveClubUUID(clubId);
-                const { data } = await supabase
-                  .from('tables')
-                  .select(
-                    'id, name, game_variant, stakes, current_players, max_players, status, created_at'
-                  )
-                  .eq('club_id', resolvedId)
-                  .eq('is_deleted', false)
-                  .order('created_at', { ascending: false });
-                if (data)
-                  setTables(
-                    data.map((t: any) => ({
-                      id: t.id,
-                      name: formatGameTitle(t.name) || 'Table',
-                      gameVariant: t.game_variant || 'NLH',
-                      stakes: t.stakes || '1/2',
-                      currentPlayers: t.current_players || 0,
-                      maxPlayers: t.max_players || 6,
-                      status: t.status || 'waiting',
-                    }))
-                  );
-              }
+              reportError(err, 'ClubDetailPage.Failed_to_close_table');
+              toast.error(err instanceof Error ? err.message : 'Failed To Close Table');
             } finally {
               setDeletingTableId(null);
             }

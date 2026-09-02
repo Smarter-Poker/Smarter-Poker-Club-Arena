@@ -27,7 +27,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { maxGapMinutes } from '../.github/scripts/schedule-liveness.mjs';
+import { maxGapMinutes, healDecision } from '../.github/scripts/schedule-liveness.mjs';
 
 const ROOT = resolve(__dirname, '..');
 const SCRIPT = readFileSync(resolve(ROOT, '.github/scripts/schedule-liveness.mjs'), 'utf8');
@@ -123,5 +123,104 @@ describe('the wedge heals itself (added 2026-09-01, the day it happened live)', 
 
   it('the heal is loud - an issue, not a step summary nobody reads', () => {
     expect(SCRIPT).toMatch(/api\(`\/issues`, 'POST'/);
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A HEAL THAT DID NOT WORK IS NOT A HEAL (2026-09-02)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * MEASURED. The self-healer cycled four workflow registrations at 14:56 and it
+ * did not work. The cooldown then kept it quiet until 20:56, so the estate ran
+ * five and a half hours with no scheduled tick at all - including
+ * build-for-world-hub's every-30-minute publish retry, the safety net that
+ * exists precisely so a failed publish is not left sitting. Twelve workflows
+ * were overdue and the component built to fix that had decided it was not its
+ * turn.
+ *
+ * The cooldown's SHAPE was right: cycling registrations every few minutes is
+ * flapping. The QUESTION was wrong. `selfHeal` is only reached when schedules
+ * are still overdue, so "we healed recently" and "schedules are still dead"
+ * together mean the heal failed - which is an argument for trying again, not
+ * for going quiet.
+ */
+describe('the wedge healer retries a heal that did not take, and gives up out loud', () => {
+  const ISSUE = { number: 2638, created_at: '2026-09-02T14:56:25Z', labels: [] };
+  const NOW = Date.parse('2026-09-02T16:30:00Z'); // 1.6h later, inside the 6h cooldown
+
+  it('heals when there is no prior wedge issue', () => {
+    expect(healDecision({ recentIssue: null, now: NOW }).act).toBe('heal');
+  });
+
+  it('THE BUG: inside the cooldown with schedules still dead, it retries rather than sleeping', () => {
+    // The old code returned here and did nothing for six hours. This is the
+    // exact state of the estate at 16:30 on 2026-09-02.
+    const d = healDecision({ recentIssue: ISSUE, attempts: 1, now: NOW });
+    expect(d.act).toBe('retry');
+    expect(d.attempt).toBe(2);
+  });
+
+  it('counts attempts up rather than repeating attempt one forever', () => {
+    expect(healDecision({ recentIssue: ISSUE, attempts: 2, now: NOW }).attempt).toBe(3);
+  });
+
+  it('stops cycling and escalates once the attempts are spent', () => {
+    const d = healDecision({ recentIssue: ISSUE, attempts: 3, now: NOW });
+    expect(d.act).toBe('escalate');
+    // A fourth identical attempt is not persistence, it is noise.
+    expect(d.why).toMatch(/does not fix this wedge/);
+  });
+
+  it('treats a wedge past the cooldown as a fresh episode, attempts reset', () => {
+    const old = { ...ISSUE, created_at: '2026-09-02T05:00:00Z' }; // 11.5h earlier
+    const d = healDecision({ recentIssue: old, attempts: 3, now: NOW });
+    expect(d.act).toBe('heal');
+    expect(d.attempt).toBe(1);
+  });
+
+  it('respects an explicit cooldown and attempt budget', () => {
+    // A one-attempt budget escalates immediately on the first failed heal.
+    expect(healDecision({ recentIssue: ISSUE, attempts: 1, now: NOW, maxAttempts: 1 }).act).toBe(
+      'escalate'
+    );
+    // A zero-hour cooldown means every run is a fresh episode.
+    expect(healDecision({ recentIssue: ISSUE, attempts: 9, now: NOW, cooldownH: 0 }).act).toBe(
+      'heal'
+    );
+  });
+});
+
+/**
+ * The other half of the same bug: the old heal filed its cooldown marker
+ * unconditionally, so a cycle that cycled NOTHING (a token without
+ * actions:write, say) still bought six hours of silence for work that had not
+ * happened. These pin the source, because the failure is a branch that only
+ * runs when the API refuses.
+ */
+describe('the healer never buys silence for a heal it did not perform', () => {
+  const src = readFileSync(resolve(__dirname, '../.github/scripts/schedule-liveness.mjs'), 'utf8');
+
+  it('returns without filing a cooldown marker when nothing was cycled', () => {
+    expect(src).toMatch(/if \(cycled\.length === 0\)/);
+    const i = src.indexOf('if (cycled.length === 0)');
+    const block = src.slice(i, i + 500);
+    expect(block).toMatch(/not filing a cooldown marker/i);
+    expect(block).toMatch(/return;/);
+  });
+
+  it('cycles every scheduled workflow, not just the ones measured late', () => {
+    // A repo-level wedge is not fixed by cycling a subset: on 2026-09-02 four
+    // were cycled while twelve were dead.
+    expect(src).toMatch(/const all = scheduledWorkflows\(\);/);
+    expect(src).toMatch(/for \(const w of all\)/);
+  });
+
+  it('leaves a deliberately disabled workflow alone', () => {
+    expect(src).toMatch(/deliberately off, leaving it alone/);
+  });
+
+  it('always re-enables even when the enable call failed', () => {
+    expect(src).toMatch(/Enable is the half that must not be left undone/);
   });
 });

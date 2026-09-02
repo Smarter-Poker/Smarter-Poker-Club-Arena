@@ -161,27 +161,112 @@ async function api(path, method = 'GET', body = undefined) {
  */
 const WEDGE_MIN = Number(process.env.SCHEDULE_WEDGE_MIN || 3);
 const REHEAL_COOLDOWN_H = Number(process.env.REHEAL_COOLDOWN_H || 6);
+const MAX_HEAL_ATTEMPTS = Number(process.env.MAX_HEAL_ATTEMPTS || 3);
 const WEDGE_ISSUE_TITLE = 'Cron registration wedge: schedules stopped firing repo-wide';
+/** Written into the issue so attempts can be counted on the next run. */
+const ATTEMPT_MARKER = '<!-- heal-attempt -->';
+
+/**
+ * ── WHAT TO DO THIS RUN (added 2026-09-02, the day the cooldown backfired) ──
+ *
+ * MEASURED. A heal ran at 14:56 and did not work. The estate then sat without
+ * a single scheduled tick for five and a half hours - build-for-world-hub's
+ * every-30-minute publish safety net included - because the cooldown keyed
+ * on a heal having RUN rather than on it having WORKED, and the healer had put
+ * itself to sleep until 20:56. Twelve workflows were overdue and the one thing
+ * built to fix that had decided it was not its turn.
+ *
+ * The cooldown is still right in shape: cycling registrations every few
+ * minutes would be flapping. What was wrong is the question it asked. This
+ * function is only ever reached when schedules are STILL overdue, so being
+ * inside the cooldown is not evidence that the last heal is working - it is
+ * evidence that it is not.
+ *
+ * So: retry, up to MAX_HEAL_ATTEMPTS, recording each attempt on the SAME issue
+ * so the count survives between runs. When the attempts are spent, stop
+ * cycling and say plainly that this wedge is beyond the remedy, because a
+ * fourth identical attempt is not persistence, it is noise.
+ *
+ * Pure and exported so the decision can be tested without a live wedge.
+ */
+export function healDecision({ recentIssue, attempts = 0, now = Date.now(), cooldownH = REHEAL_COOLDOWN_H, maxAttempts = MAX_HEAL_ATTEMPTS }) {
+  if (!recentIssue) return { act: 'heal', attempt: 1, why: 'no prior wedge issue - first heal of this episode' };
+  const ageH = (now - Date.parse(recentIssue.created_at)) / 3600_000;
+  if (ageH >= cooldownH) {
+    return { act: 'heal', attempt: 1, why: `prior wedge #${recentIssue.number} is ${ageH.toFixed(1)}h old, past the ${cooldownH}h cooldown - new episode` };
+  }
+  if (attempts >= maxAttempts) {
+    return { act: 'escalate', attempt: attempts, why: `${attempts} cycle attempts on #${recentIssue.number} and schedules are still overdue - the cycle remedy does not fix this wedge` };
+  }
+  return { act: 'retry', attempt: attempts + 1, why: `heal #${attempts} on #${recentIssue.number} did not restore ticks - schedules are still overdue, so retrying` };
+}
 
 async function selfHeal(late) {
-  // The audit issue is also the anti-flap memory.
+  // The wedge issue is the memory that survives between runs.
+  let recentIssue = null;
+  let attempts = 0;
   const listRes = await api(`/issues?state=all&labels=cron-wedge&per_page=5`);
   if (listRes.ok) {
     const issues = await listRes.json();
-    const recent = issues.find(
-      (i) => Date.now() - Date.parse(i.created_at) < REHEAL_COOLDOWN_H * 3600_000
-    );
-    if (recent) {
-      say(
-        `[schedule-liveness] wedge detected but a heal ran ${recent.created_at}; ` +
-          `inside the ${REHEAL_COOLDOWN_H}h cooldown, not cycling again (see #${recent.number}).`
-      );
-      return;
-    }
+    recentIssue =
+      issues
+        .filter((i) => i.title === WEDGE_ISSUE_TITLE)
+        .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0] || null;
+    if (recentIssue) attempts = await countAttempts(recentIssue);
   }
 
+  const decision = healDecision({ recentIssue, attempts });
+  say(`[schedule-liveness] ${decision.why}`);
+
+  if (decision.act === 'escalate') {
+    // Stop cycling. Say it once, loudly, where a human will see it, and mark
+    // the issue so the next run does not re-escalate into a comment storm.
+    const labelled = (recentIssue.labels || []).some(
+      (l) => (typeof l === 'string' ? l : l.name) === 'cron-wedge-persistent'
+    );
+    say(
+      `::error title=CRON WEDGE BEYOND THE CYCLE FIX::${attempts} disable/enable cycles have not restored ` +
+        `scheduled ticks (#${recentIssue.number}). Scheduled work is NOT running.`
+    );
+    if (!labelled) {
+      await api(`/labels`, 'POST', { name: 'cron-wedge-persistent', color: '5319E7' }).catch(() => {});
+      await api(`/issues/${recentIssue.number}/labels`, 'POST', { labels: ['cron-wedge-persistent'] }).catch(() => {});
+      await api(`/issues/${recentIssue.number}/comments`, 'POST', {
+        body: [
+          `**${attempts} cycle attempts have not restored scheduled ticks. This needs a human.**`,
+          '',
+          `Still overdue right now: ${late.length} workflow(s), worst \`${late[0].file}\` at ${late[0].ageMin} min against a ${late[0].budget} min budget.`,
+          '',
+          'The disable/enable remedy fixed the 2026-09-01 wedge and does not fix this one, so',
+          'stop expecting it to. What to check, in order:',
+          '',
+          '1. https://www.githubstatus.com - Actions degradation is the cheapest explanation.',
+          '2. Repository -> Settings -> Actions: is Actions restricted, or is the repo out of',
+          '   included minutes? A billing stop silences schedules while `push` events keep working,',
+          '   which is exactly the shape seen here.',
+          '3. Actions -> each workflow page -> is there a "This scheduled workflow was disabled',
+          '   because of repository inactivity" banner?',
+          '',
+          'What is NOT affected, so nobody panics: `push` and `pull_request` triggers still fire,',
+          'so a merge still publishes and CI still gates. What IS lost is every safety net that',
+          'is scheduled - `build-for-world-hub`\'s */30 retry and this watchdog\'s hourly sweep',
+          'among them - so a publish that fails will not be retried automatically until this is fixed.',
+        ].join('\n'),
+      }).catch(() => {});
+    }
+    return;
+  }
+
+  /**
+   * SCOPE. The old heal cycled only the workflows it had measured as late.
+   * This wedge is repo-level - on 2026-09-02 twelve workflows were dead at
+   * once and a four-workflow cycle did nothing - and the remedy that worked by
+   * hand on 2026-09-01 was applied to every scheduled workflow. So cycle them
+   * all. A workflow that is deliberately disabled is still left alone.
+   */
+  const all = scheduledWorkflows();
   const cycled = [];
-  for (const w of late) {
+  for (const w of all) {
     const wfRes = await api(`/actions/workflows/${encodeURIComponent(w.file)}`);
     if (!wfRes.ok) continue;
     const wf = await wfRes.json();
@@ -201,30 +286,80 @@ async function selfHeal(late) {
     }
   }
 
-  await api(`/labels`, 'POST', { name: 'cron-wedge', color: 'B60205' }).catch(() => {});
-  const bodyLines = [
+  /**
+   * A cycle that cycled NOTHING is not a heal, and must not leave a cooldown
+   * marker behind - that would buy six hours of silence for work that never
+   * happened. The old code filed the issue unconditionally.
+   */
+  if (cycled.length === 0) {
+    say('[schedule-liveness] cycled nothing (API refused every workflow) - not filing a cooldown marker.');
+    say('::warning title=CRON WEDGE NOT HEALED::the heal could not cycle a single workflow; check the token\'s actions:write scope.');
+    return;
+  }
+
+  const evidence = [
     `${late.length} scheduled workflows were simultaneously overdue by more than`,
     `${TOLERANCE}x their own interval - the repo-level schedule-registration wedge`,
     `(first seen 2026-09-01 after workflow-file churn; GitHub itself was healthy).`,
     '',
-    `Auto-remediated by disabling and re-enabling ${cycled.length} workflow(s) to force`,
-    'GitHub to re-register their crons:',
+    `Cycled ${cycled.length} scheduled workflow(s) to force GitHub to re-register their crons:`,
     '',
     ...cycled.map((f) => `- \`${f}\``),
-    '',
-    'The next scheduled ticks prove whether it worked - check',
-    `\`gh run list --repo ${REPO} --event schedule --limit 5\` after the next boundary.`,
-    'If schedules are still silent past another full cycle, the wedge is beyond the',
-    'cycle fix: check githubstatus, then Actions -> the workflow pages by hand.',
-    'This issue is the cooldown marker; a new heal will not run within',
-    `${REHEAL_COOLDOWN_H}h of it. Close it once ticks are confirmed flowing.`,
   ];
+
+  if (decision.act === 'retry') {
+    // Same episode: append to the existing issue so the attempt count is
+    // countable next run, rather than filing a second issue nobody links up.
+    await api(`/issues/${recentIssue.number}/comments`, 'POST', {
+      body: [
+        `${ATTEMPT_MARKER} **Heal attempt ${decision.attempt} of ${MAX_HEAL_ATTEMPTS}.**`,
+        '',
+        `The previous attempt did not restore ticks: schedules are still overdue, worst \`${late[0].file}\` at ${late[0].ageMin} min against a ${late[0].budget} min budget.`,
+        '',
+        ...evidence,
+        '',
+        `If ticks are still silent on the next run, attempt ${decision.attempt + 1} follows; after ${MAX_HEAL_ATTEMPTS} this stops cycling and asks for a human.`,
+      ].join('\n'),
+    }).catch(() => {});
+    say(`[schedule-liveness] retry ${decision.attempt}/${MAX_HEAL_ATTEMPTS}: cycled ${cycled.length}, recorded on #${recentIssue.number}.`);
+    return;
+  }
+
+  await api(`/labels`, 'POST', { name: 'cron-wedge', color: 'B60205' }).catch(() => {});
   await api(`/issues`, 'POST', {
     title: WEDGE_ISSUE_TITLE,
     labels: ['cron-wedge'],
-    body: bodyLines.join('\n'),
+    body: [
+      `${ATTEMPT_MARKER} **Heal attempt 1 of ${MAX_HEAL_ATTEMPTS}.**`,
+      '',
+      ...evidence,
+      '',
+      'The next scheduled ticks prove whether it worked - check',
+      `\`gh run list --repo ${REPO} --event schedule --limit 5\` after the next boundary.`,
+      '',
+      'This issue is the running record for this wedge. If ticks are still silent when this',
+      `check next runs, it retries and comments here; after ${MAX_HEAL_ATTEMPTS} attempts it stops`,
+      'cycling and asks for a human rather than pretending the remedy is working.',
+      '',
+      'Close it once ticks are confirmed flowing.',
+    ].join('\n'),
   }).catch(() => {});
   say(`[schedule-liveness] wedge heal complete: cycled ${cycled.length}, issue filed.`);
+}
+
+/**
+ * How many heal attempts this wedge has already had. The body is attempt 1 and
+ * each retry adds a marked comment, so the marker is counted in both.
+ */
+async function countAttempts(issue) {
+  let n = String(issue.body || '').includes(ATTEMPT_MARKER) ? 1 : 0;
+  const res = await api(`/issues/${issue.number}/comments?per_page=100`);
+  if (res.ok) {
+    const comments = await res.json();
+    n += comments.filter((c) => String(c.body || '').includes(ATTEMPT_MARKER)).length;
+  }
+  // An issue filed before the marker existed still counts as one attempt.
+  return Math.max(n, 1);
 }
 
 /* Guarded so the arithmetic above can be imported and tested. A module that

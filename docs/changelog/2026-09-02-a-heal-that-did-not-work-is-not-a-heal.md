@@ -1,0 +1,91 @@
+# A Heal That Did Not Work Is Not A Heal
+
+2026-09-02. The self-healer for the schedule-registration wedge cycled four
+workflow registrations at 14:56, the cycle did not work, and the healer then
+went quiet for six hours by design. The estate ran five and a half hours
+without a single scheduled tick.
+
+## What was lost while it slept
+
+Every scheduled safety net, measured at 16:29 UTC:
+
+| Workflow                  | Expected every | Last scheduled tick |
+| ------------------------- | -------------- | ------------------- |
+| `build-for-world-hub.yml` | 30 min         | 323 min ago         |
+| `agent-autopilot.yml`     | 10 min         | 350 min ago         |
+| `publish-watchdog.yml`    | 60 min         | 312 min ago         |
+| `estate-integrity.yml`    | -              | 462 min ago         |
+
+Twelve workflows in total. `build-for-world-hub`'s every-30-minute tick is the
+retry that exists precisely so a publish which failed is not left sitting, and
+it was dead for the entire window in which two commits sat merged and
+unpublished behind a red test. `push` and `pull_request` triggers kept working
+throughout, which is why this was survivable and also why it was quiet.
+
+## The bug
+
+`selfHeal` refused to run again within `REHEAL_COOLDOWN_H` (6) hours, using the
+audit issue as its memory:
+
+    const recent = issues.find((i) => Date.now() - Date.parse(i.created_at) < COOLDOWN);
+    if (recent) { say('inside the cooldown, not cycling again'); return; }
+
+The cooldown's shape is right. Cycling registrations every few minutes would be
+flapping, and the guard was added for that reason. The QUESTION it asks is
+wrong: it keys on a heal having **run**, not on a heal having **worked**.
+
+`selfHeal` is only ever reached when schedules are still overdue. So "we healed
+recently" and "schedules are still dead" are true at the same moment only when
+the heal failed. That is an argument for trying again, not for going silent.
+The healer had put itself to sleep until 20:56 with twelve workflows down.
+
+Two smaller faults in the same function:
+
+- The cooldown marker issue was filed **unconditionally**, even when
+  `cycled.length === 0`. A cycle that cycled nothing is not a heal, and it
+  bought six hours of silence for work that never happened.
+- It cycled only the workflows it had measured as late. The wedge is
+  repo-level: four were cycled at 14:56 while twelve were dead. The remedy that
+  worked by hand on 2026-09-01 was applied to every scheduled workflow.
+
+## The fix
+
+`healDecision` is a pure exported function, so the decision can be tested
+without a live wedge:
+
+| State                                         | Decision                        |
+| --------------------------------------------- | ------------------------------- |
+| No prior wedge issue                          | `heal`, attempt 1               |
+| Prior issue past the cooldown                 | `heal`, attempt 1 (new episode) |
+| Inside cooldown, still overdue, attempts left | `retry`, attempt n+1            |
+| Inside cooldown, attempts spent               | `escalate`, stop cycling        |
+
+Retries record themselves as marked comments on the SAME issue, so the count
+survives between runs and the issue reads as one episode rather than a pile of
+duplicates. After `MAX_HEAL_ATTEMPTS` (3) the healer stops cycling and says so
+as a `::error`, with the three things a human should actually check: GitHub
+status, whether Actions is restricted or out of included minutes (a billing
+stop silences schedules while `push` keeps working, which is this exact
+shape), and the per-workflow inactivity banner. A fourth identical attempt is
+not persistence, it is noise.
+
+Scope widened to every active scheduled workflow. A workflow that is
+deliberately disabled is still left alone, and enable is still never left
+undone.
+
+## Verified
+
+- `tests/schedule-liveness.test.ts`: 22 of 22 passing, up from 12.
+- Replayed today's real state (issue #2638 at 14:56, one attempt, checked at
+  16:30): the old code returns `skip`; the new code returns
+  `retry`, attempt 2.
+- Three mutations, each restored afterwards, each red: restoring the early
+  return inside the cooldown, filing the marker when nothing was cycled, and
+  narrowing the cycle scope back to only the late workflows.
+
+## Done by hand at 16:32, separately from this change
+
+All 15 active scheduled workflows were disabled and re-enabled to force
+re-registration, and all 15 confirmed `active` afterwards. The estate should
+not wait for code review to get its crons back. That is remediation of the
+live incident; this change is so the next one does not need a person.

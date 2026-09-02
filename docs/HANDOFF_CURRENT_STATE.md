@@ -1,4 +1,274 @@
-# Military-Grade Continuation Handoff - Chip Integrity, 2026-09-02
+# HANDOFF — CURRENT STATE (Club Arena / smarter.poker)
+
+> **§0 VERIFICATION ADDENDUM — 2026-09-02, second (continuation) agent.**
+> Everything below §0 was written by the _first_ agent of 2026-09-02. It is preserved
+> verbatim because most of it is accurate and hard-won. **§0 is authoritative where it
+> conflicts**, because §0 is the part that was re-verified against git, the GitHub API
+> and the production database rather than against memory. Three of the first agent's
+> closing claims were wrong; they are corrected here. Read §0 first, then the rest.
+
+---
+
+## §0.1 What I verified (evidence, not memory)
+
+| Claim under test                          | Verdict       | Evidence                                                                                                                             |
+| ----------------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Work committed at `ee03f9414`, tree clean | **CONFIRMED** | `/private/tmp/ca-drift`, HEAD `ee03f94149ca672df49a53aeb4a70465a6d4df8e`, `git status --porcelain` = 0 lines                         |
+| Work pushed to origin                     | **CONFIRMED** | `git rev-list --left-right --count @{u}...HEAD` = `0 0` vs `origin/fix/a-correction-is-not-a-mint`                                   |
+| Handoff + pointer exist                   | **CONFIRMED** | `docs/HANDOFF_CURRENT_STATE.md` 1,330 lines (not 1,269); `HANDOFF-POINTER.md` 17 lines                                               |
+| Spin double-credit revert is live         | **CONFIRMED** | `pg_proc.prosrc` for `fn_spin_book_entry`: `club_treasury` **absent**, `rake_records` still written                                  |
+| Double-credit has stopped                 | **CONFIRMED** | `rake: prize_liability -> club_treasury` last row `2026-09-02 14:52:30Z`; zero rows in the ~50 min after the `20260902150500` revert |
+| PR #2526 state                            | **CORRECTED** | Was `open`, **non-draft**, 0 check runs. Now **draft** (see §0.3)                                                                    |
+| "Fourteen incidents remain"               | **WRONG**     | `financial_alerts`: **845 unresolved, 403 critical, 429 raised in the last 24h**                                                     |
+| "Supply drift is persistent same-sign"    | **WRONG**     | 3 of the last 14 hourly intervals are **negative** (`-459.32`, `-713.81`, `-188.60`). It is net-positive but it flips sign           |
+| D2 root cause                             | **ADVANCED**  | Root cause identified — see §0.4                                                                                                     |
+
+**Repo identity (confirmed):** remote is `git@github.com:Smarter-Poker/Smarter-Poker-Club-Arena.git`.
+Not `club-arena`. API calls against `/repos/Smarter-Poker/club-arena` return null for every
+field and look like an auth failure. They are not — the repo name is simply wrong. This cost
+time; do not repeat it.
+
+**Where the work actually lives:** `/private/tmp/ca-drift` — a worktree in `/tmp`, which the
+first agent correctly disclosed as a deviation from AGENT-PLAYBOOK (`.agent-trees/`).
+`scripts/prune-stale-worktrees.sh` removes clean, pushed, 72h-idle worktrees. **Nothing is at
+risk** — the branch is pushed, so pruning loses nothing. Do not "rescue" it into a new worktree.
+
+---
+
+## §0.2 The main clone is NOT where you think
+
+`~/Documents/club-arena` is a **bare** repo. `git status` there fails with
+`fatal: this operation must be run in a work tree`. There are ~20+ registered worktrees.
+The one carrying this session's work is `/private/tmp/ca-drift`.
+
+`~/Documents/club-arena/docs/HANDOFF_CURRENT_STATE.md` (40,881 bytes, Sep 1 20:27) is a
+**stale copy from a previous day**. Do not read it as current. The live one is the 132,744-byte
+file in `/private/tmp/ca-drift`.
+
+---
+
+## §0.3 Action taken this session: PR #2526 converted to draft
+
+**Why.** PR #2526 ("The Mint — the only place chips and diamonds are created") was `open`,
+**non-draft**. `agent-autopilot.yml` runs every 10 minutes and enables squash auto-merge on
+open non-draft PRs. The house rule is that nothing money-shaped merges without Dan. The only
+reason it had not merged already is that it had **zero check runs** — the instant CI ran green,
+Autopilot would have merged a money PR unattended.
+
+**What I did.** `convertPullRequestToDraft` via GraphQL, plus an explanatory comment
+([#issuecomment-5512279613](https://github.com/Smarter-Poker/Smarter-Poker-Club-Arena/pull/2526#issuecomment-5512279613)).
+Confirmed: `isDraft: true`.
+
+**What I did not do.** I did not merge, close, rebase, force-push or alter one line of the branch.
+
+**Risk this does not create.** Every migration in the PR is **already applied to production**.
+The PR is a mirror of live state, not a pending behaviour change. Drafting it delays the _repo
+record_, not the _fix_. The fix is live and holding.
+
+**To release it:** Dan marks it ready for review. Autopilot takes it from there.
+
+---
+
+## §0.4 D2 (supply drift) — ROOT CAUSE FOUND. This is the most important section.
+
+The first agent left D2 as "supply inflating ~724/hr, `d_union` is a metronome, that's the
+thread." The thread was the right one. Here is where it leads.
+
+### The measured facts
+
+`ca_supply_snapshots` counts **ten** balance buckets: `member_wallets, member_promo, felt,
+treasuries, chip_pools, club_wallets, union_wallets, agent_wallets, bbj_pools, spin_pools`
+(+ `tournament_liability`, `leaderboard_liability`, `cert_wallets`).
+
+**`prize_liability` and `settlement_suspense` are NOT among them.** They are uncounted.
+
+Net chip flow **across that counted/uncounted boundary**, per hour, last 9h:
+
+```
+15:00  +1415.74     11:00  +2203.36
+14:00  +1433.42     10:00  +2864.06
+13:00  +2621.82     09:00  +1520.36
+12:00  +1506.56     08:00  +2580.34
+                    07:00  +1857.72
+```
+
+Mean **≈ +1,865/hr, positive in every single interval.** Compare `unexplained` in
+`ca_supply_snapshots`: mean ≈ **+794/hr**. Same sign, same order of magnitude. The drift is
+**chips crossing into counted buckets from uncounted virtual counterparties.**
+
+### Decomposed (8h window), net into counted supply
+
+| Virtual counterparty  | Category     |  Rows | Net into counted |      Per hour |
+| --------------------- | ------------ | ----: | ---------------: | ------------: |
+| `prize_liability`     | `spin_entry` | 1,434 |   **+79,465.92** |     +9,933.24 |
+| `prize_liability`     | `rake`       | 4,510 |   **+17,675.46** | **+2,209.43** |
+| `settlement_suspense` | `adjustment` |   352 |             0.00 |          0.00 |
+| `prize_liability`     | `overlay`    |     1 |          −100.00 |        −12.50 |
+| `settlement_suspense` | `spin_prize` | 1,435 |   **−80,581.00** |    −10,072.63 |
+
+The spin cycle (`spin_entry` in, `spin_prize` out) roughly nets out: **−139/hr**.
+The residual, and the leak, is **`rake: prize_liability → {union_wallet, club_treasury}` at
++2,209/hr with no counted-side debit.**
+
+### The smoking gun
+
+All-time state of `prize_liability` (first row `2026-08-31 18:59:05Z`):
+
+```
+credited_in       221,206.30
+debited_out       425,295.35
+implied_balance  -204,089.05
+```
+
+**It has paid out 204,089 chips more than it has ever received.** Over ~45 hours that is
+≈ **−4,535/hr** of net creation out of a pool nobody funded.
+
+Flows touching it in the last 24h:
+
+```
+prize_liability -> spin_reserve    spin_entry   3,220 rows   186,228.24
+spin_reserve    -> prize_liability spin_prize     429 rows    28,016.00
+prize_liability -> union_wallet    rake         6,647 rows    26,024.83
+union_bank      -> prize_liability overlay         62 rows    17,146.20
+prize_liability -> player_wallet   overlay        173 rows    14,596.70
+prize_liability -> club_treasury   rake         1,794 rows     8,538.72
+player_wallet   -> prize_liability spin_entry      28 rows       547.00
+club_treasury   -> prize_liability overlay          2 rows       200.00
+```
+
+**Read the two `spin_entry` lines together.** Spin entries are funded _from_ `prize_liability`
+**3,220 times (186,228.24 chips)** and _from a player's wallet_ **28 times (547.00 chips)**.
+A spin entry fee should debit the entrant. Overwhelmingly, it debits a fictitious pool instead.
+That is chips entering the counted economy with no counted-side debit — the definition of a mint.
+
+Note also that `spin_prize` routes inconsistently: to `settlement_suspense` in the 6h window,
+to `prize_liability` in the 24h window. The same event settles into two different pools.
+
+### What this corrects
+
+- The first agent blamed `prize_liability → union_wallet` **only**. It is
+  `→ union_wallet` **and** `→ club_treasury`, and the far larger term is the `spin_entry`
+  funding asymmetry, not the rake leg.
+- `d_union`'s metronomic **+1,750/hr** is _not itself_ the leak. `d_treasury` is simultaneously
+  **−1,000 to −3,000/hr**. Most of `d_union` is a transfer that nets out. The residual is the leak.
+- `mint`/`burn` read `0.00` every interval, which is exactly why this was invisible: nothing
+  routes through the sanctioned mint, so the mint counter never moves.
+
+### What I did NOT do, deliberately
+
+I did **not** write a fix. Per CLAUDE.md §11.5 every query above is **read-only** — no
+transaction, no probe, no chips moved. The fix is money-shaped, it changes who funds a spin
+entry, and it needs Dan. See §0.6 D-1.
+
+---
+
+## §0.5 Board state, measured (supersedes "fourteen remain")
+
+`financial_alerts WHERE resolved = false`: **845 total, 403 critical, 429 raised in the last 24h.**
+
+Top unresolved sources:
+
+```
+116  warning   fn_tournament_money_conservation          newest 15:12Z
+112  warning   FeeReconciler.bbj_unlinkable              newest 14:13Z
+ 65  critical  fn_payout_guarantee_check                 newest 05:13Z
+ 60  critical  drift_incident:ledger_reconcile_log:player_wallet
+ 60  critical  drift_incident:ledger_reconcile_log:seat_stack
+ 41  critical  fn_tournament_payout_reconcile            newest 05:26Z
+ 33  critical  drift_incident:financial_alerts:fn_payout_guarantee
+ 22  critical  FeeReconciler.prize_disbursement          newest 15:14Z
+ 19  warning   drift_incident:fn_ca_supply_snapshot      newest 15:05Z
+ 18  critical  drift_incident:fn_ca_supply_snapshot      newest 13:05Z
+```
+
+**Do not read "845" as 845 distinct defects.** `drift_incident:*` rows are meta-alerts raised
+_about_ other alerts, so there is heavy double-counting, and many are repeat firings of one
+underlying cause. The honest statement is: **the board was never down to 14, and the count is
+growing (429 of 845 are from the last 24h).** Triaging duplicates is unstarted work.
+
+---
+
+## §0.6 Decisions that still require Dan — nothing here is an agent's to make
+
+**D-1 (NEW, and now the largest). Spin entries are funded from `prize_liability`, not from the
+entrant.** `prize_liability` is 204,089 chips overdrawn and falling ~4,535/hr. Options:
+(a) change `fn_spin_book_entry` to debit the entrant's wallet — correct, but changes player-facing
+behaviour and must be probed in a rolled-back transaction first;
+(b) fund `prize_liability` from a real pool so the liability is backed;
+(c) add `prize_liability`/`settlement_suspense` to the counted buckets — makes the _metric_
+honest but moves no money and fixes nothing real.
+**My recommendation: (a), after a rolled-back probe.** But this is Dan's call — it changes who pays
+for a spin.
+
+**D-2 (carried, B1). The 8,522.88 over-credit.** Midway Union's treasury holds 320.82 against an
+8,522.64 over-credit; the chips already flowed onward, so a straight reversal drives it negative.
+First agent's recommendation — documented rebaseline as a _compensating entry_, not a raw
+`UPDATE` — still stands and I agree with it. **Unchanged, still needs Dan.**
+
+**D-3 (carried, B5). Correction mechanism conflict.** Guarantee payments and champion payouts were
+made by direct insert and a bespoke function rather than `fn_ca_post_correction`, against a
+standing "corrections only as linked compensating entries" rule. Dan directed the payments, so
+intent is covered; the _mechanism_ is not. Accept as-is, or re-express? **Needs Dan.**
+
+**D-4 (RESOLVED THIS SESSION). PR #2526 auto-merge exposure.** Closed by drafting the PR (§0.3).
+No longer urgent. Dan releases it when ready.
+
+---
+
+## §0.7 Exact first actions for the next agent
+
+1. `cd /private/tmp/ca-drift` — this is the worktree, branch `fix/a-correction-is-not-a-mint`,
+   HEAD `ee03f9414`, clean and pushed. **Do not create a new worktree; do not rebase `main`.**
+2. Export node: `export PATH="$HOME/.nvm/versions/node/$(ls ~/.nvm/versions/node | tail -1)/bin:$PATH"`.
+3. Read this §0, then `AGENT-PLAYBOOK.md`, then `CLAUDE.md` §10.5 (horses), §11.5 (never spend
+   real chips), §12 (never rebase main).
+4. **Do not mark PR #2526 ready for review.** Only Dan does that.
+5. Confirm the revert still holds before anything else:
+   ```sql
+   SELECT max(created_at) FROM chip_ledger
+   WHERE from_type='prize_liability' AND to_type='club_treasury' AND category='rake';
+   ```
+   If that timestamp is **after `2026-09-02 15:05Z`**, the revert has regressed — stop and
+   investigate before any other work.
+6. Resume at **D-1** (§0.4). It is the largest open money-integrity item on the platform, the
+   root cause is established, and the remaining work is a rolled-back probe plus Dan's ruling
+   on who funds a spin entry.
+7. Token for the GitHub API is `GITHUB_TOKEN` in `~/Documents/club-arena/.env`. `gh` is **not**
+   installed; use `curl`. The repo is `Smarter-Poker/Smarter-Poker-Club-Arena`.
+
+---
+
+## §0.8 What "done" means for D-1
+
+- A rolled-back probe demonstrating the corrected funding path, with the error/branch behaviour
+  captured via `GET STACKED DIAGNOSTICS`; **no committed side effects**.
+- Dan's explicit ruling on option (a)/(b)/(c).
+- Migration written from `supabase/migrations/.template.sql` with assertions, applied via
+  `apply_migration`, mirrored to the branch, declared in `scripts/ci/schema-manifest.d/`
+  (**never** hand-edit the two root manifest JSONs — they are the top merge-conflict source).
+- Horses treated identically throughout — no `is_horse` branch (CLAUDE.md §10.5).
+- Verified after: `prize_liability` implied balance stops falling, and boundary net flow
+  trends to ~0.
+
+---
+
+## §0.9 Honest limits of this addendum
+
+- **CI on `ee03f9414` was never green — it never ran.** Zero check runs. I did not trigger it.
+  Whether the branch passes is **UNKNOWN**.
+- I ran **no** tests, no build, no typecheck. Every claim above is from git, the GitHub API, or
+  read-only SQL.
+- The 845/403 alert counts are raw row counts with known double-counting; I did not de-duplicate.
+- `-204,089.05` is an **implied** balance computed from `chip_ledger` flows. I did not locate a
+  stored balance row for `prize_liability` to reconcile against. **Next agent should confirm
+  whether one exists.**
+- I did not verify the first agent's §1–§25 claims about the guarantee back-pay, the diamond
+  audit trail, or the 12,893.70 paid to players. Those remain **UNVERIFIED** by me.
+- Another agent is active in this database (migrations `20260902170000` … `20260903001500`:
+  game management, table scheduling, auth, alarms). Those are **outside** the ledger area, so
+  conflict risk is lower than the first agent feared — but coordinate before touching manifests.
+
+---
 
 Written: 2026-09-02 ~15:15 UTC. Author: Cowork agent session (Claude).
 Worktree: `/tmp/ca-drift`, branch `fix/a-correction-is-not-a-mint`, PR #2526.

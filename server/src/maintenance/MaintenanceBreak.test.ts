@@ -668,6 +668,41 @@ describe('the schedule', () => {
  * So these run against the REAL engine. A stub cannot catch a stub's
  * optimism.
  */
+describe('the dealing loop parks for the break, not only the wait loop', () => {
+  /**
+   * PHASE 2 (2026-09-02). #2537 gave the break its own authority
+   * (maintenancePaused) so hand-for-hand could not lift it, and wired the new
+   * flag into the start-up wait loop and (via #2695) into isPausedByDesign().
+   * It did NOT wire it into the two park gates in the DEALING loop, which
+   * still read handForHandPaused alone - so a table that was dealing never
+   * parked, only quiet tables did. Measured 21:53-21:57 on the build carrying
+   * #2695: 722 / 738 / 663 / 423 hands a minute through the last-hand call,
+   * against 161 / 5 / 0 on the last build that parked via hand-for-hand.
+   *
+   * Source-level, like the other pause laws: every park gate in the dealing
+   * loop must consult maintenancePaused.
+   */
+  it('every awaitPauseGate call in the dealing loop is guarded by maintenancePaused', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const { dirname, join } = await import('node:path');
+    const here = dirname(fileURLToPath(import.meta.url));
+    const src = readFileSync(join(here, '../engine/ServerTableEngineDealing.ts'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    const sites = [...src.matchAll(/await this\.awaitPauseGate\(\)/g)];
+    expect(sites.length, 'the dealing loop has two park gates').toBeGreaterThanOrEqual(2);
+    for (const m of sites) {
+      const guard = src.slice(Math.max(0, m.index! - 220), m.index!);
+      expect(
+        guard,
+        'a park gate that ignores maintenancePaused deals through the break: ' +
+          guard.trim().slice(-120)
+      ).toMatch(/maintenancePaused/);
+    }
+  });
+});
+
 describe('the real engine treats a maintenance pause as paused', () => {
   const TBL = 'aaaaaaaa-1111-2222-3333-444444444444';
 

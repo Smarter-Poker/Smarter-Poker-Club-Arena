@@ -164,7 +164,18 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // park the table before it dealt, the sync would see everyone parked
         // and resume again, and the bubble would never burst. See the field's
         // comment on ServerTableEngineBase.
-        if (this.handForHandPaused && this.holdBeforeNextHand) {
+        // PHASE 2 (2026-09-02): THE BREAK IS ITS OWN AUTHORITY HERE TOO.
+        // #2537 split the break out of hand-for-hand: pauseForMaintenance sets
+        // maintenancePaused + holdBeforeNextHand and deliberately NOT
+        // handForHandPaused. It wired the new flag into the start-up wait loop
+        // and into isPausedByDesign() (#2695), and into neither of the two
+        // gates in THIS loop - so a table that was dealing never parked, and
+        // only quiet tables did. Measured 21:53-21:57 on 34c6194b (which has
+        // #2695): 722 / 738 / 663 / 423 hands a minute straight through the
+        // last-hand call, against 161 / 5 / 0 on the last build that parked
+        // via hand-for-hand. Same shape as the start-up loop gate on the base
+        // class, on purpose.
+        if (this.maintenancePaused || (this.handForHandPaused && this.holdBeforeNextHand)) {
           this.setLoopPhase('parked_for_pause');
           await this.awaitPauseGate();
           if (!this.running) break;
@@ -722,7 +733,7 @@ export abstract class ServerTableEngineDealing extends ServerTableEngineRunout {
         // is what makes areAllTablesParked() go true promptly, which is what
         // starts the five minutes. Same gate as the top of the loop — see
         // awaitPauseGate on the base class.
-        if (this.handForHandPaused && this.running) {
+        if ((this.handForHandPaused || this.maintenancePaused) && this.running) {
           this.setLoopPhase('parked_for_pause');
           await this.awaitPauseGate();
         }

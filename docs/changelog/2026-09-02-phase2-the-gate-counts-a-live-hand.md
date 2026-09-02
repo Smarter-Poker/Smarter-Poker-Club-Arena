@@ -51,3 +51,23 @@ before.
 The next break on this build: `engine_maintenance_break_log.ready_for_restart_at`
 non-null, the deploy takes the CLEAN cutover path (not the straggler
 escalation), and the scorecard shows unparked_at_countdown near zero.
+
+## Addendum, 21:55 UTC: the dealing loop never parked either
+
+The first break on the build carrying #2695 (34c6194b) dealt **3,110 hands**
+inside the freeze - 663 / 657 / 626 / 607 / 557 a minute, against 161 / 5 / 0
+on the last build that parked (93d167b5, via hand-for-hand). #2695 was
+necessary and not sufficient, exactly as the handoff feared.
+
+#2537 gave the break its own authority (`maintenancePaused`) and wired it into
+the start-up wait loop; #2695 wired it into `isPausedByDesign()`. Neither
+touched the two park gates in the DEALING loop
+(`ServerTableEngineDealing.ts`), which still read `handForHandPaused` alone -
+a flag `pauseForMaintenance` deliberately never sets. So a table that was
+dealing at :53 finished its hand and dealt the next one, and the next. Only
+quiet tables parked.
+
+Both gates now consult `maintenancePaused`, the same shape as the start-up
+loop gate. Pinned by a source law in `MaintenanceBreak.test.ts` (every
+`awaitPauseGate` in the dealing loop must be guarded by `maintenancePaused`):
+fails on origin/main, passes here. Server suite 3,657 / 3,657.

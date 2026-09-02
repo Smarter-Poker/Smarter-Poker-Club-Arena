@@ -233,7 +233,16 @@ describe('the draw sets the prize and the payout shape - never the stack', () =>
   it('start updates the IN-MEMORY structure too, not just the row', () => {
     // The level timer and table creation read the in-memory object; a
     // DB-only write would leave this start running placeholder blinds.
-    expect(engine).toMatch(/tournament\.blind_structure\s*=\s*spinBlinds/);
+    //
+    // 2026-09-02: the direct `tournament.blind_structure = spinBlinds` assignment
+    // was refactored into `applySpinDrawPatch(spinRowPatch, tournament, cache)`,
+    // which generically copies EVERY key of spinRowPatch (including blind_structure)
+    // onto both in-memory targets. `blind_structure: spinBlinds` is still in the
+    // patch object (pinned by the test above), and SpinDrawIntegrity.guard.test.ts
+    // pins that applySpinDrawPatch copies every key. Together they are the same
+    // guarantee — this test now verifies the new wiring pattern.
+    expect(engine).toMatch(/applySpinDrawPatch\s*\(/);
+    expect(engine).toMatch(/applySpinDrawPatch\([^)]*spinRowPatch/);
   });
 
   it('creation writes an honest placeholder, not a fake tier', () => {

@@ -631,8 +631,11 @@ export interface HorseGameStateV2 extends HorseGameState {
     /** V23 BLIND CLOCK: next level's bb over the current bb (1 = flat). */
     nextBlindMult?: number;
   };
-  /** V12: table format. Spins are winner-take-all chip-EV (no ICM), HU SNGs
-   *  play heads-up ranges, MTTs get the full survival model. */
+  /** V12: table format. HU SNGs play heads-up ranges, MTTs get the full
+   *  survival model, and a Spin is decided by `spotsPaid` rather than by the
+   *  word "spin": MOST spins are winner-take-all chip-EV (no ICM), but 10x
+   *  and above pay 80/20 or 80/12/8 and therefore have a real ladder. See
+   *  icmRisk. */
   format?: 'cash' | 'mtt' | 'spin' | 'hu_sng';
   /** V11 (Dan 2026-08-22): EXPLICIT game mode from the table engine
    *  (tournament_id / game_type). Cash and tournaments are different games;
@@ -716,7 +719,16 @@ function icmRisk(
   // icmRisk v2 (V12, 2026-08-22): real bubble model from TournamentBrainContext.
   const explicit = gs.tournament;
   if (!isTournamentMode(gs)) return 0;
-  // Spins are winner-take-all — pure chip EV, zero survival premium.
+  // A SPIN IS NOT AUTOMATICALLY WINNER-TAKE-ALL (corrected 2026-08-31). The
+  // ladder pays one place below 10x, but 10x pays 80/20 and 25x/50x/100x pay
+  // 80/12/8 (SPIN_TIERS) — about 1.1% of games by frequency, and the biggest
+  // prizes on the platform. This branch has always tested `spotsPaid <= 1`
+  // rather than the format, so the CODE was right; only the comment claimed
+  // otherwise, and every comment that repeated the claim is corrected in the
+  // same commit. `spotsPaid` comes from TournamentBrainContext, which resolves
+  // the structure from the drawn tier — so a multi-place spin correctly falls
+  // through to the ICM model below and gets a genuine survival premium.
+  // Pure chip EV, zero survival premium, WHEN ONE PLACE IS PAID:
   // V22 telemetry honesty (2026-08-27): this CORRECT no-ICM answer used to
   // leave lastIcmPath on whatever the previous call set, so 7,000 spins a day
   // were counted as "legacy" fallbacks in the proof-of-receipt numbers. Same
@@ -977,8 +989,11 @@ export interface HorseDecideOpts {
   /** disable the V23 variant polish: short-deck draw/thin-value recalibration
    *  and plo8 low-only draw discipline (default: enabled) */
   v23Variants?: boolean;
-  /** disable the V23 spin overlay: winner-take-all hypers reward aggression —
-   *  bluff volume up, value thresholds down a notch (default: enabled) */
+  /** disable the V23 spin overlay: 3-max hypers reward aggression — bluff
+   *  volume up, value thresholds down a notch (default: enabled). The overlay
+   *  is about the STRUCTURE (three-handed, shallow, 3-minute levels), not the
+   *  payout shape: it stays on at 10x+, where the ladder's survival premium
+   *  arrives separately through icmRisk and already damps bluffScale. */
   v23Spin?: boolean;
   /** disable the V24 bounty layer (Dan 2026-08-28): PKO and mystery-bounty
    *  awareness preflop — pots against a covered raiser are worth more than
@@ -1632,8 +1647,10 @@ export class HorseLogic {
           ? (gs.tournament?.nextBlindInMin ?? undefined)
           : undefined,
       nextBlindMult: (opts.v23Endgame ?? true) !== false ? gs.tournament?.nextBlindMult : undefined,
-      // V12: table format — spins widen (winner-take-all chip EV), HU SNGs
-      // ride the heads-up ranges.
+      // V12: table format — spins widen (3-max, shallow, high blind
+      // pressure), HU SNGs ride the heads-up ranges. Not "winner-take-all
+      // chip EV": at 10x and above a spin pays two or three places, and that
+      // ladder is priced by icmRisk rather than here.
       // V13: `format` is a V12 field and now answers to the v12 flag.
       format:
         opts.v12 !== false ? (gs.format ?? (isTournamentMode(gs) ? 'mtt' : 'cash')) : undefined,
@@ -2436,10 +2453,19 @@ export class HorseLogic {
         /* reads are best-effort */
       }
     }
-    // ═══ V23 SPIN OVERLAY (2026-08-28) ═══ winner-take-all hypers pay
-    // aggression: every chip won is worth every chip lost, stacks are
-    // shallow, and blinds eat the passive. League cannot deal spins, so the
-    // sizes here are small and the flag exists for ablation.
+    // ═══ V23 SPIN OVERLAY (2026-08-28) ═══ 3-max hypers pay aggression:
+    // stacks are shallow, levels are three minutes, and blinds eat the
+    // passive. League cannot deal spins, so the sizes here are small and the
+    // flag exists for ablation.
+    //
+    // CORRECTED 2026-08-31: this used to open "winner-take-all hypers pay
+    // aggression: every chip won is worth every chip lost". That premise is
+    // false above 10x, where the tier pays 80/20 or 80/12/8. The overlay is
+    // kept ON for every spin anyway, and deliberately: what it prices is the
+    // STRUCTURE, which is identical at every tier. The ladder is priced in
+    // one place only — icmRisk — and it already reaches this line, because
+    // `bluffScale` carries `Math.max(0.5, 1 - 2 * risk)` above. Adding a
+    // second tier-aware damper here would count the same ladder twice.
     const spin23 = (opts.v23Spin ?? true) !== false && gs.format === 'spin';
     if (spin23) {
       bluffScale *= 1.12;

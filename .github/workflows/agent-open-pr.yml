@@ -8,7 +8,7 @@
 # design waits STUCK_AFTER_H (3h) before opening the PR — a 3-hour deploy
 # stall for work that is already green.
 #
-# This closes the gap: any push to agent/** opens the PR immediately.
+# This closes the gap: creating ANY branch opens the PR immediately.
 # Autopilot's `pull_request: opened` job then enables squash auto-merge, and
 # GitHub lands it when the required checks pass. No polling, no --admin, no
 # human clicking a button.
@@ -56,8 +56,29 @@ jobs:
   open-pr:
     # `create` fires for tags as well as branches, and for every branch in the
     # repo - the `on:` block for `create` takes no filters, so it goes here.
-    if: github.event.ref_type == 'branch' && startsWith(github.ref_name, 'agent/')
-    name: Open a PR for this agent branch
+    # ANY BRANCH, not only agent/* (2026-09-02). CLAUDE.md 11.0 tells every
+    # agent to claim a worktree as `fix/<slug>`, and the AGENT-PLAYBOOK says the
+    # job ends when a pull request exists. This gate only opened one for
+    # `agent/*`, so an agent that did exactly what the docs said pushed a
+    # `fix/...` branch and got nothing - and on 2026-09-02, when every PAT on
+    # the Mac was revoked at once, that was three agents' finished work
+    # stranded with no route to main. The docs and the automation disagreed and
+    # the docs won, silently.
+    #
+    # Excluded: the default branch, and the namespaces that are never proposals
+    # (backups, CI markers, dependabot, reverts). Everything else is somebody's
+    # work waiting to ship, and a pull request is how it ships.
+    if: >-
+      github.event.ref_type == 'branch'
+      && github.ref_name != github.event.repository.default_branch
+      && !startsWith(github.ref_name, 'backup/')
+      && !startsWith(github.ref_name, 'ci-marker/')
+      && !startsWith(github.ref_name, 'build/')
+      && !startsWith(github.ref_name, 'dependabot/')
+      && !startsWith(github.ref_name, 'renovate/')
+      && !startsWith(github.ref_name, 'sentry-autofix/')
+      && !startsWith(github.ref_name, 'revert-')
+    name: Open a PR for this branch
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

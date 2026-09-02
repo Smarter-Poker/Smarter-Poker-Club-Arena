@@ -261,6 +261,30 @@ export default function GlobalWaitlistListener() {
             };
             const newRow = (payload as WaitlistPayload).new;
             const oldRow = (payload as WaitlistPayload).old;
+            /* ── THE THAW MOVES THE DEADLINE, AND THE BANNER MUST FOLLOW
+               (Dan 2026-09-01, to-do #2563 item 5). When the maintenance
+               break ends, fn_thaw_platform shifts hold_expires_at forward by
+               the frozen duration - an UPDATE on this player's own row, which
+               lands right here. The status is already 'notified' on both
+               sides, so the offer branch below skips it, and the on-screen
+               countdown kept counting a deadline that no longer exists:
+               the banner showed "expired" on a hold that was alive. Re-emit
+               with the fresh deadline so the countdown re-seeds. Harmless on
+               any other same-status touch: the banner just re-reads the same
+               instant. */
+            if (
+              (payload as WaitlistPayload).eventType === 'UPDATE' &&
+              newRow?.status === 'notified' &&
+              oldRow?.status === 'notified' &&
+              newRow?.table_id &&
+              newRow?.hold_expires_at
+            ) {
+              masterBus.emit('WAITLIST_SEAT_OFFERED', {
+                tableId: String(newRow.table_id),
+                tableName: '',
+                holdExpiresAt: newRow.hold_expires_at,
+              });
+            }
             if (
               (payload as WaitlistPayload).eventType === 'UPDATE' &&
               newRow?.status === 'notified' &&

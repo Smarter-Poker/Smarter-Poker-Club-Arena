@@ -45,8 +45,11 @@ describe('the bankroll gate reads the clubs whose seats it is deciding', () => {
 
 describe('an unknown roll is unknown, not zero', () => {
   it('fails OPEN - a missing membership row never refuses a seat', () => {
+    /* 2026-09-02: keyed on the SEAT club (the wallet that pays), no longer
+       on table.club_id - see the "a horse plays inside its own club" block
+       below for why that key was wrong for every union table. */
     const gate = SRC.slice(
-      SRC.indexOf('const roll = bankrolls.get(`${table.club_id}:${h.id}`);'),
+      SRC.indexOf('const roll = seatClub ? bankrolls.get(`${seatClub}:${h.id}`) : undefined;'),
       SRC.indexOf('const ref = referenceBuyIn(')
     );
     expect(gate).toContain('roll === undefined');
@@ -71,6 +74,117 @@ describe('an unknown roll is unknown, not zero', () => {
        false` may not go missing. */
     expect(SRC).toMatch(
       /if \(!canSit\(roll, ref, bankrollPolicyFor\(h\.id\)\)\) \{[^{}]*return false;\s*\}/
+    );
+  });
+});
+
+/**
+ * A HORSE PLAYS INSIDE ITS OWN CLUB (Dan 2026-09-02, verbatim: "FREE THEM TO
+ * PLAY OPENLY INSIDE THE DEEP STACK SOCIETY ONLY. THEY HAVE NO AFFILIATION OR
+ * ARE A PART OF THE MIDWAY UNION.")
+ *
+ * Measured on the live engine before this: candidates were drawn from the
+ * whole fleet and every roll was keyed on `table.club_id`. For a Midway Union
+ * table that is the union's own club row - where no wallet lives - so 261 of
+ * 584 Midway horses (and every Deep Stack horse) read a roll of ZERO,
+ * computeHorseBuyIn sized a zero buy-in, and the seat was skipped for the
+ * cycle. "bankroll gate skipped for 84,954 horse/table pairs"; Midway seated
+ * 22 horses an hour against Deep Stack's 198.
+ */
+describe('a horse plays inside its own club', () => {
+  it('reads the union map the database resolves wallets through, and fails CLOSED', () => {
+    expect(SRC).toContain("from('union_clubs')");
+    const read = SRC.slice(
+      SRC.indexOf("from('union_clubs')"),
+      SRC.indexOf('const eligibleClubsFor')
+    );
+    expect(read).toContain('Seeding cycle SKIPPED');
+    expect(read).toMatch(/return;/);
+  });
+
+  it('a union table is paid from the union MEMBER clubs, a standalone table from itself', () => {
+    const fn = SRC.slice(SRC.indexOf('const eligibleClubsFor'), SRC.indexOf('const bankrolls ='));
+    expect(fn).toMatch(/if \(t\.union_id\) return unionClubs\.get\(t\.union_id\) \?\? \[\];/);
+    expect(fn).toMatch(/return t\.club_id \? \[t\.club_id\] : \[\];/);
+  });
+
+  it('loads the wallets of the member clubs, which own no tables of their own', () => {
+    expect(SRC).toMatch(/for \(const c of eligibleClubsFor\(t\)\) clubIdsToLoad\.add\(c\);/);
+    // Only the statuses fn_seat_club_for_user will pay from.
+    expect(SRC).toMatch(/\.in\('status', \['active', 'approved'\]\)/);
+  });
+
+  it('a horse with no membership that can pay for the table is NOT a candidate', () => {
+    const filter = SRC.slice(
+      SRC.indexOf('const candidateHorses'),
+      SRC.indexOf('const tablesForHorse')
+    );
+    expect(filter).toMatch(
+      /const seatClub = this\.resolveSeatClub\(membership, table, h\.id\);\s*if \(seatClub === null\) \{\s*clubDropped\+\+;\s*return false;\s*\}/
+    );
+    // ...and an UNKNOWN map still fails open, exactly like the roll.
+    const resolver = SRC.slice(
+      SRC.indexOf('private resolveSeatClub('),
+      SRC.indexOf('private async ensureAllTablesExist')
+    );
+    expect(resolver).toContain('if (!ctx.known) return undefined;');
+    expect(resolver).toContain('if (mine.length === 0) return null;');
+  });
+
+  it('a seat already held in the same scope decides the wallet, as the database rules', () => {
+    const resolver = SRC.slice(
+      SRC.indexOf('private resolveSeatClub('),
+      SRC.indexOf('private async ensureAllTablesExist')
+    );
+    expect(resolver).toMatch(
+      /const held = ctx\.seatClubInScope\.get\(horseId\)\?\.get\(ctx\.tableScope\(table\)\);/
+    );
+    expect(resolver).toMatch(/if \(held && eligible\.includes\(held\)\) return held;/);
+  });
+
+  it('the buy-in is sized on the wallet that pays, and that wallet is SENT to the database', () => {
+    expect(SRC).not.toContain('bankrolls.get(`${table.club_id}:');
+    const sizing = SRC.slice(
+      SRC.indexOf('private computeHorseBuyIn('),
+      SRC.indexOf('private async seatHorse(')
+    );
+    expect(sizing).toContain('bankrolls.get(`${seatClub}:${horseId}`)');
+    const rpc = SRC.slice(
+      SRC.indexOf("supabase.rpc('atomic_table_buyin'"),
+      SRC.indexOf('if (rpcErr)')
+    );
+    expect(rpc).toContain('p_club_id: clubId');
+  });
+});
+
+/**
+ * THE CADENCE IS THE FEATURE. start() promises a cycle every 30 seconds; the
+ * engine log on 2026-09-02 showed one beginning 18:08:35 and ending 18:55:53,
+ * because the waitlist was pruned once PER TABLE inside the loop - 1,131
+ * sequential round trips on a saturated database. Between cycles the floor
+ * only drained.
+ */
+describe('the seeding cycle is one round trip per floor, not per table', () => {
+  it('prunes the waitlist ONCE, before the table loop', () => {
+    const pruneAt = SRC.indexOf('await this.pruneHorseWaitlist(horseIdSet);');
+    const loopAt = SRC.indexOf('for (const table of orderedTables) {');
+    expect(pruneAt).toBeGreaterThan(-1);
+    expect(loopAt).toBeGreaterThan(pruneAt);
+    expect(SRC).not.toContain('await this.pruneHorseWaitlist(table.id');
+    const pruner = SRC.slice(
+      SRC.indexOf('private async pruneHorseWaitlist('),
+      SRC.indexOf('private resolveSeatClub(')
+    );
+    expect(pruner).not.toContain(".eq('table_id'");
+  });
+
+  it('says how long the cycle took and how many ticks it cost', () => {
+    expect(SRC).toMatch(
+      /const cycleSeconds = Math\.round\(\(Date\.now\(\) - cycleStartedAt\) \/ 1000\);/
+    );
+    expect(SRC).toMatch(/this\.overrunTicks\+\+;/);
+    expect(SRC).toMatch(
+      /Seeding cycle took \$\{cycleSeconds\}s and \$\{this\.overrunTicks\} 30s tick\(s\)/
     );
   });
 });

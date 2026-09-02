@@ -9,13 +9,13 @@ a lot of finished work existed on its disk and nowhere else.
 
 ## What lived only on the Mac, and what phase 6 did about it
 
-| State                                                      | Risk before             | After phase 6                                    |
-| ---------------------------------------------------------- | ----------------------- | ------------------------------------------------ |
-| Canonical clones (`club-arena`, `Smarter-Poker-World-Hub`) | Re-clonable from GitHub | unchanged (fine)                                 |
-| Agent worktrees with **unpushed commits**                  | Gone if the disk died   | **all pushed to `origin` under `rescue/<name>`** |
-| Uncommitted edits in worktrees                             | Gone                    | snapshotted to `refs/wip/*` (existing tooling)   |
-| Engine secret backup (`.dr-backups/`)                      | Mac-local               | still Mac-local — see below                      |
-| Keychain credentials (GitHub, Hetzner, DR passphrase)      | Mac-local               | still Mac-local — see below                      |
+| State                                                      | Risk before             | After phase 6                                                                                                      |
+| ---------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Canonical clones (`club-arena`, `Smarter-Poker-World-Hub`) | Re-clonable from GitHub | unchanged (fine)                                                                                                   |
+| Agent worktrees with **unpushed commits**                  | Gone if the disk died   | **85 pushed to `origin` under `rescue/<name>` — every 2+-commit branch; single-commit remainder is one loop away** |
+| Uncommitted edits in worktrees                             | Gone                    | snapshotted to `refs/wip/*` (existing tooling)                                                                     |
+| Engine secret backup (`.dr-backups/`)                      | Mac-local               | still Mac-local — see below                                                                                        |
+| Keychain credentials (GitHub, Hetzner, DR passphrase)      | Mac-local               | still Mac-local — see below                                                                                        |
 
 ## The unpushed-work rescue (phase 6)
 

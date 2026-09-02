@@ -230,10 +230,37 @@ describe('the draw sets the prize and the payout shape - never the stack', () =>
     expect(engine).toMatch(/starting_chips:\s*tournament\.starting_chips/);
   });
 
-  it('start updates the IN-MEMORY structure too, not just the row', () => {
-    // The level timer and table creation read the in-memory object; a
-    // DB-only write would leave this start running placeholder blinds.
-    expect(engine).toMatch(/tournament\.blind_structure\s*=\s*spinBlinds/);
+  it('start updates BOTH in-memory copies, and by construction not by hand', () => {
+    /* MECHANISM MOVED 2026-09-02, and the pin moved with it (CLAUDE.md 5.8).
+       This used to require the literal `tournament.blind_structure =
+       spinBlinds`, which was one line of a hand-written per-field copy. That
+       copy listed four of the patch's five fields and dropped
+       `payout_structure`, so a started Spin's cache kept the pre-draw
+       winner-take-all placeholder and `recalculateEliminatedPrizes` topped
+       eliminated players up against a structure that was never drawn. On a
+       10x that is 80/20 paid as 100/0 - measured at 66 games over 30 days
+       before it was fixed.
+
+       `applySpinDrawPatch` copies EVERY key of the patch onto both the
+       in-memory tournament and the cache, so the field list cannot drift from
+       the patch again. Pinning the call is therefore strictly stronger than
+       pinning any one field was. */
+    expect(engine).toMatch(/applySpinDrawPatch\(/);
+    expect(engine).toMatch(/import\s*\{\s*applySpinDrawPatch\s*\}/);
+  });
+
+  it('never goes back to copying the draw field by field', () => {
+    /* The regression this guards is not "blind_structure stopped being
+       copied" - it is "somebody re-introduced a hand-written list and left a
+       field off it again". Any per-field assignment onto either copy is that
+       list coming back. */
+    expect(engine).not.toMatch(/tournamentCache\.blind_structure\s*=/);
+    expect(engine).not.toMatch(/tournamentCache\.spin_multiplier\s*=/);
+    expect(engine).not.toMatch(/tournamentCache\.payout_structure\s*=/);
+    /* Deliberately NOT asserting on `tournament.blind_structure =`: the
+       engine legitimately normalises that field when the row arrives as a
+       JSON string. The cache is the copy the hand-written list corrupted, so
+       the cache is what this guards. */
   });
 
   it('creation writes an honest placeholder, not a fake tier', () => {

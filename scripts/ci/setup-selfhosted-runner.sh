@@ -11,6 +11,12 @@
 # runners, ~€30/mo). DO NOT run it on the poker-engine VPS: CI builds would
 # contend with live dealing for CPU.
 #
+# BOX-LEVEL TUNING LIVES IN scripts/ci/provision-ci-box.sh (run it as root,
+# once, and again after adding runners): swap, nightly GC, the per-runner
+# fair-share caps (VITEST_MAX_WORKERS=2, 3 GB heap), the idle-restart sweeper,
+# browser system libraries, gh/jq/node. Eight runners on one box without it
+# sat at load 69-75 and starved every job (2026-09-02).
+#
 # Prereqs on the box: Ubuntu 22+, a non-root user with passwordless sudo
 # (playwright's --with-deps needs apt), Node is NOT required (workflows bring
 # their own via actions/setup-node), git, curl.

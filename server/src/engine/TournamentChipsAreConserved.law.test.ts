@@ -36,6 +36,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { selectSeatsToFund } from '../tournament/seatStackCredit.js';
+import { sliceMethod } from '../testHelpers/sourceWindow.js';
 import { checkTournamentChipConservation } from './tournamentChipConservation.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -160,10 +161,17 @@ describe('LAW 2: the engine refuses to persist a tournament hand that does not c
   });
 
   it('the dealt stacks are captured when the HandController is built and carried in the snapshot', () => {
+    // The method that builds the HandController, bounded by its own braces
+    // (a byte-count window drifts off the code it guards; see
+    // tests/helpers/sourceWindow.ts). The capture must sit in that method,
+    // after the construction it snapshots.
     const dealing = code(read('./ServerTableEngineDealing.ts'));
-    const ctor = dealing.indexOf('this.handController = new HandController(');
-    expect(ctor).toBeGreaterThan(-1);
-    expect(dealing.slice(ctor, ctor + 600)).toMatch(/this\.currentHandDealtStacks = new Map\(/);
+    const dealHand = sliceMethod(dealing, 'protected async dealHand(');
+    const ctor = dealHand.indexOf('this.handController = new HandController(');
+    expect(ctor, 'dealHand builds the HandController').toBeGreaterThan(-1);
+    const capture = dealHand.indexOf('this.currentHandDealtStacks = new Map(');
+    expect(capture, 'dealHand captures the dealt stacks').toBeGreaterThan(-1);
+    expect(capture, 'the capture follows the construction it snapshots').toBeGreaterThan(ctor);
     const settle = code(read('./ServerTableEngineSettlement.ts'));
     const snap = settle.indexOf('const snap = {');
     expect(settle.slice(snap, settle.indexOf('};', snap))).toMatch(

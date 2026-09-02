@@ -966,7 +966,15 @@ export class HorseFleetManager {
           clubActiveCashMembers.set(cid, (clubActiveCashMembers.get(cid) ?? 0) + 1);
         }
         for (const [cid, n] of clubActiveCashMembers) {
-          clubOpenBudget.set(cid, Math.min(60, Math.max(4, Math.ceil(n / 3))));
+          /**
+           * SIZED FOR FOUR TABLES PER HORSE (Dan 2026-09-02, cash occupancy
+           * law: "THEY SHOULD BE PLAYING 4 TABLES AT ONCE!"). Each active
+           * cash-lane member can hold MAX_TABLES_PER_HORSE seats, and the
+           * occupancy law packs 75% of live tables full — so the budget is
+           * seats-available over a packed-table's field, not one table per
+           * three horses. n members x 4 seats / ~5 per field.
+           */
+          clubOpenBudget.set(cid, Math.min(240, Math.max(8, Math.ceil((n * 4) / 5))));
         }
       }
 

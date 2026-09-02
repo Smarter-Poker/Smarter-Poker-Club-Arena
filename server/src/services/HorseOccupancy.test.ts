@@ -33,23 +33,36 @@ describe('a floor is lopsided, not uniform', () => {
     }
   });
 
-  it('some tables are FULL WITH A WAITING LIST and some have 2-3 open seats', () => {
+  /**
+   * THE CASH OCCUPANCY LAW (Dan 2026-09-02, verbatim): "HORSES CAN FILL ALL
+   * SEATS, AND ONLY 'GET UP' WHEN A REAL HUMAN IS ON THE WAITING LIST FOR
+   * 75% OF ALL GAMES. THE OTHER 25% OF GAMES SHOULD HAVE ANYWHERE FROM ONE,
+   * TO A FULL GAME. IT SHOULD BE SPARATIC, BUT HORSES NEED TO BE OCCUPYING
+   * AT LEAST 75% OF ALL SEATS IN THE CASH GAMES." Supersedes the 2026-08-23
+   * lopsided-vibe targets and the 2026-08-26 15%-held-empty share.
+   */
+  it('packs ~75% of tables full, leaves the rest sporadic, and clears 75% of all seats', () => {
     let full = 0;
     let queued = 0;
-    let couple = 0;
-    let short = 0;
+    let seatSum = 0;
+    const sporadicTargets = new Set<number>();
     for (const id of tables) {
       const { seatTarget, waitTarget } = occupancyTargetFor(id, 6, false, 1_700_000_000_000);
       if (seatTarget >= 6) full++;
+      else sporadicTargets.add(seatTarget);
       if (waitTarget > 0) queued++;
-      const open = 6 - seatTarget;
-      if (open >= 2 && open <= 3) couple++;
-      if (open >= 3) short++;
+      seatSum += seatTarget;
     }
-    expect(full, 'no full tables').toBeGreaterThan(60);
-    expect(queued, 'nobody ever waiting').toBeGreaterThan(50);
-    expect(couple, 'no tables with 2-3 open seats').toBeGreaterThan(60);
-    expect(short, 'no short-handed tables').toBeGreaterThan(40);
+    const fullFrac = full / tables.length;
+    expect(fullFrac, 'packed share').toBeGreaterThan(0.65);
+    expect(fullFrac, 'packed share').toBeLessThan(0.85);
+    expect(queued, 'nobody ever waiting behind a packed game').toBeGreaterThan(30);
+    // Sporadic really means one-to-full: the non-packed quarter must span
+    // short-handed AND nearly-full targets, not cluster on one number.
+    expect(sporadicTargets.size, 'sporadic spread').toBeGreaterThanOrEqual(4);
+    expect([...sporadicTargets].some((t) => t <= 2)).toBe(true);
+    // The floor: horses occupy at least 75% of all seats.
+    expect(seatSum / (tables.length * 6), 'total seat share').toBeGreaterThanOrEqual(0.75);
   });
 
   it('a table holds its popularity long enough to be read, then drifts', () => {
@@ -71,24 +84,14 @@ describe('a floor is lopsided, not uniform', () => {
     }
   });
 
-  it('never asks for more seats than the table has, or fewer than a game (unless held empty)', () => {
+  it('never asks for more seats than the table has, and always wants at least one', () => {
     for (const max of [2, 6, 8, 9]) {
       for (const id of tables.slice(0, 80)) {
-        const { seatTarget, waitTarget, vibe } = occupancyTargetFor(
-          id,
-          max,
-          false,
-          1_700_000_000_000
-        );
+        const { seatTarget, waitTarget } = occupancyTargetFor(id, max, false, 1_700_000_000_000);
         expect(seatTarget).toBeLessThanOrEqual(max);
-        // Dan 2026-08-26: a held-empty table wants exactly zero. Anything
-        // that is actually running still wants at least a playable game.
-        if (vibe === 'empty') {
-          expect(seatTarget).toBe(0);
-          expect(waitTarget).toBe(0);
-        } else {
-          expect(seatTarget).toBeGreaterThanOrEqual(2);
-        }
+        // Under the occupancy law there is no zero-target cash table: the
+        // sporadic quarter runs one-to-full, and packed tables run full.
+        expect(seatTarget).toBeGreaterThanOrEqual(1);
         expect(waitTarget).toBeLessThanOrEqual(3);
       }
     }

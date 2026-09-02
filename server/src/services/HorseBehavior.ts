@@ -343,39 +343,58 @@ export function tableVibe(tableId: string, nowMs: number = Date.now()): TableVib
  * queued behind it. `humanSeated` pins a table to at least a playable game —
  * a human's table never goes quiet underneath them.
  */
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE CASH OCCUPANCY LAW (Dan 2026-09-02, binding, verbatim):
+ *
+ *  "HORSES CAN FILL ALL SEATS, AND ONLY 'GET UP' WHEN A REAL HUMAN IS ON THE
+ *   WAITING LIST FOR 75% OF ALL GAMES. THE OTHER 25% OF GAMES SHOULD HAVE
+ *   ANYWHERE FROM ONE, TO A FULL GAME. IT SHOULD BE SPARATIC, BUT HORSES
+ *   NEED TO BE OCCUPYING AT LEAST 75% OF ALL SEATS IN THE CASH GAMES, AND
+ *   THEY SHOULD BE PLAYING 4 TABLES AT ONCE!"
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * So, per table, deterministically in (tableId, bucket):
+ *   - PACKED (75% of tables): every seat filled by horses. A horse only
+ *     leaves when a real human is on the waiting list — that yield lives in
+ *     HorseSessionRotator, which departs exactly one horse when a full table
+ *     has a human waiting.
+ *   - SPORADIC (25% of tables): anywhere from one seat to a full game,
+ *     drifting per bucket.
+ * Packed at 100% plus sporadic averaging ~half keeps total horse occupancy
+ * comfortably above the 75%-of-all-seats floor by construction.
+ *
+ * SUPERSEDED by this law, both from 2026-08-26: the 15% held-EMPTY share of
+ * cash tables (a packed room where a horse stands up for every waiting human
+ * IS the always-somewhere-to-sit property, delivered better), and the
+ * hot/busy/steady/quiet vibe targets (the 75/25 split is the shape of the
+ * room now; tableVibe still colors the waiting list on packed tables).
+ * cashTableHeldEmpty is no longer consulted here — the sole-open protection
+ * and the rotator keep their own uses.
+ */
 export function occupancyTargetFor(
   tableId: string,
   maxPlayers: number,
   humanSeated: boolean = false,
   nowMs: number = Date.now()
 ): { seatTarget: number; waitTarget: number; vibe: TableVibe } {
-  // Dan 2026-08-26: 15% of cash tables are held EMPTY — no horses seated, no
-  // queue — so a human always has somewhere to start a fresh game. The hold
-  // releases the moment a human sits (their game then populates normally).
-  if (!humanSeated && cashTableHeldEmpty(tableId, nowMs)) {
-    return { seatTarget: 0, waitTarget: 0, vibe: 'empty' };
-  }
   const vibe = tableVibe(tableId, nowMs);
-  const h = horseHash(`${tableId}:${Math.floor(nowMs / VIBE_BUCKET_MS)}:seats`);
+  const bucket = Math.floor(nowMs / VIBE_BUCKET_MS);
+  const h = horseHash(`${tableId}:${bucket}:seats`);
+  const packedRoll = mix32((horseHash(`${tableId}:packed`) ^ Math.imul(bucket, 0x9e3779b1)) >>> 0);
+
   let seatTarget: number;
   let waitTarget = 0;
-  switch (vibe) {
-    case 'hot':
-      seatTarget = maxPlayers;
-      waitTarget = 1 + (h % 3); // 1-3 waiting
-      break;
-    case 'busy':
-      seatTarget = maxPlayers - (h % 2); // full or one open
-      break;
-    case 'steady':
-      seatTarget = maxPlayers - (2 + (h % 2)); // 2-3 open
-      break;
-    default:
-      seatTarget = Math.max(3, maxPlayers - (3 + (h % 3))); // 3-5 open
-      break;
+  if (packedRoll % 100 < 75) {
+    // PACKED: full, and hot tables also show a short queue behind the game.
+    seatTarget = maxPlayers;
+    if (vibe === 'hot') waitTarget = 1 + (h % 3);
+  } else {
+    // SPORADIC: one to a full game, drifting per bucket.
+    seatTarget = 1 + (h % Math.max(1, maxPlayers));
   }
   if (humanSeated) seatTarget = Math.max(seatTarget, Math.min(maxPlayers, 4));
-  return { seatTarget: Math.max(2, Math.min(maxPlayers, seatTarget)), waitTarget, vibe };
+  return { seatTarget: Math.max(1, Math.min(maxPlayers, seatTarget)), waitTarget, vibe };
 }
 
 /**

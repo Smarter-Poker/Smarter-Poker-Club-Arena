@@ -98,9 +98,13 @@ describe('a variant must never go fully dark (Dan, 2026-08-30)', () => {
     for (let b = 0; b < 24; b++) {
       expect(cashTableHeldEmpty(held, T0 + b * EMPTY_BUCKET_MS)).toBe(false);
     }
+    /* 2026-09-02: occupancyTargetFor no longer consults the hold at all —
+       the cash occupancy law (75% packed / 25% sporadic-one-to-full) has no
+       held-empty class, so its floor is 1, not 2. cashTableHeldEmpty itself
+       and the sole-open registry keep their contract, pinned above. */
     const { seatTarget, vibe } = occupancyTargetFor(held, 6, false, T0);
     expect(vibe).not.toBe('empty');
-    expect(seatTarget).toBeGreaterThanOrEqual(2);
+    expect(seatTarget).toBeGreaterThanOrEqual(1);
   });
 
   it('the registry replaces, not accumulates, and clearing restores the hold', () => {

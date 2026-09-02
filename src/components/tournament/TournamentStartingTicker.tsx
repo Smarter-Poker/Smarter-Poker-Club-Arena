@@ -208,6 +208,9 @@ export function TournamentStartingTicker() {
     }
   });
   const clubIdsRef = useRef<string[] | null>(null);
+  // Which context the cached scope belongs to ('club:<uuid>' or 'memberships') —
+  // navigating between clubs must not reuse the previous club's scope.
+  const clubScopeKeyRef = useRef<string | null>(null);
 
   /* Dan 2026-08-21: "it should play UNDER the global header, not through it."
 
@@ -289,10 +292,61 @@ export function TournamentStartingTicker() {
     };
   }, [location.pathname]);
 
-  // ── Which clubs (and unions) does this player belong to? ──
+  // ── Which clubs' events belong on THIS ticker? ──
+  //
+  // THE CLUB YOU ARE STANDING IN, not every club you belong to (Dan
+  // 2026-09-02: the Deep Stack Society lobby was announcing "Turbo Tuesday
+  // PKO ... 109 Entered" — a MIDWAY UNION event, truthfully counted, in the
+  // wrong club's ticker, reading as a lie about Deep Stack's own field).
+  // Inside a club route (or at one of its tables) the scope is that club
+  // plus, when it sits in a union, the union and its sibling clubs — the
+  // same visibility rule the lobby itself uses. Only OUTSIDE any club
+  // context (the hub) does the ticker fall back to every membership.
   const loadScope = useCallback(async (): Promise<string[]> => {
-    if (clubIdsRef.current) return clubIdsRef.current;
     try {
+      let clubUuid: string | null = null;
+      const clubMatch = location.pathname.match(/^\/clubs\/([^/]+)/);
+      const tableMatch = location.pathname.match(/^\/table\/([^/]+)/);
+      if (clubMatch) {
+        clubUuid = await resolveClubUUID(clubMatch[1]);
+      } else if (tableMatch) {
+        const { data } = await supabase
+          .from('tables')
+          .select('club_id')
+          .eq('id', tableMatch[1])
+          .maybeSingle();
+        clubUuid = data?.club_id || null;
+      }
+
+      if (clubUuid) {
+        const cacheKey = `club:${clubUuid}`;
+        if (clubIdsRef.current && clubScopeKeyRef.current === cacheKey) {
+          return clubIdsRef.current;
+        }
+        const { data: clubRow } = await supabase
+          .from('clubs')
+          .select('union_id')
+          .eq('id', clubUuid)
+          .maybeSingle();
+        const unionId = clubRow?.union_id || null;
+        let ids = [clubUuid];
+        if (unionId) {
+          const { data: siblings } = await supabase
+            .from('clubs')
+            .select('id')
+            .eq('union_id', unionId);
+          ids = [
+            ...new Set([clubUuid, unionId, ...(siblings || []).map((r: { id: string }) => r.id)]),
+          ];
+        }
+        clubIdsRef.current = ids;
+        clubScopeKeyRef.current = cacheKey;
+        return ids;
+      }
+
+      if (clubIdsRef.current && clubScopeKeyRef.current === 'memberships') {
+        return clubIdsRef.current;
+      }
       const auth = await import('../../lib/authUtils').then((m) => m.readLocalSession());
       const uid = auth?.userId;
       if (!uid) return [];
@@ -303,12 +357,13 @@ export function TournamentStartingTicker() {
         .in('status', ['active', 'approved']);
       const ids = (data || []).map((r: { club_id: string }) => r.club_id).filter(Boolean);
       clubIdsRef.current = ids;
+      clubScopeKeyRef.current = 'memberships';
       return ids;
     } catch (e) {
       reportError(e, 'TournamentStartingTicker.loadScope');
       return [];
     }
-  }, []);
+  }, [location.pathname]);
 
   // ── Poll for events inside the window ──
   useEffect(() => {

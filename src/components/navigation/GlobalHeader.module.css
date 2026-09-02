@@ -30,6 +30,41 @@
   isolation: isolate;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE PADDING ABOVE THE HEADER IS BLACK, AND NOTHING SCROLLS THROUGH IT
+   (Dan 2026-09-02)
+   ---------------------------------------------------------------------------
+   "THE HEADER MUST ALWAYS BE AT THE TOP, AND NOTHING SHOULD EVER APPEAR, OR BE
+   DISPLAYED ABOVE IT IN THE PADDING AREA ABOVE IT. THAT SHOULD BE BLACK AND
+   NEVER SHOW ANYTHING ABOVE IT."
+
+   `.header` is `position: sticky` and pads itself by the safe-area inset, so on
+   a notched phone there is a band between viewport y=0 and the artwork's top
+   edge that belongs to this element and is painted by nothing. Since the
+   element background was removed the day before (#2515), the page scrolling
+   underneath the sticky header showed THROUGH that band - in Dan's screenshot,
+   the lobby's own "FIND YOUR GAME / 280+ GAMES" rows sitting above the header,
+   behind the status bar.
+
+   This paints the padding band, and ONLY the padding band. The artwork's own
+   canvas still has nothing behind it, the left/right insets are still bare,
+   and `.header` still declares no background of its own - so the 2026-09-01
+   removal stands everywhere it was actually about. The band is stated with the
+   same expression as the padding it covers (including the standalone override
+   further down this file) so it can never be taller or shorter than the strip
+   it exists to fill; where the inset is 0 it is a zero-height no-op. */
+.header::before {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: env(safe-area-inset-top, 0px);
+  background: #000;
+  pointer-events: none;
+}
+
 .desktopArtwork {
   display: block;
   width: calc(100% - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
@@ -323,6 +358,14 @@
 @media (display-mode: standalone), (display-mode: fullscreen) {
   .header {
     padding-top: max(env(safe-area-inset-top, 0px), 24px);
+  }
+
+  /* The black band tracks the padding it covers. Without this the installed
+     app padded by 24px and blacked out only the inset, leaving a sliver of
+     scrolling page above the artwork on exactly the devices where the header
+     matters most. */
+  .header::before {
+    height: max(env(safe-area-inset-top, 0px), 24px);
   }
 
   .headerControls {

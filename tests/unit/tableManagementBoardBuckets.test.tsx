@@ -20,7 +20,11 @@ import { act } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ page: null as any, buckets: [] as (number | null)[] }));
+const mocks = vi.hoisted(() => ({
+  page: null as any,
+  buckets: [] as (number | null)[],
+  extraCalls: [] as string[],
+}));
 
 vi.mock('../../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: { id: 'operator-1' } }),
@@ -81,8 +85,14 @@ vi.mock('../../src/services/GameManagementService', () => ({
             : mocks.page.items.filter((row: any) => row.bucket === bucket),
       };
     },
-    getContracts: async () => [],
-    getCommandReceipts: async () => [],
+    getContracts: async () => {
+      mocks.extraCalls.push('getContracts');
+      return [];
+    },
+    getCommandReceipts: async () => {
+      mocks.extraCalls.push('getCommandReceipts');
+      return [];
+    },
     getHealth: async () => ({
       latestEventSequence: 0,
       lastEventAt: null,
@@ -178,6 +188,24 @@ describe('the board classifies games by the server bucket', () => {
   beforeEach(() => {
     mocks.page = PAGE;
     mocks.buckets = [];
+    mocks.extraCalls = [];
+  });
+
+  /**
+   * Drawing the board used to take five sequential round trips, about eleven
+   * seconds against production. Four of them were this wave: contracts and
+   * command receipts, twice each, and every one of them could only start after
+   * the list came back because it needed the ids.
+   *
+   * fn_list_managed_games returns each row's contract and latest receipt inline
+   * now, so the wave is gone. Pinned as an ABSENCE because that is the property
+   * - re-adding a dependent per-row fetch is exactly the regression, and it
+   * would not show up in any assertion about what the board renders.
+   */
+  it('draws the board without a second round trip per game', async () => {
+    await renderBoard();
+    expect(mocks.extraCalls, 'the board row must arrive whole').toEqual([]);
+    expect(screen.getByText('Friday Deep Stack')).toBeInTheDocument();
   });
 
   /**

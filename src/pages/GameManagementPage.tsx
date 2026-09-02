@@ -689,35 +689,23 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           nextHosts.some((host) => host.id === current) ? current : nextHosts[0]?.id || ''
         );
 
-        const page = await gameManagementService.list(
-          scope,
-          resolvedScopeId,
-          null,
-          VIEW_BUCKET[view]
-        );
+        // ONE wave. The board row now arrives whole - fn_list_managed_games
+        // folds in each game's published contract and latest command receipt -
+        // so the four dependent calls that used to sit here are gone, and the
+        // health read has no reason to wait for any of it.
+        const [page, healthResult] = await Promise.all([
+          gameManagementService.list(scope, resolvedScopeId, null, VIEW_BUCKET[view]),
+          gameManagementService
+            .getHealth(scope, resolvedScopeId)
+            .catch((healthError): GameManagementHealth | null => {
+              // Health is telemetry beside the board, never a reason to fail it.
+              reportError(healthError, 'GameManagementPage.health');
+              return null;
+            }),
+        ]);
         if (!isCurrent()) return;
         const tableRows = page.items.filter((row: any) => row.kind === 'table');
         const tournamentRows = page.items.filter((row: any) => row.kind === 'tournament');
-        const tableIds = tableRows.map((row: any) => row.id);
-        const tournamentIds = tournamentRows.map((row: any) => row.id);
-        const [tableContracts, tournamentContracts, tableReceipts, tournamentReceipts] =
-          await Promise.all([
-            gameManagementService.getContracts('table', tableIds),
-            gameManagementService.getContracts('tournament', tournamentIds),
-            gameManagementService.getCommandReceipts('table', tableIds),
-            gameManagementService.getCommandReceipts('tournament', tournamentIds),
-          ]);
-        if (!isCurrent()) return;
-        const tableContractMap = new Map(
-          tableContracts.map((contract) => [contract.gameId, contract])
-        );
-        const tournamentContractMap = new Map(
-          tournamentContracts.map((contract) => [contract.gameId, contract])
-        );
-        const tableReceiptMap = new Map(tableReceipts.map((receipt) => [receipt.gameId, receipt]));
-        const tournamentReceiptMap = new Map(
-          tournamentReceipts.map((receipt) => [receipt.gameId, receipt])
-        );
         const hostNames = Object.fromEntries(nextHosts.map((host) => [host.id, host.name]));
         const rows: ManagedGame[] = [
           ...tableRows.map((row: any) => ({
@@ -737,8 +725,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             minBuyIn: Number(row.min_buy_in || 0),
             maxBuyIn: Number(row.max_buy_in || 0),
             buyIn: 0,
-            contract: tableContractMap.get(row.id) || null,
-            lastCommand: tableReceiptMap.get(row.id) || null,
+            contract: row.contract || null,
+            lastCommand: row.lastCommand || null,
             pendingSchedule: row.pending_schedule
               ? {
                   scheduleId: row.pending_schedule.schedule_id,
@@ -764,8 +752,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             minBuyIn: 0,
             maxBuyIn: 0,
             buyIn: Number(row.buy_in || 0),
-            contract: tournamentContractMap.get(row.id) || null,
-            lastCommand: tournamentReceiptMap.get(row.id) || null,
+            contract: row.contract || null,
+            lastCommand: row.lastCommand || null,
             pendingSchedule: row.pending_schedule
               ? {
                   scheduleId: row.pending_schedule.schedule_id,
@@ -778,13 +766,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         setGames(rows);
         setCounts(page.counts);
         setNextCursor(page.nextCursor);
-        try {
-          const nextHealth = await gameManagementService.getHealth(scope, resolvedScopeId);
-          if (isCurrent()) setHealth(nextHealth);
-        } catch (healthError) {
-          reportError(healthError, 'GameManagementPage.health');
-          if (isCurrent()) setHealth(null);
-        }
+        setHealth(healthResult);
       } catch (error) {
         if (!isCurrent()) return;
         reportError(error, 'GameManagementPage.load');
@@ -833,36 +815,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     setLoadingMore(true);
     try {
       const page = await gameManagementService.list(scope, scopeId, nextCursor, VIEW_BUCKET[view]);
-      const tableRows = page.items.filter((row: any) => row.kind === 'table');
-      const tournamentRows = page.items.filter((row: any) => row.kind === 'tournament');
-      const [tableContracts, tournamentContracts, tableReceipts, tournamentReceipts] =
-        await Promise.all([
-          gameManagementService.getContracts(
-            'table',
-            tableRows.map((row: any) => row.id)
-          ),
-          gameManagementService.getContracts(
-            'tournament',
-            tournamentRows.map((row: any) => row.id)
-          ),
-          gameManagementService.getCommandReceipts(
-            'table',
-            tableRows.map((row: any) => row.id)
-          ),
-          gameManagementService.getCommandReceipts(
-            'tournament',
-            tournamentRows.map((row: any) => row.id)
-          ),
-        ]);
-      const contractMap = new Map(
-        [...tableContracts, ...tournamentContracts].map((contract) => [
-          `${contract.gameId}`,
-          contract,
-        ])
-      );
-      const receiptMap = new Map(
-        [...tableReceipts, ...tournamentReceipts].map((receipt) => [`${receipt.gameId}`, receipt])
-      );
+      // Same as the first page: the rows already carry their contract and
+      // their last command, so Load More is one request, not five.
       const hostNames = Object.fromEntries(hosts.map((host) => [host.id, host.name]));
       const rows: ManagedGame[] = page.items.map((row: any) => ({
         id: row.id,
@@ -881,8 +835,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         minBuyIn: Number(row.min_buy_in || 0),
         maxBuyIn: Number(row.max_buy_in || 0),
         buyIn: Number(row.buy_in || 0),
-        contract: contractMap.get(row.id) || null,
-        lastCommand: receiptMap.get(row.id) || null,
+        contract: row.contract || null,
+        lastCommand: row.lastCommand || null,
         pendingSchedule: row.pending_schedule
           ? {
               scheduleId: row.pending_schedule.schedule_id,

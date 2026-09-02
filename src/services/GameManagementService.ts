@@ -207,6 +207,27 @@ function managementError(reason: string | null): string | null {
   return reason ? MANAGEMENT_ERRORS[reason] || reason.replace(/_/g, ' ') : null;
 }
 
+/**
+ * One contract projection, used by both readers.
+ *
+ * fn_list_managed_games now returns each row's published contract inline, so
+ * the board no longer makes a second round trip for it. That is only safe
+ * while the two are mapped identically - a second copy of this object literal
+ * is how the board and the contract dialog would start disagreeing about the
+ * same contract.
+ */
+function mapContractSummary(row: any): ManagedGameContractSummary {
+  return {
+    gameId: String(row.game_id),
+    version: numberValue(row.version),
+    contractHash: String(row.contract_hash || ''),
+    publishedAt: String(row.published_at || ''),
+    changeReason: String(row.change_reason || 'published'),
+    contractLocked: Boolean(row.contract_locked),
+    readiness: mapReadiness(row.readiness),
+  };
+}
+
 function mapCommandReceipt(
   raw: ManagedGameCommandResult & { game_id?: string; command_action?: string; status?: string }
 ): ManagedGameCommandReceipt {
@@ -326,7 +347,14 @@ export const gameManagementService = {
     if (!result?.ok)
       throw new Error(managementError(result?.reason || null) || 'Could not load managed games.');
     return {
-      items: Array.isArray(result.items) ? result.items : [],
+      // The row arrives whole: fn_list_managed_games folds in the published
+      // contract and the latest command receipt, so the caller does not make
+      // four more round trips to assemble what it is about to draw.
+      items: (Array.isArray(result.items) ? result.items : []).map((row: any) => ({
+        ...row,
+        contract: row.contract ? mapContractSummary(row.contract) : null,
+        lastCommand: row.last_command ? mapCommandReceipt(row.last_command) : null,
+      })),
       counts: {
         total: numberValue(result.counts?.total),
         live: numberValue(result.counts?.live),
@@ -422,15 +450,7 @@ export const gameManagementService = {
       throw new Error(
         managementError(result?.reason || null) || 'Could not load published game contracts.'
       );
-    return (result.contracts || []).map((row) => ({
-      gameId: String(row.game_id),
-      version: numberValue(row.version),
-      contractHash: String(row.contract_hash || ''),
-      publishedAt: String(row.published_at || ''),
-      changeReason: String(row.change_reason || 'published'),
-      contractLocked: Boolean(row.contract_locked),
-      readiness: mapReadiness(row.readiness),
-    }));
+    return (result.contracts || []).map(mapContractSummary);
   },
 
   async getContractHistory(

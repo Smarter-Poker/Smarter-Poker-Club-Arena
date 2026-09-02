@@ -50,6 +50,7 @@ whichever test the next agent notices first.
 
 | Law test file                                                       | Guards                                                                                                                                                           |
 | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| tests/a-claim-cannot-destroy-chips.law.test.ts                      | A commission claim locks the membership row, asserts the credit landed, and reports money nobody can reach                                                       |
 | tests/a-control-that-says-none-must-mean-none.law.test.ts           | UI controls labeled "none" disable the feature entirely                                                                                                          |
 | tests/a-credit-line-is-spendable.law.test.ts                        | Club credit lines can actually be spent                                                                                                                          |
 | tests/a-demotion-closes-the-books.law.test.ts                       | Agent demotion settles outstanding balances                                                                                                                      |

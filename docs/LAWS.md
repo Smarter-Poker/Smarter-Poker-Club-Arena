@@ -112,3 +112,4 @@ covers both trees.
 | server/src/tournament/theReconcilerTrustsWhatItCanProve.law.test.ts | The reconciler trusts what it can prove                                                                      |
 | server/src/tournament/eliminationSweepReadsAreIndexed.law.test.ts   | The bust sweep reads through indexes and pages on a unique key, never scanning every live seat               |
 | server/src/tournament/ABountyPoolBelongsToAPlayer.law.test.ts       | A funded bounty pool settles to the champion on every completion path, including the stuck-COMPLETING rescue |
+| server/src/services/MoneyChecksProveTheyRan.law.test.ts             | Every money check records that it ran, and something notices when one stops                                  |

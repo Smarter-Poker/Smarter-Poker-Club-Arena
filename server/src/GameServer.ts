@@ -332,6 +332,47 @@ export class GameServer {
   private lastNoHandResultCheckAt = 0;
   /** Last fn_payout_guarantee_check pass (2026-09-01 every-earner-is-paid). */
   private lastPayoutGuaranteeCheckAt = 0;
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  A CHECK THAT NEVER RUNS LOOKS LIKE A CHECK FINDING NOTHING (2026-09-02)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Every money check on this platform reports zero, and each of those zeros
+   * is worth exactly as much as the evidence that the check ran. There was
+   * none. A detector wired into a path nobody executes, a scheduler pointed
+   * at a URL that 404s, an engine that has not restarted since the check was
+   * written - all three produce the same output as a healthy platform, which
+   * is silence.
+   *
+   * Not hypothetical: Open Claw fired /api/cron/rakeback-period-settle every
+   * Monday for weeks at a handler that had never been written, and 281,108.01
+   * chips of player rakeback accrued behind those silent 404s.
+   *
+   * So the driver stamps a heartbeat after each check returns. Deliberately
+   * the DRIVER and not the check itself - what needs proving is that THIS
+   * loop is executing them on its timer, and a check that records its own run
+   * proves only that somebody, somewhere, called it once.
+   *
+   * Never throws and never blocks: it is bookkeeping about a money check, not
+   * part of one. A failure to record is reported and the pass continues.
+   */
+  private async recordMoneyCheckRun(check: string, result: unknown): Promise<void> {
+    try {
+      const { error } = await supabase.rpc('fn_record_money_check_run', {
+        p_check: check,
+        p_result: (result ?? null) as never,
+      });
+      if (error) {
+        reportError(
+          new Error(`[GameServer] money check heartbeat failed for ${check}: ${error.message}`),
+          'GameServer.money_check_heartbeat_failed'
+        );
+      }
+    } catch (hbEx) {
+      reportError(hbEx, 'GameServer.money_check_heartbeat_threw');
+    }
+  }
   /** Last fn_charge_place_overpays pass (2026-08-28 duplicate-place overpay). */
   private lastPlaceOverpayChargeAt = 0;
   /** Last fn_repair_tournament_rake_attribution pass (2026-08-28). */
@@ -3497,6 +3538,7 @@ export class GameServer {
                 `[GameServer] Conservation sweep: ${cons.flagged} event(s) flagged (retained ${cons.retained_chips}, unfunded ${cons.unfunded_chips})`
               );
             }
+            await this.recordMoneyCheckRun('fn_tournament_money_conservation', cons);
           } catch (consEx) {
             reportError(consEx, 'GameServer.conservation_sweep_threw');
           }
@@ -3529,6 +3571,7 @@ export class GameServer {
                 `[GameServer] No-hand result check: ${nh.flagged} event(s) ranked without a hand (${nh.chips_paid} chips paid, ${nh.alerts_raised} new alert(s), ${nh.parked_completing} held in COMPLETING)`
               );
             }
+            await this.recordMoneyCheckRun('fn_detect_results_without_a_hand', nh);
           } catch (nhEx) {
             reportError(nhEx, 'GameServer.no_hand_result_check_threw');
           }
@@ -3577,6 +3620,7 @@ export class GameServer {
                   `(${pg.paid_but_unrecorded_chips} chips), ${pg.alerts_raised} new alert(s)`
               );
             }
+            await this.recordMoneyCheckRun('fn_payout_guarantee_check', pg);
           } catch (pgEx) {
             reportError(pgEx, 'GameServer.payout_guarantee_check_threw');
           }
@@ -3614,6 +3658,7 @@ export class GameServer {
                   `(${cp.no_winner_recorded_chips} chips), out of ${cp.hands_checked} checked`
               );
             }
+            await this.recordMoneyCheckRun('fn_cash_pot_conservation_check', cp);
           } catch (cpEx) {
             reportError(cpEx, 'GameServer.cash_pot_check_threw');
           }
@@ -3649,6 +3694,30 @@ export class GameServer {
                 `[GameServer] Bounty pool back-pay: ${bb.events_settled} event(s) settled ${bb.chips_settled} chips to their champion, ` +
                   `${bb.events_without_a_champion} with no champion (${bb.chips_without_a_champion} chips) left for a human`
               );
+            }
+            await this.recordMoneyCheckRun('fn_backpay_unfinalised_bounty_pools', bb);
+
+            // ── AND WHETHER ANY OF THEM ACTUALLY RAN (2026-09-02, Phase 1) ──
+            // The board, and a deduped critical for anything that has gone
+            // quiet. It sits at the END of the hourly pass on purpose: by the
+            // time it reads the heartbeats, every check above has just stamped
+            // its own, so a stale row means that check genuinely did not run
+            // rather than that this one got there first.
+            try {
+              const { data: mh, error: mhErr } = await supabase.rpc('fn_money_check_health', {});
+              if (mhErr) {
+                reportError(
+                  new Error(`[GameServer] money check health failed: ${mhErr.message}`),
+                  'GameServer.money_check_health_failed'
+                );
+              } else if (Number(mh?.stale) > 0) {
+                console.log(
+                  `[GameServer] Money check health: ${mh.stale} of ${mh.checks} check(s) stale, ` +
+                    `${mh.never_run} never run`
+                );
+              }
+            } catch (mhEx) {
+              reportError(mhEx, 'GameServer.money_check_health_threw');
             }
           } catch (bbEx) {
             reportError(bbEx, 'GameServer.bounty_backpay_threw');
@@ -3896,6 +3965,7 @@ export class GameServer {
                   `${bp.events_withheld_unfunded_pool} withheld (${bp.chips_withheld_unfunded_pool} chips, unfunded pools)`
               );
             }
+            await this.recordMoneyCheckRun('fn_pay_backed_payout_shortfalls', bp);
           } catch (bpEx) {
             reportError(bpEx, 'GameServer.backed_payout_threw');
           }

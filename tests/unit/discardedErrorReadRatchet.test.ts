@@ -127,7 +127,6 @@ const BASELINE = new Map<string, number>([
   ['src/pages/FlashPoolPage.tsx', 2],
   ['src/pages/CreditAdminPanel.tsx', 2],
   ['src/pages/ClubAnnouncementsPage.tsx', 2],
-  ['src/components/tournament/TournamentStartingTicker.tsx', 2],
   ['src/components/social/OnlineFriendsPill.tsx', 2],
   ['src/components/social/FriendListPanel.tsx', 1],
   ['src/components/gameplay/PlayerNotesPanel.tsx', 1],
@@ -195,6 +194,9 @@ const AUDITED_ZERO = [
   'src/services/TableService.ts',
   'src/pages/TablePage.tsx',
   'src/pages/ClubHomePage.tsx',
+  // 2026-09-02: the ticker's scope reads fail CLOSED now. A discarded error
+  // there is how a Midway event was announced in the Deep Stack lobby.
+  'src/components/tournament/TournamentStartingTicker.tsx',
 ];
 
 describe('discarded-error-read ratchet', () => {

@@ -310,11 +310,15 @@ export function TournamentStartingTicker() {
       if (clubMatch) {
         clubUuid = await resolveClubUUID(clubMatch[1]);
       } else if (tableMatch) {
-        const { data } = await supabase
+        // FAIL CLOSED. A scope read that fails must not fall through to the
+        // membership list: that is exactly the path that put a Midway event
+        // in the Deep Stack ticker. No scope means no ticker, not the wrong one.
+        const { data, error } = await supabase
           .from('tables')
           .select('club_id')
           .eq('id', tableMatch[1])
           .maybeSingle();
+        if (error) throw error;
         clubUuid = data?.club_id || null;
       }
 
@@ -323,18 +327,20 @@ export function TournamentStartingTicker() {
         if (clubIdsRef.current && clubScopeKeyRef.current === cacheKey) {
           return clubIdsRef.current;
         }
-        const { data: clubRow } = await supabase
+        const { data: clubRow, error: clubErr } = await supabase
           .from('clubs')
           .select('union_id')
           .eq('id', clubUuid)
           .maybeSingle();
+        if (clubErr) throw clubErr;
         const unionId = clubRow?.union_id || null;
         let ids = [clubUuid];
         if (unionId) {
-          const { data: siblings } = await supabase
+          const { data: siblings, error: sibErr } = await supabase
             .from('clubs')
             .select('id')
             .eq('union_id', unionId);
+          if (sibErr) throw sibErr;
           ids = [
             ...new Set([clubUuid, unionId, ...(siblings || []).map((r: { id: string }) => r.id)]),
           ];
@@ -350,11 +356,12 @@ export function TournamentStartingTicker() {
       const auth = await import('../../lib/authUtils').then((m) => m.readLocalSession());
       const uid = auth?.userId;
       if (!uid) return [];
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('club_members')
         .select('club_id')
         .eq('user_id', uid)
         .in('status', ['active', 'approved']);
+      if (error) throw error;
       const ids = (data || []).map((r: { club_id: string }) => r.club_id).filter(Boolean);
       clubIdsRef.current = ids;
       clubScopeKeyRef.current = 'memberships';
@@ -388,7 +395,7 @@ export function TournamentStartingTicker() {
         const registrationsPromise = (async () => {
           const auth = await import('../../lib/authUtils').then((m) => m.readLocalSession());
           if (!auth?.userId) return new Set<string>();
-          const { data: regData } = await supabase
+          const { data: regData, error: regErr } = await supabase
             .from('tournament_players')
             .select('tournament_id')
             .eq('user_id', auth.userId)
@@ -417,6 +424,12 @@ export function TournamentStartingTicker() {
             // random and the badge would be wrong. Newest registrations first.
             .order('registered_at', { ascending: false })
             .limit(200);
+          // A failed read is reported, and the badge simply does not render
+          // this tick; it is never rendered off a silent [] as "not entered".
+          if (regErr) {
+            reportError(regErr, 'TournamentStartingTicker.registrations');
+            return new Set<string>();
+          }
           return new Set((regData || []).map((r: { tournament_id: string }) => r.tournament_id));
         })();
 

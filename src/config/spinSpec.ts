@@ -121,8 +121,6 @@ export interface SpinTierSpec {
   freq: number;
   /** Prize split by finishing place, summing to 1. */
   payouts: number[];
-  /** Starting stack in chips. */
-  startingStack: number;
   /** Blind level length in minutes. */
   levelMinutes: number;
   /**
@@ -181,7 +179,6 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     // 4_772_497 before the 500x retirement; see the note above the array.
     freq: 4_772_073,
     payouts: [1],
-    startingStack: 300,
     levelMinutes: 3,
     reserveThresholdX: 0,
   },
@@ -190,7 +187,6 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     // 3_968_502 before the 500x retirement.
     freq: 3_968_518,
     payouts: [1],
-    startingStack: 300,
     levelMinutes: 3,
     reserveThresholdX: 0,
   },
@@ -198,7 +194,6 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     multiplier: 4,
     freq: 900_000,
     payouts: [1],
-    startingStack: 1000,
     levelMinutes: 3,
     reserveThresholdX: 0,
   },
@@ -206,7 +201,6 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     multiplier: 5,
     freq: 250_000,
     payouts: [1],
-    startingStack: 1000,
     levelMinutes: 3,
     reserveThresholdX: 0,
   },
@@ -214,7 +208,6 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     multiplier: 10,
     freq: 100_000,
     payouts: [0.8, 0.2],
-    startingStack: 1000,
     levelMinutes: 3,
     reserveThresholdX: 0,
   },
@@ -222,7 +215,6 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     multiplier: 25,
     freq: 7_500,
     payouts: [0.8, 0.12, 0.08],
-    startingStack: 1000,
     levelMinutes: 3,
     reserveThresholdX: 0,
   },
@@ -230,7 +222,6 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     multiplier: 50,
     freq: 1_000,
     payouts: [0.8, 0.12, 0.08],
-    startingStack: 5000,
     levelMinutes: 3,
     reserveThresholdX: 0,
   },
@@ -240,7 +231,6 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     // plus the extra mass needed to hold the expectation flat.
     freq: 1_008,
     payouts: [0.8, 0.12, 0.08],
-    startingStack: 5000,
     levelMinutes: 3,
     // Deliberately still 1.5, not the 2.0 the 500x used. Raising it would lock
     // the top of the ladder out of thin pools far more often than before, now
@@ -267,26 +257,55 @@ export const SPIN_TIERS: SpinTierSpec[] = [
 export const SPIN_FREQ_DENOMINATOR: number = SPIN_TIERS.reduce((sum, t) => sum + t.freq, 0);
 
 /**
- * Blind ladder. Identical at every multiplier — only the starting stack
- * changes, which is what turns one structure into three.
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE STACK BELONGS TO THE BOARD, NOT TO THE MULTIPLIER (Dan, 2026-09-01)
+ * ═══════════════════════════════════════════════════════════════════════════
  *
- * ─── STACK BANDS (Dan 2026-08-23) ───────────────────────────────────────────
+ * Dan, verbatim: "we used to award more chips depending on if its a higher
+ * multiplier... we are no longer doing that, once a player sits down and
+ * 'buys in' they either get 300 chips for a turbo, or 1000 chips for a deep
+ * stack. as soon as they buy in 300 chips should appear in their action box
+ * (not 0)."
  *
- * "SPEED SHOULDN'T CHANGE, ONLY THE STARTING STACK. BLIND LEVELS WILL ALWAYS
- * BE THE SAME." Then, exactly: "STANDARD / TURBO SHOULD BE 300. DEEP STACK
- * SHOULD BE 1000 CHIPS, ANY MULTIPLIERS OVER 25X SHOULD BE 5000 CHIPS."
+ * THIS SUPERSEDES THE 2026-08-23 STACK BANDS. That ruling read "STANDARD /
+ * TURBO SHOULD BE 300. DEEP STACK SHOULD BE 1000 CHIPS, ANY MULTIPLIERS OVER
+ * 25X SHOULD BE 5000 CHIPS" and was implemented as `SpinTierSpec.startingStack`
+ * -- 300/300/1000/1000/1000/1000/5000/5000, chosen by the tier the wheel drew.
+ * The 5000 band is retired with it. Do not reintroduce either; a stack that
+ * depends on the draw is the thing this replaces.
  *
- * Three bands, not eight nudges:
+ * WHY IT MATTERS BEYOND PREFERENCE. A stack that depends on the multiplier
+ * cannot be known until the wheel lands, so the seat could not hold a real
+ * stack when the player paid: `fn_take_seat_and_buy_in` wrote `stack = 0` and
+ * the true number arrived ~14.8 seconds later on the chip-drop beat. The
+ * client papered over the gap with the row's placeholder and showed 0 whenever
+ * that read failed. Deciding the stack at the BOARD makes it known at buy-in,
+ * which is what lets the seat show 300 the moment the money leaves the wallet.
  *
- *   2x, 3x              300 chips   standard / turbo — 15bb, over fast
- *   4x, 5x, 10x, 25x   1000 chips   deep stack — real poker for a real prize
- *   50x, 100x          5000 chips   over 25x — the lottery ticket you get to PLAY
+ * Two boards, one blind ladder. Dan, 2026-08-23, still standing: "SPEED
+ * SHOULDN'T CHANGE, ONLY THE STARTING STACK. BLIND LEVELS WILL ALWAYS BE THE
+ * SAME." Level length stays 3 minutes everywhere, so the only thing separating
+ * a Turbo from a Deep Stack is how deep it starts:
  *
- * The old ladder (300/300/400/400/500/500/500/500) was eight values spanning
- * 15bb to 25bb, a range no player could feel. A 100x hit used to be decided in
- * a handful of shoves; at 5000 chips it is 250bb and the money is won rather
- * than dealt. Level length stays 3 minutes everywhere, so the ONLY thing that
- * separates one Spin from another is how deep it starts.
+ *   Turbo        300 chips   15bb, over fast
+ *   Deep Stack  1000 chips   50bb, the same prize played out properly
+ */
+export type SpinSpeed = 'turbo' | 'deep';
+
+/** The whole stack table. Two numbers, and neither depends on the draw. */
+export const SPIN_STACKS: Record<SpinSpeed, number> = {
+  turbo: 300,
+  deep: 1000,
+};
+
+/** What a player sees on the board. Title Case, per the house copy rule. */
+export const SPIN_SPEED_LABELS: Record<SpinSpeed, string> = {
+  turbo: 'Turbo',
+  deep: 'Deep Stack',
+};
+
+/**
+ * Blind ladder. Identical on both boards and at every multiplier.
  */
 export const SPIN_BLINDS: Array<{ small: number; big: number }> = [
   { small: 10, big: 20 },

@@ -185,3 +185,7 @@ __pycache__/
 /pr_list.txt
 /scan-labels.tmp.mjs
 *.tmp.mjs
+
+# Written by the entry-module-manifest plugin in vite.config.ts each build;
+# read by scripts/ci/entry-chunk-delta.mjs. Build output, never committed.
+.entry-modules.json

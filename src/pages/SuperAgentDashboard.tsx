@@ -16,7 +16,6 @@ import { useToast } from '../components/common/Toast';
 import CreditRequestWidget from '../components/agent/CreditRequestWidget';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import './SuperAgentDashboard.css';
 import { reportError } from '../utils/errorReporter';
@@ -104,6 +103,12 @@ export default function SuperAgentDashboard() {
               event: '*',
               schema: 'public',
               table: 'chip_transactions',
+              // DB LOAD PASS 2026-08-24: this had no filter, so every chip
+              // movement anywhere on the platform was decoded and delivered to
+              // every open super-agent dashboard, which then reloaded a view
+              // that only ever shows THIS club. chip_transactions carries
+              // club_id — scope to it, and do not widen it again.
+              filter: `club_id=eq.${resolvedId}`,
             },
             () => loadDashboardData()
           )
@@ -235,7 +240,10 @@ export default function SuperAgentDashboard() {
 
     setIsTransferring(true);
     try {
-      await AgentService.transferToPlayer(agent.id, transferPlayerId, clubId!, amount);
+      // The sender is no longer a parameter: fn_agent_wallet_send derives it
+      // from auth.uid(). This used to pass agent.id - the agents-table ROW id -
+      // where a user id was expected, so the transfer could never have landed.
+      await AgentService.transferToPlayer(transferPlayerId, clubId!, amount);
       if (!isMounted.current) return;
       setTransferPlayerId('');
       if (isMounted.current)
@@ -536,7 +544,6 @@ export default function SuperAgentDashboard() {
           </div>
         )}
       </div>
-      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

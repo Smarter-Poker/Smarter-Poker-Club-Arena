@@ -64,16 +64,37 @@ const MAX_SEATS_BY_VARIANT: Record<string, number> = {
   plo5: 7,
   plo4: 8,
   plo8: 8, // four-card hi-lo — same deal as plo4
+  // 2026-08-24: flo8 is Fixed Limit Omaha Hi-Lo — the SAME four-card deal as
+  // plo8. Only the betting differs, and betting does not change how many cards
+  // leave the deck. Without this line it fell to DEFAULT_MAX_SEATS and a
+  // nine-seat FLO8 table was creatable where a nine-seat PLO8 was not.
+  flo8: 8,
 };
 
 /** Hole cards dealt to each player. */
+const HOLE_CARDS_BY_VARIANT: Record<string, number> = {
+  nlh: 2,
+  flh: 2,
+  short_deck: 2,
+  pineapple: 3,
+  plo4: 4,
+  plo5: 5,
+  plo6: 6,
+  plo8: 4,
+  flo8: 4,
+};
+
 export function holeCardsForVariant(variant: SeatCappedVariant | null | undefined): number {
+  // 2026-08-24: this was four `startsWith` tests with `return 2` underneath.
+  // `flo8` — Fixed Limit Omaha Hi-Lo — starts with none of them, so a four-card
+  // game reported TWO hole cards and `remainderAfterDeal` overstated the deck
+  // by 18 cards at a full table. That is the sixth copy of this same guess to
+  // be found (the other five were in the engine; see
+  // server/src/engine/VariantRules.ts, which is the authority this mirrors).
+  // A table beats a prefix test: a variant is either listed or it is Hold'em,
+  // and adding one cannot silently mean "two cards" any more.
   const v = String(variant ?? '').toLowerCase();
-  if (v.startsWith('plo6')) return 6;
-  if (v.startsWith('plo5')) return 5;
-  if (v.startsWith('plo')) return 4; // plo4, plo8
-  if (v.startsWith('pineapple')) return 3;
-  return 2;
+  return HOLE_CARDS_BY_VARIANT[v] ?? 2;
 }
 
 /** Cards in the deck this variant is dealt from. */
@@ -91,7 +112,29 @@ export function maxSeatsForVariant(variant: SeatCappedVariant | null | undefined
   return MAX_SEATS_BY_VARIANT[key] ?? DEFAULT_MAX_SEATS;
 }
 
+/**
+ * The most seats the DECK can physically serve: every hole card, plus a board.
+ *
+ * This is PHYSICS, not the house law above, and the two are different numbers
+ * on purpose. `maxSeatsForVariant` is Dan's CASH cap, kept tight so Run It
+ * Twice has three boards to come out of. Tournaments are explicitly exempt from
+ * that — see the header — because they cannot run it twice, they size their
+ * tables from their own structure, and capping them would shrink 9-handed MTTs
+ * and turn 3-max Spin & Gos into 8-max.
+ *
+ * They are NOT exempt from the deck. `PokerEngine.deal()` throws rather than
+ * dealing short, so an over-seated table does not degrade — it fails mid-hand.
+ * This is the only ceiling a tournament needs, and the only one it gets.
+ *
+ *   nlh / flh 23   short_deck 15   pineapple 15
+ *   plo4 / plo8 / flo8 11   plo5 9   plo6 7
+ */
+export function maxSeatsTheDeckAllows(variant: SeatCappedVariant | null | undefined): number {
+  return Math.floor((deckSizeForVariant(variant) - BOARD_CARDS) / holeCardsForVariant(variant));
+}
+
 /** Cards left in the deck once a full table has been dealt in. */
+
 export function remainderAfterDeal(variant: SeatCappedVariant, seats: number): number {
   return deckSizeForVariant(variant) - holeCardsForVariant(variant) * seats;
 }

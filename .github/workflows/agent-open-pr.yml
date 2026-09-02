@@ -62,7 +62,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4.3.1
+        uses: actions/checkout@v4
         with:
           # Full history: `gh pr create --fill` computes its title/body from
           # `base...head`, and a depth-1 checkout has no base ref — the run
@@ -123,4 +123,33 @@ jobs:
           mkdir -p .agent && cp "$LOG" .agent/open-pr-result.txt
           git add .agent/open-pr-result.txt
           git commit -q -m "marker: agent-open-pr result for $BRANCH"
-          git push -f origin HEAD:refs/heads/ci-marker/agent-open-pr-result
+
+          # 2026-08-25: this push FAILED THE WHOLE CHECK on a ref race.
+          #
+          #   ! [remote rejected] HEAD -> ci-marker/agent-open-pr-result
+          #     (cannot lock ref ...: is at <a> but expected <b>)
+          #
+          # Several agents push branches within seconds of each other, so two
+          # runs of this workflow reach this line at once and both try to move
+          # the SAME single marker ref. `-f` does not help: the failure is the
+          # ref LOCK, not a non-fast-forward. The step then exited 1 and the PR
+          # showed a red "Agent Open PR" — after the job had already done its
+          # actual work and logged "a PR is already open, nothing to do".
+          #
+          # Retry a few times (the window is milliseconds), and if it still
+          # will not land, SAY SO AND CARRY ON. This branch is a convenience
+          # log for git-only agents; the PR itself is the real output, and a
+          # missing log must never be reported as a failed check.
+          for attempt in 1 2 3; do
+            if git push -f origin HEAD:refs/heads/ci-marker/agent-open-pr-result 2>&1; then
+              echo "marker published (attempt $attempt)"
+              break
+            fi
+            if [ "$attempt" = 3 ]; then
+              echo "marker ref busy after 3 attempts - another agent's run won the race."
+              echo "This is not a failure: the PR outcome above is the real result."
+            else
+              sleep $((attempt * 3))
+              git fetch origin "+refs/heads/ci-marker/agent-open-pr-result:refs/remotes/origin/ci-marker/agent-open-pr-result" 2>/dev/null || true
+            fi
+          done

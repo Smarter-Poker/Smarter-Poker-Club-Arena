@@ -54,6 +54,17 @@ export default function ActivityHeatmap({
 }: ActivityHeatmapProps) {
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
 
+  /** One readout, reachable by pointer, tap or keyboard. */
+  const showCell = (el: HTMLElement, cell: { date: string; count: number } | undefined) => {
+    if (!cell) return;
+    const rect = el.getBoundingClientRect();
+    setTooltip({
+      x: rect.left + rect.width / 2,
+      y: rect.top - 10,
+      text: `${cell.count} action${cell.count !== 1 ? 's' : ''} on ${cell.date}`,
+    });
+  };
+
   const { grid, maxCount, totalCount } = useMemo(() => {
     const lookup = new Map(data.map((d) => [d.date, d.count]));
     const totalDays = weeks * 7;
@@ -156,14 +167,37 @@ export default function ActivityHeatmap({
                     cursor: cell ? 'pointer' : 'default',
                     transition: 'transform 0.1s ease',
                   }}
-                  onMouseEnter={(e) => {
-                    if (!cell) return;
-                    const rect = (e.target as HTMLElement).getBoundingClientRect();
-                    setTooltip({
-                      x: rect.left + rect.width / 2,
-                      y: rect.top - 10,
-                      text: `${cell.count} action${cell.count !== 1 ? 's' : ''} on ${cell.date}`,
-                    });
+                  /**
+                   * TAP AND KEYBOARD REACH THE READOUT TOO (2026-08-29).
+                   *
+                   * The count and the date lived only in a `mouseenter`
+                   * handler, so on a phone — which is where Club Arena is
+                   * mostly used — this grid was a wall of coloured squares
+                   * with no way to learn what any of them meant. Same for
+                   * anyone navigating by keyboard.
+                   *
+                   * One handler, four events. Focus is genuine here because
+                   * the cell is now focusable; the label is the same sentence
+                   * the tooltip shows, so a screen reader gets it without
+                   * needing the tooltip to open at all.
+                   */
+                  tabIndex={cell ? 0 : -1}
+                  role={cell ? 'button' : undefined}
+                  aria-label={
+                    cell
+                      ? `${cell.count} Action${cell.count !== 1 ? 's' : ''} On ${cell.date}`
+                      : undefined
+                  }
+                  onMouseEnter={(e) => showCell(e.currentTarget, cell)}
+                  onFocus={(e) => showCell(e.currentTarget, cell)}
+                  onClick={(e) => showCell(e.currentTarget, cell)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      showCell(e.currentTarget, cell);
+                    } else if (e.key === 'Escape') {
+                      setTooltip(null);
+                    }
                   }}
                 />
               );

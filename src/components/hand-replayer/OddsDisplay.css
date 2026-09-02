@@ -178,11 +178,6 @@
   transition: all 0.25s ease;
 }
 
-.metric-item:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(6, 182, 212, 0.3);
-}
-
 .metric-label {
   font-size: 0.65rem;
   font-weight: 600;
@@ -243,12 +238,6 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   transition: all 0.25s ease;
 }
-
-.mini-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-}
-
 .mini-card.red {
   color: #e74c3c;
 }

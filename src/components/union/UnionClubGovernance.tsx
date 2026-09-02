@@ -118,17 +118,17 @@ export default function UnionClubGovernance({ unionId, clubId, clubName, onExpel
             {blockers && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '14px 0' }}>
                 <Blocker
-                  label="Players seated in union games"
+                  label="Players Seated In Union Games"
                   value={blockers.players_seated_in_union_games}
                 />
-                <Blocker label="Live tournament entries" value={blockers.live_tournament_entries} />
+                <Blocker label="Live Tournament Entries" value={blockers.live_tournament_entries} />
                 <Blocker
-                  label="Unsettled rake this period"
+                  label="Unsettled Rake This Period"
                   value={money(blockers.unsettled_rake_this_period)}
                   bad={Number(blockers.unsettled_rake_this_period) > 0}
                 />
                 <Blocker
-                  label="Agent credit outstanding"
+                  label="Agent Credit Outstanding"
                   value={money(blockers.agent_credit_outstanding)}
                   bad={Number(blockers.agent_credit_outstanding) > 0}
                 />
@@ -145,8 +145,8 @@ export default function UnionClubGovernance({ unionId, clubId, clubName, onExpel
                   }}
                 >
                   {blockers.clear_to_exit
-                    ? 'Clear to exit.'
-                    : 'Open exposure - forcing will leave it unsettled.'}
+                    ? 'Clear To Exit.'
+                    : 'Open Exposure - Forcing Will Leave It Unsettled.'}
                 </div>
               </div>
             )}
@@ -154,7 +154,7 @@ export default function UnionClubGovernance({ unionId, clubId, clubName, onExpel
             <input
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Reason (recorded in the audit log)"
+              placeholder="Reason (Recorded In The Audit Log)"
               style={{
                 width: '100%',
                 padding: '9px 12px',

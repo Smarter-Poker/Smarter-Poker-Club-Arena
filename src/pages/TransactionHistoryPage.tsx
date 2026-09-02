@@ -16,6 +16,8 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { formatDateTime as formatDate } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
+import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
+import { formatPopupText } from '../utils/popupStyle';
 
 interface Transaction {
   id: string;
@@ -345,6 +347,22 @@ export default function TransactionHistoryPage() {
 
   return (
     <div className="transaction-history-page">
+      <RewardsSurfaceHeader
+        eyebrow="Rewards Circuit / Ledger"
+        title="Transaction Ledger"
+        description="Audit Deposits, Withdrawals, Transfers, Rake, And Settlements From One Filterable Record. Exported Results Preserve The Active Date And Transaction Filters."
+        art="vault"
+        status="TRANSACTION INDEX // LIVE"
+        metrics={[
+          { label: 'Inflow', value: `+${totals.deposits.toLocaleString()}`, tone: 'live' },
+          { label: 'Outflow', value: `-${totals.withdrawals.toLocaleString()}` },
+          {
+            label: 'Net Flow',
+            value: `${netFlow >= 0 ? '+' : ''}${netFlow.toLocaleString()}`,
+            tone: netFlow >= 0 ? 'attention' : 'default',
+          },
+        ]}
+      />
       {/* Summary */}
       <div className="tx-summary">
         <div className="summary-card">
@@ -379,7 +397,7 @@ export default function TransactionHistoryPage() {
       >
         <input
           type="text"
-          placeholder="Search transactions..."
+          placeholder="Search Transactions..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           style={{
@@ -476,12 +494,12 @@ export default function TransactionHistoryPage() {
             </p>
             <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
               {searchQuery
-                ? `No results matching "${searchQuery}".`
+                ? `No Results Matching "${searchQuery}".`
                 : dateFrom || dateTo
-                  ? 'No transactions found in the selected date range.'
+                  ? 'No Transactions Found In The Selected Date Range.'
                   : filter !== 'all'
-                    ? `No ${filter} have been recorded yet.`
-                    : 'No transaction history yet. Your activity will appear here.'}
+                    ? `No ${filter} Have Been Recorded Yet.`
+                    : 'No Transaction History Yet. Your Activity Will Appear Here.'}
             </p>
           </div>
         ) : (
@@ -517,7 +535,9 @@ export default function TransactionHistoryPage() {
                     {icon.symbol}
                   </span>
                   <div className="tx-info">
-                    <span className="tx-desc">{tx.description || tx.type.replace('_', ' ')}</span>
+                    <span className="tx-desc">
+                      {formatPopupText(tx.description || tx.type.replace('_', ' '))}
+                    </span>
                     <span className="tx-meta">
                       {tx.club_name && <span className="tx-club">{tx.club_name}</span>}
                       {formatDate(tx.created_at)}

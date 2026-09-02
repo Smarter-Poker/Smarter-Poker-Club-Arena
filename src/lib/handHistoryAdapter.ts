@@ -12,7 +12,8 @@
  */
 import type { HandRecord as ServiceHandRecord } from '../services/HandHistoryService';
 import type { HandRecord as PanelHandRecord } from '../components/table/HandHistoryPanel';
-import { toCardCodes } from '../utils/cardCode';
+import type { ShareableHand, ShareableCard, ShareableAction } from '../components/table/ShareHand';
+import { toCardCodes, toCardCode } from '../utils/cardCode';
 
 /**
  * Dan 2026-08-15 — HandRecord adapter (build fix).
@@ -80,12 +81,74 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
             | 'allin'
             | 'discard',
           amount: a.amount,
+          /* PHASE 4 COMPLETION 2026-09-01: the viewer's own thrown card, as a
+             canonical code because that is the only card shape this panel
+             renders. `toCardCode` because the store writes the suit as a WORD
+             (`{rank:'9',suit:'hearts'}`) and taking the last character of that
+             would print the nine of hearts as a spade - the exact bug that
+             produced `UNDEFINE` on the board, see utils/cardCode.ts. Undefined
+             on every other player's discard: the service only ever fills it
+             for rows RLS let this viewer read. */
+          discardedCard: a.discarded_card ? toCardCode(a.discarded_card) : undefined,
         })),
       pot: 0, // not stored per street — only the final pot is persisted
     }))
     .filter((s) => s.actions.length > 0 || s.cards);
 
   const potTotal = (h.main_pot || 0) + (h.side_pots || []).reduce((a, b) => a + (b || 0), 0);
+
+  /* RUN IT TWICE — boards 2..N, and the reason Dan saw one board on a hand that
+     ran three (production hand #3046089, 2026-08-27).
+
+     `hand_history.rit_boards` was read correctly by HandHistoryService and
+     landed on the service record; this adapter is the ONLY producer of the view
+     model both hand-history screens render, and it did not carry the field
+     across. The service knew and the screen never heard. Board 1 is not in here
+     — it is the ordinary board and stays in `streets[].cards`, which is where
+     `runBoardsFor` reads it from.
+
+     Normalised through toCardCodes for the same reason community_cards is: the
+     column stores spelled-out strings ("7clubs"), and a board that reaches the
+     panel unparsed prints "UNDEFINE" beside a diamond. Empty runs are dropped
+     rather than rendered as a blank RUN badge. */
+  const ritBoards = (h.rit_boards || []).map((b) => toCardCodes(b)).filter((b) => b.length > 0);
+
+  /* TWO DIFFERENT MONEY FIGURES, and conflating them cost a player the truth
+     about their own hand.
+
+       COLLECTED = chips pushed from the pot to a winner (gross).
+       RESULT    = collected minus everything that player put in (net).
+
+     `winners[].amount` used to be set to `p.result`, i.e. the NET, while both
+     its own type (HandHistoryService.HandWinner: "Chips taken from the pot.
+     NOT the player's net result.") and every consumer treated it as gross.
+     HandDetailModal then subtracted each action amount again and added this on
+     top, so a hero who posted 2, called 10 and took a 24 pot was shown 0 in
+     Hand Detail while Hand History showed +12 for the same hand. The gross was
+     on the row the whole time, in `h.winners[].amount`, and was never read.
+
+     Side pots arrive as one winner entry per pot for the same user, so they
+     are summed rather than overwritten. */
+  const investedBy = new Map<string, number>();
+  for (const a of h.actions || []) {
+    if (typeof a.amount === 'number' && a.amount > 0) {
+      investedBy.set(a.player_id, (investedBy.get(a.player_id) || 0) + a.amount);
+    }
+  }
+  const collectedBy = new Map<string, number>();
+  for (const w of h.winners || []) {
+    if (!w?.user_id) continue;
+    collectedBy.set(w.user_id, (collectedBy.get(w.user_id) || 0) + (Number(w.amount) || 0));
+  }
+  /* A row stored before `winners` was persisted still pins the gross exactly:
+     the service defines result as `won - invested`, which rearranges to
+     `won = result + invested`. That is a reconstruction from the same inputs,
+     not an estimate, so a legacy hand shows the same figure a current one does
+     rather than quietly falling back to the net and reopening this bug. */
+  const collectedFor = (uid: string, result: number): number =>
+    collectedBy.has(uid)
+      ? (collectedBy.get(uid) as number)
+      : Math.round(((Number(result) || 0) + (investedBy.get(uid) || 0)) * 100) / 100;
 
   return {
     id: h.id,
@@ -100,6 +163,10 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
       stack: 0, // not stored per hand in hand_history
       position: p.position,
       holeCards: toCardCodes(p.hole_cards).length ? toCardCodes(p.hole_cards) : undefined,
+      /* The stored net, carried through instead of being re-derived downstream.
+         HandDetailModal used to rebuild it from the action log and the winner
+         amount, which is where the double subtraction lived. */
+      result: Number(p.result) || 0,
     })),
     streets,
     winners: (h.players || [])
@@ -107,11 +174,148 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
       .map((p) => ({
         playerId: p.user_id,
         playerName: p.username,
-        amount: p.result,
+        amount: collectedFor(p.user_id, p.result),
         hand: p.final_hand,
       })),
     heroId,
     heroResult: (h.players || []).find((p) => p.user_id === heroId)?.result ?? 0,
     potTotal,
+    // Absent rather than empty on a single-run hand: `runBoardsFor` reads the
+    // length, and an empty array is a claim that the hand ran once, not silence.
+    ritBoards: ritBoards.length ? ritBoards : undefined,
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PANEL RECORD -> SHAREABLE HAND
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Hand Detail's SHARE button had the same defect its REPLAY button had: the
+   handler took no argument and shared `sharedHandData`, a snapshot built once
+   at the end of the LIVE hand. Open Hand Detail, page back to an older hand,
+   press SHARE, and you shared the most recent hand instead — or, if you had
+   not finished a hand this session, you got "Play a hand to the end, then
+   share it" while looking straight at a hand that was plainly finished.
+
+   The record on screen already carries everything a share link needs, so the
+   subject is built FROM IT rather than looked up again.
+
+   Note what is deliberately NOT set: `stack`. Hand history does not store a
+   per-hand stack (the adapter writes 0 above precisely because it is unknown),
+   and HandHistoryPage once filled a literal 1000 for every seat, presenting an
+   invented number to whoever opened the link. `ShareablePlayer.stack` is
+   optional so the figure can be omitted; omitted is what an unknown is. */
+
+const SHARE_VARIANTS = [
+  'NLH',
+  'PLO4',
+  'PLO5',
+  'PLO6',
+  'PLO8',
+  'Short Deck',
+  // 2026-09-01: the engine deals CRAZY Pineapple. See handFormat.ts.
+  'Crazy Pineapple',
+] as const;
+
+/** Widen a stored game_type onto the share union without silently mislabelling.
+    Order matters: PLO8 must be tested before PLO, and SHORT before anything
+    else, or "PLO8" is shared as "PLO4" — which is what the union's own comment
+    records as having happened. */
+export function toShareVariant(gameType: string | undefined): ShareableHand['variant'] {
+  const g = (gameType || '').toUpperCase().replace(/[\s_-]/g, '');
+  if (g.includes('PINEAPPLE')) return 'Crazy Pineapple';
+  if (g.includes('SHORT')) return 'Short Deck';
+  if (g.includes('PLO8') || g.includes('OMAHA8') || g.includes('HILO')) return 'PLO8';
+  if (g.includes('PLO6')) return 'PLO6';
+  if (g.includes('PLO5')) return 'PLO5';
+  if (g.includes('PLO') || g.includes('OMAHA')) return 'PLO4';
+  return (SHARE_VARIANTS as readonly string[]).includes(gameType || '')
+    ? (gameType as ShareableHand['variant'])
+    : 'NLH';
+}
+
+/** "Ah" -> { rank: 'A', suit: 'h' }. Codes reaching here are canonical
+    two-character output from `toCardCode`; anything else is dropped rather
+    than shared as a half-parsed card. */
+function toShareCard(code: string): ShareableCard | null {
+  const rank = (code || '').slice(0, -1);
+  const suit = (code || '').slice(-1).toLowerCase();
+  if (!rank || !'hdcs'.includes(suit)) return null;
+  return { rank, suit: suit as ShareableCard['suit'] };
+}
+
+const SHARE_ACTION: Record<string, ShareableAction['action']> = {
+  fold: 'FOLD',
+  check: 'CHECK',
+  call: 'CALL',
+  bet: 'BET',
+  raise: 'RAISE',
+  allin: 'ALL_IN',
+  all_in: 'ALL_IN',
+};
+
+export function panelHandToShareable(hand: PanelHandRecord, tableName: string): ShareableHand {
+  const seatOf = new Map(hand.players.map((p) => [p.id, p.seat]));
+  const winnerIds = new Set(hand.winners.map((w) => w.playerId));
+
+  const actionsFor = (street: string): ShareableAction[] =>
+    (hand.streets.find((s) => s.name === street)?.actions || [])
+      .map((a): ShareableAction | null => {
+        const mapped = SHARE_ACTION[(a.action || '').toLowerCase()];
+        const seat = seatOf.get(a.playerId);
+        /* `discard` (pineapple) has no ShareableAction member. Dropping it
+           keeps the shared hand honest rather than relabelling it as a CHECK,
+           which would show the recipient an action that never happened. */
+        if (!mapped || seat == null) return null;
+        return { seat, action: mapped, amount: a.amount };
+      })
+      .filter((a): a is ShareableAction => a !== null);
+
+  /* The board is stored per street by the adapter above, so it is read back
+     the same way rather than re-sliced from a flat list. */
+  const cardsOn = (street: string): ShareableCard[] =>
+    (hand.streets.find((s) => s.name === street)?.cards || [])
+      .map(toShareCard)
+      .filter((c): c is ShareableCard => c !== null);
+
+  const flopCards = cardsOn('flop');
+  const turnCard = cardsOn('turn')[0];
+  const riverCard = cardsOn('river')[0];
+
+  return {
+    id: hand.id,
+    tableName: tableName || 'Club Arena',
+    variant: toShareVariant(hand.gameType),
+    stakes: hand.blinds || '',
+    timestamp: hand.timestamp,
+    /* Positions are stored, so the button is derived rather than defaulted to
+       seat 0. 'D' and 'BTN' are both in use across producers. */
+    buttonSeat: hand.players.find((p) => p.position === 'BTN' || p.position === 'D')?.seat ?? 0,
+    players: hand.players.map((p) => {
+      const cards = (p.holeCards || [])
+        .map(toShareCard)
+        .filter((c): c is ShareableCard => c !== null);
+      return {
+        seat: p.seat,
+        name: p.name,
+        /* Only holdings the table actually saw travel in the link. The record
+           carries hole cards for the hero and for anyone who showed down; a
+           mucked hand is never persisted, so there is nothing here to leak. */
+        cards: cards.length ? cards : undefined,
+        isHero: p.id === hand.heroId,
+        isWinner: winnerIds.has(p.id),
+      };
+    }),
+    preflop: actionsFor('preflop'),
+    flop: flopCards.length >= 3 ? { cards: flopCards, actions: actionsFor('flop') } : undefined,
+    turn: turnCard ? { card: turnCard, actions: actionsFor('turn') } : undefined,
+    river: riverCard ? { card: riverCard, actions: actionsFor('river') } : undefined,
+    potTotal: hand.potTotal,
+    /* GROSS chips out of the pot, which is what `winners[].amount` holds after
+       the 2026-08-23 correction. Sharing the net here would understate every
+       pot by the winner's own investment. */
+    winners: hand.winners
+      .map((w) => ({ seat: seatOf.get(w.playerId) ?? 0, amount: w.amount }))
+      .filter((w) => w.seat > 0),
   };
 }

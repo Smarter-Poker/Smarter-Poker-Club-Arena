@@ -125,11 +125,16 @@ export const FinancialCronService = {
       this._config.suspensionCheckIntervalMs
     );
 
-    // Settle rakeback weekly (every 7 days) — persists in-memory rakeback to rakeback_periods table
-    this._rakebackSettlementTimer = setInterval(
-      () => this.settleAllClubRakebacks(),
-      7 * 24 * 60 * 60 * 1000 // 7 days
-    );
+    // WEIGHTED RAKE SWEEP 2026-08-29: the weekly rakeback settlement is NO
+    // LONGER scheduled from the browser. It duplicated two server-side owners
+    // that already run it — the pg_cron pair `union-weekly-rakeback-recompute`
+    // (Sun 23:40 UTC) / `union-weekly-rakeback-close` (Mon 00:10 UTC) and the
+    // engine's RakebackSettlerService sweep — and it fired from whichever
+    // user's tab happened to be open 7 days after page load, which is not a
+    // schedule, it is a coin flip. settle_club_rakeback is also owner-gated
+    // in the database now, so a random member's browser could no longer close
+    // another club's periods anyway. settleAllClubRakebacks() remains callable
+    // for an explicit admin action; nothing schedules it.
 
     this._isRunning = true;
   },

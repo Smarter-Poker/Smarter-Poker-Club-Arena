@@ -1,0 +1,37 @@
+-- Applied to production 2026-08-27 as `privileged_rpcs_are_not_reachable_signed_out`.
+--
+-- Supabase's advisor reports 96 SECURITY DEFINER functions the UNAUTHENTICATED
+-- anon role can call over /rest/v1/rpc. The advisor flags the GRANT, not
+-- exploitability, so the dangerous-looking ones were probed as role anon with
+-- no JWT (auth.uid() NULL) inside transactions that were rolled back.
+--
+-- NO VULNERABILITY WAS FOUND. Both false alarms recorded, because the next
+-- reader of that list will draw the same wrong conclusions:
+--
+--   fn_take_seat_and_buy_in  REFUSED, SQLSTATE 28000, "requires an
+--                            authenticated caller".
+--
+--   fn_admin_update_agent    LOOKED like anon setting an agent's role, status,
+--                            credit limit and commission, because it returned
+--                            without raising. Two checks say otherwise: a
+--                            before/after probe gave MUTATED_BY_ANON = false,
+--                            and the body already carries
+--                              IF v_caller IS NULL THEN RETURN
+--                                jsonb_build_object('success', false,
+--                                                   'error','authentication required');
+--                            A structured failure, not a hole - the right
+--                            contract for a JSON RPC, and why PERFORM made it
+--                            look silent. NOT TOUCHED: making it RAISE would
+--                            break the admin UI that reads {success:false}.
+--
+-- This is defence in depth. An RPC that only makes sense signed in should not
+-- be REACHABLE signed out, so the internal guard is the second line.
+--
+-- WHY THE FIRST ATTEMPT DID NOTHING, caught by its own assertion: these are
+-- granted to PUBLIC and anon INHERITS PUBLIC, so REVOKE ... FROM anon is a
+-- no-op while the PUBLIC grant stands. The revoke must be FROM PUBLIC, with
+-- authenticated and service_role granted back explicitly or every signed-in
+-- caller loses access too.
+--
+-- Result: 96 -> 63 anon-callable. All 6 privileged functions still reachable
+-- for authenticated. All 4 public-discovery RPCs still reachable signed out.

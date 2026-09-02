@@ -22,8 +22,15 @@
  * fourth pins that a payload WITHOUT pendingCashout never queries at all.
  */
 
+/* ROUTER (2026-08-28). The host reads useNavigate: the `session_summary`
+   house ad inside this card carries its own destination, and a promotion you
+   cannot click is worse than none. In the app this component is mounted
+   outside <Routes> but inside <BrowserRouter> (App.tsx, beside ConfirmHost),
+   so a bare render() was testing a context that does not exist in production.
+   MemoryRouter restores it without pulling in a real history. */
 import React from 'react';
 import { render, screen, act, cleanup } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 /* The ledger read the host performs at settlement. One row queue: a test
@@ -86,13 +93,21 @@ describe('SessionSummaryHost — Pending Settlement annotation', () => {
   });
 
   it('annotates a deferred cashout as Pending Settlement', () => {
-    render(<SessionSummaryHost />);
+    render(
+      <MemoryRouter>
+        <SessionSummaryHost />
+      </MemoryRouter>
+    );
     act(() => publishSessionSummary(cashPayload({ plPending: true })));
     expect(screen.getByText('Pending Settlement')).toBeTruthy();
   });
 
   it('does not annotate a settled cashout', () => {
-    render(<SessionSummaryHost />);
+    render(
+      <MemoryRouter>
+        <SessionSummaryHost />
+      </MemoryRouter>
+    );
     act(() => publishSessionSummary(cashPayload()));
     expect(screen.queryByText('Pending Settlement')).toBeNull();
     /* And the card itself did render — the absence above must never pass
@@ -106,7 +121,11 @@ describe('SessionSummaryHost — Pending Settlement annotation', () => {
     /* Settlement: 1,400 cashed out against 1,000 bought in = +400, where the
        estimate said +157. The first (immediate) poll finds the row. */
     ledgerRows.push({ amount: 1400, created_at: new Date().toISOString() });
-    render(<SessionSummaryHost />);
+    render(
+      <MemoryRouter>
+        <SessionSummaryHost />
+      </MemoryRouter>
+    );
     await act(async () => {
       publishSessionSummary(
         cashPayload({
@@ -125,7 +144,11 @@ describe('SessionSummaryHost — Pending Settlement annotation', () => {
 
   it('keeps the annotation while the row has not landed', async () => {
     /* Queue stays empty — every poll answers null. */
-    render(<SessionSummaryHost />);
+    render(
+      <MemoryRouter>
+        <SessionSummaryHost />
+      </MemoryRouter>
+    );
     await act(async () => {
       publishSessionSummary(
         cashPayload({

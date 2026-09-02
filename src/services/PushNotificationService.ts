@@ -1,18 +1,31 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  PUSH NOTIFICATION SERVICE — OneSignal Integration
+ *  PUSH NOTIFICATION SERVICE — RETIRED TRANSPORT, LIVE CALL SITES
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Handles push notifications via OneSignal for:
- * - Table seat availability alerts
- * - Tournament start reminders
- * - Settlement notifications
- * - Achievement unlocks
- * - Friend requests
- * - Club announcements
+ * EVERY METHOD HERE RETURNS false AND DELIVERS NOTHING. The transport it was
+ * built on (a Supabase edge function relaying to OneSignal) was retired on
+ * 2026-08-19; the eight call sites that use it were not. See sendToUsers() for
+ * the full reasoning, and #1498 for the work to move each flow server-side.
+ *
+ * It is kept rather than deleted because deleting it would silently drop the
+ * INTENT — the recipient, the category, the exact copy each flow wants to send
+ * are all recorded here, and that is most of the specification for the
+ * replacement. Removing it would leave nothing to port.
+ *
+ * The flows still waiting on a working transport:
+ *   - table seat availability     (covered server-side already: waitlist_seat_open)
+ *   - tournament start / result   (NOT covered)
+ *   - settlement                  (covered, barely: 1 notification in 30 days)
+ *   - achievement unlocks         (NOT covered)
+ *   - friend requests             (covered server-side already)
+ *   - club announcements          (NOT covered)
+ *   - wallet credit / cashout     (NOT covered)
+ *   - disputes                    (NOT covered)
+ * Measured against production 2026-08-29 by grouping `notifications` by type
+ * over 30 days.
  */
 
-import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -49,178 +62,72 @@ export interface NotificationPreferences {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ONESIGNAL CONFIG
-// ═══════════════════════════════════════════════════════════════════════════════
-
-const ONESIGNAL_APP_ID = import.meta.env.VITE_ONESIGNAL_APP_ID || '';
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // SERVICE
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class PushNotificationServiceClass {
-  private initialized = false;
-
   /**
-   * Initialize OneSignal SDK (call on app start)
-   */
-  async init(): Promise<void> {
-    if (this.initialized || !ONESIGNAL_APP_ID) {
-      console.debug('[PushService] OneSignal not configured or already initialized');
-      return;
-    }
-
-    try {
-      // OneSignal Web SDK initialization
-      // @ts-expect-error - OneSignal CDN types - OneSignal is loaded via CDN
-      if (typeof window !== 'undefined' && window.OneSignalDeferred) {
-        // @ts-expect-error - OneSignal CDN types
-        window.OneSignalDeferred.push(async (OneSignal: any) => {
-          try {
-            await OneSignal.init({
-              appId: ONESIGNAL_APP_ID,
-              allowLocalhostAsSecureOrigin: true,
-              notifyButton: { enable: false },
-            });
-            this.initialized = true;
-          } catch (innerErr: unknown) {
-            console.debug('[PushService] OneSignal.init() failed inside deferred:', innerErr);
-          }
-        });
-      }
-    } catch (error: unknown) {
-      console.debug('[PushService] Init failed:', error);
-    }
-  }
-
-  /**
-   * Register/update user's OneSignal external ID
-   */
-  async setExternalUserId(userId: string): Promise<void> {
-    try {
-      // @ts-expect-error - OneSignal CDN types
-      if (typeof window !== 'undefined' && window.OneSignal) {
-        // @ts-expect-error - OneSignal CDN types
-        await window.OneSignal.login(userId);
-      }
-    } catch (error: unknown) {
-      // OneSignal SDK v16 intermittent issue — non-blocking, suppress to warn
-      console.debug(
-        '[PushService] External user ID set skipped (OneSignal SDK):',
-        (error as Error)?.message || error
-      );
-    }
-  }
-
-  /**
-   * Request push notification permission
-   */
-  async requestPermission(): Promise<boolean> {
-    try {
-      // @ts-expect-error - OneSignal CDN types
-      if (typeof window !== 'undefined' && window.OneSignal) {
-        // @ts-expect-error - OneSignal CDN types
-        const permission = await window.OneSignal.Notifications.requestPermission();
-        return permission;
-      }
-      return false;
-    } catch (error: unknown) {
-      reportError(error, 'PushNotificationService.Permission_request_failed');
-      return false;
-    }
-  }
-
-  /**
-   * Check if push notifications are enabled
-   */
-  async isEnabled(): Promise<boolean> {
-    try {
-      // @ts-expect-error - OneSignal CDN types
-      if (typeof window !== 'undefined' && window.OneSignal) {
-        // @ts-expect-error - OneSignal CDN types
-        return await window.OneSignal.Notifications.permission;
-      }
-      return false;
-    } catch (err) {
-      reportError(err, 'PushNotificationService.Error');
-      return false;
-    }
-  }
-
-  /**
-   * Send push notification to specific user(s)
-   * Uses Supabase Edge Function to call OneSignal REST API
+   * Send push notification to specific user(s).
+   *
+   * RETIRED. Always returns false. See sendToUsers().
    */
   async sendToUser(userId: string, payload: PushNotificationPayload): Promise<boolean> {
     return this.sendToUsers([userId], payload);
   }
 
   /**
-   * Send push notification to multiple users
+   * ═══════════════════════════════════════════════════════════════════════
+   *  RETIRED. THIS DELIVERS NOTHING, AND IT CANNOT BE MADE TO FROM HERE.
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * This used to invoke the `send-push-notification` edge function, which
+   * relayed to onesignal.com. OneSignal was removed from the platform on
+   * 2026-08-19 and replaced with self-hosted VAPID web push, so every call
+   * since that date has delivered nothing — while returning through a
+   * `console.debug` and a `false` that no call site checks. Eight of them
+   * (cashout, credit requests, disputes, settlements, tournament auto-seat)
+   * believe they notify people and do not.
+   *
+   * WHY IT IS NOT SIMPLY REPOINTED. Two independent reasons, and both matter:
+   *
+   *   1. The edge function performed no authorisation on WHO may be notified,
+   *      so any authenticated user could push an arbitrary title, message and
+   *      url to arbitrary user ids. Today that is inert because the vendor is
+   *      gone. Wiring it to a working transport would turn a dead relay into a
+   *      live spam and phishing vector — precisely the hole World Hub closed
+   *      in pages/api/notifications/send.js on 2026-07-25.
+   *
+   *   2. There is no client-writable transport to point it at. Verified
+   *      against production on 2026-08-29: `notifications` has RLS on with a
+   *      single INSERT policy, `service_role` only, and `push_outbox` grants
+   *      the browser nothing at all. A push is raised by inserting a
+   *      `notifications` row; `trg_mirror_notification_to_push_outbox` mirrors
+   *      it into `push_outbox`, and /api/cron/push-dispatch drains that with
+   *      the consent gate applied. All of it is server-side, by design.
+   *
+   * So the fix for each call site is to raise the notification from the
+   * trusted context that already performs the action — the RPC or trigger on
+   * the underlying table — not from the browser afterwards. Tracked in #1498.
+   *
+   * WHAT CHANGED HERE (2026-08-29): this used to warn ONCE per session at
+   * console.warn and quietly run a `filterByPreferences` query first — a DB
+   * round trip to decide who to send nothing to. Now every dropped
+   * notification is reported, with its category, so the flows that are
+   * silently not notifying anybody are visible in monitoring instead of
+   * depending on somebody reading a console on the right screen.
    */
   async sendToUsers(userIds: string[], payload: PushNotificationPayload): Promise<boolean> {
-    try {
-      // Check user preferences before sending
-      const filteredUserIds = await this.filterByPreferences(userIds, payload.category);
-      if (filteredUserIds.length === 0) return true;
-
-      const { error } = await supabase.functions.invoke('send-push-notification', {
-        body: {
-          userIds: filteredUserIds,
-          title: payload.title,
-          message: payload.message,
-          category: payload.category,
-          data: payload.data,
-          url: payload.url,
-          imageUrl: payload.imageUrl,
-        },
-      });
-
-      if (error) throw error;
-      return true;
-    } catch (error: unknown) {
-      console.debug('[PushService] Send failed:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Filter users based on their notification preferences
-   */
-  private async filterByPreferences(
-    userIds: string[],
-    category: NotificationCategory
-  ): Promise<string[]> {
-    // Map category to preference field
-    const categoryToField: Record<NotificationCategory, keyof NotificationPreferences> = {
-      table_available: 'tableAlerts',
-      tournament_start: 'tournamentReminders',
-      tournament_result: 'tournamentReminders',
-      settlement: 'settlementAlerts',
-      achievement: 'achievementAlerts',
-      friend_request: 'friendAlerts',
-      club_announcement: 'clubAnnouncements',
-      wallet_credit: 'tableAlerts', // Fallback to table alerts
-      general: 'clubAnnouncements',
-    };
-
-    const field = categoryToField[category];
-    if (!field) return userIds;
-
-    try {
-      const { data } = await supabase
-        .from('user_notification_preferences')
-        .select('user_id')
-        .in('user_id', userIds)
-        .eq(field, true);
-
-      // If no preferences found, assume all enabled (default on)
-      if (!data || data.length === 0) return userIds;
-      return data.map((d) => d.user_id);
-    } catch (err) {
-      reportError(err, 'PushNotificationService.Error');
-      return userIds; // On error, send to all
-    }
+    reportError(
+      new Error(
+        `PushNotificationService is retired and delivered nothing: ` +
+          `category="${payload.category}" title="${payload.title}" ` +
+          `recipients=${userIds.length}. This flow must raise its notification ` +
+          `server-side (insert into notifications, which mirrors to push_outbox). ` +
+          `See issue #1498.`
+      ),
+      'PushNotificationService.Retired_send_dropped'
+    );
+    return false;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -357,24 +264,17 @@ class PushNotificationServiceClass {
    * `url` deep-links straight at the table so tapping the notification IS
    * taking the seat.
    */
-  async notifyBlindingOff(
-    userId: string,
-    tournamentName: string,
-    tableId: string,
-    chipsLeft?: number
-  ): Promise<boolean> {
-    const stack =
-      typeof chipsLeft === 'number' && chipsLeft > 0
-        ? ` You have ${Math.round(chipsLeft).toLocaleString()} chips left.`
-        : '';
-    return this.sendToUser(userId, {
-      title: 'You Are Being Blinded Off',
-      message: `Your seat in ${tournamentName} is posting blinds without you.${stack} Tap to take your seat.`,
-      category: 'tournament_start',
-      url: `/table/${tableId}`,
-      data: { tableId, action: 'blinding_off' },
-    });
-  }
+  /**
+   * REMOVED 2026-08-30 (#1498). The last live caller was TournamentAutoSeat,
+   * and it is now handled by trg_notify_blinding_off on table_seats: the engine
+   * flags is_sitting_out / is_away on a live tournament seat, the trigger raises
+   * the notification, and the mirror sends the push.
+   *
+   * Server-side is not merely tidier here, it is the only version that works.
+   * Somebody being blinded off is by definition not looking at the app, and a
+   * push that only fires while a React component is mounted is the one that
+   * matters least.
+   */
 
   /**
    * Notify user that a club game is starting / has open seats
@@ -403,7 +303,7 @@ class PushNotificationServiceClass {
     messagePreview: string
   ): Promise<boolean> {
     return this.sendToUser(userId, {
-      title: `Message from ${fromUsername}`,
+      title: `Message From ${fromUsername}`,
       message: messagePreview.substring(0, 80) + (messagePreview.length > 80 ? '...' : ''),
       category: 'general',
       url: '/messages',

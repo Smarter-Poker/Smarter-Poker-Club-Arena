@@ -1,203 +1,192 @@
 .agent-hierarchy-tree {
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 16px;
-    overflow: hidden;
-    backdrop-filter: blur(16px) saturate(1.2);
-    -webkit-backdrop-filter: blur(16px) saturate(1.2);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  overflow: hidden;
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .hierarchy-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 16px 20px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .hierarchy-header h3 {
-    margin: 0;
-    font-size: 1.1rem;
-    color: #fff;
+  margin: 0;
+  font-size: 1.1rem;
+  color: #fff;
 }
 
 .refresh-btn {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 6px;
-    padding: 6px 12px;
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 0.85rem;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.refresh-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 6px 12px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
 .hierarchy-container {
-    padding: 16px;
-    max-height: 600px;
-    overflow-y: auto;
+  padding: 16px;
+  max-height: 600px;
+  overflow-y: auto;
 }
 
 .hierarchy-node {
-    margin-left: calc(var(--depth) * 24px);
+  margin-left: calc(var(--depth) * 24px);
 }
 
 .node-content {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 12px;
-    margin-bottom: 8px;
-    cursor: pointer;
-    transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.node-content:hover {
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.15);
-    transform: translateY(-2px);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .node-content.tier-super {
-    border-left: 3px solid #ffd700;
+  border-left: 3px solid #ffd700;
 }
 
 .node-content.tier-master {
-    border-left: 3px solid #c0c0c0;
+  border-left: 3px solid #c0c0c0;
 }
 
 .node-content.tier-sub {
-    border-left: 3px solid #cd7f32;
+  border-left: 3px solid #cd7f32;
 }
 
 .expand-btn {
-    width: 24px;
-    height: 24px;
-    background: none;
-    border: none;
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 0.7rem;
-    cursor: pointer;
-    transition: transform 0.2s;
-    flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.7rem;
+  cursor: pointer;
+  transition: transform 0.2s;
+  flex-shrink: 0;
 }
 
 .expand-btn.expanded {
-    transform: rotate(90deg);
+  transform: rotate(90deg);
 }
 
 .expand-placeholder {
-    width: 24px;
-    flex-shrink: 0;
+  width: 24px;
+  flex-shrink: 0;
 }
 
 .node-avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    overflow: hidden;
-    background: linear-gradient(135deg, #ffd700, #ff8c00);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: linear-gradient(135deg, #ffd700, #ff8c00);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .node-avatar img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .node-avatar span {
-    font-weight: 700;
-    color: #000;
-    font-size: 1.1rem;
+  font-weight: 700;
+  color: #000;
+  font-size: 1.1rem;
 }
 
 .node-info {
-    flex: 1;
-    min-width: 0;
+  flex: 1;
+  min-width: 0;
 }
 
 .node-name {
-    font-weight: 600;
-    color: #fff;
-    font-size: 0.95rem;
-    margin-bottom: 4px;
+  font-weight: 600;
+  color: #fff;
+  font-size: 0.95rem;
+  margin-bottom: 4px;
 }
 
 .node-meta {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.8rem;
 }
 
 .tier-badge {
-    text-transform: uppercase;
-    font-weight: 600;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-size: 0.7rem;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.7rem;
 }
 
 .tier-super .tier-badge {
-    background: rgba(255, 215, 0, 0.2);
-    color: #ffd700;
+  background: rgba(255, 215, 0, 0.2);
+  color: #ffd700;
 }
 
 .tier-master .tier-badge {
-    background: rgba(192, 192, 192, 0.2);
-    color: #c0c0c0;
+  background: rgba(192, 192, 192, 0.2);
+  color: #c0c0c0;
 }
 
 .tier-sub .tier-badge {
-    background: rgba(205, 127, 50, 0.2);
-    color: #cd7f32;
+  background: rgba(205, 127, 50, 0.2);
+  color: #cd7f32;
 }
 
 .player-count {
-    color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.6);
 }
 
 .commission {
-    color: #22c55e;
+  color: #22c55e;
 }
 
 .node-volume {
-    text-align: right;
-    flex-shrink: 0;
+  text-align: right;
+  flex-shrink: 0;
 }
 
 .volume-label {
-    font-size: 0.75rem;
-    color: rgba(255, 255, 255, 0.5);
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .volume-value {
-    font-size: 1rem;
-    font-weight: 600;
-    color: #ffd700;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #ffd700;
 }
 
 .node-children {
-    margin-top: 4px;
+  margin-top: 4px;
 }
 
 .hierarchy-loading,
 .hierarchy-empty {
-    padding: 40px;
-    text-align: center;
-    color: rgba(255, 255, 255, 0.5);
+  padding: 40px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.5);
 }

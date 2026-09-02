@@ -23,8 +23,14 @@ export function useVisibilityRefresh(refreshFn: () => void | Promise<void>) {
   const isRefreshingRef = useRef(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Always keep ref in sync with latest callback (no effect re-run needed)
-  refreshFnRef.current = refreshFn;
+  /* Synced in an effect, not in the render body. Writing a ref while
+     rendering is a side effect: React 19 may begin a render and discard it,
+     and a visibilitychange landing in that window would then run a callback
+     belonging to props that were never committed. No dep array, so it tracks
+     every commit. */
+  useEffect(() => {
+    refreshFnRef.current = refreshFn;
+  });
 
   // Track when data was last fetched
   const markFresh = useCallback(() => {

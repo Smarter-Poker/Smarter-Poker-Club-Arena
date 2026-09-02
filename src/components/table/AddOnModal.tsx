@@ -170,7 +170,7 @@ export default function AddOnModal({
       <div
         style={{
           background: 'linear-gradient(145deg, #1a1a2e 0%, #16213e 100%)',
-          border: '1px solid rgba(16,185,129,0.3)',
+          border: '1px solid rgba(63,185,80,0.3)',
           borderRadius: 16,
           padding: 24,
           width: '100%',
@@ -180,7 +180,7 @@ export default function AddOnModal({
         }}
       >
         {/* Header */}
-        <div style={{ fontSize: 18, fontWeight: 700, color: '#10b981', marginBottom: 4 }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: '#3fb950', marginBottom: 4 }}>
           Add-On Available
         </div>
         <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 16 }}>
@@ -190,7 +190,7 @@ export default function AddOnModal({
         {/* Countdown */}
         <div
           style={{
-            background: countdown <= 10 ? 'rgba(239,68,68,0.15)' : 'rgba(16,185,129,0.1)',
+            background: countdown <= 10 ? 'rgba(239,68,68,0.15)' : 'rgba(63,185,80,0.1)',
             borderRadius: 12,
             padding: '12px 0',
             marginBottom: 16,
@@ -200,7 +200,7 @@ export default function AddOnModal({
             style={{
               fontSize: 32,
               fontWeight: 800,
-              color: countdown <= 10 ? '#ef4444' : '#10b981',
+              color: countdown <= 10 ? '#ef4444' : '#3fb950',
             }}
           >
             {countdown}s
@@ -263,7 +263,7 @@ export default function AddOnModal({
               }}
             >
               <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14 }}>Chips Received</span>
-              <span style={{ color: '#10b981', fontWeight: 600, fontSize: 14 }}>
+              <span style={{ color: '#3fb950', fontWeight: 600, fontSize: 14 }}>
                 +{addOnChips.toLocaleString()} Chips
               </span>
             </div>
@@ -326,7 +326,7 @@ export default function AddOnModal({
                   borderRadius: 10,
                   border: 'none',
                   background: canAfford
-                    ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)'
+                    ? 'linear-gradient(135deg, #3fb950 0%, #2ea043 100%)'
                     : '#374151',
                   color: '#fff',
                   fontSize: 14,
@@ -339,7 +339,7 @@ export default function AddOnModal({
                 {processing
                   ? 'Processing...'
                   : priceKnown
-                    ? `Accept for ${totalCost.toLocaleString()}`
+                    ? `Accept For ${totalCost.toLocaleString()}`
                     : 'Accept Add-On'}
               </button>
             </div>
@@ -348,7 +348,7 @@ export default function AddOnModal({
           /* Result display */
           <div style={{ padding: '16px 0' }}>
             {result === 'accepted' && (
-              <div style={{ color: '#10b981', fontSize: 16, fontWeight: 600 }}>
+              <div style={{ color: '#3fb950', fontSize: 16, fontWeight: 600 }}>
                 Add-On Accepted - +{addOnChips.toLocaleString()} Chips Added
               </div>
             )}

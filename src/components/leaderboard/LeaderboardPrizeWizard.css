@@ -1,0 +1,434 @@
+.lb-prize-wizard-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(3, 6, 12, 0.86);
+  backdrop-filter: blur(10px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.lb-prize-wizard {
+  width: min(780px, 100%);
+  max-height: min(900px, calc(100dvh - 36px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: #f7f2e5;
+  border: 1px solid rgba(224, 180, 77, 0.42);
+  border-radius: 24px;
+  background:
+    linear-gradient(135deg, rgba(224, 180, 77, 0.08), transparent 34%),
+    linear-gradient(180deg, #171923, #0c0e15 72%);
+  box-shadow:
+    0 32px 90px rgba(0, 0, 0, 0.64),
+    inset 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.lb-prize-wizard-header,
+.lb-prize-wizard-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px;
+}
+
+.lb-prize-wizard-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.lb-prize-wizard-header h2,
+.lb-prize-wizard-header p {
+  margin: 0;
+}
+
+.lb-prize-wizard-header h2 {
+  margin-top: 4px;
+  font-family: var(--font-display, Georgia, serif);
+  font-size: clamp(1.4rem, 4vw, 2rem);
+  letter-spacing: 0.02em;
+}
+
+.lb-prize-wizard-header p,
+.lb-prize-kicker,
+.lb-prize-step-number {
+  color: #d1b66c;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.lb-prize-wizard button,
+.lb-prize-wizard input,
+.lb-prize-wizard select {
+  min-height: 44px;
+}
+
+.lb-prize-wizard button {
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.045);
+  cursor: pointer;
+}
+
+.lb-prize-wizard button:focus-visible,
+.lb-prize-wizard .selected {
+  border-color: rgba(224, 180, 77, 0.8);
+  background: rgba(224, 180, 77, 0.12);
+  outline: none;
+}
+
+.lb-prize-wizard button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.lb-prize-progress {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 0;
+  padding: 14px 22px;
+  list-style: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.lb-prize-progress li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(247, 242, 229, 0.5);
+  font-size: 0.73rem;
+}
+
+.lb-prize-progress li > span {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+.lb-prize-progress li.active,
+.lb-prize-progress li.complete {
+  color: #e0b44d;
+}
+
+.lb-prize-wizard-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 24px;
+}
+
+.lb-prize-step h3 {
+  margin: 7px 0 8px;
+  font-size: clamp(1.2rem, 3vw, 1.65rem);
+}
+
+.lb-prize-step > p {
+  margin: 0 0 22px;
+  color: rgba(247, 242, 229, 0.7);
+  line-height: 1.55;
+}
+
+.lb-prize-choice-grid,
+.lb-prize-plan-buttons,
+.lb-prize-period-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.lb-prize-choice-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.lb-prize-choice-grid button,
+.lb-prize-plan-buttons button {
+  display: flex;
+  min-height: 96px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 7px;
+  padding: 16px;
+  text-align: left;
+}
+
+.lb-prize-choice-grid span,
+.lb-prize-plan-buttons span {
+  color: rgba(247, 242, 229, 0.62);
+  font-size: 0.8rem;
+}
+
+.lb-prize-source-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 18px;
+  align-items: center;
+  margin-top: 20px;
+  padding: 20px;
+  border: 1px solid rgba(224, 180, 77, 0.32);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(224, 180, 77, 0.12), rgba(13, 16, 25, 0.8));
+}
+
+.lb-prize-source-mark {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  color: #201604;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #f2d681, #a86d11);
+  box-shadow: 0 8px 26px rgba(224, 180, 77, 0.22);
+}
+
+.lb-prize-source-card p {
+  margin: 5px 0 0;
+  color: rgba(247, 242, 229, 0.62);
+  font-size: 0.8rem;
+}
+
+.lb-prize-source-card > div > span,
+.lb-prize-balance span,
+.lb-prize-balance small {
+  display: block;
+  color: rgba(247, 242, 229, 0.58);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.lb-prize-balance {
+  min-width: 120px;
+  text-align: right;
+}
+
+.lb-prize-balance strong {
+  display: block;
+  margin: 4px 0;
+  color: #f1cf72;
+  font-size: 1.25rem;
+}
+
+.lb-prize-safety-note,
+.lb-prize-inline-error,
+.lb-prize-inline-warning {
+  display: grid;
+  gap: 4px;
+  margin-top: 16px;
+  padding: 13px 15px;
+  border-radius: 12px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.lb-prize-safety-note {
+  border-left: 3px solid #5ca9ff;
+  background: rgba(48, 111, 184, 0.12);
+}
+
+.lb-prize-inline-error {
+  color: #ffd5d5;
+  border: 1px solid rgba(255, 93, 93, 0.3);
+  background: rgba(150, 30, 30, 0.16);
+}
+
+.lb-prize-inline-warning {
+  color: #ffe4a1;
+  border: 1px solid rgba(224, 180, 77, 0.3);
+  background: rgba(224, 180, 77, 0.09);
+}
+
+.lb-prize-field {
+  display: grid;
+  gap: 7px;
+  margin: 18px 0;
+  color: rgba(247, 242, 229, 0.68);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.lb-prize-field input,
+.lb-prize-field select,
+.lb-prize-rank-list input {
+  width: 100%;
+  box-sizing: border-box;
+  color: #f7f2e5;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 10px;
+  background: #090b11;
+  padding: 9px 11px;
+}
+
+.lb-prize-plan-buttons {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.lb-prize-plan-buttons button {
+  min-height: 78px;
+  padding: 11px;
+}
+
+.lb-prize-period-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.lb-prize-period-grid fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+}
+
+.lb-prize-period-grid legend {
+  padding: 0 7px;
+  color: #e8c76b;
+  font-weight: 800;
+}
+
+.lb-prize-rank-list {
+  display: grid;
+  gap: 8px;
+}
+
+.lb-prize-rank-list label,
+.lb-prize-total {
+  display: grid;
+  grid-template-columns: 1fr minmax(90px, 0.8fr);
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+}
+
+.lb-prize-rank-list input {
+  min-height: 40px;
+}
+
+.lb-prize-total {
+  margin-top: 13px;
+  padding-top: 12px;
+  color: #e8c76b;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.lb-prize-total strong {
+  text-align: right;
+}
+
+.lb-prize-review {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 20px 0;
+}
+
+.lb-prize-review div {
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.lb-prize-review dt {
+  color: rgba(247, 242, 229, 0.5);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lb-prize-review dd {
+  margin: 5px 0 0;
+  font-weight: 800;
+}
+
+.lb-prize-wizard-footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(3, 5, 9, 0.6);
+}
+
+.lb-prize-wizard-footer button {
+  min-width: 112px;
+  padding: 0 17px;
+}
+
+.lb-prize-wizard-footer .primary {
+  color: #181103;
+  border-color: #f1cf72;
+  background: linear-gradient(145deg, #f3d77f, #c78b24);
+  font-weight: 900;
+}
+
+@media (max-width: 680px) {
+  .lb-prize-wizard-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .lb-prize-wizard {
+    max-height: 94dvh;
+    border-radius: 22px 22px 0 0;
+  }
+
+  .lb-prize-progress strong {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .lb-prize-progress li {
+    justify-content: center;
+  }
+
+  .lb-prize-wizard-body {
+    min-height: 0;
+    padding: 20px 16px;
+  }
+
+  .lb-prize-choice-grid,
+  .lb-prize-period-grid,
+  .lb-prize-review {
+    grid-template-columns: 1fr;
+  }
+
+  .lb-prize-plan-buttons {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .lb-prize-source-card {
+    grid-template-columns: auto 1fr;
+  }
+
+  .lb-prize-balance {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lb-prize-wizard *,
+  .lb-prize-wizard *::before,
+  .lb-prize-wizard *::after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
+}

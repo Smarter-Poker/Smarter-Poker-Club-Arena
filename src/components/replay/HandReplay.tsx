@@ -6,6 +6,7 @@
 import { useState, useEffect, useRef, Suspense } from 'react';
 import type { Card, CardSuit, CardRank } from '../../types/database.types';
 import { CardImage } from '../table/CardImage';
+import { LiveHandReplayer2D } from './LiveHandReplayer2D';
 import type { Card as CardImageCard } from '../table/CardImage';
 import './HandReplay.css';
 import { useToast } from '../common/Toast';
@@ -15,12 +16,29 @@ import { lazyWithRetry } from '../../utils/lazyWithRetry';
 // Lazy-load HandReplay3D — Three.js is large and only needed when 3D tab is opened
 const HandReplay3D = lazyWithRetry(() => import('./HandReplay3D'));
 
-interface PlayerAction {
+export interface PlayerAction {
   player_id: string;
+  street?: string;
   action: 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | 'discard';
   amount?: number;
   timestamp: number;
 }
+
+/**
+ * The verbs a player CHOOSES. `hand_history.actions` also carries forced money
+ * — sb, bb, ante, straddle, post — and the returned uncalled bet, all recorded
+ * since 2026-08-27 so a hand can be rebuilt. None of them is a decision, so
+ * none of them belongs in a replay's action timeline.
+ */
+const VOLUNTARY_ACTIONS = new Set<string>([
+  'fold',
+  'check',
+  'call',
+  'bet',
+  'raise',
+  'all_in',
+  'discard',
+]);
 
 interface HandPlayer {
   seat: number;
@@ -32,9 +50,17 @@ interface HandPlayer {
   final_hand?: string; // "Two Pair", "One Pair", etc.
   result: number; // +/- chips
   is_winner: boolean;
+  /** SHOWDOWN POLISH 2026-08-25: the persisted reveal record (see
+      HandHistoryService.HandPlayer.showdown_reveal). */
+  showdown_reveal?: {
+    reveal_order: number;
+    mucked: boolean;
+    hand_name?: string;
+    hand_description?: string;
+  };
 }
 
-interface HandData {
+export interface HandData {
   id: string;
   serial_number: string;
   played_at: string;
@@ -44,6 +70,21 @@ interface HandData {
   community_cards: Card[];
   /** Round 2 (double board): board 2, absent on single-board hands. */
   community_cards2?: Card[];
+  /** TRIPLE-BOARD BOMB POT 2026-08-27: board 3, absent below three boards. */
+  community_cards3?: Card[];
+  /** BOMB POT FACTS (spec §20): trigger reason / ante / boards / variant. */
+  bomb_pot?: {
+    trigger_reason?: string;
+    ante_amount?: number;
+    board_count?: number;
+    variant?: string;
+  } | null;
+  /**
+   * COMPLETENESS PASS 2026-08-26: Run It Twice boards 2..N in run order
+   * (board 1 is community_cards). Dealt AFTER the all-in locked, so they
+   * render only once the replay reaches the river step.
+   */
+  rit_boards?: Card[][];
   players: HandPlayer[];
   actions: PlayerAction[];
 }
@@ -72,8 +113,26 @@ function normalizeRank(rank: string): CardImageCard['rank'] {
   return rank as CardImageCard['rank'];
 }
 
-// Convert database Card to CardImage Card
-function toCardImage(card: Card): CardImageCard {
+/**
+ * Convert a stored card to CardImage form.
+ *
+ * COMPLETENESS PASS 2026-08-26: production `hand_history.community_cards`
+ * rows store ENGINE STRINGS ('8spades', '10hearts'), not {rank, suit}
+ * objects — verified against a live row. This function only handled the
+ * object form, so `card.rank` came back undefined and CardImage fell back
+ * to its Ace-of-Spades placeholder for every board card in a replayed
+ * hand_history row. Both forms are handled now (rit_boards uses the same
+ * string format).
+ */
+function toCardImage(card: Card | string): CardImageCard {
+  if (typeof card === 'string') {
+    const m = /^(10|[2-9TJQKA])(hearts|diamonds|clubs|spades|[hdcs])$/.exec(card);
+    if (m) {
+      return { rank: normalizeRank(m[1]), suit: SUIT_ABBREV[m[2]] || 's' };
+    }
+    // Unparseable string — let CardImage's own guard warn and fall back.
+    return { rank: 'A', suit: 's' };
+  }
   return {
     rank: normalizeRank(card.rank),
     suit: SUIT_ABBREV[card.suit] || 's',
@@ -140,13 +199,16 @@ export default function HandReplay({
 
   useEffect(() => {
     if (handData) {
-      // Calculate total steps based on community cards stages
-      // (preflop, flop, turn, river, showdown)
-      const stages =
-        1 + // preflop
-        (handData.community_cards.length >= 3 ? 1 : 0) + // flop
-        (handData.community_cards.length >= 4 ? 1 : 0) + // turn
-        (handData.community_cards.length >= 5 ? 1 : 0); // river
+      let stages = 1; // preflop
+      let currentStreet = 'preflop';
+      for (const a of handData.actions) {
+        if (a.street && a.street !== currentStreet && a.street !== 'pineapple_discard') {
+          stages++;
+          currentStreet = a.street;
+        }
+        stages++;
+      }
+      stages++; // showdown
       setTotalSteps(stages);
       totalStepsRef.current = stages;
     }
@@ -178,23 +240,40 @@ export default function HandReplay({
             main_pot: data.main_pot,
             community_cards: data.community_cards,
             community_cards2: data.community_cards2 ?? [],
+            community_cards3: data.community_cards3 ?? [],
+            bomb_pot: data.bomb_pot ?? null,
+            // COMPLETENESS PASS 2026-08-26: Run It Twice boards 2..N (board
+            // 1 is community_cards) — rendered as RUN rows at showdown.
+            rit_boards: data.rit_boards ?? [],
             players: data.players.map((p) => ({
               seat: p.seat,
               user_id: p.user_id,
               username: p.username,
               avatar_url: p.avatar_url,
-              position: p.position as any,
+              position: p.position as HandPlayer['position'],
               hole_cards: p.hole_cards,
               final_hand: p.final_hand,
               result: p.result,
               is_winner: p.is_winner,
+              showdown_reveal: p.showdown_reveal,
             })),
-            actions: data.actions.map((a) => ({
-              player_id: a.player_id,
-              action: a.action,
-              amount: a.amount,
-              timestamp: a.timestamp,
-            })),
+            /* FORCED MONEY IS NOT A REPLAYED ACTION (2026-08-27).
+               The engine now records the blinds, antes, straddles and the
+               returned uncalled bet in `actions`, which is what makes a hand
+               rebuildable — see server/src/engine/HandController.ts postBlinds.
+               The replay animates a player DECIDING something, and nobody
+               decides to post a blind, so those rows are filtered here rather
+               than widened into PlayerAction. The hand rundown, which does
+               want them, reads the row directly. */
+            actions: data.actions
+              .filter((a) => VOLUNTARY_ACTIONS.has(a.action))
+              .map((a) => ({
+                player_id: a.player_id,
+                action: a.action as PlayerAction['action'],
+                amount: a.amount,
+                street: (a as { street?: string }).street as 'PREFLOP' | 'FLOP' | 'TURN' | 'RIVER',
+                timestamp: a.timestamp,
+              })),
           });
         } else {
           /* NOT FOUND. It used to render `getFallbackHandData()` here — a
@@ -255,7 +334,7 @@ export default function HandReplay({
   };
 
   const handleShare = async () => {
-    const shareUrl = `https://smarter.poker/replay/${handData?.id}`;
+    const shareUrl = `https://smarter.poker/hub/club-arena/replay/${handData?.id}`;
     const shareText = `Check out this hand I played on Club Arena! #PlayPoker`;
 
     if (navigator.share) {
@@ -392,68 +471,179 @@ export default function HandReplay({
       </div>
 
       {/* Players Table */}
-      <div className="players-table">
-        {handData.players.map((player) => (
-          <div key={player.user_id} className={`player-row ${player.is_winner ? 'winner' : ''}`}>
-            {/* Name & Position */}
-            <div className="player-info">
-              <span className="player-name">{player.username}</span>
-              <span
-                className="player-position"
-                style={{ backgroundColor: getPositionColor(player.position) }}
+      {activeTab === 'summary' && (
+        <div className="players-table">
+          {/* SHOWDOWN POLISH 2026-08-25: when the reveal record exists, list
+            the showdown participants in the order the table revealed them —
+            aggressor first, then clockwise — with everyone else after. */}
+          {[...handData.players]
+            .sort((a, b) => {
+              const ao = a.showdown_reveal?.reveal_order ?? 99;
+              const bo = b.showdown_reveal?.reveal_order ?? 99;
+              return ao - bo || a.seat - b.seat;
+            })
+            .map((player) => (
+              <div
+                key={player.user_id}
+                className={`player-row ${player.is_winner ? 'winner' : ''}`}
               >
-                {player.position}
-              </span>
-            </div>
-
-            {/* Hole Cards */}
-            <div className="player-hole-cards">
-              {player.hole_cards.length > 0 ? (
-                player.hole_cards.map((card, idx) => (
-                  <div key={idx} className="card">
-                    <CardImage card={toCardImage(card)} size="xs" />
-                  </div>
-                ))
-              ) : (
-                <>
-                  <div className="card back" />
-                  <div className="card back" />
-                </>
-              )}
-            </div>
-
-            {/* Hand Ranking (if shown) */}
-            {player.final_hand && <div className="player-hand-ranking">{player.final_hand}</div>}
-
-            {/* Community Cards (repeated per row for visual) */}
-            <div className="community-cards-row">
-              {getVisibleCommunityCards().map((card, idx) => (
-                <div key={idx} className="card small">
-                  <CardImage card={toCardImage(card)} size="xs" />
+                {/* Name & Position */}
+                <div className="player-info">
+                  <span className="player-name">{player.username}</span>
+                  <span
+                    className="player-position"
+                    style={{ backgroundColor: getPositionColor(player.position) }}
+                  >
+                    {player.position}
+                  </span>
                 </div>
-              ))}
-            </div>
-            {/* Round 2 (double board): board 2 under board 1, same street slice */}
-            {(handData.community_cards2?.length ?? 0) > 0 && (
-              <div className="community-cards-row">
-                {sliceForStep(handData.community_cards2!).map((card, idx) => (
-                  <div key={`b2-${idx}`} className="card small">
-                    <CardImage card={toCardImage(card)} size="xs" />
-                  </div>
-                ))}
-              </div>
-            )}
 
-            {/* Result */}
-            <div className={`player-result ${player.result >= 0 ? 'positive' : 'negative'}`}>
-              {player.result >= 0 ? '+' : ''}
-              {player.result.toLocaleString()}
-              <br />
-              <span className="result-label">Main Pot</span>
-            </div>
-          </div>
-        ))}
-      </div>
+                {/* Hole Cards */}
+                <div className="player-hole-cards">
+                  {player.hole_cards.length > 0 ? (
+                    player.hole_cards.map((card, idx) => (
+                      <div key={idx} className="card">
+                        <CardImage card={toCardImage(card)} size="xs" />
+                      </div>
+                    ))
+                  ) : (
+                    <>
+                      <div className="card back" />
+                      <div className="card back" />
+                    </>
+                  )}
+                </div>
+
+                {/* Hand Ranking (if shown) — SHOWDOWN POLISH 2026-08-25: prefer
+                the persisted reveal record (name + description), fall back to
+                the winner's hand name; a mucked participant reads MUCKED, with
+                no hand identity, exactly as the table showed it. */}
+                {player.showdown_reveal?.mucked ? (
+                  <div className="player-hand-ranking player-hand-ranking--mucked">Mucked</div>
+                ) : player.showdown_reveal?.hand_name || player.final_hand ? (
+                  <div className="player-hand-ranking">
+                    {player.showdown_reveal?.hand_name || player.final_hand}
+                    {player.showdown_reveal?.hand_description && (
+                      <span className="player-hand-description">
+                        {' '}
+                        {player.showdown_reveal.hand_description}
+                      </span>
+                    )}
+                  </div>
+                ) : null}
+
+                {/* BOMB POT FACTS (spec §20, 2026-08-28): the frozen trigger
+                    record, so a replay says what KIND of hand this was. */}
+                {handData.bomb_pot && (
+                  <div
+                    className="replay-bomb-facts"
+                    style={{
+                      display: 'flex',
+                      gap: 6,
+                      flexWrap: 'wrap',
+                      margin: '2px 0 6px',
+                      fontSize: 11,
+                      fontWeight: 700,
+                      letterSpacing: '0.05em',
+                      color: '#ffcf7d',
+                    }}
+                  >
+                    <span>BOMB POT</span>
+                    {(handData.bomb_pot.board_count ?? 1) >= 2 && (
+                      <span>
+                        {(handData.bomb_pot.board_count ?? 2) >= 3
+                          ? 'TRIPLE BOARD'
+                          : 'DOUBLE BOARD'}
+                      </span>
+                    )}
+                    {handData.bomb_pot.variant && (
+                      <span>{handData.bomb_pot.variant.toUpperCase()}</span>
+                    )}
+                    {(handData.bomb_pot.ante_amount ?? 0) > 0 && (
+                      <span>{`ANTE ${handData.bomb_pot.ante_amount}`}</span>
+                    )}
+                    {handData.bomb_pot.trigger_reason && (
+                      <span>
+                        {/* 2026-08-29: was `.replace(/_/g,' ').toUpperCase()`,
+                            which printed the raw DB enum at the player — "EVERY
+                            N HANDS", "ONCE PER ORBIT", "BOMB POT ONLY", "MANUAL
+                            NEXT HAND". Two of those are engineering
+                            identifiers, not English, and "EVERY N HANDS" names
+                            a variable nobody outside this codebase has ever
+                            seen. The lobby already maps the same four values to
+                            readable labels (lobbyEntries.ts); this is the
+                            replay saying the same thing the lobby says. */}
+                        {(
+                          {
+                            every_n_hands: 'SCHEDULED',
+                            once_per_orbit: 'EVERY ORBIT',
+                            timed: 'ON THE CLOCK',
+                            bomb_pot_only: 'BOMB POT TABLE',
+                            manual_next_hand: 'CALLED BY THE HOST',
+                          } as Record<string, string>
+                        )[String(handData.bomb_pot.trigger_reason)] ??
+                          String(handData.bomb_pot.trigger_reason).replace(/_/g, ' ').toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Community Cards (repeated per row for visual) */}
+                <div className="community-cards-row">
+                  {getVisibleCommunityCards().map((card, idx) => (
+                    <div key={idx} className="card small">
+                      <CardImage card={toCardImage(card)} size="xs" />
+                    </div>
+                  ))}
+                </div>
+                {/* Round 2 (double board): board 2 under board 1, same street slice */}
+                {(handData.community_cards2?.length ?? 0) > 0 && (
+                  <div className="community-cards-row">
+                    {sliceForStep(handData.community_cards2!).map((card, idx) => (
+                      <div key={`b2-${idx}`} className="card small">
+                        <CardImage card={toCardImage(card)} size="xs" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* TRIPLE-BOARD BOMB POT 2026-08-27: board 3, same slice. */}
+                {(handData.community_cards3?.length ?? 0) > 0 && (
+                  <div className="community-cards-row">
+                    {sliceForStep(handData.community_cards3!).map((card, idx) => (
+                      <div key={`b3-${idx}`} className="card small">
+                        <CardImage card={toCardImage(card)} size="xs" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* COMPLETENESS PASS 2026-08-26: Run It Twice boards 2..N.
+                    Dealt AFTER the all-in locked, so they exist only from
+                    the river step onward — gated on board 1's slice being
+                    complete, labeled by run. */}
+                {(handData.rit_boards?.length ?? 0) > 0 &&
+                  getVisibleCommunityCards().length >= 5 &&
+                  handData.rit_boards!.map((board, bi) => (
+                    <div className="community-cards-row" key={`rit-${bi}`}>
+                      <span className="replay-run-badge">RUN {bi + 2}</span>
+                      {board.map((card, idx) => (
+                        <div key={`rit-${bi}-${idx}`} className="card small">
+                          <CardImage card={toCardImage(card)} size="xs" />
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+
+                {/* Result */}
+                <div className={`player-result ${player.result >= 0 ? 'positive' : 'negative'}`}>
+                  {player.result >= 0 ? '+' : ''}
+                  {player.result.toLocaleString()}
+                  <br />
+                  <span className="result-label">Main Pot</span>
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
 
       {/* Playback Controls */}
       <div
@@ -518,6 +708,11 @@ export default function HandReplay({
           3D Replay
         </button>
       </div>
+
+      {/* 2D Live Replayer */}
+      {activeTab === 'detail' && (
+        <LiveHandReplayer2D handData={handData} currentStep={currentStep} totalSteps={totalSteps} />
+      )}
 
       {/* 3D Replay Panel */}
       {activeTab === '3d' && (

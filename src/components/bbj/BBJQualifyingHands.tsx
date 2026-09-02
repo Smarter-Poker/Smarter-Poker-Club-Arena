@@ -38,7 +38,7 @@ const c = (rank: DeckCard['rank'], suit: DeckCard['suit']): DeckCard => ({ rank,
 const BLOCKS: VariantBlock[] = [
   {
     key: 'nlh',
-    games: "NLH / FLH",
+    games: 'NLH / FLH',
     cards: [c('A', 's'), c('A', 'h'), c('A', 'c'), c('J', 's'), c('J', 'h')],
     note: 'Aces Full Of Jacks Or Better Must Lose To Quads Or A Straight Flush. The Player Holding The Full House Must Have At Least One Ace Among Their Dealt Cards.',
   },
@@ -106,7 +106,17 @@ export function BBJQualifyingHands({ highlightVariantKey = null }: BBJQualifying
 
       {BLOCKS.map((b) => {
         const config = BBJ_QUALIFYING_HANDS[b.key];
-        const eligible = config?.eligible !== false && b.cards.length > 0;
+        /**
+         * ELIGIBILITY IS A RULE, NOT A RENDERING DETAIL.
+         *
+         * This read `config?.eligible !== false && b.cards.length > 0`, so an
+         * empty `cards` array — a presentation choice — could veto the config.
+         * The day PLO6 or short deck becomes eligible in RakeConfig, this panel
+         * would go on telling players it is not, and the panel is the thing
+         * players read the rules from. The config decides; the cards are drawn
+         * if we have them to draw.
+         */
+        const eligible = config?.eligible !== false && !!config?.minLosingHand;
         const isHere = hl === b.key;
         return (
           <section
@@ -116,6 +126,9 @@ export function BBJQualifyingHands({ highlightVariantKey = null }: BBJQualifying
             <header className="bbj-qh__head">
               <span className="bbj-qh__games">{b.games}</span>
               {isHere && <span className="bbj-qh__here">YOUR GAME</span>}
+              {eligible && b.cards.length === 0 && (
+                <span className="bbj-qh__minimum">{config?.minLosingHand}</span>
+              )}
             </header>
 
             {eligible ? (

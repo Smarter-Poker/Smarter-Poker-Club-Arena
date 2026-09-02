@@ -113,8 +113,8 @@ export default function ClubActivityChart({ data, height = 240 }: Props) {
             labelStyle={{ color: '#cbd5e1' }}
             // Recharts types `name` as possibly undefined, so it is normalised
             // here rather than asserted away.
-            formatter={(value: any, name?: string) => {
-              const label = name ?? '';
+            formatter={(value, name) => {
+              const label = String(name ?? '');
               return label === 'Rake'
                 ? [fmtChips(Number(value)), label]
                 : [fmtInt(Number(value)), label];

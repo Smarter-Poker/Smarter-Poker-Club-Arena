@@ -21,6 +21,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { fmt, fmtChips, timeAgo } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
+import { EmptyState } from '../components/common/EmptyState';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 interface PlayerSession {
@@ -490,7 +491,9 @@ export default function PlayerSessionsPage() {
     const refresh = () => loadSessions(clubId, true);
     const unsubs = [
       masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', refresh, 500),
-      masterBus.subscribeDebounced('PLAYER_JOINED', refresh, 500),
+      // PLAYER_JOINED removed 2026-08-28: nothing emits it as a BUS event —
+      // RoomService's 'PLAYER_JOINED' is a room MESSAGE type, a name
+      // collision that made this look wired. It never fired.
       masterBus.subscribeDebounced('CASHOUT_APPROVED', refresh, 500),
       masterBus.subscribeDebounced('CASHOUT_REQUESTED', refresh, 500),
     ];
@@ -634,14 +637,22 @@ export default function PlayerSessionsPage() {
       const uuid = await resolveClubUUID(clubId);
       const { error: upsertErr } = await supabase.from('player_notes').upsert(
         {
-          club_id: uuid,
+          // club_id removed 2026-08-27: player_notes has no such column, so
+          // naming it here rejected the whole upsert. My first pass corrected
+          // only the conflict target and left the payload — the extended
+          // write-payload gate caught that, which is exactly what it is for.
           target_user_id: noteTarget.userId,
           user_id: user?.id,
           player_type: noteData.player_type,
           color_label: noteData.color_label,
           notes: noteData.notes,
         },
-        { onConflict: 'club_id,target_user_id,user_id' }
+        /* PHANTOM COLUMN FIX 2026-08-27: `player_notes` has no `club_id`
+           column, so this upsert 400'd and Save Note could never succeed.
+           The READ path at the top of this page is already club-agnostic —
+           a note is per (author, subject), which is what the conflict target
+           says now. */
+        { onConflict: 'user_id,target_user_id' }
       );
       if (upsertErr) throw upsertErr;
       setNotes((prev) => ({ ...prev, [noteTarget.userId]: noteData }));
@@ -674,6 +685,25 @@ export default function PlayerSessionsPage() {
     );
   }
 
+  if (!clubId) {
+    return (
+      <div className="admin-page">
+        <EmptyState
+          icon="CLUB"
+          eyebrow="Operations Context Required"
+          tone="permission"
+          title="No Managed Club Is Available"
+          description={
+            error ||
+            'Player Sessions, Retention, And Chip Flow Are Available To Club Operators From A Club Workspace.'
+          }
+          action={{ label: 'Return To Arena', onClick: () => navigate('/') }}
+          secondaryAction={{ label: 'Find Clubs', onClick: () => navigate('/search') }}
+        />
+      </div>
+    );
+  }
+
   const statusColors: Record<string, string> = {
     online: '#31A24C',
     idle: '#F7C52A',
@@ -699,7 +729,7 @@ export default function PlayerSessionsPage() {
           <div className="admin-modal-overlay" onClick={() => setWbTarget(null)}>
             <div
               className="admin-card"
-              style={{ maxWidth: '420px', margin: '60px auto' }}
+              style={{ width: 'calc(100% - 32px)', maxWidth: '420px', margin: '60px auto' }}
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="admin-card-title">Send Welcome-Back Chips</h3>
@@ -740,7 +770,7 @@ export default function PlayerSessionsPage() {
           <div className="admin-modal-overlay" onClick={() => !savingNote && setNoteTarget(null)}>
             <div
               className="admin-card"
-              style={{ maxWidth: '420px', margin: '60px auto' }}
+              style={{ width: 'calc(100% - 32px)', maxWidth: '420px', margin: '60px auto' }}
               onClick={(e) => e.stopPropagation()}
             >
               <h3 className="admin-card-title">
@@ -793,7 +823,7 @@ export default function PlayerSessionsPage() {
                 <textarea
                   className="admin-input admin-textarea"
                   rows={4}
-                  placeholder="Add notes about this player..."
+                  placeholder="Add Notes About This Player..."
                   value={noteData.notes}
                   onChange={(e) => setNoteData((d) => ({ ...d, notes: e.target.value }))}
                 />
@@ -939,7 +969,7 @@ export default function PlayerSessionsPage() {
               <input
                 className="admin-input"
                 style={{ flex: '1 1 200px' }}
-                placeholder="Search by name or ID..."
+                placeholder="Search By Name Or ID..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
@@ -1010,8 +1040,8 @@ export default function PlayerSessionsPage() {
                 <span className="admin-empty-icon">◉</span>
                 <span>
                   {searchQuery || statusFilter !== 'all'
-                    ? 'No players match your filters'
-                    : 'No members found'}
+                    ? 'No Players Match Your Filters'
+                    : 'No Members Found'}
                 </span>
               </div>
             ) : (
@@ -1108,7 +1138,7 @@ export default function PlayerSessionsPage() {
                           fontSize: '14px',
                           color: notes[p.userId] ? '#F7C52A' : '#6B7280',
                         }}
-                        title={notes[p.userId] ? 'Edit note' : 'Add note'}
+                        title={notes[p.userId] ? 'Edit Note' : 'Add Note'}
                       >
                         {notes[p.userId] ? '▤' : '✏'}
                       </button>

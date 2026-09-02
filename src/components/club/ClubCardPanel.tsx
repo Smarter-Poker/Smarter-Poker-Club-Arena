@@ -8,9 +8,9 @@ import './ClubCardPanel.css';
 
 interface ClubCardPanelProps {
   clubName: string;
-  totalMembers: number;
-  clubLevel: number;
-  activePlayers: number;
+  totalMembers: number | null;
+  clubLevel: number | null;
+  activePlayers: number | null;
   clubId?: number | string;
   /**
    * Where the club sits between its current level and the next, 0-100, on the
@@ -86,7 +86,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
         {useBakedCard ? (
           <img
             src={cardImageUrl}
-            alt={`${clubName} card`}
+            alt={`${clubName} Card`}
             className="club-card-viewport-img"
             loading="lazy"
             decoding="async"
@@ -98,7 +98,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
             <div className="club-card-logo-backdrop"></div>
             <img
               src={logoUrl}
-              alt={`${clubName} logo`}
+              alt={`${clubName} Logo`}
               className="club-card-viewport-logo"
               loading="lazy"
               decoding="async"
@@ -127,7 +127,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
           <div className="club-card-stat">
             <span className="club-card-stat-label">MEMBERS</span>
             <span className="club-card-stat-value">
-              {Math.max(1, totalMembers).toLocaleString()}
+              {totalMembers == null ? 'Unavailable' : totalMembers.toLocaleString()}
             </span>
           </div>
           {/* Dan 2026-08-20: level is now the 1-55 member ladder, so the bare
@@ -138,19 +138,23 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
             title={
               levelTierLabel
                 ? membersToNextLevel != null
-                  ? `${levelTierLabel} - ${membersToNextLevel.toLocaleString()} more members to level ${Math.max(1, clubLevel) + 1}`
-                  : `${levelTierLabel} - maximum level`
+                  ? `${levelTierLabel} - ${membersToNextLevel.toLocaleString()} More Members To Level ${Math.max(1, clubLevel ?? 1) + 1}`
+                  : `${levelTierLabel} - Maximum Level`
                 : undefined
             }
           >
             <span className="club-card-stat-label">LEVEL</span>
             <span className="club-card-stat-value club-card-stat-value--level">
-              {Math.max(1, clubLevel)}
+              {clubLevel == null ? 'Unavailable' : Math.max(1, clubLevel)}
             </span>
           </div>
-          <div className={`club-card-stat ${activePlayers > 0 ? 'club-card-stat--active' : ''}`}>
+          <div
+            className={`club-card-stat ${(activePlayers ?? 0) > 0 ? 'club-card-stat--active' : ''}`}
+          >
             <span className="club-card-stat-label">ACTIVE</span>
-            <span className="club-card-stat-value">{activePlayers.toLocaleString()}</span>
+            <span className="club-card-stat-value">
+              {activePlayers == null ? 'Unavailable' : activePlayers.toLocaleString()}
+            </span>
           </div>
         </div>
 
@@ -164,7 +168,7 @@ export const ClubCardPanel: React.FC<ClubCardPanelProps> = ({
             aria-valuenow={Math.round(levelProgressPercent)}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label={`Progress to level ${Math.max(1, clubLevel) + 1}`}
+            aria-label={`Progress To Level ${Math.max(1, clubLevel ?? 1) + 1}`}
           >
             <span
               className="club-card-level-fill"

@@ -17,17 +17,18 @@ import { DisconnectEngine } from './DisconnectEngine.js';
 import { PreActionEngine } from './PreActionEngine.js';
 import { AtomicStackService } from './AtomicStackService.js';
 import { StraddleEngine } from './StraddleEngine.js';
+import { BombPotScheduler, bombPotSettingsFromTable } from './BombPotScheduler.js';
 import { RunItTwiceEngine } from './RunItTwiceEngine.js';
 import { InsuranceEngine, type InsuranceSettlement } from './InsuranceEngine.js';
 import { ShadowRecorder } from './eventlog/ShadowRecorder.js';
 import type { BlindKind } from './eventlog/events.js';
 import * as EngineMetrics from '../observability/engineInstruments.js';
 import type { Span as EngineSpan } from '../observability/Tracing.js';
-import { RakebackEngine } from './RakebackEngine.js';
 import { ChipRaceEngine } from './ChipRaceEngine.js';
 import { TableBalancer } from './TableBalancer.js';
 import { TableBreakEngine } from './TableBreakEngine.js';
 import { EngineTelemetry } from './EngineTelemetry.js';
+import { getTournamentBrainContext } from '../services/TournamentBrainContext.js';
 import {
   getFullRakeConfig,
   getPlayerCountCaps,
@@ -51,7 +52,10 @@ import {
   saveHandSnapshotExtras,
   getActiveHandSnapshotFull,
   supabase,
+  atomicCashout,
+  markSeatAsLeft,
 } from '../services/supabase.js';
+import { collectNitEvictions } from '../services/supabase/nitGame.js';
 import { deadlineScheduler } from './DeadlineScheduler.js';
 import type {
   SeatPlayer,
@@ -63,12 +67,14 @@ import type {
   RakeConfig,
 } from '../types.js';
 import { reportError } from '../services/errorReporter.js';
+import { logInsuranceOfferEvent } from '../services/supabase/insuranceOfferLog.js';
 import type { TableStateHub } from '../transport/TableStateHub.js';
 import {
   createTableStateMachine,
   createTurnStateMachine,
   type TurnFSMState,
 } from './StateMachine.js';
+import { headsUpButtonSeat } from './headsUpButton.js';
 import type { StateMachine } from './StateMachine.js';
 import type { TableStatus } from '../types.js';
 
@@ -122,6 +128,97 @@ export abstract class ServerTableEngineBase {
   protected hub: TableStateHub | null = null;
   protected tableInfo: TableInfo | null = null;
   protected seatedPlayers: SeatedPlayer[] = [];
+  /** Tracks busted users who explicitly rejected a rebuy in the current hand (Dan 2026-08-24). */
+  protected rejectedRebuys = new Set<string>();
+  /**
+   * Wakes an in-flight rebuy pause the instant a busted player answers.
+   *
+   * REBUY-PAUSE 2026-08-27: `rejectedRebuys` shipped as a WRITE-ONLY set. The
+   * whole decline chain — TablePage -> POST /reject_rebuy -> rejectRebuy() —
+   * terminated in a `.add()` that nothing ever read, and the pause itself was
+   * a bare `await this.sleep(5000)` with no handle. So "snap continues if they
+   * click no", which is half of Dan's rule, did not exist: the table sat out
+   * the full five seconds either way. This resolver is what makes the pause
+   * interruptible.
+   */
+  private rebuyPauseWake: (() => void) | null = null;
+
+  public rejectRebuy(userId: string): void {
+    this.rejectedRebuys.add(userId);
+    // Snap-continue: wake the pause loop now rather than at the next poll tick.
+    this.rebuyPauseWake?.();
+  }
+
+  /**
+   * Dan's Rebuy Pause, waited out properly.
+   *
+   * Holds the deal for up to `totalMs` after a bust, and returns EARLY the
+   * moment every busted seat has answered — declined (`rejectRebuy`) or
+   * rebought (a seat whose stack is positive again). Both halves of Dan's rule
+   * are here: the pause happens, and it ends the instant it is no longer doing
+   * anything for anybody.
+   *
+   * HORSES ARE PLAYERS. The caller passes EVERY busted seat, horse or human.
+   * The horse answers through its own input device (HorseLogic / autoRebuyHorse
+   * / tryTournamentRebuys) instead of through a modal, and that landing is
+   * detected here by the same stack read that detects a human's. What must not
+   * differ — and what did differ until this shipped — is the table's RHYTHM:
+   * a felt that stops for one seat and rolls straight on for another tells
+   * every watching player which seats are horses.
+   */
+  protected async waitForRebuyDecisions(userIds: string[], totalMs: number): Promise<void> {
+    const pending = new Set(userIds.filter(Boolean));
+    if (pending.size === 0) return;
+    // A decision from a PREVIOUS hand must not fast-forward this pause.
+    for (const id of pending) this.rejectedRebuys.delete(id);
+
+    const deadline = Date.now() + totalMs;
+    const POLL_MS = 250;
+
+    const drainAnswered = async (): Promise<void> => {
+      for (const id of Array.from(pending)) {
+        if (this.rejectedRebuys.has(id)) pending.delete(id);
+      }
+      if (pending.size === 0) return;
+      try {
+        const { data } = await supabase
+          .from('table_seats')
+          .select('user_id, stack')
+          .eq('table_id', this.tableId)
+          .in('user_id', Array.from(pending))
+          .is('left_at', null);
+        for (const row of (data ?? []) as Array<{ user_id: string; stack: number | null }>) {
+          if (Number(row.stack ?? 0) > 0) pending.delete(String(row.user_id));
+        }
+      } catch {
+        /* A failed read must never SHORTEN the pause — fall through and wait. */
+      }
+    };
+
+    try {
+      while (Date.now() < deadline) {
+        await drainAnswered();
+        if (pending.size === 0) return;
+        const slice = Math.min(POLL_MS, Math.max(0, deadline - Date.now()));
+        if (slice <= 0) return;
+        await new Promise<void>((resolve) => {
+          let done = false;
+          const finish = () => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            this.rebuyPauseWake = null;
+            resolve();
+          };
+          const timer = setTimeout(finish, slice);
+          this.rebuyPauseWake = finish;
+        });
+      }
+    } finally {
+      this.rebuyPauseWake = null;
+      for (const id of userIds) this.rejectedRebuys.delete(id);
+    }
+  }
   protected dealerSeatIndex: number = 0;
   /**
    * A button seat drawn for the FIRST hand and consumed by it.
@@ -136,6 +233,14 @@ export abstract class ServerTableEngineBase {
   // index) so roster changes (bust/leave/join) can't move it backward, skip a
   // seat, or double-post a blind. 0 = no hand dealt yet.
   protected lastButtonSeat: number = 0;
+  /**
+   * The seat that posted the big blind on the last hand dealt here. Heads-up,
+   * the button is derived from THIS rather than from the previous button, so
+   * that no player posts the big blind twice running when a 3-handed table
+   * drops to two (TDA Rule 33 -- see the dealing loop). Restored from
+   * hand_history on restart alongside the button, for the same reason.
+   */
+  protected lastBigBlindSeat: number = 0;
   protected consecutiveErrors: number = 0;
 
   // Bankroll Management: Track how many times a horse has re-bought at this table.
@@ -151,11 +256,87 @@ export abstract class ServerTableEngineBase {
   // Bible V8 §4.2: Players waiting for BB position before they can play
   protected waitingForBB: Set<string> = new Set();
 
+  // B2 2026-08-27 — TOURNAMENT ARRIVALS OWE A BIG BLIND, AND NOTHING COLLECTED IT.
+  //
+  // Every entry mechanism this engine has was switched off for tournament
+  // tables: registerWaitForBB is a no-op for them, `deadBlinds` and
+  // `bbOnlyPosts` were both gated on `!isTournamentTable()`. So a late
+  // registrant, or a player the balancer moved in, was dealt in wherever they
+  // happened to land and paid NOTHING until the blinds reached them — up to a
+  // full free orbit if they landed on the seat the big blind had just passed,
+  // which the seat-number-order placement in TableBalancer handed out at random.
+  //
+  // This set is the tournament counterpart of `postingBBToEnter`: a live big
+  // blind (chip-conserving — it goes into the pot as a real bet), charged once,
+  // on the arrival's first dealt hand. HandController's bbOnlyPosts handler
+  // skips anyone sitting in the small or big blind that hand, so this can never
+  // produce two big blinds inside one orbit. Membership survives the hand a
+  // player spends in the small blind seat and is settled on the next one, which
+  // is the ordinary blind cycle run backwards (SB then BB) rather than an extra
+  // charge.
+  protected mustPostBB: Set<string> = new Set();
+
+  // POST-TO-ENTER RACE FIX 2026-08-27 (Dan: "the post to get dealt in
+  // feature in cash games isn't working"): a brand-new joiner is only
+  // REGISTERED as waiting by the dealing loop's next pass - which, mid-hand,
+  // can be minutes away. Tapping Post Big Blind in that window came back
+  // "Player is not waiting for BB" and the client gave up. The intent is
+  // recorded HERE instead; the dealing loop applies it the moment the joiner
+  // is registered, through the same postBBToEnter path (positional hold-outs
+  // and the live-BB bill included). Pruned with knownPlayerIds when a seat
+  // empties.
+  protected pendingPostToEnter: Set<string> = new Set();
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // AGREEING TO POST IS ANSWERED ONCE (Dan 2026-08-29, binding)
+  //
+  //   "in cash games when you click POST BB but you are IN BETWEEN THE
+  //    BLINDS you get this pop up... that shouldn't happen because you
+  //    already agreed to post bb... and auto post the blind then. it
+  //    currently makes you hit the button again, or it simply won't deal
+  //    you in at all."
+  //
+  // `postBBToEnter` refuses from two seats and must keep refusing them: a
+  // cash player is never dealt into the small blind, and a new player never
+  // takes the button. Neither may be bought, and this set does not buy them.
+  //
+  // What it fixes is what the refusal did to the PLAYER. The refusal threw
+  // the answer away — the player stayed in `waitingForBB`, TablePage put the
+  // same "Post Big Blind To Enter" button straight back on the felt, and
+  // nothing anywhere remembered that they had already said yes. Tapping it
+  // again from the same seat was refused again, so the only way through was
+  // to keep tapping until the button happened to have moved, which is why it
+  // reads as "it simply won't deal you in at all".
+  //
+  // A player in here has ALREADY AGREED to post. The dealing loop replays
+  // that agreement, unchanged, on every pass, and it takes effect on the
+  // first pass where the seat is no longer the one the small blind or the
+  // button is about to reach. They are then billed one live big blind
+  // through `postingBBToEnter` exactly as if they had tapped at that moment.
+  //
+  // Nothing here shortens the wait. It only stops the wait from costing the
+  // player their answer.
+  protected postBBWhenClear: Set<string> = new Set();
+
+  // Guards restoreEntryHoldsFromSeats() to once per process. See that method
+  // for why it must not run on every pass the way the sit-out restore does.
+  protected entryHoldsRestored = false;
+
   // Bible V8 §4.2: Track every userId we've ever seen seated at this table.
   // Used by the dealing loop to detect new joiners after the engine has started
-  // dealing hands — new joiners must wait for the BB to reach their seat
-  // (or opt to post the BB immediately via POST /post-bb).
+  // dealing hands. Since 2026-08-25 a new joiner does NOT wait and does not
+  // post: they are released free on the same loop tick. The registration exists
+  // so the two positional hold-outs can inspect the seat first — a cash player
+  // is never dealt into the small blind, and never gets the button on their
+  // first hand.
   protected knownPlayerIds: Set<string> = new Set();
+
+  // Dan 2026-08-25, BINDING: "NEW PLAYERS NEVER GET THE BUTTON WHEN SITTING
+  // DOWN — it skips over them and moves to the correct person." Every userId
+  // that has actually been dealt at least one hand at this table. A player who
+  // is not in here has never played, so the button rotation passes over them;
+  // they pick it up on the following orbit like everyone else.
+  protected dealtInUserIds: Set<string> = new Set();
 
   // Guard for the dealing loop's first iteration. On the first pass — whether
   // this is a cold start or a crash-recovery resume — every currently-seated
@@ -202,6 +383,75 @@ export abstract class ServerTableEngineBase {
 
   public holdDealingUntil(atMs: number): void {
     if (atMs > this.dealHoldUntilMs) this.dealHoldUntilMs = atMs;
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  MYSTERY BOUNTY REVEAL GATE (Dan sections 21-26, 61-65)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * "When an award is reserved, the affected table enters a reveal state.
+   * During it: no dealer button move, no next hand, no blinds or antes
+   * posted, no player action timers. Only the reveal timeout runs."
+   *
+   * WHY THIS IS NOT `holdDealingUntil()`. The hold is a DEADLINE — a wall
+   * clock the loop compares itself against. That is right for the spin
+   * wheel, which is one fixed-length animation. It is wrong here, because
+   * section 25/64 is a COUNT, not a duration: the button may not move until
+   * the QUEUE IS EMPTY, and three knockouts in one hand are three reveals
+   * one after another. Timer arithmetic that tried to express "however long
+   * three chests take" would be wrong the first time a reveal ran slow, and
+   * a table that deals underneath a live chest has moved the button during
+   * a reveal — the exact thing sections 25 and 64 forbid.
+   *
+   * So this is a SET of open awards, and dealing resumes when it empties.
+   *
+   * EVERY ENTRY STILL CARRIES A DEADLINE, because a set that only empties on
+   * a call is a set that a crashed settle path leaves full forever, and a
+   * wedged table is worse than a missed animation. `hasOpenBountyReveal()`
+   * prunes expired entries on every read, so the gate is self-healing: the
+   * worst case is that the table resumes on its own a few seconds after the
+   * reveal should have ended.
+   *
+   * ONLY THIS TABLE STOPS (sections 22 and 61). This state lives on one
+   * engine instance. The tournament clock, the blind-level clock and every
+   * other table run from the TournamentManager and never consult it.
+   *
+   * ACTION TIMERS: there is nothing to cancel. The gate is checked in the
+   * dealing loop BEFORE `dealHand()`, so no hand exists while it is closed
+   * and therefore no player is on the clock. A knockout detected while the
+   * next hand is already in progress holds from the next hand boundary —
+   * which is also section 23's end-of-hand order (settle, THEN reveal).
+   */
+  private bountyRevealHolds: Map<string, number> = new Map();
+
+  /** Open a reveal gate. `deadlineMs` is an absolute epoch-ms failsafe. */
+  public beginBountyReveal(awardId: string, deadlineMs: number): void {
+    const id = String(awardId ?? '').trim();
+    if (!id) return;
+    const prev = this.bountyRevealHolds.get(id) ?? 0;
+    // Monotonic, like holdDealingUntil: a second reserve of the same award
+    // (an idempotent re-sweep) may extend the gate but never shorten it.
+    this.bountyRevealHolds.set(id, Math.max(prev, deadlineMs));
+  }
+
+  /** Close one award's gate. Safe to call for an award that never opened. */
+  public endBountyReveal(awardId: string): void {
+    this.bountyRevealHolds.delete(String(awardId ?? '').trim());
+  }
+
+  /** How many reveals are still holding this table. Prunes expired entries. */
+  public openBountyRevealCount(): number {
+    const now = Date.now();
+    for (const [id, deadline] of this.bountyRevealHolds) {
+      if (deadline <= now) this.bountyRevealHolds.delete(id);
+    }
+    return this.bountyRevealHolds.size;
+  }
+
+  /** True while this table must not deal, post blinds, or move the button. */
+  public hasOpenBountyReveal(): boolean {
+    return this.openBountyRevealCount() > 0;
   }
   protected maintenanceLock: boolean = false;
 
@@ -283,7 +533,169 @@ export abstract class ServerTableEngineBase {
    * guards, so this is a leak/noise issue rather than a corruption one — but
    * teardown should still be complete).
    */
+  /**
+   * Fold the seats whose OWN discard deadline has passed, then re-arm for the
+   * next one still outstanding.
+   *
+   * One re-arming sweep rather than one timer per seat: a time bank moves a
+   * single seat's deadline, and a fixed table-wide timeout could not express
+   * that. Deadlines are absolute, so a sweep that runs late is still correct —
+   * it folds exactly the seats that are genuinely out of time.
+   */
+  protected armPineappleDiscardSweep(controllerRef: unknown): void {
+    if (this.pineappleDiscardTimer) {
+      clearTimeout(this.pineappleDiscardTimer);
+      this.pineappleDiscardTimer = null;
+    }
+    this.pruneSettledPineappleDeadlines();
+    if (this.pineappleDiscardDeadlines.size === 0) return;
+
+    const next = Math.min(...this.pineappleDiscardDeadlines.values());
+    const wait = Math.max(0, next - Date.now());
+
+    this.pineappleDiscardTimer = setTimeout(() => {
+      this.pineappleDiscardTimer = null;
+      if (!this.handController || this.handController !== controllerRef) return;
+
+      /* Reconcile before folding anybody. A horse discards through
+         performDiscard and an all-in seat through
+         resolvePendingPineappleDiscards, neither of which passes through
+         submitDiscard - so without this the sweep would reach a seat that
+         settled its round minutes ago. foldForMissedDiscard would refuse it,
+         but "the guard downstream happens to say no" is not a reason to ask. */
+      this.pruneSettledPineappleDeadlines();
+
+      const now = Date.now();
+      for (const [seat, at] of [...this.pineappleDiscardDeadlines]) {
+        if (at > now) continue; // this seat bought itself more time
+        this.pineappleDiscardDeadlines.delete(seat);
+        try {
+          // Dan 2026-08-21: a missed discard FOLDS the hand. It used to
+          // auto-discard the last card - a random discard the player never
+          // chose, which then kept playing for them.
+          this.handController.foldForMissedDiscard(seat);
+        } catch (err) {
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.pineapple_discard_fold_threw', {
+            seat,
+          });
+          // Keep going — one bad seat must not strand the whole table.
+        }
+      }
+      this.markProgress();
+      // Seats with an extended deadline are still owed their round.
+      this.armPineappleDiscardSweep(controllerRef);
+    }, wait);
+  }
+
+  /**
+   * Spend a time bank on a DISCARD (2026-08-31).
+   *
+   * Every other decision on this table can buy time; the discard could not,
+   * because the whole time-bank path is written against `currentPlayerSeat`
+   * and the discard round has no turn — every seat decides at once. So the one
+   * action where a player is most likely to hesitate was the one action with no
+   * way to think, and missing it folds the hand outright.
+   *
+   * Same rules as a turn, deliberately: the ordinary clock must be genuinely
+   * exhausted first (TimeBankEngine enforces it from the remaining seconds we
+   * pass in), the pool and the per-street cap are the engine's, and the grant
+   * lands on THIS seat's deadline only.
+   */
+  public extendPineappleDiscard(userId: string): {
+    success: boolean;
+    error?: string;
+    armed?: boolean;
+    message?: string;
+    deadlineMs?: number;
+  } {
+    if (!this.handController) return { success: false, error: 'No Active Hand At This Table' };
+    if (this.handController.getState().stage !== 'pineapple_discard') {
+      return { success: false, error: 'Not In The Discard Round' };
+    }
+    const player = this.seatedPlayers.find((p) => p.user_id === userId);
+    if (!player) return { success: false, error: 'You Are Not Seated At This Table' };
+
+    const seat = player.seat_number;
+    const at = this.pineappleDiscardDeadlines.get(seat);
+    if (at === undefined) return { success: false, error: 'You Have Already Discarded' };
+
+    const remaining = Math.max(0, (at - Date.now()) / 1000);
+    if (remaining > TimeBankEngine.CLOCK_EXHAUSTED_EPSILON_SECONDS) {
+      if (!this.timeBankEngine.arm(this.tableId, userId)) {
+        return { success: false, error: 'No Time Bank Uses Remaining' };
+      }
+      return {
+        success: true,
+        armed: true,
+        message: 'Time Bank Armed. It Starts When Your Clock Runs Out',
+      };
+    }
+
+    const before = this.timeBankEngine.getRemainingSeconds(this.tableId, userId);
+    /* The expiry callback is EMPTY ON PURPOSE, and this comment is why: do not
+       "fix" it later by folding here. On a turn, TimeBankEngine's countdown is
+       the enforcement deadline, so its onExpire has to act. In the discard
+       round the enforcement deadline is the per-seat map below, swept by
+       armPineappleDiscardSweep - and that sweep is re-armed to the very
+       deadline this grant produces. Folding from both would be two deadlines
+       under different keys racing on one decision, which is precisely the bug
+       TimeBankEngine's own history records ("two deadlines under different
+       keys on the same PreciseActionTimer, both live, and the shorter one
+       folded the player while the clock on screen was still counting down").
+       One enforcer: the sweep. */
+    const result = this.timeBankEngine.tryActivate(this.tableId, userId, () => {}, remaining);
+    if (result !== 'activated') {
+      return {
+        success: false,
+        error:
+          result === 'depleted' || result === 'not_initialized'
+            ? 'No Time Bank Uses Remaining'
+            : result === 'street_limit'
+              ? 'No Time Bank Uses Left On This Street'
+              : 'Your Time Bank Is Already Running',
+      };
+    }
+
+    /* The grant is what the bank actually released, not a hard-coded 20 — a
+       player down to 6 seconds of pool gets 6, and the deadline we publish is
+       the deadline we enforce. */
+    const granted = Math.max(
+      0,
+      before - this.timeBankEngine.getRemainingSeconds(this.tableId, userId)
+    );
+    const seconds = granted > 0 ? granted : before;
+    const extended = Date.now() + seconds * 1000;
+    this.pineappleDiscardDeadlines.set(seat, extended);
+    this.armPineappleDiscardSweep(this.handController);
+    this.broadcastCurrentState();
+    return { success: true, deadlineMs: extended };
+  }
+
+  /**
+   * Drop deadline entries for seats that no longer owe a discard, and drop the
+   * whole map once the round is over. The HandController's own set is the
+   * authority; this map is a cache of it that exists only to carry the extra
+   * time a time bank bought for one seat.
+   */
+  protected pruneSettledPineappleDeadlines(): void {
+    const hc = this.handController;
+    if (!hc || hc.getState().stage !== 'pineapple_discard') {
+      this.pineappleDiscardDeadlines.clear();
+      this.pineappleDiscardBaseDeadlineMs = null;
+      this.pineappleDiscardDurationMs = 0;
+      return;
+    }
+    for (const seat of [...this.pineappleDiscardDeadlines.keys()]) {
+      if (!hc.owesPineappleDiscard(seat)) this.pineappleDiscardDeadlines.delete(seat);
+    }
+  }
+
   protected clearLooseHandTimers(): void {
+    /* PHASE 3 2026-08-31: the discard settle beat is a timer on the hand
+       controller, and this is the one place that knows a hand is being torn
+       down. Without it a superseded hand's beat could advance a stage on a
+       controller nobody is reading any more. */
+    this.handController?.cancelPineappleSettle?.();
     if (this.horseActionTimer) {
       clearTimeout(this.horseActionTimer);
       this.horseActionTimer = null;
@@ -292,6 +704,9 @@ export abstract class ServerTableEngineBase {
       clearTimeout(this.pineappleDiscardTimer);
       this.pineappleDiscardTimer = null;
     }
+    this.pineappleDiscardDeadlines.clear();
+    this.pineappleDiscardBaseDeadlineMs = null;
+    this.pineappleDiscardDurationMs = 0;
   }
 
   // FIX 2 (2026-07-24): per-hand hole cards kept in memory so we can (a) retry
@@ -310,16 +725,58 @@ export abstract class ServerTableEngineBase {
   protected currentHandCommunityCards: string[] = [];
   /** DOUBLE-BOARD BOMB POT 2026-08-20: board 2 accumulator (empty unless active). */
   protected currentHandCommunityCards2: string[] = [];
+  /** TRIPLE-BOARD BOMB POT 2026-08-27: board 3 accumulator (empty unless active). */
+  protected currentHandCommunityCards3: string[] = [];
+  /**
+   * BOMB POT STANDARDIZATION 2026-08-27 (spec §20): the bomb-pot facts of the
+   * current hand, frozen at trigger time for hand_history.bomb_pot. Null on
+   * normal hands. Reset per hand alongside the accumulators above.
+   */
+  protected currentHandBombPot: {
+    trigger_reason: string;
+    ante_amount: number;
+    board_count: number;
+    /** VARIANT OVERRIDE 2026-08-28: the variant the bomb hand was dealt as. */
+    variant?: string;
+  } | null = null;
+  /**
+   * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant the CURRENT hand
+   * was dealt as, captured at hand start. Settlement writes hand_history from
+   * this rather than from tableInfo.game_variant, which lies on every
+   * variant-override bomb hand. Null between hands.
+   */
+  protected currentHandVariant: string | null = null;
   /**
    * Round 2: per-board winner breakdown from the WINNERS event (double board
    * only). Amounts are PRE-rake shares — clients use board + handName for
    * labeling; the shipped amounts come from the merged winners list.
+   *
+   * POKERBROS PARITY 2026-08-26: `board` widened from 1|2 to number — a
+   * run-it-twice/three-times hand populates this with the RUN index (1..3),
+   * the same axis the double-board bomb pot uses for its two boards.
    */
   protected currentHandWinnersByBoard: Array<{
-    board: 1 | 2;
+    board: number;
     userId: string;
     amount: number;
     handName?: string;
+  }> = [];
+  /**
+   * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): the unmerged per-pot(-half)
+   * award breakdown from the WINNERS event — one entry per (board, pot,
+   * hi/lo half, winner) with that pot's exact post-rake display share.
+   * Feeds pot_win's pot_awards groups. Reset per hand in dealHand.
+   */
+  protected currentHandPerPotAwards: Array<{
+    userId: string;
+    potIndex: number;
+    low: boolean;
+    amount: number;
+    hand?: { name?: string; ranking?: number; cards?: Array<{ rank?: string; suit?: string }> };
+    /** 1|2 on double-board bomb pots; RUN index 1..3 on run-it-twice hands. */
+    board?: number;
+    /** Review fix 2026-08-25: this entry's own engine-generated description. */
+    handDescription?: string;
   }> = [];
   // Round 38: track wall-clock start so logHandHistory can write started_at +
   // ended_at (was missing — every completed hand_history row had null
@@ -337,6 +794,11 @@ export abstract class ServerTableEngineBase {
      *  hand_history replayable by HorseMind, which requires it to count an
      *  all-in as aggression at all. */
     isFullRaise?: boolean;
+    /** 2026-08-27: set on forced-money rows that are DEAD — an ante, or the
+     *  small-blind half of a dead blind. Dead money is in the pot but is not
+     *  part of the live bet level, so it never counts toward a call and must
+     *  not be differenced against a raise-TO level. */
+    dead?: boolean;
   }[] = [];
   protected currentHandWinners: {
     userId: string;
@@ -351,12 +813,80 @@ export abstract class ServerTableEngineBase {
      */
     hand?: { name: string; ranking: number; cards?: Array<{ rank?: string; suit?: string }> };
   }[] = [];
-  protected currentHandContributions: Map<string, number> = new Map(); // userId → totalInvested
+  /**
+   * POT-LEVEL SETTLEMENT (Dan section 29, 2026-08-25).
+   *
+   * The pots as `calculatePots()` returned them at the moment the hand was
+   * scored — before distribution, so `eligible` still names everyone who had
+   * a claim on each pot. Persisted to `hand_history.pots`.
+   *
+   * It is captured rather than recomputed because after settlement the answer
+   * is gone: `HandController.getPots()` recalculates from the live players,
+   * and by then the winners' stacks have already moved. This is the only
+   * moment the true breakdown exists.
+   *
+   * Read back by `attributeKnockout()` to credit a knockout to the winner(s)
+   * of the pot that held the busted player's LAST chips rather than to
+   * whoever won the most money in the hand. Without it, a short stack busting
+   * against a large side pot paid its bounty to the side-pot winner.
+   */
+  protected currentHandPots: { index: number; amount: number; eligible: string[] }[] = [];
+  /**
+   * userId → ELIGIBLE contribution (engine totalInvested, which is net of any
+   * returned uncalled bet). This is the authoritative basis for WEIGHTED
+   * CONTRIBUTED rake attribution (Dan 2026-08-29).
+   */
+  protected currentHandContributions: Map<string, number> = new Map();
+  /**
+   * userId → uncalled amount returned to the player this hand. Persisted for
+   * audit alongside contributions (gross = eligible + returned). Zero-entry
+   * players are omitted.
+   */
+  protected currentHandReturnedUncalled: Map<string, number> = new Map();
   protected currentHandInsuranceSettlements: InsuranceSettlement[] = [];
+  /**
+   * EV CASHOUT 2026-08-28: pot winnings clawed back to the bank for each
+   * cashed-out player this hand (what the bank actually collected, post-
+   * clamp). Feeds the insurance ledger's bank-in side.
+   */
+  protected currentHandCashoutRedirects: Map<string, number> = new Map();
   protected currentHandBBJHit: BBJDetectionResult | null = null;
   protected currentHandBBJPayoutConfig: ServerRakeConfigResult | null = null;
-  /** Remaining deck cards at hand completion — used for Rabbit Hunt reveal */
-  protected currentHandRabbitCards: import('../types.js').Card[] = [];
+  /**
+   * Rabbit hunt purchases currently mid-flight, by userId. Two taps that race
+   * the RPC both pass the `revealed` check (that set is written only after the
+   * charge returns), so without this they would both succeed and bill twice.
+   */
+  protected rabbitHuntInFlight: Set<string> = new Set();
+  /** Diamond price of a rabbit hunt, read once from `feature_pricing`. */
+  protected rabbitHuntCostCache: number | null = null;
+  /**
+   * Rabbit hunt offers, keyed by hand number. Dan 2026-08-25.
+   *
+   * These cards are NEVER broadcast. They are held server-side and released to
+   * one authenticated player at a time by revealRabbitHunt(), after
+   * fn_consume_rabbit_hunt has actually taken payment.
+   *
+   * Keyed by hand rather than kept in a single field because a player has a few
+   * seconds to click and the next hand may already be dealing by the time they
+   * do — a single field is wiped at the next deal and the purchase would return
+   * either nothing or, worse, the NEXT hand's undealt cards. Trimmed to the
+   * last two hands at capture, so it stays bounded on a table running for days.
+   *
+   * `eligible` is who was dealt into that hand: a spectator cannot buy a look
+   * at a hand they were never part of, and `revealed` makes a paid reveal
+   * repeatable for the buyer without charging them twice.
+   */
+  protected rabbitHuntOffers: Map<
+    number,
+    {
+      cards: import('../types.js').Card[];
+      boardLength: number;
+      eligible: Set<string>;
+      revealed: Set<string>;
+      offeredAt: number;
+    }
+  > = new Map();
   /**
    * RIT VERIFIER FIX 2026-08-21: number of boards dealt by Run It Twice this
    * hand (0 = normal hand). Every RIT-resolved hand tripped the state
@@ -371,13 +901,58 @@ export abstract class ServerTableEngineBase {
    * fix invariant).
    */
   protected currentHandRitBoards = 0;
+  /**
+   * POKERBROS PARITY 2026-08-26: community cards already on the felt when the
+   * RIT all-in locked (0 preflop, 3 flop, 4 turn). The hand-completion hold
+   * derives the reveal-timeline length from it (streets per board = the
+   * streets still to deal), so the next hand waits for the client's
+   * street-by-street reveal to finish. Reset with currentHandRitBoards.
+   */
+  protected currentHandRitBaseBoardCount = 0;
+  /**
+   * COMPLETENESS PASS 2026-08-26: boards 2..N of a run-it-twice hand, engine
+   * card strings ('Ahearts'), in run order. Persisted first-class to
+   * hand_history.rit_boards at settlement — the changelog's long-standing
+   * "persist the extra board(s)" item. The `rit_board_N:` pseudo-actions
+   * remain for older readers; this column is the canonical record now.
+   */
+  protected currentHandRitExtraBoards: string[][] = [];
   protected currentHandShowdownResults: Array<{
     userId: string;
     handRanking: number;
     handName: string;
     kickers: number[];
     holeCards: Array<{ rank: string; suit: string }>;
+    /**
+     * SHOWDOWN SYSTEM 2026-08-25: engine-decided reveal metadata. seat +
+     * revealOrder drive the client's staggered flip; mucked withholds the
+     * hole cards from every public surface (snapshot, resync,
+     * showdown_cards_revealed) unless the player voluntarily shows;
+     * handDescription is the secondary line ("Kings Full Of Nines").
+     */
+    seat?: number;
+    revealOrder?: number;
+    mucked?: boolean;
+    handDescription?: string;
   }> = [];
+
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25: true when the player mucked at showdown and
+   * has not voluntarily shown the WHOLE hand — the one question every reveal
+   * gate asks. A whole-hand voluntary show (showHandPlayers) overrides the
+   * muck: mucking hides by default, showing is consent.
+   *
+   * AUDIT NOTE 2026-08-25 (doc/code drift fixed): per-card picks
+   * (showHandCards) deliberately do NOT clear the muck. A mucked player who
+   * marked one card gets exactly that card exposed through the snapshot's
+   * partialReveal branch while the REST of the hand — and its identity
+   * (hand_name / ranking / description) — stays private. That is the whole
+   * point of a per-card pick: show the bluff card, keep the hand mucked.
+   */
+  protected isMuckedAtShowdown(userId: string): boolean {
+    if (this.showHandPlayers?.has(userId)) return false;
+    return this.currentHandShowdownResults.some((r) => r.userId === userId && r.mucked === true);
+  }
   /** Bible V8 §2.15: Timer log — every timer start/expiry/action event */
   protected currentHandTimerLog: Array<{
     playerId: string;
@@ -416,6 +991,29 @@ export abstract class ServerTableEngineBase {
    * outlast the short hand-for-hand window without self-resuming.
    */
   protected pauseMaxWaitMs: number | null = null;
+  /**
+   * DOES THIS PAUSE FORBID THE NEXT HAND, OR ONLY THE ONE AFTER IT?
+   *
+   * The two callers of pauseAfterHand want opposite things, and conflating
+   * them deadlocks one of them:
+   *
+   *   - A SYNCHRONIZED BREAK (and the add-on break, and a drain) means STOP.
+   *     The hand in flight finishes, and no further hand is dealt until the
+   *     break ends. A table that was idle at :55 must park without dealing.
+   *     -> beforeNextHand: true.
+   *
+   *   - HAND-FOR-HAND means DEAL EXACTLY ONE MORE HAND, THEN STOP. The bubble
+   *     sync resumes every table together and re-pauses them 500ms later,
+   *     deliberately, "to let dealing start" — it is arming the park for the
+   *     hand that is about to be dealt. If the top-of-loop gate honoured that
+   *     re-pause, the table would park BEFORE dealing, the sync would see
+   *     everyone parked, resume, re-pause, and park again — the bubble would
+   *     never burst and the tournament would freeze on the money.
+   *     -> beforeNextHand stays false, and only the post-deal gate parks.
+   *
+   * Cleared by resumeDealing along with the rest of the pause state.
+   */
+  protected holdBeforeNextHand: boolean = false;
 
   // Bible V8 §1.1.4: Action serialization lock — prevents parallel action processing
   protected actionLock: boolean = false;
@@ -493,6 +1091,18 @@ export abstract class ServerTableEngineBase {
   protected playerTurnStartTime: number = 0;
   protected playerTurnDuration: number = 0;
   protected timeBankActivatedThisTurn: boolean = false;
+  /**
+   * Set when the player whose turn it is drops out of reconnect grace.
+   *
+   * A time bank is a use-it-or-lose-it asset the player PAYS for. Auto-
+   * activating one for somebody whose socket is gone spends it on a decision
+   * they cannot make. Cleared by handleTurnChange, so a reconnect inside the
+   * same turn restores the normal behaviour, and by every genuinely new turn.
+   *
+   * This deliberately does NOT touch any deadline. See
+   * handlePlayerDisconnectedMidTurn (ServerTableEngineTurns) for why.
+   */
+  protected timeBankSuppressedThisTurn: boolean = false;
   protected showHandPlayers: Set<string> | null = null; // Bible V8 §4.21: players who voluntarily show hand
 
   /**
@@ -548,7 +1158,6 @@ export abstract class ServerTableEngineBase {
   protected straddleEngine: StraddleEngine;
   protected runItTwiceEngine: RunItTwiceEngine;
   protected insuranceEngine: InsuranceEngine;
-  protected rakebackEngine: RakebackEngine;
 
   // ── Step 7: Ported Tournament & Extras Modules ──
   protected chipRaceEngine: ChipRaceEngine;
@@ -571,7 +1180,7 @@ export abstract class ServerTableEngineBase {
     });
     this.actionValidator = new ServerActionValidator((event) => {
       console.warn(
-        `[ServerTableEngine:${tableId}] Action rejected: ${event.code} — ${event.reason}`
+        `[ServerTableEngine:${tableId}] Action rejected: ${event.code} - ${event.reason}`
       );
     });
     this.stateVerifier = new StateVerifier((event) => {
@@ -647,6 +1256,9 @@ export abstract class ServerTableEngineBase {
             reportError(err, 'ServerTableEngine.' + this.tableId + '.sitout_persist_threw');
           });
       }
+      if (event.type === 'PLAYER_DISCONNECTED') {
+        this.handlePlayerDisconnectedMidTurn(event.playerId);
+      }
       if (event.type === 'PLAYER_RECONNECTED') {
         // ── ADDITIVE observability (#5): WS reconnect counter ──
         try {
@@ -680,31 +1292,81 @@ export abstract class ServerTableEngineBase {
     });
     this.insuranceEngine = new InsuranceEngine((event) => {
       console.log(`[ServerTableEngine:${tableId}] Insurance: ${event.type}`);
-    });
-    /**
-     * Dan 2026-08-23: "WHY WOULD YOU LEAVE THIS INSTEAD OF FIXING IT?!"
-     *
-     * These callbacks were console.log and nothing else, so the events never
-     * left the process. TablePage has always subscribed to RAKEBACK_DISTRIBUTED
-     * and TABLE_BALANCE_EXECUTED on MasterBus and its handlers were already
-     * written - "Received +$N rakeback!" and "You were moved to balance the
-     * tables." - they simply could not run. Both now go out on the hub, which
-     * is the same path insurance and RIT already use.
-     */
-    this.rakebackEngine = new RakebackEngine(supabase, (event) => {
-      console.log(`[ServerTableEngine:${tableId}] Rakeback: ${event.type}`);
-      if (event.type === 'RAKEBACK_DISTRIBUTED') {
+      // POKERBROS PARITY 2026-08-26: accept/decline/settle used to die in this
+      // console.log (same defect class as the rakeback events below). The
+      // reference flow shows every seat a "waiting" bar while the leader
+      // decides and a table-wide notice when they answer - none of which can
+      // exist if the decision never leaves the process. INSURANCE_OFFERED is
+      // NOT forwarded here: broadcastInsuranceOffers already emits the
+      // context-rich 'insurance_offers' event for it.
+      if (
+        event.type === 'INSURANCE_ACCEPTED' ||
+        event.type === 'INSURANCE_DECLINED' ||
+        event.type === 'INSURANCE_SETTLED' ||
+        // EV CASHOUT 2026-08-28: the third decision, table-wide like the others.
+        event.type === 'INSURANCE_CASHED_OUT'
+      ) {
         try {
+          const playerId = String((event as Record<string, unknown>).playerId ?? '');
+          const username =
+            this.seatedPlayers.find((p) => p.user_id === playerId)?.username || 'Player';
           this.hub?.emitEvent(this.tableId, {
             ...(event as unknown as Record<string, unknown>),
-            type: 'rakeback_distributed',
+            type: event.type.toLowerCase(), // insurance_accepted / _declined / _settled / _cashed_out
+            username,
             table_id: this.tableId,
           });
         } catch {
           /* broadcast failure is non-fatal */
         }
+        // OBSERVABILITY 2026-08-28: the decision funnel, durable. 'offered'
+        // rows come from broadcastInsuranceOffers; these are the outcomes.
+        // Fire-and-forget — the log must never touch gameplay.
+        try {
+          const ev = event as unknown as Record<string, unknown>;
+          logInsuranceOfferEvent({
+            tableId: this.tableId,
+            clubId: this.tableInfo?.club_id ?? null,
+            handNumber: this.handCount,
+            playerId: String(ev.playerId ?? ''),
+            event:
+              event.type === 'INSURANCE_ACCEPTED'
+                ? 'accepted'
+                : event.type === 'INSURANCE_DECLINED'
+                  ? ev.source === 'timeout'
+                    ? 'timeout'
+                    : 'declined'
+                  : event.type === 'INSURANCE_CASHED_OUT'
+                    ? 'cashed_out'
+                    : 'settled',
+            equityPercent: typeof ev.equity === 'number' ? ev.equity : null,
+            premium: typeof ev.premium === 'number' ? ev.premium : null,
+            insuredAmount:
+              typeof ev.insuredAmount === 'number'
+                ? ev.insuredAmount
+                : typeof ev.cashoutAmount === 'number'
+                  ? ev.cashoutAmount
+                  : null,
+            pot: null,
+            street: null,
+          });
+        } catch {
+          /* observability failure is non-fatal */
+        }
       }
     });
+    /**
+     * WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): RakebackEngine is DELETED,
+     * not just disabled. It was the FIX 144 equal-share accumulator — inert
+     * since RAKE-AUDIT 2026-07-24 (its in-memory totals were never flushed,
+     * its tiers disagreed with the authoritative RakebackSettlerService), and
+     * equal-share attribution itself is retired. Durable rakeback runs
+     * exclusively through rake_records -> RakebackSettlerService, which now
+     * allocates via services/rakeAllocation.ts (weighted contributed). The
+     * TABLE_BALANCE_EXECUTED hub bridge below (Dan 2026-08-23) is untouched;
+     * the client's `rakeback_distributed` listener stays as a no-op — this
+     * engine never emitted it while disabled either.
+     */
 
     // Step 7: Initialize tournament & extras modules
     this.chipRaceEngine = new ChipRaceEngine((event) => {
@@ -769,6 +1431,236 @@ export abstract class ServerTableEngineBase {
   /**
    * Start the dealing pipeline
    */
+
+  /**
+   * HOW MANY SEATS BEFORE A HAND IS DEALT (Dan 2026-08-25).
+   *
+   * `auto_start_players` has been a slider on the creation screen since
+   * February and was read by nothing: the dealing loop, the start-up wait and
+   * the stall watchdog each hard-coded 2. A host could set AutoStart to 5, and
+   * the table dealt three-handed anyway.
+   *
+   * It lives here, on the base, because THREE call sites have to agree about
+   * it. They already had to agree about the old constant — the watchdog's own
+   * comment says "mirror dealingLoop's predicate exactly, so the watchdog's
+   * idea of 'this table should be dealing' cannot disagree with the loop's" —
+   * and a table whose loop waits for 5 while the watchdog wants 2 is a table
+   * the watchdog kills and rebuilds every ninety seconds.
+   *
+   * Clamped at 2 because the column carries no CHECK constraint and a hand of
+   * one is not a hand. A tournament table ignores the setting entirely: its
+   * field size is decided by the tournament, not by a cash-table slider.
+   */
+  /**
+   * ── THE VARIANT THIS TABLE ACTUALLY DEALS (Dan 2026-08-25) ──────────────
+   *
+   * Pineapple is a fully built variant: three hole cards, its own discard
+   * street, its own timer, `pineapple_discard` wired through BettingStructure
+   * and HandController. The toggle on the creation screen was simply never
+   * connected to it — `pineapple_holdem` is a boolean column with no reader,
+   * sitting beside a `game_variant` the engine reads for everything.
+   *
+   * So this is mapping, not building. A Hold'em table with the switch on is
+   * dealt as pineapple; every other variant is left exactly as it is, because
+   * "Pineapple PLO" is not a game and a stray flag must not silently turn a
+   * PLO table into one.
+   */
+  /**
+   * VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant of the hand that is
+   * LIVE right now — the HandController's own config when a hand is running
+   * (which carries the bomb-pot override variant on override hands), the
+   * table's dealt variant otherwise. This is the ONE seam every "what game is
+   * this hand" consumer reads: bettingStructureFields (the snapshot the
+   * client's bet slider obeys), the legal-action clamps in Turns, the horse
+   * evaluator's variant, and the hand-history write. Reading
+   * tableInfo.game_variant directly at any of those sites would deal a PLO
+   * bomb hand and then price it like Hold'em.
+   */
+  protected activeHandVariant(): string {
+    return this.handController?.getGameVariant?.() ?? this.dealtGameVariant();
+  }
+
+  protected dealtGameVariant(): string {
+    const variant = String(this.tableInfo?.game_variant || 'nlh').toLowerCase();
+    if (variant === 'pineapple') return 'pineapple';
+    const wantsPineapple = (this.tableInfo as { pineapple_holdem?: boolean } | null)
+      ?.pineapple_holdem;
+    if (wantsPineapple === true && (variant === 'nlh' || variant === 'nlhe')) return 'pineapple';
+    return variant;
+  }
+
+  protected minPlayersToDeal(): number {
+    if (this.isTournamentTable()) return 2;
+    const configured = Number(this.tableInfo?.auto_start_players);
+    return Number.isFinite(configured) && configured > 2 ? Math.floor(configured) : 2;
+  }
+
+  /**
+   * The deal threshold, for callers OUTSIDE the engine (2026-08-27).
+   *
+   * GameServer's zombie reaper decides "should this table be dealing?" and
+   * until now answered with a hard-coded `player_count >= 2` — the same
+   * disagreement the header above warns about, in the one caller that could
+   * not see this method because it was protected. A table with
+   * auto_start_players = 5 and 2-4 seats makes no progress BY DESIGN, and the
+   * reaper called that a zombie and rebuilt its engine every 180 seconds,
+   * forever. One definition of "enough players", visible to everyone who
+   * needs it.
+   */
+  public dealThreshold(): number {
+    return this.minPlayersToDeal();
+  }
+
+  /**
+   * ── RIT CONFIG IS RE-READ, NOT REMEMBERED (2026-08-27) ──────────────────
+   *
+   * This block used to live inline in start(), which runs ONCE per engine
+   * process. So `run_it_twice`, `allow_run_it_twice`, `run_it_twice_enabled`,
+   * `insurance_enabled` and `run_it_mode` were sampled at boot and never
+   * looked at again: an owner turning insurance on, or run-it-twice off,
+   * changed nothing at all until the table's engine happened to restart.
+   *
+   * Production hand #3046089 is that defect: cash table d9d3c3b3 dealt three
+   * boards and split a 1470 pot without one player at the table being shown a
+   * prompt, off configuration the engine had been holding since it booted.
+   *
+   * ── WHAT THIS METHOD DOES *NOT* DO ANY MORE (merge note, 2026-08-27) ────
+   *
+   * The extraction was written when FIX 92 ended `ritEffective = ritEnabled &&
+   * !insuranceEnabled` — "insurance takes priority, RIT is disabled". That
+   * force-disable was RETIRED on 2026-08-26 by Dan's leader-seat ruling and
+   * the body below is the retired-it version, not the extracted one: when both
+   * features are on, the run-it-multi-times question comes FIRST and insurance
+   * engages only if the hand resolves to a single run ("THE INSURANCE PART
+   * PICKED UP ON THE TURN. AFTER THE RUN IT TWICE WAS DECLINED").
+   *
+   * Per-HAND exclusivity still holds absolutely — a hand that deals extra
+   * boards never carries an insurance contract, and an insured hand always
+   * runs exactly once — but it is enforced by the runout dispatch
+   * (`ritFirst` in handleAllInRunout), not by switching the feature off here.
+   * So do not restore the `&& !insuranceEnabled` term: hand #3046089 needed
+   * the configuration RE-READ, which is what this method is for, and did not
+   * need the table's RIT switch overridden.
+   *
+   * It is called from start() AND from ServerTableEngineRunout at the top of
+   * handleAllInRunout — the last instant before an offer can be made, and the
+   * only place in the hand where the answer matters. That is deliberately
+   * tighter than "hand start": there is no window between the re-read and the
+   * decision for the two to disagree, and no code path can reach the offer
+   * without passing through it.
+   *
+   * ONE CAVEAT, and it is the important one: `this.tableInfo` is itself a
+   * cached snapshot. It is assigned exactly once (start(), from loadTable) and
+   * the only thing that refreshes any part of it afterwards is refreshBlinds(),
+   * which copies back three columns — small_blind, big_blind, ante — and only
+   * for tournament tables. So this method re-reads the freshest values the
+   * PROCESS has; it does not re-read the DATABASE. Adding a per-hand
+   * `loadTable` for these five columns is a separate decision (an extra round
+   * trip on every hand, under the 90s deal watchdog) and is deliberately NOT
+   * taken here.
+   *
+   * Returns `insuranceEnabled` so start() can keep configuring the insurance
+   * engine from the same computation. The insurance engine is deliberately NOT
+   * re-configured per hand: start() sets only `enabled` on it, while other call
+   * sites set `houseMargin` and `offerTimeoutSeconds` too, so a partial
+   * re-configure mid-flow would silently drop them. The runout dispatch reads
+   * the RIT engine's own `isEnabled` for its sequencing, so the two cannot
+   * drift apart.
+   */
+  protected applyRunItTwiceConfig(): { ritEffective: boolean; insuranceEnabled: boolean } {
+    // No table row loaded yet: leave whatever configuration is already in
+    // place rather than reconfiguring from nothing.
+    if (!this.tableInfo) return { ritEffective: false, insuranceEnabled: false };
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // FIX 92 (HISTORY): RIT and Insurance used to be mutually exclusive at
+    // CONFIGURE time — "RUN IT TWICE AND INSURANCE ARE NOT ALLOWED ON THE
+    // SAME TABLE", insurance taking priority and RIT being switched off. See
+    // the SEQUENCING note below for what replaced it on 2026-08-26.
+    // ═══════════════════════════════════════════════════════════════════════
+    // RIT INTENT FIX 2026-08-18: the engine read `run_it_twice_enabled`,
+    // a column NOTHING in the product ever writes (39 of 710 open tables
+    // true, likely a one-off script). The creation surfaces write
+    // `run_it_twice` (CreateTableModal) and `allow_run_it_twice`
+    // (TableCreationPage) - each defaulting the OTHER to true - and the
+    // lobby advertises the feature off `run_it_twice`. So the lobby said
+    // "run it twice" on ~every table while the engine had it off on 94%
+    // of them, and no offer ever fired in live traffic. Owner intent:
+    // OFF means at least one user-written column is false; the legacy
+    // engine column is honored as an additional ON override.
+    // TOURNAMENT GATE 2026-08-18 — CONFIRMED CASH-ONLY BY DAN 2026-08-26:
+    // "run it twice or 3 times is a cash game only area. it should never
+    // be in MTT, SPINS OR HEADS UP." The gate was briefly lifted the same
+    // day and reinstated within the hour on that ruling — RIT is a product
+    // decision, cash tables only, not merely a numeric limitation.
+    //
+    // (The original numeric reason still stands as history: per-board
+    // splits produce fractional amounts while tournament_players.chips is
+    // INTEGER — the sync floors, destroying chips; live 3-run tournament
+    // hand 41627f9a split 1760.88 into 586.96/1173.92 before the gate went
+    // in. dealAndResolveRIT now carries an integer-exact tournament branch
+    // as DEFENSE IN DEPTH: unreachable while this gate holds, but if the
+    // gate ever regresses, that branch makes the 41627f9a chip destruction
+    // impossible rather than merely unlikely.)
+    const ritIsTournament =
+      !!this.tableInfo.tournament_id || this.tableInfo.game_type === 'tournament';
+    const ritEnabled =
+      !ritIsTournament &&
+      (((this.tableInfo.run_it_twice ?? true) && (this.tableInfo.allow_run_it_twice ?? true)) ||
+        (this.tableInfo.run_it_twice_enabled ?? false));
+    // ALL-CASH INSURANCE 2026-08-26 (Dan): insurance is a CASH feature.
+    // The ledger step was already cash-only (ServerTableEngineSettlement
+    // gates on !isTournamentTable), but the engine itself never refused a
+    // stray insurance_enabled flag on a tournament row - which would have
+    // moved seat chips with NO bank ledger behind them. Same gate as RIT.
+    const insuranceEnabled = (this.tableInfo.insurance_enabled ?? false) && !ritIsTournament;
+    // SEQUENCING 2026-08-26 (Dan's leader-seat recording): FIX 92 used to
+    // force-disable RIT here whenever insurance was on ("insurance takes
+    // priority"). The reference table runs BOTH: the run-it-multi-times
+    // question comes FIRST, and insurance engages only when the hand
+    // resolves to a single run ("THE INSURANCE PART PICKED UP ON THE TURN.
+    // AFTER THE RUN IT TWICE WAS DECLINED"). Per-HAND exclusivity still
+    // holds - a hand that deals extra boards never carries an insurance
+    // contract, and an insured hand always runs exactly once - it is now
+    // enforced by the runout dispatch (handleAllInRunout), not by turning
+    // the feature off.
+    const ritEffective = ritEnabled;
+
+    // Bible V8 §4.20 + FIX 98: Configure Run It Twice engine
+    /**
+     * Dan 2026-08-25: run_it_mode reaches the engine at last. Read
+     * DEFENSIVELY and additively — see RITConfig.mode. The column is the
+     * string 'none' on all 46 live tables while run-it-twice is genuinely on
+     * via the three boolean columns, so a mode that gated `enabled` would
+     * have switched the feature off across the whole platform. It can only
+     * ever REMOVE the question, never the feature.
+     */
+    const ritMode = String(this.tableInfo.run_it_mode || '').toLowerCase();
+    this.runItTwiceEngine.configure(this.tableId, {
+      enabled: ritEffective,
+      mode:
+        ritMode === 'mandatory_three'
+          ? 'mandatory_three'
+          : ritMode === 'mandatory_twice'
+            ? 'mandatory_twice'
+            : ritMode === 'player_choice'
+              ? 'player_choice'
+              : 'none',
+      // POKERBROS PARITY 2026-08-26 (Dan's reference recordings): one shared
+      // 25-second countdown covers the chooser AND every responder — the
+      // reference panel shows "Countdown: 25s" ticking for the whole
+      // decision, not 5s + 10s phases. The engine's DeadlineScheduler
+      // auto-declines at this same deadline, and the wire events now carry
+      // it (deadline_ts) so every client renders the same clock.
+      autoDeclineTimeout: 25,
+      maxRuns: 3, // Support up to 3 boards (Dan's rules: player can choose 1/2/3)
+      chooserTimeout: 25,
+      responderTimeout: 25,
+    });
+
+    return { ritEffective, insuranceEnabled };
+  }
+
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
@@ -812,12 +1704,26 @@ export abstract class ServerTableEngineBase {
           if (!this.running) return;
           const backoff = Math.min(500 * 2 ** (attempt - 1), 8_000);
           console.warn(
-            `[ServerTableEngine:${this.tableId}] loadTable blipped on start (attempt ${attempt}/${ServerTableEngineBase.START_LOAD_ATTEMPTS}) — retrying in ${backoff}ms`
+            `[ServerTableEngine:${this.tableId}] loadTable blipped on start (attempt ${attempt}/${ServerTableEngineBase.START_LOAD_ATTEMPTS}) - retrying in ${backoff}ms`
           );
           await this.sleep(backoff);
         }
       }
       this.tableInfo = tableData as TableInfo;
+
+      // V22 (2026-08-27, Phase 2): pre-warm the tournament ICM context the
+      // moment the engine knows which tournament it serves. The cache used to
+      // warm on the FIRST HORSE DECISION — with 7,000+ spins a day, the
+      // opening hands of every event ran on the flat premium while the fetch
+      // was still in flight. The call is synchronous-cheap: it only kicks the
+      // background refresh.
+      if (this.tableInfo?.tournament_id) {
+        try {
+          getTournamentBrainContext(String(this.tableInfo.tournament_id));
+        } catch {
+          /* warming is best-effort */
+        }
+      }
 
       // FIX 123: Bible V8 §6.2 + Dan's directive — Time bank auto-extend ONLY if:
       //   1. Table has time_bank_enabled = true
@@ -845,53 +1751,9 @@ export abstract class ServerTableEngineBase {
         reconnectGraceSeconds: 5,
       });
 
-      // ═══════════════════════════════════════════════════════════════════════
-      // FIX 92: MUTUAL EXCLUSION — RIT and Insurance CANNOT coexist on the
-      // same table. Per Dan: "RUN IT TWICE AND INSURANCE ARE NOT ALLOWED ON
-      // THE SAME TABLE." If both are enabled in DB, insurance takes priority
-      // (it's the more complex feature). RIT is disabled.
-      // ═══════════════════════════════════════════════════════════════════════
-      // RIT INTENT FIX 2026-08-18: the engine read `run_it_twice_enabled`,
-      // a column NOTHING in the product ever writes (39 of 710 open tables
-      // true, likely a one-off script). The creation surfaces write
-      // `run_it_twice` (CreateTableModal) and `allow_run_it_twice`
-      // (TableCreationPage) - each defaulting the OTHER to true - and the
-      // lobby advertises the feature off `run_it_twice`. So the lobby said
-      // "run it twice" on ~every table while the engine had it off on 94%
-      // of them, and no offer ever fired in live traffic. Owner intent:
-      // OFF means at least one user-written column is false; the legacy
-      // engine column is honored as an additional ON override.
-      // TOURNAMENT GATE 2026-08-18: RIT is a cash/club-game feature. Running
-      // it twice in a tournament is both non-standard (no major app offers
-      // it in MTTs) and numerically unsound here: per-board splits produce
-      // fractional amounts while tournament_players.chips is INTEGER (the
-      // sync floors, destroying chips - see POSTGRES_INTEGER_CAST_FLOOD).
-      // A live 3-run tournament hand (41627f9a, 02:11 UTC) split 1760.88
-      // into 586.96/1173.92 tournament chips before this gate went in.
-      const ritIsTournament =
-        !!this.tableInfo.tournament_id || this.tableInfo.game_type === 'tournament';
-      const ritEnabled =
-        !ritIsTournament &&
-        (((this.tableInfo.run_it_twice ?? true) && (this.tableInfo.allow_run_it_twice ?? true)) ||
-          (this.tableInfo.run_it_twice_enabled ?? false));
-      const insuranceEnabled = this.tableInfo.insurance_enabled ?? false;
-      const ritEffective = ritEnabled && !insuranceEnabled; // Insurance takes priority
-
-      if (ritEnabled && insuranceEnabled) {
-        console.warn(
-          `[ServerTableEngine:${this.tableId}] MUTUAL EXCLUSION: Both RIT and Insurance enabled — disabling RIT. These features cannot coexist.`
-        );
-      }
-
-      // Bible V8 §4.20 + FIX 98: Configure Run It Twice engine
-      // Chooser gets 5s, responders get 10s — per Dan's rules
-      this.runItTwiceEngine.configure(this.tableId, {
-        enabled: ritEffective,
-        autoDeclineTimeout: 10,
-        maxRuns: 3, // Support up to 3 boards (Dan's rules: player can choose 1/2/3)
-        chooserTimeout: 5,
-        responderTimeout: 10,
-      });
+      // Run It Twice — see applyRunItTwiceConfig(). Extracted 2026-08-27 so it
+      // can be re-evaluated per hand instead of once per process lifetime.
+      const { insuranceEnabled } = this.applyRunItTwiceConfig();
 
       // Bible V8 §4.19: Configure Insurance engine
       this.insuranceEngine.configure(this.tableId, {
@@ -909,26 +1771,10 @@ export abstract class ServerTableEngineBase {
         });
       }
 
-      // ⚠ D22 (2026-08-20): this object is INERT. It is constructed and
-      // configured per table, but recordHandRake only accumulates into an
-      // in-memory total that nothing ever flushes, and its rakeback tiers
-      // DISAGREE with the live authoritative tiers used by
-      // RakebackSettlerService — which reads rake_records and is the only thing
-      // that actually pays rakeback. Do not re-enable this by flipping a flag:
-      // its numbers are not the platform's numbers.
-      //
-      // FIX 104 → RAKE-AUDIT 2026-07-24: RakebackEngine is DISABLED. Its
-      // in-memory accumulator was never flushed anywhere (settleRakeback has
-      // zero callers), its tier table conflicts with the authoritative
-      // RakebackSettlerService tiers, and with enabled:true it grew an
-      // unbounded per-player Map on every raked hand — a slow memory leak that
-      // paid out nothing. Durable rakeback runs exclusively through
-      // rake_records → RakebackSettlerService (30-min daemon + weekly close).
-      if (this.tableInfo.club_id) {
-        this.rakebackEngine.configure(this.tableInfo.club_id, {
-          enabled: false,
-        });
-      }
+      // RakebackEngine (FIX 144 equal-share, inert since RAKE-AUDIT
+      // 2026-07-24) was DELETED on 2026-08-29 under the weighted contributed
+      // rake law. Rakeback runs exclusively through rake_records ->
+      // RakebackSettlerService, allocated by services/rakeAllocation.ts.
 
       // ── Dan 2026-08-16 — SEED handCount FROM PERSISTED HISTORY ──
       //
@@ -950,18 +1796,29 @@ export abstract class ServerTableEngineBase {
       // able to reuse that hand's exact number.
       await this.seedHandCountFromHistory();
 
+      // Dan 2026-08-25, BINDING: "IN THE EVENT OF AN ENGINE RESTART, WHILE PLAY
+      // IS RUNNING, IT MUST ALWAYS RESTART IN THE SAME POSITION."
+      await this.restoreButtonFromHistory();
+
       // FIX 137: Bible V8 §7.17 — Check for interrupted hand from a server crash
       const recovered = await this.checkCrashRecovery();
       if (recovered) {
         console.log(
-          `[ServerTableEngine:${this.tableId}] Crash recovery complete — resuming from hand #${this.handCount}`
+          `[ServerTableEngine:${this.tableId}] Crash recovery complete - resuming from hand #${this.handCount}`
         );
       }
 
       // Bible V8 §3.1: Table FSM — empty → waiting (engine started, waiting for players)
       this.tableFSM.transition('waiting');
 
-      // Wait for minimum 2 players
+      // 2026-08-29: open the manual-bomb listener once the table row is loaded
+      // (bomb_pot_enabled is known by now) and before any hand is dealt, so a
+      // host clicking during the wait-for-players phase is not missed. Only
+      // bomb-enabled tables pay for a subscription; the throttled refresh
+      // opens it later if the owner enables bomb pots mid-session.
+      if (this.tableInfo?.bomb_pot_enabled === true) this.subscribeManualBomb();
+
+      // Wait for the host's AutoStart figure (2 unless they raised it)
       this.setLoopPhase('start_wait_for_players');
       while (this.running) {
         try {
@@ -976,6 +1833,23 @@ export abstract class ServerTableEngineBase {
           await this.sleep(5000);
           continue;
         }
+        this.restoreSitOutsFromSeats();
+        // Dan 2026-08-30: and the cash entry holds, for the same reason the
+        // sit-out restore is here rather than only in the dealing loop — a
+        // table below the minimum to deal never reaches that loop, so a player
+        // held for the big blind on a table that went quiet would have their
+        // hold restored only if and when the table filled again. Guarded to
+        // once per process, so the two call sites cannot double-restore.
+        this.restoreEntryHoldsFromSeats();
+        // THE CASE DAN REPORTED. This loop is where a table below the minimum
+        // to deal waits — possibly forever — and the sit-out rule used to live
+        // only in the dealing loop, which is never reached from here. So the
+        // last player at a table could sit out and hold the seat indefinitely,
+        // with the five-minute clock never once being asked the time.
+        // countOrbit false: nothing is being dealt, so no orbit has passed.
+        await this.evictExpiredSitOuts({ countOrbit: false }).catch((err) =>
+          reportError(err, 'ServerTableEngine.' + this.tableId + '.wait_loop_sitout_evict')
+        );
         // IDLE BROADCAST (2026-08-22): publish the waiting-state snapshot so
         // a client joining an idle table gets a real SNAPSHOT (seats, stacks,
         // 'waiting' stage) instead of an eternal spinner. The hub drops
@@ -986,9 +1860,9 @@ export abstract class ServerTableEngineBase {
         } catch {
           /* idle publish must never stall the wait loop */
         }
-        if (this.seatedPlayers.length >= 2) break;
+        if (this.seatedPlayers.length >= this.minPlayersToDeal()) break;
         console.log(
-          `[ServerTableEngine:${this.tableId}] Waiting for players... (${this.seatedPlayers.length}/2)`
+          `[ServerTableEngine:${this.tableId}] Waiting for players... (${this.seatedPlayers.length}/${this.minPlayersToDeal()})`
         );
         await this.sleep(5000);
       }
@@ -1063,6 +1937,11 @@ export abstract class ServerTableEngineBase {
     // instances drop in-memory state only.
     this.clearHandSafetyTimer();
     this.clearLooseHandTimers();
+    // 2026-08-29: drop the manual-bomb listener with the engine that opened
+    // it. Local state only, so this is safe on a superseded instance too — a
+    // channel belongs to one instance and closing ours cannot disturb the
+    // successor's, which is the trap the guard below exists for.
+    this.unsubscribeManualBomb();
     if (ServerTableEngineBase.isCurrentEngineFor(this.tableId, this)) {
       this.clearTurnTimer();
       // C15: flush any coalesced snapshot BEFORE dropping the controller — after
@@ -1102,7 +1981,6 @@ export abstract class ServerTableEngineBase {
       this.straddleEngine.disposeAll();
       this.runItTwiceEngine.disposeAll();
       this.insuranceEngine.disposeAll();
-      this.rakebackEngine.disposeAll();
 
       // Step 7: Dispose tournament & extras modules
       this.engineTelemetry.dispose();
@@ -1421,7 +2299,7 @@ export abstract class ServerTableEngineBase {
     reportError(
       new Error(
         `[HandNumber] Could not allocate a global hand number for table ${this.tableId} ` +
-          `after ${MAX_ATTEMPTS} attempts — refusing to deal. A hand that cannot be numbered ` +
+          `after ${MAX_ATTEMPTS} attempts - refusing to deal. A hand that cannot be numbered ` +
           `cannot be settled or audited. Underlying error: ${String(
             (lastErr as { message?: string })?.message ?? lastErr
           )}`
@@ -1538,9 +2416,12 @@ export abstract class ServerTableEngineBase {
    * pause now say so; the safety net still exists, it is just sized to the
    * pause being requested.
    */
-  pauseAfterHand(maxWaitMs?: number): void {
+  pauseAfterHand(maxWaitMs?: number, opts?: { beforeNextHand?: boolean }): void {
     this.handForHandPaused = true;
     this.pauseMaxWaitMs = maxWaitMs && maxWaitMs > 0 ? maxWaitMs : null;
+    // See holdBeforeNextHand. Sticky within one pause: a break already holding
+    // the table must not be downgraded by a later ordinary pause request.
+    if (opts?.beforeNextHand) this.holdBeforeNextHand = true;
     if (this.pausedSinceMs === 0) this.pausedSinceMs = Date.now();
   }
 
@@ -1553,6 +2434,7 @@ export abstract class ServerTableEngineBase {
     // hand-for-hand pause gets its own short safety window rather than
     // inheriting a multi-minute one.
     this.pauseMaxWaitMs = null;
+    this.holdBeforeNextHand = false;
     // Bible V8 §3.1: Table FSM — paused → running
     if (this.tableFSM.state === 'paused') {
       this.tableFSM.transition('running');
@@ -1566,6 +2448,91 @@ export abstract class ServerTableEngineBase {
   /** Check if engine is currently waiting for hand-for-hand resume */
   isWaitingForHandForHand(): boolean {
     return this.handForHandPaused && this.handForHandResolve !== null;
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  THE PARK. A PAUSED TABLE STOPS, WHATEVER IT WAS DOING (2026-08-27)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Dan: "AT THE :55 BREAK HAS STARTED, AND ALL HANDS FINISH. ONCE A TABLE HAS
+   * FINISHED THE HAND, THEY STOP, AND DON'T RESTART UNTIL THE BREAK IS OVER."
+   *
+   * This block used to live INLINE in the dealing loop, immediately after
+   * `await this.dealHand(...)`. That is the one place in the loop a table only
+   * reaches when it actually dealt a hand, and every branch above it exits the
+   * iteration with `continue`:
+   *
+   *   - `activePlayers.length < minPlayersToDeal()`  (sleep 3s, continue)
+   *   - the spin-reveal hold                          (sleep <=1s, continue)
+   *   - the mystery-bounty reveal gate                (sleep 250ms, continue)
+   *   - the admin-pause / maintenance lock            (sleep 3s, continue)
+   *
+   * and the start-up wait loop hands control to the dealing loop without
+   * passing it at all. So a table that was NOT mid-hand at :55 — one short a
+   * player while the balancer moves somebody in, one holding for a spin wheel,
+   * one that just filled — never parked. Two things followed, both wrong:
+   *
+   *   1. `isWaitingForHandForHand()` stayed false, so `areAllTablesParked()`
+   *      was false, so the platform burned the whole LAST_HAND_GRACE_MS every
+   *      single hour and logged "last hand did not land within 120s" for a
+   *      table that had no hand in the air at all. Every break started two
+   *      minutes late and ran two minutes past the hour.
+   *
+   *   2. Far worse: the instant that table got its players back — a balanced
+   *      seat arriving, a wheel finishing — it went straight to `dealHand()`
+   *      and played a full hand IN THE MIDDLE OF THE BREAK, only parking
+   *      afterwards. That is precisely the thing the break exists to prevent.
+   *
+   * The gate is now a method and the loop awaits it at the TOP of every
+   * iteration, before any of those branches and before the deal. A table with
+   * cards in the air still finishes its hand first, because the loop cannot
+   * come back around until `dealHand()` resolves — "all hands finish" and "no
+   * new hand starts" are the same single check from here.
+   *
+   * The post-deal call site is retained so hand-for-hand still parks the
+   * instant a hand settles rather than after the showdown display pause.
+   */
+  protected async awaitPauseGate(): Promise<void> {
+    if (!this.handForHandPaused || !this.running) return;
+    // Bible V8 §3.1: Table FSM — running → paused. GUARDED: the FSM has no
+    // waiting → paused edge, and this gate is now reachable from the idle
+    // branches where the table sits in 'waiting'. An unguarded transition
+    // logged a false "Invalid transition" to Sentry on every idle park.
+    if (this.tableFSM.state === 'running') {
+      this.tableFSM.transition('paused');
+    }
+    console.log(
+      `[ServerTableEngine:${this.tableId}] Parked between hands - waiting for the pause to lift...`
+    );
+    await new Promise<void>((resolve) => {
+      this.handForHandResolve = resolve;
+      /**
+       * Safety timeout so a table can never wedge forever.
+       *
+       * Dan 2026-08-19: this was hard-coded to 120 seconds. A synchronized
+       * break is five minutes measured from AFTER the last hand completes, so
+       * every table silently self-resumed two minutes in and dealt through the
+       * rest of the break. The budget now comes from whoever requested the
+       * pause (pauseAfterHand), defaulting to the original two minutes for
+       * hand-for-hand.
+       */
+      const maxWaitMs = this.pauseMaxWaitMs ?? 120000;
+      const timer = setTimeout(() => {
+        if (this.handForHandResolve === resolve) {
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] Pause safety timeout after ${Math.round(
+              maxWaitMs / 1000
+            )}s - resuming to avoid a wedged table`
+          );
+          this.handForHandResolve = null;
+          resolve();
+        }
+      }, maxWaitMs);
+      // The break is minutes long and this timer is the only thing keeping a
+      // reference; unref so a shutdown inside a break is not held open by it.
+      (timer as { unref?: () => void }).unref?.();
+    });
   }
 
   /**
@@ -1583,6 +2550,24 @@ export abstract class ServerTableEngineBase {
    */
   isDrained(): boolean {
     return !this.running || this.isWaitingForHandForHand();
+  }
+
+  /**
+   * Are there no cards in the air at this table right now?
+   *
+   * The mystery bounty phase may only open BETWEEN hands (Dan's sections 1-3):
+   * a player who committed his stack while a knockout was worth a flat bounty
+   * must not find, when the hand is scored, that it was worth a chest. That is
+   * the information changing under a decision already made.
+   *
+   * `handController === null` is the whole test. It is also briefly true during
+   * setup, before the first hand — which is harmless here and deliberately not
+   * excluded: seeding a chest inventory before any hand has been dealt is the
+   * safest moment there is, whereas `isDrained()` (which does exclude it) would
+   * report a running table as busy forever and the phase would never open.
+   */
+  isBetweenHands(): boolean {
+    return this.handController === null;
   }
 
   /**
@@ -1755,6 +2740,27 @@ export abstract class ServerTableEngineBase {
   }
   protected pineappleDiscardTimer: ReturnType<typeof setTimeout> | null = null;
   /**
+   * PINEAPPLE DISCARD DEADLINES, PER SEAT, ABSOLUTE (2026-08-31).
+   *
+   * The discard round used to be one flat `setTimeout` for the whole table and
+   * nothing published about it, so the client counted down from its OWN copy of
+   * action_time_seconds anchored to the moment it first saw the stage. Three
+   * ways that lied: a table configured with a different action time showed the
+   * wrong number; a reconnect restarted the countdown from full while the
+   * server clock was half spent; and switching to the table from another tab
+   * re-anchored it again. Dan was folded on a clock that read twelve seconds.
+   *
+   * Absolute epoch ms, per seat, published in the snapshot and enforced from
+   * the same map, so what the player sees and what folds them are one number.
+   * Per SEAT rather than per table because a time bank extends one player's
+   * deadline without touching anybody else's.
+   */
+  protected pineappleDiscardDeadlines: Map<number, number> = new Map();
+  /** The unextended deadline every seat started the round with. */
+  protected pineappleDiscardBaseDeadlineMs: number | null = null;
+  /** Round duration in ms, for the client's ring geometry. */
+  protected pineappleDiscardDurationMs: number = 0;
+  /**
    * Pending horse think-time timer. Tracked so it can be cancelled — a stray
    * horse action scheduled for a hand that has since ended is a real hazard
    * (the callback's identity guards catch it, but an untracked timer cannot be
@@ -1844,10 +2850,82 @@ export abstract class ServerTableEngineBase {
         (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
     );
     if (roster.length < 2) return -1;
-    const sortedSeats = roster.map((p) => p.seat_number).sort((a, b) => a - b);
-    const nextButton =
-      this.lastButtonSeat > 0 ? this.getNextSeat(this.lastButtonSeat, roster) : sortedSeats[0];
+    const nextButton = this.predictButtonSeat(roster);
     return roster.length === 2 ? nextButton : this.getNextSeat(nextButton, roster);
+  }
+
+  /**
+   * Dan 2026-08-25, BINDING: "NEW PLAYERS NEVER GET THE BUTTON WHEN SITTING
+   * DOWN. It skips over them and moves to the correct person."
+   *
+   * The subset of a roster that may hold the button on the next hand: players
+   * who have already been dealt at least one hand here. Returns the roster
+   * UNCHANGED when nobody has played yet — a table dealing its very first hand
+   * has none but new players and somebody has to take the button — so this can
+   * never empty the rotation or make the caller spin.
+   */
+  protected buttonEligible(roster: SeatedPlayer[]): SeatedPlayer[] {
+    // CASH ONLY. Dan's rule is about sitting down at a cash game. In a
+    // tournament nobody "sits down": the seating sweep places late registrants
+    // and TableBalancer moves players between tables deliberately, positioning
+    // them relative to the big blind so the rotation stays honest. Filtering
+    // those players out of the button rotation would silently override that
+    // placement, and a table that has just been balanced into is mostly players
+    // this set has never seen.
+    if (this.isTournamentTable()) return roster;
+    const veterans = roster.filter((p) => this.dealtInUserIds.has(p.user_id));
+    return veterans.length > 0 ? veterans : roster;
+  }
+
+  /**
+   * Where the button lands on the hand about to be dealt. ONE definition,
+   * shared by the SB/BB predictors, the wait-for-BB gate and the rotation
+   * itself — if these were separate walks they could disagree about who is on
+   * the button, which is exactly the class of bug the shared sbSeat/bbSeat
+   * computation in the dealing loop was introduced to kill.
+   */
+  protected predictButtonSeat(roster: SeatedPlayer[]): number {
+    const eligible = this.buttonEligible(roster);
+    const sortedSeats = eligible.map((p) => p.seat_number).sort((a, b) => a - b);
+    if (sortedSeats.length === 0) return -1;
+    if (this.lastButtonSeat > 0) {
+      /**
+       * HEADS-UP, THE BLINDS ADVANCE AND THE BUTTON FOLLOWS (2026-08-31,
+       * Phase 3, carried from the Phase 2 audit).
+       *
+       * The dealing loop stopped rotating the button at two players and started
+       * deriving it from the last big blind (TDA Rule 33 -- see
+       * headsUpButton.ts). This predictor kept walking the old rotation, so for
+       * every heads-up hand the wait-for-BB gate and the deal disagreed about
+       * which seat was about to hold the button. Nothing broke, because at two
+       * players there is no joiner to hold out, but two walks that disagree are
+       * how the ORIGINAL bug got in: the dealing loop's comment says the shared
+       * sb/bb computation exists precisely so "the day somebody fixes the
+       * heads-up rule in one of them" the other cannot silently keep billing
+       * the wrong seat. Same argument, one layer up.
+       */
+      if (sortedSeats.length === 2 && this.lastBigBlindSeat > 0) {
+        const headsUp = headsUpButtonSeat(sortedSeats, this.lastBigBlindSeat);
+        if (headsUp !== null && headsUp > 0) return headsUp;
+      }
+      return this.getNextSeat(this.lastButtonSeat, eligible);
+    }
+    return sortedSeats[0];
+  }
+
+  /**
+   * The button seat for the next hand, over the same roster the blinds use.
+   * Used by the dealing loop to hold a brand-new joiner out for one hand when
+   * they have sat down in the seat the button is about to reach.
+   */
+  protected getButtonSeatIndex(): number {
+    const roster = this.seatedPlayers.filter(
+      (p) =>
+        p.stack > 0 &&
+        (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
+    );
+    if (roster.length < 2) return -1;
+    return this.predictButtonSeat(roster);
   }
 
   protected getBBSeatIndex(): number {
@@ -1862,9 +2940,7 @@ export abstract class ServerTableEngineBase {
         (this.isTournamentTable() || !this.disconnectEngine.isSittingOut(this.tableId, p.user_id))
     );
     if (roster.length < 2) return -1;
-    const sortedSeats = roster.map((p) => p.seat_number).sort((a, b) => a - b);
-    const nextButton =
-      this.lastButtonSeat > 0 ? this.getNextSeat(this.lastButtonSeat, roster) : sortedSeats[0];
+    const nextButton = this.predictButtonSeat(roster);
     const sbSeat = roster.length === 2 ? nextButton : this.getNextSeat(nextButton, roster);
     return this.getNextSeat(sbSeat, roster);
   }
@@ -1949,18 +3025,150 @@ export abstract class ServerTableEngineBase {
   protected lastRakeRefreshAtMs = 0;
 
   /**
-   * ROUND 3 AUDIT FIX (2026-08-20): hands dealt at THIS table since the last
-   * bomb pot. The trigger used to be `handCount % frequency === 0`, but
-   * handCount is the GLOBAL hand-number allocator shared by every table —
-   * consecutive hands at one table draw numbers spaced by however many hands
-   * the whole fleet dealt in between, so divisibility was a ~1/N coin flip
-   * per hand. "Every 3 hands" produced back-to-back bomb pots and 15-hand
-   * droughts (observed live on the demo table). This counter makes the
-   * cadence exactly what the setting promises. Resets on engine restart —
-   * deterministic, no DB write, worst case the first bomb arrives N hands
-   * after a deploy.
+   * BOMB POT STANDARDIZATION 2026-08-27 (Dan's spec §4): the per-table trigger
+   * scheduler — every_n_hands, once_per_orbit, timed and bomb_pot_only modes,
+   * single pending-token semantics, and the minimum-players gate. Replaces the
+   * raw `handsSinceBombPot` counter (ROUND 3 AUDIT FIX 2026-08-20), whose
+   * history matters: the trigger before it was `handCount % frequency === 0`
+   * on the GLOBAL hand-number allocator, which made cadence a coin flip. The
+   * scheduler keeps the per-table counter as internal state. Same restart
+   * caveat as before: in-memory, resets on deploy, worst case the first bomb
+   * after a restart arrives one full cycle later.
    */
-  protected handsSinceBombPot = 0;
+  protected bombPotScheduler = new BombPotScheduler();
+
+  /**
+   * FULL SCHEDULER PERSISTENCE (2026-08-28): last serialized scheduler state
+   * written to tables.bomb_pot_sched_state — the change detector that keeps
+   * the per-hand write down to one row only when something actually moved.
+   */
+  protected bombPotSchedPersistedJson: string | null = null;
+
+  /**
+   * SEPARATE BOMB BUTTON (spec §5.3): the bomb hands' own button seat when
+   * bomb_pot_button_policy = 'separate'. Advances clockwise per bomb hand;
+   * the regular rotation never sees bomb hands. Persisted in the scheduler
+   * state jsonb (key `b`) so it survives restarts like everything else.
+   */
+  protected bombButtonSeat: number | null = null;
+
+  /**
+   * MANUAL BOMB: PUSHED, NOT POLLED (2026-08-29).
+   *
+   * MANUAL_NEXT_HAND must reach the engine before the next hand is dealt, and
+   * the only mechanism it had was the engine ASKING — one round trip at the
+   * top of every hand, on every bomb-enabled table, forever, for a flag that
+   * is false essentially always, sitting on the hand-start critical path.
+   *
+   * `fn_request_manual_bomb_pot` now broadcasts on the `table:<id>` topic this
+   * engine already opens for its own sends. This flag is what the broadcast
+   * sets. The claim it triggers is unchanged and still atomic, so hearing the
+   * broadcast twice — or hearing it in the same hand the throttled column read
+   * also reports it — still fires exactly one bomb.
+   *
+   * A broadcast is best-effort by nature: an engine that restarted between the
+   * click and the hand never hears it. That is what the throttled read is for
+   * (see refreshRakeConfig, which now carries the column). The poll is demoted
+   * from once per hand to once per refresh that was already happening; it is
+   * not deleted, because a request must never be lost.
+   */
+  protected manualBombPushed = false;
+  private manualBombChannel: { unsubscribe: () => void } | null = null;
+
+  /**
+   * Open the manual-bomb listener. Idempotent, and a failure to subscribe is
+   * survivable — the throttled column read still finds the request.
+   */
+  protected subscribeManualBomb(): void {
+    if (this.manualBombChannel) return;
+    try {
+      const ch = supabase
+        .channel(`table:${this.tableId}`)
+        .on('broadcast', { event: 'bomb_pot_manual_requested' }, () => {
+          this.manualBombPushed = true;
+        });
+      void ch.subscribe();
+      this.manualBombChannel = ch as unknown as { unsubscribe: () => void };
+    } catch (err) {
+      // Never fatal: the table deals fine, the manual bomb just arrives on the
+      // throttled read instead of instantly.
+      console.warn(`[BombPot] manual-bomb subscribe failed on ${this.tableId}:`, err);
+    }
+  }
+
+  /** Close it. Called from stop(); safe to call when never opened. */
+  protected unsubscribeManualBomb(): void {
+    try {
+      this.manualBombChannel?.unsubscribe();
+    } catch {
+      /* a channel that will not close cannot hold up a table shutdown */
+    }
+    this.manualBombChannel = null;
+  }
+
+  /**
+   * Snapshot fields for the felt's bomb-pot indicators, shared by every
+   * broadcast payload in ServerTableEngine. `bomb_pot_in` keeps its legacy
+   * contract (hands until the bomb, 1 = next hand, null = no countdown);
+   * `bomb_pot_next_at` is the timed mode's due timestamp (epoch ms) so the
+   * client can render a clock instead of a hand counter (spec §15.2).
+   */
+  protected bombPotSnapshotFields(): {
+    bomb_pot_in: number | null;
+    bomb_pot_next_at: number | null;
+    /**
+     * WHY THE PROMISED BOMB HAS NOT ARRIVED (2026-08-29).
+     *
+     * A due bomb waits for `minPlayers` and the engine said nothing about it —
+     * `isPending()` existed and had no production caller, so the felt showed
+     * "BOMB POT NEXT HAND" and then dealt a normal hand, and another, and
+     * another, with no way for anyone at the table to find out why.
+     *
+     * Null unless a bomb is genuinely waiting on the count; when it is, this
+     * is how many players it is waiting for, so the pill can say so.
+     */
+    bomb_pot_waiting_for: number | null;
+  } {
+    if (!this.tableInfo) {
+      return { bomb_pot_in: null, bomb_pot_next_at: null, bomb_pot_waiting_for: null };
+    }
+    const s = bombPotSettingsFromTable(this.tableInfo);
+    const dueAt = this.bombPotScheduler.nextBombDueAt(s);
+    /**
+     * THE ANNOUNCE WINDOW IS ENFORCED HERE, NOT ON THE CLIENT (2026-08-29).
+     *
+     * `bomb_pot_announce_seconds` lets a host keep the timed clock quiet until
+     * the bomb is close. It was read into tableInfo and then never used by the
+     * engine: the snapshot published the exact due timestamp to every player,
+     * every broadcast, and the ONLY thing honouring the setting was a
+     * `remainMs > announce * 1000` test in the client's render.
+     *
+     * A host who sets a five-minute window is asking for the detonation time
+     * to be secret until then. Shipping it in every snapshot and asking the
+     * browser not to draw it is not a secret — anyone reading the websocket
+     * has the number, which on a table with a forced ante is an edge over the
+     * players who cannot. A rule about what players may know has to be
+     * enforced where the knowledge is handed out.
+     *
+     * The client check stays: it is what makes the pill disappear mid-session
+     * without waiting for the next snapshot, and it is now a presentation
+     * detail rather than the whole enforcement.
+     */
+    const announceSec = Number(this.tableInfo.bomb_pot_announce_seconds ?? 0);
+    const withheld = dueAt !== null && announceSec > 0 && dueAt - Date.now() > announceSec * 1000;
+    // Seats dealt into the CURRENT hand is the number the scheduler gates on.
+    // Falling back to the seated roster keeps the pill honest between hands.
+    const dealtIn = this.seatedPlayers.filter((p) => !p.is_sitting_out).length;
+    const waitingFor =
+      s.enabled && this.bombPotScheduler.isPending() && dealtIn < s.minPlayers
+        ? s.minPlayers
+        : null;
+    return {
+      bomb_pot_in: this.bombPotScheduler.handsUntilDue(s),
+      bomb_pot_next_at: withheld ? null : dueAt,
+      bomb_pot_waiting_for: waitingFor,
+    };
+  }
 
   /**
    * Re-read the table's and club's rake settings so an owner's change takes
@@ -1984,7 +3192,10 @@ export abstract class ServerTableEngineBase {
           // re-read — an owner toggling bomb pots (or double board) no longer
           // waits for an engine restart, same reason rake got this in
           // 2026-08-18.
-          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board'
+          // BOMB POT STANDARDIZATION 2026-08-27: the five new canonical
+          // columns ride along — board count, trigger mode, timed interval,
+          // minimum players and fixed ante.
+          'rake_percent, rake_cap_bb, bomb_pot_enabled, bomb_pot_frequency, bomb_pot_ante_multiplier, bomb_pot_double_board, bomb_pot_board_count, bomb_pot_trigger_mode, bomb_pot_interval_seconds, bomb_pot_min_players, bomb_pot_ante_fixed, bomb_pot_variant, bomb_pot_button_policy, bomb_pot_announce_seconds, bomb_pot_manual_pending'
         )
         .eq('id', this.tableId)
         .maybeSingle();
@@ -1995,6 +3206,31 @@ export abstract class ServerTableEngineBase {
         this.tableInfo.bomb_pot_frequency = (tableRow as any).bomb_pot_frequency ?? 0;
         this.tableInfo.bomb_pot_ante_multiplier = (tableRow as any).bomb_pot_ante_multiplier ?? 2;
         this.tableInfo.bomb_pot_double_board = (tableRow as any).bomb_pot_double_board ?? false;
+        this.tableInfo.bomb_pot_board_count = (tableRow as any).bomb_pot_board_count ?? undefined;
+        this.tableInfo.bomb_pot_trigger_mode = (tableRow as any).bomb_pot_trigger_mode ?? null;
+        this.tableInfo.bomb_pot_interval_seconds =
+          (tableRow as any).bomb_pot_interval_seconds ?? null;
+        this.tableInfo.bomb_pot_min_players = (tableRow as any).bomb_pot_min_players ?? undefined;
+        this.tableInfo.bomb_pot_ante_fixed = (tableRow as any).bomb_pot_ante_fixed ?? null;
+        this.tableInfo.bomb_pot_variant = (tableRow as any).bomb_pot_variant ?? null;
+        this.tableInfo.bomb_pot_button_policy = (tableRow as any).bomb_pot_button_policy ?? null;
+        this.tableInfo.bomb_pot_announce_seconds =
+          (tableRow as any).bomb_pot_announce_seconds ?? null;
+        // 2026-08-29: THE BACKSTOP FOR THE PUSH. fn_request_manual_bomb_pot
+        // broadcasts, and manualBombPushed is normally how the engine hears
+        // about a request. A broadcast is best-effort, so an engine that
+        // restarted between the click and the hand would never hear it — this
+        // read, which was already happening on its own throttle, catches that.
+        // Latching rather than assigning: the flag is cleared only by a
+        // successful claim, so a stale `false` here cannot un-arm a push that
+        // arrived a moment ago.
+        if ((tableRow as any).bomb_pot_manual_pending === true) {
+          this.manualBombPushed = true;
+        }
+        // An owner who turns bomb pots ON mid-session gets the listener here,
+        // rather than having to wait for an engine restart to be able to fire
+        // a manual bomb at all.
+        if (this.tableInfo.bomb_pot_enabled === true) this.subscribeManualBomb();
       }
       const clubId = this.tableInfo?.club_id;
       if (clubId) {
@@ -2093,7 +3329,7 @@ export abstract class ServerTableEngineBase {
     const config: HandConfig = {
       tableId: this.tableId,
       handNumber: this.handCount,
-      gameVariant: this.tableInfo.game_variant as GameVariant,
+      gameVariant: this.dealtGameVariant() as GameVariant,
       smallBlind: this.tableInfo.small_blind,
       bigBlind: this.tableInfo.big_blind,
       ante: this.tableInfo.ante,
@@ -2200,7 +3436,7 @@ export abstract class ServerTableEngineBase {
 
       if (error) {
         console.warn(
-          `[ServerTableEngine:${this.tableId}] Could not seed hand counter (${error.message}) — ` +
+          `[ServerTableEngine:${this.tableId}] Could not seed hand counter (${error.message}) - ` +
             `continuing from #${this.handCount}. Hand numbers may repeat for this table.`
         );
         return;
@@ -2219,8 +3455,425 @@ export abstract class ServerTableEngineBase {
       }
     } catch (err) {
       console.warn(
-        `[ServerTableEngine:${this.tableId}] Hand counter seed threw (${(err as Error)?.message}) — ` +
+        `[ServerTableEngine:${this.tableId}] Hand counter seed threw (${(err as Error)?.message}) - ` +
           `continuing from #${this.handCount}.`
+      );
+    }
+  }
+
+  /**
+   * EVICT SEATS THAT HAVE OUTSTAYED THE SIT-OUT RULE.
+   *
+   * Dan 2026-08-25: "IF YOU ARE SITTING OUT IT NEVER KICKS YOU OFF THE TABLE.
+   * YOU CAN LITERALLY HOLD THAT SEAT FOREVER. IT SHOULD BE 2 ORBITS OR 5
+   * MINUTES, WHICHEVER IS FIRST AND YOU GET AUTO BOOTED."
+   *
+   * The rule was implemented and lived in ONE place: the dealing loop. And the
+   * dealing loop is not running in precisely the situation the player is
+   * describing — `start()` parks in a wait-for-players loop until the table has
+   * enough seats to deal, and only then launches it. A table with one seated
+   * player (which GameServer deliberately keeps an engine alive for), or one
+   * that fell below AutoStart, never reaches the sweep at all. The last person
+   * at the table sits out and holds the seat indefinitely, and the five-minute
+   * clock never runs because nothing ever asks it the time.
+   *
+   * Extracted here so both the wait loop and the dealing loop can call it.
+   * `countOrbit` is true only when a hand is actually being dealt — an idle tick
+   * is not an orbit.
+   *
+   * Cash tables only: a tournament sit-out is blinded off by design and must
+   * never be stood up.
+   */
+  protected async evictExpiredSitOuts(opts: { countOrbit: boolean }): Promise<void> {
+    if (this.isTournamentTable()) return;
+    const seatedIds = this.seatedPlayers.map((p) => p.user_id);
+    if (seatedIds.length === 0) return;
+
+    const sitOutEvictable = this.disconnectEngine.tickSitOutsAndCollectEvictions(
+      this.tableId,
+      seatedIds,
+      { countOrbit: opts.countOrbit }
+    );
+    // Dan 2026-08-23, BINDING: away-blind cap. "IF A PLAYER IS AWAY FROM THE
+    // CASH GAME TABLE, ONCE THEY LOSE ONE BB AND ONE SB THEY MUST BE AUTO
+    // REMOVED." Collected together so one pass removes the seat once.
+    const blindEvictable = this.disconnectEngine.collectAwayBlindEvictions(this.tableId, seatedIds);
+
+    // Dan 2026-08-25, table-creation parity: NIT GAME. `nit_game` and its three
+    // numbers were columns the creation page wrote and nothing read, while the
+    // toggle's own tooltip promised a "Penalty for tight play".
+    //
+    // The rule is a QUERY (fn_nit_evictions) rather than engine state, because
+    // ca_hand_facts already stores VPIP per player per hand from the same
+    // derivation the player's own HUD shows. A second counter here would be a
+    // second answer, and the two would part company the first time this process
+    // restarted mid-session.
+    //
+    // GATED ON THE COLUMN so the round trip never happens on a table without the
+    // rule — which is every table today. A failure returns an empty list: a
+    // stats query that cannot answer must not throw anyone out of a hand they
+    // were entitled to play.
+    //
+    // Merged into this shared method 2026-08-25: it arrived on main inside the
+    // inline block this method replaced, and it belongs wherever the other two
+    // eviction reasons live — including the start-up wait loop.
+    const nitEvictable: string[] = [];
+    if (this.tableInfo?.nit_game === true) {
+      const nits = await collectNitEvictions(this.tableId);
+      for (const n of nits) {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] nit game: ${n.userId} is at ` +
+            `${n.vpip}% VPIP over ${n.hands} hands, table requires ${n.required}%`
+        );
+        nitEvictable.push(n.userId);
+      }
+    }
+
+    const blindEvictSet = new Set(blindEvictable);
+    const nitEvictSet = new Set(nitEvictable);
+    const evictable = Array.from(new Set([...sitOutEvictable, ...blindEvictable, ...nitEvictable]));
+    if (evictable.length === 0) return;
+
+    // Dan 2026-08-26, binding: "a player can never leave the table while they
+    // are all in. they must wait for the hand to be finished." An eviction is
+    // still a departure, and this one cashes the seat out. Both call sites are
+    // between hands today, so this should never fire - which is the point: the
+    // safety was call-site placement rather than a check, and a future caller
+    // would not know that. leaveTable() refuses the same case explicitly.
+    const evictHand = this.handController?.getState();
+
+    for (const userId of evictable) {
+      const seated = this.seatedPlayers.find((p) => p.user_id === userId);
+      if (!seated) continue;
+      const evictSelf = evictHand?.players.find((p) => p.user_id === userId);
+      if (evictSelf?.is_all_in && !evictSelf.is_folded) {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] NOT evicting ${userId} - all-in in a live hand`
+        );
+        continue;
+      }
+      const awayBlindEvict = blindEvictSet.has(userId);
+      const nitEvict = !awayBlindEvict && nitEvictSet.has(userId);
+      console.log(
+        awayBlindEvict
+          ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - away, already charged one SB and one BB`
+          : nitEvict
+            ? `[ServerTableEngine:${this.tableId}] evicting ${userId} - below this nit game's VPIP floor`
+            : `[ServerTableEngine:${this.tableId}] evicting ${userId} - sat out past the 2-orbit / 5-minute limit`
+      );
+      this.hub?.emitEvent(this.tableId, {
+        type: 'seat_left',
+        table_id: this.tableId,
+        seat: seated.seat_number,
+        user_id: userId,
+        mid_hand: false,
+        reason: awayBlindEvict ? 'away_blind_cap' : nitEvict ? 'nit_game_vpip' : 'sit_out_timeout',
+        timestamp: Date.now(),
+      });
+      try {
+        await atomicCashout(userId, this.tableId, seated.seat_number);
+        this.disconnectEngine.unregisterPlayer(this.tableId, userId);
+        this.timeBankEngine.removePlayer(this.tableId, userId);
+        this.straddleEngine.removePlayer(this.tableId, userId);
+        this.preActionEngine.removePlayer(this.tableId, userId);
+      } catch (err) {
+        reportError(err, 'ServerTableEngine.' + this.tableId + '.sitout_evict_cashout');
+        /* The fallback's own failure is reported too. `seat_left` has already
+           gone out, so a silent failure here means every client has cleared a
+           seat whose row is still occupied — the player is told they were
+           removed and the seat stays blocked, with nothing anywhere to say so.
+           A cleanup that cannot complete is precisely the case worth an alert. */
+        await markSeatAsLeft(this.tableId, userId, seated.seat_number).catch((err2) =>
+          reportError(err2, 'ServerTableEngine.' + this.tableId + '.sitout_evict_mark_left')
+        );
+      }
+    }
+    this.seatedPlayers = this.seatedPlayers.filter((p) => !evictable.includes(p.user_id));
+  }
+
+  /**
+   * PUT SITTING-OUT PLAYERS BACK IN THE CHAIR THEY LEFT.
+   *
+   * Restart fidelity, Dan 2026-08-25. The engine writes `table_seats
+   * .is_sitting_out` on every PLAYER_SAT_OUT / PLAYER_SAT_BACK and, until now,
+   * never read it back — `loadSeatedPlayers` did not even select the column.
+   * DisconnectEngine's sit-out set is in memory, so a restart between hands
+   * emptied it and the very next deal dealt cards, and took blinds, from
+   * players who had sat out. Every client meanwhile read the column and
+   * correctly showed them as out: the felt and the database disagreed, and the
+   * felt was the one taking money.
+   *
+   * REGISTER FIRST. This is the whole reason the first version of this method
+   * did nothing at all: `DisconnectEngine.sitOut()` opens with
+   * `const state = this.playerStates.get(key); if (!state) return;`, and that
+   * Map is only ever populated by `registerPlayer`, which runs inside dealHand.
+   * At boot it is empty, so every sitOut() here returned at the guard — while
+   * the console.log below still announced a restore that had not happened. A
+   * log that lies is worse than no log: it makes the bug unfindable.
+   *
+   * `registerPlayer` is idempotent (it returns early when the key exists), so
+   * calling it here cannot disturb a player the dealing loop has already set up.
+   *
+   * Called from BOTH the start-up wait loop and the dealing loop's seat sweep,
+   * so a seat that appears later — someone mid-buy-in when the engine booted —
+   * still gets its state applied. Never un-sits anyone: sitting back in is a
+   * player action, and a stale `false` must not override a live sit-out.
+   */
+  protected restoreSitOutsFromSeats(): void {
+    for (const p of this.seatedPlayers) {
+      if (p.is_sitting_out !== true) continue;
+      if (this.disconnectEngine.isSittingOut(this.tableId, p.user_id)) continue;
+      this.disconnectEngine.registerPlayer(this.tableId, p.user_id);
+      /* THE CLOCK COMES FROM THE DATABASE, NOT FROM now() (2026-08-28).
+       *
+       * This call used to omit the fourth argument, so sitOut() stamped
+       * `sitOutSince = Date.now()`. That single line is why the five-minute
+       * cash eviction never fired in production: this method runs on every
+       * pass of BOTH the start-up wait loop and the dealing loop, so every
+       * engine restart — deploy, lease change, killForRestart, watchdog —
+       * silently handed every sat-out seat a fresh five minutes. A table whose
+       * engine recycled more often than that could never evict anyone, and the
+       * player kept the seat indefinitely.
+       *
+       * `sit_out_at` is written by a database trigger on the transition into
+       * sitting out and cleared on the way out, so it is the only stamp in the
+       * system that a restart cannot move. Falling back to now() when it is
+       * absent keeps a pre-migration row working rather than pinning it at
+       * epoch 0 and evicting it instantly. */
+      const stampedAt = p.sit_out_at ? Date.parse(p.sit_out_at) : NaN;
+      this.disconnectEngine.sitOut(
+        this.tableId,
+        p.user_id,
+        'voluntary',
+        Number.isFinite(stampedAt) ? stampedAt : undefined
+      );
+      // Report the OUTCOME, not the attempt.
+      if (this.disconnectEngine.isSittingOut(this.tableId, p.user_id)) {
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Restored sit-out for ${p.user_id} from table_seats`
+        );
+      } else {
+        reportError(
+          new Error(`sit-out restore had no effect for ${p.user_id}`),
+          'ServerTableEngine.sit_out_restore_no_effect'
+        );
+      }
+    }
+  }
+
+  /**
+   * WRITE THE CASH ENTRY HOLD DOWN, SO A DEPLOY CANNOT CANCEL IT.
+   *
+   * Dan 2026-08-30. `waitingForBB`, `postBBWhenClear` and `postingBBToEnter`
+   * are Sets on this process and every push to `server/**` redeploys it. The
+   * dealing loop's first-iteration block then adds every seated player to
+   * `knownPlayerIds` AND `dealtInUserIds` — right for someone who really was
+   * playing before the restart, wrong for someone who was being HELD, who came
+   * back released, unbilled and button-eligible. One deploy, three house rules
+   * switched off: the wait, "no free hands", and "a new player never gets the
+   * button".
+   *
+   * Fire-and-forget on purpose, in the house style of the other seat-state
+   * writes. This is a DURABILITY improvement over a Set in memory; awaiting it
+   * inside the dealing loop would put a network round trip between a player
+   * tapping a button and the engine acting on it, to protect against a restart
+   * landing inside a few hundred milliseconds. The in-memory set stays
+   * authoritative for the running process; this column is only ever read by
+   * `restoreEntryHoldsFromSeats()` on boot.
+   *
+   * Scoped to the live seat (`left_at IS NULL`) so it can never resurrect state
+   * onto a historical row for a player who has since left and come back.
+   */
+  /**
+   * WRITE ORDER IS THE STATE (2026-08-30). persistEntryHold is fire-and-forget
+   * by design, but two forgotten fires can land out of order — and did, in
+   * production: a player who sat down in the very seat the big blind was
+   * arriving at was registered ('waiting') and released (null) in the same
+   * loop iteration, the two HTTP writes raced, and the CLEAR lost. The row
+   * then said 'waiting' for a player the engine was actively dealing — which
+   * is harmless right up until the next restart, when
+   * restoreEntryHoldsFromSeats would re-hold a player who had already paid
+   * their way in. Seat 7, table 08746c1a, 2026-08-31 00:27 UTC: entry_hold
+   * was still 'waiting' when the seat was evicted ten minutes after the
+   * player posted a live big blind. One chain per user, so a user's writes
+   * apply in the order the engine decided them; different users still write
+   * concurrently. Entries are removed when their chain drains, so the map
+   * stays bounded by in-flight writers, not by table lifetime.
+   */
+  private entryHoldWriteChains: Map<string, Promise<void>> = new Map();
+
+  protected persistEntryHold(
+    userId: string,
+    state: { hold: 'waiting' | 'posting' | null; agreed?: boolean }
+  ): void {
+    if (this.isTournamentTable()) return;
+    const patch: Record<string, unknown> = { entry_hold: state.hold };
+    if (state.agreed !== undefined) patch.entry_post_agreed = state.agreed;
+    /* Promise.resolve() around the builder, deliberately. A PostgREST query
+       builder is a THENABLE, not a Promise: it has `.then` and no `.catch`, so
+       `void builder.then(...).catch(...)` does not compile — and without the
+       `.catch` an unhandled rejection takes the engine down (that is what
+       noUnhandledRejections.test.ts pins). Promise.resolve turns the thenable
+       into a real Promise, which is the only shape that has both. */
+    const prevWrite = this.entryHoldWriteChains.get(userId) ?? Promise.resolve();
+    const thisWrite: Promise<void> = prevWrite
+      .then(() =>
+        Promise.resolve(
+          supabase
+            .from('table_seats')
+            .update(patch)
+            .eq('table_id', this.tableId)
+            .eq('user_id', userId)
+            .is('left_at', null)
+        )
+      )
+      .then(({ error }) => {
+        if (error) {
+          console.warn(
+            `[ServerTableEngine:${this.tableId}] entry hold write failed for ${userId.slice(0, 8)}: ${error.message}`
+          );
+        }
+      })
+      // A fire-and-forget promise without a .catch() takes the process down on
+      // an unhandled rejection, which for THIS write would mean a transient
+      // network blip killing the engine to protect a durability nicety. The
+      // in-memory set is still authoritative for the running process, so a
+      // lost write costs only restart fidelity.
+      .catch((err: unknown) => {
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] entry hold write threw for ${userId.slice(0, 8)}:`,
+          err
+        );
+      })
+      // Drop the chain entry once it drains, IF this write is still the tail —
+      // a later write may have chained past it already, and deleting that one
+      // would let the write after it start unordered. Runs after the .catch,
+      // so this promise can never reject.
+      .then(() => {
+        if (this.entryHoldWriteChains.get(userId) === thisWrite) {
+          this.entryHoldWriteChains.delete(userId);
+        }
+      });
+    this.entryHoldWriteChains.set(userId, thisWrite);
+  }
+
+  /**
+   * PUT THE HOLD BACK, ONCE, ON BOOT.
+   *
+   * The counterpart of persistEntryHold. Runs exactly once per process — NOT
+   * on every pass like `restoreSitOutsFromSeats`, and the difference matters:
+   * sit-out state is a fact the database owns continuously, whereas an entry
+   * hold is released by the engine itself mid-orbit. Re-reading it every pass
+   * would race the fire-and-forget write that clears it and re-hold a player
+   * the engine had just let in.
+   *
+   * A restored waiter is deliberately NOT added to `dealtInUserIds` by the
+   * caller. They have never been dealt a hand here, so they must not be
+   * button-eligible; that is half the hole this closes.
+   */
+  protected restoreEntryHoldsFromSeats(): void {
+    if (this.entryHoldsRestored) return;
+    this.entryHoldsRestored = true;
+    if (this.isTournamentTable()) return;
+
+    let restored = 0;
+    for (const p of this.seatedPlayers) {
+      const hold = (p as { entry_hold?: string | null }).entry_hold ?? null;
+      const agreed = (p as { entry_post_agreed?: boolean | null }).entry_post_agreed === true;
+      if (hold === 'waiting') {
+        this.waitingForBB.add(p.user_id);
+        if (agreed) this.postBBWhenClear.add(p.user_id);
+        restored += 1;
+      } else if (hold === 'posting') {
+        // They paid to come in and the restart landed before the deal that
+        // bills it. Put the debt back rather than the hold: they are entitled
+        // to the next hand, and they owe the live big blind for it.
+        this.postingBBToEnter.add(p.user_id);
+        restored += 1;
+      }
+    }
+
+    if (restored > 0) {
+      console.log(
+        `[ServerTableEngine:${this.tableId}] Restored ${restored} cash entry hold(s) from table_seats`
+      );
+    }
+  }
+
+  /**
+   * PUT THE BUTTON BACK WHERE IT WAS.
+   *
+   * Dan 2026-08-25, BINDING: "IN THE EVENT OF AN ENGINE RESTART, WHILE PLAY IS
+   * RUNNING, IT MUST ALWAYS RESTART IN THE SAME POSITION... EVERYTHING RESTARTS
+   * EXACTLY AS IT WAS BEFORE THE RESTART."
+   *
+   * `lastButtonSeat` is declared `= 0` and nothing ever restored it. The
+   * rotation reads that as "no hand dealt yet" and falls back to
+   * `buttonSeats[0]` — THE LOWEST OCCUPIED SEAT NUMBER. So every engine restart
+   * threw the button backwards to seat 1 regardless of where it actually was,
+   * and the blinds were taken again from whoever sat in the seats behind it.
+   * A player could pay the big blind, watch the engine restart, and pay it
+   * again on the next hand. On a busy table that is real money, silently, every
+   * deploy.
+   *
+   * The seat was already being written to `hand_history.button_seat` on every
+   * settled hand and read by nobody (100% populated in production). Reading it
+   * back costs one indexed row and closes the hole with no schema change.
+   *
+   * Deliberately NOT fatal: a table that cannot read its history still deals.
+   * Losing the button costs one orbit of position; refusing to start costs the
+   * whole table.
+   */
+  private async restoreButtonFromHistory(): Promise<void> {
+    try {
+      // Same (table_id, hand_number DESC) index seedHandCountFromHistory uses.
+      const { data, error } = await supabase
+        .from('hand_history')
+        .select('button_seat, players')
+        .eq('table_id', this.tableId)
+        .order('hand_number', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.warn(
+          `[ServerTableEngine:${this.tableId}] Could not restore button seat (${error.message}) - ` +
+            `it will start at the lowest occupied seat and blinds may be re-taken for one orbit.`
+        );
+        return;
+      }
+
+      const row = data as { button_seat?: number; players?: Array<{ seat?: number }> } | null;
+      const seat = Number(row?.button_seat ?? 0);
+      /**
+       * The big blind seat comes back with the button, derived from the same
+       * row rather than stored separately: `players` carries the seats that
+       * were dealt in and `button_seat` says where the button was, which is
+       * all the blind walk needs. Without it a restart between two heads-up
+       * hands leaves lastBigBlindSeat at 0, the dead-button rule stands down,
+       * and the very bug it fixes reappears for one hand on every deploy.
+       */
+      const seats = Array.isArray(row?.players)
+        ? row.players
+            .map((p) => Number(p?.seat))
+            .filter((s) => Number.isFinite(s) && s > 0)
+            .sort((a, b) => a - b)
+        : [];
+      if (seats.length >= 2 && Number.isFinite(seat) && seat > 0) {
+        const nextOf = (from: number) => seats.find((s) => s > from) ?? seats[0];
+        const sb = seats.length === 2 ? seat : nextOf(seat);
+        this.lastBigBlindSeat = nextOf(sb);
+      }
+      if (Number.isFinite(seat) && seat > 0) {
+        this.lastButtonSeat = seat;
+        console.log(
+          `[ServerTableEngine:${this.tableId}] Button restored to seat ${seat} from the last settled hand`
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[ServerTableEngine:${this.tableId}] Button restore threw (${(err as Error)?.message}) - ` +
+          `starting from the lowest occupied seat.`
       );
     }
   }
@@ -2266,9 +3919,9 @@ export abstract class ServerTableEngineBase {
     console.warn(
       `[ServerTableEngine:${this.tableId}] CRASH RECOVERY: Found incomplete hand #${snapshot.handNumber} ` +
         `(stage: ${snapshot.stage}, last updated: ${snapshot.updatedAt}). ` +
-        `${snapshot.pendingDeadlines.length} pending deadlines (not rehydrated — they belong to the abandoned hand), ` +
+        `${snapshot.pendingDeadlines.length} pending deadlines (not rehydrated - they belong to the abandoned hand), ` +
         `${Object.keys(snapshot.disconnectStates).length} disconnect-FSM entries, ${restoredFsm} restored. ` +
-        `Marking hand complete and starting fresh — players retain their last-known stacks.`
+        `Marking hand complete and starting fresh - players retain their last-known stacks.`
     );
 
     // For now: mark the orphaned hand as complete so we don't get stuck.
@@ -2289,6 +3942,7 @@ export abstract class ServerTableEngineBase {
   // ── Implemented by ServerTableEngineTurns (layer 3/8) ──
   protected abstract clearTurnTimer(): void;
   protected abstract rearmTurnTimerIfCurrent(userId: string): void;
+  protected abstract handlePlayerDisconnectedMidTurn(userId: string): void;
 
   // ── Implemented by ServerTableEngineDealing (layer 5/8) ──
   protected abstract dealingLoop(): Promise<void>;

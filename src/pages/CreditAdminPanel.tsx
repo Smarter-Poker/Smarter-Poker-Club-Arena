@@ -261,7 +261,16 @@ export default function CreditAdminPanel() {
   }
 
   return (
-    <div style={{ padding: '16px', maxWidth: '800px', margin: '0 auto', paddingBottom: '100px' }}>
+    <div
+      style={{
+        padding: '16px',
+        width: '100%',
+        maxWidth: '800px',
+        margin: '0 auto',
+        paddingBottom: '100px',
+        overflowX: 'hidden',
+      }}
+    >
       {/* Header */}
       <div style={{ marginBottom: '24px' }}>
         <button
@@ -307,6 +316,8 @@ export default function CreditAdminPanel() {
                 fontSize: '0.7rem',
                 fontWeight: 600,
                 padding: '4px 10px',
+                minHeight: '44px',
+                touchAction: 'manipulation',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
               }}
@@ -321,7 +332,10 @@ export default function CreditAdminPanel() {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
+          /* auto-fit lets the three cards drop to 2-up/1-up on narrow phones
+             instead of scrunching the monospace totals (no media query needed
+             for inline styles) */
+          gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
           gap: '10px',
           marginBottom: '20px',
         }}
@@ -485,7 +499,8 @@ export default function CreditAdminPanel() {
                           border: '1px solid rgba(255,255,255,0.15)',
                           borderRadius: '6px',
                           color: '#fff',
-                          fontSize: '0.8rem',
+                          fontSize: '16px' /* under 16px makes iOS zoom the page on focus */,
+                          minHeight: '44px',
                         }}
                       />
                       <button
@@ -493,6 +508,9 @@ export default function CreditAdminPanel() {
                         disabled={saving}
                         style={{
                           padding: '6px 10px',
+                          minWidth: '44px',
+                          minHeight: '44px',
+                          touchAction: 'manipulation',
                           background: 'rgba(16,185,129,0.15)',
                           border: '1px solid rgba(16,185,129,0.3)',
                           borderRadius: '6px',
@@ -511,6 +529,9 @@ export default function CreditAdminPanel() {
                         }}
                         style={{
                           padding: '6px 10px',
+                          minWidth: '44px',
+                          minHeight: '44px',
+                          touchAction: 'manipulation',
                           background: 'rgba(239,68,68,0.1)',
                           border: '1px solid rgba(239,68,68,0.3)',
                           borderRadius: '6px',
@@ -542,6 +563,9 @@ export default function CreditAdminPanel() {
                         }}
                         style={{
                           padding: '4px 10px',
+                          minWidth: '44px',
+                          minHeight: '44px',
+                          touchAction: 'manipulation',
                           background: 'rgba(255,255,255,0.06)',
                           border: '1px solid rgba(255,255,255,0.1)',
                           borderRadius: '6px',

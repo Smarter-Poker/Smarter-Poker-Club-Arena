@@ -22,12 +22,17 @@ interface Reaction {
   label: string;
 }
 
+// ANIMATION AUDIT 2026-08-27: Laugh, Shock and Dead all shared the glyph
+// '◆' — React keyed the picker on the glyph (duplicate-key mis-reconcile)
+// and the [REACTION:glyph:seat] wire format could not distinguish the three
+// on the receiving client. Every reaction now has a unique symbol (plain
+// Unicode, per the no-emoji rule).
 const REACTIONS: Reaction[] = [
   { emoji: '★', label: 'Clap' },
   { emoji: '◆', label: 'Laugh' },
-  { emoji: '◆', label: 'Shock' },
+  { emoji: '✦', label: 'Shock' },
   { emoji: '▲', label: 'Fire' },
-  { emoji: '◆', label: 'Dead' },
+  { emoji: '✖', label: 'Dead' },
   { emoji: '♣', label: 'Lucky' },
 ];
 
@@ -79,7 +84,7 @@ export function TableReactions({
           <div className="tr-picker" onClick={(e) => e.stopPropagation()}>
             {REACTIONS.map((r) => (
               <button
-                key={r.emoji}
+                key={r.label}
                 className="tr-picker__btn"
                 onClick={() => handleReaction(r)}
                 title={r.label}

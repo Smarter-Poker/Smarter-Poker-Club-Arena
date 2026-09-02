@@ -34,6 +34,7 @@ import type { IncomingMessage } from 'http';
 import type { Server as HttpServer } from 'http';
 import { randomUUID } from 'crypto';
 import { supabase } from '../services/supabase.js';
+import { authorizeTableViewer, type TableViewerAccess } from '../services/TableViewerAccess.js';
 import type { TableStateHub, HubSubscriber } from './TableStateHub.js';
 // Round 70: blacklist gate + Round 67/190: connection audit log both use
 // the supabase client imported above. No additional import needed.
@@ -109,12 +110,21 @@ const IP_RESTRICTION_TTL_MS = 60_000;
  * ServerTableEngine / GameServer classes.
  */
 export type TableExistsCheck = (tableId: string) => boolean;
+export type EnsureTableCheck = (tableId: string) => Promise<boolean>;
 
 export interface EngineWebSocketServerOptions {
   hub: TableStateHub;
   tableExists: TableExistsCheck;
+  /**
+   * Starts a valid cash-table engine on demand when the table exists in the
+   * database but has not reached the occupied-table discovery feed yet.
+   * Optional for isolated transport tests; production always wires it.
+   */
+  ensureTable?: EnsureTableCheck;
   /** Optional override for auth, used by tests to inject fake tokens. */
   verifyToken?: (token: string) => Promise<{ userId: string } | null>;
+  /** Optional override for the authoritative club-membership gate in tests. */
+  authorizeViewer?: (tableId: string, userId: string) => Promise<TableViewerAccess>;
   /**
    * FIX 2 (2026-07-24): invoked on (re)connect and on RESYNC so the engine can
    * re-deliver the requesting player's hole cards for the current hand. Public
@@ -216,7 +226,9 @@ export class EngineWebSocketServer {
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private readonly hub: TableStateHub;
   private readonly tableExists: TableExistsCheck;
+  private readonly ensureTable?: EnsureTableCheck;
   private readonly verifyToken: (token: string) => Promise<{ userId: string } | null>;
+  private readonly authorizeViewer: (tableId: string, userId: string) => Promise<TableViewerAccess>;
   private readonly onResync?: (tableId: string, userId: string) => void;
   private readonly onConnect?: (tableId: string, userId: string) => void;
   private readonly onDisconnect?: (tableId: string, userId: string) => void;
@@ -233,7 +245,9 @@ export class EngineWebSocketServer {
   constructor(opts: EngineWebSocketServerOptions) {
     this.hub = opts.hub;
     this.tableExists = opts.tableExists;
+    this.ensureTable = opts.ensureTable;
     this.verifyToken = opts.verifyToken ?? defaultVerifyToken;
+    this.authorizeViewer = opts.authorizeViewer ?? authorizeTableViewer;
     this.onResync = opts.onResync;
     this.onConnect = opts.onConnect;
     this.onDisconnect = opts.onDisconnect;
@@ -322,7 +336,33 @@ export class EngineWebSocketServer {
             socket.destroy();
             return;
           }
-          if (!this.tableExists(tableId)) {
+          const viewerAccess = await this.authorizeViewer(tableId, auth.userId);
+          if (!viewerAccess.allowed) {
+            const status =
+              viewerAccess.reason === 'table_not_found'
+                ? '404 Not Found'
+                : viewerAccess.reason === 'check_failed'
+                  ? '503 Service Unavailable'
+                  : '403 Forbidden';
+            socket.write(`HTTP/1.1 ${status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`);
+            socket.destroy();
+            return;
+          }
+
+          /*
+           * A brand-new empty table is deliberately absent from the normal
+           * occupied-table discovery RPC. Before this gate, Create And Start
+           * navigated to the felt immediately, this synchronous check returned
+           * false, and the client received an endless 404/reconnect cycle until
+           * a seat somehow existed on a table nobody could open. An authorized
+           * viewer now wakes that one table on demand. The GameServer method
+           * validates cash/status/deletion state and takes the same single-owner
+           * lease as background discovery before it installs the engine.
+           */
+          if (
+            !this.tableExists(tableId) &&
+            !(this.ensureTable && (await this.ensureTable(tableId)))
+          ) {
             socket.write(
               'HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
             );
@@ -346,6 +386,15 @@ export class EngineWebSocketServer {
           } catch {
             // Belt-and-suspenders: never reject legit connections on a
             // blacklist-check error. Log and proceed.
+          }
+
+          // Restrict Observers: a table may be seats-only (Dan 2026-08-25).
+          if (await this.isRestrictedObserver(tableId, auth.userId)) {
+            socket.write(
+              'HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+            );
+            socket.destroy();
+            return;
           }
 
           // 2026-08-19: IP Restriction, made real. The switch existed on the
@@ -476,6 +525,9 @@ export class EngineWebSocketServer {
    * Only the two lookup queries are avoided on a hit; nothing about the ban
    * decision itself is weakened.
    */
+  /** Per-table `restrict_observers`, cached like the IP rule. Never the seat. */
+  private observerRestrictionCache = new Map<string, { restricted: boolean; readAt: number }>();
+
   private async isBannedFromTable(tableId: string, userId: string): Promise<boolean> {
     let scope = this.tableScopeCache.get(tableId);
     if (!scope) {
@@ -526,6 +578,58 @@ export class EngineWebSocketServer {
     }
     this.banCache.set(banKey, { banned, readAt: Date.now() });
     return banned;
+  }
+
+  // ─── Restrict Observers (2026-08-25) ────────────────────────────────────
+  /**
+   * Is `userId` allowed to watch `tableId` without holding a seat?
+   *
+   * Dan 2026-08-25, table-creation parity. `restrict_observers` has been a
+   * toggle since February with ZERO references anywhere in the codebase: a
+   * non-seated user connected on exactly the same path as a seated one and
+   * there was no seated check in the transport at all.
+   *
+   * TWO READS, CACHED DIFFERENTLY ON PURPOSE:
+   *
+   *   the table's SETTING is cached like the IP rule below — it changes when a
+   *   host edits the table, which is rare;
+   *
+   *   the player's SEAT is NOT cached, ever. A player who has just bought in
+   *   connects within the same second, and a thirty-second stale "not seated"
+   *   would lock them out of the seat they just paid for. This is the one
+   *   check on this path where a cache is worse than a query.
+   *
+   * Fails OPEN on error, like every other gate in this file: a database blip
+   * must never refuse a legitimate connection.
+   */
+  private async isRestrictedObserver(tableId: string, userId: string): Promise<boolean> {
+    try {
+      const cached = this.observerRestrictionCache.get(tableId);
+      let restricted: boolean;
+      if (cached && Date.now() - cached.readAt < IP_RESTRICTION_TTL_MS) {
+        restricted = cached.restricted;
+      } else {
+        const { data } = await supabase
+          .from('tables')
+          .select('restrict_observers')
+          .eq('id', tableId)
+          .maybeSingle();
+        restricted = data?.restrict_observers === true;
+        this.observerRestrictionCache.set(tableId, { restricted, readAt: Date.now() });
+      }
+      if (!restricted) return false;
+
+      const { data: seat } = await supabase
+        .from('table_seats')
+        .select('seat_number')
+        .eq('table_id', tableId)
+        .eq('user_id', userId)
+        .is('left_at', null)
+        .maybeSingle();
+      return !seat;
+    } catch {
+      return false;
+    }
   }
 
   // ─── IP Restriction (2026-08-19) ────────────────────────────────────────
@@ -654,6 +758,16 @@ export class EngineWebSocketServer {
       send(data: string) {
         ws.send(data);
       },
+      // 2026-08-24: hub hard-drop → close the socket so the client's
+      // onclose fires NOW and it reconnects on the slow ladder (4429),
+      // instead of holding an open socket that will never speak again.
+      evict() {
+        try {
+          ws.close(CLOSE_RATE_LIMITED, 'backpressure evict - reconnect');
+        } catch {
+          /* ignore */
+        }
+      },
     };
     (ws as unknown as { __sub: HubSubscriber }).__sub = subscriber;
     this.hub.subscribe(tableId, subscriber);
@@ -741,7 +855,33 @@ export class EngineWebSocketServer {
     }
     conn.subs.set(tableId, 'pending');
     try {
-      if (!this.tableExists(tableId)) {
+      const viewerAccess = await this.authorizeViewer(tableId, conn.userId);
+      if (!viewerAccess.allowed) {
+        conn.subs.delete(tableId);
+        this.sendMuxError(
+          conn,
+          tableId,
+          viewerAccess.reason === 'table_not_found'
+            ? 'TABLE_NOT_FOUND'
+            : viewerAccess.reason === 'check_failed'
+              ? 'ACCESS_CHECK_FAILED'
+              : viewerAccess.reason === 'observers_restricted'
+                ? 'OBSERVERS_RESTRICTED'
+                : 'CLUB_MEMBERSHIP_REQUIRED',
+          viewerAccess.reason === 'table_not_found'
+            ? 'Table not found'
+            : viewerAccess.reason === 'check_failed'
+              ? 'Unable to verify table access'
+              : viewerAccess.reason === 'observers_restricted'
+                ? 'This Table Is Open To Seated Players Only'
+                : 'Join this club before watching its live games'
+        );
+        return;
+      }
+      // The multiplexed path must wake new empty tables exactly like the
+      // single-table WebSocket path, or multi-table users still get the old
+      // permanent TABLE_NOT_FOUND loop.
+      if (!this.tableExists(tableId) && !(this.ensureTable && (await this.ensureTable(tableId)))) {
         conn.subs.delete(tableId);
         this.sendMuxError(conn, tableId, 'TABLE_NOT_FOUND', 'Table not found in engine');
         return;
@@ -750,6 +890,19 @@ export class EngineWebSocketServer {
         if (await this.isBannedFromTable(tableId, conn.userId)) {
           conn.subs.delete(tableId);
           this.sendMuxError(conn, tableId, 'BANNED', 'Not permitted at this table');
+          return;
+        }
+        /* The multi-table client never touches the upgrade gate above, so the
+           same rule has to exist here or one surface enforces it and the other
+           does not. */
+        if (await this.isRestrictedObserver(tableId, conn.userId)) {
+          conn.subs.delete(tableId);
+          this.sendMuxError(
+            conn,
+            tableId,
+            'OBSERVERS_RESTRICTED',
+            'This Table Is Open To Seated Players Only'
+          );
           return;
         }
       } catch {
@@ -773,6 +926,8 @@ export class EngineWebSocketServer {
       if (!this.connections.has(conn.ws) || conn.subs.get(tableId) !== 'pending') return;
       this.logConnectionAudit(conn.userId, tableId, conn.clientIp);
       const ws = conn.ws;
+      // eslint-disable-next-line @typescript-eslint/no-this-alias
+      const self = this;
       const subscriber: HubSubscriber = {
         id: `${conn.id}:${tableId}`,
         get readyState() {
@@ -783,6 +938,14 @@ export class EngineWebSocketServer {
         },
         send(data: string) {
           ws.send(data);
+        },
+        // 2026-08-24: on a mux socket, closing the whole connection would
+        // punish the user's OTHER tables for one table's backpressure.
+        // Drop just this table's subscription and say so; the client's
+        // per-table facade sees the close and reconnects that table alone.
+        evict() {
+          conn.subs?.delete(tableId);
+          self.sendMuxError(conn, tableId, 'EVICTED', 'backpressure evict - resubscribe');
         },
       };
       conn.subs.set(tableId, subscriber);

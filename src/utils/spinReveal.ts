@@ -65,7 +65,18 @@ const PRE_START_STATUSES = new Set([
   'REGISTRATION_OPEN',
 ]);
 
-/** Is this tournament a Spin? Both columns are checked; either one may be set. */
+/** Is this tournament a Spin? Both columns are checked; either one may be set.
+ *
+ * KNOWN LATENT DIVERGENCE (ITEM E audit, 2026-08-26): classifyTournament in
+ * lobbyEntries additionally falls back to `name.includes('spin')` when the
+ * variant column is absent, so a name-only "Spin" is a Spin to the lobby's
+ * card classifier and NOT a Spin to this reveal gate — which would then treat
+ * it as "always revealed". Not reachable today: `spin_multiplier` is only
+ * ever written at start (HorseOrchestrator writes null at creation; the one
+ * SQL writer is gated on RUNNING/COMPLETED), and every multiplier label
+ * returns null for a falsy multiplier before this gate is consulted. If a
+ * pre-start writer of spin_multiplier ever appears, unify these two
+ * predicates FIRST. */
 export function isSpinTournament(t: SpinRevealSubject | null | undefined): boolean {
   if (!t) return false;
   return (

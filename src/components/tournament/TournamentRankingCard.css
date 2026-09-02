@@ -87,10 +87,6 @@
     transform 0.18s ease,
     filter 0.18s ease;
 }
-.trc2__close:hover {
-  filter: brightness(1.12);
-  transform: rotate(90deg);
-}
 .trc2__close:focus-visible {
   outline: 2px solid #00d4ff;
   outline-offset: 2px;
@@ -109,18 +105,6 @@
   text-align: center;
 }
 /* The row of arena lights across the top of the reference banner. */
-.trc2__banner-lights {
-  position: absolute;
-  top: 6px;
-  left: -10%;
-  width: 120%;
-  height: 16px;
-  background-image: radial-gradient(circle, rgba(190, 225, 255, 0.9) 0 2px, transparent 2.5px);
-  background-size: 16px 16px;
-  background-repeat: repeat-x;
-  opacity: 0.55;
-  pointer-events: none;
-}
 .trc2__brand {
   position: relative;
   font-size: 0.95rem;
@@ -176,6 +160,14 @@
     inset 0 4px 12px rgba(255, 255, 255, 0.45),
     inset 0 -6px 14px rgba(0, 0, 0, 0.35),
     0 8px 22px rgba(0, 0, 0, 0.45);
+}
+/* PODIUM TROPHY (Dan 2026-08-23). currentColor is the medal ink, so the cup
+   is platinum / silver / bronze without a second palette to keep in sync. */
+.trc2__trophy {
+  width: 3.1rem;
+  height: 3.1rem;
+  color: var(--trc2-medal-ink);
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.32));
 }
 .trc2__medal-place {
   font-size: 2.9rem;
@@ -311,6 +303,29 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ── Payout split (Dan section 44) ──
+   Directly under the total, so the two halves of it are read as parts of the
+   number above rather than as two more badges. Only rendered when there IS a
+   bounty half. */
+.trc2__payout-split {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  margin: 6px 12px 0;
+  font-size: 0.72rem;
+  color: #9fb6da;
+}
+.trc2__payout-part strong {
+  color: #eaf1ff;
+  font-variant-numeric: tabular-nums;
+}
+.trc2__payout-plus {
+  color: #00d4ff;
+  font-weight: 800;
+}
+
 .trc2__extras {
   display: flex;
   flex-wrap: wrap;
@@ -391,9 +406,6 @@
   color: #fff;
   background: linear-gradient(180deg, #2f8bf7 0%, #1163cc 100%);
 }
-.trc2__btn:hover {
-  filter: brightness(1.08);
-}
 .trc2__btn:active {
   transform: translateY(1px);
 }
@@ -425,7 +437,33 @@
   .trc2__card {
     animation: none;
   }
-  .trc2__close:hover {
-    transform: none;
-  }
+}
+
+/* ── Winning Hand ── */
+.trc2__winning-hand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 12px 0;
+  padding: 12px 10px;
+  background: linear-gradient(180deg, rgba(0, 212, 255, 0.08) 0%, rgba(0, 212, 255, 0.02) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  border: 1px solid rgba(0, 212, 255, 0.15);
+}
+.trc2__winning-hand-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #00d4ff;
+}
+.trc2__winning-cards {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+.trc2__winning-card {
+  filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.4));
 }

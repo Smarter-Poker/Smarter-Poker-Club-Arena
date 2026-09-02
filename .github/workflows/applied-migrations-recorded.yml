@@ -1,0 +1,113 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# A MIGRATION THE DATABASE HAS APPLIED MUST HAVE A FILE IN THIS REPO
+#
+# check-migrations-applied.mjs runs on every PR and asks whether the migrations
+# a branch ADDS exist in the live schema. This asks the other direction, which
+# no gate has ever asked: what has production applied that nobody wrote down.
+#
+# Measured on 2026-08-31: 41 of the 90 migrations applied that afternoon had no
+# file on main, including all thirteen zero-drift ledger-hardening migrations.
+#
+# SCHEDULED, NOT A PR GATE. There is a real backlog of in-flight work on any
+# given day, and failing every PR until somebody else's branch lands would be an
+# outage of its own. This runs on a schedule and goes red in the Actions tab
+# when the gap exists, which is a signal somebody can act on without blocking
+# the queue.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Applied Migrations Are Recorded
+
+on:
+  schedule:
+    # Twice a day. An unrecorded migration is not an emergency, it is a debt.
+    - cron: '25 7,19 * * *'
+  workflow_dispatch:
+    inputs:
+      since:
+        description: 'Version floor, e.g. 20260825000000 (default: 7 days ago)'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  # 2026-09-01 (cost audit): a red run in the Actions tab is silence with
+  # extra steps — nobody reads that tab. Drift now files an issue.
+  issues: write
+
+concurrency:
+  group: applied-migrations-recorded
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Every applied migration has a file
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Use Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Compare the live migration history against this repo
+        id: compare
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          set -o pipefail
+          ARGS=""
+          if [ -n "${{ inputs.since }}" ]; then ARGS="--since ${{ inputs.since }}"; fi
+
+          # --fail makes the run go red when the gap exists. The script exits 2
+          # on its own errors (missing credentials, missing RPC), which is a
+          # different failure and should also be visible rather than swallowed.
+          set +e
+          node scripts/ci/check-applied-migrations-are-recorded.mjs $ARGS --fail 2>&1 | tee /tmp/recorded.log
+          echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          set -e
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Applied migrations without a file in this repo"
+            echo ""
+            echo '```'
+            cat /tmp/recorded.log 2>/dev/null || echo "(the check produced no output)"
+            echo '```'
+            echo ""
+            echo "The applied SQL for each one is in"
+            echo "\`supabase_migrations.schema_migrations.statements\`. Name the file for the"
+            echo "version it was applied under so the two can be tied together."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # 2026-09-01: measured drift was 426 of 925 applied migrations with no
+      # file in the repo — the database regressing invisibly. An open issue is
+      # the alarm; it is commented on while the gap persists and closed by
+      # hand when the backfill lands.
+      - name: File an issue while the drift exists
+        if: steps.compare.outputs.status != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          COUNT=$(grep -cE '^[0-9]{14}' /tmp/recorded.log 2>/dev/null || echo "?")
+          EXISTING=$(gh issue list --repo "$REPO" --state open --label migration-drift --limit 1 --json number --jq '.[0].number' || echo "")
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --repo "$REPO" --body "Still drifting (~${COUNT} unrecorded). Latest run: $RUN" || true
+          else
+            gh api "/repos/$REPO/labels" -f name=migration-drift -f color=B60205 >/dev/null 2>&1 || true
+            gh issue create --repo "$REPO" --label migration-drift \
+              --title "Applied migrations with no file in this repo (~${COUNT})" \
+              --body "$(printf 'Production has applied migrations this repo has no file for, so the schema can regress with no source-control record and no guard able to see it.\n\nThe applied SQL for each is in supabase_migrations.schema_migrations.statements — name the backfilled file for the version it was applied under.\n\nRun: %s' "$RUN")" || true
+          fi
+
+      - name: Fail the run when migrations are unrecorded
+        if: steps.compare.outputs.status != '0'
+        run: |
+          echo "::error title=Unrecorded migrations::Production has applied migrations that this repo has no file for. See the job summary."
+          exit 1

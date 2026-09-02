@@ -14,13 +14,12 @@ import { reportError } from '../../utils/errorReporter';
 
 interface Club {
   id: string;
+  slug?: string;
   name: string;
   logo?: string;
   description: string;
   memberCount: number;
   activeTableCount: number;
-  minStakes: string;
-  maxStakes: string;
   tags: string[];
   isPrivate: boolean;
   rating: number;
@@ -36,14 +35,13 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
   const [clubs, setClubs] = useState<Club[]>([]);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'popular' | 'active' | 'new'>('popular');
-  const [stakeFilter, setStakeFilter] = useState<'all' | 'micro' | 'low' | 'mid' | 'high'>('all');
   const [loading, setLoading] = useState(true);
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const isMounted = useIsMounted();
 
   useEffect(() => {
     loadClubs();
-  }, [filter, stakeFilter]);
+  }, [filter]);
 
   // Q3 Phase 10: Bus listener for cross-page club updates
   useMasterBusSubscription('CLUB_UPDATED', () => {
@@ -58,9 +56,15 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
         fetchedClubs = await ClubsService.search(search);
       } else {
         // ── Filter-specific queries (was: all calling search('')) ──
+        // Explicit columns, not `*, club_members(count)`: the embedded count
+        // was never read (member_count is trigger-maintained on clubs), and
+        // `*` dragged every club's settings JSON and 70+ columns across the
+        // wire for a browse grid that renders nine fields.
         let query = supabase
           .from('clubs')
-          .select('*, club_members(count)')
+          .select(
+            'id, slug, name, description, logo_url, avatar_url, member_count, table_count, requires_approval, is_public, tags, game_type, average_rating, level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next, created_at'
+          )
           .eq('is_public', true)
           .limit(30);
 
@@ -83,13 +87,16 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
       // Map backend data to local Club interface
       const mappedClubs: Club[] = fetchedClubs.map((c) => ({
         id: c.id,
+        slug: c.slug,
         name: c.name,
         logo: c.logo_url || c.avatar_url,
-        description: c.description || 'Welcome to our club!',
+        description: c.description || 'Welcome To Our Club!',
         memberCount: c.member_count || 0,
         activeTableCount: c.table_count || 0,
-        minStakes: c.min_stakes || '1/2',
-        maxStakes: c.max_stakes || '5/10',
+        // No minStakes/maxStakes: clubs has no such columns, so every card
+        // showed the fallback "1/2 - 5/10" as if it were real. Fabricated
+        // data is worse than no data — the stake filter built on it is gone
+        // for the same reason.
         tags: c.tags || (c.game_type ? [c.game_type] : ['Texas Holdem']),
         isPrivate: c.requires_approval || !c.is_public,
         rating: c.average_rating || c.rating || 0,
@@ -104,37 +111,10 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
         }),
       }));
 
-      // Apply stake filter client-side
-      const stakeFilteredClubs =
-        stakeFilter === 'all'
-          ? mappedClubs
-          : mappedClubs.filter((club) => {
-              const stakes = club.minStakes.toLowerCase();
-              switch (stakeFilter) {
-                case 'micro':
-                  return (
-                    stakes.includes('0.01') || stakes.includes('0.02') || stakes.includes('0.05')
-                  );
-                case 'low':
-                  return (
-                    stakes.includes('0.1') ||
-                    stakes.includes('0.25') ||
-                    stakes.includes('0.5') ||
-                    stakes.includes('1/')
-                  );
-                case 'mid':
-                  return stakes.includes('2/') || stakes.includes('5/');
-                case 'high':
-                  return stakes.includes('10/') || stakes.includes('25/') || stakes.includes('50/');
-                default:
-                  return true;
-              }
-            });
-
       if (!isMounted.current) return;
-      setClubs(stakeFilteredClubs);
+      setClubs(mappedClubs);
       setVisibleItems(new Set());
-      stakeFilteredClubs.forEach((_, i) => {
+      mappedClubs.forEach((_, i) => {
         setTimeout(() => {
           if (isMounted.current) setVisibleItems((prev) => new Set(prev).add(i));
         }, i * 60);
@@ -176,7 +156,7 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
         <span className="search-icon">⌕</span>
         <input
           type="text"
-          placeholder="Search clubs by name, game, or tag..."
+          placeholder="Search Clubs By Name, Game, Or Tag..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -191,17 +171,6 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
             </button>
           ))}
         </div>
-        <select
-          className="stake-select"
-          value={stakeFilter}
-          onChange={(e) => setStakeFilter(e.target.value as any)}
-        >
-          <option value="all">All Stakes</option>
-          <option value="micro">Micro</option>
-          <option value="low">Low</option>
-          <option value="mid">Mid</option>
-          <option value="high">High</option>
-        </select>
       </div>
 
       {/* Q3 Phase 14: Featured / Hot Clubs Carousel */}
@@ -253,7 +222,7 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
                 {club.name}
               </div>
               <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary, #8b9dc3)' }}>
-                {club.memberCount} Members • {club.minStakes}
+                {club.memberCount} Members
               </div>
               {club.activeTableCount > 0 && (
                 <div
@@ -334,9 +303,6 @@ export const ClubDiscovery: React.FC<ClubDiscoveryProps> = ({ onJoinRequest, onV
               <div className="club-stats">
                 <span> {club.memberCount}</span>
                 <span> {club.activeTableCount} Tables</span>
-                <span>
-                  {club.minStakes} - {club.maxStakes}
-                </span>
                 {club.activeTableCount > 0 && (
                   <span className="live-indicator">
                     <span className="live-pulse" />

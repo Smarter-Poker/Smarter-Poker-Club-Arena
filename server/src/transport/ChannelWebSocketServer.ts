@@ -20,8 +20,12 @@
  *   REQUEST_HAND_REPLAY { type, handId }
  *   CHANNEL_PING        { type }
  *
- * Heartbeat: server sends CHANNEL_PING every 25 s; closes after 60 s without
- * a matching CHANNEL_PONG from the client.
+ * Heartbeat (2026-08-24): server sends PING + CHANNEL_PING every 25 s; ANY
+ * well-formed inbound frame (PONG, CHANNEL_PONG, JOIN_*, ...) counts as proof
+ * of life. Closes after 60 s of total inbound silence. (The old contract —
+ * CHANNEL_PING out, only CHANNEL_PONG accepted back — did not match the
+ * deployed client, which answers PING with PONG; every connection was
+ * therefore force-closed 60s after it opened, forever.)
  *
  * Hand replay: on REQUEST_HAND_REPLAY the server queries `hand_history`
  * for rows matching `hand_id` and streams them as HAND_REPLAY_EVENT messages
@@ -90,7 +94,8 @@ type InboundMessage =
   | { type: 'LEAVE_LOBBY' }
   | { type: 'REQUEST_HAND_REPLAY'; handId: string }
   | { type: 'CHANNEL_PING' }
-  | { type: 'CHANNEL_PONG' };
+  | { type: 'CHANNEL_PONG' }
+  | { type: 'PONG'; ts?: number };
 
 // ─── Default JWT verification ─────────────────────────────────────────────────
 
@@ -286,12 +291,22 @@ export class ChannelWebSocketServer {
     }
     if (!msg || typeof msg.type !== 'string') return;
 
+    // 2026-08-24 HEARTBEAT FIX — any well-formed inbound frame proves the
+    // link is alive. The sweep below used to accept ONLY CHANNEL_PONG as
+    // proof of life while the deployed client answered heartbeats with PONG
+    // (and its JOINs/PRESENCE frames were ignored as liveness too), so every
+    // single /ws/channel connection was force-closed at the 60s mark,
+    // forever — taking wallet updates, tournament events, club events and
+    // lobby updates down with it, every minute, for every user. This mirrors
+    // the client's own rule ("any byte from the peer proves the link").
+    conn.lastPongAt = Date.now();
+
     const { userId } = conn;
 
     switch (msg.type) {
       case 'CHANNEL_PONG':
-        conn.lastPongAt = Date.now();
-        return;
+      case 'PONG':
+        return; // liveness already stamped above
 
       case 'CHANNEL_PING':
         // Client-initiated ping → server replies with PONG immediately
@@ -524,10 +539,15 @@ export class ChannelWebSocketServer {
         this.onClose(ws);
         continue;
       }
-      // Send server-initiated ping — client must reply CHANNEL_PONG
-      channelHub.sendToUser(conn.userId, { type: 'CHANNEL_PONG' });
-      // Actually send a distinct PING frame that the client recognises
+      // 2026-08-24: send the heartbeat in BOTH dialects. The deployed client
+      // only recognises {type:'PING'} (it replies {type:'PONG'}); newer
+      // clients also answer CHANNEL_PING with CHANNEL_PONG. Sending both
+      // means whichever side deploys first, no connection is ever declared
+      // dead for speaking the wrong dialect again. (The old code here also
+      // sent a stray unsolicited CHANNEL_PONG to the client every sweep —
+      // noise that answered nothing; removed.)
       try {
+        ws.send(JSON.stringify({ type: 'PING', ts: now }));
         ws.send(JSON.stringify({ type: 'CHANNEL_PING', ts: now }));
       } catch {
         /* next sweep will collect */

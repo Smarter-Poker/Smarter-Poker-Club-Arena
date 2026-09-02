@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { resolve, join } from 'node:path';
+import { sliceStatement, sliceCall } from '../helpers/sourceWindow';
 
 /**
  * Dan 2026-08-21: "you assign an avatar to every horse, and they use that in
@@ -51,8 +52,11 @@ describe('Club Arena never touches the social media photo column', () => {
       const re = /\.from\(\s*['"]profiles['"]\s*\)/g;
       let m: RegExpExecArray | null;
       while ((m = re.exec(src))) {
-        const sel = /\.select\(/.exec(src.slice(m.index, m.index + 500));
+        const slice = sliceStatement(src.slice(m.index), '.from(');
+        const sel = /\.select\(/.exec(slice);
         if (!sel) continue;
+        const intervening = slice.slice(0, sel.index);
+        if (/\.(from|update|upsert|insert|delete)\(/.test(intervening)) continue;
         const start = m.index + sel.index + sel[0].length;
         let depth = 1;
         let j = start;
@@ -63,9 +67,29 @@ describe('Club Arena never touches the social media photo column', () => {
         }
         const body = src.slice(start, j - 1);
         if (!/\bavatar_url\b/.test(body)) continue;
-        // Aliased form `avatar_url:arena_avatar_url` is the correct one.
+        // Aliased form `avatar_url:arena_avatar_url` is the correct one for Arena.
         if (/avatar_url\s*:\s*arena_avatar_url/.test(body)) continue;
-        offenders.push(`${file.replace(ROOT + '/', '')} -> .select(${body.trim().slice(0, 90)})`);
+
+        // Social Media features are allowed to fetch the real avatar_url
+        const relPath = file.replace(ROOT + '/', '');
+        if (
+          [
+            'src/components/social/FriendListPanel.tsx',
+            'src/components/social/OnlineFriendsPill.tsx',
+            'src/pages/FriendsPage.tsx',
+            'src/pages/ProfilePage.tsx',
+            'src/services/ProfileService.ts',
+            'src/services/FriendSuggestionService.ts',
+            // The global header is a World Hub surface embedded in Arena. It
+            // intentionally reads both sources and obeys the user's existing
+            // use_avatar_as_profile_pic preference; it never writes either.
+            'src/stores/useHeaderDataStore.ts',
+          ].includes(relPath)
+        ) {
+          continue;
+        }
+
+        offenders.push(`${relPath} -> .select(${body.trim().slice(0, 90)})`);
       }
     }
 
@@ -88,7 +112,7 @@ describe('Club Arena never touches the social media photo column', () => {
       const re = /\.from\(\s*['"]profiles['"]\s*\)[\s\S]{0,400}?\.(update|upsert|insert)\(/g;
       let m: RegExpExecArray | null;
       while ((m = re.exec(src))) {
-        const tail = src.slice(m.index, m.index + 600);
+        const tail = sliceCall(src.slice(m.index), `.${m[1]}(`);
         if (/(?<!arena_)\bavatar_url\b\s*:/.test(tail)) {
           offenders.push(`${file.replace(ROOT + '/', '')} -> .${m[1]}({ avatar_url: ... })`);
         }
@@ -137,7 +161,7 @@ describe('Club Arena never touches the social media photo column', () => {
       const re = /\.from\(\s*['"]profiles['"]\s*\)[\s\S]{0,400}?\.(update|upsert|insert)\(/g;
       let m: RegExpExecArray | null;
       while ((m = re.exec(src))) {
-        if (/\barena_avatar_url\b\s*:/.test(src.slice(m.index, m.index + 600))) {
+        if (/\barena_avatar_url\b\s*:/.test(sliceCall(src.slice(m.index), `.${m[1]}(`))) {
           offenders.push(`${rel} -> .${m[1]}({ arena_avatar_url: ... })`);
         }
       }

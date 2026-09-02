@@ -90,6 +90,37 @@
   animation: subtitleFadeIn 0.45s ease 0.3s forwards;
 }
 
+.tournamentAnnouncement.finalTableAnnouncement {
+  background:
+    linear-gradient(90deg, transparent, rgba(197, 145, 54, 0.12), transparent),
+    radial-gradient(
+      ellipse at center,
+      rgba(3, 8, 18, 0.9),
+      rgba(2, 5, 11, 0.46) 54%,
+      transparent 76%
+    );
+  backdrop-filter: blur(7px) saturate(105%);
+}
+.finalTableAnnouncement .announcementContent {
+  padding: 1.1rem 1.4rem 1.25rem;
+  border-block: 1px solid rgba(217, 170, 78, 0.42);
+  background: linear-gradient(90deg, transparent, rgba(7, 13, 23, 0.72), transparent);
+}
+.finalTableAnnouncement .announcementIcon {
+  display: inline-grid;
+  place-items: center;
+  width: 3.2rem;
+  height: 3.2rem;
+  border: 1px solid rgba(217, 170, 78, 0.64);
+  border-radius: 50%;
+  color: #f5d48f;
+  background: #080d16;
+  font:
+    800 0.9rem/1 'JetBrains Mono',
+    ui-monospace,
+    monospace;
+}
+
 /* ── COMPACT: the level-change banner ─────────────────────────────────── */
 
 .tournamentAnnouncement.compact {

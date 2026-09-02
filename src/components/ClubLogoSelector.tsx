@@ -7,9 +7,10 @@
  * 2. Select from 25 pre-made animated GIF logos
  */
 
-import { useState, useRef, ChangeEvent } from 'react';
+import { useState, useRef, useEffect, ChangeEvent } from 'react';
 import { uploadClubLogo } from '@/services/ClubsService';
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { useToast } from './common/Toast';
 import './ClubLogoSelector.css';
 
 interface ClubLogoSelectorProps {
@@ -52,12 +53,27 @@ export default function ClubLogoSelector({
   currentLogo,
   onLogoChange,
 }: ClubLogoSelectorProps) {
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState<'upload' | 'preset'>('preset');
-  const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
+  /**
+   * AUDIT 2026-08-25: seeded from `currentLogo`, not from null. A club already
+   * using preset-07 opened this picker with NOTHING highlighted, so the only
+   * way to find out which badge was in use was to remember. The 25 presets are
+   * real, distinct artwork; the picker just refused to admit which one was on.
+   */
+  const [selectedPreset, setSelectedPreset] = useState<string | null>(
+    currentLogo && currentLogo.startsWith('/club-logos/') ? currentLogo : null
+  );
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(currentLogo || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  /** Follow the club's stored logo when the parent loads or replaces it. */
+  useEffect(() => {
+    setPreview(currentLogo || null);
+    setSelectedPreset(currentLogo && currentLogo.startsWith('/club-logos/') ? currentLogo : null);
+  }, [currentLogo]);
 
   const handleFileSelect = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -66,13 +82,17 @@ export default function ClubLogoSelector({
     // Validate file type
     const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
     if (!allowedTypes.includes(file.type)) {
-      setError('Please upload JPEG, PNG, GIF, or WebP format');
+      const message = 'Please Upload JPEG, PNG, GIF Or WebP Format';
+      setError(message);
+      toast.error(message);
       return;
     }
 
     // Validate file size (2MB max)
     if (file.size > 2 * 1024 * 1024) {
-      setError('File too large. Maximum size is 2MB');
+      const message = 'File Too Large. Maximum Size Is 2MB';
+      setError(message);
+      toast.error(message);
       return;
     }
 
@@ -91,21 +111,31 @@ export default function ClubLogoSelector({
       const logoUrl = await uploadClubLogo(clubId, file);
       onLogoChange(logoUrl);
       setSelectedPreset(null);
+      toast.success('Club Logo Uploaded');
     } catch (err) {
-      setError(safeErrorMessage(err, 'Upload failed'));
+      const message = safeErrorMessage(err, 'Upload failed');
+      setError(message);
+      // The inline message sits below a grid the user may have scrolled past.
+      // An upload that failed must announce itself, not wait to be found.
+      toast.error(message);
     } finally {
       setUploading(false);
     }
   };
 
-  const handlePresetSelect = async (preset: (typeof PRESET_LOGOS)[0]) => {
+  const handlePresetSelect = (preset: (typeof PRESET_LOGOS)[0]) => {
+    if (selectedPreset === preset.file) return; // already on, nothing to say
+    // Preview updates in the same tick as the tap: the change is visible
+    // before anything is written anywhere.
     setSelectedPreset(preset.file);
     setPreview(preset.file);
     setError(null);
 
-    // For presets, we just update the club's logo_url to the static asset path
-    // The calling component should handle saving this to the database
+    // Presets are static assets, so the id IS the url. Writing it to the club
+    // row is the caller's job (ClubSettingsPage saves the whole form at once),
+    // which is why this confirms "Selected" and not "Saved".
     onLogoChange(preset.file);
+    toast.success(`Logo Selected. ${preset.name}`);
   };
 
   const triggerFileInput = () => {
@@ -121,7 +151,7 @@ export default function ClubLogoSelector({
             loading="lazy"
             decoding="async"
             src={preview}
-            alt="Club logo preview"
+            alt="Club Logo Preview"
             className="logo-preview__image"
           />
         ) : (

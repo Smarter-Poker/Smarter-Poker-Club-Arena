@@ -6,12 +6,13 @@
  * All pricing is server-authoritative; the client sends only plan keys.
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useToast } from '../../components/common/Toast';
 import { confirmDialog } from '../../components/common/confirmDialog';
 import { masterBus } from '../../core/MasterBus';
 import { fmt, formatDate } from '../../utils/format';
 import styles from '../MarketplacePage.module.css';
+import { VipArt } from './ItemArt';
 import {
   startCheckout,
   storeFetch,
@@ -22,6 +23,7 @@ import {
 
 interface MembershipTabProps {
   clubId: string;
+  userId: string;
   wallet: WalletInfo;
   /** plan table served by /api/club-arena/store-catalog */
   plans: VipPlan[];
@@ -30,98 +32,131 @@ interface MembershipTabProps {
 
 export default function MembershipTab({
   clubId,
+  userId,
   wallet,
   plans,
   onWalletChanged,
 }: MembershipTabProps) {
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
+  // State does not latch two events fired in one React commit. Every membership
+  // path shares this ref so touch+click can create only one purchase intent.
+  const inFlightRef = useRef(false);
+  const intentKeyRef = useRef<string | null>(null);
+
+  const claimIntent = (key: string): boolean => {
+    if (inFlightRef.current) return false;
+    inFlightRef.current = true;
+    intentKeyRef.current = uuid();
+    setBusy(key);
+    return true;
+  };
+
+  const releaseIntent = () => {
+    inFlightRef.current = false;
+    intentKeyRef.current = null;
+    setBusy(null);
+  };
 
   const buyDailyPass = async (cost: number) => {
-    if (busy) return;
+    if (inFlightRef.current) return;
     if (!wallet.loaded) {
-      toast.error('Your diamond balance is unavailable right now');
+      toast.error('Your Diamond Balance Is Unavailable Right Now');
       return;
     }
     if (wallet.diamonds < cost) {
-      toast.error(`You need ${fmt(cost)} diamonds for a Daily Pass`);
+      toast.error(`You Need ${fmt(cost)} Diamonds For A Daily Pass`);
       return;
     }
+    if (!claimIntent('vip-daily')) return;
     if (
       !(await confirmDialog({
         title: 'Daily VIP Pass',
         message: wallet.isVip
-          ? `Spend ${fmt(cost)} diamonds to extend your VIP access by 24 hours?`
-          : `Spend ${fmt(cost)} diamonds for 24 hours of VIP access?`,
+          ? `Spend ${fmt(cost)} Diamonds To Extend Your VIP Access By 24 Hours?`
+          : `Spend ${fmt(cost)} Diamonds For 24 Hours Of VIP Access?`,
         confirmText: 'Activate',
         variant: 'default',
       }))
-    )
+    ) {
+      releaseIntent();
       return;
-    setBusy('vip-daily');
+    }
     try {
       const data = await storeFetch<{ success: true; expiresAt?: string; newBalance?: number }>(
         '/api/store/purchase-daily-vip',
-        { body: { idempotencyKey: uuid() } }
+        { body: { idempotencyKey: intentKeyRef.current } }
       );
       toast.success(
-        data.expiresAt ? `VIP active until ${formatDate(data.expiresAt)}` : 'VIP Daily Pass active'
+        data.expiresAt ? `VIP Active Until ${formatDate(data.expiresAt)}` : 'VIP Daily Pass Active'
       );
       masterBus.emit('BALANCE_UPDATED', { source: 'vip_daily' });
+      masterBus.emit('ENTITLEMENTS_CHANGED', {
+        userId,
+        category: 'vip',
+        source: 'vip-purchase',
+      });
       onWalletChanged();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Purchase failed');
     } finally {
-      setBusy(null);
+      releaseIntent();
     }
   };
 
   const buyWithCard = async (checkoutPlan: string) => {
-    if (busy) return;
-    setBusy(`card-${checkoutPlan}`);
+    if (!claimIntent(`card-${checkoutPlan}`)) return;
     try {
       await startCheckout(
         'subscription',
         [{ plan: checkoutPlan }],
-        `club=${encodeURIComponent(clubId)}&tab=membership`
+        `club=${encodeURIComponent(clubId)}&tab=membership`,
+        intentKeyRef.current || undefined
       );
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Could not start checkout');
-      setBusy(null);
+      releaseIntent();
     }
   };
 
   const buyWithDiamonds = async (planKey: 'monthly' | 'annual', priceDiamonds: number) => {
-    if (busy) return;
+    if (inFlightRef.current) return;
     if (!wallet.loaded) {
-      toast.error('Your diamond balance is unavailable right now');
+      toast.error('Your Diamond Balance Is Unavailable Right Now');
       return;
     }
     if (wallet.diamonds < priceDiamonds) {
-      toast.error(`You need ${fmt(priceDiamonds)} diamonds for this plan`);
+      toast.error(`You Need ${fmt(priceDiamonds)} Diamonds For This Plan`);
       return;
     }
+    if (!claimIntent(`diamonds-${planKey}`)) return;
     if (
       !(await confirmDialog({
         title: `${planKey === 'monthly' ? 'Monthly' : 'Annual'} VIP`,
-        message: `Spend ${fmt(priceDiamonds)} diamonds for ${planKey} VIP membership?`,
+        message: `Spend ${fmt(priceDiamonds)} Diamonds For ${planKey === 'monthly' ? 'Monthly' : 'Annual'} VIP Membership?`,
         confirmText: 'Purchase',
         variant: 'default',
       }))
-    )
+    ) {
+      releaseIntent();
       return;
-    setBusy(`diamonds-${planKey}`);
+    }
     try {
       await storeFetch('/api/store/purchase-vip-with-diamonds', {
-        body: { plan: planKey, idempotencyKey: uuid() },
+        body: { plan: planKey, idempotencyKey: intentKeyRef.current },
       });
-      toast.success('VIP membership activated');
+      toast.success('VIP Membership Activated');
       masterBus.emit('BALANCE_UPDATED', { source: 'vip_purchase' });
+      masterBus.emit('ENTITLEMENTS_CHANGED', {
+        userId,
+        category: 'vip',
+        source: 'vip-purchase',
+      });
       onWalletChanged();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Purchase failed');
     } finally {
-      setBusy(null);
+      releaseIntent();
     }
   };
 
@@ -142,10 +177,10 @@ export default function MembershipTab({
             <span className={styles.vipStatusBadge}>VIP ACTIVE</span>
             <span>
               {wallet.vipTier === 'lifetime'
-                ? 'Lifetime membership'
+                ? 'Lifetime Membership'
                 : wallet.vipExpiresAt
-                  ? `${wallet.vipTier ? `${wallet.vipTier} plan, ` : ''}expires ${formatDate(wallet.vipExpiresAt)}`
-                  : 'Active membership'}
+                  ? `${wallet.vipTier ? `${wallet.vipTier.charAt(0).toUpperCase()}${wallet.vipTier.slice(1)} Plan, ` : ''}Expires ${formatDate(wallet.vipExpiresAt)}`
+                  : 'Active Membership'}
             </span>
           </>
         ) : (
@@ -160,11 +195,22 @@ export default function MembershipTab({
             className={`${styles.planCard} ${plan.featured ? styles.planCardFeatured : ''}`}
           >
             {plan.featured && <span className={styles.pkgRibbon}>MOST POPULAR</span>}
+            <div className={styles.planArt}>
+              <VipArt
+                variant={
+                  plan.id === 'vip-annual'
+                    ? 'annual'
+                    : plan.id === 'vip-daily'
+                      ? 'daily'
+                      : 'monthly'
+                }
+              />
+            </div>
             <div className={styles.planName}>{plan.name}</div>
             <div className={styles.planPrice}>
               {plan.priceUsd != null
                 ? `$${plan.priceUsd.toFixed(2)}`
-                : `${fmt(plan.priceDiamonds)} diamonds`}
+                : `${fmt(plan.priceDiamonds)} Diamonds`}
             </div>
             <div className={styles.planPeriod}>{plan.period}</div>
             <ul className={styles.planFeatures}>
@@ -180,7 +226,7 @@ export default function MembershipTab({
               >
                 {busy === 'vip-daily'
                   ? 'Activating...'
-                  : `${wallet.isVip ? 'Extend' : 'Activate'} for ${fmt(plan.priceDiamonds)} diamonds`}
+                  : `${wallet.isVip ? 'Extend' : 'Activate'} For ${fmt(plan.priceDiamonds)} Diamonds`}
               </button>
             ) : (
               <>
@@ -190,10 +236,10 @@ export default function MembershipTab({
                   onClick={() => plan.checkoutPlan && buyWithCard(plan.checkoutPlan)}
                 >
                   {busy === `card-${plan.checkoutPlan}`
-                    ? 'Opening checkout...'
+                    ? 'Opening Checkout...'
                     : wallet.isVip
-                      ? 'Switch to this plan'
-                      : 'Subscribe with card'}
+                      ? 'Switch To This Plan'
+                      : 'Subscribe With Card'}
                 </button>
                 <button
                   className={styles.btnGhostWide}
@@ -202,7 +248,7 @@ export default function MembershipTab({
                 >
                   {busy === `diamonds-${plan.planKey}`
                     ? 'Processing...'
-                    : `Pay ${fmt(plan.priceDiamonds)} diamonds`}
+                    : `Pay ${fmt(plan.priceDiamonds)} Diamonds`}
                 </button>
               </>
             )}

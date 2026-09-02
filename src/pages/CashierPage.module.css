@@ -4,13 +4,8 @@
    ═══════════════════════════════════════════════════════════════ */
 
 .page {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 20px 16px 120px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: #e4e6eb;
-  min-height: 100vh;
-  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
 }
 
 /* ═══ Wallet Header ═══ */
@@ -60,14 +55,13 @@
   text-transform: capitalize;
 }
 
-.tab:hover {
-  color: #e4e6eb;
-  background: rgba(24, 119, 242, 0.06);
-}
-
 .tabActive {
   color: #fff;
-  background: linear-gradient(135deg, rgba(24, 119, 242, 0.2) 0%, rgba(24, 119, 242, 0.08) 100%);
+  background: linear-gradient(180deg, rgba(24, 119, 242, 0.2) 0%, rgba(10, 93, 194, 0.1) 100%);
+  border: 1px solid #1877f2;
+  box-shadow:
+    0 0 12px rgba(24, 119, 242, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
   box-shadow:
     0 0 12px rgba(24, 119, 242, 0.15),
     inset 0 -2px 0 #1877f2;
@@ -91,14 +85,10 @@
   transition: all 0.15s ease;
 }
 
-.quickLink:hover {
-  filter: brightness(1.2);
-}
-
 .quickLinkWarning {
   background: rgba(255, 184, 0, 0.1);
   border: 1px solid rgba(255, 184, 0, 0.25);
-  color: #ffb800;
+  color: #6fdcff;
 }
 
 .quickLinkDanger {
@@ -259,12 +249,6 @@
   text-align: center;
 }
 
-.presetBtn:hover {
-  border-color: rgba(24, 119, 242, 0.4);
-  color: #1877f2;
-  background: rgba(24, 119, 242, 0.06);
-}
-
 /* ═══ Buttons ═══ */
 .btnPrimary {
   width: 100%;
@@ -280,12 +264,6 @@
   box-shadow: 0 2px 12px rgba(24, 119, 242, 0.25);
   text-transform: capitalize;
   letter-spacing: 0.5px;
-}
-
-.btnPrimary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #357ce6 0%, #1d4ed8 100%);
-  box-shadow: 0 4px 20px rgba(24, 119, 242, 0.35);
-  transform: translateY(-1px);
 }
 
 .btnPrimary:disabled {
@@ -307,12 +285,6 @@
   transition: all 0.2s ease;
 }
 
-.btnGhost:hover:not(:disabled) {
-  border-color: rgba(24, 119, 242, 0.4);
-  color: #1877f2;
-  background: rgba(24, 119, 242, 0.04);
-}
-
 .btnGhost:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -329,10 +301,6 @@
   cursor: pointer;
   width: 100%;
   transition: all 0.15s ease;
-}
-
-.btnSuccess:hover {
-  background: rgba(63, 208, 122, 0.18);
 }
 
 .btnRow {
@@ -380,7 +348,7 @@
 .messageInfo {
   background: rgba(255, 184, 0, 0.08);
   border: 1px solid rgba(255, 184, 0, 0.2);
-  color: #ffb800;
+  color: #6fdcff;
 }
 
 /* ═══ Transfer Preview ═══ */
@@ -416,7 +384,7 @@
 .pendingTitle {
   font-size: 11px;
   font-weight: 700;
-  color: #ffb800;
+  color: #6fdcff;
   text-transform: capitalize;
   letter-spacing: 0.5px;
   margin-bottom: 8px;
@@ -431,7 +399,7 @@
 }
 
 .pendingStatus {
-  color: #ffb800;
+  color: #6fdcff;
   font-size: 12px;
   font-weight: 600;
 }
@@ -509,7 +477,7 @@
 
 .escrowCheckAmber {
   background: rgba(255, 184, 0, 0.12);
-  color: #ffb800;
+  color: #6fdcff;
   animation: checkPulse 2s ease-in-out infinite;
 }
 
@@ -567,11 +535,6 @@
   flex-shrink: 0;
 }
 
-.txFilterBtn:hover {
-  border-color: rgba(24, 119, 242, 0.3);
-  color: #b0b3b8;
-}
-
 .txFilterActive {
   border-color: rgba(24, 119, 242, 0.4);
   background: rgba(24, 119, 242, 0.1);
@@ -591,11 +554,6 @@
   text-transform: capitalize;
   letter-spacing: 0.5px;
   transition: all 0.15s ease;
-}
-
-.txExportBtn:hover {
-  background: rgba(49, 162, 76, 0.15);
-  border-color: rgba(49, 162, 76, 0.5);
 }
 
 .txLoading,
@@ -680,11 +638,6 @@
   }
 }
 
-.txRow:hover {
-  background: rgba(24, 119, 242, 0.03);
-  border-left-color: rgba(24, 119, 242, 0.3);
-}
-
 .txIcon {
   font-size: 1.1rem;
   min-width: 28px;
@@ -761,12 +714,9 @@
   margin-top: 8px;
 }
 
-/* ═══ Loading Text ═══ */
-.loadingText {
-  padding: 8px;
-  color: #6b7280;
-  font-size: 13px;
-}
+/* .loadingText removed 2026-08-25: every loading state on this page is a
+   skeleton (.loadingSkeleton / .recipientSkeleton / .txSkeletonRow), so this
+   rule matched nothing. */
 
 /* ═══ Spinner ═══ */
 .spinner {
@@ -794,7 +744,19 @@
 /* ═══ Tablet ═══ */
 @media (max-width: 768px) {
   .page {
-    padding: 14px 12px 100px;
+  }
+
+  /* 44px touch targets apply on all mobile widths, not just ≤480px */
+  .presetBtn,
+  .tab,
+  .txFilterBtn,
+  .txExportBtn,
+  .quickLink {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    touch-action: manipulation;
   }
 
   .card {
@@ -819,7 +781,6 @@
 /* ═══ Phone ═══ */
 @media (max-width: 480px) {
   .page {
-    padding: 10px 10px 90px;
   }
 
   .walletHeader {
@@ -890,7 +851,6 @@
 /* ═══ Small Phone ═══ */
 @media (max-width: 380px) {
   .page {
-    padding: 8px 8px 90px;
   }
 
   .tab {
@@ -1007,7 +967,7 @@
 .confirmTitle {
   font-size: 16px;
   font-weight: 800;
-  color: #ffb800;
+  color: #6fdcff;
   margin: 0 0 16px;
   text-align: center;
 }
@@ -1053,11 +1013,6 @@
   transition: all 0.15s ease;
 }
 
-.btnSecondary:hover {
-  background: rgba(58, 59, 60, 0.6);
-  color: #e4e6eb;
-}
-
 .btnDanger {
   flex: 1;
   padding: 12px 16px;
@@ -1070,11 +1025,6 @@
   cursor: pointer;
   transition: all 0.2s ease;
   box-shadow: 0 2px 12px rgba(239, 68, 68, 0.25);
-}
-
-.btnDanger:hover {
-  background: linear-gradient(135deg, #ef4444 0%, #c62828 100%);
-  box-shadow: 0 4px 20px rgba(239, 68, 68, 0.35);
 }
 
 /* ═══ Load More Button ═══ */
@@ -1091,11 +1041,6 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.15s ease;
-}
-
-.loadMoreBtn:hover {
-  background: rgba(24, 119, 242, 0.12);
-  border-color: rgba(24, 119, 242, 0.4);
 }
 
 /* ═══ Connection Status Banner ═══ */

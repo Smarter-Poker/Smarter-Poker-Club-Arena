@@ -116,6 +116,55 @@ export interface NemesisPayload {
 
 // ── Benchmarks ─────────────────────────────────────────────────────────────
 
+/**
+ * POLISH 1 (Dan 2026-08-30): the player's own weighted rake, from the same
+ * cent-exact source the money pipeline uses (ca_hand_facts.rake_paid, written
+ * by the canonical allocator). Cash hands only.
+ */
+export interface PlayerRakeStats {
+  hands: number;
+  raked_hands: number;
+  rake_paid: number;
+  /** Rake per 100 hands played — the industry-standard shape. */
+  rake_per_100: number;
+  rake_in_bb: number;
+  bb_per_100: number;
+  avg_rake_per_raked_hand: number;
+  first_hand_at: string | null;
+  last_hand_at: string | null;
+  days: number | null;
+}
+
+/** One hand's rake, and the caller's own share of it. */
+export interface HandRakeShare {
+  found: boolean;
+  hand_id?: string;
+  rake_method?: string;
+  pot_size?: number | null;
+  hand_rake?: number;
+  hand_bbj?: number;
+  your_contribution?: number;
+  your_returned_uncalled?: number;
+  your_share_pct?: number;
+  your_rake?: number;
+  your_bbj?: number;
+  /** false when derived by the allocator (pre-ledger hand) rather than stored. */
+  from_ledger?: boolean;
+}
+
+const EMPTY_RAKE_STATS: PlayerRakeStats = {
+  hands: 0,
+  raked_hands: 0,
+  rake_paid: 0,
+  rake_per_100: 0,
+  rake_in_bb: 0,
+  bb_per_100: 0,
+  avg_rake_per_raked_hand: 0,
+  first_hand_at: null,
+  last_hand_at: null,
+  days: null,
+};
+
 export interface DistributionRow {
   cohort: string;
   metric: string;
@@ -264,6 +313,34 @@ export const StatsFactsService = {
       reportError(err, 'StatsFactsService.getDistribution.threw', { cohort });
       return [];
     }
+  },
+
+  /**
+   * POLISH 1: the caller's own weighted rake. Identity is derived server-side
+   * from auth.uid() — the p_user argument is honoured for the engine only.
+   * `days: null` means lifetime.
+   */
+  async getRakeStats(days: number | null = null): Promise<PlayerRakeStats> {
+    return callRpc<PlayerRakeStats>(
+      'ca_player_rake_stats',
+      { p_user: null, p_days: days },
+      EMPTY_RAKE_STATS
+    );
+  },
+
+  /**
+   * POLISH 1: "your rake share" for one hand, read from the authoritative
+   * per-player ledger (rake_attributions), with the canonical allocator as the
+   * fallback for hands that predate it. Never exposes another player's
+   * contribution.
+   */
+  async getHandRakeShare(handId: string): Promise<HandRakeShare> {
+    if (!handId) return { found: false };
+    return callRpc<HandRakeShare>(
+      'ca_player_hand_rake_share',
+      { p_hand_id: handId },
+      { found: false }
+    );
   },
 };
 

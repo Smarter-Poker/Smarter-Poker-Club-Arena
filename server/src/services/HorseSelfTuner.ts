@@ -33,6 +33,7 @@
 
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
+import { claimNightlyJob } from '../benchmark/HorseLeague.js';
 import type { HorseProfileMods } from '../engine/HorseLogic.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -371,7 +372,21 @@ const clampMod = (n: number): number => Math.max(MOD_MIN, Math.min(MOD_MAX, n));
  * Diagnose one horse's measured play and produce the next night's modifiers.
  * `current` are the mods already in horse_profile (missing = 1.0).
  */
-export function diagnoseAndNudge(s: PlayStats, current: HorseProfileMods): TuneResult {
+/** Real-nets sample bar: below this, a bb100 figure is variance, not signal. */
+export const MIN_REAL_HANDS_FOR_BB100 = 1500;
+
+export function diagnoseAndNudge(
+  s: PlayStats,
+  current: HorseProfileMods,
+  /** V16: EXACT bb100 from horse_daily_nets (null = no real sample). This is
+   *  settlement truth, never the action-log reconstruction the 2026-08-23
+   *  audit disqualified. */
+  realBB100: number | null = null,
+  realHands: number = 0,
+  /** V18: this horse's leak-tag counts from horse_review_rollup over the
+   *  window - the 20bb review system's verdicts, driving the dials. */
+  leaks: Record<string, number> | null = null
+): TuneResult {
   let tightness = current.tightness ?? 1;
   let aggression = current.aggression ?? 1;
   let bluffFreq = current.bluffFreq ?? 1;
@@ -461,6 +476,54 @@ export function diagnoseAndNudge(s: PlayStats, current: HorseProfileMods): TuneR
   // human to read; it simply no longer moves a dial on its own.
   void bb100;
 
+  // ── V18 (2026-08-26): LEAK TAGS DRIVE THE DIALS ─────────────────────────
+  // The 20bb review system tags every big loss with WHAT went wrong. A horse
+  // that keeps producing the same tag has a personality problem the
+  // frequency benchmarks cannot see: the tags are hand-level verdicts on
+  // exact settlement data. Small steps, same clamps, honest reasons.
+  if (leaks) {
+    const n = (k: string): number => leaks[k] ?? 0;
+    const stackoffs =
+      n('nonnut_flush_stackoff') +
+      n('second_nut_flush_stackoff') +
+      n('dominated_straight_stackoff');
+    if (stackoffs >= 6) {
+      tightness += STEP / 2;
+      aggression -= STEP / 2;
+      reasons.push(
+        `leak: ${stackoffs} dominated-hand stackoffs in 20bb pots - tighten and calm down`
+      );
+    }
+    if (n('big_bet_fold') >= 10) {
+      bluffFreq -= STEP / 2;
+      reasons.push(
+        `leak: ${n('big_bet_fold')} big bluffs surrendered - fewer, better-picked bluffs`
+      );
+    }
+    if (n('preflop_stackoff') >= 8) {
+      tightness += STEP / 2;
+      reasons.push(
+        `leak: ${n('preflop_stackoff')} preflop stackoffs of 40bb+ - stop shipping marginal`
+      );
+    }
+  }
+
+  // ── V16 (2026-08-26): THE REGRESSION RULE IS BACK, ON REAL NUMBERS ──────
+  // horse_daily_nets aggregates the engine's EXACT settlement nets (the same
+  // inputs ca_hand_facts trusts), flushed every minute — chip conservation
+  // holds by construction. A horse measurably losing 15bb/100 over a real
+  // 1500-hand sample has dial settings that are not working: regress all
+  // three halfway to neutral rather than pile more nudges on top. This is
+  // the original V8 rule, disabled only because its input was garbage.
+  if (realBB100 !== null && realHands >= MIN_REAL_HANDS_FOR_BB100 && realBB100 < -15) {
+    tightness = 1 + (tightness - 1) / 2;
+    aggression = 1 + (aggression - 1) / 2;
+    bluffFreq = 1 + (bluffFreq - 1) / 2;
+    reasons.push(
+      `real bb100 ${realBB100.toFixed(1)} over ${realHands} exact-net hands - regress dials halfway to neutral`
+    );
+  }
+
   return {
     mods: {
       ...current,
@@ -514,6 +577,17 @@ const PAGE_SIZE = 1000;
 
 let checkTimer: NodeJS.Timeout | null = null;
 let lastRunDate: string | null = null;
+/*
+ * ── 2026-09-02: why `lastRunDate = null` in the catch never bought a retry ──
+ * runSelfTune's catch clears lastRunDate so the next tick can try again. The
+ * next tick then reached the stand-down branch below, which set
+ * `lastRunDate = today` - and the day was shut for good, 30 minutes before the
+ * stale claim it was waiting on became takeable. Measured: self_tuner claimed
+ * 2026-09-01 and 2026-09-02, hit `canceling statement due to statement
+ * timeout` both times, and wrote zero rows on both days. The stand-down keeps
+ * its own memo now and only suppresses the repeated log line.
+ */
+let lastStandDownDate: string | null = null;
 let running = false;
 
 /**
@@ -547,6 +621,15 @@ async function maybeRunSelfTune(): Promise<void> {
   if (!inWindow || running || lastRunDate === today) return;
   if (await alreadyTunedToday(today)) {
     lastRunDate = today;
+    return;
+  }
+  // V13.1: one claim, one runner — otherwise both instances stream 120,000
+  // hand_history rows at the same time.
+  if (!(await claimNightlyJob('self_tuner', today))) {
+    if (lastStandDownDate !== today) {
+      lastStandDownDate = today;
+      console.log(`[HorseSelfTuner] run ${today} claimed by another instance - standing down`);
+    }
     return;
   }
   lastRunDate = today;
@@ -632,6 +715,111 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
     }
     const tracked = new Set(horses.keys());
 
+    // ── V16: real per-horse nets for the window (cash + hu_cash only — the
+    // tuner is cash-only by design and tournament chips are not bb-comparable).
+    const realNets = new Map<string, { hands: number; netBB: number }>();
+    try {
+      const sinceDay = new Date(Date.now() - STUDY_WINDOW_DAYS * 86400_000)
+        .toISOString()
+        .slice(0, 10);
+      for (let offset = 0; ; offset += 1000) {
+        const { data, error } = await supabase
+          .from('horse_daily_nets')
+          .select('horse_user_id, hands, net_bb, format')
+          .gte('day', sinceDay)
+          .in('format', ['cash', 'hu_cash'])
+          /*
+           * ═══ THE SORT KEY MUST BE UNIQUE (2026-09-01, measured) ═══
+           *
+           * This paged 1,000 rows at a time ordered by (horse_user_id, day) -
+           * which is NOT unique here. horse_daily_nets is keyed
+           * (horse_user_id, day, game_variant, format), and in the seven-day
+           * window there were 19,883 matching rows across 20 pages with 2,589
+           * groups sharing a (horse_user_id, day) pair.
+           *
+           * Postgres does not promise a stable order within ties, and
+           * LIMIT/OFFSET pagination over an unstable order silently DROPS
+           * rows and repeats others. The horse whose rows are dropped simply
+           * has a smaller sample than it really played.
+           *
+           * MEASURED consequence on 2026-08-31: two horses with 2,141 and
+           * 2,332 cash hands in the window - both comfortably past the
+           * 1,500-hand bar - came out under it and were logged with the
+           * -9999 "no real sample" sentinel. Their dials were then tuned from
+           * frequency estimates instead of settlement truth, which is the
+           * exact substitution MIN_REAL_HANDS_FOR_BB100 exists to prevent.
+           *
+           * Ordering by the full unique key makes the page boundaries
+           * deterministic. The same fix is applied to the leak-tag loop
+           * below, which had 3,413 tied groups.
+           */
+          .order('horse_user_id', { ascending: true })
+          .order('day', { ascending: true })
+          .order('game_variant', { ascending: true })
+          .order('format', { ascending: true })
+          .range(offset, offset + 999);
+        if (error) throw new Error(error.message);
+        if (!data || data.length === 0) break;
+        for (const row of data as Array<{
+          horse_user_id: string;
+          hands: number;
+          net_bb: number;
+        }>) {
+          const acc = realNets.get(row.horse_user_id) ?? { hands: 0, netBB: 0 };
+          acc.hands += row.hands ?? 0;
+          acc.netBB += Number(row.net_bb ?? 0);
+          realNets.set(row.horse_user_id, acc);
+        }
+        if (data.length < 1000) break;
+      }
+    } catch (err) {
+      // Real nets are an UPGRADE, not a dependency: a read failure reports
+      // and the night tunes on frequencies exactly as before.
+      reportError(err, 'HorseSelfTuner.realNets');
+      realNets.clear();
+    }
+
+    // ── V18: leak-tag counts per horse over the window ──
+    const leaksByHorse = new Map<string, Record<string, number>>();
+    try {
+      const sinceDay = new Date(Date.now() - STUDY_WINDOW_DAYS * 86400_000)
+        .toISOString()
+        .slice(0, 10);
+      for (let offset = 0; ; offset += 1000) {
+        const { data, error } = await supabase
+          .from('horse_review_rollup')
+          .select('horse_user_id, leak_counts')
+          .gte('day', sinceDay)
+          // Same unstable-pagination bug as the real-nets loop above, same
+          // fix: horse_review_rollup is keyed (horse_user_id, day,
+          // game_variant) and 3,413 groups shared a (horse_user_id, day)
+          // pair, so leak counts - which drive the tightness, aggression and
+          // bluff dials directly - were being assembled from a sample with
+          // rows silently missing.
+          .order('horse_user_id', { ascending: true })
+          .order('day', { ascending: true })
+          .order('game_variant', { ascending: true })
+          .range(offset, offset + 999);
+        if (error) throw new Error(error.message);
+        if (!data || data.length === 0) break;
+        for (const row of data as Array<{
+          horse_user_id: string;
+          leak_counts: Record<string, number> | null;
+        }>) {
+          if (!row.leak_counts) continue;
+          const acc = leaksByHorse.get(row.horse_user_id) ?? {};
+          for (const [k, v] of Object.entries(row.leak_counts)) {
+            acc[k] = (acc[k] ?? 0) + (Number(v) || 0);
+          }
+          leaksByHorse.set(row.horse_user_id, acc);
+        }
+        if (data.length < 1000) break;
+      }
+    } catch (err) {
+      reportError(err, 'HorseSelfTuner.leakTags');
+      leaksByHorse.clear();
+    }
+
     // Stream the study window through the accumulator, newest first.
     const since = new Date(Date.now() - STUDY_WINDOW_DAYS * 86400_000).toISOString();
     const stats = new Map<string, PlayStats>();
@@ -668,7 +856,16 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
     for (const [horseId, s] of stats) {
       if (s.hands < MIN_HANDS_TO_TUNE) continue;
       const prevMods = horses.get(horseId) ?? {};
-      const { mods, reasons } = diagnoseAndNudge(s, prevMods);
+      const rn = realNets.get(horseId);
+      const realBB100 =
+        rn && rn.hands >= MIN_REAL_HANDS_FOR_BB100 ? (rn.netBB / rn.hands) * 100 : null;
+      const { mods, reasons } = diagnoseAndNudge(
+        s,
+        prevMods,
+        realBB100,
+        rn?.hands ?? 0,
+        leaksByHorse.get(horseId) ?? null
+      );
       const changed =
         mods.tightness !== (prevMods.tightness ?? 1) ||
         mods.aggression !== (prevMods.aggression ?? 1) ||
@@ -690,7 +887,13 @@ export async function runSelfTune(runDate?: string): Promise<{ studied: number; 
             horse_id: horseId,
             run_date: date,
             hands: s.hands,
-            stats: statSnapshot(s),
+            stats: {
+              ...statSnapshot(s),
+              // V16: the EXACT figure alongside the legacy estimate; -9999
+              // = no qualifying real sample this window.
+              real_bb100: realBB100 !== null ? round4(realBB100) : -9999,
+              real_hands: rn?.hands ?? 0,
+            },
             mods_before: {
               tightness: prevMods.tightness ?? 1,
               aggression: prevMods.aggression ?? 1,

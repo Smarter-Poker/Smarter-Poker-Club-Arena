@@ -8,6 +8,14 @@
 .promotions-page {
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
+  width: 100%;
+  max-width: 100vw;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
   background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
   /* Reserve the fixed bottom nav this page renders (2026-08-23). The bar is
      out of flow, so whatever it covers is simply unreachable — the token
@@ -27,6 +35,8 @@
 
 .promo-filters button {
   flex: 1;
+  min-height: 44px;
+  touch-action: manipulation;
   padding: 0.75rem;
   border: 2px solid #2a3a4a;
   border-radius: 12px;
@@ -36,11 +46,6 @@
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
-}
-
-.promo-filters button:hover {
-  border-color: #3a4a5a;
-  color: #8a9aaa;
 }
 
 .promo-filters button.active {
@@ -70,14 +75,6 @@
   overflow: hidden;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.promo-card:hover {
-  border-color: #00d4ff;
-  transform: translateY(-2px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 8px 24px rgba(0, 212, 255, 0.2);
 }
 
 .promo-image {
@@ -197,12 +194,6 @@
 .daily-bonus-banner {
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.daily-bonus-banner:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 0 30px rgba(0, 212, 255, 0.5);
-}
-
 .bonus-icon {
   font-size: 1.5rem;
 }
@@ -260,8 +251,9 @@
   position: absolute;
   top: 1rem;
   right: 1rem;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
+  touch-action: manipulation;
   border: 2px solid #3a4a5a;
   border-radius: 50%;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
@@ -271,10 +263,6 @@
   transition: all 0.2s ease;
 }
 
-.modal-close:hover {
-  border-color: #ef4444;
-  color: #ef4444;
-}
 /* ─────────────────────────────────────────────────────────────────────────────
    MOBILE RESPONSIVE
    ───────────────────────────────────────────────────────────────────────────── */
@@ -468,8 +456,16 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
 }
-
-.referral-banner:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 0 25px rgba(16, 185, 129, 0.5);
+@media (max-width: 768px) {
+  .promotions-page {
+    /* padding: 0 !important used to wipe the bottom-nav clearance declared on
+       the root — the fixed bottom bar then covered the last card. Zero the
+       sides/top only; keep the clearance. */
+    padding: 0 0 var(--bottom-nav-clearance, 74px) !important;
+  }
+  .promo-card {
+    border-radius: 0 !important;
+    border-left: none !important;
+    border-right: none !important;
+  }
 }

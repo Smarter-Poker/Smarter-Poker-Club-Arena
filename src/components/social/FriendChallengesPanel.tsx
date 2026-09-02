@@ -1,14 +1,9 @@
-/**
- * FriendChallengesPanel — the receive/track side of friend challenges.
- * Incoming pending → accept/decline; active → live progress race; completed → winner.
- * Complements FriendChallengeModal (the send side).
- */
-
 import { useCallback, useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
-import { useToast } from '../common/Toast';
-import { reportError } from '../../utils/errorReporter';
 import { useIsMounted } from '../../hooks/useIsMounted';
+import { supabase } from '../../lib/supabase';
+import { reportError } from '../../utils/errorReporter';
+import { useToast } from '../common/Toast';
+import './FriendChallengesPanel.css';
 
 const TYPE_META: Record<string, { label: string; icon: string }> = {
   streak_battle: { label: 'Streak Battle', icon: '▲' },
@@ -32,11 +27,22 @@ interface ChallengeRow {
 function timeLeft(iso: string): string {
   const diff = new Date(iso).getTime() - Date.now();
   if (diff <= 0) return 'Ended';
-  const d = Math.floor(diff / 86_400_000);
-  const h = Math.floor((diff % 86_400_000) / 3_600_000);
-  if (d > 0) return `${d}d ${h}h left`;
-  const m = Math.floor((diff % 3_600_000) / 60_000);
-  return h > 0 ? `${h}h ${m}m left` : `${m}m left`;
+  const days = Math.floor(diff / 86_400_000);
+  const hours = Math.floor((diff % 86_400_000) / 3_600_000);
+  if (days > 0) return `${days}d ${hours}h left`;
+  const minutes = Math.floor((diff % 3_600_000) / 60_000);
+  return hours > 0 ? `${hours}h ${minutes}m left` : `${minutes}m left`;
+}
+
+function ChallengeHeader({ row }: { row: ChallengeRow }) {
+  const meta = TYPE_META[row.challenge_type] || { label: row.challenge_type, icon: '◇' };
+  return (
+    <div className="challenge-card-heading">
+      <span aria-hidden="true">{meta.icon}</span>
+      <strong>{meta.label}</strong>
+      <small>{row.status}</small>
+    </div>
+  );
 }
 
 export default function FriendChallengesPanel({ userId }: { userId: string }) {
@@ -45,12 +51,15 @@ export default function FriendChallengesPanel({ userId }: { userId: string }) {
   const [rows, setRows] = useState<ChallengeRow[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!userId) return;
+    setLoading(true);
+    setError(null);
     try {
-      const { data } = await supabase
+      const { data, error: challengeError } = await supabase
         .from('friend_challenges')
         .select(
           'id, challenger_id, challengee_id, challenge_type, challenger_progress, challengee_progress, status, expires_at, winner_id'
@@ -58,25 +67,32 @@ export default function FriendChallengesPanel({ userId }: { userId: string }) {
         .or(`challenger_id.eq.${userId},challengee_id.eq.${userId}`)
         .order('created_at', { ascending: false })
         .limit(50);
+      if (challengeError) throw challengeError;
+
       const list = (data || []) as ChallengeRow[];
       if (!isMounted.current) return;
       setRows(list);
-      const ids = [...new Set(list.flatMap((r) => [r.challenger_id, r.challengee_id]))].filter(
-        (id) => id && id !== userId
-      );
-      if (ids.length > 0) {
-        const { data: profs } = await supabase
+      const playerIds = [
+        ...new Set(list.flatMap((row) => [row.challenger_id, row.challengee_id])),
+      ].filter((id) => id && id !== userId);
+
+      if (playerIds.length > 0) {
+        const { data: profiles, error: profileError } = await supabase
           .from('profiles')
           .select('id, username')
-          .in('id', ids);
-        if (isMounted.current && profs) {
-          const m: Record<string, string> = {};
-          for (const p of profs) m[p.id] = p.username || 'Player';
-          setNames(m);
+          .in('id', playerIds);
+        if (profileError) {
+          reportError(profileError, 'FriendChallengesPanel.profile_lookup');
+        } else if (isMounted.current) {
+          const nextNames: Record<string, string> = {};
+          for (const profile of profiles || [])
+            nextNames[profile.id] = profile.username || 'Player';
+          setNames(nextNames);
         }
       }
-    } catch (e) {
-      reportError(e, 'FriendChallengesPanel.load');
+    } catch (loadError) {
+      reportError(loadError, 'FriendChallengesPanel.load');
+      if (isMounted.current) setError('Challenge records could not be reached.');
     } finally {
       if (isMounted.current) setLoading(false);
     }
@@ -90,222 +106,189 @@ export default function FriendChallengesPanel({ userId }: { userId: string }) {
     if (busyId) return;
     setBusyId(id);
     try {
-      const { data, error } = await supabase.rpc('fn_respond_friend_challenge', {
+      const { data, error: responseError } = await supabase.rpc('fn_respond_friend_challenge', {
         p_challenge_id: id,
         p_accept: accept,
       });
-      if (error || !data?.success) throw new Error(data?.error || error?.message || 'Failed');
+      if (responseError || !data?.success) {
+        throw new Error(data?.error || responseError?.message || 'Challenge response failed');
+      }
       toast.success(accept ? 'Challenge accepted!' : 'Challenge declined');
-      load();
-    } catch (e: any) {
-      toast.error(e?.message || 'Could not respond');
-      reportError(e, 'FriendChallengesPanel.respond');
+      await load();
+    } catch (responseError) {
+      const message = responseError instanceof Error ? responseError.message : 'Could not respond';
+      toast.error(message);
+      reportError(responseError, 'FriendChallengesPanel.respond');
     } finally {
       if (isMounted.current) setBusyId(null);
     }
   };
 
   if (loading) {
-    return <div style={{ padding: '1.5rem', textAlign: 'center', opacity: 0.6 }}>Loading…</div>;
+    return (
+      <div className="challenge-panel-state" role="status">
+        <span className="challenge-panel-loader" />
+        <p>Syncing Challenge Ledger…</p>
+      </div>
+    );
   }
 
-  const incoming = rows.filter((r) => r.status === 'pending' && r.challengee_id === userId);
-  const outgoingPending = rows.filter((r) => r.status === 'pending' && r.challenger_id === userId);
-  const active = rows.filter((r) => r.status === 'active');
-  const done = rows.filter((r) => r.status === 'completed');
+  if (error) {
+    return (
+      <div className="challenge-panel-state is-error" role="alert">
+        <span aria-hidden="true">!</span>
+        <h3>Challenge Link Interrupted</h3>
+        <p>{error}</p>
+        <button type="button" onClick={load}>
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   if (rows.length === 0) {
     return (
-      <div style={{ padding: '2rem 1.5rem', textAlign: 'center' }}>
-        <span
-          style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.5rem', opacity: 0.5 }}
-        >
-          ⚔
-        </span>
-        <p style={{ fontWeight: 600, margin: '0 0 0.35rem' }}>No Challenges Yet</p>
-        <p style={{ color: 'var(--soft-white,#B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
-          Challenge A Friend From Their Profile To Start A Race.
-        </p>
+      <div className="challenge-panel-state">
+        <span aria-hidden="true">◇</span>
+        <h3>No Challenges Yet</h3>
+        <p>Choose Challenge Beside A Friend To Start A Streak, Mission, Spin, Or Hand Race.</p>
       </div>
     );
   }
 
-  const meVsThem = (r: ChallengeRow) => {
-    const iAmChallenger = r.challenger_id === userId;
-    const myProg = iAmChallenger ? r.challenger_progress : r.challengee_progress;
-    const theirProg = iAmChallenger ? r.challengee_progress : r.challenger_progress;
-    const themId = iAmChallenger ? r.challengee_id : r.challenger_id;
-    return { myProg: myProg || 0, theirProg: theirProg || 0, themName: names[themId] || 'Player' };
-  };
+  const incoming = rows.filter((row) => row.status === 'pending' && row.challengee_id === userId);
+  const outgoing = rows.filter((row) => row.status === 'pending' && row.challenger_id === userId);
+  const active = rows.filter((row) => row.status === 'active');
+  const history = rows.filter((row) => row.status !== 'pending' && row.status !== 'active');
 
-  const card = (children: React.ReactNode, key: string) => (
-    <div
-      key={key}
-      style={{
-        background: 'rgba(255,255,255,0.03)',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: '12px',
-        padding: '12px 14px',
-        marginBottom: '10px',
-      }}
-    >
-      {children}
-    </div>
-  );
-
-  const header = (r: ChallengeRow) => {
-    const meta = TYPE_META[r.challenge_type] || { label: r.challenge_type, icon: '⚔' };
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-        <span style={{ fontSize: '1.1rem' }}>{meta.icon}</span>
-        <span style={{ fontWeight: 700 }}>{meta.label}</span>
-      </div>
-    );
+  const versus = (row: ChallengeRow) => {
+    const iAmChallenger = row.challenger_id === userId;
+    const myProgress = iAmChallenger ? row.challenger_progress : row.challengee_progress;
+    const theirProgress = iAmChallenger ? row.challengee_progress : row.challenger_progress;
+    const opponentId = iAmChallenger ? row.challengee_id : row.challenger_id;
+    return {
+      myProgress: myProgress || 0,
+      theirProgress: theirProgress || 0,
+      opponentName: names[opponentId] || 'Player',
+    };
   };
 
   return (
-    <div style={{ padding: '4px 2px' }}>
+    <div className="challenge-panel">
       {incoming.length > 0 && (
-        <>
-          <h4 style={{ margin: '4px 0 8px', fontSize: '0.85rem', opacity: 0.7 }}>Incoming</h4>
-          {incoming.map((r) =>
-            card(
-              <>
-                {header(r)}
-                <p style={{ margin: '0 0 10px', fontSize: '0.85rem' }}>
-                  <strong>{names[r.challenger_id] || 'A friend'}</strong> Challenged You -{' '}
-                  {timeLeft(r.expires_at)}
+        <section className="challenge-section" aria-labelledby="challenge-incoming">
+          <h3 id="challenge-incoming">
+            Incoming <span>{incoming.length}</span>
+          </h3>
+          <div className="challenge-card-list">
+            {incoming.map((row) => (
+              <article className="challenge-card is-incoming" key={row.id}>
+                <ChallengeHeader row={row} />
+                <p>
+                  <strong>{names[row.challenger_id] || 'A Friend'}</strong> Challenged You ·{' '}
+                  {timeLeft(row.expires_at)}
                 </p>
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div className="challenge-actions">
                   <button
-                    onClick={() => respond(r.id, true)}
-                    disabled={busyId === r.id}
-                    style={{
-                      flex: 1,
-                      padding: '8px',
-                      borderRadius: '9px',
-                      border: 'none',
-                      fontWeight: 700,
-                      color: '#fff',
-                      background: 'linear-gradient(135deg,#31A24C,#248a3d)',
-                      cursor: 'pointer',
-                    }}
+                    className="is-accept"
+                    type="button"
+                    disabled={busyId === row.id}
+                    onClick={() => respond(row.id, true)}
                   >
-                    Accept
+                    {busyId === row.id ? 'Working…' : 'Accept'}
                   </button>
                   <button
-                    onClick={() => respond(r.id, false)}
-                    disabled={busyId === r.id}
-                    style={{
-                      flex: 1,
-                      padding: '8px',
-                      borderRadius: '9px',
-                      border: '1px solid rgba(255,255,255,0.15)',
-                      fontWeight: 700,
-                      color: 'rgba(255,255,255,0.7)',
-                      background: 'transparent',
-                      cursor: 'pointer',
-                    }}
+                    type="button"
+                    disabled={busyId === row.id}
+                    onClick={() => respond(row.id, false)}
                   >
                     Decline
                   </button>
                 </div>
-              </>,
-              r.id
-            )
-          )}
-        </>
+              </article>
+            ))}
+          </div>
+        </section>
       )}
 
       {active.length > 0 && (
-        <>
-          <h4 style={{ margin: '12px 0 8px', fontSize: '0.85rem', opacity: 0.7 }}>Active</h4>
-          {active.map((r) => {
-            const { myProg, theirProg, themName } = meVsThem(r);
-            const total = Math.max(1, myProg + theirProg);
-            return card(
-              <>
-                {header(r)}
-                <div style={{ fontSize: '0.8rem', marginBottom: '6px' }}>
-                  Vs <strong>{themName}</strong> · {timeLeft(r.expires_at)}
-                </div>
-                <div
-                  style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}
-                >
-                  <span>You: {myProg}</span>
-                  <span>
-                    {themName}: {theirProg}
-                  </span>
-                </div>
-                <div
-                  style={{
-                    height: 8,
-                    borderRadius: 4,
-                    background: 'rgba(255,255,255,0.08)',
-                    overflow: 'hidden',
-                    marginTop: 4,
-                    display: 'flex',
-                  }}
-                >
-                  <div
-                    style={{ width: `${(myProg / total) * 100}%`, background: '#31A24C' }}
-                    aria-label="your progress"
-                  />
-                  <div style={{ width: `${(theirProg / total) * 100}%`, background: '#E4A11B' }} />
-                </div>
-              </>,
-              r.id
-            );
-          })}
-        </>
+        <section className="challenge-section" aria-labelledby="challenge-active">
+          <h3 id="challenge-active">
+            Active <span>{active.length}</span>
+          </h3>
+          <div className="challenge-card-list">
+            {active.map((row) => {
+              const { myProgress, theirProgress, opponentName } = versus(row);
+              const scale = Math.max(1, myProgress, theirProgress);
+              return (
+                <article className="challenge-card is-active" key={row.id}>
+                  <ChallengeHeader row={row} />
+                  <p>
+                    Versus <strong>{opponentName}</strong> · {timeLeft(row.expires_at)}
+                  </p>
+                  <div className="challenge-progress">
+                    <label>
+                      You <span>{myProgress}</span>
+                      <progress max={scale} value={myProgress} />
+                    </label>
+                    <label>
+                      {opponentName} <span>{theirProgress}</span>
+                      <progress max={scale} value={theirProgress} />
+                    </label>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
       )}
 
-      {outgoingPending.length > 0 && (
-        <>
-          <h4 style={{ margin: '12px 0 8px', fontSize: '0.85rem', opacity: 0.7 }}>Sent</h4>
-          {outgoingPending.map((r) =>
-            card(
-              <>
-                {header(r)}
-                <p style={{ margin: 0, fontSize: '0.85rem', opacity: 0.8 }}>
-                  Waiting For <strong>{names[r.challengee_id] || 'friend'}</strong> To Accept ·{' '}
-                  {timeLeft(r.expires_at)}
+      {outgoing.length > 0 && (
+        <section className="challenge-section" aria-labelledby="challenge-sent">
+          <h3 id="challenge-sent">
+            Sent <span>{outgoing.length}</span>
+          </h3>
+          <div className="challenge-card-list">
+            {outgoing.map((row) => (
+              <article className="challenge-card" key={row.id}>
+                <ChallengeHeader row={row} />
+                <p>
+                  Waiting For <strong>{names[row.challengee_id] || 'Your Friend'}</strong> ·{' '}
+                  {timeLeft(row.expires_at)}
                 </p>
-              </>,
-              r.id
-            )
-          )}
-        </>
+              </article>
+            ))}
+          </div>
+        </section>
       )}
 
-      {done.length > 0 && (
-        <>
-          <h4 style={{ margin: '12px 0 8px', fontSize: '0.85rem', opacity: 0.7 }}>Completed</h4>
-          {done.map((r) => {
-            const { myProg, theirProg, themName } = meVsThem(r);
-            const iWon = r.winner_id === userId;
-            const tie = !r.winner_id;
-            return card(
-              <>
-                {header(r)}
-                <div style={{ fontSize: '0.85rem' }}>
-                  {tie ? (
-                    <span>Tie Vs {themName}</span>
-                  ) : iWon ? (
-                    <span style={{ color: '#31A24C', fontWeight: 700 }}>You Won Vs {themName}</span>
-                  ) : (
-                    <span style={{ opacity: 0.8 }}>{themName} Won</span>
-                  )}
-                  <span style={{ opacity: 0.6 }}>
-                    {' '}
-                    ({myProg}-{theirProg})
-                  </span>
-                </div>
-              </>,
-              r.id
-            );
-          })}
-        </>
+      {history.length > 0 && (
+        <section className="challenge-section" aria-labelledby="challenge-history">
+          <h3 id="challenge-history">
+            History <span>{history.length}</span>
+          </h3>
+          <div className="challenge-card-list">
+            {history.map((row) => {
+              const { myProgress, theirProgress, opponentName } = versus(row);
+              const result =
+                row.status !== 'completed'
+                  ? row.status
+                  : !row.winner_id
+                    ? `Tie with ${opponentName}`
+                    : row.winner_id === userId
+                      ? `You won against ${opponentName}`
+                      : `${opponentName} won`;
+              return (
+                <article className="challenge-card is-history" key={row.id}>
+                  <ChallengeHeader row={row} />
+                  <p>
+                    <strong>{result}</strong> · {myProgress}-{theirProgress}
+                  </p>
+                </article>
+              );
+            })}
+          </div>
+        </section>
       )}
     </div>
   );

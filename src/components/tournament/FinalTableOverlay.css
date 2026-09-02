@@ -91,11 +91,11 @@
   0%,
   100% {
     transform: scale(1);
-    filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.5));
+    filter: drop-shadow(0 0 8px rgba(111, 220, 255, 0.5));
   }
   50% {
     transform: scale(1.1);
-    filter: drop-shadow(0 0 16px rgba(251, 191, 36, 0.8));
+    filter: drop-shadow(0 0 16px rgba(111, 220, 255, 0.8));
   }
 }
 
@@ -104,7 +104,7 @@
   font-weight: 900;
   letter-spacing: 6px;
   color: transparent;
-  background: linear-gradient(135deg, #fbbf24, #f59e0b, #d97706);
+  background: linear-gradient(135deg, #6fdcff, #0a5dc2, #d97706);
   background-clip: text;
   -webkit-background-clip: text;
   margin: 0;
@@ -121,14 +121,14 @@
 
 .ft-overlay__prize {
   font-size: 0.85rem;
-  color: #fbbf24;
+  color: #6fdcff;
   font-weight: 600;
   margin-top: 0.5rem;
   padding: 4px 12px;
   display: inline-block;
-  background: rgba(251, 191, 36, 0.1);
+  background: rgba(111, 220, 255, 0.1);
   border-radius: 6px;
-  border: 1px solid rgba(251, 191, 36, 0.2);
+  border: 1px solid rgba(111, 220, 255, 0.2);
 }
 
 /* ── Player List ──────────────────────────────────────────────────────────── */
@@ -154,13 +154,9 @@
   transition: background 0.2s;
 }
 
-.ft-player:hover {
-  background: rgba(255, 255, 255, 0.06);
-}
-
 .ft-player:first-child {
-  background: rgba(251, 191, 36, 0.06);
-  border-color: rgba(251, 191, 36, 0.15);
+  background: rgba(111, 220, 255, 0.06);
+  border-color: rgba(111, 220, 255, 0.15);
 }
 
 @keyframes ftPlayerIn {
@@ -183,7 +179,7 @@
 }
 
 .ft-player:first-child .ft-player__rank {
-  color: #fbbf24;
+  color: #6fdcff;
 }
 
 /* Avatar */
@@ -200,7 +196,7 @@
 }
 
 .ft-player:first-child .ft-player__avatar {
-  border-color: rgba(251, 191, 36, 0.4);
+  border-color: rgba(111, 220, 255, 0.4);
 }
 
 .ft-player__avatar-img {
@@ -259,7 +255,7 @@
 .ft-player__chips {
   font-size: 0.8rem;
   font-weight: 700;
-  color: #34d399;
+  color: #6fdcff;
   font-variant-numeric: tabular-nums;
 }
 
@@ -281,12 +277,12 @@
 .ft-player__bar {
   height: 100%;
   border-radius: 2px;
-  background: linear-gradient(90deg, #fbbf24, #f59e0b);
+  background: linear-gradient(90deg, #6fdcff, #0a5dc2);
   transition: width 0.6s ease-out;
 }
 
 .ft-player:first-child .ft-player__bar {
-  background: linear-gradient(90deg, #fbbf24, #f97316);
+  background: linear-gradient(90deg, #6fdcff, #1877f2);
 }
 
 /* ── Dismiss Label ────────────────────────────────────────────────────────── */

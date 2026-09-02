@@ -90,12 +90,6 @@
   border-radius: 4px;
 }
 
-.sh-toggle:hover,
-.sh-minimize:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.7);
-}
-
 /* ── P&L ── */
 .sh-pl-section {
   display: flex;
@@ -118,8 +112,8 @@
 }
 
 .sh-positive {
-  color: #22c55e;
-  text-shadow: 0 0 12px rgba(34, 197, 94, 0.3);
+  color: #3fb950;
+  text-shadow: 0 0 12px rgba(63, 185, 80, 0.3);
 }
 .sh-negative {
   color: #ef4444;
@@ -268,11 +262,6 @@
   color: #f59e0b;
   margin-left: 6px;
   animation: flamePulse 1.2s ease-in-out infinite alternate;
-}
-
-.sh-hot-streak::before {
-  content: '🔥';
-  font-size: 12px;
 }
 
 @keyframes flamePulse {

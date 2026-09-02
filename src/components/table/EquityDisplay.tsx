@@ -32,7 +32,7 @@ function LegacyEquityDisplay({
   const countStartRef = useRef(0);
 
   const getColor = () => {
-    if (equity >= 60) return '#4ade80';
+    if (equity >= 60) return '#4dc660';
     if (equity >= 40) return '#fbbf24';
     return '#f87171';
   };
@@ -112,8 +112,8 @@ export const EquityBar = memo(function EquityBar({
   const animationFrameRef = useRef<number>(0);
   const countStartRef = useRef(0);
 
-  const barColor = isLeading ? '#22c55e' : '#ef4444';
-  const bgColor = isLeading ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)';
+  const barColor = isLeading ? '#3fb950' : '#ef4444';
+  const bgColor = isLeading ? 'rgba(63, 185, 80, 0.15)' : 'rgba(239, 68, 68, 0.15)';
 
   // Animate equity value on change
   useEffect(() => {

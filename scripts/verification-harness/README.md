@@ -6,12 +6,15 @@ Each script targets one specific deferred check from the phase signoff docs in `
 
 ## Inventory
 
-| Script                            | Phase  | What it validates                                                                                                                                                                           |
-| --------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `01-rls-regression.sql`           | F-2 #1 | God-mode RLS removed; per-user policy in effect on `table_hole_cards`; financial tables RLS-enabled; SECURITY DEFINER on critical RPCs; Realtime publication includes `wallet_transactions` |
-| `02-equal-share-rake.sql`         | D-2 #1 | Per-hand rake split is exactly equal across dealt-in players (FIX 144 / DECISION D-001)                                                                                                     |
-| `03-double-spend-buyin.sql`       | F-2 #2 | 100 concurrent `lock_for_buyin` calls produce exactly 1 success, 99 failures, exactly `amount` debited                                                                                      |
-| `04-engine-telemetry-snapshot.sh` | G-2 #0 | Hetzner engine `/health` reports hands_dealt > 0, hands_per_hour > 0, broadcast_threshold_violations == 0                                                                                   |
+| Script                                   | Phase           | What it validates                                                                                                                                                                               |
+| ---------------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `01-rls-regression.sql`                  | F-2 #1          | God-mode RLS removed; per-user policy in effect on `table_hole_cards`; financial tables RLS-enabled; SECURITY DEFINER on critical RPCs; Realtime publication includes `wallet_transactions`     |
+| `02-equal-share-rake.sql`                | D-2 #1          | Per-hand rake split is exactly equal across dealt-in players (FIX 144 / DECISION D-001)                                                                                                         |
+| `03-double-spend-buyin.sql`              | F-2 #2          | 100 concurrent `lock_for_buyin` calls produce exactly 1 success, 99 failures, exactly `amount` debited                                                                                          |
+| `04-engine-telemetry-snapshot.sh`        | G-2 #0          | Hetzner engine `/health` reports hands_dealt > 0, hands_per_hour > 0, broadcast_threshold_violations == 0                                                                                       |
+| `cashier-claim-back-cent-integrity.sql`  | Cashier Phase 1 | In one rolled-back transaction: rejects sub-cents, conserves a whole-cent reversal, replays the same intent, refuses a reused key for another source, and blocks a direct browser balance write |
+| `cashier-phase2-authorization-audit.sql` | Cashier Phase 2 | In one rolled-back transaction: proves mandatory retry keys, scoped roster/agent/ticket reads, distinct ticket closing receipts, replay safety, and exact escrow credits                        |
+| `cashier-phase3-performance.sql`         | Cashier Phase 3 | In one rolled-back transaction: proves keyset pages have no overlap, bounded send/ticket batches replay without duplicate movement, oversize batches refuse, and all hot indexes are valid      |
 
 ## Coming next
 

@@ -616,7 +616,8 @@
    ================================================================================= */
 
 .throw-animation[data-throwable='thumbs_up'] .throw-animation__impact-icon {
-  animation: fx-icon-rise var(--impact-dur, 820ms) ease-out forwards;
+  animation: fx-icon-rise var(--impact-dur, calc(820ms * var(--animation-speed, 1))) ease-out
+    forwards;
 }
 .throw-animation[data-throwable='thumbs_up'] .throw-animation__fxi {
   display: block;
@@ -627,7 +628,8 @@
     800 13px/16px system-ui,
     sans-serif;
   text-align: center;
-  animation: fx-rise-fade 750ms ease-out 120ms both;
+  animation: fx-rise-fade calc(750ms * var(--animation-speed, 1)) ease-out
+    calc(120ms * var(--animation-speed, 1)) both;
 }
 .throw-animation[data-throwable='thumbs_up'] .throw-animation__fxi::before {
   content: '+1';
@@ -638,7 +640,8 @@
    ================================================================================= */
 
 .throw-animation[data-throwable='thumbs_down'] .throw-animation__impact-icon {
-  animation: fx-icon-sink var(--impact-dur, 820ms) ease-in forwards;
+  animation: fx-icon-sink var(--impact-dur, calc(820ms * var(--animation-speed, 1))) ease-in
+    forwards;
 }
 .throw-animation[data-throwable='thumbs_down'] .throw-animation__fxi {
   display: block;
@@ -649,7 +652,8 @@
     800 13px/16px system-ui,
     sans-serif;
   text-align: center;
-  animation: fx-sink-fade 750ms ease-in 120ms both;
+  animation: fx-sink-fade calc(750ms * var(--animation-speed, 1)) ease-in
+    calc(120ms * var(--animation-speed, 1)) both;
 }
 .throw-animation[data-throwable='thumbs_down'] .throw-animation__fxi::before {
   content: '-1';
@@ -660,7 +664,8 @@
    ================================================================================= */
 
 .throw-animation[data-throwable='laughing_emoji'] .throw-animation__impact-icon {
-  animation: fx-icon-giggle var(--impact-dur, 820ms) ease-in-out forwards;
+  animation: fx-icon-giggle var(--impact-dur, calc(820ms * var(--animation-speed, 1))) ease-in-out
+    forwards;
 }
 
 /* =================================================================================
@@ -681,14 +686,15 @@
   height: 22px;
   border-radius: 2px;
   background: linear-gradient(to bottom, #6ec6ff, rgba(110, 198, 255, 0));
-  animation: fx-sink-fade 900ms ease-in 150ms both;
+  animation: fx-sink-fade calc(900ms * var(--animation-speed, 1)) ease-in
+    calc(150ms * var(--animation-speed, 1)) both;
 }
 .throw-animation[data-throwable='crying_emoji'] .throw-animation__fxi::before {
   left: 6px;
 }
 .throw-animation[data-throwable='crying_emoji'] .throw-animation__fxi::after {
   right: 6px;
-  animation-delay: 260ms;
+  animation-delay: calc(260ms * var(--animation-speed, 1));
 }
 
 /* =================================================================================
@@ -696,11 +702,93 @@
    ================================================================================= */
 
 .throw-animation[data-throwable='angry_emoji'] .throw-animation__tilt {
-  animation: fx-rage-shake 90ms linear infinite;
+  animation: fx-rage-shake calc(90ms * var(--animation-speed, 1)) linear infinite;
 }
 .throw-animation[data-throwable='angry_emoji'] .throw-animation__burst {
   animation-iteration-count: 2;
-  animation-duration: 300ms;
+  animation-duration: calc(300ms * var(--animation-speed, 1));
+}
+
+/* Steam from both ears — the one gesture that reads as FURIOUS rather than
+   merely red. Two puffs on one element (the second is ::after) at different
+   offsets and rhythms, so they do not pulse in lockstep. */
+.throw-animation[data-throwable='angry_emoji'] .throw-animation__fxf {
+  display: block;
+  left: -12px;
+  top: 24%;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0) 70%);
+  animation: fx-rage-steam calc(520ms * var(--animation-speed, 1)) ease-out infinite;
+}
+
+.throw-animation[data-throwable='angry_emoji'] .throw-animation__fxf::after {
+  content: '';
+  position: absolute;
+  left: 34px;
+  top: 0;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 70%);
+  animation: fx-rage-steam calc(520ms * var(--animation-speed, 1)) ease-out
+    calc(260ms * var(--animation-speed, 1)) infinite;
+}
+
+/* The landing flushes red. A plain-colour floor is declared first: a browser
+   that cannot parse color-mix() discards the WHOLE declaration, and this one
+   IS the effect. */
+.throw-animation[data-throwable='angry_emoji'] .throw-animation__fxi {
+  display: block;
+  width: 96px;
+  height: 96px;
+  margin: -48px 0 0 -48px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(229, 57, 53, 0.6) 0%, rgba(229, 57, 53, 0) 68%);
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--c1, #e53935) 60%, transparent) 0%,
+    transparent 68%
+  );
+  animation: fx-rage-flash calc(560ms * var(--animation-speed, 1)) ease-out both;
+}
+
+@keyframes fx-rage-steam {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.4);
+  }
+  30% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-14px, -20px) scale(1.5);
+  }
+}
+
+@keyframes fx-rage-flash {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  16% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+  46% {
+    opacity: 0.45;
+    transform: scale(0.92);
+  }
+  62% {
+    opacity: 0.9;
+    transform: scale(1.06);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.3);
+  }
 }
 
 /* =================================================================================
@@ -709,8 +797,9 @@
 
 .throw-animation[data-throwable='cool_sunglasses_emoji'] .throw-animation__impact-icon {
   animation:
-    fx-icon-wobble-settle var(--impact-dur, 820ms) ease-out forwards,
-    fx-fade-late var(--impact-dur, 820ms) linear forwards;
+    fx-icon-wobble-settle var(--impact-dur, calc(820ms * var(--animation-speed, 1))) ease-out
+      forwards,
+    fx-fade-late var(--impact-dur, calc(820ms * var(--animation-speed, 1))) linear forwards;
 }
 .throw-animation[data-throwable='cool_sunglasses_emoji'] .throw-animation__fxi {
   display: block;
@@ -722,7 +811,8 @@
     rgba(255, 255, 255, 0.85) 50%,
     transparent 80%
   );
-  animation: fx-shine-sweep 600ms ease-in-out 150ms both;
+  animation: fx-shine-sweep calc(600ms * var(--animation-speed, 1)) ease-in-out
+    calc(150ms * var(--animation-speed, 1)) both;
 }
 
 /* =================================================================================
@@ -730,7 +820,8 @@
    ================================================================================= */
 
 .throw-animation[data-throwable='heart'] .throw-animation__impact-icon {
-  animation: fx-icon-heartbeat var(--impact-dur, 820ms) ease-in-out forwards;
+  animation: fx-icon-heartbeat var(--impact-dur, calc(820ms * var(--animation-speed, 1)))
+    ease-in-out forwards;
 }
 .throw-animation[data-throwable='heart'] .throw-animation__fxi {
   display: block;
@@ -745,15 +836,15 @@
   height: 9px;
   background: #ff4081;
   clip-path: polygon(50% 100%, 6% 45%, 6% 20%, 25% 6%, 50% 22%, 75% 6%, 94% 20%, 94% 45%);
-  animation: fx-rise-fade 800ms ease-out both;
+  animation: fx-rise-fade calc(800ms * var(--animation-speed, 1)) ease-out both;
 }
 .throw-animation[data-throwable='heart'] .throw-animation__fxi::before {
   left: 4px;
-  animation-delay: 120ms;
+  animation-delay: calc(120ms * var(--animation-speed, 1));
 }
 .throw-animation[data-throwable='heart'] .throw-animation__fxi::after {
   right: 4px;
-  animation-delay: 300ms;
+  animation-delay: calc(300ms * var(--animation-speed, 1));
 }
 
 /* =================================================================================
@@ -761,7 +852,8 @@
    ================================================================================= */
 
 .throw-animation[data-throwable='star'] .throw-animation__impact-icon {
-  animation: fx-icon-spin-out var(--impact-dur, 820ms) ease-out forwards;
+  animation: fx-icon-spin-out var(--impact-dur, calc(820ms * var(--animation-speed, 1))) ease-out
+    forwards;
 }
 .throw-animation[data-throwable='star'] .throw-animation__glow--flight {
   opacity: 0.65;
@@ -781,11 +873,11 @@
   height: 60px;
   margin: -30px 0 0 -1.5px;
   background: linear-gradient(to bottom, transparent, rgba(255, 245, 157, 0.95), transparent);
-  animation: fx-slash 550ms ease-out both;
+  animation: fx-slash calc(550ms * var(--animation-speed, 1)) ease-out both;
 }
 .throw-animation[data-throwable='star'] .throw-animation__fxi::after {
   rotate: 90deg;
-  animation-delay: 70ms;
+  animation-delay: calc(70ms * var(--animation-speed, 1));
 }
 
 /* =================================================================================
@@ -816,11 +908,11 @@
     44% 30%
   );
   opacity: 0.85;
-  animation: fx-ring-expand 480ms ease-out both;
+  animation: fx-ring-expand calc(480ms * var(--animation-speed, 1)) ease-out both;
 }
 .throw-animation[data-throwable='tomato'] .throw-animation__impact-icon {
   animation-name: throwable-impact-splat;
-  animation-duration: var(--impact-dur, 820ms);
+  animation-duration: var(--impact-dur, calc(820ms * var(--animation-speed, 1)));
 }
 .throw-animation[data-throwable='tomato'] .throw-animation__linger::before {
   content: '';
@@ -851,7 +943,7 @@
   height: 10px;
   background: #fffdf5;
   clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
-  animation: fx-petal 700ms ease-out both;
+  animation: fx-petal calc(700ms * var(--animation-speed, 1)) ease-out both;
 }
 .throw-animation[data-throwable='cracked_egg'] .throw-animation__fxi::before {
   left: 2px;
@@ -859,7 +951,7 @@
 .throw-animation[data-throwable='cracked_egg'] .throw-animation__fxi::after {
   right: 2px;
   animation-name: fx-petal-mirror;
-  animation-delay: 90ms;
+  animation-delay: calc(90ms * var(--animation-speed, 1));
 }
 .throw-animation[data-throwable='cracked_egg'] .throw-animation__linger {
   background: radial-gradient(
@@ -876,7 +968,8 @@
    ================================================================================= */
 
 .throw-animation[data-throwable='banana_peel'] .throw-animation__impact-icon {
-  animation: fx-icon-slip var(--impact-dur, 820ms) cubic-bezier(0.2, 0.8, 0.4, 1) forwards;
+  animation: fx-icon-slip var(--impact-dur, calc(820ms * var(--animation-speed, 1)))
+    cubic-bezier(0.2, 0.8, 0.4, 1) forwards;
 }
 
 /* =================================================================================
@@ -898,14 +991,15 @@
   border-radius: 2px;
   background: linear-gradient(to bottom, #ffcc80, rgba(255, 204, 128, 0));
   transform-origin: top center;
-  animation: fx-sink-fade 850ms ease-in 120ms both;
+  animation: fx-sink-fade calc(850ms * var(--animation-speed, 1)) ease-in
+    calc(120ms * var(--animation-speed, 1)) both;
 }
 .throw-animation[data-throwable='pizza_slice'] .throw-animation__fxi::before {
   left: 9px;
 }
 .throw-animation[data-throwable='pizza_slice'] .throw-animation__fxi::after {
   right: 9px;
-  animation-delay: 240ms;
+  animation-delay: calc(240ms * var(--animation-speed, 1));
 }
 
 /* =================================================================================
@@ -922,7 +1016,7 @@
   content: '';
   position: absolute;
   border-radius: 50%;
-  animation: fx-petal 800ms ease-out both;
+  animation: fx-petal calc(800ms * var(--animation-speed, 1)) ease-out both;
 }
 .throw-animation[data-throwable='cake'] .throw-animation__fxi::before {
   left: 4px;
@@ -938,7 +1032,7 @@
   height: 9px;
   background: #fff9c4;
   animation-name: fx-petal-mirror;
-  animation-delay: 110ms;
+  animation-delay: calc(110ms * var(--animation-speed, 1));
 }
 
 /* =================================================================================
@@ -958,7 +1052,7 @@
   border-radius: 50%;
   background: #33291f;
   box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
-  animation: fx-flies 650ms linear infinite;
+  animation: fx-flies calc(650ms * var(--animation-speed, 1)) linear infinite;
 }
 .throw-animation[data-throwable='poop'] .throw-animation__fxi::after {
   content: '';
@@ -967,7 +1061,8 @@
   height: 3px;
   border-radius: 50%;
   background: #4a3b2c;
-  animation: fx-flies 800ms linear 200ms infinite reverse;
+  animation: fx-flies calc(800ms * var(--animation-speed, 1)) linear
+    calc(200ms * var(--animation-speed, 1)) infinite reverse;
 }
 .throw-animation[data-throwable='poop'] .throw-animation__linger::before {
   content: '';
@@ -978,7 +1073,7 @@
   height: 20px;
   border-left: 2px solid rgba(139, 195, 74, 0.7);
   border-radius: 60%;
-  animation: fx-stink 1.2s ease-out infinite;
+  animation: fx-stink calc(1.2s * var(--animation-speed, 1)) ease-out infinite;
 }
 
 /* =================================================================================
@@ -994,7 +1089,7 @@
   height: 5px;
   border-radius: 3px;
   background: linear-gradient(to left, #29b6f6, rgba(41, 182, 246, 0));
-  animation: fx-flame 140ms linear infinite;
+  animation: fx-flame calc(140ms * var(--animation-speed, 1)) linear infinite;
 }
 .throw-animation[data-throwable='water_gun'] .throw-animation__fxf::after {
   content: '';
@@ -1021,7 +1116,8 @@
    ================================================================================= */
 
 .throw-animation[data-throwable='boxing_glove'] .throw-animation__impact-icon {
-  animation: fx-icon-recoil var(--impact-dur, 820ms) cubic-bezier(0.3, 1.2, 0.4, 1) forwards;
+  animation: fx-icon-recoil var(--impact-dur, calc(820ms * var(--animation-speed, 1)))
+    cubic-bezier(0.3, 1.2, 0.4, 1) forwards;
 }
 .throw-animation[data-throwable='boxing_glove'] .throw-animation__burst {
   border-width: 6px;
@@ -1037,7 +1133,8 @@
   height: 20px;
   border-radius: 50%;
   background: radial-gradient(ellipse, rgba(0, 0, 0, 0.75) 0%, transparent 70%);
-  animation: fx-shadow-grow var(--flight-dur, 780ms) ease-in forwards;
+  animation: fx-shadow-grow var(--flight-dur, calc(780ms * var(--animation-speed, 1))) ease-in
+    forwards;
 }
 .throw-animation[data-throwable='anvil'] .throw-animation__fxi {
   display: block;
@@ -1052,7 +1149,7 @@
   width: 26px;
   height: 3px;
   background: rgba(20, 20, 24, 0.6);
-  animation: fx-slash 700ms ease-out both;
+  animation: fx-slash calc(700ms * var(--animation-speed, 1)) ease-out both;
 }
 .throw-animation[data-throwable='anvil'] .throw-animation__fxi::before {
   left: 0;
@@ -1061,7 +1158,7 @@
 .throw-animation[data-throwable='anvil'] .throw-animation__fxi::after {
   right: 0;
   rotate: 12deg;
-  animation-delay: 60ms;
+  animation-delay: calc(60ms * var(--animation-speed, 1));
 }
 
 /* =================================================================================
@@ -1069,7 +1166,8 @@
    ================================================================================= */
 
 .throw-animation[data-throwable='trash_can'] .throw-animation__impact-icon {
-  animation: fx-icon-tipover var(--impact-dur, 820ms) ease-out forwards;
+  animation: fx-icon-tipover var(--impact-dur, calc(820ms * var(--animation-speed, 1))) ease-out
+    forwards;
 }
 .throw-animation[data-throwable='trash_can'] .throw-animation__fxi {
   display: block;
@@ -1077,7 +1175,8 @@
   height: 6px;
   border-radius: 50%;
   background: #cfd8dc;
-  animation: fx-cork 750ms ease-out 80ms both;
+  animation: fx-cork calc(750ms * var(--animation-speed, 1)) ease-out
+    calc(80ms * var(--animation-speed, 1)) both;
 }
 
 /* =================================================================================
@@ -1093,10 +1192,10 @@
   box-shadow:
     0 0 14px rgba(179, 229, 252, 0.8),
     inset 0 0 10px rgba(179, 229, 252, 0.5);
-  animation: fx-ring-expand 700ms ease-out both;
+  animation: fx-ring-expand calc(700ms * var(--animation-speed, 1)) ease-out both;
 }
 .throw-animation[data-throwable='snowman'] .throw-animation__particle {
-  animation-duration: 1100ms; /* snow falls softly */
+  animation-duration: calc(1100ms * var(--animation-speed, 1)); /* snow falls softly */
 }
 
 /* =================================================================================
@@ -1107,7 +1206,8 @@
   animation-timing-function: cubic-bezier(0.6, 0, 0.9, 0.4); /* pulled in */
 }
 .throw-animation[data-throwable='magnet'] .throw-animation__impact-icon {
-  animation: fx-icon-wobble-settle var(--impact-dur, 820ms) ease-out forwards;
+  animation: fx-icon-wobble-settle var(--impact-dur, calc(820ms * var(--animation-speed, 1)))
+    ease-out forwards;
 }
 .throw-animation[data-throwable='magnet'] .throw-animation__fxi {
   display: block;
@@ -1116,8 +1216,8 @@
   border: 2px solid rgba(239, 83, 80, 0.7);
   border-radius: 50%;
   animation:
-    fx-ring-expand 500ms ease-out both,
-    fx-spark 250ms linear 2;
+    fx-ring-expand calc(500ms * var(--animation-speed, 1)) ease-out both,
+    fx-spark calc(250ms * var(--animation-speed, 1)) linear 2;
 }
 .throw-animation[data-throwable='magnet'] .throw-animation__fxi::before {
   content: '';
@@ -1125,7 +1225,8 @@
   inset: -10px;
   border: 2px solid rgba(144, 164, 174, 0.55);
   border-radius: 50%;
-  animation: fx-ring-expand 500ms ease-out 140ms both;
+  animation: fx-ring-expand calc(500ms * var(--animation-speed, 1)) ease-out
+    calc(140ms * var(--animation-speed, 1)) both;
 }
 
 /* =================================================================================
@@ -1133,7 +1234,8 @@
    ================================================================================= */
 
 .throw-animation[data-throwable='basketball'] .throw-animation__impact-icon {
-  animation: fx-icon-hops3 var(--impact-dur, 820ms) ease-out forwards;
+  animation: fx-icon-hops3 var(--impact-dur, calc(820ms * var(--animation-speed, 1))) ease-out
+    forwards;
 }
 
 /* =================================================================================
@@ -1141,7 +1243,8 @@
    ================================================================================= */
 
 .throw-animation[data-throwable='football'] .throw-animation__impact-icon {
-  animation: fx-icon-tumble var(--impact-dur, 820ms) ease-out forwards;
+  animation: fx-icon-tumble var(--impact-dur, calc(820ms * var(--animation-speed, 1))) ease-out
+    forwards;
 }
 
 /* =================================================================================
@@ -1152,7 +1255,79 @@
   opacity: 0.45; /* speed reads through a harder smear */
 }
 .throw-animation[data-throwable='tennis_ball'] .throw-animation__impact-icon {
-  animation-duration: 600ms;
+  animation-duration: calc(600ms * var(--animation-speed, 1));
+}
+
+/* This item had TWO declarations and NOT ONE animation — the only throwable in
+   the set with no motion of its own at all. It is a fastball; everything about
+   it should be speed.
+
+   Speed lines, drawn as hard stripes rather than a soft blur because a tennis
+   ball is small and light: the eye reads separated streaks as fast and a soft
+   smear as heavy. */
+.throw-animation[data-throwable='tennis_ball'] .throw-animation__fxf {
+  display: block;
+  left: -40px;
+  top: 50%;
+  width: 40px;
+  height: 14px;
+  margin-top: -7px;
+  background: repeating-linear-gradient(
+    to right,
+    rgba(220, 231, 117, 0) 0 4px,
+    rgba(220, 231, 117, 0.85) 4px 7px
+  );
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 70%);
+  mask-image: linear-gradient(to right, transparent, #000 70%);
+  animation: fx-ball-lines calc(180ms * var(--animation-speed, 1)) linear infinite;
+}
+
+/* The felt takes a scuff. Elliptical and offset, so it reads as a mark ON the
+   table rather than a ring in the air — the same ground-plane rule the
+   framework's dust follows. */
+.throw-animation[data-throwable='tennis_ball'] .throw-animation__fxi {
+  display: block;
+  width: 66px;
+  height: 22px;
+  margin: -4px 0 0 -33px;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    rgba(220, 231, 117, 0.55) 0%,
+    rgba(220, 231, 117, 0.18) 55%,
+    transparent 78%
+  );
+  animation: fx-ball-scuff calc(520ms * var(--animation-speed, 1)) ease-out both;
+}
+
+@keyframes fx-ball-lines {
+  0% {
+    opacity: 0.45;
+    transform: scaleX(0.8);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scaleX(1.1);
+  }
+  100% {
+    opacity: 0.45;
+    transform: scaleX(0.8);
+  }
+}
+
+@keyframes fx-ball-scuff {
+  0% {
+    opacity: 0;
+    transform: scale(0.3, 0.7);
+  }
+  22% {
+    opacity: 0.9;
+    transform: scale(1.05, 1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.35, 1.05);
+  }
 }
 
 /* =================================================================================
@@ -1173,19 +1348,19 @@
   height: 20px;
   border-radius: 4px 4px 3px 3px;
   background: linear-gradient(to bottom, #fff 55%, #ef5350 60%, #fff 70%);
-  animation: fx-pins 650ms ease-out both;
+  animation: fx-pins calc(650ms * var(--animation-speed, 1)) ease-out both;
 }
 .throw-animation[data-throwable='bowling_ball'] .throw-animation__fxi::before {
   left: 6px;
   --pin-x: -22px;
   --pin-r: -75deg;
-  animation-delay: 40ms;
+  animation-delay: calc(40ms * var(--animation-speed, 1));
 }
 .throw-animation[data-throwable='bowling_ball'] .throw-animation__fxi::after {
   right: 6px;
   --pin-x: 22px;
   --pin-r: 75deg;
-  animation-delay: 90ms;
+  animation-delay: calc(90ms * var(--animation-speed, 1));
 }
 
 /* =================================================================================
@@ -1199,7 +1374,7 @@
   border: 3px solid rgba(255, 217, 61, 0.85);
   border-radius: 50%;
   box-shadow: 0 0 16px rgba(255, 217, 61, 0.6);
-  animation: fx-ring-expand 850ms ease-out both;
+  animation: fx-ring-expand calc(850ms * var(--animation-speed, 1)) ease-out both;
 }
 .throw-animation[data-throwable='horseshoe'] .throw-animation__fxi::before {
   content: '';
@@ -1207,7 +1382,8 @@
   inset: 10px;
   border: 2px solid rgba(255, 245, 157, 0.7);
   border-radius: 50%;
-  animation: fx-ring-expand 850ms ease-out 200ms both;
+  animation: fx-ring-expand calc(850ms * var(--animation-speed, 1)) ease-out
+    calc(200ms * var(--animation-speed, 1)) both;
 }
 
 /* =================================================================================
@@ -1215,7 +1391,8 @@
    ================================================================================= */
 
 .throw-animation[data-throwable='dice'] .throw-animation__impact-icon {
-  animation: fx-icon-tumble var(--impact-dur, 820ms) steps(4, end) forwards;
+  animation: fx-icon-tumble var(--impact-dur, calc(820ms * var(--animation-speed, 1))) steps(4, end)
+    forwards;
 }
 
 /* =================================================================================
@@ -1234,7 +1411,8 @@
     700 14px/23px system-ui,
     sans-serif;
   text-align: center;
-  animation: fx-answer-8 var(--impact-dur, 820ms) ease-out 200ms both;
+  animation: fx-answer-8 var(--impact-dur, calc(820ms * var(--animation-speed, 1))) ease-out
+    calc(200ms * var(--animation-speed, 1)) both;
 }
 .throw-animation[data-throwable='magic_8_ball'] .throw-animation__fxi::before {
   content: '8';
@@ -1256,19 +1434,19 @@
   bottom: 0;
   border-radius: 50%;
   background: rgba(255, 248, 225, 0.95);
-  animation: fx-bubbles 800ms ease-out both;
+  animation: fx-bubbles calc(800ms * var(--animation-speed, 1)) ease-out both;
 }
 .throw-animation[data-throwable='beer'] .throw-animation__fxi::before {
   left: 8px;
   width: 8px;
   height: 8px;
-  animation-delay: 120ms;
+  animation-delay: calc(120ms * var(--animation-speed, 1));
 }
 .throw-animation[data-throwable='beer'] .throw-animation__fxi::after {
   right: 8px;
   width: 6px;
   height: 6px;
-  animation-delay: 300ms;
+  animation-delay: calc(300ms * var(--animation-speed, 1));
 }
 
 /* =================================================================================
@@ -1289,7 +1467,7 @@
   height: 12px;
   border-radius: 40%;
   background: #6d4c41;
-  animation: fx-cork 700ms cubic-bezier(0.2, 0.8, 0.4, 1) both;
+  animation: fx-cork calc(700ms * var(--animation-speed, 1)) cubic-bezier(0.2, 0.8, 0.4, 1) both;
 }
 .throw-animation[data-throwable='champagne'] .throw-animation__fxi::after {
   content: '';
@@ -1300,7 +1478,7 @@
   height: 26px;
   clip-path: polygon(50% 100%, 0% 0%, 100% 0%);
   background: linear-gradient(to top, rgba(255, 249, 196, 0.9), rgba(255, 249, 196, 0));
-  animation: fx-rise-fade 650ms ease-out both;
+  animation: fx-rise-fade calc(650ms * var(--animation-speed, 1)) ease-out both;
 }
 
 /* =================================================================================
@@ -1322,14 +1500,14 @@
   border-radius: 50%;
   background: linear-gradient(to top, rgba(255, 255, 255, 0), rgba(255, 255, 255, 0.55));
   filter: blur(1.5px);
-  animation: fx-steam 1s ease-out 2;
+  animation: fx-steam calc(1s * var(--animation-speed, 1)) ease-out 2;
 }
 .throw-animation[data-throwable='coffee'] .throw-animation__fxi::before {
   left: 6px;
 }
 .throw-animation[data-throwable='coffee'] .throw-animation__fxi::after {
   right: 6px;
-  animation-delay: 350ms;
+  animation-delay: calc(350ms * var(--animation-speed, 1));
 }
 
 /* =================================================================================
@@ -1350,7 +1528,8 @@
     800 15px/18px system-ui,
     sans-serif;
   text-align: center;
-  animation: fx-rise-fade 800ms ease-out 150ms both;
+  animation: fx-rise-fade calc(800ms * var(--animation-speed, 1)) ease-out
+    calc(150ms * var(--animation-speed, 1)) both;
 }
 .throw-animation[data-throwable='cash_stack'] .throw-animation__fxi::before {
   content: '$';
@@ -1375,14 +1554,14 @@
   height: 56px;
   margin: -28px 0 0 -1.5px;
   background: linear-gradient(to bottom, transparent, rgba(224, 247, 250, 0.95), transparent);
-  animation: fx-slash 650ms ease-out both;
+  animation: fx-slash calc(650ms * var(--animation-speed, 1)) ease-out both;
 }
 .throw-animation[data-throwable='diamond'] .throw-animation__fxi::before {
   rotate: 30deg;
 }
 .throw-animation[data-throwable='diamond'] .throw-animation__fxi::after {
   rotate: -40deg;
-  animation-delay: 90ms;
+  animation-delay: calc(90ms * var(--animation-speed, 1));
 }
 
 /* =================================================================================
@@ -1403,15 +1582,15 @@
   height: 6px;
   border-radius: 60% 40% 55% 45%;
   background: #ec407a;
-  animation: fx-petal 950ms ease-in-out both;
+  animation: fx-petal calc(950ms * var(--animation-speed, 1)) ease-in-out both;
 }
 .throw-animation[data-throwable='rose'] .throw-animation__fxi::before {
   left: 8px;
-  animation-delay: 100ms;
+  animation-delay: calc(100ms * var(--animation-speed, 1));
 }
 .throw-animation[data-throwable='rose'] .throw-animation__fxi::after {
   right: 8px;
-  animation-delay: 320ms;
+  animation-delay: calc(320ms * var(--animation-speed, 1));
   background: #f8bbd0;
 }
 
@@ -1429,7 +1608,8 @@
     rgba(255, 255, 255, 0.9) 50%,
     transparent 75%
   );
-  animation: fx-shine-sweep 650ms ease-in-out 180ms both;
+  animation: fx-shine-sweep calc(650ms * var(--animation-speed, 1)) ease-in-out
+    calc(180ms * var(--animation-speed, 1)) both;
 }
 
 /* =================================================================================
@@ -1442,7 +1622,8 @@
   height: 70px;
   border: 2px solid rgba(64, 196, 255, 0.8);
   border-radius: 50%;
-  animation: fx-ring-expand 600ms ease-out 240ms both;
+  animation: fx-ring-expand calc(600ms * var(--animation-speed, 1)) ease-out
+    calc(240ms * var(--animation-speed, 1)) both;
 }
 .throw-animation[data-throwable='fireworks'] .throw-animation__fxi::before {
   content: '';
@@ -1450,7 +1631,8 @@
   inset: 8px;
   border: 2px solid rgba(255, 64, 129, 0.85);
   border-radius: 50%;
-  animation: fx-ring-expand 600ms ease-out 430ms both;
+  animation: fx-ring-expand calc(600ms * var(--animation-speed, 1)) ease-out
+    calc(430ms * var(--animation-speed, 1)) both;
 }
 
 /* =================================================================================
@@ -1466,7 +1648,7 @@
   height: 9px;
   border-radius: 50%;
   background: radial-gradient(circle, #fff7cc 0%, #ffb300 55%, transparent 75%);
-  animation: fx-spark 120ms linear infinite;
+  animation: fx-spark calc(120ms * var(--animation-speed, 1)) linear infinite;
 }
 .throw-animation[data-throwable='bomb'] .throw-animation__fxt {
   display: block;
@@ -1474,7 +1656,8 @@
   height: 16px;
   border-radius: 50%;
   background: radial-gradient(ellipse, rgba(0, 0, 0, 0.55) 0%, transparent 70%);
-  animation: fx-shadow-grow var(--flight-dur, 950ms) ease-in forwards;
+  animation: fx-shadow-grow var(--flight-dur, calc(950ms * var(--animation-speed, 1))) ease-in
+    forwards;
 }
 
 /* =================================================================================
@@ -1491,7 +1674,7 @@
   height: 12px;
   clip-path: polygon(100% 20%, 100% 80%, 0% 50%);
   background: linear-gradient(to left, #fff7cc 0%, #ffb300 40%, #ff5252 75%, transparent 100%);
-  animation: fx-flame 90ms linear infinite;
+  animation: fx-flame calc(90ms * var(--animation-speed, 1)) linear infinite;
 }
 .throw-animation[data-throwable='rocket'] .throw-animation__fxf::before {
   content: '';
@@ -1503,7 +1686,7 @@
   margin-top: -2.5px;
   clip-path: polygon(100% 25%, 100% 75%, 0% 50%);
   background: #ffffff;
-  animation: fx-flame 60ms linear infinite;
+  animation: fx-flame calc(60ms * var(--animation-speed, 1)) linear infinite;
 }
 
 /* =================================================================================
@@ -1511,7 +1694,75 @@
    ================================================================================= */
 
 .throw-animation[data-throwable='ufo'] .throw-animation__glow--flight {
-  animation-duration: 160ms; /* strobing saucer lights */
+  animation-duration: calc(160ms * var(--animation-speed, 1)); /* strobing saucer lights */
+}
+
+/* The beam was good; the saucer itself was a static glyph with a fast glow
+   behind it. It gets a RIM OF LIGHTS that travels around the hull — a conic
+   gradient rotated under a ring mask, which is one element and one composited
+   rotation rather than six positioned lamps. */
+.throw-animation[data-throwable='ufo'] .throw-animation__fxf {
+  display: block;
+  left: 50%;
+  top: 58%;
+  width: 62px;
+  height: 20px;
+  margin: -10px 0 0 -31px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    rgba(105, 240, 174, 0) 0deg 24deg,
+    rgba(105, 240, 174, 0.95) 24deg 36deg,
+    rgba(105, 240, 174, 0) 36deg 114deg,
+    rgba(105, 240, 174, 0.95) 114deg 126deg,
+    rgba(105, 240, 174, 0) 126deg 204deg,
+    rgba(105, 240, 174, 0.95) 204deg 216deg,
+    rgba(105, 240, 174, 0) 216deg 294deg,
+    rgba(105, 240, 174, 0.95) 294deg 306deg,
+    rgba(105, 240, 174, 0) 306deg 360deg
+  );
+  /* Ring, not disc — the hull is opaque, only its edge carries lamps. */
+  -webkit-mask-image: radial-gradient(closest-side, transparent 58%, #000 66%, #000 100%);
+  mask-image: radial-gradient(closest-side, transparent 58%, #000 66%, #000 100%);
+  animation: fx-ufo-rim calc(1400ms * var(--animation-speed, 1)) linear infinite;
+}
+
+/* A scan sweep across the seat under the beam — the abduction actually
+   LOOKING at something, rather than a cone that simply arrives. */
+.throw-animation[data-throwable='ufo'] .throw-animation__fxi::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 70px;
+  height: 8px;
+  margin-left: -35px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(105, 240, 174, 0.85) 0%, rgba(105, 240, 174, 0) 72%);
+  animation: fx-ufo-scan calc(900ms * var(--animation-speed, 1)) ease-in-out 2 both;
+}
+
+@keyframes fx-ufo-rim {
+  from {
+    rotate: 0deg;
+  }
+  to {
+    rotate: 360deg;
+  }
+}
+
+@keyframes fx-ufo-scan {
+  0% {
+    opacity: 0;
+    transform: scaleX(0.4) translateY(-26px);
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scaleX(1.15) translateY(6px);
+  }
 }
 .throw-animation[data-throwable='ufo'] .throw-animation__fxi {
   display: block;
@@ -1520,8 +1771,8 @@
   clip-path: polygon(28% 0%, 72% 0%, 100% 100%, 0% 100%);
   background: linear-gradient(to bottom, rgba(105, 240, 174, 0.75), rgba(105, 240, 174, 0));
   animation:
-    fx-beam-drop 700ms ease-out both,
-    fx-spark 130ms steps(2, end) 5;
+    fx-beam-drop calc(700ms * var(--animation-speed, 1)) ease-out both,
+    fx-spark calc(130ms * var(--animation-speed, 1)) steps(2, end) 5;
 }
 
 /* =================================================================================
@@ -1538,10 +1789,11 @@
     rgba(118, 255, 3, 0.35),
     rgba(118, 255, 3, 0)
   );
-  animation: fx-beam-drop 800ms ease-in-out both;
+  animation: fx-beam-drop calc(800ms * var(--animation-speed, 1)) ease-in-out both;
 }
 .throw-animation[data-throwable='alien'] .throw-animation__impact-icon {
-  animation: fx-icon-bob var(--impact-dur, 820ms) ease-in-out forwards;
+  animation: fx-icon-bob var(--impact-dur, calc(820ms * var(--animation-speed, 1))) ease-in-out
+    forwards;
 }
 
 /* =================================================================================
@@ -1549,18 +1801,191 @@
    ================================================================================= */
 
 .throw-animation[data-throwable='robot'] .throw-animation__impact-icon {
-  animation: fx-icon-glitch var(--impact-dur, 820ms) steps(8, end) forwards;
+  animation: fx-icon-glitch var(--impact-dur, calc(820ms * var(--animation-speed, 1))) steps(8, end)
+    forwards;
+}
+
+/* In flight it is POWERED: a scanning eye sweeping left to right, on the
+   flight signature slot. steps() rather than a smooth sweep, because a robot
+   reads as mechanical when its motion quantises. */
+.throw-animation[data-throwable='robot'] .throw-animation__fxf {
+  display: block;
+  left: 50%;
+  top: 34%;
+  width: 22px;
+  height: 4px;
+  margin-left: -11px;
+  border-radius: 2px;
+  background: linear-gradient(to right, rgba(255, 82, 82, 0), #ff5252 45%, rgba(255, 82, 82, 0));
+  animation: fx-robot-scan calc(620ms * var(--animation-speed, 1)) steps(6, end) infinite;
+}
+
+/* Antenna blink — a second, slower rhythm so the two do not lock into one
+   pulse and read as a single flashing lamp. */
+.throw-animation[data-throwable='robot'] .throw-animation__fxf::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -16px;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: #ff5252;
+  box-shadow: 0 0 8px 2px rgba(255, 82, 82, 0.7);
+  animation: fx-robot-antenna calc(430ms * var(--animation-speed, 1)) steps(2, end) infinite;
+}
+
+/* THE MALFUNCTION. The glitch had nothing around it, so a robot landed and
+   flickered in an empty space. Now it shorts out: electric arcs snap across
+   the impact point, then the whole thing browns out. */
+.throw-animation[data-throwable='robot'] .throw-animation__fxi {
+  display: block;
+  width: 76px;
+  height: 76px;
+  margin: -38px 0 0 -38px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 12deg,
+    transparent 0deg 26deg,
+    rgba(255, 209, 128, 0.9) 26deg 30deg,
+    transparent 30deg 104deg,
+    rgba(255, 82, 82, 0.85) 104deg 107deg,
+    transparent 107deg 191deg,
+    rgba(255, 209, 128, 0.8) 191deg 196deg,
+    transparent 196deg 288deg,
+    rgba(255, 82, 82, 0.7) 288deg 291deg,
+    transparent 291deg 360deg
+  );
+  animation: fx-robot-arc calc(420ms * var(--animation-speed, 1)) steps(3, end) 2 both;
+}
+
+.throw-animation[data-throwable='robot'] .throw-animation__glow--flight {
+  animation-duration: calc(210ms * var(--animation-speed, 1));
+}
+
+@keyframes fx-robot-scan {
+  0% {
+    transform: translateX(-9px);
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(9px);
+    opacity: 0.55;
+  }
+}
+
+@keyframes fx-robot-antenna {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0.15;
+  }
+}
+
+@keyframes fx-robot-arc {
+  0% {
+    opacity: 0;
+    transform: scale(0.35) rotate(0deg);
+  }
+  30% {
+    opacity: 0.95;
+    transform: scale(0.9) rotate(24deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.25) rotate(52deg);
+  }
 }
 
 /* =================================================================================
    41. GHOST -- translucent in flight, rises through the target and vanishes
    ================================================================================= */
 
+/* A ghost should not be a sticker at 82% opacity — it should be UNSTEADY.
+   The waver is on the tilt wrapper, which owns no transform of its own, so it
+   cannot collide with the arc or the tumble spin on the spinner above it. */
 .throw-animation[data-throwable='ghost'] .throw-animation__tilt {
   opacity: 0.82;
+  animation: fx-ghost-waver calc(900ms * var(--animation-speed, 1)) ease-in-out infinite;
+}
+
+/* A spectral wisp streaming behind it. Sits in the flight slot, stretched
+   along the travel line rather than drawn as a shape, so it reads as
+   something the ghost is TRAILING rather than an object it is carrying. */
+.throw-animation[data-throwable='ghost'] .throw-animation__fxf {
+  display: block;
+  left: -30px;
+  top: 46%;
+  width: 30px;
+  height: 16px;
+  border-radius: 50%;
+  filter: blur(3px);
+  background: linear-gradient(to left, rgba(224, 231, 255, 0.55), rgba(224, 231, 255, 0));
+  animation: fx-ghost-waver calc(900ms * var(--animation-speed, 1)) ease-in-out infinite reverse;
+}
+
+/* It passes THROUGH the seat rather than hitting it, so the impact is a cold
+   ripple pushing outward, not a shockwave. Two rings on one element via
+   ::after, staggered, because a single ring reads as a bubble. */
+.throw-animation[data-throwable='ghost'] .throw-animation__fxi {
+  display: block;
+  width: 84px;
+  height: 84px;
+  margin: -42px 0 0 -42px;
+  border-radius: 50%;
+  border: 2px solid rgba(224, 231, 255, 0.5);
+  animation: fx-ghost-mist calc(1100ms * var(--animation-speed, 1)) ease-out both;
+}
+
+.throw-animation[data-throwable='ghost'] .throw-animation__fxi::after {
+  content: '';
+  position: absolute;
+  inset: 12px;
+  border-radius: 50%;
+  border: 2px solid rgba(224, 231, 255, 0.32);
+  animation: fx-ghost-mist calc(1100ms * var(--animation-speed, 1)) ease-out
+    calc(200ms * var(--animation-speed, 1)) both;
+}
+
+@keyframes fx-ghost-waver {
+  0%,
+  100% {
+    opacity: 0.82;
+    translate: 0 0;
+  }
+  35% {
+    opacity: 0.55;
+    translate: -3px -4px;
+  }
+  70% {
+    opacity: 0.95;
+    translate: 3px 2px;
+  }
+}
+
+@keyframes fx-ghost-mist {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  25% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
 }
 .throw-animation[data-throwable='ghost'] .throw-animation__impact-icon {
-  animation: fx-icon-ghost-rise var(--impact-dur, 820ms) ease-out forwards;
+  animation: fx-icon-ghost-rise var(--impact-dur, calc(820ms * var(--animation-speed, 1))) ease-out
+    forwards;
 }
 
 /* =================================================================================
@@ -1573,7 +1998,7 @@
   height: 90px;
   border-radius: 50%;
   background: radial-gradient(circle, rgba(10, 8, 14, 0.55) 0%, transparent 65%);
-  animation: fx-warning-pulse 400ms ease-in-out 2;
+  animation: fx-warning-pulse calc(400ms * var(--animation-speed, 1)) ease-in-out 2;
 }
 
 /* =================================================================================
@@ -1586,7 +2011,7 @@
   height: 70px;
   border-radius: 50%;
   background: radial-gradient(circle, rgba(255, 238, 88, 0.5) 0%, transparent 65%);
-  animation: fx-warning-pulse 130ms linear infinite;
+  animation: fx-warning-pulse calc(130ms * var(--animation-speed, 1)) linear infinite;
 }
 .throw-animation[data-throwable='lightning_bolt'] .throw-animation__fxi {
   display: block;
@@ -1595,7 +2020,7 @@
   clip-path: polygon(58% 0%, 100% 0%, 52% 44%, 78% 44%, 22% 100%, 40% 56%, 12% 56%);
   background: #fffde7;
   filter: drop-shadow(0 0 8px #ffee58);
-  animation: fx-spark 90ms linear 4;
+  animation: fx-spark calc(90ms * var(--animation-speed, 1)) linear 4;
 }
 
 /* =================================================================================
@@ -1603,7 +2028,8 @@
    ================================================================================= */
 
 .throw-animation[data-throwable='doge'] .throw-animation__impact-icon {
-  animation: fx-icon-hops3 var(--impact-dur, 820ms) ease-out forwards;
+  animation: fx-icon-hops3 var(--impact-dur, calc(820ms * var(--animation-speed, 1))) ease-out
+    forwards;
 }
 .throw-animation[data-throwable='doge'] .throw-animation__fxi {
   display: block;
@@ -1615,7 +2041,8 @@
     sans-serif;
   text-align: center;
   letter-spacing: 1px;
-  animation: fx-rise-fade 850ms ease-out 200ms both;
+  animation: fx-rise-fade calc(850ms * var(--animation-speed, 1)) ease-out
+    calc(200ms * var(--animation-speed, 1)) both;
 }
 .throw-animation[data-throwable='doge'] .throw-animation__fxi::before {
   content: 'wow';
@@ -1626,7 +2053,8 @@
    ================================================================================= */
 
 .throw-animation[data-throwable='shark'] .throw-animation__impact-icon {
-  animation: fx-icon-chomp var(--impact-dur, 820ms) ease-in-out forwards;
+  animation: fx-icon-chomp var(--impact-dur, calc(820ms * var(--animation-speed, 1))) ease-in-out
+    forwards;
 }
 .throw-animation[data-throwable='shark'] .throw-animation__fxi {
   display: block;
@@ -1637,7 +2065,8 @@
   border-bottom-color: transparent;
   border-left-color: transparent;
   rotate: 45deg;
-  animation: fx-ring-expand 600ms ease-out 140ms both;
+  animation: fx-ring-expand calc(600ms * var(--animation-speed, 1)) ease-out
+    calc(140ms * var(--animation-speed, 1)) both;
 }
 
 /* =================================================================================
@@ -1655,7 +2084,8 @@
     rgba(109, 76, 65, 0.85) 52%,
     transparent 56%
   );
-  animation: fx-slash 550ms ease-out 120ms both;
+  animation: fx-slash calc(550ms * var(--animation-speed, 1)) ease-out
+    calc(120ms * var(--animation-speed, 1)) both;
 }
 .throw-animation[data-throwable='bear'] .throw-animation__fxi::before,
 .throw-animation[data-throwable='bear'] .throw-animation__fxi::after {
@@ -1668,15 +2098,15 @@
   background: linear-gradient(to right, rgba(141, 110, 99, 0), #6d4c41 30%, rgba(141, 110, 99, 0));
   rotate: -28deg;
   transform-origin: left center;
-  animation: fx-slash 550ms ease-out both;
+  animation: fx-slash calc(550ms * var(--animation-speed, 1)) ease-out both;
 }
 .throw-animation[data-throwable='bear'] .throw-animation__fxi::before {
   top: 12px;
-  animation-delay: 60ms;
+  animation-delay: calc(60ms * var(--animation-speed, 1));
 }
 .throw-animation[data-throwable='bear'] .throw-animation__fxi::after {
   top: 24px;
-  animation-delay: 180ms;
+  animation-delay: calc(180ms * var(--animation-speed, 1));
 }
 
 /* =================================================================================
@@ -1692,10 +2122,11 @@
   height: 6px;
   border-radius: 60% 40% 55% 45%;
   background: rgba(255, 248, 225, 0.95);
-  animation: fx-petal 500ms ease-out infinite;
+  animation: fx-petal calc(500ms * var(--animation-speed, 1)) ease-out infinite;
 }
 .throw-animation[data-throwable='chicken'] .throw-animation__impact-icon {
-  animation: fx-icon-bob var(--impact-dur, 820ms) ease-in-out forwards;
+  animation: fx-icon-bob var(--impact-dur, calc(820ms * var(--animation-speed, 1))) ease-in-out
+    forwards;
 }
 
 /* =================================================================================
@@ -1703,7 +2134,8 @@
    ================================================================================= */
 
 .throw-animation[data-throwable='rubber_duck'] .throw-animation__impact-icon {
-  animation: fx-icon-bob var(--impact-dur, 820ms) ease-in-out forwards;
+  animation: fx-icon-bob var(--impact-dur, calc(820ms * var(--animation-speed, 1))) ease-in-out
+    forwards;
 }
 .throw-animation[data-throwable='rubber_duck'] .throw-animation__fxi {
   display: block;
@@ -1711,7 +2143,8 @@
   height: 20px;
   border: 2px solid rgba(255, 235, 59, 0.6);
   border-radius: 50%;
-  animation: fx-ring-expand 800ms ease-out 150ms both;
+  animation: fx-ring-expand calc(800ms * var(--animation-speed, 1)) ease-out
+    calc(150ms * var(--animation-speed, 1)) both;
 }
 .throw-animation[data-throwable='rubber_duck'] .throw-animation__fxi::before {
   content: '';
@@ -1719,7 +2152,8 @@
   inset: -6px;
   border: 2px solid rgba(41, 182, 246, 0.45);
   border-radius: 50%;
-  animation: fx-ring-expand 900ms ease-out 420ms both;
+  animation: fx-ring-expand calc(900ms * var(--animation-speed, 1)) ease-out
+    calc(420ms * var(--animation-speed, 1)) both;
 }
 
 /* =================================================================================
@@ -1804,7 +2238,8 @@
   height: 7px;
   border-radius: 50% 0 50% 50%;
   background: #6ec6ff;
-  animation: fx-tear-side 600ms ease-out 120ms both;
+  animation: fx-tear-side calc(600ms * var(--animation-speed, 1)) ease-out
+    calc(120ms * var(--animation-speed, 1)) both;
 }
 .throw-animation[data-throwable='laughing_emoji'] .throw-animation__fxi::before {
   left: 2px;
@@ -1815,7 +2250,7 @@
   right: 2px;
   --tx: 26px;
   rotate: -135deg;
-  animation-delay: 240ms;
+  animation-delay: calc(240ms * var(--animation-speed, 1));
 }
 
 /* 11b. BANANA -- the slide leaves a smear streak on the felt */
@@ -1831,7 +2266,8 @@
     rgba(255, 235, 59, 0)
   );
   translate: 10px 12px;
-  animation: fx-fade-late 800ms linear 150ms both;
+  animation: fx-fade-late calc(800ms * var(--animation-speed, 1)) linear
+    calc(150ms * var(--animation-speed, 1)) both;
 }
 
 /* 21b. BASKETBALL -- court dust puffs timed with the first two hops */
@@ -1853,11 +2289,13 @@
 }
 .throw-animation[data-throwable='basketball'] .throw-animation__fxi::before {
   left: 2px;
-  animation: fx-dust-puff 350ms ease-out 300ms both;
+  animation: fx-dust-puff calc(350ms * var(--animation-speed, 1)) ease-out
+    calc(300ms * var(--animation-speed, 1)) both;
 }
 .throw-animation[data-throwable='basketball'] .throw-animation__fxi::after {
   right: 2px;
-  animation: fx-dust-puff 300ms ease-out 610ms both;
+  animation: fx-dust-puff calc(300ms * var(--animation-speed, 1)) ease-out
+    calc(610ms * var(--animation-speed, 1)) both;
 }
 
 /* 22b. FOOTBALL -- turf flecks kicked up by the tumble */
@@ -1875,15 +2313,15 @@
   height: 4px;
   border-radius: 1px;
   background: #66bb6a;
-  animation: fx-petal 600ms ease-out both;
+  animation: fx-petal calc(600ms * var(--animation-speed, 1)) ease-out both;
 }
 .throw-animation[data-throwable='football'] .throw-animation__fxi::before {
   left: 4px;
-  animation-delay: 60ms;
+  animation-delay: calc(60ms * var(--animation-speed, 1));
 }
 .throw-animation[data-throwable='football'] .throw-animation__fxi::after {
   right: 4px;
-  animation-delay: 150ms;
+  animation-delay: calc(150ms * var(--animation-speed, 1));
 }
 
 /* 26b. DICE -- the roll comes up: pips blink in over the settle */
@@ -1894,7 +2332,8 @@
   border-radius: 50%;
   background: #ffffff;
   box-shadow: 0 0 3px rgba(255, 255, 255, 0.8);
-  animation: fx-pip-blink 700ms ease-out 350ms both;
+  animation: fx-pip-blink calc(700ms * var(--animation-speed, 1)) ease-out
+    calc(350ms * var(--animation-speed, 1)) both;
 }
 .throw-animation[data-throwable='dice'] .throw-animation__fxi::before,
 .throw-animation[data-throwable='dice'] .throw-animation__fxi::after {
@@ -1905,17 +2344,17 @@
   border-radius: 50%;
   background: #ffffff;
   box-shadow: 0 0 3px rgba(255, 255, 255, 0.8);
-  animation: fx-pip-blink 700ms ease-out both;
+  animation: fx-pip-blink calc(700ms * var(--animation-speed, 1)) ease-out both;
 }
 .throw-animation[data-throwable='dice'] .throw-animation__fxi::before {
   left: -11px;
   top: -9px;
-  animation-delay: 420ms;
+  animation-delay: calc(420ms * var(--animation-speed, 1));
 }
 .throw-animation[data-throwable='dice'] .throw-animation__fxi::after {
   left: 11px;
   top: 9px;
-  animation-delay: 490ms;
+  animation-delay: calc(490ms * var(--animation-speed, 1));
 }
 
 /* 34b. TROPHY -- golden stars rise with the shine sweep */
@@ -1929,15 +2368,15 @@
   background: #ffd93d;
   clip-path: polygon(50% 0%, 61% 39%, 100% 50%, 61% 61%, 50% 100%, 39% 61%, 0% 50%, 39% 39%);
   filter: drop-shadow(0 0 3px rgba(255, 217, 61, 0.8));
-  animation: fx-rise-fade 800ms ease-out both;
+  animation: fx-rise-fade calc(800ms * var(--animation-speed, 1)) ease-out both;
 }
 .throw-animation[data-throwable='trophy'] .throw-animation__fxi::before {
   left: 12px;
-  animation-delay: 200ms;
+  animation-delay: calc(200ms * var(--animation-speed, 1));
 }
 .throw-animation[data-throwable='trophy'] .throw-animation__fxi::after {
   right: 12px;
-  animation-delay: 380ms;
+  animation-delay: calc(380ms * var(--animation-speed, 1));
 }
 
 /* 42b. SKULL -- ember eyes glow out of the dark pulse */
@@ -1950,14 +2389,15 @@
   height: 7px;
   border-radius: 50%;
   background: radial-gradient(circle, #ff5252 0%, rgba(255, 82, 82, 0) 75%);
-  animation: fx-ember 650ms ease-out 150ms both;
+  animation: fx-ember calc(650ms * var(--animation-speed, 1)) ease-out
+    calc(150ms * var(--animation-speed, 1)) both;
 }
 .throw-animation[data-throwable='skull'] .throw-animation__fxi::before {
   left: 34%;
 }
 .throw-animation[data-throwable='skull'] .throw-animation__fxi::after {
   right: 34%;
-  animation-delay: 220ms;
+  animation-delay: calc(220ms * var(--animation-speed, 1));
 }
 
 /* 45b. SHARK -- a thud that throws WATER, not dust */
@@ -2122,7 +2562,7 @@
   background: linear-gradient(to bottom, rgba(41, 182, 246, 0.55), rgba(41, 182, 246, 0));
   border-radius: 44% 44% 30% 30%;
   transform-origin: top center;
-  animation: fx-soak-drip 1.6s ease-in forwards;
+  animation: fx-soak-drip calc(1.6s * var(--animation-speed, 1)) ease-in forwards;
 }
 .throw-animation[data-throwable='water_gun'] .throw-animation__fxi::before,
 .throw-animation[data-throwable='water_gun'] .throw-animation__fxi::after {
@@ -2133,14 +2573,15 @@
   height: 30px;
   border-radius: 0 0 3px 3px;
   background: linear-gradient(to bottom, #29b6f6, rgba(41, 182, 246, 0));
-  animation: fx-sink-fade 1.3s ease-in 220ms both;
+  animation: fx-sink-fade calc(1.3s * var(--animation-speed, 1)) ease-in
+    calc(220ms * var(--animation-speed, 1)) both;
 }
 .throw-animation[data-throwable='water_gun'] .throw-animation__fxi::before {
   left: 22%;
 }
 .throw-animation[data-throwable='water_gun'] .throw-animation__fxi::after {
   right: 22%;
-  animation-delay: 460ms;
+  animation-delay: calc(460ms * var(--animation-speed, 1));
 }
 
 /* 3. ALIEN — beam from the bottom of the ship, held over the villain */
@@ -2151,13 +2592,13 @@
   clip-path: polygon(30% 0%, 70% 0%, 100% 100%, 0% 100%);
   background: linear-gradient(to bottom, rgba(118, 255, 3, 0.75), rgba(118, 255, 3, 0.05));
   transform-origin: top center;
-  animation: fx-beam-hold 2.2s ease-out forwards;
+  animation: fx-beam-hold calc(2.2s * var(--animation-speed, 1)) ease-out forwards;
 }
 
 /* 6. SKULL — eye sockets flash red */
 .throw-animation[data-throwable='skull'] .throw-animation__fxi::before,
 .throw-animation[data-throwable='skull'] .throw-animation__fxi::after {
-  animation: fx-eye-flash 1.8s linear both;
+  animation: fx-eye-flash calc(1.8s * var(--animation-speed, 1)) linear both;
   background: radial-gradient(circle, #ff1744 0%, rgba(255, 23, 68, 0) 72%);
   width: 12px;
   height: 12px;
@@ -2174,22 +2615,23 @@
   clip-path: polygon(58% 0%, 100% 0%, 52% 44%, 78% 44%, 22% 100%, 40% 56%, 12% 56%);
   background: #fffde7;
   filter: drop-shadow(0 0 7px #ffee58);
-  animation: fx-bolt-strike 1.1s linear both;
+  animation: fx-bolt-strike calc(1.1s * var(--animation-speed, 1)) linear both;
 }
 .throw-animation[data-throwable='lightning_bolt'] .throw-animation__fxi::before {
   left: -30px;
-  animation-delay: 160ms;
+  animation-delay: calc(160ms * var(--animation-speed, 1));
 }
 .throw-animation[data-throwable='lightning_bolt'] .throw-animation__fxi::after {
   left: 22px;
-  animation-delay: 330ms;
+  animation-delay: calc(330ms * var(--animation-speed, 1));
 }
 
 /* 8. DOGE — glasses track back and forth, sizing the victim up */
 .throw-animation[data-throwable='doge'] .throw-animation__impact-icon {
   animation:
-    fx-icon-hops3 var(--impact-dur, 820ms) ease-out forwards,
-    fx-look-around 1.6s ease-in-out 700ms 2;
+    fx-icon-hops3 var(--impact-dur, calc(820ms * var(--animation-speed, 1))) ease-out forwards,
+    fx-look-around calc(1.6s * var(--animation-speed, 1)) ease-in-out
+      calc(700ms * var(--animation-speed, 1)) 2;
 }
 
 /* 20. SNOWMAN — arrives as five separate snowballs */
@@ -2198,37 +2640,38 @@
   height: 16px;
   background: #fff;
   box-shadow: inset -2px -2px 4px rgba(150, 190, 215, 0.6);
-  animation: fx-snowball-hit 900ms ease-out both;
+  animation: fx-snowball-hit calc(900ms * var(--animation-speed, 1)) ease-out both;
 }
 .throw-animation[data-throwable='snowman'] .throw-animation__particle:nth-child(1) {
   --sx: -60px;
   --sy: -46px;
-  animation-delay: 0ms;
+  animation-delay: calc(0ms * var(--animation-speed, 1));
 }
 .throw-animation[data-throwable='snowman'] .throw-animation__particle:nth-child(2) {
   --sx: 54px;
   --sy: -52px;
-  animation-delay: 130ms;
+  animation-delay: calc(130ms * var(--animation-speed, 1));
 }
 .throw-animation[data-throwable='snowman'] .throw-animation__particle:nth-child(3) {
   --sx: -44px;
   --sy: 40px;
-  animation-delay: 270ms;
+  animation-delay: calc(270ms * var(--animation-speed, 1));
 }
 .throw-animation[data-throwable='snowman'] .throw-animation__particle:nth-child(4) {
   --sx: 58px;
   --sy: 34px;
-  animation-delay: 420ms;
+  animation-delay: calc(420ms * var(--animation-speed, 1));
 }
 .throw-animation[data-throwable='snowman'] .throw-animation__particle:nth-child(5) {
   --sx: 0px;
   --sy: -64px;
-  animation-delay: 580ms;
+  animation-delay: calc(580ms * var(--animation-speed, 1));
 }
 
 /* 21. MAGNET — hovers ABOVE and pulls chips up out of the villain */
 .throw-animation[data-throwable='magnet'] .throw-animation__impact-icon {
-  animation: fx-icon-wobble-settle var(--impact-dur, 820ms) ease-out forwards;
+  animation: fx-icon-wobble-settle var(--impact-dur, calc(820ms * var(--animation-speed, 1)))
+    ease-out forwards;
   translate: 0 -46px;
 }
 .throw-animation[data-throwable='magnet'] .throw-animation__particle {
@@ -2237,7 +2680,7 @@
   border-radius: 50%;
   background: radial-gradient(circle, #fff 0%, #ef5350 42%, #b71c1c 100%);
   box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
-  animation: fx-chip-pull 1.1s ease-in both;
+  animation: fx-chip-pull calc(1.1s * var(--animation-speed, 1)) ease-in both;
 }
 .throw-animation[data-throwable='magnet'] .throw-animation__particle:nth-child(2n) {
   --cx: -22px;
@@ -2258,13 +2701,13 @@
   border-right: 6px solid #ffd93d;
   border-bottom: 6px solid #ffd93d;
   border-radius: 0 0 6px 6px;
-  animation: fx-ring-expand 1.4s ease-out both;
+  animation: fx-ring-expand calc(1.4s * var(--animation-speed, 1)) ease-out both;
 }
 
 /* 25. BOWLING — pins stay down after they scatter */
 .throw-animation[data-throwable='bowling_ball'] .throw-animation__fxi::before,
 .throw-animation[data-throwable='bowling_ball'] .throw-animation__fxi::after {
-  animation-duration: 1.1s;
+  animation-duration: calc(1.1s * var(--animation-speed, 1));
 }
 
 /* 31. CASH — rains down over the villain */
@@ -2274,19 +2717,19 @@
   border-radius: 2px;
   background: linear-gradient(135deg, #66bb6a 0%, #a5d6a7 50%, #66bb6a 100%);
   box-shadow: inset 0 0 0 1px rgba(27, 94, 32, 0.55);
-  animation: fx-money-rain 1.7s linear both;
+  animation: fx-money-rain calc(1.7s * var(--animation-speed, 1)) linear both;
 }
 .throw-animation[data-throwable='cash_stack'] .throw-animation__particle:nth-child(3n) {
   --mx: -46px;
-  animation-delay: 120ms;
+  animation-delay: calc(120ms * var(--animation-speed, 1));
 }
 .throw-animation[data-throwable='cash_stack'] .throw-animation__particle:nth-child(3n + 1) {
   --mx: 12px;
-  animation-delay: 280ms;
+  animation-delay: calc(280ms * var(--animation-speed, 1));
 }
 .throw-animation[data-throwable='cash_stack'] .throw-animation__particle:nth-child(3n + 2) {
   --mx: 44px;
-  animation-delay: 440ms;
+  animation-delay: calc(440ms * var(--animation-speed, 1));
 }
 
 /* 17. BOXING GLOVE — a SECOND glove comes in from the other side */
@@ -2297,15 +2740,17 @@
   border-radius: 46% 54% 50% 50%;
   background: radial-gradient(circle at 38% 34%, #ff6b6b 0%, #c62828 70%);
   box-shadow: inset -3px -4px 8px rgba(0, 0, 0, 0.4);
-  animation: fx-icon-recoil 900ms cubic-bezier(0.3, 1.2, 0.4, 1) 190ms both;
+  animation: fx-icon-recoil calc(900ms * var(--animation-speed, 1)) cubic-bezier(0.3, 1.2, 0.4, 1)
+    calc(190ms * var(--animation-speed, 1)) both;
   scale: -1 1;
 }
 
 /* 19. TRASH CAN — the lid slams back down */
 .throw-animation[data-throwable='trash_can'] .throw-animation__fxi {
   animation:
-    fx-cork 420ms ease-out both,
-    fx-icon-sink 380ms ease-in 420ms both;
+    fx-cork calc(420ms * var(--animation-speed, 1)) ease-out both,
+    fx-icon-sink calc(380ms * var(--animation-speed, 1)) ease-in
+      calc(420ms * var(--animation-speed, 1)) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2355,7 +2800,8 @@
 }
 
 .throw-animation[data-throwable='star'] .throw-animation__impact-icon {
-  animation: fx-star-dance 1.8s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: fx-star-dance calc(1.8s * var(--animation-speed, 1)) cubic-bezier(0.34, 1.56, 0.64, 1)
+    forwards;
 }
 
 /* 36. RAGE — bursts outward on impact instead of settling */
@@ -2381,14 +2827,15 @@
 }
 
 .throw-animation[data-throwable='angry_emoji'] .throw-animation__impact-icon {
-  animation: fx-rage-burst 1.4s cubic-bezier(0.2, 1.3, 0.4, 1) forwards;
+  animation: fx-rage-burst calc(1.4s * var(--animation-speed, 1)) cubic-bezier(0.2, 1.3, 0.4, 1)
+    forwards;
 }
 
 /* 35. CRYING — tears actually run down the face */
 .throw-animation[data-throwable='crying_emoji'] .throw-animation__fxi::before,
 .throw-animation[data-throwable='crying_emoji'] .throw-animation__fxi::after {
   height: 34px;
-  animation-duration: 1.5s;
+  animation-duration: calc(1.5s * var(--animation-speed, 1));
   animation-iteration-count: 2;
 }
 
@@ -2412,7 +2859,7 @@
 }
 
 .throw-animation[data-throwable='cool_sunglasses_emoji'] .throw-animation__impact-icon {
-  animation: fx-cool-dance 1.1s ease-in-out 2 forwards;
+  animation: fx-cool-dance calc(1.1s * var(--animation-speed, 1)) ease-in-out 2 forwards;
 }
 
 /* 38. HEART — bursts with love */
@@ -2420,7 +2867,7 @@
 .throw-animation[data-throwable='heart'] .throw-animation__fxi::after {
   width: 14px;
   height: 14px;
-  animation-duration: 1.6s;
+  animation-duration: calc(1.6s * var(--animation-speed, 1));
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -17,6 +17,7 @@ import { DiamondService } from '../../services/DiamondService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import './DiamondWalletModal.css';
 import { reportError } from '../../utils/errorReporter';
+import { formatPopupText } from '../../utils/popupStyle';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -42,9 +43,82 @@ interface DiamondTransaction {
 // TX TYPE CONFIG
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * ICON NAMES ARE NOT ICONS. AUDIT 2026-08-25.
+ *
+ * Every entry below carries an `icon` like 'cart', 'gem' or 'crossed_swords' —
+ * names left behind when the emoji purge (house rule 5.3, emoji break SWC)
+ * replaced the glyphs with identifiers. Nothing ever mapped the identifiers
+ * back to anything renderable, and the list rendered `{config.icon}` directly:
+ * so every row of the diamond wallet showed the literal word "cart", "gem" or
+ * "crossed_swords" inside its icon circle.
+ *
+ * This map closes that loop with typographic symbols — no emoji, no font
+ * dependency, no SWC risk. A name with no glyph falls back to the diamond,
+ * which is at least true of every row in this wallet.
+ */
+const ICON_GLYPHS: Record<string, string> = {
+  cart: '▤',
+  unlock: '⊘',
+  gamepad: '▣',
+  joystick: '▣',
+  gift: '⊞',
+  celebration: '★',
+  calendar: '▦',
+  puzzle: '◈',
+  flame: '▲',
+  crown: '♛',
+  trophy: '★',
+  /* Deliberately NO codepoint that Unicode lists as an RGI emoji, even where a
+     text-presentation form exists: U+26A1 lightning, U+2694 crossed swords and
+     U+2699 gear all render as full-colour emoji on iOS and Android, which is
+     the thing house rule 5.3 is about. These are geometric shapes and
+     dingbats, the same family the wallet rows already use. */
+  lightning: '◈',
+  gold_medal: '★',
+  refresh: '↻',
+  crossed_swords: '✦',
+  target: '◎',
+  brain: '◈',
+  memo: '≡',
+  person: '◍',
+  heart: '♥',
+  comment: '❝',
+  link: '↗',
+  handshake: '≈',
+  checkmark: '✓',
+  camera: '▢',
+  filmstrip: '▤',
+  star: '★',
+  location: '◈',
+  ticket: '▭',
+  settings: '⊙',
+  coin: '◉',
+  gem: '◆',
+};
+
+const iconGlyph = (name: string) => ICON_GLYPHS[name] || '◆';
+
 const TX_TYPES: Record<string, { icon: string; label: string; color: string }> = {
   purchase: { icon: 'cart', label: 'Purchase', color: '#ef4444' },
   feature_unlock: { icon: 'unlock', label: 'Feature Unlock', color: '#f97316' },
+  /**
+   * Dan 2026-08-23: "when you buy time banks, it actually deducts the diamonds
+   * and adds the transaction inside your diamond wallet."
+   *
+   * It always did both. `deduct_diamonds` debits `profiles.diamonds` and writes
+   * the `diamond_transactions` row in the same transaction (confirmed against
+   * production: one row, -2,500, "Time banks x500"). What was missing was this
+   * line. `deduct_diamonds` stamps `transaction_type` from
+   * COALESCE(p_source, p_transaction_type), which for every feature purchase is
+   * the literal 'feature_purchase' - a key no wallet map had. The lookup below
+   * falls back to `adjustment`, so a diamond spend the player had just made
+   * showed up in their own wallet as a grey "Adjustment", indistinguishable
+   * from an admin correction. That is what "no transaction in my wallet" was.
+   */
+  feature_purchase: { icon: 'unlock', label: 'Feature Purchase', color: '#f97316' },
+  /** Same gap, same writer: the diamond helpers also emit this type. */
+  chip_purchase: { icon: 'cart', label: 'Chip Purchase', color: '#ef4444' },
   game_cost: { icon: 'gamepad', label: 'Game Entry', color: '#ef4444' },
   arcade_entry: { icon: 'joystick', label: 'Arcade Entry', color: '#ef4444' },
   bonus: { icon: 'gift', label: 'Bonus', color: '#a855f7' },
@@ -83,7 +157,50 @@ const TX_TYPES: Record<string, { icon: string; label: string; color: string }> =
   diamond_deduction: { icon: 'gem', label: 'Diamond Spent', color: '#ef4444' },
   diamond_reward: { icon: 'gem', label: 'Diamond Reward', color: '#22c55e' },
   diamond_refund: { icon: 'gem', label: 'Diamond Refund', color: '#94a3b8' },
+
+  /* ── ADDED 2026-08-25, from the live `diamond_transactions` table ──────────
+     Every type below occurs in production and had NO entry, so all of them fell
+     through to the grey "Adjustment" fallback — the exact complaint this file's
+     own `feature_purchase` comment was written about, still true for eleven
+     more types. `reconciliation` alone is 557 rows: the single largest group in
+     the table rendered as if an admin had corrected the player's balance. */
+  reconciliation: { icon: 'settings', label: 'Balance Reconciliation', color: '#94a3b8' },
+  live_gift_sent: { icon: 'gift', label: 'Gift Sent', color: '#ef4444' },
+  live_gift_received: { icon: 'gift', label: 'Gift Received', color: '#22c55e' },
+  diamond_gift_sent: { icon: 'gift', label: 'Diamond Gift Sent', color: '#ef4444' },
+  diamond_gift_received: { icon: 'gift', label: 'Diamond Gift Received', color: '#22c55e' },
+  diamond_gift_refund: { icon: 'refresh', label: 'Diamond Gift Refund', color: '#94a3b8' },
+  pvp_stake: { icon: 'crossed_swords', label: 'PvP Stake', color: '#ef4444' },
+  training_reward: { icon: 'target', label: 'Training Reward', color: '#22c55e' },
+  easter_egg: { icon: 'gift', label: 'Easter Egg', color: '#a855f7' },
+  chip_mint: { icon: 'coin', label: 'Chip Mint', color: '#22c55e' },
+  trivia_arcade: { icon: 'puzzle', label: 'Trivia Arcade', color: '#8b5cf6' },
+  trivia_run: { icon: 'puzzle', label: 'Trivia Run', color: '#8b5cf6' },
+  credit: { icon: 'gem', label: 'Diamond Credit', color: '#22c55e' },
 };
+
+/**
+ * A type nobody has taught this map about must still read like English — never
+ * the raw enum, never blank, and never a confident "Adjustment" that claims an
+ * admin touched the account when nobody did. Underscores become spaces and
+ * every word takes a capital, so a `weekly_streak_bonus` added server-side
+ * tomorrow reads "Weekly Streak Bonus" from the day it first appears.
+ */
+export function diamondTxLabel(rawType: string | null | undefined): string {
+  const known = rawType ? TX_TYPES[rawType] : undefined;
+  if (known) return known.label;
+  if (!rawType || !rawType.trim()) return 'Diamond Movement';
+  return rawType
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => (w === w.toUpperCase() ? w.toLowerCase() : w))
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+const TX_LIMIT = 50;
 
 const FILTER_OPTIONS = [
   { value: 'all', label: 'All' },
@@ -92,38 +209,22 @@ const FILTER_OPTIONS = [
   { value: 'refund', label: 'Refunds' },
 ];
 
-const EARNED_TYPES = [
-  'bonus',
-  'signup_bonus',
-  'daily_bonus',
-  'daily_login',
-  'daily_trivia',
-  'streak_reward',
-  'achievement',
-  'challenge',
-  'tournament_prize',
-  'pvp_win',
-  'game_reward',
-  'trivia_reward',
-  'vip_reward',
-  'vip_stipend',
-  'social_post',
-  'follow',
-  'reaction',
-  'comment',
-  'share',
-  'referral',
-  'profile_complete',
-  'profile_pic',
-  'video_watch',
-  'video_favorite',
-  'hendonmob_link',
-  'venue_review',
-  'promo_code',
-  'diamond_purchase',
-  'diamond_reward',
-  'diamond_refund',
-];
+/**
+ * EARNED / SPENT COME FROM THE SIGN, NOT FROM A LIST. AUDIT 2026-08-25.
+ *
+ * There used to be a hand-maintained `EARNED_TYPES` array of thirty type names,
+ * and "Earned" meant "is in that array". It had to be edited every time the
+ * platform learned a new way to give someone a diamond, and it had already
+ * fallen behind by eleven types: `live_gift_received`, `diamond_gift_received`,
+ * `training_reward`, `easter_egg`, `trivia_run`, `reconciliation` and the rest
+ * are all credits, none were listed, and the Earned tab hid every one of them.
+ * It also listed `diamond_refund` as earned while the Refunds tab claimed the
+ * same rows, and listed `pvp_refund` in neither.
+ *
+ * A credit is a positive amount. That is a fact about the row rather than a
+ * fact about our list, so it cannot go stale.
+ */
+const isRefund = (type: string) => /refund/i.test(type);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -138,12 +239,14 @@ export default function DiamondWalletModal({
   const [transactions, setTransactions] = useState<DiamondTransaction[]>([]);
   const [balance, setBalance] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [filter, setFilter] = useState('all');
   const isMounted = useIsMounted();
 
   const fetchTransactions = useCallback(async () => {
     if (!user?.id) return;
     setLoading(true);
+    setLoadError(false);
 
     try {
       // Get balance from Triple-Wallet Architecture source-of-truth
@@ -151,78 +254,97 @@ export default function DiamondWalletModal({
 
       if (isMounted.current) setBalance(diamondWallet.balance || 0);
 
-      // Get transactions from wallet_transactions (diamond-related)
-      const { data: txData } = await supabase
-        .from('wallet_transactions')
-        .select('id, type, amount, description, balance_after, created_at, category')
-        .eq('user_id', user.id)
-        .in('category', [
-          'diamond_purchase',
-          'diamond_deduction',
-          'vip_purchase',
-          'mint',
-          'diamond_reward',
-          'diamond_refund',
-        ])
-        .order('created_at', { ascending: false })
-        .limit(50);
+      /* ── THE `wallet_transactions` HALF OF THIS FETCH IS GONE ───────────────
+         It filtered on `category IN (diamond_purchase, diamond_deduction,
+         vip_purchase, mint, diamond_reward, diamond_refund)`. Five of those six
+         values are REJECTED by `wallet_transactions_category_check`, so no row
+         in that table can ever carry them — the query was five-sixths dead by
+         construction.
 
-      // Also try diamond_transactions table if it exists
-      const { data: dtData } = await supabase
+         The sixth, `mint`, is worse than dead. `wallet_transactions` is the
+         CHIP ledger; a `mint` row there records chips minted into a treasury.
+         Pulling it into the diamond wallet put a chip figure on a diamond
+         statement, labelled "Chip Mint", where it read as a diamond balance
+         change of that size. Diamonds are counted in ones and chips in tens of
+         thousands, so a single mint row could show a player a five-figure
+         movement in a wallet that never moved.
+
+         Diamonds live in `diamond_transactions`. One source, one currency. */
+      const { data: dtData, error: dtError } = await supabase
         .from('diamond_transactions')
-        .select('id, transaction_type, amount, description, balance_after, created_at')
+        /* `type` is selected as well as `transaction_type`, and that is the
+           whole fix for 773 of the ~1,540 rows in this table. `transaction_type`
+           is NULL on 774 of them — 557 `reconciliation` rows and 216
+           `signup_bonus` rows carry their kind in the older `type` column
+           instead — and this component read only `transaction_type`. So a
+           player's Welcome Bonus, the first diamond movement on every account
+           ever created, rendered in their own wallet as a grey "Adjustment". */
+        .select('id, type, transaction_type, amount, description, balance_after, created_at')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(TX_LIMIT);
 
-      // Combine both sources
-      const combined: DiamondTransaction[] = [
-        ...(txData || []).map((t: any) => ({
-          id: t.id,
-          type: t.type,
-          transaction_type: t.category,
-          amount: t.amount,
-          description: t.description,
-          balance_after: t.balance_after,
-          created_at: t.created_at,
-        })),
-        ...(dtData || []).map((t: any) => ({
-          id: t.id,
-          type: t.transaction_type,
-          transaction_type: t.transaction_type,
-          amount: t.amount,
-          description: t.description,
-          balance_after: t.balance_after,
-          created_at: t.created_at,
-        })),
-      ]
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-        .slice(0, 50);
+      /* supabase-js RESOLVES with `{ data: null, error }`; it does not throw.
+         Both reads here discarded `error` entirely, so an RLS denial or a
+         dropped connection produced an empty array and this modal told the
+         player "No Transactions Yet" — a statement about their money that was
+         not true, with no error, no retry and nothing in Sentry. */
+      if (dtError) throw dtError;
+
+      const combined: DiamondTransaction[] = (dtData || []).map((t: any) => ({
+        id: t.id,
+        type: t.transaction_type || t.type || '',
+        transaction_type: t.transaction_type || t.type || '',
+        amount: Number(t.amount) || 0,
+        description: t.description,
+        balance_after: t.balance_after,
+        created_at: t.created_at,
+      }));
 
       if (isMounted.current) setTransactions(combined);
     } catch (err) {
       reportError(err, 'DiamondWalletModal.Fetch_error');
+      if (isMounted.current) setLoadError(true);
     } finally {
       if (isMounted.current) setLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, isMounted]);
 
   useEffect(() => {
     if (isOpen) fetchTransactions();
   }, [isOpen, fetchTransactions]);
+
+  /* Escape closes and the page behind stops scrolling. This is a FULL-SCREEN
+     sheet with a fixed backdrop and it had neither: on a phone the wallet page
+     underneath scrolled with the modal's own gestures, and there was no
+     keyboard way out of it at all — the only exit was hitting the small close
+     glyph. Same manners as PlayerWalletModal, for the same reasons. */
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isOpen, onClose]);
 
   // Refresh when diamond balance changes from another component
   useMasterBusSubscription('DIAMOND_BALANCE_CHANGED', () => {
     if (isMounted.current && isOpen) fetchTransactions();
   });
 
-  // Client-side filter
+  // Client-side filter over the fetched page.
   const filteredTx = transactions.filter((tx) => {
-    const txType = tx.transaction_type || tx.type;
+    const txType = tx.transaction_type || tx.type || '';
     if (filter === 'all') return true;
-    if (filter === 'earned') return EARNED_TYPES.includes(txType);
-    if (filter === 'spent')
-      return tx.amount < 0 && !['refund', 'tournament_refund', 'pvp_refund'].includes(txType);
+    if (filter === 'refund') return isRefund(txType);
+    if (filter === 'earned') return tx.amount > 0 && !isRefund(txType);
+    if (filter === 'spent') return tx.amount < 0;
     return txType === filter;
   });
 
@@ -279,15 +401,32 @@ export default function DiamondWalletModal({
         <div className="diamond-wallet-modal__list">
           {loading ? (
             <div className="diamond-wallet-modal__status">Loading Transactions...</div>
+          ) : loadError ? (
+            /* "No Transactions Yet" is a claim about the player's money. It
+               must never be shown for a read that failed — see the error note
+               in fetchTransactions. */
+            <div className="diamond-wallet-modal__status">
+              <div style={{ fontSize: 32, marginBottom: 8 }} aria-hidden="true">
+                {'⚠'}
+              </div>
+              Could Not Load Your Diamond History
+              <button className="diamond-wallet-modal__retry" onClick={() => fetchTransactions()}>
+                Retry
+              </button>
+            </div>
           ) : filteredTx.length === 0 ? (
             <div className="diamond-wallet-modal__status">
-              <div style={{ fontSize: 32, marginBottom: 8 }}>◆</div>
-              No Transactions Yet
+              <div style={{ fontSize: 32, marginBottom: 8 }} aria-hidden="true">
+                ◆
+              </div>
+              {filter === 'all' ? 'No Transactions Yet' : 'No Transactions Of This Kind'}
             </div>
           ) : (
             filteredTx.map((tx) => {
-              const txType = tx.transaction_type || tx.type;
-              const config = TX_TYPES[txType] || TX_TYPES.adjustment;
+              const txType = tx.transaction_type || tx.type || '';
+              const config = TX_TYPES[txType];
+              const color = config?.color || '#94a3b8';
+              const label = diamondTxLabel(txType);
               const isPositive = tx.amount >= 0;
               const dt = new Date(tx.created_at);
 
@@ -295,14 +434,15 @@ export default function DiamondWalletModal({
                 <div key={tx.id} className="diamond-wallet-modal__tx">
                   <div
                     className="diamond-wallet-modal__tx-icon"
-                    style={{ backgroundColor: `${config.color}15` }}
+                    style={{ backgroundColor: `${color}15`, color }}
+                    aria-hidden="true"
                   >
-                    {config.icon}
+                    {iconGlyph(config?.icon || 'gem')}
                   </div>
                   <div className="diamond-wallet-modal__tx-body">
-                    <div className="diamond-wallet-modal__tx-label">{config.label}</div>
+                    <div className="diamond-wallet-modal__tx-label">{label}</div>
                     <div className="diamond-wallet-modal__tx-desc">
-                      {tx.description || config.label}
+                      {formatPopupText(tx.description || label)}
                     </div>
                   </div>
                   <div className="diamond-wallet-modal__tx-amount-col">

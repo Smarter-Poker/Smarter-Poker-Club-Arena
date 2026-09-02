@@ -33,7 +33,7 @@ import { Page, expect, test } from '@playwright/test';
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /** The catch-all route's copy (App.tsx `path="*"`). */
-const CATCH_ALL_404 = "This page doesn't exist";
+const CATCH_ALL_404 = 'This Arena Door Is Closed';
 
 /** RouteErrorBoundary / PageErrorBoundary fallbacks. */
 const ERROR_BOUNDARY = /This page ran into an issue|Something went wrong/;
@@ -101,9 +101,10 @@ export async function assertRendered(
     .toBeGreaterThan(0);
 
   const body = await page.locator('body').innerText();
-  expect(body, `${path} fell through to the catch-all 404 — the route does not exist`).not.toContain(
-    CATCH_ALL_404
-  );
+  expect(
+    body,
+    `${path} fell through to the catch-all 404 — the route does not exist`
+  ).not.toContain(CATCH_ALL_404);
   expect(body, `${path} rendered an error boundary`).not.toMatch(ERROR_BOUNDARY);
 
   if (opts.expectText) {
@@ -113,4 +114,21 @@ export async function assertRendered(
     ).toBeVisible({ timeout: 15000 });
   }
   return true;
+}
+
+/**
+ * Messages deliberately leaves the Club Arena SPA for the shared World Hub
+ * messenger. Treating that successful native handoff as a missing `#root`
+ * made both message-route checks fail on the page they were meant to reach.
+ */
+export async function expectMessengerHandoff(page: Page): Promise<void> {
+  await page.goto('messages');
+  await page.waitForLoadState('domcontentloaded');
+  if (page.url().includes('/auth')) {
+    test.skip();
+    return;
+  }
+  await expect(page).toHaveURL(/\/hub\/(?:social-media\/)?messenger(?:[/?#]|$)/, {
+    timeout: 15000,
+  });
 }

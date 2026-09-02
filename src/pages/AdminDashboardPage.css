@@ -9,6 +9,15 @@
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   padding: 16px;
+  width: 100%;
+  max-width: 100vw;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
+  padding-bottom: max(70px, env(safe-area-inset-bottom));
   color: var(--text-primary, #e4e6eb);
 }
 
@@ -65,11 +74,6 @@
   transition: all 0.2s ease;
 }
 
-.admin-tab:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-primary, #e4e6eb);
-}
-
 .admin-tab.active {
   background: rgba(69, 153, 255, 0.15);
   color: #4599ff;
@@ -96,6 +100,16 @@
   background: rgba(255, 255, 255, 0.03);
   padding: 24px;
   border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* A thin status strip, for a standing fact plus its action - quieter and far
+   tighter than .admin-card, whose 24px padding is meant for a whole section.
+   Used by the house-ads retention row. */
+.admin-panel-soft {
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px 12px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -232,12 +246,6 @@
   background: linear-gradient(135deg, #4599ff, #2374e1);
   color: #fff;
 }
-
-.admin-btn-primary:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(69, 153, 255, 0.3);
-}
-
 .admin-btn-success {
   background: #31a24c;
   color: #fff;
@@ -254,11 +262,6 @@
   color: var(--text-secondary, #b0b3b8);
 }
 
-.admin-btn-ghost:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-primary, #e4e6eb);
-}
-
 .admin-btn-sm {
   padding: 4px 12px;
   font-size: 12px;
@@ -272,11 +275,6 @@
   padding: 4px;
   transition: transform 0.15s ease;
 }
-
-.admin-icon-btn:hover {
-  transform: scale(1.15);
-}
-
 /* ── Inputs ── */
 .admin-input {
   width: 100%;
@@ -344,10 +342,6 @@
 .admin-data-table td {
   padding: 10px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-}
-
-.admin-data-table tr:hover td {
-  background: rgba(255, 255, 255, 0.02);
 }
 
 /* ── Badges ── */
@@ -493,12 +487,42 @@
 
 /* ── Mobile ── */
 @media (max-width: 768px) {
+  .admin-page {
+    padding: 12px;
+    padding-bottom: max(70px, env(safe-area-inset-bottom));
+  }
+
+  .admin-page-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .admin-header-actions {
+    flex-wrap: wrap;
+  }
+
+  .admin-page-title {
+    font-size: 18px;
+  }
+
+  .admin-card {
+    padding: 16px;
+  }
+
+  .admin-tab,
+  .admin-btn {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
   .admin-dashboard-grid {
     flex-direction: column;
+    gap: 12px;
   }
 
   .admin-stats-grid {
     grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
   }
 
   .admin-period-row {

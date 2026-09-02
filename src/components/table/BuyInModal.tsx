@@ -80,6 +80,15 @@ export function BuyInModal({
   const [displayAmount, setDisplayAmount] = useState(effectiveDefault);
   const [isConfirmPulsing, setIsConfirmPulsing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  // 60-second kicker visual countdown
+  const [timeLeft, setTimeLeft] = useState(60);
+
+  // The backend caps the rathole floor at max_buy_in. If we don't mirror that cap,
+  // the user's cashoutRestriction might exceed maxBuyIn, breaking the HTML slider logic entirely.
+  const cappedCashoutRestriction = cashoutRestriction ? Math.min(cashoutRestriction, maxBuyIn) : 0;
+  const effectiveMinBuyIn =
+    cappedCashoutRestriction > minBuyIn ? cappedCashoutRestriction : minBuyIn;
   const animationFrameRef = useRef<number>(0);
   const countStartRef = useRef<number>(0);
 
@@ -103,14 +112,14 @@ export function BuyInModal({
 
   // Clamp buy-in to valid range
   const clampedBuyIn = useMemo(() => {
-    return Math.max(minBuyIn, Math.min(maxBuyIn, buyInAmount));
-  }, [buyInAmount, minBuyIn, maxBuyIn]);
+    return Math.max(effectiveMinBuyIn, Math.min(maxBuyIn, buyInAmount));
+  }, [buyInAmount, effectiveMinBuyIn, maxBuyIn]);
 
   // Calculate slider percentage
   const sliderPercent = useMemo(() => {
-    const range = maxBuyIn - minBuyIn;
-    return range > 0 ? ((clampedBuyIn - minBuyIn) / range) * 100 : 0;
-  }, [clampedBuyIn, minBuyIn, maxBuyIn]);
+    const range = maxBuyIn - effectiveMinBuyIn;
+    return range > 0 ? ((clampedBuyIn - effectiveMinBuyIn) / range) * 100 : 0;
+  }, [clampedBuyIn, effectiveMinBuyIn, maxBuyIn]);
 
   // Check if user has enough balance
   const hasEnoughBalance = accountBalance >= clampedBuyIn;
@@ -157,6 +166,25 @@ export function BuyInModal({
   }, [hasEnoughBalance]);
 
   /**
+   * ESCAPE CLOSES THE SHEET (2026-08-28). Before this, the ONLY way out was
+   * clicking the backdrop — unreachable by keyboard, and easy to miss on a
+   * phone where the sheet fills the screen. Attached only while open so it
+   * cannot swallow Escape for whatever is behind it, and it does not fire
+   * mid-buy-in: a confirm already in flight must not be abandoned halfway.
+   */
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (isProcessing) return;
+      e.stopPropagation();
+      onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, isProcessing, onClose]);
+
+  /**
    * 2026-08-20: the MAX BUY-IN was not reachable by dragging.
    *
    * `<input type="range">` only emits values on the grid `min + n*step`, and
@@ -173,10 +201,10 @@ export function BuyInModal({
    */
   const sliderGridMax = useMemo(() => {
     const step = bigBlind || 1;
-    if (!(maxBuyIn > minBuyIn)) return maxBuyIn;
-    const steps = Math.floor((maxBuyIn - minBuyIn) / step);
-    return Math.round((minBuyIn + steps * step) * 100) / 100;
-  }, [minBuyIn, maxBuyIn, bigBlind]);
+    if (!(maxBuyIn > effectiveMinBuyIn)) return maxBuyIn;
+    const steps = Math.floor((maxBuyIn - effectiveMinBuyIn) / step);
+    return Math.round((effectiveMinBuyIn + steps * step) * 100) / 100;
+  }, [effectiveMinBuyIn, maxBuyIn, bigBlind]);
 
   const handleSliderChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -184,15 +212,6 @@ export function BuyInModal({
       setBuyInAmount(raw >= sliderGridMax ? maxBuyIn : raw);
     },
     [sliderGridMax, maxBuyIn]
-  );
-
-  // Handle quick amount buttons
-  const handleQuickAmount = useCallback(
-    (multiplier: number) => {
-      const amount = Math.min(minBuyIn * multiplier, maxBuyIn);
-      setBuyInAmount(amount);
-    },
-    [minBuyIn, maxBuyIn]
   );
 
   // Handle confirm
@@ -212,21 +231,38 @@ export function BuyInModal({
   if (!isOpen) return null;
 
   return (
-    <div className="buy-in-modal__overlay" onClick={onClose}>
-      <div className="buy-in-modal" onClick={(e) => e.stopPropagation()}>
+    /**
+     * ACCESSIBILITY 2026-08-28. This is the modal every player passes through
+     * to sit down, and it had no dialog semantics at all: no role, no
+     * aria-modal, no accessible name, and no Escape handler — the backdrop
+     * click was the only way out, which is not reachable by keyboard. The
+     * overlay is marked aria-hidden because it is a redundant affordance for
+     * the same action Escape now performs (the pattern TableMenu already
+     * uses).
+     */
+    <div className="buy-in-modal__overlay" onClick={onClose} aria-hidden="true">
+      <div
+        className="buy-in-modal"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="buy-in-modal-title"
+      >
         {/* Header */}
         <div className="buy-in-modal__header">
           {countdown !== undefined && (
             <span className="buy-in-modal__countdown">{countdown}s (Close)</span>
           )}
-          <h2 className="buy-in-modal__title">BUY-IN</h2>
-          <button className="buy-in-modal__close" onClick={onClose}>
-            ×
+          <h2 className="buy-in-modal__title" id="buy-in-modal-title">
+            BUY-IN
+          </h2>
+          <button className="buy-in-modal__close" onClick={onClose} aria-label="Close Buy-In">
+            <span aria-hidden="true">×</span>
           </button>
         </div>
 
         {/* FIX 136: 2-hour re-entry restriction notice */}
-        {cashoutRestriction && cashoutRestriction > 0 && (
+        {cappedCashoutRestriction > 0 && cappedCashoutRestriction > minBuyIn && (
           <div
             className="buy-in-modal__restriction-notice"
             style={{
@@ -240,14 +276,16 @@ export function BuyInModal({
               textAlign: 'center',
             }}
           >
-            You Cashed Out {formatAmount(cashoutRestriction)} From This Table. Min Buy-In Is{' '}
-            {formatAmount(cashoutRestriction)} For 2 Hours.
+            You Cashed Out From This Table. Min Buy-In Is {formatAmount(cappedCashoutRestriction)}{' '}
+            For 2 Hours.
           </div>
         )}
 
         {/* Amount Display */}
         <div className="buy-in-modal__amount-display">
-          <span className="buy-in-modal__min-label">{formatAmount(minBuyIn, currency)}</span>
+          <span className="buy-in-modal__min-label">
+            {formatAmount(effectiveMinBuyIn, currency)}
+          </span>
           <div className="buy-in-modal__current-amount">
             <span className="buy-in-modal__amount-value">
               {displayAmount.toLocaleString('en-US', {
@@ -255,7 +293,6 @@ export function BuyInModal({
                 maximumFractionDigits: 2,
               })}
             </span>
-            <span className="buy-in-modal__chip-icon">◉</span>
           </div>
           <span className="buy-in-modal__max-label">{formatAmount(maxBuyIn, currency)}</span>
         </div>
@@ -265,7 +302,7 @@ export function BuyInModal({
           <input
             type="range"
             className="buy-in-modal__slider"
-            min={minBuyIn}
+            min={effectiveMinBuyIn}
             max={maxBuyIn}
             value={clampedBuyIn}
             onChange={handleSliderChange}
@@ -282,17 +319,48 @@ export function BuyInModal({
           </div>
         </div>
 
-        {/* Quick Amounts — FIX 192: labels computed dynamically from actual BB count */}
+        {/* Quick Amounts dynamically scale the interval between min and max */}
         <div className="buy-in-modal__quick-amounts">
-          <button className="buy-in-modal__quick-btn" onClick={() => handleQuickAmount(1)}>
-            {Math.round(minBuyIn / bigBlind)}BB
+          <button
+            className="buy-in-modal__quick-btn"
+            onClick={() => setBuyInAmount(effectiveMinBuyIn)}
+          >
+            {Math.round(effectiveMinBuyIn / bigBlind)}BB
           </button>
-          <button className="buy-in-modal__quick-btn" onClick={() => handleQuickAmount(2)}>
-            {Math.round((minBuyIn * 2) / bigBlind)}BB
-          </button>
-          <button className="buy-in-modal__quick-btn" onClick={() => handleQuickAmount(5)}>
-            {Math.round(Math.min(minBuyIn * 5, maxBuyIn) / bigBlind)}BB
-          </button>
+          {maxBuyIn > effectiveMinBuyIn && (
+            <>
+              {Math.round(
+                (effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.33) / bigBlind
+              ) !== Math.round(effectiveMinBuyIn / bigBlind) && (
+                <button
+                  className="buy-in-modal__quick-btn"
+                  onClick={() =>
+                    setBuyInAmount(effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.33)
+                  }
+                >
+                  {Math.round(
+                    (effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.33) / bigBlind
+                  )}
+                  BB
+                </button>
+              )}
+              {Math.round(
+                (effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.66) / bigBlind
+              ) !== Math.round(maxBuyIn / bigBlind) && (
+                <button
+                  className="buy-in-modal__quick-btn"
+                  onClick={() =>
+                    setBuyInAmount(effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.66)
+                  }
+                >
+                  {Math.round(
+                    (effectiveMinBuyIn + (maxBuyIn - effectiveMinBuyIn) * 0.66) / bigBlind
+                  )}
+                  BB
+                </button>
+              )}
+            </>
+          )}
           <button
             className="buy-in-modal__quick-btn buy-in-modal__quick-btn--max"
             onClick={() => setBuyInAmount(maxBuyIn)}

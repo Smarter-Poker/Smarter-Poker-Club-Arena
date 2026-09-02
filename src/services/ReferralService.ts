@@ -55,12 +55,19 @@ class ReferralService {
   async getOrCreateCode(userId: string): Promise<ReferralCode | null> {
     try {
       // Check for existing code
-      const { data: existing } = await supabase
+      const { data: existing, error: existingErr } = await supabase
         .from('referral_codes')
         .select('id, code, uses, max_uses')
         .eq('user_id', userId)
         .limit(1)
         .maybeSingle();
+
+      /* A FAILED LOOKUP IS NOT "NO CODE YET" (2026-08-29). Only `data` was
+         destructured; a Supabase builder resolves with {data: null, error}. A
+         failed read therefore minted a SECOND referral code for a player who
+         already had one -- and a player whose code changes has just lost every
+         link they have already shared. */
+      if (existingErr) throw existingErr;
 
       if (existing) {
         return {
@@ -196,7 +203,10 @@ class ReferralService {
 
           // Server says claimed (now) or already claimed (before) — either way,
           // stop re-asking from this browser.
-          if (typeof window !== 'undefined' && (data?.success || data?.error === 'milestone already claimed')) {
+          if (
+            typeof window !== 'undefined' &&
+            (data?.success || data?.error === 'milestone already claimed')
+          ) {
             localStorage.setItem(storageKey, 'true');
           }
 

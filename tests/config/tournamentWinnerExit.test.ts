@@ -44,6 +44,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceEnclosingBlock, sliceStatement } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
@@ -104,7 +105,7 @@ describe("The champion's exit", () => {
   it('carries the winner identity and the prize', () => {
     const body = finishTournamentBody();
     const at = body.indexOf("this.broadcast('tournament_winner'");
-    const payload = body.slice(at, at + 400);
+    const payload = sliceEnclosingBlock(body, "this.broadcast('tournament_winner'");
     // TablePage matches on userId to decide whether this result is the local
     // player's; without it every seat at the table takes the champion's card.
     expect(payload).toMatch(/userId:\s*winnerId/);
@@ -123,7 +124,7 @@ describe("The champion's exit", () => {
   it('TablePage handles tournament_winner and routes it to the lobby exit', () => {
     expect(tablePage).toMatch(/data\?\.type === 'tournament_winner'/);
     const at = tablePage.indexOf("data?.type === 'tournament_winner'");
-    const branch = tablePage.slice(at, at + 900);
+    const branch = sliceEnclosingBlock(tablePage, "data?.type === 'tournament_winner'");
     // Only the local player leaves. Everyone else at the table is a spectator
     // of someone else's result.
     expect(branch).toMatch(/winData\.userId === userId/);
@@ -150,7 +151,7 @@ describe("The champion's exit", () => {
     // publishes and two navigations. The guard lives at the subscription's
     // lifetime because a player finishes a tournament exactly once.
     const at = tablePage.indexOf('const goToLobbyWithResult =');
-    const fn = tablePage.slice(at, at + 300);
+    const fn = sliceStatement(tablePage, 'const goToLobbyWithResult =');
     expect(fn).toMatch(/if \(exitStarted\) return;/);
     expect(fn).toMatch(/exitStarted = true;/);
   });
@@ -166,8 +167,25 @@ describe("The champion's exit", () => {
     // If this ever stops being true, the two paths can both fire and the
     // champion gets the card twice (or the elimination toast). The guard above
     // catches the double exit; this catches the cause.
-    expect(engine).toMatch(/basePosition = Math\.max\(playingCount, bustedOrdered\.length \+ 1\)/);
-    expect(engine).toMatch(/eliminatePlayer\(ordered\[i\]\.user_id, ordered\.length \+ 1 - i\)/);
+    // 2026-08-27: both assignment sites were rewritten to walk the FREE place
+    // set instead of trusting arithmetic over a live (non-monotonic) count —
+    // the old `basePosition = Math.max(playingCount, ...)` and
+    // `ordered.length + 1 - i` expressions this used to pin re-stamped places
+    // that had already been PAID (206 duplicates across 138 tournaments).
+    // The invariant this test actually cares about is unchanged and is now
+    // enforced structurally: neither loop can ever hand out place 1.
+    // 2026-08-28: the bust sweep's down-walk was renamed `nextPosition` ->
+    // `place` when the seed moved off the live playing count and the
+    // exhaustion `break` was replaced by an up-walk (Union PKO Afternoon
+    // 4f42d847 deadlocked heads-up because that break left a 0-chip player
+    // `status='playing'` forever, so finishTournament was unreachable). The
+    // invariant is unchanged and still structural: the down-walk stops at 2,
+    // and the up-walk starts ABOVE the seed, so neither can reach place 1.
+    expect(engine).toMatch(/while \(place >= 2 && takenPositions\.has\(place\)\) place--;/);
+    expect(engine).toMatch(/let up = nextPosition \+ 1;/);
+    expect(engine).not.toMatch(/eliminatePlayer\([^)]*,\s*1\s*\)/);
+    expect(engine).toMatch(/while \(finishNext >= 2 && finishTakenPositions\.has\(finishNext\)\)/);
+    expect(engine).toMatch(/no_free_finishing_place/);
   });
 });
 
@@ -264,10 +282,26 @@ describe('One card, one carrier', () => {
     // It said SPIN unconditionally, so a 128-runner MTT finished under a Spin
     // badge. Resolved from the tournament row, never from the event name.
     const card = tsCode(read('src/components/tournament/TournamentRankingCard.tsx'));
-    expect(card).toMatch(/result\.isSpin \? 'SPIN' : 'TOURNAMENT'/);
+    /**
+     * Dan 2026-08-23: "remove the 'spin' after SmarterPoker". The badge used
+     * to read `result.isSpin ? 'SPIN' : 'TOURNAMENT'`; on a Spin it repeated
+     * what the event line directly beneath it already said. A Spin now carries
+     * NO badge, and only a real tournament is badged — a stricter version of
+     * what this test has always guarded: the card must never label a game as
+     * something it is not.
+     */
+    expect(card).not.toMatch(/'SPIN'/);
+    expect(card).toMatch(/!result\.isSpin && <span className="trc2__brand-mark">TOURNAMENT/);
     expect(tablePage).toMatch(/isSpin: isSpinTournament\(/);
     // isSpinTournament reads both columns; both must be selected or it is
     // always false.
-    expect(tablePage).toMatch(/select\('name, current_players, variant, tournament_type'\)/);
+    //
+    // 2026-08-25: the same select now also carries `is_mystery_bounty`, which
+    // gates the mystery bounty read that fills the card's chest figures
+    // (Dan section 43). What this test guards is unchanged and is asserted on
+    // the two columns by name rather than on the whole literal, so the next
+    // column added here does not fail a spec about Spin branding.
+    expect(tablePage).toMatch(/select\('name, current_players, variant, tournament_type/);
+    expect(tablePage).toMatch(/select\('name, current_players, variant, tournament_type[^']*'\)/);
   });
 });

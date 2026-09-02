@@ -51,6 +51,14 @@ export interface UnbankedFee {
   pot: number;
   numPlayers: number;
   contributions: Record<string, number>;
+  /** Per-player uncalled amounts returned (weighted contributed rake audit). */
+  returnedUncalled?: Record<string, number> | null;
+  /**
+   * Methodology the hand was settled under ('WEIGHTED_CONTRIBUTED' for the
+   * post-2026-08-29 engine). Threaded through the queue so a re-driven hand
+   * keeps the attribution it was played with.
+   */
+  rakeMethod?: string | null;
   tournamentId?: string | null;
   bigBlind?: number | null;
   lastError: string;
@@ -67,6 +75,8 @@ interface PendingFeeRow {
   pot: number;
   num_players: number;
   contributions: Record<string, number> | null;
+  returned_uncalled: Record<string, number> | null;
+  rake_method: string | null;
   tournament_id: string | null;
   big_blind: number | null;
   kind: PendingFeeKind;
@@ -94,8 +104,17 @@ const QUEUE_INSERT_ATTEMPTS = 4;
  * failed, and buys the reload time to finish.
  */
 const QUEUE_BACKOFF_MS = (attempt: number): number => 100 * 3 ** attempt;
-/** Bound the work a single cycle does so a large backlog cannot stall the loop. */
-const RECONCILE_BATCH = 100;
+/**
+ * Bound the work a single cycle does so a large backlog cannot stall the loop.
+ *
+ * Raised 100 -> 250 after the 2026-08-29 FK outage: 1,860 queued hands at 100
+ * per cycle meant hours of natural drain for a backlog the database could
+ * clear in minutes. 250 keeps a cycle comfortably under a minute of
+ * sequential RPCs while cutting worst-case drain time by 2.5x. For anything
+ * bigger, the DB-side sweep exists: fn_redrive_unbanked_rake (service_role),
+ * which re-drives idempotently without the per-row HTTP round trip.
+ */
+const RECONCILE_BATCH = 250;
 
 /**
  * Durably record a fee that left the pot but could not be banked.
@@ -124,6 +143,8 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
         pot: fee.pot,
         num_players: fee.numPlayers,
         contributions: fee.contributions,
+        returned_uncalled: fee.returnedUncalled ?? null,
+        rake_method: fee.rakeMethod ?? null,
         tournament_id: fee.tournamentId ?? null,
         big_blind: fee.bigBlind ?? null,
         kind,
@@ -154,7 +175,7 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
     if (await feeIsAccountedFor(kind, fee)) {
       console.warn(
         `[A5] Queue insert for ${kind} on hand ${fee.handId ?? fee.handNumber} reported ` +
-          `"${lastError}", but the fee is already queued or banked — no chips at risk, ` +
+          `"${lastError}", but the fee is already queued or banked - no chips at risk, ` +
           `not alarming.`
       );
       return;
@@ -192,6 +213,8 @@ export async function queueUnbankedFee(kind: PendingFeeKind, fee: UnbankedFee): 
       pot: fee.pot,
       numPlayers: fee.numPlayers,
       contributions: fee.contributions ?? {},
+      returnedUncalled: fee.returnedUncalled ?? null,
+      rakeMethod: fee.rakeMethod ?? null,
       tournamentId: fee.tournamentId ?? null,
       bigBlind: fee.bigBlind ?? null,
       dbError: lastError,
@@ -293,7 +316,7 @@ export async function reconcilePendingFees(): Promise<{
   const { data, error } = await supabase
     .from('pending_fee_distributions')
     .select(
-      'id, table_id, club_id, hand_id, hand_number, rake, bbj, pot, num_players, contributions, tournament_id, big_blind, kind, attempts'
+      'id, table_id, club_id, hand_id, hand_number, rake, bbj, pot, num_players, contributions, returned_uncalled, rake_method, tournament_id, big_blind, kind, attempts'
     )
     .is('resolved_at', null)
     .lt('attempts', MAX_RECONCILE_ATTEMPTS)
@@ -352,6 +375,11 @@ export async function reconcilePendingFees(): Promise<{
           p_num_players: row.num_players,
           p_contributions: row.contributions ?? {},
           p_tournament_id: row.tournament_id,
+          // Weighted contributed rake (Dan 2026-08-29): a re-driven hand keeps
+          // the methodology it was settled under. Legacy queue rows (null)
+          // stay DEALT_EQUAL, which is what they were played as.
+          p_returned_uncalled: row.returned_uncalled ?? null,
+          p_rake_method: row.rake_method ?? 'DEALT_EQUAL',
         });
         ok = !rdErr;
         failureMessage = rdErr?.message ?? '';
@@ -478,7 +506,7 @@ export async function repairUnbankedBBJFees(
       reportError(
         new Error(
           `[BBJ self-heal] Recovered ${rows.length} unbanked BBJ contribution(s) totalling ` +
-            `${chips.toFixed(2)} chips — these fees were withheld from pots but never reached a ` +
+            `${chips.toFixed(2)} chips - these fees were withheld from pots but never reached a ` +
             `pool (no pending_fee_distributions row, i.e. the engine did not survive to enqueue). ` +
             `Hands: ${rows.map((r) => r.hand_id).join(', ')}`
         ),
@@ -562,6 +590,329 @@ export async function auditBBJDrift(
     return { booked, received, drift, unlinkableRows, unlinkableChips };
   } catch (err) {
     reportError(err, 'FeeReconciler.drift_threw');
+    return null;
+  }
+}
+
+/**
+ * WEIGHTED CONTRIBUTED RAKE reconciliation watchdog (Dan 2026-08-29).
+ *
+ * Invariants 4 and 9 of the weighted-rake law: for every cash hand settled
+ * under WEIGHTED_CONTRIBUTED, the per-player ledger (rake_attributions) must
+ * sum back EXACTLY to the rake collected (rake_records.rake_amount). The
+ * allocator guarantees this by construction, so ANY row here means either the
+ * ledger write was lost (missing attribution rows) or the two ledgers were
+ * written by disagreeing code. Read-only: it reports, it never "fixes"
+ * financial discrepancies silently.
+ */
+export async function auditRakeAttributionDrift(
+  windowHours = 24
+): Promise<{ mismatchedHands: number; chips: number } | null> {
+  try {
+    const { data, error } = await supabase.rpc('fn_rake_attribution_drift', {
+      p_hours: windowHours,
+    });
+    if (error) {
+      reportError(error, 'FeeReconciler.rake_attribution_drift_query_failed');
+      return null;
+    }
+    const rows = (data ?? []) as Array<{
+      hand_id: string;
+      rake_amount: number;
+      allocated: number;
+      difference: number;
+    }>;
+    if (rows.length === 0) return { mismatchedHands: 0, chips: 0 };
+
+    const chips = Math.round(rows.reduce((s, r) => s + Number(r.difference || 0), 0) * 100) / 100;
+    const detail =
+      `[A5] RAKE_ALLOCATION_MISMATCH: ${rows.length} weighted-contributed hand(s) in the last ` +
+      `${windowHours}h whose per-player rake_attributions do not sum to the rake collected ` +
+      `(net difference ${chips} chips). First hands: ` +
+      rows
+        .slice(0, 10)
+        .map((r) => `${r.hand_id} (rake ${r.rake_amount}, allocated ${r.allocated})`)
+        .join(', ');
+    reportError(new Error(detail), 'FeeReconciler.rake_attribution_drift');
+    await raiseFinancialAlert('critical', 'FeeReconciler.rake_attribution_drift', detail, {
+      windowHours,
+      mismatchedHands: rows.length,
+      netDifferenceChips: chips,
+      hands: rows.slice(0, 50),
+    });
+    return { mismatchedHands: rows.length, chips };
+  } catch (err) {
+    reportError(err, 'FeeReconciler.rake_attribution_drift_threw');
+    return null;
+  }
+}
+
+/**
+ * SATELLITE CONSERVATION watchdog (2026-08-30 satellite audit, phase 3).
+ *
+ * Two failure shapes shipped silently in one week and this makes both loud:
+ *
+ *   1. UNPAID WINNERS — a finisher inside the awardable count who received
+ *      neither a funded seat (rake_records / fn_award_satellite_seat) nor
+ *      prize cash. Four players won satellites and got nothing.
+ *   2. DISBURSED BEYOND THE PROMISE — cash + funded seats worth more than
+ *      max(pool, awardable_seats x ticket). The guarantee overlay is the
+ *      advertised promise and is allowed; the pre-#1935 face-value cash bug
+ *      (4,132.50 chips, now an acknowledged baseline) was not.
+ *
+ * The arithmetic lives in fn_satellite_conservation_audit so the check reads
+ * the same ledgers the money moved through. Read-only: it reports, it never
+ * repairs.
+ *
+ * CORRECTED 2026-08-31 (migration prize_disbursement_audit_and_three_false_alarms).
+ * Shape 1 as originally written produced a FALSE critical every hour on
+ * ccb686f8: pool 216, ticket 200, target already closed, so the whole 216
+ * went out as cash to the finisher and the money conserved exactly — but the
+ * check computed awardable = GREATEST(configured 2, floor(216/200)=1) = 2 and
+ * then demanded that position 2 be paid as well. A satellite whose pool funds
+ * one seat does not owe a second player anything, and how a cash fallback
+ * splits is the payout structure's business, not a conservation invariant.
+ * Shape 2's allowance, GREATEST(pool, awardable x ticket), was too generous
+ * the same way: it would have let that satellite pay 400 against a 216 pool
+ * in silence. The SQL now states conservation symmetrically —
+ *   disbursed = cash + seats x ticket, allowance = pool + acknowledged,
+ *   excess (minted) or undisbursed (kept back) — and needs no seat count.
+ */
+/**
+ * A GUARANTEE IS A PROMISE, AND NOTHING WAS CHECKING IT (2026-08-31, phase 6).
+ *
+ * Every guarantee check in this estate is a PRE-START affordability check, or
+ * it excludes the events that actually fail. Enumerated against production:
+ * trg_tournaments_guarantee_affordable is scoped to ANNOUNCED/REGISTERING/
+ * RUNNING; fn_overlay_at_risk and fn_audit_overlays both require
+ * `buy_in_amount > 0`, which excludes every freeroll; fn_tournament_metrics
+ * (the phase 2 unpaid detector) filters `prize_pool > 0`, which is the exact
+ * column this defect zeroes.
+ *
+ * So a freeroll - whose pool is 0 by construction and whose guarantee is
+ * therefore the only money it will ever have - was invisible to all of them.
+ * Nine of them ranked a full field, up to 326 players, stamped a winner, and
+ * paid zero chips to anybody, with no alert from any source.
+ *
+ * This asks the question nothing asked: did a COMPLETED guaranteed event
+ * actually PAY its guarantee? It reads tournament_payouts, not prize_pool,
+ * for the reason phase 3 built the record - a settled question is answered
+ * from evidence, not from a column an outage can overwrite.
+ *
+ * It detects and never repairs. The engine now funds the guarantee on the
+ * finish path; the historical backlog is an owner's decision, not a sweep's.
+ */
+export async function auditGuaranteesKept(
+  windowHours = 24
+): Promise<{ shortOfGuarantee: number } | null> {
+  try {
+    const { data, error } = await supabase.rpc('fn_tournament_guarantee_check', {
+      p_hours: windowHours,
+    });
+    if (error) {
+      reportError(error, 'FeeReconciler.guarantee_check_query_failed');
+      return null;
+    }
+    const r = (data ?? {}) as {
+      checked?: number;
+      short_of_guarantee?: number;
+      paid_nothing?: number;
+      chips_short?: number;
+      alerts_raised?: number;
+    };
+    const short = Number(r.short_of_guarantee ?? 0);
+    if (short > 0) {
+      console.warn(
+        `[FeeReconciler] guarantee check: ${short} of ${r.checked ?? 0} completed guaranteed event(s) ` +
+          `paid under their guarantee in the last ${windowHours}h ` +
+          `(${r.paid_nothing ?? 0} paid nothing at all, ${r.chips_short ?? 0} chips short, ` +
+          `${r.alerts_raised ?? 0} new alert(s)).`
+      );
+    }
+    return { shortOfGuarantee: short };
+  } catch (err) {
+    reportError(err, 'FeeReconciler.guarantee_check_failed');
+    return null;
+  }
+}
+
+export async function auditSatelliteConservation(
+  windowHours = 24
+): Promise<{ violations: number } | null> {
+  try {
+    const { data, error } = await supabase.rpc('fn_satellite_conservation_audit', {
+      p_hours: windowHours,
+    });
+    if (error) {
+      reportError(error, 'FeeReconciler.satellite_conservation_query_failed');
+      return null;
+    }
+    const rows = (data ?? []) as Array<{
+      satellite_id: string;
+      satellite_name: string;
+      pool: number;
+      ticket_cost: number;
+      awardable: number;
+      seats_funded: number;
+      cash_paid: number;
+      unpaid_winners: number;
+      excess_disbursed: number;
+    }>;
+    if (rows.length === 0) return { violations: 0 };
+
+    const detail =
+      `SATELLITE_CONSERVATION: ${rows.length} completed satellite(s) in the last ${windowHours}h ` +
+      `broke conservation: ` +
+      rows
+        .slice(0, 10)
+        .map(
+          (r) =>
+            `${r.satellite_id.slice(0, 8)} "${r.satellite_name}" (pool ${r.pool}, seats ${r.seats_funded}/${r.awardable}, ` +
+            `cash ${r.cash_paid}, unpaid winners ${r.unpaid_winners}, excess ${r.excess_disbursed})`
+        )
+        .join('; ');
+    reportError(new Error(detail), 'FeeReconciler.satellite_conservation');
+    await raiseFinancialAlert('critical', 'FeeReconciler.satellite_conservation', detail, {
+      windowHours,
+      violations: rows.length,
+      rows: rows.slice(0, 50),
+    });
+    return { violations: rows.length };
+  } catch (err) {
+    reportError(err, 'FeeReconciler.satellite_conservation_threw');
+    return null;
+  }
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A HAND'S RAKE THAT MISSED THE QUEUE HEALS ITSELF
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * `pendingHands` is an IN-MEMORY queue drained on shutdown. When the process
+ * dies between the inline fee write failing and that drain, nothing on disk
+ * remembers the hand owed a fee — and no existing healer looks for it:
+ * fn_bbj_repair_unbanked heals BBJ *from* rake_records, so a hand with no
+ * rake_records row at all is invisible to it.
+ *
+ * MEASURED 2026-08-31 over 24 hours: 17,911 raked cash hands, 20 of them
+ * (72.30 chips) with no rake_records row and nothing queued, clustered
+ * exactly at engine restarts. The 08:07 cluster shows the split cleanly —
+ * four hands had a bbj_contributions row and no rake_records, three the
+ * reverse. Two halves of one write with a restart between them. 0.11%,
+ * permanent, and growing by about a chip an hour with nothing to stop it.
+ * Phase 2 had re-queued 21 of these BY HAND after the outage; this is that
+ * repair turned into a mechanism.
+ *
+ * The SQL only FILES THE CLAIM — it inserts into pending_fee_distributions
+ * and this reconciler banks it through atomic_distribute_rake, which is
+ * hand-gated and idempotent, so a double sweep cannot double-bank.
+ *
+ * Attribution is honest about what it lost: hand_history.players carries the
+ * dealt-in user ids and their ENDING STACK, never per-street contribution, so
+ * the weighted split is unreconstructable after the fact. The sweep stamps
+ * rake_method='DEALT_EQUAL' — the legacy method the allocator still
+ * implements exactly — rather than inventing weights from stack sizes and
+ * labelling the guess as weighted truth.
+ */
+export async function requeueUnbankedCashRake(
+  sinceHours = 48,
+  minAgeMinutes = 10,
+  limit = 200
+): Promise<{ requeued: number; chips: number } | null> {
+  try {
+    const { data, error } = await supabase.rpc('fn_requeue_unbanked_cash_rake', {
+      p_since_hours: sinceHours,
+      p_min_age_minutes: minAgeMinutes,
+      p_limit: limit,
+    });
+    if (error) {
+      reportError(error, 'FeeReconciler.requeue_unbanked_query_failed');
+      return null;
+    }
+    const rows = (data ?? []) as Array<{ hand_id: string; rake: number; bbj: number }>;
+    if (rows.length === 0) return { requeued: 0, chips: 0 };
+    const chips = rows.reduce((s, r) => s + (Number(r.rake) || 0), 0);
+    console.log(
+      `[FeeReconciler] re-queued ${rows.length} unbanked cash hand(s), ${chips.toFixed(2)} chips ` +
+        `- no rake_records row and nothing queued (restart-orphaned fees)`
+    );
+    return { requeued: rows.length, chips };
+  } catch (err) {
+    reportError(err, 'FeeReconciler.requeue_unbanked_threw');
+    return null;
+  }
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  PRIZE DISBURSEMENT watchdog — read the LEDGER, not the snapshot
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * WHY THIS EXISTS. On 2026-08-30 "Sunday $200 Deep Stack" paid 62,841.60
+ * against a 44,640 prize pool — 18,201.60 of chips that came from nowhere. A
+ * recovery payout paid places 1-9 on the pre-reset 20,880 pool; the outage
+ * reset then re-opened the event, it was replayed, and the reconciler paid
+ * the NEW places 1-9 in full. Eight of the first-run recipients finished
+ * 62nd-109th on the replay and kept money for places they no longer hold.
+ *
+ * EVERY EXISTING CHECK STAYED GREEN, and the reason is the whole point of
+ * this function. TournamentSentinel.payout_conservation compares
+ * SUM(tournament_players.prize) against prize_pool — but the reset OVERWROTE
+ * tournament_players, so that sum read 44,640, exactly the pool. The
+ * double payment existed only in wallet_transactions, which a reset cannot
+ * rewrite. A conservation check that reads a mutable snapshot is measuring
+ * the wrong object; this one reads the ledger.
+ *
+ * ACKNOWLEDGED, NOT FORGIVEN. tournament_conservation_baseline carries the
+ * known historical excesses (including the 18,201.60, recorded with its
+ * cause and with Dan named as the decision owner for any clawback), so this
+ * speaks only for NEW drift. Read-only: it reports, it never repairs.
+ */
+export async function auditPrizeDisbursement(
+  windowHours = 24
+): Promise<{ violations: number; excess: number } | null> {
+  try {
+    const { data, error } = await supabase.rpc('fn_tournament_prize_disbursement_audit', {
+      p_hours: windowHours,
+    });
+    if (error) {
+      reportError(error, 'FeeReconciler.prize_disbursement_query_failed');
+      return null;
+    }
+    const rows = (data ?? []) as Array<{
+      tournament_id: string;
+      name: string;
+      variant: string;
+      prize_pool: number;
+      disbursed: number;
+      acknowledged: number;
+      excess: number;
+    }>;
+    if (rows.length === 0) return { violations: 0, excess: 0 };
+
+    const excess = rows.reduce((s, r) => s + (Number(r.excess) || 0), 0);
+    const detail =
+      `PRIZE_DISBURSEMENT: ${rows.length} completed tournament(s) in the last ${windowHours}h ` +
+      `paid out more than their prize pool (${excess.toFixed(2)} chips beyond pool + acknowledged): ` +
+      rows
+        .slice(0, 10)
+        .map(
+          (r) =>
+            `${r.tournament_id.slice(0, 8)} "${r.name}" (${r.variant}: pool ${r.prize_pool}, ` +
+            `disbursed ${r.disbursed}, excess ${r.excess})`
+        )
+        .join('; ');
+    reportError(new Error(detail), 'FeeReconciler.prize_disbursement');
+    await raiseFinancialAlert('critical', 'FeeReconciler.prize_disbursement', detail, {
+      windowHours,
+      violations: rows.length,
+      excessTotal: Number(excess.toFixed(2)),
+      rows: rows.slice(0, 50),
+    });
+    return { violations: rows.length, excess };
+  } catch (err) {
+    reportError(err, 'FeeReconciler.prize_disbursement_threw');
     return null;
   }
 }

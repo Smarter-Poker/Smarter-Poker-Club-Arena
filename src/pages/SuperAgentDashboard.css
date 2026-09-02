@@ -9,7 +9,21 @@
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
-  padding-bottom: 2rem;
+  width: 100%;
+  max-width: 100vw;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
+  /* Dan 2026-08-25: was max(70px, env(safe-area-inset-bottom)). The bar is
+     74px PLUS the home-indicator inset (additive), and max() picks one or
+     the other - so this reserved 70px on every phone and hid the last row
+     of content under the footer, by 4px on a flat screen and ~38px on a
+     notched one. --bottom-nav-clearance is the token the bar itself is
+     pinned to. */
+  padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -37,11 +51,6 @@
   cursor: pointer;
   padding: 0.5rem 0.75rem;
   transition: all 0.2s ease;
-}
-
-.dashboard-header .back-btn:hover {
-  border-color: #00d4ff;
-  color: #00d4ff;
 }
 
 .header-info {
@@ -109,15 +118,6 @@
     inset 0 -1px 0 rgba(0, 0, 0, 0.15);
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.stat-card:hover {
-  transform: translateY(-2px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.15),
-    0 8px 24px rgba(0, 212, 255, 0.15);
-}
-
 .stat-card.highlight {
   border-color: rgba(0, 212, 255, 0.4);
   background: linear-gradient(145deg, rgba(0, 212, 255, 0.12) 0%, rgba(0, 212, 255, 0.04) 100%);
@@ -157,8 +157,14 @@
   gap: 0.25rem;
   padding: 0 1rem;
   overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
   border-bottom: 2px solid #1a2332;
   background: rgba(0, 0, 0, 0.2);
+}
+
+.dashboard-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .dashboard-tabs button {
@@ -169,13 +175,12 @@
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
+  touch-action: manipulation;
+  min-height: 44px;
+  flex-shrink: 0;
   border-bottom: 2px solid transparent;
   white-space: nowrap;
   transition: all 0.2s ease;
-}
-
-.dashboard-tabs button:hover {
-  color: #8a9aaa;
 }
 
 .dashboard-tabs button.active {
@@ -216,14 +221,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
-
-.balance-card:hover {
-  transform: translateY(-2px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 8px 24px rgba(0, 212, 255, 0.15);
-}
-
 .balance-card .label {
   color: #8a9aaa;
 }
@@ -294,11 +291,6 @@
   border: 1px solid #2a3a4a;
   border-radius: 12px;
   transition: all 0.2s ease;
-}
-
-.agent-row:hover,
-.player-row:hover {
-  border-color: #3a4a5a;
 }
 
 .agent-info,
@@ -493,7 +485,7 @@
 
 @media (max-width: 480px) {
   .dashboard-tabs button {
-    min-height: 36px;
+    min-height: 44px;
     font-size: 0.78rem;
   }
 
@@ -508,7 +500,8 @@
   }
 
   .dashboard-header .back-btn {
-    min-height: 36px;
-    min-width: 36px;
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
   }
 }

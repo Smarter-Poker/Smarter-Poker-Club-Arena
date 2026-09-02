@@ -44,10 +44,6 @@
   transition: all 0.2s;
 }
 
-.pl-tab:hover {
-  color: rgba(255, 255, 255, 0.7);
-}
-
 .pl-tab-active {
   background: rgba(124, 58, 237, 0.15);
   color: #a78bfa;
@@ -72,12 +68,6 @@
   text-align: left;
   color: inherit;
   font: inherit;
-}
-
-.pl-card:hover {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(124, 58, 237, 0.3);
-  transform: translateY(-1px);
 }
 
 .pl-card-claimed {
@@ -171,10 +161,6 @@
   cursor: pointer;
   margin-left: 4px;
   transition: all 0.15s;
-}
-
-.pl-retry:hover {
-  background: rgba(124, 58, 237, 0.25);
 }
 
 .pl-loading {

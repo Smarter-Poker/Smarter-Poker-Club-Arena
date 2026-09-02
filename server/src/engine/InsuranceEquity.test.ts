@@ -5,13 +5,13 @@
  * outcome against the actual opponent hand, not a random one.
  */
 import { describe, it, expect } from 'vitest';
-import { insuranceEquity } from './InsuranceEquity.js';
+import { insuranceEquity, leaderOuts } from './InsuranceEquity.js';
 import type { Card, CardRank, CardSuit } from '../types.js';
 
 const S = { h: 'hearts', d: 'diamonds', c: 'clubs', s: 'spades' } as const;
 const c = (rank: CardRank, suit: keyof typeof S): Card => ({ rank, suit: S[suit] as CardSuit });
 
-describe('insuranceEquity — completed board (0 cards to come)', () => {
+describe('insuranceEquity - completed board (0 cards to come)', () => {
   it('leader with quad aces = 100%', () => {
     const hero = [c('A', 'h'), c('A', 'd')];
     const opp = [c('K', 'd'), c('K', 's')];
@@ -38,7 +38,7 @@ describe('insuranceEquity — completed board (0 cards to come)', () => {
   });
 });
 
-describe('insuranceEquity — one card to come (exact enumeration)', () => {
+describe('insuranceEquity - one card to come (exact enumeration)', () => {
   it('top set vs flush draw: leader equity = 37/44 ≈ 84.1%', () => {
     // Hero trip aces; opp K-high club flush draw. 44 unknown cards, 1 to come.
     // 9 clubs remain, but Ac gives hero quads (win) and 9c pairs the board so
@@ -51,5 +51,47 @@ describe('insuranceEquity — one card to come (exact enumeration)', () => {
     expect(r.exact).toBe(true);
     expect(r.runouts).toBe(44);
     expect(r.equity).toBeCloseTo(84.1, 0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// POKERBROS PARITY 2026-08-26 — leaderOuts: the specific next-street cards
+// the popup shows the leader ("these beat you").
+// ═══════════════════════════════════════════════════════════════════════════
+describe('leaderOuts - the cards that put the leader behind on the next street', () => {
+  it('top set vs flush draw on the turn: exactly the 7 live clubs', () => {
+    // 9 clubs remain, but Ac makes hero quads and 9c pairs the board into
+    // aces-full — both WIN for the leader and must not be listed as outs.
+    const hero = [c('A', 'h'), c('A', 'd')];
+    const opp = [c('K', 'c'), c('Q', 'c')];
+    const board = [c('A', 's'), c('7', 'c'), c('2', 'c'), c('9', 'h')];
+    const outs = leaderOuts(hero, [opp], board, 'nlh');
+    expect(outs).toHaveLength(7);
+    expect(outs.every((o) => o.suit === 'clubs')).toBe(true);
+    const ranks = outs.map((o) => o.rank);
+    expect(ranks).not.toContain('A');
+    expect(ranks).not.toContain('9');
+  });
+
+  it('a leader who cannot be overtaken next street has zero outs against them', () => {
+    const hero = [c('A', 'h'), c('A', 'd')];
+    const opp = [c('K', 'd'), c('K', 's')];
+    // Hero already has quads on the turn.
+    const board = [c('A', 's'), c('A', 'c'), c('K', 'h'), c('7', 'd')];
+    expect(leaderOuts(hero, [opp], board, 'nlh')).toHaveLength(0);
+  });
+
+  it('returns nothing on a complete board or preflop (insurance is flop/turn only)', () => {
+    const hero = [c('A', 'h'), c('A', 'd')];
+    const opp = [c('K', 'c'), c('Q', 'c')];
+    expect(
+      leaderOuts(
+        hero,
+        [opp],
+        [c('A', 's'), c('7', 'c'), c('2', 'c'), c('9', 'h'), c('3', 'd')],
+        'nlh'
+      )
+    ).toHaveLength(0);
+    expect(leaderOuts(hero, [opp], [], 'nlh')).toHaveLength(0);
   });
 });

@@ -61,11 +61,6 @@
   cursor: pointer;
 }
 
-.sa-header__close:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-}
-
 /* ─── Tabs ─── */
 .sa-tabs {
   display: flex;
@@ -84,11 +79,6 @@
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s;
-}
-
-.sa-tab:hover {
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.7);
 }
 
 .sa-tab--active {
@@ -130,7 +120,7 @@
 
 /* ─── Colors ─── */
 .sa-positive {
-  color: #22c55e;
+  color: #3fb950;
 }
 .sa-negative {
   color: #ef4444;
@@ -317,7 +307,7 @@
 }
 
 .sa-pot-row__result.sa-positive {
-  background: rgba(34, 197, 94, 0.15);
+  background: rgba(63, 185, 80, 0.15);
 }
 
 .sa-pot-row__result.sa-negative {

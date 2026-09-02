@@ -27,7 +27,6 @@ export interface UseTableAnimationsReturn {
   handleThrowableSelect: (throwable: Throwable) => void;
   handleThrowComplete: (eventId: string) => void;
   receiveThrow: (fromSeat: number, toSeat: number, throwableId: string) => void;
-  getSeatPositions: (maxPlayers: number) => Map<number, { x: number; y: number }>;
   // Chip animations
   chipAnimations: ChipAnimationEvent[];
   setChipAnimations: React.Dispatch<React.SetStateAction<ChipAnimationEvent[]>>;
@@ -104,49 +103,11 @@ export function useTableAnimations(
     setActiveThrows((prev) => prev.filter((e) => e.id !== eventId));
   }, []);
 
-  /**
-   * @deprecated Dan 2026-08-15 (item 4) — NOT the real table geometry.
-   *
-   * This invents an 800x500 LANDSCAPE ellipse (centre 400,250 / radii
-   * 300,150) that corresponds to nothing on screen. The real table is a
-   * 341:609 PORTRAIT box, so throws positioned by this launched and landed at
-   * arbitrary points and never hit the villain's avatar.
-   *
-   * Throwables now use `throwSeatPositions` in TablePage, derived from the
-   * same hero-rotated percentage map the seats themselves render from and
-   * scaled to .table-scaler. This has zero callers as of this commit and is
-   * retained only so the hook's public shape does not change mid-session;
-   * delete it outright in the next cleanup pass.
-   */
-  const getSeatPositions = useCallback(
-    (maxPlayers: number): Map<number, { x: number; y: number }> => {
-      const positions = new Map<number, { x: number; y: number }>();
-      const centerX = 400;
-      const centerY = 250;
-      const radiusX = 300;
-      const radiusY = 150;
-
-      // UI-AUDIT #2b: seats (and ThrowEvent.fromSeat/toSeat) are 1-indexed
-      // seatNumbers. Previously this Map was keyed 0..maxPlayers-1, so every
-      // seatPositions.get(seatNumber) was one seat off and the highest seat
-      // (get(maxPlayers)) returned undefined → ThrowAnimation rendered null.
-      // Key by the 1-indexed seatNumber, and rotate the ellipse so the hero is
-      // at the bottom (matching the viewer-relative table layout).
-      const heroIndex = heroSeat > 0 ? heroSeat - 1 : 0;
-      for (let seat = 1; seat <= maxPlayers; seat++) {
-        const i = seat - 1;
-        // Rotate so the hero (heroIndex) lands at the bottom of the ellipse.
-        const rel = (i - heroIndex + maxPlayers) % maxPlayers;
-        const angle = ((rel * 360) / maxPlayers + 90) * (Math.PI / 180);
-        positions.set(seat, {
-          x: centerX + radiusX * Math.cos(angle),
-          y: centerY + radiusY * Math.sin(angle),
-        });
-      }
-      return positions;
-    },
-    [heroSeat]
-  );
+  /* `getSeatPositions` is GONE (2026-08-28). It was deprecated on 2026-08-15
+     — it invented an 800x500 landscape ellipse corresponding to nothing on
+     screen — and has had zero callers since throwables moved to the real
+     seat geometry (`throwSeatPositions` in TablePage). Deleted per the
+     Animation Law cleanup: dead geometry is a trap. */
 
   return {
     showThrowableSelector,
@@ -157,7 +118,6 @@ export function useTableAnimations(
     handleThrowableSelect,
     handleThrowComplete,
     receiveThrow,
-    getSeatPositions,
     chipAnimations,
     setChipAnimations,
     showConfetti,

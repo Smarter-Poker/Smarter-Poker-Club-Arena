@@ -1,0 +1,34 @@
+-- 20260829f_rake_hardening_and_retention.sql
+-- APPLIED TO PRODUCTION 2026-08-29 via Supabase MCP
+-- (migration name: rake_hardening_and_retention). Full body in the Supabase
+-- migration history; recorded here for the repo and the next reader.
+--
+-- 1. fn_hand_rake_breakdown: now authorised — engine/service roles, the
+--    hand's club owner, or a union overseer. Was readable by ANY
+--    authenticated user (per-player contributions of every hand).
+-- 2. settle_club_rakeback: engine or club owner only (was any authenticated
+--    user, for any club).
+-- 3. DROPPED dead attribution-era functions (zero callers in code or DB):
+--    record_hand_rake_attribution (it OVERWROTE player_contributions),
+--    get_player_rake_total (both overloads — summed a wallet category cash
+--    players never receive). record_rake STAYS (fn_union_law_selftest asserts
+--    its union guard) but is service_role-only now.
+-- 4. The dead hands family (hands / hand_players / hand_actions: 0 rows,
+--    0 inserts ever): browser writes revoked, tables COMMENTed as retired.
+--    The FK from rake_attributions to hands caused the 2026-08-29 banking
+--    outage; nothing may point at them again.
+-- 5. fn_redrive_unbanked_rake(p_limit): sanctioned ops re-drive for queued
+--    rake (idempotent, method-aware, resolves missing hand ids, includes
+--    attempts-exhausted rows). service_role only.
+-- 6. RETENTION (the hand-history ruling, 10.5, extended): when
+--    sp_prune_hand_history deletes a horse-only hand past
+--    hand_history_retention_policy.horse_retention_days, that hand's
+--    rake_attributions rows are deleted in the same pass. rake_records (the
+--    money ledger) is never pruned; every consumer falls back to
+--    fn_allocate_rake_credits when ledger rows are absent, so no total ever
+--    changes. fn_backfill_rake_attributions now refuses to resurrect a pruned
+--    ledger (requires the hand_history row to still exist).
+-- 7. fn_bbj_my_contribution: reads the exact persisted
+--    bbj_attributed_contribution per hand, estimate fallback for pre-ledger
+--    hands.
+SELECT 'applied via MCP as rake_hardening_and_retention — see migration history' AS notice;

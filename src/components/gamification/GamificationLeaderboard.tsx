@@ -67,9 +67,7 @@ export default function GamificationLeaderboard() {
           }))
         );
       } else {
-        // Fetch top mission completers (mocking this slightly by counting completed tasks)
-        // In a real scenario, this might need a dedicated aggregated table.
-        // For now, we count rows in user_daily_challenges where completed=true
+        // Fetch top mission completers
         const { data, error } = await supabase.rpc('get_top_mission_completers');
 
         if (error) throw error;

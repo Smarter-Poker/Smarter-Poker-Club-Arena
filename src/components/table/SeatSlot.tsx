@@ -17,19 +17,30 @@
  * that DISAPPEARS as the clock counts down (CSS conic-gradient mask).
  */
 
-import React, { useMemo, useState, useEffect, useRef, memo } from 'react';
+import React, { useMemo, useState, useEffect, useLayoutEffect, useRef, memo } from 'react';
 import { serverNow } from '../../utils/serverClock';
 import './SeatSlot.css';
 import { CardImage, CardBack } from './CardImage';
 import MiniHUD, { type MiniHUDStats } from './MiniHUD';
+import { SitOutBadge } from './SitOutBadge';
 import type { PlayerStyleResult } from '../../services/PlayerStyleClassifier';
 import { ChipPhysics } from './ChipPhysics';
 import { getAvatarWithFallback } from '../../utils/avatarGenerator';
 import { soundService, haptic } from '../../services/SoundService';
+import {
+  useActionClockProgress,
+  useActionClockSeconds,
+  type ActionClockStore,
+} from '../../hooks/actionClockStore';
 import { getAnimationSpeed, prefersReducedMotion } from '../../utils/animationSpeed';
 import RiveAvatar from './RiveAvatar';
+import AvatarCosmetics from '../avatars/AvatarCosmetics';
 import { startMotionBudget } from '../../utils/motionBudget';
+import { bustArtGain, BUST_ART_GAIN } from './bustArtGain';
+import { displayOrderWithDealtIndex } from '../../lib/tableCardDisplay';
+import { seatCardSide, type CardSide } from '../../lib/tableSeatGeometry';
 import './avatarChoreography.css';
+import { formatTableChips } from '../../utils/format';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -56,7 +67,12 @@ export type PositionBadge =
   | 'HJ'
   | 'CO'
   | null;
-export type LastAction = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | null;
+/* CRAZY PINEAPPLE PHASE 3 2026-08-31: 'discard' was missing from this union
+   even though the engine has emitted PLAYER_ACTION action:'discard' since the
+   variant shipped and TablePage writes it into lastActions like any other
+   action. The seat therefore had a live action it could not name, could not
+   label and could not animate. */
+export type LastAction = 'fold' | 'check' | 'call' | 'bet' | 'raise' | 'all_in' | 'discard' | null;
 
 /**
  * AVATAR CHOREOGRAPHY 2026-08-21 (Dan: "if they could move to put chips in the
@@ -149,6 +165,16 @@ const GESTURE_FOR_ACTION: Partial<
   all_in: { gesture: 'push', ms: 560 },
   check: { gesture: 'check', ms: 440 },
   fold: { gesture: 'fold', ms: 660 },
+  /* 'discard' is DELIBERATELY absent, and this note is here so nobody adds it
+     by pattern-matching. The library is push / check / fold / celebrate / lose
+     / alert, and none of them means "throws one card away and keeps playing".
+     `fold` is the tempting one and it is the worst: it is the slump that tells
+     the whole table a hand has DIED, played over a player who is still in the
+     pot - which is precisely the confusion Dan reported ("auto folded my hand,
+     even though it didn't"). The discard already has its own card animation
+     and its own cue; a wrong gesture would subtract from it, not add. If a
+     real throw-away gesture is ever rigged, wire it here.
+     Pinned in tests/animations-always-play.law.test.ts. */
 };
 
 /** Celebration window — must outlast spAvatarCelebrate (900ms) by a hair. */
@@ -158,6 +184,15 @@ export interface SeatPlayer {
   id: string;
   name: string;
   avatar?: string;
+  /**
+   * Equipped avatar frame token (`frame-gold`, ...), from
+   * `profiles.equipped_frame`. Arrives with the avatar in the engine snapshot
+   * and is refreshed live by the table's profiles subscription. Undefined or an
+   * unknown token draws nothing.
+   */
+  frame?: string;
+  /** Equipped avatar aura token (`aura-fire`, ...), from `profiles.equipped_aura`. */
+  aura?: string;
   stack: number;
   status: PlayerStatus;
   /**
@@ -169,16 +204,56 @@ export interface SeatPlayer {
   holeCards?: (Card | null)[];
   showCards: boolean;
   isHero: boolean;
+  /**
+   * SHOWDOWN AUDIT 2026-08-25: the engine's muck ruling as carried by the
+   * snapshot (is_mucked). The parent unions it with the showdown event's
+   * mask so a client that reconnects mid-showdown — and therefore missed the
+   * event — still renders the MUCKED label.
+   */
+  isMucked?: boolean;
 }
 
 export interface SeatSlotProps {
+  /**
+   * `table_seats.sit_out_at` in epoch ms, and ONLY when a deadline applies.
+   *
+   * A SEPARATE PROP, not a field on `player` — that was the first attempt and it
+   * did not work. `mapEngineSnapshot` builds a BRAND NEW player object on every
+   * engine broadcast, from a fixed list of nine fields, so anything else written
+   * onto a player is erased at the next frame. The stamp would appear on the
+   * 10-second poll and vanish on the next hand, forever.
+   *
+   * The parent withholds it on tournament tables, where a player may sit out as
+   * long as they like — which keeps this component's standing rule intact:
+   * nothing in here may branch a visual on tournament-ness. A stamp means a
+   * clock; no stamp means the plain tag.
+   */
+  sitOutAt?: number | null;
   seatNumber: number;
   player: SeatPlayer | null;
   position: PositionBadge;
   isActive: boolean;
   lastAction: LastAction;
   lastBetAmount?: number;
-  timerProgress?: number; // 0-100 (100 = full time, 0 = out of time)
+  /**
+   * 0-100 (100 = full time, 0 = out of time).
+   *
+   * PERF 2026-08-25: TablePage no longer passes this. Handing the acting seat's
+   * countdown DOWN as a prop is what forced the page to hold the countdown in
+   * its own state and re-render — page, nine seats, board, pot, HUD — once a
+   * second for the whole of anybody's turn. The seat subscribes to `actionClock`
+   * itself now, and only while it is the seat actually on the clock.
+   *
+   * Still honoured when supplied, so a harness that has a number and no store
+   * (SimPage) keeps working unchanged. An explicit prop wins over the store.
+   */
+  timerProgress?: number;
+  /**
+   * The table's action clock. Supplied by TablePage; absent everywhere else, in
+   * which case the seat subscribes to an idle store that never publishes and the
+   * two props above are the only source, exactly as before.
+   */
+  actionClock?: ActionClockStore;
   bigBlind?: number;
   isTournament?: boolean;
   bountyValue?: number;
@@ -190,6 +265,36 @@ export interface SeatSlotProps {
   bombPotAnte?: boolean;
   isWinner?: boolean;
   winningHandName?: string; // e.g. "Straight", "Full House"
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25 (spec section 15): indices of THIS winner's
+   * own hole cards that participate in the winning five-card hand, from the
+   * engine's pot_win payload. When present, only those cards highlight;
+   * when absent, the whole hand highlights (previous behaviour, and the
+   * right fallback for older engine payloads).
+   */
+  winningHoleCardIndexes?: readonly number[];
+  /**
+   * POKERBROS PARITY 2026-08-26 (frame-by-frame of the reference recording):
+   * true while ANY seat's winning hand is being displayed table-wide. While
+   * true, every face-up hole card at this seat that is not part of the
+   * winning five dims to ~50% brightness — a losing shown hand dims
+   * entirely, and the winner's own unused cards dim around the lit ones.
+   * Card backs never dim. TablePage derives it from winnerInfo.
+   */
+  winnerDisplayActive?: boolean;
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25 (spec section 4): the ENGINE ruled this hand
+   * muckable at showdown — its cards were never revealed, and the seat
+   * renders a MUCKED label instead. Distinct from isMucking, which is the
+   * fly-to-muck animation for cards that WERE revealed and lost.
+   */
+  isMuckedShowdown?: boolean;
+  /**
+   * SHOWDOWN SYSTEM 2026-08-25 (spec section 3): how long to hold this
+   * seat's showdown reveal so the flips play in reveal order — the
+   * final-street aggressor first, then clockwise. 0 = flip immediately.
+   */
+  showdownRevealDelayMs?: number;
   /**
    * Dan 2026-08-21 (item 15): hero's CURRENT made hand, recomputed on every
    * street ("Ace High" -> "Pair" -> "Two Pair"). Hero seats only; the parent
@@ -213,9 +318,64 @@ export interface SeatSlotProps {
   hudStats?: MiniHUDStats | null; // Opponent VPIP/PFR stats
   showHUD?: boolean; // Whether to show the HUD overlay
   playerStyle?: PlayerStyleResult | null; // Auto-classified player archetype
-  secondsLeft?: number; // Actual seconds remaining (for countdown overlay)
+  /**
+   * Actual seconds remaining, for the disconnected-player countdown overlay.
+   * Same story as `timerProgress`: TablePage stopped passing it on 2026-08-25
+   * and the seat reads the store instead. An explicit prop still wins.
+   */
+  secondsLeft?: number;
   deckStyle?: '4color' | '2color';
   cardBack?: string; // Card back design ID (e.g. 'classic_red', 'black', 'clubs_gold')
+  /**
+   * How many hole cards this VARIANT deals, used only to draw the right number
+   * of face-down backs for an opponent whose hand we cannot see.
+   *
+   * Dan 2026-08-23: "it only shows 2 cards even if its a 4 card, 5 card or 6
+   * card game, that needs to also change." The fallback branch below hard-coded
+   * two <HoleCard hidden> elements, so every PLO4/PLO5/PLO6 seat showed a
+   * Hold'em hand. The seat cannot infer this - an opponent's `holeCards` is
+   * empty precisely because it is hidden, so there is nothing local to count.
+   * Only the table knows the variant, so the table passes it.
+   *
+   * Defaults to 2 so any caller that does not pass it keeps today's behaviour
+   * rather than rendering nothing.
+   */
+  holeCardCount?: number;
+  /**
+   * CRAZY PINEAPPLE PHASE 3 2026-08-31 - the card this seat just discarded,
+   * for the ghost that flies to the muck.
+   *
+   * HERO ONLY, and it never crosses the wire. In Crazy Pineapple the discarded
+   * card is never revealed to opponents - not on the discard, not at showdown -
+   * and hole cards on this platform do not travel on the public broadcast at
+   * all: they go through the RLS-protected `table_hole_cards` table, which
+   * exists because of a god-mode vulnerability (migration
+   * 20260312_secure_hole_cards_fix.sql). The public `player_action` event
+   * carries a seat and the word 'discard' and NOTHING card-shaped, so a
+   * villain's ghost is drawn face DOWN from that event alone. The hero's own
+   * card is already in their own client, and they are the one who chose it.
+   *
+   * Null or undefined = draw a back, which is the correct treatment for every
+   * seat that is not the hero.
+   */
+  discardFlightCard?: Card | null;
+  /**
+   * Is there a HAND at this table right now?
+   *
+   * Dan 2026-08-28, on a Spin still selling its third seat: the two players
+   * who had bought seats were each drawn holding a fan of face-down cards,
+   * before a single card had been dealt — a table that looks mid-hand while
+   * it is plainly waiting for a player. The villain fan below renders for any
+   * seat whose status is 'active', which every seated player is from the
+   * moment they sit, so the cards were furniture rather than a hand.
+   *
+   * Defaults TRUE so a caller that does not pass it keeps today's behaviour
+   * exactly. The gate is deliberately permissive — holeCards present, a deal
+   * animating, a fold or muck flying out all still draw regardless — so no
+   * animation the law protects can be suppressed by it. It removes exactly
+   * one thing: backs drawn for a hand that does not exist.
+   */
+  handInPlay?: boolean;
   showStackInBB?: boolean;
   onSit?: () => void;
   /**
@@ -286,6 +446,23 @@ export interface SeatSlotProps {
   /** Wall-clock time the current turn started (server-authoritative). */
   turnStartTimeMs?: number;
   /**
+   * Hero has PRESSED time bank but the engine has not spent it yet.
+   *
+   * Dan 2026-08-24: "when you use a time bank, it gives you this generic pop
+   * up, instead of resetting the countdown clock on the hero's box." Pressing
+   * with ordinary clock left ARMS the bank rather than spending it (deliberate
+   * — Dan 2026-08-23, "it should not take a time bank or add more time until
+   * you have truly used your entire 15 seconds"), so there is genuinely no new
+   * time to draw yet and the ring must NOT restart. The feedback belonged on
+   * the seat all the same; a toast was the whole of it.
+   *
+   * This paints the pending state on the hero's own box. When the engine
+   * redeems the bank at expiry it re-stamps `turnStartTimeMs`, which remounts
+   * this node and restarts the ring for real.
+   */
+  timeBankArmed?: boolean;
+  isTimeBankActive?: boolean;
+  /**
    * Dan 2026-08-18: "a user should be able to click on any card in their hand,
    * and when clicked that card or cards always get shown after the hand is
    * over." Indexes of the hero's own hole cards currently marked to be shown.
@@ -299,23 +476,25 @@ export interface SeatSlotProps {
 // UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Dan 2026-08-28: a stack on the felt is never abbreviated. This used to
+// render 117000 as "117K", which is a range 500 chips wide standing in for a
+// number the player is about to act on. One formatter, shared with every
+// other chip surface on the table.
 function formatStack(amount: number): string {
-  if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
-  if (amount >= 100000) return `${(amount / 1000).toFixed(0)}K`;
-  if (amount >= 10000) return `${(amount / 1000).toFixed(1)}K`;
-  // For any amount >= 1, always show as a rounded whole number.
-  // Fractional cents on big stacks are rake/split artifacts that look ugly.
-  if (amount >= 1) return Math.round(amount).toLocaleString();
-  // Sub-dollar amounts (micro-stakes like 0.25/0.50) — show 2 decimals
-  if (amount > 0) return amount.toFixed(2);
-  return '0';
+  // Same reason as ChipAnimation: fractional cents on a big stack are rake
+  // and split artifacts, not chips anyone can bet. Squared off for display
+  // only, and only above 1 so micro-stakes keep their cents.
+  return formatTableChips(amount >= 1 ? Math.round(amount) : amount);
 }
 
+// Dan 2026-08-28: the same rule as chips. A 1,500 BB stack read "1.5K BB",
+// which is the abbreviation complaint wearing a different unit. Deep counts
+// stay whole and separated; shallow ones keep the one decimal that decides
+// whether you are shoving.
 function formatStackAsBB(stack: number, bigBlind: number): string {
   if (bigBlind <= 0) return '0 BB';
   const bb = stack / bigBlind;
-  if (bb >= 1000) return `${(bb / 1000).toFixed(1)}K BB`;
-  if (bb >= 100) return `${Math.round(bb)} BB`;
+  if (bb >= 100) return `${Math.round(bb).toLocaleString('en-US')} BB`;
   return `${bb.toFixed(1)} BB`;
 }
 
@@ -336,39 +515,27 @@ function formatStackAsBB(stack: number, bigBlind: number): string {
  */
 /**
  * How much bigger a particular character has to be drawn to LOOK the same size
- * as the others.
+ * as the others. See `./bustArtGain` - it is a GENERATED table covering every
+ * character in the library, measured from the art itself.
  *
- * Dan 2026-08-23: "the viking and chef need to be 2x current size."
+ * Re-exported here because this module was its original home and the `table`
+ * barrel (index.ts) re-exports from it.
  *
- * Until now `--sp-bust-scale` was a single number, 1.45, for all 76 characters,
- * on the assumption that art delivered at one canvas size renders at one size.
- * It does not. Every asset is 125x170, but the SUBJECT inside that canvas is
- * not drawn to a common scale, and `object-fit: contain` fits the CANVAS, so
- * whatever headroom the artist left is rendered as empty pixels. Measured off
- * the shipped assets, as a share of canvas height:
+ * It used to be two entries typed by hand - `viking: 2, chef: 2` - written from
+ * a four-character sample after Dan asked for "the viking and chef 2x current
+ * size". The chef is genuinely small (71% of its canvas). The viking is the 6th
+ * LARGEST asset of 100 at 95%, so 2x gave it a 2.9x render that swallowed its
+ * seat and spilled onto the felt. Two characters named in one sentence, given
+ * one number, sitting at opposite ends of the distribution.
  *
- *     vip_eagle    97%      free_viking  93%
- *     free_owl     82%      free_chef    70%
+ * A sample cannot correct a per-file difference across 100 files. Measurement
+ * can, so the numbers are now computed for all of them and cannot drift from
+ * the art:  python3 scripts/measure-bust-art.py
  *
- * So the chef is drawn at about three quarters the owl's size and renders that
- * way, through no fault of the CSS. One global number cannot correct for a
- * per-file difference; only a per-file number can. This is that number, applied
- * as a MULTIPLIER on the global scale so the shared rule keeps owning
- * everything else (breakpoints, the top-rail cap, the holo and rig mirrors).
- *
- * Keyed on the asset slug, which is stable: the URL is always
- * /avatars/table/{free|vip}_{slug}.webp.
+ * Imported at the top of this file (the render path calls it directly) and
+ * re-exported here so the `table` barrel keeps the same public surface.
  */
-const BUST_ART_GAIN: Readonly<Record<string, number>> = {
-  viking: 2,
-  chef: 2,
-};
-
-export function bustArtGain(avatarUrl: string | null | undefined): number {
-  if (!avatarUrl) return 1;
-  const m = /\/avatars\/table\/(?:free|vip)_([\w-]+?)(?:@2x)?\.webp/.exec(avatarUrl);
-  return (m && BUST_ART_GAIN[m[1]]) || 1;
-}
+export { bustArtGain, BUST_ART_GAIN };
 
 const SEAT_AVATAR_PX = 84;
 const SEAT_AVATAR_PX_HERO = 112;
@@ -398,6 +565,9 @@ function getActionLabel(action: LastAction, amount?: number): string {
       return amount ? `Raise ${formatStack(amount)}` : 'Raise';
     case 'all_in':
       return 'ALL IN';
+    case 'discard':
+      /* CLAUDE.md 5.7: Title Case Every Word. */
+      return 'Discard';
     default:
       return '';
   }
@@ -407,52 +577,174 @@ function getActionLabel(action: LastAction, amount?: number): string {
 // HOLE CARDS
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * THE VILLAIN CLUSTER TUNING — Dan 2026-08-26, corrected same day against the
+ * PokerBros close-ups: "THE FANNING WAS ONLY EVER SUPPOSED TO BE DONE FOR THE
+ * HERO'S SEAT." A villain's face-down hand is a SMALL rotational cluster —
+ * card size fixed at ~0.52 x avatar in CSS — and these two numbers are the
+ * ONLY thing that changes with card count:
+ *
+ *   step  horizontal slide per card, as a fraction of card width. A pair
+ *         sits side-by-side (0.42); bigger hands nest their bottoms tighter
+ *         because the ROTATION is what separates them.
+ *   rot   degrees of splay per card, pivoting about a point below the card's
+ *         bottom edge, symmetric around the cluster centre. 7deg keeps a
+ *         hold'em pair nearly parallel like the reference; 12deg gives 4-6
+ *         cards the full rosette.
+ *
+ * Applied as CSS custom properties on the cluster container (never as inline
+ * pixel values), so the geometry stays inspectable in devtools and the
+ * responsive system retunes it through --seat-avatar-size alone.
+ *
+ * 3 is not a live variant; it falls between 2 and 4 so a malformed count
+ * clamped into the sane band still renders sensibly.
+ */
+const VILLAIN_FAN: Record<number, { step: number; rot: number }> = {
+  /* Dan 2026-08-26 round 3: "more tightly compacted together, not so spread
+     out" — the slide per card came down across the board; the rotation is
+     what separates the backs, exactly like the reference crops. */
+  1: { step: 0.3, rot: 0 },
+  2: { step: 0.3, rot: 7 },
+  3: { step: 0.18, rot: 10 },
+  4: { step: 0.14, rot: 12 },
+  5: { step: 0.13, rot: 12 },
+  6: { step: 0.12, rot: 12 },
+};
+
+/**
+ * One card in a seat's row.
+ *
+ * `index` was accepted here and never read - the body branches only on
+ * hidden/card/isHero/isWinner - while every call site dutifully passed
+ * `index={i}`. A parameter that is accepted and ignored is a lie in the
+ * signature: the next reader assumes the card knows its own position in the
+ * row (for a stagger, for a z-order, for the per-card show picker) and writes
+ * code that depends on something the component never had. Removed 2026-08-25.
+ * The React `key` still carries the position, which is where it belongs.
+ *
+ * `eager` exists because the two rows that are ALWAYS in view - the hero's own
+ * hand, and a villain's cards at showdown - should not have their faces
+ * deferred by the browser's lazy heuristic at the exact moment the player is
+ * trying to read them. See CardImage's `loading` prop.
+ */
+/**
+ * Dan 2026-08-30 (binding): seat names never ellipsize. If the full name does
+ * not fit the plate, it is CUT AT A CHARACTER BUDGET with no "..." appended -
+ * "Clara Hell..." reads worse than "Clara Hell". 11 characters is the widest
+ * string that always fits the .seat__name 76px cap at --font-xs; the CSS
+ * keeps overflow:hidden as a belt, but with text-overflow: clip so the
+ * ellipsis can never come back through styling alone.
+ */
+function limitSeatName(name: string | undefined | null): string {
+  const n = (name ?? '').trim();
+  return n.length > 11 ? n.slice(0, 11).trimEnd() : n;
+}
+
 function HoleCard({
   card,
   hidden = false,
-  index,
   isHero = false,
   isWinner = false,
+  isDimmed = false,
   deckStyle,
   cardBack = 'classic_blue',
+  eager = false,
+  fanIndex,
+  discardFlight = false,
 }: {
   card?: Card | null;
   hidden?: boolean;
-  index: number;
   isHero?: boolean;
   isWinner?: boolean;
+  /**
+   * POKERBROS PARITY 2026-08-26 (frame-by-frame of the reference recording):
+   * while the winning five are lit, every face-up card that is NOT one of
+   * them — the winner's own unused cards included — drops to ~50% brightness
+   * in the same beat the gold borders appear. Never applied to card backs.
+   */
+  isDimmed?: boolean;
   deckStyle?: '4color' | '2color';
   cardBack?: string;
+  eager?: boolean;
+  /**
+   * VILLAIN FAN 2026-08-26: this card's position in the fan, innermost
+   * (nearest the avatar) = 0. Handed to CSS as `--vh-i`, from which the
+   * stylesheet derives the card's offset, its rotation and its z-order —
+   * an index, not a pixel value, so the geometry itself stays in CSS.
+   * Undefined for hero cards, whose row derives its index via nth-child.
+   */
+  fanIndex?: number;
+  /**
+   * CRAZY PINEAPPLE PHASE 3 2026-08-31: this card is the one being thrown, and
+   * is drawn only for as long as it takes to reach the muck. It is a GHOST -
+   * the hand it came from has already lost it (hero's row shrank the instant
+   * the engine accepted; a villain's back count dropped on the public event) -
+   * so it must never be counted, clicked or read as part of the holding.
+   * `seat__card--discarding` in SeatSlot.css carries the flight.
+   */
+  discardFlight?: boolean;
 }) {
-  // v10 layout (Dan-approved PokerBros clone): the HERO row is LINED UP — no
-  // fan tilt. Opponents keep the tight +/-8deg pair behind the avatar.
-  //
-  // The hero row must NOT get an inline transform. Inline styles out-specify
-  // every stylesheet rule, so an inline rotate() here would override
-  // `.seat__cards--hero .seat__card { transform: none }` and put the fan
-  // straight back — it is exactly the "fan/overlap mess" v10 removed. It also
-  // broke PLO: `index === 0 ? -12 : 12` gave card 1 -12deg and cards 2..6 all
-  // the SAME +12deg, so a 5- or 6-card hand stacked into one tilted clump.
-  // Leaving style undefined hands full control of the hero row to CSS.
-  const rotation = isHero ? 0 : index === 0 ? -8 : 8;
-  const cardStyle = isHero ? undefined : { transform: `rotate(${rotation}deg)` };
   const size = isHero ? 'md' : 'sm';
+  const fanStyle =
+    fanIndex !== undefined ? ({ '--vh-i': fanIndex } as React.CSSProperties) : undefined;
+  const flightClass = discardFlight ? ' seat__card--discarding' : '';
 
   if (hidden || !card) {
     return (
-      <div className="seat__card seat__card--back" style={cardStyle}>
+      <div
+        className={`seat__card seat__card--back${flightClass}`}
+        style={fanStyle}
+        aria-hidden={discardFlight || undefined}
+      >
         <CardBack size={size} style={cardBack} />
       </div>
     );
   }
   return (
     <div
-      className={`seat__card seat__card--face${isWinner ? ' seat__card--winner' : ''}`}
-      style={cardStyle}
+      className={`seat__card seat__card--face${isWinner ? ' seat__card--winner' : ''}${isDimmed ? ' seat__card--dimmed' : ''}${flightClass}`}
+      style={fanStyle}
+      aria-hidden={discardFlight || undefined}
     >
-      <CardImage card={card} deckStyle={deckStyle} size={size} isHighlighted={isWinner} />
+      <CardImage
+        card={card}
+        deckStyle={deckStyle}
+        size={size}
+        isHighlighted={isWinner}
+        loading={eager ? 'eager' : 'lazy'}
+      />
     </div>
   );
+}
+
+/**
+ * Where this seat sits on the table, as percentages of the table's own box.
+ *
+ * A seat is handed its NUMBER and nothing else — the ring, the rotation and the
+ * table size all live in the parent — so the only place the seat's own position
+ * still exists by the time it renders is on the element the parent wrapped it
+ * in: TablePage sets `left: ${pos.x}%` and `top: ${pos.y}%` inline on
+ * `.seat-wrapper`. Reading those strings back is exact, costs no layout, and is
+ * scale-invariant, which is why it is tried first.
+ *
+ * The offset fallback covers any host that positions the wrapper some other way
+ * (SimPage mounts SeatSlot outside the table page entirely). It is a
+ * layout-forcing read, so the caller runs it only when the cheap path found
+ * nothing AND the wrapper has actually moved since the last look.
+ *
+ * NaN, deliberately, when neither works: `seatCardSide` then answers 'right',
+ * which is where every seat's cards hung before any of this existed.
+ */
+function seatWrapperPercent(wrap: HTMLElement): { x: number; y: number } {
+  const inlineX = /^\s*([\d.]+)%\s*$/.exec(wrap.style.left || '');
+  const inlineY = /^\s*([\d.]+)%\s*$/.exec(wrap.style.top || '');
+  if (inlineX && inlineY) return { x: Number(inlineX[1]), y: Number(inlineY[1]) };
+  const host = wrap.offsetParent as HTMLElement | null;
+  if (!host || !host.offsetWidth || !host.offsetHeight) return { x: NaN, y: NaN };
+  return {
+    x: (wrap.offsetLeft / host.offsetWidth) * 100,
+    y: (wrap.offsetTop / host.offsetHeight) * 100,
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -477,7 +769,8 @@ export const SeatSlot = memo(
       isActive,
       lastAction,
       lastBetAmount,
-      timerProgress,
+      timerProgress: timerProgressProp,
+      actionClock,
       bigBlind = 2,
       // isTournament is deliberately NOT destructured any more. Nothing inside
       // this component may branch a VISUAL on tournament-ness: doing so is what
@@ -485,6 +778,7 @@ export const SeatSlot = memo(
       // The prop stays on the interface because the memo comparator below still
       // needs to see it change (it feeds SeatSlot's parents), and because
       // removing it from every call site is a bigger change than it is worth.
+      sitOutAt,
       bountyValue,
       bombPotAnte,
       isWinner = false,
@@ -495,9 +789,12 @@ export const SeatSlot = memo(
       hudStats,
       showHUD = false,
       playerStyle,
-      secondsLeft,
+      secondsLeft: secondsLeftProp,
       deckStyle,
       cardBack = 'classic_blue',
+      holeCardCount = 2,
+      discardFlightCard = null,
+      handInPlay = true,
       showStackInBB = false,
       onSit,
       canSit = true,
@@ -510,36 +807,266 @@ export const SeatSlot = memo(
       isCollectingChips = false,
       isDealing = false,
       isMucking = false,
+      winningHoleCardIndexes,
+      winnerDisplayActive = false,
+      isMuckedShowdown = false,
+      showdownRevealDelayMs = 0,
       cardSqueezeActive = false,
       handNumber = 0,
       playSounds = true,
       turnDeadlineMs,
       turnStartTimeMs,
+      timeBankArmed,
+      isTimeBankActive,
       showPickedCardIndexes,
       onToggleShowCard,
     } = props;
 
-    // Animated stack change — flash green/red when stack changes
+    /**
+     * THE CALLBACKS, ALWAYS THE LATEST ONES (audit 2026-08-25).
+     *
+     * `onSit`, `onAction` and `onAvatarClick` are the three props this seat
+     * accepts that the memo comparator below deliberately does NOT compare, and
+     * that is the right call: TablePage builds all three as inline arrows
+     * (`onSit={() => handleSeatClick(seatNumber)}`), so comparing them would be
+     * comparing a brand-new function every render and the memo would never skip
+     * anything - nine seats times up to four mounted tables, re-rendering on
+     * every parent tick.
+     *
+     * The cost of not comparing them is that the seat keeps whichever closure
+     * it last rendered with, and those closures capture live table state:
+     * `handleSeatClick` reads `pendingSeat` and the roster to decide whether the
+     * hero may sit, and the avatar handler captures `player` to target notes and
+     * throwables. A seat that has nothing else changing about it - which is
+     * exactly an EMPTY seat, the one `onSit` belongs to - can sit on a stale
+     * closure indefinitely and act on a table that has moved on.
+     *
+     * A ref costs nothing and removes the trade entirely: the memo still skips
+     * the render, and the handler that eventually fires is the current one.
+     * Assigned during render rather than in an effect on purpose - the value has
+     * to be correct for a click that lands before React commits, and there is
+     * nothing to clean up.
+     */
+    const callbacksRef = useRef({ onSit, onAction, onAvatarClick });
+    callbacksRef.current = { onSit, onAction, onAvatarClick };
+
+    /**
+     * Dan 2026-08-23: "when a player folds, their blue countdown light should
+     * stop at once."
+     *
+     * A folded seat is not acting, whatever the last snapshot still says. The
+     * two sources disagree for a moment by design, and the class list further
+     * down already documents it: `lastAction` flips the instant the fold is
+     * dispatched, `player.status` only turns 'folded' when the next server
+     * snapshot lands. But `isActive` is derived from the SNAPSHOT's
+     * currentPlayerSeat, so for that whole round trip - the fold leaves, the
+     * engine advances the turn, the delta comes back - the seat that just
+     * folded is still formally "the player to act", and its ring keeps
+     * draining on a player who is already out of the hand.
+     *
+     * Dimming was taught to honour whichever source lands first. The clock was
+     * not, so the seat went dark with a live countdown still running on it.
+     * Declared here, above every consumer, so the ring, the urgency colours,
+     * the tense idle animation, the turn gesture and the screen-reader label
+     * all read ONE value instead of four sites each re-deciding what "acting"
+     * means - which is how they drifted apart in the first place.
+     *
+     * Deliberately CLIENT-side and optimistic. The engine remains the authority
+     * on whose turn it is; this only refuses to draw a clock for a player we
+     * already know cannot act.
+     */
+    const hasFolded = !!player && (lastAction === 'fold' || player.status === 'folded');
+    const isActingNow = isActive && !hasFolded;
+
+    /**
+     * PERF 2026-08-25 — THE COUNTDOWN COMES IN SIDEWAYS, NOT FROM ABOVE.
+     *
+     * These two values used to arrive as props from TablePage, which meant
+     * TablePage had to hold the countdown in state and re-render the entire
+     * table once a second for the whole of anybody's turn to deliver them.
+     *
+     * The seat subscribes to the store directly instead. `isActingNow` gates the
+     * subscription, so the eight seats that are NOT on the clock read
+     * `undefined` on every publication, React compares it with `Object.is`, and
+     * they do not render at all. Only the acting seat wakes — which is the only
+     * seat that has ever done anything with either number.
+     *
+     * An explicitly supplied prop still wins, so SimPage and any other harness
+     * that passes a number and no store behaves exactly as it did.
+     *
+     * NOTE the ring itself is not involved: it has been a pure-CSS animation off
+     * the engine's absolute deadline (`--sp-timer-duration` / `--sp-timer-delay`
+     * below) since 2026-04-15 and no React render has ever driven it.
+     */
+    const liveTimerProgress = useActionClockProgress(
+      actionClock,
+      isActingNow && timerProgressProp === undefined
+    );
+    /* `secondsLeft` has exactly one reader — the DISCONNECTED overlay's
+       countdown — so the subscription is gated on that state as well. The old
+       prop arrived whenever this seat was the current one, and was then ignored
+       for every seat that was not disconnected; subscribing on the same terms it
+       is read on means an ordinary acting seat is not woken once a second for a
+       number it will not render. `isActive` rather than `isActingNow`, to keep
+       the condition identical to the prop it replaces. */
+    const liveSecondsLeft = useActionClockSeconds(
+      actionClock,
+      isActive && player?.status === 'disconnected' && secondsLeftProp === undefined
+    );
+    const timerProgress = timerProgressProp ?? liveTimerProgress;
+    const secondsLeft = secondsLeftProp ?? liveSecondsLeft;
+
+    /**
+     * Dan 2026-08-23: "when the cards get shown down they need to be straight
+     * and IN ORDER."
+     *
+     * The engine hands cards over in deal order, which is arbitrary to look at -
+     * a PLO4 hand arrives as something like 6h As 9c Ad and the player has to
+     * pair it up themselves at the exact moment they are trying to read a
+     * showdown. Sorted high to low, the same way the hero's own hand is already
+     * sorted by the cards_pre_sort setting.
+     *
+     * ONLY when every card is present. `null` in this array is not a missing
+     * card, it is the per-card show picker saying "this one stays face down"
+     * (2026-08-18) - so a slot's POSITION carries meaning there, and sorting
+     * would move a face-down card away from the card it belongs beside.
+     *
+     * ── EACH CARD CARRIES ITS OWN INDEX, AND THAT IS NOT COSMETIC ───────────
+     * Dan 2026-08-27 asked that shown hands be "highlighted at showdown". They
+     * were - on the wrong cards, whenever the sort moved anything.
+     *
+     * This used to return a bare `Card[]` and the row rendered it with
+     * `.map((card, i) =>  ... winningHoleCardIndexes.includes(i))`. But `i` is
+     * the position in the SORTED row, while `winningHoleCardIndexes` arrives
+     * from the engine (`hole_card_indices` on the pot_win event) indexed
+     * against the DEALT order - the array this function is about to reorder. A
+     * villain dealt `6h As 9c Ad` renders as `As Ad 9c 6h`, so a winning index
+     * of 1 lit the ace of diamonds when the engine meant the ace of spades, and
+     * `--dimmed` darkened the wrong card in the same beat. The sort landed on
+     * 2026-08-23 and the highlight on 2026-08-25; each was right on its own.
+     *
+     * Pairing the card with the index it had BEFORE the sort makes the two
+     * orders explicit, so the row can be drawn in reading order while every
+     * per-card flag is still asked about the right card.
+     */
+    const displayHoleCards = useMemo(
+      () => displayOrderWithDealtIndex(player?.holeCards),
+      [player?.holeCards]
+    );
+
+    /**
+     * WHICH SIDE THIS SEAT'S CARDS HANG OFF — see `seatCardSide` in
+     * lib/tableSeatGeometry.ts for the rule itself (outboard at the top cap,
+     * inboard everywhere else) and for why it is derived from position rather
+     * than from a seat index.
+     *
+     * Measured rather than passed as a prop: adding one would mean editing
+     * TablePage, which several other workstreams are in at once, and the seat
+     * can recover its own position from the wrapper the parent already
+     * positions it with.
+     *
+     * ── Dan 2026-08-25 round 2: WHY THE TOP SEATS BOTH SHOWED CARDS ON THE
+     *    LEFT, and why the wrapper is OBSERVED rather than re-read on render ──
+     *
+     * The measurement itself was fine. WHEN it ran was not: the dependency list
+     * was `[seatNumber, hasPlayer]`, and NEITHER of those changes when the seat
+     * MOVES. A seat moves constantly — `rotateSeatsForHero` re-assigns every
+     * chair's position the moment the hero's seat is known, and the ring itself
+     * is swapped when `maxPlayers` arrives from the table row after the first
+     * paint. Both rewrite the inline `left` on the wrapper while seatNumber and
+     * hasPlayer sit still, so the side stayed whatever the pre-rotation layout
+     * happened to say — which for the two top seats was the same answer for
+     * both of them. It was never falling through to the NaN default; it was
+     * answering a question about where the seat USED to be.
+     *
+     * Widening the dependency list would not fix it either, because a pure
+     * rotation need not re-render this seat at all: the wrapper's `style` moves
+     * while SeatSlot's own props stand still, and the memo comparator below
+     * correctly skips the render. So the position is watched at its source —
+     * one MutationObserver on the one attribute that carries it. That is true
+     * for every host and every reason the seat might move, including ones that
+     * do not exist yet, and it costs nothing while the seat is not moving.
+     *
+     * The string compare in `read` is the cheap guard: `style.left`/`style.top`
+     * are property reads on an element already in hand, with no layout flush,
+     * and they are exact. Only when the pair has actually changed do we parse —
+     * and only then can the offset fallback, which DOES force layout, run.
+     *
+     * `useLayoutEffect` so the first measurement lands in the same paint as the
+     * markup it measured; with a plain effect the seat shows one frame of cards
+     * on the default side before correcting itself.
+     */
+    const seatRef = useRef<HTMLDivElement | null>(null);
+    const [cardSide, setCardSide] = useState<CardSide>('right');
+    const hasPlayer = !!player;
+    useLayoutEffect(() => {
+      // The wrapper is only in the DOM on the occupied branch (the empty-seat
+      // branches return before the ref is attached), so gaining or losing an
+      // occupant is what re-arms this.
+      const wrap = seatRef.current?.parentElement;
+      if (!wrap) return;
+      let lastStamp: string | null = null;
+      const read = () => {
+        const stamp = `${wrap.style.left}|${wrap.style.top}`;
+        if (stamp === lastStamp) return;
+        lastStamp = stamp;
+        const { x, y } = seatWrapperPercent(wrap);
+        setCardSide(seatCardSide(x, y));
+      };
+      read();
+      const moved = new MutationObserver(read);
+      moved.observe(wrap, { attributes: true, attributeFilter: ['style'] });
+      return () => moved.disconnect();
+    }, [hasPlayer]);
+
+    /**
+     * Animated stack change — flash green/red when the stack moves.
+     *
+     * AUDIT 2026-08-25: the effect keyed on `player?.stack` ALONE while its
+     * "have we seen this player before" latch only reset when the seat rendered
+     * EMPTY. A seat does not always pass through empty: one snapshot can carry
+     * player A leaving and player B arriving in the same chair, and the seat
+     * then renders straight from A to B. The effect saw a stack change, found
+     * the latch still armed, and floated `B.stack - A.stack` over the new
+     * arrival - a green +4,000 or a red -900 on a player who had done nothing.
+     * Comparing the OCCUPANT as well makes a change of player what it actually
+     * is: a fresh sit-down, which never animates.
+     */
     const [stackDelta, setStackDelta] = useState<number>(0);
     const prevStackRef = React.useRef<number>(player?.stack ?? 0);
-    const wasSeatedRef = React.useRef<boolean>(!!player); // Track if player was already present
+    const seatedIdRef = React.useRef<string | null>(player?.id ?? null);
+    const playerId = player?.id ?? null;
     useEffect(() => {
       if (!player) {
-        wasSeatedRef.current = false; // Player left — reset for next occupant
+        seatedIdRef.current = null; // Player left — reset for next occupant
         return;
       }
+      const sameOccupant = seatedIdRef.current === player.id;
       const diff = player.stack - prevStackRef.current;
-      // Only animate if player was already seated (not initial sit-down)
-      if (diff !== 0 && wasSeatedRef.current) {
+      prevStackRef.current = player.stack;
+      seatedIdRef.current = player.id;
+      // Only animate for a player who was already sitting here.
+      if (diff !== 0 && sameOccupant) {
         setStackDelta(diff);
-        const t = setTimeout(() => setStackDelta(0), 2000);
-        prevStackRef.current = player.stack;
-        wasSeatedRef.current = true;
+        /* 2026-08-28: scaled, because the keyframe is. `stackDeltaFloat` became
+           `calc(2s * var(--animation-speed, 1))` in SeatSlot.css and this window
+           stayed at a flat 2000ms, so the two disagreed the moment a player
+           changed animation speed — and --animation-speed is a DURATION
+           multiplier that runs up to 3 (see utils/animationSpeed.ts), so on the
+           "slow" setting the float ran six seconds while React unmounted the
+           node after two. The +/- indicator simply vanished a third of the way
+           through its own animation, on the setting chosen by the players most
+           likely to want to read it.
+
+           Same +50ms cushion as the all-in shake below: an exact tie races the
+           final frame at speed 1. Overshooting is harmless — the keyframe ends
+           at opacity 0 with `forwards`, so the extra moments are invisible. */
+        const t = setTimeout(() => setStackDelta(0), 2000 * getAnimationSpeed() + 50);
         return () => clearTimeout(t);
       }
-      prevStackRef.current = player.stack;
-      wasSeatedRef.current = true; // Mark as seated after first render
-    }, [player?.stack]);
+      // A new occupant must not inherit the last one's floating delta.
+      if (!sameOccupant) setStackDelta(0);
+    }, [player?.stack, playerId]);
 
     /**
      * Which avatar URL (if any) failed to load, so the monogram can take over.
@@ -571,6 +1098,19 @@ export const SeatSlot = memo(
     // and drive off an isWinner rising edge so the bounce replays every win.
     const winnerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const prevIsWinnerRef = useRef(false);
+
+    /* Dan 2026-08-26 mobile pass, item 10: how much of the turn had already
+       elapsed when THIS CLIENT first painted the turn. The engine stamps
+       turn_start_time_ms when it arms the timer, which is broadcast-latency
+       plus the deal hold BEFORE the seat can render the ring — so the ring
+       used to mount already part-drained and visibly emptied in fewer than 15
+       seconds. Anchoring the animation at first paint makes the ring start
+       FULL and reach empty exactly at the engine's deadline (the fold /
+       time-bank moment), which is what "it must take 15 full seconds to
+       disappear" means on a screen that cannot see the packet in flight.
+       Keyed by the turn's start stamp so re-renders mid-turn reuse the same
+       anchor instead of re-anchoring (which would freeze the ring). */
+    const turnPaintAnchorRef = useRef<{ key: number; baseElapsedMs: number } | null>(null);
     useEffect(() => {
       return () => {
         if (peekTimerRef.current) clearTimeout(peekTimerRef.current);
@@ -600,7 +1140,10 @@ export const SeatSlot = memo(
       // --animation-speed, the same multiplier the keyframes use.
       if (lastAction === 'all_in' && prevActionRef.current !== 'all_in') {
         setAllinShake(true);
-        const timer = setTimeout(() => setAllinShake(false), 400 * getAnimationSpeed());
+        // 2026-08-27: +50ms cushion — the keyframe now scales with
+        // --animation-speed (SeatSlot.css), and an exact tie races the last
+        // frame at speed 1.
+        const timer = setTimeout(() => setAllinShake(false), 400 * getAnimationSpeed() + 50);
         prevActionRef.current = lastAction;
         return () => clearTimeout(timer);
       }
@@ -615,6 +1158,57 @@ export const SeatSlot = memo(
         return () => clearTimeout(timer);
       }
       prevActionRef.current = lastAction;
+    }, [lastAction]);
+
+    /**
+     * CRAZY PINEAPPLE PHASE 3 2026-08-31 - one card leaves the hand.
+     *
+     * Deliberately its own effect, its own ref and its own timer, for the same
+     * reason the avatar choreography below is: the all-in/fold effect above
+     * early-returns per branch to scope its cleanup to a single timer, so a
+     * third branch added there would be unreachable (all_in and fold both
+     * return first) or would silently change which timeout gets cleaned up.
+     *
+     * Fired off `lastAction` and NOTHING else, which is what makes a horse's
+     * discard identical to a human's (CLAUDE.md §10.5): both arrive as the
+     * same PLAYER_ACTION event, on the same code path, at the horse's own
+     * humanlike delay. There is no `is_horse` anywhere near this.
+     *
+     * The window outlasts the CSS the way the fold's does - cardDiscardOut is
+     * 420ms and this is 500ms, both scaled by --animation-speed, so the ghost
+     * is never unmounted mid-flight at any speed setting (ANIMATION AUDIT
+     * 2026-08-19 found exactly that bug on the fold).
+     *
+     * NOT marked data-motion="keep", and that is deliberate: the length of
+     * this animation carries no information. What it MEANS - a card left this
+     * hand - is carried by its final frame and by the row that is now one card
+     * shorter, both of which reduced motion preserves (reducedMotion.css
+     * collapses to 1ms rather than `animation: none` precisely so `forwards`
+     * animations still land). Motion collapses; the meaning does not.
+     */
+    const [discardFlight, setDiscardFlight] = useState(false);
+    const prevDiscardActionRef = React.useRef<LastAction>(null);
+    /* AUDIT 2026-08-31: belt to the engine's braces. The trigger is now durable
+       (HandController records the discard on state.actionHistory, so a snapshot
+       re-asserts it instead of erasing it), but a seat discards exactly ONCE
+       per hand, so a second flight is never correct however lastAction gets
+       there. This makes a fall-then-rise from any source - a dropped snapshot,
+       a resync, a re-mount - unable to throw the same card twice. */
+    const inFlightRef = React.useRef(false);
+    useEffect(() => {
+      const rising = lastAction === 'discard' && prevDiscardActionRef.current !== 'discard';
+      prevDiscardActionRef.current = lastAction;
+      if (!rising || inFlightRef.current) return;
+      inFlightRef.current = true;
+      setDiscardFlight(true);
+      const timer = setTimeout(() => {
+        inFlightRef.current = false;
+        setDiscardFlight(false);
+      }, 500 * getAnimationSpeed());
+      return () => {
+        clearTimeout(timer);
+        inFlightRef.current = false;
+      };
     }, [lastAction]);
 
     /**
@@ -716,10 +1310,10 @@ export const SeatSlot = memo(
      * alert is a reaction to the turn ARRIVING; arriving late to someone else's
      * turn is not that.
      */
-    const prevGestureActiveRef = useRef(isActive);
+    const prevGestureActiveRef = useRef(isActingNow);
     useEffect(() => {
-      const rising = isActive && !prevGestureActiveRef.current;
-      prevGestureActiveRef.current = isActive;
+      const rising = isActingNow && !prevGestureActiveRef.current;
+      prevGestureActiveRef.current = isActingNow;
       if (!rising || prefersReducedMotion()) return;
       setAvatarGesture('alert');
       if (gestureTimerRef.current) clearTimeout(gestureTimerRef.current);
@@ -727,7 +1321,7 @@ export const SeatSlot = memo(
         () => setAvatarGesture(null),
         ALERT_MS * getAnimationSpeed()
       );
-    }, [isActive]);
+    }, [isActingNow]);
     /**
      * THE OTHER HALF OF THE OUTCOME 2026-08-21.
      *
@@ -773,7 +1367,7 @@ export const SeatSlot = memo(
      * Same approach as `--rigged`.
      */
     const showTense =
-      isActive &&
+      isActingNow &&
       !avatarGesture &&
       !rigActive &&
       timerProgress !== undefined &&
@@ -781,20 +1375,77 @@ export const SeatSlot = memo(
 
     // Showdown card flip animation — 3D flip when opponent cards are revealed
     const [isShowdownFlip, setIsShowdownFlip] = useState(false);
+    // SHOWDOWN SYSTEM 2026-08-25 (spec section 3): while true, the seat keeps
+    // rendering card BACKS even though the snapshot has already revealed the
+    // hand — this is what turns the simultaneous broadcast reveal into a
+    // sequence. The hold expires after showdownRevealDelayMs (reveal order x
+    // stagger), then the flip plays exactly as before.
+    const [revealHeld, setRevealHeld] = useState(false);
     const prevShowCardsRef = React.useRef<boolean>(player?.showCards ?? false);
+    // ANIMATION AUDIT 2026-08-27: the old effect kept its timers in effect
+    // scope and CANCELLED them in cleanup — but showdownRevealDelayMs is
+    // recomputed when SHOWDOWN_CARDS_REVEALED reconciles the reveal order
+    // mid-hold, and that dep change re-ran the effect: cleanup killed the
+    // hold timer, and because prevShowCardsRef was already latched true the
+    // rising-edge guard refused to reschedule — NO flip played and the cards
+    // snapped face-up. Timers now live in component-scope refs, survive dep
+    // changes, and are torn down only on unmount or when the cards go back
+    // face-down (new hand). Once a hold is pending it is never cancelled by
+    // a reorder — the first-scheduled stagger plays out.
+    const flipPlayedRef = React.useRef(false);
+    const flipHoldTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const flipEndTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(
+      () => () => {
+        if (flipHoldTimerRef.current) clearTimeout(flipHoldTimerRef.current);
+        if (flipEndTimerRef.current) clearTimeout(flipEndTimerRef.current);
+      },
+      []
+    );
     useEffect(() => {
       if (!player) return;
-      // Trigger 3D flip when showCards transitions false → true
-      if (player.showCards && !prevShowCardsRef.current) {
+      const showing = !!player.showCards;
+      if (!showing) {
+        // Cards hidden again (new hand) — re-arm for the next reveal.
+        prevShowCardsRef.current = false;
+        flipPlayedRef.current = false;
+        if (flipHoldTimerRef.current) {
+          clearTimeout(flipHoldTimerRef.current);
+          flipHoldTimerRef.current = null;
+        }
+        if (flipEndTimerRef.current) {
+          clearTimeout(flipEndTimerRef.current);
+          flipEndTimerRef.current = null;
+        }
+        setRevealHeld(false);
+        return;
+      }
+      // Already played, or a hold is pending — let it run.
+      if (flipPlayedRef.current || flipHoldTimerRef.current) {
+        prevShowCardsRef.current = true;
+        return;
+      }
+      prevShowCardsRef.current = true;
+      const beginFlip = () => {
+        flipHoldTimerRef.current = null;
+        flipPlayedRef.current = true;
+        setRevealHeld(false);
         setIsShowdownFlip(true);
         // ANIMATION AUDIT 2026-08-19: was 400ms, but card 2 runs 120ms delay
         // + 350ms flip = 470ms — it snapped face-up at 85%. 600ms covers it.
-        const timer = setTimeout(() => setIsShowdownFlip(false), 600 * getAnimationSpeed());
-        prevShowCardsRef.current = player.showCards;
-        return () => clearTimeout(timer);
+        flipEndTimerRef.current = setTimeout(() => {
+          setIsShowdownFlip(false);
+          flipEndTimerRef.current = null;
+        }, 600 * getAnimationSpeed());
+      };
+      const holdMs = Math.max(0, showdownRevealDelayMs) * getAnimationSpeed();
+      if (holdMs > 0) {
+        setRevealHeld(true);
+        flipHoldTimerRef.current = setTimeout(beginFlip, holdMs);
+      } else {
+        beginFlip();
       }
-      prevShowCardsRef.current = player.showCards ?? false;
-    }, [player?.showCards]);
+    }, [player?.showCards, showdownRevealDelayMs]);
 
     // ── COMPETITOR-PARITY 2026-08-19: Card Squeeze ─────────────────────────
     // squeezeProgress: 0 = face down, 1 = fully peeled open. Driven by a
@@ -902,23 +1553,30 @@ export const SeatSlot = memo(
       },
     };
 
-    // Stack glow pulse — when stack changes by >20%
+    // Stack glow pulse — when the stack changes by >20%.
+    // Same occupant guard as the delta above, and for the same reason: a chair
+    // changing hands is not a 20% swing, and it used to pulse like one.
     const [stackGlow, setStackGlow] = useState(false);
     const prevStackForGlowRef = React.useRef<number>(player?.stack ?? 0);
+    const glowOccupantRef = React.useRef<string | null>(player?.id ?? null);
     useEffect(() => {
-      if (!player) return;
+      if (!player) {
+        glowOccupantRef.current = null;
+        return;
+      }
       const prev = prevStackForGlowRef.current;
-      if (prev > 0) {
+      const sameOccupant = glowOccupantRef.current === player.id;
+      prevStackForGlowRef.current = player.stack;
+      glowOccupantRef.current = player.id;
+      if (sameOccupant && prev > 0) {
         const percentChange = Math.abs(player.stack - prev) / prev;
         if (percentChange > 0.2) {
           setStackGlow(true);
           const timer = setTimeout(() => setStackGlow(false), 600);
-          prevStackForGlowRef.current = player.stack;
           return () => clearTimeout(timer);
         }
       }
-      prevStackForGlowRef.current = player.stack;
-    }, [player?.stack]);
+    }, [player?.stack, playerId]);
 
     const containerClasses = useMemo(() => {
       const cls = ['seat'];
@@ -937,7 +1595,15 @@ export const SeatSlot = memo(
           cls.push(`seat--${player.status}`);
         }
         if (player.isHero) cls.push('seat--hero');
-        if (isActive) cls.push('seat--active');
+        /* Armed-but-unspent time bank, hero only. Deliberately NOT gated on
+           isActingNow alone: the arm is only meaningful during hero's turn,
+           and TablePage clears it when the turn ends. */
+        if (player.isHero && timeBankArmed) cls.push('seat--tb-armed');
+        // isActingNow, not isActive: a seat that has just folded must lose the
+        // acting chrome (and its countdown ring) immediately, without waiting
+        // for the snapshot that moves currentPlayerSeat along. See hasFolded.
+        if (isActingNow) cls.push('seat--active');
+        if (isActingNow && isTimeBankActive) cls.push('seat--time-bank-active');
         if (isWinner) {
           cls.push('seat--winner');
           cls.push('seat--winner-glow');
@@ -959,13 +1625,24 @@ export const SeatSlot = memo(
         if (allinShake) cls.push('seat--allin-shake');
         if (stackGlow) cls.push('seat--stack-glow');
         // Timer urgency classes for color transitions
-        if (isActive && timerProgress !== undefined) {
+        if (isActingNow && timerProgress !== undefined) {
           if (timerProgress <= 20) cls.push('seat--timer-critical');
           else if (timerProgress <= 33) cls.push('seat--timer-urgent');
         }
       }
       return cls.join(' ');
-    }, [player, isActive, lastAction, isWinner, timerProgress, winnerPop, allinShake, stackGlow]);
+    }, [
+      player,
+      isActingNow,
+      lastAction,
+      isWinner,
+      timerProgress,
+      winnerPop,
+      allinShake,
+      stackGlow,
+      timeBankArmed,
+      isTimeBankActive,
+    ]);
 
     // ─── EMPTY SEAT ────────────────────────────────────────────────────────
     if (!player) {
@@ -992,34 +1669,47 @@ export const SeatSlot = memo(
         return (
           <div
             className={`${containerClasses} seat--empty-locked`}
-            aria-label={`Seat ${seatNumber}: empty`}
+            data-seat-num={seatNumber}
+            /* 2026-08-26: replaced text label with the EMPTY coin image.
+               Interaction model unchanged — no onClick, no tabIndex, no role:
+               the seat is removed from the interaction model entirely. */
+            aria-label={
+              isHeroReservedSeat ? `Seat ${seatNumber}: Your Seat` : `Seat ${seatNumber}: Empty`
+            }
           >
-            <span className="seat__empty-label">{isHeroReservedSeat ? 'YOUR SEAT' : 'EMPTY'}</span>
+            <img
+              src={`${import.meta.env.BASE_URL}images/icons/empty-button.png`}
+              alt={isHeroReservedSeat ? 'Your Reserved Seat' : 'Empty Seat'}
+              className="seat__empty-img"
+              draggable={false}
+            />
           </div>
         );
       }
       return (
         <div
           className={containerClasses}
-          onClick={onSit}
+          data-seat-num={seatNumber}
+          onClick={() => callbacksRef.current.onSit?.()}
           onKeyDown={(e) => {
             // Lobby audit P2-5: keyboard users must be able to sit via the
             // role="button" empty seat. Mirror the onClick (onSit) handler.
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
-              onSit?.();
+              callbacksRef.current.onSit?.();
             }
           }}
           role="button"
           tabIndex={0}
-          aria-label={`Seat ${seatNumber}: open - click to sit`}
+          aria-label={`Seat ${seatNumber}: Open - Click To Sit`}
         >
-          {/* Dan 2026-08-18: "+" stacked ABOVE "SIT" and centered, not
-              inline where it read as left-offset. */}
-          <span className="seat__empty-label">
-            <span className="seat__empty-plus">+</span>
-            <span className="seat__empty-word">SIT</span>
-          </span>
+          {/* 2026-08-26: replaced +/SIT text stack with the SIT coin image. */}
+          <img
+            src={`${import.meta.env.BASE_URL}images/icons/sit-button.png`}
+            alt="Sit Down"
+            className="seat__empty-img seat__empty-img--sit"
+            draggable={false}
+          />
         </div>
       );
     }
@@ -1077,8 +1767,8 @@ export const SeatSlot = memo(
      * the character would no longer agree. A rigged avatar carries its own look.
      */
     const showHolo = isVipBust && !avatarBroken && !rigActive;
-    // The hero cannot open a menu on themselves.
-    const avatarClickable = !!onAvatarClick && !player.isHero;
+    // The hero can now be clicked to open the profile modal.
+    const avatarClickable = !!onAvatarClick;
 
     // COMPETITOR-PARITY 2026-08-19 (Card Squeeze): single source of truth for
     // "the hero's cards are currently face down awaiting a squeeze".
@@ -1090,6 +1780,118 @@ export const SeatSlot = memo(
       !isWinner &&
       !isMucking;
 
+    /**
+     * IS THE HERO'S HAND BEING SHOWN TO THE TABLE?
+     *
+     * Dan 2026-08-27: "cards ... need to be displayed left to right. These are
+     * the ONLY WAY they should be displayed at showdown, or when shown by the
+     * player. Clearly showing every single card in the hand."
+     *
+     * The hero's row is the one row on the table with two audiences, and it has
+     * only ever been drawn for the first. PRIVATELY it is the hero's own hand:
+     * overlapped and arced, because that is what a held hand looks like and
+     * because the compact row is what lets a PLO6 hand live in the strip of
+     * backdrop right of the seat on a 375px phone. The hero loses nothing to a
+     * covered card - they already know what they hold.
+     *
+     * TABLED it is being read by everybody else, and every one of those reasons
+     * evaporates. So the class below opens the row out and flattens it (see the
+     * `--revealed` block at the end of SeatSlot.css) - the same treatment a
+     * villain's shown hand gets, which is the point: Dan's rule is that a shown
+     * hand looks the same wherever it is sitting.
+     *
+     * DERIVED HERE RATHER THAN PASSED IN. `player.showCards` cannot answer this
+     * for the hero: TablePage sets it to `isHero` on every deal, because the
+     * hero can always see their own cards. The honest signal is a prop
+     * (`isShowdown`) from TablePage, which several other workstreams are inside
+     * right now, so this reads the three states the seat can already see:
+     *
+     *   isWinner            the hand was tabled and won - it is on display now
+     *   status === all_in   an all-in runout turns the hand face up to the table
+     *   winnerDisplayActive a showdown is being presented at this table
+     *
+     * and requires the hand to still be LIVE. A hero who folded keeps their
+     * cards on screen on purpose (TablePage substitutes the last-delivered
+     * array back in so the player can see what they mucked, Dan 2026-04-14),
+     * and that muck view is private - it must not fan itself open every time
+     * somebody else wins. Same for a hand the engine ruled muckable.
+     */
+    const heroHandIsTabled =
+      !!player.isHero &&
+      player.status !== 'folded' &&
+      lastAction !== 'fold' &&
+      !isMuckedShowdown &&
+      (isWinner || player.status === 'all_in' || !!winnerDisplayActive);
+
+    /**
+     * How many cards a VILLAIN's fan is about to draw.
+     *
+     * Dan 2026-08-26 rebuild: this number is the ONLY thing game type changes
+     * about a villain's hand. 2, 4, 5 and 6 all render through the same fan
+     * geometry (see VILLAIN_FAN above and `.seat__cards--opponent` in
+     * SeatSlot.css); the old per-game-type layout branch was the bug.
+     *
+     * Counted from what will actually be RENDERED rather than from
+     * holeCardCount alone, because the two branches below disagree by design:
+     * a revealed hand draws `holeCards`, a hidden one draws `holeCardCount`
+     * backs. Both are the variant's count for a villain — an opponent's
+     * holeCards array is empty precisely because the hand is hidden, never
+     * short — so either branch answers the same question, and reading the one
+     * that is about to render means the fan's variables can never disagree
+     * with the row they describe.
+     */
+    const opponentCardCount =
+      player.holeCards && player.holeCards.length > 0
+        ? player.holeCards.length
+        : Math.max(1, Math.min(6, holeCardCount));
+
+    /**
+     * Dan 2026-08-25 round 2, item 9: "when the hero doesn't have a hand, they
+     * should never be covered by anything ever."
+     *
+     * The hero's card row is the one thing INSIDE this seat that can be drawn
+     * over the hero, and it outlives the hand it belongs to. TablePage keeps
+     * the hero's last-delivered `holeCards` alive on purpose — when the hero
+     * folds, the engine scrubs them out of the public snapshot and TablePage
+     * substitutes the previous array back in, so the player can still see what
+     * they mucked (Dan's UX rule, 2026-04-14). That substitution has no hand
+     * boundary in it: once the hero has been dealt in even once, `holeCards`
+     * stays non-empty through the fold, through the showdown, through the gap
+     * before the next deal, and on through a sit-out — so this row renders in
+     * every state where the hero has no hand at all.
+     *
+     * Two halves to making that structurally impossible, and this is the first:
+     * a player who is OUT of the game — sat out or away — is not holding a hand
+     * by any reading, so the stale row is not drawn for them at all. The second
+     * half is geometric and lives in SeatSlot.css: the row is anchored 1px
+     * clear of the seat's own box, so even while it legitimately renders (live
+     * hand, muck view, showdown) it cannot overlap the avatar or the plate at
+     * any hand size or breakpoint.
+     *
+     * Deliberately NOT extended to 'disconnected': a disconnected player is
+     * still in the hand until the engine folds them, and erasing their cards
+     * would be erasing a live holding.
+     */
+    /* ── HOLDING CARDS BEATS EVERY OTHER SIGNAL ────────────────────────────
+       Dan 2026-08-26: "hero can NEVER EVER EVER lose access to seeing their
+       hole cards."
+
+       This suppression exists so a STALE holding cannot be drawn over a hero
+       who has no hand — which is a real problem and stays solved, because the
+       merge upstream now expires the holding at the hand boundary. But as a
+       standalone status test it was also capable of hiding a hand the hero
+       genuinely HOLDS: a resync can re-stamp the hero 'sitting_out' from a
+       stale ref, and a frame where the engine roster omits the hero's seat
+       substitutes a placeholder with that status. Either one blanked a live
+       hand for as long as it lasted.
+
+       Cards present is now the stronger signal. If the hero is holding
+       something, it is drawn, whatever the status line says; the suppression
+       only applies when there is nothing to show anyway. */
+    const heroHoldsCards = !!player.holeCards && player.holeCards.length > 0;
+    const heroIsOutOfPlay =
+      !heroHoldsCards && (player.status === 'sitting_out' || player.status === 'away');
+
     // 2026-04-15 Bible V8 §6.1 — pure-CSS ring countdown. Set animation
     // duration + a negative animation-delay so the ring animates from the
     // CURRENT elapsed position to 0% over the remaining seconds. Works on
@@ -1098,7 +1900,7 @@ export const SeatSlot = memo(
     // unavailable so the prior JS-driven visual still shows.
     let timerStyle: React.CSSProperties | undefined;
     let timerKey: number | string = 'no-turn';
-    if (isActive && turnDeadlineMs && turnDeadlineMs > 0) {
+    if (isActingNow && turnDeadlineMs && turnDeadlineMs > 0) {
       // ── Dan 2026-08-20: "the yellow countdown timer is not 15 seconds — it
       //    needs to be exactly 15 seconds long to make the yellow disappear."
       //
@@ -1136,14 +1938,39 @@ export const SeatSlot = memo(
       // overrun). serverNow() applies the measured offset - see
       // utils/serverClock.ts. durationMs above never had this problem: it is
       // deadline minus start, server-minus-server, so the offset cancels.
-      const elapsedMs = turnStartTimeMs ? Math.max(0, serverNow() - turnStartTimeMs) : 0;
+      const rawElapsedMs = turnStartTimeMs ? Math.max(0, serverNow() - turnStartTimeMs) : 0;
+      /* Item 10 (Dan 2026-08-26): anchor at this client's FIRST paint of the
+         turn. The base elapsed (latency + deal hold) is subtracted from both
+         the duration and the elapsed, so the ring spans mount → deadline:
+         starts full, empties exactly when the engine folds or the time bank
+         fires, never earlier. Capped so a pathological anchor can never
+         reduce the ring below one second. */
+      /* Only broadcast latency and the deal hold are compensated — a few
+         seconds at most. A LARGER first-paint elapsed means a genuine
+         mid-turn rejoin (reconnect, tab wake), where the ring must pick up
+         at its true position rather than pretend the clock restarted —
+         tests/seatslot-countdown-duration.test.tsx pins that case. */
+      const TURN_PAINT_LATENCY_ALLOWANCE_MS = 3_000;
+      const anchorKey = turnStartTimeMs || turnDeadlineMs;
+      if (turnPaintAnchorRef.current?.key !== anchorKey) {
+        turnPaintAnchorRef.current = {
+          key: anchorKey,
+          baseElapsedMs: rawElapsedMs <= TURN_PAINT_LATENCY_ALLOWANCE_MS ? rawElapsedMs : 0,
+        };
+      }
+      const baseElapsedMs = Math.min(
+        turnPaintAnchorRef.current.baseElapsedMs,
+        Math.max(0, durationMs - 1_000)
+      );
+      const effDurationMs = durationMs - baseElapsedMs;
+      const elapsedMs = Math.max(0, rawElapsedMs - baseElapsedMs);
       // Dan 2026-08-15: the yellow countdown is a full 15 seconds. On a normal
       // 15s turn that is the entire clock (never goes red); when a time bank
       // extends the turn, yellow still owns the first 15s and the borrowed
       // seconds run red. Capped at the turn length so the colour animation can
       // never outlive the ring it colours.
       const YELLOW_MS = 15_000;
-      const yellowMs = Math.min(YELLOW_MS, durationMs);
+      const yellowMs = Math.min(YELLOW_MS, effDurationMs);
       /**
        * Dan 2026-08-21 (bug list item 8): "it must take 15 seconds to fully
        * disappear, it needs to slow down at the end and FLASH when there are 5
@@ -1169,14 +1996,14 @@ export const SeatSlot = memo(
        */
       const FLASH_WINDOW_MS = 5_000;
       const FLASH_CYCLE_MS = 500;
-      const remainingMs = Math.max(0, durationMs - elapsedMs);
-      const flashDelayMs = durationMs - FLASH_WINDOW_MS - elapsedMs;
+      const remainingMs = Math.max(0, effDurationMs - elapsedMs);
+      const flashDelayMs = effDurationMs - FLASH_WINDOW_MS - elapsedMs;
       const flashCount = Math.max(
         0,
         Math.ceil(Math.min(FLASH_WINDOW_MS, remainingMs) / FLASH_CYCLE_MS)
       );
       timerStyle = {
-        '--sp-timer-duration': `${(durationMs / 1000).toFixed(3)}s`,
+        '--sp-timer-duration': `${(effDurationMs / 1000).toFixed(3)}s`,
         '--sp-timer-yellow-duration': `${(yellowMs / 1000).toFixed(3)}s`,
         '--sp-timer-delay': `-${(elapsedMs / 1000).toFixed(3)}s`,
         '--sp-timer-flash-delay': `${(flashDelayMs / 1000).toFixed(3)}s`,
@@ -1199,7 +2026,7 @@ export const SeatSlot = memo(
       // precisely the desired behaviour (the ring keeps draining from where
       // it is, just more slowly).
       timerKey = turnStartTimeMs || turnDeadlineMs;
-    } else if (isActive && timerProgress !== undefined) {
+    } else if (isActingNow && timerProgress !== undefined) {
       // Legacy JS-hook fallback (visible tabs only).
       timerStyle = {
         '--timer-progress': `${timerProgress}%`,
@@ -1208,12 +2035,20 @@ export const SeatSlot = memo(
 
     return (
       <div
-        className={containerClasses}
-        onClick={onAction}
+        ref={seatRef}
+        /* `seat--cards-left` / `seat--cards-right` is the side derived above —
+           outboard at the top cap, inboard everywhere else, see `seatCardSide`.
+           It rides on the seat rather than on the card row so the CSS can key
+           both the hero row and the opponent row off one class. */
+        className={`${containerClasses} seat--cards-${cardSide}`}
+        onClick={() => callbacksRef.current.onAction?.()}
         data-seat-num={seatNumber}
         role="region"
-        aria-label={`Seat ${seatNumber}: ${player.name}${isActive ? ' (acting now)' : ''}${player.status === 'folded' ? ' (folded)' : ''}${player.status === 'all_in' ? ' (all in)' : ''}, stack ${player.stack}`}
-        aria-live={isActive ? 'polite' : 'off'}
+        /* isActingNow: a screen reader must not keep announcing a folded seat
+           as "acting now" for the round trip it takes the snapshot to move the
+           turn along - the same stale-turn window the countdown ring had. */
+        aria-label={`Seat ${seatNumber}: ${player.name}${isActingNow ? ' (Acting Now)' : ''}${player.status === 'folded' ? ' (Folded)' : ''}${player.status === 'all_in' ? ' (All In)' : ''}, Stack ${player.stack}`}
+        aria-live={isActingNow ? 'polite' : 'off'}
       >
         {/* Last Action Badge — floats ABOVE the seat (premium style) */}
         {lastAction && (
@@ -1246,45 +2081,125 @@ export const SeatSlot = memo(
           </div>
         ) : null}
 
-        {/* Hole Cards — opponents: show card backs for active/all-in players, reveal at showdown.
-            Also render during isFolding so the fly-out animation can play before unmount. */}
+        {/* Hole Cards — opponents: ONE small rotational cluster for every hand
+            size (Dan 2026-08-26, PokerBros reference). The count comes from
+            the variant, the geometry from CSS; there is deliberately NO
+            game-type layout branch here — that branch (the old `--twocard`
+            hold'em treatment) was the second renderer this rebuild deleted.
+            Also renders during isFolding so the fly-out animation can play
+            before unmount; the pod itself never reflows when the cluster
+            goes, because it is absolutely positioned. */}
         {!player.isHero &&
-          (player.status === 'active' || player.status === 'all_in' || isFolding || isMucking) && (
+          (player.status === 'active' || player.status === 'all_in' || isFolding || isMucking) &&
+          /* A HAND, NOT FURNITURE (Dan 2026-08-28). See `handInPlay`. Every
+             arm after the first is an escape hatch so this can never swallow
+             a real hand or a protected animation: cards actually delivered,
+             an all-in that is by definition mid-hand, a deal sliding in, a
+             fold or muck flying out. What is left — a seated player, no
+             hand, nothing animating — is the pre-start Spin that drew two
+             players holding cards before the game had a third. */
+          (handInPlay ||
+            (player.holeCards?.length ?? 0) > 0 ||
+            player.status === 'all_in' ||
+            isDealing ||
+            isFolding ||
+            isMucking) && (
             <div
-              className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
+              className={`seat__cards seat__cards--opponent${player.showCards && player.holeCards?.length && !revealHeld ? ' seat__cards--revealed' : ''}${isFolding || isMucking ? ' seat__cards--folding' : ''}${isShowdownFlip ? ' seat__cards--showdown' : ''}${isDealing ? ' seat__cards--dealing' : ''}`}
+              style={
+                {
+                  /* PHASE 3 2026-08-31: the flying card still counts toward
+                     the fan's geometry while it is on screen. Without this the
+                     cluster re-centres for two cards the same frame the third
+                     starts leaving, and the two survivors visibly slide. */
+                  '--vh-n': opponentCardCount + (discardFlight ? 1 : 0),
+                  '--vh-rot-step': `${(VILLAIN_FAN[opponentCardCount] ?? VILLAIN_FAN[2]).rot}deg`,
+                  /* -base, not --vh-step-f itself: the showdown reveal widens
+                     the step to 0.55 via a class rule, and an inline value
+                     would beat it. */
+                  '--vh-step-f-base': (VILLAIN_FAN[opponentCardCount] ?? VILLAIN_FAN[2]).step,
+                } as React.CSSProperties
+              }
             >
-              {player.holeCards && player.holeCards.length > 0 ? (
-                player.holeCards.map((card, i) => (
-                  <HoleCard
-                    key={i}
-                    card={card}
-                    /* Dan 2026-08-18: null = this specific card was not among
+              {player.holeCards && player.holeCards.length > 0
+                ? /* TWO ORDERS, NEVER CONFLATED (Dan 2026-08-27, showdown
+                     highlighting). `row` is the position in the row as it is
+                     DRAWN - left to right, high card first - and drives the
+                     React key and `--vh-i`, which is what lays the card out.
+                     `dealtIndex` is the position the ENGINE numbers the card
+                     by, and is the only thing `winningHoleCardIndexes` may be
+                     asked about. They are equal only when the sort was a no-op;
+                     see `displayOrderWithDealtIndex` for the hand that proved
+                     they are not the same number. */
+                  displayHoleCards.map(({ card, dealtIndex }, row) => (
+                    <HoleCard
+                      key={dealtIndex}
+                      card={card}
+                      /* Dan 2026-08-18: null = this specific card was not among
                        the ones the player chose to show, so it stays down even
-                       though the seat itself is revealed. */
-                    hidden={!player.showCards || card == null}
-                    index={i}
-                    isWinner={isWinner}
-                    deckStyle={deckStyle}
-                    cardBack={cardBack}
-                  />
-                ))
-              ) : (
-                <>
-                  <HoleCard
-                    key={0}
-                    hidden={true}
-                    index={0}
-                    deckStyle={deckStyle}
-                    cardBack={cardBack}
-                  />
-                  <HoleCard
-                    key={1}
-                    hidden={true}
-                    index={1}
-                    deckStyle={deckStyle}
-                    cardBack={cardBack}
-                  />
-                </>
+                       though the seat itself is revealed.
+                       SHOWDOWN SYSTEM 2026-08-25: revealHeld keeps the back on
+                       until this seat's turn in the reveal sequence. */
+                      hidden={!player.showCards || card == null || revealHeld}
+                      isWinner={
+                        isWinner &&
+                        (winningHoleCardIndexes
+                          ? winningHoleCardIndexes.includes(dealtIndex)
+                          : true)
+                      }
+                      /* POKERBROS PARITY 2026-08-26: while a winner is on
+                         display, every face-up card outside the winning five
+                         dims — a losing shown hand dims whole, a winner's
+                         unused cards dim around the lit ones. */
+                      isDimmed={
+                        winnerDisplayActive &&
+                        !(
+                          isWinner &&
+                          (winningHoleCardIndexes
+                            ? winningHoleCardIndexes.includes(dealtIndex)
+                            : true)
+                        )
+                      }
+                      deckStyle={deckStyle}
+                      cardBack={cardBack}
+                      /* A revealed villain hand is being read RIGHT NOW - the
+                         showdown is the one moment a card face has to be on
+                         screen the instant it flips. */
+                      eager={player.showCards}
+                      fanIndex={row}
+                    />
+                  ))
+                : /* Dan 2026-08-23: this used to be exactly two hard-coded backs,
+                   so a PLO4 seat showed a Hold'em hand and a 6-card seat showed
+                   a third of one. The count comes from the table because the
+                   seat has nothing to count - an opponent's holeCards array is
+                   empty BECAUSE the hand is hidden. `opponentCardCount` above
+                   applies the sane-band clamp so a malformed variant string
+                   cannot render 0 cards (a live player who looks like they
+                   folded) or a hundred. */
+                  Array.from({ length: opponentCardCount }, (_, i) => (
+                    <HoleCard
+                      key={i}
+                      hidden={true}
+                      deckStyle={deckStyle}
+                      cardBack={cardBack}
+                      fanIndex={i}
+                    />
+                  ))}
+              {/* PHASE 3 2026-08-31: the card on its way to the muck. Drawn
+                  OUTSIDE the count above, at the fan position the hand just
+                  gave up, so the two remaining backs never reflow to make room
+                  for a card that is leaving. Face DOWN, always: this is a
+                  villain, and their discard is not revealed in this variant. */}
+              {discardFlight && (
+                <HoleCard
+                  key="discard-flight"
+                  hidden={true}
+                  deckStyle={deckStyle}
+                  cardBack={cardBack}
+                  fanIndex={opponentCardCount}
+                  discardFlight
+                />
               )}
             </div>
           )}
@@ -1327,17 +2242,29 @@ export const SeatSlot = memo(
                character's silhouette instead of sweeping a rectangle across the
                felt. CSS cannot read the img's src, so hand it over as a custom
                property. Only set for VIP busts — everyone else gets no extra
-               property and no pseudo-element at all. */
+               property and no pseudo-element at all.
+
+               --sp-bust-gain rides here rather than on the <img> BECAUSE of that
+               ::after. This element owns all three things that draw the
+               character — the <img>, the Rive canvas that can stand in for it,
+               and the masked pseudo-element — so a property declared here
+               inherits to every one of them. Declared on the <img> (where it
+               started) only the <img> could see it, which is precisely how the
+               rig and the holo mask ended up scaling differently from the art
+               they are meant to sit exactly on top of. */
             style={
-              showHolo
-                ? ({ ['--sp-avatar-src' as string]: `url("${avatarUrl}")` } as React.CSSProperties)
+              showHolo || bustGain !== 1
+                ? ({
+                    ...(showHolo ? { '--sp-avatar-src': `url("${avatarUrl}")` } : null),
+                    ...(bustGain !== 1 ? { '--sp-bust-gain': bustGain } : null),
+                  } as React.CSSProperties)
                 : undefined
             }
             onClick={
               avatarClickable
                 ? (e) => {
                     e.stopPropagation();
-                    onAvatarClick?.();
+                    callbacksRef.current.onAvatarClick?.();
                   }
                 : undefined
             }
@@ -1349,14 +2276,14 @@ export const SeatSlot = memo(
                hover ring for "clickable opponent avatars". */
             role={avatarClickable ? 'button' : undefined}
             tabIndex={avatarClickable ? 0 : undefined}
-            aria-label={avatarClickable ? `Player actions for ${player.name}` : undefined}
+            aria-label={avatarClickable ? `Player Actions For ${player.name}` : undefined}
             onKeyDown={
               avatarClickable
                 ? (e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
                       e.stopPropagation();
-                      onAvatarClick?.();
+                      callbacksRef.current.onAvatarClick?.();
                     }
                   }
                 : undefined
@@ -1382,8 +2309,15 @@ export const SeatSlot = memo(
               <RiveAvatar
                 avatarUrl={avatarUrl}
                 gesture={avatarGesture}
-                isActive={isActive}
-                isFolded={lastAction === 'fold' || player.status === 'folded'}
+                /* isActingNow, not isActive. `hasFolded` exists precisely so
+                   that ONE value answers "is this seat acting" for the ring,
+                   the urgency colours, the tense idle, the alert gesture and
+                   the screen-reader label - and the rig was the one consumer
+                   still reading the raw snapshot flag. A player who has just
+                   folded kept telling their rig it was still on the clock for
+                   the whole round trip. */
+                isActive={isActingNow}
+                isFolded={hasFolded}
                 size={player.isHero ? SEAT_AVATAR_PX_HERO : SEAT_AVATAR_PX}
                 onRigActive={setRigActive}
               />
@@ -1391,15 +2325,25 @@ export const SeatSlot = memo(
             {showAvatar && !avatarBroken && !rigActive ? (
               <img
                 src={avatarUrl}
-                srcSet={`${avatarUrl} 1x, ${avatarUrl.replace(/\.webp$/, '@2x.webp')} 2x`}
+                /* RETINA 2026-08-23 (root cause of "avatars don't show on
+                   mobile"): 193 profiles stored their library art as
+                   /avatars/table/X@2x.webp. The old unconditional replace
+                   built X@2x@2x.webp as the 2x candidate — a 404 — and every
+                   phone (DPR>=2) SELECTS the 2x candidate, so the img errored
+                   and the seat fell back to an initial. Desktop (DPR 1) used
+                   the 1x URL and looked fine, which is why this only ever hurt
+                   phones. Only offer a 2x twin when the URL is base table art
+                   that is not already @2x. */
+                srcSet={
+                  /^https?:\/\/[^\s]+\/avatars\/table\/[^@\s]+\.webp$/.test(avatarUrl)
+                    ? `${avatarUrl} 1x, ${avatarUrl.replace(/\.webp$/, '@2x.webp')} 2x`
+                    : undefined
+                }
                 alt=""
                 className="seat__avatar-img"
-                /* Per-avatar size correction. See bustArtGain(). */
-                style={
-                  bustGain === 1
-                    ? undefined
-                    : ({ '--sp-bust-gain': bustGain } as React.CSSProperties)
-                }
+                /* Per-avatar size correction (--sp-bust-gain) is NOT set here.
+                   It is declared on `.seat__avatar` above so the Rive rig and
+                   the holo mask inherit the same value; see the note there. */
                 /* Hero eager + high priority: it is the largest avatar on the
                    table (1.33x), always in view, and the one the player looks
                    at first — `lazy` bought nothing there but a deferred request
@@ -1419,6 +2363,17 @@ export const SeatSlot = memo(
               </span>
             ) : null}
 
+            {/* Equipped frame + aura — Bible V8 §11 cosmetics.
+                Inside `.seat__avatar` on purpose: that element owns the circle
+                and the `position: relative`, so the overlay inherits both and
+                stays a circle without knowing the seat's geometry.
+
+                `still` because a nine-handed felt could otherwise run nine
+                infinite keyframe loops behind the cards, and `aura-glitch`
+                repeats six times a second. The aura still reads as an aura; it
+                just stops repainting. */}
+            {showAvatar && <AvatarCosmetics frame={player.frame} aura={player.aura} still />}
+
             {/* Folded overlay */}
             {lastAction === 'fold' && <div className="seat__avatar-fold-overlay" />}
           </div>
@@ -1429,9 +2384,27 @@ export const SeatSlot = memo(
             player.status !== 'all_in' && (
               <span className={`seat__status-dot seat__status-dot--${player.status}`} />
             )}
+          {/* SITTING OUT tag (Dan 2026-08-28): "you also need to add a SITTING
+              OUT tag that other users can see at the table when a player is
+              sitting out, or is forced to sit out from connection issues."
+
+              A real element rather than the `.seat__info::after` pill that used
+              to carry this, because that pill said AWAY for both states and
+              there was no way to tell the two apart — nor to assert on it from
+              a test. AWAY still exists and still means away; this says what it
+              means. The disconnect overlay below is the third state and takes
+              precedence over neither: a dropped player reads DISCONNECTED until
+              the engine formally sits them out, and SITTING OUT after. */}
+          {player.status === 'sitting_out' && (
+            /* The clock lives in a memoised child that owns its own interval —
+               passing a per-second number through here would defeat this
+               component's comparator sixty times a minute per sat-out seat.
+               See SitOutBadge for the full reasoning. */
+            <SitOutBadge sitOutAt={sitOutAt} />
+          )}
           {/* FIX 186: Disconnected overlay — shows DISCONNECTED label + countdown */}
           {player.status === 'disconnected' && (
-            <div className="seat__disconnect-overlay" title="Player disconnected">
+            <div className="seat__disconnect-overlay" title="Player Disconnected">
               <span className="seat__disconnect-label">DISCONNECTED</span>
               {secondsLeft != null && secondsLeft > 0 && (
                 <span className="seat__disconnect-timer">{Math.ceil(secondsLeft)}s</span>
@@ -1454,14 +2427,58 @@ export const SeatSlot = memo(
         {/* Info Box — name + stack, with neon timer border when active.
             The React `key` forces a fresh mount per turn so the CSS
             @property animation restarts from 100%. */}
-        <div className="seat__info" style={timerStyle} key={`info-${timerKey}`}>
+        {/* ANIMATION AUDIT 2026-08-27: data-motion="keep" — the countdown ring
+            IS duration-carrying CSS animation (spTimerRingShrink runs the whole
+            turn; its length is the information). reducedMotion.css collapses
+            every unmarked animation to 1ms, which made the ring finish
+            instantly on every turn for reduced-motion players — the exact case
+            the escape hatch was built for. The ring is informational, not
+            vestibular motion (it shrinks in place). */}
+        <div className="seat__info" style={timerStyle} key={`info-${timerKey}`} data-motion="keep">
           {/* Neon border overlay (rendered via CSS ::before when --active) */}
-          <span className="seat__name">{player.name}</span>
+          {/* Dan 2026-08-30: "NAMES SHOULD NEVER BE CUT OFF... PUT A
+              CHARACTER LIMIT ON THEM IF YOU CAN'T FIT THEM ALL IN WITHOUT
+              USING A ... AFTER THEM." A hard budget instead of an ellipsis:
+              what renders is what fits, whole characters, no dots. */}
+          <span className="seat__name">{limitSeatName(player.name)}</span>
           <span
             className={`seat__stack${stackDelta > 0 ? ' seat__stack--up' : stackDelta < 0 ? ' seat__stack--down' : ''} ${getStackDepthClass(player.stack, bigBlind)}`}
           >
             {showStackInBB ? formatStackAsBB(player.stack, bigBlind) : formatStack(player.stack)}
           </span>
+
+          {/* Armed time bank — the seat-level replacement for the toast that
+              used to be the ONLY feedback for a press that spends nothing yet.
+              Lives inside .seat__info so it sits with the ring it describes. */}
+          {player.isHero && timeBankArmed && (
+            <span className="seat__tb-armed" aria-live="polite">
+              Time Bank Ready
+            </span>
+          )}
+
+          {/**
+           * AUDIT 2026-08-25 — the time bank being SPENT had a stylesheet and
+           * no element.
+           *
+           * `.seat__tb-active` is a fully written rule in SeatSlot.css, with
+           * its own `seat-tb-active-flash` keyframe, and nothing has ever
+           * rendered that class. So the ARMED state (a press that spends
+           * nothing yet) got a label while the ACTIVE state — the one where the
+           * player is burning banked seconds — got only a red box-shadow on the
+           * plate, which is indistinguishable at a glance from the ordinary
+           * critical-time colour the ring already turns.
+           *
+           * Not hero-only, deliberately: TablePage sets `isTimeBankActive` for
+           * the acting seat alone, and knowing an OPPONENT has gone into the
+           * tank on borrowed time is exactly the information a player wants.
+           * Gated on isActingNow for the same reason the class list is — a
+           * seat that has just folded must not keep a live clock on it.
+           */}
+          {isActingNow && isTimeBankActive && (
+            <span className="seat__tb-active" aria-live="polite">
+              Time Bank
+            </span>
+          )}
 
           {/* Stack Change Delta */}
           {stackDelta !== 0 && (
@@ -1498,7 +2515,7 @@ export const SeatSlot = memo(
          *  After the hero folds, keep the cards visible but dim them so the
          *  player can still see what they mucked (matches how the avatar
          *  dims on fold). Dan's UX rule, 2026-04-14. */}
-        {player.holeCards && player.holeCards.length > 0 && player.isHero && (
+        {player.holeCards && player.holeCards.length > 0 && player.isHero && !heroIsOutOfPlay && (
           /* COMPETITOR-PARITY 2026-08-19 (Card Squeeze): while the setting is
              on and this hand has not been squeezed open, the hero's cards sit
              face DOWN and the container owns a drag-up peel gesture instead
@@ -1507,6 +2524,12 @@ export const SeatSlot = memo(
           <div
             className={
               'seat__cards seat__cards--hero' +
+              /* Dan 2026-08-27: a hand that is being SHOWN opens out flat and
+                 left to right, hero and villain alike. `heroHandIsTabled`
+                 above says when that is; the geometry is the `--revealed`
+                 block at the end of SeatSlot.css. Never while the cards are
+                 still face down in the squeeze - there is nothing to show. */
+              (heroHandIsTabled && !squeezeDown ? ' seat__cards--revealed' : '') +
               (isDealing ? ' seat__cards--dealing' : '') +
               (isFolding ? ' seat__cards--folding' : '') +
               (lastAction === 'fold' || player.status === 'folded' ? ' seat__cards--folded' : '') +
@@ -1526,7 +2549,7 @@ export const SeatSlot = memo(
             tabIndex={squeezeDown ? 0 : undefined}
             aria-label={
               squeezeDown
-                ? 'Your cards are face down. Drag up to squeeze them open, or press Enter.'
+                ? 'Your Cards Are Face Down. Drag Up To Squeeze Them Open, Or Press Enter.'
                 : undefined
             }
             {...(squeezeDown
@@ -1588,8 +2611,8 @@ export const SeatSlot = memo(
                 aria-label={
                   onToggleShowCard && !squeezeDown
                     ? showPickedCardIndexes?.includes(i)
-                      ? `Card ${i + 1} will be shown after the hand. Activate to keep it hidden.`
-                      : `Show card ${i + 1} after the hand`
+                      ? `Card ${i + 1} Will Be Shown After The Hand. Activate To Keep It Hidden.`
+                      : `Show Card ${i + 1} After The Hand`
                     : undefined
                 }
                 onClick={(e) => {
@@ -1636,20 +2659,66 @@ export const SeatSlot = memo(
                   <HoleCard
                     card={card}
                     hidden={false}
-                    index={i}
                     isHero={true}
-                    isWinner={isWinner}
+                    isWinner={
+                      isWinner &&
+                      (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
+                    }
+                    /* POKERBROS PARITY 2026-08-26: same rule as the villain
+                       row — during winner display, only the winning cards
+                       stay lit; the hero's other cards dim with the rest. */
+                    isDimmed={
+                      winnerDisplayActive &&
+                      !(
+                        isWinner &&
+                        (winningHoleCardIndexes ? winningHoleCardIndexes.includes(i) : true)
+                      )
+                    }
                     deckStyle={deckStyle}
                     cardBack={cardBack}
+                    /* The hero's own hand is on screen for the whole hand and is
+                       the first thing they look at. Nothing about it should be
+                       deferred. */
+                    eager
                   />
                 )}
               </span>
             ))}
+            {/* PHASE 3 2026-08-31: hero's discarded card, on its way out.
+                By the time this renders the row above is already two cards -
+                the engine accepted, TablePage took the card off the felt, and
+                that removal is also what closes the picker. So the card the
+                player just chose has nowhere left to live, and without a ghost
+                the hero's hand simply pops from three to two.
+
+                Deliberately NOT inside a .seat__card-pick wrapper: this card
+                is gone, so it must not be clickable, focusable, or markable as
+                "show after the hand". Face UP, because it is the hero's own
+                card and they are the one who picked it - see discardFlightCard
+                on the interface for why nobody else's is. */}
+            {discardFlight && (
+              <HoleCard
+                key="discard-flight"
+                card={discardFlightCard}
+                hidden={!discardFlightCard}
+                isHero={true}
+                deckStyle={deckStyle}
+                cardBack={cardBack}
+                eager
+                discardFlight
+              />
+            )}
           </div>
         )}
 
         {/* Winning Hand Name — floats below cards (premium style) "Straight" label */}
         {isWinner && winningHandName && <div className="seat__hand-name">{winningHandName}</div>}
+
+        {/* SHOWDOWN SYSTEM 2026-08-25 (spec section 4): the engine ruled this
+            hand muckable — its cards were never revealed. The label is the
+            seat's whole showdown story, so it never renders alongside a
+            winner label. */}
+        {isMuckedShowdown && !isWinner && <div className="seat__mucked-label">Mucked</div>}
 
         {/**
          * Dan 2026-08-21 (bug list item 15): "display the current strength of
@@ -1668,12 +2737,38 @@ export const SeatSlot = memo(
           </div>
         )}
 
-        {/* Phase 2 T1-01 — PokerBros net-profit "+N" yellow floating text.
-         *  Shows only when isWinner=true AND netWinAmount>0. Keyed on the
-         *  amount so each new win re-triggers the float animation. */}
+        {/* Phase 2 T1-01 — PokerBros net-profit floating text.
+         *  Keyed on the amount so each new win re-triggers the float.
+         *
+         *  Dan 2026-08-23: shows for any NON-ZERO net, not just a positive one,
+         *  and carries its own sign. Taking down a pot and making money on it
+         *  are different things - chop one after the rake comes off and a
+         *  winner can be genuinely down on the hand. That used to render as
+         *  nothing at all (the mapper clamped the net to 0, and 0 failed this
+         *  `> 0` gate), so the hand a player most wants explained was the one
+         *  the table went quiet on. A true zero still renders nothing, because
+         *  "you broke even" needs no animation. */}
+        {isWinner && typeof netWinAmount === 'number' && netWinAmount !== 0 && (
+          <div
+            className={`seat__net-win${netWinAmount < 0 ? ' seat__net-win--loss' : ''}`}
+            key={netWinAmount}
+          >
+            {netWinAmount > 0 ? '+' : '-'}
+            {formatStack(Math.abs(netWinAmount))}
+          </div>
+        )}
+
+        {/* POKERBROS PARITY 2026-08-26 (round 3): the reference scatters
+            four-point gold star sparkles over the winner's cards while the
+            +N float shows — measured off the 30.5-31.1s frames (one large
+            star on the cards, smaller ones twinkling around them). Positive
+            wins only: a rake-negative chop gets information, not confetti. */}
         {isWinner && typeof netWinAmount === 'number' && netWinAmount > 0 && (
-          <div className="seat__net-win" key={netWinAmount}>
-            +{formatStack(netWinAmount)}
+          <div className="seat__win-sparkles" aria-hidden="true" key={`spark-${netWinAmount}`}>
+            <span className="seat__win-sparkle" />
+            <span className="seat__win-sparkle" />
+            <span className="seat__win-sparkle" />
+            <span className="seat__win-sparkle" />
           </div>
         )}
 
@@ -1698,15 +2793,35 @@ export const SeatSlot = memo(
           <div className="seat__bombpot-badge">BOMB</div>
         )}
 
-        {/* Bounty Badge */}
+        {/* Bounty Badge.
+
+            2026-08-26, two fixes:
+
+            (a) NO FORCED CENTS. This used `minimumFractionDigits: 2`, so a
+                12-chip bounty rendered `◎ 12.00` — four glyphs of which two
+                carry nothing, at 0.55rem, on the most size-constrained badge
+                on the felt. Every other tournament money surface rounds
+                through `utils/buyIn.money()`. Fractional bounties (mystery
+                bounty splits) still show their decimals; whole ones do not
+                pretend to have any.
+
+            (b) IT HAD NO ACCESSIBLE TEXT. The only content was an unlabelled
+                geometric glyph plus a number, announced as "circled ring
+                operator twelve" — and the seat's own aria-label names seat,
+                player, status and stack but not the bounty, so the figure was
+                unavailable anywhere else. */}
         {bountyValue != null && bountyValue > 0 && (
-          <div className="seat__bounty">
-            <span className="seat__bounty-target">◎</span>
-            <span className="seat__bounty-val">
-              {(Math.trunc(bountyValue * 100) / 100).toLocaleString('en-US', {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
+          <div
+            className="seat__bounty"
+            aria-label={`Bounty ${bountyValue.toLocaleString('en-US', {
+              maximumFractionDigits: 2,
+            })} Chips`}
+          >
+            <span className="seat__bounty-target" aria-hidden="true">
+              ◎
+            </span>
+            <span className="seat__bounty-val" aria-hidden="true">
+              {bountyValue.toLocaleString('en-US', { maximumFractionDigits: 2 })}
             </span>
           </div>
         )}
@@ -1717,8 +2832,46 @@ export const SeatSlot = memo(
     // Return true if props are equal (skip re-render)
     if (prev.seatNumber !== next.seatNumber) return false;
     if (prev.timerProgress !== next.timerProgress) return false;
+    /* PERF 2026-08-25: the store instance is stable for the life of a table, so
+       in practice this never differs — but a table SWITCH inside MultiTablePage
+       reuses seat nodes across two different tables' clocks, and a seat left
+       subscribed to the previous table's store would count down the wrong turn.
+       Compared for that case, not for the countdown: the countdown does not
+       travel through props any more. */
+    if (prev.actionClock !== next.actionClock) return false;
     if (prev.isActive !== next.isActive) return false;
     if (prev.canSit !== next.canSit) return false;
+    /**
+     * AUDIT 2026-08-25 — two props that were passed, read, and then blocked.
+     *
+     * `holeCardCount` is the variant's hand size and it is the ONLY thing that
+     * decides how many face-down backs a hidden villain draws. TablePage feeds
+     * it from `tableState.gameType`, which is EMPTY on the first paint and
+     * arrives with the table row a moment later. Without this line the memo
+     * swallowed that arrival, so a seat that had already rendered kept the
+     * default of two backs for the rest of the session - the exact "PLO6 seat
+     * shows a Hold'em hand" symptom the prop was added on 2026-08-23 to fix,
+     * reintroduced one layer up. It only recovered if some unrelated prop
+     * happened to change on that seat first.
+     *
+     * `isHeroReservedSeat` is worse, because it is an EMPTY-seat prop and the
+     * comparator's `if (!pp && !np) return true` short-circuit is the last
+     * thing that runs: two empty seats always compared equal, so nothing about
+     * an empty seat could ever change. The moment the hero reserves a seat that
+     * seat is supposed to read YOUR SEAT instead of EMPTY, and it never did.
+     */
+    if (prev.holeCardCount !== next.holeCardCount) return false;
+    /* PHASE 3 2026-08-31: without this the ghost would render whatever card
+       was in the prop at the last render this comparator DID let through -
+       i.e. the previous hand's discard, or nothing at all. `lastAction` is
+       compared above and is what starts the flight, but the two arrive in
+       different renders. */
+    if (prev.discardFlightCard !== next.discardFlightCard) return false;
+    /* The first hand of a Spin flips this from false to true, and it is what
+       puts every villain's cards on the felt. Swallowed here, the table would
+       stay card-less through the whole hand. */
+    if (prev.handInPlay !== next.handInPlay) return false;
+    if (prev.isHeroReservedSeat !== next.isHeroReservedSeat) return false;
     if (prev.position !== next.position) return false;
     if (prev.isTournament !== next.isTournament) return false;
     if (prev.bigBlind !== next.bigBlind) return false;
@@ -1738,6 +2891,23 @@ export const SeatSlot = memo(
     if (prev.isCollectingChips !== next.isCollectingChips) return false;
     // ANIMATION AUDIT 2026-08-19: showdown-loser muck flag must re-render.
     if (prev.isMucking !== next.isMucking) return false;
+    // SHOWDOWN SYSTEM 2026-08-25: the MUCKED label, the reveal stagger and
+    // the exact-card winner highlight all arrive as new props at showdown —
+    // each must break the memo or the feature is invisible.
+    if (prev.isMuckedShowdown !== next.isMuckedShowdown) return false;
+    if (prev.showdownRevealDelayMs !== next.showdownRevealDelayMs) return false;
+    // POKERBROS PARITY 2026-08-26: the table-wide dim flag flips on every
+    // seat at once when a winner is named — it must break the memo or losing
+    // seats keep full-brightness cards while the winner's are lit.
+    if (prev.winnerDisplayActive !== next.winnerDisplayActive) return false;
+    {
+      const a = prev.winningHoleCardIndexes;
+      const b = next.winningHoleCardIndexes;
+      if (a !== b) {
+        if (!a || !b || a.length !== b.length) return false;
+        for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+      }
+    }
     // COMPETITOR-PARITY 2026-08-19: card squeeze mode flips render structure.
     if (prev.cardSqueezeActive !== next.cardSqueezeActive) return false;
     // AUDIT-2 FIX 2026-08-20: these were missing from the comparator.
@@ -1786,6 +2956,19 @@ export const SeatSlot = memo(
     // 2026-04-15 §6.1: re-render on new turn so CSS ring restarts.
     if (prev.turnDeadlineMs !== next.turnDeadlineMs) return false;
     if (prev.turnStartTimeMs !== next.turnStartTimeMs) return false;
+    /* Without this the memo swallows the arm and the seat never repaints —
+       which is how it would silently regress back to "the toast is the only
+       feedback". */
+    if (prev.timeBankArmed !== next.timeBankArmed) return false;
+    if (prev.isTimeBankActive !== next.isTimeBankActive) return false;
+    /* The sit-out countdown. Omitted from this comparator on the first attempt,
+       which made the badge's clock non-deterministic: `paint()` writes the
+       stamp on the 10s poll WITHOUT changing anything else about the seat, so
+       every field below matched, this returned true, and the render was
+       skipped. On the deferred-sit-out path — tap Sit Out mid-hand, trigger
+       fires at settlement — the stamp only ever arrives that way, so the badge
+       showed no clock at all for the whole five minutes. */
+    if (prev.sitOutAt !== next.sitOutAt) return false;
 
     const pp = prev.player;
     const np = next.player;
@@ -1803,6 +2986,12 @@ export const SeatSlot = memo(
     if (pp.isHero !== np.isHero) return false;
     if (pp.showCards !== np.showCards) return false;
     if (pp.avatar !== np.avatar) return false;
+    /**
+     * Compare cosmetics (frame and aura).
+     * These are refreshed live by the table's profiles subscription.
+     */
+    if (pp.frame !== np.frame) return false;
+    if (pp.aura !== np.aura) return false;
     if (prev.showStackInBB !== next.showStackInBB) return false;
     // Compare holeCards without JSON.stringify (performance optimization)
     const ph = pp.holeCards;

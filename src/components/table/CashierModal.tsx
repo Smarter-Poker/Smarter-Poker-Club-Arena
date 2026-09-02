@@ -14,6 +14,7 @@ import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { haptic } from '../../services/SoundService';
 import './CashierModal.css';
 import { reportError } from '../../utils/errorReporter';
+import { uuid } from '../../utils/uuid';
 
 import { safeErrorMessage } from '../../utils/safeErrorMessage';
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -45,7 +46,8 @@ export interface CashierModalProps {
    * boolean check: it still compiled, and the bug came back silently. Requiring
    * the boolean makes that revert a build error instead.
    */
-  onAddChips: (amount: number) => Promise<boolean>;
+  /** `opId` is the modal's per-attempt idempotency id (see opIdRef). */
+  onAddChips: (amount: number, opId?: string) => Promise<boolean>;
   onWithdrawChips: (amount: number) => Promise<boolean>;
   currentStack: number;
   accountBalance: number;
@@ -120,6 +122,17 @@ export function CashierModal({
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  /**
+   * Per-ATTEMPT idempotency id (Cashier audit 2026-08-27, P0-1). Minted
+   * lazily, held across retries of the same attempt — a Confirm re-tap after
+   * a transport failure re-sends under the SAME id, so the engine's
+   * atomic_table_addon key de-duplicates instead of debiting twice. Rotated
+   * when the amount or tab changes (a different attempt) and on success
+   * (that attempt is settled). Deliberately NOT rotated on failure — the
+   * failure is the case the key exists for. Same shape as
+   * WalletCashierModal.opIdRef.
+   */
+  const opIdRef = useRef<string | null>(null);
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   // Held in a ref so the focus-trap effect does not re-run (and re-steal focus)
@@ -152,6 +165,13 @@ export function CashierModal({
       { label: 'MAX', value: max },
     ];
   }, [activeTab, canAddAmount, canWithdrawAmount]);
+
+  // A changed amount or tab is a DIFFERENT attempt — it gets its own
+  // idempotency id. (After a failed attempt both are unchanged, so the held
+  // id survives for the retry, which is the point.)
+  useEffect(() => {
+    opIdRef.current = null;
+  }, [amount, activeTab]);
 
   // Reset amount when switching tabs
   const animTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -189,15 +209,28 @@ export function CashierModal({
     haptic.medium();
 
     try {
-      const ok = activeTab === 'add' ? await onAddChips(amount) : await onWithdrawChips(amount);
+      if (!opIdRef.current) opIdRef.current = uuid();
+      const ok =
+        activeTab === 'add'
+          ? await onAddChips(amount, opIdRef.current)
+          : await onWithdrawChips(amount);
       if (!ok) {
+        /* Cashier audit 2026-08-27 (P0-1): this banner used to assert "your
+           wallet was not charged" / "your stack is unchanged" for EVERY
+           failure — true for a server refusal, false for a transport failure
+           where the request committed and the response was lost. This modal
+           only sees a boolean, so it must not make a claim it cannot back;
+           the toast from the handler carries the specific verdict (refusal
+           vs unknown-outcome), and this banner points at the number that
+           settles it. */
         setSubmitError(
           activeTab === 'add'
-            ? 'Those chips were not added. Your wallet was not charged.'
-            : 'Those chips were not cashed out. Your stack is unchanged.'
+            ? 'That Top-Up Did Not Complete. Check Your Stack And Balance Before Trying Again.'
+            : 'That Cash-Out Did Not Complete. Check Your Stack And Balance Before Trying Again.'
         );
         return;
       }
+      opIdRef.current = null; // attempt settled — the next one is its own transaction
       setAmount(0);
       onClose();
     } catch (error) {
@@ -324,7 +357,7 @@ export function CashierModal({
             className="cashier-modal__close"
             onClick={onClose}
             disabled={busy}
-            aria-label="Close cashier"
+            aria-label="Close Cashier"
           >
             ×
           </button>
@@ -350,7 +383,7 @@ export function CashierModal({
         <div
           className="cashier-modal__tabs"
           role="tablist"
-          aria-label="Cashier actions"
+          aria-label="Cashier Actions"
           onKeyDown={handleTabKeyDown}
         >
           <button
@@ -400,7 +433,7 @@ export function CashierModal({
               step={0.01}
               max={activeMax}
               disabled={busy}
-              aria-label={activeTab === 'add' ? 'Amount to add' : 'Amount to withdraw'}
+              aria-label={activeTab === 'add' ? 'Amount To Add' : 'Amount To Withdraw'}
               aria-invalid={amount > 0 && !isValidAmount}
             />
           </div>

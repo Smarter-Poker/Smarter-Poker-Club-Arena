@@ -105,20 +105,36 @@ export function HandReveal({
 
     setTimer(autoMuckTimer);
     timerRef.current = setInterval(() => {
-      setTimer((prev) => {
-        if (prev <= 1) {
-          // Auto-muck (via ref → always the latest handler)
-          handleMuckRef.current();
-          return 0;
-        }
-        return prev - 1;
-      });
+      setTimer((prev) => (prev <= 1 ? 0 : prev - 1));
     }, 1000);
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [isOpen, isWinner, autoMuckTimer, handId, revealed, mucked]);
+
+  /**
+   * AUDIT 2026-08-25 — the auto-muck fired from INSIDE a state updater.
+   *
+   * `setTimer(prev => { if (prev <= 1) { handleMuckRef.current(); ... } })`
+   * calls a handler that emits on the bus, plays a sound, fires a haptic and
+   * sets two more pieces of state, all from within React's own reducer. React
+   * treats updaters as pure and is explicitly free to call them more than once
+   * for the same transition (StrictMode does exactly that today, and the
+   * concurrent renderer may without it) - which would muck the hand twice, send
+   * two HAND_MUCKED events and play the fold sound over itself. It also means
+   * the muck lands during another component's render phase, which is the
+   * cheapest way to get a "cannot update while rendering" warning.
+   *
+   * The interval now only counts. The muck is a reaction to the count reaching
+   * zero, in an effect, where a side effect belongs. The `!mucked` guard makes
+   * it fire once even if this effect re-runs.
+   */
+  useEffect(() => {
+    if (!isOpen || !isWinner || revealed || mucked) return;
+    if (timer > 0) return;
+    handleMuckRef.current();
+  }, [timer, isOpen, isWinner, revealed, mucked]);
 
   // Reset on new hand
   useEffect(() => {
@@ -166,12 +182,44 @@ export function HandReveal({
 
   if (!isOpen) return null;
 
+  /**
+   * How many face-down cards to draw before the hand is shown.
+   *
+   * AUDIT 2026-08-25: this was two hard-coded `--facedown` divs, which is the
+   * same defect Dan reported on the seat itself on 2026-08-23 ("it only shows 2
+   * cards even if its a 4 card, 5 card or 6 card game"), living on in the modal
+   * that asks the winner whether to show them. The winner's own hand is already
+   * in `revealedCards` before they decide - TablePage fills it from the hero's
+   * hole cards when it opens the prompt - so the count is available without a
+   * new prop. Two stays the fallback for the paid-reveal case, where a
+   * non-winner genuinely has no idea how many cards are hiding.
+   */
+  const faceDownCount = Math.max(2, Math.min(6, revealedCards?.length ?? 2));
+
   return (
-    <div className="hand-reveal-overlay" onClick={onClose}>
+    <div
+      className="hand-reveal-overlay"
+      onClick={onClose}
+      /* AUDIT 2026-08-25: this was a bare div. It is a modal that takes the
+         whole screen and steals every click, and it announced itself to a
+         screen reader as nothing at all - and Escape, the one key every user
+         tries on an overlay, did nothing. */
+      role="dialog"
+      aria-modal="true"
+      aria-label={isWinner ? 'Show Or Muck Your Hand' : `${winnerName} Won This Pot`}
+      tabIndex={-1}
+      onKeyDown={(e) => {
+        if (e.key !== 'Escape') return;
+        e.stopPropagation();
+        // Escape is a dismissal, not a decision: for the winner it must not be
+        // read as "muck" (the countdown still owns that), only as "close".
+        onClose();
+      }}
+    >
       <div className="hand-reveal" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="hand-reveal__header">
-          <h3 className="hand-reveal__title">{isWinner ? 'Show or Muck?' : `${winnerName} Won`}</h3>
+          <h3 className="hand-reveal__title">{isWinner ? 'Show Or Muck?' : `${winnerName} Won`}</h3>
           {isWinner && !revealed && !mucked && <span className="hand-reveal__timer">{timer}s</span>}
         </div>
 
@@ -188,10 +236,9 @@ export function HandReveal({
               <span className="hand-reveal__mucked-text">Mucked</span>
             </div>
           ) : (
-            <>
-              <div className="hand-reveal__card hand-reveal__card--facedown" />
-              <div className="hand-reveal__card hand-reveal__card--facedown" />
-            </>
+            Array.from({ length: faceDownCount }, (_, i) => (
+              <div key={i} className="hand-reveal__card hand-reveal__card--facedown" />
+            ))
           )}
         </div>
 

@@ -1,0 +1,297 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   ENTRIES TAB — the register
+
+   Everything structural lives in tournament-lobby-3d.css (.tl-panel, .tl-row,
+   .tl-avatar, .tl-badge, .tl-scroll). This file only does the four things
+   that are specific to a register:
+
+     1. the four-column row budget, so a name never collapses at 375px;
+     2. an ordinal that reads as an entry number rather than a rank;
+     3. the badge cluster on the right;
+     4. NOT giving the rows a hover lift — nothing here is clickable, and a
+        surface that rises under the cursor is promising a click that never
+        arrives. Watching a player is the Ranking tab's job.
+
+   Palette is the locked one: #223046 / #1a2436 / #131b28 / #0d1120, accent
+   #6fdcff / #00b4e6, action #1877f2 / #0a5dc2, text #e8eaf0 / #8892a4 /
+   #6b7686, refusal #ef4444 / #ffb4b4. No brown, no yellow, no gold.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.et-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.et-stats {
+  margin-bottom: 10px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   THE SCROLL BOX
+   The list owns its overflow so the page never grows a second scrollbar and
+   the locked Share / Late Register footer stays put. The cap is a viewport
+   fraction rather than a pixel count so a tall phone shows more rows without
+   ever pushing the footer off-screen.
+   ───────────────────────────────────────────────────────────────────────── */
+.et-scroll {
+  /* `max-height: min(58vh, 520px)` used to open this rule. `vh` is the viewport
+     even when this tab is rendered inside TournamentLobbyModal's 75dvh sheet,
+     so the cap belonged to a box this list was not in - it clipped the entry
+     list while leaving the panel nothing to scroll. `.details-content` owns the
+     scroll for every tab now (Dan 2026-08-30). */
+  min-height: 0;
+  padding-right: 2px;
+  /* Sunk well, so the rows read as sitting INSIDE the panel rather than
+     floating on top of it. */
+  border-radius: 10px;
+  background: linear-gradient(180deg, #131b28 0%, #0d1120 100%);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.62),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+  padding: 6px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   THE ROW
+   Column budget at 375px: 30 ordinal + 30 avatar + flexible identity + auto
+   badges, with 8px gaps. The identity column is `minmax(0, 1fr)` — without
+   the zero minimum a grid child refuses to shrink below its content and the
+   name pushes the badges off the right edge instead of ellipsing.
+   ───────────────────────────────────────────────────────────────────────── */
+.et-row {
+  grid-template-columns: 34px auto minmax(0, 1fr) auto;
+  /* Not interactive: no pointer, no lift. Stated rather than inherited so a
+     later edit has to argue with this comment first. */
+  cursor: default;
+}
+
+.et-ordinal {
+  min-width: 34px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--tl-text-hint);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  /* An entry number is reference, not achievement. It never gets the podium
+     glow that .tl-rank--podium gives a finishing position. */
+  text-shadow: none;
+}
+
+.et-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0; /* lets .tl-name's ellipsis actually engage */
+}
+
+.et-id {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.4px;
+  color: var(--tl-text-dim);
+}
+
+.et-marks {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  flex-wrap: nowrap;
+}
+
+.et-marks .tl-badge {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   375px — the design target, not an afterthought
+   Tighter ordinal, tighter gaps, and the badges are allowed to wrap onto a
+   second line rather than squeezing the name into two letters. A player's
+   name is the point of the row; a rebuy count is not.
+   ───────────────────────────────────────────────────────────────────────── */
+@media (max-width: 420px) {
+  .et-row {
+    grid-template-columns: 28px auto minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .et-ordinal {
+    min-width: 28px;
+    font-size: 12px;
+  }
+
+  .et-marks {
+    /* 84px until 2026-08-28, which fitted RE / RB / ADD-ON and nothing else.
+       The satellite mark now carries the words "Satellite Winner" beside its
+       dish (Dan's request), and 84px would have wrapped that onto a second
+       line and doubled the height of one row in a list of 52px rows. The
+       name column ellipses into the difference, which is the cheaper loss:
+       a truncated name is still recognisable, a missing mark is not there. */
+    max-width: 148px;
+    flex-wrap: wrap;
+    row-gap: 3px;
+  }
+
+  .et-marks .tl-badge {
+    padding: 2px 6px;
+    font-size: 8px;
+    letter-spacing: 0.5px;
+  }
+
+  .et-scroll {
+    /* The 460px cap that lived here is GONE - see the flex-fill note at the
+       bottom of this file. It sits BEFORE that rule in source order and at the
+       same specificity, so leaving it would have been decorative: the later
+       `max-height: none` wins regardless of viewport. A cap that cannot fire
+       is worse than no cap, because the next reader budgets for it. */
+    padding: 5px;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   MOTION
+   There is no animation in this tab to switch off, but the shared .tl-row
+   transition is inherited — silence it here too so a player who asked for
+   reduced motion gets it from every direction.
+   ───────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .et-row {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   A ROW THAT LEADS SOMEWHERE
+
+   Only a player who is still IN, at a table, in a RUNNING event gets a
+   button (Dan 2026-08-25). Every other row stays a plain list item, so this
+   can never advertise a link that does nothing. The <li> carries no layout of
+   its own here; the button is the row.
+   ───────────────────────────────────────────────────────────────────────── */
+.et-item {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.et-row--watch {
+  width: 100%;
+  /* NOT `border: none`. That is what it said, and it made a watchable row two
+     pixels shorter than the plain rows beside it and stripped the bevel edge
+     off it, so the list looked ragged at 375px wherever a seated player sat
+     next to a busted one. The shared `.tl-row` border is inherited instead
+     (2026-08-26 audit). */
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* A keyboard reader must be able to see which entry they are on. */
+.et-row--watch:focus-visible {
+  outline: 2px solid var(--tl-accent);
+  outline-offset: -2px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   THE DEGRADED NOTICE
+   A failed query says so. It never masquerades as a field of zeros.
+   ───────────────────────────────────────────────────────────────────────── */
+.et-degraded {
+  margin: 0 0 10px;
+  padding: 7px 10px;
+  border-radius: var(--tl-radius-sm);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--tl-danger-soft);
+  background: linear-gradient(180deg, rgba(239, 68, 68, 0.12) 0%, rgba(19, 27, 40, 0.7) 100%);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+/* -------------------------------------------------------------------------
+   THE PANEL WAS TALLER THAN THE LIST INSIDE IT (Dan, 2026-08-28, screenshot)
+   -------------------------------------------------------------------------
+   `.et-scroll` carried `max-height: min(58vh, 520px)` while the tab body
+   stretches `.et-panel` to whatever height the modal gives it. Measured on
+   production before this change: panel 860px, list 520px, list content
+   1108px. So 340px of the panel was EMPTY while the list it contains was
+   scrolling - the reader was handed a scrollbar and a void at the same time.
+
+   A cap is the wrong tool for "do not exceed the panel". The panel already
+   knows its own height; the list only has to fill it. So the panel becomes a
+   flex column and the list takes the remaining space, which is what the cap
+   was approximating with two guessed numbers.
+
+   `min-height: 0` on both is load-bearing: a flex item defaults to
+   `min-height: auto`, which refuses to shrink below its content, and an
+   overflow container that cannot shrink does not scroll - it pushes the panel
+   taller and the footer off-screen instead.
+
+   The 420px cap above was deleted rather than left in place: it sits earlier
+   in this file at the same specificity, so it could never have won against
+   this rule. The fill is correct on a phone for the same reason it is correct
+   here - the panel's height is the constraint, and the panel knows it.
+
+   Verified live before shipping: this exact CSS injected into production moved
+   the list from 520px to 726px inside the 860px panel, 9 visible rows to 12,
+   no dead space, footer still pinned.
+
+   ── AND THEN IT WAS RENDERED AT 375px (2026-08-29) ───────────────────────
+
+   The line above says "the fill is correct on a phone for the same reason it
+   is correct here". It was measured on a 860px desktop panel and reasoned onto
+   a phone. Rendered at 375x812 on production it is not correct at all:
+
+     .et-panel          321px
+       .tl-section-head  18px
+       .et-stats        128px      <- 40% of the panel
+       .et-scroll       160px      <- its own min-height, NOT what is available
+
+   Drop the floor and the list measures 129px, so it was overflowing its parent
+   by 31px and being propped up by the minimum. The panel had turned its own
+   overflow on to cope, which means the reader got TWO nested scrollbars -
+   precisely the shape this block was written to remove, arriving on the one
+   screen size nobody rendered.
+
+   The cause is the stat grid. `.tl-stat-grid` is shared and asks for
+   `repeat(auto-fit, minmax(104px, 1fr))`; at a 309px inner width that resolves
+   to TWO columns, so three tiles take two rows and the second row is half
+   empty. Sixty-four pixels of nothing, on the screen with the least to spare,
+   next to a 49-row list showing under three rows.
+
+   Three tiles, one row, on a phone. That returns the 64px to the list, which
+   then sits above its floor and stops overflowing, and the nested scrollbar
+   goes with it.
+   ------------------------------------------------------------------------- */
+.et-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.et-scroll {
+  flex: 1 1 auto;
+  max-height: none;
+  /* No floor. A `min-height` on a list inside a scrolling panel is only ever a
+     way to push something else off the bottom - the panel scrolls, so the list
+     is free to be exactly as tall as its rows. */
+  min-height: 0;
+}
+
+@media (max-width: 480px) {
+  /* Scoped to this tab: `.tl-stat-grid`'s auto-fit is right for the tabs whose
+     tiles carry longer values. Entries has three short ones. */
+  .et-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+
+  /* The phone floor went with the desktop one above: "a floor taller than the
+     space available is not a floor, it is an overflow" was the right diagnosis,
+     and no floor at all is the fix. */
+}

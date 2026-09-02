@@ -1,3 +1,77 @@
+# RULE 0 — "EM BARS" MEANS EM DASHES (—), NOT HAMBURGER BARS
+
+Dan, 2026-08-20: **"forbid the use of em bars anywhere."** He means the
+PUNCTUATION MARK, U+2014. It is a rule about the characters inside copy.
+
+It says nothing about artwork or icons, and **it does not ban the hamburger
+menu.** Misreading it as "horizontal bars are banned" has removed the hamburger
+from every page of the app twice in two days (#2321, then #2429 after #2401
+reverted the first). Both times Dan opened the app and found a different icon
+where his menu button used to be. Both times the agent that did it believed it
+was enforcing a house rule.
+
+**If the word "bars" leads you toward an icon, a raster, an SVG path or a
+header composite, you have misread it.** The hamburger is the menu. See
+`CLAUDE.md` §10.7 and `tests/approvedHamburgerGearGuard.law.test.ts`.
+
+---
+
+# RULE 1 — VERIFICATION PASS. Do not take your own word for it.
+
+Every claim below needs a command behind it, and you must paste the output.
+
+PART A — IS IT ACTUALLY SHIPPED?
+git status --porcelain # must be empty of tracked files
+git log --oneline origin/main..HEAD # must be empty
+git branch -r --contains HEAD # must name your branch
+gh pr list --head <your-branch> # must show a PR, or explain why not
+If any of those is wrong, you are not finished. Fix it before continuing.
+
+PART B — DID YOU FOLLOW THE RULES?
+pwd # must be under .agent-trees/
+git log -1 --format='%an <%ae>' # must be Smarter-Poker # <254329056+...@users.noreply.github.com>
+git log --oneline origin/main..HEAD | wc -l
+State plainly whether you used --no-verify at any point. If you did, say where and why.
+
+PART C — IS THE CODE ACTUALLY DONE? (THE INTERROGATION)
+You must re-read your own diff before answering: `git diff origin/main...HEAD`
+
+1. STUBS & MOCKS — Are there any TODO, FIXME, `throw new Error('not implemented')`, empty catch blocks, or hardcoded placeholders left behind? Run a search. Do not rely on memory.
+2. WIRING & EXECUTION — Is every new function actually CALLED? Is every new component actually rendered? Is every route reachable? Name the exact caller for every single addition. Dead code is unacceptable.
+3. DATABASE STATE — Did you write a migration? Was it actually APPLIED to production via the Supabase MCP? A migration file that hasn't run is a feature the database doesn't know exists.
+4. COLLATERAL DAMAGE — What existing behavior did this change alter? Did you update the tests in the SAME commit, or did you leave them asserting the old rules?
+5. HOSTILE STATE & CACHE — What happens if the user's localStorage is stale? What happens if they enter via a 6-month-old bookmark? Show exactly where the fallback or transition is handled in your code.
+6. USER INTENT VERIFICATION — Did you actually solve the specific complaint the user raised? Explain step-by-step how your code definitively prevents the user's exact reported error sequence from ever happening again.
+
+PART D — DOES IT RUN?
+npx tsc --noEmit # paste the result
+npx vitest run <the tests covering your change>
+npm run build # if you touched src/
+Paste real output. "Tests pass" without a count is not an answer.
+
+PART E — IS IT LIVE?
+If your PR merged: what SHA does production serve right now, and does it
+contain your commit? Check it. Do not say "should be live shortly".
+If your PR has not merged: what is blocking it, in the words of the
+check that is failing?
+
+ANSWER FORMAT: for each of A–E, either the command output showing it is
+satisfied, or a plain statement of what is not done and what you are
+doing about it. If something is incomplete, say so — an honest gap is
+worth more than a confident claim I have to discover is wrong.
+
+---
+
+## RULE 8 — THE ZERO-ASSUMPTION DOCTRINE (PROOF OF RESOLUTION)
+
+A green CI pipeline and a merged PR only prove your code does not crash. It **DOES NOT** prove you fixed the user's problem. You are forbidden from claiming success until you have verified the resolution in production.
+
+- **NO SURFACE-LEVEL PATCHES:** You must track the bug to its absolute root cause. Fixing a symptom without checking for structural contagion (e.g., stale cache, inherited state, nested URL parameters) is a failure of your duty.
+- **HOSTILE ENVIRONMENT TESTING:** You must assume the user's browser is a hostile environment: old `localStorage` data, expired tokens, stale bookmarks, and mid-flight network drops. If your fix relies on a pristine, freshly-cleared browser state to work, your fix is invalid.
+- **BURDEN OF PROOF:** You may not tell the user "I fixed it." You must explicitly explain exactly _how_ you proved their exact edge case is eradicated.
+
+---
+
 # AGENT PLAYBOOK
 
 **Read this before you touch anything.** Claude, Antigravity, Cowork, Codex,
@@ -33,6 +107,36 @@ the single largest cause of destroyed work here.
 
 ---
 
+## 1b. ONE CLONE PER REPO. THESE EXACT PATHS.
+
+```
+~/Documents/club-arena                 Club Arena
+~/Documents/Smarter-Poker-World-Hub    World Hub
+```
+
+Every agent — Claude, Antigravity, any other — and the dev server work in those
+two directories and nowhere else. You never work in them directly; you claim a
+worktree off them:
+
+```bash
+cd ~/Documents/club-arena
+eval "$(bash scripts/agent-workspace.sh <your-name> fix/<slug>)"
+```
+
+**Why this is a rule and not a preference.** On 2026-08-23 this machine had SIX
+clones of these two repos — `Smarter-Poker-Club-Arena`, `hub-vanguard`,
+`hub-vanguard3`, `hub-vanguard-clean`. Claude worked in one, Antigravity in
+another, the dev server ran from a third. `Smarter-Poker-Club-Arena` drifted
+**293 commits behind** while a Vite process served it, and two days were spent
+believing deploys were broken. They were not; the work was live the whole time.
+
+The old directory names are now **symlinks** to the canonical clone, so any
+path you already have memorised still works and lands in the right tree.
+`scripts/check-canonical-clone.sh` refuses a commit made in a fresh duplicate,
+which is how all six started.
+
+---
+
 ## 2. THE SEVEN REPOS
 
 | Repo                          | What it is                                                                                                 | Publishes to                                  |
@@ -54,14 +158,14 @@ not break them, and to know what they are telling you when they speak.
 
 ### Your work cannot be destroyed
 
-| File                                                  | What it does                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `scripts/agent-workspace.sh`                          | Gives you your own git worktree, branched from fresh `origin/main`. Refuses to move you off uncommitted work                                                                                                                                                                                                                                                                                                             |
-| `.husky/pre-commit` → `scripts/guard-shared-clone.sh` | **Refuses a commit made in the shared clone.** Prints the exact command to get a proper tree. Never stashes, never checks anything out                                                                                                                                                                                                                                                                                   |
-| `.husky/reference-transaction`                        | Fires _before_ any ref update lands and refuses one that would orphan local commits — **and writes them to `refs/wip/orphan-guard/<stamp>` first**, so even an override leaves the work recoverable                                                                                                                                                                                                                      |
-| `scripts/agent-trees-snapshot.sh`                     | Snapshots every working tree's uncommitted state as a git ref. Safe mid-edit: `git stash create` builds objects without touching the index, the tree, or the stash stack                                                                                                                                                                                                                                                 |
-| `scripts/install-wip-snapshot-agent.sh`               | Runs that snapshot every 10 minutes as a launchd agent — **once the Mac has granted Full Disk Access**. `~/Documents` is TCC-protected and a launchd agent cannot read inside it without that; on 2026-08-22 this had captured nothing in 73 runs. `--status` now says which state it is in, and the installer refuses to claim success. Until it is granted, run the snapshot by hand at the start and end of a session |
-| `scripts/agent-trees-audit.sh`                        | Lists every tree holding work that exists in exactly one place                                                                                                                                                                                                                                                                                                                                                           |
+| File                                                               | What it does                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `scripts/agent-workspace.sh`                                       | Gives you your own git worktree, branched from fresh `origin/main`. Refuses to move you off uncommitted work                                                                                                                                                                                                                                                                                                             |
+| `.husky/pre-commit` & `pre-push` → `scripts/guard-shared-clone.sh` | **Refuses a commit or push made in the shared clone.** Prints the exact command to get a proper tree. Never stashes, never checks anything out                                                                                                                                                                                                                                                                           |
+| `.husky/reference-transaction`                                     | Fires _before_ any ref update lands and refuses one that would orphan local commits — **and writes them to `refs/wip/orphan-guard/<stamp>` first**, so even an override leaves the work recoverable                                                                                                                                                                                                                      |
+| `scripts/agent-trees-snapshot.sh`                                  | Snapshots every working tree's uncommitted state as a git ref. Safe mid-edit: `git stash create` builds objects without touching the index, the tree, or the stash stack                                                                                                                                                                                                                                                 |
+| `scripts/install-wip-snapshot-agent.sh`                            | Runs that snapshot every 10 minutes as a launchd agent — **once the Mac has granted Full Disk Access**. `~/Documents` is TCC-protected and a launchd agent cannot read inside it without that; on 2026-08-22 this had captured nothing in 73 runs. `--status` now says which state it is in, and the installer refuses to claim success. Until it is granted, run the snapshot by hand at the start and end of a session |
+| `scripts/agent-trees-audit.sh`                                     | Lists every tree holding work that exists in exactly one place                                                                                                                                                                                                                                                                                                                                                           |
 
 ```bash
 bash scripts/agent-trees-audit.sh              # what is at risk right now
@@ -118,23 +222,22 @@ add a team member to unblock a deploy.
 
 Each one caused a real, dated incident.
 
-| Never                                                                | What happened                                                                                                                                                                                                                                                                                                                                         |
-| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Work in the shared clone                                             | One HEAD, one index. Agent B's `checkout -b` takes agent A's edits with it. Eight abandoned stashes and six `backup/*` branches were the evidence                                                                                                                                                                                                     |
-| `gh pr merge --admin`                                                | Bypasses required checks. Red code reached `main` four times                                                                                                                                                                                                                                                                                          |
-| `gh pr merge --merge` / `--rebase`                                   | Disabled here. The API call fails **silently** while the agent reports success                                                                                                                                                                                                                                                                        |
-| A polling script (`wait_and_merge.sh`, `while true; do gh run list`) | Fragile and unobservable. Autopilot already does this, server-side                                                                                                                                                                                                                                                                                    |
-| `git push` / `--force` to `main`                                     | Blocked by the ruleset. A force-push once rewound `main` and dropped four commits already live in production                                                                                                                                                                                                                                          |
-| `git pull --rebase origin main` on the Mac clone                     | Strands the clone mid-rebase. Use `bash scripts/git-unstick.sh`                                                                                                                                                                                                                                                                                       |
-| `--no-verify`                                                        | Skips every hook, and each one is there because something was lost                                                                                                                                                                                                                                                                                    |
-| Resolve a conflict with `--ours` / `--theirs` on a whole file        | This is how a leaderboard RPC call vanished while its function signature survived. **Resolve hunk by hunk**                                                                                                                                                                                                                                           |
-| Commit a red test                                                    | `npx vitest run tests/` is what PUBLISHES the bundle. A red test stops the deploy for everyone. Write the spec first as `it.skip()` with a note                                                                                                                                                                                                       |
-| Write a migration and not apply it                                   | The code believes in a feature the database has never heard of. It fails 42703 into a catch block and nothing goes red. Apply with the Supabase MCP `apply_migration`                                                                                                                                                                                 |
-| Commit under any identity but `Smarter-Poker`                        | Vercel refuses to build a commit whose author it cannot resolve to a GitHub user. The deployment goes to **BLOCKED** - no build, no logs, nothing in CI can see it, only a red dashboard row. Five sat that way on 2026-08-23, all authored `Agent <agent@smarter.poker>`                                                                             |
-| Commit a hook file non-executable                                    | git **skips** a hook that is not mode 755 and mentions it only as a hint buried in commit output. `.husky/pre-commit` was 644 in two repos, so both guards it holds were decorative for months                                                                                                                                                        |
-| `npm install` / `npm ci` inside a worktree                           | `scripts/agent-workspace.sh` links `node_modules` from the main clone so hooks and tests work without a per-tree install. A symlink **writes through**: one `npm install` in one worktree emptied 290 packages in the shared install and broke `typescript` for every tree at once. Add the dependency in `~/Documents/<repo>` and run `npm ci` there |
-| `npm install` / `npm ci` inside a worktree                           | Worktrees share the main clone's `node_modules` through a symlink, and npm **writes through it**. One install in one tree emptied ~285 packages and broke `tsc`/`vitest` for every tree at once. Add the dependency in `~/Documents/<repo>` and run `npm ci` THERE. `scripts/check-node-modules.sh` detects and repairs it                            |
-| Ask a human to push, merge, deploy, or approve                       | The entire point of this document                                                                                                                                                                                                                                                                                                                     |
+| Never                                                                | What happened                                                                                                                                                                                                                                                                                                                                                    |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Work in the shared clone                                             | One HEAD, one index. Agent B's `checkout -b` takes agent A's edits with it. Eight abandoned stashes and six `backup/*` branches were the evidence                                                                                                                                                                                                                |
+| `gh pr merge --admin`                                                | Bypasses required checks. Red code reached `main` four times                                                                                                                                                                                                                                                                                                     |
+| `gh pr merge --merge` / `--rebase`                                   | Disabled here. The API call fails **silently** while the agent reports success                                                                                                                                                                                                                                                                                   |
+| A polling script (`wait_and_merge.sh`, `while true; do gh run list`) | Fragile and unobservable. Autopilot already does this, server-side                                                                                                                                                                                                                                                                                               |
+| `git push` / `--force` to `main`                                     | Blocked by the ruleset. A force-push once rewound `main` and dropped four commits already live in production                                                                                                                                                                                                                                                     |
+| `git pull --rebase origin main` on the Mac clone                     | Strands the clone mid-rebase. Use `bash scripts/git-unstick.sh`                                                                                                                                                                                                                                                                                                  |
+| `--no-verify`                                                        | Skips every hook, and each one is there because something was lost                                                                                                                                                                                                                                                                                               |
+| Resolve a conflict with `--ours` / `--theirs` on a whole file        | This is how a leaderboard RPC call vanished while its function signature survived. **Resolve hunk by hunk**                                                                                                                                                                                                                                                      |
+| Commit a red test                                                    | `npx vitest run tests/` is what PUBLISHES the bundle. A red test stops the deploy for everyone. Write the spec first as `it.skip()` with a note                                                                                                                                                                                                                  |
+| Write a migration and not apply it                                   | The code believes in a feature the database has never heard of. It fails 42703 into a catch block and nothing goes red. Apply with the Supabase MCP `apply_migration`                                                                                                                                                                                            |
+| Commit under any identity but `Smarter-Poker`                        | Vercel refuses to build a commit whose author it cannot resolve to a GitHub user. The deployment goes to **BLOCKED** - no build, no logs, nothing in CI can see it, only a red dashboard row. Five sat that way on 2026-08-23, all authored `Agent <agent@smarter.poker>`                                                                                        |
+| Commit a hook file non-executable                                    | git **skips** a hook that is not mode 755 and mentions it only as a hint buried in commit output. `.husky/pre-commit` was 644 in two repos, so both guards it holds were decorative for months                                                                                                                                                                   |
+| ~~`npm install` inside a worktree~~ — **now safe**                   | Worktrees used to share the main clone's `node_modules` through a symlink, and `npm ci` writes through it: one install deleted the shared tree and broke `tsc`/`vitest` for all 79 trees at once, three times in one afternoon. `scripts/agent-workspace.sh` now gives each tree its own copy-on-write clone, so npm in your own tree affects only your own tree |
+| Ask a human to push, merge, deploy, or approve                       | The entire point of this document                                                                                                                                                                                                                                                                                                                                |
 
 ---
 
@@ -217,6 +320,80 @@ curl -s https://smarter.poker/api/health                        # World Hub
 
 Compare to `main`. A green tick answers "did it merge". Only production
 answers "did it ship".
+
+---
+
+## 7b. YOUR TIME GOES SOMEWHERE. IT IS ALMOST NEVER THE WORK
+
+Measured on this machine 2026-08-25, after a session that took ~30 minutes and
+should have taken ~10. The gates are cheap. Waiting is not.
+
+| What                                      | Actual cost |
+| ----------------------------------------- | ----------- |
+| `npx vitest run tests/` — **4,240 tests** | **~10s**    |
+| server `npx vitest run` — **1,452 tests** | **~21s**    |
+| `npx tsc --noEmit` (client)               | **~21s**    |
+| `npx tsc --noEmit` (server)               | **~3s**     |
+| CI required checks, end to end            | **0-2 min** |
+| **Every gate above, run in full**         | **~55s**    |
+
+The pre-push hook does not even run all of that — it runs the tests _related
+to what you touched_, which is faster still. And measure before you assume:
+an earlier draft of this table said "1432 tests in 3.5s", taken from a
+partial run, and was wrong in both columns.
+
+**So if your task took 25 minutes, roughly 24 of them were not compute.**
+They were one of these four:
+
+### 1. Waiting for something that finishes without you
+
+The single largest waste. Do not `sleep`-and-poll a deploy, a check, a merge,
+or a watchdog. **Every one of them is already watched server-side** — Autopilot
+merges, `publish-watchdog` compares production to `main`, `report-stuck-prs`
+opens the PR you forgot. Section 5 forbids `wait_and_merge.sh` by name; this is
+the same rule for the same reason, and "I'll just check every 30 seconds"
+is that script written by hand.
+
+Push, open the PR, **stop**. Check once at the end if you must. A poll loop also
+burns a tool call and a slice of context per iteration, so it costs tokens as
+well as minutes.
+
+### 2. Re-solving the same setup, once per worktree
+
+If you hit a missing dependency, a PATH problem or a broken tool, fix it **for
+the session**, not for the command in front of you. Four worktrees means four
+chances to solve the identical problem four times.
+
+`gh`, `node` and `npx` are not on the default PATH in every shell here:
+
+```bash
+export PATH="/opt/homebrew/bin:$PATH"; source ~/.nvm/nvm.sh
+```
+
+### 3. One command per round trip
+
+Every tool call is latency. Batch independent commands into one invocation and
+independent tool calls into one message. Ten `echo`-and-check calls that could
+have been one script are ten round trips you paid for and nine you did not need.
+
+Trim output at the source — `| head`, `--jq`, `cut -c1-120`. An unbounded `ps`
+or `git log` can blow the response limit outright, which costs the whole call.
+
+### 4. Long operations inside a blocking call
+
+Anything over ~90s can outlive the call and you will lose the result, retry, and
+pay twice. Background it and come back:
+
+```bash
+nohup bash -c 'long-thing' >/tmp/out.log 2>&1 &      # returns instantly
+```
+
+### And before you expand the job
+
+"Get everything up to date" is not a mandate to open eleven pull requests across
+seven repositories. When a task grows past what was asked, **say what you found
+and let the human choose the scope.** Finding six more problems is useful; fixing
+all of them unasked, slowly, is usually not what was wanted.
 
 ---
 

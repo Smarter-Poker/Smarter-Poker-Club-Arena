@@ -201,7 +201,17 @@ export default function RateAuditPage() {
   };
 
   return (
-    <div style={{ padding: '16px', maxWidth: '900px', margin: '0 auto', paddingBottom: '100px' }}>
+    <div
+      style={{
+        padding: '16px',
+        width: '100%',
+        maxWidth: '900px',
+        margin: '0 auto',
+        paddingBottom: '100px',
+        boxSizing: 'border-box',
+        overflowX: 'hidden',
+      }}
+    >
       {/* Header */}
       <div
         style={{
@@ -220,7 +230,9 @@ export default function RateAuditPage() {
               color: '#3b82f6',
               cursor: 'pointer',
               fontSize: '0.85rem',
-              padding: 0,
+              padding: '10px 10px 10px 0',
+              minHeight: '44px',
+              touchAction: 'manipulation',
               marginBottom: '4px',
             }}
           >
@@ -254,6 +266,8 @@ export default function RateAuditPage() {
             onClick={() => setFilter(f)}
             style={{
               padding: '6px 14px',
+              minHeight: '44px',
+              touchAction: 'manipulation',
               borderRadius: '8px',
               border: `1px solid ${filter === f ? 'rgba(59,130,246,0.5)' : 'rgba(255,255,255,0.1)'}`,
               background: filter === f ? 'rgba(59,130,246,0.15)' : 'rgba(255,255,255,0.03)',
@@ -299,6 +313,7 @@ export default function RateAuditPage() {
                 style={{
                   display: 'flex',
                   alignItems: 'center',
+                  flexWrap: 'wrap',
                   gap: '12px',
                   padding: '12px 14px',
                   background: 'rgba(255,255,255,0.03)',

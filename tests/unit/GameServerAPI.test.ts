@@ -147,8 +147,17 @@ describe('GameServerAPI', () => {
           'getAvailableActions',
           'getServerStatus',
           'getTableState',
+          'notifyServerRejectRebuy',
+          // Added 2026-08-25. Both are HTTP action endpoints that were defined
+          // and exported by name but never listed here, so
+          // GameServerAPI.requestRabbitHunt and .postBBToEnter resolved to
+          // undefined while their siblings worked. The rule this test enforces
+          // is "no WebSocket helpers", asserted on the last line — not "no new
+          // endpoints".
+          'postBBToEnter',
           'previewInsurance',
           'removeChips',
+          'requestRabbitHunt',
           'respondToInsurance',
           'respondToRIT',
           'sendHeartbeat',

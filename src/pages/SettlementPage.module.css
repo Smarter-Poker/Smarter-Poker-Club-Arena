@@ -9,8 +9,22 @@
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   padding: 2rem;
   background: linear-gradient(180deg, var(--bg-darker) 0%, var(--bg-dark) 100%);
+  width: 100%;
   max-width: 1200px;
   margin: 0 auto;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
+  /* Dan 2026-08-25: was max(70px, env(safe-area-inset-bottom)). The bar is
+     74px PLUS the home-indicator inset (additive), and max() picks one or
+     the other - so this reserved 70px on every phone and hid the last row
+     of content under the footer, by 4px on a flat screen and ~38px on a
+     notched one. --bottom-nav-clearance is the token the bar itself is
+     pinned to. */
+  padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
 }
 
 /* Header */
@@ -27,11 +41,9 @@
   color: var(--text-muted);
   font-size: 0.9rem;
   cursor: pointer;
+  touch-action: manipulation;
+  min-height: 44px;
   transition: color 0.2s;
-}
-
-.backButton:hover {
-  color: #fff;
 }
 
 .headerContent {
@@ -93,11 +105,6 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   transition: transform 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.metricCard:hover {
-  transform: translateY(-2px);
-}
-
 .metricIcon {
   font-size: 1.75rem;
 }
@@ -176,12 +183,11 @@
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
+  touch-action: manipulation;
+  min-height: 44px;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: all 0.2s;
-}
-
-.tabButton:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
 }
 
 .tabButton.active {
@@ -320,12 +326,6 @@
     transform 0.2s,
     box-shadow 0.2s;
 }
-
-.executeButton:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.4);
-}
-
 .executeButton:disabled {
   opacity: 0.7;
   cursor: not-allowed;
@@ -340,6 +340,11 @@
 /* Wire Table */
 .wiresSection {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.wireTable {
+  min-width: 560px; /* keep columns readable; the section scrolls, not the page */
 }
 
 .wireTable {
@@ -424,6 +429,12 @@
 /* Agent Payouts */
 .payoutsSection {
   padding: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.payoutTable {
+  min-width: 560px; /* keep columns readable; the section scrolls, not the page */
 }
 
 .payoutSummary {
@@ -513,10 +524,6 @@
   transition: all 0.2s;
 }
 
-.periodCard:hover {
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
 .periodCard.selected {
   border-color: var(--accent);
   background: rgba(var(--accent-rgb), 0.1);
@@ -558,6 +565,29 @@
   }
 }
 
+@media (max-width: 768px) {
+  .page {
+    padding: 12px;
+    padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
+  }
+
+  .header h1 {
+    font-size: 1.15rem;
+  }
+
+  .settlementSummary {
+    padding: 1rem;
+    gap: 1rem;
+  }
+
+  .wireTable th,
+  .wireTable td,
+  .payoutTable th,
+  .payoutTable td {
+    padding: 0.6rem;
+  }
+}
+
 @media (max-width: 600px) {
   .header {
     flex-wrap: wrap;
@@ -570,6 +600,11 @@
   .tabNav {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .tabNav::-webkit-scrollbar {
+    display: none;
   }
 }
 /* ═══════ PREMIUM ANIMATIONS ═══════ */

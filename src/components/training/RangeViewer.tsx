@@ -45,9 +45,31 @@ export const RangeViewer: React.FC<RangeViewerProps> = ({
       <div
         key={hand}
         className={`range-cell intensity-${intensity} ${isPocket ? 'pocket' : ''} ${isSuited ? 'suited' : 'offsuit'}`}
+        /* THE FREQUENCY WAS HOVER-ONLY (2026-08-29). `freq-tooltip` below is
+           the whole point of the grid -- how often this hand is played -- and
+           it rendered only while `hoveredHand === hand`. On a phone that is
+           never, so a training tool for a mobile-first product showed 169
+           coloured squares and not one number. The tap also still forwards to
+           onCellClick; showing the frequency and selecting the hand are the
+           same gesture, which is what a player would expect. */
+        tabIndex={0}
+        role="button"
+        aria-label={freq > 0 ? `${hand}, Played ${freq}%` : hand}
         onMouseEnter={() => setHoveredHand(hand)}
         onMouseLeave={() => setHoveredHand(null)}
-        onClick={() => onCellClick?.(hand)}
+        onFocus={() => setHoveredHand(hand)}
+        onBlur={() => setHoveredHand(null)}
+        onClick={() => {
+          setHoveredHand((cur) => (cur === hand ? null : hand));
+          onCellClick?.(hand);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setHoveredHand(hand);
+            onCellClick?.(hand);
+          }
+        }}
       >
         <span className="hand-label">{hand}</span>
         {hoveredHand === hand && freq > 0 && <span className="freq-tooltip">{freq}%</span>}

@@ -1,13 +1,13 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * HAMBURGER MENU — Facebook Dark Theme
+ * HAMBURGER MENU — Smarter Casino Realism Command Drawer
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Clean, classy navigation with complete page coverage
  * No emojis - professional Facebook-style design
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { identityDNA } from '../../core/IdentityDNA';
@@ -18,6 +18,7 @@ import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 import { STORAGE_KEYS } from '../../lib/storage';
+import { persistIdentity } from '../../lib/cachedIdentity';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { preloadRoute } from '../../utils/ChunkPreloader';
 import { useUserTableSettings } from '../../hooks/useUserTableSettings';
@@ -26,7 +27,35 @@ import { ThemeSettingsModal } from '../table/ThemeSettingsModal';
 import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
+import { fetchGameCreationAccess } from '../../services/GameAccessService';
+import { soundService } from '../../services/SoundService';
+import { isSoundAllowed } from '../../utils/soundGate';
+import { isVibrationPreferred, setVibrationAllowed } from '../../utils/vibrationGate';
 import { AvatarGallery } from '../customization/AvatarGallery';
+import AvatarCosmetics from '../avatars/AvatarCosmetics';
+import { CLUB_ARENA_SUPPORT_NAV, getClubArenaNavigation } from '../../config/clubArenaNavigation';
+import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
+import { capture } from '../../lib/analytics';
+import { fetchQuickLinkClubs, type QuickLinkClub } from '../../utils/clubQuickLink';
+import {
+  LeaderboardService,
+  type LeaderboardRewardContext,
+} from '../../services/LeaderboardService';
+import {
+  clearTableStudioCheckoutReturnUrl,
+  readTableStudioCheckoutIntent,
+  tableStudioCheckoutResult,
+} from '../../lib/tableStudioCheckoutResume';
+import { formatPopupText } from '../../utils/popupStyle';
+import styles from './HamburgerMenu.module.css';
+
+/* Dan 2026-08-30: "THE FIRST LETTER OF EVERY WORD INSIDE THE HAMBURGER MENU
+   MUST BE CAPITALIZED. AS WELL AS EVERY CLICKABLE PAGE AND SUBPAGE."
+   Enforced in the render path — the same reasoning as the Toast layer's house
+   rule: hundreds of label/description strings are written by many agents, and
+   a style that lives in a convention drifts by the next commit. Every label
+   and description this drawer renders passes through here. */
+const tc = formatPopupText;
 
 interface HamburgerMenuProps {
   isOpen: boolean;
@@ -52,44 +81,206 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const { user } = useAuthUser();
   const toast = useToast();
   const touchStartRef = useRef<number | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const previousBodyOverflowRef = useRef('');
+  const navigatingRef = useRef(false);
+  const dialogTitleId = useId();
+  const tableSettingsId = useId();
 
-  const [soundsEnabled, setSoundsEnabled] = useState(true);
-  const [vibrationsEnabled, setVibrationsEnabled] = useState(true);
-  const [showBBEnabled, setShowBBEnabled] = useState(false);
+  /**
+   * LAZY INITIALIZERS (2026-08-28, first-paint flash sweep): these four
+   * toggles began at hard-coded defaults and read localStorage one tick
+   * later in the load effect — so an open drawer could flash the wrong
+   * switch positions. The read is synchronous; do it before the first
+   * paint, before any asynchronous profile refinement. The load
+   * effect's async profile fetch still refines them afterwards.
+   */
+  const readStoredBool = (key: string, fallback: boolean): boolean => {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw === null ? fallback : raw === 'true';
+    } catch {
+      return fallback;
+    }
+  };
+  /* SEED FROM THE GATES, not from one of the two keys each gate reads.
+     `soundGate` and `vibrationGate` fail closed on EITHER of their keys; reading
+     only `club_arena_sounds` here meant a player who had muted IN-TABLE
+     ('ca_sound_enabled'='false') opened this menu to a Sounds switch reading ON
+     over a silent app. `useTableSound` was converted to `isSoundAllowed()` on
+     2026-08-29 for exactly this reason and this component was not — the fourth
+     hand-rolled copy of a two-key rule that lives in one place. */
+  const [soundsEnabled, setSoundsEnabled] = useState(() => isSoundAllowed());
+  const [vibrationsEnabled, setVibrationsEnabled] = useState(() => isVibrationPreferred());
+  /* `showBBEnabled` state DELETED 2026-08-29: it was written in three places
+     and READ IN NONE — no JSX, no condition. The switch a player sees lives in
+     the expandable TableSettingsPanel and reads the hook directly. What
+     survives is the localStorage MIRROR below, which is a real first-paint seed
+     for the next cold open; the `setState` beside it only forced a re-render
+     that changed nothing on screen. */
   // Avatar from persistent header store (avoids duplicate Supabase query)
   const avatarUrl = useHeaderDataStore((s) => s.avatarUrl);
+  const equippedFrame = useHeaderDataStore((s) => s.equippedFrame);
+  const equippedAura = useHeaderDataStore((s) => s.equippedAura);
   const [userName, setUserName] = useState<string>('');
-  const [useRealName, setUseRealName] = useState(false);
+  const [useRealName, setUseRealName] = useState(() =>
+    readStoredBool(STORAGE_KEYS.USE_REAL_NAME, false)
+  );
   const [showAvatarGallery, setShowAvatarGallery] = useState(false);
   const [isVIP, setIsVIP] = useState(false);
+  const [isPlatformStaff, setIsPlatformStaff] = useState(false);
   const { diamonds: diamondBalance } = useWalletStore();
-  const [selectedCardColor, setSelectedCardColor] = useState(() => {
-    try {
-      return localStorage.getItem(STORAGE_KEYS.CARD_COLOR) || 'default';
-    } catch (err) {
-      reportError(err, 'HamburgerMenu.Error');
-      return 'default';
-    }
-  });
-
   // Bible V8 §11.1: User table settings (12 toggles) from Supabase
   const {
     settings: tableSettings,
     loading: tableSettingsLoading,
     toggleSetting: toggleTableSetting,
   } = useUserTableSettings(user?.id);
+  /* THE ONLY WRITER of this switch's state and of its localStorage key.
+     `useUserTableSettings` is the single reader of the canonical column, so
+     mirroring here — rather than in a query of this component's own — is what
+     removed the two-callback race described further down. The localStorage key
+     is a first-paint seed for the next cold open; keeping it in step here
+     means it can never disagree with the row for a whole session. */
+  useEffect(() => {
+    /* Wait for the row. Until it lands the hook is serving defaults, and
+       writing those over the localStorage seed would show a cold-open user
+       chips for a moment and then persist that as their answer. */
+    if (tableSettingsLoading) return;
+    try {
+      localStorage.setItem(STORAGE_KEYS.SHOW_STACK_BB, String(tableSettings.show_stack_in_bb));
+    } catch {
+      /* private mode */
+    }
+  }, [tableSettings.show_stack_in_bb, tableSettingsLoading]);
   const [showTableSettings, setShowTableSettings] = useState(false);
   const [showThemeSettings, setShowThemeSettings] = useState(false);
+  const checkoutResumeHandledRef = useRef(false);
 
   const location = useLocation();
+  const workspace = useClubWorkspace();
   const [clubLevelInfo, setClubLevelInfo] = useState<ClubLevelInfo | null>(null);
+  const [clubChoices, setClubChoices] = useState<QuickLinkClub[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [attentionCount, setAttentionCount] = useState(0);
+  const [rewardContexts, setRewardContexts] = useState<LeaderboardRewardContext[]>([]);
+  const [rewardContextClubId, setRewardContextClubId] = useState<string>('');
+  const [canManageGames, setCanManageGames] = useState(false);
+  const [gameAccessRevision, setGameAccessRevision] = useState(0);
+
+  // Stripe returns to the route where the player opened Table Studio. The
+  // command drawer is mounted globally even while closed, so it is the one
+  // launcher that can reliably restore the Studio on tables, settings and club
+  // pages alike. The modal revalidates the stored asset and live price.
+  useEffect(() => {
+    if (checkoutResumeHandledRef.current) return;
+    const result = tableStudioCheckoutResult(location.search);
+    if (!result || !user?.id) return;
+    checkoutResumeHandledRef.current = true;
+    if (!readTableStudioCheckoutIntent(user.id)) {
+      clearTableStudioCheckoutReturnUrl();
+      toast.error('Your Previous Design Could Not Be Restored. Choose It Again To Continue.');
+      return;
+    }
+    setShowThemeSettings(true);
+  }, [location.search, toast, user?.id]);
+  const recentStorageKey = `club_arena_nav_recents_v1:${user?.id || 'signed-out'}`;
+  const pinStorageKey = `club_arena_nav_pins_v1:${user?.id || 'signed-out'}`;
+  const [recentPaths, setRecentPaths] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(recentStorageKey) || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [pinnedPaths, setPinnedPaths] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(pinStorageKey) || '[]');
+    } catch {
+      return [];
+    }
+  });
 
   const match = location.pathname.match(/^\/clubs\/([a-zA-Z0-9-]+)/);
   const clubId = match ? match[1] : null;
+  const clubRole = clubId === workspace.routeClubId ? workspace.clubRole : null;
+  const effectivePlatformStaff = clubId ? workspace.isPlatformStaff : isPlatformStaff;
+  const navigationGroups = getClubArenaNavigation({
+    clubId,
+    clubRole,
+    isPlatformStaff: effectivePlatformStaff,
+    canManageGames,
+  });
+  const allNavigationItems = useMemo(
+    () => navigationGroups.flatMap((group) => group.items),
+    [navigationGroups]
+  );
+  const filteredNavigationGroups = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return navigationGroups;
+    return navigationGroups
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) =>
+          `${item.label} ${item.description}`.toLowerCase().includes(query)
+        ),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [navigationGroups, searchQuery]);
+  const recentItems = recentPaths
+    .map((path) => allNavigationItems.find((item) => item.path === path))
+    .filter((item): item is (typeof allNavigationItems)[number] => Boolean(item))
+    .slice(0, 3);
+  const pinnedItems = pinnedPaths
+    .map((path) => allNavigationItems.find((item) => item.path === path))
+    .filter((item): item is (typeof allNavigationItems)[number] => Boolean(item));
+  const rewardToolMatchesSearch =
+    !searchQuery.trim() ||
+    'leaderboard prize setup owner rewards promo wallet'.includes(searchQuery.trim().toLowerCase());
+
+  useEffect(() => {
+    try {
+      setRecentPaths(JSON.parse(localStorage.getItem(recentStorageKey) || '[]'));
+      setPinnedPaths(JSON.parse(localStorage.getItem(pinStorageKey) || '[]'));
+    } catch {
+      setRecentPaths([]);
+      setPinnedPaths([]);
+    }
+  }, [pinStorageKey, recentStorageKey]);
+
+  const isActivePath = (path: string) => {
+    const current = location.pathname.replace(/\/+$/, '') || '/';
+    const target = path.split('?')[0].replace(/\/+$/, '') || '/';
+    return target === '/'
+      ? current === '/'
+      : current === target || current.startsWith(`${target}/`);
+  };
+
+  useEffect(() => {
+    if (!isOpen || !workspace.clubUUID) {
+      setCanManageGames(false);
+      return;
+    }
+    let cancelled = false;
+    void fetchGameCreationAccess(workspace.clubUUID).then((access) => {
+      if (!cancelled) setCanManageGames(access.allowed && !access.unionId);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [gameAccessRevision, isOpen, workspace.clubUUID]);
+
+  useMasterBusSubscription('GAME_MANAGEMENT_ACCESS_CHANGED', (payload) => {
+    if (!payload.clubId || payload.clubId === workspace.clubUUID) {
+      setGameAccessRevision((value) => value + 1);
+    }
+  });
 
   useEffect(() => {
     if (!isOpen || !clubId) {
-      if (!clubId) setClubLevelInfo(null);
+      if (!clubId) {
+        setClubLevelInfo(null);
+      }
       return;
     }
     let isMounted = true;
@@ -126,75 +317,157 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     return () => {
       isMounted = false;
     };
-  }, [isOpen, clubId]);
+  }, [isOpen, clubId, user?.id]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    capture('club_arena_menu_opened', {
+      route: location.pathname,
+      club_id: workspace.clubUUID,
+      club_role: clubRole,
+      offline: workspace.isOffline,
+    });
+  }, [clubRole, isOpen, location.pathname, workspace.clubUUID, workspace.isOffline]);
+
+  useEffect(() => {
+    if (!isOpen || !user?.id) return;
+    void fetchQuickLinkClubs(user.id).then(setClubChoices);
+  }, [isOpen, user?.id]);
+
+  useEffect(() => {
+    if (!isOpen || !user?.id) {
+      if (!user?.id) {
+        setRewardContexts([]);
+        setRewardContextClubId('');
+      }
+      return;
+    }
+    let cancelled = false;
+    void LeaderboardService.getManageableRewardContexts(true)
+      .then((contexts) => {
+        if (cancelled) return;
+        setRewardContexts(contexts);
+        setRewardContextClubId((current) => {
+          if (contexts.some((context) => context.club_id === current)) return current;
+          const routeContext = contexts.find((context) => context.club_id === workspace.clubUUID);
+          return routeContext?.club_id || contexts[0]?.club_id || '';
+        });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        reportError(error, 'HamburgerMenu.Leaderboard_reward_contexts_failed');
+        setRewardContexts([]);
+        setRewardContextClubId('');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, user?.id, workspace.clubUUID]);
+
+  useEffect(() => {
+    if (!isOpen || !workspace.clubUUID || !workspace.isClubStaff) {
+      setAttentionCount(0);
+      return;
+    }
+    let cancelled = false;
+    void supabase
+      .from('disputes')
+      .select('id', { count: 'exact', head: true })
+      .eq('club_id', workspace.clubUUID)
+      .in('status', ['open', 'under_review', 'escalated'])
+      .then(({ count, error }) => {
+        if (error) {
+          reportError(error, 'HamburgerMenu.Attention_count_failed');
+          return;
+        }
+        if (!cancelled) setAttentionCount(count || 0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, workspace.clubUUID, workspace.isClubStaff]);
 
   const drawerRef = useRef<HTMLDivElement>(null);
 
-  // Close on ESC key
+  // Lock background scroll, contain keyboard focus, and restore the opener.
   useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) onClose();
-    };
-    window.addEventListener('keydown', handleEsc);
-    return () => window.removeEventListener('keydown', handleEsc);
-  }, [isOpen, onClose]);
+    if (!isOpen) return;
 
-  // Prevent body scroll when menu is open + focus trap
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      // Focus trap: keep Tab cycling within the drawer
-      const drawer = drawerRef.current;
-      if (!drawer) return;
-      const focusable = drawer.querySelectorAll<HTMLElement>(
-        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-      );
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    previousBodyOverflowRef.current = document.body.style.overflow;
+    navigatingRef.current = false;
+    document.body.style.overflow = 'hidden';
+
+    const drawer = drawerRef.current;
+    if (!drawer) return;
+
+    const getFocusable = () =>
+      Array.from(
+        drawer.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )
+      ).filter((element) => element.offsetParent !== null);
+
+    const containFocus = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const focusable = getFocusable();
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      const trapFocus = (e: KeyboardEvent) => {
-        if (e.key !== 'Tab') return;
-        if (e.shiftKey) {
-          if (document.activeElement === first) {
-            e.preventDefault();
-            last?.focus();
-          }
-        } else {
-          if (document.activeElement === last) {
-            e.preventDefault();
-            first?.focus();
-          }
-        }
-      };
-      drawer.addEventListener('keydown', trapFocus);
-      first?.focus();
-      return () => {
-        document.body.style.overflow = '';
-        drawer.removeEventListener('keydown', trapFocus);
-      };
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => {
-      document.body.style.overflow = '';
+      if (!first || !last) {
+        event.preventDefault();
+        drawer.focus();
+        return;
+      }
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-  }, [isOpen]);
+
+    drawer.addEventListener('keydown', containFocus);
+    requestAnimationFrame(() => getFocusable()[0]?.focus());
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflowRef.current;
+      drawer.removeEventListener('keydown', containFocus);
+      if (!navigatingRef.current && previousFocusRef.current?.isConnected) {
+        previousFocusRef.current.focus();
+      }
+    };
+  }, [isOpen, onClose]);
 
   // Load user data and settings
   useEffect(() => {
-    const sounds = localStorage.getItem(STORAGE_KEYS.SOUNDS);
-    const vibrations = localStorage.getItem(STORAGE_KEYS.VIBRATIONS);
-    const showBB = localStorage.getItem(STORAGE_KEYS.SHOW_STACK_BB);
+    /* ── THE GATES, NOT ONE OF THEIR TWO KEYS ────────────────────────────
+       This read `STORAGE_KEYS.SOUNDS` ('club_arena_sounds') and
+       `STORAGE_KEYS.VIBRATIONS` ('vibrationsEnabled') RAW and unconditionally
+       — so it overwrote the gate-derived seed above one render later, and
+       undid the fix that seed exists to be. In the exact case that fix names
+       (`ca_sound_enabled='false'`, `club_arena_sounds='true'`) the switch went
+       back to reading ON over a silent app.
+
+       Both gates fail closed on EITHER of their two keys, so re-reading them
+       here is the only answer that agrees with the seed AND with the engine.
+       `useRealName` keeps its raw read: it has one key and no gate. */
+    setSoundsEnabled(isSoundAllowed());
+    setVibrationsEnabled(isVibrationPreferred());
     const useReal = localStorage.getItem(STORAGE_KEYS.USE_REAL_NAME);
-    if (sounds !== null) setSoundsEnabled(sounds === 'true');
-    if (vibrations !== null) setVibrationsEnabled(vibrations === 'true');
-    if (showBB !== null) setShowBBEnabled(showBB === 'true');
     if (useReal !== null) setUseRealName(useReal === 'true');
 
     if (user?.id) {
       supabase
         .from('profiles')
         .select(
-          'avatar_url:arena_avatar_url, username, display_name, sounds_enabled, vibrations_enabled, show_stack_bb, is_vip, tier'
+          'avatar_url:arena_avatar_url, username, display_name, sounds_enabled, vibrations_enabled, is_vip, tier, role'
         )
         .eq('id', user.id)
         .maybeSingle()
@@ -214,22 +487,66 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
                 ? data.display_name || data.username || 'Player'
                 : data.username || data.display_name || 'Player'
             );
-            // These columns may not exist on profiles — use optional chaining with defaults
-            if (data.sounds_enabled !== undefined && data.sounds_enabled !== null) {
-              setSoundsEnabled(data.sounds_enabled);
-              localStorage.setItem(STORAGE_KEYS.SOUNDS, String(data.sounds_enabled));
-            }
-            if (data.vibrations_enabled !== undefined && data.vibrations_enabled !== null) {
-              setVibrationsEnabled(data.vibrations_enabled);
-              localStorage.setItem(STORAGE_KEYS.VIBRATIONS, String(data.vibrations_enabled));
-            }
-            if (data.show_stack_bb !== undefined && data.show_stack_bb !== null) {
-              setShowBBEnabled(data.show_stack_bb);
-              localStorage.setItem(STORAGE_KEYS.SHOW_STACK_BB, String(data.show_stack_bb));
-            }
+            // First-paint identity cache (2026-08-28 flash sweep): what the
+            // database just said is what the header and hero seat should wear
+            // on the NEXT cold open, before any round trip.
+            persistIdentity(user.id, {
+              displayName: data.display_name || data.username || null,
+              avatarUrl: data.avatar_url || null,
+            });
+            /* ── `profiles.sounds_enabled` / `vibrations_enabled` ARE NO LONGER
+                  READ BACK OVER THE GATES (2026-08-29) ──────────────────────
+               This used to `setState` from the profile row AND write the gate's
+               `club_arena_sounds` / `vibrationsEnabled` keys directly, bypassing
+               `persistSoundPreference` and `setVibrationAllowed` (which write
+               both of each gate's keys as a pair) and never calling
+               `soundService.setEnabled`.
+
+               That made `profiles` a SECOND DATABASE OWNER of "is sound on",
+               alongside `user_table_settings.sound_enabled`, with nothing
+               reconciling them — so muting at the table and then opening this
+               menu re-asserted the stale profile value over the gate on every
+               open. Only the gate's fail-closed rule stopped it actually
+               un-muting anyone.
+
+               The columns are still WRITTEN below (`updateSetting` mirrors to
+               them for older surfaces). They are simply not an input any more:
+               the gates are, and they are what the audio engine consults. */
+            /* `profiles.show_stack_bb` is NOT read here any more — see the note
+               where the second query used to be. */
             setIsVIP(data.is_vip || data.tier === 'vip' || false);
+            setIsPlatformStaff(data.role === 'admin' || data.role === 'super_admin');
           }
         });
+
+      /* ── WHY THERE IS NO show_stack_bb QUERY HERE ANY MORE (2026-08-29) ──
+       *
+       * Dan 2026-08-25 established the rule this still obeys: the felt reads
+       * `user_table_settings.show_stack_in_bb`, `profiles.show_stack_bb` is a
+       * legacy mirror, and whatever the table is actually obeying is what this
+       * switch must display. No row means the user never chose, which is
+       * chips, which is the default.
+       *
+       * The fix at the time added a SECOND query beside the profiles one, and
+       * both wrote `setShowBBEnabled` and the same localStorage key from
+       * unordered `.then()` callbacks. Whichever resolved last won, so the
+       * legacy value could still land on top of the canonical one — the exact
+       * disagreement the fix was written to end, now decided by network
+       * timing rather than by a rule.
+       *
+       * Both queries are gone. `useUserTableSettings` is already mounted above
+       * and already reads this column, on a request that is de-duplicated
+       * across every consumer in the tab; the effect beside it mirrors its
+       * value into state and into localStorage. One reader, one writer, no
+       * race.
+       *
+       * The legacy `profiles.show_stack_bb` is now dead in BOTH directions: the
+       * reads went with that fix, and `handleShowBBToggle` — the only thing
+       * that ever wrote it — turned out to have had no caller since the day it
+       * was added, and was deleted on 2026-08-29. An earlier version of this
+       * comment claimed it was "still WRITTEN ... for older surfaces". It was
+       * not. `user_table_settings.show_stack_in_bb` is the only copy.
+       */
     }
   }, [user?.id]);
 
@@ -254,8 +571,43 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
   // Navigate and close
   const handleNavigate = (path: string) => {
+    const nextRecentPaths = [path, ...recentPaths.filter((item) => item !== path)].slice(0, 5);
+    setRecentPaths(nextRecentPaths);
+    try {
+      localStorage.setItem(recentStorageKey, JSON.stringify(nextRecentPaths));
+    } catch {
+      /* private mode */
+    }
+    capture('club_arena_navigation_selected', {
+      route: path,
+      from_route: location.pathname,
+      club_id: workspace.clubUUID,
+      source: 'hamburger',
+    });
+    navigatingRef.current = true;
     navigate(path);
     onClose();
+  };
+
+  // Table Studio is a modal destination, not content inside the command
+  // drawer. Hand ownership to it in the same click: leaving the drawer open
+  // puts its higher stacking layer and focus trap over the studio, so every
+  // design tile looks visible but cannot be tapped on mobile or desktop.
+  const handleOpenTableStudio = () => {
+    setShowThemeSettings(true);
+    onClose();
+  };
+
+  const togglePinnedPath = (path: string) => {
+    const nextPinnedPaths = pinnedPaths.includes(path)
+      ? pinnedPaths.filter((item) => item !== path)
+      : [...pinnedPaths, path].slice(-6);
+    setPinnedPaths(nextPinnedPaths);
+    try {
+      localStorage.setItem(pinStorageKey, JSON.stringify(nextPinnedPaths));
+    } catch {
+      /* private mode */
+    }
   };
 
   // Prefetch page chunk on hover — so page loads instantly when clicked
@@ -310,6 +662,12 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     updateSetting(STORAGE_KEYS.SOUNDS, 'sounds_enabled', newValue, () =>
       setSoundsEnabled(!newValue)
     );
+    // SOUND AUDIT 2026-08-27: this toggle wrote only STORAGE_KEYS.SOUNDS.
+    // The shared gate fails closed on EITHER key, so a player who had muted
+    // in-table ('ca_sound_enabled'='false') and then flipped this switch ON
+    // got a switch reading ON with a still-silent app. setEnabled() persists
+    // the choice to BOTH gate keys so the switches always agree.
+    soundService.setEnabled(newValue);
     masterBus.emit('SETTINGS_CHANGED', { setting: 'isSoundEnabled', value: newValue });
   };
 
@@ -319,32 +677,52 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     updateSetting(STORAGE_KEYS.VIBRATIONS, 'vibrations_enabled', newValue, () =>
       setVibrationsEnabled(!newValue)
     );
-    masterBus.emit('SETTINGS_CHANGED', { setting: 'vibrationsEnabled', value: newValue });
+    /* Through the GATE, which writes both of its keys. The sound sibling above
+       got `soundService.setEnabled` on 2026-08-27 for precisely this reason and
+       the haptic half was left behind: turning vibration ON here could not clear
+       a mute set by the in-table switch, because the gate fails closed on
+       `ca_vibration_enabled` and nothing here ever touched it. */
+    setVibrationAllowed(newValue);
+    /* 2026-08-26: the key was `vibrationsEnabled`, which is NOT a field of
+       useTableSettings — the store calls it `isHapticEnabled` — so the
+       whitelist at useTableSettings dropped this event silently and an open
+       table never learned haptics had been turned off. (The localStorage
+       write above still worked, which is why it half-functioned and was easy
+       to miss.) The store's own name is what the bus must carry. */
+    masterBus.emit('SETTINGS_CHANGED', { setting: 'isHapticEnabled', value: newValue });
   };
 
-  const handleShowBBToggle = () => {
-    const newValue = !showBBEnabled;
-    setShowBBEnabled(newValue);
-    updateSetting(STORAGE_KEYS.SHOW_STACK_BB, 'show_stack_bb', newValue, () =>
-      setShowBBEnabled(!newValue)
-    );
-    masterBus.emit('SETTINGS_CHANGED', { setting: 'showStackInBB', value: newValue });
-  };
+  /* ── `handleShowBBToggle` DELETED 2026-08-29 ────────────────────────────
+     It had never had a caller. `git log -S` puts it back to the commit that
+     added it: no `onClick`, no "Show Stack In Big Blinds" control anywhere in
+     this component's JSX — that switch lives in the expandable
+     `TableSettingsPanel`, which writes through `useUserTableSettings` on its
+     own.
+
+     It was left in place on 2026-08-29 alongside a fresh comment claiming
+     "the legacy column is still WRITTEN by handleShowBBToggle for older
+     surfaces, which is a mirror rather than a second opinion." That was false
+     in both halves: the function wrote nothing because nothing called it, and
+     the same commit had just deleted the two `.select()` calls that read
+     `profiles.show_stack_bb`. The legacy column is dead in both directions.
+
+     That is the more useful fact and it is why this note is here rather than
+     nothing: a future reader looking for the legacy mirror will not find one,
+     and should not add one back. `user_table_settings.show_stack_in_bb` is the
+     only copy of this preference. */
 
   const handleResetTutorial = async () => {
     localStorage.removeItem(STORAGE_KEYS.INTRO_SHOWN);
     localStorage.removeItem(STORAGE_KEYS.TUTORIAL_COMPLETED);
-    if (user?.id) {
-      try {
-        const { error: resetErr } = await supabase
-          .from('profiles')
-          .update({ tutorial_completed: false })
-          .eq('id', user.id);
-        if (resetErr) reportError(resetErr, 'HamburgerMenu.Tutorial_reset_save_failed');
-      } catch (error) {
-        reportError(error, 'HamburgerMenu.Error_resetting_tutorial');
-      }
-    }
+    /**
+     * There is no `profiles.tutorial_completed` column and nothing anywhere
+     * reads one. This used to write it, which was rejected on every reset and
+     * reported as a failure the user never saw - and had the column existed,
+     * the reset would still have worked exactly as it does now, because
+     * localStorage above is the only thing the intro gate consults. Removing
+     * the write loses no behaviour; it removes a control that was never wired
+     * to anything. Making it a real cross-device flag needs a reader first.
+     */
     toast.info('Tutorial reset! Refresh the page to see the intro again.');
     onClose();
   };
@@ -395,32 +773,24 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   };
 
   // Shared styles
-  const sectionHeaderStyle: React.CSSProperties = {
-    fontSize: 12,
-    fontWeight: 600,
-    color: colors.textSecondary,
-    margin: 0,
-    padding: '16px 16px 8px',
-    textTransform: 'uppercase',
-    letterSpacing: '0.5px',
-  };
-
-  const menuItemStyle: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    padding: '12px 16px',
-    cursor: 'pointer',
-    borderRadius: 8,
-    margin: '0 8px',
-    transition: 'background-color 0.15s ease, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
-  };
-
   const dividerStyle: React.CSSProperties = {
     height: 1,
     background: colors.divider,
     margin: '8px 16px',
   };
+
+  // Do not leave an off-canvas tree full of focusable controls in the tab order.
+  if (!isOpen) {
+    return showThemeSettings ? (
+      <ThemeSettingsModal
+        isOpen
+        onClose={() => setShowThemeSettings(false)}
+        userId={user?.id || ''}
+        isVip={isVIP}
+        checkoutReturnResult={tableStudioCheckoutResult(location.search)}
+      />
+    ) : null;
+  }
 
   return (
     <>
@@ -439,137 +809,144 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             `}</style>
 
       {/* Backdrop */}
-      {isOpen && (
-        <div
-          onClick={onClose}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.7)',
-            zIndex: 1100,
-          }}
-        />
-      )}
+      <div className={styles.backdrop} onClick={onClose} aria-hidden="true" />
 
       {/* Drawer */}
       <div
         ref={drawerRef}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          bottom: 0,
-          width: '100%',
-          maxWidth: 320,
-          backgroundColor: '#18191a' /* Solid background to prevent see-through */,
-          boxShadow: '4px 0 20px rgba(0, 0, 0, 0.5)',
-          zIndex: 1200,
-          transform: isOpen ? 'translateX(0)' : 'translateX(-100%)',
-          transition: 'transform 0.3s ease',
-          display: 'flex',
-          flexDirection: 'column',
-          overflowY: 'auto',
-          paddingBottom: 80,
-        }}
+        className={`${styles.drawer} ${styles.drawerOpen}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={dialogTitleId}
+        tabIndex={-1}
       >
-        {/* Close button */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '16px 12px 8px' }}>
-          <button
-            onClick={onClose}
-            style={{
-              background: colors.bgHover,
-              border: 'none',
-              padding: '8px 16px',
-              borderRadius: 8,
-              cursor: 'pointer',
-              fontSize: 14,
-              fontWeight: 600,
-              color: colors.text,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
+        <div className={styles.utilityRail}>
+          <div className={styles.brandLockup}>
+            <img
+              src="/hub/club-arena/images/diamond-icon.webp"
+              alt=""
+              className={styles.brandMark}
+            />
+            <span>
+              <span className={styles.brandEyebrow}>Smarter.Poker</span>
+              <span className={styles.brandTitle} id={dialogTitleId}>
+                Club Arena
+              </span>
+            </span>
+          </div>
+          <button type="button" onClick={onClose} className={styles.closeButton}>
             Close
           </button>
         </div>
 
         {/* User Profile Card */}
-        <div
+        <button
+          type="button"
           onClick={() => handleNavigate('/profile')}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: '12px 16px',
-            margin: '0 12px 12px',
-            background: colors.bgSecondary,
-            borderRadius: 12,
-            cursor: 'pointer',
-          }}
+          className={styles.profilePlate}
         >
-          <img
-            loading="lazy"
-            decoding="async"
-            src={avatarUrl || generateDefaultAvatar()}
-            alt=""
+          {/* Wrapped so the equipped frame/aura has a positioned, radius-owning
+              parent to fill. The <img> itself cannot be that parent: an
+              absolutely positioned child of an <img> is not a thing. */}
+          <div
             style={{
+              position: 'relative',
               width: 48,
               height: 48,
               borderRadius: '50%',
-              objectFit: 'cover',
-              border: `2px solid ${colors.divider}`,
+              flexShrink: 0,
+              fontSize: 11,
             }}
-          />
-          <div style={{ flex: 1 }}>
-            <div
+          >
+            <img
+              loading="lazy"
+              decoding="async"
+              src={avatarUrl || generateDefaultAvatar()}
+              alt=""
               style={{
-                fontWeight: 600,
-                fontSize: 16,
-                color: colors.text,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
+                width: 48,
+                height: 48,
+                borderRadius: '50%',
+                objectFit: 'cover',
+                border: `2px solid ${colors.divider}`,
               }}
-            >
+            />
+            <AvatarCosmetics frame={equippedFrame} aura={equippedAura} />
+          </div>
+          <div>
+            <div className={styles.profileName}>
               {userName || 'Player'}
               {isVIP && (
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 800,
-                    color: '#fbbf24',
-                    letterSpacing: '0.05em',
-                  }}
-                  title="VIP Diamond Member"
-                >
+                <span className={styles.vipBadge} title="VIP Diamond Member">
                   VIP
                 </span>
               )}
             </div>
-            <div
-              style={{
-                fontSize: 13,
-                color: colors.textSecondary,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-              }}
-            >
+            <div className={styles.profileMeta}>
               <span>View Profile</span>
               {diamondBalance > 0 && (
-                <span style={{ color: '#60a5fa', fontWeight: 600 }}>
-                  {diamondBalance.toLocaleString()} DIA
-                </span>
+                <span className={styles.diamondBalance}>{diamondBalance.toLocaleString()} DIA</span>
               )}
             </div>
           </div>
-          <span style={{ color: colors.textSecondary, fontSize: 18 }}>›</span>
-        </div>
+          <span className={styles.navArrow}>›</span>
+        </button>
 
         <div style={dividerStyle} />
+
+        <section className={styles.contextDeck} aria-label="Current Arena Context">
+          <div className={styles.contextStatus}>
+            <span
+              className={`${styles.statusLamp} ${workspace.isOffline ? styles.statusLampOffline : ''}`}
+              aria-hidden="true"
+            />
+            <span>
+              {workspace.isOffline
+                ? 'Offline - Queued Actions Remain Protected'
+                : workspace.isStale
+                  ? 'Live Circuit - Refreshing Context'
+                  : 'Live Circuit Connected'}
+            </span>
+            {clubRole && <strong>{tc(clubRole.replace(/_/g, ' '))}</strong>}
+          </div>
+          {clubId && clubChoices.length > 1 && (
+            <label className={styles.contextSwitcher}>
+              <span>Club Context</span>
+              <select
+                value={workspace.clubUUID || ''}
+                onChange={(event) => handleNavigate(`/clubs/${event.target.value}`)}
+              >
+                {clubChoices.map((club) => (
+                  <option key={club.id} value={club.id}>
+                    {club.name || club.club_id || 'Club'}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <form
+            className={styles.menuSearch}
+            role="search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const query = searchQuery.trim();
+              if (query) handleNavigate(`/search?q=${encodeURIComponent(query)}`);
+            }}
+          >
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search Destinations Or The Arena"
+              aria-label="Search Destinations Or The Arena"
+            />
+            <button type="submit" aria-label="Search All Players And Clubs">
+              Search
+            </button>
+          </form>
+        </section>
 
         {/* ═══════════════════════════════════════════════════════════════
                     CLUB LEVEL & PROGRESSION
@@ -641,690 +1018,355 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           </>
         )}
 
-        {/* ═══════════════════════════════════════════════════════════════
-                    GAME MODES
-                ═══════════════════════════════════════════════════════════════ */}
-        <div style={sectionHeaderStyle}>Game Modes</div>
-        {[
-          { label: 'Home', path: '/' },
-          { label: 'Tournaments', path: '/tournaments' },
-          { label: 'Tournament Lobby', path: '/tournament-lobby' },
-          { label: 'Tournament Results', path: '/tournament-results' },
-          { label: 'Hand History', path: '/hand-history' },
-          { label: 'Hand Replayer', path: '/hands' },
-          { label: 'Session History', path: '/history' },
-          { label: 'Player Sessions', path: '/player-sessions' },
-          { label: 'Leaderboard', path: '/leaderboard' },
-          { label: 'Marketplace', path: '/marketplace' },
-        ].map((item, i) => (
-          <div
-            key={`games-${i}`}
-            onClick={() => handleNavigate(item.path)}
-            style={{
-              ...menuItemStyle,
-              animation: isOpen
-                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 30}ms both`
-                : 'none',
-            }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.transform = 'translateX(0)';
-            }}
-          >
-            <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
-              {item.label}
-            </span>
-            <span style={{ color: colors.textSecondary }}>›</span>
-          </div>
-        ))}
-
-        <div style={dividerStyle} />
-
-        {/* ═══════════════════════════════════════════════════════════════
-                    CLUBS
-                ═══════════════════════════════════════════════════════════════ */}
-        <div style={sectionHeaderStyle}>Clubs</div>
-        {[
-          { label: 'My Clubs', path: '/clubs' },
-          { label: 'Create Club', path: '/clubs/create' },
-          { label: 'Find Player', path: '/search' },
-          { label: 'Messages', path: '/messages' },
-          { label: 'Club Messages', path: '/messages/clubs' },
-          { label: 'Players', path: '/players' },
-          { label: 'Cashier', path: '/cashier' },
-        ].map((item, i) => (
-          <div
-            key={`clubs-${i}`}
-            onClick={() => handleNavigate(item.path)}
-            style={{
-              ...menuItemStyle,
-              animation: isOpen
-                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 8) * 30}ms both`
-                : 'none',
-            }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.transform = 'translateX(0)';
-            }}
-          >
-            <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
-              {item.label}
-            </span>
-            <span style={{ color: colors.textSecondary }}>›</span>
-          </div>
-        ))}
-
-        <div style={dividerStyle} />
-
-        {/* ═══════════════════════════════════════════════════════════════
-                    UNIONS
-                ═══════════════════════════════════════════════════════════════ */}
-        <div style={sectionHeaderStyle}>Unions</div>
-        {[
-          { label: 'Browse Unions', path: '/unions' },
-          { label: 'Create Union', path: '/unions/create' },
-        ].map((item, i) => (
-          <div
-            key={`unions-${i}`}
-            onClick={() => handleNavigate(item.path)}
-            style={{
-              ...menuItemStyle,
-              animation: isOpen
-                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 15) * 30}ms both`
-                : 'none',
-            }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.transform = 'translateX(0)';
-            }}
-          >
-            <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
-              {item.label}
-            </span>
-            <span style={{ color: colors.textSecondary }}>›</span>
-          </div>
-        ))}
-
-        <div style={dividerStyle} />
-
-        {/* ═══════════════════════════════════════════════════════════════
-                    PLAYER
-                ═══════════════════════════════════════════════════════════════ */}
-        <div style={sectionHeaderStyle}>Player</div>
-        {[
-          { label: 'My Profile', path: '/profile' },
-          { label: 'My Wallet', path: '/wallet' },
-          { label: 'Achievements', path: '/achievements' },
-          { label: 'Player Stats', path: '/stats' },
-          { label: 'VIP Status', path: '/vip' },
-          { label: 'Rakeback', path: '/rakeback' },
-          { label: 'Promotions', path: '/promotions' },
-          { label: 'Bonuses', path: '/bonuses' },
-          { label: 'Transactions', path: '/transactions' },
-          { label: 'Friends', path: '/friends' },
-          { label: 'Waitlist', path: '/waitlist' },
-          { label: 'Invite Players', path: '/invite' },
-        ].map((item, i) => (
-          <div
-            key={`player-${i}`}
-            onClick={() => handleNavigate(item.path)}
-            style={{
-              ...menuItemStyle,
-              animation: isOpen
-                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 17) * 30}ms both`
-                : 'none',
-            }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.transform = 'translateX(0)';
-            }}
-          >
-            <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
-              {item.label}
-            </span>
-            <span style={{ color: colors.textSecondary }}>›</span>
-          </div>
-        ))}
-
-        {/* Avatar Customization Trigger */}
-        <div
-          onClick={() => setShowAvatarGallery(true)}
-          style={{
-            ...menuItemStyle,
-            animation: isOpen
-              ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(12 + 17) * 30}ms both`
-              : 'none',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = colors.bgHover;
-            e.currentTarget.style.transform = 'translateX(4px)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.transform = 'translateX(0)';
-          }}
-        >
-          <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
-            Change Avatar
-          </span>
-          <span style={{ color: colors.textSecondary }}>›</span>
+        <div className={styles.quickActions} aria-label="Context Actions">
+          {clubId && canManageGames ? (
+            <button
+              type="button"
+              className={styles.quickAction}
+              onClick={() => handleNavigate(`/clubs/${clubId}/table-management`)}
+            >
+              Table Management
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={styles.quickAction}
+              onClick={() => handleNavigate('/?create=club')}
+            >
+              Create Club
+            </button>
+          )}
+          {clubId && workspace.canControlClub ? (
+            <button
+              type="button"
+              className={styles.quickAction}
+              onClick={() => handleNavigate(`/invite/${clubId}`)}
+            >
+              Invite Players
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={styles.quickAction}
+              onClick={() => handleNavigate('/unions/create')}
+            >
+              Create Union
+            </button>
+          )}
+          {clubId && workspace.canViewFinance && (
+            <button
+              type="button"
+              className={`${styles.quickAction} ${styles.quickActionWide}`}
+              onClick={() => handleNavigate(`/clubs/${clubId}/finance`)}
+            >
+              Open Finance & Risk
+            </button>
+          )}
         </div>
 
-        <div style={dividerStyle} />
+        {(pinnedItems.length > 0 || recentItems.length > 0) && !searchQuery && (
+          <section className={styles.memoryRail} aria-label="Pinned And Recent Destinations">
+            {pinnedItems.length > 0 && (
+              <div>
+                <h2 className={styles.sectionHeader}>Pinned</h2>
+                <div className={styles.memoryLinks}>
+                  {pinnedItems.map((item) => (
+                    <button key={item.path} type="button" onClick={() => handleNavigate(item.path)}>
+                      {tc(item.label)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {recentItems.length > 0 && (
+              <div>
+                <h2 className={styles.sectionHeader}>Recent</h2>
+                <div className={styles.memoryLinks}>
+                  {recentItems.map((item) => (
+                    <button key={item.path} type="button" onClick={() => handleNavigate(item.path)}>
+                      {tc(item.label)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
 
-        {/* ═══════════════════════════════════════════════════════════════
-                    AGENT & ADMIN
-                ═══════════════════════════════════════════════════════════════ */}
-        <div style={sectionHeaderStyle}>Agent & Admin</div>
-        {[
-          { label: 'Agent Management', path: '/agent-management' },
-          { label: 'Agent Dashboard', path: '/agent-dashboard' },
-          { label: 'Club Dashboard', path: '/data' },
-          { label: 'Club Settings', path: '/admin' },
-          { label: 'Anti-Cheat', path: '/anti-cheat' },
-        ].map((item, i) => (
-          <div
-            key={`admin-${i}`}
-            onClick={() => handleNavigate(item.path)}
-            style={{
-              ...menuItemStyle,
-              animation: isOpen
-                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 29) * 30}ms both`
-                : 'none',
-            }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.transform = 'translateX(0)';
-            }}
-          >
-            <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
-              {item.label}
-            </span>
-            <span style={{ color: colors.textSecondary }}>›</span>
-          </div>
+        {filteredNavigationGroups.map((group) => (
+          <section className={styles.navGroup} key={group.label} aria-label={group.label}>
+            <h2 className={styles.sectionHeader}>{tc(group.label)}</h2>
+            {group.items.map((item) => {
+              const active = isActivePath(item.path);
+              return (
+                <div className={styles.navItemRow} key={item.path}>
+                  <button
+                    type="button"
+                    className={`${styles.navItem} ${active ? styles.navItemActive : ''}`}
+                    onClick={() => handleNavigate(item.path)}
+                    onMouseEnter={() => handleItemHover(item.path)}
+                    aria-current={active ? 'page' : undefined}
+                  >
+                    <span>
+                      <span className={styles.navLabel}>{tc(item.label)}</span>
+                      <span className={styles.navDescription}>{tc(item.description)}</span>
+                    </span>
+                    {attentionCount > 0 && item.path.endsWith('/disputes') && (
+                      <span className={styles.attentionBadge}>{attentionCount}</span>
+                    )}
+                    <span className={styles.navArrow}>{item.external ? '↗' : '›'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`${styles.pinButton} ${pinnedPaths.includes(item.path) ? styles.pinButtonActive : ''}`}
+                    onClick={() => togglePinnedPath(item.path)}
+                    aria-label={`${pinnedPaths.includes(item.path) ? 'Unpin' : 'Pin'} ${item.label}`}
+                    aria-pressed={pinnedPaths.includes(item.path)}
+                  >
+                    <span aria-hidden="true">◇</span>
+                  </button>
+                </div>
+              );
+            })}
+          </section>
         ))}
 
-        <div style={dividerStyle} />
+        {rewardContexts.length > 0 && rewardToolMatchesSearch && (
+          <section className={styles.navGroup} aria-label="Owner Prize Tools">
+            <h2 className={styles.sectionHeader}>Owner Prize Tools</h2>
+            {rewardContexts.length > 1 && (
+              <label className={styles.contextSwitcher}>
+                <span>Prize Club</span>
+                <select
+                  value={rewardContextClubId}
+                  onChange={(event) => setRewardContextClubId(event.target.value)}
+                >
+                  {rewardContexts.map((context) => (
+                    <option key={context.club_id} value={context.club_id}>
+                      {context.club_name}
+                      {context.union_name ? ` / ${context.union_name}` : ' / Standalone'}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <div className={styles.navItemRow}>
+              <button
+                type="button"
+                className={styles.navItem}
+                onClick={() =>
+                  handleNavigate(`/leaderboard?setup=prizes&club=${rewardContextClubId}`)
+                }
+                disabled={!rewardContextClubId}
+              >
+                <span>
+                  <span className={styles.navLabel}>Leaderboard Prize Setup</span>
+                  <span className={styles.navDescription}>
+                    Configure Suggested Or Custom Promo Wallet Prize Plans
+                  </span>
+                </span>
+                <span className={styles.navArrow}>›</span>
+              </button>
+            </div>
+          </section>
+        )}
+
+        {searchQuery &&
+          filteredNavigationGroups.length === 0 &&
+          !(rewardContexts.length > 0 && rewardToolMatchesSearch) && (
+            <div className={styles.noResults} role="status">
+              <strong>No Menu Destination Matches.</strong>
+              <span>Press Search To Look Across Players And Clubs.</span>
+            </div>
+          )}
+
+        <button
+          type="button"
+          className={`${styles.quickAction} ${styles.quickActionFull}`}
+          onClick={() => setShowAvatarGallery(true)}
+        >
+          Change Avatar
+        </button>
+
+        <div className={styles.divider} />
 
         {/* ═══════════════════════════════════════════════════════════════
                     SETTINGS
                 ═══════════════════════════════════════════════════════════════ */}
-        <div style={sectionHeaderStyle}>Settings</div>
+        <section className={styles.settingsDeck} aria-label="Settings">
+          <h2 className={styles.sectionHeader}>Settings & Appearance</h2>
 
-        {/* Sounds Toggle */}
-        <div style={{ ...menuItemStyle, justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>Sounds</span>
-          <button
-            onClick={handleSoundsToggle}
-            aria-checked={soundsEnabled}
-            role="switch"
-            style={{
-              width: 52,
-              height: 28,
-              borderRadius: 14,
-              border: soundsEnabled ? '2px solid #4ade80' : '2px solid #6b7280',
-              padding: 2,
-              cursor: 'pointer',
-              backgroundColor: soundsEnabled ? '#22c55e' : '#374151',
-              transition: 'all 0.25s ease',
-              display: 'flex',
-              alignItems: 'center',
-              position: 'relative' as const,
-              flexShrink: 0,
-            }}
-          >
-            <span
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                backgroundColor: 'white',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                transform: soundsEnabled ? 'translateX(24px)' : 'translateX(0)',
-                transition: 'transform 0.25s ease',
-              }}
-            />
-          </button>
-        </div>
-
-        {/* Vibrations Toggle */}
-        <div style={{ ...menuItemStyle, justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>Vibrations</span>
-          <button
-            onClick={handleVibrationsToggle}
-            aria-checked={vibrationsEnabled}
-            role="switch"
-            style={{
-              width: 52,
-              height: 28,
-              borderRadius: 14,
-              border: vibrationsEnabled ? '2px solid #4ade80' : '2px solid #6b7280',
-              padding: 2,
-              cursor: 'pointer',
-              backgroundColor: vibrationsEnabled ? '#22c55e' : '#374151',
-              transition: 'all 0.25s ease',
-              display: 'flex',
-              alignItems: 'center',
-              position: 'relative' as const,
-              flexShrink: 0,
-            }}
-          >
-            <span
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                backgroundColor: 'white',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                transform: vibrationsEnabled ? 'translateX(24px)' : 'translateX(0)',
-                transition: 'transform 0.25s ease',
-              }}
-            />
-          </button>
-        </div>
-
-        {/* Use Real Name Toggle */}
-        <div style={{ ...menuItemStyle, justifyContent: 'space-between' }}>
-          <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>
-            Use Real Name (Vs Alias)
-          </span>
-          <button
-            onClick={handleUseRealNameToggle}
-            aria-checked={useRealName}
-            role="switch"
-            style={{
-              width: 52,
-              height: 28,
-              borderRadius: 14,
-              border: useRealName ? '2px solid #4ade80' : '2px solid #6b7280',
-              padding: 2,
-              cursor: 'pointer',
-              backgroundColor: useRealName ? '#22c55e' : '#374151',
-              transition: 'all 0.25s ease',
-              display: 'flex',
-              alignItems: 'center',
-              position: 'relative' as const,
-              flexShrink: 0,
-            }}
-          >
-            <span
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: '50%',
-                backgroundColor: 'white',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
-                transform: useRealName ? 'translateX(24px)' : 'translateX(0)',
-                transition: 'transform 0.25s ease',
-              }}
-            />
-          </button>
-        </div>
-
-        {/* Bible V8 §11.1: Table Settings — 12 toggles (expandable) */}
-        <div
-          style={{
-            ...menuItemStyle,
-            justifyContent: 'space-between',
-          }}
-          onClick={() => setShowTableSettings(!showTableSettings)}
-        >
-          <span style={{ fontSize: 15, fontWeight: 500, color: colors.text }}>Table Settings</span>
-          <span
-            style={{
-              color: colors.textSecondary,
-              fontSize: 18,
-              transform: showTableSettings ? 'rotate(90deg)' : 'rotate(0deg)',
-              transition: 'transform 0.2s ease',
-            }}
-          >
-            ›
-          </span>
-        </div>
-        {showTableSettings && (
-          <div style={{ padding: '0 0 8px' }}>
-            <TableSettingsPanel
-              settings={tableSettings}
-              loading={tableSettingsLoading}
-              onToggle={toggleTableSetting}
-              mode="inline"
-              onOpenThemeSettings={() => setShowThemeSettings(true)}
-            />
+          {/* Sounds Toggle */}
+          <div className={styles.settingRow}>
+            <span className={styles.settingLabel}>Sounds</span>
+            <button
+              type="button"
+              onClick={handleSoundsToggle}
+              aria-label="Sounds"
+              aria-checked={soundsEnabled}
+              role="switch"
+              className={styles.toggleButton}
+            >
+              <span className={styles.toggleTrack} aria-hidden="true">
+                <span className={styles.toggleThumb} />
+              </span>
+            </button>
           </div>
-        )}
 
-        {/* #6: Card Color Customization */}
-        <div style={sectionHeaderStyle}>Card Colors</div>
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 10,
-            padding: '8px 16px 12px',
-          }}
-        >
-          {[
-            {
-              id: 'default',
-              name: 'Deep Ocean',
-              bg: 'linear-gradient(145deg, rgba(8, 20, 40, 0.9), rgba(5, 12, 28, 0.95))',
-            },
-            {
-              id: 'emerald',
-              name: 'Emerald Night',
-              bg: 'linear-gradient(145deg, rgba(5, 30, 20, 0.9), rgba(3, 18, 12, 0.95))',
-            },
-            {
-              id: 'crimson',
-              name: 'Crimson Velvet',
-              bg: 'linear-gradient(145deg, rgba(40, 8, 15, 0.9), rgba(28, 5, 10, 0.95))',
-            },
-            {
-              id: 'royal',
-              name: 'Royal Purple',
-              bg: 'linear-gradient(145deg, rgba(20, 8, 40, 0.9), rgba(12, 5, 28, 0.95))',
-            },
-            {
-              id: 'gold',
-              name: 'Gold Rush',
-              bg: 'linear-gradient(145deg, rgba(35, 28, 8, 0.9), rgba(24, 18, 5, 0.95))',
-            },
-            {
-              id: 'midnight',
-              name: 'Midnight Ice',
-              bg: 'linear-gradient(145deg, rgba(5, 10, 35, 0.9), rgba(3, 6, 22, 0.95))',
-            },
-            {
-              id: 'obsidian',
-              name: 'Obsidian',
-              bg: 'linear-gradient(145deg, rgba(15, 15, 15, 0.9), rgba(8, 8, 8, 0.95))',
-            },
-            {
-              id: 'neon',
-              name: 'Neon Cyber',
-              bg: 'linear-gradient(145deg, rgba(5, 15, 25, 0.9), rgba(3, 8, 18, 0.95))',
-            },
-          ].map((preset) => {
-            const isSelected = selectedCardColor === preset.id;
-            return (
-              <div
-                key={preset.id}
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: 4,
-                  cursor: 'pointer',
-                }}
-                onClick={async () => {
-                  setSelectedCardColor(preset.id);
-                  localStorage.setItem(STORAGE_KEYS.CARD_COLOR, preset.id);
-                  try {
-                    masterBus.emit('CARD_COLOR_CHANGED', { preset: preset.id });
-                  } catch (err) {
-                    reportError(err, 'HamburgerMenu.Error');
-                    /* */
-                  }
-                  if (user?.id) {
-                    try {
-                      const { data: currentProfile } = await supabase
-                        .from('profiles')
-                        .select('preferences')
-                        .eq('id', user.id)
-                        .maybeSingle();
-                      const prefs = (currentProfile?.preferences as Record<string, unknown>) || {};
-                      const { error: saveErr } = await supabase
-                        .from('profiles')
-                        .update({ preferences: { ...prefs, card_color_preset: preset.id } })
-                        .eq('id', user.id);
-                      if (saveErr) {
-                        reportError(saveErr, 'HamburgerMenu.Card_color_save_failed');
-                        toast.error('Card color could not be saved. Please try again.');
-                      }
-                    } catch (err) {
-                      reportError(err, 'HamburgerMenu.Error');
-                      toast.error('Card color could not be saved. Please try again.');
-                    }
-                  }
-                  toast.success(`Card color: ${preset.name}`);
-                }}
-              >
-                <div
-                  title={preset.name}
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: '50%',
-                    background: preset.bg,
-                    border: isSelected
-                      ? '2px solid rgba(0, 212, 255, 0.8)'
-                      : '2px solid rgba(255, 255, 255, 0.1)',
-                    boxShadow: isSelected
-                      ? '0 0 8px rgba(0, 212, 255, 0.4)'
-                      : '0 2px 4px rgba(0,0,0,0.3)',
-                    transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
-                  }}
-                />
-                <span
-                  style={{
-                    fontSize: 9,
-                    fontWeight: isSelected ? 700 : 500,
-                    color: isSelected ? colors.accent : colors.textSecondary,
-                    textAlign: 'center',
-                    lineHeight: 1.1,
-                    maxWidth: 50,
-                    transition: 'color 0.2s ease',
-                  }}
-                >
-                  {preset.name}
-                </span>
-              </div>
-            );
-          })}
-        </div>
+          {/* Vibrations Toggle */}
+          <div className={styles.settingRow}>
+            <span className={styles.settingLabel}>Vibrations</span>
+            <button
+              type="button"
+              onClick={handleVibrationsToggle}
+              aria-label="Vibrations"
+              aria-checked={vibrationsEnabled}
+              role="switch"
+              className={styles.toggleButton}
+            >
+              <span className={styles.toggleTrack} aria-hidden="true">
+                <span className={styles.toggleThumb} />
+              </span>
+            </button>
+          </div>
 
-        {[
-          { label: 'App Settings', path: '/settings' },
-          { label: 'Notifications', path: '/notifications' },
-        ].map((item, i) => (
-          <div
-            key={`settings-${i}`}
-            onClick={() => handleNavigate(item.path)}
-            style={{
-              ...menuItemStyle,
-              animation: isOpen
-                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 32) * 30}ms both`
-                : 'none',
-            }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.transform = 'translateX(0)';
-            }}
+          {/* Use Real Name Toggle */}
+          <div className={styles.settingRow}>
+            <span className={styles.settingLabel}>Use Real Name (Vs Alias)</span>
+            <button
+              type="button"
+              onClick={handleUseRealNameToggle}
+              aria-label="Use Real Name Instead Of Poker Alias"
+              aria-checked={useRealName}
+              role="switch"
+              className={styles.toggleButton}
+            >
+              <span className={styles.toggleTrack} aria-hidden="true">
+                <span className={styles.toggleThumb} />
+              </span>
+            </button>
+          </div>
+
+          <button
+            type="button"
+            className={styles.navItem}
+            onClick={handleOpenTableStudio}
+            aria-label="Open Table Studio"
           >
-            <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
-              {item.label}
+            <span>
+              <span className={styles.navLabel}>Table Studio</span>
+              <span className={styles.navDescription}>
+                Themes, Tables, Buttons, Backgrounds, And Card Backs
+              </span>
             </span>
-            <span style={{ color: colors.textSecondary }}>›</span>
-          </div>
-        ))}
+            <span className={styles.navArrow} aria-hidden="true">
+              ›
+            </span>
+          </button>
 
-        <div style={dividerStyle} />
-
-        {/* ═══════════════════════════════════════════════════════════════
-                    KEYBOARD SHORTCUTS
-                ═══════════════════════════════════════════════════════════════ */}
-        <div style={sectionHeaderStyle}>Keyboard Shortcuts</div>
-        {[
-          { key: '?', desc: 'Show Shortcuts' },
-          { key: 'Esc', desc: 'Close Menu / Modal' },
-          { key: 'H', desc: 'Go Home' },
-          { key: 'L', desc: 'Go to Home' },
-          { key: 'T', desc: 'Go to Tournaments' },
-          { key: 'P', desc: 'Go to Profile' },
-          { key: 'S', desc: 'Go to Settings' },
-        ].map((shortcut, i) => (
-          <div
-            key={`shortcut-${i}`}
-            style={{
-              ...menuItemStyle,
-              cursor: 'default',
-              justifyContent: 'space-between',
-              animation: isOpen
-                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 34) * 30}ms both`
-                : 'none',
-            }}
+          {/* Bible V8 §11.1: Table Settings — 12 toggles (expandable) */}
+          <button
+            type="button"
+            className={styles.settingsDisclosure}
+            onClick={() => setShowTableSettings(!showTableSettings)}
+            aria-expanded={showTableSettings}
+            aria-controls={tableSettingsId}
           >
-            <span style={{ fontSize: 14, color: colors.textSecondary }}>{shortcut.desc}</span>
-            <kbd
+            <span className={styles.settingLabel}>Table Settings</span>
+            <span
+              aria-hidden="true"
               style={{
-                display: 'inline-block',
-                padding: '2px 8px',
-                fontSize: 12,
-                fontWeight: 700,
-                fontFamily: 'monospace',
-                color: colors.text,
-                background: colors.bgHover,
-                borderRadius: 6,
-                border: `1px solid ${colors.divider}`,
-                minWidth: 28,
-                textAlign: 'center',
+                color: colors.textSecondary,
+                fontSize: 18,
+                transform: showTableSettings ? 'rotate(90deg)' : 'rotate(0deg)',
+                transition: 'transform 0.2s ease',
               }}
             >
-              {shortcut.key}
-            </kbd>
-          </div>
-        ))}
-
-        <div style={dividerStyle} />
-
-        {/* ═══════════════════════════════════════════════════════════════
-                    SUPPORT & LEGAL
-                ═══════════════════════════════════════════════════════════════ */}
-        <div style={sectionHeaderStyle}>Support & Legal</div>
-        {[
-          { label: 'Help & FAQ', path: '/help' },
-          { label: 'Terms of Service', path: '/legal/tos' },
-          { label: 'Privacy Policy', path: '/legal/privacy' },
-          { label: 'Fair Gaming', path: '/legal/fair-gaming' },
-          { label: 'Promotion Rules', path: '/legal/promotions' },
-        ].map((item, i) => (
-          <div
-            key={`support-${i}`}
-            onClick={() => handleNavigate(item.path)}
-            style={{
-              ...menuItemStyle,
-              animation: isOpen
-                ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) ${(i + 41) * 30}ms both`
-                : 'none',
-            }}
-            onMouseEnter={(e) => {
-              handleItemHover(item.path);
-              e.currentTarget.style.background = colors.bgHover;
-              e.currentTarget.style.transform = 'translateX(4px)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = 'transparent';
-              e.currentTarget.style.transform = 'translateX(0)';
-            }}
-          >
-            <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
-              {item.label}
+              ›
             </span>
-            <span style={{ color: colors.textSecondary }}>›</span>
-          </div>
-        ))}
+          </button>
+          {showTableSettings && (
+            <div id={tableSettingsId} style={{ padding: '0 0 8px' }}>
+              <TableSettingsPanel
+                settings={tableSettings}
+                loading={tableSettingsLoading}
+                onToggle={toggleTableSetting}
+                mode="inline"
+              />
+            </div>
+          )}
 
-        {/* Reset Tutorial */}
-        <div
-          onClick={handleResetTutorial}
-          style={{
-            ...menuItemStyle,
-            animation: isOpen
-              ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) 1140ms both`
-              : 'none',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = colors.bgHover;
-            e.currentTarget.style.transform = 'translateX(4px)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.transform = 'translateX(0)';
-          }}
-        >
-          <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.text }}>
+          {[
+            {
+              label: 'App Settings',
+              path: '/settings',
+              description: 'Audio, Gameplay, Privacy, And Account',
+            },
+            {
+              label: 'Notifications',
+              path: '/notifications',
+              description: 'Alerts And Notification Preferences',
+            },
+          ].map((item) => {
+            const active = isActivePath(item.path);
+            return (
+              <button
+                type="button"
+                key={item.path}
+                className={`${styles.navItem} ${active ? styles.navItemActive : ''}`}
+                onClick={() => handleNavigate(item.path)}
+                onMouseEnter={() => handleItemHover(item.path)}
+                aria-current={active ? 'page' : undefined}
+              >
+                <span>
+                  <span className={styles.navLabel}>{tc(item.label)}</span>
+                  <span className={styles.navDescription}>{tc(item.description)}</span>
+                </span>
+                <span className={styles.navArrow}>›</span>
+              </button>
+            );
+          })}
+        </section>
+
+        <div className={styles.divider} />
+
+        <section className={styles.navGroup} aria-label="Support And Legal">
+          <h2 className={styles.sectionHeader}>Support & Legal</h2>
+          {CLUB_ARENA_SUPPORT_NAV.map((item) => {
+            const active = isActivePath(item.path);
+            return (
+              <button
+                type="button"
+                key={item.path}
+                className={`${styles.navItem} ${active ? styles.navItemActive : ''}`}
+                onClick={() => handleNavigate(item.path)}
+                onMouseEnter={() => handleItemHover(item.path)}
+                aria-current={active ? 'page' : undefined}
+              >
+                <span>
+                  <span className={styles.navLabel}>{tc(item.label)}</span>
+                  <span className={styles.navDescription}>{tc(item.description)}</span>
+                </span>
+                <span className={styles.navArrow}>›</span>
+              </button>
+            );
+          })}
+        </section>
+
+        <div className={styles.quickActions}>
+          <button type="button" className={styles.quickAction} onClick={handleResetTutorial}>
             Reset Tutorial
-          </span>
-          <span style={{ color: colors.textSecondary }}>›</span>
-        </div>
-
-        <div style={dividerStyle} />
-
-        {/* Log Out */}
-        <div
-          onClick={handleLogOut}
-          style={{
-            ...menuItemStyle,
-            marginBottom: 16,
-            animation: isOpen
-              ? `slideInLeft 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) 1170ms both`
-              : 'none',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = colors.bgHover;
-            e.currentTarget.style.transform = 'translateX(4px)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.transform = 'translateX(0)';
-          }}
-        >
-          <span style={{ flex: 1, fontSize: 15, fontWeight: 500, color: colors.danger }}>
+          </button>
+          <button
+            type="button"
+            className={`${styles.quickAction} ${styles.quickActionDanger}`}
+            onClick={handleLogOut}
+          >
             Log Out
-          </span>
+          </button>
         </div>
 
-        {/* Version Footer */}
-        <div
-          style={{
-            padding: '16px',
-            textAlign: 'center',
-            color: colors.textSecondary,
-            fontSize: 12,
-          }}
-        >
-          Club Arena V1.12
-        </div>
+        <div className={styles.footer}>Club Arena · Command Deck V1.12</div>
       </div>
 
       {/* Avatar Gallery Modal */}
@@ -1344,6 +1386,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
         onClose={() => setShowThemeSettings(false)}
         userId={user?.id || ''}
         isVip={isVIP}
+        checkoutReturnResult={tableStudioCheckoutResult(location.search)}
       />
     </>
   );

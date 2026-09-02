@@ -50,6 +50,10 @@ const MAX_SEATS_BY_VARIANT: Record<string, number> = {
   plo5: 7,
   plo4: 8,
   plo8: 8, // four-card hi-lo — same deal as plo4
+  // 2026-08-24: flo8 is Fixed Limit Omaha Hi-Lo — the SAME four-card deal as
+  // plo8. Only the betting differs, and betting does not change how many cards
+  // leave the deck. Kept in step with the client copy by check-seat-law-parity.
+  flo8: 8,
 };
 
 /** The hard seat ceiling for a variant. */

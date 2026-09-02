@@ -11,13 +11,13 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { CardBackSelector } from '../customization/CardBackSelector';
 import { AvatarGallery } from '../customization/AvatarGallery';
 import { TableSettingsPanel } from './TableSettingsPanel';
 import { ThemeSettingsModal } from './ThemeSettingsModal';
 import { useUserTableSettings } from '../../hooks/useUserTableSettings';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { supabase } from '../../lib/supabase';
+import { resolveAvatarDisplay } from '../../utils/avatarUtils';
 import './SettingsPanel.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -39,7 +39,8 @@ export interface TableSettings {
   showBetSizePresets: boolean;
   confirmAllIn: boolean;
   sitOutNextHand: boolean;
-  tableTheme: string;
+  /** Dan 2026-08-28: the scrolling tournament/announcement ticker. */
+  showTicker: boolean;
 }
 
 export interface SettingsPanelProps {
@@ -51,12 +52,7 @@ export interface SettingsPanelProps {
   userId?: string;
   currentAvatarUrl?: string;
   isVip?: boolean;
-  userDiamonds?: number;
-  currentCardBack?: string;
-  ownedCardBacks?: string[];
   onAvatarChanged?: (url: string) => void;
-  onCardBackChanged?: (id: string) => void;
-  onCardBackPurchase?: (id: string, price: number) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -83,19 +79,62 @@ export const DEFAULT_TABLE_SETTINGS: TableSettings = {
   showBetSizePresets: true,
   confirmAllIn: true,
   sitOutNextHand: false,
-  tableTheme: 'black',
+  showTicker: true,
 };
 
-/** Available table themes from design-tokens.css */
-const TABLE_THEMES = [
-  { value: 'green', label: 'Classic Green' },
-  { value: 'blue', label: 'Ocean Blue' },
-  { value: 'red', label: 'Ruby Red' },
-  { value: 'purple', label: 'Royal Purple' },
-  { value: 'black', label: 'Midnight Black' },
-  { value: 'gold', label: 'VIP Gold' },
-  { value: 'light', label: 'Light Mode' },
-];
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  RESET TO DEFAULTS MAY ONLY WRITE WHAT THIS PANEL OFFERS A CONTROL FOR
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * 2026-08-29. `handleReset` sent the WHOLE `DEFAULT_TABLE_SETTINGS` object, and
+ * TablePage's `onSettingsChange` acts on any key that is `!== undefined`. Three
+ * things came along that nobody asked to reset:
+ *
+ *   confirmAllIn, autoMuckWinners — no control on this panel. Their toggles
+ *     were deliberately removed; the values were still being written, so the
+ *     one button that promises to restore what you can see silently rewrote two
+ *     things you cannot.
+ *
+ *   sitOutNextHand — the serious one. It is not a display preference. Sending
+ *     `false` fires a real `setSitOut(tableId, false)` round trip, so a player
+ *     who was sitting out and tapped Reset To Defaults to tidy up their card
+ *     colours was PUT BACK IN THE GAME, blinds and all, as a side effect.
+ *
+ * The same shape as tests/settings-only-write-what-they-offer.test.ts, which is
+ * about the notifications upsert on /settings: a save path grew a key that no
+ * control on the page governs.
+ *
+ * So the payload is built from an explicit list. A new toggle must be added
+ * here to be resettable, which is the right way round — a control you can see
+ * is the thing Reset is promising to restore.
+ */
+const RESETTABLE_KEYS = [
+  'autoMuckLosers',
+  'autoPostBlinds',
+  'showPotOdds',
+  'fourColorDeck',
+  'showBetSizePresets',
+  'showTicker',
+  'animationSpeed',
+  'soundEnabled',
+  'soundVolume',
+  'hapticEnabled',
+] as const satisfies readonly (keyof TableSettings)[];
+
+/**
+ * `sitOutNextHand` has a control on this panel and is still EXCLUDED, on
+ * purpose. Sitting out is a live table action with a server round trip, not a
+ * preference — see the note above. Restoring appearance defaults must never
+ * seat or unseat anybody.
+ */
+export function resetPayload(): Partial<TableSettings> {
+  const out: Partial<TableSettings> = {};
+  for (const key of RESETTABLE_KEYS) {
+    (out as Record<string, unknown>)[key] = DEFAULT_TABLE_SETTINGS[key];
+  }
+  return out;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -107,14 +146,9 @@ export function SettingsPanel({
   settings,
   onSettingsChange,
   userId = '',
-  currentAvatarUrl = '/avatars/default-player.png',
+  currentAvatarUrl = '',
   isVip = false,
-  userDiamonds = 0,
-  currentCardBack = 'black',
-  ownedCardBacks = [],
   onAvatarChanged,
-  onCardBackChanged,
-  onCardBackPurchase,
 }: SettingsPanelProps) {
   const [visibleSections, setVisibleSections] = useState<boolean[]>([]);
   const [showAvatarGallery, setShowAvatarGallery] = useState(false);
@@ -194,13 +228,34 @@ export function SettingsPanel({
 
   // Reset to defaults
   const handleReset = useCallback(() => {
-    onSettingsChange(DEFAULT_TABLE_SETTINGS);
+    onSettingsChange(resetPayload());
   }, [onSettingsChange]);
 
   if (!isOpen) return null;
 
   return (
-    <div className="settings-overlay" onClick={onClose}>
+    <div
+      className="settings-overlay"
+      /**
+       * ONLY THE BACKDROP ITSELF DISMISSES (Dan 2026-08-31).
+       *
+       * This was `onClick={onClose}`. AvatarGallery and ThemeSettingsModal are
+       * rendered as children of this div (below the footer) but each portals to
+       * document.body — and a React portal still bubbles its events up the
+       * REACT tree, not the DOM tree. So the first click on an avatar tile
+       * reached this handler and closed the whole settings panel, taking the
+       * picker with it: "you cant hit anything inside the avatar selection and
+       * keep it up, it auto closes."
+       *
+       * Comparing target to currentTarget means only a click that landed on the
+       * scrim itself closes. The panel's own stopPropagation on the line below
+       * stays — it stops clicks on the panel body, which is a different path
+       * from the portaled children.
+       */
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="settings-panel__header">
@@ -223,33 +278,35 @@ export function SettingsPanel({
           >
             <h3 className="settings-section__title">Gameplay</h3>
 
-            {/* ── Dan 2026-08-18: auto-muck covers UNCONTESTED pots only ──
-                "Auto-muck losing hands / Automatically fold losing hands at
-                showdown" is gone. It was a dead switch - it wrote the
-                `autoMuck` key, which nothing at the table ever read - and as of
-                today it also promised the opposite of how the game behaves: a
-                showdown turns EVERY hand face up, so there is no such thing as
-                auto-mucking a loser any more. A toggle that says it will hide
-                your cards at showdown and then shows them is worse than no
-                toggle at all.
+            {/* ── SHOWDOWN follow-up 2026-08-25 (Dan spec section 37) ──
+                The auto-muck toggle RETURNS, because both of the reasons it
+                was removed are gone:
 
-                What remains is the one case where hiding is genuinely the
-                player's call: winning when everyone folds. No showdown
-                happened, so nobody is entitled to see the hand. The label says
-                so explicitly, and says what it does NOT cover. */}
-            {/* Dan 2026-08-23: "auto muck should be on by default, you should
-                never ask if they want to show cards." The toggle is removed
-                rather than merely defaulted, for the same reason the
-                confirm-all-in control was removed a few days earlier: a
-                default is a suggestion, and a control that can restore a
-                behaviour Dan asked to be gone will eventually restore it.
-                `autoMuckWinners` stays in the settings type and is pinned true
-                so any stored `false` from before today has nothing to switch
-                on — TablePage no longer reads it to decide whether to ask. */}
+                2026-08-18 removed it as a dead switch — nothing read the
+                `autoMuck` key and every showdown hand was turned face up
+                anyway. The engine now genuinely mucks beaten hands at
+                showdown (HandController.applyShowdownRevealRules), so the
+                switch controls a real behaviour.
+
+                2026-08-23 removed it to keep prompts dead ("you should never
+                ask if they want to show cards"). That rule stands: this
+                toggle asks NOTHING mid-hand. ON (default) keeps the engine's
+                muck — a beaten hand stays private. OFF means "always table
+                my hand": the client answers the engine's muck ruling with
+                the voluntary-show call and the hand turns face up, no
+                question asked. The setting can never muck a winner (the
+                engine auto-tables winners and ties) and can never hide an
+                all-in showdown (every live all-in hand is force-exposed). */}
+            <SettingToggle
+              label="Auto-Muck Losing Hands"
+              description="Keep A Beaten Hand Private At Showdown. Off Always Shows Your Hand"
+              checked={settings.autoMuckLosers}
+              onChange={() => handleToggle('autoMuckLosers')}
+            />
 
             <SettingToggle
-              label="Auto-post blinds"
-              description="Automatically post blinds when in position"
+              label="Auto-Post Blinds"
+              description="Automatically Post Blinds When In Position"
               checked={settings.autoPostBlinds}
               onChange={() => handleToggle('autoPostBlinds')}
             />
@@ -259,8 +316,8 @@ export function SettingsPanel({
                 switched back on. Do not reintroduce. */}
 
             <SettingToggle
-              label="Sit out next hand"
-              description="Automatically sit out after this hand"
+              label="Sit Out Next Hand"
+              description="Automatically Sit Out After This Hand"
               checked={settings.sitOutNextHand}
               onChange={() => handleToggle('sitOutNextHand')}
             />
@@ -280,14 +337,14 @@ export function SettingsPanel({
             {/* FIX 199: Hand strength toggle REMOVED — not allowed for live online gameplay */}
 
             <SettingToggle
-              label="Show pot odds"
-              description="Display pot odds for decisions"
+              label="Show Pot Odds"
+              description="Display Pot Odds For Decisions"
               checked={settings.showPotOdds}
               onChange={() => handleToggle('showPotOdds')}
             />
 
             <SettingToggle
-              label="Four-color deck"
+              label="Four-Color Deck"
               description="Hearts (Red), Diamonds (Blue), Clubs (Green), Spades (Black)"
               checked={settings.fourColorDeck}
               onChange={() => handleToggle('fourColorDeck')}
@@ -299,10 +356,20 @@ export function SettingsPanel({
                 created a duplicate toggle with competing state sources. */}
 
             <SettingToggle
-              label="Bet size presets"
-              description="Show quick bet size buttons"
+              label="Bet Size Presets"
+              description="Show Quick Bet Size Buttons"
               checked={settings.showBetSizePresets}
               onChange={() => handleToggle('showBetSizePresets')}
+            />
+
+            {/* Dan 2026-08-28: "add a toggle in the table settings... to turn
+                the ticker on or off." Governs the scrolling tournament and
+                announcement marquee at the top of club and table pages. */}
+            <SettingToggle
+              label="Announcement Ticker"
+              description="Show The Scrolling Tournament And Announcement Ticker"
+              checked={settings.showTicker}
+              onChange={() => handleToggle('showTicker')}
             />
 
             <div className="settings-item">
@@ -320,24 +387,6 @@ export function SettingsPanel({
                 </select>
               </div>
             </div>
-
-            <div className="settings-item">
-              <div className="settings-item__info">
-                <span className="settings-item__label">Table Theme</span>
-              </div>
-              <div className="settings-item__select">
-                <select
-                  value={settings.tableTheme}
-                  onChange={(e) => handleSelect('tableTheme', e.target.value)}
-                >
-                  {TABLE_THEMES.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
           </div>
 
           {/* Sound Section */}
@@ -352,8 +401,8 @@ export function SettingsPanel({
             <h3 className="settings-section__title">Sound</h3>
 
             <SettingToggle
-              label="Sound effects"
-              description="Play sounds for actions and events"
+              label="Sound Effects"
+              description="Play Sounds For Actions And Events"
               checked={settings.soundEnabled}
               onChange={() => handleToggle('soundEnabled')}
             />
@@ -371,13 +420,13 @@ export function SettingsPanel({
                 value={settings.soundVolume}
                 onChange={(e) => handleSlider('soundVolume', parseInt(e.target.value))}
                 disabled={!settings.soundEnabled}
-                aria-label="Sound volume percent"
+                aria-label="Sound Volume Percent"
               />
             </div>
 
             <SettingToggle
-              label="Haptic feedback"
-              description="Vibrate on actions, wins, and alerts"
+              label="Haptic Feedback"
+              description="Vibrate On Actions, Wins, And Alerts"
               checked={settings.hapticEnabled}
               onChange={() => handleToggle('hapticEnabled')}
             />
@@ -404,7 +453,7 @@ export function SettingsPanel({
                 <img
                   loading="lazy"
                   decoding="async"
-                  src={currentAvatarUrl}
+                  src={resolveAvatarDisplay(currentAvatarUrl, userId)}
                   alt="Avatar"
                   className="settings-avatar-preview"
                 />
@@ -412,14 +461,21 @@ export function SettingsPanel({
               </button>
             </div>
 
-            {/* Card Back Selector */}
-            <CardBackSelector
-              currentCardBack={currentCardBack}
-              ownedCardBacks={ownedCardBacks}
-              userDiamonds={userDiamonds}
-              onChange={onCardBackChanged}
-              onPurchase={onCardBackPurchase}
-            />
+            <div className="settings-item settings-item--action settings-item--studio">
+              <div className="settings-item__info">
+                <span className="settings-item__eyebrow">Appearance Suite</span>
+                <span className="settings-item__label">Table Studio</span>
+                <span className="settings-item__description">
+                  Tables, Backgrounds, Buttons And Card Backs
+                </span>
+              </div>
+              <button
+                className="settings-action-btn settings-action-btn--studio"
+                onClick={() => setShowThemeSettings(true)}
+              >
+                Open Studio
+              </button>
+            </div>
           </div>
 
           {/* ═══════════════════════════════════════════════════════════
@@ -432,7 +488,6 @@ export function SettingsPanel({
               loading={v8Loading}
               onToggle={v8Toggle}
               mode="inline"
-              onOpenThemeSettings={() => setShowThemeSettings(true)}
             />
           </div>
         </div>

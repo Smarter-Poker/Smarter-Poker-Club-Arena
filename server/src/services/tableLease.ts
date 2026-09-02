@@ -112,6 +112,9 @@ export function leaseDiagnostics() {
     conflictCount: conflicts.size,
     claimErrors,
     heartbeatErrors,
+    // Missing/stale heartbeat results — leases nobody took. Before 2026-08-29
+    // every one of these was counted as a conflict and stopped a live table.
+    reclaimableHeartbeats,
     conflicts: recentLeaseConflicts(),
   };
 }
@@ -121,6 +124,7 @@ export function _resetLeaseState(): void {
   conflicts.clear();
   claimErrors = 0;
   heartbeatErrors = 0;
+  reclaimableHeartbeats = 0;
 }
 
 /**
@@ -147,7 +151,7 @@ export async function claimTable(tableId: string): Promise<boolean> {
       // per table.
       if (claimErrors <= 3) {
         console.warn(
-          `[lease] claim_table_lease failed for ${tableId} (${error.message}) — proceeding without a lease`
+          `[lease] claim_table_lease failed for ${tableId} (${error.message}) - proceeding without a lease`
         );
       }
       return true;
@@ -172,59 +176,112 @@ export async function claimTable(tableId: string): Promise<boolean> {
         `(last heartbeat ${conflict.holderAgeSeconds}s ago). This instance is ${INSTANCE_ID}. ` +
         (LEASE_ENFORCED
           ? 'Refusing to deal it.'
-          : 'ENGINE_LEASE_ENFORCE is off, so dealing anyway — set it to "on" once these logs look right.')
+          : 'ENGINE_LEASE_ENFORCE is off, so dealing anyway - set it to "on" once these logs look right.')
     );
     return !LEASE_ENFORCED;
   } catch (err) {
     claimErrors++;
     if (claimErrors <= 3) {
       console.warn(
-        `[lease] claim threw for ${tableId} (${(err as Error)?.message}) — proceeding without a lease`
+        `[lease] claim threw for ${tableId} (${(err as Error)?.message}) - proceeding without a lease`
       );
     }
     return true;
   }
 }
 
+/** What the database says is true of one id we asked to renew. */
+export type LeaseState = 'kept' | 'taken' | 'stale' | 'missing';
+
+/** Counters behind the /health lease block, so the split is visible remotely. */
+let reclaimableHeartbeats = 0;
+
 /**
  * Renew every lease this instance believes it holds.
  *
- * @returns the subset of `tableIds` this instance has LOST — tables another
- *          engine has taken over, which must be torn down here. Empty on any
- *          error, because "we could not ask" must never be read as "we lost
- *          everything"; that inversion is how a fail-safe becomes an outage.
+ * @returns the subset of `tableIds` genuinely TAKEN by another live engine,
+ *          which must be torn down here. Empty on any error, because "we could
+ *          not ask" must never be read as "we lost everything"; that inversion
+ *          is how a fail-safe becomes an outage.
+ *
+ * ONLY 'taken' IS A TAKEOVER (2026-08-29). This used to subtract the renewed
+ * ids from the requested ids and call the whole remainder a takeover. Three
+ * different situations produce that remainder and only one of them is a
+ * takeover — the other two are "there is no row for this table" and "the row's
+ * holder has gone quiet", both of which we may simply re-claim.
+ *
+ * (missing) is not hypothetical: claimTable is deliberately fail-open and
+ * starts dealing WITHOUT writing a row when the claim RPC errors or times out,
+ * and the engine logged 596 supabase_timeouts in the hour this was written.
+ *
+ * The cost of the old guess was measured, not theorised: 204 teardowns in one
+ * hour, "another engine instance has taken it over. Stopping it here." — while
+ * eight of those exact table ids were, in the database at that moment, held by
+ * THIS instance with a 2.8-second-old heartbeat. Live tables and live
+ * tournaments were being stopped for a split-brain that did not exist.
  */
 export async function heartbeatTables(tableIds: string[]): Promise<string[]> {
   if (tableIds.length === 0) return [];
   try {
-    const { data, error } = await supabase.rpc('heartbeat_table_leases', {
+    const { data, error } = await supabase.rpc('heartbeat_table_leases_v2', {
       p_instance_id: INSTANCE_ID,
       p_table_ids: tableIds,
+      p_stale_seconds: LEASE_STALE_SECONDS,
     });
     if (error) {
       heartbeatErrors++;
       if (heartbeatErrors <= 3) {
-        console.warn(`[lease] heartbeat failed (${error.message}) — keeping every table`);
+        console.warn(`[lease] heartbeat failed (${error.message}) - keeping every table`);
       }
       return [];
     }
-    const kept = new Set(((data ?? []) as Array<{ table_id: string }>).map((r) => r.table_id));
-    const lost = tableIds.filter((id) => !kept.has(id));
-    for (const id of lost) {
-      conflicts.set(id, { tableId: id, holder: null, holderAgeSeconds: null, at: Date.now() });
+
+    const rows = (data ?? []) as Array<{ table_id: string; state: LeaseState }>;
+    const stateOf = new Map(rows.map((r) => [r.table_id, r.state]));
+    const taken: string[] = [];
+    let reclaimable = 0;
+
+    for (const id of tableIds) {
+      // An id the function did not answer for cannot be proven taken, so it is
+      // treated as reclaimable. Silence is not evidence of a takeover — that
+      // conflation is the entire bug this replaced.
+      const state = stateOf.get(id) ?? 'missing';
+      if (state === 'kept') continue;
+      if (state === 'taken') {
+        taken.push(id);
+        conflicts.set(id, { tableId: id, holder: null, holderAgeSeconds: null, at: Date.now() });
+        console.warn(
+          `[lease] table ${id} is held by another LIVE engine instance` +
+            (LEASE_ENFORCED ? '. Stopping it here.' : ' (enforcement off; still dealing).')
+        );
+        continue;
+      }
+      // 'missing' or 'stale' — nobody took it. claimTable will put the row
+      // back on the next discovery tick; tearing the table down would be the
+      // false alarm, not the safety measure.
+      reclaimable++;
+    }
+
+    if (reclaimable > 0) {
+      reclaimableHeartbeats += reclaimable;
       console.warn(
-        `[lease] lost the lease on table ${id} — another engine instance has taken it over` +
-          (LEASE_ENFORCED ? '. Stopping it here.' : ' (enforcement off; still dealing).')
+        `[lease] ${reclaimable} of ${tableIds.length} table leases were missing or stale, not taken - re-claiming, still dealing`
       );
     }
-    return LEASE_ENFORCED ? lost : [];
+
+    return LEASE_ENFORCED ? taken : [];
   } catch (err) {
     heartbeatErrors++;
     if (heartbeatErrors <= 3) {
-      console.warn(`[lease] heartbeat threw (${(err as Error)?.message}) — keeping every table`);
+      console.warn(`[lease] heartbeat threw (${(err as Error)?.message}) - keeping every table`);
     }
     return [];
   }
+}
+
+/** Reclaimable (missing/stale, NOT taken) heartbeat results since boot. */
+export function reclaimableLeaseCount(): number {
+  return reclaimableHeartbeats;
 }
 
 /**

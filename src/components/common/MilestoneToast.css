@@ -36,11 +36,6 @@
     transform 0.2s ease,
     opacity 0.3s ease;
 }
-
-.milestone-toast:hover {
-  transform: scale(1.02);
-}
-
 .milestone-toast__icon {
   font-size: 2rem;
   flex-shrink: 0;

@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../components/common/Toast';
-import { fmt, fmtChips } from '../../utils/format';
+import { fmt } from '../../utils/format';
 import styles from '../MarketplacePage.module.css';
 
 interface DayPoint {
@@ -92,7 +92,7 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
     <div className={styles.analyticsBlock}>
       <div className={styles.analyticsHeader}>
         <h3 className={styles.createTitle}>Sales</h3>
-        <div className={styles.rangeTabs} role="group" aria-label="Analytics date range">
+        <div className={styles.rangeTabs} role="group" aria-label="Analytics Date Range">
           {RANGES.map((d) => (
             <button
               key={d}
@@ -125,23 +125,22 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
               <span className={styles.statLabel}>Sales</span>
             </div>
             <div className={styles.statCard}>
-              <span className={styles.statValue}>{fmtChips(data.totals.netRevenue)}</span>
-              <span className={styles.statLabel}>Net Chips</span>
+              <span className={styles.statValue}>{fmt(data.totals.netRevenue)}</span>
+              <span className={styles.statLabel}>Net Diamonds</span>
             </div>
             <div className={styles.statCard}>
               <span className={styles.statValue}>{fmt(data.totals.uniqueBuyers)}</span>
               <span className={styles.statLabel}>Buyers</span>
             </div>
             <div className={styles.statCard}>
-              <span className={styles.statValue}>{fmtChips(data.totals.averageSale)}</span>
+              <span className={styles.statValue}>{fmt(data.totals.averageSale)}</span>
               <span className={styles.statLabel}>Avg Sale</span>
             </div>
           </div>
 
           {data.totals.refundedAmount > 0 && (
             <div className={styles.grantHint}>
-              Gross {fmtChips(data.totals.grossRevenue)} Less {fmtChips(data.totals.refundedAmount)}{' '}
-              Refunded.
+              Gross {fmt(data.totals.grossRevenue)} Less {fmt(data.totals.refundedAmount)} Refunded.
             </div>
           )}
 
@@ -158,14 +157,14 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
               <div
                 className={styles.chart}
                 role="img"
-                aria-label={`Daily chip revenue over ${data.days} days`}
+                aria-label={`Daily Diamond Revenue Over ${data.days} Days`}
               >
                 {data.series.map((d) => (
                   <div
                     key={d.date}
                     className={styles.chartBar}
                     style={{ height: `${Math.round((d.revenue / peak) * 100)}%` }}
-                    title={`${d.date}: ${d.sales} sale(s), ${d.revenue} chips`}
+                    title={`${d.date}: ${d.sales} Sale(s), ${d.revenue} Diamonds`}
                   />
                 ))}
               </div>
@@ -176,7 +175,7 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
                     <tr>
                       <th>Top Items</th>
                       <th>Sold</th>
-                      <th>Chips</th>
+                      <th>Diamonds</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -184,7 +183,7 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
                       <tr key={i.itemId}>
                         <td style={{ fontWeight: 600 }}>{i.name}</td>
                         <td>{fmt(i.sales)}</td>
-                        <td style={{ color: '#f7c52a', fontWeight: 700 }}>{fmtChips(i.revenue)}</td>
+                        <td style={{ color: '#00d4ff', fontWeight: 700 }}>{fmt(i.revenue)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -198,7 +197,7 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
                       <tr>
                         <th>Top Buyers</th>
                         <th>Purchases</th>
-                        <th>Chips</th>
+                        <th>Diamonds</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -206,7 +205,7 @@ export default function ShopAnalytics({ clubId }: { clubId: string }) {
                         <tr key={b.userId}>
                           <td style={{ fontWeight: 600 }}>{b.name || 'Member'}</td>
                           <td>{fmt(b.purchases)}</td>
-                          <td style={{ color: '#f7c52a', fontWeight: 700 }}>{fmtChips(b.spent)}</td>
+                          <td style={{ color: '#00d4ff', fontWeight: 700 }}>{fmt(b.spent)}</td>
                         </tr>
                       ))}
                     </tbody>

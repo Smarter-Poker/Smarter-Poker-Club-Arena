@@ -1,24 +1,54 @@
-/* CHIP MINT modal (Dan 2026-08-21) — gold-on-navy, matches the money surfaces. */
+/**
+ * CHIP MINT modal.
+ *
+ * Dan 2026-08-23: "change the color schema of the Chip Mint to be
+ * smarter.poker color schema only."
+ *
+ * It was carrying two off-palette colour families at once: gold (#f5c542 /
+ * #eab308) on the title, the destination name, the preview figure, the MAX
+ * chip and the confirm button, and violet (#8b5cf6 / #c4b5fd) on the diamond
+ * balance strip. Neither appears anywhere else in the product. This is the
+ * same correction the BBJ banner had on 2026-08-20, applied to the other
+ * money surface that had drifted.
+ *
+ * The smarter.poker palette, and the only one allowed here:
+ *   surfaces  #223046 -> #1a2436 -> #131b28 -> #0d1120   (navy)
+ *   accent    #6fdcff / #00b4e6                           (brand cyan)
+ *   action    #1877f2 / #2f8bff                           (brand blue)
+ *   diamonds  #0088ff                                     (as in DynamicWallet)
+ *   text      #e8eaf0 primary, #8892a4 secondary
+ *   refusal   #ef4444 / #ffb4b4
+ *
+ * The rule the palette encodes, unchanged from the wallet: CYAN says "this is
+ * an amount that matters", BLUE says "this is the button that acts".
+ */
 
 .cmm-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1700;
-  background: rgba(0, 0, 0, 0.62);
+  z-index: 1750;
+  background: rgba(4, 8, 16, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
+  backdrop-filter: blur(2px);
 }
 
 .cmm-panel {
   width: min(380px, 94vw);
+  /* The panel had no height bound at all: in landscape on a 375px phone the
+     destination notice plus the quick row pushed Mint Chips below the fold with
+     nothing to scroll. */
+  max-height: 92vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   border-radius: 16px;
-  background: linear-gradient(165deg, #1a2038 0%, #0d1120 100%);
-  border: 1px solid rgba(245, 197, 66, 0.35);
+  background: linear-gradient(165deg, #223046 0%, #1a2436 42%, #0d1120 100%);
+  border: 1px solid rgba(0, 180, 230, 0.3);
   box-shadow:
-    0 24px 50px rgba(0, 0, 0, 0.6),
-    0 0 40px rgba(245, 197, 66, 0.12),
+    0 24px 50px rgba(0, 0, 0, 0.62),
+    0 0 40px rgba(0, 180, 230, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
   padding: 20px;
   display: flex;
@@ -28,33 +58,38 @@
 }
 
 .cmm-title {
+  font-family: 'Oswald', 'Impact', sans-serif;
   font-size: 1.05rem;
-  font-weight: 900;
+  font-weight: 700;
   letter-spacing: 0.08em;
-  color: #f5c542;
-  text-shadow: 0 0 14px rgba(245, 197, 66, 0.35);
+  background: linear-gradient(180deg, #6fdcff 0%, #00b4e6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .cmm-rate {
   font-size: 0.8rem;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.65);
+  color: #8892a4;
 }
 
+/* Diamonds are #0088ff everywhere else in the product (DynamicWallet's diamond
+   row), so they are #0088ff here too rather than violet. */
 .cmm-balance {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 10px 12px;
   border-radius: 10px;
-  background: rgba(139, 92, 246, 0.1);
-  border: 1px solid rgba(139, 92, 246, 0.3);
+  background: rgba(0, 136, 255, 0.1);
+  border: 1px solid rgba(0, 136, 255, 0.3);
   font-size: 0.85rem;
 }
 
 .cmm-balance strong {
   font-variant-numeric: tabular-nums;
-  color: #c4b5fd;
+  color: #4faaff;
 }
 
 .cmm-panel input {
@@ -67,14 +102,21 @@
   outline: none;
 }
 
+.cmm-panel input:focus {
+  border-color: rgba(0, 180, 230, 0.6);
+}
+
 .cmm-quick {
   display: flex;
   gap: 8px;
 }
 
+/* 44px minimum on every tappable control (2026-08-25). These were 28px. */
 .cmm-quick button {
   flex: 1;
-  padding: 7px 0;
+  min-width: 0;
+  min-height: 44px;
+  padding: 7px 4px;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.15);
   background: rgba(255, 255, 255, 0.05);
@@ -84,8 +126,15 @@
   cursor: pointer;
 }
 
-.cmm-quick button:hover {
-  border-color: rgba(245, 197, 66, 0.5);
+.cmm-quick button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.cmm-max {
+  background: rgba(0, 180, 230, 0.14) !important;
+  border-color: rgba(0, 180, 230, 0.45) !important;
+  color: #6fdcff !important;
 }
 
 .cmm-preview {
@@ -94,16 +143,15 @@
   align-items: center;
   padding: 12px;
   border-radius: 10px;
-  background: rgba(245, 197, 66, 0.1);
-  border: 1px solid rgba(245, 197, 66, 0.35);
+  background: rgba(0, 180, 230, 0.08);
+  border: 1px solid rgba(0, 180, 230, 0.32);
   font-size: 0.9rem;
 }
 
 .cmm-preview strong {
   font-variant-numeric: tabular-nums;
-  color: #f5c542;
+  color: #6fdcff;
   font-size: 1.05rem;
-  text-shadow: 0 0 12px rgba(245, 197, 66, 0.35);
 }
 
 .cmm-preview--dim {
@@ -117,8 +165,10 @@
 }
 
 .cmm-actions button {
+  min-height: 44px;
   padding: 10px 18px;
   border-radius: 999px;
+  font-size: 0.85rem;
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: none;
   color: #e8eaf0;
@@ -127,20 +177,21 @@
 }
 
 .cmm-confirm {
-  background: linear-gradient(180deg, #f8d264 0%, #eab308 100%) !important;
-  color: #1a1a1a !important;
+  background: linear-gradient(180deg, #2f8bff 0%, #1877f2 100%) !important;
+  color: #ffffff !important;
   border: none !important;
   box-shadow:
-    0 8px 18px rgba(234, 179, 8, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+    0 8px 18px rgba(24, 119, 242, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
 .cmm-confirm:disabled {
   opacity: 0.4;
   cursor: default;
+  box-shadow: none;
 }
 
-/* ── Destination / refusal states (audit pass 2026-08-21) ── */
+/* ── Destination / refusal states ─────────────────────────────────────────── */
 .cmm-dest {
   padding: 9px 12px;
   border-radius: 10px;
@@ -148,16 +199,16 @@
   line-height: 1.35;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  color: rgba(255, 255, 255, 0.8);
+  color: #b6c0d0;
 }
 
 .cmm-dest strong {
-  color: #f5c542;
+  color: #6fdcff;
 }
 
 .cmm-dest--union {
-  background: rgba(245, 197, 66, 0.08);
-  border-color: rgba(245, 197, 66, 0.3);
+  background: rgba(0, 180, 230, 0.08);
+  border-color: rgba(0, 180, 230, 0.3);
 }
 
 .cmm-dest--blocked {
@@ -166,18 +217,11 @@
   color: #ffb4b4;
 }
 
-.cmm-warn {
-  font-size: 0.78rem;
+.cmm-dest--blocked strong {
   color: #ffb4b4;
 }
 
-.cmm-quick button:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.cmm-max {
-  background: rgba(245, 197, 66, 0.14) !important;
-  border-color: rgba(245, 197, 66, 0.45) !important;
-  color: #f5c542 !important;
+.cmm-warn {
+  font-size: 0.78rem;
+  color: #ffb4b4;
 }

@@ -48,6 +48,8 @@
  * language for that, so when this block is present the summary renders a
  * different modal entirely rather than filling chip tiles with zeroes.
  */
+import type { Card } from '../components/table/CardImage';
+
 export interface TournamentResult {
   /** Tournament name for the header, e.g. "Early Bird Freeroll". */
   name?: string;
@@ -64,6 +66,25 @@ export interface TournamentResult {
   rebuys: number;
   addOns: number;
   /**
+   * MYSTERY BOUNTY (Dan sections 43 and 44), the chest half broken out.
+   *
+   * `bountyWinnings` above is every bounty this player collected, which in a
+   * mystery event includes the flat bounties paid before the chests opened.
+   * These three say how much of it came out of a chest, how many chests, and
+   * the biggest single one - the number a player actually tells people about.
+   *
+   * IN CENTS, like everything the mystery engine emits, and divided by 100
+   * exactly once at the render boundary. `bountyWinnings` is in whole chips
+   * because it comes off `tournament_players.bounty_winnings`, which is a
+   * numeric column; mixing the two units silently would report a 5,000 chest
+   * as 500,000.
+   *
+   * Optional: an older payload, or any non-mystery event, simply has none.
+   */
+  mysteryBounties?: number;
+  mysteryBountyCents?: number;
+  largestMysteryBountyCents?: number;
+  /**
    * Is this a Spin?
    *
    * Only the card's BRANDING turns on this — a Spin is still a tournament and
@@ -79,6 +100,17 @@ export interface TournamentResult {
    * loss, an MTT wearing one is a lie.
    */
   isSpin?: boolean;
+  /** The hole cards the hero held when they won the tournament. */
+  winningCards?: Card[];
+  /**
+   * The finished tournament's id (2026-08-29, round 12). What Play Again
+   * needs to be a real button: with the id, the ranking card can read the
+   * origin game's club, stake and variant and seat the player straight into
+   * the open sibling game - the supply audit proved one always exists for
+   * every seat-first stake. Without it (an older payload), Play Again keeps
+   * its list-navigation fallback.
+   */
+  tournamentId?: string;
 }
 
 export interface SessionSummaryPayload {
@@ -147,8 +179,38 @@ function emit(): void {
   }
 }
 
+/**
+ * Later publishes must not swallow an unacknowledged TOURNAMENT card
+ * (Dan 2026-08-30: "IT SHOULD NEVER 'AUTO CLOSE', USER MUST CLICK THE 'X'").
+ * A second table's exit used to overwrite `pending` outright, so the ranking
+ * card - place, medal, prize - vanished mid-read, which from the felt reads
+ * as the card auto-closing. Held publishes wait here and surface when the X
+ * clears the card in front of them.
+ */
+let heldQueue: SessionSummaryPayload[] = [];
+
 /** Publish a finished session. Called by TablePage immediately before it navigates. */
 export function publishSessionSummary(payload: SessionSummaryPayload): void {
+  if (pending?.tournament) {
+    if (payload.tournament?.tournamentId === pending.tournament.tournamentId) {
+      /* Same event re-publishing (the bust path fires once early, once with
+         the settled row): MERGE, never downgrade - a place or prize already
+         on screen must not be replaced with a null. */
+      pending = {
+        ...payload,
+        tournament: {
+          ...payload.tournament!,
+          finishPlace: payload.tournament!.finishPlace ?? pending.tournament.finishPlace,
+          prize: payload.tournament!.prize || pending.tournament.prize,
+        },
+      };
+      emit();
+      return;
+    }
+    /* A different session finished while the ranking card is up: hold it. */
+    heldQueue = [...heldQueue.filter((q) => q.tableName !== payload.tableName), payload];
+    return;
+  }
   pending = payload;
   emit();
 }
@@ -175,10 +237,11 @@ export function settlePendingSummary(settledProfitLoss: number): void {
   emit();
 }
 
-/** Clear it. Called when the player dismisses the popup. */
+/** Clear it. Called when the player dismisses the popup. A publish that was
+ *  held behind an unacknowledged tournament card surfaces now. */
 export function clearSessionSummary(): void {
   if (pending === null) return;
-  pending = null;
+  pending = heldQueue.shift() ?? null;
   emit();
 }
 

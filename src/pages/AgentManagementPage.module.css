@@ -8,9 +8,23 @@
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   padding: 2rem;
+  /* Dan 2026-08-25: was max(70px, env(safe-area-inset-bottom)). The bar is
+     74px PLUS the home-indicator inset (additive), and max() picks one or
+     the other - so this reserved 70px on every phone and hid the last row
+     of content under the footer, by 4px on a flat screen and ~38px on a
+     notched one. --bottom-nav-clearance is the token the bar itself is
+     pinned to. */
+  padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
   background: linear-gradient(180deg, var(--bg-darker) 0%, var(--bg-dark) 100%);
+  width: 100%;
   max-width: 1200px;
   margin: 0 auto;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* Loading & Error States */
@@ -48,10 +62,6 @@
   transition: color 0.2s;
 }
 
-.backButton:hover {
-  color: #fff;
-}
-
 .header h1 {
   margin: 0;
   font-size: 1.5rem;
@@ -77,12 +87,6 @@
     transform 0.2s,
     box-shadow 0.2s;
 }
-
-.addButton:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 20px rgba(var(--accent-rgb), 0.4);
-}
-
 /* Summary Cards */
 .summaryGrid {
   display: grid;
@@ -104,11 +108,6 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   transition: transform 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.summaryCard:hover {
-  transform: translateY(-1px);
-}
-
 .summaryCard.attention {
   border-color: #f59e0b;
   background: rgba(245, 158, 11, 0.1);
@@ -156,11 +155,6 @@
   flex-shrink: 0;
 }
 
-.tabButton:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
-}
-
 .tabButton.active {
   background: rgba(var(--accent-rgb), 0.15);
   color: var(--accent);
@@ -188,14 +182,6 @@
   -webkit-backdrop-filter: blur(6px);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.agentCard:hover {
-  border-color: rgba(255, 255, 255, 0.2);
-  transform: translateY(-2px);
-  box-shadow:
-    0 8px 20px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 .agentCard.inactive {
@@ -311,11 +297,6 @@
   font-size: 0.8rem;
   cursor: pointer;
   transition: all 0.2s;
-}
-
-.actionBtn:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
 }
 
 .actionBtn.primary {
@@ -761,6 +742,42 @@
   }
 }
 
+@media (max-width: 768px) {
+  .page {
+    padding: 1rem;
+    padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
+  }
+
+  .header h1 {
+    font-size: 1.25rem;
+  }
+
+  .actionBtn,
+  .addButton {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .tabNav {
+    scrollbar-width: none;
+  }
+
+  /* Tables become their own horizontal scrollers so the page never scrolls sideways */
+  .creditTable,
+  .payoutTable {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .creditTable th,
+  .creditTable td,
+  .payoutTable th,
+  .payoutTable td {
+    white-space: nowrap;
+  }
+}
+
 @media (max-width: 600px) {
   .header {
     flex-wrap: wrap;
@@ -838,10 +855,6 @@
   transition: color 0.2s;
 }
 
-.closeBtn:hover {
-  color: #fff;
-}
-
 .modalBody {
   padding: 1.5rem;
   overflow-y: auto;
@@ -900,11 +913,6 @@
   transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
-}
-
-.roleOption:hover {
-  background: rgba(255, 255, 255, 0.1);
-  transform: translateY(-1px);
 }
 
 .roleOption.selected {
@@ -986,11 +994,6 @@
   cursor: pointer;
   transition: transform 0.2s;
 }
-
-.slider::-webkit-slider-thumb:hover {
-  transform: scale(1.1);
-}
-
 .sliderValue {
   font-weight: 700;
   font-size: 1.1rem;
@@ -1078,19 +1081,10 @@
   color: var(--text-muted);
 }
 
-.cancelBtn:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
-}
-
 .createBtn {
   background: var(--accent);
   border: none;
   color: #fff;
-}
-
-.createBtn:hover:not(:disabled) {
-  filter: brightness(1.1);
 }
 
 .createBtn:disabled {
@@ -1125,6 +1119,8 @@
 @media (max-width: 480px) {
   .page {
     padding: 0.75rem;
+    /* the shorthand above resets padding-bottom; restate the footer clearance */
+    padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
   }
 
   .header {
@@ -1309,6 +1305,8 @@
 @media (max-width: 380px) {
   .page {
     padding: 0.5rem;
+    /* the shorthand above resets padding-bottom; restate the footer clearance */
+    padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
   }
 
   .header h1 {

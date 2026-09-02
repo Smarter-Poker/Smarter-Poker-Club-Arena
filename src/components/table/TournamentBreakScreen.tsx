@@ -31,12 +31,41 @@ export interface BlindLevel {
   smallBlind: number;
   bigBlind: number;
   ante?: number;
-  duration: number; // minutes
+  /**
+   * OPTIONAL since 2026-08-27. The server's break payload has never carried
+   * it (pauseForBreak broadcasts smallBlind, bigBlind and ante only), so
+   * declaring it required did not make it present — it just meant the
+   * component divided by `undefined` and rendered NaN into the progress ring
+   * and the bar width on every single break. Nothing in this screen reads it
+   * any more; the break's own length drives the progress.
+   */
+  duration?: number; // minutes
 }
 
 export interface TournamentBreakScreenProps {
   isVisible: boolean;
   breakTimeRemaining: number; // seconds
+  /**
+   * THE BREAK HAS TWO PHASES AND THE SCREEN MUST SAY WHICH (2026-08-27).
+   *
+   * At :55 the server announces the LAST HAND. The five minutes do not start
+   * until every table across every tournament has finished it, which is why a
+   * break runs a little over five minutes end to end. The server deliberately
+   * writes `break_ends_at` as NULL for that window.
+   *
+   * This screen used to be handed a flat 300 seconds at :55 and count it down
+   * locally, so it hit 0:00 up to two minutes BEFORE play resumed and then sat
+   * frozen at 0:00 under a full-screen opaque overlay. 'last_hand' renders the
+   * honest thing instead: the break has started, the clock has not.
+   */
+  phase?: 'last_hand' | 'counting_down';
+  /**
+   * Absolute end of the break, epoch ms, once the countdown has actually
+   * started. Preferred over breakTimeRemaining when present: an absolute
+   * instant survives a backgrounded tab, a slow render and a missed tick,
+   * where a local decrement silently drifts.
+   */
+  breakEndsAtMs?: number | null;
   tournamentName: string;
   currentLevel: number;
   nextLevel: BlindLevel;
@@ -77,6 +106,8 @@ function formatStack(amount: number): string {
 export function TournamentBreakScreen({
   isVisible,
   breakTimeRemaining,
+  phase = 'counting_down',
+  breakEndsAtMs = null,
   tournamentName,
   currentLevel,
   nextLevel,
@@ -90,33 +121,76 @@ export function TournamentBreakScreen({
   onDismiss,
 }: TournamentBreakScreenProps) {
   const [minimized, setMinimized] = useState(false);
-  const [displayTime, setDisplayTime] = useState(breakTimeRemaining);
+  const countingDown = phase === 'counting_down';
+  const [displayTime, setDisplayTime] = useState(() =>
+    breakEndsAtMs
+      ? Math.max(0, Math.round((breakEndsAtMs - Date.now()) / 1000))
+      : breakTimeRemaining
+  );
 
-  // Update countdown
+  /**
+   * Tick against the wall clock, not by subtracting one.
+   *
+   * The old loop decremented local state and re-armed itself on every change
+   * of `displayTime`, which meant a tab throttled in the background, a slow
+   * render or a single missed tick was lost time that was never given back.
+   * Worse, it self-terminated at `displayTime <= 0` and never restarted, so
+   * once it reached zero the screen was frozen there for good. When the real
+   * end time is known the remaining seconds are recomputed from it every tick,
+   * so the display cannot drift and re-seeding is automatic.
+   */
   useEffect(() => {
-    setDisplayTime(breakTimeRemaining);
+    if (!isVisible || !countingDown) {
+      if (!countingDown) setDisplayTime(0);
+      return;
+    }
+    const read = () =>
+      breakEndsAtMs
+        ? Math.max(0, Math.round((breakEndsAtMs - Date.now()) / 1000))
+        : Math.max(0, breakTimeRemaining);
+    setDisplayTime(read());
+    // Without an absolute end time all we can do is count the seeded value
+    // down, but the seed is re-sent when the countdown truly starts.
+    let fallback = read();
+    const timer = setInterval(() => {
+      if (breakEndsAtMs) {
+        setDisplayTime(read());
+      } else {
+        fallback = Math.max(0, fallback - 1);
+        setDisplayTime(fallback);
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isVisible, countingDown, breakEndsAtMs, breakTimeRemaining]);
+
+  /**
+   * The ring and the bar are a fraction of THIS BREAK, not of the next blind
+   * level.
+   *
+   * They used to divide by `nextLevel.duration`, a field the server has never
+   * once sent on a break payload (pauseForBreak broadcasts only smallBlind,
+   * bigBlind and ante). `undefined * 60` is NaN, so this rendered
+   * `strokeDasharray="NaN 283"` and `width: NaN%` on every break, and the
+   * timer colour fell to the "urgent" red for the whole five minutes because
+   * every comparison against NaN is false. The fallback object supplied by
+   * TableModalsLayer used `duration: 0`, which is NaN by a second route.
+   */
+  const breakTotalSeconds = useMemo(() => {
+    const seeded = Math.max(0, Math.round(breakTimeRemaining));
+    return seeded > 0 ? seeded : 300;
   }, [breakTimeRemaining]);
 
-  useEffect(() => {
-    if (!isVisible || displayTime <= 0) return;
-
-    const timer = setInterval(() => {
-      setDisplayTime((t) => Math.max(0, t - 1));
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [isVisible, displayTime]);
-
-  // Progress to next level
   const progressPercent = useMemo(() => {
-    return Math.max(0, displayTime / (nextLevel.duration * 60)) * 100;
-  }, [displayTime, nextLevel.duration]);
+    if (!countingDown) return 100;
+    const pct = (displayTime / breakTotalSeconds) * 100;
+    return Number.isFinite(pct) ? Math.min(100, Math.max(0, pct)) : 0;
+  }, [countingDown, displayTime, breakTotalSeconds]);
 
   // Calculate timer color based on remaining time
   const getTimerColor = () => {
-    const percent = (displayTime / (nextLevel.duration * 60)) * 100;
-    if (percent > 50) return '#3b82f6';
-    if (percent > 25) return '#f59e0b';
+    if (!countingDown) return '#3b82f6';
+    if (progressPercent > 50) return '#3b82f6';
+    if (progressPercent > 25) return '#f59e0b';
     return '#ef4444';
   };
 
@@ -126,26 +200,33 @@ export function TournamentBreakScreen({
   if (minimized) {
     return (
       <div className="break-screen__minimized" onClick={() => setMinimized(false)}>
-        <span className="break-screen__mini-badge"> Break: {formatTime(displayTime)}</span>
+        <span className="break-screen__mini-badge">
+          {countingDown ? ` Break: ${formatTime(displayTime)}` : ' Break: Last Hand In Play'}
+        </span>
       </div>
     );
   }
 
   return (
-    <div className="break-screen">
-      <div className="break-screen__overlay"></div>
+    <div className="break-screen" role="dialog" aria-modal="true" aria-labelledby="break-title">
+      <div className="break-screen__overlay" aria-hidden="true" />
       <div className="break-screen__content">
+        <span className="break-screen__medallion" aria-hidden="true" />
         {/* Header */}
+        {/* Dan 2026-08-30: an X, not a "Minimize" button. Closing collapses
+            to the floating badge so the countdown stays reachable. */}
+        <button
+          className="break-screen__close"
+          onClick={() => setMinimized(true)}
+          aria-label="Close Break Screen"
+        >
+          X
+        </button>
         <div className="break-screen__header">
           <span className="break-screen__badge">Tournament On Break</span>
-          <h1 className="break-screen__title">{tournamentName}</h1>
-          <button
-            className="break-screen__minimize-btn"
-            onClick={() => setMinimized(true)}
-            aria-label="Minimize break screen"
-          >
-            Minimize
-          </button>
+          <h1 id="break-title" className="break-screen__title">
+            {tournamentName}
+          </h1>
         </div>
 
         {/* Timer */}
@@ -164,9 +245,11 @@ export function TournamentBreakScreen({
             </svg>
             <div className="break-screen__timer-text">
               <span className="break-screen__time" style={{ color: getTimerColor() }}>
-                {formatTime(displayTime)}
+                {countingDown ? formatTime(displayTime) : 'Last Hand'}
               </span>
-              <span className="break-screen__time-label">Until Next Level</span>
+              <span className="break-screen__time-label">
+                {countingDown ? 'Until Play Resumes' : 'Break Starts When Every Table Finishes'}
+              </span>
             </div>
           </div>
           <div
@@ -241,16 +324,30 @@ export function TournamentBreakScreen({
         <div className="break-screen__leaders">
           <span className="break-screen__section-title">Chip Leaders</span>
           <div className="break-screen__leader-list">
-            {topPlayers.slice(0, 5).map((player) => (
-              <div
-                key={player.playerId}
-                className={`break-screen__leader ${player.isCurrentUser ? 'break-screen__leader--me' : ''}`}
-              >
-                <span className="break-screen__leader-rank">#{player.rank}</span>
-                <span className="break-screen__leader-name">{player.playerName}</span>
-                <span className="break-screen__leader-stack">{formatStack(player.stack)}</span>
-              </div>
-            ))}
+            {topPlayers.length > 0 ? (
+              topPlayers.slice(0, 5).map((player) => (
+                <div
+                  key={player.playerId}
+                  className={`break-screen__leader ${player.isCurrentUser ? 'break-screen__leader--me' : ''}`}
+                >
+                  <span className="break-screen__leader-rank">#{player.rank}</span>
+                  {player.avatar ? (
+                    <img
+                      className="break-screen__leader-avatar"
+                      src={player.avatar}
+                      alt=""
+                      loading="lazy"
+                    />
+                  ) : (
+                    <span className="break-screen__leader-avatar" aria-hidden="true" />
+                  )}
+                  <span className="break-screen__leader-name">{player.playerName}</span>
+                  <span className="break-screen__leader-stack">{formatStack(player.stack)}</span>
+                </div>
+              ))
+            ) : (
+              <p className="break-screen__leaders-empty">Standings Update During The Break</p>
+            )}
           </div>
         </div>
       </div>

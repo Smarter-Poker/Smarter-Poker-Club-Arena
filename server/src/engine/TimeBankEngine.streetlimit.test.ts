@@ -33,7 +33,7 @@ function deepPool() {
 }
 
 /** Activate and immediately settle, so the bank is idle for the next attempt. */
-function useOne(tbe: TimeBankEngine): boolean {
+function consumeOne(tbe: TimeBankEngine): boolean {
   const ok = tbe.activate(TABLE, 'u1', noop);
   if (ok) tbe.playerActed(TABLE, 'u1');
   return ok;
@@ -61,36 +61,36 @@ describe('a time bank grants 20 seconds', () => {
     // The free session base every player starts with.
     tbe.initializePlayer(TABLE, 'u1', { remainingSeconds: 40, usesRemaining: 2 });
 
-    expect(useOne(tbe)).toBe(true);
+    expect(consumeOne(tbe)).toBe(true);
     expect(tbe.getRemainingSeconds(TABLE, 'u1')).toBe(20);
-    expect(useOne(tbe)).toBe(true);
+    expect(consumeOne(tbe)).toBe(true);
     expect(tbe.getRemainingSeconds(TABLE, 'u1')).toBe(0);
 
     // Nothing left to spend — and no partial third bank.
-    expect(useOne(tbe)).toBe(false);
+    expect(consumeOne(tbe)).toBe(false);
   });
 });
 
 describe('2 per street, never more', () => {
   it('allows exactly two on a street and refuses the third', () => {
     const { tbe } = deepPool();
-    expect(useOne(tbe)).toBe(true);
-    expect(useOne(tbe)).toBe(true);
-    expect(useOne(tbe)).toBe(false); // third on the same street
-    expect(useOne(tbe)).toBe(false); // still refused
+    expect(consumeOne(tbe)).toBe(true);
+    expect(consumeOne(tbe)).toBe(true);
+    expect(consumeOne(tbe)).toBe(false); // third on the same street
+    expect(consumeOne(tbe)).toBe(false); // still refused
   });
 
-  it('a new street restores the allowance — this is the per-STREET part', () => {
+  it('a new street restores the allowance - this is the per-STREET part', () => {
     const { tbe } = deepPool();
-    expect(useOne(tbe)).toBe(true);
-    expect(useOne(tbe)).toBe(true);
-    expect(useOne(tbe)).toBe(false);
+    expect(consumeOne(tbe)).toBe(true);
+    expect(consumeOne(tbe)).toBe(true);
+    expect(consumeOne(tbe)).toBe(false);
 
     tbe.resetStreetActivations(TABLE); // flop is dealt
 
-    expect(useOne(tbe)).toBe(true);
-    expect(useOne(tbe)).toBe(true);
-    expect(useOne(tbe)).toBe(false);
+    expect(consumeOne(tbe)).toBe(true);
+    expect(consumeOne(tbe)).toBe(true);
+    expect(consumeOne(tbe)).toBe(false);
   });
 
   it('four streets give at most eight activations, never a ninth on one street', () => {
@@ -98,7 +98,7 @@ describe('2 per street, never more', () => {
     let used = 0;
     for (const _street of ['preflop', 'flop', 'turn', 'river']) {
       tbe.resetStreetActivations(TABLE);
-      while (useOne(tbe)) used++;
+      while (consumeOne(tbe)) used++;
     }
     expect(used).toBe(8);
   });
@@ -108,9 +108,9 @@ describe('2 per street, never more', () => {
     const tbe = new TimeBankEngine(timer);
     tbe.initializePlayer(TABLE, 'u1', { remainingSeconds: 20, usesRemaining: 1 });
 
-    expect(useOne(tbe)).toBe(true); // their only bank
+    expect(consumeOne(tbe)).toBe(true); // their only bank
     tbe.resetStreetActivations(TABLE); // new street
-    expect(useOne(tbe)).toBe(false); // pool is empty, street limit is irrelevant
+    expect(consumeOne(tbe)).toBe(false); // pool is empty, street limit is irrelevant
   });
 
   it('the reset is per table and does not touch another table', () => {

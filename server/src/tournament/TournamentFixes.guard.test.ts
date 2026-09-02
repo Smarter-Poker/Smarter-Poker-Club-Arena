@@ -28,6 +28,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import { sliceMethod, sliceCall } from '../testHelpers/sourceWindow.js';
 
 const read = (p: string) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
 
@@ -39,8 +40,7 @@ const RECOVERY = read('src/tournament/tournamentRecovery.ts');
 const MANAGER = read('src/tournament/TournamentManager.ts');
 
 /** Strip line and block comments so a guard cannot pass on a mention in prose. */
-const code = (src: string) =>
-  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 describe('a failed query must never read as "nobody is left"', () => {
   it('the finish check treats an unreadable count as UNKNOWN, not zero', () => {
@@ -64,7 +64,29 @@ describe('finishing places must be distinct', () => {
     // players were stamped place 2 and EACH collected a full 2nd-place prize.
     // The idempotency key dedupes a repeated user, not a repeated PLACE.
     expect(code(ELIM)).not.toMatch(/Math\.max\(\s*2\s*,/);
-    expect(code(ELIM)).toMatch(/basePosition\s*=\s*Math\.max\(\s*playingCount/);
+  });
+
+  it('places are taken from the FREE set, not from a live count (2026-08-27)', () => {
+    // The `basePosition = Math.max(playingCount, n + 1)` arithmetic this test
+    // used to pin made places distinct WITHIN one sweep, but playingCount is
+    // not monotonic — ensureLateRegSeated promotes registered entrants to
+    // playing after eliminations begin — so a later sweep could re-stamp a
+    // place an earlier sweep had already PAID. Confirmed live: 206 duplicated
+    // places across 138 tournaments, worst case 107% of a pool disbursed.
+    // Both assignment sites now read the places already taken and walk down
+    // to a free one, so a collision is impossible by construction.
+    const elim = code(ELIM);
+    // Both sites read the taken places out of the database first...
+    expect(elim.match(/not\('position', 'is', null\)/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    // ...hold them in a set...
+    expect(elim).toMatch(/takenPositions/);
+    expect(elim).toMatch(/finishTakenPositions/);
+    // ...and skip occupied places instead of trusting arithmetic.
+    expect(
+      elim.match(/while \(\w+ >= 2 && \w+\.has\(\w+\)\)/g)?.length ?? 0
+    ).toBeGreaterThanOrEqual(2);
+    // Place 1 is the winner's and is never handed out by either loop.
+    expect(elim).toMatch(/no_free_finishing_place/);
   });
 });
 
@@ -78,7 +100,29 @@ describe('one rounding rule, shared by every payout site', () => {
 
   it('the last paid place absorbs the residual, so places sum to the pool', () => {
     expect(PAYOUT_MATH).toMatch(/lastPlace/);
-    expect(code(PAYOUT_MATH)).toMatch(/safePool\s*-\s*others/);
+    // 2026-08-29: this pinned `safePool - others`, dollars subtracted from
+    // dollars. The residual RULE is unchanged and still pinned; what changed
+    // is that the whole ladder is now built at once in integer cents, so the
+    // pool is spent DOWN and can never be overspent -- pricing one place in
+    // isolation clamped a negative last place at zero and paid out more than
+    // the pool. Moved to the new mechanism in the same commit that shipped
+    // it, as the house rule asks. See the note in payoutMath.ts.
+    expect(code(PAYOUT_MATH)).toMatch(/remaining/);
+    expect(code(PAYOUT_MATH)).toMatch(/isLast\s*\?\s*remaining/);
+  });
+
+  it('the money is integer cents, never a binary float', () => {
+    // Dan 2026-08-29, binding: exact to the cent, always. `513 * 3.5 / 100`
+    // is 17.954999999999998 in a double, which rounded DOWN to 17.95 while
+    // Postgres numeric made it 17.96 -- and the reconciler then "topped up"
+    // the difference, pushing a 513.00 pool to 513.01 on every run of that
+    // event. There is no epsilon that fixes that; the arithmetic has to be
+    // integers.
+    const src = code(PAYOUT_MATH);
+    expect(src).toMatch(/poolCents/);
+    expect(src).toMatch(/basis points|\bbp\(/);
+    // No dollar-scale rounding helper survives in the money path.
+    expect(src).not.toMatch(/const round2 =/);
   });
 
   it('both payout sites use it, and neither rounds on its own', () => {
@@ -123,8 +167,8 @@ describe('rebuys and add-ons actually happen', () => {
   });
 
   it('the add-on call sits inside triggerAddOnPeriod, not orphaned', () => {
-    const trigger = code(BASE).slice(code(BASE).indexOf('triggerAddOnPeriod(): Promise<void>'));
-    expect(trigger.slice(0, 4000)).toMatch(/tryTournamentAddOns\(\)/);
+    const trigger = sliceMethod(code(BASE), 'triggerAddOnPeriod(): Promise<void>');
+    expect(trigger).toMatch(/tryTournamentAddOns\(\)/);
   });
 });
 
@@ -261,6 +305,97 @@ describe('a table move must never leave a player holding two live seats', () => 
   });
 });
 
+describe('no seating path may write a second live seat in the same tournament', () => {
+  /**
+   * WHY THE GUARD ABOVE DID NOT CATCH THIS.
+   *
+   * The guard above pins ONE branch of ONE writer: the error rollback in
+   * executePlayerMoves, where a committed-but-errored destination write used
+   * to be undone by re-activating the source. That branch is fine and stayed
+   * fine. The 144 duplicate rows measured on production did not come through
+   * it — they came from the SEATING paths, which the guard says nothing about.
+   *
+   * `createTablesAndSeatPlayers` reads `alreadySeated` ONCE and then writes
+   * one seat per statement for the whole field. On tournament
+   * bae46dbf-7cf6-42c0-a709-c38a97306a08 ("$100 Freeroll 12:00 PM",
+   * 497 entrants) that loop ran from 17:11:39 to 17:16:44 on 2026-08-25. A
+   * second pass over the same tournament inside that window takes its own
+   * snapshot, sees every not-yet-written player as unseated, and seats them
+   * again — 72 players, 144 live seats, 46 of the pairs exactly 14 tables
+   * apart, which is two round-robin cursors walking one table list.
+   * `ensureLateRegSeated` holds the same shape of snapshot beside it.
+   *
+   * `idx_unique_active_user_per_table` is UNIQUE (table_id, user_id) WHERE
+   * left_at IS NULL — per TABLE. It cannot object to the second seat, because
+   * the second seat is at a different table.
+   *
+   * So the rule is not "the snapshot said they were unseated". The rule is
+   * that every writer re-asks the database immediately before it writes.
+   */
+  const SEAT_CLAIM = read('src/tournament/seatClaim.ts');
+
+  it('the claim is scoped to the TOURNAMENT, not to one table', () => {
+    const src = code(SEAT_CLAIM);
+    // Reached through the join, because table_seats carries no tournament_id.
+    expect(src).toContain('tables!inner(tournament_id)');
+    expect(src).toMatch(/eq\('tables\.tournament_id'/);
+    expect(src).toMatch(/is\('left_at',\s*null\)/);
+  });
+
+  it('an unreadable claim refuses the seat instead of granting it', () => {
+    const src = code(SEAT_CLAIM);
+    // A read error must not collapse into "no seats found".
+    expect(src).toMatch(/ok:\s*false/);
+    expect(src).toMatch(/unknown:\s*true/);
+    // Never `allowed: true` on the error path.
+    const errBranch = src.slice(
+      src.indexOf('if (!found.ok)'),
+      src.indexOf('if (found.seats.length')
+    );
+    expect(errBranch).not.toMatch(/allowed:\s*true/);
+  });
+
+  it('start-seating claims the seat against the DB, not against its snapshot', () => {
+    const src = code(BASE);
+    const fn = src.slice(src.indexOf('createTablesAndSeatPlayers(tournament: any)'));
+    const loop = fn.indexOf('for (let i = 0; i < toSeat.length; i++)');
+    const insert = fn.indexOf("from('table_seats').insert(", loop);
+    expect(loop).toBeGreaterThan(-1);
+    expect(insert).toBeGreaterThan(loop);
+    // Structural: between entering the per-player loop and inserting the seat
+    // there must be a claim, and a refusal must skip the player.
+    const window = fn.slice(loop, insert);
+    expect(window).toMatch(/mayTakeSeat\(/);
+    expect(window).toMatch(/claim\.allowed/);
+    expect(window).toMatch(/\bcontinue;/);
+  });
+
+  it('the late-reg sweep claims the seat before it writes one', () => {
+    const src = code(MANAGER);
+    const fn = src.slice(src.indexOf('ensureLateRegSeated()'));
+    // Anchor on the SEAT write, not on the first `.update(` in the method —
+    // the roster promotion for a full-house player is written before it.
+    const write = fn.search(/from\('table_seats'\)[\s\S]{0,40}\.update\(/);
+    expect(write).toBeGreaterThan(-1);
+    const window = fn.slice(0, write);
+    expect(window).toMatch(/mayTakeSeat\(/);
+    expect(window).toMatch(/\bcontinue;/);
+  });
+
+  it('a move stands down rather than adding a third live seat', () => {
+    const src = code(MANAGER);
+    const fn = src.slice(src.indexOf('executePlayerMoves(moves: MoveInstruction[])'));
+    const claim = fn.indexOf('mayTakeSeat(');
+    const vacate = fn.indexOf('update({ left_at: new Date().toISOString() })');
+    expect(claim).toBeGreaterThan(-1);
+    // Checked BEFORE the source seat is stamped, so a refusal touches nothing.
+    expect(claim).toBeLessThan(vacate);
+    // The source table is the one seat that does not count against the move.
+    expect(sliceCall(fn, 'mayTakeSeat(')).toContain('move.fromTableId');
+    expect(fn).toMatch(/Move_aborted_player_already_seated_twice/);
+  });
+});
+
 describe('seating a tournament twice must not build a second set of tables', () => {
   /**
    * start() calls createTablesAndSeatPlayers BEFORE the
@@ -280,11 +415,28 @@ describe('seating a tournament twice must not build a second set of tables', () 
     expect(fn).toMatch(/tablesToCreate/);
   });
 
-  it('creates only the shortfall, never a full second set', () => {
+  it('creates only the shortfall, and measures it in SEATS not tables', () => {
     const src = code(BASE);
     const fn = src.slice(src.indexOf('createTablesAndSeatPlayers(tournament: any)'));
-    // the create loop must be bounded by the shortfall, not by numTables alone
-    expect(fn).toMatch(/Math\.max\(0,\s*numTables\s*-\s*alreadyHave\)/);
+    /**
+     * UPDATED 2026-08-25. This used to pin
+     * `Math.max(0, numTables - alreadyHave)`, and that formula is the defect:
+     * `numTables = ceil(players.length / maxPerTable)` assumes every adopted
+     * table is EMPTY, which is the one thing adoption guarantees they are not.
+     * One adopted table already holding 9 of 9 seats plus 10 entrants asked
+     * for 2 tables, had 1, created 1 — and the tenth entrant was handed to the
+     * FULL table. Live footprint 2026-08-25: 54 seats above their table's own
+     * max_players across 53 tournament tables ("Turbo Tuesday Graveyard"
+     * tables 44-56 each carrying a seat_number 10 on max_players 9).
+     *
+     * The shortfall is now counted in seats against real free capacity, which
+     * is strictly stronger: it still creates only the shortfall, and it can no
+     * longer under-create.
+     */
+    expect(fn).not.toMatch(/Math\.max\(0,\s*numTables\s*-\s*alreadyHave\)/);
+    expect(fn).toMatch(/freeSeatsNow/);
+    expect(fn).toMatch(/seatShortfall/);
+    expect(fn).toMatch(/tablesToCreate\s*=\s*Math\.ceil\(seatShortfall\s*\/\s*maxPerTable\)/);
   });
 
   it('never re-seats a player who already holds a live seat', () => {
@@ -301,9 +453,170 @@ describe('seating a tournament twice must not build a second set of tables', () 
     expect(row).not.toContain('players[i].user_id');
   });
 
-  it('gives a new seat the lowest FREE seat number so it cannot collide', () => {
+  it('gives a new seat the lowest FREE seat number WITHIN the table capacity', () => {
     const src = code(BASE);
     const fn = src.slice(src.indexOf('createTablesAndSeatPlayers(tournament: any)'));
-    expect(fn).toMatch(/while\s*\(taken\.has\(seatNumber\)\)/);
+    /**
+     * UPDATED 2026-08-25. The pinned scan was `while (taken.has(seatNumber))
+     * seatNumber++` — lowest free, with NO CEILING. Handed a full 9-max table
+     * it returned seat 10, walking straight past the max_players that
+     * clampSeatsForVariant had just clamped for deck safety (#782). The
+     * sibling scan in ensureLateRegSeated has always carried its ceiling
+     * (`if (seatNumber > occ.max) continue`); this one did not.
+     *
+     * Lowest-free is still the rule. It is now bounded by the table's own
+     * capacity, and a player for whom no in-capacity seat exists is left
+     * unseated for the 5-second sweep rather than given an illegal seat.
+     */
+    expect(fn).not.toMatch(/while\s*\(taken\.has\(seatNumber\)\)\s*seatNumber\+\+/);
+    expect(fn).toMatch(/capacityOf/);
+    // The scan is bounded by the capacity on BOTH the loop and the acceptance.
+    expect(fn).toMatch(/while\s*\(n\s*<=\s*cap\s*&&\s*taken\.has\(n\)\)/);
+    expect(fn).toMatch(/if\s*\(n\s*<=\s*cap\)/);
+    // No in-capacity seat anywhere is reported, never papered over.
+    expect(fn).toMatch(/seating_capacity_exhausted/);
+  });
+});
+
+/**
+ * ───────────────────────────────────────────────────────────────────────────
+ * THE OCCUPIED TABLE IS THE REAL TABLE (2026-08-24)
+ *
+ * Dan registered during late registration and got no seat, no chips, and a
+ * tournament that never started. One defect produced all three.
+ *
+ * A seat-first game's field size is read off ONE chosen table, and that
+ * choice had been made two different ways, both of which pick a corpse:
+ * 20260823330000 took the oldest table ever created, 20260824050000 took the
+ * newest non-closed one. These games are created with two `waiting` tables
+ * about 0.6s apart; the players sit on the FIRST and the empty one is NEWER.
+ *
+ * Measured in production before the fix: 126 live tournaments, 39 with
+ * current_players below their real field, every one of them startable, one
+ * stuck 471 minutes. Of 31 past-start games 28 were blocked and in 12 an
+ * empty table had outranked a sibling holding the whole game. Per hour, games
+ * with a duplicate live table equalled stuck games exactly: 2/2, 2/2, 9/9.
+ *
+ * The rule is occupancy first, oldest to break the tie - which is what
+ * fn_seat_late_registrant already did. These guards keep the engine agreeing
+ * with it, because a third definition is how this happened twice already.
+ * ───────────────────────────────────────────────────────────────────────────
+ */
+const GAMESERVER = read('src/GameServer.ts');
+const RECURRING = read('src/services/TournamentRecurringService.ts');
+const OCCUPIED_MIGRATION = read(
+  '../supabase/migrations/20260824070000_the_occupied_table_is_the_real_table.sql'
+);
+
+describe('the paid-seat gate reads the table the game is actually on', () => {
+  it('does not choose the newest live table', () => {
+    // `newestTable` is the identifier the broken selection used. Its absence
+    // is the cheapest durable signal that the rule has not been reinstated.
+    expect(code(GAMESERVER)).not.toContain('newestTable');
+  });
+
+  it('chooses by occupancy, with the oldest table breaking the tie', () => {
+    const src = code(GAMESERVER);
+    expect(src).toContain('primaryTable');
+    // seats win outright; equal seats fall back to the EARLIER created_at
+    expect(src).toContain('seats > seen.seats');
+    expect(src).toContain('createdAt < seen.createdAt');
+  });
+
+  it('counts seats for every live table, not for one guessed table', () => {
+    // Choosing by occupancy is only possible if the seats of all candidates
+    // were read. The old code read seats for the single table it had already
+    // picked, which is what made the wrong pick undetectable.
+    expect(code(GAMESERVER)).toContain('const liveTableIds = (liveTables || [])');
+  });
+});
+
+describe('a seat-first top-up is measured in seats, not registrations', () => {
+  it('asks the database which table is the game', () => {
+    expect(code(RECURRING)).toContain('fn_tournament_primary_table');
+  });
+
+  it('never computes the shortfall from the bare registration count', () => {
+    // registrations 3/3 with seats 1/3 computed a shortfall of zero, so the
+    // missing horse was never seated and the start gate never opened. Five
+    // Spins were deadlocked that way, the oldest for 486 minutes.
+    expect(code(RECURRING)).not.toContain('const shortfall = targetPlayers - (liveCount || 0);');
+    expect(code(RECURRING)).toContain('const shortfall = targetPlayers - liveCount;');
+  });
+
+  it('reconciles the counter even when there is nothing to add', () => {
+    // The old `if (shortfall <= 0) return 0;` returned BEFORE the
+    // reconciliation at the foot of the function, so a full field whose count
+    // had drifted could never repair itself. That loop held 39 tournaments.
+    expect(code(RECURRING)).not.toContain('if (shortfall <= 0) return 0;');
+    expect(code(RECURRING)).toContain('if (shortfall <= 0) {');
+  });
+});
+
+describe('the database agrees with the engine about which table is the game', () => {
+  it('defines one shared primary-table function, ordered by occupancy', () => {
+    const sql = OCCUPIED_MIGRATION;
+    expect(sql).toContain('CREATE OR REPLACE FUNCTION public.fn_tournament_primary_table');
+    expect(sql).toContain('tb.created_at ASC');
+  });
+
+  it('ships the late-registration sweep that the client comments promise', () => {
+    // fn_seat_late_registrant had NO caller anywhere outside
+    // fn_register_for_tournament, yet useTournamentRegistration.ts and
+    // TablePage.tsx both tell the reader "the engine's 5s sweep seats him".
+    // A paid, seatless player waited forever.
+    expect(OCCUPIED_MIGRATION).toContain(
+      'CREATE OR REPLACE FUNCTION public.fn_sweep_seatless_late_registrants'
+    );
+    expect(OCCUPIED_MIGRATION).toContain('public.fn_seat_late_registrant(');
+  });
+
+  it('repairs the counter that gates every tournament start', () => {
+    // fn_reconcile_tournament_denormals ran every minute and fixed roster
+    // seats and table stakes, but never current_players - the one denormal
+    // the start gate actually reads.
+    expect(OCCUPIED_MIGRATION).toContain('player_counts_fixed');
+    expect(OCCUPIED_MIGRATION).toContain('empty_dupes_closed');
+  });
+});
+
+describe('a tournament that started and never dealt is rescued whatever its variant', () => {
+  /**
+   * The started-but-never-dealt sweep shipped filtered to ['sng', 'spin'] —
+   * the two variants the outage that prompted it happened to contain — while
+   * its own comment said "no existing sweep covers this state". MTTs were
+   * therefore covered by nothing. Found live 2026-08-25: an 18-player PLO6
+   * Turbo 183 minutes into a RUNNING status with zero hands, and a 499-player
+   * freezeout holding 56 tables and 548 live seats, also with zero hands.
+   * Buy-ins committed, players seated, nothing looking for either of them.
+   */
+  it('does not filter the never-dealt sweep down to seat-first variants', () => {
+    expect(code(GAMESERVER)).not.toContain("in('variant', ['sng', 'spin'])");
+  });
+
+  it('still finds the sweep by the CAS requeue that defines it', () => {
+    // Anchored on the DB effect, not on phrasing: RUNNING -> REGISTERING under
+    // a compare-and-set is the whole mechanism. If this disappears the sweep
+    // has been removed, whatever the surrounding prose says.
+    const src = code(GAMESERVER);
+    expect(src).toContain('const neverDealtCutoff');
+    expect(src).toContain("update({ status: 'REGISTERING' })");
+  });
+
+  it('requeues only once every playing player holds a live seat', () => {
+    // A large MTT seats over several passes. Without this, a game still
+    // mid-seating reads identically to a dead one and gets bounced back
+    // through the start gate for no reason.
+    const src = code(GAMESERVER);
+    expect(src).toContain('const { count: stillPlaying');
+    expect(src).toContain('if (liveSeats < stillPlaying) continue;');
+  });
+
+  it('treats a playing-count it could not read as UNKNOWN, not as settled', () => {
+    // Same rule the finish check holds: an unreadable count must never be
+    // allowed to mean zero, or a failed query silently requeues a live game.
+    expect(code(GAMESERVER)).toContain(
+      'if (playingCountErr || stillPlaying === null || stillPlaying === undefined) continue;'
+    );
   });
 });

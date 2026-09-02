@@ -31,6 +31,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { resolveThemeBucket } from '../../src/hooks/useUserThemeSettings';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 const tsCode = (src: string) =>
@@ -39,7 +40,8 @@ const tsCode = (src: string) =>
 const modal = tsCode(read('src/components/union/UnionWalletModal.tsx'));
 const page = tsCode(read('src/pages/UnionDashboardPage.tsx'));
 const table = tsCode(read('src/pages/TablePage.tsx'));
-const themeHook = tsCode(read('src/hooks/useUserThemeSettings.ts'));
+// (the theme hook is asserted by CALLING resolveThemeBucket below, not by
+//  reading its source — see the note on that test)
 
 describe('the reserve opens, like every other wallet', () => {
   it('is a key the modal understands', () => {
@@ -93,7 +95,7 @@ describe('the reserve offers no way to move money out', () => {
     // The send button must sit AFTER the first guard - i.e. inside a guarded
     // region - and never before one.
     const firstGuard = modal.indexOf('{!readOnly && (');
-    const sendButton = modal.indexOf('Pick a member');
+    const sendButton = modal.indexOf('Pick A Member');
     expect(firstGuard).toBeGreaterThan(-1);
     expect(sendButton).toBeGreaterThan(firstGuard);
   });
@@ -111,7 +113,13 @@ describe('the reserve offers no way to move money out', () => {
 
 describe('a tournament always resolves a format, so the theme always resolves', () => {
   it('the hook still waits rather than guessing', () => {
-    expect(themeHook).toMatch(/if \(isTournament && !tournamentType\) return;/);
+    // 2026-08-25: was a text match on the hook's source. The guard became an
+    // exported function during the theme-persistence audit — same behaviour,
+    // different characters — so it is asserted by CALLING it now. A guard
+    // pinned by grep is pinned to its formatting, not to what it does.
+    expect(resolveThemeBucket(undefined, true, undefined)).toBeNull();
+    expect(resolveThemeBucket('nlh', true, undefined)).toBeNull();
+    expect(resolveThemeBucket(undefined, true, 'mtt')).toBe('MTT');
   });
 
   it('TablePage falls back when the tournament row cannot be read', () => {

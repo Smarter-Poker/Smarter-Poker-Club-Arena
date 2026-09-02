@@ -69,28 +69,69 @@ describe('a queued pre-action is still a visible turn', () => {
   });
 });
 
-describe('horses act at human speed — never instantly', () => {
+describe('horse tempo - random, per-horse, from a snap to a time bank', () => {
   const turns = read('ServerTableEngineTurns.ts');
+  const logic = read('HorseLogic.ts');
 
-  it('has a think-time FLOOR, not just a ceiling', () => {
-    expect(turns).toContain('HORSE_MIN_THINK_MS');
+  // ── SUPERSEDED, deliberately ──────────────────────────────────────────
+  // This block used to pin HORSE_MIN_THINK_MS, a 2200ms FLOOR, under the
+  // heading "never instantly". Dan 2026-08-23 replaced that instruction:
+  //   "TIMING ON STREETS MUST BE MORE RANDOM. Most horses are making their
+  //    decisions at about the same rate on every street. This must be
+  //    completely random, from instant, to full 15 seconds or even using
+  //    time banks."
+  // The floor was in fact the CAUSE of the complaint: HorseLogic already
+  // produced a spread and the floor collapsed its whole fast half onto one
+  // number, so seat after seat acted at exactly 2.2 seconds. The animation
+  // concern the floor existed for is still met — every action gets the
+  // settle beat asserted at the top of this file, which is what actually
+  // gives the animation its airtime.
+
+  it('there is NO think-time floor flattening the fast half of the range', () => {
+    expect(turns).not.toContain('HORSE_MIN_THINK_MS');
   });
 
-  it('the floor leaves every action animation time to play', () => {
-    const m = turns.match(/HORSE_MIN_THINK_MS\s*=\s*(\d+)/);
-    expect(m).toBeTruthy();
-    const ms = Number(m![1]);
-    // cpSlideIn is 500ms and cardFoldOut is 380ms + 55ms stagger. A floor at
-    // or below those clips the animation the action is supposed to show.
-    expect(ms).toBeGreaterThan(1000);
+  it('the settle beat - not a think-time floor - is what protects animations', () => {
+    const events = read('ServerTableEngineHandEvents.ts');
+    expect(events).toContain('this.actionSettleMs');
   });
 
-  it('the floor is applied as a MAX (a lower decision cannot win)', () => {
-    expect(turns).toMatch(/Math\.max\(\s*HORSE_MIN_THINK_MS/);
+  it('think time is drawn from a MIXTURE, not one narrow band', () => {
+    // A uniform draw over a narrow band is the tell: every gap feels alike.
+    // Four modes — snap, a beat, a tank, a time bank — is what a real table
+    // looks like.
+    expect(logic).toContain('wSnap');
+    expect(logic).toContain('wBeat');
+    expect(logic).toContain('wTank');
+    expect(logic).toContain('wBank');
+  });
+
+  it('every horse has its OWN tempo, stable for its lifetime', () => {
+    // Derived from the user id, so a quick horse is visibly quick all
+    // session and a deliberate one visibly deliberate. Without this the
+    // whole fleet shares one rhythm however wide the range is.
+    expect(logic).toContain('tempoSeed');
+    expect(logic).toMatch(/const tempo = /);
+  });
+
+  it('a deliberate time-bank burn is a real bank use, not a timeout', () => {
+    // Past the turn clock the engine auto-activates the bank (Bible V8 6.2),
+    // and the burn is bounded well inside it so a tank can never auto-fold.
+    expect(logic).toContain('THINK_TIMEBANK_SENTINEL');
+    expect(turns).toContain('THINK_TIMEBANK_SENTINEL');
+    expect(turns).toContain('HORSE_MAX_BANK_BURN_MS');
+    const m = turns.match(/HORSE_MAX_BANK_BURN_MS\s*=\s*(\d+)/);
+    expect(m, 'the bank burn must be bounded').toBeTruthy();
+    // The bank grants ~20s per use; stay well under it.
+    expect(Number(m![1])).toBeLessThan(15000);
+  });
+
+  it('an ordinary decision still lands inside the turn clock', () => {
+    expect(turns).toContain('actionTimeMs - 1200');
   });
 });
 
-describe('the SAME bug class, everywhere it occurs — nothing is superseded in its own tick', () => {
+describe('the SAME bug class, everywhere it occurs - nothing is superseded in its own tick', () => {
   const events = read('ServerTableEngineHandEvents.ts');
   const runout = read('ServerTableEngineRunout.ts');
   const num = (src: string, name: string) => {
@@ -109,7 +150,10 @@ describe('the SAME bug class, everywhere it occurs — nothing is superseded in 
   });
 
   it('only pauses for a REAL showdown (a fold win keeps its pace)', () => {
-    expect(events).toContain('this.currentHandShowdownResults.length >= 2');
+    /* 2026-08-26: the payload is CAPTURED before the settle hold (the live
+       fields are cleared by HAND_COMPLETE during the sleep), so the gate now
+       reads the captured copy. Same rule, race-proof source. */
+    expect(events).toContain('capturedShowdownResults.length >= 2');
   });
 
   it('a freshly dealt BOARD is revealed before the next player is on the clock', () => {
@@ -147,10 +191,7 @@ describe('celebrations are not superseded by the next hand either', () => {
     // The constant moved into the shared hand-completion spec (2026-08-21),
     // where the client's celebration length and the engine's hold are the
     // same number by construction.
-    const spec = readFileSync(
-      join(process.cwd(), 'src/config/handCompletionSpec.ts'),
-      'utf8'
-    );
+    const spec = readFileSync(join(process.cwd(), 'src/config/handCompletionSpec.ts'), 'utf8');
     expect(spec).toContain('BBJ_CELEBRATION_MS');
     expect(Number(spec.match(/BBJ_CELEBRATION_MS:\s*(\d+)/)![1])).toBeGreaterThanOrEqual(9000);
     expect(dealing).toContain('currentHandBBJHit');
@@ -189,10 +230,7 @@ describe('the end of a hand is not rushed either', () => {
     // float). The pacing guarantee is unchanged; its source moved.
     expect(dealing).toContain('handCompletionHoldMs(');
     expect(dealing).toContain('boardClearMs(');
-    const spec = readFileSync(
-      join(process.cwd(), 'src/config/handCompletionSpec.ts'),
-      'utf8'
-    );
+    const spec = readFileSync(join(process.cwd(), 'src/config/handCompletionSpec.ts'), 'utf8');
     const sweep = Number(spec.match(/BETS_SWEEP_MS:\s*(\d+)/)![1]);
     const push = Number(spec.match(/POT_PUSH_MS:\s*(\d+)/)![1]);
     const muck = Number(spec.match(/MUCK_MS:\s*(\d+)/)![1]);

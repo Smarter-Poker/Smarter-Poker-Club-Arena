@@ -62,6 +62,8 @@ export interface TournamentConflict {
 const conflicts = new Map<string, TournamentConflict>();
 let claimErrors = 0;
 let heartbeatErrors = 0;
+/** Missing/stale heartbeat results — leases nobody took. See heartbeatTournaments. */
+let reclaimableHeartbeats = 0;
 
 /**
  * May this instance run `tournamentId`?
@@ -80,7 +82,7 @@ export async function claimTournament(tournamentId: string): Promise<boolean> {
     if (error) {
       claimErrors++;
       if (claimErrors <= 3) {
-        console.warn(`[tournament-lease] claim failed (${error.message}) — starting anyway`);
+        console.warn(`[tournament-lease] claim failed (${error.message}) - starting anyway`);
       }
       return true;
     }
@@ -105,7 +107,7 @@ export async function claimTournament(tournamentId: string): Promise<boolean> {
   } catch (err) {
     claimErrors++;
     if (claimErrors <= 3) {
-      console.warn(`[tournament-lease] claim threw (${(err as Error)?.message}) — starting anyway`);
+      console.warn(`[tournament-lease] claim threw (${(err as Error)?.message}) - starting anyway`);
     }
     return true;
   }
@@ -121,33 +123,52 @@ export async function claimTournament(tournamentId: string): Promise<boolean> {
 export async function heartbeatTournaments(tournamentIds: string[]): Promise<string[]> {
   if (tournamentIds.length === 0) return [];
   try {
-    const { data, error } = await supabase.rpc('heartbeat_tournament_leases', {
+    const { data, error } = await supabase.rpc('heartbeat_tournament_leases_v2', {
       p_instance_id: INSTANCE_ID,
       p_tournament_ids: tournamentIds,
+      p_stale_seconds: TOURNAMENT_LEASE_STALE_SECONDS,
     });
     if (error) {
       heartbeatErrors++;
       if (heartbeatErrors <= 3) {
-        console.warn(`[tournament-lease] heartbeat failed (${error.message}) — keeping every one`);
+        console.warn(`[tournament-lease] heartbeat failed (${error.message}) - keeping every one`);
       }
       return [];
     }
-    const kept = new Set(
-      ((data ?? []) as Array<{ tournament_id: string }>).map((r) => r.tournament_id)
-    );
-    const lost = tournamentIds.filter((id) => !kept.has(id));
-    for (const id of lost) {
+
+    const rows = (data ?? []) as Array<{ tournament_id: string; state: string }>;
+    const stateOf = new Map(rows.map((r) => [r.tournament_id, r.state]));
+    const taken: string[] = [];
+    let reclaimable = 0;
+
+    for (const id of tournamentIds) {
+      // Silence is not evidence of a takeover. See tableLease.heartbeatTables.
+      const state = stateOf.get(id) ?? 'missing';
+      if (state === 'kept') continue;
+      if (state === 'taken') {
+        taken.push(id);
+        console.warn(
+          `[tournament-lease] ${id} is held by another LIVE instance` +
+            (TOURNAMENT_LEASE_ENFORCED ? '. Stopping it here.' : ' (enforcement off; continuing).')
+        );
+        continue;
+      }
+      reclaimable++;
+    }
+
+    if (reclaimable > 0) {
+      reclaimableHeartbeats += reclaimable;
       console.warn(
-        `[tournament-lease] lost ${id} — another instance has taken it over` +
-          (TOURNAMENT_LEASE_ENFORCED ? '. Stopping it here.' : ' (enforcement off; continuing).')
+        `[tournament-lease] ${reclaimable} of ${tournamentIds.length} leases were missing or stale, not taken - re-claiming, still running`
       );
     }
-    return TOURNAMENT_LEASE_ENFORCED ? lost : [];
+
+    return TOURNAMENT_LEASE_ENFORCED ? taken : [];
   } catch (err) {
     heartbeatErrors++;
     if (heartbeatErrors <= 3) {
       console.warn(
-        `[tournament-lease] heartbeat threw (${(err as Error)?.message}) — keeping every one`
+        `[tournament-lease] heartbeat threw (${(err as Error)?.message}) - keeping every one`
       );
     }
     return [];
@@ -174,6 +195,7 @@ export function tournamentLeaseDiagnostics() {
     conflictCount: conflicts.size,
     claimErrors,
     heartbeatErrors,
+    reclaimableHeartbeats,
     conflicts: [...conflicts.values()],
   };
 }

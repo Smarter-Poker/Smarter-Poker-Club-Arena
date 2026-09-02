@@ -95,11 +95,6 @@
   -webkit-backdrop-filter: blur(16px);
 }
 
-.session-filter button:hover {
-  border-color: rgba(0, 212, 255, 0.3);
-  color: #00d4ff;
-}
-
 .session-filter button.active {
   background: linear-gradient(145deg, rgba(0, 212, 255, 0.15) 0%, rgba(0, 212, 255, 0.05) 100%);
   border-color: rgba(0, 212, 255, 0.5);
@@ -134,12 +129,6 @@
 
 .session-card.losing {
   border-left: 3px solid rgba(239, 68, 68, 0.5);
-}
-
-.session-card:hover {
-  border-color: rgba(0, 212, 255, 0.4);
-  transform: translateY(-2px);
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.1);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -276,10 +265,6 @@
   color: #6a7a8a;
   font-size: 0.8rem;
   transition: color 0.2s;
-}
-
-.session-card:hover .session-expand {
-  color: #00d4ff;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

@@ -8,140 +8,226 @@
    WIDGET
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* Dan 2026-08-23: "the bad beat jackpot above the table needs to be improved
+   visually as well, it should have some depth and 3D look and feel to it, and
+   it should be blue and brushed nickel, not purple."
+
+   The purple (#2d1b4e -> #1a102e) came from the competitor reference and was
+   the last of it on the felt, after FoldProtectionDialog and TournamentAutoSeat
+   were converted. Same house tokens as those two, so all three read as one
+   product: navy body, brushed-nickel bezel, brushed-silver numerals.
+
+   DEPTH is built, not faked with a drop shadow:
+     - a 5px nickel bezel painted in the BORDER box via a padding-box/border-box
+       background pair, so the frame is milled metal rather than a hairline
+     - a 1.5px lighter inner bezel inset from it (::before), which is what makes
+       the plate read as a machined recess instead of a rectangle
+     - a specular sheen across the top 45% (::after) — the single strongest 3D
+       cue on a small element, because it implies a light source above
+     - a stacked shadow: contact shadow, cast shadow, ambient blue bloom, plus
+       an inset top highlight and an inset bottom shade so the plate has a lit
+       edge and a dark underside. */
 .bbj-widget {
+  /* Shared smarter.poker dialog tokens (see FoldProtectionDialog.css). */
+  --sp-nickel: linear-gradient(
+    145deg,
+    #6f767e 0%,
+    #cdd3d9 14%,
+    #8d949c 30%,
+    #eef1f4 46%,
+    #9aa1a9 62%,
+    #d6dbe0 80%,
+    #70777f 100%
+  );
+  --sp-nickel-inner: linear-gradient(
+    145deg,
+    #8f969e 0%,
+    #e6eaee 25%,
+    #99a0a8 52%,
+    #dfe4e9 76%,
+    #838a92 100%
+  );
+  --sp-dialog-blue: linear-gradient(165deg, #1b3a68 0%, #12253f 52%, #0a1626 100%);
+
   /* Dan 2026-04-17: shrunk — fits between the hamburger/+ on the left
      and the stats icon on the right at 375px. Padding + font smaller. */
   position: absolute;
-  /* Dan 2026-08-22 mobile audit item 1: the banner sat UNDER the iPhone
-     status bar (clock/battery). Respect the notch safe area. */
-  top: calc(6px + env(safe-area-inset-top, 0px));
+  /* This widget's containing block is `.table-page--embedded` (position:
+     absolute; inset:0 — TablePage.css), which fills
+     `.multi-table-page__table-slot`; the slot begins on the tab bar's bottom
+     border. So y=0 here is already BELOW the notch.
+
+     It used to read `calc(6px + env(safe-area-inset-top, 0px))` — Dan
+     2026-08-22, "the banner sat under the iPhone status bar". The inset was
+     the right diagnosis of the wrong element: `.table-tab-bar` above already
+     pads itself by the full inset, so adding it again here pushed the plate a
+     further ~47px DOWN, off the chrome and onto the felt. That is the drift
+     Dan reported on 2026-08-25. The notch is handled once, by the bar. */
+  top: 6px;
   left: 50%;
   transform: translateX(-50%);
-  background: linear-gradient(135deg, #2d1b4e 0%, #1a102e 100%);
-  border: 1px solid rgba(213, 218, 226, 0.4);
-  border-radius: 8px;
-  padding: 3px 10px;
+
+  background:
+    var(--sp-dialog-blue) padding-box,
+    var(--sp-nickel) border-box;
+  border: 5px solid transparent;
+  border-radius: 11px;
+  padding: 4px 14px;
   cursor: pointer;
   z-index: 50;
   max-width: calc(100% - 200px);
   box-shadow:
-    0 0 12px rgba(0, 0, 0, 0.4),
-    0 0 14px rgba(213, 218, 226, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    0 1px 0 rgba(255, 255, 255, 0.22),
+    0 3px 5px rgba(0, 0, 0, 0.55),
+    0 9px 20px rgba(0, 0, 0, 0.5),
+    0 0 26px rgba(36, 92, 168, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -3px 7px rgba(0, 0, 0, 0.45);
   transition:
     transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275),
     box-shadow 0.2s ease;
   backdrop-filter: blur(10px) saturate(1.2);
   -webkit-backdrop-filter: blur(10px) saturate(1.2);
   animation: bbjPulseGlow 3s ease-in-out infinite;
+  isolation: isolate;
 }
 
+/* Inner nickel bezel — the machined-recess cue. */
+.bbj-widget::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 7px;
+  padding: 1.5px;
+  background: var(--sp-nickel-inner);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Specular sheen across the upper half — implies a light source above, which
+   is what actually sells the curvature at this size. */
+.bbj-widget::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 55% 0;
+  border-radius: 7px 7px 40% 40% / 7px 7px 100% 100%;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.17) 0%,
+    rgba(255, 255, 255, 0.06) 55%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* The label and amount must sit above both bezel pseudo-elements. */
+.bbj-widget__label,
+.bbj-widget__amount {
+  position: relative;
+  z-index: 2;
+}
+
+/* The breathing bloom is now BLUE and, crucially, keeps the contact and cast
+   shadows in every keyframe. The old version dropped them at 50%, so the plate
+   flattened onto the felt twice a cycle — the exact opposite of depth. */
 @keyframes bbjPulseGlow {
   0%,
   100% {
     box-shadow:
-      0 0 16px rgba(0, 0, 0, 0.4),
-      0 0 20px rgba(213, 218, 226, 0.1),
-      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      0 1px 0 rgba(255, 255, 255, 0.22),
+      0 3px 5px rgba(0, 0, 0, 0.55),
+      0 9px 20px rgba(0, 0, 0, 0.5),
+      0 0 22px rgba(36, 92, 168, 0.26),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2),
+      inset 0 -3px 7px rgba(0, 0, 0, 0.45);
   }
   50% {
     box-shadow:
-      0 0 16px rgba(0, 0, 0, 0.4),
-      0 0 40px rgba(213, 218, 226, 0.2),
-      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+      0 1px 0 rgba(255, 255, 255, 0.22),
+      0 3px 5px rgba(0, 0, 0, 0.55),
+      0 9px 20px rgba(0, 0, 0, 0.5),
+      0 0 40px rgba(54, 124, 214, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2),
+      inset 0 -3px 7px rgba(0, 0, 0, 0.45);
   }
 }
-
-.bbj-widget:hover {
-  transform: translateX(-50%) translateY(-2px);
-  box-shadow:
-    0 0 20px rgba(163, 113, 247, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  border-color: rgba(213, 218, 226, 0.6);
-}
-
 .bbj-widget__label {
   font-size: 0.5rem;
   font-weight: 700;
-  color: #d5dae2;
-  letter-spacing: 0.04em;
+  color: #9fb4d0;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  margin-bottom: 1px;
+  margin-bottom: 2px;
   text-align: center;
   line-height: 1;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
 }
 
 .bbj-widget__amount {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 800;
   color: #fff;
   font-family: 'JetBrains Mono', monospace;
-  text-shadow: 0 2px 6px rgba(213, 218, 226, 0.28);
+  /* A dark line UNDER the glyphs plus a light line above them is the standard
+     engraving cue; with the plate's own top highlight it reads as struck metal
+     rather than flat text. background-clip:text kills text-shadow, so the
+     engraving is a drop-shadow filter instead. */
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.75)) drop-shadow(0 0 8px rgba(54, 124, 214, 0.4));
   text-align: center;
   line-height: 1.05;
-  background: linear-gradient(135deg, #fff 20%, #d5dae2 80%);
+  letter-spacing: 0.02em;
+  background: linear-gradient(180deg, #ffffff 0%, #dfe5ec 42%, #a8b2bf 72%, #eef2f7 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   INFO POPOVER
+   INFO POPOVER — DELETED (audit 2026-08-25)
+   ═══════════════════════════════════════════════════════════════════════════════
+
+   `.bbj-info` was a `position: absolute; top: 100%` CHILD of `.bbj-widget`, and
+   the 2026-08-18 sheen pass gave `.bbj-widget` `overflow: hidden` (it has to:
+   the gold sheen sweeps from left:-60% to left:130% and would otherwise streak
+   across the felt and the tab bar). A `top: 100%` child of a clipped box starts
+   exactly at the clip edge, so from that pass onward the popover rendered every
+   time it was asked to and was 100% invisible. Nobody reported it in a week,
+   which is its own measurement of how much it was worth.
+
+   Three ways out were considered:
+
+     1. Drop `overflow: hidden`  — the sheen then paints outside the plate.
+        `clip-path` on the plate clips descendants too, so it is the same bug
+        with a different property name.
+     2. Re-parent the plate into a non-clipping wrapper — that means moving
+        `top`/`left`/`transform`/`max-width` and BOTH media-query blocks (the
+        published `--sp-bbj-h` height contract, the 360px step) onto a new
+        element, on a layout Dan has iterated five times this week and which
+        `.table-container`'s top reserve in TablePage.css is measured against.
+        A large regression risk to restore a DESKTOP-HOVER-ONLY tooltip.
+     3. Delete it. Every fact it carried — the per-variant qualifying rule, the
+        hole-card requirement, this table's stakes-tiered payout slice and the
+        50/25/25 split — is in BBJInfoModal, which the plate opens on tap, on
+        Enter and on Space, on every device rather than only where there is a
+        mouse. The modal shows all of it with room to read, plus the last five
+        hits and a per-hand drilldown.
+
+   (3), and the hover glance is preserved as the plate's native `title`
+   attribute (see `hoverSummary` in BadBeatJackpot.tsx). A browser tooltip is
+   painted outside the document, so no ancestor's overflow, transform, filter or
+   contain can ever clip it — which is the failure this note exists to close.
+
+   `@keyframes bbjFadeIn` went with it: `.bbj-info` was its only user.
+   NOTE: `.bbj-info` also appears in BadBeatJackpotPage.css (~line 337) with no
+   markup behind it there either. That file belongs to the jackpot PAGE, not to
+   this component, so it is reported rather than edited here.
    ═══════════════════════════════════════════════════════════════════════════════ */
-
-.bbj-info {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: 8px;
-  width: 200px;
-  padding: 12px;
-  background: rgba(20, 10, 30, 0.95);
-  border: 1px solid rgba(213, 218, 226, 0.2);
-  border-radius: 8px;
-  box-shadow:
-    0 0 30px rgba(0, 0, 0, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  pointer-events: none;
-  /* Let clicks pass through if just hovering */
-  animation: bbjFadeIn 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  backdrop-filter: blur(12px) saturate(1.3);
-  -webkit-backdrop-filter: blur(12px) saturate(1.3);
-}
-
-.bbj-info__title {
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: #d5dae2;
-  margin: 0 0 6px 0;
-  text-transform: uppercase;
-}
-
-.bbj-info__rule {
-  font-size: 0.8125rem;
-  color: #e4e6eb;
-  margin: 0 0 4px 0;
-  font-weight: 600;
-}
-
-.bbj-info__sub {
-  font-size: 0.6875rem;
-  color: #8b949e;
-  margin: 0;
-  font-style: italic;
-}
-
-@keyframes bbjFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-5px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    HIT ANIMATION OVERLAY
@@ -307,15 +393,10 @@
   background: #ff00ff;
 }
 
-/* Stakes-tiered payout preview line (2026-08-18) */
-.bbj-info__payout {
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid rgba(213, 218, 226, 0.25);
-  font-size: 11px;
-  color: #d5dae2;
-  line-height: 1.4;
-}
+/* `.bbj-info__payout` (the stakes-tiered payout preview line, 2026-08-18) was
+   deleted with the rest of the popover — see the INFO POPOVER note above. The
+   figure it printed now lives in BBJInfoModal's Basic tab and in the plate's
+   `title`. */
 
 /* ═══════════════════════════════════════════════════════════════════════════
    VISUAL PASS 2026-08-18
@@ -327,10 +408,22 @@
      3. real focus styling, since it is keyboard-reachable now.
    ═══════════════════════════════════════════════════════════════════════ */
 
+/* REQUIRED by the sheen below, and the reason `.bbj-info` was deleted rather
+   than repaired: the sheen strip travels from left:-60% to left:130%, so
+   without this clip it sweeps across the felt and the tab bar. Anything that
+   must escape the plate (a tooltip, a popover) therefore CANNOT be a child of
+   it — use the native `title`, or a portal. */
 .bbj-widget {
   overflow: hidden;
 }
 
+/* This RE-DECLARES `.bbj-widget::after`, which the base rule above uses for the
+   static specular sheen ("the single strongest 3D cue"). The later declaration
+   wins for top/left/width/height/background/animation, so the static highlight
+   has not rendered since 2026-08-18 — the moving gold sheen replaced it. Kept
+   as-is: the plate reads correctly with the animated sheen, and there is no
+   free third pseudo-element to restore the static one to (::before is the inner
+   nickel bezel). Recorded so the base rule's comment is not read as truth. */
 .bbj-widget::after {
   content: '';
   position: absolute;
@@ -403,5 +496,164 @@
 
   .bbj-widget__amount--bump {
     animation: none;
+  }
+}
+
+/* Dan 2026-08-24 (iPhone screenshots): the plaque floated mid-air over the
+   felt and read enormous on a phone.
+   Dan 2026-08-25: "the bad beat jackpot needs to be moved to the very top of
+   the page, where the black action bar meets the table."
+
+   `top: 0` IS that seam, exactly — see the containing-block note on the base
+   rule. No coordinate arithmetic, and nothing to keep in sync when the tab bar
+   changes height (it just did: 44px -> 42px in this same pass).
+
+   It costs the table nothing. `position: absolute` keeps the plate out of
+   flow, so `.table-container` reserves no height for it and the felt is free
+   to grow into the band the plate hangs in.
+
+   LANDSCAPE, not stacked, on a phone: two 8px lines plus a 5px bezel made a
+   34px plaque, and a 34px plaque is not a seam, it is a second header. One row
+   is 22px (declared, not emergent — see --sp-bbj-h below) and reads as a
+   nameplate against the bar.
+
+   It cannot reach a seat or the board. The felt's scaler starts below
+   `.table-header` (8px + inset) plus `.table-container`'s own top padding
+   (48px at <=380px, 76px above that), so it begins 56px down at the very
+   least; a top seat's plate is centred at 6-8.5% of the scaler and reaches at
+   most a few px above that edge, call it 50px. The plate ends at 22px. The
+   board sits near 40% of the scaler, far below that again.
+
+   THE ONE THING THAT COULD BREAK THIS: `.table-container`'s top padding. It is
+   the whole clearance. If a later pass takes that band below ~30px, this plate
+   and the top seats start sharing pixels — shrink the plate here in the same
+   commit, do not discover it in a screenshot.
+
+   The desktop plaque is untouched. */
+@media (max-width: 768px) {
+  /* ── PUBLISHED CONTRACT: the phone plate's total height ──────────────────
+     22px, borders included, and it does not move with the font size, the
+     jackpot's digit count or the viewport width — the plate is `height:
+     var(--sp-bbj-h)` below and centres whatever it is carrying inside that.
+
+     It is on :root rather than on .bbj-widget because the elements that have
+     to keep OFF the plate are not its descendants: `.table-container`'s top
+     reserve in TablePage.css is the one that matters, and a custom property
+     declared on the plate is invisible to it. Read this, do not re-measure the
+     plate, and do not hard-code 22 anywhere.
+
+     If a later pass changes this number, grep for --sp-bbj-h and for the
+     "~21px the BBJ nameplate" note in TablePage.css in the SAME commit. That
+     reserve is the only thing between this plate and a top seat. */
+  :root {
+    --sp-bbj-h: 22px;
+  }
+
+  .bbj-widget {
+    top: 0;
+    height: var(--sp-bbj-h);
+    display: flex;
+    flex-direction: row;
+    /* `center`, not `baseline`. Baseline alignment made sense while the label
+       was 7px and the amount 12px; with the two now at the SAME size it just
+       reintroduces half-leading asymmetry into a fixed-height plate. */
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+
+    /* FULL BORDER — Dan 2026-08-25, round 2: "THE BBJ IS CUT OFF AT THE TOP...
+       Make the whole plate visible - full border, nothing sliced."
+
+       This REVERSES round one's `border-width: 0 2px 2px`, whose comment read
+       "no top bezel and square top corners: the plate hangs FROM the bar, and
+       a milled edge along the seam would read as a gap between the two."
+       Nothing was ever clipping this plate — see the containing-block note on
+       the base rule; `top: 0` is the top of `.table-page--embedded` and there
+       is no padding, transform, clip or overflow above it that could bite.
+       The top edge was simply not being drawn, and a plate with three sides
+       reads exactly like a plate whose fourth side has been cut off. Round one
+       traded a real edge for a theoretical gap; the gap never appeared and the
+       missing edge did.
+
+       Square top corners stay: with the bezel drawn, a straight seam reads as
+       a nameplate milled into the bar, where a rounded top would open two
+       triangular slivers of felt against the bar's straight edge — which is
+       the very gap round one was worried about, and the only way to actually
+       produce it. */
+    border-width: 2px;
+    border-radius: 0 0 9px 9px;
+
+    /* No vertical padding: the fixed height plus `align-items: center` is what
+       positions the row, and a padding that also claimed height would make the
+       published number depend on the font. */
+    padding: 0 10px;
+    /* Clears the stats icon parked at right:6px on phones (TableHUD.css
+       .table-hud__corner--ur + MiniStatsCard.css .mini-stats-card--icon, 36px
+       square): 375 - 110 = 265px of plate, centred, ends at x=320 against the
+       icon's left edge at x=333. The widest thing that can be in here is a
+       seven-figure pool at the sizes below, ~232px, so the cap is headroom
+       rather than a squeeze. */
+    max-width: calc(100% - 110px);
+  }
+
+  /* The inner bezel follows the outer one. It now has a top run again, which
+     is the second half of the "cut off" report: with no outer top border, this
+     1.5px nickel line was the plate's entire top edge and it sat 0.5px above
+     the lettering, reading as a blade through the tops of the glyphs. With
+     2px of outer bezel and the row centred in a 22px plate there is ~4px of
+     air above the text and the line reads as the frame it is. */
+  .bbj-widget::before {
+    border-radius: 0 0 7px 7px;
+  }
+
+  /* ── ONE SIZE FOR BOTH (Dan 2026-08-25, round 2) ─────────────────────────
+     "BAD BEAT JACKPOT AND TOTAL SHOULD BE THE SAME FONT SIZES AS WELL."
+
+     The label was 0.4375rem (7px) against the amount's 0.75rem (12px). Levelled
+     UP to the amount's size rather than down to the label's: this is money on
+     display, and shrinking the number to meet the caption would have been the
+     wrong half to move.
+
+     Width at 12px, on the 375px phone the whole budget is taken from:
+       label   "BAD BEAT JACKPOT"  14 letters + 2 spaces at 700 weight,
+                                   letter-spacing 0.06em          ~129px
+       gap                                                           6px
+       amount  "73,555" in JetBrains Mono at 0.6em advance          ~45px
+       padding + borders                                             24px
+                                                                  = ~204px
+     against the 265px the cap allows. A seven-figure pool adds ~29px and still
+     clears it. */
+  .bbj-widget__label {
+    font-size: 0.75rem;
+    /* 0.06em, down from 0.1em. Tracking that read as deliberate on a 7px
+       caption is just width at 12px, and width is the only budget this row
+       has. */
+    letter-spacing: 0.06em;
+    /* Sits beside the amount now, not above it. */
+    margin-bottom: 0;
+    line-height: 1.1;
+    white-space: nowrap;
+  }
+
+  .bbj-widget__amount {
+    font-size: 0.75rem;
+    line-height: 1.1;
+  }
+}
+
+/* Below ~360px the plate's cap tightens to ~210px, which a seven-figure pool at
+   12px would overrun and the plate's own overflow:hidden would then clip — the
+   exact failure this pass exists to remove. One step down, applied to BOTH so
+   they stay equal, and the published height does not move: a 10px row is still
+   centred in the same 18px of content box. Measured at 320px: plate 199.02px
+   wide inside a 210px cap, no overflow, height still 22px.
+
+   A sibling of the 768px block rather than nested inside it, and placed AFTER
+   it so source order carries the override — the two rules have identical
+   specificity, so the later one has to be this one. */
+@media (max-width: 360px) {
+  .bbj-widget__label,
+  .bbj-widget__amount {
+    font-size: 0.625rem;
   }
 }

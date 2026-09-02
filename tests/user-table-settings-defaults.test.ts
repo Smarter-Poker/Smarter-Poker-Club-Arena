@@ -42,6 +42,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { DEFAULT_USER_TABLE_SETTINGS } from '../src/hooks/useUserTableSettings';
+import { DEFAULT_TABLE_USER_SETTINGS } from '../src/hooks/useTableSettings';
 
 /**
  * EVERY boolean column's live default, read from information_schema on
@@ -61,7 +62,10 @@ const DB_COLUMN_DEFAULTS = {
   multi_action_queue: true,
   multi_auto_switch: true,
   multi_desktop_alerts: false,
-  multi_shared_socket: false,
+  // 2026-08-24: flipped to true by 20260824_shared_socket_default_on.sql —
+  // the shared socket left beta and became the default transport (Dan's
+  // global-connectivity directive). Applied to production before merge.
+  multi_shared_socket: true,
   show_avatars: true,
   show_badges: false,
   show_stack_in_bb: false,
@@ -78,13 +82,68 @@ describe('DEFAULT_USER_TABLE_SETTINGS agrees with the database', () => {
     });
   }
 
-  it('keeps the shared-socket beta OFF until somebody opts in', () => {
-    // The whole point of a beta flag. A default of true would enrol every user
-    // with no settings row into an unsoaked transport change.
-    expect(DEFAULT_USER_TABLE_SETTINGS.multi_shared_socket).toBe(false);
+  it('shared socket defaults ON — it is the transport now, not a beta', () => {
+    // 2026-08-24 (Dan, binding): per-join TLS handshakes were costing every
+    // table join 300-600ms globally. The mux is the default transport; the
+    // settings toggle remains the per-user kill switch (writes ca_ws_mux='0').
+    expect(DEFAULT_USER_TABLE_SETTINGS.multi_shared_socket).toBe(true);
   });
 
   it('never starts desktop alerts ON, because permission is only asked on tap', () => {
     expect(DEFAULT_USER_TABLE_SETTINGS.multi_desktop_alerts).toBe(false);
+  });
+});
+
+/**
+ * THE SAME HAZARD, FOR THE TABLE SETTINGS PANEL.
+ *
+ * 2026-08-28: the panel's own keys moved off a per-browser localStorage blob and
+ * onto this row, so settings follow the user instead of the machine (Dan: "THEY
+ * NEED TO SAVE GLOBALLY IN REAL TIME ON ALL TABLES, AND ALL PAGES").
+ *
+ * They are written by the SAME per-key upsert, so they inherit the same trap
+ * described at the top of this file: for a user with no row, changing any ONE
+ * setting inserts the row and every OTHER column takes its SQL default. If a
+ * column default ever drifts from the client default, unrelated settings flip
+ * underneath the player and stick, on every device.
+ *
+ * The migration that added the columns asserts the pairing at apply time. This
+ * asserts it from the client side, which is the half that gets edited.
+ *
+ * Live column defaults read from information_schema on 2026-08-28.
+ */
+const TABLE_SETTINGS_COLUMN_DEFAULTS = {
+  isSoundEnabled: true, // sound_enabled
+  soundVolume: 70, // sound_volume
+  isHapticEnabled: true, // haptic_enabled
+  animationSpeed: 1, // animation_speed
+  theme: 'black', // color_theme
+  fourColorDeck: false, // four_color_deck
+  showPotOdds: false, // show_pot_odds
+  showBetSizePresets: true, // show_bet_size_presets
+  showTicker: true, // show_ticker (pre-existing column)
+  autoMuck: true, // auto_muck
+  autoMuckExplicit: false, // auto_muck_explicit
+  autoMuckWinners: false, // auto_muck_winners
+  autoPostBlinds: true, // auto_post_blinds
+  confirmAllIn: true, // confirm_all_in
+  cardBack: 'classic_blue', // card_back
+} as const;
+
+describe('DEFAULT_TABLE_USER_SETTINGS agrees with the database', () => {
+  for (const [key, dbDefault] of Object.entries(TABLE_SETTINGS_COLUMN_DEFAULTS)) {
+    it(`${key} defaults to ${String(dbDefault)}, as its column does`, () => {
+      expect(DEFAULT_TABLE_USER_SETTINGS[key as keyof typeof TABLE_SETTINGS_COLUMN_DEFAULTS]).toBe(
+        dbDefault
+      );
+    });
+  }
+
+  it('auto-muck is ON by default, and the explicit marker is OFF', () => {
+    /* Dan 2026-08-25: "ENABLE AUTO MUCK BY DEFAULT, AND MAKE USERS TURN IT OFF
+       MANUALLY." The marker must default false or the load-time migration would
+       treat every stored false as a deliberate choice. */
+    expect(DEFAULT_TABLE_USER_SETTINGS.autoMuck).toBe(true);
+    expect(DEFAULT_TABLE_USER_SETTINGS.autoMuckExplicit).toBe(false);
   });
 });

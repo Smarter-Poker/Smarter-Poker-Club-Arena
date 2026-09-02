@@ -168,7 +168,7 @@ export function SessionAnalytics({ isOpen, onClose, stats, currency = '' }: Sess
                   <polyline
                     points={sparklinePoints}
                     fill="none"
-                    stroke={stats.profitLoss >= 0 ? '#22c55e' : '#ef4444'}
+                    stroke={stats.profitLoss >= 0 ? '#3fb950' : '#ef4444'}
                     strokeWidth="2"
                     strokeLinecap="round"
                     strokeLinejoin="round"

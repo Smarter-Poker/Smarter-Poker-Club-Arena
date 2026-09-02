@@ -179,6 +179,8 @@ export const STORAGE_KEYS = {
   // ── Cache ──
   LOBBY_CACHE: 'club_arena_lobby_cache',
   PLAYER_STATS_CACHE: 'club_arena_player_stats',
+  CLUB_STATS_CACHE: 'smp_club_stats_cache',
+  CLUB_STATS_CACHE_TS: 'smp_club_stats_cache_ts',
   CLUBS_CACHE: 'club_arena_clubs_cache', // Cached club list
   CLUBS_CACHE_TS: 'club_arena_clubs_cache_ts', // Cache timestamp
   CLUBS_PAGE_CACHE: 'clubs_page_clubs_cache',
@@ -211,7 +213,20 @@ export const STORAGE_KEYS = {
   PWA_PROMPT_DISMISSED: 'pwa_prompt_dismissed',
 
   // ── Settings Page ──
-  SETTINGS: 'club-arena-settings',
+  //
+  // 2026-08-26: this was 'club-arena-settings', which is ALSO the zustand
+  // persist name in src/stores/useSettingsStore.ts. SettingsPage.saveSettings
+  // wrote a flat UserSettings object here and then called setTheme twelve
+  // lines later; zustand's persist middleware immediately overwrote the same
+  // key with its own {state, version} envelope. On the next load — including
+  // every useVisibilityRefresh when the user came back to the tab —
+  // validateSettings() parsed that envelope, matched none of its own fields
+  // and silently returned DEFAULT_SETTINGS. The page reset itself mid-session
+  // and no save ever survived.
+  //
+  // The two stores now own separate keys. Do NOT point this back at
+  // 'club-arena-settings'; useSettingsStore still holds that one.
+  SETTINGS: 'club-arena-user-settings',
 
   // ── Offline & Recovery ──
   OFFLINE_QUEUE: 'offline_mutation_queue',
@@ -269,61 +284,13 @@ export function savePreferences(prefs: Partial<UserPreferences>): void {
   }
 }
 
-export interface TableSettings {
-  tableTheme: string;
-  cardStyle: string;
-  autoMuck: boolean;
-  showBigBlinds: boolean;
-  fourColorDeck: boolean;
-}
-
-export const DEFAULT_TABLE_SETTINGS: TableSettings = {
-  tableTheme: 'classic',
-  cardStyle: 'default',
-  autoMuck: true,
-  showBigBlinds: false,
-  fourColorDeck: false,
-};
-
-/**
- * Get table settings
- */
-export function getTableSettings(): TableSettings {
-  return {
-    tableTheme: getLocalStorage(STORAGE_KEYS.TABLE_THEME, DEFAULT_TABLE_SETTINGS.tableTheme),
-    cardStyle: getLocalStorage(STORAGE_KEYS.CARD_STYLE, DEFAULT_TABLE_SETTINGS.cardStyle),
-    autoMuck: getLocalStorage(STORAGE_KEYS.AUTO_MUCK, DEFAULT_TABLE_SETTINGS.autoMuck),
-    showBigBlinds: getLocalStorage(
-      STORAGE_KEYS.SHOW_BIG_BLINDS,
-      DEFAULT_TABLE_SETTINGS.showBigBlinds
-    ),
-    fourColorDeck: getLocalStorage(
-      STORAGE_KEYS.FOUR_COLOR_DECK,
-      DEFAULT_TABLE_SETTINGS.fourColorDeck
-    ),
-  };
-}
-
-/**
- * Save table settings
- */
-export function saveTableSettings(settings: Partial<TableSettings>): void {
-  if (settings.tableTheme !== undefined) {
-    setLocalStorage(STORAGE_KEYS.TABLE_THEME, settings.tableTheme);
-  }
-  if (settings.cardStyle !== undefined) {
-    setLocalStorage(STORAGE_KEYS.CARD_STYLE, settings.cardStyle);
-  }
-  if (settings.autoMuck !== undefined) {
-    setLocalStorage(STORAGE_KEYS.AUTO_MUCK, settings.autoMuck);
-  }
-  if (settings.showBigBlinds !== undefined) {
-    setLocalStorage(STORAGE_KEYS.SHOW_BIG_BLINDS, settings.showBigBlinds);
-  }
-  if (settings.fourColorDeck !== undefined) {
-    setLocalStorage(STORAGE_KEYS.FOUR_COLOR_DECK, settings.fourColorDeck);
-  }
-}
+// ── REMOVED 2026-08-26: orphan third settings store ──────────────────────
+// `TableSettings` / `getTableSettings` / `saveTableSettings` and the
+// AUTO_MUCK / SHOW_BIG_BLINDS keys had ZERO consumers repo-wide. The live
+// stores are useUserTableSettings (Supabase `user_table_settings`, canonical)
+// and useTableSettings (localStorage `club-arena-table-settings`). A third
+// set of defaults that nothing reads is a trap: it looks like the source of
+// truth for auto-muck and stack display, and it is not.
 
 /**
  * Add to recent tables list

@@ -57,11 +57,6 @@
   -webkit-backdrop-filter: blur(16px);
 }
 
-.bankroll-periods button:hover {
-  border-color: rgba(0, 212, 255, 0.3);
-  color: #00d4ff;
-}
-
 .bankroll-periods button.active {
   background: linear-gradient(145deg, rgba(0, 212, 255, 0.15) 0%, rgba(0, 212, 255, 0.05) 100%);
   border-color: rgba(0, 212, 255, 0.5);
@@ -213,12 +208,6 @@
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.stat-card:hover {
-  border-color: rgba(0, 212, 255, 0.3);
-  transform: translateY(-2px);
-  box-shadow: 0 0 15px rgba(0, 212, 255, 0.1);
 }
 
 .stat-icon {

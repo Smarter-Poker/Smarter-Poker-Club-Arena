@@ -58,6 +58,73 @@
 export const DEFAULT_RAKE_RATE = 0.1;
 
 /**
+ * Dan 2026-08-25: "HEADS UP EVENTS ARE ONLY A 5% RAKE, SO A 1 CHIP BUY IN X 2
+ * PLAYERS = 5% OF 2 CHIPS, SO WINNER TAKES ALL = 1.90 PAYOUT."
+ */
+export const HEADS_UP_RAKE_RATE = 0.05;
+
+/**
+ * A Spin charges the buy-in and NOTHING else — its rake is engineered into the
+ * multiplier distribution (src/config/spinSpec.ts), and `buy_in_fee` must be 0.
+ * A database constraint (tournaments_spin_no_extra_rake) refuses a fee-bearing
+ * Spin, so a writer that quotes one is quoting a row the database will reject.
+ */
+export const SPIN_RAKE_RATE = 0;
+
+/**
+ * Enough of a tournament to know what it costs to enter it. Every field is
+ * optional because the six creation paths each hold a different subset: a
+ * schedule row has `variant`, the owner modal has a format string, the
+ * recurring generator has a config with seats.
+ */
+export interface RakeSubject {
+  /** tournaments.tournament_type — 'MTT' | 'SNG' | 'SPIN'. Any case. */
+  tournamentType?: string | null;
+  /** tournaments.variant, or a creation form's format string. Any case. */
+  variant?: string | null;
+  /** Seats in the game. tournaments.max_players, or a form's field size. */
+  maxPlayers?: number | null;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE SINGLE SOURCE OF TRUTH FOR WHICH RATE A FORMAT PAYS
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * 2026-08-27 audit: `SNG_RAKE_RATE = 0.05` was declared in
+ * server/src/services/TournamentRecurringService.ts and had exactly ONE
+ * consumer. The other five creation paths — the owner create modal, the legacy
+ * tournament-page form, the table-config path, the client horse orchestrator
+ * and the SCHEDULED tournament service — all called `splitBuyIn` at the 10%
+ * default on a two-seat game.
+ *
+ * For four of those the damage was a lie rather than a loss: `fn_create_tournament`
+ * is authoritative, knows the rule, and rewrites the split. The owner was
+ * QUOTED "18 + 2 fee" on a 20-chip duel that was then written 19 + 1.
+ *
+ * ScheduledTournamentService was the money bug: it writes `buy_in_amount` and
+ * `buy_in_fee` DIRECTLY, bypassing the RPC entirely, so a schedule row with
+ * `type: 'sng'` produced a real 10% heads-up game.
+ *
+ * The rule is keyed on SEATS, not on the word "SNG". A two-handed game is a
+ * duel whatever its label says, and a label is exactly the thing that varies
+ * between six writers.
+ */
+export function rakeRateFor(subject: RakeSubject): number {
+  const type = String(subject?.tournamentType ?? '').toUpperCase();
+  const variant = String(subject?.variant ?? '').toLowerCase();
+  if (type === 'SPIN' || variant === 'spin') return SPIN_RAKE_RATE;
+
+  const seats = Number(subject?.maxPlayers);
+  // `> 0` matters: the modal sends 0 for "unlimited" on an MTT, and 0 is not a
+  // heads-up game. An unknown seat count falls through to the default rate —
+  // never to the cheaper one, so a misconfigured writer cannot hand away margin.
+  if (Number.isFinite(seats) && seats > 0 && seats <= 2) return HEADS_UP_RAKE_RATE;
+
+  return DEFAULT_RAKE_RATE;
+}
+
+/**
  * The buy-in levels a tournament may be priced at.
  *
  * Deliberately a fixed ladder rather than "any integer". Dan's examples were
@@ -144,6 +211,40 @@ export function snapToWholeBuyIn(amount: number): number {
   return best;
 }
 
+/** Two decimal places, killing float noise. numeric(15,2) is what the
+    columns are, so cents is the finest money this platform can store. */
+function round2(n: number): number {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+/**
+ * THE FEE, IN CENTS (Dan 2026-08-25).
+ *
+ * "FRACTIONAL FEE'S NEED TO BE ALLOWED, WE HAVE 1 BUY IN, 5 BUY IN'S ETC THOSE
+ * SHOULD BE .10 RAKE AND .50 RAKE PER BUY IN."
+ *
+ * The fee used to floor to a WHOLE chip, which is why a 1-chip game took
+ * nothing and a 5-chip game took nothing: floor(1 x 0.1) and floor(5 x 0.1)
+ * are both 0. The whole micro end of the ladder — 1, 2, 3, 5 — ran rake-free,
+ * and the comment above this line called that a deliberate trade because "that
+ * rule cannot coexist with a hard 10% cap WHILE FEES STAY WHOLE NUMBERS".
+ *
+ * They do not have to. buy_in_fee is numeric(15,2). Flooring to CENTS instead
+ * of to chips honours the same ceiling exactly — 1 pays 0.10, 5 pays 0.50, 15
+ * pays 1.50, and none of them is a fraction of a percent over 10 — while the
+ * total the player pays stays the whole number it has always been (0.90 + 0.10
+ * = 1.00), which is what every price display and the whole-total rule depend
+ * on.
+ *
+ * Still a FLOOR, never a round: rounding a fee up is rounding the house's cut
+ * up through its own ceiling, which is the exact bug fixed on 2026-08-21.
+ */
+function feeToCents(total: number, rakeRate: number): number {
+  const exact = total * rakeRate;
+  const floored = Math.floor(exact * 100 + 1e-9) / 100;
+  return Math.min(total, Math.max(0, floored));
+}
+
 /**
  * Split a whole-dollar total into prize + fee.
  *
@@ -180,11 +281,11 @@ export function splitBuyIn(total: number, rakeRate: number = DEFAULT_RAKE_RATE):
    * `assertRakeWithinCap` below is the guard that fails loudly if a third
    * writer ever reintroduces a rounding that breaches this.
    */
-  const fee = Math.min(t, Math.floor(t * rakeRate + 1e-9));
+  const fee = feeToCents(t, rakeRate);
   // prize is computed by SUBTRACTION, never by its own rounding. Rounding both
   // ends independently is how prize + fee stops equalling total, and money that
   // does not reconcile on a money surface is a real bug later.
-  return { total: t, prize: t - fee, fee };
+  return { total: t, prize: round2(t - fee), fee };
 }
 
 /** Snap first, then split. What every tournament generator should call. */
@@ -234,11 +335,11 @@ export function clampRakeToCap(
 ): { prize: number; fee: number } {
   const total = Math.max(0, Math.round(Number(prize || 0) + Number(fee || 0)));
   if (total === 0) return { prize: 0, fee: 0 };
-  const capped = Math.min(
-    Math.max(0, Math.round(Number(fee || 0))),
-    Math.floor(total * rakeRate + 1e-9)
-  );
-  return { prize: total - capped, fee: capped };
+  /* Cents, not whole chips (2026-08-25). This used to round the incoming fee to
+     a whole number before capping it, which silently threw away every
+     fractional fee it was handed — a 0.10 on a 1-chip game came back as 0. */
+  const capped = Math.min(Math.max(0, round2(Number(fee || 0))), feeToCents(total, rakeRate));
+  return { prize: round2(total - capped), fee: capped };
 }
 
 /**

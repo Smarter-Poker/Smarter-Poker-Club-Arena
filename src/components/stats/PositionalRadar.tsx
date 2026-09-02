@@ -214,10 +214,10 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
             role="img"
             aria-label={
               METRICS.some((m) => visible[m.key])
-                ? `Radar chart of ${METRICS.filter((m) => visible[m.key])
+                ? `Radar Chart Of ${METRICS.filter((m) => visible[m.key])
                     .map((m) => m.label)
-                    .join(', ')} across ${total} positions`
-                : `Radar chart across ${total} positions, no metrics currently shown`
+                    .join(', ')} Across ${total} Positions`
+                : `Radar Chart Across ${total} Positions, No Metrics Currently Shown`
             }
           >
             <defs>
@@ -311,8 +311,16 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
                   y={y}
                   textAnchor="middle"
                   dominantBaseline="middle"
+                  /* Tap and keyboard reach it too (2026-08-29): hover was the
+                     only way to focus an axis, so on a phone the radar could
+                     not be interrogated at all. */
+                  tabIndex={0}
+                  role="button"
                   onMouseEnter={() => setFocused(i)}
                   onMouseLeave={() => setFocused(null)}
+                  onFocus={() => setFocused(i)}
+                  onBlur={() => setFocused(null)}
+                  onClick={() => setFocused((cur) => (cur === i ? null : i))}
                 >
                   {r.position}
                 </text>
@@ -367,8 +375,14 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
                   className={`${r.hands_played < minHands ? 'is-dim' : ''}${
                     focused === i ? ' is-focused' : ''
                   }`}
+                  /* The table row highlights its matching radar axis. On a
+                     phone that link did not exist, because it was hover-only. */
+                  tabIndex={0}
                   onMouseEnter={() => setFocused(i)}
                   onMouseLeave={() => setFocused(null)}
+                  onFocus={() => setFocused(i)}
+                  onBlur={() => setFocused(null)}
+                  onClick={() => setFocused((cur) => (cur === i ? null : i))}
                 >
                   <th scope="row">{r.position}</th>
                   <td>{r.hands_played.toLocaleString()}</td>

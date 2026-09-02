@@ -9,7 +9,6 @@
  * - getProfileByUsername: returns null for missing user
  * - getPublicProfile: returns null for missing user
  * - updateProfile: emits PROFILE_UPDATED on success
- * - getStats: returns defaults for empty data
  * - hasTOSAccepted: returns false for missing data
  * - acceptTOS: emits PROFILE_UPDATED
  * - getLeaderboard: returns empty array for no data
@@ -112,23 +111,6 @@ describe('ProfileService', () => {
       expect(masterBus.emit).toHaveBeenCalledWith('PROFILE_UPDATED', {
         userId: 'user-1',
         updates: { tosAccepted: true },
-      });
-    });
-  });
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // getStats — defaults for empty data
-  // ─────────────────────────────────────────────────────────────────────────
-
-  describe('getStats', () => {
-    it('should return default stats when no data', async () => {
-      const stats = await profileService.getStats('user-1');
-      expect(stats).toEqual({
-        totalHands: 0,
-        winRate: 0,
-        avgProfit: 0,
-        biggestWin: 0,
-        favoriteVariant: "No Limit Hold'em",
       });
     });
   });

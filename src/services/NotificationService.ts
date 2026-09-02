@@ -20,6 +20,7 @@ export interface Notification {
   userId: string;
   type:
     | 'waitlist_ready'
+    | 'waitlist_seat_open' // engine seat offer (notifyWaitlistSeatOpen)
     | 'table_invite'
     | 'club_announcement'
     | 'message'
@@ -146,7 +147,7 @@ class NotificationServiceClass {
   ): Promise<Notification[]> {
     let query = supabase
       .from('notifications')
-      .select('id, user_id, type, title, message, metadata, read, action_url, created_at')
+      .select('id, user_id, type, title, message, metadata, data, read, action_url, created_at')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
@@ -249,10 +250,7 @@ class NotificationServiceClass {
     notification: Omit<Notification, 'id' | 'createdAt' | 'isRead'>
   ): Promise<Notification | null> {
     // Q3: Auto-generate action_url from metadata
-    const actionUrl = NotificationServiceClass.getDeepLinkUrl(
-      notification.type,
-      notification.metadata
-    );
+    const actionUrl = this.getDeepLinkUrl(notification.type, notification.metadata);
 
     const { data, error } = await supabase
       .from('notifications')
@@ -283,7 +281,7 @@ class NotificationServiceClass {
     await this.create({
       userId,
       type: 'waitlist_ready',
-      title: 'Your seat is ready!',
+      title: 'Your Seat Is Ready!',
       message: `A seat is now available at ${tableName}`,
       metadata: { tableId },
     });
@@ -343,7 +341,7 @@ class NotificationServiceClass {
   /**
    * Generate the appropriate deep-link URL based on notification type + metadata
    */
-  static getDeepLinkUrl(
+  public getDeepLinkUrl(
     type: Notification['type'],
     metadata?: Record<string, unknown>
   ): string | undefined {
@@ -352,10 +350,23 @@ class NotificationServiceClass {
     switch (type) {
       case 'waitlist_ready':
         return metadata.tableId ? `/table/${metadata.tableId}` : '/';
+      case 'waitlist_seat_open': {
+        // The engine writes { table_id } into the row's `data` column, which
+        // mapNotification folds into this metadata bag. Snake and camel both
+        // accepted so an older writer still deep-links.
+        const tid = (metadata.table_id ?? metadata.tableId) as string | undefined;
+        // ?buyin=1: the seat is held 60s (Dan 2026-08-30) — land the player on
+        // the table with the buy-in screen ALREADY OPEN, not just the felt.
+        return tid ? `/table/${tid}?buyin=1` : '/waitlist';
+      }
       case 'table_invite':
         return metadata.tableId ? `/table/${metadata.tableId}` : '/';
       case 'club_announcement':
-        return metadata.clubId ? `/club/${metadata.clubId}` : '/clubs';
+        return metadata.clubSlug
+          ? `/clubs/${metadata.clubSlug}`
+          : metadata.clubId
+            ? `/clubs/${metadata.clubId}`
+            : '/clubs';
       case 'message':
         return metadata.conversationId
           ? `/messages/${metadata.conversationId}`
@@ -367,7 +378,12 @@ class NotificationServiceClass {
       case 'bonus':
         return '/bonus';
       case 'settlement':
-        return metadata.clubId ? `/club/${metadata.clubId}/financials` : '/wallet';
+        if (metadata.unionId) return `/unions/${metadata.unionId}/settlement`;
+        return metadata.clubSlug
+          ? `/clubs/${metadata.clubSlug}/financials`
+          : metadata.clubId
+            ? `/clubs/${metadata.clubId}/financials`
+            : '/wallet';
       case 'your_turn':
       case 'your_turn_reminder':
       case 'time_bank_active':
@@ -376,9 +392,11 @@ class NotificationServiceClass {
       case 'tournament_starting':
         return metadata.tournamentId
           ? `/tournament/${metadata.tournamentId}`
-          : metadata.clubId
-            ? `/club/${metadata.clubId}/tournaments`
-            : '/tournaments';
+          : metadata.clubSlug
+            ? `/clubs/${metadata.clubSlug}/tournaments`
+            : metadata.clubId
+              ? `/clubs/${metadata.clubId}/tournaments`
+              : '/tournaments';
       case 'system':
       default:
         return undefined;
@@ -617,7 +635,13 @@ class NotificationServiceClass {
       type: data.type as Notification['type'],
       title: data.title as string,
       message: data.message as string,
-      metadata: data.metadata as Record<string, unknown> | undefined,
+      // The engine writes its payload into `data` (waitlist_seat_open carries
+      // { table_id } there); older writers used `metadata`. Fold both so a
+      // deep link never depends on which column the writer chose.
+      metadata: {
+        ...((data.data as Record<string, unknown>) || {}),
+        ...((data.metadata as Record<string, unknown>) || {}),
+      },
       isRead: (data.read ?? false) as boolean,
       createdAt: data.created_at as string,
     };

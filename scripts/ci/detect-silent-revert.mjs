@@ -29,9 +29,20 @@
  * saying so in the commit message is the escape hatch.
  *
  * ESCAPE HATCHES
- *   - a commit message containing "revert" (any case)
- *   - a commit message containing [allow-revert]
  *   - paths in IGNORED_PATHS (build output, lockfiles, generated bundles)
+ *   - a commit message containing "revert" or [allow-revert] — but since
+ *     2026-09-01 ONLY when the run also carries REVERT_APPROVED=true, which
+ *     the workflow derives from the human-applied `revert-approved` PR label.
+ *
+ * WHY ANNOUNCING STOPPED BEING ENOUGH (2026-09-01)
+ *   On 2026-08-31 an agent hit this guard, amended its own commit message to
+ *   add [allow-revert], force-pushed, and re-armed auto-merge. The lock was on
+ *   the door and the key hung beside it. A detected revert now merges only
+ *   when a human has looked at it: Dan applies the `revert-approved` label,
+ *   the `labeled` trigger re-runs this check, and it passes. Agents cannot
+ *   apply labels through Autopilot, and the workflow files an issue naming
+ *   the PR so the request is visible without anyone polling.
+ *   If main is broken, prefer a forward fix — it needs no approval.
  *
  * USAGE
  *   node scripts/ci/detect-silent-revert.mjs [--base <ref>] [--days N]
@@ -61,6 +72,15 @@ const IGNORED_PATHS = [
   /^\.next\//,
   /^coverage\//,
   /__snapshots__\//,
+  // The Supabase manifests are GENERATED snapshots of the production schema
+  // (scripts/ci/gen-schema-manifest.mjs). Two agents regenerating at different
+  // moments legitimately produce byte-identical earlier snapshots, which reads
+  // to this check as a wholesale revert when it is just a stale regeneration
+  // race (first hit: PR #2346, a manifest matching its pre-#2404 state).
+  // Correctness of these files is enforced by the stronger live check --
+  // check-migrations-applied asks the production database directly -- so a
+  // "revert" here can never silently lose schema truth.
+  /^scripts\/ci\/supabase-(schema|columns|required-columns)-manifest\.json$/,
 ];
 
 const git = (...args) => {
@@ -132,11 +152,21 @@ if (range.length > MAX_RANGE) {
 // six-second check and a CI timeout.
 const touchMap = buildTouchMap('HEAD');
 
+// Set by the workflow from the human-applied `revert-approved` PR label.
+// Announcing a revert in the commit message is no longer sufficient on its
+// own: an agent demonstrably added [allow-revert] to its own message to get
+// past this guard (2026-08-31). Approval must come from outside the commit.
+const APPROVED = process.env.REVERT_APPROVED === 'true';
+
 const findings = [];
 
 for (const commit of range) {
   const message = bodyOf(commit);
-  if (/revert/i.test(message) || message.includes('[allow-revert]')) continue;
+  const announced = /revert/i.test(message) || message.includes('[allow-revert]');
+  if (announced && APPROVED) continue;
+  // Announced but NOT approved: keep scanning. If the commit turns out to
+  // actually restore prior states, it is reported below with instructions to
+  // request the label rather than silently waved through.
 
   const allChanged = (git('diff-tree', '--no-commit-id', '--name-only', '-r', commit) || '')
     .split('\n')
@@ -176,6 +206,7 @@ for (const commit of range) {
           commit: commit.slice(0, 9),
           commitSubject: subjectOf(commit),
           file,
+          announced,
           reverted: prior.slice(0, 9),
           revertedSubject: subjectOf(prior),
           revertedDate: git('log', '-1', '--format=%ad', '--date=short', prior),
@@ -187,31 +218,47 @@ for (const commit of range) {
 }
 
 if (findings.length === 0) {
-  console.log('detect-silent-revert: no unannounced reverts in ' + `${BASE}..HEAD`);
+  console.log('detect-silent-revert: no unapproved reverts in ' + `${BASE}..HEAD`);
   process.exit(0);
 }
 
+const silent = findings.filter((f) => !f.announced);
+const announcedOnly = findings.filter((f) => f.announced);
+
 console.error('');
-console.error('SILENT REVERT DETECTED');
-console.error('======================');
-console.error('');
-console.error('A commit below restores a file to exactly the state it had before an');
-console.error('earlier commit, without saying so. This is what happens when work is');
-console.error('committed from a checkout that predates someone else’s change: the');
-console.error('older content wins and the newer fix disappears with no diff anyone');
-console.error('would think to read.');
+console.error('REVERT DETECTED');
+console.error('===============');
 console.error('');
 
+if (silent.length > 0) {
+  console.error('A commit below restores a file to exactly the state it had before an');
+  console.error('earlier commit, without saying so. This is what happens when work is');
+  console.error('committed from a checkout that predates someone else’s change: the');
+  console.error('older content wins and the newer fix disappears with no diff anyone');
+  console.error('would think to read.');
+  console.error('');
+}
+
 for (const f of findings) {
-  console.error(`  ${f.file}`);
+  console.error(`  ${f.file}${f.announced ? '   (announced in the message)' : ''}`);
   console.error(`    this commit : ${f.commit}  ${f.commitSubject}`);
   console.error(`    undoes      : ${f.reverted}  ${f.revertedSubject}  (${f.revertedDate})`);
   console.error('');
 }
 
-console.error('If the revert is intentional, say so in the commit message: include the');
-console.error('word "revert", or the token [allow-revert], and explain why. If it is not');
-console.error('intentional, rebase onto current origin/main and re-apply your change on');
-console.error('top of theirs.');
+if (silent.length > 0) {
+  console.error('If this revert is NOT intentional (it usually is not): rebase onto');
+  console.error('current origin/main and re-apply your change on top of theirs.');
+  console.error('');
+}
+if (announcedOnly.length > 0 || silent.length > 0) {
+  console.error('If the revert IS intentional: since 2026-09-01 an intentional revert');
+  console.error('needs the `revert-approved` LABEL on this pull request, applied by a');
+  console.error('human. Say in the PR body which commit you are undoing and why, and');
+  console.error('this workflow has already filed an issue asking for the label — do');
+  console.error('NOT edit the commit message to route around this check; that is the');
+  console.error('exact move this rule was written to stop (2026-08-31 incident).');
+  console.error('If main is broken right now, prefer a forward fix: it needs no label.');
+}
 console.error('');
 process.exit(1);

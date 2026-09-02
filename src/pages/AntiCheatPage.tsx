@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
@@ -99,6 +99,16 @@ export default function AntiCheatPage() {
   const { user } = useAuthUser();
   const toast = useToast();
   const [searchParams] = useSearchParams();
+  /**
+   * THE ROUTE PARAM WINS.
+   *
+   * This page resolved its club from ?club= or, failing that, whichever
+   * club_members row came back first - which is right for the legacy global
+   * URL and wrong the moment it is opened from a club's own operations rail.
+   * Phase 7 gives it clubs/:clubId/anti-cheat, so the club being looked at is
+   * now stated in the URL and must take precedence over a guess.
+   */
+  const { clubId: routeClubId } = useParams<{ clubId?: string }>();
 
   // ── State ─────────────────────────────────────────────
   const [tab, setTab] = useState<'overview' | 'flags' | 'events' | 'collusion' | 'anomalies'>(
@@ -376,7 +386,7 @@ export default function AntiCheatPage() {
     let isMounted = true;
 
     const init = async () => {
-      const qClub = searchParams.get('club') || searchParams.get('clubId');
+      const qClub = routeClubId || searchParams.get('club') || searchParams.get('clubId');
       let targetClub = qClub;
 
       if (!targetClub) {
@@ -402,7 +412,7 @@ export default function AntiCheatPage() {
     return () => {
       isMounted = false;
     };
-  }, [user, searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user, searchParams, routeClubId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Lazy Tab Loading ──────────────────────────────────────
   useEffect(() => {
@@ -440,14 +450,8 @@ export default function AntiCheatPage() {
     if (!clubId) return;
 
     const unsubs = [
-      masterBus.subscribeDebounced(
-        'ANTI_CHEAT_FLAG_CREATED',
-        () => {
-          loadStats(clubId);
-          setFlagsLoaded(false);
-        },
-        500
-      ),
+      // ANTI_CHEAT_FLAG_CREATED listener removed 2026-08-28: nothing emits it
+      // on the client bus (flags are created server-side), so it never fired.
       masterBus.subscribeDebounced(
         'PLAYER_KICKED',
         () => {
@@ -548,7 +552,7 @@ export default function AntiCheatPage() {
   const kickPlayer = async (playerId: string, tableId?: string) => {
     if (
       !(await confirmDialog({
-        title: 'Remove player',
+        title: 'Remove Player',
         message: 'Remove this player from the table for anti-cheat violation?',
         confirmText: 'Remove',
         variant: 'danger',
@@ -709,7 +713,7 @@ export default function AntiCheatPage() {
               <label className={styles.formLabel}>Notes (Optional)</label>
               <input
                 className={styles.formInput}
-                placeholder="Add review notes..."
+                placeholder="Add Review Notes..."
                 value={reviewNotes}
                 onChange={(e) => setReviewNotes(e.target.value)}
               />

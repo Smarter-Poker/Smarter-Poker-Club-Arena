@@ -88,7 +88,9 @@ export function BBJInfoModal({
     restoreFocusRef.current = (document.activeElement as HTMLElement) || null;
     const node = dialogRef.current;
     if (node) {
-      const first = node.querySelector<HTMLElement>('button, [href], [tabindex]:not([tabindex="-1"])');
+      const first = node.querySelector<HTMLElement>(
+        'button, [href], [tabindex]:not([tabindex="-1"])'
+      );
       (first || node).focus({ preventScroll: true });
     }
     return () => {
@@ -123,12 +125,27 @@ export function BBJInfoModal({
   // Escape closes the drilldown first, then the modal — otherwise a player deep
   // in a hand loses the whole popup on one keypress. Body scroll locked while
   // open.
+  /**
+   * The Escape behaviour, held in a ref.
+   *
+   * The effect below writes body styles and measures the scrollbar, and it
+   * used to depend on `onClose` and `openHandPayoutId`. `onClose` is an inline
+   * arrow at both call sites, so its identity changed on every parent render —
+   * at a live table that is every engine tick, each one tearing down a window
+   * listener and forcing a layout. Keeping the behaviour current in a ref lets
+   * the effect depend only on whether the popup is open.
+   */
+  const escapeRef = useRef<() => void>(() => {});
+  escapeRef.current = () => {
+    if (openHandPayoutId) setOpenHandPayoutId(null);
+    else onClose();
+  };
+
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (openHandPayoutId) setOpenHandPayoutId(null);
-      else onClose();
+      escapeRef.current();
     };
     window.addEventListener('keydown', onKey);
 
@@ -152,7 +169,13 @@ export function BBJInfoModal({
       document.body.style.overflow = prevOverflow;
       document.body.style.paddingRight = prevPadding;
     };
-  }, [isOpen, onClose, openHandPayoutId]);
+    // `onClose` is an inline arrow at both call sites (TableModalsLayer and
+    // ClubHomePage), so its identity changes on every parent render. Depending
+    // on it tore down and re-added a window listener, rewrote body styles and
+    // re-measured the scrollbar - a forced layout - on every engine tick while
+    // the popup was open at a live table. The handler is held in a ref so the
+    // effect depends only on whether the popup is open.
+  }, [isOpen]);
 
   // A reopened popup starts on the winners list, never inside the last hand
   // someone happened to look at.
@@ -229,7 +252,7 @@ export function BBJInfoModal({
         <div
           className="bbj-modal__tabs"
           role="tablist"
-          aria-label="Bad Beat Jackpot sections"
+          aria-label="Bad Beat Jackpot Sections"
           onKeyDown={onTabsKeyDown}
         >
           {TABS.map((t) => (
@@ -253,6 +276,7 @@ export function BBJInfoModal({
           id="bbj-tabpanel"
           role="tabpanel"
           aria-labelledby={`bbj-tab-${tab}`}
+          tabIndex={0}
         >
           {tab === 'winner' &&
             (openHandPayoutId ? (

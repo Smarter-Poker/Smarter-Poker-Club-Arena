@@ -40,7 +40,8 @@ import { supabase } from '../lib/supabase';
 import { readLocalSession } from '../lib/authUtils';
 import { reportError, reportWarning } from '../utils/errorReporter';
 
-export type WaitlistStatus = 'waiting' | 'notified' | 'seated' | 'cancelled' | 'expired';
+// DB constraint: 'waiting'|'notified'|'seated'|'left'|'cleared'|'expired'. 'cancelled' is NOT valid.
+export type WaitlistStatus = 'waiting' | 'notified' | 'seated' | 'left' | 'cleared' | 'expired';
 
 export interface WaitlistEntry {
   id: string;
@@ -60,6 +61,16 @@ export interface WaitlistEntry {
   joinedAt: string;
   /** Display name of the table, resolved by getUserWaitlists. '' when unresolved. */
   tableName: string;
+  /** Player display name, resolved by getTableWaitlist (Dan 2026-08-26: "your
+   *  name needs to appear on the waiting list"). '' when unresolved. */
+  displayName: string;
+  /**
+   * While status is 'notified', the instant the EXCLUSIVE seat hold lapses
+   * (Dan 2026-08-30: sixty seconds to get to the seat). Null on every other
+   * status, and on rows written before the column existed. The UI counts down
+   * to this; atomic_table_buyin enforces it.
+   */
+  holdExpiresAt: string | null;
 }
 
 export interface WaitlistPosition {
@@ -80,8 +91,9 @@ function mapRow(
     status: string;
     created_at: string;
     notified_at: string | null;
+    hold_expires_at?: string | null;
   },
-  extras?: { position?: number; tableName?: string }
+  extras?: { position?: number; tableName?: string; displayName?: string }
 ): WaitlistEntry {
   const status = (row.status as WaitlistStatus) ?? 'waiting';
   return {
@@ -94,6 +106,11 @@ function mapRow(
     position: extras?.position ?? (status === 'notified' ? 0 : 0),
     joinedAt: row.created_at,
     tableName: extras?.tableName ?? '',
+    displayName: extras?.displayName ?? '',
+    // Only meaningful while the offer is live. Undefined (an older row, or a
+    // select that did not ask for it) reads as null rather than as "expired",
+    // so a missing column can never make the UI claim a hold has lapsed.
+    holdExpiresAt: row.hold_expires_at ?? null,
   };
 }
 
@@ -155,21 +172,41 @@ export const WaitlistService = {
     }
 
     // Return existing active row if present (idempotent join).
-    const { data: existing } = await supabase
+    const { data: existing, error: existingErr } = await supabase
       .from('table_waitlist')
-      .select('id, table_id, user_id, status, created_at, notified_at')
+      .select('id, table_id, user_id, status, created_at, notified_at, hold_expires_at')
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .in('status', ACTIVE_STATES)
       .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle();
+    /**
+     * A FAILED IDEMPOTENCY CHECK IS NOT "NOT ON THE LIST" (2026-08-29).
+     *
+     * Only `data` was destructured. A Supabase builder RESOLVES with
+     * `{data: null, error}`, so a failure here read as "no active row" and fell
+     * straight through to the INSERT — which is the whole point of this lookup.
+     * Every one of the guards above it (`tableErr`, `!tableRow`,
+     * `tournament_id`) reports and returns; this one, the one immediately
+     * before the write, did not.
+     *
+     * The partial unique index added on 2026-08-29 refuses the duplicate row,
+     * so this cannot put a player in one queue twice any more — but the insert
+     * then fails with a 23505 that the recovery path below diagnoses as "a
+     * concurrent join won the race", which is a false explanation for what was
+     * really a read that never worked. Report the real cause and stop.
+     */
+    if (existingErr) {
+      reportError(existingErr, 'WaitlistService.joinWaitlist.existingLookup', { tableId, userId });
+      return null;
+    }
     if (existing) return mapRow(existing as any);
 
     const { data: inserted, error: insErr } = await supabase
       .from('table_waitlist')
       .insert({ table_id: tableId, user_id: userId, status: 'waiting' })
-      .select('id, table_id, user_id, status, created_at, notified_at')
+      .select('id, table_id, user_id, status, created_at, notified_at, hold_expires_at')
       .maybeSingle();
     /**
      * RULE 1 (2026-08-21): this was `.single()` — the last one left in the
@@ -189,7 +226,7 @@ export const WaitlistService = {
       // Unique-violation → a concurrent join won the race; fetch and return it.
       const { data: raced } = await supabase
         .from('table_waitlist')
-        .select('id, table_id, user_id, status, created_at, notified_at')
+        .select('id, table_id, user_id, status, created_at, notified_at, hold_expires_at')
         .eq('table_id', tableId)
         .eq('user_id', userId)
         .in('status', ACTIVE_STATES)
@@ -227,7 +264,7 @@ export const WaitlistService = {
     }
     const { data, error } = await supabase
       .from('table_waitlist')
-      .update({ status: 'cancelled' })
+      .update({ status: 'left' })
       .eq('table_id', tableId)
       .eq('user_id', userId)
       .in('status', ACTIVE_STATES)
@@ -292,7 +329,7 @@ export const WaitlistService = {
     if (!userId) return [];
     const { data, error } = await supabase
       .from('table_waitlist')
-      .select('id, table_id, user_id, status, created_at, notified_at')
+      .select('id, table_id, user_id, status, created_at, notified_at, hold_expires_at')
       .eq('user_id', userId)
       .in('status', ACTIVE_STATES)
       .order('created_at', { ascending: true });
@@ -304,29 +341,100 @@ export const WaitlistService = {
   },
 
   /**
+   * How many players are waiting at EACH of these tables, in one round trip.
+   *
+   * Added 2026-08-25 so the lobby can say "Waitlist 3" instead of "Full".
+   * getTableWaitlist answers for one table and the lobby has up to 46, so
+   * calling it per row would be 46 requests for a badge. This is one `in`
+   * query returning only the ids.
+   *
+   * Returns NULL on failure rather than an empty map (ITEM E audit,
+   * 2026-08-26): an empty map fed `cashStatus(t, 0)`, so a full table with a
+   * real queue badged as plain 'Full' whenever this read failed. The caller
+   * keeps its PREVIOUS counts on null — stale beats wrong-empty. A table
+   * must still list if the badge cannot be fetched, which is the caller's
+   * job, not a reason to lie about the count.
+   */
+  async countsFor(tableIds: string[]): Promise<Map<string, number> | null> {
+    const counts = new Map<string, number>();
+    if (!tableIds.length) return counts;
+    try {
+      const { data, error } = await supabase
+        .from('table_waitlist')
+        .select('table_id')
+        .in('table_id', tableIds)
+        .eq('status', 'waiting');
+      if (error || !data) {
+        if (error) reportError(error, 'WaitlistService.countsFor');
+        return null;
+      }
+      for (const row of data as { table_id: string }[]) {
+        counts.set(row.table_id, (counts.get(row.table_id) ?? 0) + 1);
+      }
+    } catch (e) {
+      /* a badge is not worth an exception — but it is worth a report */
+      reportError(e, 'WaitlistService.countsFor');
+      return null;
+    }
+    return counts;
+  },
+
+  /**
    * Every ACTIVE entry on a table, oldest first, each ranked with its 1-based FIFO
    * position. A 'notified' row (being offered a seat right now) ranks 0 and does
    * not consume a position slot. Used by the table page to show who is waiting and
    * to decide whether a horse should yield its seat.
    */
-  async getTableWaitlist(tableId: string): Promise<WaitlistEntry[]> {
+
+  /**
+   * Returns NULL when the read FAILED — "we could not find out" and "nobody
+   * is waiting" are different answers, and the panel renders them differently
+   * ('-' vs '0'). Returning [] here collapsed a failed query into "Waiting 0"
+   * beside a Join Waitlist button: a promise that you are first in line,
+   * made on a guess (ITEM E audit, 2026-08-26 — the named house bug shape;
+   * the panel's own .catch could never see it because a Supabase builder only
+   * REJECTS on transport failures, not query errors).
+   */
+  async getTableWaitlist(tableId: string): Promise<WaitlistEntry[] | null> {
     if (!tableId) return [];
     const { data, error } = await supabase
       .from('table_waitlist')
-      .select('id, table_id, user_id, status, created_at, notified_at')
+      .select('id, table_id, user_id, status, created_at, notified_at, hold_expires_at')
       .eq('table_id', tableId)
       .in('status', ACTIVE_STATES)
       .order('created_at', { ascending: true });
     if (error) {
       reportError(error, 'WaitlistService.getTableWaitlist', { tableId });
-      return [];
+      return null;
+    }
+    /* Dan 2026-08-26: "if you join the wait list, your name needs to appear
+       on the waiting list." Resolve display names in one batch — the same
+       profiles join the table-page modal already does, moved here so every
+       caller gets names instead of anonymous 'Player' rows. Best-effort: a
+       failed lookup degrades to '' rather than hiding the queue. */
+    const rows = (data ?? []) as any[];
+    const names = new Map<string, string>();
+    const ids = Array.from(new Set(rows.map((r) => r.user_id).filter(Boolean)));
+    if (ids.length > 0) {
+      const { data: profiles, error: profErr } = await supabase
+        .from('profiles')
+        .select('id, display_name, username')
+        .in('id', ids);
+      if (profErr) {
+        reportWarning(profErr.message, 'WaitlistService.getTableWaitlist.profiles', { tableId });
+      }
+      for (const p of (profiles ?? []) as any[]) {
+        names.set(p.id, p.display_name || p.username || '');
+      }
     }
     let rank = 0;
-    return (data ?? []).map((r) => {
-      const row = r as any;
+    return rows.map((row) => {
       const notified = row.status === 'notified';
       if (!notified) rank += 1;
-      return mapRow(row, { position: notified ? 0 : rank });
+      return mapRow(row, {
+        position: notified ? 0 : rank,
+        displayName: names.get(row.user_id) ?? '',
+      });
     });
   },
 
@@ -343,7 +451,7 @@ export const WaitlistService = {
 
     const { data: mine, error: mineErr } = await supabase
       .from('table_waitlist')
-      .select('id, table_id, user_id, status, created_at, notified_at')
+      .select('id, table_id, user_id, status, created_at, notified_at, hold_expires_at')
       .eq('user_id', uid)
       .in('status', ACTIVE_STATES)
       .order('created_at', { ascending: true });
@@ -409,9 +517,9 @@ export const WaitlistService = {
     if (!tableId) return false;
     const uid = userId ?? (await currentUserId());
     if (!uid) return false;
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('table_waitlist')
-      .update({ status: 'cancelled' })
+      .update({ status: 'left' })
       .eq('table_id', tableId)
       .eq('user_id', uid)
       .in('status', ACTIVE_STATES)
@@ -420,7 +528,9 @@ export const WaitlistService = {
       reportError(error, 'WaitlistService.leave', { tableId, userId: uid });
       return false;
     }
-    return (data?.length ?? 0) > 0;
+    // If data is empty, they were already off the active waitlist (seated, deleted, or cancelled).
+    // The goal is achieved, so return true.
+    return true;
   },
 };
 

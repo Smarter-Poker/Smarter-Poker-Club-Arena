@@ -31,6 +31,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useNavigate } from 'react-router-dom';
+import HouseAdCard from '../ads/HouseAdCard';
 import {
   clearSessionSummary,
   peekSessionSummary,
@@ -126,6 +128,9 @@ function ordinal(n: number): string {
 
 export function SessionSummaryHost() {
   const [payload, setPayload] = useState<SessionSummaryPayload | null>(() => peekSessionSummary());
+  /* This host is mounted outside <Routes> but inside <BrowserRouter>, so it can
+     route. It needs to: a house ad in this card carries its own destination. */
+  const navigate = useNavigate();
 
   useEffect(() => subscribeSessionSummary(setPayload), []);
 
@@ -244,6 +249,26 @@ export function SessionSummaryHost() {
       if (t.bountyWinnings > 0) {
         out.push({ label: 'Bounties', value: formatChips(t.bountyWinnings) });
       }
+      /* MYSTERY BOUNTY (Dan section 43). The chest half, broken out from the
+         Bounties tile above, which also holds the flat bounties paid before the
+         mystery phase opened. Cents on the payload, divided by 100 here. */
+      const mysteryCount = Number(t.mysteryBounties) || 0;
+      const mysteryCents = Number(t.mysteryBountyCents) || 0;
+      const mysteryLargestCents = Number(t.largestMysteryBountyCents) || 0;
+      if (mysteryCount > 0) {
+        out.push({ label: 'Mystery Bounties', value: String(mysteryCount) });
+      }
+      if (mysteryCents > 0) {
+        out.push({ label: 'Mystery Winnings', value: formatChips(mysteryCents / 100) });
+      }
+      if (mysteryLargestCents > 0) {
+        out.push({ label: 'Largest Mystery', value: formatChips(mysteryLargestCents / 100) });
+      }
+      /* Section 44: the total is prize + bounty, and it is only worth a tile of
+         its own when the two differ. */
+      if (t.bountyWinnings > 0) {
+        out.push({ label: 'Total Payout', value: formatChips(t.prize + t.bountyWinnings) });
+      }
       if (t.rebuys > 0) out.push({ label: 'Rebuys', value: String(t.rebuys) });
       if (t.addOns > 0) out.push({ label: 'Add Ons', value: String(t.addOns) });
       return out;
@@ -265,7 +290,8 @@ export function SessionSummaryHost() {
       { label: 'Win Rate', value: `${winRate}%` },
     ];
     if (payload.totalBuyIn != null && payload.totalBuyIn > 0) {
-      out.push({ label: 'Total Buy In', value: formatChips(payload.totalBuyIn) });
+      /* Dan 2026-08-26 mobile pass, item 12: "Buy In", not "Buy In's". */
+      out.push({ label: 'Buy In', value: formatChips(payload.totalBuyIn) });
     }
     if (payload.totalRebuys > 0) {
       out.push({ label: 'Rebuys', value: String(payload.totalRebuys) });
@@ -323,7 +349,7 @@ export function SessionSummaryHost() {
       >
         {/* Dan asked for an X in the top-right. The old modal could only be
             dismissed by the backdrop or the big button. */}
-        <button className="ssh-close" onClick={close} aria-label="Close session summary">
+        <button className="ssh-close" onClick={close} aria-label="Close Session Summary">
           &times;
         </button>
 
@@ -408,12 +434,36 @@ export function SessionSummaryHost() {
           ))}
         </div>
 
+        {/* HOUSE ADS, `session_summary` (2026-08-28). Declared in Phase 1 and
+            wired to nothing until now. It sits under the numbers and above the
+            actions, so it never comes between a player and Done.
+
+            No club is passed: this host lives at the app root and survives the
+            navigate() off the table, so it has no club in hand. The resolver
+            drops any destination carrying an unresolved {clubId} rather than
+            serving a link it knows is broken, so this surface simply gets the
+            campaigns whose placement names its own destination. */}
+        {/* close() BEFORE navigate(), and it is not tidiness. This host is a
+            createPortal overlay that nothing but clearSessionSummary() takes
+            down: the backdrop closes it, but the card stops propagation, and
+            the ad lives inside the card. Navigating without closing routed the
+            page underneath a Session Complete panel still covering it, with
+            the click already logged - so the panel read it as a campaign that
+            worked while the player was looking at a dead end. */}
+        <HouseAdCard
+          slot="session_summary"
+          onNavigate={(path) => {
+            close();
+            navigate(path);
+          }}
+        />
+
         {/* Dan 2026-08-23: "add a share button to this." Uses the platform
             share sheet where there is one (every phone, and desktop Safari),
             and falls back to the clipboard everywhere else — a share control
             that silently does nothing on desktop is worse than none. */}
         <div className="ssh-actions">
-          <button className="ssh-share" onClick={share} aria-label="Share this session">
+          <button className="ssh-share" onClick={share} aria-label="Share This Session">
             {shareLabel}
           </button>
           <button className="ssh-done" onClick={close}>

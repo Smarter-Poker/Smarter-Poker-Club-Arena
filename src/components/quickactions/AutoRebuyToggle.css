@@ -70,11 +70,6 @@
   transition: background 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.settings-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-  transform: translateY(-2px);
-}
-
 .toggle-settings {
   padding: 16px;
   background: rgba(0, 0, 0, 0.2);
@@ -127,9 +122,4 @@
   font-weight: 500;
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.save-settings-btn:hover {
-  background: rgba(255, 215, 0, 0.3);
-  transform: translateY(-2px);
 }

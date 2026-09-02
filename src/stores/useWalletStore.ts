@@ -88,8 +88,22 @@ interface WalletState {
   _operationInFlight: boolean;
 
   // Actions
-  loadBalances: (userId: string) => Promise<void>;
-  loadDiamonds: (userId: string) => Promise<void>;
+  loadBalances: (userId: string, opts?: { force?: boolean }) => Promise<void>;
+  loadDiamonds: (userId: string, opts?: { force?: boolean }) => Promise<void>;
+  /** Whose balances these are. Guards cross-user bleed on a shared device. */
+  _balancesUserId: string | null;
+  /**
+   * DIAMONDS GET THEIR OWN CLOCK 2026-08-28. `loadDiamonds` was gated on
+   * `_balancesAt`, a stamp only `loadBalances` ever writes — and `refreshAll`
+   * fires both concurrently, so diamonds permanently inherited the balances'
+   * freshness window and any non-forced refresh inside it was a silent no-op.
+   * The header's diamond count could then sit stale indefinitely while chips
+   * updated beside it.
+   */
+  _diamondsUserId: string | null;
+  _diamondsAt: number;
+  /** When the balances were last successfully loaded (ms epoch). */
+  _balancesAt: number;
   loadTransactions: (userId: string, limit?: number) => Promise<void>;
   refreshAll: (userId: string) => Promise<void>;
 
@@ -135,7 +149,79 @@ const initialState = {
   pendingBuyIn: null as number | null,
   pendingTableId: null as string | null,
   _operationInFlight: false,
+  _balancesUserId: null as string | null,
+  _balancesAt: 0,
+  _diamondsUserId: null as string | null,
+  _diamondsAt: 0,
 };
+
+/**
+ * ALWAYS-ON WALLET (Dan 2026-08-24, top priority): "I NEVER WANT ANY WALLETS,
+ * TABLES, OR ANYTHING TO HAVE TO RELOAD OR RE-SYNC ANY TIME YOU CHANGE PAGES."
+ *
+ * A balance that was correct 20 seconds ago is still correct now, and every
+ * real change already arrives by other means: the atomic_* RPCs emit
+ * BALANCE_UPDATED on the MasterBus, PostgresSyncHooks pushes wallet row changes,
+ * and useGlobalBalanceSync (mounted in App.tsx) refetches on both. So a mount is
+ * NOT evidence that the number is stale - it is just a component appearing.
+ *
+ * Within this window a mount-time load is a no-op and the store serves what it
+ * already has, so navigating between Home, Cashier and Wallet never re-fetches
+ * and never shows a skeleton. `force: true` is available for the paths that
+ * genuinely need to re-read (an explicit refresh, a completed transfer).
+ */
+const BALANCE_FRESH_MS = 30_000;
+
+/**
+ * ───────────────────────────────────────────────────────────────────────────
+ * IN-FLIGHT COALESCING — one network round trip per (action, user), not N
+ * ───────────────────────────────────────────────────────────────────────────
+ * BALANCE_FRESH_MS above is a freshness check on a stamp that is only written
+ * AFTER the request comes back. That makes it useless in the case that
+ * actually hurts: several components mounting in the same tick. Every one of
+ * them reads the same stale stamp, every one decides it must fetch, and they
+ * all fetch. The guard only ever caught the SECOND page view.
+ *
+ * Measured on production 2026-08-28, opening one tournament page:
+ *
+ *     wallet_transactions   20 calls   slowest 2,879 ms
+ *     profiles              11 calls   slowest 1,976 ms
+ *     club_members           8 calls   slowest 2,298 ms
+ *     agents                 6 calls   slowest 2,607 ms
+ *     /auth/v1/user          7 calls
+ *     ------------------------------------------------
+ *     85 Supabase round trips, last one landing at 8.6 s
+ *
+ * The wallet numbers are this bug almost exactly: `DiamondService.getBalance`
+ * issues one `profiles` read and TWO `wallet_transactions` reads per call, so
+ * seven concurrent callers produce 7 profiles + 14 wallet_transactions, and
+ * `loadTransactions` — which had no freshness guard at all — adds the rest.
+ * The per-request timings say the same thing from the other side: each group
+ * ran `130, 129, 1680, 1773, 1872, 1988` ms, a fast pair and then a ladder
+ * climbing ~100 ms a step, which is queueing behind saturation rather than
+ * slow SQL. Nothing was polling: ten idle seconds afterwards fired zero
+ * requests. It is all mount cost.
+ *
+ * So the fix is not caching harder, it is not starting the duplicate request.
+ * The first caller runs; everyone arriving while it is still in the air gets
+ * the SAME promise and the same answer.
+ *
+ * `finally` clears the entry on both paths deliberately. Leaving a rejected
+ * promise in the map would cache the failure and every later caller would
+ * inherit it — the wallet would then stay broken for the whole session
+ * instead of retrying on the next mount.
+ */
+const _inFlight = new Map<string, Promise<void>>();
+
+function coalesce(key: string, run: () => Promise<void>): Promise<void> {
+  const existing = _inFlight.get(key);
+  if (existing) return existing;
+  const started = run().finally(() => {
+    _inFlight.delete(key);
+  });
+  _inFlight.set(key, started);
+  return started;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 🏪 STORE IMPLEMENTATION
@@ -146,80 +232,123 @@ export const useWalletStore = create<WalletState>()(
     (set, get) => ({
       ...initialState,
 
-      loadBalances: async (userId: string) => {
-        set({ isLoadingWallet: true });
-        try {
-          const walletBalances = await WalletService.getBalances(userId);
-          const balances = {
-            BUSINESS: createEmptyBalance('BUSINESS'),
-            PLAYER: createEmptyBalance('PLAYER'),
-            PROMO: createEmptyBalance('PROMO'),
-          };
-
-          for (const wallet of walletBalances) {
-            const type = wallet.walletType as WalletType;
-            if (type in balances) {
-              balances[type] = {
-                type,
-                available: wallet.availableBalance,
-                locked: wallet.lockedBalance,
-                pending: 0,
-                total: wallet.balance,
-              };
-            }
-          }
-
-          set({ balances });
-        } catch (error) {
-          if (!_balanceBreaker.isOpen()) {
-            _balanceBreaker.trip();
-            reportError(error, 'useWalletStore.Load_balances_failed');
-          }
-        } finally {
-          set({ isLoadingWallet: false });
+      loadBalances: async (userId: string, opts?: { force?: boolean }) => {
+        const st = get();
+        // Serve what we already have. See BALANCE_FRESH_MS above.
+        if (
+          !opts?.force &&
+          st._balancesUserId === userId &&
+          Date.now() - st._balancesAt < BALANCE_FRESH_MS
+        ) {
+          return;
         }
+
+        return coalesce(`balances:${userId}`, async () => {
+          // Only show the loading state when there is NOTHING to show. Flipping
+          // this on while a good balance is already on screen is what made the
+          // wallet flash a skeleton on every navigation.
+          const haveBalancesForThisUser = st._balancesUserId === userId && st._balancesAt > 0;
+          if (!haveBalancesForThisUser) set({ isLoadingWallet: true });
+          try {
+            const walletBalances = await WalletService.getBalances(userId);
+            const balances = {
+              BUSINESS: createEmptyBalance('BUSINESS'),
+              PLAYER: createEmptyBalance('PLAYER'),
+              PROMO: createEmptyBalance('PROMO'),
+            };
+
+            for (const wallet of walletBalances) {
+              const type = wallet.walletType as WalletType;
+              if (type in balances) {
+                balances[type] = {
+                  type,
+                  available: wallet.availableBalance,
+                  locked: wallet.lockedBalance,
+                  pending: 0,
+                  total: wallet.balance,
+                };
+              }
+            }
+
+            set({ balances, _balancesUserId: userId, _balancesAt: Date.now() });
+          } catch (error) {
+            if (!_balanceBreaker.isOpen()) {
+              _balanceBreaker.trip();
+              reportError(error, 'useWalletStore.Load_balances_failed');
+            }
+            // Deliberately NOT clearing `balances` here. A transient network
+            // failure must not replace a good number with zeros on screen.
+          } finally {
+            set({ isLoadingWallet: false });
+          }
+        });
       },
 
-      loadDiamonds: async (userId: string) => {
-        set({ isLoadingDiamonds: true });
-        try {
-          // Load diamonds via centralized DiamondService (profiles.diamonds source-of-truth)
-          const wallet = await DiamondService.getBalance(userId);
-          set({ diamonds: wallet.balance || 0 });
-        } catch (error) {
-          if (!_diamondBreaker.isOpen()) {
-            _diamondBreaker.trip();
-            reportError(error, 'useWalletStore.Load_diamonds_failed');
-          }
-          set({ diamonds: 0 });
-        } finally {
-          set({ isLoadingDiamonds: false });
+      loadDiamonds: async (userId: string, opts?: { force?: boolean }) => {
+        const st = get();
+        // Diamonds' OWN freshness stamp — see the _diamondsAt note on the
+        // state shape for why reading the balances' stamp made this a no-op.
+        if (
+          !opts?.force &&
+          st._diamondsUserId === userId &&
+          Date.now() - st._diamondsAt < BALANCE_FRESH_MS
+        ) {
+          return;
         }
+
+        return coalesce(`diamonds:${userId}`, async () => {
+          if (!(st._diamondsUserId === userId && st._diamondsAt > 0)) {
+            set({ isLoadingDiamonds: true });
+          }
+          try {
+            // Load diamonds via centralized DiamondService (profiles.diamonds source-of-truth)
+            const wallet = await DiamondService.getBalance(userId);
+            set({
+              diamonds: wallet.balance || 0,
+              _diamondsUserId: userId,
+              _diamondsAt: Date.now(),
+            });
+          } catch (error) {
+            if (!_diamondBreaker.isOpen()) {
+              _diamondBreaker.trip();
+              reportError(error, 'useWalletStore.Load_diamonds_failed');
+            }
+            // 2026-08-24: this used to `set({ diamonds: 0 })`. A failed fetch is
+            // not evidence the player has no diamonds - it wiped a perfectly good
+            // cached value and showed zero, which reads as "your diamonds are
+            // gone". Keep the last known value; the next successful load or a
+            // BALANCE_UPDATED will correct it.
+          } finally {
+            set({ isLoadingDiamonds: false });
+          }
+        });
       },
 
       loadTransactions: async (userId: string, limit = 25) => {
-        set({ isLoadingTransactions: true });
-        try {
-          const txHistory = await WalletService.getTransactionHistory(userId, { limit });
-          const transactions: WalletTransaction[] = txHistory.map((tx) => ({
-            id: tx.id,
-            walletType: tx.walletType as WalletType,
-            amount: tx.amount,
-            direction: tx.type as 'credit' | 'debit',
-            category: tx.category as WalletTransaction['category'],
-            description: tx.description,
-            timestamp: tx.createdAt,
-            reference: tx.relatedEntityId,
-          }));
-          set({ transactions });
-        } catch (error) {
-          if (!_txBreaker.isOpen()) {
-            _txBreaker.trip();
-            reportError(error, 'useWalletStore.Load_transactions_failed');
+        return coalesce(`transactions:${userId}:${limit}`, async () => {
+          set({ isLoadingTransactions: true });
+          try {
+            const txHistory = await WalletService.getTransactionHistory(userId, { limit });
+            const transactions: WalletTransaction[] = txHistory.map((tx) => ({
+              id: tx.id,
+              walletType: tx.walletType as WalletType,
+              amount: tx.amount,
+              direction: tx.type as 'credit' | 'debit',
+              category: tx.category as WalletTransaction['category'],
+              description: tx.description,
+              timestamp: tx.createdAt,
+              reference: tx.relatedEntityId,
+            }));
+            set({ transactions });
+          } catch (error) {
+            if (!_txBreaker.isOpen()) {
+              _txBreaker.trip();
+              reportError(error, 'useWalletStore.Load_transactions_failed');
+            }
+          } finally {
+            set({ isLoadingTransactions: false });
           }
-        } finally {
-          set({ isLoadingTransactions: false });
-        }
+        });
       },
 
       refreshAll: async (userId: string) => {
@@ -364,7 +493,33 @@ export const useWalletStore = create<WalletState>()(
     }),
     {
       name: 'wallet-store',
-      partialize: () => ({}), // Don't persist wallet data for security
+      /**
+       * ALWAYS-ON (Dan, 2026-08-24). This was `() => ({})` - nothing at all was
+       * persisted - so every hard reload, PWA cold start and iOS tab reclaim put
+       * the wallet back to 0 and made the player watch it re-populate.
+       *
+       * This DOES reverse the previous note ("Don't persist wallet data for
+       * security"), so the reasoning is spelled out rather than assumed:
+       *
+       *   - What is stored is the player's OWN balance, which is rendered to
+       *     them on the next frame anyway, and the Supabase session JWT already
+       *     lives in this same localStorage under `smarter-poker-auth`. The
+       *     integer is strictly less sensitive than the token beside it.
+       *   - The real risk is CROSS-USER BLEED on a shared device, and that is
+       *     handled rather than avoided: `_balancesUserId` is persisted with the
+       *     numbers and every read path treats a mismatch as stale and refetches,
+       *     `_balancesAt` bounds how long a rehydrated value is trusted, and
+       *     `reset()` runs on sign-out via MasterBus and clears all of it.
+       *
+       * `transactions` stays UNPERSISTED on purpose: a ledger is genuinely
+       * sensitive, it is large, and no surface needs it instantly on boot.
+       */
+      partialize: (state) => ({
+        balances: state.balances,
+        diamonds: state.diamonds,
+        _balancesUserId: state._balancesUserId,
+        _balancesAt: state._balancesAt,
+      }),
     }
   )
 );

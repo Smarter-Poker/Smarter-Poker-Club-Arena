@@ -1,6 +1,9 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- * 💳 DEPOSIT/WITHDRAW MODAL — Premium Dark Theme CSS
+ * DEPOSIT/WITHDRAW MODAL — Premium Dark Theme CSS
+ *
+ * (The credit-card emoji that used to sit in this banner is gone. House rule
+ * 5.3, no emoji in source files.)
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -101,8 +104,13 @@
   flex: 1;
 }
 
+/* The rest of this sheet is on 48px targets; Back and Close were left at 28
+   and 32. They are the two controls a player reaches for when they have made a
+   mistake on a money screen, which is the worst possible time to miss. */
 .backBtn {
   padding: 6px 12px;
+  min-height: 44px;
+  touch-action: manipulation;
   background: rgba(255, 255, 255, 0.08);
   border: none;
   border-radius: 6px;
@@ -112,8 +120,9 @@
 }
 
 .closeBtn {
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
+  touch-action: manipulation;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -123,11 +132,6 @@
   color: rgba(255, 255, 255, 0.6);
   font-size: 16px;
   cursor: pointer;
-}
-
-.closeBtn:hover {
-  background: rgba(239, 68, 68, 0.2);
-  color: #ef4444;
 }
 
 /* Balance Bar */
@@ -198,14 +202,9 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.methodCard:hover,
 .methodCard:active {
   background: rgba(251, 191, 36, 0.1);
   border-color: rgba(251, 191, 36, 0.3);
-  transform: scale(0.97);
-  box-shadow:
-    0 8px 16px rgba(251, 191, 36, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .methodIcon {
@@ -279,15 +278,10 @@
     0 0 20px rgba(251, 191, 36, 0.15);
 }
 
-.currency {
-  font-size: 32px;
-  color: rgba(255, 255, 255, 0.5);
-  transition: color 0.3s ease;
-}
-
-.amountInput:focus-within .currency {
-  color: #fbbf24;
-}
+/* `.currency` and its `:focus-within` companion lived here for a currency
+   symbol the amount step has not rendered in a long time — chips have no
+   symbol. Nothing in the component references `styles.currency`. Removed
+   2026-08-25. */
 
 .amountInput input {
   flex: 1;
@@ -325,14 +319,11 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.quickAmounts button:hover,
 .quickAmounts button:active,
 .quickAmounts button.active {
   background: rgba(251, 191, 36, 0.2);
   border-color: #fbbf24;
   color: #fbbf24;
-  box-shadow: 0 0 8px rgba(251, 191, 36, 0.2);
-  transform: scale(0.96);
 }
 
 .limits {
@@ -384,13 +375,6 @@
   box-shadow: 0 4px 12px rgba(251, 191, 36, 0.25);
   -webkit-tap-highlight-color: transparent;
 }
-
-.continueBtn:hover:not(:disabled),
-.continueBtn:active:not(:disabled) {
-  transform: scale(0.97);
-  box-shadow: 0 12px 24px rgba(251, 191, 36, 0.35);
-}
-
 .continueBtn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -471,13 +455,6 @@
   box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
   -webkit-tap-highlight-color: transparent;
 }
-
-.confirmBtn:hover:not(:disabled),
-.confirmBtn:active:not(:disabled) {
-  transform: scale(0.97);
-  box-shadow: 0 12px 24px rgba(16, 185, 129, 0.35);
-}
-
 .confirmBtn:disabled {
   opacity: 0.65;
   cursor: not-allowed;
@@ -516,24 +493,12 @@
   }
 }
 
-.successIcon {
-  font-size: 64px;
-  animation: successIconPulse 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-@keyframes successIconPulse {
-  0% {
-    transform: scale(0);
-    opacity: 0;
-  }
-  50% {
-    transform: scale(1.15);
-  }
-  100% {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
+/* `.successIcon` and `@keyframes successIconPulse` are gone. The success tick
+   is an inline-styled div in the component and it animates with the GLOBAL
+   `animationsSuccessIconPulse` from src/styles/animations.css — it has to,
+   because CSS Modules hashes keyframe names, so a module-local keyframe of a
+   similar name could never have driven an inline style anyway. Two rules that
+   looked like they were doing the work and were not. Removed 2026-08-25. */
 
 .successSection h3 {
   margin: 0;
@@ -611,10 +576,8 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.doneBtn:hover,
 .doneBtn:active {
   background: rgba(255, 255, 255, 0.15);
-  transform: scale(0.97);
 }
 
 /* Safe area spacing for devices with home indicator */

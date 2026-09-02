@@ -19,6 +19,10 @@ import styles from './UnionGamesPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { fmt, fmtChips } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
+import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
+import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
+import GameCreationActions from '../components/club/GameCreationActions';
+import { unionService } from '../services/UnionService';
 
 const formatDate = (ts: string | null) => {
   if (!ts) return '-';
@@ -83,6 +87,8 @@ interface BBJPool {
 }
 
 export default function UnionGamesPage() {
+  const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
+
   const { user } = useAuthUser();
   const toast = useToast();
   const { unionId: paramUnionId } = useParams<{ unionId: string }>();
@@ -92,6 +98,7 @@ export default function UnionGamesPage() {
   const [loading, setLoading] = useState(true);
   const [unionId, setUnionId] = useState<string | null>(paramUnionId || null);
   const [unionName, setUnionName] = useState('');
+  const [canManageGames, setCanManageGames] = useState(false);
 
   // Tournaments
   const [tournaments, setTournaments] = useState<UnionTournament[]>([]);
@@ -113,6 +120,7 @@ export default function UnionGamesPage() {
   useEffect(() => {
     setTab('tournaments');
     setTournFilter('all');
+    setCanManageGames(false);
     loadingRef.current = false;
   }, [paramUnionId]);
 
@@ -231,6 +239,9 @@ export default function UnionGamesPage() {
 
       if (targetUnion && isMounted) {
         setUnionId(targetUnion);
+        const operator = await unionService.isUnionAdmin(targetUnion, user.id);
+        if (!isMounted) return;
+        setCanManageGames(operator);
         loadUnionData(targetUnion);
       } else if (isMounted) {
         toast.error('No union found.');
@@ -264,6 +275,11 @@ export default function UnionGamesPage() {
           event: '*',
           schema: 'public',
           table: 'tournaments',
+          /* DB LOAD PASS 2026-08-24: unfiltered, this reloaded the whole union
+             games list on every tournament write anywhere on the platform.
+             `union_id` is the page's own scope — the effect already returns
+             early without it. Do not widen this. */
+          filter: `union_id=eq.${unionId}`,
         },
         () => refresh()
       )
@@ -297,20 +313,43 @@ export default function UnionGamesPage() {
   const emptyTables = useMemo(() => tables.filter((t) => (t.current_players || 0) === 0), [tables]);
 
   // Register / Unregister
+  /**
+   * Dan 2026-08-25 (binding): one confirmation per buy-in — and this page had
+   * ZERO. Direct `registerPlayer`, one tap, chips gone, while `registerMtt`
+   * sat destructured and unused at the top of the file.
+   *
+   * Routed through the shared hook. `club_id` is carried because a union game
+   * is bought with the chips of the club the player entered through, and the
+   * balance on the card has to be read against that same club or it can refuse
+   * a player who is perfectly well funded.
+   */
   const handleRegister = async (tournamentId: string) => {
     if (!user) return;
-    try {
-      // registerPlayer handles buy-in deduction, escrow, duplicate check, and event emission
-      await tournamentService.registerPlayer(
-        tournamentId,
-        user.id,
-        user.display_name || user.username || 'Player'
-      );
-      toast.success('Registered!');
-      loadUnionData(unionId || undefined);
-    } catch (err: any) {
-      toast.error(err.message);
+    const t = tournaments.find((x) => x.id === tournamentId);
+    if (!t) {
+      toast.error('That Tournament Is No Longer Listed');
+      return;
     }
+    await registerMtt(
+      {
+        id: t.id,
+        name: t.name,
+        buy_in_amount: Number((t as any).buy_in_amount ?? (t as any).buy_in ?? 0),
+        buy_in_fee: Number((t as any).buy_in_fee ?? 0),
+        start_time: (t as any).start_time ?? null,
+        /* Deliberately NOT `t.club_id`. A union-owned tournament carries the
+           UNION container in that column, and a union id handed to
+           `fn_player_spendable_balance` resolves to no wallet at all. Null lets
+           the hook fall back to the player's ambient club, which is the club
+           they entered through and the one that will actually be charged. */
+        club_id: null,
+        bounty_amount: (t as any).is_bounty ? (t as any).bounty_amount || 0 : 0,
+        is_pko: !!(t as any).is_pko,
+        is_mystery_bounty: !!(t as any).is_mystery_bounty,
+        status: t.status,
+      },
+      () => loadUnionData(unionId || undefined)
+    );
   };
 
   const handleUnregister = async (tournamentId: string) => {
@@ -329,24 +368,53 @@ export default function UnionGamesPage() {
 
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
-        <div className={styles.headerLeft}>
-          <h1 className={styles.title}> {unionName} - Games</h1>
-        </div>
-        <div className={styles.headerActions}>
-          {unionId && (
-            <Link to={`/unions/${unionId}`} className={styles.btnGhost}>
-              Union
+      <CasinoSurfaceHeader
+        eyebrow="Union Network / Games"
+        title={`${unionName || 'Union'} Games`}
+        description="Enter Active Union Tables, Register For Network Tournaments, And Inspect The Shared Bad-Beat Pool Through The Existing Game Services."
+        artPath="assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp"
+        status="UNION GAMES // LIVE"
+        metrics={[
+          {
+            label: 'Active Events',
+            value: tournaments.filter((t) =>
+              ['registering', 'running'].includes(t.status?.toLowerCase())
+            ).length,
+            tone: 'attention',
+          },
+          { label: 'Live Tables', value: activeTables.length, tone: 'live' },
+          {
+            label: 'Seated',
+            value: tables.reduce((sum, table) => sum + (table.current_players || 0), 0),
+          },
+        ]}
+        actions={
+          <>
+            {unionId && canManageGames && (
+              <>
+                <Link to={`/unions/${unionId}/table-management`} className={styles.btnGhost}>
+                  Table Management
+                </Link>
+                <GameCreationActions
+                  managementPath={`/unions/${unionId}/table-management`}
+                  compact
+                />
+              </>
+            )}
+            {unionId && (
+              <Link to={`/unions/${unionId}`} className={styles.btnGhost}>
+                Union
+              </Link>
+            )}
+            <Link to="/" className={styles.btnGhost}>
+              Lobby
             </Link>
-          )}
-          <Link to="/" className={styles.btnGhost}>
-            Lobby
-          </Link>
-          <button onClick={() => loadUnionData(unionId || undefined)} className={styles.btnGhost}>
-            ↻ Refresh
-          </button>
-        </div>
-      </header>
+            <button onClick={() => loadUnionData(unionId || undefined)} className={styles.btnGhost}>
+              Refresh
+            </button>
+          </>
+        }
+      />
 
       {/* Stats Row */}
       <div className={styles.statsGrid}>

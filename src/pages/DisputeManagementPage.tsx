@@ -10,14 +10,19 @@
  * - Real-time updates via Supabase subscription
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from 'react';
 import { useParams } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import ClubBottomNav from '../components/club/ClubBottomNav';
+import ClubIntegrityHeader from '../components/club/ClubIntegrityHeader';
 import {
   DisputeService,
   type Dispute,
@@ -32,6 +37,7 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
 
 type FilterTab = 'all' | 'open' | 'under_review' | 'resolved' | 'escalated';
+const FILTER_TABS: FilterTab[] = ['all', 'open', 'under_review', 'resolved', 'escalated'];
 
 export default function DisputeManagementPage() {
   const { clubId } = useParams();
@@ -40,6 +46,7 @@ export default function DisputeManagementPage() {
 
   const [disputes, setDisputes] = useState<Dispute[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
   const [resolving, setResolving] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState<string | null>(null);
@@ -65,12 +72,14 @@ export default function DisputeManagementPage() {
     setExpandedId(null);
     setSearchQuery('');
     loadingRef.current = false;
+    setLoadError(false);
   }, [clubId]);
 
   const loadDisputes = useCallback(async () => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
+    setLoadError(false);
     try {
       if (clubId) {
         // Club-scoped: load disputes for this club
@@ -83,12 +92,16 @@ export default function DisputeManagementPage() {
       }
     } catch (err) {
       reportError(err, 'DisputeManagementPage.Load_failed');
-      if (isMounted.current) toast.error('Failed to load disputes');
+      if (isMounted.current) {
+        setDisputes([]);
+        setLoadError(true);
+        toast.error('Failed to load disputes');
+      }
     } finally {
       loadingRef.current = false;
       if (isMounted.current) setLoading(false);
     }
-  }, [clubId, user?.id]);
+  }, [clubId, isMounted, toast, user?.id]);
 
   useVisibilityRefresh(() => loadDisputes());
 
@@ -154,6 +167,7 @@ export default function DisputeManagementPage() {
       toast.success('Dispute now under review');
       loadDisputes();
     } catch (err) {
+      reportError(err, 'DisputeManagementPage.Start_review_failed');
       toast.error('Failed to start review');
     }
     setReviewing(null);
@@ -179,6 +193,7 @@ export default function DisputeManagementPage() {
       setExpandedId(null);
       loadDisputes();
     } catch (err) {
+      reportError(err, 'DisputeManagementPage.Resolve_failed');
       toast.error('Failed to resolve dispute');
     }
     setResolving(null);
@@ -192,6 +207,7 @@ export default function DisputeManagementPage() {
       toast.success('Dispute escalated');
       loadDisputes();
     } catch (err) {
+      reportError(err, 'DisputeManagementPage.Escalate_failed');
       toast.error('Failed to escalate');
     }
     setEscalating(null);
@@ -230,38 +246,83 @@ export default function DisputeManagementPage() {
   };
 
   const getStatusBadge = (status: DisputeStatus) => {
-    const map: Record<DisputeStatus, { icon: string; cls: string }> = {
-      open: { icon: '○', cls: 'badge-open' },
-      under_review: { icon: '●', cls: 'badge-review' },
-      resolved: { icon: '✓', cls: 'badge-resolved' },
-      escalated: { icon: '●', cls: 'badge-escalated' },
-      withdrawn: { icon: '◆', cls: 'badge-withdrawn' },
+    const map: Record<DisputeStatus, string> = {
+      open: 'badge-open',
+      under_review: 'badge-review',
+      resolved: 'badge-resolved',
+      escalated: 'badge-escalated',
+      withdrawn: 'badge-withdrawn',
     };
-    const cfg = map[status] || map.open;
-    return (
-      <span className={`dispute-badge ${cfg.cls}`}>
-        {cfg.icon} {status.replace('_', ' ')}
-      </span>
-    );
+    const badgeClass = map[status] || map.open;
+    return <span className={`dispute-badge ${badgeClass}`}>{status.replace('_', ' ')}</span>;
+  };
+
+  const handleTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, current: FilterTab) => {
+    const currentIndex = FILTER_TABS.indexOf(current);
+    let nextIndex = currentIndex;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % FILTER_TABS.length;
+    else if (event.key === 'ArrowLeft')
+      nextIndex = (currentIndex - 1 + FILTER_TABS.length) % FILTER_TABS.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = FILTER_TABS.length - 1;
+    else return;
+    event.preventDefault();
+    const next = FILTER_TABS[nextIndex];
+    setActiveTab(next);
+    requestAnimationFrame(() => document.getElementById(`dispute-filter-${next}`)?.focus());
   };
 
   return (
     <>
+      <ClubIntegrityHeader
+        clubId={clubId}
+        active="disputes"
+        eyebrow={clubId ? 'Case Investigation / Financial Integrity' : 'Personal Casework'}
+        title={clubId ? 'Dispute Resolution Desk' : 'My Disputes'}
+        description={
+          clubId
+            ? 'Investigate Club Transaction Disputes, Monitor The 72-Hour Service Window, And Record A Defensible Resolution.'
+            : 'Track The Status, Evidence, And Resolution Of Disputes Filed From Your Account.'
+        }
+        metrics={[
+          {
+            label: 'Open',
+            value: statusCounts.open,
+            tone: statusCounts.open ? 'active' : 'neutral',
+          },
+          { label: 'Reviewing', value: statusCounts.under_review },
+          {
+            label: 'Escalated',
+            value: statusCounts.escalated,
+            tone: statusCounts.escalated ? 'risk' : 'neutral',
+          },
+        ]}
+      />
       <div className="dispute-management-page">
         <div className="dispute-header">
-          <h2>⚖ Dispute Management</h2>
+          <div>
+            <p className="dispute-kicker">Live Case Docket</p>
+            <h2>{clubId ? 'Club Transaction Disputes' : 'Account Disputes'}</h2>
+          </div>
           {statusCounts.open > 0 && (
             <span className="open-count-badge">{statusCounts.open} Open</span>
           )}
         </div>
 
         {/* Filter Tabs */}
-        <div className="dispute-tabs">
-          {(['all', 'open', 'under_review', 'resolved', 'escalated'] as FilterTab[]).map((tab) => (
+        <div className="dispute-tabs" role="tablist" aria-label="Filter Disputes By Status">
+          {FILTER_TABS.map((tab) => (
             <button
               key={tab}
+              id={`dispute-filter-${tab}`}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab}
+              aria-controls="dispute-case-panel"
+              tabIndex={activeTab === tab ? 0 : -1}
               className={`tab-btn ${activeTab === tab ? 'active' : ''}`}
               onClick={() => setActiveTab(tab)}
+              onKeyDown={(event) => handleTabKeyDown(event, tab)}
             >
               {tab === 'under_review' ? 'Reviewing' : tab.charAt(0).toUpperCase() + tab.slice(1)}
               {statusCounts[tab] > 0 && <span className="tab-count">{statusCounts[tab]}</span>}
@@ -270,168 +331,178 @@ export default function DisputeManagementPage() {
         </div>
 
         {/* Search */}
-        <div style={{ marginBottom: '12px' }}>
+        <div className="dispute-search">
+          <label htmlFor="dispute-search">Search Cases</label>
           <input
+            id="dispute-search"
             type="text"
-            placeholder="Search by name, reason, amount..."
+            placeholder="Player, Reason, Target, Or Amount"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '10px 14px',
-              background: 'rgba(0,0,0,0.3)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: '8px',
-              color: '#fff',
-              fontSize: '0.85rem',
-              boxSizing: 'border-box',
-            }}
           />
         </div>
 
         {/* Disputes List */}
-        {loading ? (
-          <div className="loading-state">
-            <PageSkeleton variant="list" />
-            <p>Loading Disputes...</p>
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="empty-state">
-            <span className="empty-icon">◉</span>
-            <p>{activeTab === 'all' ? 'No disputes filed' : `No ${activeTab} disputes`}</p>
-          </div>
-        ) : (
-          <div className="dispute-list">
-            {filtered.map((dispute) => (
-              <div key={dispute.id} className={`dispute-card status-${dispute.status}`}>
-                <div
-                  className="dispute-card-header"
-                  onClick={() => {
-                    const newId = expandedId === dispute.id ? null : dispute.id;
-                    setExpandedId(newId);
-                    // Reset form state when switching cards to prevent stale data carry-over
-                    if (newId !== expandedId) {
-                      setResolutionText('');
-                      setAdjustmentAmount('');
-                      setAdjustmentType('none');
-                    }
-                  }}
-                >
-                  <div className="dispute-meta">
-                    {getStatusBadge(dispute.status)}
-                    <span className="dispute-amount">{dispute.amount.toLocaleString()} Chips</span>
-                  </div>
-                  <div className="dispute-target">
-                    <span className="target-type">{dispute.targetType.replace('_', ' ')}</span>
-                    <span className="dispute-submitter">By {dispute.submitterName}</span>
-                  </div>
-                  <div className="dispute-date">
-                    {new Date(dispute.createdAt).toLocaleDateString(undefined, {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                    {(dispute.status === 'open' || dispute.status === 'under_review') &&
-                      (() => {
-                        const sla = getSlaRemaining(dispute.createdAt);
-                        if (!sla) return null;
-                        return (
-                          <span
-                            style={{
-                              display: 'block',
-                              fontSize: '0.65rem',
-                              marginTop: '2px',
-                              color: sla.urgent ? '#ff3b30' : 'rgba(255,255,255,0.4)',
-                              fontWeight: sla.urgent ? 700 : 400,
-                            }}
-                          >
-                            {sla.text}
-                          </span>
-                        );
-                      })()}
-                  </div>
-                </div>
+        <div
+          id="dispute-case-panel"
+          role="tabpanel"
+          aria-labelledby={`dispute-filter-${activeTab}`}
+        >
+          {loading ? (
+            <div className="loading-state">
+              <PageSkeleton variant="list" />
+              <p>Loading Disputes…</p>
+            </div>
+          ) : loadError ? (
+            <div className="dispute-state dispute-error" role="alert">
+              <strong>Dispute Docket Unavailable</strong>
+              <p>The Live Case Feed Could Not Be Loaded. No Dispute Records Were Changed.</p>
+              <button type="button" onClick={() => void loadDisputes()}>
+                Retry Case Feed
+              </button>
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="empty-state">
+              <span className="empty-signal" aria-hidden="true" />
+              <strong>Docket Clear</strong>
+              <p>
+                {activeTab === 'all'
+                  ? 'No Disputes Have Been Filed.'
+                  : `No ${activeTab.replace('_', ' ')} Disputes Match This View.`}
+              </p>
+            </div>
+          ) : (
+            <div className="dispute-list">
+              {filtered.map((dispute) => (
+                <div key={dispute.id} className={`dispute-card status-${dispute.status}`}>
+                  <button
+                    type="button"
+                    className="dispute-card-header"
+                    aria-expanded={expandedId === dispute.id}
+                    aria-controls={`dispute-case-${dispute.id}`}
+                    onClick={() => {
+                      const newId = expandedId === dispute.id ? null : dispute.id;
+                      setExpandedId(newId);
+                      // Reset form state when switching cards to prevent stale data carry-over
+                      if (newId !== expandedId) {
+                        setResolutionText('');
+                        setAdjustmentAmount('');
+                        setAdjustmentType('none');
+                      }
+                    }}
+                  >
+                    <div className="dispute-meta">
+                      {getStatusBadge(dispute.status)}
+                      <span className="dispute-amount">
+                        {dispute.amount.toLocaleString()} Chips
+                      </span>
+                    </div>
+                    <div className="dispute-target">
+                      <span className="target-type">{dispute.targetType.replace('_', ' ')}</span>
+                      <span className="dispute-submitter">By {dispute.submitterName}</span>
+                    </div>
+                    <div className="dispute-date">
+                      {new Date(dispute.createdAt).toLocaleDateString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                      {(dispute.status === 'open' || dispute.status === 'under_review') &&
+                        (() => {
+                          const sla = getSlaRemaining(dispute.createdAt);
+                          if (!sla) return null;
+                          return (
+                            <span className={sla.urgent ? 'sla-time sla-urgent' : 'sla-time'}>
+                              {sla.text}
+                            </span>
+                          );
+                        })()}
+                    </div>
+                  </button>
 
-                <div className="dispute-reason">
-                  <strong>Reason:</strong> {dispute.reason}
-                </div>
-
-                {dispute.resolution && (
-                  <div className="dispute-resolution-text">
-                    <strong>Resolution:</strong> {dispute.resolution}
+                  <div className="dispute-reason">
+                    <strong>Reason:</strong> {dispute.reason}
                   </div>
-                )}
 
-                {/* Expanded Actions */}
-                {expandedId === dispute.id &&
-                  dispute.status !== 'resolved' &&
-                  dispute.status !== 'withdrawn' && (
-                    <div className="dispute-actions">
-                      {dispute.status === 'open' && (
-                        <button
-                          className="action-btn review"
-                          onClick={() => handleStartReview(dispute.id)}
-                          disabled={reviewing === dispute.id}
-                        >
-                          {reviewing === dispute.id ? 'Reviewing...' : 'Start Review'}
-                        </button>
-                      )}
-
-                      {(dispute.status === 'open' || dispute.status === 'under_review') && (
-                        <>
-                          <div className="resolution-form">
-                            <textarea
-                              placeholder="Enter resolution notes..."
-                              value={resolutionText}
-                              onChange={(e) => setResolutionText(e.target.value)}
-                              rows={2}
-                            />
-                            <div className="adjustment-row">
-                              <select
-                                value={adjustmentType}
-                                onChange={(e) => setAdjustmentType(e.target.value as any)}
-                              >
-                                <option value="none">No Adjustment</option>
-                                <option value="credit">Credit Player</option>
-                                <option value="debit">Debit Player</option>
-                              </select>
-                              {adjustmentType !== 'none' && (
-                                <input
-                                  type="number"
-                                  placeholder="Amount"
-                                  value={adjustmentAmount}
-                                  onChange={(e) => setAdjustmentAmount(e.target.value)}
-                                />
-                              )}
-                            </div>
-                            <div className="resolution-actions">
-                              <button
-                                className="action-btn resolve"
-                                onClick={() => handleResolve(dispute.id)}
-                                disabled={resolving === dispute.id}
-                              >
-                                {resolving === dispute.id ? 'Resolving...' : '✓ Resolve'}
-                              </button>
-                              <button
-                                className="action-btn escalate"
-                                onClick={() => handleEscalate(dispute.id)}
-                                disabled={escalating === dispute.id}
-                              >
-                                {escalating === dispute.id ? 'Escalating...' : 'Escalate'}
-                              </button>
-                            </div>
-                          </div>
-                        </>
-                      )}
+                  {dispute.resolution && (
+                    <div className="dispute-resolution-text">
+                      <strong>Resolution:</strong> {dispute.resolution}
                     </div>
                   )}
-              </div>
-            ))}
-          </div>
-        )}
+
+                  {/* Expanded Actions */}
+                  {expandedId === dispute.id &&
+                    dispute.status !== 'resolved' &&
+                    dispute.status !== 'withdrawn' && (
+                      <div className="dispute-actions" id={`dispute-case-${dispute.id}`}>
+                        {dispute.status === 'open' && (
+                          <button
+                            className="action-btn review"
+                            onClick={() => handleStartReview(dispute.id)}
+                            disabled={reviewing === dispute.id}
+                          >
+                            {reviewing === dispute.id ? 'Reviewing...' : 'Start Review'}
+                          </button>
+                        )}
+
+                        {(dispute.status === 'open' || dispute.status === 'under_review') && (
+                          <>
+                            <div className="resolution-form">
+                              <textarea
+                                aria-label="Resolution Notes"
+                                placeholder="Enter Resolution Notes..."
+                                value={resolutionText}
+                                onChange={(e) => setResolutionText(e.target.value)}
+                                rows={2}
+                              />
+                              <div className="adjustment-row">
+                                <select
+                                  aria-label="Balance Adjustment Type"
+                                  value={adjustmentType}
+                                  onChange={(e) => setAdjustmentType(e.target.value as any)}
+                                >
+                                  <option value="none">No Adjustment</option>
+                                  <option value="credit">Credit Player</option>
+                                  <option value="debit">Debit Player</option>
+                                </select>
+                                {adjustmentType !== 'none' && (
+                                  <input
+                                    aria-label="Balance Adjustment Amount"
+                                    type="number"
+                                    placeholder="Amount"
+                                    value={adjustmentAmount}
+                                    onChange={(e) => setAdjustmentAmount(e.target.value)}
+                                  />
+                                )}
+                              </div>
+                              <div className="resolution-actions">
+                                <button
+                                  className="action-btn resolve"
+                                  onClick={() => handleResolve(dispute.id)}
+                                  disabled={resolving === dispute.id}
+                                >
+                                  {resolving === dispute.id ? 'Resolving...' : 'Resolve Dispute'}
+                                </button>
+                                <button
+                                  className="action-btn escalate"
+                                  onClick={() => handleEscalate(dispute.id)}
+                                  disabled={escalating === dispute.id}
+                                >
+                                  {escalating === dispute.id ? 'Escalating...' : 'Escalate'}
+                                </button>
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
-      {clubId && <ClubBottomNav clubId={clubId!} />}
     </>
   );
 }

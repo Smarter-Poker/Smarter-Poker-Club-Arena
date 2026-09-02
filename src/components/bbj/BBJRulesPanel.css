@@ -112,17 +112,6 @@
 }
 
 /* Embedded inside another surface (the BBJ modal) — no double chrome */
-.bbj-rules--embedded {
-  margin: 0;
-  border: none;
-  background: transparent;
-  border-radius: 0;
-}
-
-.bbj-rules--embedded .bbj-rules__body {
-  padding: 0;
-}
-
 /* "You are here" row marking (2026-08-18) */
 .bbj-rules__table tr.is-current td {
   background: rgba(213, 218, 226, 0.09);

@@ -1,24 +1,22 @@
-/**
- *  REPORT REVIEW PAGE — Admin Review of Player Reports
- */
+/** Admin review of player conduct reports. */
 
-import { useState, useEffect } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from 'react';
 import { useParams } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import ClubIntegrityHeader from '../components/club/ClubIntegrityHeader';
+import PageSkeleton from '../components/common/PageSkeleton';
+import { useToast } from '../components/common/Toast';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { useToast } from '../components/common/Toast';
-import { sanitizeInput } from '../utils/sanitizeInput';
-import PageSkeleton from '../components/common/PageSkeleton';
-import ClubBottomNav from '../components/club/ClubBottomNav';
-import './ReportReviewPage.css';
+import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
-
-const reportCardAnimationStyle = (index: number) => ({
-  opacity: 0,
-  transform: 'translateY(8px)',
-  animation: `fadeInUp 0.5s ease-out ${index * 60}ms forwards`,
-});
+import { sanitizeInput } from '../utils/sanitizeInput';
+import './ReportReviewPage.css';
 
 interface PlayerReport {
   id: string;
@@ -35,117 +33,143 @@ interface PlayerReport {
   reported_username?: string;
 }
 
+type ReportFilter = 'all' | 'pending' | 'reviewed';
+const REPORT_FILTERS: ReportFilter[] = ['pending', 'reviewed', 'all'];
+
 export default function ReportReviewPage() {
   const { clubId } = useParams();
   const { user } = useAuthUser();
   const toast = useToast();
-
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [reports, setReports] = useState<PlayerReport[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'reviewed'>('pending');
+  const [loadError, setLoadError] = useState(false);
+  const [filter, setFilter] = useState<ReportFilter>('pending');
   const [selectedReport, setSelectedReport] = useState<PlayerReport | null>(null);
   const [adminNotes, setAdminNotes] = useState('');
   const [processing, setProcessing] = useState(false);
 
+  const loadReports = useCallback(
+    async (getIsMounted?: () => boolean) => {
+      setLoading(true);
+      setLoadError(false);
+      try {
+        // This SECURITY DEFINER RPC returns only reports the caller may moderate.
+        const { data, error } = await supabase.rpc('fn_list_player_reports', { p_status: filter });
+        if (getIsMounted && !getIsMounted()) return;
+        if (error) throw error;
+        setReports((data as PlayerReport[]) || []);
+      } catch (error) {
+        if (getIsMounted && !getIsMounted()) return;
+        setReports([]);
+        setLoadError(true);
+        reportError(error, 'ReportReviewPage.Failed_to_load_reports');
+        toast.error('Failed to load reports');
+      } finally {
+        if (!getIsMounted || getIsMounted()) setLoading(false);
+      }
+    },
+    [filter, toast]
+  );
+
   useEffect(() => {
     let isMounted = true;
-    if (clubId) loadReports(() => isMounted);
+    if (clubId) void loadReports(() => isMounted);
     return () => {
       isMounted = false;
     };
-  }, [clubId, filter]);
+  }, [clubId, loadReports]);
 
-  // ── Realtime: live updates for new/updated reports ──
   useEffect(() => {
+    if (!clubId) return;
     let isMounted = true;
-    const channelKey = 'report-review-realtime';
-
+    const channelKey = `report-review-realtime-${clubId}`;
     const channel = masterBus.getOrCreateChannel(channelKey);
     channel
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'user_reports',
-        },
+        { event: '*', schema: 'public', table: 'user_reports' },
         (payload) => {
           if (!isMounted) return;
           if (payload.eventType === 'INSERT') {
-            // New report — reload to get joined profile data
-            loadReports(() => isMounted);
+            void loadReports(() => isMounted);
           } else if (payload.eventType === 'UPDATE') {
-            const updated = payload.new as any;
-            setReports((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
+            const updated = payload.new as Partial<PlayerReport> & { id: string };
+            setReports((current) =>
+              current.map((report) =>
+                report.id === updated.id ? { ...report, ...updated } : report
+              )
+            );
           }
         }
       )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          if (err) reportError(err?.message || err, 'ReportReviewPage._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[ReportReviewPage] Realtime channel timed out');
-        }
+      .subscribe((status: string, error?: Error) => {
+        if (status === 'CHANNEL_ERROR' && error)
+          reportError(error, 'ReportReviewPage.Realtime_channel_error');
+        if (status === 'TIMED_OUT') console.warn('[ReportReviewPage] Realtime channel timed out');
       });
-
     return () => {
       isMounted = false;
       masterBus.removeRegisteredChannel(channelKey);
     };
-  }, [clubId, filter]);
+  }, [clubId, loadReports]);
 
-  const loadReports = async (getIsMounted?: () => boolean) => {
-    setLoading(true);
-    try {
-      // user_reports is platform-wide with RLS that hides other users' reports
-      // and offers no client UPDATE path. fn_list_player_reports is a
-      // SECURITY DEFINER RPC that returns only reports the caller is authorized
-      // to moderate (reported player is a member of a club they administer).
-      const { data, error } = await supabase.rpc('fn_list_player_reports', {
-        p_status: filter,
-      });
+  useEffect(() => {
+    if (!selectedReport) return;
+    closeButtonRef.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSelectedReport(null);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [selectedReport]);
 
-      if (getIsMounted && !getIsMounted()) return;
-      if (error) throw error;
-      setReports((data as PlayerReport[]) || []);
-    } catch (error) {
-      if (getIsMounted && !getIsMounted()) return;
-      reportError(error, 'ReportReviewPage.Failed_to_load_reports');
-      toast.error('Failed to load reports');
-    }
-    if (getIsMounted && !getIsMounted()) return;
-    setLoading(false);
+  const openReport = (report: PlayerReport) => {
+    setSelectedReport(report);
+    setAdminNotes(report.admin_notes || '');
+  };
+
+  const handleFilterKeyDown = (
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    current: ReportFilter
+  ) => {
+    const currentIndex = REPORT_FILTERS.indexOf(current);
+    let nextIndex = currentIndex;
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % REPORT_FILTERS.length;
+    else if (event.key === 'ArrowLeft')
+      nextIndex = (currentIndex - 1 + REPORT_FILTERS.length) % REPORT_FILTERS.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = REPORT_FILTERS.length - 1;
+    else return;
+    event.preventDefault();
+    const next = REPORT_FILTERS[nextIndex];
+    setFilter(next);
+    requestAnimationFrame(() => document.getElementById(`report-filter-${next}`)?.focus());
   };
 
   const handleAction = (reportId: string, action: 'actioned' | 'dismissed') => {
     setProcessing(true);
-
-    // EAGER STATE SYNCHRONIZATION: Update report status and close modal immediately (BFCache-safe)
-    const prevReports = reports;
-    const prevSelected = selectedReport;
-    const prevNotes = adminNotes;
+    const previousReports = reports;
+    const previousSelected = selectedReport;
+    const previousNotes = adminNotes;
     const sanitizedNotes = sanitizeInput(adminNotes);
-
-    setReports((prev) =>
-      prev.map((r) =>
-        r.id === reportId
+    setReports((current) =>
+      current.map((report) =>
+        report.id === reportId
           ? {
-              ...r,
+              ...report,
               status: action,
               reviewed_at: new Date().toISOString(),
               reviewed_by: user?.id,
               admin_notes: sanitizedNotes,
             }
-          : r
+          : report
       )
     );
     setSelectedReport(null);
     setAdminNotes('');
     toast.success(action === 'actioned' ? 'Player action taken' : 'Report dismissed');
 
-    // Fire-and-forget DB mutation with rollback on failure. The RPC enforces
-    // that the caller is authorized to moderate this report.
     void Promise.resolve(
       supabase.rpc('fn_action_player_report', {
         p_report_id: reportId,
@@ -155,146 +179,185 @@ export default function ReportReviewPage() {
     )
       .then(({ data, error }) => {
         const result = data as { success?: boolean; error?: string } | null;
-        if (error || (result && result.success === false)) {
-          // Rollback on failure
-          setReports(prevReports);
-          setSelectedReport(prevSelected);
-          setAdminNotes(prevNotes);
+        if (error || result?.success === false) {
+          setReports(previousReports);
+          setSelectedReport(previousSelected);
+          setAdminNotes(previousNotes);
           toast.error(result?.error || 'Failed to update report');
           reportError(error || result?.error, 'ReportReviewPage.Failed_to_update_report');
         }
         setProcessing(false);
       })
       .catch((error: unknown) => {
-        setReports(prevReports);
-        setSelectedReport(prevSelected);
-        setAdminNotes(prevNotes);
+        setReports(previousReports);
+        setSelectedReport(previousSelected);
+        setAdminNotes(previousNotes);
+        setProcessing(false);
         toast.error('Failed to update report');
         reportError(error, 'ReportReviewPage.Failed_to_update_report');
-        setProcessing(false);
       });
   };
 
-  const getReasonIcon = (reason: string) => {
-    const icons: Record<string, string> = {
-      collusion: '↔',
-      cheating: '✗',
-      abuse: '!',
-      harassment: '⚠',
-      other: '●',
-    };
-    return icons[reason] || '●';
-  };
-
-  const getStatusBadge = (status: string) => {
-    const colors: Record<string, string> = {
-      pending: '#f59e0b',
-      reviewed: '#3b82f6',
-      actioned: '#ef4444',
-      dismissed: '#6b7280',
-    };
-    return (
-      <span className="status-badge" style={{ backgroundColor: colors[status] }}>
-        {status}
-      </span>
-    );
-  };
+  const pendingCount = reports.filter((report) => report.status === 'pending').length;
+  const actionedCount = reports.filter((report) => report.status === 'actioned').length;
 
   return (
     <div className="report-review-page">
-      {/* Filter Tabs */}
-      <div className="filter-tabs">
-        {(['pending', 'reviewed', 'all'] as const).map((f) => (
-          <button
-            key={f}
-            className={`filter-tab ${filter === f ? 'active' : ''}`}
-            onClick={() => setFilter(f)}
-          >
-            {f.charAt(0).toUpperCase() + f.slice(1)}
-          </button>
-        ))}
-      </div>
+      <ClubIntegrityHeader
+        clubId={clubId}
+        active="reports"
+        eyebrow="Case Intake / Conduct Signals"
+        title="Player Report Review"
+        description="Triage Player Conduct Signals, Inspect The Evidence, And Record A Moderation Decision Without Leaving The Live Club Workflow."
+        metrics={[
+          { label: 'In View', value: reports.length },
+          { label: 'Pending', value: pendingCount, tone: pendingCount ? 'active' : 'neutral' },
+          { label: 'Actioned', value: actionedCount, tone: actionedCount ? 'risk' : 'neutral' },
+        ]}
+      />
 
-      {loading ? (
-        <PageSkeleton variant="list" />
-      ) : reports.length === 0 ? (
-        <div className="empty-state">
-          <span className="empty-icon">⚠</span>
-          <p>No {filter === 'pending' ? 'pending' : ''} Reports</p>
+      <main className="report-workspace">
+        <div className="case-toolbar">
+          <div>
+            <p className="case-kicker">Moderation Queue</p>
+            <h2>Conduct Reports</h2>
+          </div>
+          <div className="filter-tabs" role="tablist" aria-label="Filter Reports By Status">
+            {REPORT_FILTERS.map((item) => (
+              <button
+                key={item}
+                id={`report-filter-${item}`}
+                type="button"
+                role="tab"
+                aria-selected={filter === item}
+                aria-controls="report-case-panel"
+                tabIndex={filter === item ? 0 : -1}
+                className={`filter-tab ${filter === item ? 'active' : ''}`}
+                onClick={() => setFilter(item)}
+                onKeyDown={(event) => handleFilterKeyDown(event, item)}
+              >
+                {item.charAt(0).toUpperCase() + item.slice(1)}
+              </button>
+            ))}
+          </div>
         </div>
-      ) : (
-        <div className="reports-list">
-          {reports.map((report, idx) => (
-            <div
-              key={report.id}
-              style={reportCardAnimationStyle(idx)}
-              className={`report-card ${selectedReport?.id === report.id ? 'selected' : ''}`}
-              onClick={() => {
-                setSelectedReport(report);
-                setAdminNotes(report.admin_notes || '');
-              }}
-            >
-              <div className="report-header">
-                <span className="reason-icon">{getReasonIcon(report.reason)}</span>
-                <span className="reason-label">{report.reason}</span>
-                {getStatusBadge(report.status)}
-              </div>
-              <div className="report-players">
-                <span className="reporter">
-                  <strong>By:</strong> {report.reporter_username || 'Unknown'}
-                </span>
-                <span className="reported">
-                  <strong>Against:</strong> {report.reported_username || 'Unknown'}
-                </span>
-              </div>
-              <div className="report-date">{new Date(report.created_at).toLocaleDateString()}</div>
+
+        <div id="report-case-panel" role="tabpanel" aria-labelledby={`report-filter-${filter}`}>
+          {loading ? (
+            <PageSkeleton variant="list" />
+          ) : loadError ? (
+            <div className="report-state report-error" role="alert">
+              <strong>Report Queue Unavailable</strong>
+              <p>
+                The Live Moderation Feed Could Not Be Loaded. Existing Case Data Was Not Changed.
+              </p>
+              <button type="button" onClick={() => void loadReports()}>
+                Retry Report Feed
+              </button>
             </div>
-          ))}
+          ) : reports.length === 0 ? (
+            <div className="report-state">
+              <span className="state-signal" aria-hidden="true" />
+              <strong>Queue Clear</strong>
+              <p>No {filter === 'pending' ? 'Pending ' : ''}reports Match This View.</p>
+            </div>
+          ) : (
+            <div className="reports-list">
+              {reports.map((report) => (
+                <button
+                  key={report.id}
+                  type="button"
+                  className="report-card"
+                  aria-haspopup="dialog"
+                  onClick={() => openReport(report)}
+                >
+                  <span className="report-header">
+                    <span className="reason-label">{report.reason}</span>
+                    <span className={`status-badge status-${report.status}`}>{report.status}</span>
+                  </span>
+                  <span className="report-players">
+                    <span>
+                      <strong>Filed By</strong>
+                      {report.reporter_username || 'Unknown Player'}
+                    </span>
+                    <span>
+                      <strong>Against</strong>
+                      {report.reported_username || 'Unknown Player'}
+                    </span>
+                  </span>
+                  <span className="report-date">
+                    Opened {new Date(report.created_at).toLocaleDateString()}
+                  </span>
+                  <span className="inspect-label">Inspect Case</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      </main>
 
-      {/* Report Detail Modal */}
       {selectedReport && (
-        <div className="modal-overlay" onClick={() => setSelectedReport(null)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="modal-overlay"
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) setSelectedReport(null);
+          }}
+        >
+          <section
+            className="modal-content"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="report-dialog-title"
+          >
             <div className="modal-header">
-              <h3>{getReasonIcon(selectedReport.reason)} Report Details</h3>
-              <button onClick={() => setSelectedReport(null)} aria-label="Close report details">
-                ×
+              <div>
+                <p className="case-kicker">Conduct Case</p>
+                <h2 id="report-dialog-title">Report Details</h2>
+              </div>
+              <button
+                ref={closeButtonRef}
+                type="button"
+                onClick={() => setSelectedReport(null)}
+                aria-label="Close Report Details"
+              >
+                Close
               </button>
             </div>
             <div className="modal-body">
-              <div className="detail-row">
-                <label>Reported Player:</label>
-                <span>{selectedReport.reported_username}</span>
-              </div>
-              <div className="detail-row">
-                <label>Reported By:</label>
-                <span>{selectedReport.reporter_username}</span>
-              </div>
-              <div className="detail-row">
-                <label>Reason:</label>
-                <span>{selectedReport.reason}</span>
-              </div>
-              <div className="detail-row full">
-                <label>Description:</label>
-                <p className="description">{selectedReport.details}</p>
-              </div>
-
+              <dl className="case-details">
+                <div>
+                  <dt>Reported Player</dt>
+                  <dd>{selectedReport.reported_username || 'Unknown Player'}</dd>
+                </div>
+                <div>
+                  <dt>Reported By</dt>
+                  <dd>{selectedReport.reporter_username || 'Unknown Player'}</dd>
+                </div>
+                <div>
+                  <dt>Reason</dt>
+                  <dd>{selectedReport.reason}</dd>
+                </div>
+                <div className="full-detail">
+                  <dt>Description</dt>
+                  <dd>{selectedReport.details || 'No Additional Details Supplied.'}</dd>
+                </div>
+              </dl>
               {selectedReport.status === 'pending' && (
                 <>
-                  <div className="detail-row full">
-                    <label>Admin Notes:</label>
+                  <div className="notes-field">
+                    <label htmlFor="report-admin-notes">Decision Notes</label>
                     <textarea
+                      id="report-admin-notes"
                       value={adminNotes}
-                      onChange={(e) => setAdminNotes(e.target.value)}
-                      placeholder="Add notes about your decision..."
-                      rows={3}
+                      onChange={(event) => setAdminNotes(event.target.value)}
+                      placeholder="Record The Evidence And Decision Rationale"
+                      rows={4}
                     />
                   </div>
                   <div className="action-buttons">
                     <button
                       className="btn btn-danger"
+                      type="button"
                       onClick={() => handleAction(selectedReport.id, 'actioned')}
                       disabled={processing}
                     >
@@ -302,21 +365,19 @@ export default function ReportReviewPage() {
                     </button>
                     <button
                       className="btn btn-secondary"
+                      type="button"
                       onClick={() => handleAction(selectedReport.id, 'dismissed')}
                       disabled={processing}
                     >
-                      Dismiss
+                      Dismiss Report
                     </button>
                   </div>
                 </>
               )}
             </div>
-          </div>
+          </section>
         </div>
       )}
-
-      {/* Bottom Navigation */}
-      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

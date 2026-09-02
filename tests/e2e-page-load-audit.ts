@@ -94,7 +94,6 @@ const ALL_PAGES: PageTest[] = [
   { route: '/clubs/:clubId/rules', importPath: '../src/pages/ClubRulesPage' },
   { route: '/clubs/:clubId/settlement', importPath: '../src/pages/SettlementPage' },
   { route: '/clubs/:clubId/disputes', importPath: '../src/pages/DisputeManagementPage' },
-  { route: '/clubs/:clubId/table-creation', importPath: '../src/pages/TableCreationPage' },
   { route: '/hands', importPath: '../src/pages/HandHistoryPage' },
   { route: '/promotions', importPath: '../src/pages/PromotionsPage' },
 

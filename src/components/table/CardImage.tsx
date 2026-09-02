@@ -12,6 +12,7 @@ import React, { useState, useEffect } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
 import { useDeckStyle } from '../../hooks/useDeckStyle';
 import './CardImage.css';
+import { reportError } from '../../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -31,6 +32,27 @@ export interface CardImageProps {
   isHighlighted?: boolean;
   isFolded?: boolean;
   className?: string;
+  /**
+   * Whether the browser may defer this card's face.
+   *
+   * Defaults to `lazy`, which is right for the long lists this component also
+   * serves (BBJ history, hand replays, the card-back store) - dozens of faces
+   * below the fold.
+   *
+   * It is wrong for the two rows that decide a hand. AUDIT 2026-08-25: the
+   * felt's cards were lazy too, and lazy has a real cost exactly where it hurts
+   * most. A `loading="lazy"` image inside a `display: none` subtree is not
+   * fetched at all, and MultiTablePage keeps up to four tables mounted with the
+   * inactive ones display:none - so switching tabs showed a beat of empty card
+   * boxes while the faces were fetched and decoded. At showdown the same
+   * heuristic delays the one frame the player is actually reading. The felt now
+   * passes `eager` for the hero's hand, a revealed villain hand and the
+   * community board; every other caller keeps the lazy default.
+   *
+   * Cheap to do: the whole WebP deck is ~8KB a card and shared by every table,
+   * so the second table pays nothing.
+   */
+  loading?: 'lazy' | 'eager';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -73,19 +95,43 @@ const RANK_MAP: Record<string, string> = {
 };
 
 /**
- * Get the path to the card image
+ * Get the path to the card image, or `null` if this card cannot be read.
+ *
+ * ── THE FELT NEVER SHOWS A CARD THAT IS NOT THE CARD (2026-08-26) ──
+ *
+ * This used to substitute the ACE OF SPADES for anything it could not parse:
+ *
+ *     const safeSuit = suitName || 'spades';
+ *     const safeRank = rankName || 'a';
+ *
+ * That is the most dangerous failure mode in the whole client. Every other
+ * broken thing here degrades to something the player can SEE is broken — a
+ * blank slot, a spinner, a toast. This one degraded to a real, plausible,
+ * PLAYABLE card, indistinguishable from a genuine deal, and the player would
+ * put money in behind it. A malformed river card reading as the ace that
+ * completes their nut flush is not a rendering bug, it is a wrong decision
+ * with their bankroll on it.
+ *
+ * `null` now, and the component paints an unmistakable "unreadable card"
+ * tile. A player who sees it knows not to trust the slot. That is the only
+ * honest thing a card renderer can do when it does not know the card.
+ *
+ * Note the guard fires for *unmapped* values, not merely off-type ones: both
+ * maps deliberately accept several formats (short 'h', full 'hearts', upper
+ * and lower rank), so anything reaching this branch is genuinely unreadable
+ * rather than just an unusual spelling.
  */
-export function getCardImagePath(card: Card, deckStyle: DeckStyle = '2color'): string {
+export function getCardImagePath(card: Card, deckStyle: DeckStyle = '2color'): string | null {
   const suitName = SUIT_MAP[card.suit];
   const rankName = RANK_MAP[card.rank];
 
-  // Safety guard: if lookup failed, warn and fall back to Ace of Spades
   if (!suitName || !rankName) {
-    console.warn(`[CardImage] Unknown card format: rank="${card.rank}" suit="${card.suit}"`);
-    const safeSuit = suitName || 'spades';
-    const safeRank = rankName || 'a';
-    const base = MEDIA_BASE;
-    return `${base}cards/${deckStyle}/${safeSuit}_${safeRank}.webp`;
+    reportError(
+      new Error(`Unreadable card: rank="${card.rank}" suit="${card.suit}"`),
+      'CardImage.unreadable_card',
+      { rank: String(card.rank), suit: String(card.suit), deckStyle }
+    );
+    return null;
   }
 
   // PERF PASS 2026-08-22: serve WebP instead of PNG. The source PNGs are
@@ -156,6 +202,7 @@ export function CardImage({
   isHighlighted = false,
   isFolded = false,
   className = '',
+  loading = 'lazy',
 }: CardImageProps) {
   // ── Dan 2026-08-18: make the four-colour deck setting actually apply ──
   //
@@ -173,6 +220,9 @@ export function CardImage({
   const effectiveDeckStyle = deckStyle ?? preferredDeckStyle;
   const imagePath = getCardImagePath(card, effectiveDeckStyle);
   const sizeClass = SIZE_CLASSES[size];
+  /* `null` means the card could not be read at all. See getCardImagePath:
+     showing a guessed card here would be worse than showing nothing. */
+  const unreadable = imagePath === null;
 
   // UI-AUDIT #8: track the broken-image state in React (not via manual DOM
   // mutation) and reset it whenever the image path changes, so a slot that once
@@ -185,29 +235,56 @@ export function CardImage({
     setFallbackStep(0);
   }, [imagePath]);
   const imgError = fallbackStep >= 2;
-  const effectivePath = fallbackStep === 1 ? imagePath.replace(/\.webp$/, '.png') : imagePath;
+  // AUDIT 2026-08-25: this read `fallbackStep === 1 ? png : webp`, so at step 2
+  // - the give-up state - the src flipped BACK to the .webp that had already
+  // 404'd. The <img> is still mounted (hidden with display:none so the box keeps
+  // its size), so the browser re-requested a URL known to be dead every time the
+  // fallback rendered. Once we have moved past the WebP it never comes back.
+  const effectivePath =
+    imagePath === null ? '' : fallbackStep >= 1 ? imagePath.replace(/\.webp$/, '.png') : imagePath;
 
   const classes = [
     'card-image',
     sizeClass,
     isHighlighted ? 'card-image--highlighted' : '',
     isFolded ? 'card-image--folded' : '',
+    unreadable ? 'card-image--unreadable' : '',
     className,
   ]
     .filter(Boolean)
     .join(' ');
 
+  /* An unreadable card renders NO <img> at all. Emitting one with an empty
+     src makes the browser re-request the page URL as an image, and — worse —
+     leaves a slot that can flash something card-shaped. The tile below is
+     deliberately not card-coloured and carries no rank or suit, because the
+     rank and suit are exactly what we failed to read. */
+  if (unreadable) {
+    return (
+      <div
+        className={classes}
+        role="img"
+        aria-label="Card Could Not Be Read"
+        title="This Card Could Not Be Read. Do Not Act On It, Reload The Table."
+      >
+        <div className="card-image__unreadable">
+          <span aria-hidden="true">?</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={classes}>
       <img
-        loading="lazy"
+        loading={loading}
         decoding="async"
         src={effectivePath}
-        alt={`${card.rank} of ${SUIT_MAP[card.suit] || card.suit}`}
+        alt={`${card.rank} Of ${SUIT_MAP[card.suit] || card.suit}`}
         className="card-image__img"
         draggable={false}
         style={imgError ? { display: 'none' } : undefined}
-        onError={() => setFallbackStep((s) => (s === 0 && imagePath.endsWith('.webp') ? 1 : 2))}
+        onError={() => setFallbackStep((s) => (s === 0 && effectivePath.endsWith('.webp') ? 1 : 2))}
       />
       {/* Fallback: hide broken image, show colored text indicator */}
       {imgError && (
@@ -291,7 +368,7 @@ const DEFAULT_CARD_BACK = 'classic_blue';
  * Map legacy/invalid ids onto real designs rather than rendering nothing.
  *
  * 2026-08-20 — THE STORE AND THE TABLE SPOKE DIFFERENT LANGUAGES.
- * CardBackSelector sells twelve designs by id (black, red, blue, white,
+ * Table Studio sells twelve designs by id (black, red, blue, white,
  * classic, burgundy, navy, gold, holographic, carbon, club-branded,
  * diamond-foil). Only five of those ids existed here, so buying any of the
  * other seven — six of them PAID, up to 300 diamonds each — resolved to the
@@ -334,6 +411,129 @@ export function normalizeCardBack(style: string | undefined | null): string {
   if (!style) return DEFAULT_CARD_BACK;
   if ((CARD_BACK_IDS as readonly string[]).includes(style)) return style;
   return CARD_BACK_ALIASES[style] ?? DEFAULT_CARD_BACK;
+}
+
+/**
+ * Is this an id the app has ever meant something by?
+ *
+ * normalizeCardBack answers `classic_blue` for anything it does not recognise,
+ * which is the right answer when you are about to PAINT a card and the wrong
+ * answer when you are about to decide what somebody OWNS: without this guard a
+ * junk row in feature_purchases normalises to classic_blue and reads as a
+ * purchase of it.
+ */
+export function isKnownCardBackId(style: string | undefined | null): boolean {
+  if (!style) return false;
+  return (
+    (CARD_BACK_IDS as readonly string[]).includes(style) ||
+    Object.prototype.hasOwnProperty.call(CARD_BACK_ALIASES, style)
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// THE CARD BACK CATALOGUE — one list, every surface
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Dan 2026-08-25: "every selectable feature must be 100% fully built out,
+// functional and actually change and update in real time when selected."
+//
+// ONE SURFACE SELLS CARD BACKS — Table Studio owns checkout and selection,
+// ThemeSettingsModal's Cards tab, and the table hamburger menu — and each kept
+// its OWN copy of the list. That is the defect this repo has now fixed three
+// separate times, always in one copy at a time:
+//
+//   - 2026-08-20  ThemeSettingsModal offered standard-red / premium-gold /
+//                 premium-platinum. Matched nothing. All collapsed to
+//                 classic_blue.
+//   - 2026-08-25  HamburgerMenu offered default / emerald / crimson /
+//                 midnight / obsidian. Same outcome, five days later.
+//   - then        CardBackSelector sold TWELVE ids that resolved to SEVEN
+//                 designs. `classic` (50 diamonds), `burgundy` (75) and the
+//                 free `red` were the identical picture; `navy` (75), `black`
+//                 and `blue` were the identical picture. Three paid designs
+//                 were pixel-for-pixel a free one.
+//
+// Meanwhile FOUR designs with real artwork on disk — diamond, dragon, galaxy,
+// neon — were not for sale anywhere.
+//
+// The catalogue below is keyed by the CANONICAL ids, the ones the artwork is
+// named after, so a tile cannot exist without a picture and two tiles cannot
+// share one. Every surface reads it. cardBackCatalog.test.ts pins both
+// properties: full coverage of CARD_BACK_IDS, and no two entries alike.
+
+export type CardBackTier = 'standard' | 'premium' | 'exclusive';
+
+export interface CardBackDesign {
+  /** Canonical id. Artwork lives at `cards/backs/table/<id>.webp`. */
+  id: (typeof CARD_BACK_IDS)[number];
+  name: string;
+  tier: CardBackTier;
+  /** Diamond price. 0 for the free tier. */
+  price: number;
+}
+
+export const CARD_BACK_CATALOG: readonly CardBackDesign[] = [
+  // ── Free ──
+  { id: 'classic_blue', name: 'Classic Blue', tier: 'standard', price: 0 },
+  { id: 'classic_red', name: 'Classic Red', tier: 'standard', price: 0 },
+  { id: 'royal', name: 'Royal', tier: 'standard', price: 0 },
+  // ── Premium ──
+  { id: 'neon', name: 'Neon', tier: 'premium', price: 75 },
+  { id: 'galaxy', name: 'Galaxy', tier: 'premium', price: 75 },
+  { id: 'diamond', name: 'Diamond', tier: 'premium', price: 100 },
+  { id: 'dragon', name: 'Dragon', tier: 'premium', price: 125 },
+  { id: 'gold', name: 'Premium Gold', tier: 'premium', price: 150 },
+  // ── Exclusive ──
+  { id: 'carbon', name: 'Carbon Fiber', tier: 'exclusive', price: 175 },
+  { id: 'holographic', name: 'Holographic', tier: 'exclusive', price: 200 },
+  { id: 'club-branded', name: 'Club Crest', tier: 'exclusive', price: 250 },
+  { id: 'diamond-foil', name: 'Diamond Foil', tier: 'exclusive', price: 300 },
+];
+
+/** The catalogue entry a stored id resolves to. Never undefined. */
+export function cardBackDesign(style: string | undefined | null): CardBackDesign {
+  const id = normalizeCardBack(style);
+  return CARD_BACK_CATALOG.find((d) => d.id === id) ?? CARD_BACK_CATALOG[0];
+}
+
+/**
+ * ONE ownership rule, used by the store AND by the theme modal.
+ *
+ * They used to disagree, and both directions of the disagreement were real:
+ * the modal gated paid designs on VIP alone, so a player who had SPENT 150
+ * diamonds on Premium Gold in the store still saw it padlocked in the modal;
+ * and the store gated on purchases alone, so a VIP who already had every
+ * design free in the modal was quoted a price for it in the store.
+ */
+export function isCardBackUnlocked(
+  style: string | undefined | null,
+  opts: { isVip?: boolean; owned?: readonly string[] } = {}
+): boolean {
+  const design = cardBackDesign(style);
+  if (design.tier === 'standard') return true;
+  if (opts.isVip) return true;
+  return hasPurchasedCardBack(design.id, opts.owned ?? []);
+}
+
+/**
+ * Does this list of feature_purchases rows contain a purchase of this design?
+ *
+ * Separate from isCardBackUnlocked, and exported, because the interesting case
+ * is invisible through that function: it answers `true` for the free designs
+ * before it ever looks at purchases, so the junk-handling below cannot be
+ * observed there and a test of it passes whether the guard exists or not.
+ *
+ * The guard matters because purchases are recorded under a legacy store id
+ * (`gold`, `navy`) as well as a canonical one, so the comparison has to
+ * normalise — and normalizeCardBack answers `classic_blue` for ANYTHING. One
+ * malformed row would otherwise read as owning classic_blue.
+ */
+export function hasPurchasedCardBack(
+  style: string | undefined | null,
+  owned: readonly string[]
+): boolean {
+  const id = normalizeCardBack(style);
+  return owned.some((o) => isKnownCardBackId(o) && normalizeCardBack(o) === id);
 }
 
 /**

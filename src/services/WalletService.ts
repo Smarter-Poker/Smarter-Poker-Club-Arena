@@ -15,6 +15,7 @@
 import { supabase } from '../lib/supabase';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { retryAsync } from '../utils/retryAsync';
+import { retryFetch } from '../utils/retryFetch';
 import { masterBus } from '../core/MasterBus';
 import { FinancialAlertService } from './FinancialAlertService';
 import { reportError } from '../utils/errorReporter';
@@ -101,42 +102,105 @@ export const WalletService = {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Get all wallet balances for a user
+   * Get all wallet balances for a user, FROM THE LIVE POOLS.
+   *
+   * ═══ THIS READ USED TO COME OFF A FROZEN TABLE (fixed 2026-08-27) ═══
+   *
+   * It read `public.wallets`, which has taken no write since
+   * 2026-08-21 00:59 UTC (club-arena CLAUDE.md 11.5: "public.wallets is NOT
+   * the live chip pool ... 732,591,994.33 chips stranded in it"). The rule
+   * said "nothing reads it" — eleven call sites did, this one feeding
+   * `useWalletStore`, which feeds `useCanAfford` and the "Playable Now" and
+   * "Chips In Escrow" figures on PlayerWalletPage.
+   *
+   * The numbers were not zero, which is what made this survive: they were
+   * SIX DAYS STALE AND PLAUSIBLE. Measured on production the day of the fix,
+   * the frozen PLAYER pool summed to 732,581,244.32 against a real economy of
+   * 121,018,710.03 — six times the chips that exist — and one sampled player
+   * read 3,313,727.73 against a true balance of 34,818.60, a 95x lie rendered
+   * as a formatted, confident number.
+   *
+   * THE LIVE POOLS, which every server money path actually moves:
+   *   PLAYER   club_members.chip_balance   (+ locked_chips held at tables)
+   *   PROMO    club_members.promo_balance
+   *   BUSINESS agents.agent_wallet_balance (agents only; 0 for everyone else)
+   *
+   * Club-scoped by nature, so the totals here are the player's chips summed
+   * across their clubs. What is SPENDABLE at a given table is a different and
+   * narrower question — `readPlayerBalance` answers that with the same RPC the
+   * buy-in itself uses, and callers gating a spend must use that, not this.
    */
   async getBalances(userId: string): Promise<WalletBalance[]> {
-    const { data, error } = await supabase
-      .from('wallets')
-      .select('user_id, wallet_type, balance, locked_balance, updated_at')
-      .eq('user_id', userId);
+    const [membersRes, agentRes] = await Promise.all([
+      supabase
+        .from('club_members')
+        .select('chip_balance, promo_balance, locked_chips')
+        .eq('user_id', userId),
+      supabase.from('agents').select('agent_wallet_balance').eq('user_id', userId).maybeSingle(),
+    ]);
 
-    if (error) throw error;
-    return (data || []).map((w) => ({
-      userId: w.user_id,
-      walletType: w.wallet_type as WalletType,
-      balance: w.balance,
-      lockedBalance: w.locked_balance,
-      availableBalance: w.balance - w.locked_balance,
-      lastUpdated: w.updated_at,
-    }));
+    /* ABSORBED FROM THE CASHIER AUDIT (2026-08-27, P2), whose fix landed on
+       main against the OLD body of this method: it added Number() coercion
+       because PostgREST can return numeric columns as STRINGS, and a string
+       minus a string is NaN — which string-concatenated into the wallet
+       page's hero figure. That hazard is real and is handled below: every
+       value goes through `num()` before it is summed or subtracted. Their
+       patch hardened the arithmetic on a frozen source; this removes the
+       frozen source and keeps the hardening. */
+    if (membersRes.error) throw membersRes.error;
+    // A non-agent has no `agents` row. That is a legitimate zero, not a
+    // failure — only a real query error is worth throwing over.
+    if (agentRes.error) throw agentRes.error;
+
+    const rows = membersRes.data || [];
+    const num = (v: unknown) => Number(v ?? 0) || 0;
+    const playerTotal = rows.reduce((sum, r) => sum + num(r.chip_balance), 0);
+    const playerLocked = rows.reduce((sum, r) => sum + num(r.locked_chips), 0);
+    const promoTotal = rows.reduce((sum, r) => sum + num(r.promo_balance), 0);
+    const businessTotal = num(agentRes.data?.agent_wallet_balance);
+    const lastUpdated = new Date().toISOString();
+
+    const make = (
+      walletType: WalletType,
+      balance: number,
+      lockedBalance: number
+    ): WalletBalance => ({
+      userId,
+      walletType,
+      balance,
+      lockedBalance,
+      // `balance` is what the player holds; `locked_chips` is the part of it
+      // already committed to a table. Available is the remainder, floored at
+      // zero so a mid-flight lock can never render a negative "Playable Now".
+      availableBalance: Math.max(0, balance - lockedBalance),
+      lastUpdated,
+    });
+
+    return [
+      make('PLAYER' as WalletType, playerTotal, playerLocked),
+      make('PROMO' as WalletType, promoTotal, 0),
+      make('BUSINESS' as WalletType, businessTotal, 0),
+    ];
   },
 
-  /**
-   * Get specific wallet balance
-   */
-  async getWalletBalance(userId: string, walletType: WalletType): Promise<WalletBalance> {
-    const balances = await this.getBalances(userId);
-    const wallet = balances.find((b) => b.walletType === walletType);
-    if (!wallet) throw new Error(`Wallet ${walletType} not found for user ${userId}`);
-    return wallet;
-  },
-
-  /**
-   * Get total available chips across all wallets
-   */
-  async getTotalAvailable(userId: string): Promise<number> {
-    const balances = await this.getBalances(userId);
-    return balances.reduce((sum, w) => sum + w.availableBalance, 0);
-  },
+  // AUDIT 2026-08-25: `getWalletBalance` and `getTotalAvailable` are deleted.
+  //
+  // Neither had a single call site anywhere in src/ or tests/, and both were
+  // actively wrong in ways that would have bitten whoever used them next:
+  //
+  //   getWalletBalance THREW ("Wallet PLAYER not found for user X") when the
+  //   row simply did not exist. A user who has never been provisioned has no
+  //   row and a balance of zero; raising for that turns an ordinary state into
+  //   an error on a display path. `readPlayerBalance` below is the correct
+  //   shape - it distinguishes "zero" from "could not find out".
+  //
+  //   getTotalAvailable ADDED THE THREE WALLET TYPES TOGETHER and returned one
+  //   number. BUSINESS is commissions and settlements, PLAYER is what buys into
+  //   a game, PROMO is bonus chips with their own rules. They are three
+  //   accounts; a single figure spanning them cannot be spent, cannot be
+  //   reconciled, and is exactly the conflation this pass exists to remove
+  //   (see the hero label on PlayerWalletPage for the same fix, made visible).
+  //   Anyone who needs a total should say what it is a total OF.
 
   // ─────────────────────────────────────────────────────────────────────────────
   // CHIP MINTING
@@ -296,15 +360,20 @@ export const WalletService = {
     // in ONE transaction, honoring the real from/to wallets — this replaces the old
     // atomic_deduct + atomic_credit pair which was hardcoded to PLAYER (cross-wallet
     // no-op, plus a deduct-then-credit chip-loss edge if the credit leg failed).
-    const { data: transferRes, error } = await retryAsync(async () => {
-      const res = await supabase.rpc('fn_wallet_type_transfer', {
-        p_user_id: userId,
-        p_from_wallet: request.fromWallet,
-        p_to_wallet: request.toWallet,
-        p_amount: request.amount,
-        p_note: desc,
-      });
-      return res;
+    // 2026-08-27: retryAsync REMOVED from this call. fn_wallet_type_transfer
+    // takes no idempotency key, so an automatic retry after a network-layer
+    // REJECT (a thrown fetch, not a resolved { error }) could re-run a
+    // transfer whose first attempt had committed - the double-move shape. The
+    // wallet_user_transfer call below argues 42501 resolves rather than
+    // throws; that argument never covered thrown rejects and was never made
+    // for this call site at all. One attempt: a failure surfaces, and the
+    // user retries deliberately.
+    const { data: transferRes, error } = await supabase.rpc('fn_wallet_type_transfer', {
+      p_user_id: userId,
+      p_from_wallet: request.fromWallet,
+      p_to_wallet: request.toWallet,
+      p_amount: request.amount,
+      p_note: desc,
     });
 
     if (error) throw error;
@@ -342,7 +411,27 @@ export const WalletService = {
   },
 
   /**
-   * Transfer chips to another user
+   * Transfer chips to another user.
+   *
+   * ── CANNOT SUCCEED FROM THE BROWSER (verified 2026-08-25) ─────────────────
+   * `wallet_user_transfer` is granted EXECUTE to `postgres` and `service_role`
+   * only — `authenticated` is not on its ACL — so every call from a signed-in
+   * user returns 42501 and this method throws. It has two LIVE call sites in
+   * AgentDashboardPage (the agent's "send chips" and "take credit back"
+   * controls), which means both of those buttons have been failing for as long
+   * as the grant has looked like this.
+   *
+   * NOT PAPERED OVER HERE. The fix is a grant plus an auth check inside the
+   * function (an agent may move chips to their own downline and nobody else),
+   * or a service-role API route the way minting goes through
+   * /api/club-arena/mint-chips. Both are server-side and out of scope for a
+   * display audit; making the client "work" by widening the grant without the
+   * auth check would let any signed-in user move any other user's chips.
+   *
+   * `retryAsync` is left in place deliberately: it only retries THROWN
+   * transient errors and supabase-js RESOLVES with `{ error }`, so a 42501 is
+   * returned once and not amplified. (Checked, because the identical wrapper
+   * around log_wallet_transaction was amplifying — that one threw.)
    */
   async transferToUser(
     fromUserId: string,
@@ -353,7 +442,7 @@ export const WalletService = {
   ): Promise<boolean> {
     if (amount <= 0) throw new Error('Transfer amount must be positive');
 
-    const { error } = await retryAsync(async () => {
+    const { data: transferData, error } = await retryAsync(async () => {
       const res = await supabase.rpc('wallet_user_transfer', {
         p_from_user_id: fromUserId,
         p_to_user_id: toUserId,
@@ -365,6 +454,17 @@ export const WalletService = {
     });
 
     if (error) throw error;
+    /* Cashier audit 2026-08-27 (P1-7): the RPCs in this codebase return
+       refusals as { success: false, error } rather than throwing —
+       internalTransfer above checks it, this call discarded `data`, so a
+       refusal logged both sides and emitted BALANCE_UPDATED for a transfer
+       that never happened. Latent today (42501 from the browser, see the
+       docblock) but armed to fire the moment the grant is fixed — which is
+       the stated intended fix. */
+    const parsed = transferData as { success?: boolean; error?: string } | null;
+    if (parsed && parsed.success === false) {
+      throw new Error(parsed.error || 'Transfer refused by the server');
+    }
 
     // Log both sides of the user-to-user transfer
     await this.logTransaction(
@@ -402,12 +502,19 @@ export const WalletService = {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Distribute promo chips to a player
+   * Distribute promo chips to a player.
+   *
+   * ── SAME GRANT PROBLEM AS transferToUser (verified 2026-08-25) ────────────
+   * `distribute_promo_chips` is granted EXECUTE to `postgres` and
+   * `service_role` only, so this returns 42501 from any browser. Live call
+   * sites: AgentDashboardPage's promo control and PlayerSessionsPage's win-back
+   * button. `bulkDistributePromo` below loops over this one, so a bulk
+   * leaderboard payout reports every single row as failed.
    */
   async distributePromo(agentId: string, playerId: string, amount: number): Promise<boolean> {
     if (amount <= 0) throw new Error('Amount must be positive');
 
-    const { error } = await retryAsync(
+    const { data: promoData, error } = await retryAsync(
       () =>
         supabase.rpc('distribute_promo_chips', {
           p_agent_id: agentId,
@@ -418,6 +525,12 @@ export const WalletService = {
     );
 
     if (error) throw error;
+    // Same refusal check as transferToUser (Cashier audit 2026-08-27, P1-7):
+    // a { success: false } body must not report as a paid distribution.
+    const promoParsed = promoData as { success?: boolean; error?: string } | null;
+    if (promoParsed && promoParsed.success === false) {
+      throw new Error(promoParsed.error || 'Promo distribution refused by the server');
+    }
 
     masterBus.emit('BALANCE_UPDATED', { source: 'promo', userId: playerId });
 
@@ -455,6 +568,19 @@ export const WalletService = {
    * Lock chips for table buy-in
    * Deducts from Player Wallet (wallets table) using atomic RPC
    * Chip flow: Union → Club Bank → Agent Wallet → Player Wallet → Table Buy-in
+   *
+   * ── DORMANT, AND WOULD FAIL IF IT WERE NOT (verified 2026-08-25) ──────────
+   * The note below already says `atomic_deduct_wallet_and_log` is service-role
+   * only; the ACL confirms it (postgres + service_role, no `authenticated`), so
+   * the "RPC returns false if insufficient balance" path is unreachable from a
+   * browser — the call returns 42501 first and this throws "Buy-in failed:
+   * permission denied for function atomic_deduct_wallet_and_log".
+   *
+   * Nothing reaches it today: the only caller is `useWalletStore.buyIn`, and
+   * that store method has no UI call site left. Real buy-ins go through
+   * `atomic_table_buyin` on the engine, which is the correct owner. Left in
+   * place with the reason written down rather than deleted, because deleting it
+   * would also mean editing useWalletStore, which is outside this pass.
    */
   async lockForBuyIn(userId: string, tableId: string, amount: number): Promise<boolean> {
     // VALIDATION: Prevent negative/zero/non-integer amounts before RPC call
@@ -523,8 +649,47 @@ export const WalletService = {
   // exactly as its 'buyin' branch already did for the same reason.
 
   /**
-   * Log a wallet transaction for audit trail
-   * All chip movements are recorded as currency-grade transactions
+   * Log a wallet transaction for audit trail.
+   *
+   * ── 2026-08-24: THIS NO LONGER WRITES FROM THE BROWSER. ──────────────────
+   *
+   * It never could. `log_wallet_transaction` is not SECURITY DEFINER and is
+   * granted to service_role only, and `chip_ledger` grants `authenticated`
+   * SELECT but not INSERT. Production logs for a single 3-hour window on
+   * 2026-08-24 show 125 "permission denied for function log_wallet_transaction"
+   * and 124 "permission denied for table chip_ledger" - a 100% failure rate for
+   * as long as both have existed. `CashoutService` already carries the note:
+   * "log_wallet_transaction is service_role-only and would silently no-op."
+   *
+   * What made it expensive rather than merely useless: the RPC was wrapped in
+   * retryAsync(..., 3), so each call retried a PERMANENT authorization error
+   * three times; the chip_ledger insert failed alongside it; and every failure
+   * then awaited FinancialAlertService.logCritical(), which is itself another
+   * database write. One doomed audit log therefore cost roughly six round trips
+   * and raised a false "audit trail gap" CRITICAL alert - on a database already
+   * saturated enough to be cancelling ~20 statements a minute. It also meant
+   * the genuine critical-alert channel was full of noise.
+   *
+   * THE AUDIT TRAIL IS NOT LOST, because the browser was never the one keeping
+   * it. Every real movement of money is written to `wallet_transactions`
+   * server-side, inside the same transaction as the movement itself, by the
+   * SECURITY DEFINER RPC that performs it: atomic_table_buyin,
+   * atomic_table_cashout, atomic_table_rebuy, atomic_table_withdraw,
+   * atomic_credit_wallet_and_log, atomic_distribute_rake, atomic_seat_horse and
+   * atomic_table_addon. That is strictly better bookkeeping than a best-effort
+   * client write, which could succeed while the money move failed, or vice
+   * versa.
+   *
+   * These are deliberately NOT granted to `authenticated` to make the client
+   * write work: doing so would let any logged-in user forge ledger rows for any
+   * user with arbitrary amounts. The denial is the control working.
+   *
+   * Remaining gap, tracked and intentionally not papered over here: a few call
+   * sites log non-monetary AUDIT NOTES that no atomic RPC writes - an agent
+   * promotion (amount 0), a same-person union->club allocation note, a horse
+   * seating note. Those need a service-role API route to land anywhere real.
+   * Until that route exists they are reported once, locally, instead of
+   * pretending to persist. See MIGRATION-CHANGELOG 2026-08-24.
    */
   async logTransaction(
     userId: string,
@@ -537,87 +702,28 @@ export const WalletService = {
     handId?: string,
     relatedEntityId?: string
   ): Promise<void> {
-    try {
-      // Use SECURITY DEFINER RPC to bypass RLS on wallet_transactions
-      const { error } = await retryAsync(
-        () =>
-          supabase.rpc('log_wallet_transaction', {
-            p_user_id: userId,
-            p_wallet_type: walletType,
-            p_amount: amount,
-            p_type: type,
-            p_category: category,
-            p_description: description,
-            p_table_id: tableId || null,
-            p_hand_id: handId || null,
-            p_related_entity_id: relatedEntityId || null,
-          }),
-        3
-      );
-      // Also write to chip_ledger (immutable append-only audit trail)
-      // Guard: chip_ledger has amount > 0 CHECK constraint — skip zero-amount entries
-      const ledgerAmount = Math.abs(amount);
-      if (ledgerAmount > 0) {
-        supabase
-          .from('chip_ledger')
-          .insert({
-            performed_by: userId,
-            from_type:
-              type === 'debit'
-                ? 'player_wallet'
-                : relatedEntityId
-                  ? 'player_wallet'
-                  : 'system_mint',
-            from_entity_id: type === 'debit' ? userId : relatedEntityId,
-            to_type:
-              type === 'credit'
-                ? 'player_wallet'
-                : relatedEntityId
-                  ? 'player_wallet'
-                  : 'system_burn',
-            to_entity_id: type === 'credit' ? userId : relatedEntityId,
-            amount: ledgerAmount,
-            category,
-            description,
-            table_id: tableId || undefined,
-            hand_id: handId || undefined,
-          })
-          .then(({ error: ledgerErr }) => {
-            if (ledgerErr) reportError(ledgerErr, 'WalletService.chip_ledger_write_failed');
-          });
-      }
-
-      if (error) {
-        reportError(error, 'WalletService.logTransaction', {
-          userId,
-          walletType,
-          amount,
-          type,
-          category,
-        });
-        // PARTIAL FAILURE RECOVERY: financial op succeeded but audit trail failed
-        // Fire a critical alert so ops can manually reconcile
-        // FIX: await the async logCritical call to prevent unhandled rejections
-        await FinancialAlertService.logCritical(
-          'WalletService.logTransaction',
-          'Transaction log failed after successful financial operation - audit trail gap',
-          { userId, walletType, amount, type, category, description, rpcError: error.message }
-        );
-      }
-    } catch (err: unknown) {
-      reportError(err, 'WalletService.logTransaction.catch', {
+    // No network call. See the block comment above: both writes this used to
+    // attempt are refused by the database for `authenticated`, deliberately, and
+    // the authoritative row is written server-side by the atomic_* RPC that
+    // moved the money. Retrying a permanent authorization error three times and
+    // then raising a false CRITICAL alert cost ~6 database round trips per call
+    // and produced nothing.
+    //
+    // Kept as a no-op rather than deleted at ~11 call sites so the intent stays
+    // visible and the service-role route that will carry the non-monetary audit
+    // notes has an obvious seam to land on.
+    if (import.meta.env?.DEV) {
+      console.debug('[WalletService.logTransaction] no-op (server-authoritative audit)', {
         userId,
         walletType,
         amount,
         type,
         category,
+        description,
+        tableId,
+        handId,
+        relatedEntityId,
       });
-      // FIX: await the async logCritical call to prevent unhandled rejections
-      await FinancialAlertService.logCritical(
-        'WalletService.logTransaction',
-        'Transaction log threw exception - audit trail gap',
-        { userId, walletType, amount, type, category, error: String(err) }
-      );
     }
   },
 
@@ -676,43 +782,19 @@ export const WalletService = {
   // SETTLEMENT OPERATIONS
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /**
-   * Credit commission to agent's business wallet
-   */
-  async creditCommission(agentId: string, amount: number, periodId: string): Promise<boolean> {
-    const { error } = await retryAsync(
-      () =>
-        supabase.rpc('credit_agent_commission', {
-          p_agent_id: agentId,
-          p_amount: amount,
-          p_description: `Commission for period ${periodId}`,
-        }),
-      3
-    );
-
-    if (error) throw error;
-    masterBus.emit('BALANCE_UPDATED', { source: 'commission', userId: agentId, amount });
-    return true;
-  },
-
-  /**
-   * Process rakeback to player's wallet
-   */
-  async creditRakeback(playerId: string, amount: number, periodId: string): Promise<boolean> {
-    const { error } = await retryAsync(
-      () =>
-        supabase.rpc('credit_player_rakeback', {
-          p_user_id: playerId,
-          p_amount: amount,
-          p_description: `Rakeback payout for period ${periodId}`,
-        }),
-      3
-    );
-
-    if (error) throw error;
-    masterBus.emit('BALANCE_UPDATED', { source: 'rakeback', userId: playerId, amount });
-    return true;
-  },
+  // AUDIT 2026-08-25: `creditCommission` and `creditRakeback` are deleted.
+  //
+  // They are the last two client-side wallet-CREDIT wrappers, and AUDIT M17 at
+  // the top of this file already states the position: "the client no longer
+  // initiates a wallet credit at all". These two were simply missed.
+  //
+  // Neither had a call site. Neither could have worked if it had one:
+  // `credit_agent_commission` and `credit_player_rakeback` are both granted
+  // EXECUTE to `postgres` and `service_role` only, so a browser call returns
+  // 42501 - which is the control working, exactly as the logTransaction note
+  // below explains. Settlement and rakeback are paid server-side by the
+  // process that computes them, inside the same transaction, with an
+  // idempotency key derived from the period rather than minted by a browser.
 
   // NOTE: dealer tipping was REMOVED ENTIRELY on 2026-08-20, by product
   // decision — Smarter Poker does not have dealers to tip and will not be
@@ -737,50 +819,59 @@ export const WalletService = {
   // DIRECT WALLET READS (routed from bypassing queries)
   // ─────────────────────────────────────────────────────────────────────────────
 
-  /**
-   * Get a specific wallet for a user (raw balance fields)
-   */
-  async getWallet(
-    userId: string,
-    walletType: WalletType
-  ): Promise<{ balance: number; locked_balance: number } | null> {
-    const { data, error } = await supabase
-      .from('wallets')
-      .select('balance, locked_balance')
-      .eq('user_id', userId)
-      .eq('wallet_type', walletType)
-      .maybeSingle();
-    if (error) {
-      reportError(error, 'WalletService.getWallet', { userId, walletType });
-      return null;
-    }
-    return data;
-  },
+  // AUDIT 2026-08-25: `getWallet` and `getWallets` are deleted. Zero call
+  // sites, and both collapsed a FAILED READ into an empty result - `getWallet`
+  // returned null for both "no row" and "query refused", `getWallets` returned
+  // [] for both. That is the ambiguity readPlayerBalance below was written to
+  // escape, duplicated twice over. `getBalances` remains for the one caller
+  // that needs the full set (useWalletStore).
+
+  // AUDIT 2026-08-27: `getPlayerBalance` is DELETED, and it is the same
+  // deletion as `getWallet`/`getWallets` above for the same reason.
+  //
+  // Its whole body was `return r.balance ?? 0` - it existed to turn "we could
+  // not find out" into a definite zero, which its own docstring admitted and
+  // which the 2026-08-25 audit had already called out as the cause of
+  // "Insufficient Balance" on a funded player's sign-up dialog. That audit
+  // fixed the ONE call site it was looking at and left the helper, so five
+  // more sites kept the defect:
+  //
+  //   useGlobalBalanceSync   wrote the false 0 into useUserStore.totalChips -
+  //                          the GLOBAL figure the whole app renders, so one
+  //                          refused read blanked a funded player everywhere
+  //   ChipTransferModal      `senderBalance` gates the send, so a false 0
+  //                          BLOCKED AN AGENT FROM SENDING CHIPS THEY HELD
+  //   TablePage x3           buy-in sheet, add-on affordability, realtime
+  //                          balance resync
+  //
+  // All five now call `readPlayerBalance` and leave the last known good value
+  // in place when it answers null - the rule `useWalletStore.loadBalances`
+  // already states: "a transient network failure must not replace a good
+  // number with zeros on screen". A `number`-returning shorthand cannot
+  // express "unknown", so there is no safe version of this helper to keep.
+  // If you want the number, call readPlayerBalance and decide what null means
+  // AT THE CALL SITE, where the consequence is visible.
 
   /**
-   * Get all wallets for a user
+   * The same read, but it tells you whether it WORKED.
+   *
+   * 2026-08-25 (second audit). `getPlayerBalance` collapses every failure —
+   * RPC error, RLS denial, an unresolvable club id, a dropped connection —
+   * into the number 0, because a `?? 0` is the only sane return type for a
+   * function that must hand back a number. That is fine for a display, and
+   * actively dangerous for a GATE: the buy-in dialog read 0, concluded
+   * "insufficient balance" and DISABLED Confirm for a player who was perfectly
+   * well funded. A read that never happened is not a balance of zero.
+   *
+   * `balance: null` means "we could not find out". Callers that gate on funds
+   * must treat that as unknown and let the server decide — the buy-in RPC
+   * refuses an underfunded entry anyway, so failing open costs nothing and
+   * failing closed locks people out of games they can afford.
    */
-  async getWallets(
-    userId: string
-  ): Promise<Array<{ wallet_type: string; balance: number; locked_balance: number }>> {
-    const { data, error } = await supabase
-      .from('wallets')
-      .select('wallet_type, balance, locked_balance')
-      .eq('user_id', userId);
-    if (error) {
-      reportError(error, 'WalletService.getWallets', { userId });
-      return [];
-    }
-    return data || [];
-  },
-
-  /**
-   * Get player wallet balance (shorthand for the most common query)
-   */
-  async getPlayerBalance(
+  async readPlayerBalance(
     userId: string,
     opts?: { clubId?: string | null; tableId?: string | null }
-  ): Promise<number> {
+  ): Promise<{ balance: number | null; source: 'rpc' | 'wallet' | 'failed' }> {
     // UNION LAW (Dan 2026-08-20): under club-scoped chips a player spends the
     // chips of the club they entered through, not the global player wallet.
     // fn_player_spendable_balance resolves this with EXACTLY the same rule the
@@ -788,20 +879,41 @@ export const WalletService = {
     // transaction will actually spend. Falls back to the global wallet when
     // club scoping is off or no club context resolves.
     try {
-      const clubId = opts?.clubId ?? useUserStore.getState().currentClubId ?? null;
-      const { data, error } = await supabase.rpc('fn_player_spendable_balance', {
-        p_user_id: userId,
-        p_club_id: clubId,
-        p_table_id: opts?.tableId ?? null,
-      });
+      // If opts.clubId is explicitly passed (even as null), use it. Otherwise fall back to currentClubId.
+      const clubId =
+        opts && 'clubId' in opts ? opts.clubId : (useUserStore.getState().currentClubId ?? null);
+      const { data, error } = await retryFetch(
+        () =>
+          supabase
+            .rpc('fn_player_spendable_balance', {
+              p_user_id: userId,
+              p_club_id: clubId,
+              p_table_id: opts?.tableId ?? null,
+            })
+            .then((result) => result),
+        { maxRetries: 4, baseDelayMs: 500 }
+      );
       if (!error && data && typeof (data as any).balance !== 'undefined') {
-        return Number((data as any).balance) || 0;
+        return { balance: Number((data as any).balance) || 0, source: 'rpc' };
       }
     } catch {
       /* fall through to the legacy wallet read */
     }
-    const wallet = await this.getWallet(userId, 'PLAYER');
-    return wallet?.balance ?? 0;
+    /* ═══ THE FALLBACK WAS A FROZEN READ, AND IS GONE (2026-08-27) ═══
+       This used to fall back to `public.wallets`, a pool that has taken no
+       write since 2026-08-21 and reads up to 95x high (see getBalances). A
+       fallback that answers with a confidently wrong number is worse than one
+       that admits it does not know: this function's own contract says
+       `balance: null` means "we could not find out", and that callers gating
+       a spend must let the server decide, because the buy-in RPC refuses an
+       underfunded entry anyway. So failing to 'unknown' costs nothing and
+       cannot authorise a spend against six-day-old chips. */
+    reportError(
+      new Error('fn_player_spendable_balance did not answer; no live fallback exists'),
+      'WalletService.readPlayerBalance',
+      { userId }
+    );
+    return { balance: null, source: 'failed' };
   },
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -817,23 +929,24 @@ export const WalletService = {
    * @param walletTypes - Array of wallet types to ensure exist (default: all three)
    */
   async ensureWalletsExist(
-    userId: string,
-    walletTypes: WalletType[] = ['PLAYER', 'BUSINESS', 'PROMO']
+    _userId: string,
+    _walletTypes: WalletType[] = ['PLAYER', 'BUSINESS', 'PROMO']
   ): Promise<void> {
-    for (const walletType of walletTypes) {
-      const { error } = await supabase.from('wallets').upsert(
-        {
-          user_id: userId,
-          wallet_type: walletType,
-          balance: 0,
-          locked_balance: 0,
-        },
-        { onConflict: 'user_id,wallet_type', ignoreDuplicates: true }
-      );
-      if (error) {
-        reportError(error, 'WalletService.ensureWalletsExist', { userId, walletType });
-      }
-    }
+    /* ═══ RETIRED 2026-08-27 — IT PROVISIONED ROWS IN THE FROZEN POOL ═══
+       This upserted zero-balance rows into `public.wallets`, which has been
+       frozen since 2026-08-21. That is a money path writing to the dead pool,
+       which club-arena CLAUDE.md 11.5 names as broken by definition. It was
+       harmless only by luck: the rows it wrote carried balance 0, so they did
+       not move the pool's total and did not trip the freeze-invariant check
+       added the same week — a nonzero write would have.
+
+       Nothing needs provisioning now. The live pools create their own rows:
+       `club_members` on join, `agents` on promotion (its caller in
+       AgentService creates the agents row on the very next statement). Kept as
+       a no-op rather than deleted so an in-flight caller cannot throw; the
+       parameters keep their names, underscored, so the signature still reads.
+       Remove the call sites and then this, in that order. */
+    return;
   },
 };
 

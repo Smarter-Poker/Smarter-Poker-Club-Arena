@@ -18,9 +18,11 @@ import type {
   BettingState,
   RakeConfig,
   Winner,
+  PerPotAward,
 } from '../types.js';
 
 import { secureShuffle } from './CryptoRandom.js';
+import { isOmahaVariant, isHiLoVariant, isShortDeckVariant } from './VariantRules.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -347,6 +349,87 @@ export function compareHands(a: EvaluatedHand, b: EvaluatedHand): number {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// HAND DESCRIPTION — secondary display line for the showdown result
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const RANK_WORDS: Record<number, string> = {
+  2: 'Two',
+  3: 'Three',
+  4: 'Four',
+  5: 'Five',
+  6: 'Six',
+  7: 'Seven',
+  8: 'Eight',
+  9: 'Nine',
+  10: 'Ten',
+  11: 'Jack',
+  12: 'Queen',
+  13: 'King',
+  14: 'Ace',
+};
+
+const RANK_PLURALS: Record<number, string> = {
+  2: 'Twos',
+  3: 'Threes',
+  4: 'Fours',
+  5: 'Fives',
+  6: 'Sixes',
+  7: 'Sevens',
+  8: 'Eights',
+  9: 'Nines',
+  10: 'Tens',
+  11: 'Jacks',
+  12: 'Queens',
+  13: 'Kings',
+  14: 'Aces',
+};
+
+/**
+ * SHOWDOWN SYSTEM 2026-08-25 (Dan spec section 14): a descriptive secondary
+ * line for the winning hand, generated from the ACTUAL evaluated hand — never
+ * hard-coded by the presentation layer. Examples:
+ *   Full House      -> "Kings Full Of Nines"
+ *   Flush           -> "Ace High"
+ *   Straight        -> "Nine High"  (wheel -> "Five High")
+ *   Four of a Kind  -> "Queens"
+ *   Two Pair        -> "Aces And Kings"
+ *   Pair            -> "Queens"
+ *   High Card       -> "Ace High"
+ * The kicker layout is exactly what getKickers() produces: grouped by count
+ * descending, then rank descending — so kickers[0] is always the defining
+ * rank, full house pair sits at index 3, second pair of two pair at index 2.
+ * Low hands (ranking 0, name "Low: ...") reuse their existing name.
+ */
+export function describeHand(hand: EvaluatedHand): string {
+  const k = hand.kickers;
+  const word = (r: number | undefined) => (r !== undefined && RANK_WORDS[r]) || '';
+  const plural = (r: number | undefined) => (r !== undefined && RANK_PLURALS[r]) || '';
+  switch (hand.name) {
+    case 'Royal Flush':
+      return 'Ace High';
+    case 'Straight Flush':
+    case 'Straight':
+    case 'Flush':
+    case 'High Card':
+      return k.length > 0 ? `${word(k[0])} High` : '';
+    case 'Four of a Kind':
+      return plural(k[0]);
+    case 'Full House':
+      return k.length >= 4 ? `${plural(k[0])} Full Of ${plural(k[3])}` : plural(k[0]);
+    case 'Three of a Kind':
+      return plural(k[0]);
+    case 'Two Pair':
+      return k.length >= 3 ? `${plural(k[0])} And ${plural(k[2])}` : plural(k[0]);
+    case 'Pair':
+      return plural(k[0]);
+    default:
+      // Omaha lows ("Low: 8-6-4-3-2") and any future variant-specific names
+      // are already self-describing.
+      return hand.name.startsWith('Low:') ? hand.name : '';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // OMAHA HAND EVALUATOR
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -411,7 +494,13 @@ export function evaluateOmahaLowHand(
   return bestLow;
 }
 
-function compareLowHands(a: number[], b: number[]): number {
+/**
+ * SHOWDOWN POLISH 2026-08-25 (hygiene): exported so HandController's muck
+ * rules compare lows with the SAME comparator that awards the low half —
+ * the duplicated local copy was a drift risk between "who may muck" and
+ * "who gets paid". Lower is better; lexicographic on sorted-desc rank arrays.
+ */
+export function compareLowHands(a: number[], b: number[]): number {
   for (let i = 0; i < 5; i++) {
     if (a[i] !== b[i]) return a[i] - b[i];
   }
@@ -566,9 +655,34 @@ export function calculateBettingState(
   playerBet: number,
   bigBlind: number,
   lastRaise: number = 0,
-  isPotLimit: boolean = false
+  isPotLimit: boolean = false,
+  /**
+   * 2026-08-23: fixed-limit bounds, supplied only by fixed-limit tables (flh,
+   * flo8). `betSize` is the street's wager — the small bet preflop and on the
+   * flop, the big bet on turn and river (BettingStructure.fixedLimitBetSize).
+   * `capped` is true once the street has taken a bet and three raises.
+   *
+   * When present it overrides both bounds: min and max are BOTH `betSize`, so
+   * the only legal wager is exactly that size. That is the whole of fixed
+   * limit — there is no sizing decision to make, which is why this reuses the
+   * pot-limit ceiling machinery rather than adding a parallel one.
+   */
+  fixedLimit?: { betSize: number; capped: boolean }
 ): BettingState {
   const toCall = currentBet - playerBet;
+
+  if (fixedLimit) {
+    return {
+      currentBet,
+      minRaise: fixedLimit.betSize,
+      pot,
+      toCall,
+      maxRaise: fixedLimit.betSize,
+      wagersCapped: fixedLimit.capped,
+      structure: 'fixed_limit',
+    };
+  }
+
   // FIX 121: Bible V8 §4.14 — pot-limit max raise = pot after calling
   // Pot-limit formula: max raise SIZE = pot + toCall (the pot after you call)
   // Previous code had pot + toCall + toCall which was too permissive.
@@ -579,6 +693,7 @@ export function calculateBettingState(
     pot,
     toCall,
     maxRaise,
+    structure: isPotLimit ? 'pot_limit' : 'no_limit',
   };
 }
 
@@ -598,6 +713,12 @@ export function validateAction(
   bettingState: BettingState
 ): { valid: boolean; error?: string } {
   const { currentBet, minRaise, toCall } = bettingState;
+  // 2026-08-23: "Pot-limit max ..." was hardcoded into every ceiling message,
+  // which would have read as a lie on a fixed-limit table. Name the structure
+  // that actually produced the bound.
+  const ceilingLabel = bettingState.structure === 'fixed_limit' ? 'Fixed-limit' : 'Pot-limit';
+  const isFixedLimit = bettingState.structure === 'fixed_limit';
+
   // ══════════════════════════════════════════════════════════════════════════
   // 2026-08-20: THE MIN-RAISE BUTTON WAS REJECTED ~45% OF THE TIME.
   //
@@ -632,31 +753,53 @@ export function validateAction(
     case 'bet':
       if (currentBet > 0)
         return { valid: false, error: 'Cannot bet when there is already a bet (use raise)' };
+      // Fixed limit: a capped street takes no further wager. Reachable only
+      // postflop with a bet already in, so `bet` here is a contradiction, but
+      // the guard is cheap and keeps every wager path capped by one rule.
+      if (bettingState.wagersCapped)
+        return { valid: false, error: 'Betting is capped for this round' };
       if (!amount || amount < minRaise - CENT_EPS)
         return { valid: false, error: `Minimum bet is ${minRaise}` };
       if (amount > playerStack + CENT_EPS) return { valid: false, error: 'Insufficient chips' };
-      // Bible V8 §4.14: Pot-limit max bet
+      // Bible V8 §4.14: pot-limit max bet — and, since 2026-08-23, the
+      // fixed-limit bet size, where maxRaise === minRaise so this pins the bet
+      // to exactly one legal amount.
       if (bettingState.maxRaise !== undefined && amount > bettingState.maxRaise + CENT_EPS) {
-        return { valid: false, error: `Pot-limit max bet is ${bettingState.maxRaise}` };
+        return { valid: false, error: `${ceilingLabel} max bet is ${bettingState.maxRaise}` };
       }
       return { valid: true };
     case 'raise': {
       if (currentBet === 0)
         return { valid: false, error: 'Cannot raise when there is no bet (use bet)' };
       if (!amount) return { valid: false, error: 'Raise amount required' };
+      // Fixed limit: one bet and three raises per street, then the round is
+      // capped and the only actions left are fold and call.
+      if (bettingState.wagersCapped)
+        return { valid: false, error: 'Betting is capped for this round' };
       const playerBet = currentBet - toCall;
       const maxRaiseTo = playerBet + playerStack;
       const raiseAmount = amount - currentBet;
+      // The `amount < maxRaiseTo` escape lets a short stack raise all-in for
+      // less than a full increment. That is correct in no-limit and pot-limit;
+      // in fixed limit an under-sized wager must arrive as `all_in`, never as
+      // a `raise`, or the client could shave the fixed bet.
       if (raiseAmount < minRaise - CENT_EPS && amount < maxRaiseTo - CENT_EPS) {
-        return { valid: false, error: `Minimum raise is ${minRaise}` };
+        return {
+          valid: false,
+          error: isFixedLimit
+            ? `Fixed-limit raise must be exactly ${minRaise}`
+            : `Minimum raise is ${minRaise}`,
+        };
       }
       if (amount > maxRaiseTo + CENT_EPS) return { valid: false, error: 'Insufficient chips' };
-      // FIX 121: Bible V8 §4.14: Pot-limit max raise = pot after calling
+      // FIX 121: Bible V8 §4.14: Pot-limit max raise = pot after calling.
+      // Fixed limit reuses the same ceiling with maxRaise === the bet size.
       if (bettingState.maxRaise !== undefined && raiseAmount > bettingState.maxRaise + CENT_EPS) {
-        return { valid: false, error: `Pot-limit max raise is ${bettingState.maxRaise}` };
+        return { valid: false, error: `${ceilingLabel} max raise is ${bettingState.maxRaise}` };
       }
       return { valid: true };
     }
+
     case 'all_in': {
       // ── Dan 2026-08-21, BINDING: "IN PLO YOU CAN NEVER GO ALL IN IF THE POT
       //    IS LESS THAN THE CHIPS YOU HAVE. THE MOST YOU CAN EVER BET IS POT."
@@ -668,6 +811,21 @@ export function validateAction(
       // An all-in is legal when the whole stack fits under the cap, and when
       // it cannot even cover the call. It is illegal only when the stack
       // EXCEEDS what pot-limit allows.
+      //
+      // 2026-08-23: fixed limit needs the identical treatment for the identical
+      // reason. A shove is legal there only when the stack lands at or under
+      // the street's fixed bet — a deep stack cannot jam a limit game, and on a
+      // capped street it cannot put in more than the call.
+      if (bettingState.wagersCapped) {
+        const playerBet = currentBet - toCall;
+        const allInTo = playerBet + playerStack;
+        if (allInTo > currentBet + CENT_EPS) {
+          return {
+            valid: false,
+            error: 'Betting is capped for this round - you may only call',
+          };
+        }
+      }
       if (bettingState.maxRaise !== undefined) {
         const playerBet = currentBet - toCall;
         const allInTo = playerBet + playerStack;
@@ -675,7 +833,9 @@ export function validateAction(
         if (raiseSize > bettingState.maxRaise + CENT_EPS) {
           return {
             valid: false,
-            error: `Pot-limit max is ${currentBet + bettingState.maxRaise} — you cannot go all in for more than the pot`,
+            error: isFixedLimit
+              ? `Fixed-limit max is ${currentBet + bettingState.maxRaise} - you cannot go all in for more than the bet`
+              : `Pot-limit max is ${currentBet + bettingState.maxRaise} - you cannot go all in for more than the pot`,
           };
         }
       }
@@ -689,6 +849,25 @@ export function validateAction(
 // ═══════════════════════════════════════════════════════════════════════════════
 // RAKE CALCULATION — Exact penny, NO rounding
 // ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Heads-up is raked at 5%, not the schedule's 10%.
+ *
+ * ── Dan 2026-08-27, correcting a rake audit ──────────────────────────────────
+ * "Rake is 10% with a max cap. Heads up is 5% rake."
+ *
+ * The engine already knew heads-up is cheaper, but only in the CAP:
+ * getPlayerCountCaps() halves it at two players. The PERCENT stayed at the
+ * schedule's 10%, so every heads-up pot small enough that the cap never bound
+ * was raked at double the intended rate.
+ *
+ * Measured before this fix, over 12 hours of live cash heads-up hands:
+ * 635 raked hands, 398 of them at ~10%, average effective rate 7.77%, and
+ * 457.69 chips taken above what 5% would have collected. The cap was doing its
+ * job on the big pots, which is why the average sat between the two rates and
+ * why this went unnoticed.
+ */
+export const HEADS_UP_RAKE_PERCENT = 5;
 
 export function calculateRake(
   pot: number,
@@ -706,7 +885,16 @@ export function calculateRake(
   // (Math.min) so over-rounding past the cap is impossible.
   // Aligns with the same Math.round fix applied in HandController.completeHand
   // (commit 9900b874) and distributePot (FIX 179).
-  const rake = Math.round(pot * config.percent) / 100;
+  /* Heads-up pays 5%. `Math.min` rather than an assignment, so a club or table
+     that has deliberately configured a rate BELOW 5% keeps it -- this is a
+     ceiling for two-handed play, never a floor that could raise someone's
+     rake. A table configured at 3% stays at 3% heads-up. */
+  let percent = config.percent;
+  if (playerCount !== undefined && playerCount <= 2) {
+    percent = Math.min(percent, HEADS_UP_RAKE_PERCENT);
+  }
+
+  const rake = Math.round(pot * percent) / 100;
   // Bible V8 §2.9: Use player-count-based cap if available, otherwise flat cap
   let cap = config.cap;
   if (config.playerCountCaps && config.playerCountCaps.length > 0 && playerCount !== undefined) {
@@ -722,26 +910,63 @@ export function calculateRake(
 // WINNER DETERMINATION
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/** Reports a pot whose eligibility snapshot matched none of the contenders. */
+export type EligibilityFallback = (info: {
+  potIndex: number;
+  potAmount: number;
+  snapshotEligible: number;
+  contenders: number;
+}) => void;
+
 export function determineWinners(
   players: SeatPlayer[],
   communityCards: Card[],
   pots: Pot[],
   gameVariant: string = 'nlh',
-  dealerSeat: number = 0
+  dealerSeat: number = 0,
+  /**
+   * SHOWDOWN POLISH 2026-08-25 (spec 16/19/33): optional collector for the
+   * UNMERGED per-pot(-half) award breakdown. The returned Winner[] stays
+   * merged per user — that is the settlement contract and every consumer of
+   * money depends on it — but the merge erases which pot each share came
+   * from, which is exactly what the award-sequence presentation and the
+   * HIGH/LOW winner labels need. Callers that pass an array get one entry
+   * per (pot, half, winner): potIndex, low flag, the exact share of THAT
+   * pot, and the evaluated hand that won it. Presentation-only data; the
+   * amounts are pre-rake shares.
+   */
+  perPotOut?: PerPotAward[],
+  /**
+   * Told when a pot's eligibility snapshot matched nobody and the contenders
+   * still in the hand were used instead. The award still happens; this exists
+   * so a bad snapshot is visible rather than silent.
+   */
+  onEligibilityFallback?: EligibilityFallback
 ): Winner[] {
   const winners: Winner[] = [];
   const activePlayers = players.filter((p) => !p.is_folded);
 
   if (activePlayers.length === 1) {
     const totalPot = pots.reduce((sum, p) => sum + p.amount, 0);
+    perPotOut?.push({
+      userId: activePlayers[0].user_id,
+      potIndex: 0,
+      low: false,
+      amount: totalPot,
+    });
     return [{ userId: activePlayers[0].user_id, amount: totalPot, potIndex: 0 }];
   }
 
-  const isOmaha = gameVariant.startsWith('plo');
-  // Bible V8 §7.6: plo8 = Omaha Hi-Lo (FIX 116: plo_hilo dead variant removed)
-  const isHiLo = isOmaha && gameVariant === 'plo8';
+  // 2026-08-23: all three of these were substring tests on the variant string,
+  // and this function AWARDS THE POT. `flo8` matches none of them: it would
+  // have been evaluated as Hold'em and paid out with no low split, so the
+  // wrong player wins. VariantRules answers all three from one table.
+  const isOmaha = isOmahaVariant(gameVariant);
+  // Bible V8 §7.6: plo8 and flo8 are the hi-lo variants (FIX 116: plo_hilo removed)
+  const isHiLo = isHiLoVariant(gameVariant);
   // FIX 119: Short Deck variant-aware evaluation
-  const isShortDeck = gameVariant === 'short_deck';
+  const isShortDeck = isShortDeckVariant(gameVariant);
+
   const evaluator = isOmaha
     ? evaluateOmahaHand
     : (h: Card[], c: Card[]) => evaluateHand(h, c, isShortDeck);
@@ -754,8 +979,42 @@ export function determineWinners(
 
   for (let potIdx = 0; potIdx < pots.length; potIdx++) {
     const pot = pots[potIdx];
-    const eligible = playerHands.filter((ph) => pot.eligiblePlayers.includes(ph.player.user_id));
-    if (eligible.length === 0) continue;
+    let eligible = playerHands.filter((ph) => pot.eligiblePlayers.includes(ph.player.user_id));
+
+    /**
+     * A POT IS NEVER SKIPPED (Dan 2026-08-26, binding: "a hand must ALWAYS
+     * have a winner ... it is impossible for there to not be a winner").
+     *
+     * This was `if (eligible.length === 0) continue;`. A `continue` here does
+     * not skip a calculation - it DROPS A POT. Those chips are awarded to
+     * nobody and leave the hand. When every pot took that branch the function
+     * returned an empty array, and HandController then handed the whole pot to
+     * `activePlayers[0]`: the first entry of a list, which has nothing to do
+     * with who won.
+     *
+     * `eligiblePlayers` is a snapshot taken when the pot was built, and it can
+     * fail to intersect the contenders for reasons that say nothing about the
+     * hand - a side pot built from a player who has since folded, a stale
+     * rebuild after a reconnect, an id stored in a different shape. In every
+     * one of those the money is real and somebody at this table still holds
+     * the best hand for it.
+     *
+     * So an empty intersection is a BAD SNAPSHOT, not an empty pot: fall back
+     * to every contender still in the hand - the widest defensible
+     * eligibility - and evaluate normally. The pot goes to the best hand among
+     * people actually still playing, which is the only answer that is ever
+     * correct.
+     */
+    if (eligible.length === 0) {
+      if (playerHands.length === 0) continue; // nobody is in the hand at all
+      onEligibilityFallback?.({
+        potIndex: potIdx,
+        potAmount: pot.amount,
+        snapshotEligible: pot.eligiblePlayers.length,
+        contenders: playerHands.length,
+      });
+      eligible = playerHands.slice();
+    }
 
     let hiPotAmount = pot.amount;
     let loPotAmount = 0;
@@ -781,7 +1040,7 @@ export function determineWinners(
     );
     // Bible V8 §2.7: Pass potIndex so Winner objects know which pot they won from
     // FIX 226: Pass dealerSeat so odd chip goes clockwise from dealer (not seat 0)
-    distributePot(winners, hiWinners, hiPotAmount, 'High', potIdx, dealerSeat);
+    distributePot(winners, hiWinners, hiPotAmount, 'High', potIdx, dealerSeat, perPotOut);
 
     // Low half
     if (loPotAmount > 0) {
@@ -790,7 +1049,7 @@ export function determineWinners(
       const loWinners = qualifyingLowPlayers.filter(
         (ph) => JSON.stringify(ph.lowHand!.kickers) === JSON.stringify(bestLoKickers)
       );
-      distributePot(winners, loWinners, loPotAmount, 'Low', potIdx, dealerSeat);
+      distributePot(winners, loWinners, loPotAmount, 'Low', potIdx, dealerSeat, perPotOut);
     }
   }
 
@@ -806,9 +1065,10 @@ function distributePot(
   globalWinners: Winner[],
   roundWinners: { player: SeatPlayer; hand: EvaluatedHand; lowHand?: EvaluatedHand | null }[],
   amount: number,
-  _type: 'High' | 'Low',
+  half: 'High' | 'Low',
   potIndex: number = 0,
-  dealerSeat: number = 0
+  dealerSeat: number = 0,
+  perPotOut?: PerPotAward[]
 ): void {
   // FIX 179: Math.round prevents IEEE 754 truncation (e.g. 0.51*100 = 50.999... → 51)
   const totalCents = Math.round(amount * 100);
@@ -838,6 +1098,16 @@ function distributePot(
   sortedWinners.forEach((pw, i) => {
     const existing = globalWinners.find((w) => w.userId === pw.player.user_id);
     const winAmt = (shareCents + (i < remainderCents ? 1 : 0)) / 100;
+    // SHOWDOWN POLISH 2026-08-25: the unmerged per-pot(-half) record. For the
+    // low half the winning "hand" is the qualifying low, whose name is its
+    // own description ("Low: 8-6-4-3-2").
+    perPotOut?.push({
+      userId: pw.player.user_id,
+      potIndex,
+      low: half === 'Low',
+      amount: winAmt,
+      hand: half === 'Low' ? (pw.lowHand ?? undefined) : pw.hand,
+    });
     if (existing) {
       existing.amount += winAmt;
     } else {

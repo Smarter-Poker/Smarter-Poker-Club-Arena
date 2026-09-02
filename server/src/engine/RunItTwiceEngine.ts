@@ -21,8 +21,26 @@ import { deadlineScheduler, type DeadlineScheduler } from './DeadlineScheduler.j
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * How this table decides how many times to run it (Dan 2026-08-25).
+ *
+ * `run_it_mode` has carried these four values since February and no engine
+ * ever read it, so "Mandatory Twice" and "Mandatory 3 Times" behaved exactly
+ * like "Player's Choice" — the offer went out and either player could decline
+ * a rule the host had made compulsory.
+ */
+export type RunItMode = 'none' | 'player_choice' | 'mandatory_twice' | 'mandatory_three';
+
 export interface RITConfig {
   enabled: boolean;
+  /**
+   * ADDITIVE ONLY. A missing or unrecognised mode leaves the offer flow
+   * exactly as it was — which matters, because `run_it_mode` is the string
+   * 'none' on all 46 live tables while run-it-twice is genuinely ON via the
+   * three boolean columns. Gating `enabled` on this would have switched the
+   * feature off across the whole platform.
+   */
+  mode?: RunItMode;
   autoDeclineTimeout: number;
   maxRuns: 2 | 3;
   /** FIX 96: Timeout for chooser to pick runs (phase 1) */
@@ -77,6 +95,15 @@ export interface RITResult {
 
 export type RITEventType = 'RIT_OFFERED' | 'RIT_ACCEPTED' | 'RIT_DECLINED' | 'RIT_RESOLVED';
 
+/**
+ * WHO ENDED THE OFFER (2026-08-27). A decline that a PLAYER sent and a decline
+ * the DeadlineScheduler wrote when nobody answered are the same state and two
+ * completely different things to tell the table. Without this the engine's
+ * RIT_DECLINED carried no way to tell them apart, so a forwarder could not
+ * announce the expiry without also mislabelling every human decline.
+ */
+export type RITDeclineReason = 'player' | 'timeout';
+
 export interface RITEvent {
   type: RITEventType;
   tableId: string;
@@ -91,6 +118,17 @@ export class RunItTwiceEngine {
   private activeOffers: Map<string, RITState> = new Map();
   private tableConfigs: Map<string, RITConfig> = new Map();
   private onEvent?: (event: RITEvent) => void;
+  /**
+   * ADDITIONAL listeners, alongside `onEvent`.
+   *
+   * `onEvent` is the constructor callback and is REPLACEABLE (tests assign it
+   * to watch the lifecycle). Anything the engine host needs permanently wired
+   * — forwarding to the wire, for instance — must not be able to clobber that
+   * callback or be clobbered by it, so it registers here instead. Duplicate
+   * registrations of the same function are ignored, so a host that wires on
+   * every hand still ends up with exactly one.
+   */
+  private listeners: Array<(event: RITEvent) => void> = [];
   /**
    * Phase 1.2 PR-G-real: central scheduler used for offer expiry. Replaces
    * the per-state setTimeout handle. One DeadlineScheduler tick per process
@@ -113,8 +151,106 @@ export class RunItTwiceEngine {
     this.tableConfigs.set(tableId, config);
   }
 
+  /**
+   * Register a permanent listener. Idempotent by function identity, so a host
+   * that calls this once per hand still receives each event once.
+   */
+  addEventListener(listener: (event: RITEvent) => void): void {
+    if (!this.listeners.includes(listener)) this.listeners.push(listener);
+  }
+
+  removeEventListener(listener: (event: RITEvent) => void): void {
+    const i = this.listeners.indexOf(listener);
+    if (i >= 0) this.listeners.splice(i, 1);
+  }
+
   isEnabled(tableId: string): boolean {
     return this.tableConfigs.get(tableId)?.enabled ?? false;
+  }
+
+  /**
+   * POKERBROS PARITY 2026-08-26: the offer window in seconds, as configured.
+   * The wire events (`rit_offer`, `rit_chooser_decided`) used to hardcode 10
+   * while the engine's own expiry read the config — two clocks for one
+   * countdown. Everything now reads this.
+   */
+  offerTimeoutSeconds(tableId: string): number {
+    return this.tableConfigs.get(tableId)?.autoDeclineTimeout || 10;
+  }
+
+  /**
+   * The MOST boards this table permits — the ceiling advertised on the offer,
+   * not a count anybody has agreed to.
+   *
+   * 2026-08-27: `rit_offer` used to read this ceiling out of getChosenRuns(),
+   * which is the wrong question in the wrong direction. getChosenRuns now
+   * answers "how many boards do we have consent to run" and is 1 until the
+   * offer is actually accepted, so the offer needs its own accessor for "how
+   * many may I ask for". Keeping one function for both is precisely how the
+   * maximum became a default.
+   */
+  maxRunsAllowed(tableId: string): 2 | 3 {
+    return this.tableConfigs.get(tableId)?.maxRuns ?? 2;
+  }
+
+  /** The run count this table forces, or 0 when the players decide. */
+  mandatoryRuns(tableId: string): 0 | 2 | 3 {
+    const config = this.tableConfigs.get(tableId);
+    if (!config?.enabled) return 0;
+    if (config.mode === 'mandatory_three') return 3;
+    if (config.mode === 'mandatory_twice') return 2;
+    return 0;
+  }
+
+  /**
+   * Run it N times WITHOUT asking. The host has already decided.
+   *
+   * This builds the same RITState `offer()` builds, in the state that flow
+   * only reaches after everyone has agreed: chooserDecided, status 'accepted',
+   * and every player already in acceptedBy — because dealDualBoards hard
+   * returns null unless status is 'accepted', and tryCompleteAcceptance needs
+   * every allPlayerIds member present. No deadline is scheduled: there is
+   * nothing to time out when there was never a question.
+   */
+  forceRuns(
+    tableId: string,
+    handId: string,
+    allPlayerIds: string[],
+    pot: number,
+    runs: 2 | 3
+  ): void {
+    const config = this.tableConfigs.get(tableId);
+    if (!config?.enabled || allPlayerIds.length === 0) return;
+
+    this.clearOffer(tableId);
+
+    const state: RITState = {
+      tableId,
+      handId,
+      status: 'accepted',
+      offeredBy: allPlayerIds[0],
+      offeredTo: allPlayerIds[1] ?? allPlayerIds[0],
+      allPlayerIds,
+      chooserPlayerId: allPlayerIds[0],
+      acceptedBy: new Set(allPlayerIds),
+      pot,
+      maxRuns: runs,
+      chosenRuns: runs,
+      chooserDecided: true,
+      board1: [],
+      board2: [],
+      board3: [],
+    };
+    this.activeOffers.set(tableId, state);
+
+    this.emitEvent({
+      type: 'RIT_ACCEPTED',
+      tableId,
+      handId,
+      playerId: allPlayerIds[0],
+      runs,
+      mandatory: true,
+    });
   }
 
   /**
@@ -164,7 +300,11 @@ export class RunItTwiceEngine {
       deadlineMs: Date.now() + (config.autoDeclineTimeout || 10) * 1000,
       callback: () => {
         if (state.status === 'offered') {
-          this.decline(tableId, primaryOfferedTo);
+          // 'timeout', not 'player': nobody declined here, the window closed.
+          // The host forwards THIS case to the wire (see
+          // ServerTableEngineRunout.wireRunItTwiceEvents) — a player decline
+          // is already announced by respondToRIT with its own reason.
+          this.decline(tableId, primaryOfferedTo, 'timeout');
         }
       },
     });
@@ -225,7 +365,7 @@ export class RunItTwiceEngine {
     return true;
   }
 
-  decline(tableId: string, playerId: string): void {
+  decline(tableId: string, playerId: string, reason: RITDeclineReason = 'player'): void {
     const state = this.activeOffers.get(tableId);
     if (!state || state.status !== 'offered') return;
 
@@ -238,6 +378,7 @@ export class RunItTwiceEngine {
       tableId,
       handId: state.handId,
       declinedBy: playerId,
+      reason,
     });
   }
 
@@ -339,9 +480,7 @@ export class RunItTwiceEngine {
      */
     const declaredRuns = runs === 3 ? 3 : 2;
     const declared = [board1Winner, board2Winner, board3Winner].slice(0, declaredRuns);
-    const resolvedCount = declared.filter(
-      (w) => typeof w === 'string' && w.length > 0
-    ).length;
+    const resolvedCount = declared.filter((w) => typeof w === 'string' && w.length > 0).length;
 
     // Each board that was RUN is worth an equal share of the pot, regardless of
     // whether it produced a winner. The last share carries the rounding
@@ -350,7 +489,10 @@ export class RunItTwiceEngine {
     const lastShare = Math.round((state.pot - share * (declaredRuns - 1)) * 100) / 100;
     const award = (playerId: string, amount: number) => {
       if (amount <= 0) return;
-      distribution.set(playerId, Math.round(((distribution.get(playerId) || 0) + amount) * 100) / 100);
+      distribution.set(
+        playerId,
+        Math.round(((distribution.get(playerId) || 0) + amount) * 100) / 100
+      );
     };
 
     let unresolvedChips = 0;
@@ -375,7 +517,11 @@ export class RunItTwiceEngine {
       const contenders =
         state.allPlayerIds && state.allPlayerIds.length > 0
           ? state.allPlayerIds
-          : [...new Set(declared.filter((w): w is string => typeof w === 'string' && w.length > 0))];
+          : [
+              ...new Set(
+                declared.filter((w): w is string => typeof w === 'string' && w.length > 0)
+              ),
+            ];
 
       reportError(
         new Error(
@@ -418,14 +564,44 @@ export class RunItTwiceEngine {
   }
 
   /**
-   * FIX 96: Get the chosen number of runs for a table.
-   * Returns state.chosenRuns (set by chooser), falls back to maxRuns config.
+   * HOW MANY BOARDS THIS TABLE HAS CONSENT TO RUN. One, unless every all-in
+   * player agreed to a number the chooser actually named.
+   *
+   * ── A MISSING CONSENT RECORD MEANT THE MAXIMUM (fixed 2026-08-27) ────────
+   *
+   * This used to be `if (state) return state.chosenRuns;` followed by
+   * `return config?.maxRuns ?? 2`. Both halves were wrong in the same
+   * direction — towards MORE boards:
+   *
+   *   - no state at all (never offered, cleared by endHand, wiped by a
+   *     restart) fell through to the table's MAXIMUM, so the absence of any
+   *     record of consent was read as unanimous consent to the largest split
+   *     the table allows;
+   *   - a state that existed but was still 'offered', or 'declined', returned
+   *     whatever `chosenRuns` had been SEEDED with in offer() — which is
+   *     `config.maxRuns`, not anybody's decision.
+   *
+   * Production hand #3046089 (cash table d9d3c3b3, run_it_mode 'none') is what
+   * that looks like from the felt: three boards dealt, a 1470 pot split
+   * 971.27 / 485.63, and not one player ever shown a run-it-twice prompt.
+   * Three is exactly `maxRuns`.
+   *
+   * A default that decides how to divide a pot must fail towards the outcome
+   * nobody has to agree to, and that is ONE board. The offer's ceiling has its
+   * own accessor now — maxRunsAllowed() — so nothing has to reach in here for
+   * a number that is not a decision.
    */
   getChosenRuns(tableId: string): number {
     const state = this.activeOffers.get(tableId);
-    if (state) return state.chosenRuns;
-    const config = this.tableConfigs.get(tableId);
-    return config?.maxRuns ?? 2;
+    // No record of an offer = no record of consent = one board.
+    if (!state) return 1;
+    // Offered / declined / resolved are all "not agreed, right now".
+    if (state.status !== 'accepted') return 1;
+    // Accepted without the chooser having named a number cannot happen through
+    // tryCompleteAcceptance, which requires chooserDecided. Asserted anyway:
+    // this is the last gate in front of a pot split.
+    if (!state.chooserDecided) return 1;
+    return state.chosenRuns;
   }
 
   /**
@@ -515,6 +691,15 @@ export class RunItTwiceEngine {
         this.onEvent(event);
       } catch (err) {
         reportError(err, 'RunItTwiceEngine.Event_handler_error');
+      }
+    }
+    // Each listener is isolated: one throwing must not stop the next, and must
+    // never stop the engine's own flow.
+    for (const listener of this.listeners) {
+      try {
+        listener(event);
+      } catch (err) {
+        reportError(err, 'RunItTwiceEngine.Event_listener_error');
       }
     }
   }

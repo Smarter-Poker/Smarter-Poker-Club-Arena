@@ -27,6 +27,8 @@
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
+import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
+import { loadColumnsManifest } from './schema-manifest.mjs';
 
 const REPO = process.cwd();
 const MANIFEST = join(REPO, 'scripts/ci/supabase-columns-manifest.json');
@@ -42,7 +44,15 @@ function loadJson(p, label) {
   return JSON.parse(readFileSync(p, 'utf8'));
 }
 
-const cols = loadJson(MANIFEST, 'columns manifest').columns || {};
+/* Base snapshot UNION scripts/ci/schema-manifest.d/*.json - see
+   scripts/ci/schema-manifest.mjs for why the base is read-only to agents. */
+let cols;
+try {
+  cols = loadColumnsManifest(REPO).columns;
+} catch (err) {
+  console.error(`ERROR: ${err.message}`);
+  process.exit(2);
+}
 const allow = loadJson(ALLOWLIST, 'invariants allowlist');
 // A table→Set(columns) lookup. PostgREST also always allows these virtual cols.
 const VIRTUAL = new Set(['count']);
@@ -110,6 +120,77 @@ const fromRx = /\.from\s*\(\s*['"]([a-z_][a-z0-9_]*)['"]\s*\)/g;
 // select with a STRING literal only (skip template-literal / dynamic selects).
 const selectRx = /\.select\s*\(\s*(['"])([^'"]*)\1/g;
 
+/**
+ * WRITE PAYLOADS 2026-08-27 — this gate only ever read `.select()`, and every
+ * one of the four dead controls found in the 2026-08-27 audit hid in a WRITE:
+ *
+ *   - Settings "Save Changes" upserted five columns that do not exist on
+ *     user_notification_preferences. PGRST204 threw, the success path never
+ *     ran, and saving settings failed 100% of the time for every user.
+ *   - Delete Table wrote `is_active` (no such column on `tables`) in BOTH club
+ *     UIs, so every delete 400'd and the table stayed live.
+ *   - Save Note upserted `club_id` onto player_notes, which has no such
+ *     column, so a note could never be saved.
+ *
+ * A select that names a missing column returns junk; a WRITE that names one
+ * rejects the whole statement, so the write class is strictly more damaging —
+ * and it was the unguarded half. This finds `.update({...})`, `.insert({...})`
+ * and `.upsert({...})` object literals and checks their TOP-LEVEL keys the
+ * same way select tokens are checked.
+ *
+ * Deliberately conservative: any payload containing a spread (`...x`) or a
+ * computed key (`[k]:`) is skipped entirely, because its real shape is only
+ * known at runtime and a guess would produce false failures. Array payloads
+ * (bulk insert) are skipped for the same reason.
+ */
+const writeRx = /\.(update|insert|upsert)\s*\(\s*\{/g;
+
+/** Extract top-level keys of the object literal starting at `open` (the `{`). */
+function objectKeysAt(src, open) {
+  let depth = 0;
+  let end = -1;
+  for (let i = open; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        end = i;
+        break;
+      }
+    }
+  }
+  if (end < 0) return null;
+  const body = src.slice(open + 1, end);
+  // Unresolvable shapes — skip the whole payload rather than guess.
+  if (body.includes('...') || /\[[^\]]*\]\s*:/.test(body)) return null;
+  // Top-level keys only: ignore anything nested inside braces/brackets/parens.
+  const keys = [];
+  let d = 0;
+  let tokenStart = 0;
+  const pieces = [];
+  for (let i = 0; i < body.length; i++) {
+    const ch = body[i];
+    if (ch === '{' || ch === '[' || ch === '(') d++;
+    else if (ch === '}' || ch === ']' || ch === ')') d--;
+    else if (ch === ',' && d === 0) {
+      pieces.push(body.slice(tokenStart, i));
+      tokenStart = i + 1;
+    }
+  }
+  pieces.push(body.slice(tokenStart));
+  for (const piece of pieces) {
+    const mm = /^\s*(?:\/\/[^\n]*\n\s*)*['"]?([a-z_][a-z0-9_]*)['"]?\s*:/i.exec(piece);
+    if (mm) keys.push(mm[1]);
+    else {
+      // shorthand `{ user_id }` — the key is the identifier itself
+      const sh = /^\s*([a-z_][a-z0-9_]*)\s*$/i.exec(piece);
+      if (sh) keys.push(sh[1]);
+    }
+  }
+  return keys;
+}
+
 const phantoms = new Map(); // "table.col" → [{file,line}]
 
 for (const dir of SCAN_DIRS) {
@@ -121,6 +202,40 @@ for (const dir of SCAN_DIRS) {
     let m;
     while ((m = fromRx.exec(src))) froms.push({ pos: m.index, table: m[1] });
     if (!froms.length) continue;
+
+    // ── WRITE PAYLOADS (.update/.insert/.upsert) ──
+    writeRx.lastIndex = 0;
+    let w;
+    while ((w = writeRx.exec(src))) {
+      const openBrace = src.indexOf('{', w.index);
+      if (openBrace < 0) continue;
+      let owner = null;
+      for (const fr of froms) {
+        if (fr.pos < w.index) owner = fr;
+        else break;
+      }
+      if (!owner) continue;
+      /* SAME-STATEMENT ONLY. `.update(`/`.insert(`/`.upsert(` are ordinary
+         method names — tournamentScheduleService.upsert({ clubId, ... }) is
+         not a Supabase write, and attributing it to a `.from()` earlier in the
+         file produced ten confident false positives on the first run. A real
+         query-builder write is chained to its .from() inside ONE statement, so
+         an intervening `;` means this belongs to something else. */
+      if (src.slice(owner.pos, w.index).includes(';')) continue;
+      const known = tableCols.get(owner.table);
+      if (!known) continue; // unknown table → phantom-table gate's job
+      const keys = objectKeysAt(src, openBrace);
+      if (!keys) continue; // dynamic payload — deliberately not guessed
+      const line = src.slice(0, w.index).split('\n').length;
+      for (const col of keys) {
+        if (known.has(col)) continue;
+        if (VIRTUAL.has(col)) continue;
+        if (colAllow.get(owner.table)?.has(col)) continue;
+        const key = `${owner.table}.${col}`;
+        if (!phantoms.has(key)) phantoms.set(key, []);
+        phantoms.get(key).push({ file: f.replace(REPO + '/', ''), line, write: true });
+      }
+    }
     // For each select literal, attribute it to the nearest preceding .from().
     selectRx.lastIndex = 0;
     let s;
@@ -153,7 +268,7 @@ console.log(`[check-phantom-columns] tables in manifest: ${tableCols.size}`);
 console.log(`[check-phantom-columns] phantom columns: ${phantoms.size}`);
 
 if (phantoms.size === 0) {
-  console.log('OK — every resolvable .select() column exists on its table.');
+  console.log('OK — every resolvable .select() column and write payload matches its table.');
   process.exit(0);
 }
 
@@ -193,12 +308,12 @@ async function liveColumns() {
     try {
       const res = await fetch(`${url}/rest/v1/rpc/fn_columns_manifest`, {
         method: 'POST',
-        headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        headers: supabaseServerHeaders(key, { 'Content-Type': 'application/json' }),
         body: '{}',
-      // Measured 2026-08-21: this RPC returned in 0.6s warm and 30.7s under
-      // load, against a 30s budget — so on a slow day all three attempts can
-      // expire and the gate loses its live evidence exactly when the database
-      // is busiest. The wait costs nothing when the database is healthy.
+        // Measured 2026-08-21: this RPC returned in 0.6s warm and 30.7s under
+        // load, against a 30s budget — so on a slow day all three attempts can
+        // expire and the gate loses its live evidence exactly when the database
+        // is busiest. The wait costs nothing when the database is healthy.
         signal: AbortSignal.timeout(75000),
       });
       if (res.ok) {
@@ -209,9 +324,13 @@ async function liveColumns() {
         }
         return map.size ? map : UNAVAILABLE;
       }
-      console.log(`[check-phantom-columns] live re-check attempt ${attempt}/3 failed (HTTP ${res.status})`);
+      console.log(
+        `[check-phantom-columns] live re-check attempt ${attempt}/3 failed (HTTP ${res.status})`
+      );
     } catch (err) {
-      console.log(`[check-phantom-columns] live re-check attempt ${attempt}/3 failed (${err.message})`);
+      console.log(
+        `[check-phantom-columns] live re-check attempt ${attempt}/3 failed (${err.message})`
+      );
     }
     if (attempt < 3) await new Promise((r) => setTimeout(r, attempt * 3000));
   }
@@ -257,7 +376,9 @@ if (liveCols) {
 }
 
 console.log('');
-console.log('PHANTOM COLUMNS DETECTED (.select() names a column the table does not have):');
+console.log(
+  'PHANTOM COLUMNS DETECTED (a .select() or a write payload names a column the table does not have):'
+);
 console.log('');
 for (const [key, sites] of phantoms) {
   console.log(`  ${key}`);

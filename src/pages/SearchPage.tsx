@@ -1,20 +1,16 @@
-/**
- *  SEARCH PAGE
- */
-
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import CommunitySurfaceHeader from '../components/community/CommunitySurfaceHeader';
+import { useToast } from '../components/common/Toast';
+import { masterBus } from '../core/MasterBus';
+import { useAuthUser } from '../hooks/useAuthUser';
 import { useDebounce } from '../hooks/useDebounce';
-import { useNavigate } from 'react-router-dom';
 import { STORAGE_KEYS } from '../lib/storage';
 import { supabase } from '../lib/supabase';
-import { masterBus } from '../core/MasterBus';
-import { useToast } from '../components/common/Toast';
-import { useAuthUser } from '../hooks/useAuthUser';
-import './SearchPage.css';
-import PageSkeleton from '../components/common/PageSkeleton';
-import { reportError } from '../utils/errorReporter';
-// Whole-number tournament money (Dan 2026-08-20).
 import { formatBuyInShort } from '../utils/buyIn';
+import { reportError } from '../utils/errorReporter';
+import { PLAYER_NAME_COLUMNS, playerDisplayName } from '../utils/playerDisplayName';
+import './SearchPage.css';
 
 type SearchCategory = 'all' | 'clubs' | 'players' | 'tables' | 'tournaments';
 
@@ -26,209 +22,303 @@ interface SearchResult {
   avatar?: string;
 }
 
-export default function SearchPage() {
-  useEffect(() => {
-    document.title = 'Search | Smarter Poker';
-  }, []);
+interface SearchCacheRecord {
+  cachedAt: number;
+  results: SearchResult[];
+}
 
+type SearchFreshness = 'live' | 'partial' | 'cached';
+
+const CATEGORIES: Array<{ id: SearchCategory; label: string }> = [
+  { id: 'all', label: 'All' },
+  { id: 'players', label: 'Players' },
+  { id: 'clubs', label: 'Clubs' },
+  { id: 'tables', label: 'Tables' },
+  { id: 'tournaments', label: 'Tournaments' },
+];
+
+const SEARCH_CACHE_PREFIX = 'community_search_v1:';
+const SEARCH_CACHE_TTL = 10 * 60 * 1000;
+
+function getSearchCacheKey(query: string, category: SearchCategory): string {
+  return `${SEARCH_CACHE_PREFIX}${category}:${query.trim().toLocaleLowerCase()}`;
+}
+
+function readSearchCache(query: string, category: SearchCategory): SearchResult[] | null {
+  try {
+    const raw = sessionStorage.getItem(getSearchCacheKey(query, category));
+    if (!raw) return null;
+    const record = JSON.parse(raw) as SearchCacheRecord;
+    if (Date.now() - record.cachedAt > SEARCH_CACHE_TTL || !Array.isArray(record.results)) {
+      sessionStorage.removeItem(getSearchCacheKey(query, category));
+      return null;
+    }
+    return record.results;
+  } catch {
+    return null;
+  }
+}
+
+function writeSearchCache(query: string, category: SearchCategory, results: SearchResult[]): void {
+  try {
+    const record: SearchCacheRecord = { cachedAt: Date.now(), results };
+    sessionStorage.setItem(getSearchCacheKey(query, category), JSON.stringify(record));
+  } catch {
+    // Search remains fully usable when session storage is unavailable or full.
+  }
+}
+
+function getSearchCategory(value: string | null): SearchCategory {
+  return CATEGORIES.some((category) => category.id === value) ? (value as SearchCategory) : 'all';
+}
+
+function getResultMark(type: SearchResult['type']): string {
+  switch (type) {
+    case 'club':
+      return '♠';
+    case 'player':
+      return '●';
+    case 'table':
+      return '▰';
+    case 'tournament':
+      return '◆';
+  }
+}
+
+export default function SearchPage() {
   const navigate = useNavigate();
   const toast = useToast();
-  const [query, setQuery] = useState('');
-  const [category, setCategory] = useState<SearchCategory>('all');
+  const { user } = useAuthUser();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const queryFromUrl = searchParams.get('q') || '';
+  const category = getSearchCategory(searchParams.get('type') || searchParams.get('tab'));
+  const [query, setQuery] = useState(queryFromUrl);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchFreshness, setSearchFreshness] = useState<SearchFreshness>('live');
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
-  const [visibleResults, setVisibleResults] = useState(new Set<number>());
-  const [searchFocused, setSearchFocused] = useState(false);
-  const { user } = useAuthUser();
   const [friendAdded, setFriendAdded] = useState<Set<string>>(new Set());
   const searchRequestIdRef = useRef(0);
 
-  // Add friend action (inline on search results)
-  const handleAddFriend = async (e: React.MouseEvent, playerId: string) => {
-    e.stopPropagation();
-    if (!user?.id) return;
-    try {
-      const { error } = await supabase.from('friendships').insert({
-        user_id: user.id,
-        friend_id: playerId,
-        status: 'pending',
-      });
-      if (error && error.code !== '23505') throw error;
-      setFriendAdded((prev) => new Set(prev).add(playerId));
-      masterBus.emit('FRIEND_REQUEST_SENT', { fromUserId: user.id, toUserId: playerId });
-      toast.success('Friend request sent!');
-    } catch (e) {
-      reportError(e, 'SearchPage.setFriendAdded');
-      toast.error('Failed to send request');
-    }
-  };
+  useEffect(() => {
+    document.title = 'Community Search | Smarter Poker';
+  }, []);
 
-  const handleMessagePlayer = (e: React.MouseEvent, playerId: string) => {
-    e.stopPropagation();
-    navigate(`/profile/${playerId}`);
-  };
+  useEffect(() => {
+    setQuery(queryFromUrl);
+  }, [queryFromUrl]);
+
+  useEffect(() => {
+    const legacyCategory = searchParams.get('tab');
+    if (!legacyCategory) return;
+    const next = new URLSearchParams(searchParams);
+    if (!next.has('type')) {
+      const resolved = getSearchCategory(legacyCategory);
+      if (resolved !== 'all') next.set('type', resolved);
+    }
+    next.delete('tab');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.RECENT_SEARCHES);
-    if (saved) {
-      try {
-        setRecentSearches(JSON.parse(saved));
-      } catch {
-        localStorage.removeItem(STORAGE_KEYS.RECENT_SEARCHES);
-      }
+    if (!saved) return;
+    try {
+      setRecentSearches(JSON.parse(saved));
+    } catch {
+      localStorage.removeItem(STORAGE_KEYS.RECENT_SEARCHES);
     }
+  }, []);
+
+  const updateLocation = useCallback(
+    (nextQuery: string, nextCategory = category, replace = true) => {
+      const next = new URLSearchParams(searchParams);
+      next.delete('tab');
+      if (nextCategory === 'all') next.delete('type');
+      else next.set('type', nextCategory);
+      if (nextQuery.trim()) next.set('q', nextQuery.trim());
+      else next.delete('q');
+      setSearchParams(next, { replace });
+    },
+    [category, searchParams, setSearchParams]
+  );
+
+  const rememberSearch = useCallback((value: string) => {
+    const normalized = value.trim();
+    if (normalized.length < 2) return;
+    setRecentSearches((previous) => {
+      const updated = [normalized, ...previous.filter((item) => item !== normalized)].slice(0, 5);
+      localStorage.setItem(STORAGE_KEYS.RECENT_SEARCHES, JSON.stringify(updated));
+      return updated;
+    });
   }, []);
 
   const search = useCallback(
     async (searchQuery: string, getIsMounted?: () => boolean) => {
-      if (!searchQuery.trim()) {
+      const normalized = searchQuery.trim();
+      if (!normalized) {
+        searchRequestIdRef.current += 1;
         if (!getIsMounted || getIsMounted()) {
           setResults([]);
+          setSearchError(null);
+          setSearchFreshness('live');
           setLoading(false);
         }
         return;
       }
 
-      // Increment request ID to track stale responses
       const requestId = ++searchRequestIdRef.current;
-
-      if (!getIsMounted || getIsMounted()) setLoading(true);
-      const allResults: SearchResult[] = [];
-      // Sanitize SQL wildcards to prevent unintended pattern matching
-      const sanitized = searchQuery.replace(/[%_]/g, '');
-
-      try {
-        if (category === 'all' || category === 'clubs') {
-          const { data: clubs } = await supabase
-            .from('clubs')
-            .select('id, name, avatar_url, member_count')
-            .ilike('name', `%${sanitized}%`)
-            .limit(10);
-
-          if (clubs) {
-            allResults.push(
-              ...clubs.map((c) => ({
-                id: c.id,
-                type: 'club' as const,
-                name: c.name,
-                subtitle: `${c.member_count || 0} members`,
-                avatar: c.avatar_url,
-              }))
-            );
-          }
-        }
-
-        if (category === 'all' || category === 'players') {
-          const { data: players } = await supabase
-            .from('profiles')
-            .select('id, username, avatar_url:arena_avatar_url')
-            .ilike('username', `%${sanitized}%`)
-            .limit(10);
-
-          if (players) {
-            allResults.push(
-              ...players.map((p) => ({
-                id: p.id,
-                type: 'player' as const,
-                name: p.username,
-                avatar: p.avatar_url,
-              }))
-            );
-          }
-        }
-
-        if (category === 'all' || category === 'tables') {
-          // 2026-08-19: this searched every table on the platform by name with
-          // no filters at all — private club games, soft-deleted rows, closed
-          // tables and tournament sub-tables were all returned as joinable
-          // cash games. RLS now hides other clubs' private games, but the
-          // lobby hygiene filters belong here too.
-          const { data: tables } = await supabase
-            .from('tables')
-            .select('id, name, stakes, current_players, max_players')
-            .ilike('name', `%${sanitized}%`)
-            .eq('is_deleted', false)
-            .neq('status', 'closed')
-            .is('tournament_id', null)
-            .or('is_private.is.null,is_private.eq.false')
-            .limit(10);
-
-          if (tables) {
-            allResults.push(
-              ...tables.map((t) => ({
-                id: t.id,
-                type: 'table' as const,
-                name: t.name,
-                subtitle: `${t.stakes} • ${t.current_players}/${t.max_players}`,
-              }))
-            );
-          }
-        }
-
-        if (category === 'all' || category === 'tournaments') {
-          const { data: tournaments } = await supabase
-            .from('tournaments')
-            .select('id, name, buy_in_amount, buy_in_fee, status, current_players, max_players')
-            .ilike('name', `%${sanitized}%`)
-            .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING'])
-            // Private club tournaments are not platform-searchable.
-            .or('is_private.is.null,is_private.eq.false')
-            .limit(10);
-
-          if (tournaments) {
-            allResults.push(
-              ...tournaments.map((t) => ({
-                id: t.id,
-                type: 'tournament' as const,
-                name: t.name,
-                // The advertised buy-in is the TOTAL (prize + fee), whole chips.
-                subtitle: `${t.status} • ${formatBuyInShort(t.buy_in_amount || 0, t.buy_in_fee)} buy-in • ${t.current_players || 0}/${t.max_players || '∞'}`,
-              }))
-            );
-          }
-        }
-
-        if (getIsMounted && !getIsMounted()) return;
-        // Reject stale responses — only apply if this is still the latest request
-        if (requestId !== searchRequestIdRef.current) return;
-        setResults(allResults);
-
-        if (searchQuery.length >= 2) {
-          setRecentSearches((prev) => {
-            const updated = [searchQuery, ...prev.filter((s) => s !== searchQuery)].slice(0, 5);
-            localStorage.setItem(STORAGE_KEYS.RECENT_SEARCHES, JSON.stringify(updated));
-            return updated;
-          });
-        }
-      } catch (error) {
-        reportError(error, 'SearchPage.Search_failed');
-        toast.error('Search failed. Please try again.');
+      if (!getIsMounted || getIsMounted()) {
+        setLoading(true);
+        setSearchError(null);
       }
-      if (!getIsMounted || getIsMounted()) setLoading(false);
+
+      const sanitized = normalized.replace(/[%_(),]/g, '').trim();
+      if (!sanitized) {
+        setResults([]);
+        setSearchError(null);
+        setSearchFreshness('live');
+        setLoading(false);
+        return;
+      }
+      const tasks: Array<Promise<SearchResult[]>> = [];
+
+      if (category === 'all' || category === 'clubs') {
+        tasks.push(
+          (async () => {
+            const { data, error } = await supabase
+              .from('clubs')
+              .select('id, name, avatar_url, member_count')
+              .ilike('name', `%${sanitized}%`)
+              .limit(10);
+            if (error) throw error;
+            return (data || []).map((club) => ({
+              id: club.id,
+              type: 'club' as const,
+              name: club.name,
+              subtitle: `${club.member_count || 0} Members`,
+              avatar: club.avatar_url,
+            }));
+          })()
+        );
+      }
+
+      if (category === 'all' || category === 'players') {
+        tasks.push(
+          (async () => {
+            const { data, error } = await supabase
+              .from('profiles')
+              .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
+              .or(
+                `username.ilike.%${sanitized}%,alias.ilike.%${sanitized}%,display_name.ilike.%${sanitized}%`
+              )
+              .limit(10);
+            if (error) throw error;
+            return (data || []).map((player) => ({
+              id: player.id,
+              type: 'player' as const,
+              name: playerDisplayName(player, 'arena'),
+              avatar: player.avatar_url,
+            }));
+          })()
+        );
+      }
+
+      if (category === 'all' || category === 'tables') {
+        tasks.push(
+          (async () => {
+            const { data, error } = await supabase
+              .from('tables')
+              .select('id, name, stakes, current_players, max_players')
+              .ilike('name', `%${sanitized}%`)
+              .eq('is_deleted', false)
+              .neq('status', 'closed')
+              .is('tournament_id', null)
+              .or('is_private.is.null,is_private.eq.false')
+              .limit(10);
+            if (error) throw error;
+            return (data || []).map((table) => ({
+              id: table.id,
+              type: 'table' as const,
+              name: table.name,
+              subtitle: `${table.stakes} · ${table.current_players}/${table.max_players} Seated`,
+            }));
+          })()
+        );
+      }
+
+      if (category === 'all' || category === 'tournaments') {
+        tasks.push(
+          (async () => {
+            const { data, error } = await supabase
+              .from('tournaments')
+              .select('id, name, buy_in_amount, buy_in_fee, status, current_players, max_players')
+              .ilike('name', `%${sanitized}%`)
+              .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING'])
+              .or('is_private.is.null,is_private.eq.false')
+              .limit(10);
+            if (error) throw error;
+            return (data || []).map((tournament) => ({
+              id: tournament.id,
+              type: 'tournament' as const,
+              name: tournament.name,
+              subtitle: `${tournament.status} · ${formatBuyInShort(
+                tournament.buy_in_amount || 0,
+                tournament.buy_in_fee
+              )} Buy-In · ${tournament.current_players || 0}/${tournament.max_players || '∞'}`,
+            }));
+          })()
+        );
+      }
+
+      const settled = await Promise.allSettled(tasks);
+      if ((getIsMounted && !getIsMounted()) || requestId !== searchRequestIdRef.current) return;
+
+      const successful = settled.filter(
+        (entry): entry is PromiseFulfilledResult<SearchResult[]> => entry.status === 'fulfilled'
+      );
+      const failed = settled.filter((entry) => entry.status === 'rejected');
+      failed.forEach((entry) => reportError(entry.reason, 'SearchPage.Search_failed'));
+      const liveResults = successful.flatMap((entry) => entry.value);
+      if (failed.length === settled.length) {
+        const cached = readSearchCache(normalized, category);
+        setResults(cached || []);
+        setSearchFreshness(cached ? 'cached' : 'partial');
+        setSearchError(
+          cached
+            ? 'The live index is temporarily unavailable. A recent local snapshot is shown below.'
+            : 'The community index is temporarily unavailable. Your query is safe to retry.'
+        );
+      } else if (failed.length > 0) {
+        setResults(liveResults);
+        setSearchFreshness('partial');
+        setSearchError(
+          'Some community records could not be reached. The results below are partial.'
+        );
+        writeSearchCache(normalized, category, liveResults);
+      } else {
+        setResults(liveResults);
+        setSearchFreshness('live');
+        setSearchError(null);
+        writeSearchCache(normalized, category, liveResults);
+      }
+      setLoading(false);
     },
     [category]
   );
 
-  // Stagger result rows
-  useEffect(() => {
-    setVisibleResults(new Set());
-    const timers = results.map((_, i) =>
-      setTimeout(() => setVisibleResults((prev) => new Set([...prev, i])), i * 45)
-    );
-    return () => timers.forEach((t) => clearTimeout(t));
-  }, [results]);
-
   const debouncedQuery = useDebounce(query, 300);
+
   useEffect(() => {
+    if (debouncedQuery.trim() !== queryFromUrl.trim()) updateLocation(debouncedQuery);
     let isMounted = true;
     search(debouncedQuery, () => isMounted);
     return () => {
       isMounted = false;
     };
-  }, [debouncedQuery, search]);
+  }, [debouncedQuery, queryFromUrl, search, updateLocation]);
 
-  // ── Bus Listeners: re-search when data changes from other pages (debounced) ──
   useEffect(() => {
     let isMounted = true;
     const refresh = () => {
@@ -242,257 +332,251 @@ export default function SearchPage() {
     ];
     return () => {
       isMounted = false;
-      unsubs.forEach((u) => u());
+      unsubs.forEach((unsubscribe) => unsubscribe());
     };
   }, [query, search]);
 
-  const getIcon = (type: string): string => {
-    switch (type) {
-      case 'club':
-        return '♠';
-      case 'player':
-        return '●';
-      case 'table':
-        return '■';
-      case 'tournament':
-        return '★';
-      default:
-        return '○';
+  const handleAddFriend = async (playerId: string) => {
+    if (!user?.id) return;
+    try {
+      const { error } = await supabase.from('friendships').insert({
+        user_id: user.id,
+        friend_id: playerId,
+        status: 'pending',
+      });
+      if (error && error.code !== '23505') throw error;
+      setFriendAdded((previous) => new Set(previous).add(playerId));
+      masterBus.emit('FRIEND_REQUEST_SENT', { fromUserId: user.id, toUserId: playerId });
+      toast.success(
+        error?.code === '23505' ? 'Friend request already sent' : 'Friend request sent!'
+      );
+    } catch (error) {
+      reportError(error, 'SearchPage.setFriendAdded');
+      toast.error('Failed to send request');
     }
   };
 
-  const handleResultClick = (result: SearchResult) => {
-    switch (result.type) {
-      case 'club':
-        navigate(`/clubs/${result.id}`);
-        break;
-      case 'player':
-        navigate(`/profile/${result.id}`);
-        break;
-      case 'table':
-        navigate(`/table/${result.id}`);
-        break;
-      case 'tournament':
-        navigate(`/tournaments/${result.id}`);
-        break;
-    }
+  const openResult = (result: SearchResult) => {
+    rememberSearch(query);
+    const destinations: Record<SearchResult['type'], string> = {
+      club: `/clubs/${result.id}`,
+      player: `/profile/${result.id}`,
+      table: `/table/${result.id}`,
+      tournament: `/tournaments/${result.id}`,
+    };
+    navigate(destinations[result.type]);
+  };
+
+  const submitSearch = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    rememberSearch(query);
+    updateLocation(query, category, false);
+    search(query);
+  };
+
+  const clearHistory = () => {
+    setRecentSearches([]);
+    localStorage.removeItem(STORAGE_KEYS.RECENT_SEARCHES);
   };
 
   return (
-    <div className="search-page">
-      <div className="search-bar">
-        <input
-          type="text"
-          placeholder="Search clubs, players, tables, tournaments..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onFocus={() => setSearchFocused(true)}
-          onBlur={() => setSearchFocused(false)}
-          autoFocus
-          style={{
-            boxShadow: searchFocused ? '0 0 16px rgba(0, 212, 255, 0.4)' : 'none',
-            transition: 'box-shadow 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-          }}
-        />
-        {query && (
-          <button className="clear-btn" onClick={() => setQuery('')}>
-            ✕
-          </button>
-        )}
-      </div>
+    <main className="search-page">
+      <CommunitySurfaceHeader
+        eyebrow="Community / Discovery"
+        title="Find Your Next Game"
+        description="Scan Live Players, Clubs, Open Tables, And Active Tournaments From One Precise Community Index."
+        metrics={[
+          { label: 'Live Indexes', value: 4, tone: 'live' },
+          { label: 'Current Scope', value: category === 'all' ? 'Network' : category },
+          { label: 'Results', value: loading ? 'Scanning' : results.length },
+        ]}
+      />
 
-      <div className="category-tabs">
-        {(['all', 'clubs', 'players', 'tables', 'tournaments'] as SearchCategory[]).map((cat) => (
-          <button
-            key={cat}
-            className={category === cat ? 'active' : ''}
-            onClick={() => setCategory(cat)}
-          >
-            {cat.charAt(0).toUpperCase() + cat.slice(1)}
-          </button>
-        ))}
-      </div>
+      <section className="search-console" aria-labelledby="search-console-title">
+        <div className="search-console-heading">
+          <div>
+            <p className="search-section-kicker">Network Scanner</p>
+            <h2 id="search-console-title">Community Search</h2>
+          </div>
+          <span className="search-index-status" data-state={searchFreshness}>
+            {searchFreshness === 'cached'
+              ? 'RECENT SNAPSHOT'
+              : searchFreshness === 'partial'
+                ? 'PARTIAL INDEX'
+                : 'LIVE DATA'}
+          </span>
+        </div>
 
-      <div className="search-content">
-        {loading ? (
-          <div
-            className="search-skeletons"
-            style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginTop: '1rem' }}
-          >
-            {[1, 2, 3, 4].map((n) => (
-              <div
-                key={n}
-                style={{
-                  display: 'flex',
-                  gap: '1rem',
-                  alignItems: 'center',
-                  padding: '1rem',
-                  background: 'rgba(255,255,255,0.03)',
-                  borderRadius: '12px',
-                  border: '1px solid rgba(255,255,255,0.05)',
-                }}
-              >
-                <div
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: '50%',
-                    background: 'rgba(255,255,255,0.05)',
-                    animation: 'pulse 1.5s infinite',
-                  }}
-                />
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <div
-                    style={{
-                      width: '40%',
-                      height: 16,
-                      borderRadius: 4,
-                      background: 'rgba(255,255,255,0.05)',
-                      animation: 'pulse 1.5s infinite',
-                    }}
-                  />
-                  <div
-                    style={{
-                      width: '25%',
-                      height: 12,
-                      borderRadius: 4,
-                      background: 'rgba(255,255,255,0.05)',
-                      animation: 'pulse 1.5s infinite',
-                    }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : query.length === 0 ? (
-          <div className="recent-searches">
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: '1rem',
-              }}
-            >
-              <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-muted)' }}>
-                Recent Searches
-              </h3>
-              {recentSearches.length > 0 && (
-                <button
-                  onClick={() => {
-                    setRecentSearches([]);
-                    localStorage.removeItem(STORAGE_KEYS.RECENT_SEARCHES);
-                  }}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#ef4444',
-                    fontSize: '0.8rem',
-                    cursor: 'pointer',
-                    padding: 0,
-                  }}
-                >
-                  Clear History
-                </button>
-              )}
-            </div>
-            {recentSearches.length === 0 ? (
-              <p className="empty-text">No Recent Searches</p>
-            ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                {recentSearches.map((s, i) => (
-                  <button
-                    key={i}
-                    className="recent-item"
-                    onClick={() => setQuery(s)}
-                    style={{
-                      padding: '0.5rem 1rem',
-                      background: 'rgba(255,255,255,0.05)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: '20px',
-                      color: '#fff',
-                    }}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : results.length === 0 ? (
-          <div className="empty-state" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
-            <span
-              style={{
-                fontSize: '2.5rem',
-                display: 'block',
-                marginBottom: '0.75rem',
-                opacity: 0.5,
-              }}
-            >
+        <form className="search-form" role="search" onSubmit={submitSearch}>
+          <label htmlFor="community-search">Search The Smarter Poker Network</label>
+          <div className="search-field-shell">
+            <span className="search-field-mark" aria-hidden="true">
               ⌕
             </span>
-            <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
-              No Results For "{query}"
-            </p>
-            <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
-              {category !== 'all'
-                ? `Try searching in "All" or use different keywords.`
-                : 'Try different keywords or check for typos.'}
-            </p>
+            <input
+              id="community-search"
+              type="search"
+              autoComplete="off"
+              placeholder="Player, Club, Table, Or Tournament"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              autoFocus
+            />
+            {query && (
+              <button className="search-clear" type="button" onClick={() => setQuery('')}>
+                Clear
+              </button>
+            )}
+            <button className="search-submit" type="submit">
+              Search
+            </button>
           </div>
-        ) : (
-          <div className="results-list">
-            {results.map((result, index) => (
-              <div
-                key={`${result.type}-${result.id}`}
-                className="result-item"
-                onClick={() => handleResultClick(result)}
-                style={{
-                  opacity: visibleResults.has(index) ? 1 : 0,
-                  transform: visibleResults.has(index) ? 'translateY(0)' : 'translateY(8px)',
-                  transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                }}
-              >
-                <div className="result-avatar">
-                  {result.avatar ? (
-                    <img src={result.avatar} alt="" loading="lazy" />
-                  ) : (
-                    <span>{getIcon(result.type)}</span>
-                  )}
-                </div>
-                <div className="result-info">
-                  <span className="result-name">{result.name}</span>
-                  {result.subtitle && <span className="result-subtitle">{result.subtitle}</span>}
-                </div>
-                {result.type === 'player' && result.id !== user?.id ? (
-                  <div className="result-actions" onClick={(e) => e.stopPropagation()}>
-                    {friendAdded.has(result.id) ? (
-                      <span className="friend-sent-badge">✓ Sent</span>
-                    ) : (
-                      <button
-                        className="inline-add-btn"
-                        onClick={(e) => handleAddFriend(e, result.id)}
-                        title="Add Friend"
-                      >
-                        +
-                      </button>
-                    )}
-                    <button
-                      className="inline-msg-btn"
-                      onClick={(e) => handleMessagePlayer(e, result.id)}
-                      title="Message"
-                    >
-                      ✉
-                    </button>
+        </form>
+
+        <div className="search-category-rail" role="tablist" aria-label="Search Categories">
+          {CATEGORIES.map((item) => (
+            <button
+              key={item.id}
+              id={`search-tab-${item.id}`}
+              className={category === item.id ? 'is-active' : ''}
+              type="button"
+              role="tab"
+              aria-selected={category === item.id}
+              aria-controls="search-results-panel"
+              onClick={() => updateLocation(query, item.id, false)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        <div
+          id="search-results-panel"
+          className="search-content"
+          role="tabpanel"
+          aria-labelledby={`search-tab-${category}`}
+        >
+          {searchError && (
+            <div className="search-error" role="alert">
+              <div>
+                <strong>
+                  {searchFreshness === 'cached'
+                    ? 'Showing Recent Results'
+                    : 'Index Connection Interrupted'}
+                </strong>
+                <span>{searchError}</span>
+              </div>
+              <button type="button" onClick={() => search(query)}>
+                Retry
+              </button>
+            </div>
+          )}
+
+          {loading ? (
+            <div className="search-skeletons" role="status" aria-label="Scanning Community Index">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div className="search-skeleton" key={index}>
+                  <span />
+                  <div>
+                    <i />
+                    <i />
                   </div>
-                ) : (
-                  <span className="result-type">{result.type}</span>
+                </div>
+              ))}
+            </div>
+          ) : searchError && results.length === 0 ? null : !query.trim() ? (
+            <div className="search-history">
+              <div className="search-history-heading">
+                <div>
+                  <p className="search-section-kicker">Local History</p>
+                  <h3>Recent Searches</h3>
+                </div>
+                {recentSearches.length > 0 && (
+                  <button type="button" onClick={clearHistory}>
+                    Clear History
+                  </button>
                 )}
               </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+              {recentSearches.length === 0 ? (
+                <div className="search-empty compact">
+                  <span aria-hidden="true">◇</span>
+                  <p>Your Submitted Searches Will Appear Here.</p>
+                </div>
+              ) : (
+                <div className="search-history-list">
+                  {recentSearches.map((recent) => (
+                    <button key={recent} type="button" onClick={() => setQuery(recent)}>
+                      <span aria-hidden="true">↗</span>
+                      {recent}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : results.length === 0 && !searchError ? (
+            <div className="search-empty">
+              <span aria-hidden="true">⌁</span>
+              <h3>No Matches For “{query}”</h3>
+              <p>
+                {category === 'all'
+                  ? 'Check The Spelling Or Try A Broader Term.'
+                  : 'Switch To All Or Try A Broader Term.'}
+              </p>
+            </div>
+          ) : (
+            <div className="search-results" aria-live="polite">
+              <div className="search-results-heading">
+                <span>{results.length} Matches</span>
+                <span>{category === 'all' ? 'Across The Network' : `Filtered To ${category}`}</span>
+              </div>
+              {results.map((result) => (
+                <article className="search-result" key={`${result.type}-${result.id}`}>
+                  <button
+                    className="search-result-primary"
+                    type="button"
+                    onClick={() => openResult(result)}
+                    aria-label={`Open ${result.name}`}
+                  >
+                    <span className="search-result-avatar" aria-hidden={!result.avatar}>
+                      {result.avatar ? (
+                        <img src={result.avatar} alt="" loading="lazy" />
+                      ) : (
+                        getResultMark(result.type)
+                      )}
+                    </span>
+                    <span className="search-result-copy">
+                      <strong>{result.name}</strong>
+                      <span>
+                        {result.subtitle || (result.id === user?.id ? 'Your Profile' : result.type)}
+                      </span>
+                    </span>
+                    <span className="search-result-type">{result.type}</span>
+                  </button>
+
+                  {result.type === 'player' && result.id !== user?.id && (
+                    <div className="search-result-actions">
+                      {friendAdded.has(result.id) ? (
+                        <span className="search-request-sent">Request Sent</span>
+                      ) : (
+                        <button type="button" onClick={() => handleAddFriend(result.id)}>
+                          Add Friend
+                        </button>
+                      )}
+                      <button
+                        className="is-primary"
+                        type="button"
+                        onClick={() => navigate(`/messages?compose=${result.id}`)}
+                      >
+                        Message
+                      </button>
+                    </div>
+                  )}
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+    </main>
   );
 }

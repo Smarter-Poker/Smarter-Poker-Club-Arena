@@ -64,6 +64,98 @@ describe('useUserThemeSettings live application', () => {
     expect(before).not.toBe('jade_city');
   });
 
+  it('repaints every mounted table hook from one appearance event', async () => {
+    const { result } = renderHook(() => ({
+      first: useUserThemeSettings('user-1', 'nlh'),
+      second: useUserThemeSettings('user-1', 'plo4'),
+      third: useUserThemeSettings('user-1', 'nlh'),
+    }));
+    await waitFor(() => {
+      expect(result.current.first.loading).toBe(false);
+      expect(result.current.second.loading).toBe(false);
+      expect(result.current.third.loading).toBe(false);
+    });
+
+    act(() => {
+      masterBus.emit('UI_THEME_CHANGED', {
+        key: 'ALL',
+        value: { background_id: 'vegas_night', button_id: 'gold-metal' },
+      } as never);
+    });
+
+    await waitFor(() => {
+      for (const table of Object.values(result.current)) {
+        expect(table.theme.background_id).toBe('vegas_night');
+        expect(table.theme.button_id).toBe('gold-metal');
+      }
+    });
+  });
+
+  it('keeps the newest optimistic art visible while older database echoes arrive', async () => {
+    const { result } = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => {
+      masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+        kind: 'table-appearance',
+        scope: 'user-1:ALL',
+        mutationId: 'appearance-2',
+        state: 'pending',
+      });
+      masterBus.emit('UI_THEME_CHANGED', {
+        key: 'ALL',
+        value: { table_id: 'jade_city' },
+        userId: 'user-1',
+        mutationId: 'appearance-2',
+      });
+      masterBus.emit('UI_THEME_CHANGED', {
+        key: 'ALL',
+        value: { table_id: 'classic_green' },
+        userId: 'user-1',
+      });
+    });
+    expect(result.current.theme.table_id).toBe('jade_city');
+
+    act(() => {
+      masterBus.emit('CUSTOMIZATION_MUTATION_STATE', {
+        kind: 'table-appearance',
+        scope: 'user-1:ALL',
+        mutationId: 'appearance-2',
+        state: 'confirmed',
+      });
+    });
+  });
+
+  it('ignores appearance events belonging to a different signed-in account', async () => {
+    const { result } = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const before = result.current.theme.table_id;
+
+    act(() => {
+      masterBus.emit('UI_THEME_CHANGED', {
+        key: 'ALL',
+        value: { table_id: 'jade_city' },
+        userId: 'user-2',
+      });
+    });
+    expect(result.current.theme.table_id).toBe(before);
+  });
+
+  it('does not paint a signed-in account appearance onto a guest table', async () => {
+    const { result } = renderHook(() => useUserThemeSettings(null, 'nlh'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const before = result.current.theme.table_id;
+
+    act(() => {
+      masterBus.emit('UI_THEME_CHANGED', {
+        key: 'ALL',
+        value: { table_id: 'jade_city' },
+        userId: 'signed-out-user',
+      });
+    });
+    expect(result.current.theme.table_id).toBe(before);
+  });
+
   it('ignores a change saved against a different game type', async () => {
     const { result } = renderHook(() => useUserThemeSettings('user-1', 'nlh'));
     await waitFor(() => expect(result.current.loading).toBe(false));

@@ -38,6 +38,21 @@ export interface PreActionEntry {
   setAt: number;
   /** If the action involves calling, the max amount the player agreed to */
   maxCallAmount?: number;
+  /**
+   * Dan 2026-08-28 (CRITICAL, verbatim): "I was in the small blind and
+   * clicked the Call 15 button (NOT the Call Any button), it auto called a
+   * raise which was more than the 15. THAT CAN NEVER EVER EVER HAPPEN."
+   *
+   * The price to call AT THE MOMENT THE PRE-ACTION WAS SET, recorded by the
+   * ENGINE (ServerTableEngineTurns.setPreAction), never trusted from the
+   * client. `maxCallAmount` was always optional and the client never sent
+   * it, so the `auto_call` cap guard below never fired and `auto_call`
+   * degenerated to `auto_call_any`. This field closes that hole on the
+   * server side regardless of what any client version sends: an `auto_call`
+   * may execute only at (or under) the price the player saw when they
+   * pressed the button.
+   */
+  toCallAtSet?: number;
 }
 
 export interface PreActionResult {
@@ -96,7 +111,8 @@ export class PreActionEngine {
     tableId: string,
     playerId: string,
     action: PreActionType,
-    maxCallAmount?: number
+    maxCallAmount?: number,
+    toCallAtSet?: number
   ): void {
     const key = `${tableId}:${playerId}`;
     const fsm = this.getFSM(tableId, playerId);
@@ -117,6 +133,7 @@ export class PreActionEngine {
       action,
       setAt: Date.now(),
       maxCallAmount,
+      toCallAtSet,
     });
 
     this.emitEvent({
@@ -187,23 +204,21 @@ export class PreActionEngine {
     fsm.transition('validating');
 
     /**
-     * Dan 2026-08-21 (bug list item 1): a fold/check pre-action is a decision
-     * about the WHOLE HAND, not about one street.
+     * EVERY pre-action is single-shot (Dan 2026-08-28, reversing the
+     * 2026-08-21 "sticky" re-arm).
      *
-     * This used to `delete` unconditionally, so "Check/Fold" checked the flop,
-     * disarmed itself, and then demanded a fresh click on the turn — the player
-     * had told the table they were done with the hand and the table asked again
-     * every street. Fold-family and check-family pre-actions now re-arm after
-     * they run and survive until the hand ends (`dispose`/`clearTable` at
-     * settlement) or the player clears them.
-     *
-     * Money-moving pre-actions stay single-shot on purpose: agreeing to call
-     * once is not agreeing to call again on every later street.
+     * The 2026-08-21 change made fold/check-family pre-actions re-arm after
+     * executing so a Check/Fold survived the whole hand. Dan's 2026-08-28
+     * report is that this reads as a GLITCH at the table: "the check fold,
+     * folds... but then re-appears again after the fold, same bug for check
+     * or call any" — the engine kept acting on (and re-surfacing) a choice
+     * the player had already watched execute, while the client's own strip
+     * showed unarmed. One press, one action: the entry is deleted here,
+     * unconditionally, and a player who wants the same pre-action on the
+     * next street presses it again — the strip is one tap away and the
+     * armed state on screen now always equals the armed state in the
+     * engine.
      */
-    const sticky =
-      entry.action === 'auto_fold' ||
-      entry.action === 'auto_check_fold' ||
-      entry.action === 'auto_check';
     this.queuedActions.delete(key);
 
     let action: ActionType | undefined;
@@ -239,7 +254,7 @@ export class PreActionEngine {
           return {
             executed: false,
             invalidated: true,
-            reason: 'Bet was placed — auto-check cleared',
+            reason: 'Bet was placed - auto-check cleared',
           };
         }
         break;
@@ -268,7 +283,22 @@ export class PreActionEngine {
            * to 50 has not agreed to an all-in for 50 against a 5,000 bet; they
            * have declined the hand.
            */
-          if (entry.maxCallAmount !== undefined && amountToCall > entry.maxCallAmount) {
+          /**
+           * Dan 2026-08-28 (CRITICAL): the effective cap is the LOWER of the
+           * client-declared max and the price the player was actually looking
+           * at when they armed the button (`toCallAtSet`, recorded by the
+           * engine itself at set time). Before this, `maxCallAmount` was the
+           * only guard and the client never sent it — so "Call 15" happily
+           * called a raise to 65. Now a raise past the armed price ALWAYS
+           * invalidates, no matter what the client did or didn't send.
+           * `auto_call_any` below remains uncapped by design — that is the
+           * button whose label is the promise.
+           */
+          const effectiveCap = Math.min(
+            entry.maxCallAmount ?? Number.POSITIVE_INFINITY,
+            entry.toCallAtSet ?? Number.POSITIVE_INFINITY
+          );
+          if (Number.isFinite(effectiveCap) && amountToCall > effectiveCap) {
             // FSM: validating → invalidated → idle
             fsm.transition('invalidated');
             fsm.transition('idle');
@@ -281,7 +311,7 @@ export class PreActionEngine {
             return {
               executed: false,
               invalidated: true,
-              reason: `Call amount (${amountToCall}) exceeds pre-set max (${entry.maxCallAmount})`,
+              reason: `Call amount (${amountToCall}) exceeds pre-set max (${effectiveCap})`,
             };
           }
           action = 'call';
@@ -318,12 +348,7 @@ export class PreActionEngine {
         amount,
       });
       fsm.transition('idle');
-      // Re-arm for the rest of the hand (see the `sticky` note above). A fold
-      // needs no re-arm — that player is out of the hand already.
-      if (sticky && action !== 'fold') {
-        this.queuedActions.set(key, { ...entry });
-        if (fsm.canTransition('queued')) fsm.transition('queued');
-      }
+      // No re-arm of any kind — see the single-shot note above the delete.
       return { executed: true, action, amount };
     }
 

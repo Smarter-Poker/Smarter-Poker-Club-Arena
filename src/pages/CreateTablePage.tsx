@@ -17,7 +17,7 @@ import './CreateTablePage.css';
 const gameTypeCardAnimationStyle = (index: number) => ({
   opacity: 0,
   transform: 'translateY(10px)',
-  animation: `fadeInUp 0.5s ease-out ${index * 70}ms forwards`,
+  animation: `animationsFadeInUp 0.5s ease-out ${index * 70}ms forwards`,
 });
 
 interface GameType {
@@ -87,16 +87,51 @@ const GAME_TYPES: GameType[] = [
     icon: '♦',
     unlockLevel: 1,
   },
+  // ── LIMIT (2026-08-23, Dan) ───────────────────────────────────────────────
+  // The lobby has always had a LIMIT tab, and ClubHomePage.cashKind() has
+  // always sorted `flh`/`limit_*` tables into it — but FIX 116 deleted the only
+  // two cards that could produce such a table, so the tab was structurally
+  // empty and this screen offered no way to fill it.
+  //
+  // Both games are now played fixed-limit for real (see
+  // server/src/engine/BettingStructure.ts) rather than dealt as limit and bet
+  // as no-limit, which is what a bare card restore would have produced.
+  //
+  // Green on purpose: at a glance a player should be able to tell a limit table
+  // from the blue no-limit and pot-limit ones BEFORE they sit down, because the
+  // betting rules they are agreeing to are completely different.
+  {
+    id: 'flh',
+    name: 'FLH',
+    subtitle: "FIXED LIMIT HOLD'EM",
+    gradient: 'linear-gradient(135deg, #10b981 0%, #059669 50%, #047857 100%)',
+    icon: '♠',
+    unlockLevel: 1,
+  },
+  {
+    id: 'flo8',
+    name: 'FLO8',
+    subtitle: 'FIXED LIMIT OMAHA HI-LO',
+    gradient: 'linear-gradient(135deg, #14b8a6 0%, #0d9488 50%, #0f766e 100%)',
+    icon: '♣',
+    unlockLevel: 1,
+  },
 ];
 
-export default function CreateTablePage() {
-  const { clubId } = useParams<{ clubId: string }>();
+export default function CreateTablePage({
+  clubIdOverride,
+  onBack,
+}: {
+  clubIdOverride?: string;
+  onBack?: () => void;
+} = {}) {
+  const { clubId: routeClubId } = useParams<{ clubId: string }>();
+  const clubId = clubIdOverride || routeClubId;
   const navigate = useNavigate();
   const userLevel = 1; // All game types unlocked at level 1
 
-  // Union governance (2026-08-19): union clubs may create PRIVATE club games
-  // here (the config pages force is_private). No redirect — only union admins
-  // can create union-wide tables, from the union page.
+  // Access is enforced by GameCreationGuard. For a union-managed club that
+  // means only an authorized union operator reaches this selector.
 
   const handleSelectGameType = (gameType: GameType) => {
     if (userLevel < gameType.unlockLevel) {
@@ -108,7 +143,8 @@ export default function CreateTablePage() {
   };
 
   const handleBack = () => {
-    navigate(`/clubs/${clubId}`);
+    if (onBack) onBack();
+    else navigate(`/clubs/${clubId}`);
   };
 
   return (
@@ -143,14 +179,10 @@ export default function CreateTablePage() {
         ))}
       </div>
 
-      {/* Table Template Button */}
-      <div className="create-table-page__footer">
-        <button className="template-button">
-          <span>Table Template</span>
-          <span className="template-icon">⚙</span>
-        </button>
-        <p className="unlock-hint">Unlock At Level 1</p>
-      </div>
+      {/* The "Table Template" footer button was removed 2026-08-27: it had no
+          onClick since the page was written — a button that does nothing.
+          Templates live on the config page itself (the Load Template dropdown
+          and Save as Template button), which is where a template is useful. */}
 
       {/* Background */}
       <div className="create-table-page__background"></div>

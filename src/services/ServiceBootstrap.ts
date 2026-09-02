@@ -8,6 +8,7 @@
  */
 
 import { masterBus } from '../core/MasterBus';
+import { soundService } from './SoundService';
 import { OfflineQueueService } from './OfflineQueueService';
 import { SettlementCronService } from './SettlementCronService';
 import { FinancialCronService } from './FinancialCronService';
@@ -48,6 +49,32 @@ export async function bootServices(options?: {
     timestamp: new Date().toISOString(),
   };
 
+  // 0. Sound — FIRST, and for one reason: its constructor installs the
+  //    autoplay-unlock listeners, and those have to exist BEFORE the user's
+  //    next click, not after it.
+  //
+  //    Dan 2026-08-24: "when you are spectating or watching a table it should
+  //    have the same animations and graphics and game flow as if you're
+  //    playing it... sound effects, everything."
+  //
+  //    Nothing in the sound path was ever gated on being seated - checked all
+  //    of it. The gap was the AudioContext. SoundService was imported only by
+  //    the lazily-loaded table chunk, so the context was constructed AFTER the
+  //    click that opened the table had already been dispatched, and browsers
+  //    only let a suspended context resume inside a gesture. A player who SITS
+  //    clicks again within seconds (buy-in, fold, call) and unlocks it without
+  //    noticing. A railbird clicks nothing, ever - so on iOS Safari and mobile
+  //    Chrome the table stayed silent for the whole session.
+  //
+  //    Importing it here puts the listeners in place during boot, so the very
+  //    first tap anywhere in the app unlocks audio for everyone.
+  try {
+    soundService.primeAudioUnlock();
+    console.debug('[ServiceBootstrap] ✓ SoundService unlock listeners armed');
+  } catch (err: unknown) {
+    console.debug('[ServiceBootstrap] ✗ SoundService unlock failed:', err);
+  }
+
   // 1. Offline Queue — must init before any financial operations
   try {
     await OfflineQueueService.init();
@@ -79,7 +106,9 @@ export async function bootServices(options?: {
   //    and rebought with NO stop-loss). It has been removed so the server is the
   //    single source of truth. Nothing to start client-side.
   result.autoRebuy = true;
-  console.debug('[ServiceBootstrap] ✓ Horse auto-rebuy is server-authoritative (no client monitor)');
+  console.debug(
+    '[ServiceBootstrap] ✓ Horse auto-rebuy is server-authoritative (no client monitor)'
+  );
 
   // 4. Financial Cron — reconciliation, suspension checks, audit trail
   try {
@@ -93,6 +122,31 @@ export async function bootServices(options?: {
   } catch (err: unknown) {
     console.debug('[ServiceBootstrap] ✗ FinancialCronService failed:', err);
   }
+
+  // 5. Global lobby connection (2026-08-24). Warm the auth token cache, then
+  //    open the shared /ws/multi engine socket BEFORE any table is joined, so
+  //    the first join is a SUBSCRIBE frame (~30ms) instead of a TCP + TLS +
+  //    WS-upgrade handshake (~300-600ms). Fire-and-forget: failure here costs
+  //    nothing — the first acquire() simply opens the socket itself, which is
+  //    exactly the old cold path.
+  void (async () => {
+    try {
+      const { initAuthTokenCache, getFreshAccessToken } = await import('../lib/authToken');
+      initAuthTokenCache();
+      const { isMuxEnabled, engineSocketMux } = await import('./EngineSocketMux');
+      if (!isMuxEnabled()) return;
+      const token = await getFreshAccessToken();
+      if (!token) return; // not logged in yet — first acquire covers it
+      const env = (import.meta as unknown as { env: Record<string, string | undefined> }).env;
+      const engineUrl =
+        env?.VITE_GAME_SERVER_URL ||
+        (env?.PROD ? 'https://engine.smarter.poker' : 'http://localhost:8080');
+      engineSocketMux.prewarm(engineUrl, token);
+      console.debug('[ServiceBootstrap] ✓ Engine lobby socket pre-warmed');
+    } catch (err: unknown) {
+      console.debug('[ServiceBootstrap] ✗ Engine socket pre-warm skipped:', err);
+    }
+  })();
 
   booted = true;
 

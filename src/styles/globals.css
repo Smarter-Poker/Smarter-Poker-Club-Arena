@@ -25,9 +25,10 @@
   --card-surface: #3a3b3c;
 
   /* ─────────────── Semantic Colors ─────────────── */
-  --success: #31a24c;
-  --success-glow: rgba(49, 162, 76, 0.4);
-  --success-dim: rgba(49, 162, 76, 0.15);
+  /* HOUSE GREEN - see club-engine.css --success-green. */
+  --success: #3fb950;
+  --success-glow: rgba(63, 185, 80, 0.4);
+  --success-dim: rgba(63, 185, 80, 0.15);
 
   --danger: #f02849;
   --danger-glow: rgba(240, 40, 73, 0.4);
@@ -132,19 +133,20 @@
 
   /* ─────────────── Layout ─────────────── */
   --header-height: 56px;
-  /* Dan 2026-08-20: this said 60px and the nav has never been 60px. Measured
-     in headless Chrome against the real ClubBottomNav markup: 74px (8px row
-     padding x2, 8px item padding x2, a 24px icon, a 4px gap and a ~12px
-     label). Every page that reserved `var(--bottom-nav-height)` was therefore
-     14px short and its last row of content sat UNDER the nav — which is the
-     "footer links are not at the bottom" symptom. .bottomNav now also carries
-     `min-height: var(--bottom-nav-height)` so the token and the component can
-     never silently disagree again. */
-  --bottom-nav-height: 74px;
+  /* The source remains proportional through phones and tablets, then stops at
+     the approved 132px desktop footer height from the 1680 x 932 authority.
+     The old 263px ceiling produced a 230px footer there and covered the lobby. */
+  --bottom-nav-height: clamp(44px, 13.72vw, 132px);
   /* What a page must actually reserve: the bar plus the phone's home-indicator
      inset, which the bar adds to its own padding on iOS. Reserving the bar
      alone is why content still hid behind it on notched devices. */
   --bottom-nav-clearance: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
+  /* WHERE THE TOP OF THE DRAWN BAR ACTUALLY IS (Dan 2026-08-25).
+     --bottom-nav-clearance is what a page must RESERVE, and it is deliberately
+     generous. It is the wrong number to stack a second fixed bar on, because
+     Anything anchored at the clearance floats above the nav on a notched
+     iPhone. Anchor stacked bars on THIS. */
+  --bottom-nav-stack-base: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
   --sidebar-width: 280px;
 
   /* ─────────────── FUTURISTIC METAL UI ─────────────── */
@@ -277,6 +279,10 @@ body {
 
 #root {
   min-height: 100vh;
+  /**
+   * AppLayout reserves persistent action-bar space inside its own flow, after
+   * the GlobalHeader. Body padding must never move the whole application down.
+   */
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
@@ -331,10 +337,6 @@ a {
   transition: color var(--duration-fast) var(--ease-out);
 }
 
-a:hover {
-  color: var(--pure-white);
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    BUTTONS
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -364,22 +366,10 @@ a:hover {
   background: var(--gradient-blue);
   color: var(--pure-white);
 }
-
-.btn-primary:hover:not(:disabled) {
-  box-shadow: var(--shadow-glow-blue);
-  transform: translateY(-2px);
-}
-
 .btn-success {
   background: var(--gradient-success);
   color: var(--pure-white);
 }
-
-.btn-success:hover:not(:disabled) {
-  box-shadow: var(--shadow-glow-success);
-  transform: translateY(-2px);
-}
-
 .btn-danger {
   background: var(--gradient-danger);
   color: var(--pure-white);
@@ -391,19 +381,9 @@ a:hover {
   border: 1px solid var(--border-subtle);
 }
 
-.btn-ghost:hover:not(:disabled) {
-  background: var(--elevated-surface);
-  color: var(--text-primary);
-  border-color: var(--royal-blue);
-}
-
 .btn-white {
   background: var(--pure-white);
   color: var(--near-black);
-}
-
-.btn-white:hover:not(:disabled) {
-  background: var(--off-white);
 }
 
 /* Sizes */
@@ -427,11 +407,6 @@ a:hover {
   border-radius: var(--radius-xl);
   padding: var(--space-6);
   transition: all var(--duration-normal) var(--ease-out);
-}
-
-.card:hover {
-  border-color: var(--border-blue);
-  transform: translateY(-2px);
 }
 
 .card-glass {
@@ -688,11 +663,6 @@ a:hover {
 .spring-hover {
   transition: transform var(--duration-fast) var(--ease-spring);
 }
-
-.spring-hover:hover {
-  transform: translateY(-2px);
-}
-
 .press-scale {
   transition: transform var(--duration-fast) var(--ease-out);
 }
@@ -731,13 +701,6 @@ a:hover {
   background: var(--royal-blue);
   border-radius: var(--radius-full);
   box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.3);
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--royal-blue-light);
-  box-shadow:
-    inset 0 0 6px rgba(0, 0, 0, 0.5),
-    0 0 12px var(--royal-blue-glow);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -846,4 +809,15 @@ textarea:focus-visible {
 :focus-visible {
   outline: 2px solid #ffd700;
   outline-offset: 2px;
+}
+
+/* ═══ Mobile polish (2026-08-24) ═══
+   text-size-adjust: stops iOS Safari inflating fonts on orientation change,
+   which pushed carefully sized mobile layouts out of their boxes.
+   tap-highlight: kills the translucent gray flash iOS/Android paint over
+   every tap target — the app supplies its own :active states. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
 }

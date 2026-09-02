@@ -21,6 +21,7 @@ import UnionOpsPanel from '../components/union/UnionOpsPanel';
 
 interface HubStats {
   totalAlerts: number;
+  openIncidents: number;
   openDisputes: number;
   rateChanges: number;
   healthChecks: number;
@@ -31,16 +32,25 @@ const NAV_ITEMS = [
   {
     icon: '◆',
     label: 'Financial Alerts',
-    description: 'Critical warnings and system notifications',
+    description: 'Critical Warnings And System Notifications',
     path: '/financial-alerts',
     color: '#ef4444',
     bg: 'rgba(239,68,68,0.1)',
     border: 'rgba(239,68,68,0.3)',
   },
   {
+    icon: '◈',
+    label: 'Drift Incidents',
+    description: 'Ledger Drift Detection And 20-Minute Reconciliation Queue',
+    path: '/financial-incidents',
+    color: '#f43f5e',
+    bg: 'rgba(244,63,94,0.1)',
+    border: 'rgba(244,63,94,0.3)',
+  },
+  {
     icon: '◇',
     label: 'System Health',
-    description: 'Ledger reconciliation & cron status',
+    description: 'Ledger Reconciliation & Cron Status',
     path: '/financial-health',
     color: '#10b981',
     bg: 'rgba(16,185,129,0.1)',
@@ -49,7 +59,7 @@ const NAV_ITEMS = [
   {
     icon: '⚠',
     label: 'Disputes',
-    description: 'Open disputes needing resolution',
+    description: 'Open Disputes Needing Resolution',
     path: '/disputes',
     color: '#f59e0b',
     bg: 'rgba(245,158,11,0.1)',
@@ -58,7 +68,7 @@ const NAV_ITEMS = [
   {
     icon: '▦',
     label: 'Rate Audit Trail',
-    description: 'Commission & rake rate change history',
+    description: 'Commission & Rake Rate Change History',
     path: '/rate-audit',
     color: '#8b5cf6',
     bg: 'rgba(139,92,246,0.1)',
@@ -67,7 +77,7 @@ const NAV_ITEMS = [
   {
     icon: '▦',
     label: 'Agent Portal',
-    description: 'Triple wallet, credit lines, commissions',
+    description: 'Triple Wallet, Credit Lines, Commissions',
     path: '/agent-portal',
     color: '#0ea5e9',
     bg: 'rgba(14,165,233,0.1)',
@@ -76,7 +86,7 @@ const NAV_ITEMS = [
   {
     icon: '▦',
     label: 'Rakeback Dashboard',
-    description: 'Player rakeback tiers & pending payouts',
+    description: 'Player Rakeback Tiers & Pending Payouts',
     path: '/rakeback',
     color: '#d946ef',
     bg: 'rgba(217,70,239,0.1)',
@@ -85,7 +95,7 @@ const NAV_ITEMS = [
   {
     icon: '▣',
     label: 'Credit Admin',
-    description: 'Set & adjust agent credit limits',
+    description: 'Set & Adjust Agent Credit Limits',
     path: '/credit-admin',
     color: '#f97316',
     bg: 'rgba(249,115,22,0.1)',
@@ -94,7 +104,7 @@ const NAV_ITEMS = [
   {
     icon: '▤',
     label: 'Settlement History',
-    description: 'Weekly settlement cycles & revenue trends',
+    description: 'Weekly Settlement Cycles & Revenue Trends',
     path: '/settlement-history',
     color: '#14b8a6',
     bg: 'rgba(20,184,166,0.1)',
@@ -103,7 +113,7 @@ const NAV_ITEMS = [
   {
     icon: '⚖',
     label: 'Settlement Center',
-    description: 'Canary checks, payout execution & monitoring',
+    description: 'Canary Checks, Payout Execution & Monitoring',
     path: '/settlement-dashboard',
     color: '#6366f1',
     bg: 'rgba(99,102,241,0.1)',
@@ -112,7 +122,7 @@ const NAV_ITEMS = [
   {
     icon: '▦',
     label: 'Settlements',
-    description: 'Club & agent settlement management',
+    description: 'Club & Agent Settlement Management',
     path: '/wallet',
     color: '#3b82f6',
     bg: 'rgba(59,130,246,0.1)',
@@ -121,7 +131,7 @@ const NAV_ITEMS = [
   {
     icon: '↓',
     label: 'CSV Exports',
-    description: 'Financial reports & data exports',
+    description: 'Financial Reports & Data Exports',
     path: '/wallet',
     color: '#06b6d4',
     bg: 'rgba(6,182,212,0.1)',
@@ -137,6 +147,7 @@ export default function FinancialAdminHub() {
 
   const [stats, setStats] = useState<HubStats>({
     totalAlerts: 0,
+    openIncidents: 0,
     openDisputes: 0,
     rateChanges: 0,
     healthChecks: 0,
@@ -162,6 +173,7 @@ export default function FinancialAdminHub() {
         rakeResult,
         healthCountResult,
         alertResult,
+        incidentResult,
         lastCheckResult,
         rakeDataResult,
       ] = await Promise.all([
@@ -224,6 +236,25 @@ export default function FinancialAdminHub() {
         })(),
         (async () => {
           try {
+            // BIND THE ERROR. A discarded error here reads as "0 open
+            // incidents" - an all-clear on the one tile whose whole job is to
+            // say drift was detected. Fail loud, not quiet.
+            const { data, error } = await supabase.rpc('fn_ca_incident_dashboard', {
+              p_status: null,
+              p_limit: 500,
+            });
+            if (error) {
+              reportError(error, 'FinancialAdminHub.incidentDashboard');
+              return 0;
+            }
+            return ((data as any[]) || []).filter((i: any) => i?.status !== 'resolved').length;
+          } catch (e) {
+            reportError(e, 'FinancialAdminHub.incidentDashboard');
+            return 0;
+          }
+        })(),
+        (async () => {
+          try {
             const r = await supabase
               .from('financial_health_checks')
               .select('passed')
@@ -256,6 +287,7 @@ export default function FinancialAdminHub() {
 
       setStats({
         totalAlerts: alertResult as number,
+        openIncidents: incidentResult as number,
         openDisputes: disputeResult as number,
         rateChanges: (commResult as number) + (rakeResult as number),
         healthChecks: healthCountResult as number,
@@ -330,7 +362,7 @@ export default function FinancialAdminHub() {
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
     setVisibleCards(new Set());
-    [0, 1, 2, 3].forEach((i) => {
+    [0, 1, 2, 3, 4].forEach((i) => {
       timers.push(setTimeout(() => setVisibleCards((prev) => new Set(prev).add(i)), i * 80));
     });
     setVisibleNavs(new Set());
@@ -341,6 +373,13 @@ export default function FinancialAdminHub() {
   }, []);
 
   const kpiCards = [
+    {
+      label: 'Drift Incidents',
+      value: stats.openIncidents,
+      icon: '◈',
+      color: stats.openIncidents > 0 ? '#f43f5e' : '#10b981',
+      glow: stats.openIncidents > 0 ? 'rgba(244,63,94,0.2)' : 'rgba(16,185,129,0.2)',
+    },
     {
       label: 'Open Disputes',
       value: stats.openDisputes,
@@ -486,7 +525,7 @@ export default function FinancialAdminHub() {
                       style={{
                         fontSize: '0.7rem',
                         color: '#10b981',
-                        animation: 'pulse 1.5s infinite',
+                        animation: 'animationsPulse 1.5s infinite',
                       }}
                     >
                       Syncing...
@@ -652,6 +691,8 @@ export default function FinancialAdminHub() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '6px',
           fontSize: '0.7rem',
           color: 'rgba(255,255,255,0.35)',
         }}

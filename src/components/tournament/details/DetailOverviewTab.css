@@ -1,0 +1,644 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  DETAIL / OVERVIEW TAB — the one-screen layout
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Everything generic (panel, stat tile, badge, meter, clock, row, scroll) comes
+ * from `src/styles/tournament-lobby-3d.css`. This file adds ONLY what the
+ * overview needs on top of that vocabulary: the hero band's two-column
+ * line-group, the definition grid the old label/value list became, the podium,
+ * and the deal-vote strip.
+ *
+ * THE BUDGET. Dan: the overview must fit a 375px phone with no vertical scroll,
+ * between the page header and the locked footer. That is roughly
+ * `100dvh - 230px` of chrome. The section is a flex column with a fixed-height
+ * hero, a three-row stat grid, one wrapping tag row, and an info grid that
+ * takes the remainder. The info grid is the ONLY flexible band, and it carries
+ * `tl-scroll` with `min-height: 0` — so on a viewport shorter than the design
+ * target the overflow happens INSIDE that panel and the footer never moves,
+ * rather than the page growing a second scrollbar.
+ *
+ * PALETTE: strict smarter.poker. Every colour here is a `--tl-` token from the
+ * shared layer. No brown, no yellow, no gold — including on the podium, where
+ * first place is the ACCENT cyan rather than the gold every poker UI reaches
+ * for by reflex.
+ */
+
+.dov {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  /* `max-height: 100%` used to close this rule. It capped the tab at the height
+     of its box while the bands inside shrank to fit, which is how the Detail
+     tab managed to be un-scrollable AND cut off at the same time. The panel
+     scrolls now, so the tab is allowed to be as tall as its content. */
+}
+
+.dov-empty {
+  margin: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   BAND 1 — HERO
+   Clock on the left, live blinds on the right, level meter underneath. One
+   line-group about 92px tall; the block it replaces was a 200px numeral with
+   a projector clock stacked below it.
+   ───────────────────────────────────────────────────────────────────────── */
+.dov-hero {
+  flex: 0 0 auto;
+  padding: 10px 12px 9px;
+}
+
+.dov-hero__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.95fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.dov-hero__clockcol {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dov-hero__eyebrow {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--tl-text-hint);
+}
+
+/* The clock itself keeps the shared `.tl-clock` glow; only the size is local,
+   because "big enough to read across a table" is a Blinds-tab concern and this
+   band has to leave room for four other bands. */
+.dov-hero__time {
+  font-size: 34px;
+  letter-spacing: 1px;
+}
+
+.dov-hero__note {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--tl-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dov-hero__blinds {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 6px;
+  min-width: 0;
+}
+
+/* A sunk well, so the blinds read as recessed INTO the hero panel rather than
+   as a second card floating on it. Three-layer recipe, inverted. */
+.dov-blind {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-width: 0;
+  padding: 6px 5px;
+  border-radius: var(--tl-radius-sm);
+  text-align: center;
+  background: linear-gradient(180deg, rgba(13, 17, 32, 0.92) 0%, rgba(19, 27, 40, 0.7) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow:
+    inset 0 2px 6px rgba(0, 0, 0, 0.6),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.dov-blind__label {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--tl-text-hint);
+}
+
+.dov-blind__value {
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.05;
+  color: var(--tl-text);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.dov-blind--next .dov-blind__value {
+  font-size: 13px;
+  color: var(--tl-text-dim);
+}
+
+.dov-blind__ante {
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--tl-accent);
+  letter-spacing: 0.4px;
+}
+
+.dov-hero__meter {
+  margin-top: 8px;
+  height: 5px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   BAND 2 — STAT GRID
+   Nine tiles. Three columns at 375px (three rows, ~184px) rather than two
+   (five rows, ~300px) — two columns cannot coexist with the no-scroll budget
+   once the hero, the tags and the info grid have taken their share. Above the
+   phone breakpoint the shared auto-fit takes over and the grid widens itself.
+   ───────────────────────────────────────────────────────────────────────── */
+.dov-stats {
+  flex: 0 0 auto;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   BAND 3 — RULE TAGS
+   One wrapping row of `.tl-badge` chips. These were six separate coloured
+   paragraphs, each costing a full line of a screen that has none to spare.
+   ───────────────────────────────────────────────────────────────────────── */
+.dov-tags {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   FINAL TABLE DEAL
+   ───────────────────────────────────────────────────────────────────────── */
+.dov-deal {
+  flex: 0 0 auto;
+  padding: 9px 12px;
+  border-color: rgba(111, 220, 255, 0.4);
+}
+
+.dov-deal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dov-deal__label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--tl-text-dim);
+}
+
+.dov-deal__count {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--tl-accent);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 12px rgba(111, 220, 255, 0.4);
+}
+
+.dov-deal__note {
+  margin: 6px 0 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tl-accent-strong);
+}
+
+.dov-deal__btn {
+  appearance: none;
+  width: 100%;
+  margin-top: 8px;
+  /* 44px is the floor for a thumb. At 9px padding around a 13px line this came
+     out around 35px and was the only sub-target control on the overview
+     (2026-08-26 audit). */
+  min-height: 44px;
+  touch-action: manipulation;
+  padding: 9px 12px;
+  border-radius: var(--tl-radius-sm);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  color: #ffffff;
+  background: linear-gradient(180deg, var(--tl-action) 0%, var(--tl-action-deep) 100%);
+  border: 1px solid rgba(111, 220, 255, 0.45);
+  box-shadow: var(--tl-bevel-strong), var(--tl-cast);
+  transition:
+    transform 0.16s var(--tl-ease),
+    box-shadow 0.16s var(--tl-ease);
+}
+
+.dov-deal__btn:focus-visible:not(:disabled) {
+  outline: none;
+}
+
+.dov-deal__btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+.dov-deal__btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   BAND 4 — INFO GRID
+   The old list rendered one full-width `label: value` row per fact, fourteen
+   of them. Two columns of small-label definition pairs put the same facts in
+   under half the height, and this is the band that absorbs a short viewport.
+   ───────────────────────────────────────────────────────────────────────── */
+.dov-info {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 10px 12px;
+}
+
+/* ─── Band 4's two sections ───────────────────────────────────────────────
+   These were nine inline style objects in the JSX, and three of them fought
+   this stylesheet and won:
+
+     `style={{ padding: 0 }}` on the panel beat `.dov-info`'s padding above AND
+     its `@media (max-width: 400px)` override below, so the band's phone tuning
+     had no effect at all;
+
+     `backgroundColor: 'var(--surface)'` on each section referenced a token that
+     is not defined anywhere in this repo -- `grep -r "--surface:"` finds
+     nothing -- so both sections were transparent and the wrapper's
+     `rgba(255,255,255,0.05)`, which was only ever meant to show through a 1px
+     gap as a hairline rule, washed the entire band;
+
+     `padding: 16` hardcoded on each section replaced the 9px the phone rule
+     would have applied, so at 375px the two-column grid inside was squeezed to
+     roughly 161px per column against nowrap values.
+
+   A rule in a stylesheet can be overridden by a media query. An inline style
+   cannot be overridden by anything short of !important.
+   ───────────────────────────────────────────────────────────────────────── */
+.dov-info--band {
+  padding: 0;
+  /* `overflow: hidden` used to sit here, on the very element that carries
+     `.tl-scroll`, and beat it on source order (this file is imported after
+     tournament-lobby-3d.css). It was the single reason the Detail tab could
+     not be scrolled by one pixel: the band that absorbs a short viewport was
+     also the band that clipped whatever did not fit. `.details-content` owns
+     the scroll for every tab now (Dan 2026-08-30) - do not re-introduce a
+     clip here, and do not "restore" it as overflow-y either. */
+  overflow: visible;
+}
+
+.dov-band {
+  display: flex;
+  flex-direction: column;
+  /* The 1px gap IS the separator: the parent's background shows through it. */
+  gap: 1px;
+  background: var(--tl-hairline-soft, rgba(255, 255, 255, 0.06));
+}
+
+.dov-band__section {
+  padding: 12px;
+  background: var(--tl-surface, #1a2436);
+}
+
+.dov-band__title {
+  margin: 0 0 12px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  /* Was `var(--text-muted)`, which resolves to #606770 / #6b7280 -- both fail
+     WCAG AA against this surface. --tl-text-dim is the scale this panel is
+     built on and clears it. */
+  color: var(--tl-text-dim, #8892a4);
+}
+
+.dov-band__note {
+  font-size: 13px;
+  color: var(--tl-text-dim, #8892a4);
+}
+
+.dov-band__note--error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  color: var(--tl-danger-soft, #ffb4b4);
+}
+
+.dov-band__retry {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--tl-hairline, rgba(111, 220, 255, 0.14));
+  border-radius: var(--tl-radius-pill, 999px);
+  background: var(--tl-surface-raised, #223046);
+  color: var(--tl-text, #e8eaf0);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dov-band__retry:focus-visible {
+  outline: 2px solid var(--tl-accent, #6fdcff);
+  outline-offset: 2px;
+}
+
+.dov-band__retry:active {
+  background: var(--tl-surface, #1a2436);
+}
+
+.dov-band__sats {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dov-info__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 10px;
+  margin: 0;
+}
+
+.dov-info__item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding-left: 7px;
+  border-left: 2px solid rgba(111, 220, 255, 0.22);
+}
+
+.dov-info__item--wide {
+  grid-column: 1 / -1;
+}
+
+.dov-info__label {
+  margin: 0;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--tl-text-hint);
+  line-height: 1.2;
+}
+
+.dov-info__value {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--tl-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dov-info__item--wide .dov-info__value {
+  white-space: normal;
+}
+
+.dov-info__value--accent {
+  color: var(--tl-accent);
+}
+
+.dov-info__value--danger {
+  color: var(--tl-danger-soft);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   COMPLETED — the podium takes the hero slot
+   NO GOLD. First place is accent cyan with the strongest bevel and the only
+   glow; second and third step down through the surface ramp. Rank reads from
+   depth and light, which is the house vocabulary, not from metal colours.
+   ───────────────────────────────────────────────────────────────────────── */
+.dov-podium-panel {
+  flex: 0 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+}
+
+.dov-podium {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.dov-podium__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 6px;
+  border-radius: var(--tl-radius-sm);
+  text-align: center;
+  background: linear-gradient(180deg, #223046 0%, #16202f 100%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow:
+    var(--tl-bevel),
+    0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.dov-podium__card--p1 {
+  background: linear-gradient(180deg, rgba(24, 119, 242, 0.3) 0%, rgba(13, 17, 32, 0.95) 100%);
+  border-color: rgba(111, 220, 255, 0.45);
+  box-shadow: var(--tl-bevel-strong), var(--tl-cast), var(--tl-glow);
+}
+
+.dov-podium__card--p2 {
+  background: linear-gradient(180deg, rgba(34, 48, 70, 0.95) 0%, rgba(19, 27, 40, 0.95) 100%);
+  border-color: rgba(111, 220, 255, 0.2);
+}
+
+.dov-podium__place {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--tl-accent);
+}
+
+.dov-podium__card--p2 .dov-podium__place,
+.dov-podium__card--p3 .dov-podium__place {
+  color: var(--tl-text-dim);
+}
+
+.dov-podium__name {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--tl-text);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dov-podium__prize {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--tl-accent-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The podium already carries 1st to 3rd. This list starts at 4th, so it needs
+   to say so - otherwise it reads as a second, shorter copy of the podium. */
+.dov-finishers__label {
+  display: block;
+  margin: 10px 0 4px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--tl-text-hint);
+}
+
+.dov-finishers {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 0;
+  max-height: 168px;
+}
+
+.dov-finisher {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(34, 48, 70, 0.5) 0%, rgba(19, 27, 40, 0.8) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.dov-finisher__pos {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--tl-text-dim);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.dov-finisher__name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--tl-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   MOBILE FIRST — 375px is the target. Below 400px every band tightens by a
+   couple of pixels rather than letting the info grid start scrolling.
+   ───────────────────────────────────────────────────────────────────────── */
+@media (max-width: 400px) {
+  .dov {
+    gap: 7px;
+  }
+  .dov-hero {
+    padding: 9px 10px 8px;
+  }
+  .dov-hero__time {
+    font-size: 30px;
+  }
+  .dov-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .dov-info {
+    padding: 9px 10px;
+  }
+  /* The band owns its own padding, so the rule above must not re-apply it on
+     top of the sections' -- and the sections tighten with everything else,
+     which is what the hardcoded `padding: 16` used to prevent. */
+  .dov-info--band {
+    padding: 0;
+  }
+  .dov-band__section {
+    padding: 9px 10px;
+  }
+  .dov-band__title {
+    margin-bottom: 9px;
+  }
+  .dov-info__grid {
+    gap: 6px 8px;
+  }
+  .dov-blind__value {
+    font-size: 15px;
+  }
+}
+
+/* Wider than a phone: the hero can afford a larger clock and the info grid a
+   third column, which keeps the whole overview inside one screen on a tablet
+   without simply stretching the phone layout. */
+@media (min-width: 640px) {
+  .dov-hero__time {
+    font-size: 42px;
+  }
+  .dov-info__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   RESPECT THE PLAYER'S MOTION SETTING
+   ───────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .dov-deal__btn,
+  .dov-deal__btn:focus-visible,
+  .dov-deal__btn:active {
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   THE MYSTERY LADDER LINK
+
+   Cyan house accent, never the blue action colour: opening a tab is not an
+   action that spends anything, and the two must not look like the same
+   button. 44px tall so a thumb finds it on a 375px screen.
+   ───────────────────────────────────────────────────────────────────────── */
+.dov-ladder-link {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  min-height: 44px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(111, 220, 255, 0.4);
+  background: linear-gradient(180deg, #1a2436 0%, #131b28 100%);
+  color: #6fdcff;
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: all 0.2s;
+}
+
+.dov-ladder-link:focus-visible {
+  outline: 2px solid #6fdcff;
+  outline-offset: 2px;
+}

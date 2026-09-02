@@ -49,9 +49,7 @@ const chipModuleCss = fs.readFileSync(
   path.join(process.cwd(), 'src/components/table/ChipAnimation.module.css'),
   'utf8'
 );
-const CHIP_Z = Number(
-  /\.manager\s*\{[^}]*z-index:\s*(\d+)/.exec(chipModuleCss)?.[1] ?? 'NaN'
-);
+const CHIP_Z = Number(/\.manager\s*\{[^}]*z-index:\s*(\d+)/.exec(chipModuleCss)?.[1] ?? 'NaN');
 const CHIP_Z_BEFORE = 1000; // what it was when the bug was reported
 
 const potMarkup = `
@@ -121,24 +119,26 @@ const BREAKPOINTS = [
   { label: 'small phone', width: 375 },
 ];
 
-async function potBox(page: import('@playwright/test').Page) {
-  return page.evaluate(() => {
-    const r = document.querySelector('.pot-display__main')!.getBoundingClientRect();
-    return { x: Math.round(r.x * 100) / 100, y: Math.round(r.y * 100) / 100, w: r.width, h: r.height };
-  });
-}
+/* potBox() and its half-pixel tolerance left with the retired beat above. */
 
 for (const bp of BREAKPOINTS) {
   test.describe(`pot vs chips @ ${bp.label} (${bp.width}px)`, () => {
     test.use({ viewport: { width: bp.width, height: 1000 } });
 
-    test('the pot did not move when it was promoted out of the felt', async ({ page }) => {
-      await page.setContent(pageBefore(cssBefore));
-      const before = await potBox(page);
-      await page.setContent(pageAfter(cssAfter));
-      const after = await potBox(page);
-      expect(after).toEqual(before);
-    });
+    /* RETIRED 2026-08-29: 'the pot did not move when it was promoted out of
+       the felt'. That beat compared the LIVE stylesheet against the frozen
+       pre-fix fixture and asserted the pot's position matched to half a
+       pixel — a one-time migration invariant for the 2026-08-19 promotion,
+       written as if the pot would never legitimately move again. It has,
+       twice, on purpose: the community-area rework pinned it at 19% of the
+       scaler, and the #1571 board-band pass moved it with the board. The
+       beat sat red by 330px against deliberate, Dan-approved layout — and
+       nobody saw, because this spec ran in NO CI job. The fixture stays:
+       the two control beats below still use it to prove the z-order fix is
+       measuring a real defect. Position stability is owned by
+       tests/unit/feltReserveIsStatic.test.ts (nothing measured feeds the
+       geometry) and the geometry baseline (absolute sizes per device),
+       which fail on unintended movement without freezing intended design. */
 
     test('a chip on the pot centre renders BENEATH the total', async ({ page }) => {
       await page.setContent(pageAfter(cssAfter));
@@ -181,6 +181,6 @@ for (const bp of BREAKPOINTS) {
 
 test('the shipped chip layer sits below the pot and below every overlay', () => {
   expect(Number.isFinite(CHIP_Z)).toBe(true);
-  expect(CHIP_Z).toBeGreaterThan(1);   // above .table-surface (the felt + seats)
-  expect(CHIP_Z).toBeLessThan(30);     // below .pot-area
+  expect(CHIP_Z).toBeGreaterThan(1); // above .table-surface (the felt + seats)
+  expect(CHIP_Z).toBeLessThan(30); // below .pot-area
 });

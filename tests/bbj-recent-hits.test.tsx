@@ -9,6 +9,8 @@
  * future change to that function cannot silently re-cross them.
  */
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 type Role = 'bad_beat' | 'hand_winner' | 'table';
 interface Recipient {
@@ -73,5 +75,38 @@ describe('recent-hit payout contract', () => {
     const you = HIT.recipients.filter((r) => r.name.toLowerCase() === viewer.toLowerCase());
     expect(you).toHaveLength(1);
     expect(you[0].role).toBe('bad_beat');
+  });
+});
+
+/**
+ * Dan 2026-08-27: "you need to use there club avatar as the image, not there
+ * profile pics."
+ *
+ * fn_bbj_recent_hits had resolved the winner image as
+ * COALESCE(clubs.avatar_url, profiles.avatar_url). Both clubs that have hit
+ * carry a NULL clubs.avatar_url, so every row fell through to the SOCIAL MEDIA
+ * photo — the exact column tests/unit/arenaAvatarSeparation.test.ts exists to
+ * keep this app out of. It passed that test only because the read lives in SQL,
+ * where the .from('profiles') scanner cannot see it.
+ *
+ * These pin the two halves of the corrected path in the one place a scanner
+ * CAN see: the component. The SQL half is asserted by the migration itself
+ * (supabase/migrations/20260827_bbj_full_hand_seed.sql).
+ */
+describe('the winner row draws the club avatar', () => {
+  const SRC = readFileSync(resolve(__dirname, '../src/components/bbj/BBJRecentHits.tsx'), 'utf8');
+
+  it('resolves the avatar through getAvatarWithFallback', () => {
+    // arena_avatar_url arrives Hub-relative (/avatars/table/vip_spartan@2x.webp).
+    // Handed straight to an <img> it resolves against whatever origin the client
+    // happens to be on, which is wrong everywhere except production.
+    expect(SRC).toMatch(/getAvatarWithFallback\(\s*hit\.bad_beat_avatar_url/);
+  });
+
+  it('never reaches for a profile photo field on the hit row', () => {
+    // The row type carries exactly one image field and it is the club one. If a
+    // future change adds `profile_avatar_url` or similar as a fallback, the
+    // separation is gone again and nothing else would catch it.
+    expect(SRC).not.toMatch(/\bprofile_(avatar|pic|photo)\w*/);
   });
 });

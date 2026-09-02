@@ -76,10 +76,27 @@ if docker container inspect "$CONTAINER" >/dev/null 2>&1; then
   docker rm "$CONTAINER" >/dev/null 2>&1 || docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 fi
 
+# 2026-08-23: OVERRIDE THE IMAGE'S HEALTHCHECK ADDRESS.
+#
+# The Dockerfile probes 127.0.0.1, but `httpServer.listen(PORT)` passes no host,
+# so Node binds the unspecified address and answers on :: in a dual-stack
+# container. The IPv4 loopback probe was REFUSED, every time.
+#
+# Docker then marked the container unhealthy after 3 tries, sp-autoheal saw the
+# autoheal=true label and killed it, --restart always brought it back, and the
+# cycle repeated about every 5 minutes. A perfectly healthy engine was being
+# executed by its own self-healing -- and every restart voids the in-flight
+# hands on every table it owns.
+#
+# The Dockerfile is fixed too, so the image is not born broken. This override
+# stays because THIS FILE IS THE RUN-SPEC (design note 4): the deploy and the
+# host supervisor must start the container identically, and this is the one
+# place both of them read.
 docker run -d \
   --name "$CONTAINER" \
   --restart always \
   --health-start-period=90s \
+  --health-cmd="node -e \"fetch('http://0.0.0.0:8080/health').then(r=>r.json()).then(j=>process.exit(j.liveness==='dead'?1:0)).catch(()=>process.exit(1))\"" \
   --label autoheal=true \
   --label sp.role=engine \
   --log-driver json-file \

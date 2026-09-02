@@ -6,6 +6,23 @@
  * Dan 2026-08-20, from a live table: "any and all pop ups need the first
  * letter of every word capitalized, and forbid the use of em bars."
  *
+ * WHAT "EM BARS" MEANS, BECAUSE IT HAS ALREADY BEEN MISREAD TWICE
+ *
+ * Dan's phrase "em bars" means EM DASHES: the punctuation mark, U+2014.
+ * This is a rule about COPY -- the characters inside text a player reads.
+ * It is NOT a rule about artwork, icons, or anything shaped like a line,
+ * and it does NOT ban the hamburger menu.
+ *
+ * Read the other way it has now cost the hamburger menu twice in two days:
+ * #2321 replaced it with a gear on every trigger, deleted the approved
+ * rasters, and added a law forbidding its return; #2429 did it again with a
+ * six-tile grid after #2401 reverted the first one. Each time Dan opened the
+ * app and found a different icon where his menu button used to be.
+ *
+ * If you are about to ban "bars" anywhere near an ICON, you have misread this
+ * sentence. The hamburger is the menu. See
+ * tests/approvedHamburgerGearGuard.law.test.ts.
+ *
  * The rule lives in the render path (Toast provider -> formatPopupText), so
  * these tests pin two things: the transform itself, and that the Toast layer
  * actually applies it — because a rule enforced at one door is only a rule if
@@ -34,6 +51,27 @@ describe('formatPopupText — Title Case', () => {
     expect(formatPopupText('rebuy failed (insufficient chips)')).toBe(
       'Rebuy Failed (Insufficient Chips)'
     );
+    // A quote that OPENS a phrase still starts a word.
+    expect(formatPopupText("'quoted phrase' here")).toBe("'Quoted Phrase' Here");
+  });
+
+  it('does not break a contraction, which is not a word boundary', () => {
+    /**
+     * 2026-08-31. The straight apostrophe sat in the word-boundary class next
+     * to the quote characters, so every contraction in every toast rendered
+     * with a capital in the middle of it. The live one is TablePage's
+     * seat-taken error, shown on the felt to a player who clicks a seat they
+     * already occupy:
+     *
+     *     toast.error(`You're already seated at seat ${n}.`)
+     *       rendered  "You'Re Already Seated At Seat 3."
+     */
+    expect(formatPopupText("you're already seated at seat 3")).toBe(
+      "You're Already Seated At Seat 3"
+    );
+    expect(formatPopupText("we can't reach the table")).toBe("We Can't Reach The Table");
+    expect(formatPopupText("it's your turn")).toBe("It's Your Turn");
+    expect(formatPopupText("that didn't work")).toBe("That Didn't Work");
   });
 
   it('leaves numbers and punctuation alone', () => {

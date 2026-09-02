@@ -11,8 +11,9 @@
  * exactly one player, chips are conserved, and folding everyone but one ends
  * the hand instead of stranding the table at pineapple_discard.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { HandController } from './HandController.js';
+import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
 import type { HandConfig, HandEvent, SeatPlayer } from '../types.js';
 
 function mkPlayers(stacks: number[]): SeatPlayer[] {
@@ -80,8 +81,9 @@ describe('pineapple discard round', () => {
 
   it('a missed discard FOLDS that player and nobody else', () => {
     const { hc, st } = toDiscardRound();
-    const victim = [...(hc as unknown as { pineappleDiscardsRemaining: Set<number> })
-      .pineappleDiscardsRemaining][0];
+    const victim = [
+      ...(hc as unknown as { pineappleDiscardsRemaining: Set<number> }).pineappleDiscardsRemaining,
+    ][0];
     const before = chips(st);
 
     expect(hc.foldForMissedDiscard(victim)).toBe(true);
@@ -100,8 +102,9 @@ describe('pineapple discard round', () => {
 
   it('announces the fold as a fold, so seats grey out and history is honest', () => {
     const { hc, st, events } = toDiscardRound();
-    const victim = [...(hc as unknown as { pineappleDiscardsRemaining: Set<number> })
-      .pineappleDiscardsRemaining][0];
+    const victim = [
+      ...(hc as unknown as { pineappleDiscardsRemaining: Set<number> }).pineappleDiscardsRemaining,
+    ][0];
     events.length = 0;
     hc.foldForMissedDiscard(victim);
     const fold = events.find(
@@ -113,8 +116,9 @@ describe('pineapple discard round', () => {
 
   it('is idempotent and cannot fold a seat that already discarded', () => {
     const { hc, st } = toDiscardRound();
-    const seats = [...(hc as unknown as { pineappleDiscardsRemaining: Set<number> })
-      .pineappleDiscardsRemaining];
+    const seats = [
+      ...(hc as unknown as { pineappleDiscardsRemaining: Set<number> }).pineappleDiscardsRemaining,
+    ];
     const discarder = seats[0];
     hc.performDiscard(discarder, 1); // acted in time
     expect(hc.foldForMissedDiscard(discarder)).toBe(false);
@@ -127,8 +131,9 @@ describe('pineapple discard round', () => {
 
   it('folding everyone but one ENDS the hand instead of stranding the table', () => {
     const { hc, st, events } = toDiscardRound();
-    const seats = [...(hc as unknown as { pineappleDiscardsRemaining: Set<number> })
-      .pineappleDiscardsRemaining];
+    const seats = [
+      ...(hc as unknown as { pineappleDiscardsRemaining: Set<number> }).pineappleDiscardsRemaining,
+    ];
     const before = chips(st);
     events.length = 0;
     // Everybody misses except the last seat.
@@ -156,15 +161,73 @@ describe('pineapple discard round', () => {
     expect(stacks + rake + bbj, 'no chips created or destroyed').toBeCloseTo(before, 6);
   });
 
-  it('a discard round where everyone acts still advances normally', () => {
-    const { hc, st } = toDiscardRound();
-    for (const s of [...(hc as unknown as { pineappleDiscardsRemaining: Set<number> })
-      .pineappleDiscardsRemaining]) {
-      hc.performDiscard(s, 0);
+  /**
+   * MOVED, NOT WEAKENED - PHASE 3 2026-08-31.
+   *
+   * This pin used to read `expect(st().stage).not.toBe('pineapple_discard')`
+   * on the same synchronous tick as the last discard, because the advance was
+   * synchronous. It is not any more: the last discard buys a
+   * HAND_COMPLETION.DISCARD_SETTLE_MS beat so the card leaving the hand
+   * finishes its flight before a betting round opens over the top of it. The
+   * assertion it was making - a full round of discards ADVANCES, and every
+   * survivor is left holding two cards - is unchanged and is still made here.
+   * What is added is the half that is now load-bearing: the round is still
+   * held DURING the beat (so nothing downstream may read the advance as its
+   * signal that the round is over), and it advances when the beat elapses.
+   *
+   * If this ever goes red on the first expect, the beat has become a stall.
+   */
+  it('a discard round where everyone acts advances once the settle beat elapses', () => {
+    vi.useFakeTimers();
+    try {
+      const { hc, st } = toDiscardRound();
+      for (const s of [
+        ...(hc as unknown as { pineappleDiscardsRemaining: Set<number> })
+          .pineappleDiscardsRemaining,
+      ]) {
+        hc.performDiscard(s, 0);
+      }
+      // Every card is in - and the cards are off the hands immediately, which
+      // is what the client animates against.
+      expect(hc.allPineappleDiscardsIn()).toBe(true);
+      for (const p of st().players.filter((x: SeatPlayer) => !x.is_folded)) {
+        expect(p.cards.length).toBe(2);
+      }
+      // ...but the street has NOT opened yet. This is the beat.
+      expect(st().stage).toBe('pineapple_discard');
+
+      vi.advanceTimersByTime(HAND_COMPLETION.DISCARD_SETTLE_MS);
+
+      expect(st().stage).not.toBe('pineapple_discard');
+      for (const p of st().players.filter((x: SeatPlayer) => !x.is_folded)) {
+        expect(p.cards.length).toBe(2);
+      }
+    } finally {
+      vi.useRealTimers();
     }
-    expect(st().stage).not.toBe('pineapple_discard');
-    for (const p of st().players.filter((x: SeatPlayer) => !x.is_folded)) {
-      expect(p.cards.length).toBe(2);
+  });
+
+  /**
+   * PHASE 3 2026-08-31: the beat must never be able to park a hand. A hand
+   * that ends inside the settle window (everyone else folds, a runout
+   * completes) drops its pending advance rather than firing it into a hand
+   * that is already over.
+   */
+  it('a hand that ends inside the settle window does not advance afterwards', () => {
+    vi.useFakeTimers();
+    try {
+      const { hc, st } = toDiscardRound();
+      for (const s of [
+        ...(hc as unknown as { pineappleDiscardsRemaining: Set<number> })
+          .pineappleDiscardsRemaining,
+      ]) {
+        hc.performDiscard(s, 0);
+      }
+      hc.cancelPineappleSettle();
+      vi.advanceTimersByTime(HAND_COMPLETION.DISCARD_SETTLE_MS * 4);
+      expect(st().stage).toBe('pineapple_discard');
+    } finally {
+      vi.useRealTimers();
     }
   });
 });

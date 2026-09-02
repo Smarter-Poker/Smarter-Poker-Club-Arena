@@ -28,6 +28,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceEnclosingBlock } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
@@ -132,7 +133,20 @@ describe('the draw happens at START, nowhere else', () => {
 
   it('creation writes a NULL multiplier for the start path to key on', () => {
     expect(spinInsertBlock(recurring)).toMatch(/spin_multiplier:\s*null/);
-    expect(spinInsertBlock(orchestrator)).toMatch(/spin_multiplier:\s*null/);
+  });
+
+  /**
+   * STRONGER THAN THE OLD PIN (2026-08-30 audit). This used to require the
+   * ORCHESTRATOR's own Spin insert to write spin_multiplier: null. That
+   * client insert is gone: HorseOrchestrator.launchSpin had no production
+   * caller, registered horses instead of selling seats, and then overwrote
+   * current_players with its own counter - the documented "0/3 with paid
+   * seats" shape. A creation path that does not exist cannot leak a draw, so
+   * the pin moved from "creates safely" to "does not create at all".
+   */
+  it('the client orchestrator does not create Spins at all', () => {
+    expect(orchestratorRaw).not.toMatch(/tournament_type:\s*'SPIN'/);
+    expect(orchestratorRaw).toMatch(/launchSpin is retired/);
   });
 
   it('creation does not put a multiplier-derived amount in prize_pool', () => {
@@ -145,7 +159,7 @@ describe('the draw happens at START, nowhere else', () => {
     const body = recurring.slice(i, next > i ? next : undefined);
     expect(body).not.toMatch(/prize_pool:\s*prizePool/);
     expect(body).not.toMatch(/buyIn\s*\*\s*multiplier/i);
-    expect(spinInsertBlock(orchestrator)).toMatch(/prize_pool:\s*0/);
+    // (the orchestrator no longer has a Spin insert to check - see the pin above)
   });
 
   it('no client-side draw survives anywhere', () => {
@@ -154,8 +168,25 @@ describe('the draw happens at START, nowhere else', () => {
     expect(tournamentService).not.toMatch(/spinMultiplier\(config/);
   });
 
-  it("the engine's RPC-down fallback resolves DOWN to the smallest tier", () => {
-    expect(engine).toMatch(/SPIN_TIERS\[0\]\.multiplier/);
+  /* SUPERSEDED, AND LEFT RED ON main FOR AN HOUR (fixed 2026-08-25).
+     This test asserted that the engine, unable to read the draw, resolves the
+     player DOWN to SPIN_TIERS[0] - 2x. PR #794 removed exactly that line,
+     because it was a money-facing lie: three players watched a real-looking
+     wheel land on a tier the database had never said it drew, and
+     fn_spin_settle_game then moved real money against it. That PR added
+     server/src/tournament/SpinDrawIntegrity.guard.test.ts, which FORBIDS the
+     line this one required - two tests in the same tree demanding opposite
+     things, so main could not be green either way.
+
+     House rule 8 says the test that pins replaced behaviour is updated in the
+     commit that replaces it. It was not, so the assertion is inverted here to
+     the rule that actually holds now: an unreadable draw is UNKNOWN, the
+     start stands down and retries, and no tier is ever substituted. */
+  it('the engine never substitutes a tier for a draw it could not read', () => {
+    expect(engine).not.toMatch(/spinMultiplier\s*=\s*SPIN_TIERS\s*\[\s*0\s*\]/);
+    // ...and the failure is explicit and retryable instead.
+    expect(engine).toMatch(/drawFailure/);
+    expect(engine).toMatch(/error:\s*drawErr/);
   });
 });
 
@@ -167,7 +198,7 @@ describe('every game is booked', () => {
   it('reports loudly rather than swallowing a failed settlement', () => {
     const i = engine.indexOf("supabase.rpc('fn_spin_settle_game'");
     expect(i, 'expected a call to fn_spin_settle_game').toBeGreaterThan(-1);
-    const block = engine.slice(i, i + 2600);
+    const block = sliceEnclosingBlock(engine, "supabase.rpc('fn_spin_settle_game'", 0, 2);
     expect(block).toMatch(/reportError/);
     expect(block).toMatch(/unbooked/i);
   });
@@ -177,12 +208,26 @@ describe('every game is booked', () => {
   });
 });
 
-describe('structure scales with the DRAWN tier, applied at start', () => {
-  it('start rewrites stack, blinds, payouts and pool from the tier', () => {
-    expect(engine).toMatch(/starting_chips:\s*tier\?\.startingStack/);
+describe('the draw sets the prize and the payout shape - never the stack', () => {
+  /**
+   * This used to require `starting_chips: tier?.startingStack`, which was the
+   * wheel choosing how many chips the players had. Dan retired that on
+   * 2026-09-01: the stack belongs to the board (Turbo 300, Deep Stack 1000),
+   * so it is known at buy-in and the seat can hold it immediately. The other
+   * three writes are unchanged - the prize, the blinds and the payout shape do
+   * still come from the drawn tier.
+   */
+  it('start rewrites blinds, payouts and pool from the tier', () => {
     expect(engine).toMatch(/blind_structure:\s*spinBlinds/);
     expect(engine).toMatch(/payout_structure:/);
     expect(engine).toMatch(/prize_pool:\s*prizePool/);
+  });
+
+  it('and does NOT rewrite the stack from the tier', () => {
+    expect(engine).not.toMatch(/starting_chips:\s*tier\?\.startingStack/);
+    expect(engine).not.toMatch(/tournament\.starting_chips\s*=\s*tier\.startingStack/);
+    // What it does write is the board's own number, unchanged.
+    expect(engine).toMatch(/starting_chips:\s*tournament\.starting_chips/);
   });
 
   it('start updates the IN-MEMORY structure too, not just the row', () => {

@@ -7,10 +7,10 @@
  * live stats. Single-click navigates to the club's lobby.
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
+import { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
 import haptic from '../../services/HapticService';
-import PremiumSFX from '../../services/PremiumSFX';
+import { playPremiumSfx } from '../../utils/playPremiumSfx';
 import { STORAGE_KEYS } from '../../lib/storage';
 import { SHARK_CLUB_ID } from '../../lib/constants';
 import styles from '../../pages/HomePage.module.css';
@@ -28,6 +28,7 @@ const ClubCardPanel = lazyWithRetry(() => import('../club/ClubCardPanel'));
 // ── Types ─────────────────────────────────────────
 export interface UserClub {
   id: string;
+  slug?: string;
   name?: string;
   club_id?: number | string;
   logo_url?: string;
@@ -41,9 +42,9 @@ export interface UserClub {
 }
 
 export interface ClubStats {
-  totalMembers: number;
-  clubLevel: number;
-  activePlayers: number;
+  totalMembers: number | null;
+  clubLevel: number | null;
+  activePlayers: number | null;
 }
 
 export interface CarouselSectionProps {
@@ -92,6 +93,38 @@ export default function CarouselSection({
      reads as a live feature. */
   const [orderedClubs, setOrderedClubs] = useState<UserClub[]>(displayClubs);
 
+  /* PHONE CARD WIDTH (Dan 2026-08-23: "THE MAIN CARD IS TOO BIG, CAN'T SEE THE
+     CARDS TO THE LEFT OR RIGHT").
+
+     Measured on a 390px viewport: the centre card came out 265px wide and the
+     step between centres is 0.94 of that, so each neighbour had 52px showing —
+     a sliver with no name and no stats on it, which reads as "there is only
+     one club". The carousel's own default is `trackWidth * 0.55`, tuned on a
+     desktop track where 55% still leaves room either side; on a phone the
+     track IS the viewport, so 55% eats it.
+
+     52% of the viewport capped at 210px puts the neighbours back at roughly a
+     hundred pixels each — enough to show that they are club cards and to aim
+     a thumb at. Desktop keeps the existing behaviour untouched: the override
+     only applies under 480px. */
+  const [phoneItemWidth, setPhoneItemWidth] = useState<number | undefined>(() =>
+    typeof window !== 'undefined' && window.innerWidth <= 480
+      ? Math.min(175, Math.round(window.innerWidth * 0.42))
+      : undefined
+  );
+  useEffect(() => {
+    const recompute = () =>
+      setPhoneItemWidth(
+        window.innerWidth <= 480 ? Math.min(175, Math.round(window.innerWidth * 0.42)) : undefined
+      );
+    window.addEventListener('resize', recompute);
+    window.addEventListener('orientationchange', recompute);
+    return () => {
+      window.removeEventListener('resize', recompute);
+      window.removeEventListener('orientationchange', recompute);
+    };
+  }, []);
+
   // Keep orderedClubs in sync with displayClubs (respecting saved order)
   useEffect(() => {
     try {
@@ -132,7 +165,7 @@ export default function CarouselSection({
 
   const handleIndexChange = useCallback(() => {
     haptic.light();
-    PremiumSFX.scrollSnap();
+    playPremiumSfx('scrollSnap');
     /* Warm the club lobby while the player is still deciding. It is the
        heaviest screen in the app and it is where every tap on this carousel
        goes, so fetching it at the moment a card settles turns the tap from
@@ -171,14 +204,14 @@ export default function CarouselSection({
   const handleClubCardClick = useCallback(
     (club: UserClub) => {
       haptic.success();
-      PremiumSFX.navigate();
+      playPremiumSfx('navigate');
       try {
         localStorage.setItem(STORAGE_KEYS.LAST_VISITED, club.id);
         localStorage.setItem(STORAGE_KEYS.LAST_CLUB, club.id);
       } catch {
         /* quota / private mode - navigation still works */
       }
-      navigate(`/clubs/${club.id}`);
+      navigate(`/clubs/${club.slug || club.id}`);
     },
     [navigate]
   );
@@ -207,13 +240,16 @@ export default function CarouselSection({
              move on desktop. The saved order is still honoured on load (see
              STORAGE_KEYS.CLUB_ORDER above) and pinning still floats a club to
              the front; only reordering BY DRAGGING is retired. */
-          onMouseMove={(e) => {
-            const rect = e.currentTarget.getBoundingClientRect();
-            e.currentTarget.style.setProperty('--x', `${e.clientX - rect.left}px`);
-            e.currentTarget.style.setProperty('--y', `${e.clientY - rect.top}px`);
-          }}
+          /* The cursor-follow handler that lived here is GONE (2026-08-28).
+             It ran getBoundingClientRect() - a forced layout read - and two
+             setProperty calls on EVERY mousemove across every club card, to
+             publish `--x` and `--y`. Nothing in the entire codebase reads
+             either variable: `grep -rn "var(--x)" src/` returns nothing. The
+             spotlight those coordinates once fed was removed at some point and
+             the feeder was left running, so this was pure cost - a reflow per
+             pointer move, per card - buying a value no stylesheet consumes. */
           role="button"
-          aria-label={`${club.name || 'Club'} - Click to enter lobby`}
+          aria-label={`${club.name || 'Club'} - Click To Enter Lobby`}
           tabIndex={0}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -234,9 +270,9 @@ export default function CarouselSection({
             <PageErrorBoundary pageName={club.name || 'Club Card'}>
               <ClubCardPanel
                 clubName={club.name?.toUpperCase() || 'MY CLUB'}
-                totalMembers={stats?.totalMembers ?? club.member_count ?? 0}
-                clubLevel={stats?.clubLevel ?? 1}
-                activePlayers={stats?.activePlayers ?? 0}
+                totalMembers={stats?.totalMembers ?? null}
+                clubLevel={stats?.clubLevel ?? null}
+                activePlayers={stats?.activePlayers ?? null}
                 clubId={club.club_id}
                 cardImageUrl={
                   Number(club.club_id) === SHARK_CLUB_ID
@@ -268,19 +304,19 @@ export default function CarouselSection({
           className={styles.ctaCard}
           onClick={() => {
             haptic.light();
-            PremiumSFX.ctaClick();
+            playPremiumSfx('ctaClick');
             onOpenJoinModal();
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               haptic.light();
-              PremiumSFX.ctaClick();
+              playPremiumSfx('ctaClick');
               onOpenJoinModal();
             }
           }}
           role="button"
-          aria-label="Join a Club"
+          aria-label="Join A Club"
           tabIndex={0}
         >
           <div className={styles.ctaCardIcon}>+</div>
@@ -344,6 +380,8 @@ export default function CarouselSection({
              one. 0.94 stays above (1 + 0.8) / 2 = 0.9, the point below which a
              neighbour would start to overlap the centre card. */
           visibleCards={3}
+          /* undefined on desktop, so the carousel's own sizing still applies. */
+          itemWidth={phoneItemWidth}
           spacingRatio={0.94}
           edgeScale={0.8}
           initialIndex={initialIndex}
@@ -356,19 +394,19 @@ export default function CarouselSection({
           className={styles.ctaCard}
           onClick={() => {
             haptic.light();
-            PremiumSFX.ctaClick();
+            playPremiumSfx('ctaClick');
             onOpenCreateModal();
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               haptic.light();
-              PremiumSFX.ctaClick();
+              playPremiumSfx('ctaClick');
               onOpenCreateModal();
             }
           }}
           role="button"
-          aria-label="Create a Club"
+          aria-label="Create A Club"
           tabIndex={0}
         >
           <div className={styles.ctaCardIcon}>+</div>

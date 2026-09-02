@@ -92,10 +92,6 @@
   transition: all 0.2s;
 }
 
-.vip-modal__close:hover {
-  background: rgba(255, 0, 0, 0.4);
-}
-
 /* Duration Selector */
 .vip-modal__duration {
   display: flex;
@@ -139,11 +135,6 @@
   gap: 8px;
   cursor: pointer;
   transition: all 0.2s;
-}
-
-.vip-tier-card:hover {
-  background: rgba(255, 255, 255, 0.06);
-  transform: translateY(-2px);
 }
 
 .vip-tier-card--selected {
@@ -268,12 +259,6 @@
   text-transform: uppercase;
   letter-spacing: 1px;
 }
-
-.vip-modal__purchase:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(255, 215, 0, 0.3);
-}
-
 .vip-modal__purchase:disabled {
   opacity: 0.5;
   cursor: not-allowed;

@@ -52,6 +52,8 @@ SHARED_FILES=(
   .github/workflows/agent-autopilot.yml
   scripts/guard-shared-clone.sh
   scripts/guard-commit-identity.sh
+  scripts/check-unpushed-work.sh
+  scripts/check-canonical-clone.sh
   scripts/ensure-hooks.sh
   scripts/agent-trees-snapshot.sh
   scripts/agent-trees-audit.sh

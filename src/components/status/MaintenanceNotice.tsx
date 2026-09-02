@@ -21,7 +21,7 @@ export const MaintenanceNotice: React.FC<MaintenanceNoticeProps> = ({
       <div className="notice-content">
         {message || (
           <>
-            Scheduled Maintenance {scheduledTime ? `at ${formatTime(scheduledTime)}` : 'soon'}
+            Scheduled Maintenance {scheduledTime ? `At ${formatTime(scheduledTime)}` : 'Soon'}
             {duration && <span className="duration">~{duration}</span>}
           </>
         )}

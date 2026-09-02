@@ -41,7 +41,11 @@ export async function handleWithdrawchips(
     const { tableId, amount } = body;
     const userId = auth.userId;
 
-    if (!tableId || !amount || amount <= 0) {
+    // 2026-08-27: `!amount || amount <= 0` alone lets a non-numeric string
+    // through - `!"abc"` is false and `"abc" <= 0` is false - so a garbage body
+    // reached the engine with a non-number. showhand.ts already validates this
+    // way; the two chip endpoints did not.
+    if (!tableId || typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
       return sendJSON(res, 400, { success: false, error: 'Missing tableId or invalid amount' });
     }
 

@@ -20,11 +20,6 @@
     transform 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)),
     border-color 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.color-swatch:hover {
-  transform: scale(1.1) translateY(-2px);
-}
-
 .color-swatch.selected {
   border-color: #fff;
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.3);

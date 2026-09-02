@@ -107,9 +107,16 @@ async function oldLookupThenMaybeInsert(client: any) {
 }
 
 describe('ensureAllTablesExist duplicate amplification', () => {
-  let onError: ReturnType<typeof vi.fn>;
+  /* `vi.fn()` with no implementation infers `Mock<Procedure | Constructable>`,
+     which has no call signature TypeScript can match against
+     `lookupThenMaybeInsert(client, onError: (e: any) => void)` — so this file
+     failed `tsc --noEmit` with seven TS2345s the moment it landed, taking the
+     Server Engine check down with it. Giving the mock a one-line implementation
+     lets vitest infer the real signature; the mock API is unchanged, so
+     `toHaveBeenCalledTimes` below still works. */
+  let onError = vi.fn((_e: unknown) => {});
   beforeEach(() => {
-    onError = vi.fn();
+    onError = vi.fn((_e: unknown) => {});
   });
 
   it('creates the table when none exists', async () => {
@@ -124,7 +131,7 @@ describe('ensureAllTablesExist duplicate amplification', () => {
     expect(inserted).toHaveLength(0);
   });
 
-  it('reuses — does NOT add another — when duplicates already exist', async () => {
+  it('reuses - does NOT add another - when duplicates already exist', async () => {
     const rows = Array.from({ length: 81 }, (_, i) => ({ id: `t${i}`, status: 'waiting' }));
     const { client, inserted } = makeClient({ rows });
     expect(await lookupThenMaybeInsert(client, onError)).toBe('reused');

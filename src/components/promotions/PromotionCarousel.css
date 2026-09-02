@@ -47,12 +47,6 @@
   background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 60%);
   pointer-events: none;
 }
-
-.pc-banner:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
-}
-
 .pc-icon {
   font-size: 1.8rem;
   flex-shrink: 0;

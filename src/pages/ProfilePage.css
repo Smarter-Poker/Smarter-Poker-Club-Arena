@@ -211,14 +211,6 @@
   transition: all 0.25s ease;
 }
 
-.stat-card:hover {
-  border-color: rgba(0, 212, 255, 0.3);
-  transform: translateY(-2px);
-  box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.2),
-    0 0 12px rgba(0, 212, 255, 0.06);
-}
-
 .stat-card .stat-value {
   font-size: 1.5rem;
   font-weight: 700;
@@ -267,12 +259,6 @@
   transition: all 0.25s ease;
 }
 
-.quick-stat:hover {
-  border-color: rgba(0, 212, 255, 0.3);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
-}
-
 .quick-icon {
   font-size: 2rem;
 }
@@ -302,10 +288,6 @@
   border: 2px solid #2a3a4a;
   border-radius: 12px;
   transition: border-color 0.3s ease;
-}
-
-.settings-section:hover {
-  border-color: rgba(0, 212, 255, 0.2);
 }
 
 .settings-section h2 {

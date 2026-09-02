@@ -13,6 +13,7 @@ import { haptic } from '../services/HapticService';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import './WaitlistPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { EmptyState, ErrorState } from '../components/common/EmptyState';
 import { reportError } from '../utils/errorReporter';
 
 const waitlistCardAnimationStyle = (index: number) => ({
@@ -39,6 +40,7 @@ export default function WaitlistPage() {
 
   const [entries, setEntries] = useState<WaitlistEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [leavingId, setLeavingId] = useState<string | null>(null);
   const [positionCounts, setPositionCounts] = useState<Record<string, number>>({});
   const positionCountsRef = useRef<Record<string, number>>({});
@@ -60,6 +62,11 @@ export default function WaitlistPage() {
             event: '*',
             schema: 'public',
             table: 'table_waitlist',
+            /* DB LOAD PASS 2026-08-24: unfiltered, every waitlist write on the
+               platform reloaded this page's list — a list that only ever shows
+               THIS user's own queue entries (loadWaitlist filters by user_id).
+               Scoped server-side to the same key. Do not widen this. */
+            filter: `user_id=eq.${user.id}`,
           },
           (payload) => {
             loadWaitlistRef.current();
@@ -98,23 +105,6 @@ export default function WaitlistPage() {
         300
       ),
       masterBus.subscribeDebounced('TABLE_SEATED', () => loadWaitlistRef.current(), 300),
-      masterBus.subscribeDebounced(
-        'WAITLIST_PROMOTED',
-        (event) => {
-          // Refresh the list (the promoted entry will be removed)
-          loadWaitlistRef.current();
-          // If the promoted player is the current user, toast + auto-navigate
-          const data = event?.payload;
-          if (data?.userId === user?.id && data?.tableId) {
-            toast.success('You have been auto-seated! Redirecting to your table...');
-            haptic.heavy();
-            setTimeout(() => {
-              navigate(`/table/${data.tableId}`);
-            }, 2000);
-          }
-        },
-        300
-      ),
     ];
     return () => unsubs.forEach((u) => u());
   }, [user?.id, navigate, toast]);
@@ -127,7 +117,10 @@ export default function WaitlistPage() {
     if (!user?.id) return;
     if (loadingRef.current) return;
     loadingRef.current = true;
-    if (!getIsMounted || getIsMounted()) setLoading(true);
+    if (!getIsMounted || getIsMounted()) {
+      setLoading(true);
+      setLoadError(null);
+    }
     try {
       const waitlists = await waitlistService.getUserWaitlists(user.id);
       if (getIsMounted && !getIsMounted()) return;
@@ -145,6 +138,11 @@ export default function WaitlistPage() {
       );
     } catch (error) {
       reportError(error, 'WaitlistPage.Failed_to_load_waitlist');
+      if (!getIsMounted || getIsMounted()) {
+        setLoadError(
+          'Your table waitlists could not be loaded. Check your connection and try again.'
+        );
+      }
     } finally {
       loadingRef.current = false;
       if (!getIsMounted || getIsMounted()) setLoading(false);
@@ -220,7 +218,7 @@ export default function WaitlistPage() {
       case 'plo8':
         return 'PLO Hi-Lo';
       case 'pineapple':
-        return 'Pineapple';
+        return 'Crazy Pineapple';
       case 'short_deck':
         return 'Short Deck 6+';
       default:
@@ -238,7 +236,7 @@ export default function WaitlistPage() {
     <div className="waitlist-page">
       {/* Real-time indicator */}
       {entries.length > 0 && (
-        <div className="realtime-indicator">
+        <div className="realtime-indicator" role="status">
           <span className="live-dot"></span>
           <span>Live Updates Enabled</span>
         </div>
@@ -246,24 +244,17 @@ export default function WaitlistPage() {
 
       <div className="waitlist-content">
         {loading ? (
-          <div className="waitlist-skeleton-list">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="waitlist-skeleton-card">
-                <div className="wskel-line" style={{ width: '55%' }} />
-                <div className="wskel-line" style={{ width: '35%' }} />
-                <div className="wskel-bar" />
-              </div>
-            ))}
-          </div>
+          <PageSkeleton variant="list" />
+        ) : loadError ? (
+          <ErrorState message={loadError} onRetry={() => void loadWaitlist()} />
         ) : entries.length === 0 ? (
-          <div className="empty-state">
-            <span className="empty-icon">☰</span>
-            <h3>No Active Waitlists</h3>
-            <p>You're Not On Any Table Waitlists</p>
-            <button className="btn btn-primary" onClick={() => navigate('/')}>
-              Browse Tables
-            </button>
-          </div>
+          <EmptyState
+            icon="QUEUE"
+            eyebrow="Table Queue"
+            title="No Active Waitlists"
+            description="Join A Full Table's Waitlist And Its Live Position Will Appear Here."
+            action={{ label: 'Browse Tables', onClick: () => navigate('/') }}
+          />
         ) : (
           <div className="waitlist-entries">
             {entries.map((entry, idx) => (
@@ -284,12 +275,13 @@ export default function WaitlistPage() {
                     #{positionCounts[entry.id] || entry.position}
                   </span>
                   <span className="position-label">
-                    {entry.position === 1 ? 'next up!' : 'in line'}
+                    {entry.position === 1 ? 'Next Up!' : 'In Line'}
                   </span>
                 </div>
                 <div className="waitlist-actions">
                   <span className="wait-time">{formatWaitTime(entry.estimated_wait)}</span>
                   <button
+                    type="button"
                     className={`btn btn-ghost btn-sm leave-btn ${leavingId === entry.id ? 'loading' : ''}`}
                     onClick={() => {
                       haptic.medium();

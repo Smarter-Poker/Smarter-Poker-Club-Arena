@@ -14,7 +14,7 @@ export const GAME_VARIANTS = {
   PLO5: 'Pot-Limit Omaha 5',
   PLO6: 'Pot-Limit Omaha 6',
   SHORT_DECK: '6+ Short Deck',
-  PINEAPPLE: 'Pineapple',
+  PINEAPPLE: 'Crazy Pineapple',
   STUD: 'Seven Card Stud',
   RAZZ: 'Razz',
   HORSE: 'H.O.R.S.E.',
@@ -191,16 +191,13 @@ export type MemberRole = keyof typeof MEMBER_ROLES;
 // DEFAULT CONFIGURATIONS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const DEFAULT_TABLE_CONFIG = {
-  minBuyIn: 40, // Big blinds — 40 BB minimum for all cash games
-  maxBuyIn: 100, // Big blinds
-  timeBank: 30, // Seconds
-  autoMuckEnabled: true,
-  showdownEnabled: true,
-  runItTwiceEnabled: false,
-  rabbitHuntEnabled: true,
-  straddleEnabled: false,
-} as const;
+/* DEFAULT_TABLE_CONFIG removed 2026-08-25. Exported, never imported, and every
+   key in it had a real owner elsewhere that disagreed with it: buy-in bounds
+   come from the table row, run-it-twice and rabbit hunt from the `run_it_twice`
+   and `allow_rabbit_hunt` columns, the time bank from fn_consume_time_bank,
+   straddle from `straddle_enabled`. A defaults object nothing reads is worse
+   than none: the next person to find it reasonably assumes it is authoritative
+   and edits it expecting something to change. */
 
 export const DEFAULT_RAKE_CONFIG = {
   percent: 5,

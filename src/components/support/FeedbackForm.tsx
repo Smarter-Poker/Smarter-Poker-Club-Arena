@@ -3,10 +3,7 @@
  *  FEEDBACK FORM — User Voice
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Form for bugs, suggestions, and feedback.
- * - Categorized input
- * - Screenshot attachment support
- * - Submission to Supabase
+ * Categorized support request submission to Supabase.
  */
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -21,19 +18,33 @@ export function FeedbackForm({ isOpen, onClose }: { isOpen: boolean; onClose: ()
   const toast = useToast();
   const [category, setCategory] = useState<'bug' | 'suggestion' | 'other'>('bug');
   const [description, setDescription] = useState('');
-  const [screenshot, setScreenshot] = useState<File | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const mountTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   useEffect(() => {
     if (isOpen) {
+      previousFocusRef.current = document.activeElement as HTMLElement | null;
+      setCategory('bug');
+      setDescription('');
+      setSubmitted(false);
+      setLoading(false);
+      setError(null);
       if (mountTimerRef.current) clearTimeout(mountTimerRef.current);
       mountTimerRef.current = setTimeout(() => {
         mountTimerRef.current = null;
         setMounted(true);
+        closeButtonRef.current?.focus();
       }, 50);
     } else {
       if (mountTimerRef.current) {
@@ -42,23 +53,40 @@ export function FeedbackForm({ isOpen, onClose }: { isOpen: boolean; onClose: ()
       }
       setMounted(false);
     }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && isOpen) onCloseRef.current();
+    };
+    document.addEventListener('keydown', handleEscape);
+
     return () => {
+      document.removeEventListener('keydown', handleEscape);
       if (mountTimerRef.current) {
         clearTimeout(mountTimerRef.current);
         mountTimerRef.current = null;
       }
+      previousFocusRef.current?.focus();
     };
   }, [isOpen]);
 
   if (!isOpen) return null;
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && file.type.startsWith('image/')) {
-      setScreenshot(file);
-      setError(null);
-    } else if (file) {
-      setError('Please select an image file');
+  const keepFocusInsideDialog = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'Tab') return;
+    const focusable = Array.from(
+      dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), a[href]'
+      ) || []
+    );
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
     }
   };
 
@@ -68,46 +96,27 @@ export function FeedbackForm({ isOpen, onClose }: { isOpen: boolean; onClose: ()
     setError(null);
 
     try {
-      let screenshotUrl: string | null = null;
-
-      // Upload screenshot if provided
-      if (screenshot) {
-        const fileName = `feedback/${Date.now()}_${screenshot.name}`;
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('feedback-screenshots')
-          .upload(fileName, screenshot);
-
-        if (uploadError) {
-          reportError(uploadError, 'FeedbackForm.Screenshot_upload_failed');
-          // Continue without screenshot - don't fail the submission
-        } else {
-          const { data: urlData } = supabase.storage
-            .from('feedback-screenshots')
-            .getPublicUrl(fileName);
-          screenshotUrl = urlData.publicUrl;
-        }
+      if (!user?.id) {
+        throw new Error('An authenticated account is required to send a support request.');
       }
 
-      // Submit feedback to database
       const { error: insertError } = await supabase.from('user_feedback').insert({
-        user_id: user?.id || null,
+        user_id: user.id,
         category,
         description,
-        screenshot_url: screenshotUrl,
+        screenshot_url: null,
         status: 'new',
         created_at: new Date().toISOString(),
       });
 
-      if (insertError) {
-        // Table may not exist, silently continue
-      }
+      if (insertError) throw insertError;
 
       setSubmitted(true);
-      toast.success('Thank you for your feedback!');
-    } catch (err) {
-      reportError(err, 'FeedbackForm.Feedback_submission_failed');
-      // Still show success - we logged it
-      setSubmitted(true);
+      toast.success('Support Request Sent');
+    } catch (submitError) {
+      reportError(submitError, 'FeedbackForm.Feedback_submission_failed');
+      setError('Support Request Could Not Be Sent. Try Again Or Email Support@Smarter.Poker.');
+      toast.error('Support Request Not Sent');
     } finally {
       setLoading(false);
     }
@@ -115,20 +124,25 @@ export function FeedbackForm({ isOpen, onClose }: { isOpen: boolean; onClose: ()
 
   if (submitted) {
     return (
-      <div className="feedback-overlay" onClick={onClose}>
+      <div className="feedback-overlay" onMouseDown={onClose}>
         <div
+          ref={dialogRef}
           className="feedback-modal success"
-          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="feedback-success-title"
+          onMouseDown={(event) => event.stopPropagation()}
+          onKeyDown={keepFocusInsideDialog}
           style={{
             opacity: mounted ? 1 : 0,
             transform: mounted ? 'translateY(0)' : 'translateY(8px)',
             transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
           }}
         >
-          <div className="success-icon"></div>
-          <h3>Feedback Sent!</h3>
-          <p>Thank You For Helping Us Improve Poker Club.</p>
-          <button onClick={onClose} className="close-btn">
+          <div className="success-icon" aria-hidden="true" />
+          <h3 id="feedback-success-title">Support Request Sent</h3>
+          <p>Your Request Is In The Support Queue.</p>
+          <button ref={closeButtonRef} onClick={onClose} className="close-btn">
             Close
           </button>
         </div>
@@ -137,69 +151,71 @@ export function FeedbackForm({ isOpen, onClose }: { isOpen: boolean; onClose: ()
   }
 
   return (
-    <div className="feedback-overlay" onClick={onClose}>
-      <div className="feedback-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="feedback-overlay" onMouseDown={onClose}>
+      <div
+        ref={dialogRef}
+        className="feedback-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="feedback-dialog-title"
+        aria-describedby="feedback-dialog-description"
+        onMouseDown={(event) => event.stopPropagation()}
+        onKeyDown={keepFocusInsideDialog}
+      >
         <div className="feedback-header">
-          <h2>Send Feedback</h2>
-          <button onClick={onClose} aria-label="Close">
+          <div>
+            <span>Direct Support Circuit</span>
+            <h2 id="feedback-dialog-title">Send Support Request</h2>
+          </div>
+          <button ref={closeButtonRef} onClick={onClose} aria-label="Close Support Request">
             ×
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="feedback-form">
-          <label>Category</label>
-          <div className="category-select">
-            {['bug', 'suggestion', 'other'].map((cat) => (
-              <button
-                key={cat}
-                type="button"
-                className={category === cat ? 'active' : ''}
-                onClick={() => setCategory(cat as any)}
-              >
-                {cat.charAt(0).toUpperCase() + cat.slice(1)}
-              </button>
-            ))}
-          </div>
+          <p id="feedback-dialog-description">
+            Send A Bug Report, Product Suggestion, Or Account Question To The Live Support Queue.
+          </p>
 
-          <label>Description</label>
+          <fieldset>
+            <legend>Category</legend>
+            <div className="category-select">
+              {(['bug', 'suggestion', 'other'] as const).map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  className={category === cat ? 'active' : ''}
+                  aria-pressed={category === cat}
+                  onClick={() => setCategory(cat)}
+                >
+                  {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+
+          <label htmlFor="support-request-description">Description</label>
           <textarea
+            id="support-request-description"
             required
             rows={5}
-            placeholder="Tell us what happened or what you'd like to see..."
+            placeholder="Tell Us What Happened Or What You'd Like To See..."
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
 
-          <label>Screenshot (Optional)</label>
-          <div className="screenshot-upload">
-            <input
-              type="file"
-              ref={fileInputRef}
-              accept="image/*"
-              onChange={handleFileChange}
-              style={{ display: 'none' }}
-            />
-            <button
-              type="button"
-              className="upload-btn"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {screenshot ? screenshot.name : 'Attach Screenshot'}
-            </button>
-            {screenshot && (
-              <button type="button" className="remove-btn" onClick={() => setScreenshot(null)}>
-                ✕
-              </button>
-            )}
-          </div>
-          {error && <div className="error-text">{error}</div>}
+          {error && (
+            <div className="error-text" role="alert">
+              {error}
+            </div>
+          )}
 
           <div className="form-footer">
             <button type="button" className="cancel" onClick={onClose}>
               Cancel
             </button>
             <button type="submit" className="submit" disabled={!description.trim() || loading}>
-              {loading ? 'Sending...' : 'Send Feedback'}
+              {loading ? 'Sending Request...' : 'Send Support Request'}
             </button>
           </div>
         </form>

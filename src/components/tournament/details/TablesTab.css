@@ -1,0 +1,291 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  TABLES TAB — the layer on top of the shared lobby vocabulary
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Everything structural (`tl-*`) comes from styles/tournament-lobby-3d.css.
+ * This file only does what that file cannot know about:
+ *
+ *   1. the ROW GRID. A table row carries four things that will not fit on one
+ *      52px line at 375px — name, seats, the spread bar, and three chip figures
+ *      — so the row is a stack: a head line, the bar under it, and the figures
+ *      under that. Crushing three numbers into a single line is exactly the
+ *      defect this rebuild exists to remove.
+ *   2. the INDEX CHIP, the bevelled square carrying the table number, which is
+ *      what makes "Table 1, Table 2, Table 3" readable as an ordered list at a
+ *      glance instead of a wall of similar names.
+ *   3. the SPREAD segment, a `tl-meter__fill` that is positioned rather than
+ *      left-anchored, so the bar can show a range instead of a value.
+ *
+ * Palette is the house palette and nothing else: #223046 / #1a2436 / #131b28 /
+ * #0d1120, accent #6fdcff / #00b4e6, action #1877f2 / #0a5dc2, text #e8eaf0 /
+ * #8892a4 / #6b7686, refusal #ef4444 / #ffb4b4. No brown, no yellow, no gold.
+ *
+ * Every raised surface uses the house three-layer recipe in order: top-down
+ * gradient, inset bevel highlight plus underside shade, then a cast shadow.
+ */
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PANEL + SUMMARY
+   ───────────────────────────────────────────────────────────────────────── */
+.tt-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* The panel owns the height so the LIST scrolls, not the page. */
+  min-height: 0;
+}
+
+.tt-stats {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.tt-head-bar {
+  margin-bottom: 0;
+}
+
+.tt-list {
+  gap: 8px;
+  min-height: 0;
+}
+
+.tt-item {
+  display: block;
+}
+
+.tt-note {
+  flex: 0 0 auto;
+  margin: 2px 0 0;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--tl-text-hint);
+  text-align: center;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   THE ROW
+   One column of content beside the index chip. Single column, one table per
+   line, in number order — the whole brief in one grid declaration.
+   ───────────────────────────────────────────────────────────────────────── */
+.tt-row {
+  grid-template-columns: 38px minmax(0, 1fr);
+  grid-template-areas:
+    'idx head'
+    'idx meter'
+    'figs figs'
+    'note note';
+  align-items: start;
+  gap: 6px 10px;
+  min-height: 0;
+  padding: 10px 12px;
+}
+
+/* An inert row must not pretend. No pointer, no lift, and the cursor says so. */
+.tt-row--static {
+  cursor: default;
+}
+
+/* A keyboard reader must be able to see which table they are on. The shared
+   row clears its outline on focus and leans on a border tint, which is not
+   enough on a row that already carries the hero tint. */
+.tt-row.tl-row--interactive:focus-visible {
+  outline: 2px solid var(--tl-accent);
+  outline-offset: -2px;
+}
+
+.tt-index {
+  grid-area: idx;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--tl-radius-sm);
+  font-size: 15px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--tl-accent);
+  background: linear-gradient(180deg, #223046 0%, #0d1120 100%);
+  border: 1px solid rgba(111, 220, 255, 0.24);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.55),
+    0 2px 6px rgba(0, 0, 0, 0.5);
+  text-shadow: 0 0 10px rgba(111, 220, 255, 0.4);
+}
+
+.tl-row--hero .tt-index {
+  color: var(--tl-text);
+  border-color: rgba(111, 220, 255, 0.55);
+  background: linear-gradient(180deg, #1877f2 0%, #0a5dc2 100%);
+}
+
+/* ── head line: name on the left, status and seats on the right ─────────── */
+.tt-head {
+  grid-area: head;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+  min-width: 0;
+}
+
+.tt-headline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tt-name {
+  min-width: 0;
+}
+
+.tt-headmeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.tt-seats {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.tt-seatnum {
+  font-size: 13px;
+}
+
+/* ── the spread bar ─────────────────────────────────────────────────────── */
+.tt-meter {
+  grid-area: meter;
+  align-self: center;
+  margin-top: 2px;
+}
+
+/* The house fill is left-anchored because it normally shows a value. Here it
+   shows a RANGE, so it gets absolute placement and the inline style supplies
+   both edges. Everything else about it — gradient, glow, radius — is inherited
+   from `.tl-meter__fill` and stays consistent with Ranking. */
+.tt-spread {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  height: auto;
+  min-width: 2px;
+}
+
+/* ── the three figures ──────────────────────────────────────────────────── */
+.tt-figures {
+  grid-area: figs;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.tt-fig {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 5px 4px;
+  border-radius: var(--tl-radius-sm);
+  text-align: center;
+  background: linear-gradient(180deg, rgba(34, 48, 70, 0.72) 0%, rgba(13, 17, 32, 0.92) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.5),
+    0 2px 6px rgba(0, 0, 0, 0.36);
+}
+
+.tt-figvalue {
+  font-size: 14px;
+  text-align: center;
+}
+
+/* ── the closing line: an invitation, or the reason there is not one ────── */
+.tt-hint,
+.tt-blocked {
+  grid-area: note;
+  margin-top: 1px;
+}
+
+.tt-hint {
+  color: var(--tl-text-hint);
+}
+
+.tt-blocked {
+  color: var(--tl-danger-soft);
+  font-weight: 700;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   RESPECT THE PLAYER'S MOTION SETTING
+   The shared file already flattens `.tl-row` transitions; this covers the
+   surfaces that are only declared here.
+   ───────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .tt-row,
+  .tt-index,
+  .tt-spread {
+    transition: none;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   MOBILE FIRST — 375px is the design target
+   At that width the head line wraps to two lines rather than letting the seat
+   count push the table name into an ellipsis, and the three figures keep their
+   own tiles so all three stay legible.
+   ───────────────────────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  .tt-row {
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 5px 8px;
+    padding: 9px 10px;
+  }
+  .tt-index {
+    width: 32px;
+    height: 32px;
+    font-size: 13px;
+  }
+  .tt-figvalue {
+    font-size: 13px;
+  }
+  .tt-fig {
+    padding: 4px 2px;
+  }
+  .tt-hint,
+  .tt-blocked {
+    font-size: 9px;
+  }
+}
+
+/* Roomier screens can put the figures beside the name instead of under it,
+   which shortens every row without costing legibility. */
+@media (min-width: 720px) {
+  .tt-row {
+    grid-template-columns: 44px minmax(0, 1fr) 280px;
+    grid-template-areas:
+      'idx head figs'
+      'idx meter figs'
+      'note note figs';
+    align-items: center;
+  }
+  .tt-index {
+    width: 44px;
+    height: 44px;
+    font-size: 17px;
+  }
+  .tt-figures {
+    align-self: center;
+    margin-top: 0;
+  }
+}

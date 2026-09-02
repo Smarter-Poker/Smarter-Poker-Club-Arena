@@ -46,12 +46,6 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
-
-.position-badge:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
-}
-
 .position-name {
   display: block;
 }
@@ -131,11 +125,6 @@
   position: relative;
 }
 
-.seat-indicator:hover {
-  border-color: rgba(255, 255, 255, 0.4);
-  background-color: rgba(255, 255, 255, 0.08) !important;
-}
-
 .seat-indicator.active {
   border-color: rgba(255, 255, 255, 0.3);
   color: white;
@@ -155,7 +144,8 @@
 }
 
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {
@@ -179,11 +169,6 @@
   flex-direction: column;
   gap: 4px;
   transition: all 0.25s ease;
-}
-
-.metric:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.2);
 }
 
 .metric-label {

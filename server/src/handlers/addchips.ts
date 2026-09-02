@@ -17,7 +17,8 @@ export interface AddchipsDeps {
       | {
           addChips(
             userId: string,
-            amount: number
+            amount: number,
+            opId?: string
           ):
             | { success: boolean; [k: string]: unknown }
             | Promise<{ success: boolean; [k: string]: unknown }>;
@@ -41,8 +42,20 @@ export async function handleAddchips(
     const body = JSON.parse(await readBody(req));
     const { tableId, amount } = body;
     const userId = auth.userId;
+    /* Cashier audit 2026-08-27 (P0-1): the client's per-attempt id, held
+       across its retries, so a re-sent request after a lost response lands
+       on the SAME idempotency key instead of a fresh debit. Optional (the
+       horse rotator has no HTTP retry problem) and strictly validated — it
+       becomes part of a DB idempotency key. */
+    const rawOpId = body.opId;
+    const opId =
+      typeof rawOpId === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(rawOpId) ? rawOpId : undefined;
 
-    if (!tableId || !amount || amount <= 0) {
+    // 2026-08-27: `!amount || amount <= 0` alone lets a non-numeric string
+    // through - `!"abc"` is false and `"abc" <= 0` is false - so a garbage body
+    // reached the engine with a non-number. showhand.ts already validates this
+    // way; the two chip endpoints did not.
+    if (!tableId || typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
       return sendJSON(res, 400, { success: false, error: 'Missing tableId or invalid amount' });
     }
 
@@ -51,7 +64,7 @@ export async function handleAddchips(
       return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
     }
 
-    const result = await engine.addChips(userId, amount);
+    const result = await engine.addChips(userId, amount, opId);
     return sendJSON(res, result.success ? 200 : 400, result);
   } catch (err: unknown) {
     reportError(err, 'HTTP.addchips_error');

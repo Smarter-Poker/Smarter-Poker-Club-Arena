@@ -12,6 +12,8 @@
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
 import { writeHandFacts } from './handFacts.js';
+import { recordHorseHandReviews } from '../HorseHandReview.js';
+import { HorseMind } from '../../engine/HorseMind.js';
 
 /**
  * Log hand history — every hand documented for audit and replay.
@@ -32,6 +34,12 @@ import { writeHandFacts } from './handFacts.js';
  */
 export async function logHandHistory(params: {
   tableId: string;
+  /**
+   * `tables.nit_game`. Passed through to writeHandFacts so a horse at a NIT
+   * table produces the VPIP evidence the rule is judged on. See the note over
+   * writeHandFacts for why the rule could not bite without it.
+   */
+  nitGame?: boolean;
   tournamentId?: string;
   handNumber: number;
   gameVariant: string;
@@ -43,6 +51,30 @@ export async function logHandHistory(params: {
   communityCards: string[];
   /** DOUBLE-BOARD BOMB POT 2026-08-20: board 2 (empty on single-board hands). */
   communityCards2?: string[];
+  /** TRIPLE-BOARD BOMB POT 2026-08-27: board 3 (empty below three boards). */
+  communityCards3?: string[];
+  /**
+   * BOMB POT STANDARDIZATION 2026-08-27 (spec §20): the bomb facts frozen at
+   * trigger time — why the hand was a bomb, the equal forced ante, and how
+   * many boards were actually dealt. Written to hand_history.bomb_pot as
+   * jsonb; NULL on every normal hand.
+   */
+  bombPot?: {
+    trigger_reason: string;
+    ante_amount: number;
+    board_count: number;
+    /** VARIANT OVERRIDE 2026-08-28 (spec §10.1): the variant the bomb hand was dealt as. */
+    variant?: string;
+  } | null;
+  /**
+   * COMPLETENESS PASS 2026-08-26: run-it-twice boards 2..N (engine card
+   * strings, run order). Written to hand_history.rit_boards — NULL on every
+   * single-run hand so historical rows and normal hands look identical.
+   * Before this column, a RIT hand was indistinguishable in the database:
+   * the extra boards were smuggled through `actions` as `rit_board_N:`
+   * pseudo-entries, which replayers had to parse back out.
+   */
+  ritBoards?: string[][];
   // Round 38 — wall-clock timestamps. startedAt is captured at HAND_START
   // in ServerTableEngine; endedAt is stamped here at write time.
   startedAt?: number;
@@ -53,6 +85,19 @@ export async function logHandHistory(params: {
     potIndex?: number;
     hand?: { name: string; ranking: number };
   }[];
+  /**
+   * POT-LEVEL SETTLEMENT (Dan section 29, 2026-08-25).
+   *
+   * `winners[].potIndex` has been persisted since Bible V8 §2.7 and has been
+   * uninterpretable the whole time, because nothing recorded what the pots
+   * WERE. This is that record: one entry per pot in pot order, with the
+   * players who were entitled to contest it.
+   *
+   * Optional so every other caller of logHandHistory is unaffected, and
+   * written as NULL when empty so the two million historical rows and a
+   * fold-around hand look the same to a reader.
+   */
+  pots?: { index: number; amount: number; eligible: string[] }[];
   players: { userId: string; username: string; seat: number; stack: number; cards: string[] }[];
   actions: {
     seat: number;
@@ -69,6 +114,16 @@ export async function logHandHistory(params: {
     kickers: number[];
     holeCards: { rank: string; suit: string }[];
   }[];
+  /**
+   * Server-authored Daily Missions facts for this hand. Persisting the facts
+   * on the same retryable hand-history row makes mission projection survive a
+   * transient database outage without delaying money settlement.
+   */
+  dailyMissionEvents?: Array<{
+    user_id: string;
+    amounts: Record<string, number>;
+    magnitudes: Record<string, number>;
+  }>;
   /**
    * ASSISTANT FIX 2026-08-16: dealer/button seat for this hand.
    *
@@ -101,6 +156,23 @@ export async function logHandHistory(params: {
   holeCardsAll?: Map<string, { seat: number; cards: unknown }>;
   /** Seat roster with horse flags. Only humans get fact rows. */
   roster?: Array<{ userId: string; isHorse: boolean }>;
+  /**
+   * SHOWDOWN POLISH 2026-08-25: what the table actually SAW at showdown —
+   * one entry per showdown participant with reveal order and the muck
+   * ruling. Revealed entries carry the hand identity; mucked entries
+   * deliberately do NOT (participants can read this row back, and a mucked
+   * range stays private — the 2026-08-17 leak rule). Written to the
+   * `showdown` jsonb column (migration 20260825_hand_history_showdown_reveal).
+   * Replays and dispute review render the reveal sequence from this.
+   */
+  showdownReveal?: Array<{
+    user_id: string;
+    seat: number;
+    reveal_order: number;
+    mucked: boolean;
+    hand_name?: string;
+    hand_description?: string;
+  }>;
 }): Promise<{ handId: string | null }> {
   // Round 38 fix: stamp started_at/ended_at + RETURNING id so the caller
   // can FK rake_records.hand_id back to this hand_history row.
@@ -146,14 +218,32 @@ export async function logHandHistory(params: {
     // so existing consumers see no change. Column added by migration
     // 20260820 bomb_pot_double_board.
     community_cards2: params.communityCards2?.length ? params.communityCards2 : null,
+    // TRIPLE-BOARD BOMB POT 2026-08-27: board 3 + frozen bomb facts (spec
+    // §20). Both NULL on normal hands. Columns added by migration
+    // 20260827_bomb_pot_standardization.
+    community_cards3: params.communityCards3?.length ? params.communityCards3 : null,
+    bomb_pot: params.bombPot ?? null,
+    // COMPLETENESS PASS 2026-08-26: RIT boards 2..N, first-class. NULL (not
+    // []) on single-run hands so historical rows and normal hands look
+    // identical. Column added by migration 20260826_hand_history_rit_boards.
+    rit_boards: params.ritBoards?.length ? params.ritBoards : null,
     started_at: startedAtIso,
     ended_at: endedAtIso,
     winners: params.winners,
+    // Dan section 29. NULL rather than [] on a hand with no recorded
+    // breakdown, so "this hand predates the column" and "this hand had one
+    // uncontested pot" are not the same value to attributeKnockout().
+    pots: params.pots?.length ? params.pots : null,
     players: params.players,
     actions: params.actions,
     hole_cards: holeCardsPayload,
     board: boardPayload,
     button_seat: params.buttonSeat ?? null,
+    // SHOWDOWN POLISH 2026-08-25: null (not []) on a hand with no showdown,
+    // so "predates the column" and "no showdown happened" read the same as
+    // every other nullable jsonb here.
+    showdown: params.showdownReveal?.length ? params.showdownReveal : null,
+    daily_mission_events: params.dailyMissionEvents?.length ? params.dailyMissionEvents : null,
     // RETENTION FIX 2026-08-21: has_human has existed since the retention work
     // and NOTHING has ever set it — it was NULL on all 1,509,240 rows. It is
     // the flag sp_prune_hand_history() uses to spare hands with a human in
@@ -169,6 +259,25 @@ export async function logHandHistory(params: {
     // Every in-line attempt failed. Hand it to the background queue rather
     // than losing the hand — see enqueueHandHistory().
     enqueueHandHistory(row);
+  }
+
+  // V28 AUDIT FIX (2026-08-29): the opponent-model observation used to sit
+  // INSIDE the `if (handId ...)` block below, coupling an in-memory read to a
+  // database write it does not need. During any DB incident (596 supabase
+  // timeouts in one hour on the day this was found), every hand that fell to
+  // the background queue silently skipped observeHandComplete — the
+  // fold-to-c-bet, fold-to-3-bet and big-bet tells went dark exactly when
+  // nothing else was watching either. The observation is memory-only and
+  // idempotent (handFlags dedupe); it runs whether or not the row landed.
+  try {
+    HorseMind.observeHandComplete(
+      `${params.tableId}:${params.handNumber}`,
+      params.actions,
+      params.bigBlind,
+      params.showdownReveal ?? null
+    );
+  } catch {
+    /* observation must never endanger settlement */
   }
 
   // STATS FACT LAYER 2026-08-21. Durable per-human-per-hand row for the stats
@@ -189,6 +298,29 @@ export async function logHandHistory(params: {
       buttonSeat: params.buttonSeat ?? null,
       rakeAmount: params.rakeAmount,
       boardLength: params.communityCards?.length ?? 0,
+      holeCardsAll: params.holeCardsAll,
+      contributions: params.contributions,
+      winners: params.winners,
+      actions: params.actions,
+      roster: params.roster,
+      // The rule and its evidence must cover the same seats. See writeHandFacts.
+      nitGame: params.nitGame,
+    });
+    // (V16 deep-read observation moved ABOVE the handId gate — V28 audit.)
+
+    // HORSE HAND REVIEW 2026-08-26 (Dan): every horse that won or lost 20bb+
+    // in this hand gets a review row with leak tags — same exact in-memory
+    // inputs as the fact write above, same fire-and-forget contract.
+    void recordHorseHandReviews({
+      handId,
+      tableId: params.tableId,
+      clubId: params.clubId ?? null,
+      tournamentId: params.tournamentId ?? null,
+      gameVariant: params.gameVariant,
+      bigBlind: params.bigBlind,
+      playedAt: endedAtIso,
+      potSize: params.potSize,
+      board: params.communityCards ?? null,
       holeCardsAll: params.holeCardsAll,
       contributions: params.contributions,
       winners: params.winners,

@@ -33,6 +33,8 @@
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
+import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
+import { loadSchemaManifest } from './schema-manifest.mjs';
 
 const REPO = process.cwd();
 const MANIFEST = join(REPO, 'scripts/ci/supabase-schema-manifest.json');
@@ -54,7 +56,16 @@ function loadJson(path, label) {
   }
 }
 
-const manifest = loadJson(MANIFEST, 'schema manifest');
+/* The base snapshot UNION scripts/ci/schema-manifest.d/*.json, so an agent
+   declaring a table it just created never has to edit the file every other
+   agent is editing. See scripts/ci/schema-manifest.mjs. */
+let manifest;
+try {
+  manifest = loadSchemaManifest(REPO);
+} catch (err) {
+  console.error(`ERROR: ${err.message}`);
+  process.exit(2);
+}
 const allow = loadJson(ALLOWLIST, 'invariants allowlist');
 const realTables = new Set(manifest.tables || []);
 const realFns = new Set(manifest.functions || []);
@@ -247,12 +258,12 @@ async function liveSchema() {
     try {
       const res = await fetch(`${url}/rest/v1/rpc/fn_schema_manifest`, {
         method: 'POST',
-        headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        headers: supabaseServerHeaders(key, { 'Content-Type': 'application/json' }),
         body: '{}',
-      // Measured 2026-08-21: this RPC returned in 0.6s warm and 30.7s under
-      // load, against a 30s budget — so on a slow day all three attempts can
-      // expire and the gate loses its live evidence exactly when the database
-      // is busiest. The wait costs nothing when the database is healthy.
+        // Measured 2026-08-21: this RPC returned in 0.6s warm and 30.7s under
+        // load, against a 30s budget — so on a slow day all three attempts can
+        // expire and the gate loses its live evidence exactly when the database
+        // is busiest. The wait costs nothing when the database is healthy.
         signal: AbortSignal.timeout(75000),
       });
       if (res.ok) {
@@ -299,12 +310,8 @@ const live = await liveSchema();
 // fails.
 if (live === UNAVAILABLE) {
   console.log('');
-  console.log(
-    '[check-phantom-refs] The live schema could not be reached after 3 attempts, so the'
-  );
-  console.log(
-    '    snapshot is the only evidence available — and the snapshot is stale by design.'
-  );
+  console.log('[check-phantom-refs] The live schema could not be reached after 3 attempts, so the');
+  console.log('    snapshot is the only evidence available — and the snapshot is stale by design.');
   console.log('    NOT failing the build on it. Would have flagged:');
   for (const { name } of phantomTables) console.log(`      table  ${name}`);
   for (const { name } of phantomRpcs) console.log(`      rpc    ${name}`);
@@ -357,9 +364,7 @@ const printGroup = (title, arr, kind) => {
   console.log(`Fix a phantom ${kind}:`);
   console.log(`  1. It SHOULD exist -> add the migration and regenerate the manifest.`);
   console.log(`  2. The name is wrong -> correct it to the real ${kind}.`);
-  console.log(
-    `  3. It is an intentional unbuilt-feature ref -> add it (with a reason) to`
-  );
+  console.log(`  3. It is an intentional unbuilt-feature ref -> add it (with a reason) to`);
   console.log(`     scripts/ci/supabase-invariants.allowlist.json.`);
 };
 

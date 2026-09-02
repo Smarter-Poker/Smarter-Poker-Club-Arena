@@ -4,10 +4,10 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useMemo, useRef, useCallback, Suspense } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, Suspense } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
 const HamburgerMenu = lazyWithRetry(() => import('./HamburgerMenu'));
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../../stores/useWalletStore';
@@ -15,10 +15,11 @@ import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
 import { useAuthUser } from '../../hooks/useAuthUser';
 
 import styles from './GlobalHeader.module.css';
-import { generateDefaultAvatar, getAvatarWithFallback } from '../../utils/avatarGenerator';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
 const BASE = MEDIA_BASE;
+const APPROVED_HEADER_ASSET = `${BASE}images/global-header/`;
+const DEFAULT_AVATAR = `${BASE}default-avatar.png`;
 
 /*
  * Dan 2026-08-19: "the club arena needs a back button and hub button inside the
@@ -37,51 +38,53 @@ const BASE = MEDIA_BASE;
  */
 export default function GlobalHeader() {
   const navigate = useNavigate();
-  const location = useLocation();
   const { loadBalances, loadDiamonds } = useWalletStore();
   const { user: authUser } = useAuthUser();
+  const headerRef = useRef<HTMLElement>(null);
 
-  const { avatarUrl, notificationCount, unreadMessages, loadOnce } = useHeaderDataStore();
+  const {
+    avatarUrl,
+    isVipActive,
+    notificationCount,
+    unreadMessages,
+    loadOnce,
+    clearUnreadNotifications,
+    clearUnreadMessages,
+  } = useHeaderDataStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [isNavigatingAway, setIsNavigatingAway] = useState(false);
 
-  /**
-   * ── THE PROFILE ORB ────────────────────────────────────────────────────────
-   *
-   * Two things were wrong here and both were invisible until 2026-08-22.
-   *
-   * 1. The failure fallback was written imperatively — onError assigned
-   *    `e.target.src = generateDefaultAvatar()`. React's virtual DOM does not
-   *    know about a src it did not set, so once a single transient failure
-   *    swapped in the monogram, any later render computing the SAME src string
-   *    was a no-op and the real avatar could never come back for the rest of
-   *    the session. Held in state instead, and reset whenever avatarUrl
-   *    changes, so a retry actually retries.
-   *
-   * 2. The empty state was a bare `◉` glyph, and this was the one avatar
-   *    surface in the app that did not go through getAvatarWithFallback — so it
-   *    also did not resize Storage objects or map library art the way every
-   *    seat, friend row and leaderboard entry does. The shared resolver returns
-   *    a deterministic monogram for a player with no avatar, which is a face
-   *    rather than a placeholder, so the orb is never empty and the branch that
-   *    made it empty is gone.
+  /*
+   * The off-route table action bar is fixed, so CSS cannot discover the
+   * responsive raster header's rendered height on its own. Publish the real
+   * measured height before paint and whenever the artwork resizes. This keeps
+   * the global header at viewport y=0 while the action bar begins at its exact
+   * bottom edge on desktop, mobile, zoom, and safe-area layouts.
    */
-  const [avatarFailed, setAvatarFailed] = useState(false);
+  useLayoutEffect(() => {
+    const header = headerRef.current;
+    if (!header) return;
 
-  const displayName =
-    (authUser as { display_name?: string; username?: string } | null)?.display_name ||
-    (authUser as { username?: string } | null)?.username ||
-    'Player';
+    const root = document.documentElement;
+    const publishHeight = () => {
+      root.style.setProperty(
+        '--ca-global-header-height',
+        `${header.getBoundingClientRect().height}px`
+      );
+    };
 
-  const avatarSrc = useMemo(() => {
-    if (avatarFailed) return generateDefaultAvatar();
-    return getAvatarWithFallback(avatarUrl, authUser?.id || 'player', displayName, 40);
-  }, [avatarFailed, avatarUrl, authUser?.id, displayName]);
+    publishHeight();
+    const observer =
+      typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(publishHeight);
+    observer?.observe(header);
+    window.addEventListener('resize', publishHeight, { passive: true });
 
-  // A new avatar deserves a fresh attempt; the old one's failure is not its.
-  useEffect(() => {
-    setAvatarFailed(false);
-  }, [avatarUrl]);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', publishHeight);
+      root.style.removeProperty('--ca-global-header-height');
+    };
+  }, []);
 
   const handleMenuToggle = useCallback(() => setMenuOpen((prev) => !prev), []);
   const handleMenuClose = useCallback(() => setMenuOpen(false), []);
@@ -136,10 +139,14 @@ export default function GlobalHeader() {
     loadDiamonds(authUser.id);
   }, [authUser?.id, loadOnce, loadBalances, loadDiamonds]);
 
+  // force: an EVENT says the balance moved, so the freshness window in
+  // useWalletStore (which exists to make MOUNTS free) must not swallow it.
+  // Without this a real change could be up to BALANCE_FRESH_MS stale on screen,
+  // which is worse than the skeleton flash the window removed.
   useMasterBusSubscription(
     'WALLET_REFRESHED',
     () => {
-      if (authUser?.id) loadBalances(authUser.id);
+      if (authUser?.id) loadBalances(authUser.id, { force: true });
     },
     { debounce: 300 }
   );
@@ -151,7 +158,7 @@ export default function GlobalHeader() {
         if (payload?.newBalance !== undefined) {
           useWalletStore.setState({ diamonds: payload.newBalance });
         } else {
-          loadDiamonds(authUser.id);
+          loadDiamonds(authUser.id, { force: true });
         }
       }
     },
@@ -161,7 +168,7 @@ export default function GlobalHeader() {
   useMasterBusSubscription(
     'BALANCE_UPDATED',
     () => {
-      if (authUser?.id) loadDiamonds(authUser.id);
+      if (authUser?.id) loadDiamonds(authUser.id, { force: true });
     },
     { debounce: 500 }
   );
@@ -209,16 +216,26 @@ export default function GlobalHeader() {
   const prefetchMessenger = useCallback(() => {
     if (prefetchedMessenger) return;
     setPrefetchedMessenger(true);
-    import('../../pages/MessagesPage').catch(() => {});
+    import('../../pages/NavigateToMessenger').catch(() => {});
     const link = document.createElement('link');
     link.rel = 'prefetch';
-    link.href = '/hub/messenger?hideHeader=true';
+    link.href = '/hub/messenger';
     document.head.appendChild(link);
   }, [prefetchedMessenger]);
 
   const handleHubClick = () => {
     navigateToHub('/hub');
   };
+
+  const handleMessagesClick = useCallback(async () => {
+    if (authUser?.id) await clearUnreadMessages(authUser.id);
+    navigate('/messages');
+  }, [authUser?.id, clearUnreadMessages, navigate]);
+
+  const handleNotificationsClick = useCallback(async () => {
+    if (authUser?.id) await clearUnreadNotifications(authUser.id);
+    navigate('/notifications');
+  }, [authUser?.id, clearUnreadNotifications, navigate]);
 
   const headerStyle = isNavigatingAway
     ? { opacity: 0.5, transition: 'opacity 0.15s ease', pointerEvents: 'none' as const }
@@ -230,176 +247,138 @@ export default function GlobalHeader() {
         <HamburgerMenu isOpen={menuOpen} onClose={handleMenuClose} />
       </Suspense>
 
-      <header id="global-header" className={styles.header} style={headerStyle}>
-        {/* LEFT: Hamburger, then Back and Hub sitting immediately left of the
-            brand. All three are always rendered — see the note on the component. */}
-        <div className={styles.headerLeft}>
-          <button onClick={handleMenuToggle} className={styles.hamburgerBtn} aria-label="Open Menu">
-            <img
-              src={`${BASE}images/btn-hamburger-v4.png`}
-              alt="Menu"
-              style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-            />
-          </button>
-          <button
-            onClick={handleBackClick}
-            className={`${styles.headerImgBtn} ${styles.headerNavBtn}`}
-            aria-label="Go back"
-            title="Back"
-          >
-            <img
-              src={`${BASE}images/btn-back.png`}
-              alt="Back"
-              style={{ height: '100%', width: '100%', objectFit: 'contain' }}
-            />
-          </button>
-          <button
-            onClick={handleHubClick}
-            className={`${styles.headerImgBtn} ${styles.headerNavBtn}`}
-            aria-label="Go to the Hub"
-            title="Hub"
-          >
-            <img
-              src={`${BASE}images/btn-hub-v4.png`}
-              alt="Hub"
-              style={{ height: '100%', width: '100%', objectFit: 'contain' }}
-            />
-          </button>
-        </div>
+      <header
+        ref={headerRef}
+        id="global-header"
+        className={styles.header}
+        style={headerStyle}
+        data-artwork="approved-global-header"
+        aria-label="Smarter.Poker Global Header"
+      >
+        {/* Desktop and landscape use the supplied artwork itself. This is a
+            lossless crop: no redrawing, substitutions, filters, or resampling
+            were applied to the source file. The controls below become precise
+            hit regions over the artwork at these breakpoints. */}
+        <img
+          src={`${APPROVED_HEADER_ASSET}global-header-desktop.png`}
+          alt=""
+          width={1648}
+          height={168}
+          className={styles.desktopArtwork}
+          aria-hidden="true"
+          fetchPriority="high"
+          decoding="sync"
+        />
 
-        {/* CENTER: Brand Text Image */}
-        <div className={styles.headerCenter}>
-          <img
-            src={`${BASE}images/brand-text-clean.png`}
-            alt="Smarter.Poker"
-            className={styles.brandTextImg}
-          />
-          {location.pathname.includes('/messages') && (
-            <span
-              className={styles.hideMobile}
-              style={{ marginLeft: 8, fontSize: 16, display: 'flex', alignItems: 'center' }}
-              title="Securely Encrypted"
-            >
-              ◈
-            </span>
-          )}
-        </div>
-
-        {/* RIGHT: Orb Icons - Exact World Hub Order */}
-        <div className={styles.headerRight}>
-          {/* Avatar/Profile Orb */}
-          <button
-            className={styles.orbBtn}
-            onClick={() => navigateToHub('/hub/profile')}
-            style={{ overflow: 'visible' }}
-            aria-label="My Profile"
-          >
-            <div className={styles.profileOrb}>
-              <img
-                src={avatarSrc}
-                alt=""
-                className={styles.profileImg}
-                /* The orb is 40 CSS px. getAvatarWithFallback passes that
-                   through to sizedStorageUrl for Storage objects, so an
-                   uploaded picture arrives at orb size rather than at whatever
-                   the player originally uploaded. */
-                width={40}
-                height={40}
-                decoding="async"
-                onError={() => setAvatarFailed(true)}
-              />
-            </div>
-          </button>
-
-          {/* Diamond Wallet Icon */}
-          <button
-            className={styles.orbBtn}
-            onClick={() => navigateToHub('/hub/diamond-store')}
-            title="Diamond Wallet"
-          >
-            <img
-              src={`${BASE}images/header-wallet-v4.png`}
-              alt="Wallet"
-              className={styles.orbImg}
-            />
-          </button>
-
-          {/* VIP Card Icon */}
-          <button
-            className={styles.orbBtn}
-            onClick={() => navigateToHub('/hub/vip')}
-            title="VIP Member"
-          >
-            <img src={`${BASE}images/vip-card-v8.jpg`} alt="VIP Member" className={styles.orbImg} />
-          </button>
-
-          {/* Messages */}
-          {authUser?.id && (
+        <div className={styles.headerControls}>
+          <div className={styles.headerLeft}>
             <button
-              className={styles.orbBtn}
-              onClick={() => navigate('/messages')}
+              onClick={handleMenuToggle}
+              className={`${styles.artButton} ${styles.hamburgerBtn}`}
+              aria-label="Open Menu"
+            >
+              <img src={`${APPROVED_HEADER_ASSET}menu.png`} alt="Menu" />
+            </button>
+            <button
+              onClick={handleBackClick}
+              className={`${styles.artButton} ${styles.backBtn}`}
+              aria-label="Go Back"
+              title="Back"
+            >
+              <img src={`${APPROVED_HEADER_ASSET}back.png`} alt="Back" />
+            </button>
+            <button
+              onClick={handleHubClick}
+              className={`${styles.artButton} ${styles.hubBtn}`}
+              aria-label="Go To The Hub"
+              title="Hub"
+            >
+              <img src={`${APPROVED_HEADER_ASSET}hub.png`} alt="Hub" />
+            </button>
+          </div>
+
+          {/* Functional order matches the approved right-hand group exactly. */}
+          <div className={styles.headerRight}>
+            <button
+              className={`${styles.artButton} ${styles.profileBtn}`}
+              onClick={() => navigate('/profile')}
+              aria-label="My Profile"
+              title="My Profile"
+            >
+              <img src={`${APPROVED_HEADER_ASSET}profile.png`} alt="Profile" />
+              <span className={styles.profileAvatarSlot} aria-hidden="true">
+                <img
+                  src={avatarUrl || DEFAULT_AVATAR}
+                  alt=""
+                  className={styles.profileAvatar}
+                  onError={(event) => {
+                    event.currentTarget.src = DEFAULT_AVATAR;
+                  }}
+                />
+              </span>
+            </button>
+
+            <button
+              className={`${styles.artButton} ${styles.walletBtn}`}
+              onClick={() => navigate('/marketplace?tab=diamonds')}
+              aria-label="Diamond Wallet"
+              title="Diamond Wallet"
+            >
+              <img src={`${APPROVED_HEADER_ASSET}wallet.png`} alt="Wallet" />
+            </button>
+
+            <button
+              className={`${styles.artButton} ${styles.vipBtn} ${isVipActive ? styles.vipActive : ''}`}
+              onClick={() => navigateToHub('/hub/vip-membership')}
+              aria-label={isVipActive ? 'VIP Membership Active' : 'VIP Membership'}
+              title={isVipActive ? 'VIP Membership Active' : 'VIP Membership'}
+              data-vip-active={isVipActive ? 'true' : 'false'}
+            >
+              <img src={`${APPROVED_HEADER_ASSET}vip.png`} alt="VIP Member" />
+            </button>
+
+            <button
+              className={`${styles.artButton} ${styles.messengerBtn}`}
+              onClick={() => void handleMessagesClick()}
               onMouseEnter={prefetchMessenger}
               onTouchStart={prefetchMessenger}
               aria-label="Messages"
               title="Messages"
             >
-              <img
-                src={`${BASE}images/header-messenger-v4.png`}
-                alt="Messages"
-                className={styles.orbImg}
-              />
+              <img src={`${APPROVED_HEADER_ASSET}messenger.png`} alt="Messages" />
               {unreadMessages > 0 && (
-                <span className={styles.badge} aria-live="polite">
+                <span
+                  className={`${styles.badge} ${styles.messageBadge}`}
+                  aria-label={`${unreadMessages} Unread Messages`}
+                  aria-live="polite"
+                >
                   {unreadMessages > 99 ? '99+' : unreadMessages}
                 </span>
               )}
             </button>
-          )}
 
-          {/* Notifications */}
-          <Link
-            to="/notifications"
-            className={styles.orbLink}
-            title="Notifications"
-            aria-label="Notifications"
-          >
-            <img
-              src={`${BASE}images/notification-bell-trimmed.png`}
-              alt="Notifications"
-              className={styles.orbImg}
-            />
-            {notificationCount > 0 && (
-              <span className={styles.badge} aria-live="polite">
-                {notificationCount > 99 ? '99+' : notificationCount}
-              </span>
-            )}
-          </Link>
-
-          {/* Settings */}
-          <button
-            className={styles.orbBtn}
-            onClick={() => navigateToHub('/hub/settings')}
-            title="Settings"
-          >
-            <img
-              src={`${BASE}images/header-settings-v4.png`}
-              alt="Settings"
-              className={styles.orbImg}
-            />
-          </button>
-
-          {/* Live Help */}
-          <button
-            className={styles.orbBtn}
-            onClick={() => navigate('/help')}
-            aria-label="Live Help"
-          >
-            <img
-              src={`${BASE}images/header-help-v4.png`}
-              alt="Live Help"
-              className={styles.orbImg}
-            />
-          </button>
+            <Link
+              to="/notifications"
+              className={`${styles.artButton} ${styles.notificationsBtn}`}
+              onClick={(event) => {
+                event.preventDefault();
+                void handleNotificationsClick();
+              }}
+              title="Notifications"
+              aria-label="Notifications"
+            >
+              <img src={`${APPROVED_HEADER_ASSET}notifications.png`} alt="Notifications" />
+              {notificationCount > 0 && (
+                <span
+                  className={`${styles.badge} ${styles.notificationBadge}`}
+                  aria-label={`${notificationCount} Unread Notifications`}
+                  aria-live="polite"
+                >
+                  {notificationCount > 99 ? '99+' : notificationCount}
+                </span>
+              )}
+            </Link>
+          </div>
         </div>
       </header>
     </>

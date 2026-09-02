@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceCssRule } from '../helpers/sourceWindow';
 
 /**
  * Guards the CASCADE of avatarChoreography.css, not its content.
@@ -122,9 +123,43 @@ describe('avatarChoreography.css cascade', () => {
     // band drifts off the artwork at any scale other than the default.
     expect(holo.includes('mask-size: contain')).toBe(true);
     expect(holo.includes('mask-position: 50% 100%')).toBe(true);
-    // Same transform vars as .seat__avatar-img, so the two cannot drift apart
-    // when --sp-bust-scale changes (the top rail already sets it to 1.15).
-    expect(holo.includes('var(--sp-bust-scale')).toBe(true);
+    // Same transform var as .seat__avatar-img, so the two cannot drift apart.
+    //
+    // This asserted `var(--sp-bust-scale` until 2026-08-23, and it was a fair
+    // assertion while the scale was one number. Then a PER-CHARACTER gain was
+    // added to the img alone and the mask kept scaling by the global — the band
+    // stopped hugging the silhouette for any corrected character, and this test
+    // passed throughout, because the img and the mask did both still mention
+    // --sp-bust-scale. Naming a shared INPUT does not prove a shared RESULT.
+    //
+    // --sp-bust-effective-scale IS the composed result (global scale times the
+    // clamped per-character gain), so requiring it is the assertion the
+    // original was reaching for.
+    expect(holo.includes('var(--sp-bust-effective-scale')).toBe(true);
+  });
+
+  it('draws every part of a bust from the ONE composed scale', () => {
+    // The regression above was possible because four rules each wrote their own
+    // scale() by hand: the img, its hover, the rig canvas and the holo mask.
+    // Add a term to one and the other three silently disagree.
+    //
+    // So this is the rule with teeth: inside a bust transform the bare global
+    // --sp-bust-scale is BANNED. Compose it once into --sp-bust-effective-scale
+    // (declared on .seat__avatar--bust in SeatSlot.css) and read that. Any
+    // future term added to the composition then reaches all four for free,
+    // which is the only version of "cannot drift" that survives being edited.
+    // Comments stripped first: this file documents the geometry contract in
+    // prose, and a worked example of a transform inside a /* */ block is not a
+    // declaration. Scanning raw text flagged the documentation as a violation.
+    const declarations = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+    const bustTransforms = declarations
+      .split('\n')
+      .filter((l) => l.includes('transform:') && l.includes('--sp-bust-scale'));
+    expect(
+      bustTransforms,
+      'these transforms read the raw --sp-bust-scale and so will miss any ' +
+        'per-character correction; use var(--sp-bust-effective-scale) instead'
+    ).toEqual([]);
   });
 
   it('gives the holo sweep its own phase, not the breathing one', () => {
@@ -168,8 +203,7 @@ describe('avatarChoreography.css cascade', () => {
     }
     // It must also switch off the INFINITE idle, which is not a gesture class
     // and so is not covered by SeatSlot declining to apply gesture classes.
-    const block = CSS.slice(CSS.indexOf('.seat__avatar-wrap--rigged {'));
-    expect(block.slice(0, 120)).toContain('animation: none');
+    expect(sliceCssRule(CSS, '.seat__avatar-wrap--rigged {')).toContain('animation: none');
   });
 
   it('gives the rig canvas the same geometry as the bust it replaces', () => {
@@ -179,11 +213,18 @@ describe('avatarChoreography.css cascade', () => {
     // look shrunken and would not sit on the name box.
     expect(CSS).toContain('.seat__avatar-rive');
     const rive = CSS.slice(CSS.indexOf('.seat__avatar--bust .seat__avatar-rive'));
+    // Read the actual rule BLOCK rather than a fixed slice of characters. The
+    // assertion used to be `rive.slice(0, 320)`, which is a guess at how long
+    // the rule is: adding the comment that explains which scale variable to use
+    // pushed the declaration past the window and failed a rule that was
+    // correct. A test should fail when the CSS is wrong, not when it is
+    // documented.
+    const riveBlock = rive.slice(0, rive.indexOf('}') + 1);
     expect(
-      rive.slice(0, 320),
-      'the rig canvas must reuse --sp-bust-scale so it cannot drift from the img'
-    ).toContain('var(--sp-bust-scale');
-    expect(rive.slice(0, 320)).toContain('transform-origin');
+      riveBlock,
+      'the rig canvas must reuse --sp-bust-effective-scale so it cannot drift from the img'
+    ).toContain('var(--sp-bust-effective-scale');
+    expect(riveBlock).toContain('transform-origin');
   });
 
   it('sheds ONLY the infinite animations under the motion budget', () => {

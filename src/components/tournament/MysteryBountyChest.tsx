@@ -47,18 +47,54 @@ import { mediaUrl } from '../../utils/mediaBase';
 import './MysteryBountyChest.css';
 
 export interface MysteryChestData {
-  /** userId of the player who scored the knockout — only they can open it. */
+  /**
+   * The DESIGNATED REVEALER — the one player who may tap this chest open
+   * (Dan sections 52/53). Everyone else at the table, and every spectator,
+   * watches. On a split knockout the server picks exactly one of the
+   * claimants; the money is still split between all of them.
+   */
   knockerUserId: string;
   knockerName: string;
   eliminatedName: string;
-  /** The hidden prize. */
+  /**
+   * The prize, in whole currency units.
+   *
+   * ZERO IS A LEGITIMATE VALUE HERE, and it means "not known yet". Under the
+   * two-phase reveal (section 19) the chest appears BEFORE anyone has seen the
+   * amount: the server's `mystery_bounty_pending` broadcast deliberately
+   * carries no number, and the number only exists once the chest is opened.
+   * `amountPending` says which of the two situations this is.
+   */
   amount: number;
-  /** Server-supplied tier name, e.g. 'JACKPOT'. Derived from amount if absent. */
+  /** The award this chest belongs to. Absent on the legacy one-shot path. */
+  awardId?: string;
+  /** True until the reveal lands. Gates the count-up, never the animation. */
+  amountPending?: boolean;
+  /**
+   * SERVER-SUPPLIED TIER (section 50). `tier` is the inventory's own tier name
+   * ('jackpot', 'mega', 'major', …) and drives the colour; `tierLabel` is what
+   * the player reads. Both come from the chest that was actually drawn.
+   */
+  tier?: string;
   tierLabel?: string;
   isJackpot?: boolean;
-  /** Average bounty in this event, used to derive a tier when none is given. */
+  /**
+   * Legacy fallback only. Before the server sent a tier the chest inferred one
+   * from `amount / avgBounty` — see getTier(). Kept so an older engine build
+   * still names its prizes.
+   */
   avgBounty?: number;
   currency?: string;
+  /** 1-based position in this table's reveal queue (sections 25/64). */
+  queueIndex?: number;
+  /** How many chests this burst holds in total. 1 or 0 hides the counter. */
+  queueTotal?: number;
+  /**
+   * SECTION 28 — a shared knockout is ONE bounty, split. The chest shows the
+   * full amount first (that is what the pot was worth), then who it divides
+   * between. Absent or single-entry on an ordinary knockout.
+   */
+  recipients?: { userId: string; name: string; amount: number }[];
 }
 
 export interface MysteryBountyChestProps {
@@ -71,6 +107,20 @@ export interface MysteryBountyChestProps {
    * which owns the realtime channel. Absent -> local-only (still works).
    */
   onBroadcastOpen?: () => void;
+  /**
+   * The designated revealer is opening the chest — go and get the amount.
+   *
+   * TWO-PHASE REVEAL (section 19). The tap calls `fn_mystery_bounty_reveal`
+   * FROM THE BROWSER and the amount comes straight back, which is the drama:
+   * the player who made the knockout sees the number before the table does.
+   * TablePage owns the RPC (this component owns no data access), feeds the
+   * answer back in as `data.amount`, and the count-up — which does not start
+   * until ~1.5s after the tap — reads whatever has arrived by then.
+   *
+   * Called at most ONCE per chest, from the tap and from the auto-open alike,
+   * so section 54's failsafe cannot re-roll or double-pay.
+   */
+  onRequestReveal?: () => void;
   /** Set when another client's broadcast says the chest is open. */
   remoteOpened?: boolean;
   /** How many more chests are waiting behind this one. */
@@ -109,16 +159,62 @@ const AUTO_OPEN_MS = 9000;
 /** Spectator failsafe: only used if no broadcast ever lands. */
 const SPECTATOR_FAILSAFE_MS = 14000;
 
+/**
+ * Keyed by BOTH vocabularies, because two exist and both are legitimate.
+ *
+ * The lower-case entries with no suffix are the server's inventory tier names
+ * (`mysteryBountySpec.MysteryBountyTierName`) and are what a modern engine
+ * sends as `tier`. The rest are the legacy label words that `getTier()` still
+ * produces when no server tier is available. Looking up the raw tier first
+ * (see the `tier` memo below) is what makes section 50 true: the colour and
+ * the words come from the same chest.
+ */
 const TIER_COLORS: Record<string, string> = {
-  min: '#6b7280',
-  small: '#60a5fa',
-  medium: '#34d399',
-  large: '#fbbf24',
-  huge: '#f97316',
+  // Server tier names.
+  jackpot: '#6fdcff',
   mega: '#ef4444',
+  major: '#a855f7',
+  large: '#6fdcff',
+  medium: '#6fdcff',
+  small: '#60a5fa',
+  base_plus: '#60a5fa',
+  base: '#6b7280',
+  // Legacy label words (getTier).
+  min: '#6b7280',
+  huge: '#1877f2',
   grand: '#a855f7',
-  jackpot: '#FFD700',
 };
+
+/**
+ * The words for a server tier name (Dan section 50).
+ *
+ * MIRRORS `server/src/config/mysteryBountySpec.ts:formatBountyTier`. The
+ * engine sends the label on `mystery_bounty_revealed`, so this copy exists for
+ * the one path that has no broadcast to read: the designated revealer's own
+ * tap, which calls `fn_mystery_bounty_reveal` directly and gets back the raw
+ * tier name and nothing else. If the tiers change, change both in the same
+ * commit — a chest that is a Mega Prize on the tapper's screen and a Major
+ * Prize on everyone else's is worse than no label at all.
+ *
+ * House rule (CLAUDE.md §5.7): First Letter Of Every Word Capitalized.
+ */
+const SERVER_TIER_LABELS: Record<string, string> = {
+  jackpot: 'Jackpot',
+  mega: 'Mega Prize',
+  major: 'Major Prize',
+  large: 'Large Prize',
+  medium: 'Medium Prize',
+  small: 'Small Prize',
+  base_plus: 'Bonus Prize',
+  base: 'Standard Prize',
+};
+
+export function formatBountyTierLabel(tier: string | null | undefined): string | undefined {
+  const key = String(tier ?? '')
+    .trim()
+    .toLowerCase();
+  return SERVER_TIER_LABELS[key];
+}
 
 /**
  * Tier from the amount relative to this event's average bounty. Kept identical
@@ -172,7 +268,7 @@ function fireConfetti(isJackpot: boolean) {
     .then((mod) => {
       const confetti = mod.default;
       confettiReset = () => (confetti as unknown as { reset?: () => void }).reset?.();
-      const gold = ['#FFD700', '#FFC107', '#FFB300', '#FF8F00', '#FFECB3'];
+      const gold = ['#6fdcff', '#00b4e6', '#0a5dc2', '#1877f2', '#e8eaf0'];
       confetti({
         particleCount: isJackpot ? 300 : 140,
         spread: isJackpot ? 180 : 110,
@@ -217,6 +313,7 @@ export default function MysteryBountyChest({
   viewerUserId,
   onDone,
   onBroadcastOpen,
+  onRequestReveal,
   remoteOpened = false,
   queuedBehind = 0,
   playSounds = true,
@@ -246,10 +343,76 @@ export default function MysteryBountyChest({
   onDoneRef.current = onDone;
 
   const isWinner = !!data && !!viewerUserId && data.knockerUserId === viewerUserId;
+  /**
+   * SECTION 50 — the tier is the SERVER'S when it sends one.
+   *
+   * The colour keys off `data.tier`, the inventory's own tier name, and the
+   * words come from `data.tierLabel`. Only when neither is present does the
+   * legacy `amount / avgBounty` inference run, and that path exists solely for
+   * an engine build older than 2026-08-25.
+   */
   const tier = data?.tierLabel
-    ? { label: data.tierLabel, color: TIER_COLORS[data.tierLabel.toLowerCase()] || '#60a5fa' }
+    ? {
+        label: data.tierLabel,
+        color:
+          TIER_COLORS[String(data.tier ?? '').toLowerCase()] ||
+          TIER_COLORS[data.tierLabel.toLowerCase()] ||
+          '#60a5fa',
+      }
     : getTier(data?.amount ?? 0, data?.avgBounty ?? data?.amount ?? 0);
   const isJackpot = data?.isJackpot || tier.label.toLowerCase() === 'jackpot';
+
+  /**
+   * The latest amount, readable from inside a timer that was armed before it
+   * arrived.
+   *
+   * `runOpen` schedules the count-up ~1.5s ahead and would otherwise capture
+   * `data.amount` in its closure — which under the two-phase reveal is 0,
+   * because the tap that fetches the real number happens on the same tick the
+   * timer is armed. The ref is what lets the drama work: the chest starts
+   * opening the instant it is tapped, and the number lands during the lid
+   * swing.
+   */
+  const amountRef = useRef(data?.amount ?? 0);
+  amountRef.current = data?.amount ?? 0;
+
+  /**
+   * THE CHEST'S IDENTITY, and why it is not the `data` object.
+   *
+   * Under the two-phase reveal the props CHANGE while the chest is on screen:
+   * TablePage merges the amount, the tier and the recipient split in the
+   * moment the reveal lands, which produces a new object on that render. Every
+   * effect below keyed on `data` would tear the sequence down and restart it
+   * from the landing thump — the chest would visibly re-drop the instant the
+   * prize was known.
+   *
+   * The award id is what actually identifies a chest. 'legacy' covers the old
+   * one-shot path, where the amount arrives with the chest and never changes,
+   * and where the queue's null gap between items re-arms the effect anyway.
+   */
+  const chestKey = data ? (data.awardId ?? 'legacy') : null;
+
+  /** One reveal request per chest — section 54: the tap and the failsafe are
+   *  the same request, never two. */
+  const revealRequestedRef = useRef<string | null>(null);
+  const requestReveal = useCallback(() => {
+    if (!chestKey) return;
+    // SECTIONS 52/53: only the designated revealer opens the chest. Everyone
+    // else — the rest of the table and every spectator — watches, and their
+    // clients must not call the reveal RPC at all. `fn_mystery_bounty_reveal`
+    // refuses them ('not_the_revealer'), so this is noise control rather than
+    // security, but a table of ten firing a refused RPC each is nine refusals
+    // per knockout.
+    if (!isWinner) return;
+    if (revealRequestedRef.current === chestKey) return;
+    revealRequestedRef.current = chestKey;
+    try {
+      onRequestReveal?.();
+    } catch {
+      // The engine reveals this award authoritatively on its own deadline, so
+      // a failed request costs the tapper their head start and nothing else.
+    }
+  }, [chestKey, isWinner, onRequestReveal]);
 
   const clearTimers = () => {
     timersRef.current.forEach(clearTimeout);
@@ -260,10 +423,30 @@ export default function MysteryBountyChest({
     }
   };
 
+  // ANIMATION AUDIT 2026-08-27: `playSounds` (ambientSoundsAllowed) flips
+  // whenever the player switches multi-table tab. It sat in the arrival
+  // effect's and runOpen's dependency arrays, so a tab switch MID-CHEST tore
+  // the sequence down, reset the opened latch, and re-dropped the chest from
+  // the landing thump. It is a play-time gate, not sequence identity — read
+  // it through a ref.
+  const playSoundsRef = useRef(playSounds);
+  playSoundsRef.current = playSounds;
+
   /** Run the open -> explosion -> reveal sequence. Idempotent. */
   const runOpen = useCallback(() => {
-    if (openedRef.current || !data) return;
+    if (openedRef.current || !chestKey) return;
     openedRef.current = true;
+    // 2026-08-27: cancel the landing phase's pending `toLocked` — remote
+    // opens / the spectator failsafe can fire inside the 700ms landing
+    // window, and the stale timer then snapped the chest BACK to 'locked'
+    // mid-open before it jumped to explosion.
+    clearTimers();
+
+    // Ask the server for the number, if it has not been asked already. This is
+    // the TAP path and the AUTO-OPEN path in one line, which is what makes
+    // "manual tap plus timeout cannot double-reveal" (section 80/31) true by
+    // construction rather than by two guards that have to agree.
+    requestReveal();
 
     const speed = getAnimationSpeed();
     const reduced = prefersReducedMotion();
@@ -286,7 +469,7 @@ export default function MysteryBountyChest({
       }
     }
 
-    if (playSounds) {
+    if (playSoundsRef.current) {
       try {
         soundService.playMysteryChestOpen();
       } catch {
@@ -300,7 +483,7 @@ export default function MysteryBountyChest({
 
     const toExplosion = setTimeout(() => {
       setPhase('explosion');
-      if (playSounds) {
+      if (playSoundsRef.current) {
         try {
           soundService.playMysteryChestExplosion();
         } catch {
@@ -312,7 +495,7 @@ export default function MysteryBountyChest({
 
     const toRevealed = setTimeout(() => {
       setPhase('revealed');
-      if (playSounds) {
+      if (playSoundsRef.current) {
         try {
           soundService.playMysteryBountyReveal();
         } catch {
@@ -323,7 +506,12 @@ export default function MysteryBountyChest({
 
       // Count the number UP rather than printing it. The climb is the reward;
       // a number that simply appears is a receipt.
-      const target = data.amount;
+      //
+      // Read from the ref, not the closure: under the two-phase reveal the
+      // amount arrives from `fn_mystery_bounty_reveal` DURING the lid swing,
+      // after this timer was armed. The closure's copy would be the pre-reveal
+      // zero, so the chest would explode into "0".
+      const target = amountRef.current;
       if (reduced) {
         setDisplayAmount(target);
       } else {
@@ -354,7 +542,10 @@ export default function MysteryBountyChest({
     );
 
     timersRef.current.push(toExplosion, toRevealed, toEnd);
-  }, [data, isJackpot, playSounds]);
+    // Keyed on the chest, not the data object: the props change mid-sequence
+    // when the amount lands, and a new `runOpen` identity on that render would
+    // re-arm the failsafe effects below against a chest that is already open.
+  }, [chestKey, isJackpot, requestReveal]);
 
   /** The winner's tap. Opens locally at once, and tells everyone else. */
   const handleOpenClick = useCallback(() => {
@@ -368,12 +559,16 @@ export default function MysteryBountyChest({
   }, [isWinner, phase, runOpen, onBroadcastOpen]);
 
   // ── Arrival ───────────────────────────────────────────────────────────────
+  // KEYED ON chestKey, NOT `data`. See the chestKey comment: the props change
+  // while the chest is on screen (the amount arrives), and depending on the
+  // object identity here would re-drop the chest at the moment of the reveal.
   useEffect(() => {
     clearTimers();
     openedRef.current = false;
+    revealRequestedRef.current = null;
     setDisplayAmount(0);
 
-    if (!data) {
+    if (!chestKey) {
       setPhase('idle');
       return;
     }
@@ -382,7 +577,7 @@ export default function MysteryBountyChest({
     const reduced = prefersReducedMotion();
 
     setPhase('landing');
-    if (playSounds) {
+    if (playSoundsRef.current) {
       try {
         soundService.playMysteryChestLand();
       } catch {
@@ -394,11 +589,25 @@ export default function MysteryBountyChest({
     timersRef.current.push(toLocked);
 
     return clearTimers;
-  }, [data, playSounds]);
+    // playSounds deliberately NOT a dep — see playSoundsRef above.
+  }, [chestKey]);
+
+  /**
+   * The amount can land AFTER the count-up has already finished — a slow
+   * reveal RPC, or a spectator whose `mystery_bounty_revealed` broadcast
+   * arrived late. Snap to the true figure rather than leaving a chest that
+   * exploded into nothing.
+   */
+  useEffect(() => {
+    if (phase !== 'revealed') return;
+    if (rafRef.current !== null) return; // the climb is still running
+    const target = data?.amount ?? 0;
+    if (target > 0) setDisplayAmount(target);
+  }, [phase, data?.amount]);
 
   // ── Auto-open failsafes ───────────────────────────────────────────────────
   useEffect(() => {
-    if (!data || phase !== 'locked') return;
+    if (!chestKey || phase !== 'locked') return;
 
     // Only the WINNER'S client owns the real timer and the broadcast, so an
     // AFK winner cannot produce one broadcast per spectator.
@@ -423,14 +632,14 @@ export default function MysteryBountyChest({
     }, SPECTATOR_FAILSAFE_MS * getAnimationSpeed());
     timersRef.current.push(t);
     return () => clearTimeout(t);
-  }, [data, phase, isWinner, runOpen, onBroadcastOpen]);
+  }, [chestKey, phase, isWinner, runOpen, onBroadcastOpen]);
 
   // ── Someone else opened it ────────────────────────────────────────────────
   useEffect(() => {
-    if (remoteOpened && data && !openedRef.current && phase !== 'idle') {
+    if (remoteOpened && chestKey && !openedRef.current && phase !== 'idle') {
       runOpen();
     }
-  }, [remoteOpened, data, phase, runOpen]);
+  }, [remoteOpened, chestKey, phase, runOpen]);
 
   // ── Escalating tension while it sits locked ───────────────────────────────
   useEffect(() => {
@@ -459,7 +668,7 @@ export default function MysteryBountyChest({
       style={{ ['--mbc-tension' as string]: tension, ['--mbc-tier' as string]: tier.color }}
       role="dialog"
       aria-modal="true"
-      aria-label="Mystery bounty"
+      aria-label="Mystery Bounty"
     >
       <div className="mbc__backdrop" />
 
@@ -490,7 +699,16 @@ export default function MysteryBountyChest({
             onError={() => setVideoOk(false)}
           />
         )}
-        <div className="mbc__eyebrow">Mystery Bounty</div>
+        {/* SECTIONS 25 and 64 — three knockouts in one hand read
+            "MYSTERY BOUNTY 1 OF 3", then 2 of 3, then 3 of 3, and the dealer
+            button does not move until the last of them is done. The counter
+            is the server's: it is computed once the whole burst is known, not
+            per chest as it is reserved. */}
+        <div className="mbc__eyebrow">
+          {(data.queueTotal ?? 1) > 1
+            ? `Mystery Bounty ${data.queueIndex ?? 1} Of ${data.queueTotal}`
+            : 'Mystery Bounty'}
+        </div>
         <div className="mbc__subject">
           <span className="mbc__winner-name">{data.knockerName}</span>
           <span className="mbc__subject-verb"> Eliminated </span>
@@ -511,7 +729,7 @@ export default function MysteryBountyChest({
           onPointerLeave={() => setPressed(false)}
           onPointerCancel={() => setPressed(false)}
           disabled={!canTap}
-          aria-label={canTap ? 'Tap to open the mystery bounty chest' : 'Mystery bounty chest'}
+          aria-label={canTap ? 'Tap To Open The Mystery Bounty Chest' : 'Mystery Bounty Chest'}
         >
           <span className="mbc__glow" aria-hidden="true" />
 
@@ -653,13 +871,37 @@ export default function MysteryBountyChest({
               {currency}
               {displayAmount.toLocaleString()}
             </div>
-            <div className="mbc__won-by">
-              Won By <strong>{data.knockerName}</strong>
-            </div>
+            {/* SECTION 28 — a shared knockout is ONE bounty, split. The full
+                amount above is what the chest held; this is who it divides
+                between. Shown only when there is more than one claimant, so
+                the ordinary knockout is untouched. */}
+            {data.recipients && data.recipients.length > 1 ? (
+              <div className="mbc__split">
+                <div className="mbc__split-head">
+                  Split {data.recipients.length} Ways - Shared Knockout
+                </div>
+                {data.recipients.map((r) => (
+                  <div className="mbc__split-row" key={r.userId}>
+                    <span className="mbc__split-name">{r.name}</span>
+                    <span className="mbc__split-amount">
+                      {currency}
+                      {r.amount.toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="mbc__won-by">
+                Won By <strong>{data.knockerName}</strong>
+              </div>
+            )}
           </div>
         )}
 
-        {queuedBehind > 0 && (
+        {/* The legacy "+2 more" hint. Suppressed when the server sent a real
+            queue counter, which says the same thing in the eyebrow and says it
+            more precisely. */}
+        {queuedBehind > 0 && (data.queueTotal ?? 1) <= 1 && (
           <div className="mbc__queued">
             +{queuedBehind} More Bount{queuedBehind > 1 ? 'ies' : 'y'} To Reveal
           </div>

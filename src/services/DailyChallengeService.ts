@@ -10,8 +10,10 @@
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
-import { QUERY_LIMITS } from '../lib/constants';
+import { retryFetch } from '../utils/retryFetch';
 import { reportError } from '../utils/errorReporter';
+import { titleCase } from '../utils/titleCase';
+import { uuid } from '../utils/uuid';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -154,6 +156,38 @@ export interface ClaimResult {
   diamondBalance: number;
 }
 
+/** One replay-safe receipt for one or many completed mission contracts. */
+export interface ClaimBatchResult {
+  success: boolean;
+  replayed: boolean;
+  claimedIds: string[];
+  alreadyClaimedIds: string[];
+  chips: number;
+  diamonds: number;
+  diamondBalance: number;
+  stats: Pick<DailyChallengeStats, 'totalClaimed' | 'totalChipsEarned' | 'totalDiamondsEarned'>;
+  vault: DailyChallengeRewardVault;
+}
+
+/** What the atomic reroll RPC actually changed and charged. */
+export interface RerollResult {
+  success: boolean;
+  alreadyRerolled: boolean;
+  challengeId?: string;
+  challenge?: TieredUserChallenge;
+  diamondBalance?: number;
+  error?: string;
+}
+
+/** Authoritative receipt returned by a streak-freeze purchase. */
+export interface FreezePurchaseResult {
+  success: boolean;
+  alreadyPurchased: boolean;
+  freezesAvailable?: number;
+  diamondBalance?: number;
+  error?: string;
+}
+
 export interface UserDailyChallenge {
   id: string;
   challengeId: string;
@@ -170,6 +204,46 @@ export type Tier = 'daily' | 'weekly' | 'monthly';
 
 export interface TieredUserChallenge extends UserDailyChallenge {
   tier: Tier;
+}
+
+export interface DailyChallengeStats {
+  totalCompleted: number;
+  totalClaimed: number;
+  currentStreak: number;
+  totalChipsEarned: number;
+  totalDiamondsEarned: number;
+  milestoneStart: number;
+  nextMilestone: number;
+  milestoneReward: number;
+  milestoneProgressPercent: number;
+  daysToMilestone: number;
+}
+
+export interface ChallengeStreak {
+  streak: number;
+  freezesAvailable: number;
+  usedFreeze: boolean;
+  frozenDate: string | null;
+  nextFreezeIn: number | null;
+}
+
+export interface DailyChallengeRewardVault {
+  count: number;
+  chips: number;
+  diamonds: number;
+  items: TieredUserChallenge[];
+  pageSize: number;
+  hasMore: boolean;
+}
+
+export interface DailyChallengeDashboard {
+  missions: TieredUserChallenge[];
+  stats: DailyChallengeStats;
+  streak: ChallengeStreak;
+  diamondBalance: number;
+  vault: DailyChallengeRewardVault;
+  revision: number;
+  syncedAt: string;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -759,6 +833,41 @@ export const MONTHLY_CHALLENGE_POOL: DailyChallenge[] = [
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class DailyChallengeServiceClass {
+  private mapServerChallenge(row: any, userId: string): TieredUserChallenge {
+    const tier: Tier =
+      row.tier === 'weekly' || row.tier === 'monthly' || row.tier === 'daily'
+        ? row.tier
+        : /^W/.test(row.assigned_date || '')
+          ? 'weekly'
+          : /^M/.test(row.assigned_date || '')
+            ? 'monthly'
+            : 'daily';
+
+    return {
+      id: row.id,
+      challengeId: row.challenge_id,
+      userId,
+      progress: Number(row.progress) || 0,
+      completed: row.completed === true,
+      claimed: row.claimed === true,
+      completedAt: row.completed_at || undefined,
+      tier,
+      challenge: {
+        id: row.challenge_id,
+        // Catalog text is data, so static copy gates cannot inspect it. Keep
+        // the page rule true even while an older immutable assignment snapshot
+        // is still being served from production.
+        name: titleCase(row.name),
+        description: titleCase(row.description),
+        type: row.challenge_type as ChallengeType,
+        requirement: Number(row.requirement) || 0,
+        chipReward: Number(row.chip_reward) || 0,
+        diamondReward: Number(row.diamond_reward) || 0,
+        icon: '',
+      },
+    };
+  }
+
   /**
    * Fetch (and assign, if needed) the rows for one period.
    *
@@ -815,6 +924,114 @@ class DailyChallengeServiceClass {
   }
 
   /**
+   * The complete Daily Missions page in one authenticated receipt.
+   *
+   * Active contracts, career totals, streak state, spendable diamonds, and
+   * every completed-but-unclaimed reward are read from the same database
+   * snapshot. Historical rows carry immutable assignment snapshots, so a
+   * later catalog edit cannot rewrite what a player earned or make an old
+   * reward disappear after its period rolls over.
+   */
+  async getDashboard(userId: string): Promise<DailyChallengeDashboard> {
+    const dailyKey = this.getTodayKey();
+    const weeklyKey = this.getWeekKey();
+    const monthlyKey = this.getMonthKey();
+
+    const { data, error } = await retryFetch(
+      () =>
+        supabase.rpc('get_daily_challenge_dashboard_v2', {
+          p_daily_key: dailyKey,
+          p_daily_ids: this.selectDailyChallenges(5).map((c) => c.id),
+          p_weekly_key: weeklyKey,
+          p_weekly_ids: this.selectChallenges(WEEKLY_CHALLENGE_POOL, 3, weeklyKey).map((c) => c.id),
+          p_monthly_key: monthlyKey,
+          p_monthly_ids: this.selectChallenges(MONTHLY_CHALLENGE_POOL, 2, monthlyKey).map(
+            (c) => c.id
+          ),
+        }),
+      { maxRetries: 2, baseDelayMs: 250 }
+    );
+
+    if (error) {
+      reportError(error, 'DailyChallengeService.getDashboard_failed');
+      throw new Error(error.message || 'Could not synchronize Daily Missions');
+    }
+
+    const payload = data as any;
+    if (!payload || !Array.isArray(payload.missions) || !payload.stats || !payload.vault) {
+      const contractError = new Error('Daily Missions returned an incomplete dashboard receipt');
+      reportError(contractError, 'DailyChallengeService.getDashboard_invalid_receipt');
+      throw contractError;
+    }
+
+    const mapRows = (rows: any[]): TieredUserChallenge[] =>
+      rows.map((row) => this.mapServerChallenge(row, userId));
+    const stats = payload.stats || {};
+    const streak = payload.streak || {};
+    const vault = payload.vault || {};
+
+    return {
+      missions: mapRows(payload.missions),
+      stats: {
+        totalCompleted: Math.max(0, Number(stats.totalCompleted) || 0),
+        totalClaimed: Math.max(0, Number(stats.totalClaimed) || 0),
+        currentStreak: Math.max(0, Number(stats.currentStreak) || 0),
+        totalChipsEarned: Math.max(0, Number(stats.totalChipsEarned) || 0),
+        totalDiamondsEarned: Math.max(0, Number(stats.totalDiamondsEarned) || 0),
+        milestoneStart: Math.max(0, Number(stats.milestoneStart) || 0),
+        nextMilestone: Math.max(1, Number(stats.nextMilestone) || 7),
+        milestoneReward: Math.max(0, Number(stats.milestoneReward) || 0),
+        milestoneProgressPercent: Math.min(
+          100,
+          Math.max(0, Number(stats.milestoneProgressPercent) || 0)
+        ),
+        daysToMilestone: Math.max(0, Number(stats.daysToMilestone) || 0),
+      },
+      streak: {
+        streak: Math.max(0, Number(streak.streak) || 0),
+        freezesAvailable: Math.max(0, Number(streak.freezesAvailable) || 0),
+        usedFreeze: streak.usedFreeze === true,
+        frozenDate: streak.frozenDate || null,
+        nextFreezeIn: streak.nextFreezeIn == null ? null : Number(streak.nextFreezeIn),
+      },
+      diamondBalance: Math.max(0, Number(payload.diamondBalance) || 0),
+      vault: {
+        count: Math.max(0, Number(vault.count) || 0),
+        chips: Math.max(0, Number(vault.chips) || 0),
+        diamonds: Math.max(0, Number(vault.diamonds) || 0),
+        items: mapRows(Array.isArray(vault.items) ? vault.items : []),
+        pageSize: Math.max(1, Number(vault.pageSize) || 100),
+        hasMore: vault.hasMore === true,
+      },
+      revision: Math.max(1, Number(payload.revision) || 1),
+      syncedAt: typeof payload.syncedAt === 'string' ? payload.syncedAt : new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Read only the durable cursor used to repair a missed Realtime event.
+   * This is deliberately much smaller than the atomic dashboard RPC.
+   */
+  async getDashboardRevision(userId: string): Promise<number> {
+    const { data, error } = await retryFetch(
+      () =>
+        supabase
+          .from('daily_challenge_dashboard_revisions')
+          .select('revision')
+          .eq('user_id', userId)
+          .maybeSingle(),
+      { maxRetries: 1, baseDelayMs: 250 }
+    );
+
+    if (error) {
+      reportError(error, 'DailyChallengeService.getDashboardRevision_failed');
+      throw new Error(error.message || 'Could not reconcile Daily Missions');
+    }
+
+    return Math.max(0, Number(data?.revision) || 0);
+  }
+
+  /**
    * The whole page in ONE round trip, rendered from the SERVER catalog.
    *
    * Two problems this replaces:
@@ -866,32 +1083,8 @@ class DailyChallengeServiceClass {
       monthly: [] as TieredUserChallenge[],
     };
     for (const row of (data || []) as any[]) {
-      const tier: Tier =
-        row.assigned_date === dailyKey
-          ? 'daily'
-          : row.assigned_date === weeklyKey
-            ? 'weekly'
-            : 'monthly';
-      out[tier].push({
-        id: row.id,
-        challengeId: row.challenge_id,
-        userId,
-        progress: Number(row.progress) || 0,
-        completed: row.completed === true,
-        claimed: row.claimed === true,
-        completedAt: row.completed_at || undefined,
-        tier,
-        challenge: {
-          id: row.challenge_id,
-          name: row.name,
-          description: row.description,
-          type: row.challenge_type as ChallengeType,
-          requirement: Number(row.requirement) || 0,
-          chipReward: Number(row.chip_reward) || 0,
-          diamondReward: Number(row.diamond_reward) || 0,
-          icon: '',
-        },
-      });
+      const challenge = this.mapServerChallenge(row, userId);
+      out[challenge.tier].push(challenge);
     }
     return out;
   }
@@ -967,23 +1160,142 @@ class DailyChallengeServiceClass {
    * The RPC now exists (migration 20260823_buy_streak_freeze) and every failure
    * is reported as one.
    */
-  async buyStreakFreeze(userId: string): Promise<{ success: boolean; error?: string }> {
+  async buyStreakFreeze(userId: string): Promise<FreezePurchaseResult> {
+    // One request id survives every network retry. The database binds it to the
+    // diamond ledger entry, so a committed response that was lost cannot buy a
+    // second freeze when the client retries.
+    const requestId = uuid();
     try {
-      const { data, error } = await supabase.rpc('buy_streak_freeze', {
-        p_user_id: userId,
-        p_cost: 5000,
-      });
-      if (error) throw error;
+      const { data } = await retryAsync(async () => {
+        const result = await supabase.rpc('buy_streak_freeze', {
+          p_user_id: userId,
+          p_cost: 5000,
+          p_request_id: requestId,
+        });
+        if (result.error) throw result.error;
+        return result;
+      }, 3);
       // The RPC reports refusals in its payload (at the 3-freeze cap, not
       // enough diamonds) rather than as a Postgres error, so an absent or
       // false `success` is still a failed purchase.
-      const result = data as { success?: boolean; error?: string } | null;
+      const result = data as {
+        success?: boolean;
+        alreadyPurchased?: boolean;
+        freezesAvailable?: number;
+        diamondBalance?: number;
+        error?: string;
+      } | null;
       if (!result?.success) {
-        return { success: false, error: result?.error || 'Purchase failed' };
+        return {
+          success: false,
+          alreadyPurchased: false,
+          diamondBalance:
+            result?.diamondBalance == null ? undefined : Math.max(0, Number(result.diamondBalance)),
+          error: result?.error || 'Purchase failed',
+        };
       }
-      return { success: true };
+      const alreadyPurchased = result.alreadyPurchased === true;
+      const diamondBalance = Math.max(0, Number(result.diamondBalance) || 0);
+      masterBus.emit('DIAMOND_BALANCE_CHANGED', {
+        newBalance: diamondBalance,
+        delta: alreadyPurchased ? 0 : -5000,
+        source: 'streak_freeze_purchase',
+      });
+      return {
+        success: true,
+        alreadyPurchased,
+        freezesAvailable: Math.max(0, Number(result.freezesAvailable) || 0),
+        diamondBalance,
+      };
     } catch (err: any) {
-      return { success: false, error: err?.message || 'Purchase failed' };
+      return {
+        success: false,
+        alreadyPurchased: false,
+        error: err?.message || 'Purchase failed',
+      };
+    }
+  }
+
+  /**
+   * Read the spendable diamond balance shown by challenge economy controls.
+   *
+   * This is deliberately not `getStats().totalDiamondsEarned`: that statistic
+   * is lifetime challenge payout, while purchases and rerolls spend the live
+   * profiles.diamonds balance. Confusing the two made an account with 5,000
+   * historical rewards look able to buy a freeze even after spending them.
+   */
+  async getDiamondBalance(userId: string): Promise<number> {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('diamonds')
+      .eq('id', userId)
+      .maybeSingle();
+    if (error) {
+      reportError(error, 'DailyChallengeService.getDiamondBalance_failed');
+      throw new Error('Could not load your diamond balance');
+    }
+    return Math.max(0, Number(data?.diamonds) || 0);
+  }
+
+  /**
+   * Atomically replace one unfinished challenge and spend the reroll price.
+   *
+   * `expectedChallengeId` is the replay key. If a response is lost after the
+   * database commits, retrying the request sees that the row has already moved
+   * away from this id and returns `alreadyRerolled` without charging again.
+   */
+  async rerollChallenge(
+    userId: string,
+    challengeRowId: string,
+    expectedChallengeId: string
+  ): Promise<RerollResult> {
+    try {
+      const { data, error } = await supabase.rpc('reroll_daily_challenge', {
+        p_user_id: userId,
+        p_challenge_row_id: challengeRowId,
+        p_expected_challenge_id: expectedChallengeId,
+        p_cost: 10,
+      });
+      if (error) throw error;
+
+      const result = data as {
+        success?: boolean;
+        alreadyRerolled?: boolean;
+        challengeId?: string;
+        challenge?: any;
+        diamondBalance?: number;
+        error?: string;
+      } | null;
+
+      if (!result?.success) {
+        return {
+          success: false,
+          alreadyRerolled: result?.alreadyRerolled === true,
+          error: result?.error || 'Challenge reroll was not confirmed',
+        };
+      }
+
+      const diamondBalance = Math.max(0, Number(result.diamondBalance) || 0);
+      masterBus.emit('DIAMOND_BALANCE_CHANGED', {
+        newBalance: diamondBalance,
+        delta: result.alreadyRerolled ? 0 : -10,
+        source: 'daily_challenge_reroll',
+      });
+
+      return {
+        success: true,
+        alreadyRerolled: result.alreadyRerolled === true,
+        challengeId: result.challengeId,
+        challenge: result.challenge ? this.mapServerChallenge(result.challenge, userId) : undefined,
+        diamondBalance,
+      };
+    } catch (err: any) {
+      reportError(err, 'DailyChallengeService.rerollChallenge_failed');
+      return {
+        success: false,
+        alreadyRerolled: false,
+        error: err?.message || 'Challenge reroll failed',
+      };
     }
   }
 
@@ -1217,7 +1529,90 @@ class DailyChallengeServiceClass {
   }
 
   /**
-   * Claim standard chip reward directly from UI
+   * Claim one or many completed contracts in one wallet transaction.
+   *
+   * The request UUID is stable across network retries and the database stores
+   * the complete receipt. If the commit succeeds but its response is lost, the
+   * retry gets the original payout and next vault page instead of reporting a
+   * zero-value duplicate.
+   */
+  async claimChallenges(userId: string, challengeRowIds: string[]): Promise<ClaimBatchResult> {
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const ids = [...new Set(challengeRowIds)];
+    if (ids.length === 0) throw new Error('Choose at least one completed challenge to claim.');
+    if (ids.length > 100) throw new Error('Claim up to 100 challenge rewards at a time.');
+    if (ids.some((id) => !uuidPattern.test(id))) {
+      throw new Error('One or more challenges are not ready to claim. Refresh and try again.');
+    }
+
+    const requestId = uuid();
+    const rpcResult = await retryAsync(async () => {
+      const result = await supabase.rpc('claim_daily_challenges', {
+        p_user_id: userId,
+        p_challenge_row_ids: ids,
+        p_request_id: requestId,
+      });
+      if (result.error) {
+        reportError(result.error, 'DailyChallengeService.RPC_claim_batch_error');
+        throw new Error(result.error.message || 'Challenge rewards could not be claimed');
+      }
+      return result;
+    }, 3);
+
+    const paid = (rpcResult as any)?.data as any;
+    if (!paid?.success || !paid.vault || !paid.stats) {
+      throw new Error('Daily Missions returned an incomplete claim receipt');
+    }
+
+    const claimedIds = Array.isArray(paid.claimedIds)
+      ? paid.claimedIds.filter((id: unknown): id is string => typeof id === 'string')
+      : [];
+    const alreadyClaimedIds = Array.isArray(paid.alreadyClaimedIds)
+      ? paid.alreadyClaimedIds.filter((id: unknown): id is string => typeof id === 'string')
+      : [];
+    const chips = Math.max(0, Number(paid.chips) || 0);
+    const diamonds = Math.max(0, Number(paid.diamonds) || 0);
+    const diamondBalance = Math.max(0, Number(paid.diamondBalance) || 0);
+
+    if (claimedIds.length > 0) {
+      masterBus.emit('BALANCE_UPDATED', { source: 'daily_challenge_claim', userId });
+      if (diamonds > 0) {
+        masterBus.emit('DIAMOND_BALANCE_CHANGED', {
+          newBalance: diamondBalance,
+          delta: diamonds,
+          source: 'daily_challenge_claim',
+        });
+      }
+    }
+
+    return {
+      success: true,
+      replayed: paid.replayed === true,
+      claimedIds,
+      alreadyClaimedIds,
+      chips,
+      diamonds,
+      diamondBalance,
+      stats: {
+        totalClaimed: Math.max(0, Number(paid.stats.totalClaimed) || 0),
+        totalChipsEarned: Math.max(0, Number(paid.stats.totalChipsEarned) || 0),
+        totalDiamondsEarned: Math.max(0, Number(paid.stats.totalDiamondsEarned) || 0),
+      },
+      vault: {
+        count: Math.max(0, Number(paid.vault.count) || 0),
+        chips: Math.max(0, Number(paid.vault.chips) || 0),
+        diamonds: Math.max(0, Number(paid.vault.diamonds) || 0),
+        items: (Array.isArray(paid.vault.items) ? paid.vault.items : []).map((row: any) =>
+          this.mapServerChallenge(row, userId)
+        ),
+        pageSize: Math.max(1, Number(paid.vault.pageSize) || 100),
+        hasMore: paid.vault.hasMore === true,
+      },
+    };
+  }
+
+  /**
+   * Legacy one-row wrapper retained for callers outside the dashboard.
    */
   async claimChallenge(
     userId: string,
@@ -1297,101 +1692,8 @@ class DailyChallengeServiceClass {
   /**
    * Get challenge completion stats for a user
    */
-  async getStats(userId: string): Promise<{
-    totalCompleted: number;
-    currentStreak: number;
-    totalChipsEarned: number;
-    totalDiamondsEarned: number;
-    nextMilestone: number;
-    milestoneReward: number;
-  }> {
-    // ORDER BY is load-bearing: an unordered LIMIT returns an arbitrary subset
-    // in Postgres, so once a user passed QUERY_LIMITS.MODERATE completions the
-    // streak scan below walked a random slice and collapsed to a wrong value.
-    const { data, error: statErr } = await supabase
-      .from('user_daily_challenges')
-      .select('challenge_id, completed, claimed, assigned_date')
-      .eq('user_id', userId)
-      .eq('completed', true)
-      .order('assigned_date', { ascending: false })
-      .limit(QUERY_LIMITS.MODERATE);
-    if (statErr) reportError(statErr, 'DailyChallengeService.getStats_error');
-
-    if (!data) {
-      return {
-        totalCompleted: 0,
-        currentStreak: 0,
-        totalChipsEarned: 0,
-        totalDiamondsEarned: 0,
-        nextMilestone: 7,
-        milestoneReward: 500,
-      };
-    }
-
-    const totalCompleted = data.length;
-    let totalChipsEarned = 0;
-    let totalDiamondsEarned = 0;
-
-    for (const uc of data) {
-      // Only CLAIMED rewards are money the player actually has. Counting
-      // completed-but-unclaimed rows made "Chips Earned" overstate the balance.
-      if (!uc.claimed) continue;
-      const challenge = this.findInPools(uc.challenge_id);
-      if (challenge) {
-        totalChipsEarned += challenge.chipReward;
-        totalDiamondsEarned += challenge.diamondReward;
-      }
-    }
-
-    // Calculate streak (consecutive days with at least 1 completion)
-    // CRITICAL: Filter to DAILY keys only. Weekly keys start with "W" and
-    // monthly keys start with "M" — these are NOT valid dates and would
-    // produce Invalid Date from subtractDays(), silently breaking the streak.
-    const dailyDates = data
-      .map((d) => d.assigned_date)
-      .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)); // Only YYYY-MM-DD
-    const dates = [...new Set(dailyDates)].sort().reverse();
-    let currentStreak = 0;
-    const today = this.getTodayKey();
-    const yesterday = this.subtractDays(today, 1);
-
-    // Anchor the walk at today OR yesterday. Anchoring only at today meant a
-    // player with a 30-day streak saw "0 day streak" from 00:00 UTC until they
-    // completed something — the streak looked broken at the exact moment the
-    // UI is trying to persuade them to keep it alive.
-    const anchor = dates[0] === today ? today : dates[0] === yesterday ? yesterday : null;
-    if (anchor) {
-      for (const date of dates) {
-        const expectedDate = this.subtractDays(anchor, currentStreak);
-        if (date === expectedDate) {
-          currentStreak++;
-        } else {
-          break;
-        }
-      }
-    }
-
-    // Dynamic streak milestones — tiered rewards escalate with longer streaks
-    const MILESTONES = [
-      { days: 7, reward: 500 },
-      { days: 14, reward: 1500 },
-      { days: 30, reward: 5000 },
-      { days: 60, reward: 15000 },
-      { days: 100, reward: 50000 },
-    ];
-    const nextMilestoneEntry =
-      MILESTONES.find((m) => m.days > currentStreak) || MILESTONES[MILESTONES.length - 1];
-    const nextMilestone = nextMilestoneEntry.days;
-    const milestoneReward = nextMilestoneEntry.reward;
-
-    return {
-      totalCompleted,
-      currentStreak,
-      totalChipsEarned,
-      totalDiamondsEarned,
-      nextMilestone,
-      milestoneReward,
-    };
+  async getStats(userId: string): Promise<DailyChallengeStats> {
+    return (await this.getDashboard(userId)).stats;
   }
 
   // emitDailyResetReminder removed — was dead code (never called from any file)
@@ -1557,17 +1859,6 @@ class DailyChallengeServiceClass {
   private getMonthKey(): string {
     const d = new Date();
     return `M${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-  }
-
-  /**
-   * Subtract days from a date
-   */
-  private subtractDays(dateStr: string, days: number): string {
-    // MUST use UTC operations — getTodayKey() returns UTC date (via toISOString()),
-    // so streak calculation must also use UTC to avoid timezone boundary mismatches.
-    const date = new Date(dateStr + 'T00:00:00Z'); // Force UTC parse
-    date.setUTCDate(date.getUTCDate() - days);
-    return date.toISOString().split('T')[0];
   }
 
   /**

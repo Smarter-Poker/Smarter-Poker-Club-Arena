@@ -63,7 +63,7 @@ function checkDown(h: ReturnType<typeof harness>) {
   }
 }
 
-describe('DOUBLE-BOARD BOMB POT — dealing', () => {
+describe('DOUBLE-BOARD BOMB POT - dealing', () => {
   it('deals two full boards in lockstep and reports doubleBoard in the trigger', () => {
     const h = harness(mkConfig(), mkPlayers([200, 200, 200, 200]));
     h.hc.start();
@@ -137,7 +137,7 @@ describe('DOUBLE-BOARD BOMB POT — dealing', () => {
   });
 });
 
-describe('DOUBLE-BOARD BOMB POT — deck feasibility downgrade', () => {
+describe('DOUBLE-BOARD BOMB POT - deck feasibility downgrade', () => {
   it('9-handed PLO5 (45 hole cards) downgrades to a single board', () => {
     const h = harness(
       mkConfig({ gameVariant: 'plo5' }),
@@ -156,10 +156,7 @@ describe('DOUBLE-BOARD BOMB POT — deck feasibility downgrade', () => {
   });
 
   it('single-board bomb pot still works unchanged when doubleBoard is off', () => {
-    const h = harness(
-      mkConfig({ bombPot: { anteMultiplier: 2 } }),
-      mkPlayers([100, 100, 100])
-    );
+    const h = harness(mkConfig({ bombPot: { anteMultiplier: 2 } }), mkPlayers([100, 100, 100]));
     h.hc.start();
     const trigger = h.events.find((e) => e.type === 'BOMB_POT_TRIGGERED') as any;
     expect(trigger.doubleBoard).toBe(false);
@@ -167,5 +164,84 @@ describe('DOUBLE-BOARD BOMB POT — deck feasibility downgrade', () => {
     expect(h.st().communityCards).toHaveLength(5);
     expect(h.st().communityCards2).toHaveLength(0);
     expect(Math.round(h.stacksSum() * 100)).toBe(30000);
+  });
+});
+
+/**
+ * A BOMB POT THAT ENDS IN FOLDS IS STILL A BOMB POT (2026-08-29).
+ *
+ * bomb_pot_award_units is written from the WINNERS event's perPotAwards, and a
+ * hand-off audit claimed the uncontested paths emit none — that every bomb hand
+ * ending in folds was missing from the ledger, roughly one hand in sixty. It is
+ * not true of this code (determineWinners pushes the uncontested winner's entry
+ * before it ever reaches an evaluator, PokerEngine.ts), and production agrees:
+ * hand 3366646 is a turn fold-win with exactly one award unit that reconciles.
+ *
+ * It was true of the code that shipped before PR #1685 widened the write, which
+ * is where the audit's evidence came from — hand 3309072, 2026-08-28 19:12Z,
+ * settled almost three hours before the widening reached production.
+ *
+ * These pins exist so nobody has to establish that twice. A fold win carries
+ * its award, on however many boards were complete when the folding stopped.
+ */
+describe('BOMB POT - a fold win carries its award units', () => {
+  /** Fold every live seat but one, then check the last one down. */
+  function foldDownFrom(h: ReturnType<typeof harness>, foldFromStage: string) {
+    let guard = 80;
+    while (h.st().stage !== 'showdown' && h.cur() > 0 && guard-- > 0) {
+      const live = h.st().players.filter((p: SeatPlayer) => !p.is_folded).length;
+      const shouldFold = live > 1 && h.st().stage === foldFromStage;
+      h.act(shouldFold ? 'fold' : 'check');
+    }
+  }
+
+  it('a flop fold win emits one award unit for the uncontested winner', () => {
+    const h = harness(mkConfig(), mkPlayers([200, 200, 200]));
+    h.hc.start();
+    foldDownFrom(h, 'flop');
+
+    const w = h.events.find((e) => e.type === 'WINNERS') as any;
+    expect(w.winners).toHaveLength(1);
+    // Neither board is complete, so the pot is settled once, on board 1.
+    expect(w.perPotAwards).toHaveLength(1);
+    expect(w.perPotAwards[0].userId).toBe(w.winners[0].userId);
+    expect(w.perPotAwards[0].low).toBe(false);
+    expect(w.perPotAwards[0].potIndex).toBe(0);
+    // The ledger row's amount must be the money the winner actually got.
+    expect(w.perPotAwards[0].amount).toBeCloseTo(w.winners[0].amount, 2);
+  });
+
+  it('a river fold win emits one award unit PER COMPLETE BOARD', () => {
+    const h = harness(mkConfig(), mkPlayers([200, 200, 200]));
+    h.hc.start();
+    foldDownFrom(h, 'river');
+
+    const w = h.events.find((e) => e.type === 'WINNERS') as any;
+    expect(h.st().communityCards).toHaveLength(5);
+    expect(h.st().communityCards2).toHaveLength(5);
+    expect(w.winners).toHaveLength(1);
+    expect(w.perPotAwards).toHaveLength(2);
+    expect(w.perPotAwards.map((a: any) => a.board)).toEqual([1, 2]);
+    expect(w.perPotAwards.every((a: any) => a.userId === w.winners[0].userId)).toBe(true);
+    // Both board shares together are exactly what the winner was credited —
+    // the ledger sums to the settlement or it is not a ledger.
+    const summed = w.perPotAwards.reduce((s: number, a: any) => s + a.amount, 0);
+    expect(Math.round(summed * 100)).toBe(Math.round(w.winners[0].amount * 100));
+  });
+
+  it('a triple-board fold win emits three award units', () => {
+    const h = harness(
+      mkConfig({ bombPot: { anteMultiplier: 2, doubleBoard: true, boardCount: 3 } as any }),
+      mkPlayers([200, 200, 200])
+    );
+    h.hc.start();
+    foldDownFrom(h, 'river');
+
+    const w = h.events.find((e) => e.type === 'WINNERS') as any;
+    expect(h.st().communityCards3).toHaveLength(5);
+    expect(w.perPotAwards).toHaveLength(3);
+    expect(w.perPotAwards.map((a: any) => a.board)).toEqual([1, 2, 3]);
+    const summed = w.perPotAwards.reduce((s: number, a: any) => s + a.amount, 0);
+    expect(Math.round(summed * 100)).toBe(Math.round(w.winners[0].amount * 100));
   });
 });

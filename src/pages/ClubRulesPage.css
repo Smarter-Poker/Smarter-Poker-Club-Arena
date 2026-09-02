@@ -1,6 +1,14 @@
 .club-rules-page {
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
+  width: 100%;
+  max-width: 100vw;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
   background: linear-gradient(180deg, #0a0f18 0%, #0d1520 100%);
   color: #fff;
   /* Reserve the fixed bottom nav this page renders (2026-08-23). The bar is
@@ -47,6 +55,8 @@
   font-size: 0.85rem;
   line-height: 1.6;
   margin: 4px 0;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .empty-rules {
@@ -136,7 +146,9 @@
 
 @media (max-width: 480px) {
   .club-rules-page {
-    padding: 12px;
+    /* Side padding only — the shorthand used to wipe out the bottom-nav
+       clearance and the fixed ClubBottomNav covered the last content. */
+    padding: 12px 12px var(--bottom-nav-clearance, 74px);
   }
 
   .rules-header h2 {
@@ -157,5 +169,19 @@
 
   .rule-text {
     font-size: 0.75rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .club-rules-page {
+    /* Zero the sides but keep the fixed-bottom-nav clearance — `padding: 0`
+       here let ClubBottomNav overlay the end of the rules text. */
+    padding: 0 !important;
+    padding-bottom: var(--bottom-nav-clearance, 74px) !important;
+  }
+  .rules-content {
+    border-radius: 0 !important;
+    border-left: none !important;
+    border-right: none !important;
   }
 }

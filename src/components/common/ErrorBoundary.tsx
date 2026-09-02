@@ -44,6 +44,9 @@ class ErrorBoundary extends Component<Props, State> {
       error.message?.includes('dynamically imported module') ||
       error.message?.includes('Failed to fetch') ||
       error.message?.includes('ChunkLoadError') ||
+      error.message?.includes('Importing a module script failed') ||
+      error.message?.includes('error loading dynamically imported module') ||
+      error.message?.includes('Unable to preload CSS') ||
       error.name === 'ChunkLoadError'
     ) {
       console.warn('[ErrorBoundary] Stale chunk detected, reloading...');
@@ -104,8 +107,8 @@ class ErrorBoundary extends Component<Props, State> {
         if (!Sentry) return;
         Sentry.showReportDialog({
           eventId,
-          title: 'Help us fix this issue',
-          subtitle: 'Tell us what happened',
+          title: 'Help Us Fix This Issue',
+          subtitle: 'Tell Us What Happened',
           subtitle2: 'Your feedback helps us improve Club Arena',
         });
       })
@@ -194,12 +197,6 @@ class ErrorBoundary extends Component<Props, State> {
                       cursor: 'pointer',
                       transition: 'transform 0.2s',
                     }}
-                    onMouseOver={(e) => {
-                      e.currentTarget.style.transform = 'translateY(-2px)';
-                    }}
-                    onMouseOut={(e) => {
-                      e.currentTarget.style.transform = 'translateY(0)';
-                    }}
                   >
                     Report Feedback
                   </button>
@@ -217,14 +214,6 @@ class ErrorBoundary extends Component<Props, State> {
                     fontWeight: '500',
                     cursor: 'pointer',
                     transition: 'all 0.2s',
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.15)';
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)';
-                    e.currentTarget.style.transform = 'translateY(0)';
                   }}
                 >
                   Reload Page

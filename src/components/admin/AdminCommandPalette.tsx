@@ -62,9 +62,9 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
       actions.push(
         {
           id: 'nav-overview',
-          label: 'Go to Overview',
+          label: 'Go To Overview',
           icon: '▦',
-          description: 'Club overview & activity',
+          description: 'Club Overview & Activity',
           action: () => navigate(`/clubs/${clubId}`),
           category: 'Navigation',
         },
@@ -72,7 +72,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
           id: 'nav-tables',
           label: 'View Tables',
           icon: '♠',
-          description: 'Active tables & management',
+          description: 'Active Tables & Management',
           action: () => navigate(`/clubs/${clubId}`),
           category: 'Navigation',
         },
@@ -80,7 +80,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
           id: 'nav-members',
           label: 'Member Directory',
           icon: '◉',
-          description: 'View and manage members',
+          description: 'View And Manage Members',
           action: () => navigate(`/clubs/${clubId}`),
           category: 'Navigation',
         },
@@ -88,7 +88,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
           id: 'nav-agents',
           label: 'Agent Management',
           icon: '◈',
-          description: 'Manage agents & hierarchy',
+          description: 'Manage Agents & Hierarchy',
           action: () => navigate(`/clubs/${clubId}/agents`),
           category: 'Navigation',
         },
@@ -96,7 +96,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
           id: 'nav-financials',
           label: 'Club Financials',
           icon: '◆',
-          description: 'Revenue & transactions',
+          description: 'Revenue & Transactions',
           action: () => navigate(`/clubs/${clubId}/financials`),
           category: 'Navigation',
         },
@@ -104,7 +104,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
           id: 'nav-stats',
           label: 'Player Stats',
           icon: '▲',
-          description: 'Detailed player statistics',
+          description: 'Detailed Player Statistics',
           action: () => navigate(`/stats`),
           category: 'Navigation',
         }
@@ -116,7 +116,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
           id: 'act-create-table',
           label: 'Create New Table',
           icon: '+',
-          description: 'Set up a new poker table',
+          description: 'Set Up A New Poker Table',
           action: () => navigate(`/clubs/${clubId}/create-table`),
           category: 'Actions',
         },
@@ -124,7 +124,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
           id: 'act-invite',
           label: 'Invite Players',
           icon: '✉',
-          description: 'Send club invite links',
+          description: 'Send Club Invite Links',
           action: () => navigate(`/invite/${clubId}`),
           category: 'Actions',
         },
@@ -132,7 +132,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
           id: 'act-announce',
           label: 'Post Announcement',
           icon: '◉',
-          description: 'Broadcast to all members',
+          description: 'Broadcast To All Members',
           action: () => navigate(`/clubs/${clubId}/announcements`),
           category: 'Actions',
         }
@@ -143,7 +143,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
           id: 'act-settings',
           label: 'Club Settings',
           icon: '⚙',
-          description: 'Configure rules & privacy',
+          description: 'Configure Rules & Privacy',
           action: () => navigate(`/clubs/${clubId}/settings`),
           category: 'Admin',
         });
@@ -156,7 +156,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
         id: 'gl-home',
         label: 'Home',
         icon: '⌂',
-        description: 'Return to dashboard',
+        description: 'Return To Dashboard',
         action: () => navigate('/'),
         category: 'Global',
       },
@@ -164,7 +164,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
         id: 'gl-clubs',
         label: 'My Clubs',
         icon: '◆',
-        description: 'View all clubs',
+        description: 'View All Clubs',
         action: () => navigate('/clubs'),
         category: 'Global',
       }
@@ -240,7 +240,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
           borderRadius: '16px',
           zIndex: 2001,
           overflow: 'hidden',
-          animation: 'slideDown 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+          animation: 'animationsSlideDown 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
           boxShadow: '0 20px 60px rgba(0, 0, 0, 0.6), 0 0 20px rgba(0, 212, 255, 0.1)',
         }}
       >
@@ -280,7 +280,7 @@ export default function AdminCommandPalette({ clubId, isOwner }: AdminCommandPal
               setSelectedIndex(0);
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Type a command or search..."
+            placeholder="Type A Command Or Search..."
             style={{
               flex: 1,
               background: 'none',

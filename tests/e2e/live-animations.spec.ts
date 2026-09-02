@@ -248,11 +248,15 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
        const w=document.createElement('div');w.className='sw__disc-wrap';
        w.innerHTML='<div class="sw__disc">'+
          '<div class="sw__seg sw__seg--c0 sw__seg--lit"><span class="sw__seg-label">2</span></div>'+
-         '<div class="sw__seg sw__seg--c1 sw__seg--locked"><span class="sw__seg-label">500</span></div>'+
+         '<div class="sw__seg sw__seg--c1 sw__seg--locked"><span class="sw__seg-label">100</span></div>'+
          '<div class="sw__hub"><span class="sw__hub-brand">SPIN-IT</span></div></div>';
        st.appendChild(w);
        const s=document.createElement('div');s.className='sw__status';
-       s.innerHTML='<span class="sw__status-locked">500× unlocks at 5,000</span>';st.appendChild(s);`
+       /* 100x, not 500x (2026-08-31 audit): the 500x tier was RETIRED on
+          2026-08-21 (migration 20260821g_retire_500x_spin_tier) and 100x
+          absorbed its frequency. A fixture that renders a tier the product
+          no longer has is a fixture drifting away from the thing it guards. */
+       s.innerHTML='<span class="sw__status-locked">100× unlocks at 5,000</span>';st.appendChild(s);`
     );
     expect(chase.swDiscIn, 'the disc must land on the felt').toBe(500);
 
@@ -274,23 +278,57 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
     expect(result.swConfFall, 'a big multiplier must rain confetti').toBe(1800);
   });
 
-  test('the KNOCKOUT: vignette, shockwave, the head cracks and FALLS', async ({ page }) => {
+  test('the KNOCKOUT: two gloves flurry, the star breaks, KO stamps the seat', async ({ page }) => {
+    // Replaced 2026-08-28 (the full-screen knockout this used to measure was
+    // deleted for a seat-anchored one) and again 2026-08-29, twice: once when
+    // the twelve `.sko__ray` divs became one irregular SVG path, and once when
+    // Dan supplied branded glove art and a capture of a TWO-GLOVE FLURRY. Same
+    // rule each time, stated in the animation law: if you deliberately replace
+    // a mechanism, the pin moves to the new one in the same commit.
+    //
+    // `skoGloveStrike` (one glove, one strike) is gone. `skoPunchRight` and
+    // `skoPunchLeft` are the flurry, and `skoFlurryHit` is the single element
+    // that flashes a warm burst at each of the two jab landings.
     const b = await beat(
       page,
-      `const ko=document.createElement('div');ko.className='ko ko--impact';
-       ko.innerHTML='<div class="ko__vignette"></div>'+
-         '<div class="ko__shockwave"></div>'+
-         '<div class="ko__stack"><div class="ko__head"><div class="ko__head-disc">'+
-         '<img class="ko__head-img" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt=""></div></div></div>';
-       document.querySelector('.table-page').appendChild(ko);`
+      `const l=document.createElement('div');l.className='sko-layer';
+       const k=document.createElement('div');k.className='sko';
+       k.style.setProperty('--sko-x','30%');k.style.setProperty('--sko-y','40%');
+       k.innerHTML='<div class="sko__light"></div><div class="sko__ring"></div>'+
+         '<img class="sko__glove sko__glove--r" alt="">'+
+         '<img class="sko__glove sko__glove--l" alt="">'+
+         '<svg class="sko__star" viewBox="-30 -30 260 260">'+
+           '<g class="sko__star-alt"><path d="M60 60L140 140Z"></path></g>'+
+           '<g class="sko__star-main"><path d="M60 60L140 140Z"></path></g>'+
+           '<g class="sko__shards"><path d="M60 60L140 140Z"></path></g>'+
+         '</svg>'+
+         '<div class="sko__core"></div>'+
+         '<svg class="sko__hit" viewBox="-30 -30 260 260"><path d="M60 60L140 140Z"></path></svg>'+
+         '<span class="sko__ember" style="--sko-ember-x:0.2;--sko-ember-y:0.3"></span>'+
+         '<div class="sko__flash"></div><div class="sko__stampring"></div>'+
+         '<div class="sko__stamp" data-motion="keep"><svg viewBox="0 0 138 78"></svg></div>';
+       l.appendChild(k);document.querySelector('.table-page').appendChild(l);
+       const s=document.createElement('div');s.className='seat seat--ko-flinch';
+       document.querySelector('.table-page').appendChild(s);`
     );
-    expect(b.koVignetteIn, 'the table must darken on impact').toBe(340);
-    expect(b.koShockwave, 'the hit must throw a shockwave').toBe(620);
-    expect(b.koHeadIn, 'the head must slam in').toBe(420);
-    // The centrepiece: the head falls 500ms AFTER it lands. Both the duration
-    // and the delay are the drama — a fall that starts instantly reads as a
-    // glitch, not a knockout.
-    expect(b.koHeadFall, 'the head must FALL').toBe(1100);
+    // Both gloves run the SAME 930ms pass. They have to: they land the finish
+    // together, and two passes of different lengths cannot agree on when that
+    // is at any animation speed other than 1.
+    expect(b.skoPunchRight, 'the right glove jabs and then finishes').toBe(930);
+    expect(b.skoPunchLeft, 'the left glove jabs and then finishes').toBe(930);
+    expect(b.skoFlurryHit, 'each jab throws its own warm burst').toBe(930);
+    expect(b.skoCoreFlash, 'the finish must flash white-hot').toBe(340);
+    expect(b.skoStarBurst, 'the flash must be a spiked STAR, not a ring').toBe(240);
+    expect(b.skoRingCrack, 'the impact must crack, not just glow').toBe(300);
+    expect(b.skoEmber, 'the star must come apart, not switch off').toBe(440);
+    // The seat REACTS. A punch that lands on a photograph is not a punch, and
+    // three of these land inside 280ms, so it has to be short.
+    expect(b.skoSeatFlinch, 'the busted seat snaps on every landing').toBe(200);
+    // The centrepiece: KO lands 930ms after the first glove appears, and then
+    // HOLDS. Both the delay and the length are the drama — a stamp that
+    // arrives with the punch reads as a label, and one that leaves with it is
+    // unreadable.
+    expect(b.skoStampLife, 'KO must slam on and BURN').toBe(1470);
   });
 
   test('the MYSTERY CHEST: drop, breathe under tension, lid opens', async ({ page }) => {
@@ -337,14 +375,38 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
       document.getElementById('mbc')!.className = 'mbc mbc--locked';
       await new Promise<void>((r) => requestAnimationFrame(() => r()));
       document.getElementById('mbc')!.className = 'mbc mbc--opening';
-      await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-      const t = el
-        .getAnimations()
-        .find(
-          (a) =>
-            (a as unknown as { transitionProperty?: string }).transitionProperty === 'transform'
-        );
-      const d = t?.effect?.getTiming().duration;
+      /* FLAKE FIX (2026-08-29): two rAFs was a guess at when the browser
+         lists the CSSTransition, and on a loaded CI runner it guessed wrong
+         once - getAnimations() came back empty, ms read -1, and a correct
+         lid failed the pin (blocking a publish for code that never touched
+         CSS). Poll for the live transition across up to 20 frames instead;
+         if it was genuinely missed (already finished on a fast machine),
+         fall back to the computed transition-duration, which carries the
+         SAME 900ms the pin is about. The transform assertion below still
+         proves the lid actually swings. */
+      let d: number | string | CSSNumericValue | undefined;
+      for (let frame = 0; frame < 20 && d === undefined; frame++) {
+        const t = el
+          .getAnimations()
+          .find(
+            (a) =>
+              (a as unknown as { transitionProperty?: string }).transitionProperty === 'transform'
+          );
+        d = t?.effect?.getTiming().duration as number | undefined;
+        if (d === undefined) {
+          await new Promise<void>((r) => requestAnimationFrame(() => r()));
+        }
+      }
+      if (typeof d !== 'number') {
+        const style = getComputedStyle(el);
+        const props = style.transitionProperty.split(',').map((s) => s.trim());
+        const durs = style.transitionDuration.split(',').map((s) => s.trim());
+        const at = props.findIndex((p) => p === 'transform' || p === 'all');
+        if (at >= 0) {
+          const raw = durs[at] ?? durs[0];
+          d = Math.round(parseFloat(raw) * (raw.endsWith('ms') ? 1 : 1000));
+        }
+      }
       return {
         ms: typeof d === 'number' ? Math.round(d) : -1,
         transform: getComputedStyle(el).transform,
@@ -448,22 +510,31 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
    * how the original divergence survived: nothing anywhere rendered a table in
    * tournament mode and compared it to one in cash mode.
    */
-  test('a short stack warns, and an open seat breathes', async ({ page }) => {
+  test('a short stack warns, and an open seat renders with the coin button', async ({ page }) => {
     const short = await beat(
       page,
       `$('info').innerHTML = '<span class="seat__stack seat__stack--critical">8</span>';`
     );
     expect(short.stackCriticalPulse, 'a sub-10bb stack must pulse, in every format').toBe(1500);
 
+    // 2026-08-26: empty seat now renders a coin <img> — no emptyPulse animation.
+    // The visual affordance is the image itself; pulse is removed intentionally.
+    // Verify the container exists and the image loads without JS errors.
     const open = await beat(
       page,
       `const s = document.createElement('div');
        s.className = 'seat seat--empty';
-       s.innerHTML = '<span class="seat__empty-label"><span class="seat__empty-plus">+</span>' +
-                     '<span class="seat__empty-word">SIT</span></span>';
+       s.innerHTML = '<img class="seat__empty-img seat__empty-img--sit" ' +
+                     'src="/images/icons/sit-button.png" alt="Sit down" draggable="false">';
        $('sw').appendChild(s);`
     );
-    expect(open.emptyPulse, 'an open seat must breathe so it reads as tappable').toBe(3000);
+    // No emptyPulse animation to assert — the coin image IS the affordance.
+    // The beat helper returns an empty object if no animations are running,
+    // which is the correct new state for an open seat container.
+    expect(
+      open.emptyPulse,
+      'open seat no longer uses emptyPulse — coin image replaces it'
+    ).toBeUndefined();
   });
 
   test('reduced motion is honoured — every animation collapses', async ({ browser }) => {
@@ -479,6 +550,111 @@ test.describe('LIVE E2E — a complete hand, animation by animation', () => {
     for (const [name, ms] of Object.entries(b)) {
       expect(ms, `${name} must be flattened under prefers-reduced-motion`).toBeLessThanOrEqual(1);
     }
+    await ctx.close();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// THE INSURANCE DIALOG — layout contract at the PIXEL level (2026-08-28).
+//
+// Dan's recording (hand #3158299): on a phone the modal's content overflowed
+// `max-height: 90vh; overflow: hidden` and the Insure/No buttons rendered
+// below the clip line — a timed FINANCIAL decision with no visible controls,
+// expiring into a final auto-decline. The jsdom suite pins the DOM structure;
+// this beat pins what a real browser actually PAINTS: on a short viewport the
+// body scrolls, and the decision buttons are on screen and hittable.
+// ═══════════════════════════════════════════════════════════════════════════
+test.describe('LIVE E2E — the insurance dialog, on a short phone viewport', () => {
+  test('the decision buttons are painted on screen and hittable; the body scrolls', async ({
+    browser,
+  }) => {
+    // 375x480 — shorter than any phone this app supports, so the body is
+    // GUARANTEED to overflow and the scroll contract is genuinely exercised.
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 480 } });
+    const page = await ctx.newPage();
+    await loadLiveCss(page);
+
+    await page.evaluate(() => {
+      const row = (label: string) =>
+        `<div class="insurance-modal__player-row"><span class="insurance-modal__player-name">${label}</span>` +
+        `<span class="insurance-modal__player-equity">50.00%</span>` +
+        `<span class="insurance-modal__player-cards"><span class="insurance-modal__card">A</span>` +
+        `<span class="insurance-modal__card">K</span></span></div>`;
+      const outs = Array.from(
+        { length: 8 },
+        () =>
+          `<span class="insurance-modal__outs-card"><span class="insurance-modal__card">A</span></span>`
+      ).join('');
+      const overlay = document.createElement('div');
+      overlay.className = 'insurance-overlay';
+      overlay.innerHTML = `<div class="insurance-modal" id="insModal">
+        <div class="insurance-modal__header"><div class="insurance-modal__title-row">
+          <span class="insurance-modal__icon">S</span>
+          <h2 class="insurance-modal__title">All-In Insurance</h2></div>
+          <span class="insurance-modal__timer">23s</span></div>
+        <div class="insurance-modal__body" id="insBody">
+          <div class="insurance-modal__info-strip"><span class="insurance-modal__info-item">Outs: 6</span>
+            <span class="insurance-modal__info-item">Pot: 62</span></div>
+          <div class="insurance-modal__board"><span class="insurance-modal__board-label">Board:</span>
+            <span class="insurance-modal__board-card">9</span><span class="insurance-modal__board-card">Q</span>
+            <span class="insurance-modal__board-card">2</span></div>
+          <div class="insurance-modal__players">${row('kingfish')}${row('Ryan Thomas')}${row('Third Player')}</div>
+          <div class="insurance-modal__outs"><span class="insurance-modal__outs-label">Outs Against You (6)</span>
+            <div class="insurance-modal__outs-cards">${outs}</div></div>
+          <div class="insurance-modal__readouts">
+            <div class="insurance-modal__readout"><span class="insurance-modal__readout-label">Insurance Fee</span>
+              <span class="insurance-modal__readout-value insurance-modal__readout-value--fee">14.92</span></div>
+            <div class="insurance-modal__readout"><span class="insurance-modal__readout-label">Rate</span>
+              <span class="insurance-modal__readout-value">3.16</span></div>
+            <div class="insurance-modal__readout"><span class="insurance-modal__readout-label">Insured Pot</span>
+              <span class="insurance-modal__readout-value insurance-modal__readout-value--insured">47.10</span></div></div>
+          <div class="insurance-modal__coverage"><input type="range" class="insurance-modal__slider">
+            <div class="insurance-modal__slider-range"><span>0.15</span><span>19.64</span></div>
+            <div class="insurance-modal__presets">
+              <button class="insurance-modal__preset">Break Even</button>
+              <button class="insurance-modal__preset">Constant Profit</button></div></div>
+          <div class="insurance-modal__outcomes"><span class="insurance-modal__outcomes-label">With Insurance You Will Get:</span>
+            <div class="insurance-modal__outcomes-row"><span class="insurance-modal__outcome">For Winning: <strong>47.08</strong></span>
+              <span class="insurance-modal__outcome">For Losing: <strong>47.10</strong></span></div></div>
+        </div>
+        <div class="insurance-modal__actions">
+          <button class="insurance-modal__btn insurance-modal__btn--decline" id="insNo">No</button>
+          <button class="insurance-modal__btn insurance-modal__btn--accept" id="insYes">Insure</button>
+        </div>
+      </div>`;
+      document.body.appendChild(overlay);
+    });
+
+    const verdict = await page.evaluate(() => {
+      const modal = document.getElementById('insModal')!;
+      const body = document.getElementById('insBody')!;
+      const yes = document.getElementById('insYes')!;
+      const no = document.getElementById('insNo')!;
+      const yesBox = yes.getBoundingClientRect();
+      const noBox = no.getBoundingClientRect();
+      const hit = document.elementFromPoint(
+        yesBox.left + yesBox.width / 2,
+        yesBox.top + yesBox.height / 2
+      );
+      const fade = getComputedStyle(body, '::after');
+      return {
+        modalMaxH: getComputedStyle(modal).maxHeight,
+        bodyOverflowY: getComputedStyle(body).overflowY,
+        bodyScrolls: body.scrollHeight > body.clientHeight,
+        yesOnScreen: yesBox.top >= 0 && yesBox.bottom <= window.innerHeight && yesBox.height > 0,
+        noOnScreen: noBox.top >= 0 && noBox.bottom <= window.innerHeight && noBox.height > 0,
+        yesHittable: hit === yes || yes.contains(hit),
+        fadePosition: fade.position,
+      };
+    });
+
+    // The exact defect from the recording, in reverse:
+    expect(verdict.bodyOverflowY, 'the body must scroll, not clip').toBe('auto');
+    expect(verdict.bodyScrolls, 'this viewport must actually overflow the body').toBe(true);
+    expect(verdict.yesOnScreen, 'INSURE must be painted inside the viewport').toBe(true);
+    expect(verdict.noOnScreen, 'NO must be painted inside the viewport').toBe(true);
+    expect(verdict.yesHittable, 'nothing may cover the INSURE button').toBe(true);
+    expect(verdict.fadePosition, 'the scroll-affordance fade must ride the body').toBe('sticky');
     await ctx.close();
   });
 });

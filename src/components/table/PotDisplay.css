@@ -10,8 +10,8 @@
  *  ---------------------------------------------------------------------------------
  *  SECTION 1 — Design Tokens (custom properties for physics, timing, color)
  *  SECTION 2 — Container Layout (absolute positioning, z-index hierarchy)
- *  SECTION 3 — Chip Stack Rendering (multi-layer casino chip with notches, face, shadow)
- *  SECTION 4 — Chip Drop Animation (spring-physics with squash-stretch on felt contact)
+ *  SECTIONS 3 and 4 — deleted 2026-08-25 with the chip renderer they styled;
+ *                     the pot's chips are the pile below Section 6
  *  SECTION 5 — Main Pot Container (glassmorphism, animated border, glass shine sweep)
  *  SECTION 6 — Pot Amount Text (golden text with animated shimmer on update)
  *  SECTION 7 — Side Pots (staggered spring entrance, individual glow)
@@ -32,7 +32,7 @@
  *  Color Palette:
  *    Gold: #ffd700 (pot amount, border glow, shimmer)
  *    Royal Blue: #4169e5 (side pots)
- *    Emerald: #10b981 (total, increase badge)
+ *    Emerald: #3fb950 (total, increase badge)
  *    Felt contact: rgba(0,0,0,0.7) (chip landing shadow)
  */
 
@@ -49,8 +49,6 @@
   --pd-ease-elastic: cubic-bezier(0.68, -0.55, 0.265, 1.55);
 
   /* Timing tokens */
-  --pd-chip-drop-duration: 0.45s;
-  --pd-chip-stagger: 50ms;
   --pd-side-pot-stagger: 80ms;
   --pd-bump-duration: 0.6s;
   --pd-pulse-duration: 0.5s;
@@ -60,12 +58,13 @@
   --pd-glow-period: 2s;
   --pd-shimmer-period: 3s;
 
-  /* Chip sizing */
-  --pd-chip-size: 18px;
-  --pd-chip-face-size: 10px;
-  --pd-chip-notch-width: 4px;
-  --pd-chip-notch-height: 2px;
-  --pd-chip-stack-offset: -2px;
+  /* Chip sizing lives with the chips.
+     Dan 2026-08-24: "all chips should be the same size." The pile below reads
+     --cp-chip-size, which the table page derives from the table's own measured
+     width (TableVisualHotfix.css section 4), so a chip in the pot is the same
+     disc as the chip that just swept into it. The --pd-chip-* tokens that used
+     to sit here belonged to a chip renderer this file stopped drawing on
+     2026-08-23; they are deleted with it. */
 
   /* Gold palette */
   --pd-gold: #ffd700;
@@ -81,9 +80,9 @@
   --pd-blue-glow: rgba(65, 105, 225, 0.12);
 
   /* Emerald palette */
-  --pd-emerald: #10b981;
-  --pd-emerald-bg: rgba(16, 185, 129, 0.12);
-  --pd-emerald-border: rgba(16, 185, 129, 0.3);
+  --pd-emerald: #3fb950;
+  --pd-emerald-bg: rgba(63, 185, 80, 0.12);
+  --pd-emerald-border: rgba(63, 185, 80, 0.3);
 }
 
 /* =================================================================================
@@ -112,160 +111,22 @@
 }
 
 /* =================================================================================
-   SECTION 3 — CHIP STACK RENDERING
+   SECTIONS 3 and 4 — DELETED 2026-08-25
+   =================================================================================
+   `.pot-display__chips`, `__chip-stack`, `__chip`, `__chip-face` and the
+   `pdChipDrop` keyframe that drove them. PotDisplay stopped rendering any of
+   those classes on 2026-08-23, when the pot's three identical teal circles were
+   replaced by a real coloured-up pile - Dan: "THE POT SHOULD SHOW THE AMOUNT OF
+   CHIPS NECESSARY TO EQUAL THE TOTAL CHIPS IN THE POT... ALWAYS COLORING UP TO
+   USE THE FEWEST AMOUNT OF CHIPS." The markup went; 100 lines of CSS for it did
+   not, and four !important overrides of it survived in TableVisualHotfix.css
+   as well, so a person reading either file learned a chip size that nothing on
+   the screen has used for two days.
+
+   The pot's chips are `.pot-display__pile-*` further down. They are sized by
+   --cp-chip-size, the one chip token, which the table page derives from the
+   table's own measured width. Do not add a second chip renderer here.
    ================================================================================= */
-
-/*
- * Visual hierarchy: stacks overlap horizontally to form a pile.
- * Each chip is an absolutely-positioned circle offset vertically by --chip-offset.
- * Rendering layers per chip (bottom to top):
- *   1. Base circle with denomination color
- *   2. Edge shadow (7-layer box-shadow for depth)
- *   3. Edge notches (::before — 4 white marks at N/S/E/W)
- *   4. Face ring (child div — inner circle with radial gradient)
- *   5. Specular highlight (::after — top-left shine)
- */
-
-.pot-display__chips {
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  height: 36px;
-  margin-bottom: 2px;
-  gap: 0;
-  margin-left: -4px;
-}
-
-.pot-display__chip-stack {
-  position: relative;
-  display: flex;
-  flex-direction: column-reverse;
-  align-items: center;
-  width: var(--pd-chip-size);
-  height: 44px;
-  margin-left: -6px;
-}
-
-.pot-display__chip {
-  width: var(--pd-chip-size);
-  height: var(--pd-chip-size);
-  border-radius: 50%;
-  position: absolute;
-  bottom: 0;
-  background: var(--chip-color, #e0e0e0);
-  border: 1.5px solid rgba(255, 255, 255, 0.3);
-  box-shadow:
-    /* Bottom edge — 3D thickness illusion */
-    0 2px 0 rgba(0, 0, 0, 0.35),
-    /* Ambient shadow on felt */ 0 3px 6px rgba(0, 0, 0, 0.5),
-    /* Contact shadow (tight, dark) */ 0 1px 2px rgba(0, 0, 0, 0.4),
-    /* Inner highlight — top edge catch light */ inset 0 1px 2px rgba(255, 255, 255, 0.3),
-    /* Inner shadow — bottom edge depth */ inset 0 -1px 2px rgba(0, 0, 0, 0.25),
-    /* Inner side highlights for roundness */ inset 2px 0 3px rgba(255, 255, 255, 0.06),
-    inset -2px 0 3px rgba(255, 255, 255, 0.06);
-  animation: pdChipDrop var(--pd-chip-drop-duration) var(--pd-ease-spring) forwards;
-  opacity: 0;
-  will-change: transform, opacity;
-}
-
-/* Edge notches — 4 white marks at N/S/E/W like real casino chips */
-.pot-display__chip::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: var(--pd-chip-notch-width);
-  height: var(--pd-chip-notch-height);
-  background: rgba(255, 255, 255, 0.45);
-  border-radius: 0 0 1px 1px;
-  box-shadow:
-    0 16px 0 rgba(255, 255, 255, 0.4),
-    -8px 8px 0 rgba(255, 255, 255, 0.35),
-    8px 8px 0 rgba(255, 255, 255, 0.35);
-  pointer-events: none;
-}
-
-/* Specular highlight — top-left shine for 3D pop */
-.pot-display__chip::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 3px;
-  width: 6px;
-  height: 4px;
-  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.35) 0%, transparent 80%);
-  border-radius: 50%;
-  pointer-events: none;
-}
-
-/* Inner ring — casino chip face pattern */
-.pot-display__chip-face {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: var(--pd-chip-face-size);
-  height: var(--pd-chip-face-size);
-  border: 1.5px solid rgba(255, 255, 255, 0.25);
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.12) 0%, transparent 70%);
-  pointer-events: none;
-}
-
-/* =================================================================================
-   SECTION 4 — CHIP DROP ANIMATION
-   ================================================================================= */
-
-/*
- * 7-phase spring animation simulating a chip being tossed onto the felt:
- *   0%   — Above table, tiny, bright flash (catching overhead light)
- *   20%  — Descending, growing, rotation settling
- *   40%  — CONTACT with felt — squash horizontally (scaleX > scaleY)
- *   55%  — Bounce up slightly, stretch vertically (scaleY > scaleX)
- *   70%  — Micro-bounce, settling
- *   85%  — Overshoot correction
- *   100% — Rest position
- *
- * The squash-stretch at 40% and 55% is the key to physical believability.
- * Without it, chips feel like they're being placed, not dropped.
- */
-
-@keyframes pdChipDrop {
-  0% {
-    opacity: 0;
-    transform: translateY(calc(var(--chip-offset, 0px) - 22px)) scale(0.35);
-    filter: brightness(1.6);
-  }
-  20% {
-    opacity: 1;
-    transform: translateY(calc(var(--chip-offset, 0px) - 8px)) scale(0.85)
-      rotate(calc(var(--chip-spin, 0) * 1deg));
-    filter: brightness(1.2);
-  }
-  40% {
-    /* Felt contact — horizontal squash */
-    transform: translateY(calc(var(--chip-offset, 0px) + 1px)) scaleX(1.12) scaleY(0.88);
-    filter: brightness(1.05);
-  }
-  55% {
-    /* Bounce — vertical stretch */
-    transform: translateY(calc(var(--chip-offset, 0px) - 3px)) scaleX(0.95) scaleY(1.06);
-    filter: brightness(1);
-  }
-  70% {
-    /* Micro-bounce */
-    transform: translateY(calc(var(--chip-offset, 0px) + 0.5px)) scaleX(1.02) scaleY(0.98);
-  }
-  85% {
-    transform: translateY(calc(var(--chip-offset, 0px) - 0.5px)) scale(1.005);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(var(--chip-offset, 0px)) scale(1);
-    filter: brightness(1);
-  }
-}
 
 /* =================================================================================
    SECTION 5 — MAIN POT CONTAINER
@@ -363,17 +224,6 @@
   user-select: none;
 }
 
-.pot-display__main--clickable:hover {
-  border-color: var(--pd-gold-mid);
-  box-shadow:
-    0 6px 24px rgba(0, 0, 0, 0.5),
-    0 0 50px rgba(255, 215, 0, 0.2),
-    0 0 0 1px rgba(255, 215, 0, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
-  transform: scale(1.02);
-}
-
 .pot-display__main--clickable:active {
   transform: scale(0.98);
   transition-duration: 0.1s;
@@ -421,6 +271,7 @@
    Sits below the POT pill while a street is being bet: tiny chip stack icon
    + the street's accumulating total. Disappears when the chips sweep in. */
 .pot-display__street {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -440,31 +291,156 @@
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
 }
 
-/* Tiny 3-chip stack icon */
-.pot-display__mini-chips {
-  position: relative;
-  width: 14px;
-  height: 14px;
-  display: inline-block;
+/* ── The pot, drawn as real chips (Dan 2026-08-23) ──────────────────────────
+   Replaces the old .pot-display__mini-chip* trio, which drew three identical
+   teal circles whatever the pot held. Dan: "THE POT SHOULD SHOW THE AMOUNT OF
+   CHIPS NECESSARY TO EQUAL THE TOTAL CHIPS IN THE POT... ALWAYS COLORING UP TO
+   USE THE FEWEST AMOUNT OF CHIPS." Colours and counts come from
+   src/lib/chipDenominations.ts via PotChipPile.
+
+   NOTE FOR ANYONE EDITING THIS BLOCK: do not move it into `.pot-display`'s
+   column flow, and do not touch `.pot-display` or `.pot-display__main`.
+   tests/e2e/pot-above-chips.spec.ts asserts the POT pill's box is identical to
+   a checked-in pre-fix stylesheet at four viewport widths, and it only stays
+   that way while this pile is out of flow. */
+
+/* ── ONE TOWER, HIGHEST DENOMINATION ON THE BOTTOM ────────────────────────
+   Dan 2026-08-24: "chips entering the pot should be stacked and slightly
+   offset so you can see them all, (highest denomination on the bottom) but not
+   right next to each other. And all chips should be the same size."
+
+   Was a horizontal row of per-denomination columns, at its own 16px chip size
+   while the seat chips arriving from ChipPhysics were 26px. A bet therefore
+   visibly CHANGED SIZE as it swept into the pot it was joining. Both now read
+   --cp-chip-size from ChipPhysics.css, which is the single source for it.
+
+   column-reverse puts the first DOM child at the bottom, and visualChipStacks
+   returns groups highest-denomination first, so the ladder comes out of DOM
+   order for free. */
+.pot-display__pile {
+  display: grid;
+  place-items: center;
+  pointer-events: none;
 }
-.pot-display__mini-chip {
+
+/* Groups butt into each other with the same slice as the chips inside them, so
+   two denominations meet with no seam and the pile reads as one tower. */
+.pot-display__pile-stack + .pot-display__pile-stack {
+  margin-top: 0;
+}
+
+/* The collected pot: floats just below the POT pill, centred on it, and out of
+   flow so the pill itself does not move. */
+.pot-display__pile--pot {
   position: absolute;
-  left: 0;
-  width: 12px;
-  height: 12px;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 5px;
+  z-index: 1;
+}
+
+/* The live-bets pill: inline, one pill-height of room, so smaller chips. */
+/* The street tower stands BESIDE the pill rather than inside it. A pill is one
+   line tall and a tower of full-size chips is not, so leaving it in flow would
+   stretch the pill into a box. Out of flow it keeps the pill's shape and still
+   shows the street's chips at the one size every other chip on the felt uses.
+   It rises from the pill's left end, clear of the collected pot's own pile,
+   which is centred ABOVE the POT pill. */
+.pot-display__pile--street {
+  position: absolute;
+  right: calc(100% + 6px);
+  bottom: -1px;
+}
+
+.pot-display__pile-stack {
+  grid-area: 1 / 1;
+  display: grid;
+  place-items: center;
+  animation: pdPileIn 0.3s var(--pd-ease-spring) calc(var(--pile-group, 0) * 45ms) backwards;
+}
+
+@keyframes pdPileIn {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.7);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.pot-display__pile-chip {
+  /* Same token the seat chips use - see ChipPhysics.css. The slice is what
+     stays visible of each disc under the one above it, so the overlap is
+     derived and the two can never drift apart. */
+  width: var(--cp-chip-size, 24px);
+  height: var(--cp-chip-size, 24px);
+  grid-area: 1 / 1;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #35d0c5 0%, #17877f 70%);
-  border: 1.5px dashed rgba(255, 255, 255, 0.75);
   box-sizing: border-box;
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  /* Same two-tone treatment as the seat chips: the darker rim is what makes a
+     16px disc read as a clay chip rather than a coloured dot. */
+  background:
+    radial-gradient(
+      circle at 50% 50%,
+      var(--pile-chip-color, #f2f3f5) 0%,
+      var(--pile-chip-color, #f2f3f5) 60%,
+      var(--pile-chip-accent, #b3b7c0) 64%,
+      var(--pile-chip-accent, #b3b7c0) 100%
+    ),
+    var(--pile-chip-color, #f2f3f5);
+  box-shadow:
+    0 1.5px 0 rgba(0, 0, 0, 0.45),
+    0 2px 5px rgba(0, 0, 0, 0.5),
+    inset 0 2px 3px rgba(255, 255, 255, 0.28),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.25);
 }
-.pot-display__mini-chip--b {
-  bottom: 0;
+
+/* .pot-display__pile-chip:first-of-type { margin-top: 0; } */
+
+/* A sub-1 residue that no chip on Dan's ladder can represent (a 0.5 blind).
+   Drawn as a sliver, never as a full white 1 chip — see chipDenominations.ts. */
+.pot-display__pile-chip--partial {
+  /* A sliver of a chip, so it has to stay a fraction OF that chip: 0.375 is the
+     9px this used to hardcode against the 24px disc it was written beside. Now
+     that the disc follows the table (TableVisualHotfix.css section 4), a fixed
+     9px would have been two thirds of a chip on a phone and a third on a
+     desktop - the same value reading as two different things. */
+  height: calc(var(--cp-chip-size, 24px) * 0.375);
+  opacity: 0.75;
+  border-style: dashed;
 }
-.pot-display__mini-chip--m {
-  bottom: 3px;
+
+/* True count for a stack clamped to fit. The pile is clamped; the value is not. */
+.pot-display__pile-multi {
+  position: absolute;
+  bottom: 2px;
+  left: 100%;
+  margin-left: 3px;
+  font-size: 0.55rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--pd-gold, #ffd700);
+  font-family: 'JetBrains Mono', monospace;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  white-space: nowrap;
 }
-.pot-display__mini-chip--t {
-  bottom: 6px;
+
+/* No per-place chip size any more. Dan 2026-08-24: "all chips should be the
+   same size" - the street chips, the collected pot's chips and the chips in
+   front of every seat all read --cp-chip-size. */
+
+.pot-display__pile--street .pot-display__pile-multi {
+  font-size: 0.45rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pot-display__pile-stack {
+    animation: none;
+  }
 }
 
 /*
@@ -524,6 +500,9 @@
 
 .pot-display__side-pots {
   display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 8px;
   margin-top: 4px;
 }
@@ -635,7 +614,7 @@
   border-radius: 6px;
   box-shadow:
     0 2px 8px rgba(0, 0, 0, 0.2),
-    0 0 16px rgba(16, 185, 129, 0.06);
+    0 0 16px rgba(63, 185, 80, 0.06);
   animation: pdTotalFadeIn 0.35s var(--pd-ease-settle) backwards;
   animation-delay: 0.2s;
 }
@@ -654,7 +633,7 @@
 .pot-display__total-label {
   font-size: 0.5625rem;
   font-weight: 600;
-  color: rgba(16, 185, 129, 0.8);
+  color: rgba(63, 185, 80, 0.8);
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
@@ -664,7 +643,7 @@
   font-weight: 700;
   color: var(--pd-emerald);
   font-family: 'JetBrains Mono', monospace;
-  text-shadow: 0 0 8px rgba(16, 185, 129, 0.3);
+  text-shadow: 0 0 8px rgba(63, 185, 80, 0.3);
 }
 
 /* =================================================================================
@@ -689,7 +668,7 @@
   top: -20px;
   right: -20px;
   padding: 2px 8px;
-  background: linear-gradient(135deg, rgba(16, 185, 129, 0.95) 0%, rgba(16, 185, 129, 0.85) 100%);
+  background: linear-gradient(135deg, rgba(63, 185, 80, 0.95) 0%, rgba(63, 185, 80, 0.85) 100%);
   color: #ffffff;
   border-radius: 4px;
   font-size: 0.75rem;
@@ -697,8 +676,8 @@
   font-family: 'JetBrains Mono', monospace;
   animation: pdIncreaseFloat var(--pd-increase-duration) var(--pd-ease-settle) forwards;
   box-shadow:
-    0 2px 8px rgba(16, 185, 129, 0.5),
-    0 0 16px rgba(16, 185, 129, 0.2);
+    0 2px 8px rgba(63, 185, 80, 0.5),
+    0 0 16px rgba(63, 185, 80, 0.2);
   pointer-events: none;
   z-index: 5;
 }
@@ -711,7 +690,7 @@
   left: 20%;
   right: 20%;
   height: 8px;
-  background: radial-gradient(ellipse at center, rgba(16, 185, 129, 0.4) 0%, transparent 80%);
+  background: radial-gradient(ellipse at center, rgba(63, 185, 80, 0.4) 0%, transparent 80%);
   border-radius: 50%;
   animation: pdTrailFade var(--pd-increase-duration) ease forwards;
   pointer-events: none;
@@ -993,25 +972,6 @@
     font-weight: 800;
   }
 
-  .pot-display__chips {
-    height: 40px;
-    margin-bottom: 4px;
-  }
-
-  .pot-display__chip {
-    width: 16px;
-    height: 16px;
-  }
-
-  .pot-display__chip-face {
-    width: 8px;
-    height: 8px;
-  }
-
-  .pot-display__chip-stack {
-    width: 16px;
-  }
-
   .pot-display__side-pots {
     gap: 6px;
     margin-top: 4px;
@@ -1056,25 +1016,11 @@
   .pot-display__amount {
     font-size: 0.85rem;
   }
-
-  .pot-display__chips {
-    height: 38px;
-  }
-
-  .pot-display__chip {
-    width: 15px;
-    height: 15px;
-  }
-
-  .pot-display__chip-stack {
-    width: 15px;
-  }
 }
 
 /* ── 480px: Standard phone ── */
 @media (max-width: 480px) {
   :root {
-    --pd-chip-drop-duration: 0.35s;
     --pd-bump-duration: 0.5s;
   }
 
@@ -1096,20 +1042,6 @@
   .pot-display__amount {
     font-size: 0.82rem;
     font-weight: 800;
-  }
-
-  .pot-display__chips {
-    height: 36px;
-    margin-bottom: 4px;
-  }
-
-  .pot-display__chip {
-    width: 14px;
-    height: 14px;
-  }
-
-  .pot-display__chip-stack {
-    width: 14px;
   }
 
   .pot-display__increase {
@@ -1142,19 +1074,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  .pot-display__chips {
-    height: 34px;
-  }
-
-  .pot-display__chip {
-    width: 13px;
-    height: 13px;
-  }
-
-  .pot-display__chip-stack {
-    width: 13px;
   }
 
   .pot-display__side-pots {
@@ -1193,7 +1112,6 @@
   .pot-display--golden,
   .pot-display--award,
   .pot-display--collect,
-  .pot-display__chip,
   .pot-display__side-pot,
   .pot-display__total,
   .pot-display__increase,
@@ -1213,11 +1131,10 @@
     display: none;
   }
 
-  /* Chips appear immediately at rest position */
-  .pot-display__chip {
-    opacity: 1;
-    transform: translateY(var(--chip-offset, 0));
-  }
+  /* The pot's pile is handled where it is defined - `.pot-display__pile-stack`
+     already drops its entrance animation under this same query. The rule that
+     used to sit here named `.pot-display__chip`, which nothing has rendered
+     since 2026-08-23. */
 
   /* Side pots appear immediately */
   .pot-display__side-pot {
@@ -1241,5 +1158,46 @@
   /* Increase badge appears then disappears without float */
   .pot-display__increase {
     opacity: 0;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   FELT CLASSES — Migrated from ChipStack.css (dead component cleanup 2026-08-26).
+   `.chip--partial`, `.pot-label`, and `.pot-value` were the only runtime
+   definitions of these names; they painted on the live felt but lived in a
+   file whose only importer (TablePage.tsx) was a dead-component import kept
+   solely to hold the CSS in the bundle. Now PotDisplay owns them directly.
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* A sub-1 residue no chip on Dan's ladder can represent (a 0.5 small blind).
+   Dashed and translucent so it is never read as a white 1 chip, which would
+   claim twice its value. See src/lib/chipDenominations.ts. */
+.chip--partial {
+  opacity: 0.75;
+  border-style: dashed;
+}
+
+.pot-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.pot-value {
+  font-family: 'JetBrains Mono', 'Georgia', serif;
+  font-size: 24px;
+  font-weight: 700;
+  color: #ffd700;
+  text-shadow:
+    0 0 20px rgba(255, 215, 0, 0.6),
+    0 0 40px rgba(255, 215, 0, 0.2),
+    0 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+@media (max-width: 480px) {
+  .pot-value {
+    font-size: 18px;
   }
 }

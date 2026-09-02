@@ -18,24 +18,24 @@ interface ReportData {
 }
 
 const REPORT_REASONS = [
-  { id: 'collusion', label: 'Collusion', description: 'Playing together to cheat others' },
+  { id: 'collusion', label: 'Collusion', description: 'Playing Together To Cheat Others' },
   {
     id: 'chip_dumping',
     label: 'Chip Dumping',
-    description: 'Intentionally losing chips to another player',
+    description: 'Intentionally Losing Chips To Another Player',
   },
-  { id: 'harassment', label: 'Harassment', description: 'Offensive or abusive behavior in chat' },
+  { id: 'harassment', label: 'Harassment', description: 'Offensive Or Abusive Behavior In Chat' },
   {
     id: 'slow_play',
     label: 'Intentional Slow Play',
-    description: 'Deliberately stalling to annoy others',
+    description: 'Deliberately Stalling To Annoy Others',
   },
   {
     id: 'software',
     label: 'Unauthorized Software',
-    description: 'Using automated software to play',
+    description: 'Using Automated Software To Play',
   },
-  { id: 'other', label: 'Other', description: 'Other violation not listed above' },
+  { id: 'other', label: 'Other', description: 'Other Violation Not Listed Above' },
 ];
 
 export const ReportPlayerModal: React.FC<ReportPlayerModalProps> = ({
@@ -150,7 +150,7 @@ export const ReportPlayerModal: React.FC<ReportPlayerModalProps> = ({
             <textarea
               value={details}
               onChange={(e) => setDetails(e.target.value)}
-              placeholder="Provide any additional context..."
+              placeholder="Provide Any Additional Context..."
               rows={3}
             />
           </label>
@@ -163,7 +163,7 @@ export const ReportPlayerModal: React.FC<ReportPlayerModalProps> = ({
               type="text"
               value={handId}
               onChange={(e) => setHandId(e.target.value)}
-              placeholder="e.g., #12345678"
+              placeholder="E.G., #12345678"
             />
           </label>
         </div>

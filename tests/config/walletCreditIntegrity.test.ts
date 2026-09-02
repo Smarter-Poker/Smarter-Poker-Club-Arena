@@ -91,7 +91,15 @@ describe('every wallet credit in the server carries an idempotency key', () => {
   const sites = creditCallSites();
 
   it('finds the credit sites at all (guards against the regex silently rotting)', () => {
-    expect(sites.length).toBeGreaterThanOrEqual(10);
+    /* LOWERED 10 -> 9 on 2026-08-31, and it is a credit site REMOVED rather
+       than a regex that rotted. GameServer's boot sweep no longer credits a
+       wallet itself: it calls `atomic_seat_cashout_locked`, which credits and
+       vacates the seat inside ONE transaction and derives its idempotency key
+       from the row it locked. That is the property this file is about, moved
+       into the database where the lock is - so the site is gone and the rule
+       is stronger. The floor exists to catch the regex silently matching
+       nothing; it is not a target. */
+    expect(sites.length).toBeGreaterThanOrEqual(9);
   });
 
   for (const s of sites) {
@@ -133,7 +141,8 @@ describe('no site credits and then logs as a separate, ungated step', () => {
 
         // Permitted only when the credit reports back and the write is gated.
         expect(
-          rpc === 'fn_credit_player_wallet_once' && /didCredit|=== false|if \(!\w*[Cc]redit/.test(window),
+          rpc === 'fn_credit_player_wallet_once' &&
+            /didCredit|=== false|if \(!\w*[Cc]redit/.test(window),
           `${file}:${i + 1} credits via ${rpc} and then writes a ledger row that is not gated ` +
             `on whether the credit actually happened — the phantom-row shape`
         ).toBe(true);
@@ -143,19 +152,38 @@ describe('no site credits and then logs as a separate, ungated step', () => {
 });
 
 describe('the two table cash-out paths cannot diverge again', () => {
-  const seats = stripComments(readFileSync(join(ROOT, 'server/src/services/supabase/seats.ts'), 'utf8'));
+  const seats = stripComments(
+    readFileSync(join(ROOT, 'server/src/services/supabase/seats.ts'), 'utf8')
+  );
 
+  /* 2026-08-27: these two assertions still guard "the two paths cannot
+     diverge", but the mechanism they guard changed, so they had to change with
+     it (they are updated in the same commit that moved the behaviour, per the
+     never-push-a-red-test rule).
+
+     Both paths used to credit via `atomic_credit_wallet_and_log` here in
+     TypeScript, keyed with `cashoutKey(seat)`. That shape was the bug: the
+     stack was read in a SEPARATE transaction from the credit, with no lock, so
+     an add-on could commit in the gap and its chips were destroyed. Read,
+     credit and vacate now happen inside `atomic_seat_cashout_locked` under
+     FOR UPDATE, and the key is derived from the locked row.
+
+     The invariant is stronger than before rather than weaker: there is now
+     exactly ONE implementation of "cash a seat out", so the two paths cannot
+     drift apart at all - which is what this describe block has always been
+     about. */
   it('markSeatAsLeft and atomicCashout call the SAME rpc', () => {
     const calls = [...seats.matchAll(/rpc\(\s*'([a-z_]+)'/g)].map((m) => m[1]);
-    const credits = calls.filter((c) => (CREDIT_RPCS as readonly string[]).includes(c));
-    expect(credits.length, 'both cash-out paths should credit').toBe(2);
-    expect(new Set(credits).size, 'the two paths must use one RPC — they share a key').toBe(1);
-    expect(credits[0]).toBe('atomic_credit_wallet_and_log');
+    const cashouts = calls.filter((c) => c === 'atomic_seat_cashout_locked');
+    expect(cashouts.length, 'both cash-out paths should cash out').toBe(2);
+    expect(new Set(cashouts).size, 'the two paths must use one RPC').toBe(1);
   });
 
-  it('both derive their key from cashoutKey(seat)', () => {
-    const uses = [...seats.matchAll(/p_idempotency_key:\s*cashoutKey\(seat\)/g)];
-    expect(uses.length).toBe(2);
+  it('neither path credits or vacates outside that rpc', () => {
+    /* A credit or a left_at stamp out here is a second transaction, and a
+       second transaction is the race. */
+    expect(seats).not.toMatch(/atomic_credit_wallet_and_log/);
+    expect(seats).not.toMatch(/left_at:\s*new Date\(\)\.toISOString\(\)/);
   });
 
   it('atomicCashout no longer hand-writes its own wallet_transactions row', () => {
@@ -185,14 +213,31 @@ describe('the dead horse-winnings path stays dead', () => {
 describe('the startup cash-out is accounted for', () => {
   const gs = stripComments(readFileSync(join(ROOT, 'server/src/GameServer.ts'), 'utf8'));
 
-  it('boot-time cash-outs write a ledger row like every other cash-out', () => {
-    // It used to call credit_player_wallet and log nothing at all: chips
-    // appeared in a balance with no wallet_transactions and no
-    // chip_transactions row behind them.
-    expect(gs).toMatch(/startup-cashout:/);
-    const idx = gs.indexOf('startup-cashout:');
-    const block = gs.slice(Math.max(0, idx - 1200), idx);
-    expect(block).toMatch(/rpc\(\s*'atomic_credit_wallet_and_log'/);
-    expect(block).toMatch(/p_category:\s*'cashout'/);
+  /* ── REPLACED 2026-08-31, and the replacement is stricter ────────────────
+     This used to pin `startup-cashout:{userId}:{sorted seat ids}` next to an
+     `atomic_credit_wallet_and_log` call, because the rule it was defending was
+     "the boot cash-out writes a ledger row at all" - it used to call
+     credit_player_wallet and log nothing.
+
+     That rule is now satisfied by a stronger mechanism, so the pin moves to it
+     rather than being deleted. The aggregate key was itself the next bug: the
+     credit and the seat DELETE were two round trips, so a boot that died
+     between them paid the chips and left the seat occupied, and the next boot
+     rebuilt the IDENTICAL key, deduped, wrote NO fresh row - and deleted the
+     seats anyway. 1,033 exits a day reached fn_unaccounted_seat_exits with no
+     credit to match. `atomic_seat_cashout_locked` credits and vacates in ONE
+     transaction and derives its key from the row it locked, so every seat
+     produces its own matchable ledger row and there is no window to die in. */
+  it('boot-time cash-outs go through the one locked cash-out RPC', () => {
+    expect(gs).toMatch(/rpc\(\s*'atomic_seat_cashout_locked'/);
+  });
+
+  it('the aggregate key that made a retry look like destruction is gone', () => {
+    expect(gs).not.toMatch(/startup-cashout:/);
+  });
+
+  it('the boot sweep never deletes a seat row', () => {
+    // CLAUDE.md 11.5: deleting one skips the refund and destroys the chips.
+    expect(gs).not.toMatch(/from\('table_seats'\)[\s\S]{0,200}\.delete\(/);
   });
 });

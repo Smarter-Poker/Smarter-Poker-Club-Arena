@@ -10,7 +10,12 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { VIP_GOLD_LIMITS, FEATURE_PRICING } from '../../services/VIPService';
+import {
+  VIP_GOLD_LIMITS,
+  FEATURE_PRICING,
+  isPurchasable,
+  loadFeaturePricing,
+} from '../../services/VIPService';
 import { useVIPStatus } from '../../hooks/useVIP';
 import './VIPCardsModal.css';
 
@@ -21,7 +26,7 @@ interface VIPInfoModalProps {
 
 const FEATURES = [
   { key: 'rabbit_hunt', label: 'Rabbit Hunting', vipFree: true },
-  { key: 'show_stack_bb', label: 'Show Stack in BBs', vipFree: true },
+  { key: 'show_stack_bb', label: 'Show Stack In BBs', vipFree: true },
   { key: 'offline_protection', label: 'Offline Protection', vipFree: true },
   { key: 'auto_time_bank', label: 'Auto Time Bank', vipFree: true },
   {
@@ -48,6 +53,15 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
   const { isVIP, isLoading } = useVIPStatus();
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  /**
+   * Bumped once the server's own price table has been read, purely to re-render
+   * with whatever it said. THIS TABLE IS A PRICE LIST AND IT MUST BE TRUE:
+   * on 2026-08-25 it printed "0/session" and "Free" for two features that the
+   * server charges 5 and 10 diamonds for. loadFeaturePricing patches
+   * FEATURE_PRICING in place and reports the drift; without this state bump the
+   * patch would land after render and the stale number would stay on screen.
+   */
+  const [pricingRevision, setPricingRevision] = useState(0);
 
   // Cleanup stagger timers on unmount
   useEffect(() => {
@@ -55,6 +69,18 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
     };
   }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let alive = true;
+    // Never rejects: it falls back to the cached table and reports the failure.
+    loadFeaturePricing().then(() => {
+      if (alive) setPricingRevision((n) => n + 1);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (isOpen) {
@@ -111,6 +137,14 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
                 const pricing = FEATURE_PRICING[feature.key as keyof typeof FEATURE_PRICING];
                 const vipFree = 'vipFree' in feature && feature.vipFree;
                 const vipValue = 'vipValue' in feature ? feature.vipValue : null;
+                /**
+                 * A price is a promise. Print one only for something the server
+                 * has a price row for; otherwise say so. `auto_time_bank` was
+                 * advertised at 5 diamonds while fn_purchase_feature answered
+                 * "unknown feature" for it, so the row quoted a charge that
+                 * could never be made.
+                 */
+                const sellable = isPurchasable(feature.key);
                 return (
                   <tr
                     key={feature.key}
@@ -122,10 +156,14 @@ export function VIPCardsModal({ isOpen, onClose }: VIPInfoModalProps) {
                   >
                     <td className="feature-name">{feature.label}</td>
                     <td className="feature-vip">{vipFree ? ' Free' : vipValue || ''}</td>
-                    <td className="feature-cost">
-                      {pricing
-                        ? `${pricing.cost}/${pricing.usageType.replace('per_', '').replace('_', ' ')}`
-                        : '-'}
+                    <td className="feature-cost" data-pricing-revision={pricingRevision}>
+                      {feature.key === 'theme_unlock'
+                        ? 'Table Studio'
+                        : !pricing
+                          ? '-'
+                          : !sellable
+                            ? 'Not For Sale'
+                            : `${pricing.cost.toLocaleString()}/${pricing.usageType.replace('per_', '').replace('_', ' ')}`}
                     </td>
                   </tr>
                 );

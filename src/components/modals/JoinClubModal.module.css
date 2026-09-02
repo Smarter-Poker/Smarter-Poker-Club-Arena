@@ -1,0 +1,405 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: grid;
+  place-items: stretch;
+  padding: 0;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background: rgba(0, 2, 5, 0.91);
+  backdrop-filter: blur(14px) saturate(0.8);
+  animation: joinFade 180ms ease-out;
+}
+.modalContainer {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  max-height: none;
+  display: grid;
+  grid-template-columns: 0.86fr 1.14fr;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #05080c;
+  box-shadow:
+    0 30px 90px #000,
+    inset 0 0 0 1px #020304,
+    inset 0 0 0 2px rgba(255, 255, 255, 0.055);
+  animation: joinEnter 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.modalContainer::before {
+  content: '';
+  position: absolute;
+  z-index: 4;
+  inset: 0 18% auto;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #00a9ff, transparent);
+  box-shadow: 0 0 11px #008fda;
+}
+.artPanel {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-right: 1px solid rgba(174, 200, 217, 0.22);
+  background:
+    linear-gradient(90deg, transparent 95%, rgba(255, 255, 255, 0.04)),
+    radial-gradient(circle at 50% 50%, rgba(0, 153, 234, 0.15), transparent 54%), #020406;
+}
+.artPanel::before {
+  content: '';
+  position: absolute;
+  inset: 8%;
+  border: 1px solid rgba(127, 154, 171, 0.16);
+  clip-path: polygon(
+    12px 0,
+    100% 0,
+    100% calc(100% - 12px),
+    calc(100% - 12px) 100%,
+    0 100%,
+    0 12px
+  );
+}
+.artPanel img {
+  width: 90%;
+  height: auto;
+  filter: drop-shadow(0 16px 22px #000) drop-shadow(0 0 18px rgba(0, 157, 236, 0.17));
+}
+.artScan {
+  position: absolute;
+  width: 70%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #44c6ff, transparent);
+  box-shadow: 0 0 9px #00a9ff;
+  animation: joinScan 3.6s ease-in-out infinite;
+}
+.contentPanel {
+  position: relative;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  overflow: hidden;
+  padding: 0;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.025), transparent 42%);
+}
+.scrollBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: clamp(48px, 8vh, 88px) clamp(32px, 6vw, 88px) 26px;
+}
+.pageFooter {
+  flex: 0 0 auto;
+  padding: 14px clamp(32px, 6vw, 88px) max(14px, env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(174, 200, 217, 0.22);
+  background: linear-gradient(180deg, rgba(5, 8, 12, 0.97), #020406);
+  box-shadow: 0 -14px 28px rgba(0, 0, 0, 0.32);
+}
+.eyebrow,
+.inputLabel {
+  color: #6cbfe8;
+  font: 600 10px/1 var(--font-mono, monospace);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.title {
+  margin: 12px 0 10px;
+  color: #eef7fc;
+  font:
+    400 clamp(34px, 5vw, 50px)/0.95 'Rajdhani',
+    'Arial Narrow',
+    sans-serif;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+.subtitle {
+  max-width: 38ch;
+  margin: 0 0 20px;
+  color: #8a9aa6;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.importActions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin: 9px 0 15px;
+}
+.importActions button,
+.cancelRequestButton {
+  min-height: 36px;
+  padding: 8px;
+  border: 1px solid #2a4654;
+  border-radius: 2px;
+  background: #071017;
+  color: #79b8d5;
+  cursor: pointer;
+  font: 600 9px/1 var(--font-mono, monospace);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.importActions button:active {
+  border-color: #178bc2;
+}
+.importActions button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.hiddenInput {
+  display: none;
+}
+.lookupStatus,
+.statusMessage {
+  margin-bottom: 12px;
+  padding: 9px 11px;
+  border-left: 2px solid #178bc2;
+  background: #071018;
+  color: #7fb8d2;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.statusMessage {
+  border-left-color: #d4a44d;
+  color: #c6a96e;
+}
+.clubPreview {
+  margin-bottom: 12px;
+  padding: 13px;
+  border: 1px solid rgba(109, 188, 226, 0.3);
+  border-radius: 3px;
+  background: linear-gradient(120deg, rgba(0, 154, 226, 0.08), transparent), #04090d;
+}
+.clubPreview div {
+  display: grid;
+  gap: 4px;
+}
+.clubPreview span,
+.clubPreview small {
+  color: #6d8795;
+  font: 600 8px/1.2 var(--font-mono, monospace);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.clubPreview strong {
+  color: #eff8fc;
+  font:
+    600 19px/1.1 'Rajdhani',
+    sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.clubPreview p {
+  margin: 9px 0 0;
+  color: #7d8f9a;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.cancelRequestButton {
+  width: 100%;
+  min-height: 46px;
+  border-color: #775246;
+  color: #d6a18d;
+}
+.inputWrapper {
+  width: 100%;
+}
+.inputLabel {
+  display: block;
+  margin-bottom: 9px;
+  color: #798c99;
+}
+.codeInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 16px 18px;
+  border: 1px solid rgba(160, 190, 207, 0.32);
+  border-radius: 3px;
+  outline: 0;
+  background: #020406;
+  color: #f3f8fb;
+  font: 500 30px/1.1 var(--font-mono, monospace);
+  letter-spacing: 0.28em;
+  text-align: center;
+  box-shadow: inset 0 2px 12px #000;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+.codeInput:focus {
+  border-color: #1ba9ee;
+  box-shadow:
+    inset 0 2px 12px #000,
+    0 0 0 2px rgba(0, 169, 255, 0.13);
+}
+.codeInput::placeholder {
+  color: #303b43;
+}
+.pasteHint {
+  margin: 9px 0 22px;
+  color: #5f707c;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.joinButton {
+  width: 100%;
+  min-height: 50px;
+  border: 1px solid #6dcfff;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #087bb2, #04557f);
+  color: #f5fbff;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.22),
+    0 0 18px rgba(0, 151, 226, 0.16);
+  cursor: pointer;
+  font:
+    600 14px/1 'Rajdhani',
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transition:
+    filter 140ms ease,
+    transform 120ms ease;
+}
+.joinButton:not(:disabled):focus-visible {
+  filter: brightness(1.16);
+}
+.joinButton:not(:disabled):active {
+  transform: translateY(1px);
+}
+.joinButton:disabled {
+  border-color: #27323a;
+  background: #10161b;
+  color: #46545d;
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.closeButton {
+  position: absolute;
+  z-index: 5;
+  top: 15px;
+  right: 15px;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(164, 190, 207, 0.3);
+  border-radius: 2px;
+  background: #070b0f;
+  color: #8ea0ad;
+  cursor: pointer;
+}
+.closeButton::before,
+.closeButton::after {
+  content: '';
+  position: absolute;
+  top: 16px;
+  left: 9px;
+  width: 14px;
+  height: 1px;
+  background: currentColor;
+}
+.closeButton::before {
+  transform: rotate(45deg);
+}
+.closeButton::after {
+  transform: rotate(-45deg);
+}
+.closeButton:focus-visible,
+.importActions button:focus-visible,
+.cancelRequestButton:focus-visible,
+.joinButton:focus-visible {
+  outline: 2px solid #55c8ff;
+  outline-offset: 2px;
+}
+@keyframes joinFade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes joinEnter {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+}
+@keyframes joinScan {
+  0%,
+  100% {
+    transform: translateY(-110px);
+    opacity: 0.25;
+  }
+  50% {
+    transform: translateY(110px);
+    opacity: 0.9;
+  }
+}
+@media (max-width: 650px) {
+  .modalContainer {
+    height: 100dvh;
+    min-height: 0;
+    grid-template-columns: 1fr;
+    grid-template-rows: 122px minmax(0, 1fr);
+  }
+  .artPanel {
+    height: 122px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(174, 200, 217, 0.22);
+  }
+  .artPanel img {
+    width: 130px;
+    transform: translateY(12px);
+  }
+  .artScan {
+    display: none;
+  }
+  .scrollBody {
+    padding: 34px 24px 24px;
+  }
+  .pageFooter {
+    padding-inline: 24px;
+  }
+  .title {
+    font-size: 34px;
+  }
+}
+@media (max-height: 560px) {
+  .overlay {
+    padding: 0;
+  }
+  .modalContainer {
+    height: 100dvh;
+    min-height: 0;
+    max-height: none;
+  }
+  .scrollBody {
+    padding-top: 38px;
+    padding-bottom: 22px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .overlay,
+  .modalContainer,
+  .artScan {
+    animation: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .modalContainer,
+  .codeInput,
+  .clubPreview,
+  .importActions button,
+  .cancelRequestButton {
+    border-color: #fff;
+  }
+
+  .subtitle,
+  .inputLabel,
+  .pasteHint,
+  .clubPreview p {
+    color: #fff;
+  }
+}

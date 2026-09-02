@@ -20,6 +20,7 @@
  * - playChips()             Chip clink (bet/call)
  * - playRaise()             Triple chip cascade
  * - playFold()              Card swoosh to muck
+ * - playDiscard()           ONE card swept to the muck (Crazy Pineapple)
  * - playAllIn()             Dramatic bass thud + chip push
  * - playWin()               Major arpeggio celebration
  * - playBigWin()            Extended celebration + shimmer
@@ -64,6 +65,7 @@
 import { reportError } from '../utils/errorReporter';
 import { isVibrationAllowed, fireVibration } from '../utils/vibrationGate';
 import { isSoundAllowed, persistSoundPreference } from '../utils/soundGate';
+import { spinCelebration } from '../config/spinSpec';
 export const haptic = {
   /** Check if vibrations are enabled (reads from localStorage) */
   // AUDIT 2026-08-19: the in-table vibration switch writes
@@ -172,6 +174,7 @@ export type SoundPriority =
   | 'bet'
   | 'call'
   | 'check'
+  | 'discard'
   | 'fold'
   | 'shuffle'
   | 'deal'
@@ -204,6 +207,14 @@ const SOUND_PRIORITY_RANK: Record<SoundPriority, number> = {
   bet: 60,
   call: 50,
   check: 40,
+  /* CRAZY PINEAPPLE PHASE 3 2026-08-31: the discard is its own decision and
+     owes its own cue (CLAUDE.md 10.6). It sits ABOVE fold deliberately: the
+     cue it replaced was playFold(), and a discard round resolves several
+     seats inside the same 50ms priority window as the flop that follows it
+     (deal 20 / community_card 15), so anything at or below fold's 30 would
+     have been the next playPotCollect - a cue that is wired, called, and
+     never heard. Below call (50) because a discard is not a wager. */
+  discard: 45,
   fold: 30,
   shuffle: 25,
   deal: 20,
@@ -218,7 +229,28 @@ class SoundService {
   private ctx: AudioContext | null = null;
   private enabled: boolean = true;
   private masterVolume: number = 0.7;
-  private effectsVolume: number = 0.5;
+  private categoryEnabled: Record<SoundCategory, boolean> = {
+    action: true,
+    chat: true,
+    turn_alert: true,
+    win: true,
+    event: true,
+  };
+
+  /* SOUND AUDIT 2026-08-27: was 0.5, which meant a player who never opened the
+     settings panel ran at half the intended effects gain forever and the
+     in-table volume slider (master only) topped out at 0.5. 1.0 is right.
+
+     CORRECTED 2026-08-29: the rest of that note named "the Settings → Sound
+     panel" as `setEffectsVolume`'s only caller. There is no such panel and
+     never was — `setEffectsVolume` has no production caller at all, and the
+     `restoreStoredConfig` it said "applies any saved value" was reading a
+     localStorage key nothing has ever written. So this is a CONSTANT, and
+     `getEffectsVolume` (consumed by ThrowableSoundService) is multiplying by 1.
+     It stays because the gain maths reads better with the term in it and
+     because a per-category volume is a plausible future control — but nothing
+     varies it today, and no comment here should imply otherwise. */
+  private effectsVolume: number = 1.0;
   private masterGain: GainNode | null = null;
   /**
    * The idling engine under the starting tree. Retained because it must be
@@ -236,15 +268,33 @@ class SoundService {
   // Sound priority system: tracks the highest-priority sound played this frame
   private currentFramePriority: number = -1;
   private priorityResetTimer: ReturnType<typeof setTimeout> | null = null;
+  // playPotCollect bypasses the rank window (it accompanies the win fanfare
+  // rather than competing with it) and dedupes itself with this stamp instead.
+  private lastPotCollectMs = 0;
 
-  // Category-level gates (driven by SoundSettings sub-toggles)
-  private categoryEnabled: Record<SoundCategory, boolean> = {
-    action: true,
-    chat: true,
-    turn_alert: true,
-    win: true,
-    event: true,
-  };
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   * SOUND IS ONE SWITCH (Dan, 2026-08-28, binding)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Dan, verbatim: "a simple switch, sounds on / off is all thats needed."
+   *
+   * So the per-category gates are GONE, along with the storage hydrate that
+   * fed them. They were never reachable anyway: the panel that wrote
+   * `sp_sound_settings` was deleted in #1316 as unreachable UI, and the read
+   * for it was added the day after — pointing at a key with no writer, so
+   * every category sat at `true` forever, `setCategoryEnabled` and
+   * `setCategoryStates` had zero callers, and `setEffectsVolume` was called
+   * from nowhere but that dead hydrate. Keeping five gates that can only ever
+   * be `true` means five ways for a future change to silence something by
+   * accident, for a feature nobody asked for.
+   *
+   * WHAT REMAINS IS THE WHOLE FEATURE: one master switch, owned by
+   * `soundGate` (`club_arena_sounds` + `ca_sound_enabled`, either one off
+   * silences everything) and consulted by `shouldPlay` on every call, plus a
+   * master volume. `SoundCategory` itself stays: 50 call sites pass it, and
+   * it still documents WHAT a cue is even though nothing gates on it now.
+   */
 
   constructor() {
     try {
@@ -256,6 +306,9 @@ class SoundService {
         this.masterGain.connect(this.ctx.destination);
       }
     } catch (e: unknown) {
+      // SOUND AUDIT 2026-08-27: surfaced to telemetry — this used to be the
+      // only diagnostic in the whole engine, and it reached nobody.
+      reportError(e, 'SoundService.init');
       console.warn('[SoundService] Web Audio API not supported');
     }
     // ANIMATION/SOUND AUDIT 2026-08-19: mobile autoplay unlock. This context
@@ -265,7 +318,55 @@ class SoundService {
     // Resume on the FIRST user gesture (the only place browsers allow it),
     // and again whenever the tab returns to the foreground.
     this.installUnlockListeners();
+    /* `restoreStoredConfig()` was called here. It is gone with the call: its
+       body became empty on 2026-08-29 when the localStorage key it read
+       (`sp_sound_settings`) turned out to be written by nothing anywhere in the
+       repository, and an empty private method invoked from a constructor reads
+       as live boot logic to the next person. The history is kept where the
+       method was. */
   }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   * `restoreStoredConfig` DELETED 2026-08-28 — it read a key nobody wrote.
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * It hydrated five per-category gates and an effects volume from
+   * `sp_sound_settings`. Its own comment named `SoundSettings.tsx` as the
+   * writer of that key — a file DELETED THE DAY BEFORE this function was
+   * added, in #1316 ("delete the unreachable settings UI"), after the whole
+   * `src/components/settings/` folder was verified to be a closed loop
+   * nothing imported. So the read was born dead:
+   * `localStorage.getItem('sp_sound_settings')` could only ever return null.
+   *
+   * Dan settled the question it was waiting on: "a simple switch, sounds on
+   * / off is all thats needed." There is no category UI coming, so there is
+   * nothing for this to restore. Removing it also removes a boot-time
+   * localStorage read and the last caller of `setEffectsVolume`, which means
+   * the effects gain now simply IS its default (1.0) — the same value the
+   * dead hydrate always left it at.
+   *
+   * The master switch is unaffected and is the whole feature: `soundGate`
+   * owns it (`club_arena_sounds` + `ca_sound_enabled`; either one off
+   * silences everything) and `shouldPlay` consults it on every call. The
+   * master VOLUME is applied by the surfaces that own the slider.
+   */
+  /* ── `restoreStoredConfig` REMOVED 2026-08-29 ──────────────────────────
+     It read `localStorage['sp_sound_settings']`, a key that appeared EXACTLY
+     ONCE in the whole repository — in that read. `SoundSettings.tsx`, the
+     component its doc-comment named as the shape owner, does not exist. So the
+     restore was a no-op that read as working code, and the 2026-08-27 bug it
+     claimed to fix ("a player who disabled Chat Message Sounds got it back on
+     every reload") was never actually fixed.
+
+     It was also a SECOND owner of master volume: it set it at boot, racing the
+     settings store, and whichever ran later won. Master volume now follows
+     `useTableSettings.soundVolume` and nothing else.
+
+     Sound categories keep their engine-level API (`setCategoryStates`) for the
+     surface that will drive them. Until one exists they are all on, which is
+     the state this code was producing anyway — now without pretending
+     otherwise. */
 
   // ─── Context Management ──────────────────────────────────────────────
 
@@ -298,10 +399,67 @@ class SoundService {
     });
   }
 
+  /**
+   * Arm the autoplay-unlock listeners as early as possible.
+   *
+   * The listeners are installed by the constructor, so all this really does is
+   * force the module to be evaluated - but that is the entire point, and a
+   * named method says so where a bare `import './SoundService'` would look
+   * like a stray import somebody could tidy away. Called by ServiceBootstrap
+   * at app boot; see the comment there for the spectator-silence bug.
+   *
+   * Idempotent: installUnlockListeners() guards on unlockInstalled.
+   */
+  /**
+   * Why a cue would be inaudible right now, or null if it would be heard.
+   *
+   * Dan, 2026-08-30: "ANIMATION STARTED WHEN BOUGHT IN, BUT WITH NO SOUND
+   * EFFECTS." Every gate in this service was read line by line that day and
+   * each one was individually correct — master on, category on, `muted` false
+   * by default, context constructed at import, unlock listeners armed. Which
+   * left nothing to fix and nothing to blame, and a silent wheel.
+   *
+   * That is the failure this accessor exists to end. `ensureContext()`
+   * deliberately lets a sound through while `resume()` is still settling (see
+   * its comment — the alternative silences the app permanently), so a cue CAN
+   * be dropped with no error and no trace. The spin reveal is the one place
+   * where losing the first cue is losing the moment, so it asks first and
+   * reports rather than guessing again.
+   *
+   * Returns a short reason string for telemetry, never anything user-facing.
+   */
+  inaudibleReason(): string | null {
+    if (!this.enabled) return 'engine_disabled';
+    if (!isSoundAllowed()) return 'preference_off';
+    if (!this.ctx) return 'no_audio_context';
+    if (this.ctx.state !== 'running') return `context_${this.ctx.state}`;
+    if (!this.masterGain) return 'no_master_gain';
+    if (this.masterGain.gain.value <= 0) return 'master_gain_zero';
+    return null;
+  }
+
+  primeAudioUnlock(): void {
+    this.installUnlockListeners();
+    // A context that is already allowed to run should just run, rather than
+    // waiting for a gesture that may never come (desktop, or a tab restored
+    // with an existing audio permission).
+    if (this.ctx && this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {
+        /* expected before the first gesture - the listeners handle it */
+      });
+    }
+  }
+
   private ensureContext(): boolean {
     if (!this.ctx || !this.masterGain) return false;
     if (this.ctx.state === 'suspended') {
-      this.ctx.resume();
+      // Kick it, then let this sound through anyway. Returning false here
+      // would be more honest about the one tone that gets dropped while
+      // resume() settles, and much worse in practice: on a context that never
+      // resumes it silences the app permanently instead of degrading.
+      this.ctx.resume().catch(() => {
+        /* only a real gesture can do it - installUnlockListeners is waiting */
+      });
     }
     return true;
   }
@@ -329,12 +487,34 @@ class SoundService {
     return this.enabled && isSoundAllowed();
   }
 
-  /** Enable/disable a specific sound category (e.g. 'action', 'chat', 'win'). */
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  THE CATEGORY GATE IS REAL MACHINERY WITH NO CONTROL ATTACHED
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * Stated plainly here, 2026-08-29, because the shape is misleading: both
+   * setters have ZERO callers in `src/`, so `categoryEnabled` is permanently
+   * all-`true`, so `shouldPlay`'s `if (category && !this.categoryEnabled[...])`
+   * and the win-sound check further down can never fire. Roughly forty category
+   * arguments are threaded through this file to feed a branch that is
+   * unreachable.
+   *
+   * Kept rather than deleted, deliberately: the gate itself is correct and the
+   * per-category preference (Chat Message Sounds, Win Sounds, Turn Alert...) is
+   * a control this product plausibly wants — deleting it means re-deriving the
+   * plumbing later. What was deleted was `restoreStoredConfig`, which read a
+   * localStorage key nothing has ever written and made this look wired when it
+   * is not.
+   *
+   * IF YOU ADD THE UI: drive it through `setCategoryStates` and give it an
+   * owner in `useTableSettings` like every other preference — not a fifth
+   * private localStorage key.
+   */
   setCategoryEnabled(category: SoundCategory, enabled: boolean) {
     this.categoryEnabled[category] = enabled;
   }
 
-  /** Bulk-update category gates from the SoundSettings config. */
+  /** Bulk-update category gates. See the note above: no caller yet. */
   setCategoryStates(states: Partial<Record<SoundCategory, boolean>>) {
     for (const key in states) {
       const k = key as SoundCategory;
@@ -376,8 +556,9 @@ class SoundService {
     // because the Settings switch writes storage and never calls setEnabled().
     // Consult the shared gate so either switch genuinely silences the engine.
     if (!this.enabled || !isSoundAllowed()) return false;
-    // Category gate — user can silence a whole category via SoundSettings
-    if (category && !this.categoryEnabled[category]) return false;
+    // No category gate (2026-08-28): sound is one switch. `category` is kept
+    // in the signature because it names what the cue IS at 50 call sites.
+    void category;
     const rank = SOUND_PRIORITY_RANK[priority] ?? 0;
     if (rank <= this.currentFramePriority) return false;
     this.currentFramePriority = rank;
@@ -420,6 +601,69 @@ class SoundService {
     filter.connect(gain);
     gain.connect(this.out);
     noise.start(time);
+  }
+
+  /**
+   * A noise burst whose BANDPASS sweeps downward -- the sound of something
+   * small passing through air.
+   *
+   * Dan 2026-08-23: "the sound effect should sound more like a card flying
+   * through the air, rather than what is currently in place." The old deal
+   * sound was a fixed 3kHz LOWPASS over noise plus a 4kHz-to-1kHz oscillator
+   * chirp, which is a click: a static filter cannot read as movement, and the
+   * chirp put a plasticky snap on the tail.
+   *
+   * What makes air read as air is a moving formant. A bandpass sliding down the
+   * spectrum is heard as an object going past; a fixed filter is heard as a
+   * texture sitting still. Q is kept below ~1.5 so it stays breath rather than
+   * becoming a whistle, and everything under 320Hz is cut because eighteen of
+   * these fire inside a second on a nine-handed deal and any low content stacks
+   * into mud.
+   */
+  private createSweptNoiseBurst(
+    time: number,
+    duration: number,
+    volume: number,
+    fromHz: number,
+    toHz: number,
+    q = 0.9
+  ) {
+    if (!this.ctx) return;
+    const bufferSize = Math.max(1, Math.floor(this.ctx.sampleRate * duration));
+    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+
+    const noise = this.ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    const band = this.ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.Q.value = q;
+    band.frequency.setValueAtTime(fromHz, time);
+    band.frequency.exponentialRampToValueAtTime(Math.max(40, toHz), time + duration);
+
+    const highpass = this.ctx.createBiquadFilter();
+    highpass.type = 'highpass';
+    highpass.frequency.value = 320;
+
+    // Fast attack, exponential tail: the card is loudest as it leaves the deck
+    // and thins out as it travels, which is the opposite shape to the
+    // percussive click it replaces.
+    const gain = this.ctx.createGain();
+    const attack = Math.min(0.008, duration * 0.2);
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, volume), time + attack);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+
+    noise.connect(band);
+    band.connect(highpass);
+    highpass.connect(gain);
+    gain.connect(this.out);
+    noise.start(time);
+    noise.stop(time + duration);
   }
 
   private playTone(
@@ -484,27 +728,49 @@ class SoundService {
   // ═══════════════════════════════════════════════════════════════════════
 
   /**
-   * Card deal/slide — soft paper shuffle sound
+   * One card flying through the air, dealer to seat.
+   *
+   * 100ms end to end. That is deliberate and it is a hard constraint, not a
+   * taste call: DealAnimation fires this once per card, eighteen times on a
+   * nine-handed deal, roughly 63ms apart. Anything longer overlaps its own
+   * neighbours and a deal turns into one continuous hiss.
+   *
+   * Two swept layers, both descending:
+   *   - the air the card cuts (5.6kHz -> 900Hz, wide Q, the audible part)
+   *   - a quieter, narrower body a beat later (2.4kHz -> 500Hz) so it has some
+   *     weight and does not read as pure hiss
+   *
+   * There is no click at the end any more. The arrival snap belongs to the card
+   * LANDING, which SeatSlot's own deal-in already covers; putting one here made
+   * every card sound like it hit a table it had not reached yet.
    */
   playDeal() {
     if (!this.shouldPlay('deal', 'action') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
-    // Filtered noise burst simulating paper slide
-    this.createNoiseBurst(t, 0.12, 0.15, 3000);
+    this.createSweptNoiseBurst(t, 0.1, 0.13, 5600, 900, 0.85);
+    this.createSweptNoiseBurst(t + 0.012, 0.075, 0.05, 2400, 500, 1.4);
 
-    // Subtle high-frequency click at end
-    const osc = this.ctx!.createOscillator();
-    const gain = this.ctx!.createGain();
-    osc.frequency.setValueAtTime(4000, t + 0.08);
-    osc.frequency.exponentialRampToValueAtTime(1000, t + 0.12);
-    gain.gain.setValueAtTime(0.08, t + 0.08);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-    osc.connect(gain);
-    gain.connect(this.out);
-    osc.start(t + 0.08);
-    osc.stop(t + 0.12);
+    haptic.light();
+  }
 
+  /**
+   * SOUND AUDIT 2026-08-27: the whole deal's card slides, scheduled ONCE on
+   * the AudioContext clock. DealAnimation used one setTimeout per card, and
+   * under main-thread load two timers could bunch inside the 50ms priority
+   * window — the second card's slide was silently dropped, so a busy deal
+   * played fewer sounds than cards. The audio clock cannot bunch. One gate
+   * check covers the sequence (it is one gesture: "the deal").
+   */
+  playDealSequence(delaysMs: number[]) {
+    if (delaysMs.length === 0) return;
+    if (!this.shouldPlay('deal', 'action') || !this.ensureContext()) return;
+    const t0 = this.ctx!.currentTime;
+    for (const d of delaysMs) {
+      const t = t0 + Math.max(0, d) / 1000;
+      this.createSweptNoiseBurst(t, 0.1, 0.13, 5600, 900, 0.85);
+      this.createSweptNoiseBurst(t + 0.012, 0.075, 0.05, 2400, 500, 1.4);
+    }
     haptic.light();
   }
 
@@ -783,6 +1049,46 @@ class SoundService {
   }
 
   /**
+   * Discard - ONE card swept away, then landing on the muck.
+   *
+   * CRAZY PINEAPPLE PHASE 3 2026-08-31. Until today the discard played
+   * `playFold()`: the wrong action's cue, and a two-card brush for a
+   * one-card decision. A player who threw a card heard the sound the table
+   * makes when a hand DIES, in the one variant where throwing a card is how
+   * you stay in - which is exactly the confusion Dan reported as "auto folded
+   * my hand, even though it didn't".
+   *
+   * Built out of the same air the deal is built from (`createSweptNoiseBurst`,
+   * Dan 2026-08-23: a moving formant is heard as an object going past, a
+   * fixed filter is heard as a texture sitting still), so a card leaving the
+   * hand and a card arriving in it are audibly the same object. Three things
+   * separate it from the fold:
+   *
+   *   - ONE brush, not two. The fold sends the whole hand; this sends a card.
+   *   - It sweeps from higher and lands SHORTER (0.19s vs 0.26s) - a flick
+   *     across the felt rather than a hand sliding away.
+   *   - It ends on a soft felt tap, because the card stops. The fold has no
+   *     tap: those cards are gone.
+   *
+   * Peak gain 0.10, just under the fold's 0.11 - this fires on every seat in
+   * a round where every seat acts at once, so it has to sit under the action
+   * rather than over it.
+   */
+  playDiscard() {
+    if (!this.shouldPlay('discard', 'action') || !this.ensureContext()) return;
+    const t = this.ctx!.currentTime;
+
+    // The card through the air: bandpass sliding down = moving away from you.
+    this.createSweptNoiseBurst(t, 0.19, 0.1, 3000, 520, 0.85);
+
+    // The card arriving on the felt. Heavily lowpassed and quiet - this is
+    // the stop at the end of the flick, not a second card.
+    this.createNoiseBurst(t + 0.14, 0.055, 0.05, 900);
+
+    haptic.light();
+  }
+
+  /**
    * All-In — dramatic bass thud + chip cascade + tension build
    */
   playAllIn() {
@@ -1048,7 +1354,8 @@ class SoundService {
    * Button Click — soft UI tap
    */
   playButtonClick() {
-    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    // SOUND AUDIT 2026-08-27: category added (see playSeatTaken).
+    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
     const t = this.ctx!.currentTime;
 
     const osc = this.ctx!.createOscillator();
@@ -1092,10 +1399,19 @@ class SoundService {
    * Pot Collect — chips sweep to winner (satisfying collection sound)
    */
   playPotCollect() {
-    // AUDIT-2 FIX 2026-08-20: was ('win','win') — identical rank to the
-    // playWin/playBigWin that always precedes it in the same frame, so it was
-    // suppressed 100% of the time on hero wins. Own rank (88) now.
-    if (!this.shouldPlay('pot_collect', 'win') || !this.ensureContext()) return;
+    // AUDIT-2 FIX 2026-08-20 gave this its own rank (88) — but that moved it
+    // in the WRONG direction: the gate is `rank <= currentFramePriority`, and
+    // playWin (90) / playBigWin (95) always precede it in the same frame, so
+    // 88 was rejected 100% of the time. The hero STILL never heard the pot
+    // sweep on their own wins.
+    // SOUND AUDIT 2026-08-27: the sweep is a companion to the fanfare, not a
+    // competitor — bypass the rank window entirely and dedupe with its own
+    // short throttle instead, so it plays every time the pot ships.
+    if (!this.enabled || !isSoundAllowed()) return;
+    const nowMs = Date.now();
+    if (nowMs - this.lastPotCollectMs < 250) return;
+    this.lastPotCollectMs = nowMs;
+    if (!this.ensureContext()) return;
 
     // Rapid ascending chip clicks (collecting chips)
     for (let i = 0; i < 6; i++) {
@@ -1127,7 +1443,9 @@ class SoundService {
    * Seat Taken — short chime when a new player sits down
    */
   playSeatTaken() {
-    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    // SOUND AUDIT 2026-08-27: category added — bypassed the Event Sounds
+    // sub-toggle before (same fix playPlayerLeft got on 2026-08-20).
+    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
     const now = this.ctx!.currentTime;
     const gain = this.createGain(0.12);
 
@@ -1191,7 +1509,8 @@ class SoundService {
    * Descending tone sequence to indicate connection lost
    */
   playDisconnect() {
-    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    // SOUND AUDIT 2026-08-27: category added (see playSeatTaken).
+    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
     const now = this.ctx!.currentTime;
     const gain = this.createGain(0.1);
 
@@ -1218,7 +1537,8 @@ class SoundService {
    * Reconnect — connection restored sound
    */
   playReconnect() {
-    if (!this.shouldPlay('ui') || !this.ensureContext()) return;
+    // SOUND AUDIT 2026-08-27: category added (see playSeatTaken).
+    if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
     const now = this.ctx!.currentTime;
     const gain = this.createGain(0.15);
 
@@ -1245,7 +1565,31 @@ class SoundService {
   private createGain(volume: number): GainNode {
     if (!this.ctx) throw new Error('[SoundService] createGain called without audio context');
     const gain = this.ctx.createGain();
-    gain.gain.value = volume * this.masterVolume * this.effectsVolume;
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  THE PER-VOICE AMOUNT ONLY. MASTER IS APPLIED ONCE, BY masterGain.
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * This read `volume * this.masterVolume * this.effectsVolume` and then
+     * connected to `this.out`, which IS `masterGain` — whose own gain is
+     * already `masterVolume * effectsVolume`. So every voice built through this
+     * helper was attenuated by masterVolume SQUARED:
+     *
+     *     slider 100  ->  1.00   (the only value that looked right)
+     *     slider  70  ->  0.49   the default: 30% quieter than it says
+     *     slider  50  ->  0.25   half the slider, a quarter of the sound
+     *     slider  20  ->  0.04
+     *
+     * The volume control was quadratic, the whole app was quieter than every
+     * number it displayed, and — because the other forty gain nodes in this
+     * file are hand-rolled and connect to `out` with a raw value — sounds made
+     * through this helper were quieter than sounds that were not, which is why
+     * it never read as a simple "everything is too quiet" bug.
+     *
+     * `setMasterVolume` writes `masterGain.gain.value`, so master and effects
+     * still take effect live, in the one place they belong.
+     */
+    gain.gain.value = volume;
     gain.connect(this.out);
     return gain;
   }
@@ -1637,18 +1981,210 @@ class SoundService {
   playBountyCollected() {
     if (!this.shouldPlay('big_win', 'event') || !this.ensureContext()) return;
 
+    // SOUND AUDIT 2026-08-27: this whole block (and every cue below written in
+    // the same 2026-08-20 pass) called playTone with volume and delay SWAPPED —
+    // the author was thinking in ThrowableSoundService's (freq,dur,vol,type,
+    // glide,delay) order. Six cues were fully silent (volume 0), three were
+    // 3-7x too loud. Args restored to (freq, duration, VOLUME, type, DELAY).
     // Metallic strike — the "ching"
     [1567.98, 2093.0].forEach((freq, i) => {
-      this.playTone(freq, 0.28, 0.06 + i * 0.02, 'triangle', 0.32);
+      this.playTone(freq, 0.28, 0.32, 'triangle', 0.06 + i * 0.02);
     });
     // Coin shimmer tail
     [2637.02, 3135.96].forEach((freq, i) => {
-      this.playTone(freq, 0.22, 0.14 + i * 0.05, 'sine', 0.18);
+      this.playTone(freq, 0.22, 0.18, 'sine', 0.14 + i * 0.05);
     });
     // Low confirmation thump so it lands on small speakers too
-    this.playTone(220.0, 0.24, 0.0, 'sine', 0.26);
+    this.playTone(220.0, 0.24, 0.26, 'sine', 0.0);
 
     haptic.mysteryReveal();
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  THE KNOCKOUT — a two-glove FLURRY, in ONE cue (2026-08-29)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Replaces playKnockoutSwing / playKnockoutImpact, which were built for a
+   * single glove that crept in and struck once. Dan supplied a second capture
+   * showing two gloves alternating, so the visual is a flurry now and the
+   * audio has to be one.
+   *
+   * EVERYTHING BELOW IS MEASURED, not guessed. I cannot hear Dan's capture,
+   * but the audio track can be analysed, and it was: onset detection plus a
+   * short-time Fourier transform over KO KNOCKOUT.MOV gave
+   *
+   *   - SEVEN onsets between 2.87s and 3.77s — gaps of 64, 180, 215, 99 and
+   *     75ms. That is a flurry, and it is why the visual lands three punches
+   *     inside 280ms rather than one after a long creep.
+   *   - decays of 46-186ms per landing, so every hit is SHORT;
+   *   - two flavours of hit: a body thump whose strongest partials sit at 86,
+   *     129 and 172Hz, and a brighter crack peaking at 1.4kHz or 3.7kHz;
+   *   - band energy: 26% in 120-400Hz, 22% in 400Hz-1.2kHz, 35% in 1.2-4kHz
+   *     and only 8% above 4kHz. Leather and body, not cymbal.
+   *
+   * ONE CUE, SCHEDULED ON THE AUDIO CLOCK. Not four setTimeouts. A main thread
+   * busy re-laying-out a table that just lost a seat drifts a timer by tens of
+   * milliseconds, and the 50ms priority window then eats the late arrival
+   * outright — the same reasoning playDealSequence is built on.
+   *
+   * `speed` is the player's Animation Speed. Every offset multiplies by it, so
+   * the audio and the CSS stretch together; the retired overlay scaled only
+   * its JS half and drifted apart from its own visuals at 0.5x.
+   */
+  playKnockoutFlurry(
+    opts: {
+      isHero?: boolean;
+      /** The player's animation-speed multiplier (a DURATION multiplier). */
+      speed?: number;
+      /** When each glove lands, ms from t0. The last one is the finisher. */
+      punchesAtMs?: readonly number[];
+      /** When the KO stamp slams on, ms from t0. */
+      stampAtMs?: number;
+      /**
+       * The called "K.O." and the stamp's tick. TRUE for a real knockout;
+       * FALSE for the `boxing_glove` throwable, which is the same punches
+       * thrown at somebody who has not been eliminated — Dan 2026-08-29:
+       * "SAME ANIMATION, SAME SOUND EFFECTS (MINUS THE K.O. AT THE END)".
+       * Calling a knockout that did not happen would be worse than silence.
+       */
+      withCall?: boolean;
+    } = {}
+  ) {
+    const {
+      isHero = false,
+      speed = 1,
+      punchesAtMs = [180, 320, 460],
+      stampAtMs = 930,
+      withCall = true,
+    } = opts;
+    if (!this.shouldPlay('big_win', 'event') || !this.ensureContext()) return;
+    const t0 = this.ctx!.currentTime;
+    // A speed of 0 would collapse the whole cue onto one instant and stack
+    // every oscillator on the same sample. Clamp rather than trust the caller.
+    const s = Math.min(4, Math.max(0.1, speed));
+    const punches = punchesAtMs.length ? punchesAtMs : [0];
+
+    // THE WIND-UP — air moving past the first glove before it connects. A
+    // whoosh is a filter sweep, and the first landing is only ~180ms away, so
+    // this is short and it opens rather than closes.
+    const lead = Math.max(0.05, (punches[0] ?? 180) / 1000) * s;
+    this.createSweptNoiseBurst(t0, lead * 0.95, 0.07, 800, 2600, 0.9);
+
+    punches.forEach((ms, i) => {
+      const at = t0 + (ms / 1000) * s;
+      const last = i === punches.length - 1;
+      // The two jabs sit UNDER the finish. Three hits at equal weight is a
+      // drum roll; two and a full stop is a combination.
+      const g = last ? (isHero ? 1 : 0.85) : 0.5;
+
+      // BODY — 86Hz and 129Hz were the strongest partials under every landing
+      // in the capture, and they are low enough to be FELT on a phone speaker
+      // that cannot actually reproduce them.
+      this.scheduleTone(at, 86, 0.13 * s, 0.34 * g, 'sine');
+      this.scheduleTone(at, 129, 0.1 * s, 0.2 * g, 'sine');
+      // LEATHER — the crack. Measured decays ran 46-186ms; the jabs are at the
+      // short end of that and the finish at the long end.
+      this.createNoiseBurst(at, (last ? 0.12 : 0.055) * s, 0.24 * g, last ? 2600 : 1500);
+      if (last) {
+        // Only the two-fisted finish gets the bright 3.7kHz snap — in the
+        // capture the brightest onsets are the ones that end a flurry.
+        this.createSweptNoiseBurst(at, 0.07 * s, 0.2 * g, 3800, 1500, 1.2);
+      }
+    });
+
+    // THE CALL. In the capture a human voice says "K.O." and it lands ON THE
+    // IMPACT, not on the stamp: the voiced segment runs t0+420ms to t0+650ms
+    // (and identically, to the millisecond, on the hero knockout 47 seconds
+    // later — it is one recorded asset played twice).
+    if (withCall) {
+      const impactMs = punches[punches.length - 1] ?? 460;
+      this.scheduleKnockoutCall(t0 + ((impactMs - 40) / 1000) * s, 0.3 * s, isHero ? 0.3 : 0.24);
+
+      // THE STAMP slamming on. Same clock, so it cannot drift away from the
+      // skoStampLife delay in SeatKnockout.css. It goes with the call: a
+      // throwable has no stamp, so a tick for one would be a sound with
+      // nothing on screen making it.
+      const stampAt = t0 + (stampAtMs / 1000) * s;
+      this.scheduleTone(stampAt, 880, 0.14 * s, 0.22, 'square');
+      this.scheduleTone(stampAt + 0.01, 440, 0.2 * s, 0.16, 'triangle');
+    }
+
+    if (isHero) {
+      haptic.strong();
+    } else {
+      haptic.medium();
+    }
+  }
+
+  /**
+   * A synthesised "K.O." call.
+   *
+   * HONEST LABEL: this is NOT a human voice and it is not pretending to be
+   * one. It is a source-and-formant approximation of the one in Dan's
+   * capture, built from measurements of it:
+   *
+   *   F0 falls 342Hz -> 157Hz across ~300ms (about 1.1 octaves — that FALL is
+   *   the shape the ear reads as a called knockout); periodicity 0.75-0.82,
+   *   so strongly voiced and close-mic'd; spectral centroid 1.7-2.0kHz, so
+   *   warm with no sibilance; first formant ~640Hz drifting to ~215Hz and
+   *   second ~1000Hz drifting to ~640Hz, which is the vowel moving from the
+   *   "ay" of K to the "oh" of O.
+   *
+   * WHY IT IS SYNTHESISED RATHER THAN SAMPLED. The recording in the capture
+   * is PokerBros' audio asset. Lifting it into this product would be copying
+   * someone else's sound recording, so it is not on the table however good it
+   * sounds. Replace this with a REAL voice by recording one to the numbers
+   * above — 300ms, falling, close-mic'd, no reverb — dropping it in as
+   * `public/images/knockout/ko-call.webm` and pointing KO_VOICE_URL at it.
+   * The synth stays as the fallback for browsers that cannot decode it.
+   */
+  private scheduleKnockoutCall(at: number, duration: number, volume: number) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const end = at + duration;
+
+    // The plosive: the hard "K". Very short, quite bright, and it is what
+    // stops the call sounding like a slide whistle.
+    this.createNoiseBurst(at, 0.035, volume * 0.5, 3200);
+
+    // A voiced source — sawtooth for harmonic richness — gliding down.
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(342, at);
+    osc.frequency.exponentialRampToValueAtTime(157, end);
+
+    // Two bandpass "formants" in parallel. One filter is a buzz; two is a
+    // vowel, and moving them is what turns "K" into "O".
+    const mk = (f0: number, f1: number, q: number, gain: number) => {
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.Q.value = q;
+      bp.frequency.setValueAtTime(f0, at);
+      bp.frequency.exponentialRampToValueAtTime(f1, end);
+      const g = ctx.createGain();
+      g.gain.value = gain;
+      osc.connect(bp);
+      bp.connect(g);
+      return g;
+    };
+    const f1 = mk(640, 230, 6, 1);
+    const f2 = mk(1000, 650, 8, 0.7);
+
+    // The envelope: a fast attack, a held shout, then a tail. Measured rms
+    // climbs to peak inside 60ms and holds for ~150ms before falling away.
+    const amp = ctx.createGain();
+    amp.gain.setValueAtTime(0.0001, at);
+    amp.gain.exponentialRampToValueAtTime(volume, at + 0.055);
+    amp.gain.setValueAtTime(volume, at + duration * 0.55);
+    amp.gain.exponentialRampToValueAtTime(0.0001, end);
+
+    f1.connect(amp);
+    f2.connect(amp);
+    amp.connect(this.out);
+
+    osc.start(at);
+    osc.stop(end + 0.02);
   }
 
   /**
@@ -1680,7 +2216,7 @@ class SoundService {
 
     // The lever: a dry mechanical thunk, no tail.
     this.createNoiseBurst(t, 0.06, 0.22, 2600);
-    this.playTone(160, 0.1, 0.0, 'square', 0.16);
+    this.playTone(160, 0.1, 0.16, 'square', 0.0);
 
     this.stopSpinBed(0);
 
@@ -1728,8 +2264,8 @@ class SoundService {
   playSpinCountdownLight(step: number) {
     if (!this.shouldPlay('ui', 'event') || !this.ensureContext()) return;
     const f = [330, 392, 784][Math.max(0, Math.min(2, Math.floor(step)))];
-    this.playTone(f, 0.22, 0, 'square', 0.13);
-    this.playTone(f * 1.5, 0.16, 0.01, 'triangle', 0.06);
+    this.playTone(f, 0.22, 0.13, 'square', 0);
+    this.playTone(f * 1.5, 0.16, 0.06, 'triangle', 0.01);
     this.createNoiseBurst(this.ctx!.currentTime, 0.04, 0.09, 1800);
 
     // Throttle blip. Filter and gain only — see playSpinStart on why nothing
@@ -1894,9 +2430,14 @@ class SoundService {
 
     // The stop: the wheel seating against its last peg.
     this.createNoiseBurst(t, 0.08, 0.26, 2200);
-    this.playTone(150, 0.16, 0.0, 'sine', 0.26);
+    this.playTone(150, 0.16, 0.26, 'sine', 0.0);
 
-    const level = multiplier >= 100 ? 1 : multiplier >= 25 ? 0.9 : multiplier >= 5 ? 0.8 : 0.72;
+    /* ROUND 15: the level comes from spinCelebration, the one place that
+       decides how loudly a draw celebrates, so the wheel's burst and this
+       chord can never disagree about how rare the moment was. The ladder it
+       replaces was hand-written here and had already drifted from the wheel's
+       own bands (it stepped at 5x; the wheel steps at 10x). */
+    const level = spinCelebration(multiplier).soundLevel;
 
     const bus = ctx.createGain();
     bus.gain.setValueAtTime(0.0001, t);
@@ -1987,8 +2528,8 @@ class SoundService {
     const t = this.ctx!.currentTime;
 
     // Weight: low thud
-    this.playTone(70, 0.34, 0.0, 'sine', 0.4);
-    this.playTone(105, 0.22, 0.01, 'triangle', 0.22);
+    this.playTone(70, 0.34, 0.4, 'sine', 0.0);
+    this.playTone(105, 0.22, 0.22, 'triangle', 0.01);
     // Timber: broadband knock
     this.createNoiseBurst(t, 0.1, 0.24, 600);
     // Iron fittings rattling from the drop
@@ -2025,7 +2566,7 @@ class SoundService {
 
     // Latch pops first — you hear the lock give before the hinge moves.
     this.createNoiseBurst(t, 0.04, 0.26, 3600);
-    this.playTone(880, 0.07, 0.0, 'square', 0.12);
+    this.playTone(880, 0.07, 0.12, 'square', 0.0);
 
     // Hinge groan: detuned saw pair sliding up, band-passed so it reads as
     // wood-and-iron rather than as a synth sweep.
@@ -2052,7 +2593,7 @@ class SoundService {
 
     // Light escaping the seam — a shimmer that promises the payoff.
     [1975.53, 2637.02, 3520.0].forEach((f, i) => {
-      this.playTone(f, 0.5, 0.35 + i * 0.07, 'sine', 0.07);
+      this.playTone(f, 0.5, 0.07, 'sine', 0.35 + i * 0.07);
     });
 
     haptic.strong();
@@ -2085,12 +2626,12 @@ class SoundService {
     const coins = [2093.0, 2637.02, 3135.96, 3520.0, 4186.01];
     for (let i = 0; i < 14; i++) {
       const f = coins[i % coins.length] * (0.94 + Math.random() * 0.12);
-      this.playTone(f, 0.16, 0.12 + Math.random() * 0.6, 'triangle', 0.055);
+      this.playTone(f, 0.16, 0.055, 'triangle', 0.12 + Math.random() * 0.6);
     }
 
     // Triumphant major chord landing under the shower.
     [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
-      this.playTone(f, 0.9, 0.18 + i * 0.03, 'sine', 0.13);
+      this.playTone(f, 0.9, 0.13, 'sine', 0.18 + i * 0.03);
     });
 
     haptic.jackpot();

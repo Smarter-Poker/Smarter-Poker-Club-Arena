@@ -7,6 +7,13 @@
   max-width: 420px;
   margin: 0 auto;
   padding: 12px;
+  padding-bottom: max(70px, env(safe-area-inset-bottom));
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
   box-sizing: border-box;
   color: #e0e0e0;
   background: #0a0e18;
@@ -30,10 +37,10 @@
   color: #7aa7ff;
   text-decoration: none;
   font-size: 13px;
-}
-
-.sim-page__back:hover {
-  text-decoration: underline;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  touch-action: manipulation;
 }
 
 .sim-page__title {
@@ -76,8 +83,9 @@
   border: 1px solid #2a3a5a;
   color: #e0e0e0;
   padding: 8px;
-  font-size: 13px;
+  font-size: 16px; /* under 16px makes iOS zoom the page on focus */
   border-radius: 6px;
+  max-width: 100%;
 }
 
 .sim-page__step-controls {
@@ -102,11 +110,6 @@
   touch-action: manipulation;
 }
 
-.sim-page__btn:hover:not(:disabled) {
-  background: #283855;
-  border-color: #4a5f92;
-}
-
 .sim-page__btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -115,10 +118,6 @@
 .sim-page__btn--reset {
   background: #3a1e1e;
   border-color: #78403a;
-}
-
-.sim-page__btn--reset:hover:not(:disabled) {
-  background: #4a2828;
 }
 
 .sim-page__step-counter {
@@ -241,10 +240,6 @@
   cursor: pointer;
   margin-bottom: 2px;
   transition: background 0.1s ease;
-}
-
-.sim-page__log-item:hover {
-  background: #1a2235;
 }
 
 .sim-page__log-item--current {

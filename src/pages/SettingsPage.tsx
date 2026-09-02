@@ -5,38 +5,85 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useId, useRef, type RefObject } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { STORAGE_KEYS } from '../lib/storage';
 import { identityDNA } from '../core/IdentityDNA';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { notificationService } from '../services/NotificationService';
+/**
+ * Push, 2026-08-27. This page used to call
+ * `notificationService.requestPermission()`, which does nothing but await
+ * `Notification.requestPermission()` and hand back a boolean. It created no
+ * subscription, told the server nothing, and then toasted "Push notifications
+ * enabled!" and rendered a green Active badge. `pushEnabled` was read from
+ * `Notification.permission` alone, so the badge stayed Active forever while
+ * the account could not receive a single push. Every one of the 2,432 seat
+ * offers skipped for `no_subscription` in the week before this was fixed
+ * belonged to somebody who may well have pressed that button.
+ *
+ * It now drives the real VAPID flow, and its state comes from whether a
+ * subscription actually exists on this device.
+ */
+import {
+  disablePush,
+  enablePush,
+  hasLocalSubscription,
+  isIos,
+  isIosStandalonePwa,
+  isWebPushSupported,
+  notificationPermission,
+  sendTestPush,
+} from '../lib/pushClient';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import UserProfileEdit from '../components/social/UserProfileEdit';
 import { useSettingsStore } from '../stores/useSettingsStore';
 import { useTableSettings } from '../hooks/useTableSettings';
+import { soundService } from '../services/SoundService';
 import {
-  CARD_BACKS,
   DEFAULT_SETTINGS,
   fromTableSettings,
   toTableSettings,
   validateSettings,
   type UserSettings,
 } from '../lib/settingsBridge';
-import FAQPanel from '../components/support/FAQPanel';
-import TermsGate from '../components/auth/TermsGate';
+import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import styles from './SettingsPage.module.css';
 import ConfirmModal from '../components/common/ConfirmModal';
 import { useToast } from '../components/common/Toast';
 import { reportError } from '../utils/errorReporter';
+import { ThemeSettingsModal } from '../components/table/ThemeSettingsModal';
+import AccountSurfaceHeader from '../components/account/AccountSurfaceHeader';
 
 const settingsSectionAnimationStyle = (index: number) => ({
   opacity: 0,
   transform: 'translateY(8px)',
-  animation: `fadeInUp 0.5s ease-out ${index * 70}ms forwards`,
+  animation: `animationsFadeInUp 0.5s ease-out ${index * 70}ms forwards`,
 });
+
+type SettingsSectionId = 'audio' | 'display' | 'notifications' | 'account' | 'data';
+
+const resolveSettingsSection = (tab: string | null): SettingsSectionId | null => {
+  switch (tab?.toLowerCase()) {
+    case 'audio':
+      return 'audio';
+    case 'appearance':
+    case 'display':
+    case 'gameplay':
+    case 'table':
+    case 'language':
+      return 'display';
+    case 'notifications':
+      return 'notifications';
+    case 'security':
+    case 'account':
+      return 'account';
+    case 'data':
+      return 'data';
+    default:
+      return null;
+  }
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -49,12 +96,16 @@ const Toggle = ({
 }: {
   checked: boolean;
   onChange: (checked: boolean) => void;
-  label?: string;
+  label: string;
 }) => (
   <label className={styles.toggle}>
-    <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
+    <input
+      type="checkbox"
+      checked={checked}
+      onChange={(e) => onChange(e.target.checked)}
+      aria-label={label}
+    />
     <span className={styles.toggleSlider} />
-    {label && <span className={styles.toggleLabel}>{label}</span>}
   </label>
 );
 
@@ -64,12 +115,14 @@ const Slider = ({
   min = 0,
   max = 100,
   disabled = false,
+  label,
 }: {
   value: number;
   onChange: (value: number) => void;
   min?: number;
   max?: number;
   disabled?: boolean;
+  label: string;
 }) => (
   <div className={`${styles.sliderContainer} ${disabled ? styles.disabled : ''}`}>
     <input
@@ -80,6 +133,8 @@ const Slider = ({
       max={max}
       onChange={(e) => onChange(Number(e.target.value))}
       disabled={disabled}
+      aria-label={label}
+      aria-valuetext={`${value} Percent`}
     />
     <span className={styles.sliderValue}>{value}%</span>
   </div>
@@ -94,17 +149,38 @@ export default function SettingsPage() {
     document.title = 'Settings | Smarter Poker';
   }, []);
 
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeSettingsSection = resolveSettingsSection(searchParams.get('tab'));
   const toast = useToast();
   const { user: authUser } = useAuthUser();
   const { settings: tableSettings, updateSettings: updateTableSettings } = useTableSettings();
   const tableSettingsRef = useRef(tableSettings);
   tableSettingsRef.current = tableSettings;
 
-  const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
+  /**
+   * LAZY INITIALIZER (2026-08-28, first-paint flash sweep): this began at
+   * DEFAULT_SETTINGS and the real values arrived in a passive effect — the
+   * read is SYNCHRONOUS localStorage, so every visit to /settings painted
+   * every toggle, the theme selector and the card-back dropdown at their
+   * defaults for one frame and then snapped to the saved state. Same class
+   * as the table-theme first-paint fix. The mount effect below still runs
+   * (it re-merges and loads the email); it now confirms rather than swaps.
+   */
+  const [settings, setSettings] = useState<UserSettings>(() => {
+    let initial = DEFAULT_SETTINGS;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+      if (saved) initial = validateSettings(JSON.parse(saved));
+    } catch {
+      /* hostile storage: defaults */
+    }
+    return fromTableSettings(tableSettingsRef.current, initial);
+  });
   const [hasChanges, setHasChanges] = useState(false);
   const [saving, setSaving] = useState(false);
   const [userEmail, setUserEmail] = useState<string>('');
+  const [showThemeSettings, setShowThemeSettings] = useState(false);
+  const [isVip, setIsVip] = useState(false);
 
   // Account Action States
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -125,38 +201,56 @@ export default function SettingsPage() {
   // Push Notification state
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
+  const [pushTesting, setPushTesting] = useState(false);
 
   // Section refs for tab navigation
   const audioRef = useRef<HTMLElement>(null);
   const appearanceRef = useRef<HTMLElement>(null);
-  const gameplayRef = useRef<HTMLElement>(null);
   const notificationsRef = useRef<HTMLElement>(null);
   const securityRef = useRef<HTMLElement>(null);
   const dangerRef = useRef<HTMLElement>(null);
+  const emailDialogTitleId = useId();
+  const passwordDialogTitleId = useId();
+  const twoFactorDialogTitleId = useId();
+
+  useEffect(() => {
+    if (!showEmailModal && !showPasswordModal && !show2FAModal) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setShowEmailModal(false);
+      setShowPasswordModal(false);
+      setShow2FAModal(false);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [show2FAModal, showEmailModal, showPasswordModal]);
 
   // Tab-based scroll navigation
   useEffect(() => {
-    const tab = searchParams.get('tab');
-    if (!tab) return;
+    if (!activeSettingsSection) return;
 
-    const tabToRef: Record<string, React.RefObject<HTMLElement | null>> = {
+    const sectionToRef: Record<SettingsSectionId, React.RefObject<HTMLElement | null>> = {
       audio: audioRef,
-      appearance: appearanceRef,
       display: appearanceRef,
-      gameplay: gameplayRef,
       notifications: notificationsRef,
-      security: securityRef,
       account: securityRef,
-      language: appearanceRef, // Language settings would be in appearance section
+      data: dangerRef,
     };
 
-    const targetRef = tabToRef[tab.toLowerCase()];
+    const targetRef = sectionToRef[activeSettingsSection];
     if (targetRef?.current) {
       setTimeout(() => {
         targetRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 100);
     }
-  }, [searchParams]);
+  }, [activeSettingsSection]);
+
+  const jumpToSection = (tab: SettingsSectionId, target: RefObject<HTMLElement | null>) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', tab);
+    setSearchParams(next, { replace: true });
+    target.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   // Load settings from localStorage on mount
   useEffect(() => {
@@ -187,7 +281,30 @@ export default function SettingsPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [authUser?.id]);
+
+  useEffect(() => {
+    if (!authUser?.id) {
+      setIsVip(false);
+      return;
+    }
+    let mounted = true;
+    supabase
+      .from('profiles')
+      .select('is_vip, tier')
+      .eq('id', authUser.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) {
+          reportError(error, 'SettingsPage.Vip_status_load_failed');
+          return;
+        }
+        if (mounted) setIsVip(data?.is_vip === true || data?.tier === 'vip');
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [authUser?.id]);
 
   // Bus listeners: re-read settings from localStorage when profile/settings change externally
   useEffect(() => {
@@ -291,15 +408,39 @@ export default function SettingsPage() {
       const [profiles, wallets, achievements, handHistory] = await Promise.all([
         supabase
           .from('profiles')
+          /**
+           * `streak_days` REMOVED FROM THIS EXPORT (2026-08-29).
+           *
+           * It is a dead column: 0 non-zero values across all 1,023 profiles,
+           * and nothing in the repo has ever written it. `login_streak` is the
+           * live one — `AchievementTriggerService.onLogin` maintains it against
+           * `last_login_date`. This export fetched `streak_days` and then never
+           * read it, which is harmless in itself but is exactly how a dead
+           * column stays alive: the next person greps, finds a reader, and
+           * assumes it means something.
+           *
+           * See the migration of the same date, which puts that fact in a
+           * COMMENT on the column where a schema reader will find it.
+           */
           .select(
-            'id, display_name, username, avatar_url:arena_avatar_url, bio, role, created_at, streak_days, last_login'
+            'id, display_name, username, avatar_url:arena_avatar_url, bio, role, created_at, last_login'
           )
           .eq('id', user.id)
           .maybeSingle(),
+        // A DATA EXPORT MUST NOT EXPORT A FROZEN NUMBER (fixed 2026-08-27).
+        // This exported rows from the retired global wallet table, frozen
+        // since 2026-08-21 - handing the player a formatted, confident,
+        // six-day-stale balance as their own record. The live club-scoped
+        // pool is what they actually hold.
         supabase
-          .from('wallets')
-          .select('id, user_id, wallet_type, balance, created_at')
-          .eq('user_id', user.id),
+          .from('club_members')
+          .select('club_id, user_id, chip_balance, promo_balance, locked_chips')
+          .eq('user_id', user.id)
+          // Ordered so a re-export of unchanged data is byte-identical, and
+          // so the membership-cap rule in tests/unit/clubMemberStatus.test.ts
+          // reads this chain unambiguously (it scans to the next semicolon,
+          // which here runs on into the sibling query's own .limit()).
+          .order('club_id', { ascending: true }),
         supabase
           .from('training_user_achievements')
           .select('id, user_id, achievement_id, unlocked_at, progress')
@@ -487,29 +628,98 @@ export default function SettingsPage() {
     check2FAStatus();
   }, []);
 
-  // Check push notification status
+  // Does THIS device hold a push subscription? Not "did the OS dialog get
+  // accepted at some point", which is the question the old code asked.
   useEffect(() => {
-    if ('Notification' in window) {
-      setPushEnabled(Notification.permission === 'granted');
-    }
+    let cancelled = false;
+    void (async () => {
+      const subscribed = await hasLocalSubscription();
+      if (!cancelled) setPushEnabled(subscribed);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
+  /**
+   * DELIBERATE: enablePush() is awaited directly out of the click handler with
+   * nothing before it. iOS only honours Notification.requestPermission() while
+   * the originating tap gesture is alive, so any await placed ahead of it can
+   * eat the gesture window and the OS prompt then never appears at all.
+   */
   const handleEnablePush = async () => {
     setPushLoading(true);
     try {
-      const granted = await notificationService.requestPermission();
-      setPushEnabled(granted);
-      if (granted) {
-        // Push notifications enabled successfully
-        toast.success('Push notifications enabled!');
+      const result = await enablePush();
+      setPushEnabled(result.ok);
+      if (result.ok) {
+        toast.success('Push notifications are on for this device');
+      } else if (isIos() && !isIosStandalonePwa()) {
+        // The one instruction that unblocks an iPhone. Web push does not exist
+        // in mobile Safari until the site is installed to the Home Screen.
+        toast.error('Add Smarter Poker to your Home Screen first, then open it from there');
       } else {
-        toast.error('Push notifications denied. Please allow in browser settings.');
+        toast.error(result.error || 'Could not enable push notifications');
       }
     } catch (err) {
       reportError(err, 'SettingsPage.Failed_to_enable_push');
-      toast.error('Failed to enable push notifications.');
+      toast.error('Failed to enable push notifications');
     }
     setPushLoading(false);
+  };
+
+  /**
+   * Off means off. This unsubscribes locally, deactivates the row server-side,
+   * and records the opt-out marker that stops PushSubscriptionSync quietly
+   * re-subscribing the device on the next boot. Without that marker the
+   * repair loop would undo this within the hour, because the OS permission
+   * stays granted after an unsubscribe.
+   */
+  const handleDisablePush = async () => {
+    setPushLoading(true);
+    try {
+      const result = await disablePush();
+      if (result.ok) {
+        setPushEnabled(false);
+        toast.success('Push notifications are off for this device');
+      } else {
+        toast.error(result.error || 'Could not turn off push notifications');
+      }
+    } catch (err) {
+      reportError(err, 'SettingsPage.Failed_to_disable_push');
+      toast.error('Failed to turn off push notifications');
+    }
+    setPushLoading(false);
+  };
+
+  /**
+   * Prove the subscription actually delivers.
+   *
+   * A green "On for this device" row only means a subscription was persisted.
+   * It cannot tell anyone whether a notification will reach the phone, and the
+   * gap between those two is exactly where this stack has failed before. The
+   * toast reports the DEVICE COUNT rather than just success, because "sent to
+   * 0 devices" is the informative answer: it means the row exists and the push
+   * service rejected it, which is a different fault from never having enrolled.
+   */
+  const handleTestPush = async () => {
+    setPushTesting(true);
+    try {
+      const result = await sendTestPush();
+      if (result.ok) {
+        toast.success(
+          result.sent === 1
+            ? 'Test sent to 1 device. It should arrive in a moment'
+            : `Test sent to ${result.sent} devices. It should arrive in a moment`
+        );
+      } else {
+        toast.error(result.error || 'The test push was not delivered');
+      }
+    } catch (err) {
+      reportError(err, 'SettingsPage.Failed_to_send_test_push');
+      toast.error('Failed to send the test notification');
+    }
+    setPushTesting(false);
   };
 
   const updateSetting = <K extends keyof UserSettings>(key: K, value: UserSettings[K]) => {
@@ -520,6 +730,7 @@ export default function SettingsPage() {
   const saveSettings = async () => {
     setSaving(true);
     try {
+      const settingsToPersist = settings;
       // Save to localStorage
       localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
 
@@ -527,47 +738,121 @@ export default function SettingsPage() {
       // club-arena-table-settings and emits SETTINGS_CHANGED per key, which the
       // useTableSettings instance inside an open TablePage subscribes to — so a
       // table already on screen picks these up without a reload.
-      updateTableSettings(toTableSettings(settings));
+      /* Pass the CURRENT table settings so a speed this page cannot name (2, in
+         a scale of 0.5|1|1.5|2 rendered as three labels) survives a Save that
+         never touched the animation control. */
+      updateTableSettings(toTableSettings(settings, tableSettingsRef.current));
 
-      // Sync theme to Zustand store so Shell.tsx applies it immediately
-      const { setTheme, toggleSound, toggleFourColorDeck, toggleNotifications } =
-        useSettingsStore.getState();
+      /* Dan 2026-08-28: the Sound Effects switch on this page never reached
+         the sound engine. It persisted soundEnabled into
+         club-arena-table-settings, but the gate that actually silences
+         playback (utils/soundGate, consulted by SoundService.shouldPlay)
+         reads 'club_arena_sounds' / 'ca_sound_enabled' — neither of which
+         this page wrote. So muting here said "Settings saved!", the felt
+         kept playing, and the in-table switch still read ON: two switches
+         permanently disagreeing. setEnabled() updates the live engine AND
+         persists BOTH gate keys (the HamburgerMenu path); volume is applied
+         live for the same reason rather than waiting for a table mount. */
+      /* Volume is NOT applied here. `updateTableSettings` above commits it to
+         the store, which applies it in `applyGateChanges` — this line applied
+         the same number a second time. `setEnabled` stays because the gate keys
+         are a different owner from the store and this page has to write both. */
+
+      /* Dan 2026-08-28: the Sound Effects switch on this page never reached
+         the sound engine. It persisted soundEnabled into
+         club-arena-table-settings, but the gate that actually silences
+         playback (utils/soundGate, consulted by SoundService.shouldPlay)
+         reads 'club_arena_sounds' / 'ca_sound_enabled' — neither of which
+         this page wrote. So muting here said "Settings saved!", the felt
+         kept playing, and the in-table switch still read ON: two switches
+         permanently disagreeing. setEnabled() updates the live engine AND
+         persists BOTH gate keys (the HamburgerMenu path); volume is applied
+         live for the same reason rather than waiting for a table mount. */
+
+      /* Sync theme to Zustand store so Shell.tsx applies it immediately.
+         2026-08-26: "Auto (System)" was offered in the dropdown, accepted by
+         validation, saved, and then DROPPED here by an
+         `if (dark || light)` guard — the page said "Settings saved!" and the
+         app kept whatever theme it already had. Auto now resolves against the
+         OS preference at save time, which is what the label promises. */
+      const { setTheme } = useSettingsStore.getState();
       if (settings.theme === 'dark' || settings.theme === 'light') {
-        setTheme(settings.theme);
+        setTheme(settings.theme, authUser?.id);
+      } else if (settings.theme === 'auto') {
+        const prefersLight =
+          typeof window !== 'undefined' &&
+          typeof window.matchMedia === 'function' &&
+          window.matchMedia('(prefers-color-scheme: light)').matches;
+        setTheme(prefersLight ? 'light' : 'dark', authUser?.id);
       }
 
       // Sync to Supabase profiles table
       const {
         data: { user },
       } = await getAuthUser();
+
       if (user) {
         const { error: profileErr } = await supabase
           .from('profiles')
-          .update({ settings: settings })
+          .update({ settings: settingsToPersist })
           .eq('id', user.id);
         if (profileErr) throw profileErr;
 
-        // Sync notification preferences to dedicated table (used by push service)
+        /* PHANTOM COLUMN FIX 2026-08-27: this upsert named FIVE columns that
+           do not exist on user_notification_preferences (table_alerts,
+           achievement_alerts, friend_alerts, club_announcements,
+           settlement_alerts). PostgREST returned PGRST204, the throw below
+           fired, and setHasChanges(false) plus the success toast were never
+           reached — so "Save Changes" failed 100% of the time and the button
+           never cleared, for every user, on every save. Mapped to the real
+           columns; the two settings with no column (achievements, settlement
+           alerts) still live in profiles.settings, written just above.
+
+           It is also no longer fatal: a push-preferences hiccup must not
+           fail the whole settings save. */
+        /* PHANTOM SETTING FIX 2026-08-28: this upsert also wrote
+           `live_notifications: settings.handWonNotifications ?? true`, and
+           every part of that line was wrong.
+
+           `handWonNotifications` has NO CONTROL anywhere in this page, or
+           anywhere in Club Arena. It is declared in settingsBridge.ts and
+           defaults to FALSE, and `??` only falls through on null or undefined
+           -- false is neither. So the expression evaluated to `false` on every
+           save, for every user, unconditionally.
+
+           `live_notifications` is not a Club Arena column in any meaningful
+           sense: World Hub's gate maps `live`, `live_invite` and `live_gift`
+           onto it (src/lib/push/push-prefs.js LEGACY_PREF_COLUMN), i.e. LIVE
+           STREAMING. It has nothing to do with winning a hand. So pressing
+           Save Changes here silently switched off a completely unrelated hub
+           feature, permanently, with nothing in this UI that said so, and no
+           way to switch it back on from Club Arena.
+
+           A settings page must only write what it actually offers a control
+           for. The three below each have a visible toggle in this section.
+           `live_notifications` is owned by the hub's own notification
+           settings, which is where a player can see and change it.
+
+           `handWonNotifications` itself still round-trips through
+           profiles.settings with the rest of the bridge; nothing reads it yet,
+           so it is inert rather than harmful. */
         const { error: notifErr } = await supabase.from('user_notification_preferences').upsert(
           {
             user_id: user.id,
-            table_alerts: settings.handWonNotifications ?? true,
             tournament_reminders: settings.tournamentReminders ?? true,
-            achievement_alerts: settings.achievementNotifications ?? true,
-            friend_alerts: settings.friendAlerts ?? true,
-            club_announcements: settings.clubActivity ?? true,
-            settlement_alerts: settings.settlementAlerts ?? true,
+            friend_activity: settings.friendAlerts ?? true,
+            club_updates: settings.clubActivity ?? true,
           },
           { onConflict: 'user_id' }
         );
-        if (notifErr) throw notifErr;
+        if (notifErr) reportError(notifErr, 'SettingsPage.notification_prefs_upsert');
       }
 
       setHasChanges(false);
 
       // Notify other components that settings changed
       masterBus.emit('SETTINGS_UPDATED', {
-        settings: settings as unknown as Record<string, unknown>,
+        settings: settingsToPersist as unknown as Record<string, unknown>,
       });
       toast.success('Settings saved!');
     } catch (error) {
@@ -589,16 +874,60 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className={styles.page}>
-      <div className={styles.headerActions}>
-        {hasChanges && (
-          <button className={styles.saveButton} onClick={saveSettings} disabled={saving}>
-            {saving ? 'Saving...' : 'Save Changes'}
+    <StandardContentLayout className={styles.page}>
+      <AccountSurfaceHeader
+        eyebrow="Account Control // Player Vault"
+        title="Control Room"
+        description="One Authoritative Surface For Table Behavior, Alerts, Device Access, Identity Security, And Account Data. Changes Remain Wired To The Live Table And Player Record."
+        status={hasChanges ? 'Changes Pending' : 'Systems Synced'}
+      >
+        <span className={styles.heroMetric}>
+          <small>Identity</small>
+          {userEmail || 'Authenticated'}
+        </span>
+        <span className={styles.heroMetric}>
+          <small>2FA</small>
+          {twoFactorEnabled ? 'Protected' : 'Available'}
+        </span>
+        <span className={styles.heroMetric}>
+          <small>Push</small>
+          {pushEnabled ? 'Connected' : 'Off'}
+        </span>
+      </AccountSurfaceHeader>
+
+      <nav className={styles.controlIndex} aria-label="Settings Sections">
+        {[
+          { id: 'audio' as const, label: 'Audio', ref: audioRef },
+          { id: 'display' as const, label: 'Table & Display', ref: appearanceRef },
+          { id: 'notifications' as const, label: 'Alerts', ref: notificationsRef },
+          { id: 'account' as const, label: 'Security', ref: securityRef },
+          { id: 'data' as const, label: 'Account Data', ref: dangerRef },
+        ].map((item) => (
+          <button
+            type="button"
+            key={item.id}
+            className={activeSettingsSection === item.id ? styles.controlIndexActive : ''}
+            onClick={() => jumpToSection(item.id, item.ref)}
+          >
+            {item.label}
           </button>
-        )}
-        <button className={styles.resetButton} onClick={resetSettings}>
-          Reset
-        </button>
+        ))}
+      </nav>
+
+      <div className={styles.headerActions} aria-live="polite">
+        <span className={styles.changeState}>
+          {hasChanges ? 'Unsaved Controls Are Staged Locally.' : 'All Visible Controls Are Saved.'}
+        </span>
+        <div>
+          {hasChanges && (
+            <button className={styles.saveButton} onClick={saveSettings} disabled={saving}>
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          )}
+          <button className={styles.resetButton} onClick={resetSettings}>
+            Reset
+          </button>
+        </div>
       </div>
 
       <div className={styles.content}>
@@ -614,6 +943,7 @@ export default function SettingsPage() {
             <Toggle
               checked={settings.soundEnabled}
               onChange={(v) => updateSetting('soundEnabled', v)}
+              label="Sound Effects"
             />
           </div>
 
@@ -625,6 +955,7 @@ export default function SettingsPage() {
               value={settings.soundVolume}
               onChange={(v) => updateSetting('soundVolume', v)}
               disabled={!settings.soundEnabled}
+              label="Sound Volume"
             />
           </div>
         </section>
@@ -635,7 +966,7 @@ export default function SettingsPage() {
           className={styles.section}
           style={settingsSectionAnimationStyle(1)}
         >
-          <h2>Display</h2>
+          <h2>Table &amp; Display</h2>
 
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
@@ -644,6 +975,7 @@ export default function SettingsPage() {
             <select
               className={styles.select}
               value={settings.theme}
+              aria-label="Theme"
               onChange={(e) => updateSetting('theme', e.target.value as UserSettings['theme'])}
             >
               <option value="dark">Dark</option>
@@ -652,21 +984,21 @@ export default function SettingsPage() {
             </select>
           </div>
 
-          <div className={styles.settingRow}>
+          <div className={`${styles.settingRow} ${styles.studioRow}`}>
             <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Card Back Style</span>
+              <span className={styles.settingEyebrow}>Appearance Suite</span>
+              <span className={styles.settingLabel}>Table Studio</span>
+              <span className={styles.settingDesc}>
+                Tables, Backgrounds, Buttons And Card Backs In One Live Studio
+              </span>
             </div>
-            <select
-              className={styles.select}
-              value={settings.cardBack}
-              onChange={(e) => updateSetting('cardBack', e.target.value)}
+            <button
+              type="button"
+              className={styles.studioButton}
+              onClick={() => setShowThemeSettings(true)}
             >
-              {CARD_BACKS.map((back) => (
-                <option key={back.id} value={back.id}>
-                  {back.name}
-                </option>
-              ))}
-            </select>
+              Open Studio
+            </button>
           </div>
 
           <div className={styles.settingRow}>
@@ -679,6 +1011,24 @@ export default function SettingsPage() {
             <Toggle
               checked={settings.fourColorDeck}
               onChange={(v) => updateSetting('fourColorDeck', v)}
+              label="Four-Color Deck"
+            />
+          </div>
+
+          {/* Dan 2026-08-28: "add a toggle... in the Club Arena settings to
+              turn the ticker on or off." Same stored setting the in-table
+              panel writes, so either surface flips the live bar. */}
+          <div className={styles.settingRow}>
+            <div className={styles.settingInfo}>
+              <span className={styles.settingLabel}>Announcement Ticker</span>
+              <span className={styles.settingDesc}>
+                Show The Scrolling Tournament And Announcement Ticker
+              </span>
+            </div>
+            <Toggle
+              checked={settings.showTicker}
+              onChange={(v) => updateSetting('showTicker', v)}
+              label="Announcement Ticker"
             />
           </div>
 
@@ -689,6 +1039,7 @@ export default function SettingsPage() {
             <select
               className={styles.select}
               value={settings.animationSpeed}
+              aria-label="Animation Speed"
               onChange={(e) =>
                 updateSetting('animationSpeed', e.target.value as UserSettings['animationSpeed'])
               }
@@ -707,39 +1058,7 @@ export default function SettingsPage() {
             <Toggle
               checked={settings.showPotOdds}
               onChange={(v) => updateSetting('showPotOdds', v)}
-            />
-          </div>
-        </section>
-
-        {/* Gameplay Settings */}
-        <section
-          ref={gameplayRef}
-          className={styles.section}
-          style={settingsSectionAnimationStyle(2)}
-        >
-          <h2>Gameplay</h2>
-
-          <div className={styles.settingRow}>
-            <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Confirm All-In</span>
-              <span className={styles.settingDesc}>Require Confirmation Before Going All-In</span>
-            </div>
-            <Toggle
-              checked={settings.confirmAllIn}
-              onChange={(v) => updateSetting('confirmAllIn', v)}
-            />
-          </div>
-
-          <div className={styles.settingRow}>
-            <div className={styles.settingInfo}>
-              <span className={styles.settingLabel}>Auto-Muck My Winning Hand</span>
-              <span className={styles.settingDesc}>
-                Skip The Show-Or-Muck Prompt When You Win Without A Showdown
-              </span>
-            </div>
-            <Toggle
-              checked={settings.autoMuckWinners}
-              onChange={(v) => updateSetting('autoMuckWinners', v)}
+              label="Show Pot Odds"
             />
           </div>
         </section>
@@ -760,6 +1079,7 @@ export default function SettingsPage() {
             <Toggle
               checked={settings.tournamentReminders}
               onChange={(v) => updateSetting('tournamentReminders', v)}
+              label="Tournament Reminders"
             />
           </div>
 
@@ -771,6 +1091,7 @@ export default function SettingsPage() {
             <Toggle
               checked={settings.clubActivity}
               onChange={(v) => updateSetting('clubActivity', v)}
+              label="Club Activity"
             />
           </div>
 
@@ -781,6 +1102,7 @@ export default function SettingsPage() {
             <Toggle
               checked={settings.achievementNotifications}
               onChange={(v) => updateSetting('achievementNotifications', v)}
+              label="Achievement Unlocked"
             />
           </div>
 
@@ -792,6 +1114,7 @@ export default function SettingsPage() {
             <Toggle
               checked={settings.friendAlerts}
               onChange={(v) => updateSetting('friendAlerts', v)}
+              label="Friend Alerts"
             />
           </div>
 
@@ -803,28 +1126,72 @@ export default function SettingsPage() {
             <Toggle
               checked={settings.settlementAlerts}
               onChange={(v) => updateSetting('settlementAlerts', v)}
+              label="Settlement Alerts"
             />
           </div>
 
+          {/* Push. The description states what is true of THIS device, and the
+            button is reachable in every state: an iPhone that has not been
+            installed to the Home Screen gets the instruction rather than a
+            dead control, a blocked browser is told where to unblock, and a
+            subscribed device can turn it back off. The previous version had
+            no off switch at all, so a player who enabled push had no way to
+            change their mind from inside the app. */}
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
               <span className={styles.settingLabel}>Push Notifications</span>
               <span className={styles.settingDesc}>
-                {pushEnabled ? 'Enabled' : 'Allow browser notifications'}
+                {pushEnabled
+                  ? 'On For This Device'
+                  : !isWebPushSupported() && isIos() && !isIosStandalonePwa()
+                    ? 'Add To Your Home Screen First, Then Open It From There'
+                    : !isWebPushSupported()
+                      ? 'Not Supported By This Browser'
+                      : notificationPermission() === 'denied'
+                        ? 'Blocked. Allow Notifications In Your Browser Settings'
+                        : 'Get Alerted The Moment Your Seat Opens'}
               </span>
             </div>
             {pushEnabled ? (
-              <span className={styles.statusBadge}>Active</span>
+              <button
+                className={styles.actionButton}
+                onClick={handleDisablePush}
+                disabled={pushLoading || pushTesting}
+              >
+                {pushLoading ? 'Turning Off...' : 'Turn Off'}
+              </button>
             ) : (
               <button
                 className={styles.actionButton}
                 onClick={handleEnablePush}
-                disabled={pushLoading}
+                disabled={pushLoading || !isWebPushSupported()}
               >
                 {pushLoading ? 'Enabling...' : 'Enable'}
               </button>
             )}
           </div>
+
+          {/* Only shown once this device holds a subscription, because that is
+            the only state in which the answer means anything. Offered to a
+            device that never enrolled, a test that fails would say nothing the
+            row above has not already said. */}
+          {pushEnabled && (
+            <div className={styles.settingRow}>
+              <div className={styles.settingInfo}>
+                <span className={styles.settingLabel}>Send A Test Notification</span>
+                <span className={styles.settingDesc}>
+                  Check That Alerts Actually Reach This Device
+                </span>
+              </div>
+              <button
+                className={styles.actionButton}
+                onClick={handleTestPush}
+                disabled={pushTesting || pushLoading}
+              >
+                {pushTesting ? 'Sending...' : 'Send Test'}
+              </button>
+            </div>
+          )}
         </section>
 
         {/* Account */}
@@ -833,7 +1200,7 @@ export default function SettingsPage() {
           className={styles.section}
           style={settingsSectionAnimationStyle(6)}
         >
-          <h2>Account</h2>
+          <h2>Identity Security</h2>
 
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
@@ -859,8 +1226,8 @@ export default function SettingsPage() {
               <span className={styles.settingLabel}>Two-Factor Authentication</span>
               <span className={styles.settingDesc}>
                 {twoFactorEnabled
-                  ? 'Enabled - Your account is protected'
-                  : 'Add extra security to your account'}
+                  ? 'Enabled - Your Account Is Protected'
+                  : 'Add Extra Security To Your Account'}
               </span>
             </div>
             {twoFactorEnabled ? (
@@ -877,7 +1244,7 @@ export default function SettingsPage() {
                 onClick={handleEnable2FA}
                 disabled={actionLoading}
               >
-                {actionLoading ? 'Setting up...' : 'Enable'}
+                {actionLoading ? 'Setting Up...' : 'Enable'}
               </button>
             )}
           </div>
@@ -885,7 +1252,7 @@ export default function SettingsPage() {
 
         {/* Danger Zone */}
         <section ref={dangerRef} className={`${styles.section} ${styles.dangerZone}`}>
-          <h2>Danger Zone</h2>
+          <h2>Account Data &amp; Closure</h2>
 
           <div className={styles.settingRow}>
             <div className={styles.settingInfo}>
@@ -925,15 +1292,26 @@ export default function SettingsPage() {
           className={styles.modalOverlay}
           onClick={(e) => e.target === e.currentTarget && setShowEmailModal(false)}
         >
-          <div className={styles.modal}>
-            <h3>Change Email</h3>
+          <div
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={emailDialogTitleId}
+          >
+            <h3 id={emailDialogTitleId}>Change Email</h3>
             <p>A Confirmation Email Will Be Sent To Your New Address.</p>
+            <label className={styles.fieldLabel} htmlFor="settings-new-email">
+              New Email Address
+            </label>
             <input
+              id="settings-new-email"
               type="email"
-              placeholder="New email address"
+              placeholder="New Email Address"
               value={newEmail}
               onChange={(e) => setNewEmail(e.target.value)}
               className={styles.input}
+              autoComplete="email"
+              autoFocus
             />
             <div className={styles.modalActions}>
               <button className={styles.cancelBtn} onClick={() => setShowEmailModal(false)}>
@@ -957,23 +1335,38 @@ export default function SettingsPage() {
           className={styles.modalOverlay}
           onClick={(e) => e.target === e.currentTarget && setShowPasswordModal(false)}
         >
-          <div className={styles.modal}>
-            <h3>Change Password</h3>
+          <div
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={passwordDialogTitleId}
+          >
+            <h3 id={passwordDialogTitleId}>Change Password</h3>
             <p>Password Must Be At Least 8 Characters.</p>
+            <label className={styles.fieldLabel} htmlFor="settings-new-password">
+              New Password
+            </label>
             <input
+              id="settings-new-password"
               type="password"
-              placeholder="New password"
+              placeholder="New Password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               className={styles.input}
+              autoComplete="new-password"
+              autoFocus
             />
+            <label className={styles.fieldLabel} htmlFor="settings-confirm-password">
+              Confirm New Password
+            </label>
             <input
+              id="settings-confirm-password"
               type="password"
-              placeholder="Confirm new password"
+              placeholder="Confirm New Password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               className={styles.input}
-              style={{ marginTop: '0.5rem' }}
+              autoComplete="new-password"
             />
             {newPassword && confirmPassword && newPassword !== confirmPassword && (
               <p style={{ color: '#ef4444', fontSize: '0.85rem' }}>Passwords Don't Match</p>
@@ -1005,8 +1398,13 @@ export default function SettingsPage() {
           className={styles.modalOverlay}
           onClick={(e) => e.target === e.currentTarget && setShow2FAModal(false)}
         >
-          <div className={styles.modal}>
-            <h3>Set Up Two-Factor Authentication</h3>
+          <div
+            className={styles.modal}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={twoFactorDialogTitleId}
+          >
+            <h3 id={twoFactorDialogTitleId}>Set Up Two-Factor Authentication</h3>
             <p>Scan This QR Code With Your Authenticator App (Google Authenticator, Authy, Etc.)</p>
 
             {totpQRCode && (
@@ -1029,13 +1427,17 @@ export default function SettingsPage() {
             </p>
 
             <input
+              aria-label="Six-Digit Authenticator Code"
               type="text"
-              placeholder="Enter 6-digit code"
+              placeholder="Enter 6-Digit Code"
               value={verificationCode}
               onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
               className={styles.input}
               style={{ textAlign: 'center', fontSize: '1.5rem', letterSpacing: '0.5rem' }}
               maxLength={6}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              autoFocus
             />
 
             <div className={styles.modalActions}>
@@ -1055,6 +1457,13 @@ export default function SettingsPage() {
       )}
 
       {/* Confirm Modal */}
+      <ThemeSettingsModal
+        isOpen={showThemeSettings}
+        onClose={() => setShowThemeSettings(false)}
+        userId={authUser?.id || ''}
+        isVip={isVip}
+      />
+
       <ConfirmModal
         isOpen={!!confirmAction}
         title={confirmAction?.title || 'Confirm'}
@@ -1065,6 +1474,6 @@ export default function SettingsPage() {
         onCancel={() => setConfirmAction(null)}
         loading={actionLoading}
       />
-    </div>
+    </StandardContentLayout>
   );
 }

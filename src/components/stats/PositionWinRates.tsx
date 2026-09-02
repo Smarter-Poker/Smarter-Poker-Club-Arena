@@ -291,8 +291,19 @@ const PositionWinRates: React.FC<PositionWinRatesProps> = ({ userId, initialPosi
                     transform: isVisible ? 'scale(1)' : 'scale(0.8)',
                     transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
                   }}
+                  /* Tap and keyboard reach the readout too (2026-08-29).
+                     An SVG <circle> with only mouse handlers hands its numbers
+                     to nobody on a phone, which is where this product is
+                     mostly read. tabIndex on an SVG element is honoured by
+                     every browser this app supports. */
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`${pos.position}, ${pos.winRate.toFixed(1)} BB Per 100`}
                   onMouseEnter={() => setHoveredPosition(i)}
                   onMouseLeave={() => setHoveredPosition(null)}
+                  onFocus={() => setHoveredPosition(i)}
+                  onBlur={() => setHoveredPosition(null)}
+                  onClick={() => setHoveredPosition((cur) => (cur === i ? null : i))}
                 />
 
                 {/* Position label */}

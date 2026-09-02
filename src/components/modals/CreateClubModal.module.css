@@ -1,627 +1,654 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  CreateClubModal Styles — High-Fidelity Sci-Fi Frame
- * ═══════════════════════════════════════════════════════════════════════════════
- * Uses the modal frame image as background with positioned transparent zones
- * for interactive elements.
- */
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   OVERLAY
-   ───────────────────────────────────────────────────────────────────────────── */
 .overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(12px) saturate(1.2);
-  -webkit-backdrop-filter: blur(12px) saturate(1.2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  inset: 0;
   z-index: 9999;
-  padding: 20px;
+  display: flex;
+  overflow: hidden;
+  background: rgba(0, 2, 5, 0.94);
+  backdrop-filter: blur(14px) saturate(0.8);
+  overscroll-behavior: contain;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   MODAL CONTAINER — Uses frame image as background
-   ───────────────────────────────────────────────────────────────────────────── */
 .modalContainer {
   position: relative;
-  width: 95%;
-  max-width: 600px;
-  aspect-ratio: 1024 / 700;
-  /* Match frame image aspect ratio approx */
-}
-
-.frameImage {
-  position: absolute;
-  top: 0;
-  left: 0;
+  display: grid;
+  grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1.28fr);
   width: 100%;
-  height: 100%;
-  object-fit: contain;
-  pointer-events: none;
-  user-select: none;
+  max-width: none;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #05080c;
+  box-shadow:
+    inset 0 0 0 1px #020304,
+    inset 0 0 0 2px rgba(255, 255, 255, 0.055);
+  animation: createClubEnter 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   CLOSE BUTTON — Positioned over the X in top right
-   ───────────────────────────────────────────────────────────────────────────── */
+.modalContainer::before {
+  content: '';
+  position: absolute;
+  z-index: 4;
+  inset: 0 18% auto;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #00a9ff, transparent);
+  box-shadow: 0 0 11px #008fda;
+}
+
+.artPanel {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-right: 1px solid rgba(174, 200, 217, 0.22);
+  background:
+    linear-gradient(rgba(2, 4, 6, 0.25), rgba(2, 4, 6, 0.9)),
+    radial-gradient(circle at 50% 42%, rgba(0, 153, 234, 0.18), transparent 48%), #020406;
+}
+
+.artPanel::after {
+  content: '';
+  position: absolute;
+  inset: 8%;
+  border: 1px solid rgba(127, 154, 171, 0.16);
+  pointer-events: none;
+}
+
+.artPanel img {
+  width: min(96%, 580px);
+  height: auto;
+  filter: drop-shadow(0 18px 24px #000) drop-shadow(0 0 20px rgba(0, 157, 236, 0.18));
+}
+
+.artPanel span {
+  position: absolute;
+  bottom: 14%;
+  z-index: 2;
+  color: #78909f;
+  font: 600 9px/1 var(--font-mono, monospace);
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+}
+
+.contentPanel {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.025), transparent 40%), #0b121d;
+}
+
+.scrollBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: clamp(46px, 7vh, 78px) clamp(32px, 6vw, 88px) 32px;
+  scrollbar-color: #1b3b4d #05080c;
+}
+
+.pageFooter {
+  flex: 0 0 auto;
+  padding: 14px clamp(32px, 6vw, 88px) max(14px, env(safe-area-inset-bottom));
+  border-top: 1px solid rgba(174, 200, 217, 0.22);
+  background: linear-gradient(180deg, rgba(5, 8, 12, 0.97), #020406);
+  box-shadow: 0 -14px 28px rgba(0, 0, 0, 0.32);
+}
+
 .closeButton {
   position: absolute;
-  top: 2%;
-  right: 2%;
-  width: 10%;
-  height: 10%;
-  background: transparent;
-  border: none;
-  cursor: pointer;
+  top: 15px;
+  right: 15px;
   z-index: 10;
-}
-
-.closeButton:hover {
-  opacity: 0.8;
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   CLUB NAME INPUT — Positioned over the input field area
-   ───────────────────────────────────────────────────────────────────────────── */
-.clubNameInput {
-  position: absolute;
-  top: 18%;
-  left: 12%;
-  width: 76%;
-  height: 10%;
-  background: transparent;
-  border: none;
-  outline: none;
-  font-family: 'Rajdhani', 'Inter', sans-serif;
-  font-size: clamp(12px, 2.5vw, 18px);
-  font-weight: 500;
-  color: #ffffff;
-  letter-spacing: 1px;
-  padding: 0 10px;
-  box-sizing: border-box;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
-}
-
-.clubNameInput::placeholder {
-  color: rgba(100, 180, 255, 0.4);
-}
-
-.clubNameInput:focus {
-  box-shadow: 0 0 12px rgba(100, 180, 255, 0.3);
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   LOGO BUTTONS — Positioned over the two logo boxes
-   ───────────────────────────────────────────────────────────────────────────── */
-.uploadLogoBtn {
-  position: absolute;
-  top: 33%;
-  left: 10%;
-  width: 38%;
-  height: 28%;
-  background: transparent;
-  border: none;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(164, 190, 207, 0.38);
+  border-radius: 4px;
+  background: #070b0f;
   cursor: pointer;
-  z-index: 10;
+}
+
+.closeButton::before,
+.closeButton::after {
+  content: '';
+  position: absolute;
+  top: 18px;
+  left: 10px;
+  width: 17px;
+  height: 1px;
+  background: #a9bdc9;
+}
+
+.closeButton::before {
+  transform: rotate(45deg);
+}
+.closeButton::after {
+  transform: rotate(-45deg);
+}
+.closeButton:focus-visible,
+.metaRetryButton:focus-visible,
+.uploadLogoBtn:focus-visible,
+.crestOption:focus-visible,
+.createButton:focus-visible {
+  outline: 2px solid #55c8ff;
+  outline-offset: 3px;
+}
+
+.eyebrow,
+.fieldLabel {
+  color: #6cbfe8;
+  font: 600 10px/1 var(--font-mono, monospace);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.title {
+  margin: 12px 0 8px;
+  color: #eef7fc;
+  font:
+    400 clamp(36px, 5vw, 54px)/0.95 'Rajdhani',
+    'Arial Narrow',
+    sans-serif;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.subtitle {
+  margin: 0 0 12px;
+  color: #8a9aa6;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.creationMeta {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-bottom: 18px;
+  color: #718692;
+  font: 600 9px/1.2 var(--font-mono, monospace);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.uploadLogoBtn:hover {
-  background: rgba(0, 100, 180, 0.1);
-  transform: translateY(-2px);
+.creationMeta span:last-child:not(:first-child) {
+  color: #d5a84c;
+}
+.metaRetryButton {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #e5b651;
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+.fieldLabel {
+  display: block;
+  margin: 0 0 8px;
+  color: #798c99;
+}
+.fieldLabel span {
+  color: #50616c;
+  font-size: 8px;
+}
+
+.clubNameInput,
+.descriptionInput {
+  width: 100%;
+  border: 1px solid rgba(160, 190, 207, 0.32);
+  border-radius: 4px;
+  outline: 0;
+  background: #020406;
+  color: #dce8ee;
+  box-shadow: inset 0 2px 12px #000;
+  font-family: var(--font-sans, sans-serif);
+}
+
+.clubNameInput {
+  height: 50px;
+  padding: 0 15px;
+  font-size: 16px;
+  font-weight: 500;
+}
+.descriptionInput {
+  min-height: 72px;
+  margin-bottom: 18px;
+  padding: 11px 13px;
+  resize: vertical;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.clubNameInput:focus,
+.descriptionInput:focus {
+  border-color: #1ba9ee;
+  box-shadow:
+    inset 0 2px 12px #000,
+    0 0 0 2px rgba(0, 169, 255, 0.13);
+}
+.nameStatus {
+  min-height: 24px;
+  padding-top: 5px;
+  color: #71818b;
+  font-size: 10px;
+}
+.nameStatus.available {
+  color: #48d8a0;
+}
+.nameStatus.taken,
+.nameStatus.error {
+  color: #ff7777;
+}
+
+.crestVault {
+  margin: 0 0 18px;
+  padding: 14px;
+  border: 1px solid rgba(160, 190, 207, 0.26);
+  border-radius: 5px;
+  background: linear-gradient(145deg, rgba(22, 42, 57, 0.35), transparent 55%), #05090e;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.035),
+    0 12px 32px rgba(0, 0, 0, 0.18);
+}
+
+.crestVault > legend,
+.accessSettings > legend {
+  padding: 0 8px;
+  color: #6cbfe8;
+  font: 600 9px/1 var(--font-mono, monospace);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.crestVaultHeader {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 18px;
+  align-items: stretch;
+  margin-bottom: 14px;
+}
+
+.logoPreview {
+  position: relative;
+  min-height: 132px;
+  overflow: hidden;
+  border: 1px solid rgba(196, 218, 230, 0.3);
+  border-radius: 4px;
+  background: #010305;
+  box-shadow: inset 0 0 24px #000;
 }
 
 .logoThumb {
-  width: 80%;
-  height: 80%;
-  object-fit: contain;
-  border-radius: 8px;
-  box-shadow: 0 0 16px rgba(100, 200, 255, 0.2);
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
-
-.createLogoBtn {
+.previewStatus {
   position: absolute;
-  top: 33%;
-  right: 10%;
-  width: 38%;
-  height: 28%;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  z-index: 10;
+  inset: auto 0 0;
+  padding: 7px 5px;
+  background: rgba(0, 6, 10, 0.86);
+  color: #8fd9fc;
+  font: 600 7px/1.2 var(--font-mono, monospace);
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.identityCopy {
   display: flex;
-  align-items: center;
+  min-width: 0;
+  flex-direction: column;
   justify-content: center;
-  transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
+}
+.identityCopy strong {
+  color: #e9f3f8;
+  font:
+    600 16px/1.1 'Rajdhani',
+    sans-serif;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.identityCopy p {
+  max-width: 540px;
+  margin: 7px 0 12px;
+  color: #778a96;
+  font-size: 10px;
+  line-height: 1.55;
 }
 
-.createLogoBtn:hover {
-  background: rgba(0, 100, 180, 0.1);
-  transform: translateY(-2px);
-}
-
-.plusIcon {
-  font-size: clamp(36px, 10vw, 56px);
-  font-weight: 200;
-  color: #ffffff;
-  text-shadow: 0 0 15px rgba(100, 200, 255, 0.8);
-  pointer-events: none;
-  line-height: 1;
-  transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
-}
-
-.createLogoBtn:hover .plusIcon {
-  text-shadow: 0 0 24px rgba(100, 200, 255, 1);
-  transform: scale(1.1);
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   TERMS CHECKBOX — Positioned over the checkbox area
-   ───────────────────────────────────────────────────────────────────────────── */
-.termsLabel {
-  position: absolute;
-  top: 67%;
-  left: 10%;
-  width: 80%;
-  height: 12%;
+.uploadLogoBtn {
   display: flex;
-  align-items: center;
+  width: min(100%, 330px);
+  min-height: 48px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  padding: 9px 12px;
+  border: 1px solid rgba(94, 189, 237, 0.42);
+  border-radius: 3px;
+  background: linear-gradient(180deg, #0b202b, #07141c);
+  color: #dff4ff;
   cursor: pointer;
-  z-index: 10;
+  text-align: left;
 }
 
-.termsCheckbox {
-  width: 24px;
-  height: 24px;
-  opacity: 0;
+.uploadLogoBtn:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.uploadLogoBtn span {
+  font:
+    600 11px/1.2 'Rajdhani',
+    sans-serif;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.uploadLogoBtn small {
+  color: #6f8490;
+  font-size: 8px;
+}
+
+.crestGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+.crestOption {
+  position: relative;
+  display: grid;
+  grid-template-rows: minmax(72px, 1fr) auto;
+  gap: 6px;
+  min-width: 0;
+  min-height: 106px;
+  padding: 5px 5px 8px;
+  overflow: hidden;
+  border: 1px solid rgba(139, 161, 174, 0.24);
+  border-radius: 3px;
+  background: #080c10;
+  color: #84949e;
   cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease,
+    transform 150ms ease;
+}
+.crestOption img {
+  width: 100%;
+  height: 100%;
+  min-height: 72px;
+  object-fit: cover;
+}
+.crestOption span {
+  overflow: hidden;
+  font: 600 8px/1.2 var(--font-mono, monospace);
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.crestOption small {
   position: absolute;
-  z-index: 3;
+  top: 7px;
+  right: 7px;
+  padding: 4px 5px;
+  border: 1px solid #5bd1ff;
+  border-radius: 2px;
+  background: rgba(0, 18, 29, 0.9);
+  color: #bceaff;
+  font: 700 6px/1 var(--font-mono, monospace);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.crestOptionSelected {
+  border-color: #65d2ff;
+  background: #0a1b25;
+  box-shadow:
+    0 0 0 1px rgba(101, 210, 255, 0.18),
+    0 0 18px rgba(0, 164, 235, 0.14);
+  color: #d7f3ff;
+}
+.hiddenInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
-/* Custom checkbox visual - hidden since frame already has checkbox */
+.accessSettings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  margin: 0 0 16px;
+  padding: 12px 14px 14px;
+  border: 1px solid rgba(160, 190, 207, 0.2);
+  border-radius: 4px;
+  color: #81939e;
+}
+.accessSettings label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 10px;
+}
+.accessSettings input {
+  accent-color: #0786c5;
+}
+.termsLabel {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 10px;
+  align-items: start;
+  margin: 0 0 20px;
+  color: #7f909b;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.termsCheckbox {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  opacity: 0;
+}
 .checkboxVisual {
-  display: none;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  border: 1px solid #43535e;
+  border-radius: 2px;
+  background: #020406;
 }
-
-.termsLabel:hover .checkboxVisual {
-  border-color: rgba(0, 212, 255, 0.7);
-}
-
-/* Checkmark icon - hidden by default */
 .checkboxVisual::after {
   content: '';
-  width: 6px;
-  height: 12px;
-  border: solid #00d4ff;
-  border-width: 0 3px 3px 0;
-  transform: rotate(45deg) translateY(-2px);
+  width: 4px;
+  height: 9px;
+  border: solid #55c8ff;
+  border-width: 0 2px 2px 0;
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transform: rotate(45deg) translateY(-1px);
 }
-
-/* Show checkmark when checked */
+.termsCheckbox:checked + .checkboxVisual {
+  border-color: #55c8ff;
+  box-shadow: 0 0 10px rgba(0, 181, 255, 0.25);
+}
 .termsCheckbox:checked + .checkboxVisual::after {
   opacity: 1;
 }
-
-.termsCheckbox:checked + .checkboxVisual {
-  border-color: #00d4ff;
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.4);
+.termsCheckbox:focus-visible + .checkboxVisual {
+  outline: 2px solid #55c8ff;
+  outline-offset: 2px;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   CREATE BUTTON — Positioned over the CREATE button at bottom
-   ───────────────────────────────────────────────────────────────────────────── */
 .createButton {
-  position: absolute;
-  bottom: 2%;
-  left: 12%;
-  width: 76%;
-  height: 12%;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  z-index: 10;
   display: flex;
+  width: 100%;
+  min-height: 50px;
   align-items: center;
   justify-content: center;
-  transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
+  gap: 10px;
+  border: 1px solid #6dcfff;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #087fb8, #04557f);
+  color: #f5fbff;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.22),
+    0 0 18px rgba(0, 151, 226, 0.16);
+  cursor: pointer;
+  font:
+    600 14px/1 'Rajdhani',
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
-
-.createButton:hover:not(:disabled) {
-  background: rgba(0, 180, 255, 0.15);
-  transform: translateY(-2px);
-  box-shadow: 0 0 20px rgba(0, 180, 255, 0.3);
-}
-
 .createButton:disabled {
+  border-color: #27323a;
+  background: #10161b;
+  color: #46545d;
+  box-shadow: none;
   cursor: not-allowed;
-  opacity: 0.5;
 }
-
 .spinner {
-  font-size: 24px;
-  color: #00d4ff;
-  animation: createClubModalSpin 1s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275))
-    infinite;
-  text-shadow: 0 0 12px rgba(0, 212, 255, 0.5);
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(0, 212, 255, 0.3);
+  border-top-color: #00d4ff;
+  border-radius: 50%;
+  animation: createClubSpin 1s linear infinite;
 }
 
-@keyframes createClubModalSpin {
-  from {
-    transform: rotate(0deg);
-  }
-
+@keyframes createClubSpin {
   to {
     transform: rotate(360deg);
   }
 }
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   HIDDEN FILE INPUT
-   ───────────────────────────────────────────────────────────────────────────── */
-.hiddenInput {
-  display: none;
+@keyframes createClubEnter {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════════
-   LOGO GENERATOR MODAL - Frame-based design
-   ═══════════════════════════════════════════════════════════════════════════════ */
-.logoGeneratorOverlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.9);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10001;
+@media (max-width: 880px) {
+  .modalContainer {
+    grid-template-columns: 1fr;
+    grid-template-rows: 112px minmax(0, 1fr);
+  }
+  .artPanel {
+    height: 112px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(174, 200, 217, 0.22);
+  }
+  .artPanel img {
+    width: 130px;
+    transform: translateY(13px);
+  }
+  .artPanel span {
+    display: none;
+  }
+  .scrollBody {
+    padding: 34px 24px 24px;
+  }
+  .pageFooter {
+    padding-inline: 24px;
+  }
 }
 
-.logoGeneratorModalContainer {
-  position: relative;
-  width: 95%;
-  max-width: 800px;
-  aspect-ratio: 1024 / 700;
+@media (max-width: 700px) {
+  .crestGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .crestOption {
+    grid-template-columns: 64px minmax(0, 1fr);
+    grid-template-rows: 64px;
+    align-items: center;
+    min-height: 76px;
+    text-align: left;
+  }
+  .crestOption img {
+    min-height: 64px;
+  }
+  .crestVaultHeader {
+    grid-template-columns: 104px minmax(0, 1fr);
+    gap: 12px;
+  }
+  .logoPreview {
+    min-height: 104px;
+  }
 }
 
-.frameImage {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  pointer-events: none;
-  user-select: none;
+@media (max-width: 430px) {
+  .scrollBody,
+  .pageFooter {
+    padding-inline: 18px;
+  }
+  .crestVault {
+    padding: 10px;
+  }
+  .crestVaultHeader {
+    grid-template-columns: 88px minmax(0, 1fr);
+  }
+  .logoPreview {
+    min-height: 88px;
+  }
+  .identityCopy p {
+    margin-bottom: 8px;
+    font-size: 9px;
+  }
+  .uploadLogoBtn {
+    min-height: 44px;
+  }
+  .accessSettings {
+    grid-template-columns: 1fr;
+  }
 }
 
-/* Close button positioned over the X in top right */
-.closeButton {
-  position: absolute;
-  top: 2%;
-  right: 2%;
-  width: 10%;
-  height: 10%;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  z-index: 20000;
+@media (max-height: 560px) {
+  .modalContainer {
+    height: 100dvh;
+    min-height: 0;
+  }
+  .scrollBody {
+    padding-top: 38px;
+    padding-bottom: 22px;
+  }
 }
 
-.closeButton:hover {
-  opacity: 0.8;
+@media (prefers-reduced-motion: reduce) {
+  .modalContainer,
+  .spinner {
+    animation: none;
+  }
+  .crestOption {
+    transition: none;
+  }
 }
 
-/* Textarea shrunk 10% from calibrated size for breathing room */
-.descriptionTextarea {
-  position: absolute;
-  top: 26.5%;
-  left: 15%;
-  width: 70%;
-  height: 46%;
-  background: transparent;
-  border: none;
-  outline: none;
-  font-family: 'Inter', sans-serif;
-  font-size: clamp(24px, 3.6vw, 32px);
-  font-weight: 400;
-  color: #ffffff;
-  resize: none;
-  padding: 24px 32px;
-  box-sizing: border-box;
-  z-index: 10;
-  transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
-}
-
-.descriptionTextarea::placeholder {
-  color: rgba(100, 180, 255, 0.4);
-}
-
-.descriptionTextarea:focus {
-  box-shadow: 0 0 12px rgba(100, 180, 255, 0.3);
-}
-
-.descriptionTextarea:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* Submit button positioned over SUBMIT button in frame */
-.submitButton {
-  position: absolute;
-  bottom: 10%;
-  left: 32%;
-  width: 36%;
-  height: 10%;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  z-index: 20000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.3s;
-}
-
-.submitButton:hover:not(:disabled) {
-  background: rgba(0, 180, 255, 0.1);
-  transform: translateY(-2px);
-  box-shadow: 0 0 20px rgba(0, 180, 255, 0.3);
-}
-
-.submitButton:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-/* Error message */
-.errorMessage {
-  position: absolute;
-  bottom: 2%;
-  left: 10%;
-  right: 10%;
-  background: rgba(255, 80, 80, 0.2);
-  border: 1px solid rgba(255, 80, 80, 0.5);
-  border-radius: 8px;
-  padding: 8px 12px;
-  color: #ff8888;
-  font-size: 12px;
-  text-align: center;
-  z-index: 11;
-}
-
-/* Legacy styles - keep for preview mode */
-.logoGeneratorModal {
-  background: linear-gradient(145deg, #0a1929, #0d2137);
-  border: 2px solid rgba(0, 180, 255, 0.3);
-  border-radius: 16px;
-  padding: 24px;
-  max-width: 400px;
-  width: 90%;
-  max-height: 80vh;
-  overflow-y: auto;
-  box-shadow:
-    0 0 40px rgba(0, 180, 255, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-
-.logoGeneratorModal h3 {
-  font-family: 'Rajdhani', sans-serif;
-  font-size: 18px;
-  font-weight: 600;
-  color: #ffffff;
-  text-align: center;
-  margin: 0 0 20px 0;
-  text-transform: uppercase;
-  letter-spacing: 2px;
-}
-
-.generatorHint {
-  color: rgba(200, 220, 255, 0.7);
-  font-size: 13px;
-  text-align: center;
-  margin: 0 0 16px 0;
-  line-height: 1.4;
-}
-
-/* Theme Selector Dropdown */
-.themeSelector {
-  margin-bottom: 24px;
-}
-
-.themeLabel {
-  display: block;
-  font-family: 'Rajdhani', sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(100, 180, 255, 0.9);
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 8px;
-}
-
-.themeDropdown {
-  width: 100%;
-  background: rgba(0, 20, 40, 0.8);
-  border: 2px solid rgba(100, 150, 200, 0.4);
-  border-radius: 8px;
-  padding: 12px 16px;
-  font-family: 'Inter', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-  color: #ffffff;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  outline: none;
-}
-
-.themeDropdown:hover:not(:disabled) {
-  border-color: rgba(0, 180, 255, 0.6);
-  background: rgba(0, 40, 80, 0.8);
-}
-
-.themeDropdown:focus {
-  border-color: #00d4ff;
-  box-shadow: 0 0 15px rgba(0, 180, 255, 0.3);
-}
-
-.themeDropdown:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Legacy description input styles - unused */
-
-.themeDropdown option {
-  background: #0a1929;
-  color: #ffffff;
-  padding: 8px;
-}
-
-.templateGrid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 24px;
-}
-
-.templateBtn {
-  background: rgba(0, 20, 40, 0.6);
-  border: 2px solid rgba(100, 150, 200, 0.3);
-  border-radius: 12px;
-  padding: 12px 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-}
-
-.templateBtn:hover {
-  background: rgba(0, 100, 180, 0.2);
-  border-color: rgba(0, 180, 255, 0.6);
-  transform: translateY(-2px);
-}
-
-.templateBtn.selected {
-  background: rgba(0, 180, 255, 0.2);
-  border-color: #00d4ff;
-  box-shadow: 0 0 15px rgba(0, 180, 255, 0.4);
-}
-
-.templateIcon {
-  font-size: 32px;
-}
-
-.templateName {
-  font-size: 10px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.8);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.logoGeneratorActions {
-  display: flex;
-  gap: 12px;
-}
-
-.generateBtn {
-  flex: 1;
-  background: linear-gradient(135deg, #00d4ff, #0088cc);
-  border: none;
-  border-radius: 8px;
-  padding: 12px 20px;
-  font-family: 'Rajdhani', sans-serif;
-  font-size: 14px;
-  font-weight: 600;
-  color: #ffffff;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-.generateBtn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 20px rgba(0, 180, 255, 0.4);
-}
-
-.generateBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.cancelBtn {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  padding: 12px 20px;
-  font-family: 'Inter', sans-serif;
-  font-size: 14px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.7);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.cancelBtn:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: #ffffff;
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   AI LOGO GENERATOR — Preview & Error States
-   ───────────────────────────────────────────────────────────────────────────── */
-.generatorHint {
-  color: rgba(200, 220, 255, 0.7);
-  font-size: 13px;
-  text-align: center;
-  margin: 0 0 16px 0;
-  line-height: 1.4;
-}
-
-.previewContainer {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 20px;
-  background: rgba(0, 20, 40, 0.5);
-  border-radius: 12px;
-  margin-bottom: 20px;
-}
-
-.previewImage {
-  max-width: 200px;
-  max-height: 200px;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 180, 255, 0.3);
-}
-
-.errorMessage {
-  background: rgba(255, 80, 80, 0.15);
-  border: 1px solid rgba(255, 80, 80, 0.4);
-  border-radius: 8px;
-  padding: 10px 14px;
-  margin-bottom: 16px;
-  color: #ff8888;
-  font-size: 13px;
-  text-align: center;
+@media (prefers-contrast: more) {
+  .modalContainer,
+  .clubNameInput,
+  .descriptionInput,
+  .crestVault,
+  .logoPreview,
+  .accessSettings,
+  .uploadLogoBtn,
+  .crestOption {
+    border-color: #fff;
+  }
+  .subtitle,
+  .fieldLabel,
+  .identityCopy p,
+  .uploadLogoBtn small {
+    color: #fff;
+  }
 }

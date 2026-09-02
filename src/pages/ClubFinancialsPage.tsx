@@ -3,27 +3,31 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import type { ClubRole } from '../types/clubRoles';
+import { isClubStaff, type ClubRole } from '../types/clubRoles';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import { useToast } from '../components/common/Toast';
 import { ClubFinancialDashboard } from '../components/dashboard/ClubFinancialDashboard';
 import FinancialChart from '../components/charts/FinancialChart';
 import RakeReports from '../components/admin/RakeReports';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { ErrorState } from '../components/common/EmptyState';
 import TransactionLedgerView from '../components/common/TransactionLedgerView';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { FinancialExportService } from '../services/FinancialExportService';
 import DynamicWallet from '../components/wallet/DynamicWallet';
+import WalletCashierModal from '../components/wallet/WalletCashierModal';
+import { DEFAULT_CASHIER_WALLET } from '../components/wallet/cashierModes';
+import PlayerWalletModal from '../components/wallet/PlayerWalletModal';
 import './ClubFinancialsPage.css';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
 import { formatDateShort as formatDate } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
+import { formatPopupText } from '../utils/popupStyle';
 
 interface FinancialSummary {
   period: string;
@@ -55,8 +59,17 @@ export default function ClubFinancialsPage() {
     []
   );
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [period, setPeriod] = useState<'week' | 'month' | 'all'>('week');
   const [userRole, setUserRole] = useState<ClubRole>('player');
+  // Dan 2026-08-23: tapping Club Bank opens the Club Bank Cashier.
+  const [activeCashier, setActiveCashier] = useState<
+    'club_bank' | 'promo_wallet' | 'agent_wallet' | null
+  >(null);
+  // Dan 2026-08-24: "PLAYER WALLET NEEDS TO BE FULLY CLICKABLE AND OPEN TO SEE
+  // ALL TRANSACTIONS AND OTHER AVAILABLE DATA WHEN CLICKED." The row opens the
+  // member's own statement - a read-only view, so it is not an activeCashier.
+  const [showPlayerWallet, setShowPlayerWallet] = useState(false);
   const toast = useToast();
   useVisibilityRefresh(() => loadFinancials());
   const [visibleTransactions, setVisibleTransactions] = useState<Set<string>>(new Set());
@@ -143,7 +156,7 @@ export default function ClubFinancialsPage() {
     const unsubChipsWithdrawn = masterBus.subscribeDebounced('CHIPS_WITHDRAWN', refresh, 500);
     const unsubChipsDistributed = masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', refresh, 1000);
     const unsubClubUpdated = masterBus.subscribeDebounced('CLUB_UPDATED', refresh, 1000);
-    const unsubTxLogged = masterBus.subscribeDebounced('TRANSACTION_LOGGED' as any, refresh, 2000);
+    const unsubTxLogged = masterBus.subscribeDebounced('TRANSACTION_LOGGED', refresh, 2000);
     return () => {
       unsubBalance();
       unsubWallet();
@@ -162,6 +175,7 @@ export default function ClubFinancialsPage() {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
+    setLoadError(null);
     try {
       // Use cached resolved ID when available to avoid redundant async lookups
       const resolvedId = resolvedClubIdRef.current || (await resolveClubUUID(clubId));
@@ -223,12 +237,20 @@ export default function ClubFinancialsPage() {
           .eq('transaction_type', 'rakeback')
           .gte('created_at', startDate.toISOString())
           .limit(5000),
-        supabase
-          .from('commission_history')
-          .select('net_commission, created_at')
-          .eq('club_id', resolvedId)
-          .gte('created_at', startDate.toISOString())
-          .limit(5000),
+        // PHASE 7: off commission_history, which held zero rows for the whole
+        // life of this page, onto the agent_commissions ledger the engine writes
+        // as hands settle. "Agent Commissions" here was 0 for every club and
+        // every period while SHARK CLUB alone had accrued 399,609.57.
+        //
+        // Through an RPC rather than a select, because RLS on agent_commissions
+        // gives a caller their OWN rows - a club owner reading it directly would
+        // see only what they had personally earned, which is a smaller lie in
+        // place of a bigger one. The function checks the caller is staff of this
+        // club and returns the aggregate.
+        supabase.rpc('fn_club_commission_accrued', {
+          p_club_id: resolvedId,
+          p_since: startDate.toISOString(),
+        }),
         supabase
           .from('settlement_invoices')
           .select('net_amount, created_at')
@@ -256,10 +278,13 @@ export default function ClubFinancialsPage() {
         (sum: number, r: any) => sum + (Number(r.amount) || 0),
         0
       );
-      const agentCommissions = ((commissionRes as any)?.data || []).reduce(
-        (sum: number, r: any) => sum + (Number(r.net_commission) || 0),
-        0
-      );
+      // The RPC answers one number. An error binds rather than being discarded:
+      // a denied read and a club that has accrued nothing are not the same
+      // thing, and this figure is subtracted from the club's net revenue.
+      if ((commissionRes as any)?.error) {
+        reportError((commissionRes as any).error, 'ClubFinancialsPage.commission_accrued');
+      }
+      const agentCommissions = Number((commissionRes as any)?.data ?? 0) || 0;
       const unionFees = ((unionFeeRes as any)?.data || []).reduce(
         (sum: number, r: any) => sum + (Number(r.net_amount) || 0),
         0
@@ -324,7 +349,7 @@ export default function ClubFinancialsPage() {
           id: r.id,
           type: 'rake' as const,
           amount: r.rake_amount || 0,
-          description: `${(r.rake_amount || 0).toLocaleString()} chips raked from a ${(r.pot_size || 0).toLocaleString()} pot`,
+          description: `${(r.rake_amount || 0).toLocaleString()} Chips Raked From A ${(r.pot_size || 0).toLocaleString()} Pot`,
           created_at: r.created_at,
         }));
         setTransactions(mappedTx);
@@ -347,6 +372,7 @@ export default function ClubFinancialsPage() {
     } catch (error) {
       if (!isMounted.current) return;
       reportError(error, 'ClubFinancialsPage.Failed_to_load_financials');
+      setLoadError('Live financial data could not be loaded. No figures have been estimated.');
       toast.error('Failed to load financial data');
     } finally {
       loadingRef.current = false;
@@ -379,6 +405,14 @@ export default function ClubFinancialsPage() {
     );
   }
 
+  if (loadError) {
+    return (
+      <div className="financials-page">
+        <ErrorState message={loadError} onRetry={loadFinancials} />
+      </div>
+    );
+  }
+
   return (
     <div className="financials-page">
       {/* Real-Time Wallet Overview */}
@@ -386,10 +420,33 @@ export default function ClubFinancialsPage() {
         <DynamicWallet
           userId={user.id}
           clubId={clubId}
-          variant={userRole === 'owner' ? 'owner' : 'player'}
+          variant="club"
+          // Dan 2026-08-23: role decides the rows. Club Bank, and the cashier
+          // behind it, are owner / co-owner / admin / super agent only.
+          role={userRole}
           onBuyDiamonds={() => navigate('/vip')}
+          onOpenPlayerWallet={() => setShowPlayerWallet(true)}
+          onOpenPromoWallet={() => setActiveCashier('promo_wallet')}
+          onOpenAgentWallet={() => setActiveCashier('agent_wallet')}
+          onOpenClubBank={() => setActiveCashier('club_bank')}
           onOpenBBJ={() => navigate(`/clubs/${clubId}/jackpot`)}
         />
+      )}
+      {clubId && (
+        <>
+          <WalletCashierModal
+            isOpen={!!activeCashier}
+            onClose={() => setActiveCashier(null)}
+            clubId={clubId}
+            role={userRole}
+            walletType={activeCashier || DEFAULT_CASHIER_WALLET}
+          />
+          <PlayerWalletModal
+            isOpen={showPlayerWallet}
+            onClose={() => setShowPlayerWallet(false)}
+            clubId={clubId}
+          />
+        </>
       )}
       {/* Period Selector */}
       <div className="period-selector">
@@ -495,8 +552,11 @@ export default function ClubFinancialsPage() {
         </div>
       )}
 
-      {/* Club Financial Dashboard - Chip Minting & Commission (owner-only) */}
-      {clubId && userRole === 'owner' && (
+      {/* Club Financial Dashboard - Chip Minting & Commission (club staff).
+          This was owner-only, which left a co-owner - "everything an owner can
+          do except appoint another co owner" - without the one screen that
+          mints chips. fn_actor_can_manage_club_treasury admits all three. */}
+      {clubId && isClubStaff(userRole) && (
         <section className="financial-dashboard-section">
           <ClubFinancialDashboard clubId={clubId} />
         </section>
@@ -530,7 +590,7 @@ export default function ClubFinancialsPage() {
               >
                 <span className="tx-icon">{getTypeIcon(tx.type)}</span>
                 <div className="tx-info">
-                  <span className="tx-desc">{tx.description}</span>
+                  <span className="tx-desc">{formatPopupText(tx.description)}</span>
                   <span className="tx-date">{formatDate(tx.created_at)}</span>
                 </div>
                 <span className={`tx-amount ${tx.amount >= 0 ? 'positive' : 'negative'}`}>
@@ -564,8 +624,6 @@ export default function ClubFinancialsPage() {
           </div>
         </section>
       )}
-
-      {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
     </div>
   );
 }

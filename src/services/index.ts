@@ -113,8 +113,6 @@ export { handHistoryService, HandHistoryService } from './HandHistoryService';
 export type { HandRecord, HandPlayer, HandAction } from './HandHistoryService';
 
 // GTO Query Engine
-export { GTOQueryService } from './GTOQueryService';
-export type { GTOSolution, PreflopRange } from './GTOQueryService';
 
 // Avatar Management
 export { avatarService } from './AvatarService';
@@ -159,8 +157,11 @@ export { dailyChallengeService } from './DailyChallengeService';
 // Player of the Year
 export { POYService } from './POYService';
 
-// Hand Persistence
-export { handPersistenceService } from './HandPersistenceService';
+// Hand Persistence: DELETED 2026-08-29 (weighted rake residue sweep). It was
+// the pre-server-authoritative client persistence layer, writing to the
+// retired hands/hand_players tables (0 rows ever in production) with zero
+// callers. The engine owns all hand persistence (logHandHistory,
+// atomic_distribute_rake, ca_hand_facts).
 
 // Tournament Timer
 export { tournamentTimerService } from './TournamentTimerService';
@@ -177,5 +178,3 @@ export { sessionStatsService } from './SessionStatsService';
 export type { SessionStats } from './SessionStatsService';
 
 // Disconnect Protection (heartbeat, grace period, offline queue)
-export { disconnectProtectionService } from './DisconnectProtectionService';
-export type { ConnectionState, DisconnectConfig, DCAction } from './DisconnectProtectionService';

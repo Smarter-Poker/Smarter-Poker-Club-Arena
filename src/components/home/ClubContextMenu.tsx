@@ -40,12 +40,12 @@ export default function ClubContextMenu({
 
   const handleGoToLobby = useCallback(() => {
     onClose();
-    navigate(`/clubs/${club.id}`);
-  }, [club.id, navigate, onClose]);
+    navigate(`/clubs/${club.slug || club.id}`);
+  }, [club.id, club.slug, navigate, onClose]);
 
   const handleCashier = useCallback(() => {
     onClose();
-    navigate(`/clubs/${club.id}/cashier`);
+    navigate(`/clubs/${club.slug || club.id}/cashier`);
   }, [club.id, navigate, onClose]);
 
   const handleShareCode = useCallback(() => {
@@ -123,7 +123,7 @@ export default function ClubContextMenu({
         className={styles.contextMenu}
         style={{ top: adjustedY, left: Math.min(x, window.innerWidth - 200) }}
         role="menu"
-        aria-label="Club actions"
+        aria-label="Club Actions"
         onKeyDown={handleKeyDown}
       >
         <button className={styles.contextMenuItem} onClick={handleGoToLobby} role="menuitem">
@@ -192,7 +192,7 @@ export default function ClubContextMenu({
             <line x1="12" y1="17" x2="12" y2="22" />
             <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.89A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.89A2 2 0 0 0 5 15.24z" />
           </svg>
-          {isPinned ? 'Unpin from Top' : 'Pin to Top'}
+          {isPinned ? 'Unpin From Top' : 'Pin To Top'}
         </button>
         <div className={styles.contextMenuDivider} />
         {!club.is_owner && (

@@ -13,11 +13,17 @@ import { useEffectiveRake } from '../../hooks/useEffectiveRake';
 import PlayerNotesPanel from '../gameplay/PlayerNotesPanel';
 import HandReplay from '../replay/HandReplay';
 import { GameRulesModal } from './GameRulesModal';
+import { ClubProfileModal } from './ClubProfileModal';
 import SitOutModal from './SitOutModal';
 import WaitListModal from './WaitListModal';
 import { waitlistService } from '../../services/WaitlistService';
 import InsuranceModal, { type InsuranceOffer } from './InsuranceModal';
-import { RunItTwicePrompt, RunItTwiceResult, type RitResultData } from './RunItTwice';
+import {
+  RunItTwicePrompt,
+  type RitResultData,
+  type RitPanelPlayer,
+  type Card as RitPanelCard,
+} from './RunItTwice';
 import BadBeatJackpot from './BadBeatJackpot';
 import { getBBJQualifyingInfo, getBBJPayoutPercentForBB } from '../../config/RakeConfig';
 import BBJInfoModal from '../bbj/BBJInfoModal';
@@ -25,9 +31,10 @@ import { BBJCelebration } from './BBJCelebration';
 import { ThrowableSelector } from './ThrowableSelector';
 import type { ThrowEvent } from '../../services/ThrowableService';
 import DiamondWalletModal from '../wallet/DiamondWalletModal';
+import { DiamondTopUpModal } from '../vip/DiamondTopUpModal';
 import CashierModal from './CashierModal';
 import BuyInModal from './BuyInModal';
-import RabbitHunt from './RabbitHunt';
+
 import LeaderboardPanel from './LeaderboardPanel';
 import LeaveTableConfirm from './LeaveTableConfirm';
 import { SessionHUD } from './SessionHUD';
@@ -55,8 +62,8 @@ import { BombPotOverlay } from './BombPotOverlay';
 import { FinalTableOverlay } from '../tournament/FinalTableOverlay';
 import { HeadsUpOverlay } from '../tournament/HeadsUpOverlay';
 import { TableErrorBoundary } from '../common/TableErrorBoundary';
-import { masterBus } from '../../core/MasterBus';
-import { setSitOut } from '../../services/GameServerAPI';
+/* `setSitOut` is no longer imported here: this component reports the intent and
+   TablePage owns the request. See `onReturn` below. */
 import { roomService } from '../../services/RoomService';
 import { reportError } from '../../utils/errorReporter';
 import { tournamentService } from '../../services/TournamentService';
@@ -81,17 +88,33 @@ export interface TableModalsLayerProps {
   // Table state (minimal surface needed by modals)
   tableName: string;
   blinds: string;
+  minBuyIn: number;
+  maxBuyIn: number;
   gameType: string;
   isTournament: boolean;
   tournamentId: string | undefined;
-  maxPlayers: 6 | 9;
+  /** Seats at the table. Widened from `6 | 9` on 2026-08-31 — a third of the
+   *  estate is 2/3/7/8-max and the narrow type forced a cast at every site. */
+  maxPlayers: number;
   players: (SeatPlayer | null)[];
   heroStack: number;
   rakePercent: number | undefined;
   rakeCap: number | undefined;
   runItTwice: boolean | undefined;
   isHandInProgress: boolean;
+  /**
+   * ─── ACCEPTED AND IGNORED (audit 2026-08-25) ──────────────────────────────
+   * `boardStage`, `handNumber` and `buyInProcessingRef` below are declared
+   * here, passed by TablePage on every render, and read by NOTHING in this
+   * file — they are not in the destructuring block at the top of the
+   * component. They are left declared rather than deleted because removing a
+   * prop from this interface while TablePage still passes it is a TS2322 at
+   * the call site, and TablePage belongs to another pass. The report for this
+   * audit carries the verbatim removals for both files.
+   * @deprecated unused by this layer
+   */
   boardStage: string;
+  /** @deprecated unused by this layer — see the note on boardStage */
   handNumber: number | undefined;
 
   // V8 Settings
@@ -108,6 +131,11 @@ export interface TableModalsLayerProps {
     animationSpeed: number;
     fourColorDeck: boolean;
     confirmAllIn: boolean;
+    /* Dan 2026-08-28: read back into the settings panel instead of the old
+       hardcoded `true` that snapped the toggle ON every render. */
+    showBetSizePresets: boolean;
+    /** Dan 2026-08-28: scrolling announcement ticker on/off. */
+    showTicker: boolean;
     theme: string;
   };
   isSoundEnabled: boolean;
@@ -127,12 +155,26 @@ export interface TableModalsLayerProps {
   showGameRules: boolean;
   isStraddleEnabled: boolean;
   /** Round 2 (double board): the table's bomb pot rules for the rules modal. */
+  /** 2026-08-29: staff-only link to the live-table bomb settings editor. */
+  canEditBombSettings?: boolean;
+  onEditBombSettings?: () => void;
   bombPotRules?: {
     enabled: boolean;
     frequency: number;
     anteBB: number;
     doubleBoard: boolean;
+    boardCount?: number;
+    triggerMode?: string;
+    intervalSeconds?: number;
+    variant?: string | null;
+    announceSeconds?: number;
   } | null;
+  /**
+   * MANUAL_NEXT_HAND (spec §2.1/§15.3): drawn only for club staff; the RPC
+   * behind onManualBombPot is the real gate (role-checked + audited).
+   */
+  canManualBombPot?: boolean;
+  onManualBombPot?: () => void;
   onCloseGameRules: () => void;
 
   // Chip Animations
@@ -159,9 +201,11 @@ export interface TableModalsLayerProps {
   // Insurance Modal
   showInsurance: boolean;
   insuranceOffer: InsuranceOffer | null;
-  onInsuranceAccept: (amount?: number) => void;
-  onInsuranceDecline: () => void;
-  onInsuranceDeclineForHand: () => void;
+  onInsuranceAccept: (amount?: number) => void | boolean | Promise<void | boolean>;
+  onInsuranceDecline: () => void | boolean | Promise<void | boolean>;
+  onInsuranceDeclineForHand: () => void | boolean | Promise<void | boolean>;
+  /** EV CASHOUT 2026-08-28: lock pot x equity now instead of insuring. */
+  onInsuranceEvCashout?: (amount?: number) => void | boolean | Promise<void | boolean>;
 
   // Hand Reveal (show/muck)
   showHandRevealModal: boolean;
@@ -178,9 +222,25 @@ export interface TableModalsLayerProps {
   ritIsChooser: boolean;
   ritOpponent: string;
   ritTimer: number;
-  ritChosenRuns: 2 | 3;
+  /** undefined until the chooser answers — that is the state that draws the
+   *  Run Once / Twice / 3 Times buttons. Never default it to a number. */
+  ritChosenRuns: 2 | 3 | undefined;
   ritMaxRuns: 2 | 3;
   ritPlayerCount: number;
+  /* ─── THE CONSENT SHEET'S OWN CONTENT (2026-08-28) ────────────────────────
+   * The six props below existed on RunItTwicePrompt and were never forwarded
+   * through this layer, so every one of them fell to its default: the board row
+   * drew five face-down slots over a flop that was already on the felt, the pot
+   * line did not render, and the per-player consent rows — the whole point of
+   * the 2026-08-26 parity pass — never appeared at all. `ritPanelPlayers` and
+   * `ritPanelBoardCards` are computed in TablePage on every render and were
+   * thrown away here. */
+  ritBoardCards: RitPanelCard[];
+  ritPanelPlayers: RitPanelPlayer[];
+  ritPotAmount: number | null;
+  ritTotalSeconds: number;
+  ritHeroAccepted: boolean;
+  ritCurrency: string;
   onRITChooserDecide: (runs: 1 | 2 | 3) => Promise<void>;
   onRITAccept: () => Promise<void>;
   onRITDecline: () => Promise<void>;
@@ -236,6 +296,7 @@ export interface TableModalsLayerProps {
   showCashier: boolean;
   accountBalance: number;
   cashoutMinBuyIn: number;
+  /** @deprecated unused by this layer — see the note on boardStage */
   buyInProcessingRef: React.MutableRefObject<boolean>;
   onCloseCashier: () => void;
   /** Must report whether the chips actually moved — see CashierModal.onAddChips. */
@@ -245,21 +306,47 @@ export interface TableModalsLayerProps {
   // Bust Rebuy
   bustRebuyOpen: boolean;
   bustWalletBalance: number | null;
+  /**
+   * Audit 2026-08-25: also unread here, but for a different reason than the
+   * three above — this one has real work to do and nowhere to do it. The bust
+   * rebuy renders through BuyInModal, and BuyInModal has no `isProcessing`
+   * prop at all (RebuyModal does, and gets one). So the confirm button on a
+   * bust rebuy stays live while the buy-in is in flight and can be pressed
+   * twice. The server's `atomic_table_buyin` is the guard that actually stops
+   * a double buy-in; what the player loses is the feedback, not the chips.
+   * Fixing it means adding `isProcessing` to BuyInModal, which is another
+   * agent's file this pass — carried in the report instead.
+   */
   bustRebuyProcessing: boolean;
   onCancelBustRebuy: () => void;
   onConfirmBustRebuy: (amount: number) => Promise<void>;
 
+  showProfileModal: boolean;
+  onCloseProfileModal: () => void;
+  clubName?: string;
   // Buy-In Modal
   showBuyInModal: boolean;
   selectedSeat: number | null;
   heroAvatarUrl: string;
+  /**
+   * Seconds left in the 60-second buy-in window, or null when none is running.
+   * Dan 2026-08-28: the seat is held while the player is buying in and released
+   * if they do not finish. TablePage owns the clock; this only displays it.
+   */
+  buyInSecondsLeft?: number | null;
   onCloseBuyInModal: () => void;
   onConfirmBuyIn: (amount: number, autoRebuy?: boolean) => Promise<void>;
 
   // Rabbit Hunt
-  isRabbitAvailable: boolean;
-  currentBoard: Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>;
-  onRabbitReveal: () => Promise<Array<{ rank: string; suit: 'h' | 'd' | 'c' | 's' }>>;
+  /**
+   * Cards a reveal will show, as counted by the SERVER. Replaces the old
+   * `currentBoard` prop, which was only ever passed [] — so every reveal
+   * claimed five cards regardless of the street the hand actually ended on.
+   */
+  /** Live diamond price from feature_pricing, delivered with the offer. */
+  // One contract, declared once, in the component that consumes it. This shape
+  // was written out inline here AND in TablePage AND in RabbitHunt — three
+  // copies of the same object, which is three chances for them to drift.
 
   // Leaderboard
   showLeaderboard: boolean;
@@ -301,8 +388,9 @@ export interface TableModalsLayerProps {
       showStackInBB: boolean;
       confirmAllIn: boolean;
       sitOutNextHand: boolean;
-      tableTheme: string;
       hapticEnabled: boolean;
+      /** Dan 2026-08-28: announcement ticker on/off. */
+      showTicker: boolean;
     }>
   ) => void;
 
@@ -356,6 +444,7 @@ export interface TableModalsLayerProps {
   showHandHistory: boolean;
   handHistory: HandRecord[];
   onCloseHandHistory: () => void;
+  onReplay?: (hand: HandRecord) => void;
 
   /* Session Summary props REMOVED (Phase 2 audit 2026-08-22): the in-table
      SessionSummary modal was dead code — `showSessionSummary` was never set
@@ -374,14 +463,18 @@ export interface TableModalsLayerProps {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 import React from 'react';
+import { useToast } from '../common/Toast';
 
-export function TableModalsLayer(props: TableModalsLayerProps) {
+function TableModalsLayerImpl(props: TableModalsLayerProps) {
   const {
     tableId,
     userId,
+    username,
     ambientSoundsAllowed = true,
     tableName,
     blinds,
+    minBuyIn,
+    maxBuyIn,
     gameType,
     isTournament,
     tournamentId,
@@ -408,6 +501,10 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     showGameRules,
     isStraddleEnabled,
     bombPotRules,
+    canEditBombSettings,
+    onEditBombSettings,
+    canManualBombPot,
+    onManualBombPot,
     onCloseGameRules,
     // Chips
     chipAnimations,
@@ -429,6 +526,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     onInsuranceAccept,
     onInsuranceDecline,
     onInsuranceDeclineForHand,
+    onInsuranceEvCashout,
     // Hand Reveal
     showHandRevealModal,
     handRevealWinnerId,
@@ -449,6 +547,12 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     ritChosenRuns,
     ritMaxRuns,
     ritPlayerCount,
+    ritBoardCards,
+    ritPanelPlayers,
+    ritPotAmount,
+    ritTotalSeconds,
+    ritHeroAccepted,
+    ritCurrency,
     onRITChooserDecide,
     onRITAccept,
     onRITDecline,
@@ -490,14 +594,18 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     bustWalletBalance,
     onCancelBustRebuy,
     onConfirmBustRebuy,
+    showProfileModal,
+    onCloseProfileModal,
+    clubName,
     // Buy-In
     showBuyInModal,
+    buyInSecondsLeft,
+    selectedSeat,
+    heroAvatarUrl,
     onCloseBuyInModal,
     onConfirmBuyIn,
     // Rabbit Hunt
-    isRabbitAvailable,
-    currentBoard,
-    onRabbitReveal,
+
     // Leaderboard
     showLeaderboard,
     leaderboardPlayers,
@@ -541,6 +649,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     showHandHistory,
     handHistory,
     onCloseHandHistory,
+    onReplay,
     // Session HUD
     showSessionHUD,
     onCloseSessionHUD,
@@ -549,10 +658,38 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
     getPlayerHUDStats,
   } = props;
 
+  const toast = useToast();
   // The rake the engine will actually take at this table (table override ->
   // club default -> published schedule). Only queried while the Game Rules
   // modal is open, since this layer is mounted for the whole session.
   const effectiveRake = useEffectiveRake(tableId, blinds, gameType, showGameRules);
+
+  /**
+   * ─── LEAVE NOTICE: THROUGH THE TOAST LAYER (audit 2026-08-25) ─────────────
+   *
+   * This used to be a hand-rolled `position: fixed` div with inline styles and
+   * an OK button, rendered at the bottom of this layer. Two problems, one of
+   * them a binding house rule (CLAUDE.md section 5.7): popup text renders with
+   * The First Letter Of Every Word Capitalized and em dashes are forbidden,
+   * enforced centrally in utils/popupStyle via the Toast provider — and the
+   * rule ends "never bypass the Toast layer with a hand-rolled popup". This
+   * was the bypass. TablePage's messages ("Error leaving table. Please try
+   * again.") therefore reached the player in raw sentence case.
+   *
+   * The second problem is multi-table: `position: fixed` at `bottom: 80` with
+   * `z-index: 9999`, rendered by whichever of up to four mounted TablePages
+   * raised it. A hidden table's slot is `display: none` so it did not actually
+   * paint, but the toast is the honest surface either way — it is deduped,
+   * dismisses itself, and stacks with everything else the table says.
+   *
+   * `onDismissLeaveNotice` is still called, immediately, because the notice has
+   * been handed off; leaving `leaveNotice` set would re-fire on every render.
+   */
+  React.useEffect(() => {
+    if (!leaveNotice) return;
+    toast.error(leaveNotice, 6000);
+    onDismissLeaveNotice();
+  }, [leaveNotice, toast, onDismissLeaveNotice]);
 
   // Per-variant BBJ qualifying rule for the table widget (2026-08-18).
   const bbjInfo = getBBJQualifyingInfo(gameType);
@@ -562,6 +699,10 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
   // "Detailed Analytics" button. Local state — nothing outside this layer
   // needs to open it.
   const [showDetailedAnalytics, setShowDetailedAnalytics] = React.useState(false);
+  // The wallet's Buy action used to close the wallet and stop. Keep the live
+  // table mounted while handing the player to the same server-priced Stripe
+  // catalog used by VIP and Table Studio.
+  const [showDiamondTopUp, setShowDiamondTopUp] = React.useState(false);
 
   return (
     <>
@@ -583,10 +724,30 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
 
       {/* Hand Replay Modal */}
       {showHandReplay && (
-        <div className="player-notes-overlay" onClick={onCloseHandReplay}>
+        <div
+          className="hand-replay-overlay"
+          onClick={onCloseHandReplay}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1600,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          }}
+        >
           <div
-            className="player-notes-modal hand-replay-modal"
+            className="hand-replay-modal"
             onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              height: '100%',
+              maxWidth: '100vw',
+              maxHeight: '100vh',
+              overflow: 'hidden',
+              position: 'relative',
+            }}
           >
             <button className="modal-close" onClick={onCloseHandReplay}>
               ✕
@@ -610,13 +771,17 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         onClose={onCloseGameRules}
         variant={gameType || "No Limit Hold'em"}
         stakes={blinds || '1/2'}
-        minBuyIn={safeBB(blinds) * 40}
-        maxBuyIn={safeBB(blinds) * 100}
+        minBuyIn={minBuyIn}
+        maxBuyIn={maxBuyIn}
         rakePercentage={effectiveRake.rakePercent ?? rakePercent}
         rakeCap={effectiveRake.rakeCap ?? rakeCap}
         isStraddleEnabled={!isTournament && isStraddleEnabled}
         isRunItTwiceEnabled={runItTwice ?? true}
         bombPotRules={bombPotRules}
+        canEditBombSettings={canEditBombSettings}
+        onEditBombSettings={onEditBombSettings}
+        canManualBombPot={canManualBombPot}
+        onManualBombPot={onManualBombPot}
       />
 
       {/* Chip Animations - pass-through to parent's ChipAnimationManager */}
@@ -633,22 +798,14 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
          * completely silent and the player was returned to a felt they were
          * still sitting out of. Close only after the server agrees.
          */
-        onReturn={() => {
-          if (!tableId) {
-            onReturnFromSitOut();
-            return;
-          }
-          void setSitOut(tableId, false).then((res) => {
-            if (res?.success) {
-              onReturnFromSitOut();
-            } else {
-              reportError(
-                new Error(res?.error || 'setSitOut(false) rejected by engine'),
-                'TableModalsLayer.Return_failed'
-              );
-            }
-          });
-        }}
+        /* REPORTS THE INTENT; TablePage owns the request.
+           This used to issue its own `setSitOut(tableId, false)`, which made two
+           implementations of "sit back in" — and only the other one was behind
+           the in-flight guard, so the out -> in -> out race was still reachable
+           by alternating THIS button with the table menu's Sit Out. It also let
+           the two buttons' local cleanup and failure toasts drift apart, which
+           they had. `handleSitBackIn` is now the single path. */
+        onReturn={onReturnFromSitOut}
         /**
          * 2026-08-20: was `() => navigate('/')`. "Leave Table" navigated away
          * without ever leaving the table — no cash-out, no seat release. The
@@ -658,7 +815,12 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
          */
         onLeaveTable={onConfirmLeaveTable}
         sitOutSince={sitOutSince}
-        tableName={tableName}
+        /* The countdown applies to CASH only. Dan 2026-08-28: a tournament
+           player (a spin is one) may sit out "as long as they want" and is
+           blinded off instead, so they must see no clock rather than one that
+           never fires. Heads-up cash is NOT exempt on either side of the wire —
+           see src/lib/sitOutDeadline.ts. */
+        isTournament={isTournament}
       />
 
       {/* Wait List Modal */}
@@ -711,13 +873,20 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
           onAccept={onInsuranceAccept}
           onDecline={onInsuranceDecline}
           onDeclineForHand={onInsuranceDeclineForHand}
+          onEvCashout={onInsuranceEvCashout}
           offer={insuranceOffer}
           timeRemaining={15}
         />
       )}
 
-      {/* Bible V8 §4.19: Show/Muck prompt when hero wins without showdown */}
-      {showHandRevealModal && tableId && (
+      {/* Bible V8 §4.19: Show/Muck prompt when hero wins without showdown.
+
+          NEVER IN A TOURNAMENT (Dan 2026-08-28, binding): "IN SPINS, ITS A
+          TOURNAMENT, SO THE 'SHOW CARDS' POP UP SHOULD NEVER EVER APPEAR, ALL
+          CARDS ARE ALWAYS SHOWN AT SHOWDOWN." The opener in TablePage carries
+          the same refusal; this is the render site, so a tournament cannot
+          show this modal no matter which path set the flag. */}
+      {showHandRevealModal && tableId && !isTournament && (
         <HandReveal
           isOpen={showHandRevealModal}
           isWinner={handRevealWinnerId === userId}
@@ -750,29 +919,34 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         maxRuns={ritMaxRuns}
         playerCount={ritPlayerCount}
         opponentName={_ritOpponent}
-      />
-
-      {/* Run It Twice result — the boards and payouts (2026-08-18) */}
-      <RunItTwiceResult
-        isOpen={ritResult !== null}
-        data={ritResult}
-        resolveName={ritResolveName}
-        onClose={onRitResultClose}
+        boardCards={ritBoardCards}
+        players={ritPanelPlayers}
+        potAmount={ritPotAmount ?? undefined}
+        totalSeconds={ritTotalSeconds}
+        heroAccepted={ritHeroAccepted}
+        currency={ritCurrency}
       />
 
       {/* Bad Beat Jackpot Display — per-variant qualifying rule (2026-08-18).
-          Hidden entirely for variants the server never pays (PLO6, Short Deck):
-          advertising a jackpot that cannot hit is worse than no banner. */}
-      {bbjInfo.eligible && (
-        <BadBeatJackpot
-          amount={bbjAmount}
-          qualifyingHand={bbjInfo.shortLabel}
-          subText={bbjInfo.subLabel}
-          payoutPercent={getBBJPayoutPercentForBB(safeBB(blinds))}
-          isHit={showBBJ}
-          onOpenDetails={() => setShowBBJDetails(true)}
-        />
-      )}
+          Hidden entirely for variants the server never pays (PLO6, Short Deck),
+          and never displayed during MTT, Spins, or Heads-Up games. */}
+      {bbjInfo.eligible &&
+        !isTournament &&
+        !tournamentId &&
+        maxPlayers > 2 &&
+        gameType !== 'heads_up' &&
+        gameType !== 'hu' &&
+        gameType !== 'spin' &&
+        gameType !== 'spins' && (
+          <BadBeatJackpot
+            amount={bbjAmount}
+            qualifyingHand={bbjInfo.shortLabel}
+            subText={bbjInfo.subLabel}
+            payoutPercent={getBBJPayoutPercentForBB(safeBB(blinds))}
+            isHit={showBBJ}
+            onOpenDetails={() => setShowBBJDetails(true)}
+          />
+        )}
 
       {/* Last 5 jackpots + what this table pays */}
       <BBJInfoModal
@@ -798,6 +972,12 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
           tablePlayerCount={bbjCelebrationData.tablePlayerCount}
           qualifyingLabel={bbjCelebrationData.qualifyingLabel}
           heroShare={bbjCelebrationData.heroShare}
+          /* Audit 2026-08-25 (multi-table): a BBJ hit at a BACKGROUND table fired
+             a 10-second fanfare plus a reveal sting over whatever table the
+             player was actually looking at. `display: none` hides the overlay;
+             it does not silence the Web Audio API. Same gate BombPotOverlay
+             already uses. */
+          soundsAllowed={ambientSoundsAllowed}
           onComplete={onBBJCelebrationComplete}
         />
       )}
@@ -867,48 +1047,18 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         onComplete={onParticleComplete}
       />
 
-      {/* Tip Dealer Modal */}
-
-      {/* Leave Table Notice */}
-      {leaveNotice && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: 80,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: '#1a1a2e',
-            border: '1px solid #e74c3c',
-            borderRadius: 8,
-            padding: '12px 20px',
-            color: '#fff',
-            fontSize: 14,
-            zIndex: 9999,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-            maxWidth: '90vw',
-          }}
-        >
-          <span>{leaveNotice}</span>
-          <button
-            onClick={onDismissLeaveNotice}
-            style={{
-              background: '#e74c3c',
-              border: 'none',
-              color: '#fff',
-              borderRadius: 4,
-              padding: '4px 12px',
-              cursor: 'pointer',
-            }}
-          >
-            OK
-          </button>
-        </div>
-      )}
+      {/* Leave Table Notice — see the effect above; it is a toast now. */}
 
       {/* Diamond Wallet Modal */}
-      <DiamondWalletModal isOpen={showDiamondWallet} onClose={onCloseDiamondWallet} />
+      <DiamondWalletModal
+        isOpen={showDiamondWallet}
+        onClose={onCloseDiamondWallet}
+        onBuyClick={() => {
+          onCloseDiamondWallet();
+          setShowDiamondTopUp(true);
+        }}
+      />
+      <DiamondTopUpModal isOpen={showDiamondTopUp} onClose={() => setShowDiamondTopUp(false)} />
 
       {/* Bust Rebuy Modal */}
 
@@ -922,9 +1072,9 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         onWithdrawChips={onWithdrawChips}
         currentStack={heroStack}
         accountBalance={accountBalance}
-        minBuyIn={safeBB(blinds) * 40}
-        maxBuyIn={safeBB(blinds) * 100}
-        maxStack={safeBB(blinds) * 200}
+        minBuyIn={minBuyIn}
+        maxBuyIn={maxBuyIn}
+        maxStack={maxBuyIn}
       />
       <BuyInModal
         isOpen={bustRebuyOpen}
@@ -933,8 +1083,8 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
           await onConfirmBustRebuy(amount);
         }}
         tableName={tableName}
-        minBuyIn={safeBB(blinds) * 40}
-        maxBuyIn={safeBB(blinds) * 100}
+        minBuyIn={minBuyIn}
+        maxBuyIn={maxBuyIn}
         accountBalance={bustWalletBalance ?? 0}
         bigBlind={safeBB(blinds)}
         countdown={undefined}
@@ -948,25 +1098,15 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         onConfirm={onConfirmBuyIn}
         tableName={tableName}
         minBuyIn={(() => {
-          const bb = safeBB(blinds);
-          const standardMin = bb * 40;
-          return cashoutMinBuyIn > standardMin ? cashoutMinBuyIn : standardMin;
+          return cashoutMinBuyIn > minBuyIn ? cashoutMinBuyIn : minBuyIn;
         })()}
-        maxBuyIn={safeBB(blinds) * 100}
+        maxBuyIn={maxBuyIn}
         accountBalance={accountBalance}
         bigBlind={safeBB(blinds)}
         cashoutRestriction={cashoutMinBuyIn > 0 ? cashoutMinBuyIn : undefined}
+        countdown={buyInSecondsLeft ?? undefined}
         onTopUp={onTopUpAccount}
       />
-
-      {/* Rabbit Hunt (post-hand) */}
-      {!isHandInProgress && isRabbitAvailable && (
-        <RabbitHunt
-          isAvailable={isRabbitAvailable}
-          onReveal={onRabbitReveal}
-          currentBoard={currentBoard}
-        />
-      )}
 
       {/* Leaderboard Panel */}
       <LeaderboardPanel
@@ -983,6 +1123,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         isOpen={showLeaveConfirm}
         currentStack={heroStack}
         tableName={tableName || 'this table'}
+        isTournament={isTournament}
         onConfirm={() => {
           onCloseLeaveConfirm();
           onConfirmLeaveTable();
@@ -996,7 +1137,9 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
           inside of it." SESSION_STATS used to open SessionHUD; it now opens the
           REAL TIME RESULT ledger, which answers the flat factual questions a
           player actually opens this for — how long the table has run, the real
-          blinds, what they have in, what they are up or down. Same props, so it
+          blinds,
+    minBuyIn,
+    maxBuyIn, what they have in, what they are up or down. Same props, so it
           is a drop-in. */}
       {tableId && userId !== 'guest' && (
         <RealTimeResultPanel
@@ -1031,20 +1174,33 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
           soundVolume: userSettings.soundVolume,
           hapticEnabled: userSettings.isHapticEnabled,
           showPotOdds: userSettings.showPotOdds,
+          /* Dan 2026-08-28 (settings must read back live): `--animation-speed`
+             is a DURATION MULTIPLIER — bigger is slower. The writer in
+             TablePage maps slow -> 1.5 and fast -> 0.5 (fixed 2026-08-26),
+             but this read-back was still the OLD inverted mapping, so picking
+             "Slow" made the select snap to "Fast" while the table genuinely
+             slowed down. Derived to match the writer exactly. */
           animationSpeed:
-            userSettings.animationSpeed === 0.5
+            userSettings.animationSpeed >= 1.5
               ? 'slow'
-              : userSettings.animationSpeed === 1.5 || userSettings.animationSpeed === 2
+              : userSettings.animationSpeed <= 0.5
                 ? 'fast'
                 : 'normal',
           fourColorDeck: userSettings.fourColorDeck,
           showStackInBB: v8Settings.show_stack_in_bb,
-          showBetSizePresets: true,
+          /* Was hardcoded `true`, so the toggle snapped back ON on every
+             render even though the table honoured the stored value. */
+          showBetSizePresets: userSettings.showBetSizePresets,
+          showTicker: userSettings.showTicker,
           confirmAllIn: userSettings.confirmAllIn,
           sitOutNextHand,
-          tableTheme: userSettings.theme,
         }}
         onSettingsChange={onSettingsChange}
+        /* Dan 2026-08-28: the panel's avatar row rendered a generated
+           placeholder forever — this prop was simply never passed, so the
+           row could not update when the player changed their avatar. */
+        currentAvatarUrl={heroAvatarUrl}
+        userId={userId}
       />
 
       {/* Share Hand */}
@@ -1126,6 +1282,7 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
         onClose={onCloseHandHistory}
         hands={handHistory}
         heroId={userId || ''}
+        onReplay={onReplay}
       />
 
       {/* Session Summary modal REMOVED (Phase 2 audit 2026-08-22). It could
@@ -1146,8 +1303,37 @@ export function TableModalsLayer(props: TableModalsLayerProps) {
           />
         </TableErrorBoundary>
       )}
+
+      {/* Club Profile Modal */}
+      <ClubProfileModal
+        isOpen={showProfileModal}
+        onClose={onCloseProfileModal}
+        userId={userId}
+        username={username}
+        avatarUrl={heroAvatarUrl}
+        clubName={clubName}
+      />
     </>
   );
 }
+
+/**
+ * MEMOISED (Dan 2026-08-27, the stuck-announcement bug).
+ *
+ * TablePage re-renders on every engine websocket tick — several times a second
+ * on an active table. This layer is a pure function of its props, and one of
+ * its children (TournamentAnnouncementOverlay) schedules a self-dismiss timer.
+ * Re-rendering it needlessly is how that timer got rescheduled forever and the
+ * banner stuck to the felt.
+ *
+ * memo only pays off if the props are stable, so the callbacks that FEED
+ * child-side effects and timers are wrapped in useCallback at the call site
+ * (onDismissAnnouncement, onDismissTournamentWinner, onCloseHandHistory,
+ * onCloseSessionHUD). This was deliberately NOT a blanket stabilisation of
+ * every inline arrow in TablePage: the rest are click handlers, where a new
+ * identity costs a render of a closed modal and nothing else.
+ */
+export const TableModalsLayer = React.memo(TableModalsLayerImpl);
+TableModalsLayer.displayName = 'TableModalsLayer';
 
 export default TableModalsLayer;

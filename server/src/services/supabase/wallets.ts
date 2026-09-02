@@ -62,81 +62,56 @@ export async function autoRebuyHorse(
 }
 
 /**
- * Ensure a horse's wallet is properly funded.
- * Called during fleet startup to top up horses that ran low.
+ * What each of these players could actually bring back to a CASH table.
+ *
+ * Dan 2026-08-28: "IN A CASH GAME, CHECK IF THEY HAVE ENOUGH CHIPS TO REBUY,
+ * (40 BB MINIMUM). IF THEY DO, YOU GIVE THEM THE 5 SECOND PERIOD TO REBUY OR
+ * DECLINE." This is the read behind that check.
+ *
+ * `club_members.chip_balance` is the live chip pool — the same column
+ * `atomic_table_buyin` debits and `atomic_seat_cashout_locked` credits.
+ * NOT `public.wallets`, which has been frozen since 2026-08-21 with 732m chips
+ * stranded in it and nothing reading it (CLAUDE.md 11.5).
+ *
+ * Returns a Map so a caller can distinguish "balance is zero" from "we could
+ * not read this player" — an ABSENT key means unknown. That distinction is the
+ * whole point: an unreadable balance must never be treated as "cannot afford a
+ * rebuy", because the consequence of that mistake is standing a player up who
+ * had the money all along. Callers treat unknown as CAN afford, and the worst
+ * case is then a five-second pause nobody needed.
  */
-export async function ensureHorseWallet(
-  horseId: string,
-  minBalance: number = 10000
-): Promise<void> {
-  const { data: wallet } = await supabase
-    .from('wallets')
-    .select('id, balance')
-    .eq('user_id', horseId)
-    .eq('wallet_type', 'PLAYER')
-    .maybeSingle();
-
-  if (!wallet) {
-    // Create wallet
-    await supabase.from('wallets').insert({
-      user_id: horseId,
-      wallet_type: 'PLAYER',
-      balance: minBalance,
-      locked_balance: 0,
-    });
-    return;
-  }
-
-  if (wallet.balance < minBalance) {
-    const topUp = minBalance - wallet.balance;
-    // 2026-08-22: this is read-then-write — the balance is SELECTed above and
-    // the top-up computed from it — with no key, so two passes that read the
-    // same balance both credited the difference and the horse ended up with
-    // 2x the floor. The lifecycle sweep and AutoRebuyService can both be in
-    // here at once. Keyed on the balance that was actually observed, so a
-    // duplicate of THIS decision is a DB-side no-op while a genuine later
-    // refill (a different observed balance) still goes through.
-    // fn_credit_player_wallet_once rather than credit_player_wallet: it is the
-    // same body, but it RETURNS whether THIS call performed the credit. The
-    // ledger insert below is gated on that, so the deduped second pass writes
-    // no row — the credit and the row stay in step. (credit_player_wallet
-    // returns void, which is precisely how the tournament prize paths ended up
-    // writing 95 phantom rows before 2026-08-22.)
-    const { data: didCredit, error: refillErr } = await supabase.rpc(
-      'fn_credit_player_wallet_once',
-      {
-        p_user_id: horseId,
-        p_amount: topUp,
-        p_idempotency_key: `horse-refill:${horseId}:${wallet.id}:${wallet.balance}:${minBalance}`,
-      }
-    );
-
-    if (refillErr) {
-      reportError(
-        new Error(`[refillHorseWallet] Credit failed for horse ${horseId}: ${refillErr.message}`),
-        'refillHorseWallet.Credit_failed_for_horse_horseI'
-      );
-      return;
+export async function readClubChipBalances(
+  clubId: string,
+  userIds: string[]
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (!clubId || userIds.length === 0) return out;
+  try {
+    const { data, error } = await supabase
+      .from('club_members')
+      .select('user_id, chip_balance')
+      .eq('club_id', clubId)
+      .in('user_id', userIds);
+    if (error) {
+      reportError(error, 'DB.read_club_chip_balances_failed');
+      return out; // Empty -> every player reads as UNKNOWN -> nobody is stood up.
     }
-
-    // Someone else already made this exact top-up. Their row is the only one
-    // that should exist.
-    if (didCredit === false) return;
-
-    // BUG 018 FIX: compute balance_after from the known prior balance + topup
-    const newBalance = Number(wallet.balance ?? 0) + topUp;
-    const { error: refillTxErr } = await supabase.from('wallet_transactions').insert({
-      user_id: horseId,
-      wallet_type: 'PLAYER',
-      amount: topUp,
-      type: 'credit',
-      category: 'horse_refill',
-      description: `Horse wallet refill: ${topUp} chips (balance was ${wallet.balance})`,
-      balance_after: newBalance,
-    });
-    if (refillTxErr)
-      console.warn(
-        `[DB] Horse refill tx log failed for ${horseId.slice(0, 8)}: ${refillTxErr.message}`
-      );
+    for (const row of (data ?? []) as Array<{ user_id: string; chip_balance: number | null }>) {
+      out.set(String(row.user_id), Number(row.chip_balance ?? 0));
+    }
+  } catch (err) {
+    reportError(err, 'DB.read_club_chip_balances_threw');
   }
+  return out;
 }
+
+// REMOVED 2026-08-26: ensureHorseWallet.
+//
+// It had ZERO call sites in server/src or src - the "called during fleet
+// startup" in its doc block had not been true since AutoRebuyService was
+// retired. And its first branch was a bare INSERT of `balance: minBalance`
+// into public.wallets: a mint, with no ledger row and no offsetting debit.
+// public.wallets has been frozen since 2026-08-21 with the chips in it
+// stranded and nothing reading it, so this was a loaded gun pointed at chip
+// conservation, waiting for someone to wire it up. Horses are funded from the
+// club treasury (fn_horse_seat_from_treasury / fn_horse_fund_from_treasury).

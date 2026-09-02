@@ -245,7 +245,7 @@ export default function AuthPage() {
 
     try {
       await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth?mode=reset`,
+        redirectTo: `${window.location.origin}/hub/club-arena/auth?mode=reset`,
       });
 
       // SECURITY: Always show success regardless of whether email exists
@@ -279,7 +279,7 @@ export default function AuthPage() {
             `}</style>
       <div
         className={styles.authCard}
-        style={{ animation: `slideUpIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)` }}
+        style={{ animation: `animationsSlideUpIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)` }}
       >
         {/* Logo */}
         <div className={styles.logo}>
@@ -319,7 +319,7 @@ export default function AuthPage() {
         {/* Success Message */}
         {success && (
           <div className={styles.successMessage}>
-            <span>\U2713</span> {success}
+            <span>\u2713</span> {success}
           </div>
         )}
 
@@ -383,7 +383,7 @@ export default function AuthPage() {
                   }}
                 />
               )}
-              {isLoading ? 'Logging in...' : 'Login'}
+              {isLoading ? 'Logging In...' : 'Login'}
             </button>
 
             <button
@@ -467,7 +467,7 @@ export default function AuthPage() {
                 type="text"
                 value={referralCode}
                 onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-                placeholder="e.g. ABCD1234"
+                placeholder="E.G. ABCD1234"
                 autoComplete="off"
                 style={{ textTransform: 'uppercase', letterSpacing: '1px' }}
               />

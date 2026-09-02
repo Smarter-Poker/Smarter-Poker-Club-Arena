@@ -89,14 +89,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.reason-option:hover {
-  transform: translateY(-2px);
-}
-
-.reason-option:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-
 .reason-option.selected {
   background: rgba(248, 113, 113, 0.1);
   border-color: rgba(248, 113, 113, 0.4);
@@ -177,10 +169,6 @@
   transition: background 0.2s;
 }
 
-.cancel-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
 .submit-btn {
   flex: 1;
   padding: 12px;
@@ -191,10 +179,6 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
-}
-
-.submit-btn:hover:not(:disabled) {
-  background: #ef4444;
 }
 
 .submit-btn:disabled {

@@ -18,10 +18,15 @@ import { resolve } from 'node:path';
 import {
   SPIN_SEATS,
   SPIN_TIERS,
+  SPIN_STACKS,
+  SPIN_SPEED_LABELS,
   SPIN_BLINDS,
   SPIN_FREQ_DENOMINATOR,
   SPIN_GAME_TYPES,
+  SPIN_RAKE_RATE,
   spinRakeRate,
+  spinRakeInvariant,
+  assertSpinRakeInvariant,
   spinTier,
   spinBlindsForLevel,
   expectedMultiplier,
@@ -75,24 +80,73 @@ describe('THE central invariant: the table implies the advertised rake', () => {
     const total = SPIN_TIERS.reduce((s, t) => s + t.freq, 0);
     // Dan's table sums to 10,000,099; the drift is rounding in the source and
     // is immaterial (1 part in 100k). Pinned so a real edit cannot hide in it.
-    expect(Math.abs(total - SPIN_FREQ_DENOMINATOR)).toBeLessThan(200);
+    /* EXACT, not within 200 (2026-08-28). The slack existed because the
+       denominator was a hand-written literal that had drifted 99 off the
+       ladder's real total; it is derived from the ladder now, so the only
+       honest assertion is equality — and a tolerance that hides a real
+       mismatch is how the drift survived in the first place. */
+    expect(total).toBe(SPIN_FREQ_DENOMINATOR);
   });
 });
 
-describe('rake bands', () => {
-  it('scales down with stake, exactly as published', () => {
-    expect(spinRakeRate(0.5)).toBe(0.08);
-    expect(spinRakeRate(5)).toBe(0.08);
-    expect(spinRakeRate(10)).toBe(0.07);
-    expect(spinRakeRate(25)).toBe(0.06);
-    expect(spinRakeRate(50)).toBe(0.06);
-    expect(spinRakeRate(100)).toBe(0.05);
-    expect(spinRakeRate(1000)).toBe(0.05);
+describe('the rake is flat, and the invariant is what enforces it', () => {
+  // There used to be four buy-in bands here booking 8 / 7 / 6 / 5%. They never
+  // changed a single frequency, so the player was charged 7.87% at every stake
+  // while the ledger recorded less, and 36,723.84 chips accumulated in
+  // spin_bonus_pools owned by nobody. These four tests are the guard: the
+  // equality holds at 8%, it REJECTS each rate the bands used to book, it
+  // rejects a tampered frequency table, and it says all three numbers when it
+  // fails so the next reader does not have to reconstruct the arithmetic.
+
+  it('books one rate at every stake, and the table satisfies it', () => {
+    expect(SPIN_RAKE_RATE).toBe(0.08);
+    for (const buyIn of [0.5, 5, 10, 25, 50, 100, 1000, -1]) {
+      expect(spinRakeRate(buyIn), `stake ${buyIn}`).toBe(0.08);
+    }
+
+    // E[multiplier] = seats x (1 - rake). To the cent, which is the finest
+    // difference numeric(15,2) can ever carry into a ledger row.
+    const inv = spinRakeInvariant();
+    expect(inv.driftPerBuyIn).toBe(0);
+    expect(Math.round(inv.expected * 100) / 100).toBe(Math.round(inv.implied * 100) / 100);
+    expect(() => assertSpinRakeInvariant()).not.toThrow();
   });
 
-  it('defaults an unknown stake to the HIGHEST rake, never the lowest', () => {
-    // A misconfigured buy-in must not silently hand away margin.
-    expect(spinRakeRate(-1)).toBe(0.08);
+  it('REJECTS every rate the deleted bands used to book', () => {
+    // 7, 6 and 5% are the three the ladder booked above 5, 10 and 50 stake.
+    // Each one implies a different expected multiplier than the ONE table pays.
+    for (const rejected of [0.07, 0.06, 0.05]) {
+      expect(
+        () => assertSpinRakeInvariant(SPIN_TIERS, SPIN_SEATS, rejected),
+        `${rejected * 100}% must not pass — the frequencies were never regenerated for it`
+      ).toThrow(/SPIN RAKE INVARIANT BROKEN/);
+      expect(spinRakeInvariant(SPIN_TIERS, SPIN_SEATS, rejected).driftPerBuyIn).not.toBe(0);
+    }
+  });
+
+  it('rejects a tampered frequency table at the booked rate', () => {
+    // Moving weight onto the top multiplier without touching the rate is the
+    // other half of the same mistake, arriving from the opposite direction.
+    const tampered = SPIN_TIERS.map((t) =>
+      t.multiplier === 100 ? { ...t, freq: t.freq + 500_000 } : t
+    );
+    expect(() => assertSpinRakeInvariant(tampered)).toThrow(/SPIN RAKE INVARIANT BROKEN/);
+    expect(() => assertSpinRakeInvariant(SPIN_TIERS)).not.toThrow();
+  });
+
+  it('names all three numbers when it fails', () => {
+    let message = '';
+    try {
+      assertSpinRakeInvariant(SPIN_TIERS, SPIN_SEATS, 0.05);
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    // What the table expects, what the booked rate implies, what is actually
+    // charged. Without all three the reader cannot tell which side moved.
+    expect(message).toContain(expectedMultiplier().toFixed(6));
+    expect(message).toContain((SPIN_SEATS * (1 - 0.05)).toFixed(6));
+    expect(message).toContain((impliedHouseEdge() * 100).toFixed(2));
+    expect(message).toContain('5.00%');
   });
 });
 
@@ -169,32 +223,48 @@ describe('per-game economics', () => {
   });
 });
 
-describe('structure scales with the multiplier', () => {
-  it('matches the published stack and level table', () => {
-    // Dan 2026-08-20, from a seat at a live table: "change spins to 3 min
-    // levels" — FLAT across the ladder. Tier identity lives in stack depth
-    // and payout shape; the level clock is one number everywhere.
-    const expected: Array<[number, number, number]> = [
-      [2, 300, 3],
-      [3, 300, 3],
-      [4, 400, 3],
-      [5, 400, 3],
-      [10, 500, 3],
-      [25, 500, 3],
-      [50, 500, 3],
-      [100, 500, 3],
-    ];
-    for (const [mult, stack, mins] of expected) {
-      const t = spinTier(mult)!;
-      expect(t.startingStack, `${mult}x stack`).toBe(stack);
-      expect(t.levelMinutes, `${mult}x level length`).toBe(mins);
+describe('the stack belongs to the board, not to the multiplier', () => {
+  /**
+   * REPLACES "matches the published stack and level table" and "gives bigger
+   * prizes more poker, never less", both of which pinned the 2026-08-23 stack
+   * bands (300 / 1000 / 5000, chosen by the drawn tier).
+   *
+   * Dan, 2026-09-01, verbatim: "we used to award more chips depending on if
+   * its a higher multiplier... we are no longer doing that, once a player sits
+   * down and 'buys in' they either get 300 chips for a turbo, or 1000 chips
+   * for a deep stack. as soon as they buy in 300 chips should appear in their
+   * action box (not 0)."
+   *
+   * The second sentence is why this is not cosmetic. A stack that depends on
+   * the draw cannot be known when the money leaves the wallet, so the seat was
+   * written at zero and the real number arrived 14.8 seconds later on the
+   * chip-drop beat.
+   */
+  it('no tier carries a stack at all', () => {
+    for (const tier of SPIN_TIERS) {
+      expect(
+        (tier as unknown as Record<string, unknown>).startingStack,
+        `${tier.multiplier}x must not decide a stack`
+      ).toBeUndefined();
     }
   });
 
-  it('gives bigger prizes more poker, never less', () => {
-    for (let i = 1; i < SPIN_TIERS.length; i++) {
-      expect(SPIN_TIERS[i].startingStack).toBeGreaterThanOrEqual(SPIN_TIERS[i - 1].startingStack);
-      expect(SPIN_TIERS[i].levelMinutes).toBeGreaterThanOrEqual(SPIN_TIERS[i - 1].levelMinutes);
+  it('offers exactly two depths, and they are the two Dan named', () => {
+    expect(SPIN_STACKS).toEqual({ turbo: 300, deep: 1000 });
+    // The 5000 band is retired with the tier stacks. Nothing may reintroduce it.
+    expect(Object.values(SPIN_STACKS)).not.toContain(5000);
+  });
+
+  it('names both depths in Title Case, because a player reads them', () => {
+    expect(SPIN_SPEED_LABELS.turbo).toBe('Turbo');
+    expect(SPIN_SPEED_LABELS.deep).toBe('Deep Stack');
+  });
+
+  it('keeps the level clock flat, which is the half of 2026-08-23 that stands', () => {
+    // Dan 2026-08-20: "change spins to 3 min levels" - FLAT across the ladder.
+    // Dan 2026-08-23: "SPEED SHOULDN'T CHANGE, ONLY THE STARTING STACK."
+    for (const tier of SPIN_TIERS) {
+      expect(tier.levelMinutes, `${tier.multiplier}x level length`).toBe(3);
     }
   });
 

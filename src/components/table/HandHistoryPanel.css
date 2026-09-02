@@ -1,278 +1,539 @@
 /**
  * Hand History Panel — Slide-out hand history with expandable details
+ *
+ * Dan 2026-08-23: "REMOVE THE YELLOW AND PURPLE." The tokens below come from
+ * src/styles/club-engine.css, which main.tsx loads globally and is therefore
+ * the ONLY sheet whose variables actually resolve at the table. globals.css
+ * (--royal-blue) and design-system.css (--fb-blue) are not in the table's
+ * import chain, so referencing them here would silently fall back to the
+ * declared default and merely LOOK tokenised.
+ *
+ * --hh-accent is the same #1877F2 every other table modal uses; the -rgb twin
+ * exists so the translucent tints below never repeat the literal hex.
  */
 
+/* The backdrop the panel never had.
+ *
+ * It rendered as a lone fixed div with no overlay behind it, so there was
+ * nothing to tap: the only way out was a 32px X in the corner, and in the
+ * installed app that X can sit under the status bar. It sits one layer under
+ * the panel so a tap anywhere off the sheet closes it. */
+.hh-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 499;
+  background: rgba(0, 0, 0, 0.45);
+  animation: hhBackdropIn 0.2s ease;
+}
+
+@keyframes hhBackdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .hh-panel {
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    width: min(340px, 85vw);
-    background: #111827;
-    border-left: 1px solid rgba(255, 255, 255, 0.08);
-    display: flex;
-    flex-direction: column;
-    z-index: 500;
-    animation: hhSlideIn 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4), inset 1px 0 0 rgba(255, 255, 255, 0.06);
-    backdrop-filter: blur(14px) saturate(1.3);
-    -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  --hh-accent: #1877f2;
+  --hh-accent-rgb: 24, 119, 242;
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(340px, 85vw);
+  background: var(--club-surface, #111318);
+  border-left: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  display: flex;
+  flex-direction: column;
+  z-index: 500;
+  animation: hhSlideIn 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  box-shadow:
+    -8px 0 24px rgba(0, 0, 0, 0.4),
+    inset 1px 0 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
 }
 
 @keyframes hhSlideIn {
-    from { transform: translateX(100%); }
-    to { transform: translateX(0); }
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* Grab handle — visible only where the panel is a bottom sheet. */
+.hh-panel__grab {
+  display: none;
+  justify-content: center;
+  padding: 8px 0 2px;
+  flex-shrink: 0;
+}
+
+.hh-panel__grab span {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.22);
 }
 
 /* Header */
 .hh-panel__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 16px;
-    padding-top: calc(12px + env(safe-area-inset-top, 0));
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-    background: rgba(0, 0, 0, 0.3);
-    backdrop-filter: blur(10px) saturate(1.2);
-    -webkit-backdrop-filter: blur(10px) saturate(1.2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px) saturate(1.2);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
 }
 
 .hh-panel__title {
-    font-size: 0.9375rem;
-    font-weight: 700;
-    color: #f3f4f6;
-    margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: #f3f4f6;
+  margin: 0;
 }
 
 .hh-panel__header-actions {
-    display: flex;
-    gap: 8px;
+  display: flex;
+  gap: 8px;
 }
 
 .hh-panel__export,
 .hh-panel__close {
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 8px;
-    border: none;
-    background: rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.6);
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-}
-
-.hh-panel__export:hover,
-.hh-panel__close:hover {
-    background: rgba(255, 255, 255, 0.12);
-    color: rgba(255, 255, 255, 0.9);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 /* Session Stats Bar */
 .hh-panel__stats {
-    display: flex;
-    gap: 2px;
-    padding: 8px 16px;
-    background: rgba(0, 0, 0, 0.2);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  display: flex;
+  gap: 2px;
+  padding: 8px 16px;
+  background: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .hh-panel__stat {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
 }
 
 .hh-panel__stat-label {
-    font-size: 0.5625rem;
-    color: rgba(255, 255, 255, 0.4);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+  font-size: 0.5625rem;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .hh-panel__stat-value {
-    font-size: 0.8125rem;
-    font-weight: 700;
-    color: #f3f4f6;
-    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #f3f4f6;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
 }
 
 /* Hand list */
 .hh-panel__list {
-    flex: 1;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    padding: 4px 0;
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 0;
 }
 
 .hh-panel__empty {
-    padding: 40px 16px;
-    text-align: center;
-    color: rgba(255, 255, 255, 0.3);
-    font-size: 0.8125rem;
+  padding: 40px 16px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 0.8125rem;
 }
 
 /* Hand Entry */
 .hh-entry {
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .hh-entry__summary {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 16px;
-    background: transparent;
-    border: none;
-    color: #f3f4f6;
-    cursor: pointer;
-    font-size: 0.75rem;
-    text-align: left;
-    transition: background 0.15s;
-}
-
-.hh-entry__summary:hover {
-    background: rgba(255, 255, 255, 0.04);
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  color: #f3f4f6;
+  cursor: pointer;
+  font-size: 0.75rem;
+  text-align: left;
+  transition: background 0.15s;
 }
 
 .hh-entry__num {
-    color: rgba(255, 255, 255, 0.4);
-    font-family: 'JetBrains Mono', 'SF Mono', monospace;
-    font-size: 0.6875rem;
-    min-width: 40px;
+  color: rgba(255, 255, 255, 0.4);
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 0.6875rem;
+  min-width: 40px;
 }
 
 .hh-entry__time {
-    color: rgba(255, 255, 255, 0.35);
-    font-size: 0.6875rem;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 0.6875rem;
 }
 
 .hh-entry__pot {
-    flex: 1;
-    text-align: right;
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 0.6875rem;
+  flex: 1;
+  text-align: right;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.6875rem;
 }
 
 .hh-entry__result {
-    font-family: 'JetBrains Mono', 'SF Mono', monospace;
-    font-weight: 700;
-    font-size: 0.75rem;
-    min-width: 52px;
-    text-align: right;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-weight: 700;
+  font-size: 0.75rem;
+  min-width: 52px;
+  text-align: right;
 }
 
 .hh-entry__chevron {
-    color: rgba(255, 255, 255, 0.3);
-    transition: transform 0.2s ease;
-    flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.3);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
 }
 
 .hh-entry__chevron--open {
-    transform: rotate(180deg);
+  transform: rotate(180deg);
 }
 
 /* Expanded detail */
 .hh-entry__detail {
-    padding: 0 16px 12px;
-    animation: hhDetailFadeIn 0.2s ease;
+  padding: 0 16px 12px;
+  animation: hhDetailFadeIn 0.2s ease;
 }
 
 @keyframes hhDetailFadeIn {
-    from { opacity: 0; max-height: 0; }
-    to { opacity: 1; max-height: 500px; }
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 500px;
+  }
 }
 
-.hh-entry__winners {
-    padding: 6px 10px;
-    margin-bottom: 8px;
-    background: rgba(34, 197, 94, 0.08);
-    border-radius: 6px;
-    border-left: 3px solid #22c55e;
+/* Showdown roster — one row per hand the table actually saw. */
+.hh-entry__showdown {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  background: rgba(var(--hh-accent-rgb), 0.07);
+  border-radius: 6px;
+  border-left: 3px solid var(--hh-accent);
 }
 
-.hh-entry__winner {
-    display: block;
-    font-size: 0.6875rem;
-    color: #22c55e;
-    font-weight: 600;
+.hh-entry__shown {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.625rem;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.7));
+}
+
+.hh-entry__shown--won .hh-entry__player-name {
+  color: var(--success-green, #3fb950);
+  font-weight: 700;
+}
+
+.hh-entry__holecards {
+  display: inline-flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.hh-card {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: #f6f6f4;
+  color: #17181c;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.hh-card--red {
+  color: #d0242b;
+}
+
+/* Blank cards must not read as a loading failure — see the component. */
+.hh-entry__notshown {
+  font-size: 0.5625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-disabled, rgba(255, 255, 255, 0.3));
+  flex-shrink: 0;
+}
+
+/* The two money figures ride together at the right end of the row. The auto
+   margin lives on the wrapper, not on the chips: it used to sit on
+   .hh-entry__won, and with a second chip beside it the free space would split
+   between the two and strand the pair in the middle of the row. */
+.hh-entry__tail {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.hh-entry__won {
+  color: var(--success-green, #3fb950);
+  font-weight: 700;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  flex-shrink: 0;
+}
+
+.hh-entry__net {
+  font-weight: 700;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  flex-shrink: 0;
 }
 
 .hh-entry__hand {
-    color: rgba(255, 255, 255, 0.5);
-    font-weight: 400;
+  color: var(--text-tertiary, rgba(255, 255, 255, 0.5));
+  font-weight: 400;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Street */
 .hh-entry__street {
-    margin-bottom: 6px;
+  margin-bottom: 6px;
 }
 
 .hh-entry__street-header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 3px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 3px;
 }
 
 .hh-entry__street-name {
-    font-size: 0.625rem;
-    font-weight: 700;
-    color: rgba(255, 255, 255, 0.5);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+  font-size: 0.625rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .hh-entry__street-cards {
-    font-family: 'JetBrains Mono', 'SF Mono', monospace;
-    font-size: 0.625rem;
-    color: rgba(255, 255, 255, 0.7);
-    background: rgba(255, 255, 255, 0.06);
-    padding: 1px 6px;
-    border-radius: 4px;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 0.625rem;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 6px;
+  border-radius: 4px;
 }
 
 .hh-entry__actions {
-    padding-left: 8px;
-    border-left: 1px solid rgba(255, 255, 255, 0.06);
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .hh-entry__action {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 1px 0;
-    font-size: 0.625rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 0;
+  font-size: 0.625rem;
 }
 
 .hh-entry__player-name {
-    color: rgba(255, 255, 255, 0.6);
-    min-width: 60px;
+  color: rgba(255, 255, 255, 0.6);
+  min-width: 60px;
 }
 
 .hh-entry__action-type {
-    font-weight: 600;
-    text-transform: capitalize;
-    min-width: 36px;
+  font-weight: 600;
+  text-transform: capitalize;
+  min-width: 36px;
 }
 
 .hh-entry__action-amount {
-    color: rgba(255, 255, 255, 0.5);
-    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  color: rgba(255, 255, 255, 0.5);
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+}
+
+/* ── Run It Twice ───────────────────────────────────────────────────────────
+   Production hand #3046089 ran three boards and this panel showed one. Every
+   board now gets a row and a run badge, in the same visual language the replay
+   already uses (HandReplay's RUN n badge). */
+.hh-runs {
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(var(--hh-accent-rgb), 0.07);
+  border-left: 3px solid var(--hh-accent);
+}
+
+.hh-runs__count {
+  margin-left: auto;
+  font-size: 0.5625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--hh-accent);
+}
+
+.hh-run {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.hh-run__badge {
+  min-width: 42px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--hh-accent);
+  color: var(--pure-white, #ffffff);
+  font-size: 0.5rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.hh-run__cards {
+  display: inline-flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+
+/* The cards every run shares — dealt before the players agreed to run again.
+   Dimmed so the eye lands on the part that actually differs between boards. */
+.hh-card--shared {
+  opacity: 0.42;
+}
+
+.hh-runs__note {
+  margin-top: 4px;
+  font-size: 0.5625rem;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.45);
 }
 
 /* Responsive */
 @media (max-width: 380px) {
-    .hh-panel {
-        width: 100vw;
-    }
-    .hh-entry__summary {
-        padding: 8px 12px;
-        gap: 6px;
-    }
+  .hh-entry__summary {
+    padding: 8px 12px;
+    gap: 6px;
+  }
+}
+
+/* ── Phones: a 3/4-height bottom sheet, not a cramped drawer ────────────────
+   At 381-640px the panel was a min(340px, 85vw) drawer pinned to the right
+   edge: too narrow to read, and with the backdrop above it there was still a
+   full-width strip of real estate doing nothing. As a bottom sheet the top
+   quarter of the screen is backdrop you can tap, which is the gesture people
+   reach for first. */
+@media (max-width: 640px) {
+  .hh-panel {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    height: 75vh;
+    height: 75dvh;
+    border-left: none;
+    border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+    border-radius: 18px 18px 0 0;
+    box-shadow:
+      0 -8px 32px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    animation: hhSlideUp 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  }
+
+  .hh-panel__grab {
+    display: flex;
+  }
+
+  /* Dan 2026-08-24, from an iPhone: "there is no padding at the top, so you
+     can't even X off the page." Same rule the lobby sheet carries — the header
+     pays back the top inset, so the close button is always reachable. */
+  .hh-panel__header {
+    padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  }
+}
+
+@keyframes hhSlideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* Multi-table only: the tab strip is a real element the drawer used to paint
+   over. --sp-tabbar-h is TableTabBar.css's published height (it already
+   includes the top inset). Scoped to .multi-table-page on purpose: the
+   variable is declared on :root as soon as that stylesheet loads, so an
+   unscoped read would push the single-table drawer down by a bar that is not
+   on screen. */
+@media (min-width: 641px) {
+  .multi-table-page .hh-panel {
+    top: var(--sp-tabbar-h, 0px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hh-panel,
+  .hh-backdrop {
+    animation: none;
+  }
+}
+
+/* PWA GUARANTEE. In an installed app the page draws under the status bar and
+   on some devices env(safe-area-inset-top) resolves to 0, so the env() padding
+   above silently vanishes and the X goes back under the clock. The floor makes
+   that impossible.
+
+   LAST IN THE FILE ON PURPOSE: the header's own rule sets a `padding`
+   shorthand, and a shorthand RESETS padding-top. Equal specificity means
+   source order decides. Nothing that touches .hh-panel__header padding may be
+   added below this block. */
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .hh-panel__header {
+    padding-top: calc(12px + max(env(safe-area-inset-top, 0px), 24px));
+  }
 }

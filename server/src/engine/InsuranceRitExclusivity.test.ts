@@ -1,16 +1,17 @@
 /**
- * DAN'S RULE (2026-08-18): "Insurance is only allowed for running it once."
+ * SEQUENCING 2026-08-26 (Dan's leader-seat recording) — supersedes FIX 92's
+ * config-layer exclusion. A table may run BOTH features; the ORDER is fixed:
  *
- * Two layers enforce it and both are pinned here against the REAL
- * handleAllInRunout dispatch:
- *   1. Config layer (FIX 92): a table configured with both features gets RIT
- *      force-disabled at engine start (insurance takes priority).
- *   2. Runtime layer: handleAllInRunout branches to the insurance per-street
- *      flow FIRST whenever insurance is enabled - the RIT offer block is
- *      unreachable on an insurance hand, and vice versa an insurance offer
- *      never appears on a RIT hand. A hand that runs multiple boards can
- *      therefore never carry an insurance contract, and an insured hand
- *      always runs exactly once.
+ *   1. The run-it-multi-times question is asked FIRST (all-in, board short).
+ *   2. Insurance engages ONLY when the hand resolves to a single run —
+ *      chooser picks one, any responder declines, or the offer times out.
+ *      ("THE INSURANCE PART PICKED UP ON THE TURN. AFTER THE RUN IT TWICE
+ *      WAS DECLINED.")
+ *   3. A hand that deals extra boards NEVER carries an insurance contract,
+ *      and an insured hand always runs exactly once (Dan 2026-08-18:
+ *      "insurance is only allowed for running it once").
+ *
+ * Pinned against the REAL handleAllInRunout dispatch.
  */
 import { describe, it, expect } from 'vitest';
 import { ServerTableEngine } from './ServerTableEngine.js';
@@ -18,6 +19,8 @@ import { HandController } from './HandController.js';
 import type { HandConfig, HandEvent, SeatPlayer } from '../types.js';
 
 const TABLE = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function mkPlayers(stacks: number[]): SeatPlayer[] {
   return stacks.map(
@@ -63,7 +66,24 @@ function runoutHarness(opts: { insurance: boolean; rit: boolean }) {
   engine.running = true;
   engine.handCount = 1;
   engine.handController = hc;
-  engine.tableInfo = { game_variant: 'nlh', big_blind: 10 };
+  /* The table ROW is the source of truth, not the engine's configure() call.
+     Since 2026-08-27 handleAllInRunout re-reads it through
+     applyRunItTwiceConfig() on every all-in — that is the fix for production
+     hand #3046089, which dealt three boards off a configuration sampled when
+     the engine booted. So a harness that only called runItTwiceEngine.configure
+     below would have its `enabled` overwritten a moment later by the columns
+     this row does not carry (`run_it_twice ?? true` — RIT defaults ON, see the
+     2026-08-18 intent fix). Both are set, and they agree. */
+  engine.tableInfo = {
+    game_variant: 'nlh',
+    big_blind: 10,
+    run_it_twice: opts.rit,
+    allow_run_it_twice: opts.rit,
+    run_it_twice_enabled: false,
+    insurance_enabled: opts.insurance,
+  };
+  engine.allInStreetPauseMs = 1; // drive ordering, not real seconds
+  engine.allInFirstPauseMs = 1;
   engine.seatedPlayers = players.map((p) => ({
     seat_number: p.seat,
     user_id: p.user_id,
@@ -86,26 +106,59 @@ function runoutHarness(opts: { insurance: boolean; rit: boolean }) {
   return { engine };
 }
 
-describe('insurance ⟂ run-it-twice — one hand can never carry both', () => {
-  it('insurance enabled: the hand takes the insurance path and NO RIT offer exists', async () => {
+describe('insurance x run-it-twice - the RIT question first, insurance on a single run', () => {
+  it('both enabled: the RIT offer fires FIRST and no insurance offer exists yet', async () => {
     const { engine } = runoutHarness({ insurance: true, rit: true });
-    // The per-street flow is async (deals a street, prices, offers).
-    await new Promise((r) => setTimeout(r, 400));
-    expect(engine.runItTwiceEngine.hasPendingOffer(TABLE)).toBe(false);
+    await sleep(300);
+    expect(engine.runItTwiceEngine.hasPendingOffer(TABLE)).toBe(true);
+    expect(engine.insuranceEngine.getOffers(TABLE)).toHaveLength(0);
+  });
+
+  it('both enabled: chooser runs it ONCE -> insurance flow engages', async () => {
+    const { engine } = runoutHarness({ insurance: true, rit: true });
+    await sleep(150);
+    const chooserId = engine.runItTwiceEngine.getState(TABLE)?.chooserPlayerId as string;
+    expect(chooserId).toBeTruthy();
+    const resp = engine.respondToRIT(chooserId, undefined, 1);
+    expect(resp.success).toBe(true);
+    // waitForRITResponse polls, then the single-run continuation enters the
+    // per-street insurance flow, which offers on the standing board.
+    await sleep(900);
+    expect(engine.runItTwiceEngine.isActive(TABLE)).toBe(false);
     const offers = engine.insuranceEngine.getOffers(TABLE);
-    // The leader was offered insurance (or the spot was tied/uninsurable —
-    // either way the RIT block was never reached). With random hole cards a
-    // tie is possible; assert the RIT invariant unconditionally and the
-    // insurance offer when the spot is insurable.
+    // Random hole cards can tie (no offer on a tied board) — when the spot is
+    // insurable, the offer must exist and be pending for the leader.
     if (offers.length > 0) {
       expect(offers[0].status).toBe('offered');
     }
   });
 
-  it('RIT enabled without insurance: RIT offer exists and NO insurance offer ever appears', async () => {
+  it('both enabled: RIT ACCEPTED (2 boards) -> NO insurance offer ever appears', async () => {
+    const { engine } = runoutHarness({ insurance: true, rit: true });
+    await sleep(150);
+    const chooserId = engine.runItTwiceEngine.getState(TABLE)?.chooserPlayerId as string;
+    const otherId = chooserId === 'u1' ? 'u2' : 'u1';
+    expect(engine.respondToRIT(chooserId, undefined, 2).success).toBe(true);
+    expect(engine.respondToRIT(otherId, 'accept').success).toBe(true);
+    await sleep(900);
+    // Multi-board hand: per-hand exclusivity — no insurance contract.
+    expect(engine.insuranceEngine.getOffers(TABLE)).toHaveLength(0);
+  });
+
+  it('insurance only (no RIT): straight to the insurance path, no RIT offer', async () => {
+    const { engine } = runoutHarness({ insurance: true, rit: false });
+    await sleep(400);
+    expect(engine.runItTwiceEngine.hasPendingOffer(TABLE)).toBe(false);
+    const offers = engine.insuranceEngine.getOffers(TABLE);
+    if (offers.length > 0) {
+      expect(offers[0].status).toBe('offered');
+    }
+  });
+
+  it('RIT only (no insurance): RIT offer exists and NO insurance offer ever appears', async () => {
     const { engine } = runoutHarness({ insurance: false, rit: true });
     expect(engine.runItTwiceEngine.hasPendingOffer(TABLE)).toBe(true);
-    await new Promise((r) => setTimeout(r, 200));
+    await sleep(200);
     expect(engine.insuranceEngine.getOffers(TABLE)).toHaveLength(0);
   });
 });

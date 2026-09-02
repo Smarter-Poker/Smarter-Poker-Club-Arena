@@ -38,6 +38,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { sliceSqlStatement, sliceCall } from '../helpers/sourceWindow';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
@@ -100,7 +101,7 @@ describe('Spin reserve ownership', () => {
     const i = settle.indexOf('INSERT INTO public.rake_records');
     expect(i, 'settlement must still book rake').toBeGreaterThan(-1);
 
-    const insert = settle.slice(i, i + 900);
+    const insert = sliceSqlStatement(settle, 'INSERT INTO public.rake_records');
     // The club column is p_club_id. v_owner may appear in metadata for
     // traceability, but must never be the club the rake is booked against.
     expect(insert).toMatch(/p_club_id,\s*v_rake/);
@@ -159,7 +160,7 @@ describe('Spin reserve ownership', () => {
     for (const rpc of ['fn_spin_draw_multiplier', 'fn_spin_settle_game']) {
       const i = engine.indexOf(`supabase.rpc('${rpc}'`);
       expect(i, `expected the engine to call ${rpc}`).toBeGreaterThan(-1);
-      const call = engine.slice(i, i + 500);
+      const call = sliceCall(engine, `supabase.rpc('${rpc}'`);
       expect(call, `${rpc} must be called with the playing club`).toMatch(
         /p_club_id:\s*tournament\.club_id/
       );

@@ -14,13 +14,6 @@
   letter-spacing: 0.02em;
 }
 
-.stats-export-btn:hover {
-  color: rgba(255, 255, 255, 0.85);
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.12);
-  transform: translateY(-1px);
-}
-
 .stats-export-btn:active {
   transform: translateY(0);
 }

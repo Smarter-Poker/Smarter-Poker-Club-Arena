@@ -89,13 +89,33 @@ type OutboundMessage =
   | ChannelErrorMsg
   | { type: 'CHANNEL_PONG' }
   | { type: 'TABLE_META_UPDATE'; tableId: string; table: unknown }
-  | { type: 'FINANCIAL_UPDATE'; userId: string; walletType: string; available: number; total: number; ledgerEntry?: unknown };
+  | {
+      type: 'FINANCIAL_UPDATE';
+      userId: string;
+      walletType: string;
+      available: number;
+      total: number;
+      ledgerEntry?: unknown;
+    };
 
 // ─── ChannelHub ───────────────────────────────────────────────────────────────
 
 export class ChannelHub {
-  // userId → WebSocket
-  private connections: Map<string, WebSocket> = new Map();
+  // userId → live sockets for that user (one per tab / device).
+  //
+  // 2026-08-24 MULTI-TAB FIX: this was Map<userId, WebSocket> and
+  // addConnection() closed the user's existing socket on every new one —
+  // "one socket per userId". With TWO tabs open (lobby + table, or
+  // multi-table play, or phone + desktop) the tabs EVICTED EACH OTHER in an
+  // endless loop: A connects → B connects, kills A → A auto-reconnects,
+  // kills B → forever. Every cycle dropped subscriptions and burned an auth
+  // round-trip, and the user saw wallet/tournament/lobby feeds flap
+  // permanently. A user is now allowed several sockets; subscriptions are
+  // torn down only when the LAST one closes.
+  private connections: Map<string, Set<WebSocket>> = new Map();
+
+  /** Cap per user — bounds a leak or a hostile client, generous for real use. */
+  private static readonly MAX_SOCKETS_PER_USER = 8;
 
   // clubId → Set<userId>
   private clubSubs: Map<string, Set<string>> = new Map();
@@ -129,20 +149,28 @@ export class ChannelHub {
   // ─── Connection lifecycle ───────────────────────────────────────────────────
 
   /**
-   * Register a new authenticated connection.
-   * If the user already has a connection (e.g. reconnect), the old one is
-   * silently replaced after being closed — one socket per userId.
+   * Register a new authenticated connection. A user may hold several live
+   * sockets (tabs/devices); beyond MAX_SOCKETS_PER_USER the OLDEST is closed.
    */
   addConnection(userId: string, ws: WebSocket): void {
-    const existing = this.connections.get(userId);
-    if (existing && existing !== ws) {
-      try {
-        existing.close(1001, 'replaced by new connection');
-      } catch {
-        /* ignore */
+    let set = this.connections.get(userId);
+    if (!set) {
+      set = new Set();
+      this.connections.set(userId, set);
+    }
+    set.add(ws);
+    if (set.size > ChannelHub.MAX_SOCKETS_PER_USER) {
+      // Set preserves insertion order — the first entry is the oldest socket.
+      const oldest = set.values().next().value;
+      if (oldest && oldest !== ws) {
+        set.delete(oldest);
+        try {
+          oldest.close(1001, 'too many connections for this user');
+        } catch {
+          /* ignore */
+        }
       }
     }
-    this.connections.set(userId, ws);
   }
 
   /**
@@ -157,9 +185,19 @@ export class ChannelHub {
    * one (or when no socket is provided, for legacy/explicit removal).
    */
   removeConnection(userId: string, closingWs?: WebSocket): void {
-    if (closingWs && this.connections.get(userId) !== closingWs) {
-      return;
+    const set = this.connections.get(userId);
+    if (closingWs) {
+      // Late close of a socket that is no longer registered (already evicted,
+      // or torn down by a previous full removal) — nothing to do. This is the
+      // same reconnect-race guard as before, generalised to the multi-socket
+      // model.
+      if (!set || !set.has(closingWs)) return;
+      set.delete(closingWs);
+      // Other tabs/devices still live: keep every subscription. Presence and
+      // club/tournament/lobby feeds belong to the USER, not to one socket.
+      if (set.size > 0) return;
     }
+    // Last socket (or legacy full removal): tear the user down.
     // Fan out leave events for every club the user was subscribed to.
     for (const [clubId, members] of this.clubSubs) {
       if (members.has(userId)) {
@@ -209,8 +247,7 @@ export class ChannelHub {
         members: allMembers,
         event: 'sync',
       };
-      const ws = this.connections.get(userId);
-      if (ws) this.sendWs(ws, syncMsg);
+      this.sendToUserSockets(userId, syncMsg);
 
       // Fan out join event to everyone else in the club
       const joinMsg: ClubPresenceUpdateMsg = {
@@ -222,8 +259,7 @@ export class ChannelHub {
       };
       for (const memberId of members) {
         if (memberId === userId) continue;
-        const memberWs = this.connections.get(memberId);
-        if (memberWs) this.sendWs(memberWs, joinMsg);
+        this.sendToUserSockets(memberId, joinMsg);
       }
     }
   }
@@ -251,8 +287,7 @@ export class ChannelHub {
       changed: leavingPresence,
     };
     for (const memberId of members) {
-      const memberWs = this.connections.get(memberId);
-      if (memberWs) this.sendWs(memberWs, leaveMsg);
+      this.sendToUserSockets(memberId, leaveMsg);
     }
   }
 
@@ -323,8 +358,7 @@ export class ChannelHub {
     const members = this.clubSubs.get(clubId);
     if (!members) return;
     for (const userId of members) {
-      const ws = this.connections.get(userId);
-      if (ws) this.sendWs(ws, msg);
+      this.sendToUserSockets(userId, msg);
     }
   }
 
@@ -335,8 +369,7 @@ export class ChannelHub {
     const members = this.tournamentSubs.get(tournamentId);
     if (!members) return;
     for (const userId of members) {
-      const ws = this.connections.get(userId);
-      if (ws) this.sendWs(ws, msg);
+      this.sendToUserSockets(userId, msg);
     }
   }
 
@@ -345,17 +378,15 @@ export class ChannelHub {
    */
   broadcastToLobby(msg: OutboundMessage): void {
     for (const userId of this.lobbySubscribers) {
-      const ws = this.connections.get(userId);
-      if (ws) this.sendWs(ws, msg);
+      this.sendToUserSockets(userId, msg);
     }
   }
 
   /**
-   * Send a message to a specific user by userId.
+   * Send a message to a specific user by userId — every tab/device they hold.
    */
   sendToUser(userId: string, msg: OutboundMessage): void {
-    const ws = this.connections.get(userId);
-    if (ws) this.sendWs(ws, msg);
+    this.sendToUserSockets(userId, msg);
   }
 
   /**
@@ -391,9 +422,24 @@ export class ChannelHub {
     }
   }
 
+  /** Send to EVERY live socket a user holds (all tabs / devices). */
+  private sendToUserSockets(userId: string, msg: OutboundMessage): void {
+    const set = this.connections.get(userId);
+    if (!set) return;
+    for (const ws of set) this.sendWs(ws, msg);
+  }
+
   // ─── Metrics (used by /ws-metrics and tests) ────────────────────────────────
 
   connectionCount(): number {
+    // Total live sockets across all users (a user with 2 tabs counts as 2).
+    let n = 0;
+    for (const set of this.connections.values()) n += set.size;
+    return n;
+  }
+
+  /** Distinct users with at least one live socket. */
+  userCount(): number {
     return this.connections.size;
   }
 
@@ -455,8 +501,7 @@ export class ChannelHub {
       changed: { userId, status: 'away', updatedAt: new Date().toISOString() },
     };
     for (const memberId of members) {
-      const memberWs = this.connections.get(memberId);
-      if (memberWs) this.sendWs(memberWs, leaveMsg);
+      this.sendToUserSockets(memberId, leaveMsg);
     }
   }
 }

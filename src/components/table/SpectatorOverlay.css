@@ -29,10 +29,6 @@
   cursor: pointer;
   transition: all 0.2s;
 }
-.so-badge:hover {
-  background: rgba(22, 27, 34, 0.95);
-  border-color: rgba(255, 255, 255, 0.2);
-}
 .so-badge--pulse {
   animation: soBadgePulse 0.6s ease;
 }
@@ -76,9 +72,6 @@
   cursor: pointer;
   padding: 0 2px;
 }
-.so-following__unfollow:hover {
-  color: #f85149;
-}
 
 /* ── Panel ── */
 .so-panel {
@@ -118,9 +111,6 @@
   cursor: pointer;
   padding: 0;
 }
-.so-panel__close:hover {
-  color: #fff;
-}
 
 .so-panel__list {
   max-height: 200px;
@@ -149,9 +139,6 @@
   gap: 8px;
   padding: 5px 12px;
   transition: background 0.15s;
-}
-.so-viewer:hover {
-  background: rgba(255, 255, 255, 0.04);
 }
 .so-viewer__avatar {
   width: 24px;

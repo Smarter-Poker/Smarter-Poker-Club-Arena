@@ -7,8 +7,16 @@
 .page {
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
-  background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 100%);
+  background: linear-gradient(135deg, #0d1120 0%, #1a2436 100%);
   color: #fff;
+  width: 100%;
+  max-width: 100vw;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
   padding-bottom: 2rem;
 }
 
@@ -18,7 +26,7 @@
   justify-content: center;
   gap: 2rem;
   padding: 1.5rem;
-  background: rgba(26, 26, 46, 0.6);
+  background: rgba(26, 36, 54, 0.6);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
@@ -31,7 +39,7 @@
 .statValue {
   font-size: 1.5rem;
   font-weight: 700;
-  color: #a78bfa;
+  color: #6fdcff;
 }
 
 .statLabel {
@@ -44,7 +52,7 @@
 /* Search */
 .searchBar {
   padding: 1rem 1.5rem;
-  background: rgba(26, 26, 46, 0.4);
+  background: rgba(26, 36, 54, 0.4);
 }
 
 .searchInput {
@@ -74,9 +82,15 @@
 /* Filters */
 .filters {
   padding: 1rem 1.5rem;
-  background: rgba(26, 26, 46, 0.3);
+  background: rgba(26, 36, 54, 0.3);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.filters::-webkit-scrollbar {
+  display: none;
 }
 
 .filterGroup {
@@ -102,13 +116,6 @@
   font-size: 0.75rem;
   padding: 0.35rem 0.75rem;
 }
-
-.filterBtn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-  transform: translateY(-1px);
-}
-
 .filterBtn.active {
   background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
   border-color: transparent;
@@ -194,11 +201,6 @@
   font-weight: 600;
   transition: transform 0.2s;
 }
-
-.createBtn:hover {
-  transform: scale(1.05);
-}
-
 /* ═══════ TABLET ═══════ */
 @media (max-width: 768px) {
   .quickStats {
@@ -208,6 +210,17 @@
 
   .statValue {
     font-size: 1.25rem;
+  }
+
+  /* 2026-08-23 mobile pass: keep filter pills tappable even where later
+     breakpoints shrink their padding/font */
+  .filterBtn {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .page {
+    padding-bottom: var(--bottom-nav-clearance, 74px);
   }
 }
 
@@ -285,4 +298,29 @@
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 1rem;
   padding: 1rem 0;
+}
+
+/* Phase 6 visual convergence: black-first, engineered, and blur-free. */
+.page {
+  background:
+    radial-gradient(circle at 82% 4%, rgba(58, 168, 255, 0.09), transparent 28rem),
+    linear-gradient(180deg, #05080c 0%, #020407 100%);
+}
+
+.quickStats,
+.searchBar,
+.filters {
+  border-color: #26333d;
+  background: #080d12;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.searchInput,
+.filterBtn {
+  border-radius: 3px;
+  border-color: #26333d;
+  background: #080d12;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }

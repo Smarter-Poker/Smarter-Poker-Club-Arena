@@ -135,7 +135,7 @@
   gap: 7px;
   padding: 9px 8px;
   border-radius: 12px;
-  background: linear-gradient(180deg, #242526, #18191a);
+  background: linear-gradient(180deg, #1a2436, #18191a);
   border: 1px solid rgba(255, 255, 255, 0.12);
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.7);
   z-index: 2;
@@ -160,10 +160,10 @@
     0 0 0 2px #5c1020;
 }
 .sw__lamp--1.sw__lamp--on {
-  background: radial-gradient(circle at 36% 30%, #fff2a8, #ffd700);
+  background: radial-gradient(circle at 36% 30%, #e8eaf0, #6fdcff);
   box-shadow:
-    0 0 18px #ffd700,
-    0 0 40px rgba(255, 215, 0, 0.6),
+    0 0 18px #6fdcff,
+    0 0 40px rgba(111, 220, 255, 0.6),
     0 0 0 2px #6b4f0d;
 }
 .sw__lamp--2.sw__lamp--on {
@@ -183,10 +183,10 @@
     0 0 32px rgba(240, 40, 73, 0.9);
 }
 .sw__count--2 {
-  color: #ffd700;
+  color: #6fdcff;
   text-shadow:
     0 0 8px rgba(255, 255, 255, 0.5),
-    0 0 32px rgba(255, 215, 0, 0.9);
+    0 0 32px rgba(111, 220, 255, 0.9);
 }
 .sw__count--1 {
   color: #31a24c;
@@ -237,7 +237,7 @@
   background: #1e2124;
   box-shadow:
     0 0 0 3px #141618,
-    0 0 0 4px rgba(255, 215, 0, 0.22),
+    0 0 0 4px rgba(111, 220, 255, 0.22),
     0 22px 44px rgba(0, 0, 0, 0.75);
 }
 
@@ -302,7 +302,7 @@
   --sw-seg: #0d5dc7;
 } /* royal blue dark */
 .sw__seg--c5 {
-  --sw-seg: #ffd700;
+  --sw-seg: #6fdcff;
 } /* gold            */
 .sw__seg--c6 {
   --sw-seg: #2c3e50;
@@ -358,7 +358,7 @@
   opacity: 0;
 }
 .sw__edge--halo {
-  stroke: #ffd700;
+  stroke: #6fdcff;
   animation: swNeonHalo 600ms ease-in-out 5;
 }
 .sw__edge--core {
@@ -393,7 +393,7 @@
 /* The pegs the flapper strikes. The clicking needs a visible source or it
    reads as a sound effect laid over a picture. */
 .sw__peg {
-  fill: #ffd700;
+  fill: #6fdcff;
   stroke: rgba(0, 0, 0, 0.6);
   stroke-width: 1;
 }
@@ -579,8 +579,8 @@
   font-size: 15px;
   font-weight: 900;
   letter-spacing: 0.3em;
-  color: #ffd700;
-  text-shadow: 0 0 18px rgba(255, 215, 0, 0.7);
+  color: #6fdcff;
+  text-shadow: 0 0 18px rgba(111, 220, 255, 0.7);
   animation: swHype 1.4s ease-in-out infinite;
 }
 
@@ -665,6 +665,63 @@
     transition: none;
   }
   .sw__seg--winner::before {
+    animation: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TIERED CELEBRATION (2026-08-29, round 15)
+   ═══════════════════════════════════════════════════════════════════════════
+   A 100x lands about once in 9,921 games; a 2x lands about every other game.
+   The burst SIZE is data (spinCelebration in spinSpec drives the piece count),
+   and these rules give each band its own character on top of it. Purely
+   additive per the Animation Law: every band that celebrated before still
+   celebrates, and `mid` is new. Motion here is decoration, so it collapses
+   under reduced motion while the banner text stays readable.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+.sw__hype--mid {
+  color: #7dd3fc;
+  text-shadow: 0 0 10px rgba(125, 211, 252, 0.45);
+}
+.sw__hype--big {
+  color: #fbbf24;
+  text-shadow: 0 0 14px rgba(251, 191, 36, 0.55);
+}
+.sw__hype--mega {
+  color: #fff1a8;
+  text-shadow:
+    0 0 10px rgba(255, 241, 168, 0.9),
+    0 0 30px rgba(255, 190, 60, 0.75);
+  animation: swMegaPulse 900ms ease-in-out infinite alternate;
+}
+
+@keyframes swMegaPulse {
+  from {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  to {
+    transform: scale(1.06);
+    filter: brightness(1.25);
+  }
+}
+
+/* The rarer the draw, the longer and wider its confetti falls. */
+.sw__confetti--mid .sw__conf {
+  animation-duration: calc(1500ms / var(--animation-speed, 1));
+}
+.sw__confetti--big .sw__conf {
+  animation-duration: calc(1900ms / var(--animation-speed, 1));
+}
+.sw__confetti--mega .sw__conf {
+  animation-duration: calc(2400ms / var(--animation-speed, 1));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Meaning is kept, motion is not (Animation Law: reduced motion collapses
+     motion, never the message). The banner still names the tier. */
+  .sw__hype--mega {
     animation: none;
   }
 }

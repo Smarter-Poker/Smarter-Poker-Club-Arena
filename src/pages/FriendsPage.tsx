@@ -1,30 +1,32 @@
-/**
- * 👫 FRIENDS PAGE — Friends List & Management with Real-Time Status
- */
-
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
-import { useAuthUser } from '../hooks/useAuthUser';
-import { masterBus } from '../core/MasterBus';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import CommunitySurfaceHeader from '../components/community/CommunitySurfaceHeader';
+import ConfirmModal from '../components/common/ConfirmModal';
 import { useToast } from '../components/common/Toast';
-import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
-import { retryFetch } from '../utils/retryFetch';
-import { useIsMounted } from '../hooks/useIsMounted';
-import { exportToCSV } from '../lib/export';
-import FriendsList from '../components/social/FriendsList';
-import RecentPlayers from '../components/social/RecentPlayers';
 import FriendActivityFeed from '../components/social/FriendActivityFeed';
-import InviteToTable from '../components/social/InviteToTable';
 import FriendChallengeModal from '../components/social/FriendChallengeModal';
 import FriendChallengesPanel from '../components/social/FriendChallengesPanel';
 import FriendSuggestions from '../components/social/FriendSuggestions';
-import { useSwipeAction } from '../hooks/useSwipeAction';
-import { playerStatusService } from '../services/PlayerStatusService';
-import './FriendsPage.css';
+import { masterBus } from '../core/MasterBus';
+import { useAuthUser } from '../hooks/useAuthUser';
+import { useIsMounted } from '../hooks/useIsMounted';
+import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import PageSkeleton from '../components/common/PageSkeleton';
+import { exportToCSV } from '../lib/export';
+import { supabase } from '../lib/supabase';
+import { generateAvatarSvg, sizedStorageUrl } from '../utils/avatarGenerator';
 import { reportError } from '../utils/errorReporter';
+import { fetchAllRows, type PagedResult } from '../utils/fetchAllRows';
+import { PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
+import { retryFetch } from '../utils/retryFetch';
+import {
+  chunkSocialProfileIds,
+  formatSocialLastSeen,
+  isSocialProfileOnline,
+  resolveSocialProfile,
+  type SocialGraphProfile,
+} from '../utils/socialGraph';
+import './FriendsPage.css';
 
 interface Friend {
   id: string;
@@ -32,26 +34,80 @@ interface Friend {
   username: string;
   avatar_url?: string;
   is_online: boolean;
+  source_online: boolean;
+  last_seen?: string;
+  profile_available: boolean;
 }
 
-type FriendsTab = 'friends' | 'pending' | 'recent' | 'challenges';
+interface FriendshipEdge {
+  id: string;
+  friend_id?: string;
+  user_id?: string;
+}
 
-// ── SWR Cache helpers (with 5-minute TTL) ──
-const FR_CACHE_PREFIX = 'fr_cache_';
-const FR_CACHE_TS_PREFIX = 'fr_cache_ts_';
-const FR_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+interface ConnectionDiagnostics {
+  unavailableProfiles: number;
+}
 
-function getCachedFriends(userId: string) {
+type FriendsTab = 'friends' | 'requests' | 'activity' | 'challenges';
+
+const FRIEND_TABS: Array<{ id: FriendsTab; label: string }> = [
+  { id: 'friends', label: 'Friends' },
+  { id: 'requests', label: 'Requests' },
+  { id: 'activity', label: 'Activity' },
+  { id: 'challenges', label: 'Challenges' },
+];
+
+const FR_CACHE_PREFIX = 'fr_cache_v2_';
+const FR_CACHE_TS_PREFIX = 'fr_cache_v2_ts_';
+const FR_CACHE_TTL = 5 * 60 * 1000;
+const FRIENDS_PAGE_SIZE = 40;
+const SOCIAL_GRAPH_FETCH_SIZE = 500;
+
+async function readCompleteSocialSet<T>(
+  label: string,
+  makePageQuery: (from: number, to: number) => PromiseLike<PagedResult<T>>,
+  isMounted: { current: boolean }
+): Promise<T[]> {
+  const result = await retryFetch(
+    async () => {
+      try {
+        return {
+          data: await fetchAllRows<T>(makePageQuery, {
+            pageSize: SOCIAL_GRAPH_FETCH_SIZE,
+            label,
+          }),
+          error: null,
+        };
+      } catch (error) {
+        return {
+          data: null,
+          error: {
+            message: error instanceof Error ? error.message : String(error),
+          },
+        };
+      }
+    },
+    { maxRetries: 2, isMountedRef: isMounted }
+  );
+
+  if (result.error) throw new Error(result.error.message);
+  return result.data || [];
+}
+
+function getFriendsTab(value: string | null): FriendsTab {
+  if (value === 'pending') return 'requests';
+  if (value === 'recent') return 'activity';
+  return FRIEND_TABS.some((tab) => tab.id === value) ? (value as FriendsTab) : 'friends';
+}
+
+function getCachedFriends(userId: string): Friend[] | null {
   try {
     const tsRaw = sessionStorage.getItem(FR_CACHE_TS_PREFIX + userId);
-    if (tsRaw) {
-      const ts = parseInt(tsRaw, 10);
-      if (Date.now() - ts > FR_CACHE_TTL) {
-        // Cache expired — clear it
-        sessionStorage.removeItem(FR_CACHE_PREFIX + userId);
-        sessionStorage.removeItem(FR_CACHE_TS_PREFIX + userId);
-        return null;
-      }
+    if (tsRaw && Date.now() - Number.parseInt(tsRaw, 10) > FR_CACHE_TTL) {
+      sessionStorage.removeItem(FR_CACHE_PREFIX + userId);
+      sessionStorage.removeItem(FR_CACHE_TS_PREFIX + userId);
+      return null;
     }
     const raw = sessionStorage.getItem(FR_CACHE_PREFIX + userId);
     return raw ? JSON.parse(raw) : null;
@@ -59,88 +115,108 @@ function getCachedFriends(userId: string) {
     return null;
   }
 }
+
 function setCachedFriends(userId: string, data: Friend[]) {
   try {
     sessionStorage.setItem(FR_CACHE_PREFIX + userId, JSON.stringify(data));
     sessionStorage.setItem(FR_CACHE_TS_PREFIX + userId, String(Date.now()));
   } catch {
-    /* quota */
+    // A full session cache must never block the live friends experience.
   }
 }
 
 export default function FriendsPage() {
-  useEffect(() => {
-    document.title = 'Friends | Smarter Poker';
-  }, []);
-
   const navigate = useNavigate();
-  useVisibilityRefresh(() => loadFriends());
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuthUser();
   const toast = useToast();
   const isMounted = useIsMounted();
-
+  const activeTab = getFriendsTab(searchParams.get('tab'));
   const [friends, setFriends] = useState<Friend[]>([]);
   const [pendingRequests, setPendingRequests] = useState<Friend[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<FriendsTab>('friends');
   const [searchQuery, setSearchQuery] = useState('');
+  const [visibleFriendCount, setVisibleFriendCount] = useState(FRIENDS_PAGE_SIZE);
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
-  const [visibleFriendRows, setVisibleFriendRows] = useState(new Set<number>());
-  const [visiblePendingRows, setVisiblePendingRows] = useState(new Set<number>());
-  const [searchFocused, setSearchFocused] = useState(false);
+  const [connectionDiagnostics, setConnectionDiagnostics] = useState<ConnectionDiagnostics>({
+    unavailableProfiles: 0,
+  });
   const [challengeTarget, setChallengeTarget] = useState<{ id: string; name: string } | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<Friend | null>(null);
+  const [removingFriend, setRemovingFriend] = useState(false);
   const loadFriendsRef = useRef(async () => {});
   const hasDataRef = useRef(false);
+  const loadingRef = useRef(false);
 
-  // SWR: show cached friends list instantly on mount
+  useEffect(() => {
+    document.title = 'Community Connections | Smarter Poker';
+  }, []);
+
+  useEffect(() => {
+    setVisibleFriendCount(FRIENDS_PAGE_SIZE);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    const legacyTab = searchParams.get('tab');
+    if (legacyTab !== 'pending' && legacyTab !== 'recent') return;
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', getFriendsTab(legacyTab));
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  const selectTab = (tab: FriendsTab) => {
+    const next = new URLSearchParams(searchParams);
+    if (tab === 'friends') next.delete('tab');
+    else next.set('tab', tab);
+    setSearchParams(next);
+  };
+
   useEffect(() => {
     if (!user?.id) return;
     const cached = getCachedFriends(user.id);
     if (cached && cached.length > 0) {
       setFriends(cached);
+      setConnectionDiagnostics({
+        unavailableProfiles: cached.filter((friend) => !friend.profile_available).length,
+      });
       hasDataRef.current = true;
       setLoading(false);
     }
   }, [user?.id]);
 
-  // Safety timeout: prevent infinite skeleton if auth/Supabase hangs
   useEffect(() => {
-    const timeout = setTimeout(() => setLoading(false), 5000);
-    return () => clearTimeout(timeout);
+    const timeout = window.setTimeout(() => setLoading(false), 5000);
+    return () => window.clearTimeout(timeout);
   }, []);
 
+  useVisibilityRefresh(() => loadFriendsRef.current());
+
   useEffect(() => {
-    if (user?.id) loadFriends();
+    if (user?.id) loadFriendsRef.current();
   }, [user?.id]);
 
-  // Keep ref pointing to the latest version of loadFriends to avoid stale closures
-  useEffect(() => {
-    loadFriendsRef.current = loadFriends;
-  });
-
-  // Real-time presence tracking for friends
   useEffect(() => {
     if (!user?.id) return;
-
-    const presenceKey = 'global-presence'; // Shared global channel so users actually intersect
+    const presenceKey = 'global-presence';
     const channel = masterBus.getOrCreateChannel(presenceKey);
 
-    // Track online status
     channel
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState();
         const onlineIds = new Set<string>();
         Object.values(state).forEach((presences) => {
-          (presences as any[]).forEach((p) => onlineIds.add(p.user_id));
+          (presences as unknown as Array<{ user_id: string }>).forEach((presence) => {
+            if (presence.user_id) onlineIds.add(presence.user_id);
+          });
         });
         setOnlineUserIds(onlineIds);
       })
-      .subscribe(async (status: string, err?: Error) => {
+      .subscribe(async (status: string, error?: Error) => {
         if (status === 'SUBSCRIBED') {
           await channel.track({ user_id: user.id, online_at: new Date().toISOString() });
-        } else if (status === 'CHANNEL_ERROR') {
-          if (err) reportError(err?.message || err, 'FriendsPage._Presence_channel_error');
+        } else if (status === 'CHANNEL_ERROR' && error) {
+          reportError(error.message || error, 'FriendsPage._Presence_channel_error');
         } else if (status === 'TIMED_OUT') {
           console.warn('[FriendsPage] Presence channel timed out');
         }
@@ -151,9 +227,8 @@ export default function FriendsPage() {
     };
   }, [user?.id]);
 
-  // Real-time friend request notifications
   const handleFriendRequest = useCallback(() => {
-    if (loadFriendsRef.current) loadFriendsRef.current();
+    loadFriendsRef.current();
     toast.success('New friend request received!');
   }, [toast]);
 
@@ -166,200 +241,199 @@ export default function FriendsPage() {
     enabled: !!user?.id,
   });
 
-  // ── Bus Listeners: cross-page friend reactivity (debounced) ──
   useEffect(() => {
-    let isMounted = true;
+    let active = true;
     const handler = () => {
-      if (isMounted && loadFriendsRef.current) {
-        setIsRefreshing(true);
-        loadFriendsRef.current().finally(() => {
-          if (isMounted) setIsRefreshing(false);
-        });
-      }
+      if (!active) return;
+      setIsRefreshing(true);
+      loadFriendsRef.current().finally(() => {
+        if (active) setIsRefreshing(false);
+      });
     };
     const unsubs = [
       masterBus.subscribeDebounced('FRIEND_REQUEST_ACCEPTED', handler, 500),
       masterBus.subscribeDebounced('FRIEND_REQUEST_SENT', handler, 500),
       masterBus.subscribeDebounced('PROFILE_UPDATED', handler, 500),
-      // Q3: Reactively update when a user is blocked/unblocked
       masterBus.subscribeDebounced('USER_BLOCKED', handler, 500),
       masterBus.subscribeDebounced('USER_UNBLOCKED', handler, 500),
     ];
     return () => {
-      isMounted = false;
-      unsubs.forEach((u) => u());
+      active = false;
+      unsubs.forEach((unsubscribe) => unsubscribe());
     };
   }, []);
 
-  const loadingRef = useRef(false);
+  const loadFriends = useCallback(
+    async (getIsMounted?: () => boolean) => {
+      if (!user?.id || loadingRef.current) return;
+      loadingRef.current = true;
+      if (!hasDataRef.current) setLoading(true);
 
-  const loadFriends = async (getIsMounted?: () => boolean) => {
-    if (!user?.id) return;
-    if (loadingRef.current) return;
-    loadingRef.current = true;
-    if (!hasDataRef.current) setLoading(true);
-    try {
-      // ── Batch: sent + received friendships + pending requests in parallel ──
-      const [sentResult, receivedResult, pendingResult] = await Promise.all([
-        retryFetch(
-          () =>
-            supabase
-              .from('friendships')
-              .select('id, friend_id, status')
-              .eq('user_id', user?.id)
-              .eq('status', 'accepted')
-              .order('created_at', { ascending: false })
-              .limit(200)
-              .then((r) => r),
-          { maxRetries: 2, isMountedRef: isMounted }
-        ),
-        retryFetch(
-          () =>
-            supabase
-              .from('friendships')
-              .select('id, user_id, status')
-              .eq('friend_id', user?.id)
-              .eq('status', 'accepted')
-              .order('created_at', { ascending: false })
-              .limit(200)
-              .then((r) => r),
-          { maxRetries: 2, isMountedRef: isMounted }
-        ),
-        retryFetch(
-          () =>
-            supabase
-              .from('friendships')
-              .select('id, user_id')
-              .eq('friend_id', user?.id)
-              .eq('status', 'pending')
-              .order('created_at', { ascending: false })
-              .limit(100)
-              .then((r) => r),
-          { maxRetries: 2, isMountedRef: isMounted }
-        ),
-      ]);
+      try {
+        const [sentRows, receivedRows, pendingRows] = await Promise.all([
+          readCompleteSocialSet<FriendshipEdge>(
+            'FriendsPage.accepted_sent',
+            (from, to) =>
+              supabase
+                .from('friendships')
+                .select('id, friend_id, status')
+                .eq('user_id', user.id)
+                .eq('status', 'accepted')
+                .order('created_at', { ascending: false })
+                .range(from, to),
+            isMounted
+          ),
+          readCompleteSocialSet<FriendshipEdge>(
+            'FriendsPage.accepted_received',
+            (from, to) =>
+              supabase
+                .from('friendships')
+                .select('id, user_id, status')
+                .eq('friend_id', user.id)
+                .eq('status', 'accepted')
+                .order('created_at', { ascending: false })
+                .range(from, to),
+            isMounted
+          ),
+          readCompleteSocialSet<FriendshipEdge>(
+            'FriendsPage.pending_received',
+            (from, to) =>
+              supabase
+                .from('friendships')
+                .select('id, user_id')
+                .eq('friend_id', user.id)
+                .eq('status', 'pending')
+                .order('created_at', { ascending: false })
+                .range(from, to),
+            isMounted
+          ),
+        ]);
 
-      // Collect all friend user IDs for batch profile lookup
-      const sentFriendIds = (sentResult.data || []).map((f: { friend_id: string }) => f.friend_id);
-      const receivedFriendIds = (receivedResult.data || []).map(
-        (f: { user_id: string }) => f.user_id
-      );
-      const pendingUserIds = (pendingResult.data || []).map((p: { user_id: string }) => p.user_id);
-      const allProfileIds = [
-        ...new Set([...sentFriendIds, ...receivedFriendIds, ...pendingUserIds]),
-      ];
+        const sentFriendIds = sentRows.map((item) => item.friend_id).filter(Boolean) as string[];
+        const receivedFriendIds = receivedRows
+          .map((item) => item.user_id)
+          .filter(Boolean) as string[];
+        const pendingUserIds = pendingRows.map((item) => item.user_id).filter(Boolean) as string[];
+        const allProfileIds = [
+          ...new Set([...sentFriendIds, ...receivedFriendIds, ...pendingUserIds]),
+        ];
+        const profileMap = new Map<string, SocialGraphProfile>();
 
-      // Batch-fetch all profiles at once (no FK hints needed)
-      const profileMap: Record<string, { username?: string; avatar_url?: string }> = {};
-      if (allProfileIds.length > 0) {
-        try {
-          const { data: profiles } = await supabase
-            .from('profiles')
-            .select('id, username, avatar_url:arena_avatar_url')
-            .in('id', allProfileIds);
-          if (profiles) {
-            for (const p of profiles)
-              profileMap[p.id] = { username: p.username, avatar_url: p.avatar_url };
-          }
-        } catch (e) {
-          reportError(e, 'FriendsPage.pendingUserIds');
-          /* non-critical */
-        }
-      }
-
-      // Map sent friendships (friend_id is the other person)
-      const sentMapped = (sentResult.data || []).map((f: { id: string; friend_id: string }) => ({
-        ...f,
-        friend: {
-          id: f.friend_id,
-          username: profileMap[f.friend_id]?.username,
-          avatar_url: profileMap[f.friend_id]?.avatar_url,
-        },
-      }));
-      // Map received friendships (user_id is the other person)
-      const receivedMapped = (receivedResult.data || []).map(
-        (f: { id: string; user_id: string }) => ({
-          ...f,
-          friend: {
-            id: f.user_id,
-            username: profileMap[f.user_id]?.username,
-            avatar_url: profileMap[f.user_id]?.avatar_url,
-          },
-        })
-      );
-
-      const allFriendships = [...sentMapped, ...receivedMapped];
-
-      if (getIsMounted && !getIsMounted()) return;
-      if (!isMounted.current) return;
-
-      if (allFriendships.length > 0) {
-        const uniqueMap = new Map();
-        allFriendships.forEach(
-          (f: (typeof sentMapped)[number] | (typeof receivedMapped)[number]) => {
-            if (f.friend?.id && !uniqueMap.has(f.friend.id)) {
-              uniqueMap.set(f.friend.id, {
-                id: f.id,
-                user_id: f.friend.id,
-                username: f.friend.username || 'Unknown',
-                avatar_url: f.friend.avatar_url,
-                is_online: onlineUserIds.has(f.friend.id),
-              });
+        if (allProfileIds.length > 0) {
+          const batches = await Promise.all(
+            chunkSocialProfileIds(allProfileIds).map((ids) =>
+              retryFetch(
+                () =>
+                  supabase
+                    .from('profiles')
+                    .select(
+                      `id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, is_online, last_seen`
+                    )
+                    .in('id', ids),
+                { maxRetries: 2, isMountedRef: isMounted }
+              )
+            )
+          );
+          for (const batch of batches) {
+            if (batch.error) throw batch.error;
+            for (const profile of batch.data || []) {
+              profileMap.set(profile.id, profile as SocialGraphProfile);
             }
           }
-        );
+        }
 
-        // NOTE: status_text column does not exist in profiles table yet (future feature).
-        // Skipping status enrichment until the column is added.
+        const sentMapped = sentRows.map((friendship) => ({
+          id: friendship.id,
+          friendId: friendship.friend_id,
+        }));
+        const receivedMapped = receivedRows.map((friendship) => ({
+          id: friendship.id,
+          friendId: friendship.user_id,
+        }));
+        const unique = new Map<string, Friend>();
 
-        setFriends(Array.from(uniqueMap.values()));
-        // Update SWR cache
-        if (isMounted.current) setCachedFriends(user?.id || '', Array.from(uniqueMap.values()));
-        hasDataRef.current = true;
-      } else {
-        setFriends([]);
-      }
+        [...sentMapped, ...receivedMapped].forEach((friendship) => {
+          if (!friendship.friendId || unique.has(friendship.friendId)) return;
+          const resolved = resolveSocialProfile(profileMap.get(friendship.friendId));
+          unique.set(friendship.friendId, {
+            id: friendship.id,
+            user_id: friendship.friendId,
+            username: resolved.name,
+            avatar_url: resolved.avatarUrl,
+            last_seen: resolved.lastSeen,
+            source_online: resolved.sourceOnline,
+            profile_available: resolved.available,
+            is_online: isSocialProfileOnline(
+              friendship.friendId,
+              onlineUserIds,
+              resolved.sourceOnline,
+              resolved.lastSeen
+            ),
+          });
+        });
 
-      // Use pending results from the parallel batch
-      const pending = pendingResult.data;
-
-      if (getIsMounted && !getIsMounted()) return;
-
-      if (pending) {
+        if ((getIsMounted && !getIsMounted()) || !isMounted.current) return;
+        const nextFriends = Array.from(unique.values());
+        setFriends(nextFriends);
+        setCachedFriends(user.id, nextFriends);
+        setConnectionDiagnostics({
+          unavailableProfiles: nextFriends.filter((friend) => !friend.profile_available).length,
+        });
+        hasDataRef.current = nextFriends.length > 0;
         setPendingRequests(
-          pending.map((p: { id: string; user_id: string }) => ({
-            id: p.id,
-            user_id: p.user_id,
-            username: profileMap[p.user_id]?.username || 'Unknown',
-            avatar_url: profileMap[p.user_id]?.avatar_url,
-            is_online: onlineUserIds.has(p.user_id),
-          }))
+          pendingRows
+            .filter((request) => request.user_id)
+            .map((request) => {
+              const requestUserId = request.user_id as string;
+              const resolved = resolveSocialProfile(profileMap.get(requestUserId));
+              return {
+                id: request.id,
+                user_id: requestUserId,
+                username: resolved.name,
+                avatar_url: resolved.avatarUrl,
+                last_seen: resolved.lastSeen,
+                source_online: resolved.sourceOnline,
+                profile_available: resolved.available,
+                is_online: isSocialProfileOnline(
+                  requestUserId,
+                  onlineUserIds,
+                  resolved.sourceOnline,
+                  resolved.lastSeen
+                ),
+              };
+            })
         );
+      } catch (error) {
+        reportError(error, 'FriendsPage.Failed_to_load_friends');
+        toast.error('Failed to load friends');
+      } finally {
+        loadingRef.current = false;
+        if ((!getIsMounted || getIsMounted()) && isMounted.current) setLoading(false);
       }
-    } catch (error) {
-      reportError(error, 'FriendsPage.Failed_to_load_friends');
-      toast.error('Failed to load friends');
-    } finally {
-      loadingRef.current = false;
-      if (!getIsMounted || getIsMounted()) {
-        if (isMounted.current) setLoading(false);
-      }
-    }
-  };
+    },
+    [isMounted, onlineUserIds, toast, user?.id]
+  );
+
+  useEffect(() => {
+    loadFriendsRef.current = loadFriends;
+  }, [loadFriends]);
+
+  useEffect(() => {
+    if (user?.id && !hasDataRef.current) loadFriends();
+  }, [loadFriends, user?.id]);
 
   const acceptRequest = async (friendshipId: string) => {
     try {
-      const { error } = await supabase
-        .from('friendships')
-        .update({ status: 'accepted' })
-        .eq('id', friendshipId)
-        .eq('friend_id', user?.id); // Only recipient can accept
+      const { data, error } = await supabase.rpc('accept_friendship', {
+        p_friendship_id: friendshipId,
+      });
       if (error) throw error;
+      if (data?.success !== true) throw new Error(data?.error || 'Friend request was not accepted');
       masterBus.emit('FRIEND_REQUEST_ACCEPTED', { friendshipId });
-      loadFriends();
+      await loadFriends();
       toast.success('Friend request accepted!');
-    } catch (err) {
-      reportError(err, 'FriendsPage.Failed_to_accept_request');
+    } catch (error) {
+      reportError(error, 'FriendsPage.Failed_to_accept_request');
       toast.error('Failed to accept request');
     }
   };
@@ -370,440 +444,468 @@ export default function FriendsPage() {
         .from('friendships')
         .delete()
         .eq('id', friendshipId)
-        .eq('friend_id', user?.id); // Only recipient can decline
+        .eq('friend_id', user?.id);
       if (error) throw error;
-      loadFriends();
+      await loadFriends();
       toast.success('Friend request declined');
-    } catch (err) {
-      reportError(err, 'FriendsPage.Failed_to_decline_request');
+    } catch (error) {
+      reportError(error, 'FriendsPage.Failed_to_decline_request');
       toast.error('Failed to decline request');
     }
   };
 
-  const removeFriend = async (friendshipId: string) => {
+  const removeFriend = async () => {
+    if (!removeTarget) return;
+    setRemovingFriend(true);
     try {
       const { error } = await supabase
         .from('friendships')
         .delete()
-        .eq('id', friendshipId)
-        .or(`user_id.eq.${user?.id},friend_id.eq.${user?.id}`); // Either user can remove
+        .eq('id', removeTarget.id)
+        .or(`user_id.eq.${user?.id},friend_id.eq.${user?.id}`);
       if (error) throw error;
-      loadFriends();
+      setRemoveTarget(null);
+      await loadFriends();
       toast.success('Friend removed');
-    } catch (err) {
-      reportError(err, 'FriendsPage.Failed_to_remove_friend');
+    } catch (error) {
+      reportError(error, 'FriendsPage.Failed_to_remove_friend');
       toast.error('Failed to remove friend');
+    } finally {
+      if (isMounted.current) setRemovingFriend(false);
     }
   };
 
-  const sendFriendRequest = async (playerId: string) => {
-    if (!user?.id) return;
-    try {
-      const { error } = await supabase.from('friendships').insert({
-        user_id: user.id,
-        friend_id: playerId,
-        status: 'pending',
-      });
-      if (error) {
-        if (error.code === '23505') {
-          toast.info('Friend request already sent');
-          return;
-        }
-        throw error;
-      }
-      masterBus.emit('FRIEND_REQUEST_SENT', { toUserId: playerId });
-      toast.success('Friend request sent!');
-    } catch (err) {
-      reportError(err, 'FriendsPage.Failed_to_send_request');
-      toast.error('Failed to send friend request');
-    }
-  };
-
-  // Update friend online status when presence changes
-  const friendsWithStatus = friends.map((f) => ({
-    ...f,
-    is_online: onlineUserIds.has(f.user_id),
+  const friendsWithStatus = friends.map((friend) => ({
+    ...friend,
+    is_online: isSocialProfileOnline(
+      friend.user_id,
+      onlineUserIds,
+      friend.source_online,
+      friend.last_seen
+    ),
   }));
-
-  const filteredFriends = friendsWithStatus.filter((f) =>
-    (f.username || '').toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredFriends = friendsWithStatus.filter((friend) =>
+    friend.username.toLowerCase().includes(searchQuery.trim().toLowerCase())
   );
+  const onlineFriends = filteredFriends.filter((friend) => friend.is_online);
+  const offlineFriends = filteredFriends.filter((friend) => !friend.is_online);
+  const visibleFriends = [...onlineFriends, ...offlineFriends].slice(0, visibleFriendCount);
+  const visibleOnlineFriends = visibleFriends.filter((friend) => friend.is_online);
+  const visibleOfflineFriends = visibleFriends.filter((friend) => !friend.is_online);
+  const onlineCount = friendsWithStatus.filter((friend) => friend.is_online).length;
 
-  // Stagger friend rows on render
-  useEffect(() => {
-    const timers = filteredFriends.map((_, i) =>
-      setTimeout(() => setVisibleFriendRows((prev) => new Set([...prev, i])), i * 50)
-    );
-    return () => timers.forEach((t) => clearTimeout(t));
-  }, [filteredFriends.length]);
-
-  // Stagger pending rows
-  useEffect(() => {
-    const timers = pendingRequests.map((_, i) =>
-      setTimeout(() => setVisiblePendingRows((prev) => new Set([...prev, i])), i * 50)
-    );
-    return () => timers.forEach((t) => clearTimeout(t));
-  }, [pendingRequests.length]);
-
-  const onlineCount = friendsWithStatus.filter((f) => f.is_online).length;
+  const exportFriends = () => {
+    try {
+      exportToCSV(filteredFriends, 'friends_list.csv', [
+        { key: 'username', label: 'Username' },
+        { key: 'is_online', label: 'Online' },
+        { key: 'user_id', label: 'User ID' },
+      ]);
+      toast.success('Friends exported!');
+    } catch (error) {
+      reportError(error, 'FriendsPage.export');
+      toast.error('Export failed');
+    }
+  };
 
   return (
-    <div className="friends-page">
-      <div className="friends-summary">
-        <div className="summary-stat">
-          <span className="stat-value">{friends.length}</span>
-          <span className="stat-label">Friends</span>
-        </div>
-        <div className="summary-stat online">
-          <span className="stat-value">{onlineCount}</span>
-          <span className="stat-label">Online</span>
-        </div>
-        {pendingRequests.length > 0 && (
-          <div className="summary-stat pending">
-            <span className="stat-value">{pendingRequests.length}</span>
-            <span className="stat-label">Pending</span>
+    <main className="friends-page">
+      <CommunitySurfaceHeader
+        eyebrow="Community / Connections"
+        title="Your Poker Circle"
+        description="Manage Relationships, Respond To Players, Track Shared Activity, And Launch Friendly Competitions Without Losing The Game."
+        metrics={[
+          { label: 'Friends', value: friends.length },
+          { label: 'Online', value: onlineCount, tone: 'live' },
+          {
+            label: 'Requests',
+            value: pendingRequests.length,
+            tone: pendingRequests.length ? 'attention' : 'default',
+          },
+        ]}
+        actions={
+          <>
+            <button
+              className="friends-hero-action"
+              type="button"
+              onClick={() => navigate('/search?type=players')}
+            >
+              Find Players
+            </button>
+            <button
+              className="friends-hero-action is-primary"
+              type="button"
+              onClick={() => navigate('/messages')}
+            >
+              Open Messenger
+            </button>
+          </>
+        }
+      />
+
+      <section className="friends-command" aria-labelledby="friends-command-title">
+        <div className="friends-command-heading">
+          <div>
+            <p>Relationship Command</p>
+            <h2 id="friends-command-title">Connections</h2>
           </div>
-        )}
-      </div>
-
-      {/* Q3: Friend Suggestions - "People You May Know" */}
-      <FriendSuggestions />
-
-      <div className="friends-tabs fr-chip-bar">
-        <button
-          className={`fr-filter-chip ${activeTab === 'friends' ? 'active' : ''}`}
-          onClick={() => setActiveTab('friends')}
-        >
-          Friends ({friends.length})
-        </button>
-        <button
-          className={`fr-filter-chip ${activeTab === 'pending' ? 'active' : ''}`}
-          onClick={() => setActiveTab('pending')}
-        >
-          Requests{' '}
-          {pendingRequests.length > 0 && (
-            <span className="fr-pending-badge">{pendingRequests.length}</span>
+          {isRefreshing && (
+            <span className="friends-refreshing" role="status">
+              Syncing
+            </span>
           )}
-        </button>
-        <button
-          className={`fr-filter-chip ${activeTab === 'recent' ? 'active' : ''}`}
-          onClick={() => setActiveTab('recent')}
-        >
-          Recent
-        </button>
-        <button
-          className={`fr-filter-chip ${activeTab === 'challenges' ? 'active' : ''}`}
-          onClick={() => setActiveTab('challenges')}
-        >
-          ⚔ Challenges
-        </button>
-      </div>
+        </div>
 
-      {activeTab === 'challenges' && user?.id && <FriendChallengesPanel userId={user.id} />}
-
-      {activeTab === 'friends' && (
-        <>
-          <div className="friends-search">
-            <input
-              type="text"
-              placeholder="Search friends..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onFocus={() => setSearchFocused(true)}
-              onBlur={() => setSearchFocused(false)}
-              style={{
-                boxShadow: searchFocused ? '0 0 16px rgba(0, 212, 255, 0.4)' : 'none',
-                transition: 'box-shadow 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-              }}
-            />
-            {filteredFriends.length > 0 && (
+        <div className="friends-tab-rail" role="tablist" aria-label="Connection Views">
+          {FRIEND_TABS.map((tab) => {
+            const count =
+              tab.id === 'friends'
+                ? friends.length
+                : tab.id === 'requests'
+                  ? pendingRequests.length
+                  : null;
+            return (
               <button
-                style={{
-                  background: 'rgba(65,105,225,0.15)',
-                  color: '#4169E1',
-                  border: '1px solid rgba(65,105,225,0.3)',
-                  padding: '6px 14px',
-                  borderRadius: '8px',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-                onClick={() => {
-                  try {
-                    exportToCSV(filteredFriends, 'friends_list.csv', [
-                      { key: 'username', label: 'Username' },
-                      { key: 'is_online', label: 'Online' },
-                      { key: 'user_id', label: 'User ID' },
-                    ]);
-                    toast.success('Friends exported!');
-                  } catch (e) {
-                    reportError(e, 'FriendsPage');
-                    toast.error('Export failed');
-                  }
-                }}
+                key={tab.id}
+                id={`friends-tab-${tab.id}`}
+                className={activeTab === tab.id ? 'is-active' : ''}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab.id}
+                aria-controls={`friends-panel-${tab.id}`}
+                onClick={() => selectTab(tab.id)}
               >
-                Export
+                {tab.label}
+                {count !== null && <span>{count}</span>}
               </button>
-            )}
-          </div>
+            );
+          })}
+        </div>
 
-          <div className="friends-list">
+        {activeTab === 'friends' && (
+          <div
+            id="friends-panel-friends"
+            className="friends-panel"
+            role="tabpanel"
+            aria-labelledby="friends-tab-friends"
+          >
+            <div className="friends-toolbar">
+              <label htmlFor="friends-search">Filter Your Friends</label>
+              <div>
+                <input
+                  id="friends-search"
+                  type="search"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder="Search By Player Name"
+                />
+                {filteredFriends.length > 0 && (
+                  <button type="button" onClick={exportFriends}>
+                    Export CSV
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {connectionDiagnostics.unavailableProfiles > 0 && (
+              <div className="friends-integrity-notice" role="status">
+                <strong>
+                  {connectionDiagnostics.unavailableProfiles} Relationship
+                  {connectionDiagnostics.unavailableProfiles === 1 ? '' : 's'} Need Profile Repair
+                </strong>
+                <span>
+                  These Records Remain Removable, But Profile, Message, And Challenge Actions Stay
+                  Disabled Until A Valid Player Profile Resolves.
+                </span>
+              </div>
+            )}
+
             {loading ? (
-              <div className="fr-skeleton-list">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="fr-skeleton-row">
-                    <div className="fr-skel-avatar" />
-                    <div className="fr-skel-text">
-                      <div className="fr-skel-name" />
-                      <div className="fr-skel-status" />
+              <div className="friends-skeleton-list" role="status" aria-label="Loading Friends">
+                {Array.from({ length: 5 }).map((_, index) => (
+                  <div className="friends-skeleton-row" key={index}>
+                    <span />
+                    <div>
+                      <i />
+                      <i />
                     </div>
                   </div>
                 ))}
               </div>
             ) : filteredFriends.length === 0 ? (
-              <div className="empty-state">
-                <span className="empty-icon">◆</span>
-                <p>No Friends Yet</p>
-                <button className="btn btn-primary" onClick={() => navigate('/search?tab=players')}>
-                  Find Friends
+              <div className="friends-empty">
+                <span aria-hidden="true">◇</span>
+                <h3>{searchQuery ? 'No Friends Match That Name' : 'Build Your Poker Circle'}</h3>
+                <p>
+                  {searchQuery
+                    ? 'Clear The Filter Or Search The Wider Community.'
+                    : 'Find Players You Trust, Then Message, Challenge, And Follow Their Activity Here.'}
+                </p>
+                <button type="button" onClick={() => navigate('/search?type=players')}>
+                  Find Players
                 </button>
               </div>
             ) : (
-              <>
-                {filteredFriends.filter((f) => f.is_online).length > 0 && (
-                  <div className="friend-group">
-                    <h3 className="friend-group-header">
-                      Online - {filteredFriends.filter((f) => f.is_online).length}
-                    </h3>
-                    {filteredFriends
-                      .filter((f) => f.is_online)
-                      .map((friend, index) => (
-                        <SwipeableFriendRow
-                          key={friend.id}
-                          friend={friend}
-                          visible={visibleFriendRows.has(filteredFriends.indexOf(friend))}
-                          onMessage={() => navigate(`/messages/new?userId=${friend.user_id}`)}
-                          onRemove={() => removeFriend(friend.id)}
-                          onChallenge={() =>
-                            setChallengeTarget({ id: friend.user_id, name: friend.username })
-                          }
-                          navigate={navigate}
-                        />
-                      ))}
+              <div className="friends-groups">
+                {visibleOnlineFriends.length > 0 && (
+                  <FriendGroup
+                    label="Online Now"
+                    friends={visibleOnlineFriends}
+                    totalCount={onlineFriends.length}
+                    navigate={navigate}
+                    onMessage={(friend) => navigate(`/messages?compose=${friend.user_id}`)}
+                    onChallenge={(friend) =>
+                      setChallengeTarget({ id: friend.user_id, name: friend.username })
+                    }
+                    onRemove={setRemoveTarget}
+                  />
+                )}
+                {visibleOfflineFriends.length > 0 && (
+                  <FriendGroup
+                    label="Offline"
+                    friends={visibleOfflineFriends}
+                    totalCount={offlineFriends.length}
+                    navigate={navigate}
+                    onMessage={(friend) => navigate(`/messages?compose=${friend.user_id}`)}
+                    onChallenge={(friend) =>
+                      setChallengeTarget({ id: friend.user_id, name: friend.username })
+                    }
+                    onRemove={setRemoveTarget}
+                  />
+                )}
+                {visibleFriends.length < filteredFriends.length && (
+                  <div className="friends-load-more">
+                    <span aria-live="polite">
+                      Showing {visibleFriends.length} Of {filteredFriends.length} Friends
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setVisibleFriendCount((current) => current + FRIENDS_PAGE_SIZE)
+                      }
+                    >
+                      Load{' '}
+                      {Math.min(FRIENDS_PAGE_SIZE, filteredFriends.length - visibleFriends.length)}{' '}
+                      More
+                    </button>
                   </div>
                 )}
-                {filteredFriends.filter((f) => !f.is_online).length > 0 && (
-                  <div className="friend-group">
-                    <h3 className="friend-group-header">
-                      Offline - {filteredFriends.filter((f) => !f.is_online).length}
-                    </h3>
-                    {filteredFriends
-                      .filter((f) => !f.is_online)
-                      .map((friend, index) => (
-                        <SwipeableFriendRow
-                          key={friend.id}
-                          friend={friend}
-                          visible={visibleFriendRows.has(filteredFriends.indexOf(friend))}
-                          onMessage={() => navigate(`/messages/new?userId=${friend.user_id}`)}
-                          onRemove={() => removeFriend(friend.id)}
-                          onChallenge={() =>
-                            setChallengeTarget({ id: friend.user_id, name: friend.username })
-                          }
-                          navigate={navigate}
-                        />
-                      ))}
-                  </div>
-                )}
-              </>
+              </div>
             )}
           </div>
-        </>
-      )}
+        )}
 
-      {activeTab === 'pending' && (
-        <div className="pending-list">
-          {pendingRequests.length === 0 ? (
-            <div className="empty-state" style={{ textAlign: 'center', padding: '2rem 1.5rem' }}>
-              <span style={{ fontSize: '2.5rem', display: 'block', marginBottom: '0.75rem' }}>
-                ✉
-              </span>
-              <p style={{ fontSize: '1.05rem', fontWeight: 600, margin: '0 0 0.5rem' }}>
-                No Pending Requests
-              </p>
-              <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
-                When Someone Sends You A Friend Request, It Will Appear Here.
-              </p>
-            </div>
-          ) : (
-            pendingRequests.map((request, index) => (
-              <div
-                key={request.id}
-                className="request-row"
-                style={{
-                  opacity: visiblePendingRows.has(index) ? 1 : 0,
-                  transform: visiblePendingRows.has(index) ? 'translateY(0)' : 'translateY(8px)',
-                  transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                }}
-              >
-                <div className="request-avatar">
-                  {request.avatar_url ? (
-                    <img src={request.avatar_url} alt="" loading="lazy" />
-                  ) : (
-                    <span>{request.username[0]?.toUpperCase()}</span>
-                  )}
-                </div>
-                <div className="request-info">
-                  <span className="request-name">{request.username}</span>
-                  <span className="request-label">Wants To Be Friends</span>
-                </div>
-                <div className="request-actions">
-                  <button className="accept-btn" onClick={() => acceptRequest(request.id)}>
-                    ✓
-                  </button>
-                  <button className="decline-btn" onClick={() => declineRequest(request.id)}>
-                    ✕
-                  </button>
-                </div>
+        {activeTab === 'requests' && (
+          <div
+            id="friends-panel-requests"
+            className="friends-panel"
+            role="tabpanel"
+            aria-labelledby="friends-tab-requests"
+          >
+            {pendingRequests.length === 0 ? (
+              <div className="friends-empty">
+                <span aria-hidden="true">⌁</span>
+                <h3>No Pending Requests</h3>
+                <p>Incoming Connection Requests Will Appear Here With Clear Review Controls.</p>
+                <button type="button" onClick={() => navigate('/search?type=players')}>
+                  Discover Players
+                </button>
               </div>
-            ))
-          )}
-        </div>
-      )}
+            ) : (
+              <div className="friends-request-list">
+                {pendingRequests.map((request) => (
+                  <article className="friends-request-row" key={request.id}>
+                    <button
+                      className="friends-request-profile"
+                      type="button"
+                      disabled={!request.profile_available}
+                      onClick={() =>
+                        request.profile_available && navigate(`/profile/${request.user_id}`)
+                      }
+                    >
+                      <FriendAvatar friend={request} />
+                      <span>
+                        <strong>{request.username}</strong>
+                        <small>Wants To Connect</small>
+                      </span>
+                    </button>
+                    <div className="friends-request-actions">
+                      <button
+                        className="is-accept"
+                        type="button"
+                        disabled={!request.profile_available}
+                        onClick={() => acceptRequest(request.id)}
+                      >
+                        Accept
+                      </button>
+                      <button type="button" onClick={() => declineRequest(request.id)}>
+                        Decline
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
-      {activeTab === 'recent' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-          <FriendActivityFeed friends={friends} />
-          <RecentPlayers
-            onAddFriend={(playerId) => {
-              sendFriendRequest(playerId);
-            }}
-            onInviteToTable={(playerId) => {
-              navigate(`/messages/new?userId=${playerId}`);
-              toast.info('Opening chat to invite...');
-            }}
-          />
-        </div>
-      )}
+        {activeTab === 'activity' && (
+          <div
+            id="friends-panel-activity"
+            className="friends-panel friends-activity"
+            role="tabpanel"
+            aria-labelledby="friends-tab-activity"
+          >
+            <div className="friends-panel-intro">
+              <div>
+                <p>Network Pulse</p>
+                <h3>Activity & Discovery</h3>
+              </div>
+              <button type="button" onClick={() => navigate('/search?type=players')}>
+                Search All Players
+              </button>
+            </div>
+            <FriendActivityFeed friends={friends} />
+            <FriendSuggestions />
+          </div>
+        )}
 
-      {/* Friend Challenge Modal */}
+        {activeTab === 'challenges' && (
+          <div
+            id="friends-panel-challenges"
+            className="friends-panel"
+            role="tabpanel"
+            aria-labelledby="friends-tab-challenges"
+          >
+            {user?.id ? (
+              <FriendChallengesPanel userId={user.id} />
+            ) : (
+              <div className="friends-empty">
+                <p>Sign In To View Friend Challenges.</p>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
       {user?.id && challengeTarget && (
         <FriendChallengeModal
-          isOpen={!!challengeTarget}
+          isOpen
           onClose={() => setChallengeTarget(null)}
           challengerId={user.id}
           challengeeId={challengeTarget.id}
           challengeeName={challengeTarget.name}
         />
       )}
-    </div>
+
+      <ConfirmModal
+        isOpen={!!removeTarget}
+        onConfirm={removeFriend}
+        onCancel={() => setRemoveTarget(null)}
+        title="Remove Friend?"
+        message={`Remove ${removeTarget?.username || 'this player'} from your poker circle? This does not block them.`}
+        confirmText="Remove Friend"
+        variant="danger"
+        loading={removingFriend}
+      />
+    </main>
   );
 }
 
-interface SwipeableFriendRowProps {
-  friend: Friend;
-  visible: boolean;
-  onMessage: () => void;
-  onRemove: () => void;
-  onChallenge?: () => void;
+interface FriendGroupProps {
+  label: string;
+  friends: Friend[];
+  totalCount: number;
   navigate: (path: string) => void;
+  onMessage: (friend: Friend) => void;
+  onChallenge: (friend: Friend) => void;
+  onRemove: (friend: Friend) => void;
 }
 
-function SwipeableFriendRow({
-  friend,
-  visible,
-  onMessage,
-  onRemove,
-  onChallenge,
+function FriendGroup({
+  label,
+  friends,
+  totalCount,
   navigate,
-}: SwipeableFriendRowProps) {
-  const { handlers, rowStyle, offset, reset } = useSwipeAction({
-    actionWidth: 80,
-    threshold: 40,
-    onSwipeRight: () => {
-      // Swipe right reveals left action (Message)
-    },
-    onSwipeLeft: () => {
-      // Swipe left reveals right action (Remove)
-    },
-  });
-
+  onMessage,
+  onChallenge,
+  onRemove,
+}: FriendGroupProps) {
   return (
-    <div
-      className="swipe-container"
-      style={{
-        opacity: visible ? 1 : 0,
-        transform: visible ? 'translateY(0)' : 'translateY(8px)',
-        transition: 'opacity 0.3s, transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-      }}
+    <section
+      className="friend-group"
+      aria-labelledby={`friend-group-${label.replace(/\s/g, '-').toLowerCase()}`}
     >
-      <div
-        className="swipe-actions-left"
-        onClick={(e) => {
-          e.stopPropagation();
-          reset();
-          onMessage();
-        }}
-      >
-        ◉
+      <h3 id={`friend-group-${label.replace(/\s/g, '-').toLowerCase()}`}>
+        {label}
+        <span>{totalCount}</span>
+      </h3>
+      <div className="friend-group-list">
+        {friends.map((friend) => (
+          <article className="friend-row" key={friend.id}>
+            <button
+              className="friend-profile"
+              type="button"
+              disabled={!friend.profile_available}
+              onClick={() => friend.profile_available && navigate(`/profile/${friend.user_id}`)}
+            >
+              <FriendAvatar friend={friend} />
+              <span className="friend-copy">
+                <strong>{friend.username}</strong>
+                <small>
+                  {!friend.profile_available
+                    ? 'Connection Record Only'
+                    : friend.is_online
+                      ? 'Online Now'
+                      : formatSocialLastSeen(friend.last_seen)}
+                </small>
+              </span>
+            </button>
+            <div
+              className={`friend-actions ${friend.profile_available ? '' : 'is-unavailable'}`}
+              aria-label={`Actions For ${friend.username}`}
+            >
+              {friend.profile_available && (
+                <>
+                  <button className="is-primary" type="button" onClick={() => onMessage(friend)}>
+                    Message
+                  </button>
+                  <button type="button" onClick={() => onChallenge(friend)}>
+                    Challenge
+                  </button>
+                </>
+              )}
+              <button className="is-danger" type="button" onClick={() => onRemove(friend)}>
+                Remove
+              </button>
+            </div>
+          </article>
+        ))}
       </div>
-      <div
-        className="swipe-actions-right"
-        onClick={(e) => {
-          e.stopPropagation();
-          reset();
-          onRemove();
-        }}
-      >
-        ⊘
-      </div>
-      <div
-        className="friend-row surface"
-        style={rowStyle}
-        {...handlers}
-        onClick={() => {
-          if (offset !== 0) reset();
-          else navigate(`/profile/${friend.user_id}`);
-        }}
-      >
-        <div className="friend-avatar">
-          {friend.avatar_url ? (
-            <img src={friend.avatar_url} alt="" loading="lazy" />
-          ) : (
-            <span>{friend.username[0]?.toUpperCase()}</span>
-          )}
-          {friend.is_online && <span className="online-dot pulse-anim" />}
-        </div>
-        <div className="friend-info">
-          <span className="friend-name">{friend.username}</span>
-          {friend.is_online && (
-            <span className="friend-status" style={{ fontSize: '0.7rem', color: '#10b981' }}>
-              Online
-            </span>
-          )}
-        </div>
-        <button
-          className="fr-challenge-btn"
-          onClick={(e) => {
-            e.stopPropagation();
-            onChallenge?.();
+    </section>
+  );
+}
+
+function FriendAvatar({ friend }: { friend: Friend }) {
+  return (
+    <span className="friend-avatar">
+      {friend.avatar_url ? (
+        <img
+          src={sizedStorageUrl(friend.avatar_url, 56)}
+          alt=""
+          loading="lazy"
+          onError={(event) => {
+            event.currentTarget.onerror = null;
+            event.currentTarget.src = generateAvatarSvg(
+              friend.user_id || friend.username,
+              friend.username
+            );
           }}
-          title="Challenge"
-          style={{
-            background: 'rgba(0, 212, 255, 0.1)',
-            border: '1px solid rgba(0, 212, 255, 0.2)',
-            borderRadius: '8px',
-            padding: '4px 8px',
-            color: '#00d4ff',
-            fontSize: '0.65rem',
-            fontWeight: 700,
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-        >
-          Challenge
-        </button>
-      </div>
-    </div>
+        />
+      ) : (
+        <span aria-hidden="true">{friend.username[0]?.toUpperCase()}</span>
+      )}
+      {friend.is_online && <i aria-label="Online" />}
+    </span>
   );
 }

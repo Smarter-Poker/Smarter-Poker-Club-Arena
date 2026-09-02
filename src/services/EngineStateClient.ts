@@ -55,6 +55,12 @@ export interface ServerPingMessage {
 export interface ServerEventMessage {
   type: 'EVENT';
   tableId: string;
+  /**
+   * Review fix 2026-08-25: the hub's per-table monotonic event sequence,
+   * consumed for same-connection de-duplication. Optional — legacy frames
+   * and recorded fixtures omit it.
+   */
+  seq?: number;
   payload: Record<string, unknown>;
 }
 export type ServerMessage =
@@ -225,6 +231,9 @@ export class EngineStateClient {
   /** Close the connection permanently. */
   disconnect(): void {
     this.intentionalClose = true;
+    // Review fix 2026-08-25: no queued frame may fire onSnapshot/onEvent
+    // against a page that has moved on (the CA-22 class).
+    this.resetInbox();
     if (this.onOnline !== null && typeof window !== 'undefined') {
       window.removeEventListener('online', this.onOnline);
       this.onOnline = null;
@@ -311,10 +320,11 @@ export class EngineStateClient {
     const wsUrl = this.opts.baseUrl.replace(/^http/, 'ws') + '/ws/table/' + this.opts.tableId;
     // Subprotocol carries auth. Two entries: the literal "bearer", then the JWT.
     //
-    // Roadmap batch 6 (2026-08-21), DEFAULT OFF: with localStorage
-    // ca_ws_mux='1', all tables share ONE physical socket to /ws/multi via a
-    // WebSocket-shaped facade (see EngineSocketMux). Everything below —
-    // seq/RESYNC, watchdog, reconnect backoff — runs unchanged on top of it.
+    // Roadmap batch 6 (2026-08-21), DEFAULT ON since 2026-08-24: all tables
+    // share ONE physical socket to /ws/multi via a WebSocket-shaped facade
+    // (see EngineSocketMux; kill switch localStorage ca_ws_mux='0').
+    // Everything below — seq/RESYNC, watchdog, reconnect backoff — runs
+    // unchanged on top of it.
     let ws: WebSocket;
     if (isMuxEnabled()) {
       ws = engineSocketMux.acquire(
@@ -358,6 +368,10 @@ export class EngineStateClient {
       // the live connection's state.
       if (this.ws !== ws) return;
       this.clearHandshakeTimer();
+      // Review fix 2026-08-25: a fresh connection starts with an empty
+      // inbound queue and a fresh event-seq epoch — the dead socket's
+      // frames must not precede (or dedupe against) this connection's.
+      this.resetInbox();
       this.retryCount = 0;
       this.unansweredResyncs = 0;
       this.setStatus('connected');
@@ -413,12 +427,13 @@ export class EngineStateClient {
       // 2026-08-22: 4404 used to be TERMINAL — but the engine returns it for
       // ~2 minutes after every restart while tables rehydrate, and for a
       // first player at an empty table. Giving up permanently turned every
-      // engine deploy into a page of dead tables (and the host's 'failed'
-      // auto-reload turned a truly closed table into a reload loop). Announce
-      // 'failed' so the UI can say so, but keep retrying on the slow ladder —
-      // if the table comes back, so do we.
+      // engine deploy into a page of dead tables. Dan previously added a slow
+      // retry ladder here, but announcing 'failed' triggered TablePage's
+      // auto-reload, turning a missing table into a 5-second reload loop.
+      // Announce 'idle' instead so the UI stays usable (e.g. for empty tables
+      // or during engine restarts) while we keep retrying on the slow ladder.
       if (e.code === CLOSE_TABLE_NOT_FOUND) {
-        this.setStatus('failed');
+        this.setStatus('idle');
         this.opts.onError({ code: e.code, reason: e.reason });
         this.retryCount = Math.max(this.retryCount, 5); // start at ~16s+ delays
         this.scheduleReconnect();
@@ -448,78 +463,218 @@ export class EngineStateClient {
     };
   }
 
+  /**
+   * ═══ THE UNIFIED INBOUND QUEUE (review fix 2026-08-25) ═══
+   *
+   * History, because three constraints meet here:
+   *
+   *  - Task 56 (2026-04-17): two EVENTs in one tick collapsed into one React
+   *    render and pot_win vanished. Cure: each EVENT gets its own macrotask.
+   *  - Showdown reveal (2026-08-25): the engine emits the showdown EVENT
+   *    before the revealing snapshot, but state frames applied synchronously
+   *    while events were deferred — the snapshot overtook the event and the
+   *    reveal stagger died. First cure (requeue the state frame behind
+   *    pending events) was reviewed and found wanting: no staleness guard, a
+   *    starvation window, and it still inverted an EVENT emitted after a
+   *    state frame.
+   *  - This queue is the cure for all three at once. Every non-PING frame
+   *    enters ONE FIFO in arrival order. The drain applies contiguous state
+   *    frames synchronously, dispatches exactly ONE event per macrotask,
+   *    then yields. Guarantees: server emit order IS client observation
+   *    order in both directions; every event still gets its own render; a
+   *    state frame is never observed before an event the server emitted
+   *    first; drain always advances (no starvation); and connect/disconnect
+   *    clear the queue, so a dead socket's frames can never reach a live
+   *    page (the CA-22 class). A lone state frame with an empty queue keeps
+   *    the old zero-latency fast path.
+   */
+  private inbox: ServerMessage[] = [];
+  private drainScheduled = false;
+  /**
+   * SHOWDOWN POLISH review fix: consume the hub's per-table EVENT seq —
+   * duplicates and out-of-order replays on the SAME connection are dropped.
+   * Reset on every (re)connect: the hub's counter restarts with the engine,
+   * and a fresh socket legitimately re-receives retained reveal events.
+   */
+  private lastEventSeq = 0;
+
   private handleMessage(msg: ServerMessage): void {
-    switch (msg.type) {
-      case 'SNAPSHOT': {
-        this.snapshot = msg.state;
-        this.seq = msg.seq;
-        this.opts.onSnapshot(this.snapshot, this.seq);
-        return;
+    /**
+     * ENGINE RESTART EPOCH RESET — WIRED 2026-08-28.
+     *
+     * `resetInbox()` below carries the cure for the permanent freeze after an
+     * engine rebuild, and its docblock claims "This fires on every dropTable
+     * path". It did not. `resetInbox` is reachable only from `disconnect()`
+     * and `ws.onopen`, and `TableStateHub.dropTable()` deliberately KEEPS the
+     * socket open (it resets `room.lastSeq = 0` and broadcasts this notice
+     * instead of dropping subscribers) — so no socket boundary occurred and
+     * the epoch was never reset. The rebuilt engine's `SNAPSHOT seq:1` was
+     * then discarded by the monotonicity belt, every following DELTA tripped
+     * `msg.prev !== this.seq` into a resync whose reply was dropped the same
+     * way, and because frames kept arriving the staleness watchdog and the
+     * reconnect ladder both stayed asleep. The felt sat dead — no cards, no
+     * clock, no chips — until the player reloaded the page.
+     *
+     * The hub sends the notice for exactly this purpose ("tell the clients
+     * why they are about to see a sequence reset"), and nothing consumed it.
+     * Consume it here, BEFORE the queue: the reset must land ahead of the
+     * fresh snapshot that follows it, and the hub always re-sends a full
+     * snapshot after a drop, so forgetting the old sequence loses nothing.
+     *
+     * This matters more from 2026-08-28 on, not less: the deploy pipeline's
+     * drain-gate deadlock was fixed the same day, so the engine now actually
+     * restarts on deploy instead of running hours-stale code — which means
+     * this path runs often rather than rarely.
+     */
+    if (
+      msg.type === 'EVENT' &&
+      (msg.payload as { type?: string } | undefined)?.type === 'engine_restarting'
+    ) {
+      this.inbox = [];
+      this.lastEventSeq = 0;
+      this.seq = 0;
+      this.snapshot = null;
+      // Still surface it: TablePage can show its reconnect chrome rather than
+      // a silently frozen table while the rebuilt engine publishes.
+      try {
+        this.opts.onEvent(msg.payload);
+      } catch (err) {
+        console.error('[EngineStateClient] onEvent listener threw', err);
       }
-      case 'DELTA': {
-        // If we don't have a snapshot yet, we can't apply a patch — request one.
-        if (!this.snapshot) {
-          this.requestResync();
-          return;
-        }
-        // Gap detection: if msg.prev !== local seq, we're missing something.
-        if (msg.prev !== this.seq) {
-          this.requestResync();
-          return;
-        }
-        try {
-          // applyPatch mutates in place by default; pass a cloned target
-          // for stable snapshot semantics downstream.
-          const next = structuredClone(this.snapshot) as EngineSnapshot;
-          applyPatch(next, msg.patch, /* validate */ false);
-          this.snapshot = next;
-          this.seq = msg.seq;
-          this.opts.onSnapshot(this.snapshot, this.seq);
-        } catch {
-          // Patch failed — force a resync
-          this.requestResync();
-        }
-        return;
-      }
-      case 'PING': {
-        try {
-          this.ws?.send(JSON.stringify({ type: 'PONG', ts: msg.ts }));
-        } catch {
-          /* onclose will reconnect */
-        }
-        return;
-      }
-      case 'EVENT': {
-        // Forward the transient event payload to the owning hook so the UI
-        // can dispatch by payload.type (insurance_offers, rit_offer, etc).
-        //
-        // Dan 2026-04-17 (Task 56 — pot shipping / winner acknowledgment):
-        // The server emits `pot_win` and `hand_complete` back-to-back in the
-        // same synchronous code path (HandController.completeHand). On the
-        // client, both WS frames often arrive in the same JS macrotask, so
-        // React 18's automatic batching collapsed the two `setLastEvent(...)`
-        // calls into a single render — only `hand_complete` survived, and
-        // `pot_win` was dropped silently. That's why the pot-shipping
-        // animation + winner banner never fired on production.
-        //
-        // Fix: defer each event dispatch to its own macrotask via
-        // `setTimeout(..., 0)`. That forces a separate React render per
-        // event, so every `useEffect([engineLastEvent])` watcher observes
-        // every event in order. Tiny (<1ms) latency penalty, totally
-        // invisible to the user — the animations now fire every hand.
-        const payload = msg.payload;
-        setTimeout(() => {
-          try {
-            this.opts.onEvent(payload);
-          } catch (err) {
-            // Never let a listener throw propagate back into the WS
-            // message pump — it would kill the connection.
-            console.error('[EngineStateClient] onEvent listener threw', err);
-          }
-        }, 0);
-        return;
-      }
+      return;
     }
+    if (msg.type === 'PING') {
+      // Keepalive never queues — answering late defeats its purpose.
+      try {
+        this.ws?.send(JSON.stringify({ type: 'PONG', ts: msg.ts }));
+      } catch {
+        /* onclose will reconnect */
+      }
+      return;
+    }
+    // Fast path: a state frame with nothing queued applies immediately,
+    // exactly as it always has.
+    if (this.inbox.length === 0 && (msg.type === 'SNAPSHOT' || msg.type === 'DELTA')) {
+      this.applyStateFrame(msg);
+      return;
+    }
+    this.inbox.push(msg);
+    this.scheduleDrain();
+  }
+
+  private scheduleDrain(): void {
+    if (this.drainScheduled) return;
+    this.drainScheduled = true;
+    setTimeout(() => {
+      this.drainScheduled = false;
+      this.drainInbox();
+    }, 0);
+  }
+
+  private drainInbox(): void {
+    while (this.inbox.length > 0) {
+      const msg = this.inbox.shift()!;
+      if (msg.type === 'EVENT') {
+        // Seq-based de-duplication (0/absent = legacy frame, always passes).
+        const seq = (msg as { seq?: number }).seq;
+        if (typeof seq === 'number' && seq > 0) {
+          if (seq <= this.lastEventSeq) continue;
+          this.lastEventSeq = seq;
+        }
+        try {
+          this.opts.onEvent(msg.payload);
+        } catch (err) {
+          // Never let a listener throw propagate back into the WS
+          // message pump — it would kill the connection.
+          console.error('[EngineStateClient] onEvent listener threw', err);
+        }
+        // One render per event: yield before anything else is observed.
+        if (this.inbox.length > 0) this.scheduleDrain();
+        return;
+      }
+      // SNAPSHOT / DELTA: apply in queue position, keep draining — state
+      // may share a render with a LATER event (server order preserved),
+      // never with an earlier one.
+      this.applyStateFrame(msg);
+    }
+  }
+
+  private applyStateFrame(msg: ServerMessage): void {
+    if (msg.type === 'SNAPSHOT') {
+      // Monotonicity belt: never roll state backwards. The hub's seq is
+      // monotonic per table and an engine restart forces a reconnect (which
+      // clears local seq via the fresh subscribe), so an older seq here can
+      // only be a stale frame.
+      if (this.snapshot && typeof msg.seq === 'number' && msg.seq < this.seq) return;
+      this.snapshot = msg.state;
+      this.seq = msg.seq;
+      this.opts.onSnapshot(this.snapshot, this.seq);
+      return;
+    }
+    if (msg.type !== 'DELTA') return;
+    // If we don't have a snapshot yet, we can't apply a patch — request one.
+    if (!this.snapshot) {
+      this.requestResync();
+      return;
+    }
+    // Gap detection: if msg.prev !== local seq, we're missing something.
+    if (msg.prev !== this.seq) {
+      this.requestResync();
+      return;
+    }
+    try {
+      // applyPatch mutates in place by default; pass a cloned target
+      // for stable snapshot semantics downstream.
+      const next = structuredClone(this.snapshot) as EngineSnapshot;
+      applyPatch(next, msg.patch, /* validate */ false);
+      this.snapshot = next;
+      this.seq = msg.seq;
+      this.opts.onSnapshot(this.snapshot, this.seq);
+    } catch {
+      // Patch failed — force a resync
+      this.requestResync();
+    }
+  }
+
+  /**
+   * Review fix 2026-08-25: a socket boundary empties the queue. Frames from
+   * a dead connection must never apply after reconnect, and a reconnect's
+   * first snapshot must not sit behind a dead socket's events.
+   */
+  private resetInbox(): void {
+    this.inbox = [];
+    this.lastEventSeq = 0;
+    /**
+     * EPOCH RESET 2026-08-27 (security/realtime audit): the table froze
+     * permanently after ANY engine restart.
+     *
+     * TableStateHub.dropTable() deliberately keeps the room's subscribers and
+     * their open sockets, and resets the room's sequence (`room.lastSeq = 0`).
+     * The client never reset its counterpart, so with `this.seq` still at, say,
+     * 4213 from before the restart, the monotonicity belt
+     *     if (msg.seq < this.seq) return;
+     * discarded the rebuilt engine's `SNAPSHOT seq:1`, and every following
+     * DELTA tripped `msg.prev !== this.seq` -> requestResync(), whose reply is
+     * another small-seq SNAPSHOT that was dropped again. An endless loop — and
+     * because frames kept arriving, `lastInboundAt` and `unansweredResyncs`
+     * were refreshed every time, so neither the staleness watchdog nor the
+     * reconnect ladder ever escalated. The table sat frozen until the player
+     * reloaded the page.
+     *
+     * The dropTable paths (zombie reaper, watchdog kill, tournament table
+     * breaks) do NOT pass through here — dropTable keeps the socket open, so
+     * no socket boundary occurs. They are handled by the `engine_restarting`
+     * branch in handleMessage(), which performs the same reset for the same
+     * reason. (Corrected 2026-08-28: this docblock previously claimed those
+     * paths reached this function, and that claim was why the freeze survived
+     * the fix meant to cure it.)
+     *
+     * Resetting the epoch here is safe: the hub always sends a FULL snapshot
+     * on subscribe and on resync, so nothing is lost by forgetting the old
+     * sequence.
+     */
+    this.seq = 0;
+    this.snapshot = null;
   }
 
   private requestResync(): void {
@@ -705,6 +860,17 @@ export interface ChannelPingMessage {
   type: 'PING';
   ts: number;
 }
+/**
+ * 2026-08-24: the server's documented heartbeat frame. The server sweep sent
+ * CHANNEL_PING and only accepted CHANNEL_PONG, while this client only answered
+ * PING with PONG — so every /ws/channel connection was declared dead and
+ * force-closed by the server 60s after it opened, forever. Both sides now
+ * speak both dialects so either can deploy first.
+ */
+export interface ChannelChannelPingMessage {
+  type: 'CHANNEL_PING';
+  ts?: number;
+}
 export interface ClubPresenceUpdateMessage {
   type: 'CLUB_PRESENCE_UPDATE';
   clubId: string;
@@ -748,6 +914,7 @@ export interface FinancialUpdateMessage {
 
 export type ChannelServerMessage =
   | ChannelPingMessage
+  | ChannelChannelPingMessage
   | ClubPresenceUpdateMessage
   | ClubEventMessage
   | TournamentEventMessage
@@ -772,7 +939,8 @@ export type ChannelClientMessage =
   | { type: 'JOIN_LOBBY' }
   | { type: 'LEAVE_LOBBY' }
   | { type: 'REQUEST_HAND_REPLAY'; handId: string }
-  | { type: 'PONG'; ts: number };
+  | { type: 'PONG'; ts: number }
+  | { type: 'CHANNEL_PONG' };
 
 // ─── Listener registrations ───────────────────────────────────────────────────
 
@@ -829,6 +997,76 @@ export class EngineChannelClient {
    *  thousand stale messages into the server's rate limiter on reconnect. */
   private static readonly MAX_QUEUE = 100;
 
+  // ── 2026-08-24: DESIRED SUBSCRIPTION STATE — survives reconnects ─────────
+  //
+  // Server-side subscriptions (ChannelHub clubSubs / tournamentSubs /
+  // lobbySubscribers) live on the CONNECTION and die with it. The old client
+  // sent each JOIN exactly once at subscribe time and never again, so ANY
+  // reconnect — engine deploy, network blip, heartbeat teardown — left the
+  // new connection subscribed to NOTHING. Tournament events, club events,
+  // presence and lobby updates went silent until a full page reload, with no
+  // error anywhere. (Supabase Realtime re-subscribed channels automatically;
+  // this behaviour was lost in the migration to the engine WS.)
+  //
+  // send() records the net desired state below; every onopen replays it.
+  // Server JOINs are idempotent (Set adds + alreadyJoined guard), so a replay
+  // that races a queued duplicate is harmless.
+  private desiredClubs = new Set<string>();
+  private desiredTournaments = new Set<string>();
+  private desiredLobby = false;
+  /** Latest UPDATE_PRESENCE per club, replayed after JOIN_CLUB on reconnect. */
+  private lastPresence = new Map<string, ChannelClientMessage>();
+  /** True once any socket has reached OPEN — gates the replay to reconnects. */
+  private hasConnectedBefore = false;
+
+  /** @internal Track the net effect of a client → server message. */
+  private recordDesiredState(msg: ChannelClientMessage): void {
+    switch (msg.type) {
+      case 'JOIN_CLUB':
+        this.desiredClubs.add(msg.clubId);
+        return;
+      case 'LEAVE_CLUB':
+        this.desiredClubs.delete(msg.clubId);
+        this.lastPresence.delete(msg.clubId);
+        return;
+      case 'UPDATE_PRESENCE':
+        this.desiredClubs.add(msg.clubId);
+        this.lastPresence.set(msg.clubId, msg);
+        return;
+      case 'JOIN_TOURNAMENT':
+        this.desiredTournaments.add(msg.tournamentId);
+        return;
+      case 'LEAVE_TOURNAMENT':
+        this.desiredTournaments.delete(msg.tournamentId);
+        return;
+      case 'JOIN_LOBBY':
+        this.desiredLobby = true;
+        return;
+      case 'LEAVE_LOBBY':
+        this.desiredLobby = false;
+        return;
+      default:
+        return; // PONG / CHANNEL_PONG / REQUEST_HAND_REPLAY carry no state
+    }
+  }
+
+  /** @internal Re-send the desired subscription state on a fresh socket. */
+  private replayDesiredState(ws: WebSocket): void {
+    const replay: ChannelClientMessage[] = [];
+    for (const clubId of this.desiredClubs) replay.push({ type: 'JOIN_CLUB', clubId });
+    for (const msg of this.lastPresence.values()) replay.push(msg);
+    for (const tournamentId of this.desiredTournaments)
+      replay.push({ type: 'JOIN_TOURNAMENT', tournamentId });
+    if (this.desiredLobby) replay.push({ type: 'JOIN_LOBBY' });
+    for (const msg of replay) {
+      try {
+        ws.send(JSON.stringify(msg));
+      } catch {
+        /* onclose will drive the next reconnect */
+      }
+    }
+  }
+
   // 2026-08-22: staleness watchdog + online-event recovery, mirroring
   // EngineStateClient. This client previously had NEITHER — plus a reconnect
   // ladder that gave up permanently after maxRetries — so one bad stretch of
@@ -841,6 +1079,19 @@ export class EngineChannelClient {
   private onVisibility: (() => void) | null = null;
   private static readonly WATCHDOG_TICK_MS = 10_000;
   private static readonly STALE_HARD_MS = 60_000;
+  /**
+   * 2026-08-24: periodic subscription RE-ASSERT. Two ways a subscription can
+   * silently die on a healthy socket: (a) the server's JOIN_CLUB membership
+   * check fails CLOSED on a transient DB error — the join is simply dropped,
+   * no error frame, and the client believes it is subscribed; (b) any future
+   * server-side state loss that does not close the socket. JOINs are
+   * idempotent server-side (Set adds + alreadyJoined guard), so re-sending
+   * the desired state every few minutes costs a handful of tiny frames and
+   * guarantees a lost subscription heals within one interval instead of
+   * never.
+   */
+  private static readonly REASSERT_INTERVAL_MS = 180_000;
+  private lastReassertAt = 0;
   /**
    * How much of the staleness budget a backgrounded tab is forgiven on wake.
    *
@@ -934,6 +1185,9 @@ export class EngineChannelClient {
    * If the socket isn't open yet, the message is queued and sent on connect.
    */
   send(msg: ChannelClientMessage): void {
+    // 2026-08-24: record the net desired subscription state FIRST, whether or
+    // not the socket is currently open — this is what reconnect replays.
+    this.recordDesiredState(msg);
     const data = JSON.stringify(msg);
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
@@ -1002,6 +1256,20 @@ export class EngineChannelClient {
     return () => this.listeners.onFinancialUpdate.delete(listener);
   }
 
+  /**
+   * 2026-08-24: status listeners. The constructor's onStatus option is owned
+   * by whoever built the singleton; surfaces that need to react to a
+   * reconnect (e.g. the wallet refetching balances it may have missed while
+   * the socket was down) register here instead. Does NOT auto-connect: a
+   * status observer is not a reason to open a network connection.
+   */
+  private statusListeners = new Set<(status: EngineConnectionStatus) => void>();
+
+  onStatusChange(listener: (status: EngineConnectionStatus) => void): () => void {
+    this.statusListeners.add(listener);
+    return () => this.statusListeners.delete(listener);
+  }
+
   // ─── Internal ─────────────────────────────────────────────────────────────
 
   private opening = false;
@@ -1052,6 +1320,17 @@ export class EngineChannelClient {
     ws.onopen = () => {
       if (this.ws !== ws) return;
       this.retryCount = 0;
+      // 2026-08-24: on a RECONNECT, replay the desired subscription state
+      // BEFORE flushing the queue — the fresh connection has no server-side
+      // subscriptions, and the queue only holds messages sent while offline.
+      // (First connect skips this: the original JOINs are in the queue or
+      // will be sent by their callers; replaying would only duplicate them.)
+      if (this.hasConnectedBefore) {
+        this.replayDesiredState(ws);
+      }
+      this.hasConnectedBefore = true;
+      // Fresh socket just (re)played its state — start the re-assert clock now.
+      this.lastReassertAt = Date.now();
       this.setStatus('connected');
       this.startWatchdog();
       // Flush any queued messages
@@ -1100,6 +1379,17 @@ export class EngineChannelClient {
       case 'PING': {
         try {
           this.ws?.send(JSON.stringify({ type: 'PONG', ts: msg.ts }));
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+      case 'CHANNEL_PING': {
+        // 2026-08-24: the server's heartbeat dialect. Not answering this is
+        // what got every channel connection killed at the 60s mark — the
+        // server sweep only counted CHANNEL_PONG as proof of life.
+        try {
+          this.ws?.send(JSON.stringify({ type: 'CHANNEL_PONG' }));
         } catch {
           /* ignore */
         }
@@ -1165,6 +1455,17 @@ export class EngineChannelClient {
     this.watchdogTimer = window.setInterval(() => {
       if (this.intentionalClose || this.status !== 'connected') return;
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      // 2026-08-24: re-assert desired subscriptions on a live socket — see
+      // REASSERT_INTERVAL_MS. Runs before the staleness check on purpose:
+      // the replay frames also serve as outbound traffic on a quiet link.
+      if (
+        this.ws !== null &&
+        this.ws.readyState === 1 &&
+        Date.now() - this.lastReassertAt >= EngineChannelClient.REASSERT_INTERVAL_MS
+      ) {
+        this.lastReassertAt = Date.now();
+        this.replayDesiredState(this.ws);
+      }
       if (Date.now() - this.lastInboundAt < EngineChannelClient.STALE_HARD_MS) return;
       this.lastInboundAt = Date.now();
       this.setStatus('reconnecting');
@@ -1237,6 +1538,13 @@ export class EngineChannelClient {
     if (this.status === status) return;
     this.status = status;
     this.opts.onStatus(status);
+    for (const listener of this.statusListeners) {
+      try {
+        listener(status);
+      } catch (err) {
+        console.error('[EngineChannelClient] status listener threw:', err);
+      }
+    }
   }
 }
 
@@ -1266,17 +1574,19 @@ function readTokenFromStorage(): string | null {
 
 export const engineChannelClient = new EngineChannelClient({
   baseUrl: ENGINE_BASE_URL,
-  // 2026-08-22: read via supabase.auth.getSession(), which REFRESHES an
-  // expired token. The raw localStorage read never refreshed, so a device
-  // that suspended past token expiry 4401-looped and then died permanently.
-  // localStorage stays as the fallback for any getSession failure. Dynamic
-  // import keeps this module free of an eager supabase dependency (it is
-  // unit-tested under jsdom without the app's env).
+  // 2026-08-24: routed through the in-memory auth token cache
+  // (src/lib/authToken.ts). Fast path is synchronous — no auth-js microtask
+  // chain on the connect path. Slow path (cache empty / near expiry) still
+  // calls supabase.auth.getSession(), which REFRESHES an expired token
+  // (2026-08-22 fix preserved: the raw localStorage read never refreshed, so
+  // a device that suspended past token expiry 4401-looped and died).
+  // localStorage stays as the last-resort fallback. Dynamic import keeps this
+  // module free of an eager supabase dependency (it is unit-tested under
+  // jsdom without the app's env).
   getToken: async () => {
     try {
-      const { supabase } = await import('../lib/supabase');
-      const { data } = await supabase.auth.getSession();
-      const t = data.session?.access_token ?? null;
+      const { getFreshAccessToken } = await import('../lib/authToken');
+      const t = await getFreshAccessToken();
       if (t) return t;
     } catch {
       /* fall back to storage */

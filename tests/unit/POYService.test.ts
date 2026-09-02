@@ -5,8 +5,8 @@
  *
  * Tests the Player of the Year batching logic:
  * - trackHandResult: session creation, accumulation, batched flushing
- * - submitTournamentResult: guards on missing API key
- * - submitCashSession: guards on missing API key
+ * - submitTournamentResult: honest handling of a rejected endpoint
+ * - submitCashSession: honest handling of a rejected endpoint
  * - flushAllSessions: clears all tracked sessions
  *
  * Strategy: spy on submitCashSession to verify trackHandResult actually
@@ -16,11 +16,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { POYService } from '../../src/services/POYService';
 
+vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
+
 describe('POYService', () => {
   let submitSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    // POY is same-origin now. Never let a unit test POST to whatever unrelated
+    // application happens to be listening on localhost:3000.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        text: async () => 'endpoint unavailable',
+      })
+    );
     // Flush any leaked state first
     await POYService.flushAllSessions();
     // Spy on submitCashSession so we can verify flush calls without network
@@ -28,11 +39,11 @@ describe('POYService', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────
-  // API KEY GUARD
+  // REJECTED ENDPOINT
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('submitTournamentResult', () => {
-    it('should return { success: false } when no API key is set', async () => {
+    it('should return { success: false } when the endpoint rejects the result', async () => {
       const result = await POYService.submitTournamentResult({
         player_id: 'p1',
         club_id: 'c1',
@@ -47,7 +58,7 @@ describe('POYService', () => {
   });
 
   describe('submitCashSession', () => {
-    it('should return { success: false } when no API key is set', async () => {
+    it('should return { success: false } when the endpoint rejects the session', async () => {
       // Restore real implementation for this one test
       submitSpy.mockRestore();
       const result = await POYService.submitCashSession({

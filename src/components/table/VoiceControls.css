@@ -1,0 +1,198 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  VOICE CONTROLS — the microphone in the chat sheet header
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Lives inside `.table-chat__voice` (TableChat.css), which is a flex child with
+ * `flex: 1 1 auto; min-width: 0`. That min-width is what lets the roster text
+ * ellipsis inside this component instead of shoving the close X off the right
+ * edge of a 375px screen, so nothing here may reintroduce an intrinsic minimum:
+ * the roster carries `min-width: 0` for exactly that reason.
+ *
+ * SIZES. Every button is 44x44, the smallest reliable touch target, measured
+ * before the header's own 10px padding. Three of them plus the gaps is 144px;
+ * the title and the close X take about 104px more, which leaves the roster its
+ * own room at 375px and lets it shrink first on anything narrower.
+ */
+
+.voice-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* The "you cannot use voice here" line, rendered instead of the buttons. */
+.voice-controls--note {
+  display: block;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: rgba(228, 230, 235, 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* ─── the microphone ───────────────────────────────────────────────────────── */
+
+.voice-controls__mic {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #e4e6eb;
+  cursor: pointer;
+  /* A press-and-hold on a touch screen must not scroll the sheet or raise the
+     text-selection callout. Without this, holding to talk drags the chat. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.voice-controls__mic svg {
+  width: 22px;
+  height: 22px;
+  display: block;
+}
+
+.voice-controls__mic--joined {
+  border-color: rgba(24, 119, 242, 0.5);
+  color: #cfe0ff;
+}
+
+/**
+ * LIVE. The single most important state in this component: the difference
+ * between "my microphone is open" and "it is not" at a table with money on it.
+ *
+ * It is carried three ways on purpose, because one is not enough:
+ *   - colour (green fill),
+ *   - a ring that pulses, so it is visible in peripheral vision,
+ *   - and the slash through the microphone glyph disappears, which is the
+ *     colour-blind-safe half of the signal.
+ */
+.voice-controls__mic--live {
+  background: rgba(63, 185, 80, 0.22);
+  border-color: rgba(63, 185, 80, 0.85);
+  color: #4dc660;
+  animation: voice-live-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes voice-live-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(63, 185, 80, 0);
+  }
+}
+
+.voice-controls__mic:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.voice-controls__mic:focus-visible,
+.voice-controls__mode:focus-visible,
+.voice-controls__end:focus-visible {
+  outline: 2px solid #1877f2;
+  outline-offset: 2px;
+}
+
+/* ─── hold vs lock, and leaving ────────────────────────────────────────────── */
+
+.voice-controls__mode {
+  flex: 0 0 auto;
+  min-width: 44px;
+  height: 44px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(228, 230, 235, 0.85);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.voice-controls__mode[aria-pressed='true'] {
+  background: rgba(24, 119, 242, 0.22);
+  border-color: rgba(24, 119, 242, 0.6);
+  color: #cfe0ff;
+}
+
+.voice-controls__end {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: transparent;
+  color: rgba(228, 230, 235, 0.7);
+  font-size: 0.875rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* ─── who is talking ───────────────────────────────────────────────────────── */
+
+.voice-controls__roster {
+  /* `min-width: 0` plus `flex: 1 1 auto` is the pair that makes the ellipsis
+     work inside a flex row. Drop either and the text sets its own width and
+     pushes the close X out of the header. */
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: rgba(228, 230, 235, 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.voice-controls__roster--active {
+  color: #4dc660;
+}
+
+/* ─── narrow phones ────────────────────────────────────────────────────────── */
+
+@media (max-width: 360px) {
+  /* Below 360px the title, three buttons and the X cannot all fit. The roster
+     is the part a player can live without for a moment: the mic's own colour
+     already says whether they are live, and the seat bubbles on the felt say
+     who else is. */
+  .voice-controls__roster {
+    display: none;
+  }
+}
+
+/* ─── motion ───────────────────────────────────────────────────────────────── */
+
+/**
+ * src/styles/reducedMotion.css collapses every animation globally, including
+ * this one, and it is deliberately NOT marked `data-motion="keep"`: the pulse
+ * is decoration, and the state it decorates is also carried by colour and by
+ * the slash on the glyph. This block is the belt to that file's braces, and it
+ * states the intent locally so nobody re-adds a pulse without a static fallback.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .voice-controls__mic--live {
+    animation: none;
+    box-shadow: 0 0 0 2px rgba(63, 185, 80, 0.7);
+  }
+}

@@ -32,12 +32,20 @@
  * so they read as additive light and cost nothing over dark felt.
  */
 
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useId, useRef, useState, useCallback, useMemo } from 'react';
 import { ThrowEvent } from '../../services/ThrowableService';
 import type { ThrowPhysics } from '../../services/ThrowableService';
 import { throwableSoundService } from '../../services/ThrowableSoundService';
 import { throwableVoice } from '../../services/ThrowableVoice';
+import { reportError } from '../../utils/errorReporter';
 import { ThrowableImage } from './ThrowableImage';
+/* THE BOXING GLOVE IS THE KNOCKOUT NOW (Dan 2026-08-29): "THIS ANIMATION
+   SHOULD ALSO REPLACE THE BOXING GLOVE ANIMATION INSIDE THE CLUB ARENA
+   THROWABLE. SAME ANIMATION, SAME SOUND EFFECTS (MINUS THE K.O. AT THE END)."
+   One implementation, two callers — see KnockoutFlurry's own header. */
+import { KnockoutFlurry } from './SeatKnockout';
+import { soundService } from '../../services/SoundService';
+import { getAnimationSpeed } from '../../utils/animationSpeed';
 import './ThrowAnimation.css';
 // Per-item signature FX -- MUST load after ThrowAnimation.css so its
 // equal-specificity overrides win the cascade.
@@ -145,7 +153,8 @@ const TARGET_TELEGRAPH = new Set(['anvil', 'lightning_bolt', 'bomb']);
 const IMPACT_CAPTION: Record<string, string> = {
   bowling_ball: 'STRIKE!',
   football: "IT'S GOOD!",
-  boxing_glove: 'K.O.',
+  /* boxing_glove has NO caption: it plays the knockout flurry MINUS the K.O.
+     (Dan 2026-08-29), and the caption was the loudest part of the K.O. */
   anvil: 'OOF',
   magic_8_ball: 'ASK AGAIN LATER',
   trophy: "YOU'RE THE BEST",
@@ -171,7 +180,9 @@ const IMPACT_MS: Record<string, number> = {
   thumbs_down: 950,
   banana_peel: 950,
   cake: 900,
-  boxing_glove: 900,
+  // The flurry is three landings plus a star: 930ms before it starts to
+  // decay. 900 cut it off mid-punch.
+  boxing_glove: 1500,
   basketball: 950,
   dice: 900,
   magic_8_ball: 1250,
@@ -240,6 +251,11 @@ interface ParticleSpec {
 
 export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimationProps) {
   const [phase, setPhase] = useState<'windup' | 'flight' | 'impact' | 'done'>('windup');
+  /* Unique per mounted throw: SVG <defs> ids are global to the document, and
+     two gloves landing at once would otherwise repaint each other's gradients.
+     Same rule, same fix, as SeatKnockout. */
+  const koUid = useId().replace(/[^a-zA-Z0-9]/g, '');
+  const isKnockoutGlove = event.throwable.id === 'boxing_glove';
 
   const toPos = seatPositions.get(event.toSeat);
   // ACCURACY FIX (per-item pass): an unseated thrower (railbird, or a seat
@@ -251,6 +267,28 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
     seatPositions.get(event.fromSeat) || (toPos ? { x: toPos.x, y: toPos.y + 240 } : undefined);
 
   const t = event.throwable;
+  /* THE PLAYER'S ANIMATION SPEED, READ ONCE PER THROW.
+     ═════════════════════════════════════════════════════════════════════════
+     Until 2026-08-29 the entire throwable system ignored this setting: 125
+     animation declarations across ThrowAnimation.css and
+     ThrowableSignatures.css carried hardcoded durations, and not one JS timer
+     in this file multiplied by it. A player on the slow setting watched every
+     other animation on the table stretch to 3x while throwables kept snapping
+     past at 1x — and CLAUDE.md's animation law is explicit that speed scaling
+     is the ONE sanctioned control over animation duration.
+
+     It is scaled in exactly ONE place per duration, which is the only way to
+     avoid scaling something twice:
+       - the four timeline variables below are computed in JS and handed to
+         the CSS as `--flight-dur`, `--impact-dur`, `--life-dur` and
+         `--linger-dur`. They are multiplied HERE, so every keyframe that
+         reads them stretches for free;
+       - every other duration lives as a literal in the stylesheets, and those
+         are wrapped in calc(... * var(--animation-speed, 1)) THERE.
+     Read once rather than per-use so a setting changed mid-flight cannot
+     desynchronise a throw that is already in the air. */
+  const speed = getAnimationSpeed();
+  const scaled = (ms: number) => Math.round(ms * speed);
   const basePhysics = PHYSICS[t.physics] || PHYSICS.arc;
   const rawPhysics = DURATION_OVERRIDES[t.id]
     ? { ...basePhysics, duration: DURATION_OVERRIDES[t.id] }
@@ -278,6 +316,22 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
   const flightSize = FLIGHT_SIZE[t.weight] || 96;
   const impactSize = IMPACT_SIZE[t.weight] || 128;
 
+  /* HOW HARD THE MOTION SMEAR SHOULD BE, from the throw's ACTUAL speed.
+     The two trail ghosts were pinned at 0.30 / 0.14 opacity for every throw on
+     the table, so a 420ms fastball crossing the felt and an 1100ms feather
+     bobbing the same distance smeared exactly alike — and the smear is the
+     main thing that sells speed. It is a ratio now: pixels per millisecond
+     against a reference of 0.55px/ms (roughly a mid-table arc throw), clamped
+     so a very short throw never loses its trail entirely and a corner-to-
+     corner fastball never turns into a solid bar. */
+  const trailStrength = useMemo(() => {
+    if (!fromPos || !toPos) return 1;
+    const dist = Math.hypot(toPos.x - fromPos.x, toPos.y - fromPos.y);
+    const dur = Math.max(1, rawPhysics.duration);
+    return Math.max(0.35, Math.min(1.6, dist / dur / 0.55));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event.id]);
+
   // Velocity tilt: fast, spinless items lean into their line of travel
   // (rocket, water gun, boxing glove...). Fraction of the true angle so an
   // unknown render orientation can never point completely the wrong way.
@@ -296,9 +350,36 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
+  // ANIMATION AUDIT 2026-08-27: flinch/shake used document.querySelector, so
+  // in multi-table mode (up to 4 mounted TablePages, hidden not unmounted)
+  // both landed on the FIRST matching element in DOM order — often another
+  // table's seat. Scope every lookup to THIS throw's own table via the root.
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  // ANIMATION LAW TELEMETRY 2026-08-28: a throw with no resolvable target
+  // position renders NOTHING — the item was paid for and broadcast, and the
+  // failure used to be invisible. One report per event.
+  useEffect(() => {
+    if (!toPos) {
+      try {
+        reportError(
+          new Error(`ThrowAnimation: no position for target seat ${event.toSeat}`),
+          'AnimationLaw.throw_target_unresolved'
+        );
+      } catch {
+        /* telemetry must never break the table */
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event.id]);
+
   useEffect(() => {
     const timers: ReturnType<typeof setTimeout>[] = [];
-    const at = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms));
+    /* Scaled here so all four phase transitions stretch together. Scaling at
+       the call sites instead would be four chances to forget one, and a
+       forgotten one shows up as an impact that fires before its projectile
+       has landed. */
+    const at = (ms: number, fn: () => void) => timers.push(setTimeout(fn, ms * speed));
 
     const launchPan = fromPos ? panForX(fromPos.x) : 0;
     const impactPan = toPos ? panForX(toPos.x) : 0;
@@ -308,7 +389,7 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
       setPhase('flight');
       try {
         throwableSoundService.playLaunch(t.weight, launchPan);
-        throwableSoundService.playFlight(t.id, physics.duration, impactPan);
+        throwableSoundService.playFlight(t.id, scaled(physics.duration), impactPan);
       } catch {
         /* audio is best-effort */
       }
@@ -318,19 +399,33 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
     at(WINDUP_DURATION + physics.duration, () => {
       setPhase('impact');
       try {
-        throwableSoundService.playImpact(t.sound, t.weight, impactPan);
-        // Spoken taunt, for the items that have one. Silent for the rest.
-        throwableVoice.speakFor(t.id);
+        if (isKnockoutGlove) {
+          /* The knockout's own cue, WITHOUT the called "K.O." or the stamp
+             tick — nobody has been eliminated here. `speed` goes in so the
+             audio stretches with the player's Animation Speed exactly as the
+             flurry's CSS does. */
+          soundService.playKnockoutFlurry({
+            isHero: false,
+            speed,
+            withCall: false,
+          });
+        } else {
+          throwableSoundService.playImpact(t.sound, t.weight, impactPan);
+          // Spoken taunt, for the items that have one. Silent for the rest.
+          throwableVoice.speakFor(t.id);
+        }
       } catch {
         /* audio is best-effort */
       }
 
-      // Target seat flinches (SeatSlot exposes data-seat-num)
+      // Target seat flinches (SeatSlot exposes data-seat-num) — scoped to
+      // this table (see rootRef note above).
       try {
-        const seatEl = document.querySelector(`[data-seat-num="${event.toSeat}"]`);
+        const scope = rootRef.current?.closest('.table-page') ?? document;
+        const seatEl = scope.querySelector(`[data-seat-num="${event.toSeat}"]`);
         if (seatEl) {
           seatEl.classList.add('seat--throw-flinch');
-          setTimeout(() => seatEl.classList.remove('seat--throw-flinch'), 500);
+          setTimeout(() => seatEl.classList.remove('seat--throw-flinch'), 500 * speed);
         }
       } catch {
         /* flinch is decorative */
@@ -341,12 +436,15 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
         // [data-table]) matched NOTHING in the real DOM -- heavy impacts
         // never shook the screen. The animation container mounts inside
         // .table-scaler, which is the element the seats render in.
-        const table = document.querySelector(
-          '.table-scaler, .poker-table, .table-layout, [data-table]'
-        );
+        // 2026-08-27: resolved via closest() so multi-table shakes hit THIS
+        // table, and the removal window gets a 70ms cushion over the 450ms
+        // keyframe (an exact tie races the last frame).
+        const table =
+          rootRef.current?.closest('.table-scaler') ??
+          document.querySelector('.table-scaler, .poker-table, .table-layout, [data-table]');
         if (table) {
           table.classList.add('throw-animation--shake');
-          setTimeout(() => table.classList.remove('throw-animation--shake'), 450);
+          setTimeout(() => table.classList.remove('throw-animation--shake'), 520 * speed);
         }
       }
     });
@@ -379,6 +477,8 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
   if (!fromPos || !toPos || phase === 'done') {
     return null;
   }
+  // (An unresolvable TARGET seat renders nothing — reported from the effect
+  // below so a paid throw can never vanish silently again.)
 
   const colorVars = {
     '--c1': t.color,
@@ -386,7 +486,7 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
   } as React.CSSProperties;
 
   return (
-    <div className="throw-animation" data-throwable={t.id} style={colorVars}>
+    <div ref={rootRef} className="throw-animation" data-throwable={t.id} style={colorVars}>
       {/* WINDUP -- pop at the thrower's seat */}
       {phase === 'windup' && (
         <div className="throw-animation__windup" style={{ left: fromPos.x, top: fromPos.y }}>
@@ -403,7 +503,7 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
             {
               left: toPos.x,
               top: toPos.y,
-              '--flight-dur': `${physics.duration}ms`,
+              '--flight-dur': `${scaled(physics.duration)}ms`,
             } as React.CSSProperties
           }
         />
@@ -419,15 +519,23 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
               '--from-y': `${fromPos.y}px`,
               '--to-x': `${toPos.x}px`,
               '--to-y': `${toPos.y}px`,
-              '--flight-dur': `${physics.duration}ms`,
+              '--flight-dur': `${scaled(physics.duration)}ms`,
               '--arc-height': `${physics.arc}px`,
               '--spin': `${t.spin}deg`,
               '--tilt': `${travelTilt}deg`,
               '--size': `${flightSize}px`,
               '--half': `${flightSize / 2}px`,
+              '--trail-strength': `${trailStrength.toFixed(3)}`,
             } as React.CSSProperties
           }
         >
+          {/* THE CONTACT SHADOW. Deliberately a sibling of the spinner rather
+              than a child: it must track the throw HORIZONTALLY but must not
+              inherit the arc's vertical offset or the tumble spin. A shadow
+              that climbs with the item, or rotates, tells the eye there is no
+              ground — which is worse than no shadow at all. */}
+          <div className="throw-animation__shadow" />
+
           {/* trail ghosts (staggered, fading copies) */}
           <div className="throw-animation__trail throw-animation__trail--1">
             <ThrowableImage throwableId={t.id} size={flightSize} />
@@ -456,9 +564,12 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
             {
               left: toPos.x,
               top: toPos.y,
-              '--impact-dur': `${impactMs}ms`,
-              '--life-dur': `${lifeMs}ms`,
-              '--linger-dur': `${lingerMs}ms`,
+              '--impact-dur': `${scaled(impactMs)}ms`,
+              '--life-dur': `${scaled(lifeMs)}ms`,
+              '--linger-dur': `${scaled(lingerMs)}ms`,
+              /* The ground shadow and the settle pivot are both sized from the
+                 landed item, so a feather does not cast an anvil's shadow. */
+              '--impact-size': `${impactSize}px`,
             } as React.CSSProperties
           }
         >
@@ -469,56 +580,112 @@ export function ThrowAnimation({ event, seatPositions, onComplete }: ThrowAnimat
           <div className="throw-animation__smoke throw-animation__smoke--2" />
           <div className="throw-animation__smoke throw-animation__smoke--3" />
 
-          {/* squash-and-stretch item with additive glow */}
-          <div className="throw-animation__impact-glow" />
-          {/* Two nested elements on purpose. The inner one owns the MOTION
+          {/* THE BOXING GLOVE LANDS AS A KNOCKOUT. Same component the bounty
+              knockout uses, minus the stamp — see KnockoutFlurry. It replaces
+              the generic impact FX entirely rather than layering on top of
+              them: a shockwave ring and a particle scatter under a two-glove
+              flurry is two impacts for one landing.
+
+              --sko-unit comes from the throwable's OWN impact size rather than
+              --seat-avatar-base. The knockout layer sits inside the seat ring
+              where that token is retuned per breakpoint; this wrapper does
+              not, so it would have inherited the :root 84px and drawn a
+              desktop-sized flurry on a phone. */}
+          {isKnockoutGlove ? (
+            <div
+              className="sko throw-animation__ko"
+              style={
+                {
+                  '--sko-unit': `${Math.round(impactSize * 1.15)}px`,
+                  '--sko-x': '0px',
+                  '--sko-y': '0px',
+                } as React.CSSProperties
+              }
+              aria-hidden="true"
+            >
+              <KnockoutFlurry uid={koUid} showStamp={false} />
+            </div>
+          ) : (
+            <>
+              {/* squash-and-stretch item with additive glow */}
+              <div className="throw-animation__impact-glow" />
+              {/* Two nested elements on purpose. The inner one owns the MOTION
               (squash / bounce / per-item signature) at its tuned duration; the
               outer owns OPACITY for the whole landing life. Splitting them is
               what lets a throw last 3.5s without the landing animation playing
               in slow motion. */}
-          <div className="throw-animation__impact-life">
-            <div className="throw-animation__impact-icon">
-              <ThrowableImage throwableId={t.id} size={impactSize} />
-            </div>
-          </div>
+              <div className="throw-animation__impact-life">
+                {/* The landed item's own shadow on the felt, squashing in step
+                    with it. Inside __impact-life so it shares the landing's
+                    opacity rather than needing a second life timer. */}
+                <div className="throw-animation__ground" />
 
-          {/* shockwave ring */}
-          <div className="throw-animation__burst" />
+                {/* SETTLE. A dropped object rocks to rest; ours stopped dead
+                    the instant its squash resolved. This is its own wrapper so
+                    one keyframe covers every impact profile at once, instead
+                    of a rotation being threaded through four sets of squash
+                    keyframes that each already own `transform`. It pivots
+                    BELOW centre, because a thing rocks on the felt it is
+                    touching, not around its middle. */}
+                <div className="throw-animation__settle">
+                  <div className="throw-animation__impact-icon">
+                    <ThrowableImage throwableId={t.id} size={impactSize} />
+                  </div>
+                </div>
+              </div>
 
-          {/* impact shout */}
-          {IMPACT_CAPTION[t.id] && (
-            <div className="throw-animation__caption">{IMPACT_CAPTION[t.id]}</div>
-          )}
+              {/* Debris kicked out ALONG the felt. The shockwave ring below is
+                  drawn in the screen plane and reads as an energy pulse; this
+                  reads as the table itself reacting. Both, because the
+                  reference captures have both. */}
+              <div className="throw-animation__dust" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+                <i />
+                <i />
+                <i />
+              </div>
 
-          {/* stain / scorch residue for messy items. Concurrent with the
+              {/* shockwave ring */}
+              <div className="throw-animation__burst" />
+
+              {/* impact shout */}
+              {IMPACT_CAPTION[t.id] && (
+                <div className="throw-animation__caption">{IMPACT_CAPTION[t.id]}</div>
+              )}
+
+              {/* stain / scorch residue for messy items. Concurrent with the
               impact, not appended after it: a splat appears the moment the
               thing lands. */}
-          {t.linger && (
-            <div className={`throw-animation__linger throw-animation__linger--${t.impact}`} />
-          )}
+              {t.linger && (
+                <div className={`throw-animation__linger throw-animation__linger--${t.impact}`} />
+              )}
 
-          {/* per-item impact signature (frost ring, bite marks, claw slashes,
+              {/* per-item impact signature (frost ring, bite marks, claw slashes,
               steam, petals, pins, cork, magic-8 answer... CSS-gated) */}
-          <div className="throw-animation__fxi" />
+              <div className="throw-animation__fxi" />
 
-          {/* particle scatter */}
-          <div className="throw-animation__particles">
-            {particles.map((p, i) => (
-              <div
-                key={i}
-                className="throw-animation__particle"
-                style={
-                  {
-                    '--p-angle': `${p.angle}deg`,
-                    '--p-dist': `${p.dist}px`,
-                    '--p-size': `${p.size}px`,
-                    '--p-delay': `${p.delay}s`,
-                    '--p-color': p.useAlt ? 'var(--c2)' : 'var(--c1)',
-                  } as React.CSSProperties
-                }
-              />
-            ))}
-          </div>
+              {/* particle scatter */}
+              <div className="throw-animation__particles">
+                {particles.map((p, i) => (
+                  <div
+                    key={i}
+                    className="throw-animation__particle"
+                    style={
+                      {
+                        '--p-angle': `${p.angle}deg`,
+                        '--p-dist': `${p.dist}px`,
+                        '--p-size': `${p.size}px`,
+                        '--p-delay': `${p.delay}s`,
+                        '--p-color': p.useAlt ? 'var(--c2)' : 'var(--c1)',
+                      } as React.CSSProperties
+                    }
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>

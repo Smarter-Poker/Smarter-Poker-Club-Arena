@@ -2,8 +2,2296 @@
 
 ## Every Change, Documented. No Exceptions.
 
+## Cowork session 2026-09-01 - ONE UNPAYABLE PLAYER STOPPED EVERY PAYOUT IN THE PASS
+
+`fn_tournament_payout_sweep` loops over completed tournaments calling
+`fn_tournament_payout_reconcile` on each, and the loop had **no exception
+handler at all**. So one tournament that raises did not get skipped - the
+function aborted, and every top-up the pass had already applied rolled back
+with it.
+
+That stopped being theoretical at 03:52. **Three consecutive hourly runs failed,
+one second into the pass, on three different players:**
+
+```
+03:52  No club wallet resolves ... player 6313dbdb  (dss-087)
+04:52  No club wallet resolves ... player 04910a99  (dss-388)
+05:52  No club wallet resolves ... player 5bb4ca99  (dss-025)
+```
+
+All three are among **417 `dss-*` accounts created in a 19-minute window that
+hold no `club_members` row at all**. The sweep was walking into a fresh one
+every hour and paying nobody in between.
+
+**The money owed to those accounts is synthetic. The collateral was not.** Every
+genuine payout in those three passes was rolled back alongside them, and the
+backlog is real: a completed dry run over 5,000 tournaments found **7 with
+unreconciled payouts totalling 230.15**, against 33,437 candidates matched (so
+the pass is also truncated, which is a separate matter).
+
+The accounts belong to the zero-drift certification work in flight and this
+migration **does not touch them**. What it fixes is the part that turned one bad
+row into a total outage. The sibling sweep has isolated its items since it was
+written, and its comment says why:
+
+```
+EXCEPTION WHEN OTHERS THEN
+  -- Loud, never fatal: one stuck game must not stop the rest being freed.
+```
+
+`fn_tournament_payout_sweep` is the one that pays PLAYERS, and it was the one
+without the handler.
+
+**Loud, not silent.** Failures are counted, the first twenty tournament ids come
+back to the caller in `failed_tournaments`, `first_error` carries the message,
+and a single deduped `financial_alerts` row is raised per pass - one, not one
+per failure, because 417 candidate accounts would otherwise flood the table with
+the same finding. `ok: true` no longer means "nothing raised" when work was
+skipped.
+
+**Verified under the exact conditions that were failing**, in a transaction that
+rolled back: `fn_tournament_payout_sweep(7, true, 400)` - apply mode, the shape
+the cron runs - completed with **scanned=400, failed=5**, capturing the same
+"No club wallet resolves" as its `first_error`. Before the change that call died
+after one tournament.
+
+Nothing about which players get paid, or how much, changes here.
+
+---
+
+## Cowork session 2026-09-01 - THE SECOND JOB SCANNING hand_history WHOLE
+
+`fn_ca_settlement_correctness_check()` runs every 30 minutes. Its legacy-fallback
+alarm asks hand_history two questions:
+
+```sql
+SELECT count(*) FROM public.hand_history
+ WHERE created_at > now() - interval '24 hours' AND has_human IS TRUE;
+```
+
+and the same shape again over the last hour. Only `idx_hand_history_created` (a
+bare `created_at`) could serve them, so every run counted its way through every
+hand dealt in 24 hours - roughly **213,000 rows** - looking for the ones with a
+human at the table.
+
+**There are 22 of them.** Human hands are **0.01%** of the board. The other
+99.99% of that scan is horses, read and discarded, twice per run, 48 times a
+day.
+
+The job averaged **66s against a 120s statement timeout** and had already hit it
+(02:30). That is the same trajectory `rake-repair-unbanked-hourly` was on before
+`20260901104500`, and the same fix applies: give the predicate its own index
+rather than asking the planner to filter a full window.
+
+**Measured on production:**
+
+|                      | before                  | after                                     |
+| -------------------- | ----------------------- | ----------------------------------------- |
+| the `count(*)` alone | >60s (client timeout)   | **3,438ms** cold, 19ms for the 1h variant |
+| the whole check      | 66s average, 120s worst | **56s - unchanged**                       |
+
+**CORRECTION (same night).** The first version of this entry claimed the whole
+check dropped to 5,383ms. It does not. That number was measured immediately
+after warming the same pages in the same session; the scheduled run starts cold
+and competes with live traffic. Its real cron history is 88s, 120s (failed),
+83s, 63s, 54s before the index and **56s after** - inside the pre-index spread.
+
+What the index actually fixed is the query it targets: 22 rows are no longer
+found by reading 213,000, and a demonstrated timeout source is gone. What it did
+not do is make the job fast. **The human-hand counts were not the dominant cost
+of this function**, and roughly 50 seconds of it remain unaccounted for.
+
+The index is cheap and correct and stays. But this entry should not be read as
+"the settlement check is fixed" - it is not, and the next person on it should
+start from what else `fn_ca_settlement_correctness_check` spends 50 seconds
+doing.
+
+Built `CONCURRENTLY`, with an online `DROP INDEX CONCURRENTLY` rollback recorded
+in the migration.
+
+Two jobs in one night were scanning this table whole for a needle. It is worth
+someone asking which others do - `hand_history` is the largest table in the
+estate and the only index most predicates can reach is a bare `created_at`.
+
+---
+
+## Cowork session 2026-09-01 - A HEALER THAT COULD NOT FINISH
+
+`rake-repair-unbanked-hourly` calls `fn_rake_repair_unbanked(48, 200)`, which
+looks for cash hands that banked rake but never got a `rake_records` row.
+
+**It finds nothing, and it was timing out looking.** The candidate query
+returned ZERO rows every time it was measured, and still cost 56s, 64s, 80s,
+95s, 116s on consecutive runs - climbing with the table - dying at the 120s
+statement timeout on **4 of the last 24 runs**, most recently 23:52.
+
+A healer that cannot finish is worse than no healer. It burns two minutes of
+database an hour, reports failure into `cron.job_run_details`, and would not
+have banked the rake if there had been any to bank.
+
+**The cost was the scan, and the index that would have bounded it was pointed
+the wrong way.** `hand_history` carries 426,168 rows in a 48h window; only
+40,472 are cash hands with rake. The only usable index was
+`idx_hand_history_created` (bare `created_at DESC`), so every run walked all
+426k rows. The one partial index that mentions `tournament_id` -
+`idx_hand_history_tournament_created` - is `WHERE tournament_id IS NOT NULL`,
+exactly the opposite population to the one this job needs.
+
+`idx_hand_history_cash_rake_unbanked` matches the job's predicate. The three
+`NOT EXISTS` probes were already indexed.
+
+**Measured on production, same call, before and after: 116,000ms -> 9,768ms.**
+A 12x improvement, and comfortably inside the timeout it had been failing.
+
+Built `CONCURRENTLY` - `hand_history` takes roughly 600 hands a minute during
+play - with an online `DROP INDEX CONCURRENTLY` rollback recorded in the
+migration.
+
+---
+
+## Cowork session 2026-09-01 - THE CHIP GUARD LEARNS TO SAY WHICH KIND OF WRONG (Spins audit, phase 7)
+
+`fn_spin_chip_conservation_check` could tell us a game's chips did not add up.
+It could not tell us whether the ENGINE also believed the wrong number, and
+that distinction turned out to be the entire diagnosis.
+
+**Two very different failures were arriving under one alert:**
+
+|                         | what it means                                                                                                                                   | is it repairable         |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| **lost final write**    | the engine's own last hand ends on the RIGHT total; `tournament_players` holds a different one. The play was correct, only the record is wrong. | yes, from `hand_history` |
+| **chips moved in play** | the engine's own last hand AGREES with the wrong total. Chips were really created or destroyed at the table and the engine never knew.          | no - this is the bug     |
+
+**Nothing repairs the first kind.** During a tournament the next hand's
+settlement rewrites both copies of the chip count, so mid-play divergence is
+self-correcting - observed healing in under a minute. A COMPLETED tournament
+has no next hand, so a bad final write is permanent. And
+`fn_reconcile_tournament_denormals`, which runs every minute and sounds like it
+would cover this, does not touch chips at all: it reconciles `table_id`,
+`seat_number`, stakes strings and `current_players`.
+
+**What the classification found.** Of the 12 drifted games in the five hours
+after the `creditSeatStacks` mint fix: **2 lost final writes, 10 chips moved in
+play**. All ten of the second kind started between 00:31 and 00:41 on
+2026-09-01, straddling a 39-second board-wide dealing gap at 00:40:18 - an
+engine restart. Games in flight across that restart came out wrong **15.8%** of
+the time against **0.2%** for everything else, over 980 games. Filed as issue
+#2406.
+
+**A theory this ruled out.** The obvious explanation was that the abandoned
+hand's pot is destroyed at the process boundary: `checkCrashRecovery` marks the
+incomplete hand complete and players "retain their last-known stacks". It is
+not that. Measured against live snapshots, `table_seats.stack` is the PRE-hand
+stack - `db_stack - snapshot_stack` equals `totalInvested` exactly on every seat
+sampled - so chips committed to a pot are still counted in the stored stack, and
+refunding them would MINT chips rather than conserve them.
+
+Working all of that out took hand-written queries against `hand_history`.
+Nobody reading an alert at 3am should have to repeat it, so the check now does
+it: for each of the (at most 20) sampled games it compares the stack sum in the
+tournament's own last hand against both the expected total and the stored
+total, and reports `lost_final_write`, `chips_moved_in_play` and
+`classification_unclear` in the message and the context. Cost is bounded by the
+sample cap, not by how bad the hour was.
+
+`tests/config/chipGuardClassifiesTheDrift.test.ts` pins the comparison, the
+three-way split, the sample bound and the read-only shape. Dropping the
+`hand_history` join - the tempting "it's expensive" simplification - turns the
+alert back into "something is wrong somewhere" and turns this test red.
+
+CLAUDE.md 10.5 - no `is_horse` filter, no `p_include_horses`.
+
+## Cowork session 2026-09-01 - A LOGGED-IN BROWSER COULD RUN A LEDGER REPAIR
+
+`fn_ca_repair_write_failure` is SECURITY DEFINER, VOLATILE, and was executable
+by **`authenticated`** - any logged-in account. It takes a write-failure id, a
+counterparty type, a counterparty entity and a reason, and posts a correction
+against whichever ledger account those map to: `club_treasury`, `promo_wallet`,
+the player stores. It takes **no identity argument and never looks at who is
+calling**, so the caller's own identity places no limit on which failure it
+repairs or what it attributes the repair to.
+
+**The gate was already shouting.** `Telemetry Exposure` exists to catch exactly
+this shape, and it had been failing on EVERY branch in the repo - it asks the
+live database, not the branch, so one open routine reddens everybody's PR. That
+is how a real finding gets quietly reclassified as noise, and it is why this
+was found while chasing an unrelated CI failure on a Spins guard.
+
+**Nothing calls it.** Not the client, not the server, not pg_cron, and no other
+database function - `fn_ca_guard_watchlist` merely names it in an array of
+routines to watch. It is an operator tool that was left open, not a feature
+anyone is using, so closing it removes no capability from anyone.
+
+The grants applied are exactly what the gate's own remediation text prescribes,
+with the revoke asserted in-migration rather than trusted:
+
+```
+REVOKE ALL ... FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ... TO service_role;
+```
+
+Verified after applying: `[telemetry-exposure] no unscoped operator routine is
+reachable from a browser.`
+
+---
+
+## Cowork session 2026-08-31 - THE SWEEP DEADLOCKED ITSELF INTO DOING NOTHING (Spins audit, phase 7)
+
+For two and a half hours on 2026-08-31, **29 terminal tournaments finished with
+banked rake and were never settled.** 17 spins, 11 SNGs and one mystery bounty,
+holding **215.98 in union rake** the union was never paid. The oldest sat there
+from 20:33 while fifteen consecutive safety-net passes stepped over it.
+
+The safety net was running the whole time. `fn_sweep_unsettled_tournament_rake`
+is called by the engine every ten minutes, and it left exactly one clue behind:
+
+> Sweep could not settle tournament rake: **deadlock detected**
+
+**The batch size was the bug.** The whole sweep is ONE transaction, and every
+settlement inside it updates the same `club_wallets` row and the same union
+wallet. At `p_limit: 200` that is minutes of held row locks, against a live
+engine settling its own finishing tournaments on those exact rows. The sweep
+lost the deadlock, and because it is one transaction, losing meant rolling back
+every settlement it had already done - so a failing pass made **no progress at
+all**, and the next pass started from the same place and lost again.
+
+Ten per pass is about five seconds of locking, and at one pass per ten minutes
+it drains sixty events an hour against an arrival rate near one.
+
+**Nothing was watching.** `v_tournament_rake_attribution_gaps` is the estate's
+tournament-rake watcher and it opens `FROM tournament_rake_settlements r`. It
+can tell you a settlement credited nobody, or threw, or was never measured.
+What it structurally cannot tell you is that a settlement **does not exist** -
+an unsettled tournament has no row to start from. It sat at zero rows for the
+entire incident. Every settlement it could see was fine. The wrong ones were
+the ones that were not there.
+
+**Shipped:**
+
+| Change                                                      | What it does                                                                                                                                                                                        |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/src/GameServer.ts`                                  | Sweep batch `p_limit` 200 → 10, with the reasoning written next to the number                                                                                                                       |
+| `20260831_tournament_rake_settlement_guard.sql`             | `fn_tournament_rake_settlement_check(p_grace_minutes, p_since_days)` - drives off `tournaments`, finds terminal events with banked rake and no settlement row, `critical` at 5 events or 50 in rake |
+| `20260831_tournament_rake_settlement_guard_schedule.sql`    | pg_cron `tournament_rake_settlement_check_hourly` at `19 * * * *`, advisory-locked, asserting in-migration that the job landed                                                                      |
+| `server/src/tournament/rakeSweepBatchIsSmall.guard.test.ts` | Pins the batch at ≤ 25 and the history at ≥ 30 days. Raising it back to 200 turns CI red                                                                                                            |
+| `tests/config/rakeSettlementGuardSeesMissingRows.test.ts`   | 13 tests pinning the direction of the query, the grace window, the severity ladder and the read-only shape                                                                                          |
+
+**The backlog was drained.** All 29 events were settled through the platform's
+own idempotent settler in small batches, `source='sweep'`, and every settlement
+matches its `rake_records` sum exactly with zero attribution errors: 17 spins
+(134.88), 11 SNGs (36.10), one mystery bounty (45.00).
+
+**Both branches of the new guard were proven against production, in
+transactions that rolled back.** Live it returns `verdict: pass`; with the 29
+settlement rows removed it returns `rake_never_settled`, 215.98 unpaid, oldest
+`20:33:29` - the incident, reproduced exactly. Swapping the query back to drive
+from the settlements table turns the test red.
+
+The check **reports and repairs nothing.** Settling quietly here would hide the
+very failure it exists to report.
+
+CLAUDE.md §10.5 - no `is_horse` filter, no `p_include_horses`.
+
+## Cowork session 2026-08-31 - NOBODY WAS COUNTING THE CHIPS (Spins audit, phase 6)
+
+Every money guard in this estate watches the prize.
+`fn_tournament_money_conservation` proves collected = rake + payouts. The rake
+law proves the 8% is exactly 8%. `fn_spin_unpaid_check` proves the winner got
+paid. Eleven scheduled audits, and **not one of them counts the chips on the
+felt.**
+
+That is not a cosmetic gap. A chip mint moves no money at all - the prize pool
+is fixed the moment three players buy in - so `creditSeatStacks` could top a
+busted seat back up to a full starting stack and every single one of those
+audits would stay green. **The prize does not depend on the chip count. The
+WINNER does.** A player who was beaten, handed a fresh stack, can go on to take
+the money from the player who actually beat them, and no existing guard would
+ever say a word.
+
+Measured over the 6 hours before this shipped: **264 of 1,317 completed
+spin/sng games carried more chips than they were dealt**, worst single game off
+by 1,301 - one whole starting stack plus change.
+
+**Two migrations, applied and verified in production:**
+
+| Migration                                                  | What it adds                                                                                                                                                                                         |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `20260831234000_spin_chip_conservation_guard.sql`          | `fn_spin_chip_conservation_check(p_since_hours int default 6)` - compares `sum(tournament_players.chips)` against `seats × starting_chips` and raises a `critical` financial alert on any divergence |
+| `20260831234100_spin_chip_conservation_guard_schedule.sql` | pg_cron `spin_chip_conservation_hourly` at `49 * * * *`, under the house advisory lock, with an in-migration assertion that the job actually landed                                                  |
+
+**The scope is 'spin' and 'sng', and that limit is the point.** The first cut
+of this check measured every variant and reported 281 of 1,341 games broken,
+worst case off by 106,398 chips. That number was an artefact of the model, not
+a finding: for a multi-table tournament with late registration - 9 levels of it
+on a live freezeout sampled here - seats × starting_chips is simply not the
+expected chip total, because seats and stacks keep arriving after the clock
+starts. Shipping that would have taught whoever reads `financial_alerts` to
+close this alert unread, which is worse than having no alert at all.
+
+For spin and sng the identity is **exact**: across the 3,307 such games
+completed in the 24h before this shipped, zero had late registration, zero
+allowed re-entry or add-ons, and zero carried early-bird chips. The
+wallet-transaction exclusion is belt-and-braces on top - if a spin ever does
+get a rebuy, the check skips that game rather than guessing what the extra
+chips were worth.
+
+**Both branches were proven against production, in a transaction that rolled
+back.** With the real data the check returns `chips_minted` and raises the
+alert; with every in-window game corrected to conserve, the same call over 398
+games returns `verdict: pass` and raises nothing. The rollback was then
+confirmed by re-running against live data and getting the real numbers back.
+
+`tests/config/chipConservationGuardIsHonest.test.ts` pins the scope, the rebuy
+exclusion, the read-only shape (one INSERT, into `financial_alerts`, and no
+UPDATE or DELETE anywhere), the grants, and the schedule. Removing the variant
+scope turns it red.
+
+CLAUDE.md §10.5 - there is no `is_horse` filter and no `p_include_horses`
+parameter. A horse's chips are chips.
+
+**Verified against production after the engine fix landed.** The mint this guard
+was built to watch was fixed in `creditSeatStacks` and deployed at 20:21 UTC.
+Measured over the twelve hours around it, splitting on whether the game STARTED
+before or after that deploy:
+
+|               | games | minted  | destroyed | destroyed rate |
+| ------------- | ----- | ------- | --------- | -------------- |
+| before deploy | 1,803 | **413** | 49        | 2.72%          |
+| after deploy  | 630   | **0**   | 1         | 0.16%          |
+
+Minting went to zero, and chip loss fell by 94%. Independently corroborated by
+a guard nobody touched: `drift_incident:...tournament_mint_blocked` fired 25
+times in the 19:00 hour and 12 in the 20:00 hour, then **not once** in the three
+hours after the deploy.
+
+**The one remaining loss is a different bug, and this guard is what will keep
+reporting it.** In the single post-deploy case the engine's own final hand
+records the winner finishing with the full 900 chips while
+`tournament_players.chips` says 630 - a stale final-stack write, not lost chips.
+But that explanation does NOT generalise: across 57 short games in twelve hours,
+the engine's own last-hand stack sum agrees with the short total in **53** of
+them. The chips really did leave the felt during play in those. That is a
+pre-existing defect, separate from the mint, and it is not fixed here - it is
+now merely visible.
+
+**Still open, and deliberately not fixed here:** the same query pointed at
+multi-table variants shows large positive deltas that late registration does
+not obviously explain (a 24-seat freezeout with no re-entry, no add-on and no
+early-bird chips holding 826,398 against 720,000 dealt). That needs its own
+model of what an MTT's expected chip total is before anyone can call it a bug,
+and guessing at it inside this guard is exactly the mistake this scope avoids.
+
+---
+
+## Cowork session 2026-08-31 - THE OPERATOR CONSOLE WAS OPEN TO EVERY PLAYER (hardening phase 3 of 6)
+
+`fn_chip_integrity_report()` is the platform's money posture in seven rows. It
+is SECURITY DEFINER, so RLS does not apply to it, and `authenticated` could
+execute it. Any account that could log in could read this:
+
+```
+ledger_liveness        Ledger recording normally: 44662 rows in 24h.
+drift_since_baseline   0 member(s) drifting, worst 0.00.
+unpriced_tournaments   WARN 31 COMPLETED tournament(s) took a buy-in and
+                       earned no rake, ~13.30 uncollected.
+legacy_wallets_frozen  public.wallets holds 732591994.33 chips.
+```
+
+The total chip supply, the ledger's throughput, and a live list of **which
+invariant is currently unwatched**. An operator console is a fine thing to
+have. Serving it to the browser is reconnaissance.
+
+**Thirty-eight routines were in that shape** across three migrations, all
+applied and verified in production:
+
+1. **`20260831204718_the_operator_console_was_open_to_every_player`** closes
+   thirty-five platform-wide diagnostics: money integrity, grant auditing,
+   deal fairness, double-deal detection, BBJ gap decomposition, hand-history
+   bloat, and `fn_ungated_money_rpcs()` - the function that lists which money
+   RPCs have no gate, which a player could call. Zero of the thirty-five have a
+   browser caller. Three are called by the game server, which builds its client
+   with `SUPABASE_SERVICE_ROLE_KEY`; `fn_nit_evictions` is the eviction rule the
+   engine consults every hand, so its post-apply assertion does not read a
+   grant, it RUNS the function.
+
+2. **`20260831231249_three_handles_a_player_could_pull`** closes three with no
+   caller anywhere and a real cost if pulled. `sp_backfill_member_fee_rollup`
+   is a LOOP WITH COMMIT that runs until `p_seconds` elapses - any account
+   could pin a backend worker for as long as it liked.
+   `training_leaderboard_refresh` is an unbounded `REFRESH MATERIALIZED VIEW
+CONCURRENTLY` on demand. `sum_anti_farming_ips(p_ip, p_start)` sums the
+   anti-farming ledger for **an IP address the caller supplies**: an oracle
+   against the fraud system, letting a farmer ask whether an address is tracked
+   and tune around the answer.
+
+3. **`20260831231356_a_guard_where_the_definer_sweep_was`** is the half that
+   keeps it true. `fn_ca_browser_reachable_telemetry()` reports every SECURITY
+   DEFINER routine that is browser-executable, takes no identity argument,
+   never consults the caller, is not a trigger function, and is not recorded on
+   the new `ca_browser_definer_allowlist` with a written reason. Zero rows is
+   the healthy state.
+
+**`scripts/ci/check-telemetry-exposure.mjs` + `.github/workflows/telemetry-exposure.yml`**
+read it on every migration PR and twice a day.
+
+### Why this needed a guard and not just a sweep
+
+Another agent ran a phase-4 security sweep earlier the same day and wrote this
+in its own migration:
+
+> THE SURFACE GREW BACK WITHIN THE HOUR. Immediately after the phase-4 sweep
+> took the anon-executable SECURITY DEFINER count from 83 to 22, it read 23
+> again... This is not a criticism of that change; it is the default doing what
+> the default does. Postgres grants EXECUTE to PUBLIC on every new function and
+> Supabase publishes it as an RPC, so an operator watchdog is born public unless
+> someone says otherwise.
+
+That is the whole argument, already written down by somebody else. The default
+is open, so a closure with nothing re-reading it has a date on it. This is the
+fourth time this estate has been bitten by that shape, after the definer views
+that reopened in eight hours, `v_system_health_cron` watching three job-name
+prefixes out of seventy-five, and `check-ui-text` exempting four whole files.
+
+### One decision reversed on purpose
+
+That same phase-4 migration deliberately KEPT `authenticated` on
+`fn_tournament_metrics`, "so an admin dashboard that picks this up later is not
+broken by a guess". This phase revokes it. The reasoning is the continuation of
+their own: they described it as "precisely the thing that tells an outsider when
+the floor is degraded" and worried only about `anon`, but a logged-in account is
+still an outsider for a readout of how many tournaments are stuck. Nothing calls
+it from a browser today, and if a dashboard needs it later the fix is now a
+deliberate grant plus an allowlist row carrying its reason, rather than a guess
+left open in the meantime.
+
+### Why an allowlist is acceptable here
+
+Nineteen routines legitimately have this shape and must stay open: public
+leaderboards, the club name check the signup form calls on every keystroke, the
+nearby live games map, support search, the member-fee rollup the roster page
+nudges. An allowlist is exactly the decaying thing criticised above, so this one
+differs where it matters. Every row carries its REASON in the database under a
+`CHECK` constraint, adding a row is a migration that shows up in review, and the
+guard reports what is NOT on the list rather than trusting that somebody re-read
+it. Trigger functions are excluded by return type rather than by name, because
+seven of them matched and a list of names rots while a return type does not.
+
+### Verified live
+
+`0` unaccounted, `20` allowed with a reason, `fn_chip_integrity_report` and
+`sum_anti_farming_ips` closed to `authenticated`, the roster nudge still open,
+`fn_tournament_metrics` still returning its row to the game server.
+
+Red before green, three ways. A `GRANT` on `fn_chip_integrity_report` inside a
+rolled-back transaction moved the guard from 0 to 1 and production never saw it.
+A synthetic unscoped definer created and dropped drove the real CI script to
+exit 1 - and it was reported as reachable by `anon + authenticated`, because
+Postgres had granted PUBLIC on creation without anyone asking, which is the
+point. And a planted re-grant in a post-sweep migration file turns the repo pin
+red.
+
+### Postscript, 00:02 UTC: the guard's first real run went red
+
+`fn_ca_browser_reachable_telemetry()` shipped at 23:13. Its first run in CI, 49
+minutes later, failed on a function that did not exist when it was written:
+
+```
+fn_ca_migration_text                     stable    anon + authenticated
+                                         (p_version text)
+```
+
+It returns the full SQL text of any applied migration, by version, to anyone,
+including a visitor with no account. Every migration this platform has run: the
+money paths, the fraud rules, the security fixes, and the comments explaining
+what each one was defending against.
+
+Its own COMMENT, written by the agent who created it, says **"Read-only,
+service_role only."** That is what the author intended and believed. Postgres
+granted EXECUTE to PUBLIC on creation, Supabase published it as an RPC, nobody
+wrote the REVOKE, and it was anon-readable from birth while its own
+documentation said otherwise. It had been built hours earlier in response to
+this session's finding that 428 applied migrations have no file in the repo: a
+good tool, born public.
+
+Closed by `20260901000358_the_guard_caught_one_within_the_hour`. Zero callers
+anywhere; service_role keeps it, asserted by calling it rather than by reading
+its grant.
+
+This is the argument for the guard, made by the estate itself, inside an hour,
+without anybody going looking.
+
+## Cowork session 2026-08-31 - NOTHING SCHEDULED FAILS SILENTLY (hardening phase 2 of 6)
+
+`sp_upcoming_tournament_pushes` runs every minute. It failed **4,017
+consecutive times** between 2026-08-28 19:49 and 2026-08-31 19:29 - nearly
+three days, zero successes - because it joins `public.user_presence`, a table
+that does not exist. It sends the "your tournament starts in 15 minutes"
+reminders, so for three days no player was reminded of anything.
+
+Every one of those 4,017 failures was already sitting in
+`cron.job_run_details`. It was not hidden. Nothing read it.
+
+**There was a watcher, and it was looking at three jobs.**
+`v_system_health_cron` already existed and already read `cron.job_run_details`.
+Its filter was `WHERE jobname LIKE 'home%' OR 'pnm%' OR 'flag-garbage%'` -
+three name prefixes out of **75 active jobs**. Every scheduled thing the
+platform has learned to do since that view was written lived outside it: the
+reconcilers, the sweeps, the pushes, the rake repair. This is the same shape as
+a definer-view sweep that a newly created view walks straight past - a sweep
+where a guard belongs.
+
+Three migrations, all applied and verified in production:
+
+1. **`20260831193507_the_pgrst_watchdog_learns_to_bark`** - At 19:21 UTC
+   PostgREST began answering every request with PGRST002 and hands served
+   dropped from 246/min to 0. Root cause: 181 reload-triggering DDL events in
+   one hour (against a warn threshold of 20) forcing re-introspection of 974
+   tables and 2,490 functions. Recovery was a manual `NOTIFY pgrst, 'reload
+schema'`. This adds `ca_pgrst_reload_log` and
+   `fn_ca_pgrst_reload_if_stale(p_ddl_window, p_cooldown)`, scheduled every five
+   minutes, which sends the reload **only** when reload-triggering DDL happened
+   recently _and_ nothing was sent inside the cooldown - so a busy migration
+   afternoon self-heals and a quiet one costs nothing. Verified firing on its
+   own schedule three times (19:35, 19:45, 19:50) with the cooldown respected.
+
+2. **`20260831193608_nothing_was_watching_the_scheduled_work`** - widens
+   `v_system_health_cron` from three prefixes to every job (same columns, so
+   the World Hub admin surface that selects from it is untouched - asserted
+   column-by-column in the post-apply block), and adds
+   `fn_ca_cron_health(p_window)`: one row per active job with a verdict of
+   `critical` / `warn` / `ok` / `idle`, run counts, and the last error text.
+   `service_role` only; `anon` and `authenticated` are revoked and the
+   post-apply block proves it.
+
+3. **`20260831193846_a_job_that_is_still_running_has_not_failed`** - the alarm
+   found its own false positive within minutes of shipping:
+   `rake-bbj-invariant-audit-hourly` was called CRITICAL with **zero failures**.
+   `pg_cron` writes its row when a job _starts_, so a run in flight has status
+   `running` - neither succeeded nor failed - and "ran, no success yet" was
+   being read as "broken". The verdict now counts only FINISHED runs; no
+   finished runs in the window is `idle`, the same honest answer given for a
+   weekly job inside a 24-hour window. An alarm that calls a healthy job
+   critical is worse than no alarm, because it is why people stop reading
+   alarms. Fixed before it was ever read.
+
+**`scripts/ci/check-cron-health.mjs` + `.github/workflows/cron-health.yml`** -
+the half that makes somebody look. Scheduled every six hours (not a PR gate: a
+broken cron job is not a reason to block an unrelated branch), red when any
+active job ran in the window and never once succeeded, with the job's last
+error in the run summary. Flaky jobs are `warn` and do not fail the run.
+
+Live output over 24 hours at the time of writing: **77 active jobs - 61 ok · 6
+warn · 2 critical · 8 idle**, exit 1. The two criticals are
+`tourney_payout_sweep_detect_daily` and `union-weekly-rakeback-recompute`, both
+`canceling statement due to statement timeout`, both already addressed by
+phase 1's corrected planner statistics - the next scheduled runs will say so.
+Over a 10-minute window: 29 ok · 0 warn · **0 critical** · 48 idle, exit 0 -
+the false positive is gone.
+
+`sp_upcoming_tournament_pushes` itself was fixed at 19:30 by another agent
+(the `public.user_presence` join replaced with `table_seats` where
+`left_at IS NULL`) and now reads `warn` - 1,413 failures against 1,435 runs,
+all of them historical. Credited, not duplicated. The point of this phase is
+that the next one does not get three days.
+
+## Codex session 2026-08-30 — LEADERBOARD PRIZE SETUP AND PROMO-WALLET AUTHORITY
+
+Leaderboard prize configuration now follows the actual financial hierarchy:
+an affiliated club is funded and administered by its union's
+`union_wallets.promo_wallet`; a standalone club is funded by its own
+`clubs.promo_balance`. Migration
+`20260830223000_leaderboard_reward_setup_safe.sql` adds validated setup
+metadata, read-only funding visibility, an owner-context RPC, and a single
+server-authorized save RPC. Union authority is derived with
+`fn_union_can_manage_wallets`; standalone authority is limited to the club
+owner or active co-owner. The browser never submits or chooses the funding
+source.
+
+The same migration closes a pre-existing unsafe path. The live
+`fn_payout_leaderboard` implementation credited club member chip balances
+without debiting either required promo source. Because there is no canonical,
+idempotent promo-wallet batch transfer that covers both funding owners, the
+function is replaced by an explicit safety refusal and browser execution is
+revoked. No balances are changed by this migration and no payout automation is
+introduced. This follows the request to omit high-risk work instead of creating
+a second money system.
+
+The client adds an accessible four-step setup wizard, suggested and custom
+plans, owner-only hamburger discovery, first-click deep linking, live planned
+prize badges, and a saved program summary. Existing verified payout history
+remains readable. Direct table writes are removed; configuration goes through
+the validated RPC only.
+
+Applied to production after a transaction-wrapped live-schema dry run. Verified
+8/8 new columns, zero browser write policies, zero settings/payout rows changed,
+authenticated payout execution revoked, the payout body replaced by the safety
+barrier, and valid/duplicate/hostile prize validators returning the expected
+results. Verification after rebasing onto current `origin/main`: 657 Vitest
+files / 9,591 tests green; TypeScript clean; targeted ESLint, Title Case, and
+no-hover law clean; production bundle and the full media optimization pipeline
+completed with `behind-main=0`.
+
+## Codex session 2026-08-29 — CLUB ARENA IA PHASE 3: COMMAND RAILS, UNION RECOVERY, INVITE CONTEXT
+
+The exhaustive hamburger cleanup now extends beyond the drawer itself into the
+routes it launches. This pass did not replace a query, mutation, Supabase
+subscription, form handler, checkout path, or permission guard. It repaired the
+orientation and recovery layers around those systems:
+
+1. **Contextual route-family command rails.** Play records, community, rewards,
+   player identity, support/legal, and union workspaces now expose their sibling
+   destinations directly below the global header. Current-page state is
+   semantic, targets are 44px, the mobile rail scrolls internally, and owner-only
+   union finance links are not advertised from the member-accessible games page.
+2. **One club capability vocabulary.** The hamburger and fixed club rail now
+   share `getClubNavigationCapabilities`. The bottom rail no longer calls club
+   Settings “Profile”, no longer routes Data through the legacy dashboard, and
+   no longer advertises members/data/settings to roles that cannot use them.
+   Role changes refresh from the existing `CLUB_UPDATED` and
+   `MEMBER_ROLE_CHANGED` bus events; route and API guards remain authoritative.
+3. **Invite context repaired.** Bare `/invite` now resolves the last eligible
+   club (or the first active membership) and replaces the URL with
+   `/invite/:clubId`. No eligible club produces an explicit club-context state
+   instead of the old invalid-invite page.
+4. **Union routes recovered.** The directory is a keyboard-native linked-card
+   list with proper progress semantics and explicit loading/empty/error states.
+   Union detail has retryable load failure and not-found states. The dashboard's
+   Games action now uses `/unions/:unionId/games`, eliminating the context-free
+   `/union-games` dead end.
+5. **Designed route failure.** The catch-all now uses the shared
+   #SmarterCasinoRealism state system, shows the unresolved path, and offers
+   Arena/back recovery rather than an inline generic SaaS 404.
+6. **Accessibility regression closed.** The root skip link's rule had lived in
+   an unimported legacy stylesheet, leaving it visible at the top of every page.
+   It now lives in the loaded Club Engine sheet, stays fully off-canvas at rest,
+   appears as a 44px machined control on keyboard focus, and lands focus on the
+   routed main region.
+7. **Build hygiene recovered.** A Promo Vault numeric selector is declared; the
+   lobby player-state regression test follows the shared classifier after its
+   refactor; malformed CSS fragments in the lobby, table, and shared button
+   sheet were repaired or removed. Vite now reports zero CSS syntax warnings.
+
+Verification: 562 Vitest files / 8,608 tests green; targeted IA, accessibility,
+club-rail, lobby, and CSS-integrity set 119/119; TypeScript clean; targeted ESLint
+0 errors; responsive browser pass at 1200, 600 (200%-zoom equivalent), 390, and
+320 CSS pixels with no document overflow; production build and full media
+pipeline completed. Shipping provenance correctly refused to certify the build
+because this shared working branch is 29 commits behind `origin/main` and dirty.
+No deployment was attempted.
+
+## Cowork session 2026-08-28 — MULTI-BOARD EQUITY, PLO8 HI-LO, LEDGER SCOPE
+
+Dan asked for the all-in equity to appear only AFTER a street lands, and for a
+full second before each next street. **Another agent shipped that same fix
+while this work was in flight** (`allInStreetRevealMs`, a shared
+`ALL_IN_STREET_REVEAL_MS` spec constant, applied to both the paced runout and
+the per-street insurance flow). Their implementation is correct and covers
+both requirements, so it stands as written — a competing second constant for
+one rule would be worse than either version alone. What is added here is what
+their change does not cover, plus pins so the rule cannot be silently undone:
+
+1. **Guard pins for the reveal gate.** The failure mode is silent: move the
+   equity broadcast back above the sleep and nothing errors, the numbers just
+   start moving over cards still in the air again. Both dealing paths are
+   pinned for ORDER (deal -> reveal gate -> equity -> inter-street gap), the
+   gate is pinned at >= 1250ms (the client's own flop landing time) and the
+   inter-street pause at >= 1000ms ("one full second, every time").
+2. **Per-board equity priced in PARALLEL.** It was one `await` per board
+   inside a loop, so a triple-board all-in paid three times the latency — and
+   that latency sits between the reveal gate and the percentages appearing,
+   which is precisely the window Dan's rule is measured in. `Promise.all`; the
+   worker pool was already concurrent.
+3. **PLO8 multi-board hi-lo, fixed.** The multi-board branch passed
+   `undefined` for the hi-lo accumulator, so it stayed all zeros and the
+   strategy below it (`scoopy`, the quarter check, the V23 low-only branch)
+   read "no hi, no lo" on every multi-board PLO8 hand. Now averaged per board,
+   with a FRESH accumulator per board so four probabilities cannot sum past 1.
+4. **Award ledger covers every bomb hand**, not just multi-board ones — a
+   single-board bomb with side pots is exactly as hard to rebuild from the
+   merged winners list, and a partial ledger could not tell one from a hand
+   that never happened.
+
+### PROVEN ON LIVE HANDS, not only tests
+
+Until today every bomb pot ever dealt was one configuration (every_n_hands /
+2 boards / no override). The horse-only `E2E TEST TABLE` was configured to
+exercise five never-run paths at once, and did:
+
+    hand 3329569  21:43:59  plo4  boards 3  trigger timed  ante 3.00 fixed
+      pot 21.00 - rake 2.10 - bbj 0.50 = 18.40 = paid = ledger (3 rows)
+      15/15 distinct board cards - 4 hole cards per player (PLO4 override)
+
+Three such hands, each reconciling exactly (18.40 / 69.50 / 16.20, the last a
+chop across 4 award units), all 15/15 distinct cards. The separate bomb button
+behaved to spec 5.3 across them — normal btn 3, BOMB 4, normal 4, BOMB 5,
+normal 5, BOMB 7 — the regular rotation blind to bomb hands, dead-button skip
+intact. The table is left configured so this coverage keeps running.
+
+## Cowork session 2026-08-28 — BOMB POT ROUND 5: a clone must not inherit a bomb
+
+Post-ship audit of my own round-4 work. One real bug, found by asking "what
+else touches these columns", and two improvements.
+
+1. **BUG (mine, shipped in round 4): a cloned table inherited bomb scheduler
+   LIVE state.** `fn_clone_table_row` copies the whole `tables` row and resets
+   an explicit identity/live-state list — and the three columns the bomb
+   engine WRITES were not on it: `bomb_pot_sched_state` (including the PENDING
+   TOKEN), `bomb_pot_next_due_at`, and `bomb_pot_manual_pending`. Both callers
+   made it reachable: `fn_launch_table_from_template` and — worse —
+   `fn_table_lifecycle_pass`, the AUTOMATIC restart/extension sweep. A
+   restarted or template-launched table could therefore deal a bomb pot on its
+   first hand from an inherited token, or immediately from a due timestamp
+   hours old, or fire a manual bomb a host armed on a DIFFERENT table.
+   Migration `clone_never_inherits_bomb_scheduler_state` adds the three to the
+   reset list; the CONFIG columns are deliberately left carrying over, because
+   configuration is exactly what a template is for. Proved with a
+   ROLLED-BACK probe (CLAUDE.md §11.5): armed the live table with a pending
+   token, a two-hour-old due time and a manual flag, cloned it, and confirmed
+   all three reset while enabled/boards/mode/ante all carried — then rolled
+   back with zero rows left behind.
+2. **The scheduler now decides BEFORE the manual flag is read.** Two wins: no
+   extra per-hand round trip on hands that are already bombs, and a host's
+   manual request is no longer silently swallowed by a scheduled bomb that was
+   coming anyway (spec §4.3 collapses two SCHEDULED triggers; a manual request
+   is a separate intent, so it is preserved for the next non-bomb hand).
+3. **A swept pot is no longer announced in silence.** The scoop banner lands
+   ~2.2s after the awards, by which time the pot fanfare has finished, so it
+   had no cue at all. It now plays the big-win sound, gated for a muted player
+   and for background multi-table tabs (#175).
+
+Three new guard pins. 112 client + 31 server tests green on the touched
+surface, tsc clean on both tsconfigs.
+
+## Cowork session 2026-08-28 — BOMB POT MAX (round 4: every remaining item)
+
+Dan: "GO AHEAD AND FULLY BUILD ALL OF THESE." All thirteen open items from the
+bomb pot audit, built and wired. Migration `bomb_pot_max` APPLIED to
+production and verified (4 columns, 2 tables, 3 views, 1 RPC) before merge.
+
+1. **Full scheduler persistence** — `tables.bomb_pot_sched_state` jsonb holds
+   the every-N counter, orbit anchor, pending token, timed clock and separate
+   bomb button; restored once at boot. A deploy now costs NO trigger mode
+   anything (previously only timed survived). Corrupt rows degrade
+   field-by-field, restore refuses a started scheduler; five new tests.
+2. **MANUAL_NEXT_HAND (spec §2.1/§15.3)** — `fn_request_manual_bomb_pot`
+   (SECURITY DEFINER, club owner/co_owner/admin only, audit row in
+   `bomb_pot_manual_requests`), consumed by the engine on a fresh per-hand
+   read, FAIL-CLOSED if the flag cannot be cleared. Staff-only "Bomb Pot Next
+   Hand" button in the Game Rules modal; the RPC is the gate, the button is
+   presentation.
+3. **SEPARATE_BOMB_BUTTON (spec §5.3)** — bomb hands rotate their own button;
+   the regular rotation is rewound on bomb hands so intervening normal hands
+   resume exactly where they would have been. Host toggle; persisted with the
+   scheduler state.
+4. **Announce window (spec §3)** — `bomb_pot_announce_seconds`: the timed felt
+   clock appears only within the window (0/null = always). Host slider.
+5. **Host presets (spec §3.2)** — one-tap Classic Double Board / Timed Bomb /
+   Triple Board Special / PLO Bomb Only chips in TableConfigPage.
+6. **Award-unit ledger (spec §16.2/§17)** — `bomb_pot_award_units`: one row
+   per (pot, board, side, winner) for every multi-board bomb hand, UNIQUE
+   idempotency key, written fire-and-forget at settlement.
+7. **Horse multi-board equity (Horses Are Players)** — the fleet now averages
+   per-board equity on double/triple-board hands (iteration budget split so a
+   bomb decision costs what a normal one does). Boards ride HorseGameState.
+8. **Multi-board all-in equity display** — no longer suppressed: per-board
+   equity averaged (equal pot shares make the average exact), pool and exact
+   fallback paths both, variant-override aware; `board_count` in the payload.
+9. **Scoop labels (spec §9.2/§13.3)** — TRIPLE SCOOP / SCOOP / 2-BOARD SWEEP
+   felt banner, derived from the per-board winner record, shown only after
+   the awards push, hand-number fenced, reduced-motion safe.
+10. **Replay bomb facts (spec §20)** — HandReplay shows BOMB POT · boards ·
+    variant · ante · trigger; HandHistoryService ships `bomb_pot`.
+11. **Analytics (spec §22.3)** — `v_bomb_pot_daily`, `v_bomb_pot_vs_normal`,
+    `v_bomb_pot_outcomes` (scoop/split frequency off the award ledger).
+12. **Lobby** — medallion tip now names the ante (fixed or ×BB; get_club_home
+    ships both columns) and a Multi-Board Bomb filter chip that really
+    narrows (column-backed).
+13. **Mobile review** — 3-board stack reuses the shipped RIT-3 CSS
+    (data-boards=3: community 36%, masthead 84%); scoop banner clamps its
+    type and yields to reduced motion. Device pass still recommended.
+
+Pins: six new bombPotGuards suites lock the fail-closed manual clear, the
+button rewind, persistence restore, equity unsuppression, horse averaging and
+ledger idempotency. 45 server + 228 client tests green, tsc clean both.
+
+## Cowork session 2026-08-28 — BOMB POT VARIANT OVERRIDE + TIMED PERSISTENCE
+
+Round 3 of the bomb pot spec work (rounds 1-2 below). Two features, both to
+Dan's spec, migration `bomb_pot_variant_and_timed_persistence` APPLIED to
+production before merge.
+
+1. **Variant override (spec §10.1).** An NLH table can now deal PLO bomb
+   hands (`tables.bomb_pot_variant`, whitelisted nlh/plo4/plo5/plo6, DB CHECK
+   mirrored). The whole override is one assignment — HandConfig.gameVariant —
+   plus ONE new seam, `ServerTableEngineBase.activeHandVariant()`, now read by
+   the four places that used to ask the TABLE what game a HAND was: the
+   snapshot's betting structure (client slider goes pot-limit on the bomb
+   hand), the legal-action pot-limit clamps, the horses' evaluator variant,
+   and the hand-history write (records plo4, not the table label). The
+   snapshot ships `hand_variant`; the client sizes villain card-backs and
+   winner-highlight evaluation from it, the intro badges "PLO4 DOUBLE BOARD",
+   the lobby tip says "played as PLO4", the rules modal shows "Played As".
+   Guard: an override the deck cannot cover for the seated count (9-handed
+   PLO6 = 54 hole cards) yields to the table's own game, logged.
+2. **Timed clock survives restarts (spec §4.3).** The timed mode's due
+   timestamp now persists to `tables.bomb_pot_next_due_at` (engine-written,
+   fire-and-forget) and seeds the scheduler at boot — a deploy no longer
+   restarts the 30-minute cycle; a due time that passed during the deploy
+   detonates at the first hand boundary.
+
+Pins: bombPotGuards grew a six-pin suite locking every activeHandVariant
+consumer; scheduler tests cover the whitelist and the seed (never overwrites
+a running clock). 38 server + 165 client tests green, tsc clean both.
+
+## Cowork session 2026-08-27 — BOMB POTS, AUDITED AND STANDARDIZED TO DAN'S SPEC
+
+Full audit of the bomb pot feature against the Bomb Pot Rules + Architecture
+Specification, then the gaps closed. Audit record with the spec-by-spec
+compliance table: `.agent/audits/2026-08-27-bomb-pot-standardization.md`.
+
+What the audit found already correct (built 2026-08-20/25): server-authoritative
+double board with per-pot integer-cent splits, odd cent to Board 1; board-major
+award sequencing; odd chips clockwise from the button; short-ante all-in side
+pots; RIT/insurance/BBJ suppression on multi-board hands; deck-feasibility
+downgrade; the cinematic intro with reduced-motion fallback; per-board hi/lo
+muck integrity.
+
+What was missing, now built:
+
+1. **Trigger modes (spec §2.1/§4).** Only every-N-hands existed. New
+   `BombPotScheduler` (server/src/engine/BombPotScheduler.ts, pure state
+   machine, 16 unit tests) adds `once_per_orbit` (button-crossing orbit
+   tracker — seats joining/leaving cannot double or skip a bomb, T01/T02),
+   `timed` (server clock, due at next hand boundary, one pending token no
+   matter how long a pause, T03/T04) and `bomb_pot_only`. Single
+   pending-token semantics and a minimum-players floor (default 3): a due
+   bomb stays pending until enough players are dealt in.
+2. **Triple board (spec §9).** HandController generalized from a double-board
+   boolean to `activeBoardCount` 1-3: lockstep dealing on all paths (normal
+   streets, insurance-paced runout, full runout), N-way per-pot integer split
+   with remainders to Board 1 then Board 2, per-board winners/labels, `hand3`
+   at showdown, board-3 muck eligibility (hi and lo), stepwise 3→2→1 deck
+   downgrade. Client renders board 3 under board 2 (existing `data-boards='3'`
+   CSS), with its own winning-five highlight.
+3. **Config standardization (spec §3).** Migration
+   `20260827_bomb_pot_standardization` (APPLIED to production, verified:
+   5 tables columns + 2 hand_history columns, 1 double-board row backfilled):
+   `bomb_pot_board_count` (1-3, supersedes the boolean, kept in lockstep),
+   `bomb_pot_trigger_mode`, `bomb_pot_interval_seconds`,
+   `bomb_pot_min_players`, `bomb_pot_ante_fixed` (FIXED ante mode overriding
+   the BB multiple). Wired through loadTable select (engineSelectIsTheContract
+   guard extended), the throttled re-read, TableConfigPage (schedule + boards
+   radio groups — Triple Board is a real switch again, this time with an
+   engine behind it), lobby medallions per mode, GameRulesModal, felt pill.
+4. **Bomb antes on the hand record (spec §20).** postBombPotAntes never ran
+   postBlinds' forced-money recorder (#1477), so every bomb hand's persisted
+   `actions` log was short by the entire starting pot. Bomb antes now emit
+   FORCED_BETS_POSTED as `bomb_ante`, dead money.
+5. **Hand history (spec §20).** `community_cards3` plus a `bomb_pot` jsonb
+   {trigger_reason, ante_amount, board_count} frozen at trigger time — a bomb
+   hand's why/how is now reconstructable from the row.
+
+Deliberately deferred (documented in the audit): variant override
+(NLH table dealing PLO bombs — the config snapshot now carries the fields it
+needs), separate bomb button, admin manual next-hand trigger, per-award-unit
+settlement ledger table. Scheduler state is in-memory per engine (restart =
+worst case one cycle's delay), same trade-off the old counter made.
+
+Tests: 30 server (scheduler 16, triple board 9, double board 5 — all green),
+183 client tests in the touched areas green, `tsc --noEmit` clean on both
+tsconfigs.
+
+## Cowork session 2026-08-27 — THE CASHIER, AUDITED TO THE MONEY STANDARD
+
+The table cashier and the wallet paths behind it, hunted for the six defect
+classes plus three money-specific ones (idempotency, un-rolled-back optimistic
+UI, client-named prices). Ten fixed; the rest were verified already-fixed at
+HEAD by intervening PRs (`internalTransfer`'s discarded boolean, the
+`retryAsync` on `fn_wallet_type_transfer`) and are not redone.
+
+1. **A lost response could double-charge a top-up, and the UI invited it.**
+   `/addchips` carried no client key: the engine's stable key only
+   de-duplicated the two attempts of ONE invocation, so a second HTTP request
+   minted a fresh key and a fresh debit. The window is exactly the one a
+   player retries in — commit, response lost, modal still open with the
+   amount intact. CashierModal now holds a per-ATTEMPT `opIdRef` (rotated on
+   amount/tab change and on success, deliberately NOT on failure), threaded
+   through `onAddChips(amount, opId)` → `GameServerAPI.addChips` →
+   `handlers/addchips.ts` (validated `^[A-Za-z0-9-]{8,64}$`) →
+   `engine.addChips(userId, amount, opId)` → the `atomic_table_addon` key.
+2. **And it told the charged player they had not been charged.** "Your wallet
+   was not charged" is true for a server refusal and false for a transport
+   failure. `GameServerAPI` now tags transport failures `code: 'TRANSPORT'`,
+   both handlers say the outcome is UNKNOWN and to check the stack first, and
+   the modal's banner — which only ever sees a boolean — no longer makes a
+   claim it cannot back.
+3. **The engine's `applied` was thrown away.** It caps a top-up to the seat's
+   headroom and reports what actually moved; the client accounted for the
+   REQUESTED amount in five places (account balance, session buy-in, rebuy
+   count, SessionStats, the CHIPS_ADDED bus event), so asking 5,000 with
+   1,200 of room drifted every session figure by 3,800 for the rest of the
+   session. `applied`/`queued` now propagate, all five use `applied`, and the
+   player is told when the table capped them or when chips land at hand end.
+4. **A failed club-balance read became a confident 0** —
+   `fetchClubChipBalances` returned an empty map on failure, which
+   `map.get(id) ?? 0` turned into "you have 0 chips in this club": Max
+   prefilled 0, every percent button zeroed, and the local check refused
+   cashouts the server would have allowed. Returns null now (stale cache
+   preferred when present); CashierPage keeps its existing "still loading"
+   null state.
+5. **Table chip moves did not invalidate the club-balance memo** —
+   `CHIPS_ADDED`/`CHIPS_WITHDRAWN` were missing from `CHIP_BALANCE_EVENTS`,
+   the two events the table cashier actually emits, so Max prefilled a
+   pre-transaction figure for up to 30s.
+6. **The cashier had no height ceiling** — `overflow: hidden`, no
+   `max-height`, and its media queries key on max-WIDTH so they never fire in
+   landscape (the table page's orientation on phones). A refused top-up added
+   the error banner, which pushed Confirm below the clip line: both the error
+   and the retry became invisible. Capped and scrollable now.
+7. **`getBalances` was the one wallet read with no `Number()` coercion**
+   (string columns would have made the summed hero figure concatenate).
+8. **`transferToUser` / `distributePromo` returned true for a REFUSED RPC** —
+   both discarded `data` while every other RPC here returns refusals as
+   `{ success: false }`. Latent behind a 42501 grant today, armed to fire the
+   moment the grant is fixed.
+9. **`src/components/chips/` deleted entirely** — six components and a barrel
+   nothing imported, carrying pre-fix versions of these same defects
+   (`Promise<void>` handlers, overlay-dismiss mid-request, unguarded
+   `.toLocaleString()`).
+
+Client 458 files / 7,301 tests green; server tsc + handler/entry suites green
+(94). One source-pin test updated in the same commit: cashier-honest-outcomes
+now pins the honest contract (reports failure, stays open, points at the
+figures) rather than the "was not charged" wording it replaced. No money RPC
+was called against production (§11.5); the idempotency claims are verified by
+reading the function signatures and the key construction.
+
+## Cowork session 2026-08-27 — ITEM E: THE BUY-IN SURFACES, AUDITED TO THE TAB STANDARD
+
+The last open handoff item without a pending PR: GameLobbyPanel, LobbyTable,
+lobbyEntries and the Spin surfaces, hunted for the six defect classes the
+tournament-tab audit established. Twelve findings, ten fixed, one recorded as
+latent (spinReveal predicate divergence — unreachable today, comment says when
+it stops being), one closed by verification:
+
+1. **`payout_structure` rendered raw** — the SAME TEXT-holding-JSON bug this
+   panel already fixed for `blind_structure`, one field over: on a string,
+   `.map` threw and took the panel down; on the range shapes real builders
+   emit it showed 2 rows where RewardsTab showed 9. Now through
+   `parsePayoutStructure`, the one parser every tab uses (also fixes the
+   `key={undefined}` collision on range rows).
+2. **"Waiting 0" on a failed read** — `getTableWaitlist` swallowed query
+   errors into `[]`, so the guard written for exactly this could never fire.
+   It now returns null for "could not find out"; the panel renders '-'.
+   Same for `countsFor` (a queued-up full table badged plain 'Full' on a
+   failed read) — the board now keeps its previous counts instead.
+3. **"Am I already in this game?" built from three error-discarding queries**
+   — a failed read offered Register / Join Table to a player already holding
+   the seat (the expensive direction, on the buy-in surface). Each set now
+   updates only from a read that worked; stale beats wrong-empty.
+4. **`0 Min / 0 Max` on unpriceable tables** — the panel ignored
+   `cashBuyInRange`'s `unknown` flag the card already honours; now '-' at all
+   three money sites, and an unknown row sorts to the BOTTOM of a Buy-In sort
+   instead of the top (buyInValue Infinity, not 0).
+5. **"45 / 500" on MTTs, thrice** — the panel's Players row and PlaqueSeats
+   both violated the seatsTakenLabel rule (Dan 2026-08-24: no /500). Bare
+   entry count for MTTs now, fraction kept for spin/sng.
+6. **Format column sorted on depth but rendered the name keyword** — "Sunday
+   Turbo" at 60bb printed Turbo and sorted Deepstack, so the sorted column
+   looked broken. New `stackFormatRank` derives the rank FROM the rendered
+   label; sort and word cannot disagree (pinned in lobbySweepFixes).
+7. **`live` vs `status: 'running'`, two derivations of one fact** — a 3/3
+   seat-first game showed a Running badge with no live pip. `live` now
+   derives from the same status the surfaces render.
+8. **`noSeatLeft` omitted 'closed'** — a just-cancelled spin still rendered a
+   Sit Down button that could only fail; now through `seatFirstJoinable`,
+   the one list of dead states.
+9. **Dangling "Blinds" over nothing** — plaque and panel printed the heading
+   over a null stakesLabel; both guarded now, matching COL_STAKES.
+10. **`getAveragePot` signature lied** — returned 0 for both "no hands" and
+    "read failed" against a caller typed `number | null`. Returns null now.
+
+Also: buy-in idempotency general case CLOSED BY VERIFICATION — the live
+`atomic_table_buyin` already accepts `p_idempotency_key`, dedups via
+`transaction_idempotency_keys` (duplicate key = silent no-op = success on
+retry), and the client mints one key per attempt and reuses it on retry
+(pinned in buyInIdempotencyKey.test.ts). No code needed. And `.bbj-info`:
+resolved 2026-08-25 by deletion (native title + BBJInfoModal); the orphan
+rule left in BadBeatJackpotPage.css is now gone too.
+
+## Cowork session 2026-08-26 (late night) — HANDOFF CLOSURE + FIRST REAL-BROWSER LOBBY AUDIT
+
+Worked the two 2026-08-26 handoffs and the open guard issue. Much of the
+handoffs' backlog turned out to already be shipped by intervening PRs (#939,
+#950, and the TournamentPage cleanup) — verified each rather than redone:
+
+1. **PRIORITY ONE discharged: the tournament lobby has now been opened in a
+   real browser.** New repeatable probe `e2e-live/tournament-lobby-audit.mjs`
+   (mints a one-time session for the documented test account via the GoTrue
+   admin magic-link flow — no password is stored anywhere on this machine —
+   and runs the handoff's 10-row checklist in headless Chromium against
+   production at 375×812 AND 430×932). Results on "Late Night Grind (PLO4)"
+   (RUNNING): detail fits one screen at both widths; blinds clock ticks
+   3:28 → 3:26 and never reads 0:00; tab arrows WRAP (ArrowLeft from Detail
+   lands on Rewards) and Home jumps back; Entries shows 10 real avatar
+   images; Rewards bands render with no NaN; `?tab=chips` deep-links to
+   Ranking. Screenshots verified by eye. ONE real defect found and fixed:
+2. **Footer was 12px off the bottom at BOTH widths** (footerBottom 800/920 vs
+   viewports 812/932) — the measure subtracted the parent `<main>`'s bottom
+   padding, leaving exactly that band visible under the buttons. The shell now
+   takes the full remaining height and cancels the parent's gutter with a
+   matching negative margin (TournamentDetails.tsx measure()). Same guarded
+   writes, same ResizeObserver convergence.
+3. **ITEM B verified closed** — no client writer of `tournaments.current_level`
+   remains anywhere in src/ (all references are reads); the engine's
+   TournamentManagerBase persist is the sole writer; `initializeAllTimers` is
+   already deleted. Stale comment in TournamentTimerService corrected to say
+   so.
+4. **ITEM A closed for real** — TournamentPage relayed the chest reveal onto
+   masterBus "so the celebration toast can show it", but that bus event had
+   ZERO subscribers (an emit into the void) and MysteryBountyCelebration
+   subscribes to the server's own t-break channel directly (so observers see
+   it). Dead relay + orphan MYSTERY_BOUNTY_REVEALED bus type deleted.
+5. **ITEM D verified closed** — the dead comment pointers cited by the handoff
+   no longer exist; remaining LiveChipCounts/TournamentStandings mentions are
+   legitimate "replaces X" history.
+6. **Table follow-ups: #950 shipped the five dead components, the CSS
+   scoping, and the landscape height budget** (verified in the tree, landscape
+   scaler now uses --sp-ls-table-w/h). Two named orphans it missed are now
+   deleted: `src/components/chips/ChipStack.tsx` + `.css` (barrel-only ref,
+   barrel imported by nothing) and `src/hooks/useTableModals.ts` (importer
+   removed in #936, test deleted in #950).
+7. **Estate integrity #1231** — `scripts/agent-trees-snapshot.sh` re-synced to
+   the canonical version in the three drifted repos via PRs:
+   commander-shared#33, Diamond-Arena#39, PepNationLab#114. The hourly guard
+   closes the issue itself once they land.
+
+Client: 7,202 tests green, tsc clean. Still open from the handoffs, deliberately
+not touched: ITEM C (pko+mystery prizeRank — needs Dan's ruling on whether the
+combo will ever be configured), ITEM E (GameLobbyPanel/lobbyEntries/Spin
+surfaces line-by-line audit), buy-in idempotency general case (server-side
+key), `.bbj-info` desktop hover popover, and the `seat--sitout`/'AWAY' pill
+rename (ships a new visual — Dan's call).
+
+## Cowork session 2026-08-26 (night) — DAN'S 8-POINT LOBBY/ENGINE AUDIT
+
+Dan's punch list (screenshots of Club JAQK lobby + game panels), all eight
+shipped in one branch:
+
+1. **Cash rebuy silently failed, then booted the player (item 6).**
+   `atomic_table_rebuy` was the only function in the buy-in family running
+   SECURITY INVOKER — its first statement died on RLS
+   (`transaction_idempotency_keys`: RLS on, zero policies) for 100% of real
+   players. Recreated SECURITY DEFINER with an `auth.uid() = p_user_id` guard
+   (migration `20260826150000`, applied + probe-verified in rolled-back
+   transactions). Client: bust-rebuy prompt now reads the CLUB wallet through
+   `fn_player_spendable_balance` (it displayed the legacy `wallets` balance the
+   RPC never spends), reports failures to Sentry, and dismissing the prompt no
+   longer force-leaves the table — that was the "boots you" half (BuyInModal's
+   only close affordances backdropped into handleLeaveTable).
+2. **Waitlist end-to-end (item 2).** RLS only let a player read their OWN
+   row, so the queue rendered 'Player'×10 for everyone but admins. New policy
+   `waitlist_public_queue_read` (active rows public), one-time GC of 1,737
+   abandoned horse "atmosphere" rows (migration `20260826151500`). The fleet
+   now PRUNES horse queue rows every cycle (only genuinely full tables keep
+   1-3, humans never touched), the seat-open notifier skips horses, expires
+   3-minute-stale offers, and sends a best-effort OneSignal push. Client:
+   `getTableWaitlist` resolves real display names + real waited-since times;
+   the seat offer (row → 'notified') raises a clickable toast that deep-links
+   to the table; `waitlist_seat_open` notifications deep-link (the engine
+   writes `data`, the client only read `metadata` — now folded); the old
+   `position === 1` auto-navigate (a column that defaults to 1 for everyone)
+   is gone.
+3. **Overlay announcements (item 3, reversing the 7-day window from
+   yesterday).** Future events NEVER announce. Only running events with the
+   registration door open, and only past 75% of the late-reg window
+   (`LATE_REG_ANNOUNCE_FRACTION`, derived through the same `lateRegEndMs` the
+   lobby countdown uses; fails closed when the row can't prove the window).
+4. **Rabbit hunt can never linger (item 4).** The reveal's ONLY clear was the
+   hand-number-changed effect, which never fires on an idle table. Now: hand
+   boundary clears it, an 8s backstop timer always removes it, stale offers
+   (offer hand < current hand) are rejected, and the 3s freeze-replay's
+   duplicate-enqueue and latched-freeze defects are fixed.
+5. **Showdown announcement 100% (item 5).** The settle hold ate its own
+   event: HAND_COMPLETE nulled the controller and cleared winner state while
+   the WINNERS handler slept, so the post-sleep guard broke before emitting —
+   `pot_win`/`pot_distributed` were skipped on EVERY contested showdown
+   (fold-wins worked, hence "intermittent"). Payload is now captured before
+   the sleep; the guard only checks engine-stopped/new-hand. Client keeps
+   opponents' revealed cards on the felt through the post-hand hold (same
+   no-news rule the hero already had).
+6. **15% cash / 33% spin / 50% HU tables held empty (item 1).**
+   `cashTableHeldEmpty` (2h buckets) zeroes occupancy targets; the rotator
+   drains held-empty horse-only tables one seat per cycle; a human sitting
+   releases the hold. Seat-first: `seatFirstHeldEmpty` (hash on tournament id)
+   opens 33% of spins / 50% of HU with zero horses; topUpWithHorses refuses to
+   fill them until a human buys a seat, then fills so the game starts.
+7. **Post or Wait for BB popup (item 7).** The engine already enforced
+   wait-or-post (2026-08-26 reversal); the client now ASKS: a dialog follows
+   the buy-in confirm (Post Big Blind → /post-bb with a one-retry for the
+   registration race; Wait → default), auto-resolves when the hero is dealt
+   in, and the passive pill remains for mid-wait changes of mind.
+8. **Horse lanes + activity floors (item 8).** `gameLaneFor`: 33%
+   events-only / 33% cash-only / 34% both, enforced in cash seeding, waitlist
+   seeding, `pickFreeHorses` and `registerHorses`. MTT floor: at least 2 live
+   MTTs at all times (checkAndLaunchTournaments launches extras from the
+   schedule when short). Fleet activity floor: when seated horses < 1/3 of
+   the stable, seat targets get a one-seat boost per cycle.
+
+Tests: client 7,169 green, server 1,908 green, both tsc clean. Five
+source-pin tests updated to the new anchors in the same commit (per the
+NEVER-PUSH-A-RED-TEST rule). Migrations applied to production via Supabase
+MCP and verified (`list_migrations` + probes).
+
+## Cowork session 2026-08-26 (final) — WINNER DISPLAY ON EVERY BOARD AND EVERY CHOP
+
+Extension of the parity session below to multi-run and multi-winner hands
+(PR #1368 + a post-merge review fix):
+
+1. **Per-winner hand names.** winnerInfo.handNames (per user_id, from the
+   engine's per-winner hand_name; winners_by_board fallback). A hi-lo low
+   winner's seat labels "Low: 8-6-4-3-2", never the high hand's name.
+2. **POT_WIN merges.** The event can fire once per pot; replacing
+   winnerInfo un-lit the main-pot winner when the side pot paid. Events now
+   union (players, hole indices, names) and SUM per-user amounts (the
+   post-merge review caught the spread overwriting a double-pot winner's
+   first share). Fenced by the hand-start resets.
+3. **RIT hole cards per board.** Each run derives which of the winner's
+   hole cards made THAT board's five (unfiltered holeCards positions);
+   seats light the union across runs.
+4. **Stacked boards' banners join the flow.** Under [data-boards] the
+   banner renders compactly under its own board instead of absolutely
+   overlapping the next run — every RIT run and both bomb-pot boards name
+   their winning hand.
+
+Pinned by the parity spec (33 assertions).
+
+## Cowork session 2026-08-26 (late) — WINNER PRESENTATION, POKERBROS 1:1 (3 passes, measured)
+
+Dan supplied HIGHLIGHT WINNING HAND AND DSIPLAY IT ON SCREEN.MOV (26-Aug PLO5
+"Flush" hand) and asked for a frame-by-frame 1:1 clone of the winner
+presentation. Three passes shipped (PR #1307 rounds 1-2, PR #1330 round 3,
+plus a final-audit PR); pass 2 onward MEASURED the recording per pixel:
+
+1. **The cut.** One-frame hard cut (between two adjacent 30fps frames):
+   winning five get a steady thin warm-gold ring (#e9b355, no pulse, no pop,
+   no lift), every card outside them drops to brightness(0.28)
+   channel-neutral, and the ENTIRE scene dims to ~0.73 — felt art, brand
+   block, pot, page backdrop, dealer button, and every seat's chrome
+   including the winner's own plate (per-group filters; stacking contexts
+   forbid a single overlay). Retired as motion-the-reference-does-not-have:
+   winnerTableFlash, ccHighlightPulse, winnerCardPulse, ccGlowPulse, the
+   highlight-pop state machine, showdown screen shake, the spark burst, the
+   showdown-wide gold ambient, CardImage's highlight lift, the sheen sweep
+   and hover lift on tableau cards.
+2. **The banner.** Below the board (+4px), translucent dark band, orange
+   lens-flare streak on the bottom edge, hand name as gradient-gold
+   background-clip text (measured core #ffe39c) sized at 0.33x card height
+   via clamp(--cc-card-h).
+3. **The sequence.** +N floats and the pot-win ride recolored to the
+   measured yellow (#ffe94a — the ride was cyan and matched nothing);
+   four-point star sparkles over the winner's cards for the life of the
+   float; float/sparkles/BBJ credit excluded from the scene dim; seat
+   hand-name label is plain quiet text (the reference has no gold pill).
+4. **Bug found by the audit:** double-board bomb pots never highlighted or
+   dimmed board 2 (engine card_indices are board-1 only) — board 2 now
+   derives its winning five client-side like the RIT boards do.
+
+Deliberately NOT matched: the reference ships the pot ~2.3s after the cut;
+Dan's 2026-08-21 3-second showdown-read floor (engine-matched) outranks it.
+
+Pinned by tests/unit/pokerbrosWinnerPresentation.test.ts (25 measured
+assertions); tests/e2e/showdown-beats.spec.ts rewritten for the new beats.
+
+## Cowork session 2026-08-26 (evening) — INSURANCE REFERENCE PARITY (pass 6)
+
+Dan supplied the missing reference: a leader-seat recording (INSURANCE.MOV)
+plus stills of the actual dialog. Frame-by-frame findings drove three changes:
+
+1. **The dialog is FEE-first.** Rebuilt: All-In Insurance title, outs count +
+   pot strip, board row, player rows (leader named + equity, opponents with
+   cards), Insurance Fee / Rate / Insured Pot readouts, a fee slider (insured
+   = fee x rate) with the range printed at both ends, Break Even and Constant
+   Profit presets, "For Winning / For Losing" outcome readouts, No / Insure.
+   Coverage now caps at the POT (the winnings), not the leader's stake — the
+   reference max insured is ~the pot. `atRisk` rides the offer for Break
+   Even. Countdown is 25s to match.
+2. **Three table moments.** A shield INSURANCE banner sweeps the felt for
+   every seat when the offer opens; after a purchase the fee sits beside the
+   pot as its own chip pill until the hand resolves; when insurance pays, a
+   chip fan + "+N" float flies from the pot to the insured seat with a toast.
+3. **Sequencing (supersedes FIX 92) + offer-before-deal.** The reference asks
+   the run-it-multi-times question FIRST; insurance engages only when the
+   hand resolves to a single run. The engine no longer force-disables RIT on
+   insurance tables — the runout dispatch runs RIT first and chains into the
+   insurance flow on a single-run resolution. Per-hand exclusivity is kept: a
+   multi-board hand never carries insurance. The per-street flow also now
+   offers on the STANDING board before dealing (a turn all-in used to deal
+   the river instantly and never receive an offer at all).
+
+InsuranceRitExclusivity.test.ts rewritten to pin the sequencing (5 tests);
+64 server tests green across the insurance/RIT/pacing suites.
+
+**Pass 7 (final audit, PR #1334 — merged):** two line-by-line finds, fixed
+and pinned. (1) At dust stakes a cents-rounded premium could hit 0.00 while
+the insured amount stayed positive — a payout contract the union bank funds
+without collecting a cent; createOffers now refuses it. (2) The accept path
+rounded coverage to a whole percent, so the charged premium could differ
+from the dialog's displayed fee by up to half a percent of the full premium;
+coverage now flows at hundredths-of-a-percent precision end to end (client
+accept path, acceptPartial, getPreview) — the fee shown is the fee charged,
+to the cent. Also swept for stubs/dead code and re-verified every client
+piece (banner, waiting bar, fee pill, payout flight, slow reveal, fee-first
+dialog) present and wired on main. 107 server + 50 client tests green.
+
+**Pass 8 (publish + P&L, Dan 2026-08-26/27):** migration
+`20260827_insurance_on_for_all_cash_tables` (APPLIED) enabled insurance on
+all 46 live cash tables with zero tournament rows touched; fleet inserts now
+birth cash tables insured; CreateTableModal defaults the toggle ON; the
+engine gained a tournament gate (a stray flag could have moved seat chips
+with no bank ledger). Deploy verified: engine served the exact merge commit.
+Migration `20260827b_insurance_pnl_in_daily_reports` (APPLIED) put insurance
+into the daily P&L where the money actually settles: `ca_club_revenue` gains
+totals.insurance {contracts, premiums, payouts, net, bank} + per-day
+ins_net (bank='union' for affiliated clubs, 'club' for standalone), and NEW
+`ca_union_insurance_pnl(union, days)` reports the union bank's live daily
+insurance P&L (totals, per-day, per-club), oversight-gated, anon revoked.
+ClubDashboard's revenue tab shows the insurance net with honest bank
+attribution; UnionStatementsPage shows the union's 14-day insurance strip
+(net, premiums in, payouts out, contracts).
+
+---
+
 **Started:** 2026-03-24
 **Current Step:** ALL 8 STEPS COMPLETE — Bible V8 Deep Audit (226 fixes, 99% verified)
+
+---
+
+## Cowork session 2026-08-26 — INSURANCE POKERBROS PARITY (reference video)
+
+Dan uploaded a screen recording of the reference app's all-in flow and asked
+for a 1:1 clone of its pacing and functionality: the action pauses, the offer
+is presented, turn/river are slowed and flipped, decisions are announced.
+Frame-by-frame analysis of the clip (observer view of a run-it-3x hand)
+documented: a bottom "waiting" status line while the offer stands, a
+table-wide toast when the decision is made, and each runout card landing face
+down and flipping after a beat.
+
+New binding rules from Dan, and what changed:
+
+1. **A decline is FINAL for the hand.** "If a player declines, they don't get
+   offered again." Timeout = decline = final (InsuranceEngine expiry callback,
+   respondToInsurance, client decline handlers, single Decline button in the
+   modal replacing the Decline Now / Decline For Hand pair).
+2. **Offers on every street to the CURRENT best hand** already existed
+   (per-street re-evaluation), but an eligibility defect defeated it: after
+   the leader declined, the pause flow only consulted players who had already
+   RECEIVED offers, gave up per-street pacing, and the villain who took the
+   lead on the next street was never offered. Eligibility is now computed
+   over ALL all-in players (ServerTableEngineRunout).
+3. **Decision events reach the table.** INSURANCE_ACCEPTED / DECLINED /
+   SETTLED died in a console.log (same defect class as the rakeback events);
+   they now go out on the hub as insurance_accepted / insurance_declined /
+   insurance_settled with the player's username. Client: toast on decision,
+   payout toast to the settled player.
+4. **Observer flow.** Everyone except the leader shows a quiet pulsing status
+   bar under the board ("Waiting For <name>'s Insurance Decision") that
+   auto-expires with the offer window (TablePage + CSS).
+5. **The popup got its missing content.** The offer event now carries the
+   leader's cards, opponent cards, board, street and server-computed OUTS
+   (InsuranceEquity.leaderOuts — exact next-street enumeration; quads /
+   board-pairing boats correctly excluded). InsuranceModal displays the outs
+   row and a LIVE ticking countdown (red under 5s) driven by the server's
+   timeoutSeconds instead of a frozen "15s".
+6. **Slowed all-in reveal.** During the runout (equity overlay live) turn and
+   river land FACE DOWN, hold a beat, then flip — reusing the flop's
+   two-surface flip markup with slow-reveal timing (CommunityCards
+   slowReveal prop + CSS; reduced-motion respected; newly-dealt window
+   extended to 1.8s in this mode so the flip is never torn out mid-turn).
+
+Tests: 96 server tests pass including new pins — timed-out offer is a final
+decline; leaderOuts counts 7 live clubs (not 9) in the set-vs-flush-draw spot.
+
+**Pass 2 (same day, PR #1232 — merged):**
+
+7. **The handoff rule is pinned by deterministic tests.**
+   `InsuranceLeaderHandoff.test.ts` builds a real lead-change spot (top set vs
+   nut flush draw; the flush arrives on the turn) and proves: a decline by one
+   player never blocks the other's later offer; the per-street pause SURVIVES
+   a leader decline (the exact pre-fix failure); accepted coverage rides to
+   settlement untouched; only all-players-declined collapses to the paced
+   runout. The eligibility rule was extracted into
+   `insurancePauseStillLive()` so it is directly testable.
+8. **Multiway popups.** A 3-way all-in now shows EVERY opponent's hand under
+   their username, not just the first one.
+9. **Odds next to the outs.** The offer carries `outPct` (outs / unseen next
+   cards, short-deck aware) and the popup renders "Outs Against You (10 •
+   22.7%)".
+10. **Attention parity.** The leader hears the your-turn bell when the offer
+    arrives, so a multi-tabling player looks over inside the window.
+
+Deploy verified per section 11: PR #1229's engine deploy finished 19:25:27Z;
+`hand_history` per-minute counts show the restart dip (54 at 19:25) and
+recovery above baseline (411 at 19:27). World Hub sync green. Three running
+production tables have `insurance_enabled=true`, so the flow is reachable.
+
+---
+
+## Cowork session 2026-08-26 — HORSE BRAIN V15 + THE 20BB REVIEW SYSTEM
+
+Dan: "massive improvement and optimization to the decision making... I watched
+horses check-shoving small flushes... a horse call off 800 chips with a 9-high
+flush in PLO6 where your opponent always has a bigger flush when raised...
+every hand where a horse wins or loses 20bb needs to be flagged and reviewed."
+
+### PR #1001 — V15 Omaha nut discipline (MERGED, deployed, verified on engine)
+
+Full audit of the decision pipeline (HorseLogic / HorseEval / HorsePreflop /
+HorseMind / scheduleHorseAction). Root causes of the small-flush payoffs:
+
+1. **The equity model could not see that a PLO raiser has a flush.** V12
+   board-contact conditioning was NLH-only; PLO opponents were sampled from
+   preflop bands, so a nine-high flush priced itself ~75-85% against a range
+   that is really bigger flushes. Omaha aggressors now get cheap structural
+   contact conditioning (bounded redraws, wide-band pots only).
+2. **No concept of flush rank.** cat 6 was cat 6. New `omahaNutStatus()`
+   counts live higher flushes / detects nut straights. Dominated hands facing
+   a raise play against a CAPPED equity, never value-raise on any street
+   unless near-lock, and call rather than jam when committed.
+3. **plo5/plo6 preflop scores inflated by hole count** — measured median plo6
+   hand scored 0.53 (above the 0.52 call-a-raise bar) vs plo4's 0.24. Fixed
+   with measured median-shift normalization (-4.7 / -8.8 pts).
+4. **No small ball**: non-nut value sizing damped (x0.86 plo5, x0.78 plo6),
+   dominated flush multiway checks 60%, multiway tightening scales with hole
+   count.
+
+League now deals variants: playHand is variant-generic and a nightly
+`plo6_v15_discipline` matchup measures v15 on/off (the NLH matchups cannot
+see it by construction). Verified deployed: engine container restarted 14:46
+UTC, `grep -c omahaNutStatus /app/dist/engine/*.js` returns hits.
+HorseOmahaDiscipline.test.ts pins Dan's exact hands. Honest scope note: v15
+shipped on correctness + scenario tests; first league numbers arrive with the
+next nightly run — compare against the 2026-08-23 baseline only.
+
+### PR #1002 — 20bb hand flag + review capture (this PR)
+
+`recordHorseHandReviews()` beside writeHandFacts at settlement: any horse at
+|net| >= 20bb gets a row in `horse_hand_reviews` (exact in-memory nets, NOT
+the action-log reconstruction that fails chip conservation in 38% of hands).
+Leak tags at write time: nonnut_flush_stackoff, second_nut_flush_stackoff,
+dominated_straight_stackoff, big_bet_fold, preflop_stackoff, river_aggr_lost.
+Permanent per-horse/day rollup via `fn_hhr_rollup_add`; raw rows prune at 30
+days. Migration `20260826144505_horse_hand_reviews.sql` APPLIED to production
+(tables + RLS + admin RPCs `ca_horse_hand_reviews`, `ca_horse_review_summary`
+gated on `fn_is_horse_admin()`); schema manifest regenerated. Measured volume
+first: 485k hands/day, 3.3% reach 40bb pots -> 15-30k rows/day.
+
+### Daily audit loop (added same session, Dan follow-up)
+
+`horse_daily_audit` (migration `20260826151309`, APPLIED): one row per day
+with machine-computed findings — leak-tag spikes vs the trailing week, horses
+bleeding 400bb+ in flagged pots, league layers resolving significant-negative,
+illegal league actions, capture-coverage gaps (a variant dealing big pots but
+writing zero review rows), missing evidence payloads, net outliers, untagged
+losses — each finding carrying severity, category (schema/logic/gto),
+evidence, and a recommendation. Computation lives in SQL
+(`fn_run_horse_daily_audit`); the engine's `HorseDailyAudit.ts` is a thin
+scheduler (06:00-09:00 UTC window, boot check, catch-up, `horse_job_runs`
+claim key `daily_audit` — all the 2026-08-23 nightly-job lessons). The daily
+Claude analysis writes into `agent_analysis` via
+`fn_horse_audit_set_agent_analysis`; a scheduled Cowork task runs it every
+day. Self-test on live data: the very first run correctly flagged 7
+capture-coverage criticals because the capture PR had not yet deployed.
+
+### World Hub PR #781 — /horses/hand-reviews admin dashboard
+
+Fleet summary (per-horse big wins/losses, net bb, leak counts, clickable
+filters) + flagged-hand browser with expandable street-by-street detail.
+FOLLOW-UP: pages/horses/index.js has 26 pre-existing argument-less
+getSession() calls, so any edit to it is blocked by pre-commit CHECK C — the
+nav button for hand-reviews cannot land until that file gets the authUtils
+refactor. Page is reachable directly at /horses/hand-reviews.
+
+### Also verified this session (before the brain work)
+
+club-arena Vercel project (`prj_tmZtfoqDmUFwusuOiPivr2nM52QM`) is a DEAD
+duplicate: link severed, one ERROR deploy ever (the "services" framework
+misconfig), nothing serves from it; the real pipeline (build-for-world-hub ->
+hub-vanguard) is healthy. Recommend Dan deletes the project in the dashboard.
+Commander's CANCELED deploys are the Ignored Build Step skip rule working on
+docs-only commits, not a failure. estate-integrity: 0 problems across all 7.
+
+---
+
+## Cowork session 2026-08-25 (part 3) — THE CLUB PAGE, LINE BY LINE
+
+Dan: "go through it all line by line, check for any bugs, stubs, gaps, errors,
+regressions or wiring issues... then find any and all ways to improve, enhance
+and upgrade this page and functionality to the max."
+
+Scope: everything behind `/hub/club-arena/clubs/:slug` read in full —
+ClubHomePage.tsx (3,210 lines), LobbyTable.tsx/.css, GameLobbyPanel.tsx,
+DynamicWallet.tsx/.css, lobbyEntries.ts. Thirty defects found and fixed in
+PR #791; two left open as product decisions (below).
+
+### The three that could put a wrong number on a money surface
+
+1. **A rejected read rendered as a balance of zero.** DynamicWallet awaited
+   four Supabase reads and inspected `error` on none of them. supabase-js
+   RESOLVES with `{ data: null, error }` rather than throwing, so an RLS
+   denial, a renamed `fn_club_money_panel`, or a PGRST116 from `.maybeSingle()`
+   produced `panel = {}`, every `num()` returned 0, and the component then
+   called `setFetchError(false)` — Club Bank 0.00, Diamonds 0, Player Wallet
+   0.00, presented as fact with no error badge. The four errors are now
+   coalesced and thrown, which routes to the existing catch: the last known
+   numbers stay on screen and the retry appears.
+
+2. **`Boolean(panel.in_union)` turned "no answer" into "standalone."** That
+   adds the Rake Treasury and Spins Wallet rows a union club does not own, and
+   un-gates the Backup BBJ row — which holds the UNION's reserve, because
+   `backupBBJ` was never given the `unionScoped` gate the other union figures
+   have. Now only written when the RPC actually answered.
+
+3. **A NaN target froze the animated counter permanently.** `Math.abs(NaN) <
+0.01` is false, so the animation ran, committed NaN, and every later target
+   computed `start = NaN`. `formatBalance` then masked the wreckage as
+   "0.00". Cached payloads are sanitised field by field before reaching state,
+   the counter coerces at the door, and formatBalance renders a non-finite
+   number as "-" rather than as zero.
+
+### The realtime teardown loop
+
+`removeChannel()` → `unsubscribe()` → the channel's close handler → the
+`subscribe` callback with status `CLOSED`. The club and union callbacks treated
+CLOSED as a failure and called `scheduleReconnect()`, which bumped
+`channelEpoch`, which re-ran the effect, which called `removeChannel()`. Four
+queries and a full channel rebuild **every two seconds for as long as the panel
+was mounted** — and the backoff could never escalate past the first 2s delay,
+because the main channel resubscribed successfully each epoch and its
+SUBSCRIBED handler zeroed the retry count.
+
+The callbacks fire after the cleanup has already cleared the pending-timer
+guard, so only a per-run `disposed` flag can tell "the server dropped us" from
+"we let go". Added, plus per-channel health so the count clears only when every
+channel this run created reports SUBSCRIBED.
+
+Two more in the same file: channel topics carried no per-instance
+discriminator, and `RealtimeClient._leaveOpenTopic` unsubscribes any
+already-joined channel with a matching topic — so two wallet surfaces in one
+window silently killed each other's listeners. And
+`p.old.union_id !== p.new.union_id` is ALWAYS true, because logical replication
+only fills `old_record` with the replica identity (the primary key), so every
+club-bank movement fired the refetch the payload-apply beside it exists to
+avoid.
+
+### Stale closures on the club page
+
+The bus listeners, the realtime `club_members` handler and the 90-second
+fallback all had `[]` deps and froze render 0's `loadClubData`, which closes
+over that render's `clubId`. After `/clubs/a → /clubs/b` (React Router reuses
+the component) any of them refetched club A and painted it over club B. Fixed
+with a latest-value ref kept current by a no-dep effect.
+
+Beside it: the club-switch reset cleared role, level and jackpot but left
+`club`, `tables` and `tournaments` — so entering an uncached club showed the
+PREVIOUS club's name, member count and tables, as live joinable rows, for the
+whole fetch. The `get_club_home` fast path had no cross-load token
+(`lobbyPainted` is a local of one invocation and cannot arbitrate between two
+loads). `loadMyGameStates` had no cancellation, no club scope and no row limit.
+
+### The search box that was never rendered
+
+Every part of this feature existed and was wired — `searchQuery` filters both
+`filteredTables` and `filteredTournaments`, `narrowing.searching` drives the
+empty state's copy, `clearAllNarrowing` clears it, the stylesheet has carried
+`.lobby-top__searchbox` since 2026-08-21 — but nothing on the page could SET
+it. `searchQuery` was permanently `''`, the filters were no-ops, the "Your
+Search And" branch was unreachable, and `IconSearch` was an unused import. The
+input is now on the page.
+
+### Lobby table
+
+The Starting Stack and Current Level columns shipped earlier the same day
+joined a `table-layout: fixed` table without joining its narrowing ladder:
+216px carried whole into every breakpoint, which is ~200px of sideways scroll
+in the 641–768px band — the exact failure the phone pass exists to prevent.
+They narrow at 1100 and hide at 900 (the card and the game panel both still
+carry the figures). Their `sortValue` used `-1` for cash rows, and the
+comparator parks NON-FINITE values last, so ascending floated every empty cell
+to the top; `Infinity` now.
+
+`blind_structure` had grown THREE parsers in one folder, each reading only the
+spelling it was written against — `BlindLevel` declares `small_blind` and
+`smallBlind`, `duration_minutes` and `durationMinutes`. All 22,175 stored rows
+are camelCase today, so the first canonical row would have gone blank in some
+readers and not others, silently, because a `catch` that returns null looks
+exactly like a tournament with no structure. One parser now:
+`src/components/lobby/tournamentFigures.ts`.
+
+Dead and conflicting CSS: `.lt-status` declared three times in one media query
+(each later one keeping what the earlier had not set, producing a half-applied
+badge nobody designed), `.lt-name__clockpart` twice with opposite values, a
+768px block sitting AFTER the 640px card block and silently overriding both
+phone font sizes and the card's zero padding, plus `.lt-badge`,
+`.lt-rule--more` and a `thead th` rule inside the block that hides `thead`.
+
+### Left open — product decisions, not defects
+
+1. **The ALL tab does not show all.** It keeps only HOLDEM/OMAHA/LIMIT cash
+   (dropping MIXED), only registering/late-reg MTTs (dropping running games and
+   all Spin/SNG), and caps each section at 10. `countsCapped` suggests the cap
+   is deliberate; the MIXED exclusion contradicts a comment 2,000 lines above
+   that says MIXED surfaces under All.
+2. **The Filters button renders on ALL, where its filters cannot apply.**
+   `AdvancedFilters` retargets `initialType: 'ALL'` to `'HOLDEM'`, while the
+   filter functions set `advType = null` on ALL — so the sheet configures
+   something the list will not read. The comment beside the button says it is
+   "Hidden on ALL"; it is not. Hiding it would also remove access to sort from
+   that tab, which is why this needs a decision rather than a guess.
+
+### Gates
+
+`npx tsc --noEmit` clean. `npx vitest run tests/` — 341 files, 4,240 passed, 5
+skipped. eslint 0 errors. Three source-reading tests pinned shapes this work
+changed (`spinsWalletOwnership`, `clubHomeFastPath`, `clubHomeWaterfall`) and
+were updated in the same commit, each rewritten to assert the INTENT rather
+than the literal text.
+
+---
+
+## Cowork session 2026-08-25 (part 2) — ANON COULD READ EVERY MEMBER'S WALLET
+
+### The finding that mattered more than any of the CPU work
+
+Supabase's own security advisor reported 104 SECURITY DEFINER functions
+executable by `anon`. Chasing it down found a live, unauthenticated data
+exposure. Proven in production BEFORE the fix, running as the anon role:
+
+    set role anon;
+    select count(*), max(chip_balance)
+      from public.ca_club_members_overview('<any club id>');
+    -> 584 rows, max chip_balance 442967.95
+
+`ca_club_member_detail` is worse: it takes an ARBITRARY `p_user_id` and returns
+that member's `chip_balance`, `player_wallet`, `agent_wallet`, `promo_wallet`,
+upline, downline and `last_login`. A club id and a user id are the only inputs,
+and both appear in ordinary application traffic. The anon key ships inside the
+client bundle, so `POST /rest/v1/rpc/<name>` from anywhere on the internet
+reached all of it. None of these functions check `auth.uid()`, and being
+SECURITY DEFINER they bypass RLS by design.
+
+### The trap inside the fix
+
+The first `REVOKE EXECUTE ... FROM anon` **silently did nothing** for 7 of the
+12 functions. Postgres grants EXECUTE to PUBLIC on every new function, so
+`anon` mostly held the privilege _through PUBLIC_, not through a grant of its
+own — `has_function_privilege('anon', ...)` stayed `true` after the revoke.
+The correct removal is `REVOKE FROM PUBLIC` and then an explicit grant back.
+Anyone doing this again must verify with `has_function_privilege`, not assume
+the REVOKE worked.
+
+30 functions were locked down across two migrations. `authenticated` and
+`service_role` keep EXECUTE throughout, so no real caller changed.
+
+### The three gates checked before revoking anything
+
+Breaking these breaks logged-out reads rather than merely tightening them:
+
+1. **RLS policies are evaluated as the INVOKING role.** Revoking a function a
+   policy calls makes that policy ERROR for anon. Every candidate was checked
+   against `pg_policy` qual/withcheck. The seven that ARE used in policies —
+   `fn_is_any_union_overseer` (16 policies), `fn_union_oversees_club` (16),
+   `fn_home_is_group_staff` (15), `fn_is_union_overseer` (3),
+   `fn_can_create_games` (1), `fn_has_club_role` (1), `fn_is_agent_of_player`
+   (1) — deliberately KEEP anon EXECUTE.
+2. **Views.** Checked against `pg_get_viewdef` for every view and matview:
+   all zero except `fn_spin_reserve_owner` (2 views), also excluded.
+3. **Volatility.** All STABLE, so this is information disclosure, not writes.
+
+Verified after: anon gets 42501 on `ca_club_members_overview`; anon can still
+read clubs, tables, tournaments, unions and union_clubs with no policy errors.
+
+### sp_prune_hand_history: a comment that lied
+
+Its own comment says _"Only cast what IS a uuid. A malformed id yields NULL...
+the same fail-safe as an unknown account."_ The code used `length(...) = 36`,
+which a 36-character non-UUID passes before throwing 22P02 on the cast. Rather
+than failing safe, one bad id would abort the whole prune batch and stop
+retention silently. Regex guard added behind the length pre-filter. Verified:
+2,500 rows deleted in 10.4s.
+
+---
+
+## Things deliberately NOT changed, with the evidence
+
+Recorded so the next agent does not "fix" them and break production.
+
+**Realtime is 26-29% of database time and there is no safe cut.** All three
+heavy WAL producers are genuinely subscribed:
+
+- `table_hole_cards` (90k ins + 88k del / 35 min) is the SECURE HOLE-CARD
+  DELIVERY PATH — `TablePage.tsx:4079` subscribes to it and the engine
+  comments confirm it. Removing it from the publication breaks dealing.
+- `tournament_players` (183k updates) has SIX subscriber components
+  (TournamentClock, TournamentStandings, TournamentRegistration,
+  TournamentDetails, TournamentResultsPage, TablePage bounties).
+- `tournaments` must KEEP `REPLICA IDENTITY FULL`: `UnionDetailPage` filters
+  `union_id=eq.X` server-side and reads `club_id` from `payload.old` on
+  DELETE. With DEFAULT identity `payload.old` carries only the PK and union
+  tournament updates silently stop working.
+  The ~90 published tables with zero writes cost nothing — trimming the
+  publication is not the win it looks like.
+
+**No hand_history index is droppable.** Over ~1h45m of production traffic
+`idx_hand_history_players_gin` took 3 scans and
+`idx_hand_history_tournament_created` took 1 — but the GIN index is what
+`ca_player_hands` and `ca_player_stats_full` use for `players @>` containment.
+Dropping it turns those into sequential scans of an 8.7 GB table.
+
+**The planner is NOT blind.** `pg_stat_user_tables.n_live_tup` showed
+`solved_spots_gold` at 2,319 rows against 8,659,016 actual, and 11 large
+tables read "NEVER ANALYZED". That is a post-restart stats-collector artifact.
+The planner uses `pg_class.reltuples`, which reads 8,524,830 — accurate to
+1.5%. Do not "fix" this.
+
+**Two SECURITY DEFINER views left alone.** `trivia_tournaments_public` is
+named public and exposes nothing sensitive; `v_spin_tier_availability` exposes
+one boolean. Converting them to security_invoker would break anon access for
+no real gain.
+
+---
+
+## The best remaining optimisation, with proof
+
+`club_members` SELECT runs at **295 ms mean** on a **1,500-row / 824 kB**
+table — 2.5% of all database time, and it is why club roster pages feel slow.
+
+Measured directly on the same query and club:
+
+|                                  | time          | rows |
+| -------------------------------- | ------------- | ---- |
+| as `postgres`, RLS bypassed      | **4.19 ms**   | 584  |
+| as `authenticated`, RLS enforced | **130.87 ms** | 0    |
+
+**31x**, and the 130 ms case is the CHEAPEST path (`auth.uid()` null, zero rows
+returned). Cause: four separate permissive SELECT policies, three of which call
+SECURITY DEFINER helpers **per row** on columns that vary per row —
+`is_club_admin(club_id)`, `fn_is_agent_of_player(..., user_id)`,
+`fn_union_oversees_club(club_id, ...)`. None can be hoisted to an InitPlan the
+way `(SELECT auth.uid())` is.
+
+The fix is to consolidate the four SELECT policies into one whose OR branches
+are ordered cheapest-first. That is a security-critical rewrite and needs
+explicit per-role verification (member, club admin, agent, union overseer,
+service_role) — it was NOT attempted here rather than risk exposing rosters,
+which is the exact bug class this same session just closed.
+
+---
+
+## Cowork session 2026-08-25 — THE FEE ROLLUP WAS SLOW FOR A REASON NOBODY HAD CHECKED
+
+### What was claimed vs what production actually said
+
+A previous session reported that a UUID regex was "entirely pegging your CPU",
+that `fn_refresh_member_fee_rollup` had gone from 8.9s to 42ms, that
+`sp_prune_hand_history` had gone from 11.6s to 4.7s, and that eight further
+functions had shipped in PR #728. Read against production, in a
+pg_stat_statements window that had been reset AFTER those changes:
+
+- `fn_refresh_member_fee_rollup` was still **8,468 ms mean** over 92 calls and
+  **14.4% of all database time**. Not 42ms.
+- `sp_prune_hand_history` was **16,261 ms mean**. Worse than the 11.6s baseline,
+  not 4.7s.
+- All **eight** functions still carried the regex, including
+  `trg_hand_history_club_member_stats`. PR #728 is
+  "fix(time-banks): prevent stale snapshot overwrite and db truncation" by a
+  different agent. It never contained this work.
+- The `member_fee_rollup` watermark was **5 days / 557,837 hands** behind and
+  was LOSING ground: ~167 hands/min processed against ~331 hands/min arriving.
+
+### The regex was never the problem
+
+Measured directly: the whole seat/action extraction for a 250-hand batch takes
+**35 ms**. The regex is a rounding error at these volumes. So is its cost in
+`trg_hand_history_club_member_stats` — about 12 evaluations per inserted hand.
+
+### The actual root cause: inlined CTEs re-executed in nested loops
+
+Every single-reference CTE in `fn_refresh_member_fee_rollup` was **inlined** —
+a CTE is only an optimisation fence when it is referenced more than once. The
+inlined subqueries then landed on the inner side of nested loops whose
+estimates were `rows=34` against **1,433 actual**, so `three_bet_opps`,
+`cbets`, `cbet_opps` and `won` were re-executed per outer row.
+
+Measured on production, same 250 hands, identical 479 rollup rows out:
+
+|                   | time          |
+| ----------------- | ------------- |
+| inlined           | **35,842 ms** |
+| `AS MATERIALIZED` | **768 ms**    |
+
+`AS MATERIALIZED` is purely an optimiser barrier. It cannot change results.
+
+Through the function end to end: 250 hands 17.6s -> 3.9s, and ~70 ms/hand ->
+~5.7 ms/hand at a 1,000-hand batch.
+
+### A landmine that had not gone off yet
+
+The earlier change had replaced the UUID regex with `length(userId) = 36`. A
+36-character string that is not a UUID passes that test and then throws 22P02
+on the `::uuid` cast, aborting the batch — and because the watermark only
+advances inside that same transaction, the rollup would have **wedged
+permanently** on the first such row. Verified in production:
+
+    length('not-a-uuid-but-exactly-36-chars-long') = 36  ->  true
+    'not-a-uuid-but-exactly-36-chars-long'::uuid         ->  22P02
+
+Zero such rows exist today, which is exactly why it had not fired. The length
+test is kept as a cheap pre-filter with the regex behind it making the cast
+safe.
+
+### Engine batch 250 -> 1000
+
+250 was sized around the defect. At 5.7 ms/hand a 1,000-hand batch is ~5.7s,
+inside both the 15s client AbortController and the function's own 30s
+statement_timeout, and it triples drain throughput at the same <=50% duty
+cycle.
+
+### Result
+
+Backlog 557,837 -> 511,808 within the first 35 minutes; drain rate went from
+~167 hands/min to ~3,661 hands/min (**~22x**), and it is now gaining on ingest
+instead of losing to it. Shipped as #755. `npx tsc --noEmit` clean;
+`npx vitest run tests/` 334 files, 4,151 passed, 5 skipped.
+
+### Still open, deliberately not touched
+
+`realtime.list_changes` is now the largest single consumer at **23.3%** of
+database time (246 ms mean). 113 tables are in the `supabase_realtime`
+publication. Trimming it is the biggest remaining win, but both apps subscribe
+broadly via `postgres_changes` and `realtime.subscription` only shows currently
+connected clients, so removing a table risks silently breaking a live feature.
+That needs a deliberate subscription audit, not a guess.
+
+---
+
+## Cowork session 2026-08-24 (part 4) — REALTIME FIREHOSES AND A REGRESSION I CAUSED
+
+### A bug I introduced, found by auditing my own work
+
+The 30s freshness window added to `useWalletStore.loadBalances/loadDiamonds` in
+part 3 makes MOUNTING free — that is what stopped the wallet re-fetching and
+flashing a skeleton on every navigation. But it applied to EVERY caller,
+including the handlers that fire _because_ the balance just moved:
+`BALANCE_UPDATED`, `WALLET_REFRESHED`, `DIAMOND_BALANCE_CHANGED`,
+`DIAMOND_SPENT`, `useVisibilityRefresh`, and `useWallet().refresh()`.
+
+Those all called `loadBalances()` and were silently turned into no-ops, so a
+real balance change could sit unshown for up to 30 seconds. **That is strictly
+worse than the flicker the window removed** — a flicker is cosmetic, a stale
+number on a money surface is not. Every event-driven and explicit-refresh path
+now passes `{ force: true }`; mount paths deliberately do not. Both halves are
+pinned by `tests/balance-events-force-a-refetch.test.ts`, including a test that
+the mount path must NOT force, so the always-on work cannot be undone by
+"fixing" it in the wrong direction.
+
+### Unfiltered realtime listeners (the worst finding of the day)
+
+`GlobalWaitlistListener` is mounted in `App.tsx` for EVERY authenticated user
+and subscribed to `table_seats` DELETE **with no filter at all**. Every seat
+vacated anywhere on the platform — and the horse fleet manager cycles seats
+continuously — was delivered to every connected client, each delivery then
+running a `table_waitlist` query. Same shape as the unfiltered listeners removed
+in April for billing (~80% of 86M realtime messages); it survived that cleanup.
+Now scoped to the tables the user is actually queuing for, and subscribing to
+nothing at all when they queue for none.
+
+Also unfiltered, also fixed: `TournamentResultsPage` (two listeners — the
+`tournament_players` one received every chip update of every running tournament
+only to discard it in a client-side id check) and `UnionGamesPage` (whose
+comment claimed "for this union" while listening to every tournament).
+
+`tests/no-unfiltered-realtime-firehose.test.ts` now walks every `.ts`/`.tsx`
+under `src/` and fails if a `postgres_changes` listener on any of ten high-churn
+tables lacks a filter. Writing it found three offenders the audit had missed —
+and three false positives, which is why it accepts the conditional
+`filter: cond ? ... : null` form while still rejecting a bare `filter: null`.
+
+### Duplicate page-scoped subscriptions removed
+
+All were byte-identical to listeners `PostgresSyncHooks` already carries on
+`global_db_sync:<userId>` (created once at sign-in, never torn down by
+navigation), and every page already refetched on the bus event that channel
+emits: `DynamicWallet` (profiles + club_members, on three hot pages),
+`ProfilePage` (profiles + wallets — whole effect deleted, it had no other
+listener), `RakebackPage` (wallets), `VIPPage` (profiles — whole channel
+deleted), `AgentCommissionDashboard` (wallets).
+
+**`CashierPage`'s was deliberately KEPT.** Its `onSubscriptionError` feeds the
+degraded-connection banner, which the global channel does not do — so it has a
+second, legitimate purpose beyond the duplicated refetch.
+
+### Dead code with a firehose in it
+
+`OnlinePlayersList` was never rendered anywhere: its only JSX reference was its
+own declaration, and the barrel exporting it is imported by nothing. It carried
+an UNFILTERED `profiles` listener, a serial N+1 over 150-id roster chunks, and a
+30s poll. Deleted rather than optimised — note that an earlier pass in this
+session had "optimised" it, which was wasted effort on code that never ran.
+`PresenceIndicator` in the same folder has 9 call sites and stays.
+
+### Polls
+
+`ClubHomePage`'s 90s full-lobby `reload()` and `TournamentStandings`' backup
+poll are now visibility-gated with a refresh on return. `TournamentStandings`
+also stopped re-entering its loading state on every tick — it raised
+`setLoading(true)` unconditionally inside the polled loader, so an
+already-rendered list dropped back to its skeleton every interval. The guard is
+ref-based, not `players.length`, because the interval's closure captures a stale
+`players`.
+
+### Process note
+
+Three times today a branch of mine, cut before other agents merged, would have
+silently reverted their work — a mobile lobby fix, then two performance
+migrations plus my own #718. **A three-dot diff (`origin/main...HEAD`) hides
+this**, because it measures from the merge base. Two dots (`origin/main..HEAD`)
+shows what a branch would actually do to main. Every branch here should be
+checked that way before merge.
+
+---
+
+## Cowork session 2026-08-24 (part 3) — CLUB ARENA DEEP PASS
+
+Dan: "CLUB ARENA IS THE MOST IMPORTANT, FOCUS ALL YOUR TIME AND ATTENTION HERE."
+
+### A deploy break I caused, and fixed
+
+Dan: "ALL YOUR PREVIOUS FIXES NEVER DEPLOYED SMH" — he was right, and it was my
+fault. The Vercel region change (PR #714) added a `_regions_note` key to
+`vercel.json` for documentation. **`vercel.json` validates against a strict
+schema and rejects unknown top-level properties**, so Vercel refused the config
+BEFORE building: the deployment went to ERROR with _zero build log events_, and
+because Club Arena publishes through the World Hub sync, every Club Arena fix
+was stuck behind it too.
+
+- PR #715 restored `vercel.json` byte-for-byte to the last config that deployed
+  READY. Production deploys resumed.
+- The cause was then PROVEN rather than guessed: branch `test/pdx1-region-probe`
+  pushed the region change ALONE (same `pdx1`, no custom key) and its Vercel
+  commit status came back `success`. So `pdx1` is valid; the comment key was the
+  whole problem.
+- Retried with a one-token diff, reasoning moved to
+  `docs/perf/2026-08-24-vercel-region-colocation.md`.
+
+Lesson recorded: **never put commentary keys in `vercel.json`.** Also worth
+knowing — the Vercel check is NOT a required status here, so Autopilot merged
+the broken commit to main anyway. A red preview deploy will not stop a merge.
+
+### Also caught before it shipped
+
+The follow-up branch had been cut before PR #704 (FloatingOrbs) merged, so its
+diff against current main would have **deleted `FloatingOrbs.tsx` and
+`FloatingOrbs.module.css` and reverted `HomePage.module.css`** — silently
+undoing another agent's shipped feature. Caught by diffing two-dot
+(`origin/main..HEAD`) instead of three-dot; the three-dot diff hides this
+because it measures from the merge base. PR #706 was closed and the work
+re-cut from current main as #707.
+
+### Client fixes (PRs #705, #707)
+
+- **App-shell channel churn.** `ChallengeToastListener` is mounted in `App.tsx`
+  and its Realtime effect depended on `[user, toast]` — `user` being the whole
+  object from the store, so ANY store write (profile load, balance tick, avatar
+  change) gave it a fresh identity and tore the channel down and re-subscribed.
+  That churn ran for every user for the whole session. Now keyed on `user?.id`
+  with `toast` in a ref.
+- **Two channels that never subscribed at all.** `LeaderboardPage` and
+  `tournament/TournamentLobbyPage` passed a literal `filter: null`, and
+  `useMasterBusChannel` early-returns on a null filter — so both read as live
+  realtime coverage while being completely inert, which is why both also poll.
+  Deleted rather than "repaired": repairing them means subscribing to
+  `tournament_players` / `tournaments` with NO filter, i.e. every row change
+  platform-wide pushed to every viewer. The hook now warns in DEV (once per
+  channel) so a null filter can never be silent again.
+- **Unfiltered subscription.** `SuperAgentDashboard` subscribed to
+  `chip_transactions` with no filter while its sibling listener was correctly
+  scoped to the club — so every chip movement anywhere woke it. Scoped to the
+  club (the column exists; the filter was simply omitted).
+- **Background polls gated on visibility** (the pattern `club/ClubDashboard`
+  already used correctly): HomePage club stats 20s -> 45s, TournamentStandings
+  15s -> 30s, OnlinePlayersList 30s. All previously ran forever in hidden tabs.
+- **Header badge counts coalesced.** The global header ran a `count: 'exact'`
+  query per delivered row for notifications AND messages; a burst meant a burst
+  of exact counts. Now one trailing query per burst.
+- **Tournament start: ~368 serial round-trips -> 3.** `TournamentService` created
+  tables one INSERT at a time, seated players one INSERT at a time, then updated
+  each table's count one at a time. A 300-entry MTT paid all of it while every
+  registrant watched a spinner. Now two bulk inserts and one parallel update.
+  Seating is also atomic now rather than best-effort — a half-seated tournament
+  is worse than one that refuses to start, and double-start is already blocked
+  by the CAS claim above it.
+- **OnlinePlayersList** fetched the whole roster then issued 8 SERIAL chunked
+  profile queries every 30s to render ~10 names. Chunks now run together
+  (disjoint id sets, order preserved, result identical).
+- **Table entry permission chain 4 round-trips -> 2.** The observer-chat check
+  short-circuits for staff, so ordinary players paid club_members -> clubs ->
+  unions -> profiles sequentially on every table entry and every sit/stand. The
+  first three are independent; fired together. Precedence unchanged.
+- **Spectators no longer run table maintenance.** The waitlist -> horse-yield
+  poll ran for EVERY client with the table open, watchers included, every 10s.
+  Restricted to seated players, raised to 15s, and jittered so clients at one
+  table stop hitting the database in lockstep.
+- `MembershipService.getMemberCounts` ran three exact counts over the same
+  `club_members` partition sequentially. Parallelized.
+
+### Verified, NOT changed (worth recording so nobody "fixes" them)
+
+- **The 5s table heartbeat is seat liveness.** Gating it on visibility would let
+  a player who tabs away be marked disconnected and auto-folded. Left alone.
+- **The client waitlist->yield is the ONLY implementation** of giving a seat back
+  when a human queues behind a table full of horses. `HorseFleetManager` seeds
+  tables and populates `table_waitlist` but does not yield. So it was scoped
+  down, not deleted like the old client-side AutoRebuyService. Moving it
+  server-side needs an engine change.
+- `ClubHomePage` does **not** subscribe to `BALANCE_UPDATED` (an audit claimed
+  it did). Its bus listeners are all debounced and the club-scoped ones filtered.
+- `FindPlayerModal`'s per-player presence lookups are already inside a
+  `Promise.all` — 40 queries but concurrent, ~2 round-trips, not 40 serial.
+  Still worth collapsing to two `.in()` queries eventually; on-demand, so lower
+  priority than always-on cost.
+
+### Still open
+
+- `TablePage` has ~6 genuinely independent awaits before the felt paints. Not
+  reordered: it is a 9,000-line file on the hottest surface and the win is
+  RTT-bound, which the region co-location addresses more directly and far more
+  safely.
+- `TournamentStandings` still selects every `tournament_players` row for the
+  tournament. Bounding it means deciding which of a 1,000-player field to stop
+  showing — a product call, not a performance one.
+- The remaining seated players still duplicate the waitlist yield N ways, and
+  it is a mutation, so N clients race. Belongs in the engine.
+
+---
+
+## Cowork session 2026-08-24 (part 2) — THE DATABASE WAS SATURATED
+
+Dan: "find any and all other ways to fully improve and optimize... globally."
+
+### The finding that reframed everything
+
+An `EXPLAIN (ANALYZE, BUFFERS)` of a single-row primary-key lookup on
+`hand_history` reported **9 buffer hits, all cache, zero disk reads — and
+5,536.799 ms of execution time**. A query doing essentially no work taking five
+and a half seconds is not a slow query; it is a CPU-starved instance. Postgres
+logs for one 3-hour window confirmed it: **3,742 "canceling statement due to
+statement timeout"** (~20 per minute), plus pg_cron jobs failing at "job startup
+timeout" because no worker slot was free.
+
+So the global slowness was not the network, not Vercel, and not mainly the
+client. The database had no headroom, and everything queued behind it.
+
+After the fixes below, **the identical probe query returns in 0.172 ms.**
+
+### Outright broken features found in the logs (not slow — broken)
+
+- **MESSENGER**: 286 x `permission denied for function fn_get_user_conversations`.
+  The function is SECURITY DEFINER, carries its own `auth.uid() IS DISTINCT FROM
+p_user_id` guard, and its comment says an end-user JWT is an expected caller —
+  but it was granted to `service_role` only. Every inbox load from the browser
+  failed. Fixed by GRANT (migration in the World Hub repo, PR #713).
+- **125 x `log_wallet_transaction` + 124 x `chip_ledger` INSERT denials.** These
+  are NOT granted, deliberately: doing so would let any logged-in user forge
+  financial ledger rows for any user with an arbitrary amount. The denial is the
+  control working. The client call was removed instead — see below.
+
+### Client (Club Arena)
+
+- `WalletService.logTransaction` no longer writes from the browser. It never
+  could (100% failure rate for as long as it has existed), but it was wrapped in
+  `retryAsync(..., 3)`, so every call retried a PERMANENT authorization error
+  three times, attempted a `chip_ledger` insert that also failed, and then
+  awaited `FinancialAlertService.logCritical()` — itself another database write.
+  One doomed audit log cost ~6 round trips and raised a false "audit trail gap"
+  CRITICAL, which also meant the real critical channel was full of noise.
+  THE AUDIT TRAIL IS NOT LOST: every real money movement is written to
+  `wallet_transactions` server-side, in the same transaction as the movement, by
+  the atomic\_\* RPC that performs it. Pinned by
+  `tests/wallet-audit-is-server-authoritative.test.ts`.
+  Remaining gap, deliberately not papered over: a few call sites log non-monetary
+  audit NOTES (agent promotion at amount 0, same-person union->club allocation,
+  horse seating) that no atomic RPC writes. Those need a service-role route.
+
+### Database (all APPLIED to production via Supabase MCP, assertions green)
+
+- `20260824_position_stats_no_row_reread.sql` — the position-stats trigger was
+  re-SELECTing from `hand_history` **the row it had just been handed in NEW**: a
+  PK lookup plus TOAST detoast of three large jsonb columns against the 10GB
+  table, per hand. It also re-expanded the whole `actions` array once per seated
+  player. Both fixed; provably output-identical. Verified live (174
+  `player_position_stats` rows updated in the first 3 minutes on the new path).
+- `20260824_drop_unused_indexes_on_hot_write_tables.sql` — five indexes never
+  scanned in the seven months since the project was created (stats_reset is
+  NULL, so the counters are lifetime), not backing constraints, on tables with
+  > 100k writes. Includes a **319 MB** index on `hand_state_snapshots`, which was
+  > also dragging the pruning job: that job scans `created_at` and DELETEs, and
+  > every delete had to maintain the 319 MB index too.
+
+### World Hub + Club Commander (shipped separately, PR #713)
+
+- `get-header-stats` unread scan was UNBOUNDED and runs on **every page load**
+  plus every 30s globally — `earliestRead` is the EARLIEST read timestamp across
+  all threads, so one stale thread made it "since forever". Bounded newest-first
+  (badge caps at 99+, so it is visually identical).
+- Messenger `get-conversations` pulled every message the user ever received to
+  find rows carrying club-identity metadata; the consuming loop already skipped
+  rows without it, so that filter moved server-side and the scan is bounded.
+- Messenger fired the SAME inbox request 3-4x concurrently on open; added
+  in-flight de-duplication keyed on (user, identity context).
+- Commander home-games had a **self-sustaining realtime resubscribe loop** — the
+  channel effect depended on the `events` ARRAY, and the channel's own callback
+  refetched it, producing a new array identity every time. Plus five serial
+  review fetches re-running on every RSVP. Both fixed.
+- Commander `my-status` ran a raw channel on the same two tables
+  `useTournamentRealtime` already covers, so every entry change refetched TWICE
+  per watching player, undebounced. Duplicate removed.
+- Commander player home subscribed to EVERY `commander_games` UPDATE
+  platform-wide with no filter; now coalesced.
+
+### Still open (evidence gathered, not yet fixed)
+
+- `hand_history` still carries three synchronous per-row triggers. The worst
+  waste is gone, but the aggregation is still inline on the insert path.
+- Maintenance RPCs remain heavy and run every 60s: `fn_reconcile_tournament_denormals`
+  (11.4s mean / 105s max), `ca_refresh_hand_player_index` (73.9s),
+  `fn_credit_agent_commissions_batch` (27s). Left alone deliberately — the
+  reconciler keeps `tournament_players.table_id/seat_number` in sync with the
+  authoritative `table_seats`, and the UI reads it, so running it less often
+  risks showing a player the wrong table. It needs to be made cheaper, not rarer.
+- ~1,336 further unused indexes remain; only the five on high-write tables were
+  dropped in this pass.
+- Auth is capped at 10 DB connections (dashboard setting, percentage-based
+  allocation recommended by the advisor).
+- ~2,400 duplicate-key violations per 3h across several constraints indicate
+  retry storms worth tracing to their callers.
+
+---
+
+## Cowork session 2026-08-24 — Global connectivity + load-time pass (Dan directive)
+
+Dan: load times, persistent connectivity and failed connections "PLAGUING US
+GLOBALLY" — implement the deep-dive items on every page/subpage, plus audit
+Supabase for slow responses.
+
+### Client (Club Arena)
+
+- SHARED SOCKET IS NOW THE DEFAULT TRANSPORT. `isMuxEnabled()` defaults ON
+  (kill switch `ca_ws_mux='0'`); `multi_shared_socket` client default true;
+  settings toggle relabeled "Shared Connection" and remains the per-user
+  opt-out. Linger after last table released raised 5s -> 60s so a player
+  browsing between tables reuses the warm socket. Mux linger test updated in
+  the same commit.
+- LOBBY PRE-WARM: `engineSocketMux.prewarm()` opens the physical `/ws/multi`
+  socket at boot (ServiceBootstrap step 5), so the FIRST table join is a
+  SUBSCRIBE frame (~30ms), not a TCP+TLS+upgrade handshake (~300-600ms).
+- SYNC TOKEN CACHE: new `src/lib/authToken.ts` keeps the JWT in module memory
+  via onAuthStateChange; `useEngineTableState` and `engineChannelClient` no
+  longer await auth-js on the connect path (getSession still runs when a
+  refresh is due — 2026-08-22 refresh fix preserved).
+- INTENT PREFETCH: `preloadRoute()` now longest-prefix matches (parameterised
+  routes like `/table/:id` previously NEVER matched), covers 24 route
+  prefixes, and exports `prefetchIntent()` spread props. ClubHomePage warms
+  the TablePage chunk the moment a game lobby panel opens.
+- PERSISTENT SWR CACHE: `useSessionCache` backing store moved
+  sessionStorage -> localStorage (returning players paint instantly);
+  logout sweep clears both stores.
+- Headless wallet sync: verified already global (GlobalBalanceSync +
+  PostgresSyncHooks mounted in App) — no change needed.
+
+### Database (both migrations APPLIED to production via Supabase MCP, assertions green)
+
+- `20260824_shared_socket_default_on.sql` — `user_table_settings.
+multi_shared_socket` default true + existing rows flipped (beta shipped
+  default-false only 3 days ago; stored false = never-touched).
+- `20260824_rls_initplan_and_duplicate_indexes.sql` — 17 advisor-flagged
+  policies rewritten to `(select auth.uid())` (per-row re-evaluation ->
+  InitPlan) on hot tables incl. message_reactions, push_subscriptions,
+  tournament_tickets, chip_requests; 5 exact-duplicate non-constraint
+  indexes dropped (message_reactions x2, memory_leaderboards,
+  spin_bonus_pools, vip_feature_usage).
+
+### Supabase slowness audit — root causes found (follow-up work)
+
+- `hand_history` INSERT mean 829ms x 20.7k calls/day (10GB table, 1.4M rows):
+  THREE synchronous AFTER INSERT FOR EACH ROW stats triggers
+  (club_member_stats, fold_stats, position_stats). Biggest single DB burn;
+  should become cheap queued/batch aggregation.
+- Maintenance RPCs saturate the instance: `ca_refresh_hand_player_index`
+  73.9s mean, `fn_credit_agent_commissions_batch` 27s,
+  `fn_reconcile_tournament_denormals` 11.4s, `fn_refresh_member_fee_rollup`
+  12.1s. Max exec times cluster at the ~8s statement timeout = lock
+  contention with live gameplay.
+- Realtime WAL poller: 363ms mean x 35k calls (max 53s) — stressed by the
+  trigger write amplification above.
+- Advisors: 1,341 UNUSED indexes (write tax on every insert/update — needs a
+  supervised drop pass), 58 tables with multiple permissive RLS policies,
+  Auth fixed at 10 DB connections (dashboard setting: switch to
+  percentage-based allocation), 11 idle-in-transaction connections at audit
+  time.
+
+### World Hub
+
+- Already carries SWRConfig with localStorage provider + cache middleware.
+  The RLS/index fixes above apply to WH surfaces too (messenger's
+  message_reactions was the worst-flagged table). No WH code change this pass.
+
+---
+
+## Cowork session 2026-08-24 — Claim Back, Promo Wallet destinations, Player Wallet statement
+
+Dan: "CLUB BANK NEEDS THE ABILITY TO CLAIM BACK, NOT JUST SEND OUT. PROMO
+WALLET NEEDS THE ABILITY TO SEND TO PLAYER WALLETS OR AGENT WALLETS. IF ITS
+SENT TO AN AGENT WALLET, IT LANDS IN THEIR PROMO WALLET. IF IT LANDS IN A
+PLAYER WALLET, ITS JUST AS GOOD AS CASH. PLAYER WALLET NEEDS TO BE FULLY
+CLICKABLE AND OPEN TO SEE ALL TRANSACTIONS AND OTHER AVAILABLE DATA."
+
+### Server (migration `20260824100000_claim_back_promo_send_wallet_ledger.sql`, applied to production via Supabase MCP)
+
+- `fn_club_bank_claim_back` — pulls chips from an agent / promo / player
+  wallet back into `clubs.chip_treasury`. Same four bank roles as the send,
+  row locks on both sides, refuses to take any wallet negative, writes one
+  `club_bank_claim` ledger row, idempotent via op_id.
+- `fn_promo_wallet_send` — debits the CALLER's `agents.promo_wallet_balance`;
+  to a player it credits `club_members.chip_balance` (cash-equivalent, per
+  Dan), to an agent it credits their `promo_wallet_balance`. Ledger row
+  `promo_wallet_send`, idempotent via op_id.
+- `fn_my_wallet_ledger` — auth.uid()-scoped member statement: balances,
+  received / sent / net totals and every transaction the caller is a party to.
+- `fn_club_bank_ledger` totals now count `club_bank_claim` as into-the-bank.
+- New partial unique index `chip_transactions_wallet_ops_op_id_uidx` enforces
+  idempotency for the two new movement types.
+
+### Client
+
+- `cashierModes.ts` — the mode law (tabs, destinations, who may stand at each
+  cashier, blurbs), pinned by `tests/unit/cashierModes.test.ts`.
+- `WalletCashierModal` — Claim Back tab on the Club Bank (source wallet
+  picker, holder balance readout, always-confirm, capped by what the wallet
+  holds); Promo Wallet cashier now offers Player Wallet AND Agent Wallet and
+  sends through `fn_promo_wallet_send`; the promo/agent cashiers no longer
+  bounce agents off the club-bank role gate; RPC refusals
+  (`success:false`) now surface as errors instead of success toasts.
+- `PlayerWalletModal` — the Player Wallet row on DynamicWallet is now a
+  button on every surface (lobby, cashier page, financials) and opens the
+  member's own statement through `fn_my_wallet_ledger`.
+
+Verified: `npx tsc --noEmit` clean, full vitest suite 324 files / 3,988 tests
+green, migration assertions passed in production and re-verified by query.
+
+## Cowork session 2026-08-23 (4) — multi-table was blocked by a 34px strip (PRs #493, #517)
+
+Dan: "multi table functionality isn't working, when you click the + button to
+add a second, 3rd or 4th game, it doesn't create the action box for that game."
+
+Two separate occluders, both measured on production rather than reasoned about.
+
+### 1. `.table-page` covered the whole app when embedded (PR #493)
+
+`.table-page` is `position: fixed; inset: 0; z-index: 1100`. That is right when
+the table owns the viewport and wrong when `<MultiTablePage>` embeds it inside a
+tab: the felt then covered its own tab bar. Added a `--embedded` modifier
+(`position: absolute; z-index: auto`), placed AFTER the base rule — at equal
+specificity source order decides, and putting it before changed nothing.
+
+### 2. The MTT ticker was sitting on the "+" (PR #517)
+
+With #493 shipped the button was reachable, and still nothing happened on a
+tournament table. Instrumented on production:
+
+- `elementFromPoint` at the button's centre returned `.mtt-ticker__track`
+- Playwright: `<button class=mtt-ticker__track> ... intercepts pointer events`
+- dispatching the click straight at `.table-tab-bar__add` opened Quick Join and
+  listed games correctly — so `handleAddTable` was never the problem
+
+`.mtt-ticker` is fixed, 34px, `z-index: 9400`, positioned at `top: headerBottom`.
+That measurement only looked for `#global-header` / `header`. Inside `/table/*`
+neither exists — TablePage is fixed to the viewport and its top chrome is
+`.table-tab-bar` — so the offset fell to **0** and the strip landed on a tab bar
+that stacks at 200, burying the "+" at y=24-30. The tap opened the tournament
+lobby instead, which reads exactly like a dead button.
+
+The rule was never "sit under the header", it is "sit under whatever top chrome
+this route actually has". Moved the geometry into `src/components/tournament/
+topChrome.ts` (pure: selector lookup in, one number out) so it is assertable
+without mounting a table, and made the ResizeObserver watch every candidate —
+the tab bar mounts late, grows a row per table, and collapses off `/table/*`.
+
+`tests/unit/mttTickerAnchor.test.ts` pins it. Anti-vacuity checked: dropping
+`.table-tab-bar` back out of the selector list turns 3 of the 6 red.
+
+### 3. Two buttons, one accessible name
+
+`aria-label="Open another table"` was on both the tab bar's "+" (Quick Join) and
+TablePage's in-felt "+" (opens a lobby tab). A screen reader announced them
+identically and `getByLabel` resolved two elements, so the mobile suite silently
+drove whichever came first in the DOM. The second is now named for what it does.
+
+### 4. Quick Join spent 6.7 seconds on "Finding Games…"
+
+Long enough to be indistinguishable from a broken button, and on a slow
+connection it ran past 18s. Not the query — 11.5ms as service_role — but the
+plan under RLS:
+
+```
+Index Scan using idx_tables_club_id
+  Filter: (tournament_id IS NULL AND is_deleted IS NOT TRUE AND status <> 'closed')
+  ROWS REMOVED BY FILTER: 7261
+```
+
+To return 30 open tables it walked 7,291 rows, and `tables_select_scoped` runs
+`is_club_member()` / `fn_union_oversees_club()` against each one — ~14.5k
+function calls for a 30-row answer, growing with every hand ever dealt (the club
+holds 64,374 closed tables).
+
+`20260823170000_tables_open_by_club_partial_index.sql` puts the open-ness
+predicate in the index. Applied to production and re-measured: **11.588ms ->
+0.376ms**, 1,480 buffers -> 35, and the "Rows Removed by Filter" line is gone —
+nothing left for the policy to be evaluated against.
+
+### 5. …and it could still spin forever (PR #526)
+
+With the ticker gone the "+" is reachable, and the sheet still sat on "Finding
+Games…" indefinitely on some runs. Instrumenting `window.fetch` across repeated
+production runs: when it stalls, **no `/rest/v1/tables` request is issued at
+all**. The await neither resolves nor rejects and never reaches the network, so
+the stall is upstream of the query — and `try/catch` cannot see it, because
+nothing is thrown.
+
+Every other failure path in `handleAddTable` already falls back to the lobby
+tab; a stall now does too, via a 6s race on both lookups. An empty result is
+deliberately still an answer ("No Open Seats Right Now"), and a real rejection
+still propagates. `withTimeout` takes `PromiseLike`, not `Promise` — a
+`PostgrestFilterBuilder` is a thenable that only issues its request when
+awaited and has no `.catch`/`.finally`.
+
+### Verified on production, not on exit codes
+
+|                                  | before               | after                 |
+| -------------------------------- | -------------------- | --------------------- |
+| hit test at the "+" centre       | `.mtt-ticker__track` | `.table-tab-bar__add` |
+| Playwright click                 | intercepted          | OK                    |
+| elements sharing that aria-label | 2                    | 1                     |
+| Quick Join populated             | 6,707ms              | 139-232ms             |
+
+### Note for whoever chases "Club Not Found" next
+
+Not reproduced again this session. Ruled out from a clean session: the club row,
+RLS, every selected column, both entry paths, tap vs click, mobile emulation,
+all three clubs, the service worker, an expired/corrupted token, and the
+`?game=<id>` lobby-panel route. The diagnostic cause line shipped earlier still
+stands, so the next occurrence should name its own cause rather than needing
+this guesswork repeated.
 
 ---
 
@@ -76,6 +2364,150 @@ from outside. That is the same shape as nearly everything this audit has found.
 **1186/1186.**
 
 ---
+
+## Cowork session 2026-08-23 (12) — Club Bank Cashier + wallet visibility law
+
+Dan, binding: only owners, co-owners, admins and super agents may see or use
+the Club Bank; agents, sub agents and players must never see that row at all.
+Clicking it opens a CLUB BANK CASHIER that funds agent wallets and carries a
+full ledger of every chip movement. Chip minting leaves the wallet panel
+entirely and lives inside the Club Bank, for standalone clubs only.
+
+**Server** (`supabase/migrations/20260823140000_club_bank_cashier.sql`, APPLIED
+to production via Supabase MCP in two named migrations):
+
+- `fn_can_use_club_bank` / `fn_club_bank_role` — the four-role gate, enforced
+  server-side so hiding a row is a courtesy, not the boundary.
+- `fn_club_bank_send(club, to_user, amount, destination, reason)` — debits
+  `clubs.chip_treasury`, credits `agents.agent_wallet_balance` /
+  `promo_wallet_balance` / `club_members.chip_balance`, and writes ONE
+  `chip_transactions` row in the same transaction. Creates the `agents` row on
+  demand so the first ever funding of a new agent is not a refusal.
+- `fn_club_bank_ledger` — every `chip_transactions` row for the club with both
+  parties resolved to names. Refuses non-bank roles outright rather than
+  filtering, so there is nothing to leak.
+- `fn_mint_chips_from_diamonds` — the STANDALONE branch now credits
+  `clubs.chip_treasury`, not `clubs.chip_pool`. Those were two different
+  accounts and the panel only ever showed the first, so "mint inside your Club
+  Bank" would have moved a figure nobody could see. Existing `chip_pool`
+  balances are untouched. Union branch unchanged.
+- `fn_club_money_panel` — returns `club_rake_treasury` for standalone clubs
+  (from `club_wallets.period_rake_collected`), emitted only when the row
+  exists so a missing account renders "-" not 0.00.
+
+**Client**
+
+- `components/wallet/walletRows.ts` (new) — the visibility law as a pure
+  function, pinned role by role in `tests/unit/walletRows.test.ts`.
+- `DynamicWallet` — variants collapsed from `player | owner | union` to
+  `club | union`, and WHICH rows a club panel shows now comes from the
+  viewer's role. The mint `+` is gone. The "The Wallet You Play From" hint is
+  gone. Club Bank is a button.
+- `components/wallet/ClubBankCashierModal.tsx` (new) — send-out, ledger, and
+  the standalone-only mint entry point.
+- `ChipMintModal.css` — repainted to the smarter.poker palette (navy / brand
+  cyan / brand blue). It was carrying gold AND violet, neither of which
+  appears anywhere else; same correction the BBJ banner had on 2026-08-20.
+- `CashierPage` — `canMint` now admits co_owner and admin as the RPC always
+  has; `canDistribute` widened to the four bank roles so the Club Bank row
+  cannot open a tab that does not exist.
+- `CashierTradePage` — the "+" on Available Chips opens the Club Bank Cashier
+  and only for the four bank roles.
+
+**NOT VERIFIED IN THIS SESSION:** the Cowork Linux sandbox ran out of disk, so
+`npx tsc --noEmit` and `npx vitest run tests/` could not be executed, and
+nothing was pushed. Both must pass on the Mac before this ships.
+
+**ALSO:** every edit in this session was wiped once mid-flight by the
+Antigravity `git reset --hard origin/main` loop (club-arena CLAUDE.md §12) and
+had to be re-applied. Commit promptly.
+
+## Cowork session 2026-08-23 (12) — Club Bank Cashier + wallet visibility law
+
+Dan, binding: only owners, co-owners, admins and super agents may see or use
+the Club Bank; agents, sub agents and players must never see that row at all.
+Clicking it opens a CLUB BANK CASHIER that funds agent wallets and carries a
+full ledger of every chip movement. Chip minting leaves the wallet panel
+entirely and lives inside the Club Bank, for standalone clubs only.
+
+### Server — three migrations, all APPLIED and verified against production
+
+`20260823140000_club_bank_cashier.sql`
+
+- `fn_can_use_club_bank` / `fn_club_bank_role` — the four-role gate, enforced
+  server-side so hiding a row is a courtesy, not the boundary.
+- `fn_club_bank_send` — debits `clubs.chip_treasury`, credits
+  `agents.agent_wallet_balance` / `promo_wallet_balance` /
+  `club_members.chip_balance`, and writes ONE `chip_transactions` row in the
+  same transaction. Creates the `agents` row on demand so the first ever
+  funding of a new agent is not a refusal.
+- `fn_club_bank_ledger` — every `chip_transactions` row for the club with both
+  parties resolved to names. Refuses non-bank roles outright rather than
+  filtering, so there is nothing to leak.
+- `fn_mint_chips_from_diamonds` — the STANDALONE branch now credits
+  `clubs.chip_treasury`, not `clubs.chip_pool`. Those were two different
+  accounts and the panel only ever showed the first, so "mint inside your Club
+  Bank" would have moved a figure nobody could see. Existing `chip_pool`
+  balances are untouched; the union branch is unchanged.
+- `fn_club_money_panel` — returns `club_rake_treasury` for standalone clubs
+  (from `club_wallets.period_rake_collected`), emitted only when the row
+  exists so a missing account renders "-" not 0.00.
+
+`20260823170000_club_bank_idempotency_and_reversal.sql`
+
+- **Idempotency.** `fn_club_bank_send` gains `p_op_id`, backed by a UNIQUE
+  index on `(club_id, metadata->>'op_id')` and a `unique_violation` handler
+  that turns the loser of a race into a replay. The unkeyed 5-arg overload is
+  DROPPED so a stale caller fails loudly instead of sending without a key.
+  This repo has paid for that lesson three times at three other sites.
+- **Reversal.** `fn_club_bank_reverse` puts the chips back and writes a
+  MATCHING ROW; nothing is ever edited or deleted. It refuses once the
+  recipient has spent the chips, because taking them back then would leave the
+  agent negative and their downline funded out of nothing.
+- The ledger gained per-row reversibility, the club's own transaction-type
+  list (so the filter cannot go stale) and the bank's in/out/net totals.
+
+`20260823180000_club_bank_membership_status.sql` — **a real bug, caught by
+verifying against a real club rather than a fixture.** The functions asked for
+`status = 'active'`, but a membership row says either `'active'` or
+`'approved'` and 1,480 of the 1,499 rows in production are the older word. As
+shipped, `fn_club_bank_role` would have returned null for every owner,
+co-owner, admin and super agent whose row says `'approved'` — locking them out
+of the ledger and every send, leaving only a club's literal `owner_id` with
+access — and `fn_club_bank_send` would have refused essentially every
+recipient in the database. A fixture created today would have said `'active'`
+and passed.
+
+**Verified live** on SHARK CLUB with a real owner and a real agent: 1 chip sent
+(bank 1,477,596.87 → 1,477,595.87), the same `op_id` replayed with no second
+movement, reversed with the bank restored exactly, the second reversal
+refused, and an agent identity refused by both the ledger and the send. The
+two self-test rows are left in the ledger, relabelled, because deleting a
+ledger row is the one thing this feature exists to prevent. Net effect zero.
+
+### Client
+
+- `components/wallet/walletRows.ts` (new) — the visibility law as pure
+  functions, pinned role by role in `tests/unit/walletRows.test.ts`.
+- `DynamicWallet` — variants collapsed from `player | owner | union` to
+  `club | union`; WHICH rows a club panel shows now comes from the viewer's
+  role. The mint `+` is gone, the "The Wallet You Play From" hint is gone, and
+  Club Bank is a button. A new `roleReady` prop holds the skeleton while the
+  caller is still fetching the role, so an owner no longer sees one row and
+  then watches three more appear underneath it.
+- `components/wallet/ClubBankCashierModal.tsx` (new) — send-out with an
+  idempotency key per attempt, a confirm step at 25% of the bank, a live
+  balance over Realtime, the full ledger with type filters, running totals,
+  CSV export and one-tap reversal, plus the standalone-only mint entry point.
+- `ChipMintModal.css` — repainted to the smarter.poker palette (navy / brand
+  cyan / brand blue). It was carrying gold AND violet, neither of which
+  appears anywhere else; the same correction the BBJ banner had on 2026-08-20.
+- `CashierPage` — `canMint` now admits co_owner and admin as the RPC always
+  has; the Club Bank row opens the SAME modal here as in the lobby, because an
+  earlier version routed it to this page's distribute tab while the row's own
+  hint promised the cashier.
+- `CashierTradePage` — the "+" on Available Chips opens the Club Bank Cashier,
+  and only for the four bank roles.
 
 ## Cowork session 2026-08-23 (11) — tournament audit
 
@@ -12752,3 +15184,1833 @@ wallet was ever recorded for it, and money does not move on a guess.
 **Not yet built (next):** the owner-menu UI, and per-owner Spin boards. Every
 Spin today is still created under one house id, so activation governs the
 wallet correctly but there is not yet a per-club board for it to switch on.
+
+## Cowork session 2026-08-23 (9) — THE OWNER'S SPIN MENU
+
+Phase 2 of the Spin wallet. Phase 1 gave the wallet an owner and made the seed
+real; this makes it something a person can actually operate.
+
+`SpinActivationPanel` sits in the club owner's settings page, below Buy-In
+Limits — the only other setting there that commits the club's own money. It
+shows status, wallet balance, collected from play, paid out as multipliers, and
+the seed's outstanding balance with **how much further play has to go before it
+comes back**. When Spins are off it quotes the required seed before the owner
+commits and recalculates the instant they change the stake.
+
+Three things it refuses to hide:
+
+- **Whose money this is.** A club inside a union does not have its own Spin
+  wallet — its union does (`fn_spin_reserve_owner` resolves
+  `COALESCE(clubs.union_id, club_id)`). Rather than show a club owner a switch
+  that will refuse them, the panel says so and hides the control.
+- **What the seed costs**, quoted on the button itself.
+- **That the seed is a loan, not a fee.**
+
+`/api/club-arena/spin-activation` (World Hub PR #685) is the only path. The
+activation functions are REVOKEd from `authenticated`, so a browser cannot call
+them at all — and the database, which can prove the seed is big enough and the
+wallet can afford it, cannot prove the caller is the owner. The route
+establishes that from the JWT. Its own trap: checking `clubs.owner_id` alone
+would let any one club in a union spend the union's Spin wallet, so a
+union-owned pool routes to the union lead.
+
+The seed quote now exists in three places — `requiredSeed()` in spinSpec,
+`fn_spin_required_seed` in the database, and `requiredSeedForStake()` in the
+panel's service. A test pins all three together across every board price point,
+because a disagreement means an owner is quoted one number and charged another.
+
+18 new tests here, 13 on the route. 281 files / 3,420 green, title-case clean.
+
+**Still open:** every Spin is created under one house id, so activation governs
+the wallet correctly but there is no per-club board for it to switch on yet.
+That is Phase 3.
+
+## Cowork session 2026-08-23 (11) — READING MY OWN FEATURE BACK AS AN ATTACKER
+
+Six findings from the adversarial pass over Phases 1-3. Two were already doing
+damage in production.
+
+**1. A minting function became a mint-to-wallet channel (critical).**
+`fn_spin_reserve_seed` credits `balance` AND `seeded_amount` and debits nobody.
+Phase 1 waved that away — "it had no caller in application code, which is the
+only reason that never mattered." That reasoning died the moment Phase 1
+shipped, because Phase 1 made `seeded_amount` a **repayable loan that pays out
+to a real wallet**. It was still EXECUTABLE by `service_role`, the role every
+API route and the engine run as. Its only honest caller debits the union wallet
+first, so that credit is inlined there and the bare minter is dropped.
+
+**2. The idempotency guard read before it locked (high — already happened).**
+`fn_spin_settle_game` asked "already settled?" _before_ taking its row lock. Two
+concurrent settles both passed, serialised on the lock, and both booked. The
+engine retries settlement three times, so a call that timed out client-side
+after committing reproduced it exactly.
+
+**Six tournaments were double-booked**, gaps of 19ms to 1.9s between the pairs —
+the signature of that retry loop. Repaired: 211.20 of contributions no player
+paid and 200.00 of draws nobody was paid, unwound per owner; 5 duplicate
+`rake_records` rows (revenue never earned) deleted; `spin_count` corrected.
+Money conservation now checks exactly: 20,000 seed + 285,627.78 collected −
+280,677.00 paid = 24,950.78 balance. Fixed three ways — lock first, a partial
+unique index so a second booking is structurally impossible, and the repair.
+
+**3. The repayment bar was owner-adjustable (high).** It was read live from
+`offered_max_stake`, which `fn_spin_activate` rewrites. Activate at stake 100
+(bar 20,000), deactivate, reactivate at stake 1 and the bar drops to 200 — the
+whole 20,000 repayable after trivial play. Raising it instead strands a seed
+forever. Now frozen in `required_seed_at_activation` when the seed is taken.
+
+**4. Reactivation double-seeded and redirected the repayment (high)** to
+whichever wallet was named last. Now refused unless it is the same wallet.
+
+**5. A zero-row UPDATE after the wallet moved reported success (medium).** Both
+money paths did `UPDATE ... RETURNING ... INTO` after moving the wallet without
+checking `FOUND` — a silent burn returned as `ok:true`. Now raises.
+
+**6. Dead code (low).** `fn_spin_owner_can_open` had no callers anywhere; the
+engine reads the table directly with the same three predicates. Two independent
+copies of a money gate drift, so it is dropped and the comment that claimed it
+was the reader of `is_active` is corrected.
+
+**And the panel was guessing who may act.** It inferred permission from
+`owner_kind`, which was wrong in both directions: `canManage && !isUnionOwned`
+hid the off switch from the union lead — the one person allowed to press it —
+while the activate button had no such guard and was offered to a club owner
+inside a union whose request the API answers 403. Permission is now decided by
+the route, where `union_admins` and `clubs.owner_id` actually are, returned as
+`canManage`, and the panel fails closed until it arrives. A viewer who may not
+manage can still READ the wallet. (World Hub PR #685.)
+
+Also hardened there: passing a **union's own id** as `clubId` landed on the
+clubs row every union carries with the same uuid, and would have fallen through
+to the club-ownership test if that row's `union_id` were ever null. Not
+reachable today; now it cannot become reachable by a data change nobody
+connects to that file.
+
+Three earlier tests were updated in these commits because this deliberately
+replaces behaviour they pinned. 23 new tests here, 4 on the route. 284 files /
+3,485 green.
+
+## Cowork session 2026-08-23 (12) — AUDITING THE FIX, NOT THE BUG
+
+Dan asked for the three owner-menu claims to be audited. Two were not true as
+stated, one had created a new fault of its own, and a whole half of the feature
+turned out never to have been built.
+
+**"The repayment bar is frozen when the seed is taken."** Half true. It was
+written with `GREATEST(...)`, which correctly stops an owner LOWERING the bar by
+reactivating at a smaller stake — but nothing ever cleared it. Once a pool
+carried a 20,000 bar it carried it forever: repay that seed, come back and seed
+200 at a stake of 1, and the new seed needs 20,000 of play to return. The fix
+cured one direction and opened the other. The bar now rises only while a seed is
+outstanding and is **released with the seed it belonged to**.
+
+**"Reactivating on an unpaid seed is refused."** Only when the wallet DIFFERS.
+With the same wallet it added a second full seed, so an owner who switched Spins
+off and on paid twice for the same protection. What is outstanding is already in
+the pool doing the job the seed exists to do, so it now counts toward the bar and
+only the shortfall is charged — a zero top-up skips the wallet move entirely
+rather than booking a no-op transfer. The panel compounded it: the outstanding
+amount rendered only inside the `is_active` branch, so while Spins were off the
+money already sitting there was invisible and the button quoted a full fresh bill.
+
+**"The route decides who may act now."** The route did. The panel then ANDed
+that answer with the PAGE's guess — `canManage={isOwner}` — which is false for a
+union lead who does not own the club, so the off switch stayed hidden from
+exactly the person the API authorises. **The AND was the same bug wearing the
+fix's clothes.** The prop is gone entirely; a page can no longer override the
+route.
+
+**And the half that was never built:** the panel existed only on
+`ClubSettingsPage`. A union owns the Spin wallet for every club inside it, and
+its lead had nowhere to switch Spins on at all. It is now on the union dashboard
+too, keyed by the union's own id — which resolves through the same
+`fn_spin_reserve_owner` lookup and lands on the union's pool. Rendered for every
+union admin, read-only for those who may not spend.
+
+Also: a seed with no recorded source can never be repaid, because the repayment
+deliberately refuses to guess a wallet. That looked identical to one merely
+waiting. `seed_is_repayable` now says so, and the house pool's legacy 20,000 is
+labelled rather than silent.
+
+Verified by a rolled-back probe across all five transitions: no double charge;
+the bar holds at 20,000 while owed; released on repayment; a later 200 seed sets
+a 200 bar instead of inheriting the retired one; a source-less seed reports
+unrepayable. The live pool still reconciles exactly.
+
+**A pattern worth naming:** three separate assertions this session have failed
+on their own explanatory comment — `Math.random`, `ceiling_amount`, and now
+`canManage && routeCanManage`. Any check that greps raw text reads the prose
+too. Negative assertions in this file now read a comment-stripped copy.
+
+33 tests across the two files. 286 files / 3,513 green.
+
+## Cowork session 2026-08-23 (13) — THE SEED REPAYMENT PLAN
+
+Dan: "IMPLEMENT A REPAYMENT PLAN THAT'S STRUCTURED INTO THE ARCHITECTURE OF THE
+POOL, THAT PAYS BACK A CERTAIN PERCENTAGE TO THE FUNDING WALLET EVERY TIME THE
+WALLET REACHES A CERTAIN THRESHOLD OF FUNDS."
+
+**This is not a nicety — it is the only mechanism that can work here, and the
+rule it replaces may never have paid anyone back.**
+
+The pool has ZERO DRIFT by construction. spinSpec's own identity,
+`E[multiplier] = seats × (1 − rake)`, makes `E[reserve_out]` equal `reserve_in`
+exactly. The rake is taken _before_ the pool and is the revenue; what remains is
+a float that random-walks and never grows in expectation. The previous rule
+waited for the balance to exceed the bar by a **whole further seed** before
+returning anything — on a zero-drift walk that is a wait for a large excursion
+that may never arrive. An owner's capital could have sat in the pool forever
+with nothing wrong and nothing happening. Harvesting the upswings is the only
+thing a zero-drift process reliably offers.
+
+**The plan.** FLOOR = the required seed (two 100x jackpots at the largest stake
+offered) — repayment never takes the balance below it, so the top prize on the
+wheel is always real money. TRIGGER = floor × 1.25; nothing moves until the
+balance sits 25% clear, because skimming the moment it peeks over would nibble
+the working capital on every ripple and re-lock the top tiers. RATE = 50% of the
+surplus above the floor — half, not all, because a wheel whose top prize
+flickers in and out of reach as the balance is shaved back is a worse product
+than one that repays a little slower.
+
+Repayment **stops the moment the seed is square**. It is a loan being retired,
+not a rake — which is why the old ceiling sweep is gone and is not returning in
+a new coat.
+
+At a 100 stake: floor 20,000, nothing until 25,000, where 2,500 of the 5,000
+surplus goes home leaving 22,500. Eight visits retire a 20,000 seed.
+
+**Measured, by rolled-back probe at a stake of 10:** exactly EIGHT instalments
+retired a 2,000 seed, the treasury returned to 100,000 to the chip, the pool
+never dipped below 2,255 against its 2,000 floor, and once square the plan took
+nothing further even with the balance forced to 500,000.
+
+Safety is by construction: the instalment is at most `RATE × (balance − floor)`,
+strictly less than the surplus, so `balance_after ≥ floor` always; and it is
+capped at what is owed, so the plan cannot overpay. Both the migration and the
+test sweep every balance from 20,000 to 60,000 to prove the floor holds.
+
+The owner menu now shows the plan rather than a number: the floor, the trigger,
+what the next instalment will be, how much is still owed, how much has come
+back, and the wallet it returns to — and it explains all of that **before** the
+owner commits any money.
+
+Two guards earned their keep. `spinSpec` has a **server copy** that must stay
+byte-identical, and editing only the client tripped it immediately — the comment
+on that guard says the drift is "exactly how three conflicting multiplier tables
+happened". And a test pinned the old all-or-nothing copy, updated here in the
+same commit that replaced the behaviour.
+
+18 new tests pinning the SQL rule and the TypeScript mirror to the same numbers.
+287 files / 3,531 green.
+
+## Cowork session 2026-08-23 (14) — THE SPINS WALLET, AND WHAT HAPPENS WHEN A CLUB JOINS A UNION
+
+Dan: "ADD THE SPINS WALLET TO THE UNION, AND CLUBS WHEN THEY ENABLE SPINS. IF A
+CLUB JOINS A UNION, THAT WALLET MUST DISAPPEAR."
+
+**Two pots that looked like one.** The union dashboard already carried a tile
+called "Spin Reserve" — and it does not show this wallet. That one reads
+`union_wallets.spin_reserve_wallet`: operator capital earmarked for Spins but
+**not yet deployed**. The migration that created it says so outright: "The
+DEPLOYED reserve is `spin_bonus_pools.balance` — this wallet holds only what is
+NOT currently in the pool, so the two never double-count." So the live float
+every multiplier is actually paid from appeared on **no wallet surface in the
+entire product**. Both tiles now sit side by side, in both union tabs, and the
+comment between them says which is which.
+
+Clubs get a "Spins Wallet" row in `DynamicWallet`, for club-bank staff only,
+and only when they have actually switched Spins on — no permanent 0.00 parked
+next to real balances.
+
+**The disappearing act is a data problem before it is a UI one.**
+`fn_spin_reserve_owner` resolves `COALESCE(clubs.union_id, club_id)`. The
+instant `clubs.union_id` is written, the club's own `spin_bonus_pools` row
+becomes unreachable through every code path in the platform — not deleted, not
+flagged, just orphaned, with its balance stranded, its seed no longer
+repayable, and `is_active` still true. Hiding the row in the UI would have left
+the money there. Neither join path knew the pool existed.
+
+So the wind-down is a **trigger on `clubs.union_id`**, not a patch to the two
+join routes: a third join path added later would reintroduce the leak, and the
+money must move in the _same transaction_ as the join — a club half-joined with
+its float in limbo is the worst of both states.
+
+Where the money goes: **the seed returns to the club** (its own capital, lent
+to its own pool — joining a union is not a reason to forfeit it), and **the
+remaining float goes to the union's pool** (player money, and the union now
+runs Spins for those players). It arrives as a `merge` — a ledger kind that had
+existed unused since the pool was first built.
+
+One guess made deliberately: if the seed has no recorded source wallet the
+repayment plan normally refuses to move it, because guessing which _entity_
+owns money is not a machine's job. Here the entity is not in doubt — it is this
+club — only which of its own wallets, so it goes to `chip_treasury` and the
+ledger says why.
+
+Verified by a rolled-back probe: a standalone club activated with a 2,000 seed
+and built a 600 float, then joined. Seed home to the treasury, 600 absorbed by
+the union, club row emptied and switched off, owner lookup moved to the union,
+and the platform total conserved to the chip. A backfill wound down any club
+that had already joined while holding a pool.
+
+The client half follows the same law `rake_treasury` already used — Dan's own
+earlier rule that union money must never appear on a club surface — so this is
+one flag, not a new concept.
+
+14 new tests. 289 files / 3,561 green.
+
+## Cowork session 2026-08-23 (15) — EVERY CLUB WALLET CLOSES INTO THE MAIN BANK
+
+Dan: "IF A CLUB HAS SPINS, BBJ, BACK UP BBJ OR PROMO FUNDS, ALL CHIPS IN THE
+WALLETS GO TO THE 'MAIN BANK' AND CLOSED WHEN A CLUB JOINS A UNION. ALL THOSE
+FUNDS ARE GIVEN TO THE CLUB TO KEEP OR DISBURSE AT THEIR OWN DISCRETION."
+
+**This overrules a decision I made an hour earlier.** The first union-join
+wind-down sent the Spins _seed_ back to the club but the remaining _float_ to
+the union, reasoning that the float was player money and the union now runs
+Spins for those players. Wrong: the club funded the wallet, the club carried the
+variance, the club keeps the balance. All of it.
+
+**Promo lives in two places** and both are swept — `bbj_pools.promo_balance` is
+the jackpot's own promo slice, `clubs.promo_balance` is the club's separate
+promo float. Sweeping one and not the other would have looked like it worked.
+
+**The trap this nearly walked into.** `fn_bbj_conservation_check` computes
+`gap = inflow − outflow − balances`, healthy only while that gap stays within
+1.00 of a recorded baseline. Taking money OUT of `bbj_pools` shrinks `balances`
+and pushes the gap up by exactly the amount swept — turning a correct transfer
+into a red money alarm. The check already counts `bbj_promo_sweep` rows in
+`chip_transactions` as OUTFLOW, which is precisely what this is, so the sweep is
+booked that way and the gap does not move.
+
+**And it surfaced something that is not mine.** The first attempt asserted the
+check was `healthy` and the whole migration rolled back — because it _already
+is not_. With nothing of this work applied, drift from the 2026-08-19 baseline
+was **−226.65 against a tolerance of 1.00**. That baseline's own note says the
+selftest "alerts on MOVEMENT from this baseline, which is what indicates new
+loss", so something has been quietly alerting. It predates all of this and needs
+its own investigation. The assertion was rewritten to measure the gap _before
+and after this transaction only_ — blocking a correct transfer on an unrelated
+fault would be the wrong call, adding to it would be worse, and that test is
+what tells the two apart.
+
+**Play moves, money does not follow it.** The club's BBJ pool is retired and
+pointed at the union's via `merged_into_pool_id`, because that is where its
+players now play. The balance still goes to the club. The ledger note says so
+explicitly, so nobody later reads the merge pointer as a money movement.
+
+Backfill closed **Club JAQK's 28,742.48 promo float** into its main bank
+(1,023,075.23 → 1,051,817.71). Its BBJ had already been retired into the union
+pool by an older manual step; that is history and was left alone rather than
+unwound out of a live jackpot players are now playing for.
+
+Verified by a rolled-back probe: a club holding all four wallets — 2,600 Spins
+including a 2,000 seed, 1,200 BBJ, 300 backup, 90 jackpot promo, 750 club promo
+— joined a union, its main bank went 8,000 → 12,940, the union received
+nothing, and the BBJ gap did not move across the join.
+
+One probe failure worth recording: the first version measured the gap before
+inserting its own synthetic BBJ pool, so it charged the test for conjuring 1,590
+of jackpot money with no matching contributions. The fixture was wrong, not the
+code — but it is exactly the shape of mistake that would hide a real leak.
+
+10 new tests. 290 files / 3,571 green.
+
+## Cowork session 2026-08-23 (10) — PER-OWNER SPIN BOARDS
+
+Phase 3, and the piece that makes the switch mean anything. Phases 1 and 2 gave
+the Spin wallet an owner, a real seed and an owner menu — but every Spin on the
+platform was still created with `club_id = union_id = MIDWAY_UNION_ID`, so
+activation governed a wallet with no tables behind it.
+
+An owner who activates now gets **their own board**, funded by their own
+wallet. The house board is untouched and filled FIRST, so a player who is not
+in an activated club always has somewhere to sit.
+
+### The part that is easy to get silently wrong
+
+A Spin's visibility is decided _entirely_ by `club_id` / `union_id` on its row.
+`ClubHomePage` scopes its lobby query by one or the other and never consults
+club membership, so those two fields are the whole access model:
+
+- a club **inside a union** has its page scoped by
+  `.eq('club_id', id).eq('is_private', true)` — a PUBLIC club-owned Spin is
+  dropped by the very club that paid for it;
+- a **standalone** club's page scopes by `club_id` alone, and shows it;
+- a **union's** games are found by `union_id` across every club in that union,
+  which is exactly how the house board has always reached players.
+
+So a union-owned pool stamps `union_id`, and a club-owned pool must not. Get it
+backwards and there is no error anywhere — just a board nobody can see. That is
+why `BoardOwner` carries the two fields separately and documents why.
+
+### What else had to change
+
+- **The open-board read is now scoped to the owner.** The set is keyed on the
+  config NAME, and "10 Chip Spin PLO4" is the same string on every board.
+  Unscoped, the house would fill first and every activated club would look
+  already-full and never open a single game.
+- **The in-flight guard moved up** from `ensureBoardOpen` to a `withBoardTick`
+  wrapper around the whole pass. A pass now calls `ensureBoardOpen` once per
+  owner, so the old placement would have let the first owner set the flag and
+  every owner behind them be skipped forever.
+- **BURST became a shared budget.** A per-board cap is not a cap once one pass
+  can service the house plus every activated owner — twenty owners would be
+  twenty times the work. One `{ left: 12 }` is threaded through every board in
+  the pass and only decremented on a game that was actually created, so a run
+  of failed inserts cannot starve the boards behind it.
+- **An owner is only offered the stakes their seed covers.** The required seed
+  is two 100x jackpots at their largest stake, so advertising a bigger buy-in
+  than they seeded for would offer a multiplier the wallet cannot pay.
+
+Gated on `is_active`, `activated_at IS NOT NULL` and `balance > 0` — a drained
+pool cannot pay a multiplier, and opening games it cannot settle hands the
+player a prize the wallet has to clamp.
+
+**Zero immediate production effect:** exactly one pool is activated today (the
+house), and it is filtered out of the owner list because it is served by
+`houseOwner`. The first real change happens the first time a club activates.
+
+Two tests from earlier today were updated in this commit because this change
+deliberately replaces the behaviour they pinned (`missing.slice(0, BURST)` and
+the guard living inside `ensureBoardOpen`). 20 new tests, 18 of which fail
+against origin/main. 282 files / 3,458 green.
+
+## Cowork session 2026-08-23 (16) — AN ALARM THAT CANNOT RING IS NOT AN ALARM
+
+Chasing the −226.65 BBJ conservation drift turned up something much larger than
+the drift.
+
+**`public.bbj_contributions` had never been analysed.** `last_analyze`,
+`last_autoanalyze`, `last_vacuum`, `last_autovacuum` — all NULL. The planner
+therefore believed it held **2,600 rows. It holds 648,543.** A 250x
+underestimate on a 242 MB table.
+
+Planned on that fiction, `fn_union_treasury_selftest`'s duplicate-contribution
+scan chose a catastrophic plan and hit the statement timeout — **the treasury
+self-test could not run at all.** Which is exactly why a −226.65 breach of a
+1.00 tolerance sat unreported. The alarm was not ignored; it was unable to ring.
+One `ANALYZE` later it completes in normal time and reports the breach it was
+always supposed to report.
+
+**And it was never one table.** Twelve relations over 20 MB had never been
+analysed, including money that settlement and rakeback read every day:
+`rake_records` (1 GB, estimated 8,932 rows), `wallet_transactions` (797 MB,
+estimated 14,979), `vip_points_ledger`, `agent_commissions`,
+`club_wallet_transactions`, `rake_distribution_legs`, `rakeback_stats_applied`
+— plus `solved_spots_gold` at **72 GB estimated as 4,846 rows**. Every query
+planned against those is planned on a guess. That is the most likely
+explanation for the slow IO-bound money queries seen repeatedly today —
+`fn_rakeback_recompute_periods` sitting 49 seconds on `DataFileRead` — and for
+the repeated connection-pool timeouts.
+
+**Why autoanalyze never fired:** none of them carry table-level settings, there
+are three autovacuum workers, and this database holds a 72 GB table and a 10 GB
+one. The giants monopolise the workers and everything behind them starves.
+`hand_history` is the only table with explicit settings — added this morning
+after its unthrottled vacuum saturated disk IO and took `/api/health` down.
+
+The eight money tables now analyse on a **row count** rather than a percentage
+of a total nothing has ever measured, and every one keeps `cost_delay = 2ms` —
+the same gentle value `hand_history` was given, because the cure for a starving
+autovacuum must not be a second IO saturation. The migration asserts both: that
+none is left without a threshold, and that unthrottled autovacuum has not come
+back anywhere.
+
+The three non-money giants are deliberately left alone and the migration says
+why — handing three more giants aggressive settings on a three-worker
+autovacuum is how the starvation happened in the first place.
+
+**Also closed three stale PRs (#486, #487, #488)** that the stuck-PR sweeper had
+re-opened. Each was 100–200 commits behind `main`, and merging any one would
+have **reverted 30,000–72,000 lines across 300–580 files**. Their content is
+already on main under different SHAs — the pattern CLAUDE.md §12 documents —
+and `tests/config/spinSeatFirstIntegrity.test.ts` proves it: main carries 157
+lines where the branch has 124, because tests were added afterwards. Merging
+would have deleted them. Each PR was closed with that reasoning recorded.
+
+17 new tests.
+
+**Still open, and not mine to guess at:** the −226.65 drift itself. It is
+static across every measurement over ninety minutes, so it is a one-time
+historical event rather than an active leak; the three payouts since the
+baseline are fully explained by their recipients, and there is no single
+transaction of that size. It wants a targeted audit of the 2026-08-21 pool
+consolidation, with the watchdog now able to run while that happens.
+
+## Cowork session 2026-08-23 (17) — A UNION CLUB SAW THE UNION'S TABLES AND NONE OF ITS TOURNAMENTS
+
+Dan, from Shark Club's lobby: "YOU SAY SPINS ARE OPEN AND RUNNING, BUT THE
+CLUBS CAN'T SEE ANY SPINS, HEADS UP OR MTT'S ANYWHERE... THIS HAS GOT TO STOP
+HAPPENING!" — and then the same from Club JAQK.
+
+**`get_club_home` carried the union scope TWICE, and only one copy was ever
+fixed.**
+
+```
+tables       THEN (union_id = v_union_id OR (club_id = v_club.id AND is_private))
+tournaments  THEN (club_id = v_club.id AND is_private = true)          <- no union
+```
+
+Two clauses fifteen lines apart, meant to say the same thing. Somebody fixed
+the first and did not notice the second. For a union club that means every
+union cash table and only its OWN PRIVATE tournaments — of which Shark Club
+has none.
+
+Measured before: `get_club_home('25450')` returned **43 tables and ZERO
+tournaments**, while the union held 36 joinable Spins, 33 MTTs and 21 heads-up
+games, every one public and readable. Exactly the screenshot: "42 Games Are
+Open In This Club, Just None Of This Type."
+
+**It also explains the intermittency** Dan reported earlier — "sometimes it
+displays, then it disappears." This RPC is the FAST PATH that paints first;
+the client's own union query is authoritative and _does_ carry the union
+branch. On a healthy database the real query overwrote the empty fast paint
+and the games appeared. When it timed out — repeatedly, all day — the empty
+paint was all that survived.
+
+**A grep said the union branch was present.** It was matching the tables line
+two lines above. Running the RPC is what caught it; reading it did not.
+
+### The hardening, which is the part that matters
+
+The missing branch is the symptom. The disease is that the rule was **writable
+twice**, and this is at least the second time the copies drifted. So:
+
+- **One predicate.** `fn_club_home_in_scope(...)` is now the only statement of
+  the rule and both lists call it. A future edit cannot fix one and miss the
+  other, because there is no longer an "other". Written as plain SQL IMMUTABLE
+  so Postgres inlines it rather than calling it per row.
+- **A live parity check.** `fn_club_home_scope_parity()` lists any union club
+  whose club-home returns zero tournaments while its union is running some.
+  Empty is healthy.
+- **Assertions that fail on regression**: the shared scope must appear exactly
+  twice in `get_club_home` (once per list), no union club may be blind, and
+  the RPC must still return `variant`.
+
+### And the lobby stopped guessing
+
+Neither client query selected `variant`, so a Spin was identified by whether
+its **name contained "spin"**. Both selects now carry the column and both
+classifiers prefer it — including when it says _not_ a spin. My own first cut
+of that fix was wrong and a test I wrote caught it: with `variant='freezeout'`
+a "Spinnaker Special" still fell through to the name and filed under Spins.
+The column is authoritative when present; the heuristic survives only for
+callers still passing older projections, because removing it would turn a
+wrong tab into an empty one.
+
+Verified after: Shark Club and Club JAQK both return **identical** lists — 88
+tournaments (33 Spins, 22 heads-up), 43 tables — and the parity check reports
+zero blind clubs. Because the fix is in the shared RPC it covers every union
+club by construction, not one club at a time.
+
+9 new tests. 294 files / 3,623 green.
+
+## Cowork session 2026-08-23 (18) — THE UNION'S GAMES WERE NOT MISSING, THREE SEPARATE THINGS WERE DELETING THEM
+
+Dan: "THE MTT, SPINS AND HEADS UP TABLES AND EVENTS THAT WERE CREATED IN THE
+MIDWAY UNION ARE NOT BEING DISPLAYED IN THE ATTACHED CLUBS (CLUB JAQK AND
+MIDWAY CLUB)... THEY ARE NOT SHOWING UP INSIDE MIDWAY UNION ANY MORE EITHER."
+
+The data was never the problem. Midway Union was running **44 cash tables and
+86 joinable tournaments** — 33 Spins, 17 Heads Up, 24 MTTs — every one public,
+every one readable by an ordinary member (verified under `role authenticated`
+with Dan's own uid). Three unrelated defects were removing them between the
+database and the screen, which is why the symptom kept changing shape.
+
+### 1. The cash list 400'd on every club lobby load, everywhere
+
+`ClubHomePage` asked for the club's tables with
+
+```
+.not('status', 'in', ['closed', 'deleted'])
+```
+
+`.not(column, operator, value)` does not inspect the value; it interpolates it
+into `not.<operator>.<value>`. An array stringifies to `closed,deleted`, so the
+wire carried `status=not.in.closed,deleted` and PostgREST answered
+
+```
+400 PGRST100  "failed to parse filter (not.in.closed,deleted)"
+```
+
+The whole list came back null. **Zero cash tables in every club, union or
+standalone, on every single load**, while 44 were running. Confirmed live from
+Dan's browser: rewriting only that one filter in flight turned the same request
+into `200` with 44 rows.
+
+It arrived in #542 — _"fix(club): unify table and tournament home scopes to
+resolve missing union MTTs/Spins"_, a commit whose subject is this exact bug
+report. The same commit edited the test that had been pinning the correct form:
+"test: fix regex to match actual source code". **A test may only be relaxed to
+match the source when the source is the thing that is correct.** The assertion
+is now stated twice — the group form must be present, and no `.not(col,'in',[…])`
+may appear anywhere in `src/` (968 files scanned).
+
+### 2. `get_club_home()` had never once executed
+
+The fast path that exists to paint the lobby in ONE round trip instead of six
+raised on every call, from the first, since the day it was written:
+
+```
+SELECT union_id ... FROM union_clubs WHERE ... AND status = 'active'
+ERROR 42703: column "status" does not exist
+```
+
+`union_clubs` has five columns and none is `status`. Behind that sat four more
+of the same kind, none ever reached: `clubs.short_id`, `club_members.profile_id`,
+`tables.time_bank_seconds`/`time_bank_rounds`, and a filter on
+`tables.status IN ('RUNNING','WAITING')` when the column is lowercase. It also
+returned no `found` key, which the caller requires. **Five independent reasons
+for one outcome.**
+
+So every lobby fell back to the slow chain — club row, membership, union row,
+union club ids, member count, and only _then_ tables and tournaments — and for
+those seconds every tab reads "No Tournaments Yet". That is exactly "sometimes
+it displays, then it disappears."
+
+The migration that installed it was written, applied and committed **without
+ever calling the function**. One `SELECT get_club_home(<any club>)` would have
+failed in under a millisecond. Its sibling `20260823250000` does carry
+assertions — one of which calls a function that calls this — so those were
+recorded, not run.
+
+Rewritten and applied (`20260823280000`, `290000`, `300000`). The guarantee is
+no longer a string match on the source text: the migration **executes** the
+function on every club and refuses to apply if any call raises, if any union
+club comes back blind, if the payload loses `variant`/`table_size`, or if it
+takes longer than 250 ms.
+
+Two more things fixed while in there:
+
+- **Union membership is read from both sources**, as the client already does.
+  The union's own club carries `clubs.union_id` with no `union_clubs` row,
+  which is why _Midway itself_ went blind to its own games.
+- **`lower(status)` cost a sequential scan of 64,670 rows to return 44 —
+  593 ms, every call.** Three partial indexes exist for exactly this list and
+  their predicates say `status <> ALL (…)`, which Postgres cannot prove a
+  `lower()` call implies. Written the way the client writes it: **4.8 ms.**
+
+Measured after: Club JAQK, SHARK CLUB and Midway Union each return 44 tables
+and 86 tournaments in **17–43 ms**, from one call.
+
+### 3. An untouched slider deleted every MTT in two of the three clubs
+
+With the database fixed, Club JAQK showed 33 Spins, 17 Heads Up and 24 MTTs.
+Shark Club and Midway — same union, same 86 games — showed the Spins and the
+Heads Up and an **empty MTT tab**. The only difference was a saved
+advanced-filter value in localStorage, sitting untouched at its default
+`seatMin: 2, seatMax: 9`.
+
+`FILTER_SPECS.MTT.seats` is `{2, 9}` and its label is **"Table Size"**, but
+`rowPassesFilter` was handed `seats: max_players` — the size of the FIELD, 150
+to 1,000. Every MTT that has ever existed fails a 2-9 test. The slider had been
+made live in an earlier pass ("the MTT and SNG sliders were previously inert")
+without noticing it was now measuring the wrong quantity.
+
+And `isFilterActive()` called that default range **inactive** while
+`rowPassesFilter` **enforced** it — so the empty state read "Nothing Here On
+This Tab — 129 Games Are Open In This Club, Just None Of This Type", offered no
+filter to clear, and was wrong on both counts. Two functions disagreeing about
+whether a filter is set is the whole bug.
+
+Both halves fixed: a range at its default filters nothing, and "Table Size"
+reads `tournaments.table_size` (2, 3, 6 or 9 on every live row) rather than the
+field cap. A tournament whose table size is unknown is never hidden.
+
+### Verified on production
+
+From Dan's own browser, cold hard load of Club JAQK, at t=0s:
+**Spins 33 · Heads Up 17 · MTT 24 · NLH 18 · PLO 21 · 128 games.**
+Before: every tab empty for several seconds, then cash permanently absent.
+
+18 new/updated assertions across three test files; `tsc --noEmit` clean.
+
+## Cowork session 2026-08-23 (19) — THE SPIN BOARD HAD WEDGED ITSELF, AND THE HEADER COUNTED THE WRONG THINGS
+
+Four reports, four unrelated causes.
+
+### 1. 44 of the 50 Spins and Heads-Ups could never be joined
+
+Dan: "make sure the horses are sitting and playing the spins. two horses should
+fill the first two seats... wait 60-180 seconds before a 3rd horse sits."
+
+That design was already written, correctly, in `TournamentRecurringService`.
+What was on the board: of 33 REGISTERING Spins, **THIRTY had no table row**, and
+of 17 heads-ups, **FOURTEEN**. Oldest 05:24 UTC — fifteen hours listed and
+unjoinable. A seat-first game _is_ a table with seats; these had none.
+
+**And the state was self-sustaining.** `ensureBoardOpen` decides what to open by
+NAME: a husk is REGISTERING, so its name is "covered", so its price point is
+never reopened — and it can never leave REGISTERING, because a seat-first game
+starts when every seat is sold. One dead row wedges one price point forever.
+Exactly two of thirty-two Spin configs were still cycling: 1 Chip NLH and 3 Chip
+NLH, the only two whose live instance could still fill and free its name.
+
+`fn_repair_seat_first_games` gives a husk the table it never got, seats its
+opening horses (seats-1) and restarts its human window at a fresh 60–180s
+rather than cancelling it — section 8 is explicit that tournaments run, they do
+not cancel. Called at the top of both board ticks, before the keeper decides
+what is missing. **First run: 44 repaired.** `ensureBoardOpen` now also refuses
+to count a table-less seat-first game as covering its price point, so one failed
+repair cannot wedge the board again.
+
+### 2. Horses were sitting and the board said 0/3
+
+`fn_seat_horse_in_seat_first_game` seated the horse, wrote `tournament_players`
+and updated `tables.current_players` — but never `tournaments.current_players`,
+which is the number the lobby card reads. The two healthy Spins had two horses
+genuinely in seats 1 and 2 and advertised themselves as empty. The count is now
+maintained in the seating function itself, so it cannot drift from the seats.
+
+**After:** 9 Spins and 21 Heads-Ups RUNNING, 12 more partly full.
+
+### 3. "Create New Table" opened a page of invisible cards
+
+Dan: "the create new table button doesn't work for any of the cash games or
+tournaments." The button worked. The page rendered seven game-type cards that
+were in the DOM, laid out, occupying space, and completely transparent:
+
+```js
+opacity: 0,
+animation: `fadeInUp 0.5s ease-out ${index * 70}ms forwards`,
+```
+
+`@keyframes fadeInUp` is not reachable on that route. `ba1af5a8b` — "ZERO
+colliding @keyframes names", **93 .css files, 0 .tsx** — renamed every keyframe
+to a file-prefixed name and nothing updated the names that live as RAW STRINGS
+in inline style objects, where no CSS tool can see them. An unresolvable
+`animation-name` is not an error: the declaration is dropped, the animation
+never runs, and the `opacity: 0` it was meant to clear stays forever. No console
+error, no failed request, no type error. **Eleven pages** were rendering blank
+content with tsc, vitest and the production build all green.
+
+Twelve references repointed at the global `animationsFadeInUp`.
+`tests/unit/inlineAnimationsResolve.test.ts` now resolves every inline animation
+name against the stylesheets that are actually loaded where it renders — the
+globals `main.tsx` imports, plus the file's own sibling `.css` — and hard-fails
+on any paired with `opacity: 0`. Verified it fails, naming file and line, when
+the fix is reverted. The 40 remaining cosmetic cases are pinned to a baseline
+that can only shrink.
+
+### 4. The header's two numbers
+
+Dan: "club jaqk doesn't have 1172 players"; "shark club... bounces back and
+forth from 1172 players to 588"; "the 0 players currently playing is a bug...
+every horse needs to be considered a current player".
+
+**Members** — `get_club_home` counted the whole union, so JAQK (584) and Shark
+(588) both read 1,172 and Midway read 1,500. The client's own query counts the
+club alone, so the header FLIPPED depending on which landed last — two writers,
+one rule, the same shape as this morning's scope bug. Both now count this club's
+members, and the union-wide re-query that caused it is gone (it was also awaited
+_in series_ ahead of the games queries).
+
+**Playing** — `clubs.online_count` is denormalised and nothing keeps it current:
+12 for JAQK, 0 for Shark and Midway, while 579 seats were occupied. It is not
+corrected, it is bypassed: the RPC counts live seats directly, horses included,
+platform-wide as instructed.
+
+### Known limit, not a bug: the horse pool is the ceiling
+
+584 horses against 46 cash tables, 40 Spins, 36 Heads-Ups and 26 MTTs. Measured
+after the repair: **zero free horses**, 667 live seat occupancies, 77 horses
+already holding two seats. 20 Spins remain at 0/3 for want of bodies. Filling
+every seat-first game at seats-1 needs ~83 opening horses that do not exist.
+Either the population grows or the board narrows.
+
+## Cowork session 2026-08-23 (20) — THE ENGINE RAN 13:23 CODE FOR EIGHT HOURS, AND HALF THE FLEET WAS ON THE WRONG INSTANCE
+
+`Auto-Deploy Hetzner Engine` had failed on every push since 18:36 UTC — four in
+a row. Each one built, cut over, failed verification and rolled back, so
+production kept running `d3c3bf3f` (13:23) while every run reported a tidy
+rollback and nothing anywhere went red.
+
+### What was actually on the box
+
+```
+club-arena-engine     :3d2ca6a6   0.0.0.0:8080->8080
+club-arena-engine-2   :d3c3bf3f   0.0.0.0:8081->8080     created 13:29:16Z
+```
+
+A SECOND engine container, stood up six minutes after `d3c3bf3f` merged, wearing
+the same `sp.role=engine` / `autoheal=true` run-spec — and **unknown to every
+part of the pipeline**. The workflow only ever names `club-arena-engine`, so
+8081 had never received a deploy and never would.
+
+The morning's Caddyfile (backup at 08:00 shows a single `reverse_proxy
+localhost:8080`) had been changed to an active/standby pair:
+
+```
+reverse_proxy localhost:8080 localhost:8081 { lb_policy first ... }
+```
+
+**That is what broke the deploys.** The verify step polls `$ENGINE_URL`, the
+public vhost. While the deploy restarts 8080, Caddy fails over to 8081 — which
+answers with the version it was built from in the morning. Verification read the
+wrong instance, never matched, and rolled back a build that was fine.
+
+It was a RACE, which is why it looked intermittent: when 8080 came back inside
+Caddy's 5s health interval the failover never happened and the same pipeline
+passed. That is how `#559` slipped through at 21:15 while four before it died.
+
+### And the pair was splitting the fleet
+
+Measured live before the fix:
+
+```
+8080  version 3d2ca6a6  leadership.role=leader  activeTables 14
+8081  version d3c3bf3f  leadership.role=leader  activeTables 10
+```
+
+**Both leaders. Fleet split across both.** The Caddyfile's own comment says why
+that must never happen: "~half of all player requests hit an instance that does
+not own their table and get 404 / close 4404." The standby did not stand by.
+
+### Done
+
+- Caddy collapsed to the single upstream it had at 08:00, backed up first.
+- `club-arena-engine-2` stopped with a 45s SIGTERM grace and removed. 8080
+  absorbed the fleet within a minute: **14 tables -> 132, one leader, liveness ok.**
+- **The verify step now asks the CONTAINER**, over ssh at `127.0.0.1:$PORT`,
+  not the load-balanced hostname. A load balancer's job is to hide which
+  instance answers, which makes it the wrong thing to ask "is the build I just
+  shipped running?". The public URL is then checked for what it CAN answer —
+  that it serves that same SHA — which would have caught the twin on day one.
+- **A one-engine guard before cutover.** Any container labelled `sp.role=engine`
+  that is not the managed one stops the deploy. A second engine is not
+  automatically wrong; an unmanaged one is.
+
+Restore the pair only once a standby genuinely answers 503 and owns zero tables,
+and once this workflow deploys both.
+
+### Confirmed on the live engine afterwards
+
+```
+[TournamentRecurring] repaired 1 seat-first game(s) that had no table
+[TournamentRecurring] Opened 12 spin(s) for house fade0000; 3 still to fill
+[TournamentRecurring] Opened 2 spin(s) for house fade0000; 0 still to fill
+```
+
+The Spin board is reopening price points that had been wedged for fifteen hours.
+
+## Cowork session 2026-08-23 (21) — THE FIVE THAT WERE LEFT
+
+### 1. Every hand on the platform queued behind one database row
+
+Measured live at 21:50 UTC: hands per minute had fallen from ~250 to **29**,
+with 103 `hand_history insert failed: statement timeout` in 25 minutes.
+`pg_blocking_pids` gave the shape immediately — eight `INSERT INTO hand_history`
+all blocked by one other.
+
+`trg_hand_history_club_member_stats` upserted `club_hand_daily` as its FIRST
+statement. A row lock is held until the transaction COMMITS, not until the
+statement ends, so that row stayed locked through the rest of the trigger: a
+jsonb expansion per player, a correlated `NOT EXISTS` over `hand_history`, and
+two more upserts. And **every table on the platform shares that row** —
+1 distinct club dealing, 178 live tables, 97,772 hands on the busiest row.
+
+Moved to the end. Same statements, same values, same conflict targets; only the
+order. Measured with the identical probe before and after:
+
+|                            | before   | after   |
+| -------------------------- | -------- | ------- |
+| whole INSERT incl. waiting | 993.7 ms | 87.7 ms |
+| the insert node itself     | 858 ms   | 7.6 ms  |
+| this trigger               | 98.8 ms  | 29.7 ms |
+| queries blocked on the row | 8        | 0       |
+
+### 2. The board drank the fleet
+
+An hour after the Spin board was unwedged: MTT 190 horses, SPIN 128, SNG 107,
+and **CASH 43 across 44 tables** — 72 seats occupied in the whole cash room.
+Nothing takes a horse off a table, but claiming every idle horse the instant one
+stands up starves whatever puts them back, and the room hollows out a rotation
+at a time.
+
+`pickFreeHorses` now leaves `CASH_FLOOR_PER_TABLE` (2) per live cash table
+unclaimed. It moves nobody; it declines the last horses so the cash seater can
+find them. Fails open to 0, so a database blip cannot freeze the boards.
+
+### 3. Two engines both believed they were the leader
+
+The standby contract was already right — `handleHealth` returns **503** when
+`liveness === 'standby'`, exactly what Caddy's `health_status 2xx` needs. Two
+lines defeated it:
+
+- `let role: EngineRole = 'leader'` — a process assumed leadership from its
+  first instruction, so between boot and its first successful claim it answered
+  200 and Caddy routed to it. With the database saturated that window was the
+  length of the outage.
+- `if (!row || row.granted)` — an empty answer granted leadership. No row is
+  not a grant; it is an unanswered question.
+
+A fresh process now starts as **standby** and may only lead by being granted.
+The fail-open the file was written around is kept and is now real: an incumbent
+retains, a newcomer does not assume. `PROMOTE_AFTER_UNKNOWN` keeps a lone engine
+from stranding a single-container deployment at 503 — three consecutive claims
+that name nobody, and only nobody, promote it.
+
+Four existing tests asserted the old default. They were rewritten, not deleted,
+with the incident written above them — the same discipline PR #542 skipped.
+
+### 4. The class of bug, guarded
+
+`classNamesResolve.test.ts` resolves every plain BEM `className` against the
+stylesheets actually loaded on that route: the globals `main.tsx` imports, the
+file's sibling `.css`, and any `.css` the file imports itself. A definition in
+another component's stylesheet does not count; that is chunk luck, not a
+contract. **43 references across 35 names are unresolved, 27 defined in no
+stylesheet anywhere.** Not fixed here on purpose — writing CSS for
+`insurance-modal__ev-hero` without the design in front of you is inventing an
+appearance. Pinned so the number can only fall.
+
+### 5. One ledger, so a rebase cannot quietly undo the day
+
+Fifteen open pull requests, eight touching files repaired today, four already
+conflicting. The morning's outage was a stale branch landing on a fix **and
+editing the test that caught it**. `todaysIncidentsStayFixed.test.ts` states
+every one of today's fixes in one place with the incident attached, so a
+conflict resolution that drops one fails with the reason rather than a regex
+mismatch in an unrelated file. It strips comments before asserting absence —
+this repo quotes the code it replaced, and a comment must not be able to report
+its own bug as present.
+
+## Cowork session 2026-08-24 (18) — THE SERVER KILLED EVERY WALLET/TOURNAMENT SOCKET EVERY 60 SECONDS
+
+Dan: "THE SERVER DISCONNECTS HAVE GOT TO STOP!!" Full audit in
+`.agent/audits/2026-08-24-always-connected-three-root-causes.md`. Three fixes:
+
+1. **Heartbeat dialect mismatch.** The channel server sent CHANNEL_PING and
+   accepted only CHANNEL_PONG; the client only answers PING with PONG. Every
+   /ws/channel connection (wallets, tournament events, club events, lobby) was
+   force-closed at the 60s mark, forever. Server now sends both dialects and
+   counts ANY well-formed inbound frame as liveness; client answers both.
+
+2. **No resubscribe after reconnect.** JOIN_CLUB/JOIN_TOURNAMENT/JOIN_LOBBY
+   were sent exactly once per page life while the server's subscription state
+   dies with the connection — one reconnect and tournaments/lobby went silent
+   until reload. EngineChannelClient now replays desired subscription state on
+   every reconnect, exposes onStatusChange(), and useRealtimeFinancials
+   refetches balances on reconnect (FINANCIAL_UPDATEs missed while down were
+   previously lost forever).
+
+3. **Deploys stopped kicking seated players.** ~25 engine restarts/day (263
+   server commits/wk); the drain gate proceeded after 8 min even with humans
+   seated. It now defers instead (job succeeds, nothing restarts), bounded by
+   a 6h engine-uptime staleness cap, with an hourly catch-up schedule + dedupe
+   step so deferred code lands in the first empty window.
+
+16 tests (6 server heartbeat + 5 new client + 5 existing green), tsc clean
+both sides.
+
+## Cowork session 2026-08-24 (19) — PHASE 2: TWO TABS EVICTED EACH OTHER FOREVER
+
+Dan: "FIND ANY AND ALL OTHER REASONS THIS MAY HAPPEN AND FIX THEM NOW." Full
+audit in `.agent/audits/2026-08-24-always-connected-phase2.md`. Three fixes:
+
+1. **Multi-tab eviction ping-pong.** ChannelHub enforced one socket per user
+   by closing the existing one on every new connection — two tabs (or phone +
+   desktop) evicted each other in an endless reconnect loop, flapping wallet/
+   tournament/lobby feeds. Users now hold a set of sockets (cap 8); sends fan
+   out to all tabs; subscriptions die only with the LAST socket.
+
+2. **Hard-evicted table subscribers sat blind for 60s.** Backpressure
+   hard-drop removed the hub subscriber but left the socket open and silent.
+   The transports now close/unsubscribe on evict so the client reconnects in
+   seconds (4429 slow ladder) instead of waiting out its watchdog mid-hand.
+
+3. **A JOIN dropped by a DB blip stayed dropped.** The club-membership gate
+   fails closed with no error frame. The channel client now re-asserts its
+   desired subscriptions every 180s on the live socket — idempotent
+   server-side, heals any silent loss within one interval.
+
+Verified clean: liveness/autoheal grace, deploy twin-guard + public-hostname
+check, Caddyfile, GameServerAPI circuit breaker. 12 new/rewritten tests
+(8 ChannelHub + 3 evict + 1 re-assert), tsc clean both sides.
+
+## Cowork session 2026-08-24 (20) — LINE-BY-LINE SWEEP: METRICS FOR THE INVISIBLE TRANSPORT, AND RESTART COALESCING
+
+Dan: "finish up everything... check for any bugs, stubs, gaps... enhance to the
+max." Full-pass re-review of every merged connectivity file, plus production
+query evidence. Two enhancements shipped:
+
+1. **/ws-metrics finally sees the channel transport.** The socket carrying
+   wallet FINANCIAL_UPDATEs, tournament/club events and lobby updates had ZERO
+   metrics — which is exactly how the 60s heartbeat kill loop ran unmeasured.
+   Now: channelSockets, channelUsers, lobbySubscribers, plus the hub's
+   softDropped/hardDropped backpressure counters. ChannelHub.userCount() is
+   thereby wired to a real caller (flagged as test-only in the compliance
+   pass).
+
+2. **Restart coalescing in the deploy gate.** The engine restarted 5x in ONE
+   HOUR tonight as a merge train landed — each restart voids in-flight hands
+   and costs ~2min of 4404 rehydration, humans seated or not. The dedupe step
+   now defers any restart while the running engine is under 20 minutes old
+   (workflow_dispatch/force bypasses); the next push or the hourly catch-up
+   lands a newer HEAD containing the deferred commit.
+
+DB pressure findings (no blind changes): hand_history INSERT is the top cost
+(513ms mean x 18k calls); its GIN players index CANNOT be dropped (19 scans
+but my-hands.js .contains() depends on it); fee-rollup backfill verified
+advancing (watermark 08-18, runs every ~8s, will reach steady state alone).
+The real fix is hand_history partitioning/archival - Tier 3, needs a plan.
+
+4 files, tests updated in the same commit (health.test.ts 4/4, hub 8/8, tsc
+clean).
+
+## Cowork session 2026-08-24 (20b) — THE ENGINE WAS RESTARTING ITSELF TO FIX A SLOW DATABASE
+
+Caught LIVE during the session-20 sweep (05:15-05:35 UTC): /health reported
+liveness 'dead' while 123 tables dealt a hand every second, because ONE
+discovery cycle sat blocked ~87s inside a slow database call and
+discoveryLoopStalledMs stamps attempts, not successes-in-progress. sp-autoheal
+restarted the healthy engine in a loop (uptime observed 804s -> 448s) — a
+self-inflicted mass disconnect, the exact complaint this whole workstream
+exists to kill.
+
+Fix (#660): a discovery stall flips 'dead' only when NO table has made
+observable progress in 2 minutes; capped at 15 minutes of zero discovery
+attempts, which is dead regardless (a wedged loop must still restart).
+Landed via workflow_dispatch force (the new coalescing gate would have
+deferred its own cure while autoheal kept resetting the uptime clock).
+Verified: production serves f7cb273e containing the fix, liveness 'ok'.
+
+Also this session: shared-worktree collision — a scheduled agent's `git add
+-A` swept this fix into its lobby commit (#652, failing on a phantom
+ClubBankCashierModal import). Extracted cleanly to #660; #652 annotated for
+its owner. This session now works from its own worktree (cowork-claude-conn).
+
+## Cowork session 2026-08-25 (21) — THE SWEEP WAS SCOPED TO THE SAMPLE, NOT THE PROPERTY
+
+Dan: "get everything up to date, finish up anything you feel like is necessary
+before we start making mobile updates." Full audit in
+`.agent/audits/2026-08-25-the-sweep-was-scoped-to-the-sample.md`.
+
+1. **Two MTTs at a dead felt that no sweep could see (#780).** The
+   started-but-never-dealt recovery shipped filtered to `['sng','spin']` — the
+   variants its originating outage happened to contain — while its own comment
+   said "no existing sweep covers this state". Monday Grind PLO6 Turbo sat
+   RUNNING 183 minutes with 18 paid players and zero hands; Six-Card Late Night
+   16 minutes with 499 players, 56 tables, 548 live seats, zero hands. Filter
+   removed. The 15-minute cutoff was measured, not assumed: of 187
+   non-seat-first tournaments in 48h, 153 dealt within 15 minutes and 127 within
+   5, INCLUDING a 500-player field, and the slow tail's average field is smaller
+   than the fast group's. Added a seating-settled guard (every `playing` player
+   must hold a live seat; an unreadable count is UNKNOWN) so a large MTT still
+   filling tables is not requeued mid-seating. 4 guards, each verified to fail
+   when the fix is reverted.
+
+2. **Verified live, and honest about what it did not fix.** Engine cut over to
+   `137247b2`, the sweep requeued both games, the start gate relaunched both,
+   the engine adopted their tables (295 known vs 294 running). They STILL did
+   not deal: both wedged at `loopPhase 'dealing'` with 108s since progress, 9
+   dealable seats, not paused. #780 rescues the state, it does not cure it —
+   left as a ~15min retry loop rather than dressed up as a fix.
+
+3. **The wedge has a shape, and a worse baseline (#782).** Never-dealt rate by
+   game_type over 48h: NLH 22.3%, PLO4 20.8%, PLO5 35.9%, PLO6 36.5%. The 5/6
+   card excess is real, but the headline is that ~1 tournament in 5 never deals
+   a card — ~1,942 in 48 hours. Until #780 that state was invisible to every
+   sweep. Raised with the instrumentation needed rather than guessed at.
+
+4. **The open PR queue was half revert.** All four stuck PRs were DIRTY and all
+   four touched the files mobile work starts in. #761 resolved to main. #744
+   resolved by SPLITTING the hunk — the branch's functional updater is a real
+   stale-closure fix for `setStandUpNextBB`, but wrong for
+   `setIsAutoRebuyEnabled`, which is a `(v:boolean)=>void` wrapper. #733 closed:
+   fully superseded by #758, and its only surviving 10 lines were a
+   byte-for-byte re-add of the opponent card rotation #742 deliberately removed.
+   #716 closed: exact duplicate of #717, which merged the day before.
+
+5. **The stranded-work alarm was almost entirely false.** Five branches / ~10
+   commits reported as never seen by GitHub were ALL already on main under
+   different SHAs — verified by blob hash per path, not filename. They sit on
+   ancient bases, so pushing them would have opened PRs reverting ~100k lines.
+   27 dirty trees snapshotted to `refs/wip/rescue/20260825T045141Z/*`; nothing
+   pushed, nothing deleted.
+
+6. **Estate drift #682 closed, both halves, in OPPOSITE directions.**
+   `AGENT-PLAYBOOK.md`: Club Arena newer, synced out — six repos were still
+   telling agents to run `npm ci` in the shared clone, which is now the worst
+   place to do it. `agent-autopilot.yml`: PepNationLab newer (Dependabot bump of
+   `checkout` and `create-github-app-token`), synced in. The second mints the
+   merge credential, so it was staged through `commander-shared` as a canary and
+   only propagated after its sweep went green on the bumped SHA.
+
+7. **Left alone deliberately:** live uncommitted mobile work in the shared clone
+   (`ClubBottomNav.tsx` +332 and 5 more files, implementing today's binding
+   bottom-nav instruction, modified minutes before it was found) — snapshotted
+   to `refs/wip/rescue/shared-clone-mobile-20260825T050552Z` and untouched. Also
+   noted: `Smarter-Poker-Club-Arena` is a third real clone, not the symlink
+   AGENT-PLAYBOOK section 1b claims, and that is where the phantom stranded work
+   lives.
+
+---
+
+## 2026-08-25 — The stats page was being cancelled, not running slowly
+
+Two separate costs inside one RPC, both of which had to go. Numbers are from
+production (`kuklfnapbkmacvwxktbh`), not from reading the code.
+
+`ca_player_stats_full`, heaviest account (89,401 indexed hands):
+
+|                                  | before        | after            |
+| -------------------------------- | ------------- | ---------------- |
+| fully warm                       | 34 ms         | —                |
+| partly warm                      | 1,315 ms      | —                |
+| **cold**                         | **15,071 ms** | —                |
+| steady state, as `authenticated` | cancelled     | **909–1,302 ms** |
+| immediately after a forward roll | cancelled     | 44–153 ms        |
+
+`authenticated` carries `statement_timeout = 8s`. Past that Postgres does not
+return a slow answer — it cancels. On a cold cache the page did not render at
+all for the heaviest accounts. The 34 ms warm figure is what proves this was
+never CPU and never the analysis SQL, which was already capped at 750 hands.
+
+**Cost 1 — 750 hands cost ~3,730 random page reads.** `hand_history` is 8,700 MB
+over 1,416,541 rows: ~6.4 KB a row, because `players`/`actions`/`winners` are
+JSONB stored INLINE (TOAST is only 100 MB, so almost nothing spilled out of
+line). At that width a page holds about one hand.
+
+**Cost 2 — `ca_hand_player_idx` had never been vacuumed.** `last_vacuum`,
+`last_autovacuum` and `last_autoanalyze` were all NULL on 14,180,471 rows. The
+"lifetime hands" count is an index-only scan, and an index-only scan is only
+index-only where the VISIBILITY MAP says a page is all-visible — nothing but
+VACUUM sets that bit. So every tuple fell back to a heap fetch:
+`Heap Fetches: 17308`, **14,257 ms for a COUNT**. That also explains why the
+source comment claimed "23 ms after VACUUM" while production disagreed by three
+orders of magnitude: the comment was right, the VACUUM had never run.
+
+Fixing either alone would have moved the page from cancelled to still cancelled.
+
+### What landed
+
+- **`ca_hand_player_stat`** — a narrow per-(player,hand) rollup of the ~28
+  scalars the page uses, so the RPC reads ~20 pages instead of 3,730. Retention
+  is each player's most recent 1,000 hands: **584,887 rows across 585 players**,
+  not the 14,180,471 that one row per player per hand would be. Pruned _during_
+  the backfill, not only after — it would otherwise have passed 19m rows.
+- **`ca_hand_player_facts`** — one definition of the math. The builder calls it
+  and so does the RPC, for the tail not yet rolled. A rollup that computes its
+  own VPIP eventually disagrees with the page it feeds, and the disagreement
+  surfaces as a number a player believes.
+- **autovacuum settings on `ca_hand_player_idx`**, copied from `hand_history`,
+  which already carries them for the same append-heavy shape. Scale factors
+  pinned to 0 so the thresholds stay absolute — a default 0.2 on 14m rows means
+  "wait for 2.8 million more", which is how it went unvacuumed indefinitely.
+- **`ca_roll_hand_stats_forward`**, called every 15 minutes from
+  `club-stats-maintenance.js` (World Hub #738). Whatever it has not rolled, the
+  RPC computes live, so the gap since it last ran is directly a term in the
+  page's response time.
+
+Backfill: **1,397,746 hands in 30.8 minutes**, complete to the oldest hand.
+
+### Verified, not assumed
+
+- Parity against the ORIGINAL per-hand math, on live data, before anything was
+  written: 1,138 (hand, player) rows over 400 hands, **zero differences on all
+  fifteen derived facts**.
+- Stored-vs-recomputed, per hand, 400 rows, **zero differences on all fifteen
+  columns** — the check that catches an INSERT column-mapping bug, which no
+  aggregate comparison reliably would.
+- Of a player's 750-hand window, the 6 hands absent from the rollup were exactly
+  the 6 newer than `rolled_ceil`, **0 unexplained**.
+- The 15-minute cron was observed advancing `rolled_ceil` on its own in
+  production after the World Hub deploy.
+
+### Three things that looked right and were not
+
+1. **A faithful generalisation is quadratic.** Keeping the original's four
+   correlated subqueries per player is fine over one hand's ~30 actions and
+   catastrophic over a 2,000-hand chunk's ~9,200: >55 ms/hand, 21 hours for the
+   table. Rewritten as aggregates and hash joins: 1.6 ms/hand, a 34x cut.
+2. **Selecting hands by id list is 60x worse than by time range** — 25.0 ms/hand
+   against 0.4 ms/hand — because the table is physically ordered by `created_at`,
+   so a range is near-sequential while an id list is thousands of independent
+   random fetches of 6.4 KB rows.
+3. **Revoking PUBLIC and anon does not lock a function down in this database.**
+   It carries `ALTER DEFAULT PRIVILEGES ... GRANT EXECUTE ... TO anon,
+authenticated, service_role`, so a new function is born with an EXPLICIT
+   grant to `authenticated` that `REVOKE ... FROM PUBLIC` does not touch. The
+   first version of this work used the repo's usual pattern and left
+   `ca_hand_player_facts` — SECURITY DEFINER, arbitrary time range, one row per
+   player per hand for EVERY player — callable from any logged-in browser.
+   Caught by the Supabase security advisor, **not** by the migration's own
+   assertion, which checked `grantee = 0` and anon only and so could not fail on
+   the one grant that mattered. An assertion that cannot fail is worse than
+   none: it reads as a guarantee. Name `authenticated` explicitly and assert it.
+
+### Open, deliberately not changed
+
+`ca_player_stats_full(p_user, ...)` does not check `auth.uid()`. That is
+pre-existing and appears intentional — `PlayerStatsPage` takes a route param
+(`targetUserId = userId || user?.id`) and `ProfileService.getPublicProfile`
+reads other players, so public player profiles are a product feature. It does
+mean any logged-in user can read any other player's VPIP, PFR and **cash
+profit** by uuid. Flagged for Dan rather than changed unilaterally, since
+tightening it would break that feature.
+
+Shipped as club-arena #848 and World-Hub #738.
+
+## 2026-08-25 — Showdown system: adversarial-review fixes F1-F14 (PR #923)
+
+Fourteen findings from the adversarial review of the showdown polish batch
+(#872), fixed in one PR across both tiers. Merged as 86023ca5 with CI green;
+client tier verified serving a descendant sha in production build-info.json,
+engine landing rides the coalescing catch-up (both deploy runs coalesced at
+805s/1104s uptime; the notice names the sha the catch-up lands).
+
+**Client — EngineStateClient rewritten around one unified inbound FIFO.**
+The prior fix requeued state frames behind pending events, which still let a
+LATER event leapfrog and could starve. Now: every frame joins one inbox in
+arrival order; a state frame with an empty inbox keeps the synchronous fast
+path; the drain applies contiguous state frames and dispatches at most one
+EVENT per macrotask (Task-56 guarantee kept); the hub's per-table EVENT `seq`
+(stamped in TableStateHub, cleaned up on room drop) de-duplicates on the same
+connection; connect/disconnect clear the queue. Pinned end-to-end by 8 specs
+in tests/engine-event-ordering.test.ts (E-before-S, E-after-S, E1/S1/E2,
+dedupe, legacy no-seq, reconnect-clears).
+
+**Server.** Per-pot display shares are penny-repaired per user against the
+credited total after rake scaling (largest entry absorbs the diff — displayed
+cents now always sum to the credit). PerPotAward carries its own
+handDescription so board-2 pot_win groups stop inheriting the board-1
+description. RIT: the discrete showdown event now emits BEFORE rit_result,
+honors the street aggressor for reveal order (spec 2 parity), counts in
+showdownHandsTotal, and Runout's four `startsWith('plo')` checks became
+isOmahaVariant (flo8 was evaluated as hold'em). showdown_cards_revealed
+reveals now carry seat.
+
+**Client presentation.** lowWinnerLabel no longer suppressed on double-board
+hi-lo (a real winner's line was hidden). buildAwardGroups flags engine groups
+`exact` — a zero share renders as a real zero instead of being inflated to
+the player's merged total by the `||` fallback. The HAND_COMPLETE reset hold
+stretches to cover long award sequences (potAwardAnimEndAtRef). The
+SHOWDOWN_CARDS_REVEALED reconciliation resolves seats by user_id (server
+sends -1 defaults) and applies reveal_order for reconnecting clients.
+
+Scheduled task verify-showdown-review-fix-landing independently re-verifies
+both tiers and reports.
+
+## Cowork session 2026-08-23 (18) — THE SCOPE RULE, WRITTEN ONCE
+
+Dan, after the Shark Club / Club JAQK fix: "HOW ELSE CAN THIS IMPROVE? THIS CAN
+NEVER BREAK. ANY TIME THE UNION CREATES NEW TABLES, THEY MUST BE DISPLAYED
+INSIDE THEIR ATTACHED CLUBS RIGHT AWAY."
+
+Fixing the missing clause was the symptom. One sentence — _a union club sees the
+union's games plus its own private ones_ — was written **six times in three
+languages**:
+
+| #    | Where                                            | Form                 |
+| ---- | ------------------------------------------------ | -------------------- |
+| 1, 2 | `get_club_home` tables + tournaments             | SQL                  |
+| 3    | cash-table fetch                                 | PostgREST `.or`      |
+| 4    | tournament fetch                                 | two separate queries |
+| 5, 6 | `belongsInTableList` / `belongsInTournamentList` | JS predicates        |
+
+Copy 2 had drifted. The realtime rules even carried a comment saying they "MUST
+mirror the fetch queries" — which _is_ the disease: a rule six places must
+remember is a rule that drifts, and this one drifted twice.
+
+**Now there are two shapes of one rule, in one file.** `src/utils/clubScope.ts`
+exports `inClubScope` (the predicate realtime judges a live row by) and
+`clubScopeOrExpression` / `applyClubScope` (what the database is filtered with).
+A test walks the **full matrix** of `union_id × club_id × is_private` and holds
+both to the same answer — so "the live list and the fetched list agree" is a
+fact, not a comment. Further tests fail if a seventh copy appears: no
+hand-written union scope may survive in the page.
+
+**Tournaments are now fetched in ONE query, the same shape as tables.** They
+used to be two — the club's private games, plus a conditional union query,
+merged and deduped. That asymmetry is precisely what hid both bugs: the
+tournament path looked different enough that a fix to the table path did not
+obviously apply. It was also the worse failure mode — when the union query
+timed out (which it did repeatedly today) the club query quietly succeeded with
+nothing and every tournament tab emptied.
+
+**And a dropped socket can no longer leave a club stale.** The subscribe
+callback set a flag and logged; nothing re-read the lists. Realtime gives no
+backlog on resubscribe, so every game the union opened while the connection was
+down — and `CHANNEL_ERROR` and `TIMED_OUT` are both handled there, so it does go
+down — stayed invisible until the player happened to reload. It now refetches on
+re-subscribe, with a `firstSubscribe` guard so the initial connect does not
+double-fetch on top of the load already in flight.
+
+Realtime subscriptions were checked and were already correct: dual-channel on
+`club_id` **and** `union_id`, so union rows do arrive live. Without that filter
+the admission rule would never even run.
+
+Two tests were updated in this commit because they pinned the two-query shape
+this deliberately replaces — the list-cap guard (3 → 2 capped queries) and my
+own `variant` assertion from earlier today.
+
+15 new tests. 295 files / 3,638 green.
+
+**Noted, not fixed:** `tests/unit/POYService.test.ts` failed twice in a full
+parallel run and passes in isolation on both this branch and a clean main. That
+is a flake — probably cross-test pollution — and it is worth someone chasing
+before it masks a real failure.
+
+---
+
+## 2026-08-26 — Run It Twice: PokerBros parity pass (offer panel, live consent, per-run pot ships, split pots)
+
+Reference: three screen recordings from Dan (RIT accepted HU, RIT declined,
+RIT multi-way with split pots), watched frame-by-frame. Full behavioral
+contract in `docs/rit-pokerbros-parity.md`.
+
+**Server** (`ServerTableEngineRunout.ts`, `ServerTableEngineBase.ts`,
+`ServerTableEngineHandEvents.ts`, `RunItTwiceEngine.ts`, `handFacts.ts`,
+`types.ts`):
+
+- One shared 25s offer countdown (was: hardcoded 10 on the wire, 10 in the
+  engine, 5/10 on the client — three clocks for one question). `rit_offer`
+  and `rit_chooser_decided` now carry `deadline_ts` + `timeoutSeconds` from
+  the engine config; the wait's safety timeout follows the config.
+- NEW `rit_response_update` broadcast on every accept (live green checkmarks
+  in the consent panel) and NEW `rit_all_accepted` on unanimity (the accept
+  banner). Both named in `RIT_EVENT_TYPES` for telemetry.
+- `dealAndResolveRIT` now collects `determineWinners`' UNMERGED perPotOut
+  per board and publishes it through `currentHandPerPotAwards` /
+  `currentHandWinnersByBoard` with the RUN index as the board axis (types
+  widened 1|2 → number). `pot_win.pot_awards` therefore sequences run 1 →
+  run N, main pot → side pots, splits per winner — the client's existing
+  award-group animation plays them as separate beats. Money math untouched:
+  settlement is byte-identical, display shares are scaled to the net pot.
+- Fixed: WINNERS handler unconditionally wiped `currentHandWinnersByBoard`
+  on the RIT path's empty emit (pre-set per-run labels died a tick before
+  pot_win read them).
+- `rit_result` carries `base_board_count` for the client reveal timeline.
+
+**Client** (`TablePage.tsx`, `RunItTwice.tsx/.css`, `TableModalsLayer.tsx`,
+`showdownPresentation.ts`, `handHistoryShape.ts`):
+
+- `RunItTwicePrompt` rebuilt as the consent panel: board preview with
+  face-down slots for undealt streets, pot, live shared countdown, one row
+  per all-in player (hole cards, equity when broadcast, live checkmark),
+  Decline/Accept pills. Opens for EVERY participant at `rit_offer` —
+  responders can accept before the chooser picks (the engine records it).
+  Accepting keeps the panel open in a waiting state; ANY decline closes it
+  instantly for everyone (`rit_single_run`) with the decliner named.
+- Reveal timeline: `rit_result` no longer slams finished boards onto the
+  felt. Each run deals street by street (flop → turn → river) at the paced
+  runout cadence, run by run; winner ribbons, card highlights and share
+  labels appear only after the last river; the pot ship holds until the
+  timeline ends, then plays board-by-board, pot-by-pot, split fans with
+  per-winner floats.
+- `handHistoryShape` now lifts board 3 as well (`extraBoards`); a 3-run
+  hand no longer loses its third board in replay.
+
+**Tests:** new `server/src/engine/RunItTwice.parity.test.ts` (wire countdown,
+consent broadcasts, per-run unmerged awards, 3-run board axis) + extended
+`tests/hand-history-shape.test.ts` (board-3 lift). `hand-history-shape`
+updated for the new `extraBoards` field in the same commit that adds it.
+
+### Round 2 (same session) — measured timings, felt banners, pot counter, hold fix
+
+Re-cut the recordings at 10fps and timestamped every card land and chip ship
+via inter-frame difference spikes. Then closed the gaps the measurements and a
+line-by-line re-read exposed:
+
+- **CRITICAL: the post-hand hold was shorter than the RIT reveal timeline**
+  (max ~7.9s vs ~12s for a 2-run preflop hand) — the next hand would deal
+  over a board still turning its river. `handCompletionSpec` (both mirrors,
+  byte-identical, test-pinned) gained RIT_REVEAL_LEAD_MS / RIT_STREET_MS /
+  RIT_RUN_GAP_MS / RIT_RIBBON_MS and `handCompletionHoldMs` a
+  `ritRuns`/`ritStreetsPerRun` branch; Dealing passes both from the new
+  `currentHandRitBaseBoardCount`. The client timeline now reads the SAME
+  constants — change them once, both sides move.
+- RIT status is a **felt strip, not a toast** (reference behavior): waiting
+  persists for everyone incl. spectators, outcome banners (decliner named)
+  replace it; the consent panel slides in a beat (~1.5s) after the strip.
+- **POT counter decrements per shipped pot** in any sequenced award — splits,
+  side pots, every RIT board (potShipRemaining override on PotDisplay).
+- Runs 2+ **dim the shared base cards** so re-dealt streets read as new.
+- Cadence retuned to measurements: POT_AWARD_STAGGER_MS 600 → 900, RIT run
+  gap 1500 → 1800.
+- New hold-math pins in tests/unit/handCompletionLaw.test.ts.
+
+### Round 3 — the RUN IT 3X recording (turn all-in, spectator view)
+
+Dan supplied a fourth reference recording (Crazy Pineapple HU turn all-in run
+three times, captured from a folded player's seat). Three behaviors adopted:
+
+- Per-player accept banners on the felt ("<name> Has Accepted Running
+  Multi-Times.", revert to the waiting strip while the offer hangs) — the
+  whole story for spectators, who have no panel. Collective banner suppressed
+  when a named one just fired.
+- Compact partial-re-deal layout: extra-run rows hide the shared-prefix
+  slots (width kept) so re-dealt cards sit under their street positions,
+  like the reference's parked rivers. Preflop keeps full rows.
+- INTERLEAVED winner phase: ribbon + highlights + ship per run, run by run
+  (RIT_RESULT_RUN_MS 2600ms windows; ships aligned to each run's ribbon via
+  ritRunRibbonAtRef). Engine hold formula now
+  reveal + runs x RIT_RESULT_RUN_MS + push — spec mirrors updated
+  byte-identical, handCompletionLaw pins updated in the same commit.
+
+### Round 4 — completeness pass: RIT boards persisted first-class, replay fixed
+
+- **hand_history.rit_boards** (migration 20260826_hand_history_rit_boards,
+  APPLIED to production via Supabase MCP, verified in list_migrations):
+  boards 2..N in run order, JSONB, NULL on single-run hands. Writer:
+  logHandHistory via new engine field currentHandRitExtraBoards. Reader:
+  HandHistoryService.mapHandHistoryRow, column-first with a pseudo-action
+  fallback for pre-column rows. This closes the 2026-08-21 open item ("RIT
+  boards are never persisted ... NEXT STEP: persist the extra board(s)").
+- rit_board_N pseudo-actions are now FILTERED from the mapped action list
+  (they leaked into every replay's action feed as a bogus system entry).
+- HandReplay renders every RIT board as a labeled RUN row from the river
+  step onward. Fixed along the way: replay board cards rendered as
+  Ace-of-Spades placeholders for ALL hand_history rows, because rows store
+  engine card strings ('8spades') and the converter only handled objects.
+- Dead code: RunItTwiceBoard removed (zero call sites, 2-player-only).
+  Correction to the round-1 audit: the uppercase RIT\_\* masterBus cases DO
+  fire (evt.type is uppercased before the switch) — kept.
+- New pins: server handHistory.test (rit_boards written / NULL when
+  single-run), tests/unit/ritBoardsPersistence.test.ts (column-first,
+  fallback order, action filtering, empty on single-run).
+
+### Round 5 — exactness pass (display pennies, mandatory-mode wiring)
+
+- Wiring audit result: the event pipeline is sound — EngineStateClient
+  already gives every EVENT its own macrotask with order preserved (the
+  Task-56 fix), so showdown / rit_result / pot_win bursts cannot coalesce.
+- Per-player PENNY REPAIR on the RIT display awards: each (run, pot, winner)
+  share was rounded independently, so a player's "+N" floats could sum a
+  cent away from what their stack actually rose, and the decrementing pot
+  counter could park at 0.01. Each player's drift now folds into their
+  largest share — display sums equal credited totals to the cent, pinned
+  per-player in RunItTwice.parity.test.ts.
+- run_it_mode is finally reachable from table CREATION: TableSettings type +
+  TableService column mapping + a mode selector in CreateTableModal
+  (Players Choose / Mandatory Twice / Mandatory 3 Times). Previously only
+  TableConfigPage could set it, so a table created from the modal could
+  never be mandatory — the exact dead-wiring shape FIX-D1 fixed for the
+  other creation settings.
+
+### Round 6 — house palette only, and RIT published to ALL formats (Dan 2026-08-26)
+
+- Every RIT surface added in this work now uses the smarter.poker scheme
+  exclusively (panel gradient #1c2128→#161b22, borders rgba(255,255,255,.15),
+  text #e4e6eb/#8b949e, gold #ffb800, accept green #3fb950 gradient,
+  translucent decline — matching the existing prompt/insurance modals). The
+  slate/amber/orange hexes my consent panel, felt strip and replay badge
+  introduced are gone.
+- THE TOURNAMENT GATE IS LIFTED: RIT now runs on cash, MTTs, Spins and
+  heads-up SNGs. The 2026-08-18 gate existed because fractional per-board
+  splits destroyed INTEGER tournament chips (hand 41627f9a). That failure
+  mode is now impossible: dealAndResolveRIT's tournament branch floors every
+  credited total to whole chips and deals the odd chips clockwise from the
+  dealer (distributePot's own convention); display shares are integerized
+  the same way, so every "+N" float and run label is a whole number.
+  Tournament run labels and the consent panel drop the "$" mark.
+- Pins: tournament offer fires; 2-run and 3-run tournament settlements
+  credit whole chips only, conserve the pot exactly, and display whole
+  chips (multiple randomized trials); source pin that Base's enable formula
+  no longer references tournaments.
+
+### Round 6b — CORRECTION: RIT is CASH-ONLY (Dan, same day)
+
+Dan's ruling, verbatim: "run it twice or 3 times is a cash game only area.
+it should never be in MTT, SPINS OR HEADS UP." The tournament gate lifted
+earlier this round is REINSTATED within the hour:
+
+- Base's enable formula refuses tournaments again (ritIsTournament),
+  documented as a product decision, not merely a numeric limitation.
+- The integer odd-chip tournament branch in dealAndResolveRIT STAYS as
+  defense in depth: unreachable while the gate holds, but if the gate ever
+  regresses it makes the 41627f9a chip-destruction impossible rather than
+  merely unlikely. Its test now drives the resolver directly and says so.
+- Test pins flipped: a tournament all-in gets NO rit_offer and NO
+  rit_mandatory; source pin asserts the gate exists and carries the ruling.
+- Kept from round 6: the house-palette-only restyle of every RIT surface,
+  and the no-currency-mark guards (harmless, and correct if a tournament
+  surface ever renders these labels).
+
+### Round 6c — First Letter Of Every Word, on every RIT display (Dan)
+
+Dan: "MAKE SURE ON ALL DISPLAYS THE FIRST LETTER OF EVERY WORD IS
+CAPITALIZED ... or any other forward facing announcements." The Toast layer
+has enforced this centrally since 2026-08-20 (popupStyle), but the RIT
+surfaces bypass it. All of them now route through the SAME transform:
+
+- The felt status strip: applied at the showRitFeltBanner choke point, so
+  waiting / accepted / declined / mandatory banners are all covered, with
+  player names keeping their interior capitals.
+- The consent panel message and waiting label.
+- Winner ribbons on the board (CommunityCards): the evaluator's data-level
+  names stay untouched ("Three of a Kind"); the SCREEN says "Three Of A
+  Kind" — name, description line, and low-winner line alike. This applies to
+  every showdown platform-wide, exactly as the rule reads.
+- The multi-board run headers ("Name • Two Pair (Chop)").
+- New pins in tests/unit/ritTitleCaseDisplays.test.tsx: rendered ribbon
+  case, panel message case with name capitals preserved, the banner choke
+  point, and the transform's name-preserving behavior.
+
+## 2026-08-27 — Phase-2 platform audit: reconciler refit + grant hardening (cowork-mobile)
+
+Full write-up: `.agent/audits/2026-08-27-phase2-platform-audit-reconciler-and-grants.md`
+
+- reconcile_ledger_nightly no longer reconciles the FROZEN public.wallets pool
+  per-wallet (3,449 phantom criticals in 7 days, drowning the real alerts). A
+  freeze-invariant baseline (ca_frozen_pool_baseline, 732,591,994.33) replaces
+  it: one row per run, critical only if the dead pool MOVES. Applied to
+  production via Supabase MCP; repo files are pointer stubs because the local
+  tool gate blocked writing the SQL bodies to disk (statements verbatim in
+  supabase_migrations.schema_migrations).
+- ledger_reconcile_log.entity_id nullable (pool-level rows carry no entity).
+- anon/authenticated write grants on trivia_tournaments revoked;
+  v_spin_tier_availability flipped to security_invoker;
+  trivia_tournaments_public documented as a deliberate DEFINER exception.
+- OPEN for Dan: seat exit #15448 (55 chips uncredited, direct postgres-role
+  seat write, NOT player_leave_table) — returning chips is a financial call;
+  and the 94-stuck-PRs triage (issue #375) — scope call.
+
+## 2026-08-27 — Phase-3 sweep: eleven more reads off the frozen chip pool (cowork-mobile)
+
+Full write-up: `.agent/audits/2026-08-27-phase3-frozen-pool-reads-swept.md`
+
+CLAUDE.md 11.5 says of `public.wallets`: "nothing reads it". Eleven sites did.
+The pool has taken no write since 2026-08-21 and holds 732,581,244.32 chips
+against a live economy of 121,018,710.03 — so the reads did not render zeros
+(which the deprecated-table gate would have caught), they rendered six-day-old
+plausible numbers. One sampled player read 3,313,727.73 against a true
+34,818.60.
+
+- Repointed to the live pools (`club_members.chip_balance` / `.promo_balance` /
+  `.locked_chips`, `agents.agent_wallet_balance`): `WalletService.getBalances`
+  (feeds `useCanAfford` and "Playable Now"), `ChipTransferModal` recipient
+  balances, four `ChipFlowService` sites including `auditTotals`, and the
+  SettingsPage data export.
+- `readPlayerBalance` no longer falls back to the frozen pool — it answers null
+  ("unknown"), which callers already fail open on.
+- `ensureWalletsExist` retired: it was provisioning rows in the dead pool.
+- `TablePage` bust-rebuy no longer collapses an unknown balance into 0.
+- `auditTotals` paging is now ordered (unordered `.range()` can double-count or
+  skip rows in a function that sums chips).
+- GUARDS: `wallets` added to the CI deprecated-table gate (proven to exit 1 on
+  a reintroduced read) and to the DB `deprecated_tables` registry; new
+  `tests/unit/BalancesComeFromTheLivePool.test.ts` (mutation-tested).
+- Verified healthy, not touched: `blacklists` and `messages` (both have live
+  writers), config/reference tables, no skipped-spec stubs.
+- OPEN: `union_clubs` at 6,590,684 reads on a 2-row table (hot-path re-query,
+  own task); seat exit #15448; the SECURITY DEFINER function backlog.
+
+### Addendum, same day — the reconciler was rolling back every run
+
+Verifying phase 2 end-to-end found `ledger_reconcile_log` EMPTY for 2026-08-27:
+`ledger_reconcile_log_entity_type_check` allowed 5 entity_type values while
+`reconcile_ledger_nightly` emits 9. The `frozen_wallets_pool` row added that
+morning is an INSERT..VALUES, so it broke the job immediately (my regression).
+The cashier audit's `cashout_escrow_stuck` / `negative_balance` /
+`over_claimed_send` are INSERT..SELECT and were latent - they would have
+detonated on the first night a real money fault existed. Both fixed by
+migration `reconcile_log_entity_type_check_covers_every_emitted_kind`.
+
+Proven end to end: the run now returns 8 rows / 4 criticals (was 588 / 575),
+and the frozen-pool invariant reads drift 0.00. The 4 surviving criticals are
+REAL and are for Dan: Club JAQK treasury -78,057.05, SHARK CLUB treasury
+-32,320.73, Midway Union treasury negative at -1,202.80, and seat exit #15448
+(55 chips).
+
+## 2026-08-27 — Phase-4 sweep: the loaded gun the last audit left behind (cowork-mobile)
+
+Full write-up: `.agent/audits/2026-08-27-phase4-unknown-is-not-zero.md`
+
+Swept the three bug CLASSES from phases 2-3 rather than hunting instances, and
+control-tested every detector before believing its result.
+
+- CONSTRAINT-vs-WRITER drift (class B): swept DB functions (9 call sites of
+  log_wallet_transaction, all permitted) and the World Hub API (19 real literal
+  writes inspected, 0 violations). `ledger_reconcile_log` was the only
+  instance and is already fixed. Noted honestly: the CA-client run of this
+  detector returned an EMPTY that a control test proved worthless.
+- UNKNOWN-collapsed-to-ZERO (class C): the 2026-08-25 audit fixed one call site
+  and left `WalletService.getPlayerBalance`, whose body was `r.balance ?? 0`.
+  Five sites still used it - including `useGlobalBalanceSync` (blanked the
+  GLOBAL chip figure app-wide on one refused read) and `ChipTransferModal`
+  (blocked an agent from sending chips they held). All five now guard on null
+  and keep the last known good value; the helper is deleted.
+- New pin `tests/unit/UnknownBalanceIsNotZero.test.ts` (mutation-tested).
+
+Verified: tsc clean, 7,331/7,331 tests, deprecated-table gate green.
+
+## 2026-08-27 — Phase-5: no ceiling on people; the flaky suite fixed (cowork-mobile)
+
+Full write-up: `.agent/audits/2026-08-27-phase5-no-ceiling-on-people.md`
+
+Dan: "there should never be a cap on the amount of players in the club, union
+or anywhere else." Correction first: none of these were caps on PLAYERS - they
+were page sizes on background reads. But each treated its slice as the whole
+room, so the effect was the same once the room outgrew them.
+
+- HorseSessionRotator: `.limit(400)` UNORDERED, with 348 live seats measured
+  that day (87% of it). Now pages the whole room, ordered.
+- horseLoadMap (both halves) and the same-tournament entrant guard: three
+  `.limit(20000)` ceilings removed; all page. A truncated entrant list is how a
+  horse gets registered into the same tournament twice.
+- Waitlist: took the oldest TEN and looked for a human among them - a
+  horse-heavy head notified nobody while humans waited behind. Now walks the
+  queue. Kept as two queries on purpose: `table_waitlist.user_id` has FKs to
+  BOTH profiles and auth.users, so an embedded filter is ambiguous and a 400
+  would silence every seat offer.
+- FLAKY SUITE FIXED: full runs failed 2, then 4, then 5 specs across different
+  files while each passed alone. Two CPU-bound describes were spending ~8.5s of
+  the 10s default, and EngineStartResilience left three collaborators unstubbed
+  against its own docstring. Proven pre-existing by reproducing on main with
+  these changes stashed. Now: two consecutive full runs, 1,941/1,941.
+
+Reported not changed: 31 further row ceilings on people-tables, of which ~8 are
+complete-set operations (StatsExport, AgentPromoPanel, member lists) that need
+the same treatment in their own pass.
+
+## 2026-08-27 — Phase-6: complete-set reads no longer truncate (cowork-mobile)
+
+Full write-up: `.agent/audits/2026-08-27-phase6-complete-set-reads.md`
+
+New tested helper `src/utils/fetchAllRows.ts` pages a query until the server
+returns a short page, and rejects on a failed page rather than returning a
+partial set.
+
+- LIVE BUG FIXED: ClubDetailPage's member list capped at 500 while SHARK CLUB
+  had 590 members and Club JAQK 584 - 90 and 84 members were missing from their
+  own club's list. It was ordered by created_at, so the invisible ones were
+  always the newest joiners.
+- Also paged (latent): StatsExport roster (5000), AgentAssignmentPanel (2000),
+  AgentPromoPanel (1000), TournamentResults myEntries (5000), and the
+  union-clubs lookup in server/src/handlers/admin.ts (100) - which is an
+  AUTHORIZATION path where truncation denies a legitimate union admin.
+- NOT removed on purpose: StatsExport.fetchOwnHands keeps its 200-table scope.
+  Every id rides in the next request's URL and ~1000 uuids is a 37 KB URL that
+  servers answer 414, so paging it would break the export. The silence was the
+  bug: the limit is now a named constant, the clip is detected, and the user is
+  told the file is scoped instead of getting a row count that reads complete.
+
+Guard: tests/unit/CompleteSetReadsDoNotTruncate.test.ts (13 specs,
+mutation-tested) plus tests/unit/fetchAllRows.test.ts (8 specs).
+Verified: client 7,422/7,422, server 1,967/1,967, both tsc clean.
+
+## 2026-08-27 — Two mobile felt bugs from Dan (cowork-mobile)
+
+1. "Sometimes cards dim like you folded, even though you are live in a hand.
+   That should never happen while you still have a hand."
+
+   The dim is `winnerDisplayActive`, which darkens every face-up card outside
+   the winning five. Its ONLY fence was a reset at hand start - and a reset
+   cannot fence an out-of-order event. A POT_WIN belonging to hand N arriving
+   after hand N+1 had started merged into the fresh hand and dimmed the hero's
+   brand-new hole cards. The merge comment claimed "the hand-start resets fence
+   the union to the current hand", which is true only while events arrive in
+   order.
+
+   winnerInfo now carries the hand number it belongs to, enforced at BOTH ends:
+   the merge drops a payload that is not for the live hand (fenced ABOVE the
+   derived maps, so a stale display's hole-card indices and amounts are not
+   carried forward), and the render refuses to dim for winners stamped with a
+   different hand. The legitimate showdown dim is untouched - the existing
+   pokerbrosWinnerPresentation pin was updated in the same commit to require
+   both the dim and its new fence.
+
+2. "There are bugs in the pre action buttons, they don't work and function all
+   the time, and sometimes stay engaged on future streets."
+
+   Both halves were single-shot calls. `setPreAction` resolves
+   { success: false } rather than throwing, including for a FULL 30 SECONDS
+   while GameServerAPI's circuit breaker is open, so an attempt inside that
+   window simply lost and the player was told to play it manually.
+
+   The clear direction is the one that costs a hand: the ENGINE disposes
+   pre-actions only at hand end while the CLIENT clears every street, so a
+   failed clear left the engine armed and the bar dark - the player saw nothing
+   engaged and the engine acted for them on a later street. Both directions now
+   retry (3 bounded attempts), and a failed clear puts the armed control BACK
+   on screen so the player can see and cancel what the engine is still holding.
+
+Guard: tests/unit/LiveHandNeverDimsAndPreActionsLand.test.ts (9 specs,
+mutation-tested - and strengthened after a first mutation slipped past a pin
+that only required one of the two restore paths).
+Verified: client 7,516/7,516, server 1,991/1,991, both tsc clean, ui-text gate
+green.
+
+### Same day, deeper pass — the action bar reappearing for a split second
+
+Dan: "you make an action (check, call, raise or fold), the action happens, but
+then the action bar reappears for a split second."
+
+Root cause, and it is a race, not a rendering quirk. The bar renders on
+`currentPlayerSeat === heroSeat`. Acting optimistically sets that to 0, so it
+hides immediately - correct. But the engine snapshot merge then applied
+`currentPlayerSeat: mapped.currentPlayerSeat` UNCONDITIONALLY, and a snapshot
+generated BEFORE the server processed the action still names the hero as the
+actor. It lands a beat later, hands the turn back, the bar returns; the next
+snapshot moves the action on and it vanishes again. One flash per action, for
+as long as the round trip takes.
+
+Fixed with a narrow fence (heroActedFenceRef): while it is live for THIS hand
+and THIS seat, a snapshot may not hand the turn back to the seat that just
+acted. It releases on every other outcome so it can never outlive its purpose -
+the engine naming a different actor is the success signal, a new hand
+invalidates it, a rejected action clears it, and a 1.5s bound covers the case
+where none of those arrive. The same file already guards two fields this way
+(boardStage never goes backwards, a bet is held through its collect), so this
+is the established shape here.
+
+SECOND DEFECT FOUND IN THE SAME PATH: revert() restored lastActions,
+lastBetAmounts and player status but NOT `currentPlayerSeat`, which the
+optimistic update had zeroed. So a REJECTED fold or call left the hero still on
+the clock with NO ACTION BAR, unable to do anything until the next snapshot
+happened to arrive. It now clears the fence and gives the turn back.
+
+Checked and found correct, not changed: the PreActionBar requires
+`currentPlayerSeat > 0`, so it does not appear during the fence window either -
+the fence reuses the quiet state the code already relies on to stop the two
+bars flickering against each other.
+
+Guard: 7 more specs in LiveHandNeverDimsAndPreActionsLand.test.ts (16 total),
+mutation-tested. Verified: client 7,523/7,523, server 1,991/1,991, tsc clean
+both sides, ui-text gate green.
+
+## Change #146 — Table Studio Never Edits Unknown Or Stale Customization State
+
+**File:** `src/components/table/ThemeSettingsModal.tsx`, `src/components/table/ThemeSettingsModal.css`, `src/lib/persistInterfaceTheme.ts`
+**Lines:** Before: modal component 585-1326, saved-theme read 718-775, asset writer 857-895, interface selector 1054-1063, VIP prompt 1297-1324
+**What existed:** The picker displayed writable defaults while the saved row was still loading or had failed, briefly marked purchased card backs as VIP-locked before ownership resolved, kept an open editor stale after another surface changed the same bucket, applied light/dark mode only to local Zustand state, and treated the VIP prompt as part of the parent focus trap.
+**What changed:** Added explicit loading/error/retry state with mutation locks, ownership verification state, exact-account/exact-bucket `UI_THEME_CHANGED` synchronization, ordered profile persistence with rollback for interface mode, a truthful device-only loadout note, and an independently labelled/focus-trapped VIP dialog. Guest sessions now reset to defaults instead of inheriting a prior account's in-memory selection.
+**Why:** A customization control must never overwrite a row it failed to read or claim an unsaved value is equipped. The live editor and live felt must consume the same discrete customization event.
+**Verified:** YES — re-read after formatting; component tests cover loading, ownership success/failure, dialog keyboard flow, mode rollback, and live editor synchronization.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #147 — All Ten Controls Designs Reach Real Mobile Action Buttons
+
+**File:** `src/components/table/ControlThemeTokens.css`, `src/components/table/ActionPanel.css`, `src/components/table/TableStudioGameplayPreview.tsx`, `src/components/table/TableStudioGameplayPreview.css`, `src/components/table/ThemeSettingsModal.tsx`, `src/components/table/ThemeSettingsModal.css`, `src/pages/TablePage.tsx`, `src/pages/TablePage.css`
+**Lines:** Before: TablePage.css 834-937 held dealer-only tokens; ActionPanel.css 473-552 ignored the selected design; the studio preview action row 185-201 used one generic finish
+**What existed:** The ten items labelled "Button" changed only the dealer marker. Fold, Check/Call, and Raise looked identical across all ten choices, and previews opened from non-table routes depended on a stylesheet that might not be loaded.
+**What changed:** Renamed the surface "Controls", extracted a shared route-safe token sheet, gave every design a distinct material/edge/radius/type treatment, wired those tokens into production ActionPanel and both studio previews, and retained the approved red/blue/green semantic action palette.
+**Why:** The user requested ten actual button/control designs that work mobile-first in previews and real gameplay, not ten dealer-puck aliases.
+**Verified:** YES — Chromium at 390x844 produced ten unique computed-style fingerprints, preserved Fold/Check/Raise semantic colors, and had no horizontal overflow.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #148 — Failed Card-Back And Cross-Device Mode Writes Stay Honest
+
+**File:** `src/pages/SettingsPage.tsx`, `src/lib/settingsBridge.ts`, `src/stores/useSettingsStore.ts`, `src/core/MasterBus.ts`
+**Lines:** Before: SettingsPage save path 533-628, settings store mode writer 29-40, MasterBus theme handler 1475-1494
+**What existed:** SettingsPage announced unconditional success and persisted the requested card back into local/profile settings even when the canonical appearance write failed. Its rollback read a ref after the optimistic table-store update, allowing the "previous" value to become the same failed value. Table Studio mode changes did not update the full Settings-page cache, and remote profile mode events repainted the DOM while leaving that cache stale.
+**What changed:** Captured the durable card back before optimistic mutation, rolls failed writes back across UI/local/profile state, reports partial failure explicitly, mirrors local mode changes into the full settings cache, and mirrors discrete cross-device `UI_THEME_CHANGED` events there before notifying mounted settings consumers.
+**Why:** No picker may claim a design saved when the durable writer rejected it, and a stale cache must not overwrite a valid realtime account preference later.
+**Verified:** YES — rollback, local-cache preservation, account isolation, and cross-device mode propagation are pinned by unit/integration tests.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #149 — Customization Wiring Regression Gate
+
+**File:** `tests/unit/ThemeSettingsModalHardening.test.tsx`, `tests/unit/persistInterfaceTheme.test.ts`, `tests/unit/SettingsPageBridge.test.ts`, `tests/unit/useSettingsStore.test.ts`, `tests/unit/liveCustomizationBus.test.ts`, `tests/unit/visualCustomizationContracts.test.ts`, `tests/config/tableAppearanceModesAndMobileBackgrounds.test.ts`, `tests/e2e/customization-controls.spec.ts`
+**Lines:** New coverage plus updated contracts for the implemented persistence path
+**What existed:** Catalog-count and static CSS checks existed, but no browser proof that ten control choices rendered distinctly on a phone, and no component-level hostile-state coverage for delayed/failed reads, ownership, mode rollback, or an already-open editor receiving a live event.
+**What changed:** Added behavior-level component, ordered-writer, cache, live-bus, rollback, shared-token, and mobile Chromium contracts.
+**Why:** Static inventory counts cannot prove a user tap reaches the live table or remains durable under delayed and failed requests.
+**Verified:** YES — 498 test files / 7,860 tests pass; focused mobile Playwright 1/1; production build passes; ESLint reports 0 errors (711 pre-existing warnings).
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #150 — Cashier Claim Back Moves Whole Cents Only
+
+**File:** `supabase/migrations/20260830235990_cashier_claim_back_cent_integrity.sql`, `src/pages/CashierTradePage.tsx`
+**Lines:** Before: final claim-back body from `20260826_cashier_send_out_and_claim_back_audit_fixes.sql` 337-523; client claim call near 1450
+**What existed:** The claim RPC accepted arbitrary numeric precision, credited a four-decimal agent wallet and debited a two-decimal player wallet, and accepted an operation-ID replay without binding it to the same source send. The client echoed the server's potentially contaminated fractional remainder.
+**What changed:** Explicit sub-cent values are refused before any wallet read, null claims the maximum safe whole-cent remainder, historical residue rounds down, retries serialize and bind to source plus explicit amount, and the client renders the server-returned amount.
+**Why:** A repeated `0.0049` claim could credit the agent while the player debit rounded to zero. Money movement must conserve the same unit on both sides and a retry key must describe one immutable intent.
+**Verified:** YES — re-read after editing; production migration assertions passed; six transaction-isolated production behavior probes passed and rolled back.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #151 — The First Cashier Load Cannot Invalidate Itself
+
+**File:** `src/pages/CashierTradePage.tsx`, `tests/cashier-club-load-order.test.tsx`
+**Lines:** Before: separate load effect 727-729 and later reset effect 777-820
+**What existed:** React started the club load and then the later reset effect incremented its version. The load's success and finally paths both treated themselves as stale, so the Trade tab could remain on `Loading Members...` forever.
+**What changed:** Club reset and load now share one ordered effect: invalidate prior work, clear club-scoped state, then start the new request.
+**Why:** Request invalidation must target the club being left, never the request for the club being entered.
+**Verified:** YES — a rendered regression test holds the membership response in flight, releases it, observes the roster, and confirms Trade remains the selected first tab.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #152 — Browser Balance Guards Survive A Clean Replay
+
+**File:** `supabase/migrations/20260830235990_cashier_claim_back_cent_integrity.sql`, `scripts/verification-harness/cashier-claim-back-cent-integrity.sql`
+**Lines:** Before: `20260827g_close_browser_chip_mint.sql` ended in `SELECT 1`
+**What existed:** Three live protection triggers existed only as a production hotfix; the tracked historical migration described them but did not recreate them.
+**What changed:** The invoker-rights update/insert guards and all three triggers are installed idempotently, asserted inside the migration, and exercised by a reusable rolled-back production probe.
+**Why:** Disaster recovery and fresh environments must preserve the same chip-mint boundary as production.
+**Verified:** YES — all three trigger definitions are live and an authenticated own-wallet update returned the expected insufficient-privilege refusal inside a rolled-back transaction.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #153 — One Server-Owned UTC Clock For Every Leaderboard Period
+
+**File:** `supabase/migrations/20260831000500_leaderboard_canonical_period_windows.sql`, `src/services/LeaderboardService.ts`, `src/pages/LeaderboardPage.tsx`
+**What existed:** Current rankings used rolling 1/7/30-day database windows while historical rankings and payout lookups rebuilt calendar dates in each browser's local timezone. The same weekly board could therefore mean different dates to rankings, prize metadata, and players in different timezones. Historical rank responses also assumed a single JSON object even when PostgREST returned a table row array.
+**What changed:** Added one authenticated, read-only UTC period-window RPC with Sunday-start weeks and start-inclusive/end-exclusive boundaries; current club, global, and union rankings now consume that boundary while retaining tied ranks, active-player totals, BB/100, pagination, and rank movement. Historical rankings, personal ranks, and payout metadata request the same server window, and rank response normalization accepts both PostgREST shapes.
+**Why:** Rankings, published prize rules, and future settlement must share an immutable period identity before versioned reward programs can be safe.
+**Verified:** Transactional production dry run compiled and executed all three ranking functions and asserted UTC rollover, Sunday weeks, and leap-year months. Targeted service and migration contracts pass; full regression/build results are recorded by the phase release.
+**Money movement:** NONE — this phase exposes date boundaries and reads cumulative stats only.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #154 — Cashier Rows Are Visible Only To Their Authorized Scope
+
+**File:** `supabase/migrations/20260831235990_cashier_authorization_and_audit_contracts.sql`
+**What existed:** Clean migration replay recreated legacy policies that exposed all club member and agent rows to every member. The live ticket table also retained a duplicate policy that let any cashier-role member read every ticket, including unrelated agents' downlines.
+**What changed:** Legacy aliases are dropped unconditionally. Member and agent reads are rebuilt as self, owner/admin, owned-union overseer, or server-authorized downline scope. Ticket reads are issuer, holder, or full club-cashier scope only. Anonymous agent and ticket table reads are revoked.
+**Why:** Direct REST reads must enforce the same role and downline boundaries as the cashier RPCs, and disaster recovery must reproduce production authorization.
+**Verified:** YES — migration compiled in a rolled-back production transaction; authenticated player probes could not read other roster rows, unrelated agent rows, or an unrelated ticket.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #155 — Every Cashier Money Intent Must Carry A Retry Key
+
+**File:** `supabase/migrations/20260831235990_cashier_authorization_and_audit_contracts.sql`
+**What existed:** Agent send, claim back, and ticket issue generated a fresh key when direct or older callers omitted one. A committed request whose response was lost could be retried as a second movement.
+**What changed:** Proven money bodies are retained behind non-callable cores. Public RPC wrappers preserve their PostgREST signatures but refuse a missing caller-owned operation/idempotency key before any balance row is touched.
+**Why:** Idempotency is an RPC contract, not an optional UI convention.
+**Verified:** YES — all three null-key calls returned their exact refusal in a rolled-back authenticated production probe; authenticated cannot execute any core directly.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #156 — Ticket Escrow Closing Legs Have Distinct Linked Receipts
+
+**File:** `supabase/migrations/20260831235990_cashier_authorization_and_audit_contracts.sql`, `scripts/verification-harness/cashier-phase2-authorization-audit.sql`
+**What existed:** Cancellation and redemption both wrote generic `peer_transfer` rows with no ticket id. A ledger consumer could not join the escrow release to its ticket or distinguish refund from redemption.
+**What changed:** Cancellation writes `tournament_ticket_cancel`; redemption writes `tournament_ticket_redeem`; both store ticket, issuer, holder, escrow action, and the credited balance in metadata. Partial unique indexes permit one closing receipt per ticket, and retries replay that receipt instead of crediting again.
+**Why:** Every escrow debit and closing credit needs an immutable, joinable audit contract.
+**Verified:** YES — cancel/redeem and their retries passed; each produced exactly one ticket-linked receipt and credited exactly one cent in a rolled-back production transaction.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #157 — Closed Leaderboard Periods Stay Closed And Reproducible
+
+**File:** `supabase/migrations/20260831002500_leaderboard_historical_period_contract.sql`, `src/services/LeaderboardService.ts`, `tests/unit/LeaderboardService.test.ts`, `tests/unit/leaderboardHistoricalPeriodContract.test.ts`
+**What existed:** Production had corrected historical club/global ranking and JSON personal-rank function bodies that were absent from migration history, so a clean replay restored an older personal-rank function that selected a nonexistent `score` column and broke tied ranks. The live date-range functions also used mutable totals when an exclusive period end equalled today, anonymous callers inherited execution on four `SECURITY DEFINER` readers, and strict page loads could silently replace failed period/server aggregates with all-time or known-truncated fallback rows.
+**What changed:** Recorded the complete historical ranking contract in a new forward-only migration, made every close-date decision explicitly UTC and end-exclusive, preserved tied ranks/active totals/pagination/movement/qualification, converged personal rank onto the JSON shape consumed by PostgREST, revoked anonymous execution, and made strict leaderboard and tournament reads fail closed rather than relabel fallback data.
+**Why:** A Sunday/month/day boundary cannot include play after its 00:00 UTC close, disaster recovery must rebuild the same functions production runs, and an error state is safer than a convincing board calculated from the wrong population or period.
+**Verified:** Targeted migration/service contracts cover UTC close semantics, function reproduction, personal-rank shape, tied ranks, privilege closure, and strict no-fallback behavior. Production dry run, full gates, deployment and live route re-verification are recorded by the Phase 1 release audit.
+**Money movement:** NONE — definitions, read privileges and client error handling only.
+
+## Change #158 — Cashier Roster Paints Progressively With A Stable Cursor
+
+**File:** `supabase/migrations/20260831235991_cashier_roster_ledger_batch_performance.sql`, `src/pages/CashierTradePage.tsx`
+**What existed:** The browser repeatedly OFFSET-paged the full recursive roster and withheld every row until the final request returned.
+**What changed:** A bounded role-rank/user-id keyset RPC and club/agent covering index now back progressive first-page publication. Continuation failure preserves the usable authorized page and exposes an explicit full-roster retry.
+**Why:** A large club must become usable after its first authoritative page, without repeated offset walks or an all-or-nothing loading screen.
+**Verified:** YES — rendered deferred-page regression and rollback-isolated production keyset overlap probe pass.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #159 — Cashier Batches Use One Bounded Server Round Trip
+
+**File:** `supabase/migrations/20260831235991_cashier_roster_ledger_batch_performance.sql`, `src/pages/CashierTradePage.tsx`
+**What existed:** Six browser lanes made one RPC per recipient while every request contended on the same club wallet hierarchy lock; long actions had no progress and emitted one monitoring event per failed target.
+**What changed:** The browser submits chunks of at most 25 to one server RPC. Each item retains its mandatory retry key and isolated result, the modal announces progress, and failures are aggregated into one diagnostic while remaining individually visible.
+**Why:** Batch throughput must reduce network and lock churn without weakening replay safety or hiding partial failure.
+**Verified:** YES — send and ticket batches execute, replay, and move exact balances only once in a rolled-back production transaction; focused UI contracts pass.
+**TypeScript:** PASS — `npx tsc --noEmit`.
+
+## Change #160 — Club Ledger Party Queries Have Covering Indexes
+
+**File:** `supabase/migrations/20260831235991_cashier_roster_ledger_batch_performance.sql`
+**What existed:** Ledger history filtered by club plus sender/recipient, but the available party indexes omitted club and forced avoidable heap/filter work across the full immutable ledger.
+**What changed:** Concurrent club/from/created and club/to/created covering indexes serve both directions without blocking live chip writes during construction.
+**Why:** Cashier history latency should scale with one club and one wallet, not the global ledger.
+**Verified:** YES — both ledger indexes and the roster index are live, ready, and valid in production.
+**TypeScript:** PASS — no runtime TypeScript surface.

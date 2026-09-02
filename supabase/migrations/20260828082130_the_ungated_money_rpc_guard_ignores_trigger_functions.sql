@@ -1,0 +1,19 @@
+-- THE UNGATED-MONEY-RPC GUARD IGNORES TRIGGER FUNCTIONS.
+--
+-- The guard's first run reported four: fn_log_jackpot_hand_deleted,
+-- fn_log_jackpot_payout_without_hand, trg_spin_completed_guard and
+-- trg_tournaments_guarantee_affordable. All four RETURN trigger. PostgREST
+-- cannot usefully invoke a trigger function over the API, and a trigger body
+-- has no caller to authorize - it runs as part of the statement that fired it.
+-- They are not reachable and not ungated; they are noise.
+--
+-- Noise is the whole failure mode this guard exists to avoid. A check that
+-- always shows four false positives is a check nobody reads - exactly how the
+-- union law self-test ended up crying wolf nightly, and how 3,753 alerts piled
+-- up in a queue. The predicate now excludes RETURNS trigger, so it reports zero
+-- today and any future row is real signal.
+--
+-- The final body of fn_ungated_money_rpcs, including this exclusion, is in
+-- 20260828082057_close_the_anonymous_role_oracles.sql. This file records why
+-- the exclusion is there so nobody removes it as "too permissive".
+SELECT 1;

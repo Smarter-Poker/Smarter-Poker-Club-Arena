@@ -14,11 +14,11 @@
  * cheapest possible guard against shipping a blank page again.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react';
 
 // ── Network and platform boundaries ──────────────────────────────────────────
 
-/** Exactly what ca_player_stats_full returns for an account with NO hands. */
+/** Exactly what ca_player_stats_overview_v2 returns for an account with NO hands. */
 const EMPTY_OVERALL = {
   pfr: 0,
   vpip: 0,
@@ -61,11 +61,19 @@ const EMPTY_TOURNAMENTS = {
 };
 
 let rpcPayload: Record<string, unknown> = {};
+let routeUserId: string | undefined;
+const rpcMock = vi.hoisted(() => vi.fn());
+const toastApi = vi.hoisted(() => ({
+  show: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+}));
 
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
-    rpc: vi.fn(async (fn: string) => {
-      if (fn === 'ca_player_stats_full') return { data: rpcPayload, error: null };
+    rpc: rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_player_stats_overview_v2') return { data: rpcPayload, error: null };
       return { data: null, error: null };
     }),
     from: vi.fn(() => {
@@ -97,9 +105,22 @@ vi.mock('../../src/hooks/useAuthUser', () => ({
   }),
 }));
 
+/**
+ * Dan 2026-08-25: this page now renders ClubBottomNav (the footer belongs on
+ * every page the footer can reach), which uses `useLocation` and `Link`. A mock
+ * that stops at useParams/useNavigate made the whole page throw
+ * "No useLocation export is defined on the react-router-dom mock" - which reads
+ * as a broken stats page and is really a stale mock. Anything this page renders
+ * transitively has to be answerable here.
+ */
 vi.mock('react-router-dom', () => ({
-  useParams: () => ({}),
+  useParams: () => (routeUserId ? { userId: routeUserId } : {}),
   useNavigate: () => vi.fn(),
+  useLocation: () => ({ pathname: '/stats', search: '', hash: '', state: null, key: 'test' }),
+  // JSX (automatic runtime) rather than React.createElement: a vi.mock factory
+  // is hoisted above the imports, so referencing an imported React binding
+  // inside it would blow up before initialisation.
+  Link: ({ to, children }: { to: string; children?: unknown }) => <a href={to}>{children}</a>,
 }));
 
 vi.mock('../../src/services/AgentRakeService', () => ({
@@ -138,17 +159,60 @@ vi.mock('../../src/services/StatsFactsService', () => {
     }),
     getDistribution: vi.fn().mockResolvedValue([]),
   };
+  // POLISH 1 (2026-08-30): the page reads its own weighted rake. Mocked here
+  // so the mock cannot lag the service it stands in for.
+  (svc as Record<string, unknown>).getRakeStats = vi.fn().mockResolvedValue({
+    hands: 0,
+    raked_hands: 0,
+    rake_paid: 0,
+    rake_per_100: 0,
+    rake_in_bb: 0,
+    bb_per_100: 0,
+    avg_rake_per_raked_hand: 0,
+    first_hand_at: null,
+    last_hand_at: null,
+    days: null,
+  });
+  (svc as Record<string, unknown>).getHandRakeShare = vi.fn().mockResolvedValue({ found: false });
   return { __esModule: true, default: svc, StatsFactsService: svc };
 });
 
 vi.mock('../../src/components/common/Toast', () => ({
-  useToast: () => ({ show: vi.fn(), success: vi.fn(), error: vi.fn(), info: vi.fn() }),
+  useToast: () => toastApi,
 }));
 
 import PlayerStatsPage from '../../src/pages/PlayerStatsPage';
+import { clearStatsRangeMemo } from '../../src/lib/statsCache';
 
 beforeEach(() => {
+  localStorage.clear();
+  clearStatsRangeMemo();
+  routeUserId = undefined;
+  rpcMock.mockReset();
+  rpcMock.mockImplementation(async (fn: string) => {
+    if (fn === 'ca_player_stats_overview_v2') return { data: rpcPayload, error: null };
+    return { data: null, error: null };
+  });
   rpcPayload = {
+    contract_version: 2,
+    generated_at: '2026-08-31T12:00:00.000Z',
+    scope: { target_user_id: 'user-1', club_id: null, range_days: null, visibility: 'owner' },
+    quality: {
+      cash_money_source: 'reconstructed_actions',
+      cash_money_exact: false,
+      advanced_facts_source: 'ca_hand_player_stat',
+      historical_club_breakdown_available: false,
+      live_tail_included: false,
+    },
+    coverage: {
+      analysis_hand_cap: 750,
+      analysis_hands_capped: false,
+      lifetime_index_complete: true,
+      first_hand_at: null,
+      last_hand_at: null,
+      rollup_covered_through: '2026-08-31T11:59:00.000Z',
+      rollup_updated_at: '2026-08-31T12:00:00.000Z',
+    },
     user_id: 'user-1',
     overall: EMPTY_OVERALL,
     lifetime: { hands: 0, first_hand_at: null, last_hand_at: null, indexed_complete: true },
@@ -166,6 +230,16 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('PlayerStatsPage mounts', () => {
+  it('renders the private boundary without requesting another player stats', async () => {
+    routeUserId = 'user-2';
+
+    render(<PlayerStatsPage />);
+
+    expect(await screen.findByText('Player Stats Are Private')).toBeInTheDocument();
+    expect(screen.getByText(/No All-Club Financial Data Is Exposed/i)).toBeInTheDocument();
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
   it('renders for an account with NO hands without hitting the error boundary', async () => {
     // This is the exact shape smarterpoker returns in production, and the
     // state the page was crashing in.
@@ -230,6 +304,63 @@ describe('PlayerStatsPage mounts', () => {
     expect(() => render(<PlayerStatsPage />)).not.toThrow();
     await waitFor(() => {
       expect(screen.getByText(/Overview/i)).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /Player Intelligence/i })).toBeInTheDocument();
+      expect(screen.getByRole('group', { name: /Analysis Range/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /Evidence At A Glance/i })).toBeInTheDocument();
+      expect(screen.getByText('Established')).toBeInTheDocument();
+    });
+
+    expect(document.querySelector('.stats-hero-art')).toHaveAttribute(
+      'src',
+      expect.stringContaining('player-intelligence-dossier-v2.webp')
+    );
+
+    expect(screen.getByRole('button', { name: 'Open Deep Analysis' })).toBeInTheDocument();
+  });
+
+  it('never relabels a prior payload when a new range fails', async () => {
+    rpcPayload = {
+      ...rpcPayload,
+      overall: { ...EMPTY_OVERALL, total_hands: 20000, cash_hands: 18000 },
+    };
+    render(<PlayerStatsPage />);
+    expect(await screen.findByText('20,000')).toBeInTheDocument();
+
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'ca_player_stats_overview_v2') {
+        return { data: null, error: { code: '57014', message: 'timed out' } };
+      }
+      return { data: null, error: null };
+    });
+    fireEvent.click(screen.getByRole('button', { name: '7 Days' }));
+
+    expect(
+      await screen.findByText("Couldn't Load Your Stats", undefined, { timeout: 6_000 })
+    ).toBeInTheDocument();
+    expect(screen.queryByText('20,000')).not.toBeInTheDocument();
+  }, 8_000);
+
+  it('completes a dossier shortcut by selecting, focusing, and revealing its destination', async () => {
+    rpcPayload = {
+      ...rpcPayload,
+      overall: { ...EMPTY_OVERALL, total_hands: 2_000, cash_hands: 2_000 },
+    };
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
+
+    render(<PlayerStatsPage />);
+    const shortcut = await screen.findByRole('button', { name: 'Open Deep Analysis' });
+    fireEvent.click(shortcut);
+
+    const analysisTab = screen.getByRole('tab', { name: 'Analysis' });
+    await waitFor(() => {
+      expect(analysisTab).toHaveAttribute('aria-selected', 'true');
+      expect(analysisTab).toHaveFocus();
+      expect(screen.getByRole('tabpanel')).toHaveAttribute('id', 'stats-panel-analysis');
+      expect(scrollIntoView).toHaveBeenCalled();
     });
   });
 

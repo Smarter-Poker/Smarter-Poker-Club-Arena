@@ -89,7 +89,8 @@
 }
 
 .throw-animation__glow--flight {
-  animation: throwable-glow-pulse 320ms ease-in-out infinite alternate;
+  animation: throwable-glow-pulse calc(320ms * var(--animation-speed, 1)) ease-in-out infinite
+    alternate;
 }
 
 @keyframes throwable-glow-pulse {
@@ -126,7 +127,8 @@
 .throw-animation__windup {
   position: absolute;
   transform: translate(-50%, -50%);
-  animation: throwable-windup 140ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation: throwable-windup calc(140ms * var(--animation-speed, 1))
+    cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
 }
 
 @keyframes throwable-windup {
@@ -202,16 +204,202 @@
   will-change: transform;
 }
 
+/* The smear is proportional to the throw's REAL speed now (--trail-strength,
+   computed in ThrowAnimation.tsx from px/ms). Pinned at 0.30 / 0.14 it made a
+   420ms fastball and an 1100ms float smear identically, which flattened the
+   one cue that separates them. */
 .throw-animation__trail--1 {
-  opacity: 0.3;
-  filter: blur(1px);
+  opacity: calc(0.3 * var(--trail-strength, 1));
+  filter: blur(calc(1px * var(--trail-strength, 1)));
   scale: 0.92;
 }
 
 .throw-animation__trail--2 {
-  opacity: 0.14;
-  filter: blur(2px);
+  opacity: calc(0.14 * var(--trail-strength, 1));
+  filter: blur(calc(2px * var(--trail-strength, 1)));
   scale: 0.8;
+}
+
+/* =================================================================================
+   THE CONTACT SHADOW
+   The single biggest reason a thrown item read as a flat sticker rather than an
+   object: there was nothing underneath it. A real object crossing a table drags
+   a shadow along the felt, and that shadow is the ONLY cue the eye gets for how
+   high the thing is — without it a lob and a fastball differ only in speed.
+
+   High  -> wide, faint.        Low -> tight, dark.
+   Each physics profile gets keyframes at the SAME percentage stops as its arc,
+   because that is the only way the shadow and the item can agree where the
+   ground is. Nothing here animates `filter`: the softness is baked into the
+   gradient, and scaling it up softens it for free, which is a great deal
+   cheaper than interpolating a blur under four concurrent throws.
+   ================================================================================= */
+
+.throw-animation__shadow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--size, 48px);
+  height: calc(var(--size, 48px) * 0.38);
+  margin-left: calc(var(--size, 48px) * -0.5);
+  /* parked on the felt, just under where the item comes to rest */
+  margin-top: calc(var(--size, 48px) * 0.1);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0.5) 0%,
+    rgba(0, 0, 0, 0.26) 46%,
+    rgba(0, 0, 0, 0) 72%
+  );
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.throw-animation__projectile--arc .throw-animation__shadow,
+.throw-animation__projectile--lob .throw-animation__shadow {
+  animation: throwable-shadow-arc var(--flight-dur) forwards;
+}
+
+@keyframes throwable-shadow-arc {
+  0% {
+    opacity: 0.5;
+    transform: scale(0.9, 0.9);
+    animation-timing-function: cubic-bezier(0.17, 0.67, 0.45, 0.99);
+  }
+  50% {
+    opacity: 0.15;
+    transform: scale(1.52, 1.52);
+    animation-timing-function: cubic-bezier(0.55, 0.01, 0.83, 0.33);
+  }
+  100% {
+    opacity: 0.52;
+    transform: scale(0.85, 0.85);
+  }
+}
+
+.throw-animation__projectile--fastball .throw-animation__shadow {
+  animation: throwable-shadow-fastball var(--flight-dur) ease-in forwards;
+}
+
+@keyframes throwable-shadow-fastball {
+  0% {
+    opacity: 0.44;
+    transform: scale(0.95, 0.95);
+  }
+  50% {
+    opacity: 0.3;
+    transform: scale(1.16, 1.16);
+  }
+  100% {
+    opacity: 0.5;
+    transform: scale(0.9, 0.9);
+  }
+}
+
+.throw-animation__projectile--float .throw-animation__shadow {
+  animation: throwable-shadow-float var(--flight-dur) ease-in-out forwards;
+}
+
+@keyframes throwable-shadow-float {
+  0% {
+    opacity: 0.4;
+    transform: scale(0.95, 0.95);
+  }
+  25% {
+    opacity: 0.17;
+    transform: scale(1.42, 1.42);
+  }
+  50% {
+    opacity: 0.29;
+    transform: scale(1.16, 1.16);
+  }
+  75% {
+    opacity: 0.15;
+    transform: scale(1.48, 1.48);
+  }
+  100% {
+    opacity: 0.44;
+    transform: scale(0.9, 0.9);
+  }
+}
+
+/* drop hovers high and then slams — so its shadow starts big and faint and
+   arrives SMALLER AND DARKER than any other profile's. That contrast is the
+   whole weight cue. */
+.throw-animation__projectile--drop .throw-animation__shadow {
+  animation: throwable-shadow-drop var(--flight-dur) forwards;
+}
+
+@keyframes throwable-shadow-drop {
+  0% {
+    opacity: 0.28;
+    transform: scale(1.28, 1.28);
+    animation-timing-function: ease-out;
+  }
+  55% {
+    opacity: 0.12;
+    transform: scale(1.72, 1.72);
+    animation-timing-function: cubic-bezier(0.7, 0, 1, 0.4);
+  }
+  100% {
+    opacity: 0.62;
+    transform: scale(0.78, 0.78);
+  }
+}
+
+.throw-animation__projectile--swoop .throw-animation__shadow {
+  animation: throwable-shadow-swoop var(--flight-dur) ease-in-out forwards;
+}
+
+@keyframes throwable-shadow-swoop {
+  0% {
+    opacity: 0.45;
+    transform: scale(0.95, 0.95);
+  }
+  30% {
+    opacity: 0.16;
+    transform: scale(1.5, 1.5);
+  }
+  65% {
+    opacity: 0.26;
+    transform: scale(1.22, 1.22);
+  }
+  100% {
+    opacity: 0.48;
+    transform: scale(0.9, 0.9);
+  }
+}
+
+.throw-animation__projectile--spiral .throw-animation__shadow {
+  animation: throwable-shadow-spiral var(--flight-dur) linear forwards;
+}
+
+@keyframes throwable-shadow-spiral {
+  0% {
+    opacity: 0.45;
+    transform: scale(0.95, 0.95);
+  }
+  20% {
+    opacity: 0.27;
+    transform: scale(1.26, 1.26);
+  }
+  40% {
+    opacity: 0.17;
+    transform: scale(1.46, 1.46);
+  }
+  60% {
+    opacity: 0.23;
+    transform: scale(1.31, 1.31);
+  }
+  80% {
+    opacity: 0.34;
+    transform: scale(1.11, 1.11);
+  }
+  100% {
+    opacity: 0.48;
+    transform: scale(0.9, 0.9);
+  }
 }
 
 /* -- arc: classic parabola with tumble ------------------------------------- */
@@ -220,10 +408,10 @@
   animation: throwable-arc var(--flight-dur) forwards;
 }
 .throw-animation__projectile--arc .throw-animation__trail--1 {
-  animation-delay: 30ms;
+  animation-delay: calc(30ms * var(--animation-speed, 1));
 }
 .throw-animation__projectile--arc .throw-animation__trail--2 {
-  animation-delay: 60ms;
+  animation-delay: calc(60ms * var(--animation-speed, 1));
 }
 
 @keyframes throwable-arc {
@@ -246,10 +434,10 @@
   animation: throwable-fastball var(--flight-dur) ease-in forwards;
 }
 .throw-animation__projectile--fastball .throw-animation__trail--1 {
-  animation-delay: 20ms;
+  animation-delay: calc(20ms * var(--animation-speed, 1));
 }
 .throw-animation__projectile--fastball .throw-animation__trail--2 {
-  animation-delay: 40ms;
+  animation-delay: calc(40ms * var(--animation-speed, 1));
 }
 
 @keyframes throwable-fastball {
@@ -270,10 +458,10 @@
   animation: throwable-arc var(--flight-dur) forwards;
 }
 .throw-animation__projectile--lob .throw-animation__trail--1 {
-  animation-delay: 45ms;
+  animation-delay: calc(45ms * var(--animation-speed, 1));
 }
 .throw-animation__projectile--lob .throw-animation__trail--2 {
-  animation-delay: 90ms;
+  animation-delay: calc(90ms * var(--animation-speed, 1));
 }
 
 /* -- float: bobbing emoji drift (v2: lands AT the impact point, the v1
@@ -283,10 +471,10 @@
   animation: throwable-float var(--flight-dur) ease-in-out forwards;
 }
 .throw-animation__projectile--float .throw-animation__trail--1 {
-  animation-delay: 60ms;
+  animation-delay: calc(60ms * var(--animation-speed, 1));
 }
 .throw-animation__projectile--float .throw-animation__trail--2 {
-  animation-delay: 120ms;
+  animation-delay: calc(120ms * var(--animation-speed, 1));
 }
 
 @keyframes throwable-float {
@@ -313,10 +501,10 @@
   animation: throwable-drop var(--flight-dur) forwards;
 }
 .throw-animation__projectile--drop .throw-animation__trail--1 {
-  animation-delay: 30ms;
+  animation-delay: calc(30ms * var(--animation-speed, 1));
 }
 .throw-animation__projectile--drop .throw-animation__trail--2 {
-  animation-delay: 60ms;
+  animation-delay: calc(60ms * var(--animation-speed, 1));
 }
 
 @keyframes throwable-drop {
@@ -341,10 +529,10 @@
   animation: throwable-swoop var(--flight-dur) ease-in-out forwards;
 }
 .throw-animation__projectile--swoop .throw-animation__trail--1 {
-  animation-delay: 45ms;
+  animation-delay: calc(45ms * var(--animation-speed, 1));
 }
 .throw-animation__projectile--swoop .throw-animation__trail--2 {
-  animation-delay: 90ms;
+  animation-delay: calc(90ms * var(--animation-speed, 1));
 }
 
 @keyframes throwable-swoop {
@@ -368,10 +556,10 @@
   animation: throwable-spiral var(--flight-dur) linear forwards;
 }
 .throw-animation__projectile--spiral .throw-animation__trail--1 {
-  animation-delay: 30ms;
+  animation-delay: calc(30ms * var(--animation-speed, 1));
 }
 .throw-animation__projectile--spiral .throw-animation__trail--2 {
-  animation-delay: 60ms;
+  animation-delay: calc(60ms * var(--animation-speed, 1));
 }
 
 @keyframes throwable-spiral {
@@ -418,7 +606,7 @@
   border-radius: 50%;
   background: radial-gradient(circle, var(--c1) 0%, transparent 60%);
   mix-blend-mode: screen;
-  animation: throwable-impact-glow 600ms ease-out forwards;
+  animation: throwable-impact-glow calc(600ms * var(--animation-speed, 1)) ease-out forwards;
 }
 
 @keyframes throwable-impact-glow {
@@ -441,7 +629,8 @@
    set opacity at all. */
 .throw-animation__impact-life {
   position: absolute;
-  animation: throwable-impact-life var(--life-dur, 2400ms) linear forwards;
+  animation: throwable-impact-life var(--life-dur, calc(2400ms * var(--animation-speed, 1))) linear
+    forwards;
 }
 
 @keyframes throwable-impact-life {
@@ -459,7 +648,233 @@
 /* An exploding item is consumed by its own fireball, so it must NOT sit
    around for three seconds -- only its smoke and scorch mark should. */
 .throw-animation__impact--explode .throw-animation__impact-life {
-  animation-duration: 420ms;
+  animation-duration: calc(420ms * var(--animation-speed, 1));
+}
+
+/* -- THE LANDED ITEM'S SHADOW ----------------------------------------------
+   Lives INSIDE __impact-life so it shares the landing's opacity envelope and
+   needs only its own squash timer — a second life animation on a second
+   element is two things that can drift apart. It flattens hard on contact and
+   recovers with the item, which is what makes the squash read as weight
+   landing on a surface rather than a sprite changing shape in mid-air. */
+.throw-animation__ground {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--impact-size, 128px);
+  height: calc(var(--impact-size, 128px) * 0.3);
+  margin-left: calc(var(--impact-size, 128px) * -0.5);
+  margin-top: calc(var(--impact-size, 128px) * 0.14);
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(0, 0, 0, 0.46) 0%,
+    rgba(0, 0, 0, 0.22) 48%,
+    rgba(0, 0, 0, 0) 74%
+  );
+  pointer-events: none;
+  animation: throwable-ground var(--impact-dur, calc(820ms * var(--animation-speed, 1)))
+    cubic-bezier(0.16, 1.11, 0.36, 1.2) forwards;
+}
+
+@keyframes throwable-ground {
+  0% {
+    transform: scale(1.5, 1.2);
+    opacity: 0.95;
+  }
+  22% {
+    transform: scale(0.86, 0.8);
+    opacity: 0.62;
+  }
+  40% {
+    transform: scale(1.08, 1.04);
+    opacity: 0.8;
+  }
+  60% {
+    transform: scale(1, 1);
+    opacity: 0.72;
+  }
+  100% {
+    transform: scale(0.94, 0.94);
+    opacity: 0.7;
+  }
+}
+
+/* A splatted item is flat ON the felt, so its shadow stays spread and never
+   recovers; an exploding one has no item left to cast one. */
+.throw-animation__impact--splat .throw-animation__ground {
+  animation: throwable-ground-splat var(--impact-dur, calc(820ms * var(--animation-speed, 1)))
+    ease-out forwards;
+}
+
+@keyframes throwable-ground-splat {
+  0% {
+    transform: scale(1.5, 1.2);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.18, 0.7);
+    opacity: 0.6;
+  }
+}
+
+.throw-animation__impact--explode .throw-animation__ground {
+  display: none;
+}
+
+/* -- SETTLE -----------------------------------------------------------------
+   A dropped object rocks to rest. Ours stopped dead the instant its squash
+   resolved, which is the difference between an object and a sticker being
+   revealed. Its own wrapper on purpose: one keyframe then covers every impact
+   profile, rather than a rotation being threaded through four sets of squash
+   keyframes that each already own `transform` and would stomp it.
+
+   The pivot is BELOW centre because a thing rocks on the felt it is touching,
+   not around its middle — and it uses the individual `rotate` property, so
+   nothing here can ever collide with a descendant's `transform`. */
+.throw-animation__settle {
+  position: absolute;
+  transform-origin: 0 calc(var(--impact-size, 128px) * 0.34);
+  animation: throwable-settle var(--impact-dur, calc(820ms * var(--animation-speed, 1)))
+    cubic-bezier(0.22, 0.8, 0.3, 1) forwards;
+}
+
+@keyframes throwable-settle {
+  0% {
+    rotate: 0deg;
+  }
+  26% {
+    rotate: calc(-6.5deg * var(--settle, 1));
+  }
+  46% {
+    rotate: calc(4.5deg * var(--settle, 1));
+  }
+  64% {
+    rotate: calc(-2.6deg * var(--settle, 1));
+  }
+  80% {
+    rotate: calc(1.2deg * var(--settle, 1));
+  }
+  100% {
+    rotate: 0deg;
+  }
+}
+
+/* Two profiles must NOT rock: splat has stuck to what it hit, and explode has
+   been consumed by its own fireball. */
+.throw-animation__impact--splat .throw-animation__settle,
+.throw-animation__impact--explode .throw-animation__settle {
+  animation: none;
+}
+
+/* ITEMS THAT ALREADY ROCK, SPIN OR TIP UNDER THEIR OWN SIGNATURE.
+   The settle above is the house default for the ~30 items whose landing has no
+   rotational character of its own. These eleven DO have one — a banana peel
+   slips, dice tumble, a trash can tips over, sunglasses and a magnet already
+   wobble to rest — and stacking a second rock on top of a bespoke one is the
+   'two mechanisms for one job' trap: at best it muddies a hand-tuned curve, at
+   worst (fx-icon-wobble-settle) it is literally the same animation twice.
+
+   Kept as ONE list in ONE place rather than an `animation: none` scattered
+   through the signature file, and pinned by a law test that re-derives the set
+   from ThrowableSignatures.css — so an item whose signature gains a rotation
+   later cannot quietly start double-rocking. --settle is a multiplier rather
+   than a switch, so a signature that wants a HALF rock can say 0.5. */
+.throw-animation[data-throwable='alien'],
+.throw-animation[data-throwable='banana_peel'],
+.throw-animation[data-throwable='chicken'],
+.throw-animation[data-throwable='cool_sunglasses_emoji'],
+.throw-animation[data-throwable='dice'],
+.throw-animation[data-throwable='football'],
+.throw-animation[data-throwable='laughing_emoji'],
+.throw-animation[data-throwable='magnet'],
+.throw-animation[data-throwable='rubber_duck'],
+.throw-animation[data-throwable='star'],
+.throw-animation[data-throwable='trash_can'] {
+  --settle: 0;
+}
+
+/* -- DUST ------------------------------------------------------------------
+   Debris kicked out ALONG the felt. The shockwave ring further down is drawn
+   in the screen plane and reads as an energy pulse; this reads as the table
+   itself reacting to a weight. The reference captures have both, and they do
+   different jobs.
+
+   The vectors are squashed vertically (a circle of offsets would read as a
+   flat screen-plane ring, the same mistake the knockout star made) and every
+   particle rises a little before it falls, so it is a puff rather than a
+   starburst. */
+.throw-animation__dust {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+}
+
+.throw-animation__dust i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  /* Plain colour first: a browser that cannot parse color-mix() discards the
+     WHOLE declaration, and an invisible particle is not a graceful fallback. */
+  background: rgba(226, 214, 190, 0.85);
+  background: color-mix(in srgb, var(--c2, #e2d6be) 72%, #fff);
+  opacity: 0;
+  animation: throwable-dust calc(640ms * var(--animation-speed, 1)) cubic-bezier(0.12, 0.72, 0.3, 1)
+    forwards;
+}
+
+.throw-animation__dust i:nth-child(1) {
+  --dx: 46px;
+  --dy: 15px;
+}
+.throw-animation__dust i:nth-child(2) {
+  --dx: -44px;
+  --dy: 17px;
+  animation-delay: calc(24ms * var(--animation-speed, 1));
+}
+.throw-animation__dust i:nth-child(3) {
+  --dx: 30px;
+  --dy: -13px;
+  animation-delay: calc(12ms * var(--animation-speed, 1));
+}
+.throw-animation__dust i:nth-child(4) {
+  --dx: -28px;
+  --dy: -15px;
+  animation-delay: calc(38ms * var(--animation-speed, 1));
+}
+.throw-animation__dust i:nth-child(5) {
+  --dx: 58px;
+  --dy: 4px;
+  animation-delay: calc(52ms * var(--animation-speed, 1));
+  width: 6px;
+  height: 6px;
+}
+.throw-animation__dust i:nth-child(6) {
+  --dx: -56px;
+  --dy: 6px;
+  animation-delay: calc(30ms * var(--animation-speed, 1));
+  width: 6px;
+  height: 6px;
+}
+
+@keyframes throwable-dust {
+  0% {
+    opacity: 0.9;
+    transform: translate(0, 0) scale(0.45);
+  }
+  30% {
+    opacity: 0.72;
+    transform: translate(calc(var(--dx, 0px) * 0.55), calc(var(--dy, 0px) * 0.55 - 8px)) scale(1.08);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx, 0px), var(--dy, 0px)) scale(1.4);
+  }
 }
 
 /* -- squash-and-stretch item ----------------------------------------------- */
@@ -467,8 +882,8 @@
 .throw-animation__impact-icon {
   position: absolute;
   transform: translate(-50%, -50%);
-  animation: throwable-impact-squash var(--impact-dur, 820ms) cubic-bezier(0.16, 1.11, 0.36, 1.2)
-    forwards;
+  animation: throwable-impact-squash var(--impact-dur, calc(820ms * var(--animation-speed, 1)))
+    cubic-bezier(0.16, 1.11, 0.36, 1.2) forwards;
 }
 
 @keyframes throwable-impact-squash {
@@ -491,7 +906,8 @@
 
 /* bounce profile: diminishing hops instead of a squash-fade */
 .throw-animation__impact--bounce .throw-animation__impact-icon {
-  animation: throwable-impact-bounce var(--impact-dur, 820ms) ease-out forwards;
+  animation: throwable-impact-bounce var(--impact-dur, calc(820ms * var(--animation-speed, 1)))
+    ease-out forwards;
 }
 
 @keyframes throwable-impact-bounce {
@@ -517,7 +933,8 @@
 
 /* splat profile: hit flat and STICK (no rebound) */
 .throw-animation__impact--splat .throw-animation__impact-icon {
-  animation: throwable-impact-splat var(--impact-dur, 820ms) ease-out forwards;
+  animation: throwable-impact-splat var(--impact-dur, calc(820ms * var(--animation-speed, 1)))
+    ease-out forwards;
 }
 
 @keyframes throwable-impact-splat {
@@ -534,7 +951,7 @@
 
 /* explode profile: item is consumed by the fireball */
 .throw-animation__impact--explode .throw-animation__impact-icon {
-  animation: throwable-impact-consume 300ms ease-out forwards;
+  animation: throwable-impact-consume calc(300ms * var(--animation-speed, 1)) ease-out forwards;
 }
 
 @keyframes throwable-impact-consume {
@@ -556,7 +973,7 @@
   border: 3px solid var(--c1);
   border-radius: 50%;
   opacity: 0.85;
-  animation: throwable-burst-ring 500ms ease-out forwards;
+  animation: throwable-burst-ring calc(500ms * var(--animation-speed, 1)) ease-out forwards;
 }
 
 @keyframes throwable-burst-ring {
@@ -577,7 +994,7 @@
 .throw-animation__impact--explode .throw-animation__burst,
 .throw-animation__impact--thud .throw-animation__burst {
   border-width: 5px;
-  animation-duration: 620ms;
+  animation-duration: calc(620ms * var(--animation-speed, 1));
 }
 
 /* -- flash + fireball + smoke (explode / zap only) --------------------------- */
@@ -598,7 +1015,7 @@
   width: 190px;
   height: 190px;
   background: radial-gradient(circle, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 65%);
-  animation: throwable-flash 260ms ease-out forwards;
+  animation: throwable-flash calc(260ms * var(--animation-speed, 1)) ease-out forwards;
 }
 
 @keyframes throwable-flash {
@@ -623,7 +1040,8 @@
     var(--c1, #ff7043) 60%,
     rgba(80, 30, 0, 0) 78%
   );
-  animation: throwable-fireball 560ms cubic-bezier(0.2, 0.9, 0.35, 1) forwards;
+  animation: throwable-fireball calc(560ms * var(--animation-speed, 1))
+    cubic-bezier(0.2, 0.9, 0.35, 1) forwards;
 }
 
 @keyframes throwable-fireball {
@@ -648,20 +1066,20 @@
   height: 46px;
   background: radial-gradient(circle, rgba(90, 84, 78, 0.55) 0%, rgba(60, 56, 52, 0) 70%);
   filter: blur(3px);
-  animation: throwable-smoke 900ms ease-out forwards;
+  animation: throwable-smoke calc(900ms * var(--animation-speed, 1)) ease-out forwards;
 }
 
 .throw-animation__impact--explode .throw-animation__smoke--1 {
-  animation-delay: 180ms;
+  animation-delay: calc(180ms * var(--animation-speed, 1));
   --sx: -22px;
 }
 .throw-animation__impact--explode .throw-animation__smoke--2 {
-  animation-delay: 280ms;
+  animation-delay: calc(280ms * var(--animation-speed, 1));
   --sx: 4px;
   scale: 1.25;
 }
 .throw-animation__impact--explode .throw-animation__smoke--3 {
-  animation-delay: 400ms;
+  animation-delay: calc(400ms * var(--animation-speed, 1));
   --sx: 24px;
   scale: 0.85;
 }
@@ -688,7 +1106,7 @@
     var(--c1, #ffee58) 35%,
     rgba(255, 255, 255, 0) 70%
   );
-  animation: throwable-zap-flicker 420ms steps(6, end) forwards;
+  animation: throwable-zap-flicker calc(420ms * var(--animation-speed, 1)) steps(6, end) forwards;
 }
 
 @keyframes throwable-zap-flicker {
@@ -729,7 +1147,8 @@
   background: var(--p-color, var(--c1));
   border-radius: 50%;
   opacity: 0;
-  animation: throwable-particle 700ms ease-out var(--p-delay, 0s) forwards;
+  animation: throwable-particle calc(700ms * var(--animation-speed, 1)) ease-out
+    var(--p-delay, calc(0s * var(--animation-speed, 1))) forwards;
 }
 
 @keyframes throwable-particle {
@@ -770,7 +1189,7 @@
   border-radius: 1px;
   height: calc(var(--p-size, 7px) * 0.55);
   animation-name: throwable-confetti;
-  animation-duration: 850ms;
+  animation-duration: calc(850ms * var(--animation-speed, 1));
 }
 
 @keyframes throwable-confetti {
@@ -812,7 +1231,8 @@
   background: radial-gradient(ellipse at 45% 40%, var(--c1) 0%, var(--c1) 45%, transparent 75%);
   opacity: 0.75;
   filter: blur(1.5px) saturate(1.15);
-  animation: throwable-linger var(--linger-dur, 2500ms) ease-in forwards;
+  animation: throwable-linger var(--linger-dur, calc(2500ms * var(--animation-speed, 1))) ease-in
+    forwards;
 }
 
 /* goo drip */
@@ -825,7 +1245,7 @@
   height: 22px;
   border-radius: 0 0 50% 50%;
   background: var(--c1);
-  animation: throwable-drip 1.6s ease-in forwards;
+  animation: throwable-drip calc(1.6s * var(--animation-speed, 1)) ease-in forwards;
 }
 
 @keyframes throwable-drip {
@@ -894,7 +1314,8 @@
    ================================================================================= */
 
 .seat--throw-flinch {
-  animation: throwable-seat-flinch 450ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  animation: throwable-seat-flinch calc(450ms * var(--animation-speed, 1))
+    cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
 }
 
 /* Uses the INDIVIDUAL translate/rotate properties, not `transform` --
@@ -933,7 +1354,8 @@
    ================================================================================= */
 
 .throw-animation--shake {
-  animation: throwable-screen-shake 450ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both !important;
+  animation: throwable-screen-shake calc(450ms * var(--animation-speed, 1))
+    cubic-bezier(0.36, 0.07, 0.19, 0.97) both !important;
 }
 
 @keyframes throwable-screen-shake {
@@ -965,7 +1387,7 @@
   .throw-animation__spinner,
   .throw-animation__trail,
   .throw-animation__windup {
-    animation-duration: 1ms !important;
+    animation-duration: calc(1ms * var(--animation-speed, 1)) !important;
   }
 
   .throw-animation__trail,
@@ -974,12 +1396,25 @@
   .throw-animation__smoke,
   .throw-animation__glow,
   .throw-animation__impact-glow,
-  .throw-animation__particle {
+  .throw-animation__particle,
+  .throw-animation__shadow,
+  .throw-animation__dust {
     display: none !important;
   }
 
+  /* The ground shadow STAYS — it is not theatrics, it is the cue that says the
+     item is on the felt, and reduced motion drops motion, not meaning
+     (CLAUDE.md 10.6). It simply stops moving. */
+  .throw-animation__ground {
+    animation: none !important;
+  }
+
+  .throw-animation__settle {
+    animation: none !important;
+  }
+
   .throw-animation__impact-icon {
-    animation: throwable-reduced-impact 600ms ease-out forwards !important;
+    animation: throwable-reduced-impact calc(600ms * var(--animation-speed, 1)) ease-out forwards !important;
   }
 
   @keyframes throwable-reduced-impact {
@@ -998,26 +1433,182 @@
 }
 
 /* =================================================================================
-   IMPACT CAPTION (2026-08-21) — the shout you can read with the sound off
-   ================================================================================= */
+   IMPACT CAPTION (2026-08-21, rebuilt as a BADGE 2026-08-29)
+   =================================================================================
+   Dan 2026-08-29, on the PokerBros captures: "THE DESIGN GRAPHICS ETC NEEDS TO
+   BE REPLICATED INSIDE OF EVERY SINGLE THROWABLE ANIMATION."
+
+   The reference's caption is not text. It is a struck plate — dark leather,
+   gold rim, a starburst blown out behind it — that SLAMS in over the landing
+   and holds. Ours was 22px of white Rajdhani with a glow, floating in space,
+   and next to theirs it read as a debug label.
+
+   It is still ONE element. The plate is the element, the starburst is its
+   ::before and the top shine is its ::after, so a caption costs exactly what
+   it cost before: nothing extra in the DOM, on a table that can be running
+   four of these at once.
+
+   The rim takes the item's own --c1, so GOOD LUCK on a horseshoe and PEE-YEW
+   on a poop stay as different as their items are, while the plate itself
+   keeps the Club Arena gold-on-dark that the rest of the product uses.
+
+   THE STARBURST IS DELIBERATELY IRREGULAR. A repeating-conic-gradient at even
+   intervals reads as a cartoon sun — the same mistake the knockout's first
+   star made, documented at length in SeatKnockout.css. The stops below are
+   hand-spaced and the second layer is rotated against the first, so no two
+   spokes are the same width and there is no rotational symmetry to catch. */
 
 .throw-animation__caption {
   position: absolute;
   left: 0;
-  top: -54px;
+  top: -66px;
   transform: translate(-50%, 0);
   white-space: nowrap;
   font-family: 'Rajdhani', system-ui, sans-serif;
-  font-size: 22px;
+  /* clamp rather than a flat 22px: at 375px the plate used to run past the
+     felt on the longer shouts (ASK AGAIN LATER, YOU'RE THE BEST). */
+  font-size: clamp(15px, 4.4vw, 23px);
   font-weight: 700;
-  letter-spacing: 0.06em;
-  color: #fff;
+  letter-spacing: 0.07em;
+  line-height: 1;
+  padding: 7px 18px 8px;
+  border-radius: 9px;
+  color: #fff6df;
+  background: linear-gradient(
+    180deg,
+    rgba(72, 52, 16, 0.97) 0%,
+    rgba(30, 20, 6, 0.97) 55%,
+    rgba(46, 32, 10, 0.97) 100%
+  );
+  border: 2px solid transparent;
+  /* The rim is a gradient BORDER, which needs two backgrounds and a double
+     clip — border-image cannot do rounded corners. */
+  background-origin: border-box;
+  background-clip: padding-box, border-box;
+  /* TWO DECLARATIONS EACH, AND THAT IS DELIBERATE.
+     If a browser does not understand color-mix() it throws away the WHOLE
+     declaration, not just the offending colour — so a single shadow list
+     using it would take the bevel and the drop shadow down with the glow, and
+     the plate would render flat on exactly the older mobile browsers least
+     able to afford a missing bevel. The first list is the floor and uses a
+     plain gold; the second replaces it with the item's own accent wherever
+     color-mix is supported, and is silently ignored where it is not. */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 226, 150, 0.5),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.6),
+    0 3px 10px rgba(0, 0, 0, 0.7),
+    0 0 18px rgba(255, 204, 68, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 226, 150, 0.5),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.6),
+    0 3px 10px rgba(0, 0, 0, 0.7),
+    0 0 18px color-mix(in srgb, var(--c1, #ffcc44) 55%, transparent);
   text-shadow:
-    0 2px 0 rgba(0, 0, 0, 0.75),
-    0 0 14px var(--c1, #fff);
-  animation: throwable-caption 1500ms cubic-bezier(0.16, 1.11, 0.36, 1.2) forwards;
+    0 2px 0 rgba(0, 0, 0, 0.8),
+    0 0 12px rgba(255, 204, 68, 0.7);
+  text-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.8),
+    0 0 12px color-mix(in srgb, var(--c1, #ffcc44) 70%, transparent);
+  animation: throwable-caption calc(1500ms * var(--animation-speed, 1))
+    cubic-bezier(0.16, 1.11, 0.36, 1.2) forwards;
   pointer-events: none;
-  z-index: 2;
+  z-index: 3;
+}
+
+/* The gold rim. Painted as a second background under the plate so the corners
+   stay round; `border: 2px solid transparent` above is what reveals it. */
+.throw-animation__caption {
+  background-image:
+    linear-gradient(
+      180deg,
+      rgba(72, 52, 16, 0.97) 0%,
+      rgba(30, 20, 6, 0.97) 55%,
+      rgba(46, 32, 10, 0.97) 100%
+    ),
+    linear-gradient(180deg, #ffe9a8 0%, #d9a227 45%, #8a5f10 100%);
+}
+
+/* THE STARBURST. Irregular by construction — see the header note. */
+.throw-animation__caption::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 240%;
+  height: 340%;
+  transform: translate(-50%, -50%);
+  z-index: -1;
+  pointer-events: none;
+  /* Floor first: the same burst in flat gold. If color-mix is unsupported the
+     enhanced version below is dropped and this one still draws, rather than
+     the caption losing its starburst entirely. */
+  background: conic-gradient(
+    from 8deg,
+    #ffd873 0deg 3deg,
+    transparent 3deg 21deg,
+    #ffd873 21deg 25deg,
+    transparent 25deg 58deg,
+    #ffd873 58deg 62deg,
+    transparent 62deg 96deg,
+    #ffd873 96deg 99deg,
+    transparent 99deg 143deg,
+    #ffd873 143deg 148deg,
+    transparent 148deg 187deg,
+    #ffd873 187deg 190deg,
+    transparent 190deg 233deg,
+    #ffd873 233deg 238deg,
+    transparent 238deg 279deg,
+    #ffd873 279deg 282deg,
+    transparent 282deg 322deg,
+    #ffd873 322deg 326deg,
+    transparent 326deg 360deg
+  );
+  background: conic-gradient(
+    from 8deg,
+    color-mix(in srgb, var(--c1, #ffcc44) 85%, #fff) 0deg 3deg,
+    transparent 3deg 21deg,
+    color-mix(in srgb, var(--c1, #ffcc44) 70%, #fff) 21deg 25deg,
+    transparent 25deg 58deg,
+    color-mix(in srgb, var(--c1, #ffcc44) 85%, #fff) 58deg 62deg,
+    transparent 62deg 96deg,
+    color-mix(in srgb, var(--c1, #ffcc44) 60%, #fff) 96deg 99deg,
+    transparent 99deg 143deg,
+    color-mix(in srgb, var(--c1, #ffcc44) 85%, #fff) 143deg 148deg,
+    transparent 148deg 187deg,
+    color-mix(in srgb, var(--c1, #ffcc44) 70%, #fff) 187deg 190deg,
+    transparent 190deg 233deg,
+    color-mix(in srgb, var(--c1, #ffcc44) 85%, #fff) 233deg 238deg,
+    transparent 238deg 279deg,
+    color-mix(in srgb, var(--c1, #ffcc44) 60%, #fff) 279deg 282deg,
+    transparent 282deg 322deg,
+    color-mix(in srgb, var(--c1, #ffcc44) 80%, #fff) 322deg 326deg,
+    transparent 326deg 360deg
+  );
+  /* Fade the spokes out before they reach the edge, so the burst has a soft
+     end rather than a hard circular cut. */
+  -webkit-mask-image: radial-gradient(
+    closest-side,
+    #000 8%,
+    rgba(0, 0, 0, 0.75) 42%,
+    transparent 82%
+  );
+  mask-image: radial-gradient(closest-side, #000 8%, rgba(0, 0, 0, 0.75) 42%, transparent 82%);
+  opacity: 0;
+  animation: throwable-caption-burst calc(760ms * var(--animation-speed, 1)) ease-out forwards;
+}
+
+/* The top shine across the plate — what makes it read as struck metal rather
+   than a rectangle with a border. */
+.throw-animation__caption::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  top: 2px;
+  height: 42%;
+  border-radius: 7px 7px 40% 40%;
+  background: linear-gradient(180deg, rgba(255, 245, 215, 0.3), rgba(255, 245, 215, 0));
+  pointer-events: none;
 }
 
 @keyframes throwable-caption {
@@ -1042,9 +1633,33 @@
   }
 }
 
+/* The burst blows out on the slam and is gone well before the plate is — it is
+   the STRIKE, not the label. */
+@keyframes throwable-caption-burst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.25) rotate(-6deg);
+  }
+  18% {
+    opacity: 0.95;
+    transform: translate(-50%, -50%) scale(1) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.35) rotate(7deg);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  /* The caption is the one part of a throw that carries WORDS, so it keeps a
+     readable hold rather than collapsing. The burst is pure drama and goes. */
   .throw-animation__caption {
     animation: none;
     opacity: 1;
+  }
+
+  .throw-animation__caption::before {
+    animation: none;
+    opacity: 0;
   }
 }

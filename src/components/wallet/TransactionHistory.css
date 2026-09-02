@@ -12,11 +12,9 @@
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
-.transaction-history.loading {
-  padding: 24px;
-  text-align: center;
-  color: var(--text-secondary);
-}
+/* `.transaction-history.loading` lived here for a long time and was never
+   emitted: the component renders <TransactionSkeleton /> for its loading state,
+   which is a separate tree with its own classes. Removed 2026-08-25. */
 
 .transaction-history__header {
   display: flex;
@@ -40,6 +38,10 @@
   border-radius: 6px;
   color: var(--text-primary);
   font-size: 16px; /* was 12px; under 16px makes iOS zoom the page on focus */
+  /* 375px-first: 6px padding round a 16px line is a ~32px target, and this is
+     the only control in the header. */
+  min-height: 44px;
+  max-width: 55%;
 }
 
 .transaction-list {
@@ -56,17 +58,18 @@
   transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.15s;
 }
 
-.transaction-row:hover {
-  background: rgba(255, 255, 255, 0.02);
-  transform: translateY(-1px);
-}
-
 .transaction-row .icon {
   font-size: 20px;
 }
 
+/* `min-width: 0` is load-bearing. A flex item will not shrink below its content
+   width without it, so at 375px - icon 20 + amounts ~70 + a nowrap timestamp
+   ~110 + three 12px gaps leaves this column about 100px - a description like
+   "Cash game buy-in at table" pushed the row wider than the panel and the whole
+   history scrolled sideways. */
 .transaction-row .details {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -81,6 +84,9 @@
 .transaction-row .description {
   font-size: 11px;
   color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .transaction-row .amounts {
@@ -115,10 +121,56 @@
   white-space: nowrap;
 }
 
-.empty-state {
+/* Was a bare `.empty-state`. This file is a plain CSS import, not a module, so
+   that selector was a GLOBAL rule owned by a wallet component: any other screen
+   in the app with an element called `empty-state` inherited this padding and
+   colour from whichever bundle happened to load. Scoped to the component that
+   emits it, and the class renamed so the two can never be confused again. */
+.transaction-history__empty {
   text-align: center;
   padding: 32px;
   color: var(--text-secondary);
+}
+
+/* ── Load More ──
+   Was an 11-property inline `style` object on the button, rebuilt on every
+   render of the list. */
+.tx-load-more {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px;
+  margin-top: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.tx-load-more:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* A refresh that failed while rows are already on screen. The rows stay; this
+   says they may be stale and offers the retry. */
+.tx-stale-banner {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 16px;
+  background: rgba(239, 68, 68, 0.1);
+  border: none;
+  border-bottom: 1px solid rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 /* ── Skeleton Loading ── */
@@ -194,6 +246,8 @@
 }
 
 .tx-retry-btn {
+  min-height: 44px;
+  touch-action: manipulation;
   padding: 8px 20px;
   background: rgba(59, 130, 246, 0.15);
   border: 1px solid rgba(59, 130, 246, 0.3);
@@ -205,8 +259,25 @@
   transition: all 0.2s ease;
 }
 
-.tx-retry-btn:hover {
-  background: rgba(59, 130, 246, 0.25);
-  border-color: rgba(59, 130, 246, 0.5);
-  transform: translateY(-1px);
+/* ── 375px ──
+   Four columns do not fit a phone. The timestamp drops under the description
+   and the row wraps instead of overflowing. */
+@media (max-width: 420px) {
+  .transaction-row {
+    flex-wrap: wrap;
+    row-gap: 2px;
+    padding: 10px 12px;
+  }
+
+  .transaction-row .details {
+    /* Icon (20) + its gap (12) = 32px; leave the amounts their column. */
+    flex: 1 1 calc(100% - 32px - 90px);
+  }
+
+  .transaction-row .time {
+    /* Push onto its own line, aligned under the description. */
+    flex: 1 0 100%;
+    padding-left: 32px;
+    text-align: left;
+  }
 }

@@ -14,7 +14,6 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { bonusService } from '../services/BonusService';
 import { promotionService } from '../services/PromotionService';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import './PromotionsPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -22,7 +21,10 @@ import { formatDateShort as formatDate } from '../utils/format';
 import { retryFetch } from '../utils/retryFetch';
 import { useIsMounted } from '../hooks/useIsMounted';
 import PageSkeleton from '../components/common/PageSkeleton';
+import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { reportError } from '../utils/errorReporter';
+import { ErrorState } from '../components/common/EmptyState';
+import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 interface Promotion {
   id: string;
@@ -45,6 +47,7 @@ export default function PromotionsPage() {
 
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'upcoming'>('active');
   const [showBonusWheel, setShowBonusWheel] = useState(false);
   const [showReferral, setShowReferral] = useState(false);
@@ -53,6 +56,37 @@ export default function PromotionsPage() {
   const [claimingId, setClaimingId] = useState<string | null>(null);
   const loadPromotionsRef = useRef(async () => {});
   const isMounted = useIsMounted();
+
+  // The player's own referral code. This modal used to invent one
+  // (`user.id.slice(0, 8).toUpperCase()`) and hand it out beside a link to
+  // `https://clubarena.poker/join`, which is neither the production domain nor
+  // a route that exists. Nobody who followed it could arrive anywhere, and the
+  // code it displayed matched no player, so redemption refused it as an unknown
+  // inviter. Both halves now come from the same place the rest of the app
+  // shares from: the real player_number, on the real invite route.
+  const [playerNumber, setPlayerNumber] = useState<string | null>(null);
+  useEffect(() => {
+    if (!user?.id) return;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('player_number')
+          .eq('id', user.id)
+          .maybeSingle();
+        if (!isMounted.current) return;
+        setPlayerNumber(data?.player_number ?? null);
+      } catch (e) {
+        reportError(e, 'PromotionsPage.referral_code_lookup');
+      }
+    })();
+  }, [user?.id, isMounted]);
+
+  const referralCode = playerNumber || user?.id || '';
+  const referralLink =
+    clubId && referralCode
+      ? `${window.location.origin}/hub/club-arena/invite/${clubId}?ref=${referralCode}`
+      : '';
 
   // Load the user's existing claims so cards show Claimed vs claimable.
   useEffect(() => {
@@ -106,31 +140,57 @@ export default function PromotionsPage() {
     // Real-time promotions updates (INSERT + UPDATE + DELETE)
     const channelKey = clubId ? `promotions-live-${clubId}` : 'promotions-live';
 
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'promotions',
-        },
-        (payload) => {
-          if (!isMounted) return;
-          if (payload.eventType === 'INSERT') {
-            toast.info(' New promotion available!');
+    /* DB LOAD PASS 2026-08-24: this subscription had no filter, so every
+       promotion write for every club on the platform was delivered here and
+       re-ran the page's own club-scoped query — and could even toast "New
+       promotion available!" for another club's promotion.
+
+       The route param may be a slug, so the club UUID has to be resolved
+       before the filter can be built; hence the async setup. Without a clubId
+       this is the global promotions surface and there is no narrower scope to
+       apply. Do not remove the filter on the club route. */
+    const setupRealtime = async () => {
+      const resolvedClubId = clubId ? await resolveClubUUID(clubId) : null;
+
+      /* A club slug that fails to resolve must NOT fall through to an
+         unfiltered subscription. Spreading `...(resolved ? {filter} : {})`
+         reads as harmless, but on the failure path it silently restores the
+         platform-wide firehose this scoping exists to remove - and
+         tests/no-unfiltered-realtime-firehose.test.ts is static, so it cannot
+         see a runtime widening. No scope means no subscription; the page still
+         renders from its initial load. (clubId absent entirely is different:
+         that is the legitimate global promotions surface.) */
+      if (clubId && !resolvedClubId) return;
+      if (!isMounted) return;
+
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'promotions',
+            ...(resolvedClubId ? { filter: `club_id=eq.${resolvedClubId}` } : {}),
+          },
+          (payload) => {
+            if (!isMounted) return;
+            if (payload.eventType === 'INSERT') {
+              toast.info('New Promotion Available');
+            }
+            loadPromotionsRef.current();
           }
-          loadPromotionsRef.current();
-        }
-      )
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          if (err) reportError(err?.message || err, 'PromotionsPage._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[PromotionsPage] Realtime channel timed out');
-        }
-      });
+        )
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            if (err) reportError(err?.message || err, 'PromotionsPage._Realtime_channel_error');
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[PromotionsPage] Realtime channel timed out');
+          }
+        });
+    };
+    void setupRealtime();
 
     return () => {
       isMounted = false;
@@ -148,6 +208,7 @@ export default function PromotionsPage() {
 
   const loadPromotions = async (getIsMounted?: () => boolean) => {
     setLoading(true);
+    setLoadError(null);
     try {
       let query = supabase
         .from('promotions')
@@ -170,11 +231,11 @@ export default function PromotionsPage() {
 
       if (getIsMounted && !getIsMounted()) return;
 
-      if (!error && data) {
-        setPromotions(data);
-      }
+      if (error) throw error;
+      setPromotions(data || []);
     } catch (error) {
       reportError(error, 'PromotionsPage.Failed_to_load_promotions');
+      setLoadError('Promotions could not be loaded. Existing offers have not been changed.');
       toast.error('Failed to load promotions');
     }
     if (getIsMounted && !getIsMounted()) return;
@@ -247,7 +308,19 @@ export default function PromotionsPage() {
   };
 
   return (
-    <div className="promotions-page">
+    <StandardContentLayout className="promotions-page">
+      <RewardsSurfaceHeader
+        eyebrow="Rewards Circuit / Promotions"
+        title="Promotion Exchange"
+        description="Discover Active Club Offers, Scheduled Events, Referral Rewards, And Leaderboard Opportunities Without Losing The Live Eligibility And Claim Workflows Beneath Them."
+        art="market"
+        status="OFFER INDEX // LIVE"
+        metrics={[
+          { label: 'Visible Offers', value: filteredPromos.length, tone: 'live' },
+          { label: 'View', value: filter.toUpperCase() },
+          { label: 'Daily Bonus', value: 'Ready', tone: 'attention' },
+        ]}
+      />
       {/* Daily Bonus Button */}
       <div className="daily-bonus-banner" onClick={() => setShowBonusWheel(true)}>
         <span className="bonus-icon">▦</span>
@@ -284,6 +357,8 @@ export default function PromotionsPage() {
               </div>
             ))}
           </div>
+        ) : loadError ? (
+          <ErrorState message={loadError} onRetry={() => void loadPromotions()} />
         ) : filteredPromos.length === 0 ? (
           <div className="empty-state" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
             <span
@@ -305,10 +380,10 @@ export default function PromotionsPage() {
             </p>
             <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
               {filter === 'active'
-                ? 'There are no promotions running right now. Check back soon!'
+                ? 'There Are No Promotions Running Right Now. Check Back Soon!'
                 : filter === 'upcoming'
-                  ? 'No promotions are scheduled yet. Stay tuned!'
-                  : 'No promotions have been created for this club yet.'}
+                  ? 'No Promotions Are Scheduled Yet. Stay Tuned!'
+                  : 'No Promotions Have Been Created For This Club Yet.'}
             </p>
           </div>
         ) : (
@@ -427,7 +502,8 @@ export default function PromotionsPage() {
                   return {
                     day: res.day,
                     reward: res.reward,
-                    rewardType: res.rewardType === 'vip_points' ? ('vip' as const) : ('chips' as const),
+                    rewardType:
+                      res.rewardType === 'vip_points' ? ('vip' as const) : ('chips' as const),
                   };
                 } catch (err) {
                   toast.error(err instanceof Error ? err.message : 'Could not claim daily bonus');
@@ -444,13 +520,10 @@ export default function PromotionsPage() {
       <ReferralModal
         isOpen={showReferral}
         onClose={() => setShowReferral(false)}
-        referralCode={user?.id?.slice(0, 8).toUpperCase() || 'POKER123'}
-        referralLink={`https://clubarena.poker/join?ref=${user?.id || 'guest'}`}
+        referralCode={referralCode}
+        referralLink={referralLink}
         totalReferrals={0}
       />
-
-      {/* Bottom Navigation */}
-      {clubId && <ClubBottomNav clubId={clubId} />}
-    </div>
+    </StandardContentLayout>
   );
 }

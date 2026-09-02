@@ -1,56 +1,51 @@
 .list-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 14px 16px;
-    background: rgba(255, 255, 255, 0.03);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    transition: background var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  transition: background var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.2s;
 }
 
 .list-item:first-child {
-    border-radius: 12px 12px 0 0;
+  border-radius: 12px 12px 0 0;
 }
 
 .list-item:last-child {
-    border-radius: 0 0 12px 12px;
-    border-bottom: none;
+  border-radius: 0 0 12px 12px;
+  border-bottom: none;
 }
 
 .list-item:only-child {
-    border-radius: 12px;
+  border-radius: 12px;
 }
 
 .list-item.clickable {
-    cursor: pointer;
-}
-
-.list-item.clickable:hover {
-    background: rgba(255, 255, 255, 0.06);
-    transform: translateY(-1px);
+  cursor: pointer;
 }
 
 .list-item-left {
-    flex-shrink: 0;
+  flex-shrink: 0;
 }
 
 .list-item-content {
-    flex: 1;
-    min-width: 0;
+  flex: 1;
+  min-width: 0;
 }
 
 .list-item-title {
-    font-weight: 500;
-    color: rgba(255, 255, 255, 0.95);
-    margin-bottom: 2px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.95);
+  margin-bottom: 2px;
 }
 
 .list-item-subtitle {
-    font-size: 0.85rem;
-    color: rgba(255, 255, 255, 0.5);
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .list-item-right {
-    flex-shrink: 0;
-    color: rgba(255, 255, 255, 0.6);
+  flex-shrink: 0;
+  color: rgba(255, 255, 255, 0.6);
 }

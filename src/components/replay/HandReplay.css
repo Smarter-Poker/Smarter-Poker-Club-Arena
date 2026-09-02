@@ -216,6 +216,18 @@
   color: var(--text-muted);
 }
 
+/* SHOWDOWN POLISH 2026-08-25: the persisted reveal record in replays. */
+.player-hand-ranking--mucked {
+  color: rgba(255, 255, 255, 0.45);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.player-hand-description {
+  color: rgba(255, 255, 255, 0.55);
+  font-style: italic;
+}
+
 /* Community Cards Row */
 .community-cards-row {
   display: flex;
@@ -343,4 +355,20 @@
   .player-result {
     grid-column: 4;
   }
+}
+
+/* COMPLETENESS PASS 2026-08-26: Run It Twice board rows in replay. */
+.replay-run-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  margin-right: 4px;
+  border-radius: 4px;
+  background: rgba(255, 184, 0, 0.15);
+  border: 1px solid rgba(255, 184, 0, 0.4);
+  color: #ffb800;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
 }

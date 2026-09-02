@@ -1,0 +1,354 @@
+/*
+ * SHARK CLUB — SELECTED CASH TABLE
+ *
+ * The artwork is the interface. This panel intentionally reuses the exact
+ * approved game-card renderer and the Club Arena chassis; it does not redraw
+ * the hardware with borders, gradients or clipped rectangles.
+ */
+
+.glp--cash {
+  --pg-blue: #168bff;
+  --pg-cyan: #65d9ff;
+  --pg-green: #32d27a;
+  position: relative;
+  width: min(720px, 100%);
+  padding: clamp(18px, 2.7vw, 30px) clamp(24px, 4vw, 44px) clamp(28px, 4.8vw, 52px);
+  isolation: isolate;
+  overflow: hidden;
+  color: #eef3f8;
+  font-family: 'Roboto Condensed', 'Rajdhani', var(--font-sans, system-ui, sans-serif);
+  background: #000 url('/hub/club-arena/assets/club-buttons/lobby/lobby-command-chassis-v2.png')
+    center / 100% 100% no-repeat;
+  border: 0;
+  box-shadow: -28px 0 70px rgb(0 0 0 / 88%);
+}
+
+/* Keep the live close control and table name inside the top glass well. */
+.glp--cash .glp__head {
+  position: relative;
+  z-index: 6;
+  flex: 0 0 auto;
+  min-height: 76px;
+  padding: 17px clamp(18px, 4vw, 34px) 12px;
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.glp--cash .glp__head-title {
+  display: grid;
+  min-width: 0;
+  text-transform: uppercase;
+}
+
+.glp--cash .glp__head-title small {
+  color: var(--pg-cyan);
+  font:
+    800 9px/1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.24em;
+  text-shadow: 0 0 8px rgb(22 139 255 / 55%);
+}
+
+.glp--cash .glp__head-title b {
+  overflow: hidden;
+  color: #f2f4f6;
+  font:
+    800 clamp(20px, 4vw, 30px) / 1.04 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.025em;
+  text-overflow: ellipsis;
+  text-shadow:
+    0 2px 0 #000,
+    0 4px 8px #000;
+  white-space: nowrap;
+}
+
+.glp--cash .glp__close {
+  width: 46px;
+  height: 40px;
+  border: 0;
+  border-radius: 0;
+  color: #dfe8ef;
+  font:
+    800 14px/1 'Roboto Condensed',
+    sans-serif;
+  background: url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center top / 100% 114%
+    no-repeat;
+  box-shadow: none;
+  text-shadow: 0 2px 2px #000;
+}
+
+.glp--cash .glp__close:focus-visible {
+  outline: 2px solid #9be7ff;
+  outline-offset: -4px;
+}
+
+.glp--cash .glp__scroll {
+  position: relative;
+  z-index: 2;
+  gap: 14px;
+  padding: 6px clamp(16px, 3.3vw, 30px) 34px;
+  background: transparent;
+  border: 0;
+  scrollbar-color: #168bff #03070a;
+}
+
+.glp--cash .glp__scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.glp--cash .glp__scroll::-webkit-scrollbar-track {
+  background: #03070a;
+}
+
+.glp--cash .glp__scroll::-webkit-scrollbar-thumb {
+  border: 2px solid #03070a;
+  border-radius: 0;
+  background: linear-gradient(180deg, #9cecff, #168bff 52%, #06396f);
+}
+
+/* Exact approved responsive cash machine — the same component, registry,
+   live values and production shell used by the Club Arena card grid. */
+.glp--cash .glp__arena-card {
+  flex: 0 0 auto;
+  width: min(100%, 540px);
+  max-width: 540px;
+  margin: 0 auto;
+  filter: drop-shadow(0 14px 24px rgb(0 0 0 / 82%));
+}
+
+.glp--cash .glp__arena-card .agc-action {
+  cursor: pointer;
+}
+
+/* The information below the machine keeps the same manufactured frame
+   language. The empty, alpha-backed navigation shell scales without baking
+   any fake values or labels into these live sections. */
+.glp--cash .glp__section {
+  position: relative;
+  padding: clamp(24px, 5.5vw, 42px) clamp(24px, 5.2vw, 40px);
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background:
+    url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center top / 100% 114% no-repeat,
+    #020507;
+  box-shadow: 0 9px 18px rgb(0 0 0 / 58%);
+}
+
+.glp--cash .glp__section::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  inset: 18% 7%;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgb(255 255 255 / 1.2%) 0 1px, transparent 1px 4px);
+}
+
+.glp--cash .glp__section > * {
+  position: relative;
+  z-index: 1;
+}
+
+.glp--cash .glp__h {
+  margin: 0 0 13px;
+  color: var(--pg-cyan);
+  font:
+    800 11px/1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.19em;
+  text-shadow: 0 0 9px rgb(22 139 255 / 55%);
+}
+
+.glp--cash .glp__grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.glp--cash .glp__grid > div {
+  min-height: 52px;
+  padding: 8px 10px;
+  align-items: center;
+  border: 1px solid #364858;
+  background: linear-gradient(180deg, rgb(20 31 42 / 96%), rgb(2 7 11 / 98%));
+  box-shadow:
+    inset 0 0 0 2px #020406,
+    inset 0 1px 0 rgb(255 255 255 / 13%);
+  clip-path: polygon(
+    7px 0,
+    calc(100% - 7px) 0,
+    100% 7px,
+    100% calc(100% - 7px),
+    calc(100% - 7px) 100%,
+    7px 100%,
+    0 calc(100% - 7px),
+    0 7px
+  );
+}
+
+.glp--cash .glp__grid dt {
+  color: #80909e;
+  font:
+    700 9px/1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.glp--cash .glp__grid dd {
+  color: #eff3f6;
+  font:
+    800 15px/1 'Roboto Condensed',
+    sans-serif;
+  text-shadow: 0 2px 2px #000;
+}
+
+.glp--cash .glp__seatmap {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #334a5d;
+  background:
+    radial-gradient(ellipse at center, #0b382f 0 28%, #061510 29% 41%, transparent 42%), #020609;
+  box-shadow: inset 0 0 22px #000;
+}
+
+.glp--cash .glp__seat {
+  min-width: 0;
+  min-height: 58px;
+  justify-content: center;
+  border: 1px solid #526272;
+  border-radius: 0;
+  background: linear-gradient(180deg, #172431, #05090d);
+  box-shadow: inset 0 0 0 2px #020406;
+  clip-path: polygon(
+    7px 0,
+    calc(100% - 7px) 0,
+    100% 7px,
+    100% calc(100% - 7px),
+    calc(100% - 7px) 100%,
+    7px 100%,
+    0 calc(100% - 7px),
+    0 7px
+  );
+}
+
+.glp--cash .glp__seat:not(.is-taken) {
+  border-color: #168bff;
+  box-shadow:
+    inset 0 0 0 2px #020406,
+    0 0 8px rgb(22 139 255 / 34%);
+}
+
+.glp--cash .glp__seat:not(.is-taken) i,
+.glp--cash .glp__seat:not(.is-taken) em {
+  color: var(--pg-cyan);
+}
+
+.glp--cash .glp__seat.is-you {
+  border-color: var(--pg-green);
+  background: linear-gradient(180deg, #175f39, #061b10);
+}
+
+.glp--cash .glp__rules li {
+  padding: 10px 11px;
+  border-left: 2px solid #168bff;
+  background: linear-gradient(90deg, rgb(22 139 255 / 12%), transparent);
+}
+
+.glp--cash .glp__rules b {
+  color: var(--pg-cyan);
+  font-family: 'Roboto Condensed', sans-serif;
+  letter-spacing: 0.12em;
+}
+
+.glp--cash .glp__foot {
+  gap: 8px;
+  padding: 0 0 16px;
+}
+
+.glp--cash .glp__backlink,
+.glp--cash .glp__deletebtn {
+  min-height: 48px;
+  padding: 11px 26px;
+  border: 0;
+  border-radius: 0;
+  color: #e8eef3;
+  font:
+    800 12px/1 'Roboto Condensed',
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  background: url('/hub/club-arena/assets/club-buttons/club-nav-shell.webp') center top / 100% 114%
+    no-repeat;
+  text-shadow: 0 2px 2px #000;
+}
+
+.glp--cash .glp__deletebtn {
+  color: #ff8b94;
+}
+
+@media (max-width: 640px) {
+  .glp--cash {
+    width: 100%;
+    padding: max(8px, env(safe-area-inset-top, 0px)) 0 0;
+    background-size: 100% 100%;
+    box-shadow: none;
+  }
+
+  .glp--cash .glp__head {
+    min-height: 68px;
+    padding: 14px 12% 8px;
+  }
+
+  .glp--cash .glp__head-title b {
+    font-size: clamp(18px, 6vw, 25px);
+  }
+
+  .glp--cash .glp__close {
+    width: 44px;
+    height: 38px;
+  }
+
+  .glp--cash .glp__scroll {
+    gap: 10px;
+    padding: 4px 5.5% calc(28px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .glp--cash .glp__arena-card {
+    width: 100%;
+    max-width: none;
+  }
+
+  .glp--cash .glp__section {
+    padding: 30px 8%;
+  }
+
+  .glp--cash .glp__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .glp--cash .glp__seatmap {
+    grid-template-columns: repeat(3, 1fr);
+    padding: 10px;
+  }
+}
+
+@media (max-width: 390px) {
+  .glp--cash .glp__scroll {
+    padding-inline: 4.5%;
+  }
+
+  .glp--cash .glp__section {
+    padding-inline: 7%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glp--cash,
+  .glp--cash * {
+    scroll-behavior: auto !important;
+  }
+}

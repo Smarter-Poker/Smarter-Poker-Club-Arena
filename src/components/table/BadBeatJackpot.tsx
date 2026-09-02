@@ -9,7 +9,7 @@
  * - "Jackpot Hit" celebration animation
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import './BadBeatJackpot.css';
 
 export interface BadBeatJackpotProps {
@@ -34,7 +34,6 @@ export function BadBeatJackpot({
   isHit = false,
   onOpenDetails,
 }: BadBeatJackpotProps) {
-  const [showInfo, setShowInfo] = useState(false);
   const [displayAmount, setDisplayAmount] = useState(amount);
   // Brief scale/glow whenever the jackpot GROWS (2026-08-18) — a live pool
   // that only changes digits reads as static; a bump reads as money landing.
@@ -73,33 +72,50 @@ export function BadBeatJackpot({
     return () => clearInterval(interval);
   }, [amount]);
 
+  /**
+   * THE HOVER POPOVER IS GONE (audit 2026-08-25). See the note above
+   * `.bbj-widget { overflow: hidden }` in BadBeatJackpot.css for the full
+   * reasoning; in short, `.bbj-info` was a `top: 100%` child of a plate that
+   * has clipped its overflow since the 2026-08-18 sheen pass, so it has not
+   * been visible to anyone for a week, and every fact it carried is in
+   * BBJInfoModal — which this plate opens on tap or Enter — in a better form.
+   *
+   * The information itself was worth keeping for a desktop glance, so it moved
+   * to the plate's native `title`. A tooltip is painted by the browser outside
+   * the document, so no ancestor's `overflow`, `transform` or `contain` can
+   * ever clip it again — which is exactly the failure mode being fixed.
+   */
+  const hoverSummary = useMemo(() => {
+    const lines = [`Qualifying Hand: ${qualifyingHand}`];
+    if (subText) lines.push(subText);
+    if (typeof payoutPercent === 'number' && payoutPercent > 0) {
+      const share =
+        amount > 0
+          ? ` (about ${currency}${Math.trunc((amount * payoutPercent) / 100).toLocaleString('en-US')})`
+          : '';
+      lines.push(
+        `This table hits for ${payoutPercent}% of the pool${share} - 50% bad beat / 25% winner / 25% table.`
+      );
+    }
+    lines.push('Tap for the last five jackpots.');
+    return lines.join('\n');
+  }, [qualifyingHand, subText, payoutPercent, amount, currency]);
+
   return (
     <>
-      {/* Table Widget */}
-      {/* BBJ-UX 2026-08-18: hover shows the quick rule on desktop; a TAP opens
-          the full jackpot view (last 5 hits + what this table pays), which is
-          what players actually want from the banner. Falls back to toggling
-          the popover when no handler is wired. */}
+      {/* Table Widget — a TAP (or Enter/Space) opens the full jackpot view:
+          last 5 hits, what this table pays, and the qualifying hands. */}
       <div
         className="bbj-widget"
         role="button"
         tabIndex={0}
-        aria-label="Bad Beat Jackpot - view recent jackpots"
-        onMouseEnter={() => setShowInfo(true)}
-        onMouseLeave={() => setShowInfo(false)}
-        onClick={() => {
-          if (onOpenDetails) {
-            setShowInfo(false);
-            onOpenDetails();
-          } else {
-            setShowInfo((v) => !v);
-          }
-        }}
+        aria-label="Bad Beat Jackpot - View Recent Jackpots"
+        title={hoverSummary}
+        onClick={() => onOpenDetails?.()}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
-            if (onOpenDetails) onOpenDetails();
-            else setShowInfo((v) => !v);
+            onOpenDetails?.();
           }
         }}
       >
@@ -118,32 +134,6 @@ export function BadBeatJackpot({
                 maximumFractionDigits: 2,
               })}
         </div>
-
-        {/* Info Popover */}
-        {showInfo && (
-          <div className="bbj-info">
-            <h4 className="bbj-info__title">Qualifying Hand</h4>
-            <p className="bbj-info__rule">{qualifyingHand}</p>
-            {subText && <p className="bbj-info__sub">{subText}</p>}
-            {/* PAYOUT-TRUTH 2026-08-18: the banner shows the FULL pool, but a
-                table only pays its stakes-tiered slice (nano 15% ... 85%).
-                Showing the real number here beats a six-figure tease that a
-                nano table can never pay. */}
-            {typeof payoutPercent === 'number' && payoutPercent > 0 && (
-              <p className="bbj-info__payout">
-                This Table Hits For {payoutPercent}% Of The Pool
-                {amount > 0 && (
-                  <>
-                    {' '}
-                    (&asymp; {currency}
-                    {Math.trunc((amount * payoutPercent) / 100).toLocaleString('en-US')})
-                  </>
-                )}
-                &nbsp;&mdash; 50% Bad Beat / 25% Winner / 25% Table
-              </p>
-            )}
-          </div>
-        )}
       </div>
 
       {/* Hit Animation Overlay */}

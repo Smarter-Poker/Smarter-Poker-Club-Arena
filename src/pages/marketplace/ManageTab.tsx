@@ -14,10 +14,12 @@ import { callClubArenaApi } from '../../services/clubArenaApi';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../components/common/Toast';
 import { confirmDialog } from '../../components/common/confirmDialog';
-import { fmtChips } from '../../utils/format';
+import { fmt } from '../../utils/format';
 import styles from '../MarketplacePage.module.css';
 import ShopAnalytics from './ShopAnalytics';
 import PurchaseLedger from './PurchaseLedger';
+import { THEME_PRESET_CATALOG } from '../../lib/tableTheme';
+import { avatarService, type Avatar } from '../../services/AvatarService';
 import {
   CATEGORIES,
   describeGrant,
@@ -57,6 +59,9 @@ interface EditDraft {
   stackable: boolean;
 }
 
+const MARKETPLACE_THEME_PRESETS = THEME_PRESET_CATALOG.filter((preset) => preset.tier === 'vip');
+const MARKETPLACE_THEME_IDS = new Set(MARKETPLACE_THEME_PRESETS.map((preset) => preset.id));
+
 export default function ManageTab({
   clubId,
   categories,
@@ -84,6 +89,10 @@ export default function ManageTab({
   const [imageUrl, setImageUrl] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<EditDraft | null>(null);
+  const [avatarOptions, setAvatarOptions] = useState<Avatar[]>([]);
+  const [avatarCatalogState, setAvatarCatalogState] = useState<
+    'idle' | 'loading' | 'ready' | 'error'
+  >('idle');
 
   const loadItems = useCallback(async () => {
     setLoadError(null);
@@ -119,6 +128,32 @@ export default function ManageTab({
 
   // What the selected category will grant when a member redeems it.
   const grantInfo = categories.find((c) => c.name === category);
+  const editGrantInfo = draft ? categories.find((c) => c.name === draft.category) : undefined;
+  const needsAvatarCatalog =
+    grantInfo?.grantType === 'avatar' || editGrantInfo?.grantType === 'avatar';
+
+  useEffect(() => {
+    if (!needsAvatarCatalog || avatarCatalogState !== 'idle') return undefined;
+    setAvatarCatalogState('loading');
+    avatarService
+      .getAvatarLibraryResult()
+      .then((result) => {
+        const presets = result.avatars.filter((avatar) => avatar.category !== 'custom');
+        if (result.presetsFailed || presets.length === 0) {
+          setAvatarCatalogState('error');
+          return;
+        }
+        setAvatarOptions(presets);
+        setAvatarCatalogState('ready');
+      })
+      .catch(() => {
+        setAvatarCatalogState('error');
+      });
+    return undefined;
+  }, [avatarCatalogState, needsAvatarCatalog]);
+
+  const isRealAvatarId = (avatarId: string) =>
+    avatarOptions.some((avatar) => avatar.id === avatarId);
   // Table skins and avatars need an id, or every one a club sells collapses to
   // the same theme/avatar (and avatar_unlocks dedupes, granting nothing).
   const secondsPerUse = categories.find((c) => c.grantType === 'time_bank')?.secondsPerUse ?? 20;
@@ -138,15 +173,15 @@ export default function ManageTab({
   const validate = (n: string, p: string): number | null => {
     const numPrice = Math.floor(Number(p));
     if (!n.trim()) {
-      toast.error('Item name required');
+      toast.error('Item Name Required');
       return null;
     }
     if (!numPrice || !Number.isFinite(numPrice) || numPrice <= 0) {
-      toast.error('Price must be a positive number');
+      toast.error('Price Must Be A Positive Number');
       return null;
     }
     if (numPrice > 1_000_000_000) {
-      toast.error('Price exceeds maximum allowed value');
+      toast.error('Price Exceeds Maximum Allowed Value');
       return null;
     }
     return numPrice;
@@ -155,6 +190,14 @@ export default function ManageTab({
   const handleCreate = async () => {
     const numPrice = validate(name, price);
     if (numPrice == null) return;
+    if (grantInfo?.grantType === 'table_skin' && !MARKETPLACE_THEME_IDS.has(grantRef)) {
+      toast.error('Choose A Real Table Studio Theme For This Item');
+      return;
+    }
+    if (grantInfo?.grantType === 'avatar' && !isRealAvatarId(grantRef)) {
+      toast.error('Choose A Real Avatar From The 97-Avatar Library For This Item');
+      return;
+    }
     setProcessing(true);
     try {
       await callClubArenaApi('manage-shop', {
@@ -183,7 +226,7 @@ export default function ManageTab({
         availableFrom: localInputToIso(availableFrom),
         sortOrder: sortOrder.trim() === '' ? undefined : Math.floor(Number(sortOrder) || 0),
       });
-      toast.success('Item created');
+      toast.success('Item Created');
       setName('');
       setPrice('');
       setDesc('');
@@ -237,13 +280,22 @@ export default function ManageTab({
     if (!draft) return;
     const numPrice = validate(draft.name, draft.price);
     if (numPrice == null) return;
+    const nextGrant = categories.find((c) => c.name === draft.category);
+    if (nextGrant?.grantType === 'table_skin' && !MARKETPLACE_THEME_IDS.has(draft.grantRef)) {
+      toast.error('Choose A Real Table Studio Theme For This Item');
+      return;
+    }
+    if (nextGrant?.grantType === 'avatar' && !isRealAvatarId(draft.grantRef)) {
+      toast.error('Choose A Real Avatar From The 97-Avatar Library For This Item');
+      return;
+    }
     // club_shop_items_sale_price_valid enforces sale_price <= price. Without
     // this, lowering the price under an active sale surfaced as a bare 500.
     if (draft.salePrice.trim() !== '') {
       const sale = Math.floor(Number(draft.salePrice) || 0);
       if (sale > numPrice) {
         toast.error(
-          `Sale price cannot exceed the price (${numPrice}). Lower the sale price first.`
+          `Sale Price Cannot Exceed The Price (${numPrice}). Lower The Sale Price First.`
         );
         return;
       }
@@ -253,7 +305,6 @@ export default function ManageTab({
       // The grant MUST travel with the category. Updating category alone left
       // e.g. a time-bank grant on a row now labelled "Avatars", so the card
       // advertised table time and redeeming granted time bank seconds.
-      const nextGrant = categories.find((c) => c.name === draft.category);
       await callClubArenaApi('manage-shop', {
         action: 'update',
         clubId,
@@ -286,7 +337,7 @@ export default function ManageTab({
         sortOrder: draft.sortOrder.trim() === '' ? 0 : Math.floor(Number(draft.sortOrder) || 0),
         stackable: draft.stackable,
       });
-      toast.success('Item updated');
+      toast.success('Item Updated');
       setEditingId(null);
       setDraft(null);
       loadItems();
@@ -303,7 +354,7 @@ export default function ManageTab({
     setProcessing(true);
     try {
       await callClubArenaApi('manage-shop', { action: 'toggle', clubId, itemId: item.id });
-      toast.success(item.is_active ? 'Item hidden' : 'Item activated');
+      toast.success(item.is_active ? 'Item Hidden' : 'Item Activated');
       loadItems();
       onShopChanged();
     } catch (err: unknown) {
@@ -317,14 +368,14 @@ export default function ManageTab({
     if (processing) return;
     if ((item.purchase_count || 0) > 0) {
       toast.error(
-        'This item has sales. Deleting it would erase its purchase history - hide it instead.'
+        'This Item Has Sales. Deleting It Would Erase Its Purchase History - Hide It Instead.'
       );
       return;
     }
     if (
       !(await confirmDialog({
-        title: 'Delete item',
-        message: `Delete "${item.name}"? This cannot be undone.`,
+        title: 'Delete Item',
+        message: `Delete "${item.name}"? This Cannot Be Undone.`,
         confirmText: 'Delete',
         variant: 'danger',
       }))
@@ -334,7 +385,7 @@ export default function ManageTab({
     setProcessing(true);
     try {
       await callClubArenaApi('manage-shop', { action: 'delete', clubId, itemId: item.id });
-      toast.success('Item deleted');
+      toast.success('Item Deleted');
       loadItems();
       onShopChanged();
     } catch (err: unknown) {
@@ -361,8 +412,8 @@ export default function ManageTab({
           <span className={styles.statLabel}>Total Sold</span>
         </div>
         <div className={styles.statCard}>
-          <span className={styles.statValue}>{fmtChips(stats.totalRevenue)}</span>
-          <span className={styles.statLabel}>Revenue</span>
+          <span className={styles.statValue}>{fmt(stats.totalRevenue)}</span>
+          <span className={styles.statLabel}>Diamond Revenue</span>
         </div>
       </div>
 
@@ -377,8 +428,8 @@ export default function ManageTab({
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Item name"
-            aria-label="Item name"
+            placeholder="Item Name"
+            aria-label="Item Name"
             className={styles.formInput}
             maxLength={100}
           />
@@ -386,8 +437,8 @@ export default function ManageTab({
             type="number"
             value={price}
             onChange={(e) => setPrice(e.target.value)}
-            placeholder="Price (chips)"
-            aria-label="Item price in chips"
+            placeholder="Price (Diamonds)"
+            aria-label="Item Price In Diamonds"
             min="1"
             step="1"
             className={styles.formInput}
@@ -396,7 +447,7 @@ export default function ManageTab({
         <input
           value={desc}
           onChange={(e) => setDesc(e.target.value)}
-          placeholder="Description (optional)"
+          placeholder="Description (Optional)"
           className={styles.formInput}
           maxLength={500}
         />
@@ -405,7 +456,7 @@ export default function ManageTab({
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             className={styles.formSelect}
-            aria-label="Item category"
+            aria-label="Item Category"
           >
             {categoryNames.map((cat) => (
               <option key={cat} value={cat}>
@@ -416,8 +467,8 @@ export default function ManageTab({
           <input
             value={imageUrl}
             onChange={(e) => setImageUrl(e.target.value)}
-            placeholder="Image URL (https only, optional)"
-            aria-label="Item image URL"
+            placeholder="Image URL (Https Only, Optional)"
+            aria-label="Item Image URL"
             className={styles.formInput}
           />
         </div>
@@ -428,8 +479,8 @@ export default function ManageTab({
             step="1"
             value={stock}
             onChange={(e) => setStock(e.target.value)}
-            placeholder="Stock (blank = unlimited)"
-            aria-label="Stock quantity, blank for unlimited"
+            placeholder="Stock (Blank = Unlimited)"
+            aria-label="Stock Quantity, Blank For Unlimited"
             className={styles.formInput}
           />
           <input
@@ -438,8 +489,8 @@ export default function ManageTab({
             step="1"
             value={perUserLimit}
             onChange={(e) => setPerUserLimit(e.target.value)}
-            placeholder="Max per member (blank = no cap)"
-            aria-label="Maximum purchases per member"
+            placeholder="Max Per Member (Blank = No Cap)"
+            aria-label="Maximum Purchases Per Member"
             className={styles.formInput}
           />
         </div>
@@ -450,15 +501,15 @@ export default function ManageTab({
             step="1"
             value={salePrice}
             onChange={(e) => setSalePrice(e.target.value)}
-            placeholder="Sale price (blank = none)"
-            aria-label="Discounted sale price"
+            placeholder="Sale Price (Blank = None)"
+            aria-label="Discounted Sale Price"
             className={styles.formInput}
           />
           <input
             type="datetime-local"
             value={availableUntil}
             onChange={(e) => setAvailableUntil(e.target.value)}
-            aria-label="Available until"
+            aria-label="Available Until"
             className={styles.formInput}
           />
         </div>
@@ -467,7 +518,7 @@ export default function ManageTab({
             type="datetime-local"
             value={availableFrom}
             onChange={(e) => setAvailableFrom(e.target.value)}
-            aria-label="Available from"
+            aria-label="Available From"
             className={styles.formInput}
           />
           <input
@@ -475,8 +526,8 @@ export default function ManageTab({
             step="1"
             value={sortOrder}
             onChange={(e) => setSortOrder(e.target.value)}
-            placeholder="Sort order (lower shows first)"
-            aria-label="Storefront sort order"
+            placeholder="Sort Order (Lower Shows First)"
+            aria-label="Storefront Sort Order"
             className={styles.formInput}
           />
         </div>
@@ -492,41 +543,74 @@ export default function ManageTab({
               step="1"
               value={grantQty}
               onChange={(e) => setGrantQty(e.target.value)}
-              placeholder={`How many ${grantInfo.grantUnit}?`}
-              aria-label={`Number of ${grantInfo.grantUnit} granted`}
+              placeholder={`How Many ${grantInfo.grantUnit}?`}
+              aria-label={`Number Of ${grantInfo.grantUnit} Granted`}
               className={styles.formInput}
             />
             <span className={styles.grantHint}>
               {grantInfo.grantType === 'time_bank'
-                ? `= ${(Number(grantQty) || 1) * (grantInfo.secondsPerUse || 20)}s of table time`
-                : `${Number(grantQty) || 1} free ${grantInfo.grantUnit}`}
+                ? `= ${(Number(grantQty) || 1) * (grantInfo.secondsPerUse || 20)}s Of Table Time`
+                : `${Number(grantQty) || 1} Free ${grantInfo.grantUnit === 'throws' ? 'Throws' : 'Uses'}`}
             </span>
           </div>
         )}
         {grantNeedsRef && (
           <div className={styles.formRow}>
-            <input
-              value={grantRef}
-              onChange={(e) => setGrantRef(e.target.value)}
-              placeholder={
-                grantInfo?.grantType === 'avatar'
-                  ? 'Avatar id (e.g. shark)'
-                  : 'Theme id (e.g. royal_gold)'
-              }
-              aria-label={grantInfo?.grantType === 'avatar' ? 'Avatar id' : 'Theme id'}
-              className={styles.formInput}
-              maxLength={64}
-            />
+            {grantInfo?.grantType === 'table_skin' ? (
+              <select
+                value={grantRef}
+                onChange={(event) => setGrantRef(event.target.value)}
+                aria-label="Table Studio Theme"
+                className={styles.formInput}
+              >
+                <option value="">Choose A Table Studio Theme</option>
+                {MARKETPLACE_THEME_PRESETS.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <select
+                value={grantRef}
+                onChange={(event) => setGrantRef(event.target.value)}
+                aria-label="Avatar Library Selection"
+                className={styles.formInput}
+                disabled={avatarCatalogState === 'loading' || avatarCatalogState === 'error'}
+              >
+                <option value="">
+                  {avatarCatalogState === 'loading'
+                    ? 'Loading The 97-Avatar Library...'
+                    : avatarCatalogState === 'error'
+                      ? 'Avatar Library Unavailable - Try Again'
+                      : 'Choose An Avatar'}
+                </option>
+                {avatarOptions.map((avatar) => (
+                  <option key={avatar.id} value={avatar.id}>
+                    {avatar.name} ({avatar.category === 'vip' ? 'VIP' : 'Free'})
+                  </option>
+                ))}
+              </select>
+            )}
             <span className={styles.grantHint}>
               Unique Per Item - Two Items Sharing An ID Unlock The Same Thing.
             </span>
+            {grantInfo?.grantType === 'avatar' && avatarCatalogState === 'error' && (
+              <button
+                type="button"
+                className={styles.btnGhost}
+                onClick={() => setAvatarCatalogState('idle')}
+              >
+                Retry Avatar Library
+              </button>
+            )}
           </div>
         )}
         {grantInfo && !grantInfo.grantUnit && (
           <div className={styles.grantHint}>
             {grantInfo.grantType === 'none'
-              ? 'Exclusive items grant nothing automatically - your club fulfils them.'
-              : 'Redeeming unlocks this permanently for the member.'}
+              ? 'Exclusive Items Grant Nothing Automatically - Your Club Fulfils Them.'
+              : 'Redeeming Unlocks This Permanently For The Member.'}
           </div>
         )}
         <button
@@ -571,19 +655,19 @@ export default function ManageTab({
                     {item.name}
                   </div>
                   <div style={{ fontSize: 12, color: '#8b8d91', marginTop: 2 }}>
-                    {fmtChips(item.price)} Chips {' - '}
+                    {fmt(item.price)} Diamonds {' - '}
                     <span className={styles.categorySmall}>{item.category || 'Time Banks'}</span>
                     {' - '}
                     {item.purchase_count || 0} Sold
-                    {item.revenue ? ` - ${fmtChips(item.revenue)} earned` : ''}
-                    {item.stock !== null && item.stock !== undefined ? ` - ${item.stock} left` : ''}
+                    {item.revenue ? ` - ${fmt(item.revenue)} Earned` : ''}
+                    {item.stock !== null && item.stock !== undefined ? ` - ${item.stock} Left` : ''}
                     {item.sale_price !== null && item.sale_price !== undefined
-                      ? ` - on sale at ${fmtChips(item.sale_price)}`
+                      ? ` - On Sale At ${fmt(item.sale_price)}`
                       : ''}
-                    {item.per_user_limit ? ` - max ${item.per_user_limit}/member` : ''}
-                    {item.stackable ? ' - stackable' : ''}
+                    {item.per_user_limit ? ` - Max ${item.per_user_limit}/Member` : ''}
+                    {item.stackable ? ' - Stackable' : ''}
                     {item.available_until
-                      ? ` - ends ${new Date(item.available_until).toLocaleDateString()}`
+                      ? ` - Ends ${new Date(item.available_until).toLocaleDateString()}`
                       : ''}
                   </div>
                   {describeGrant(item.grant_spec, secondsPerUse) && (
@@ -620,8 +704,8 @@ export default function ManageTab({
                     disabled={processing || (item.purchase_count || 0) > 0}
                     title={
                       (item.purchase_count || 0) > 0
-                        ? 'Items with sales cannot be deleted - hide them instead'
-                        : 'Delete this item'
+                        ? 'Items With Sales Cannot Be Deleted - Hide Them Instead'
+                        : 'Delete This Item'
                     }
                   >
                     Delete
@@ -636,7 +720,7 @@ export default function ManageTab({
                     <input
                       value={draft.name}
                       onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                      placeholder="Item name"
+                      placeholder="Item Name"
                       className={styles.formInput}
                       maxLength={100}
                     />
@@ -644,7 +728,7 @@ export default function ManageTab({
                       type="number"
                       value={draft.price}
                       onChange={(e) => setDraft({ ...draft, price: e.target.value })}
-                      placeholder="Price (chips)"
+                      placeholder="Price (Diamonds)"
                       min="1"
                       className={styles.formInput}
                     />
@@ -653,6 +737,7 @@ export default function ManageTab({
                     value={draft.description}
                     onChange={(e) => setDraft({ ...draft, description: e.target.value })}
                     placeholder="Description"
+                    aria-label="Item Description"
                     className={styles.formInput}
                     maxLength={500}
                   />
@@ -661,7 +746,7 @@ export default function ManageTab({
                       value={draft.category}
                       onChange={(e) => setDraft({ ...draft, category: e.target.value })}
                       className={styles.formSelect}
-                      aria-label="Item category"
+                      aria-label="Item Category"
                     >
                       {(categoryNames.includes(draft.category)
                         ? categoryNames
@@ -675,7 +760,7 @@ export default function ManageTab({
                     <input
                       value={draft.imageUrl}
                       onChange={(e) => setDraft({ ...draft, imageUrl: e.target.value })}
-                      placeholder="Image URL (optional)"
+                      placeholder="Image URL (Optional)"
                       className={styles.formInput}
                     />
                   </div>
@@ -686,8 +771,8 @@ export default function ManageTab({
                       step="1"
                       value={draft.stock}
                       onChange={(e) => setDraft({ ...draft, stock: e.target.value })}
-                      placeholder="Stock (blank = unlimited)"
-                      aria-label="Stock quantity, blank for unlimited"
+                      placeholder="Stock (Blank = Unlimited)"
+                      aria-label="Stock Quantity, Blank For Unlimited"
                       className={styles.formInput}
                     />
                     <input
@@ -696,12 +781,12 @@ export default function ManageTab({
                       step="1"
                       value={draft.salePrice}
                       onChange={(e) => setDraft({ ...draft, salePrice: e.target.value })}
-                      placeholder="Sale price (blank ends the sale)"
-                      aria-label="Sale price, blank to end the sale"
+                      placeholder="Sale Price (Blank Ends The Sale)"
+                      aria-label="Sale Price, Blank To End The Sale"
                       className={styles.formInput}
                     />
                     <span className={styles.grantHint}>
-                      {draft.stock.trim() === '' ? 'Unlimited' : `${draft.stock} available`}
+                      {draft.stock.trim() === '' ? 'Unlimited' : `${draft.stock} Available`}
                     </span>
                   </div>
                   <div className={styles.formRow}>
@@ -711,8 +796,8 @@ export default function ManageTab({
                       step="1"
                       value={draft.perUserLimit}
                       onChange={(e) => setDraft({ ...draft, perUserLimit: e.target.value })}
-                      placeholder="Max per member (blank = no cap)"
-                      aria-label="Maximum purchases per member"
+                      placeholder="Max Per Member (Blank = No Cap)"
+                      aria-label="Maximum Purchases Per Member"
                       className={styles.formInput}
                     />
                     <input
@@ -720,8 +805,8 @@ export default function ManageTab({
                       step="1"
                       value={draft.sortOrder}
                       onChange={(e) => setDraft({ ...draft, sortOrder: e.target.value })}
-                      placeholder="Sort order"
-                      aria-label="Storefront sort order"
+                      placeholder="Sort Order"
+                      aria-label="Storefront Sort Order"
                       className={styles.formInput}
                     />
                   </div>
@@ -730,14 +815,14 @@ export default function ManageTab({
                       type="datetime-local"
                       value={draft.availableFrom}
                       onChange={(e) => setDraft({ ...draft, availableFrom: e.target.value })}
-                      aria-label="Available from"
+                      aria-label="Available From"
                       className={styles.formInput}
                     />
                     <input
                       type="datetime-local"
                       value={draft.availableUntil}
                       onChange={(e) => setDraft({ ...draft, availableUntil: e.target.value })}
-                      aria-label="Available until"
+                      aria-label="Available Until"
                       className={styles.formInput}
                     />
                   </div>
@@ -764,20 +849,68 @@ export default function ManageTab({
                             step="1"
                             value={draft.grantQty}
                             onChange={(e) => setDraft({ ...draft, grantQty: e.target.value })}
-                            placeholder={`How many ${g.grantUnit}?`}
-                            aria-label={`Number of ${g.grantUnit} granted`}
+                            placeholder={`How Many ${g.grantUnit}?`}
+                            aria-label={`Number Of ${g.grantUnit} Granted`}
                             className={styles.formInput}
                           />
                         )}
-                        {(g.grantType === 'avatar' || g.grantType === 'table_skin') && (
-                          <input
+                        {g.grantType === 'table_skin' && (
+                          <select
                             value={draft.grantRef}
-                            onChange={(e) => setDraft({ ...draft, grantRef: e.target.value })}
-                            placeholder={g.grantType === 'avatar' ? 'Avatar id' : 'Theme id'}
-                            aria-label={g.grantType === 'avatar' ? 'Avatar id' : 'Theme id'}
+                            onChange={(event) =>
+                              setDraft({ ...draft, grantRef: event.target.value })
+                            }
+                            aria-label="Table Studio Theme"
                             className={styles.formInput}
-                            maxLength={64}
-                          />
+                          >
+                            {!MARKETPLACE_THEME_IDS.has(draft.grantRef) && draft.grantRef && (
+                              <option value={draft.grantRef}>Legacy: {draft.grantRef}</option>
+                            )}
+                            <option value="">Choose A Table Studio Theme</option>
+                            {MARKETPLACE_THEME_PRESETS.map((preset) => (
+                              <option key={preset.id} value={preset.id}>
+                                {preset.name}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {g.grantType === 'avatar' && (
+                          <>
+                            <select
+                              value={draft.grantRef}
+                              onChange={(e) => setDraft({ ...draft, grantRef: e.target.value })}
+                              aria-label="Avatar Library Selection"
+                              className={styles.formInput}
+                              disabled={avatarCatalogState === 'loading'}
+                            >
+                              {!isRealAvatarId(draft.grantRef) && draft.grantRef && (
+                                <option value={draft.grantRef}>
+                                  Invalid Legacy Avatar: {draft.grantRef}
+                                </option>
+                              )}
+                              <option value="">
+                                {avatarCatalogState === 'loading'
+                                  ? 'Loading The 97-Avatar Library...'
+                                  : avatarCatalogState === 'error'
+                                    ? 'Avatar Library Unavailable - Try Again'
+                                    : 'Choose An Avatar'}
+                              </option>
+                              {avatarOptions.map((avatar) => (
+                                <option key={avatar.id} value={avatar.id}>
+                                  {avatar.name} ({avatar.category === 'vip' ? 'VIP' : 'Free'})
+                                </option>
+                              ))}
+                            </select>
+                            {avatarCatalogState === 'error' && (
+                              <button
+                                type="button"
+                                className={styles.btnGhost}
+                                onClick={() => setAvatarCatalogState('idle')}
+                              >
+                                Retry Avatar Library
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     );

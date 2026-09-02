@@ -22,8 +22,8 @@ vi.mock('../../src/core/MasterBus', () => ({
   masterBus: { emit: vi.fn(), subscribe: vi.fn(() => vi.fn()) },
 }));
 
-// Mock OneSignal
-vi.stubGlobal('OneSignal', undefined);
+// No OneSignal stub any more. The SDK is not loaded, and nothing in the
+// service reaches for it — see the removal note below.
 
 import {
   pushNotificationService,
@@ -39,20 +39,29 @@ describe('PushNotificationService', () => {
     expect(PushNotificationService).toBe(pushNotificationService);
   });
 
-  it('should have init method', () => {
-    expect(typeof pushNotificationService.init).toBe('function');
-  });
-
-  it('should have setExternalUserId method', () => {
-    expect(typeof pushNotificationService.setExternalUserId).toBe('function');
-  });
-
-  it('should have requestPermission method', () => {
-    expect(typeof pushNotificationService.requestPermission).toBe('function');
-  });
-
-  it('should have isEnabled method', () => {
-    expect(typeof pushNotificationService.isEnabled).toBe('function');
+  /**
+   * These four methods existed only to drive the OneSignal SDK, and asserting
+   * they exist is what kept them looking load-bearing.
+   *
+   * OneSignal was retired on 2026-08-19 and replaced with self-hosted VAPID web
+   * push. The loader survived until 2026-08-29, when it was found still
+   * injecting the v16 SDK on every Club Arena session and calling
+   * api.onesignal.com/sync/<app-id>/web — a third-party request per session, for
+   * a vendor the platform does not use. `init`, `setExternalUserId`,
+   * `requestPermission` and `isEnabled` went with it. Between the four of them
+   * they had one caller in the entire app.
+   *
+   * The assertion is inverted rather than deleted so that re-adding any of them
+   * fails here, with this explanation attached, instead of quietly bringing the
+   * SDK back with it.
+   */
+  it('no longer exposes the OneSignal SDK surface', () => {
+    for (const removed of ['init', 'setExternalUserId', 'requestPermission', 'isEnabled']) {
+      expect(
+        (pushNotificationService as unknown as Record<string, unknown>)[removed],
+        `${removed}() existed only to drive the OneSignal SDK, which was removed on 2026-08-29`
+      ).toBeUndefined();
+    }
   });
 
   it('should have sendToUser method', () => {

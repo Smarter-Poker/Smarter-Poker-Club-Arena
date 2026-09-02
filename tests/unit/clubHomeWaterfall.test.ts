@@ -51,8 +51,12 @@ describe('the club lobby does not re-serialise its round trips', () => {
     const resolved = at('const resolvedId = clubData.id;');
     const unionStart = at('const unionRowPromise = supabase');
     const countStart = at('const liveMemberCountPromise = supabase');
-    // The membership batch is the first thing that used to block them.
-    const membershipAwait = at('const [memberResult, diamondWallet] = await Promise.all([');
+    /* The membership read is the first thing that used to block them. It was
+       a Promise.all of the club_members row AND a DiamondService balance;
+       the balance fed a `wallet` state nothing in the file ever read, so the
+       round trip is gone and this is a single awaited query now. What this
+       test pins is unchanged: both hoisted promises must be ISSUED before it. */
+    const membershipAwait = at('const memberResult = await supabase');
 
     expect(unionStart).toBeGreaterThan(resolved);
     expect(countStart).toBeGreaterThan(resolved);
@@ -79,8 +83,12 @@ describe('the club lobby does not re-serialise its round trips', () => {
     // union-wide count a few lines further down uses .in('club_id',
     // unionClubIds) and genuinely cannot be hoisted - it depends on a value
     // two round trips away - so it must not trip this.
+    /* Matched on the COUNT form specifically. A bare club_members read is not
+       the thing being guarded against - the viewer's own membership row is
+       one, is awaited inline on purpose, and cannot be hoisted because it
+       needs the authenticated user id. Only the head/count query is. */
     expect(
-      /await supabase\s*\n\s*\.from\('club_members'\)[\s\S]{0,240}?\.eq\('club_id', resolvedId\)/.test(
+      /await supabase\s*\n\s*\.from\('club_members'\)[\s\S]{0,240}?count: 'exact'[\s\S]{0,240}?\.eq\('club_id', resolvedId\)/.test(
         src
       ),
       'the standalone live member count is being queried inline inside loadClubData again'
@@ -96,10 +104,17 @@ describe('the club lobby does not re-serialise its round trips', () => {
       at('const liveMemberCountPromise')
     );
     expect(unionBlock).toContain('(error) => ({ data: null, error })');
+    /* Was `{ count: null, error }` while this was a PostgREST head/count query.
+       It is now supabase.rpc('fn_get_club_member_count', ...), whose failure
+       shape is `{ data: null, error }` - because a direct count returned 0 to
+       anyone who is not a member of the club (RLS), and cost 204ms against the
+       RPC's 0.55ms. What this test actually guards is unchanged: the hoisted
+       promise must still shape its rejection so the fail-open handling at the
+       await site sees `{ error }` instead of an unhandled rejection. */
     const countBlock = src.slice(
       at('const liveMemberCountPromise = supabase'),
       at('const liveMemberCountPromise = supabase') + 600
     );
-    expect(countBlock).toContain('(error) => ({ count: null, error })');
+    expect(countBlock).toContain('(error) => ({ data: null, error })');
   });
 });

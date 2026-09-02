@@ -703,9 +703,13 @@ class UnionServiceClass {
       totalRakeCollected,
       totalUnionTax: round2(totalHolds),
       // Agent commissions and player rakeback settle INSIDE each club
-      // (commission_records / rake_records are club-scoped and not readable
-      // across the union under RLS) — they are not union revenue and are
-      // reported as 0 here rather than fabricated.
+      // (agent_commissions / rake_records are club-scoped, and RLS gives an
+      // agent their own rows and a union overseer only the clubs they oversee)
+      // - they are not union revenue and are reported as 0 here rather than
+      // fabricated.
+      //
+      // 2026-09-01: this named commission_records, a table dropped in phase 7
+      // that never held a row. The reasoning was right; the table was not.
       totalAgentCommissions: 0,
       totalPlayerRakeback: 0,
       netUnionRevenue: round2(totalHolds + engineRake),
@@ -760,11 +764,25 @@ class UnionServiceClass {
     // Get member counts for all clubs
     const clubIds = clubs.map((c) => c.clubId);
 
-    const { count: totalPlayers } = await supabase
-      .from('club_members')
-      .select('*', { count: 'exact', head: true })
-      .in('club_id', clubIds)
-      .in('status', ['active', 'approved']);
+    /* Summed from the SECURITY DEFINER batch RPC, not counted off the table.
+       A direct count here is RLS-filtered, and the filter does not drop a CLUB
+       from the sum - it drops ROWS - so the union total silently became "members
+       of this union that I may personally enumerate". Measured for a real admin
+       of one of the two clubs: 593 against a true 1,172. Identical defect to the
+       one fixed in ClubHomePage (#875); this was the second copy.
+
+       Summed without de-duplication, matching unions.member_count: the RPC
+       returns one row per club and a player in two clubs is two memberships. */
+    const { data: perClubCounts } = await supabase.rpc('fn_batch_club_member_counts', {
+      p_club_ids: clubIds,
+    });
+    const totalPlayers = Array.isArray(perClubCounts)
+      ? perClubCounts.reduce(
+          (sum: number, row: { member_count: number | string }) =>
+            sum + Number(row.member_count ?? 0),
+          0
+        )
+      : 0;
 
     return {
       totalPlayers: totalPlayers || 0,

@@ -81,7 +81,14 @@ class PlayerStatusServiceClass {
   async getPlayerStatus(userId: string): Promise<PlayerStatus | null> {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, status_text:status, is_online, last_seen')
+      /**
+       * This used to read `status_text:status` - aliasing the ACCOUNT STATUS
+       * column into the custom-status field, because profiles.status_text did
+       * not exist. A profile therefore rendered "active" under the player's
+       * name as if they had written it. The column exists now
+       * (20260828034000_profiles_status_text.sql), so read the real one.
+       */
+      .select('id, status_text, is_online, last_seen')
       .eq('id', userId)
       .maybeSingle();
 
@@ -127,7 +134,7 @@ class PlayerStatusServiceClass {
     // Step 2: Batch-fetch profiles for all friend IDs
     const { data: profiles, error } = await supabase
       .from('profiles')
-      .select('id, status_text:status, is_online, last_seen')
+      .select('id, status_text, is_online, last_seen')
       .in('id', Array.from(friendIds))
       .eq('is_online', true);
 
@@ -148,7 +155,7 @@ class PlayerStatusServiceClass {
    */
   generateProfileLink(userId: string): string {
     const baseUrl = window.location.origin;
-    return `${baseUrl}/profile/${userId}`;
+    return `${baseUrl}/hub/club-arena/profile/${userId}`;
   }
 
   /**

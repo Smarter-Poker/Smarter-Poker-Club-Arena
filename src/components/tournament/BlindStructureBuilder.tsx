@@ -11,7 +11,7 @@
  * - Exports BlindLevel[] for tournament creation
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { BLIND_STRUCTURES } from '../../services/TournamentService';
 import './BlindStructureBuilder.css';
 
@@ -73,24 +73,20 @@ export const BlindStructureBuilder: React.FC<BlindStructureBuilderProps> = ({
   const [autoInsertBreaks, setAutoInsertBreaks] = useState(true);
 
   // ── Preset Loading ──
-  const loadPreset = useCallback(
-    (p: StructurePreset) => {
-      setPreset(p);
-      if (p === 'custom') return;
+  const loadPreset = useCallback((p: StructurePreset) => {
+    setPreset(p);
+    if (p === 'custom') return;
 
-      const base =
-        p === 'turbo'
-          ? BLIND_STRUCTURES.turbo
-          : p === 'deepStack'
-            ? BLIND_STRUCTURES.deepStack
-            : BLIND_STRUCTURES.regular;
+    const base =
+      p === 'turbo'
+        ? BLIND_STRUCTURES.turbo
+        : p === 'deepStack'
+          ? BLIND_STRUCTURES.deepStack
+          : BLIND_STRUCTURES.regular;
 
-      const newLevels = base.map((l, i) => ({ ...l, level: i + 1 }));
-      setLevels(newLevels);
-      onChange(newLevels);
-    },
-    [onChange]
-  );
+    const newLevels = base.map((l, i) => ({ ...l, level: i + 1 }));
+    setLevels(newLevels);
+  }, []);
 
   // ── Level Mutations ──
   const updateLevel = useCallback(
@@ -103,11 +99,10 @@ export const BlindStructureBuilder: React.FC<BlindStructureBuilderProps> = ({
           updated[index].bigBlind = (value as number) * 2;
         }
         setPreset('custom');
-        onChange(updated);
         return updated;
       });
     },
-    [onChange]
+    []
   );
 
   const addLevel = useCallback(() => {
@@ -122,63 +117,50 @@ export const BlindStructureBuilder: React.FC<BlindStructureBuilderProps> = ({
       };
       const updated = [...prev, newLevel];
       setPreset('custom');
-      onChange(updated);
       return updated;
     });
-  }, [onChange]);
+  }, []);
 
-  const removeLevel = useCallback(
-    (index: number) => {
-      setLevels((prev) => {
-        if (prev.length <= 3) return prev; // Minimum 3 levels
-        const updated = prev.filter((_, i) => i !== index);
-        // Renumber
-        let levelNum = 1;
-        const renumbered = updated.map((l) => {
-          if (l.isBreak) return l;
-          return { ...l, level: levelNum++ };
-        });
-        setPreset('custom');
-        onChange(renumbered);
-        return renumbered;
+  const removeLevel = useCallback((index: number) => {
+    setLevels((prev) => {
+      if (prev.length <= 3) return prev; // Minimum 3 levels
+      const updated = prev.filter((_, i) => i !== index);
+      // Renumber
+      let levelNum = 1;
+      const renumbered = updated.map((l) => {
+        if (l.isBreak) return l;
+        return { ...l, level: levelNum++ };
       });
-    },
-    [onChange]
-  );
+      setPreset('custom');
+      return renumbered;
+    });
+  }, []);
 
-  const insertBreak = useCallback(
-    (afterIndex: number) => {
-      setLevels((prev) => {
-        const updated = [...prev];
-        updated.splice(afterIndex + 1, 0, { ...BREAK_LEVEL });
-        setPreset('custom');
-        onChange(updated);
-        return updated;
-      });
-    },
-    [onChange]
-  );
+  const insertBreak = useCallback((afterIndex: number) => {
+    setLevels((prev) => {
+      const updated = [...prev];
+      updated.splice(afterIndex + 1, 0, { ...BREAK_LEVEL });
+      setPreset('custom');
+      return updated;
+    });
+  }, []);
 
-  const moveLevel = useCallback(
-    (fromIndex: number, direction: 'up' | 'down') => {
-      setLevels((prev) => {
-        const toIndex = direction === 'up' ? fromIndex - 1 : fromIndex + 1;
-        if (toIndex < 0 || toIndex >= prev.length) return prev;
-        const updated = [...prev];
-        [updated[fromIndex], updated[toIndex]] = [updated[toIndex], updated[fromIndex]];
-        // Renumber
-        let levelNum = 1;
-        const renumbered = updated.map((l) => {
-          if (l.isBreak) return l;
-          return { ...l, level: levelNum++ };
-        });
-        setPreset('custom');
-        onChange(renumbered);
-        return renumbered;
+  const moveLevel = useCallback((fromIndex: number, direction: 'up' | 'down') => {
+    setLevels((prev) => {
+      const toIndex = direction === 'up' ? fromIndex - 1 : fromIndex + 1;
+      if (toIndex < 0 || toIndex >= prev.length) return prev;
+      const updated = [...prev];
+      [updated[fromIndex], updated[toIndex]] = [updated[toIndex], updated[fromIndex]];
+      // Renumber
+      let levelNum = 1;
+      const renumbered = updated.map((l) => {
+        if (l.isBreak) return l;
+        return { ...l, level: levelNum++ };
       });
-    },
-    [onChange]
-  );
+      setPreset('custom');
+      return renumbered;
+    });
+  }, []);
 
   // ── Auto-break insertion ──
   const levelsWithBreaks = useMemo(() => {
@@ -198,6 +180,21 @@ export const BlindStructureBuilder: React.FC<BlindStructureBuilderProps> = ({
     }
     return result;
   }, [levels, autoInsertBreaks, breakEvery]);
+
+  /**
+   * AUDIT 2026-08-25: this component previewed one ladder and emitted another.
+   * Auto-break insertion is ON by default, so the table, the level count and
+   * the estimated duration all described `levelsWithBreaks`, while every
+   * `onChange` call handed the parent the bare `levels` - a tournament built
+   * here would silently have had no breaks in it at all. Nothing caught it
+   * because nothing rendered the component.
+   *
+   * One effect on the derived value now, so what is shown is what is emitted,
+   * and there is a single place where that can ever be true or false again.
+   */
+  useEffect(() => {
+    onChange(levelsWithBreaks);
+  }, [levelsWithBreaks, onChange]);
 
   // ── Stats ──
   const stats = useMemo(() => {
@@ -222,6 +219,7 @@ export const BlindStructureBuilder: React.FC<BlindStructureBuilderProps> = ({
       <div className="bsb-presets">
         {(Object.keys(PRESET_LABELS) as StructurePreset[]).map((p) => (
           <button
+            type="button"
             key={p}
             className={`bsb-preset-btn ${preset === p ? 'active' : ''}`}
             onClick={() => loadPreset(p)}
@@ -308,9 +306,10 @@ export const BlindStructureBuilder: React.FC<BlindStructureBuilderProps> = ({
                     </td>
                     <td className="bsb-col-actions">
                       <button
+                        type="button"
                         className="bsb-btn-remove"
                         onClick={() => removeLevel(index)}
-                        title="Remove break"
+                        title="Remove Break"
                       >
                         ✕
                       </button>
@@ -362,32 +361,36 @@ export const BlindStructureBuilder: React.FC<BlindStructureBuilderProps> = ({
                     <td className="bsb-col-actions">
                       <div className="bsb-action-group">
                         <button
+                          type="button"
                           className="bsb-btn-move"
                           onClick={() => moveLevel(index, 'up')}
                           disabled={index === 0}
-                          title="Move up"
+                          title="Move Up"
                         >
                           ↑
                         </button>
                         <button
+                          type="button"
                           className="bsb-btn-move"
                           onClick={() => moveLevel(index, 'down')}
                           disabled={index === levels.length - 1}
-                          title="Move down"
+                          title="Move Down"
                         >
                           ↓
                         </button>
                         <button
+                          type="button"
                           className="bsb-btn-break"
                           onClick={() => insertBreak(index)}
-                          title="Insert break after"
+                          title="Insert Break After"
                         >
                           ◇
                         </button>
                         <button
+                          type="button"
                           className="bsb-btn-remove"
                           onClick={() => removeLevel(index)}
-                          title="Remove level"
+                          title="Remove Level"
                         >
                           ✕
                         </button>
@@ -402,7 +405,7 @@ export const BlindStructureBuilder: React.FC<BlindStructureBuilderProps> = ({
       </div>
 
       {/* ── Add Level Button ── */}
-      <button className="bsb-add-level" onClick={addLevel}>
+      <button type="button" className="bsb-add-level" onClick={addLevel}>
         + Add Level
       </button>
     </div>

@@ -65,12 +65,12 @@ export default function OfflineQueueBadge() {
         fontSize: '0.8125rem',
         fontWeight: 600,
         boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
-        animation: 'slideInRight 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+        animation: 'animationsSlideInRight 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
         fontFamily: 'system-ui, -apple-system, sans-serif',
       }}
     >
       <span style={{ fontSize: '1rem' }}>{!isOnline ? '--' : '...'}</span>
-      {!isOnline ? 'Offline' : `${queueSize} pending`}
+      {!isOnline ? 'Offline' : `${queueSize} Pending`}
       {queueSize > 0 && (
         <span
           style={{

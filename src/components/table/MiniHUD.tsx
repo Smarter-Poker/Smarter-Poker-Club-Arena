@@ -55,9 +55,9 @@ function getTypeColor(type: PlayerType): string {
     case 'Rock':
       return '#93c5fd'; // Light blue
     case 'TAG':
-      return '#22c55e'; // Green - solid
+      return '#3fb950'; // Green - solid
     case 'Reg':
-      return '#86efac'; // Light green
+      return '#4dc660'; // Light green
     case 'LAG':
       return '#f59e0b'; // Amber - aggressive
     case 'Maniac':
@@ -82,7 +82,7 @@ function getHeatColor(level: 0 | 1 | 2 | 3): string {
     case 0:
       return '#3b82f6'; // Blue - tight
     case 1:
-      return '#22c55e'; // Green - normal
+      return '#3fb950'; // Green - normal
     case 2:
       return '#f59e0b'; // Amber - loose
     case 3:
@@ -99,10 +99,13 @@ const MiniHUD = memo(
       const pfr = Math.round((stats.pfrCount / stats.handsPlayed) * 100);
       const heat = getHeatLevel(vpip);
       const type = classifyPlayer(vpip, pfr);
-      const winRate =
-        stats.handsPlayed > 0 ? Math.round((stats.wonCount / stats.handsPlayed) * 100) : 0;
+      /* `winRate` deleted 2026-08-25: computed here on every stats change and
+         read by nothing in the render below. The memo's own comparator does
+         watch `wonCount`, so it was also re-running this whole block for a
+         number that never reached the screen. Hands won is shown on the stats
+         card, not on the per-seat HUD, which has room for two figures. */
 
-      return { vpip, pfr, heat, hands: stats.handsPlayed, type, winRate };
+      return { vpip, pfr, heat, hands: stats.handsPlayed, type };
     }, [stats]);
 
     if (!isVisible || !computed) return null;
@@ -117,7 +120,7 @@ const MiniHUD = memo(
     // Color-code VPIP/PFR values: <20% = tight (blue), 20-40% = normal (green), >40% = loose (orange), >60% = whale (red)
     const getVpipColor = (vpip: number) => {
       if (vpip < 20) return '#3b82f6'; // Blue - tight
-      if (vpip < 40) return '#22c55e'; // Green - normal
+      if (vpip < 40) return '#3fb950'; // Green - normal
       if (vpip < 60) return '#f59e0b'; // Orange - loose
       return '#ef4444'; // Red - whale
     };
@@ -127,7 +130,7 @@ const MiniHUD = memo(
     return (
       <div
         className={`mini-hud ${compact ? 'mini-hud--compact' : ''} mini-hud--heat-${computed.heat} mini-hud--glass`}
-        title={`${computed.type} - VPIP: Voluntarily Put In Pot (hands you play) | PFR: Pre-Flop Raise (aggressive plays)`}
+        title={`${computed.type} - VPIP: Voluntarily Put In Pot (Hands You Play) | PFR: Pre-Flop Raise (Aggressive Plays)`}
       >
         {/* Player Type Label */}
         <span className="mini-hud__type" style={{ color: typeColor }}>
@@ -135,10 +138,10 @@ const MiniHUD = memo(
         </span>
 
         {/* VPIP / PFR with micro progress bars & color-coding */}
-        <div className="mini-hud__stats" title="Player statistics">
+        <div className="mini-hud__stats" title="Player Statistics">
           <div
             className="mini-hud__stat-row"
-            title="Voluntarily Put In Pot - how often player enters pot"
+            title="Voluntarily Put In Pot - How Often Player Enters Pot"
           >
             <span className="mini-hud__label">V</span>
             <div className="mini-hud__bar">
@@ -153,7 +156,7 @@ const MiniHUD = memo(
           </div>
           <div
             className="mini-hud__stat-row"
-            title="Pre-Flop Raise - how often player raises pre-flop"
+            title="Pre-Flop Raise - How Often Player Raises Pre-Flop"
           >
             <span className="mini-hud__label">P</span>
             <div className="mini-hud__bar">
@@ -173,7 +176,7 @@ const MiniHUD = memo(
         />
 
         {!compact && (
-          <span className="mini-hud__hands" title="Hands observed">
+          <span className="mini-hud__hands" title="Hands Observed">
             {computed.hands < 100 ? computed.hands : '99+'}
           </span>
         )}

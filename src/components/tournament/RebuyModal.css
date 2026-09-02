@@ -84,12 +84,6 @@
   cursor: pointer;
 }
 
-.rm-close:hover,
-.am-close:hover {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-}
-
 /* ── Body ── */
 .rm-body,
 .am-body {
@@ -236,27 +230,14 @@
   color: rgba(255, 255, 255, 0.6);
 }
 
-.rm-btn-cancel:hover,
-.am-btn-cancel:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
 .rm-btn-rebuy {
   background: linear-gradient(135deg, #3b82f6, #2563eb);
   color: #fff;
 }
 
-.rm-btn-rebuy:hover {
-  background: linear-gradient(135deg, #60a5fa, #3b82f6);
-}
-
 .am-btn-addon {
   background: linear-gradient(135deg, #22c55e, #16a34a);
   color: #fff;
-}
-
-.am-btn-addon:hover {
-  background: linear-gradient(135deg, #4ade80, #22c55e);
 }
 
 /* ── Countdown (Add-on) ── */
@@ -291,7 +272,7 @@
 
 .am-countdown-fill {
   height: 100%;
-  background: linear-gradient(90deg, #eab308, #f59e0b);
+  background: linear-gradient(90deg, #eab308, #0a5dc2);
   border-radius: 2px;
   transition: width 1s linear;
 }

@@ -122,11 +122,6 @@
   transition: all 0.15s ease;
 }
 
-.player-stats__close:hover {
-  background: rgba(248, 81, 73, 0.3);
-  color: #f85149;
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    SESSION STATS
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -247,10 +242,6 @@
   transition: all 0.15s ease;
 }
 
-.player-stats__add-note:hover {
-  background: rgba(24, 119, 242, 0.3);
-}
-
 .player-stats__note-input {
   display: flex;
   flex-direction: column;
@@ -358,10 +349,6 @@
   color: #f85149;
   cursor: pointer;
   transition: all 0.15s ease;
-}
-
-.player-stats__report:hover {
-  background: rgba(248, 81, 73, 0.1);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

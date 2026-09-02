@@ -3,24 +3,56 @@
  */
 
 import { useState, useEffect, useRef, useMemo, type ChangeEvent } from 'react';
-import type { ClubRole } from '../types/clubRoles';
+import { isClubStaff, type ClubRole } from '../types/clubRoles';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { retryFetch } from '../utils/retryFetch';
 import { masterBus } from '../core/MasterBus';
 import { ClubsService } from '../services/ClubsService';
+import { MembershipService } from '../services/MembershipService';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
+import SpinActivationPanel from '../components/club/SpinActivationPanel';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import PageSkeleton from '../components/common/PageSkeleton';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import AuditLog from '../components/admin/AuditLog';
 import { StatsExport } from '../components/admin/StatsExport';
 import { resolveClubIdFilter, resolveClubUUID } from '../utils/clubIdResolver';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
+import { useIsMounted } from '../hooks/useIsMounted';
 import '../components/common/ButtonSpinner.css';
 import './ClubSettingsPage.css';
+
+/**
+ * The handover picker shows each candidate's current role so the owner is not
+ * choosing from a list of bare names. Title Cased at the source, like every
+ * other label the estate renders.
+ */
+/** The membership states transfer_club_ownership accepts as a recipient. */
+const HANDOVER_ELIGIBLE_STATUSES = new Set(['active', 'approved']);
+
+function roleLabelForHandover(role: string): string {
+  switch (role) {
+    case 'owner':
+      return 'Owner';
+    case 'co_owner':
+      return 'Co Owner';
+    case 'admin':
+      return 'Admin';
+    case 'manager':
+      return 'Manager';
+    case 'super_agent':
+      return 'Super Agent';
+    case 'agent':
+      return 'Agent';
+    case 'sub_agent':
+      return 'Sub Agent';
+    default:
+      return 'Player';
+  }
+}
 import { reportError } from '../utils/errorReporter';
+import { SHARK_CLUB_ID } from '../lib/constants';
 import {
   MAX_RAKE_CAP_BB,
   MAX_RAKE_PERCENT,
@@ -43,19 +75,24 @@ import {
 } from '../utils/clubSettingsRules';
 
 const DESCRIPTION_MAX = 500;
+const TAGLINE_MAX = 72;
+/* Dan 2026-09-01: the club's custom / day's message, printed at the top of the
+   lobby rail. Same 240-character cap `fn_set_club_lobby_message` enforces. */
+const LOBBY_MESSAGE_MAX = 240;
 
 interface ClubSettings {
   name: string;
   description: string;
+  tagline: string;
+  lobby_message: string;
   is_public: boolean;
   requires_approval: boolean;
   default_rake_percent: number;
   rake_cap: number;
-  allow_straddle: boolean;
-  allow_run_it_twice: boolean;
-  allow_rabbit_hunt: boolean;
-  min_buyin_bb: number;
-  max_buyin_bb: number;
+  bbj_rake_enabled: boolean;
+  spins_enabled: boolean;
+  spins_preseed_amount: number;
+  spins_wallet_funding: string;
 }
 
 export default function ClubSettingsPage() {
@@ -66,21 +103,43 @@ export default function ClubSettingsPage() {
   const { user } = useAuthUser();
   const toast = useToast();
 
+  const [playerNumber, setPlayerNumber] = useState<number | null>(null);
+  const [inUnion, setInUnion] = useState<boolean>(false);
+  const [clubNumericId, setClubNumericId] = useState<number | null>(null);
   const [settings, setSettings] = useState<ClubSettings>({
     name: '',
     description: '',
+    tagline: '',
+    lobby_message: '',
     is_public: true,
     requires_approval: false,
     default_rake_percent: RAKE_INHERIT,
     rake_cap: RAKE_INHERIT,
-    allow_straddle: true,
-    allow_run_it_twice: true,
-    allow_rabbit_hunt: true,
-    min_buyin_bb: 40,
-    max_buyin_bb: 200,
+    bbj_rake_enabled: true,
+    spins_enabled: false,
+    spins_preseed_amount: 0,
+    spins_wallet_funding: 'PROMO',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  /**
+   * The two rake fields are held as RAW TEXT while the owner types and only
+   * parsed/clamped on blur. See the onBlur handlers for why: clamping a
+   * controlled number input on every keystroke makes a decimal impossible to
+   * enter, and turns "0.5" into 5.
+   */
+  const [rakePercentText, setRakePercentText] = useState('');
+  const [rakeCapText, setRakeCapText] = useState('');
+  // Keep the text in step whenever the settings change from anywhere other
+  // than typing (load, realtime, discard, "load theirs").
+  useEffect(() => {
+    setRakePercentText(
+      settings.default_rake_percent < 0 ? '' : String(settings.default_rake_percent)
+    );
+  }, [settings.default_rake_percent]);
+  useEffect(() => {
+    setRakeCapText(settings.rake_cap < 0 ? '' : String(settings.rake_cap));
+  }, [settings.rake_cap]);
   const [isOwner, setIsOwner] = useState(false);
   const originalSettings = useRef<ClubSettings | null>(null);
   // Bumped every time originalSettings.current is reassigned. changedFields
@@ -102,15 +161,16 @@ export default function ClubSettingsPage() {
     const orig = originalSettings.current;
     if (settings.name !== orig.name) changes.push('Name');
     if (settings.description !== orig.description) changes.push('Description');
+    if (settings.tagline !== orig.tagline) changes.push('Tag Line');
+    if (settings.lobby_message !== orig.lobby_message) changes.push('Club Message');
     if (settings.is_public !== orig.is_public) changes.push('Public');
     if (settings.requires_approval !== orig.requires_approval) changes.push('Approval');
     if (settings.default_rake_percent !== orig.default_rake_percent) changes.push('Rake %');
     if (settings.rake_cap !== orig.rake_cap) changes.push('Rake Cap');
-    if (settings.allow_straddle !== orig.allow_straddle) changes.push('Straddle');
-    if (settings.allow_run_it_twice !== orig.allow_run_it_twice) changes.push('Run It Twice');
-    if (settings.allow_rabbit_hunt !== orig.allow_rabbit_hunt) changes.push('Rabbit Hunt');
-    if (settings.min_buyin_bb !== orig.min_buyin_bb) changes.push('Min Buy-in');
-    if (settings.max_buyin_bb !== orig.max_buyin_bb) changes.push('Max Buy-in');
+    if (settings.bbj_rake_enabled !== orig.bbj_rake_enabled) changes.push('BBJ Rake');
+    if (settings.spins_enabled !== orig.spins_enabled) changes.push('Spins Enabled');
+    if (settings.spins_preseed_amount !== orig.spins_preseed_amount) changes.push('Spins Pre-seed');
+    if (settings.spins_wallet_funding !== orig.spins_wallet_funding) changes.push('Spins Wallet');
     return changes;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings, baselineVersion]);
@@ -126,12 +186,17 @@ export default function ClubSettingsPage() {
   // attributes on a number input are advisory outside a submitting <form>, and
   // this page never submits one — so "max 10, min 5000" saved happily and every
   // table in the club then had an impossible buy-in range.
-  const buyinError = validateBuyinRange(settings.min_buyin_bb, settings.max_buyin_bb);
+  const buyinError = '';
   // clubs.name is NOT NULL but has no CHECK against '', and this page had no
   // name validation at all — a blank name saved happily, leaving a nameless
   // club whose delete confirmation was armed by an empty box.
   const nameError = validateClubName(settings.name, sanitizeInput(settings.name));
-  const formError = nameError || buyinError;
+  const taglineError =
+    /all fish of all shapes and sizes are welcome/i.test(settings.tagline) &&
+    clubNumericId !== SHARK_CLUB_ID
+      ? 'That Tag Line Belongs To Shark Club'
+      : '';
+  const formError = nameError || taglineError || buyinError;
 
   // The loaders below run from timers, realtime callbacks and bus events. They
   // close over whatever `hasUnsavedChanges` was when the effect was created, so
@@ -147,18 +212,49 @@ export default function ClubSettingsPage() {
   const [serverChanged, setServerChanged] = useState(false);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // HANDING THE CLUB OVER
+  // ───────────────────────────────────────────────────────────────────────────
+  // transfer_club_ownership has always permitted the owner to do this - it
+  // checks `v_actor <> v_old` and refuses anybody else - but the only screen
+  // that called it was AdminDashboardPage, which a club owner cannot open. So
+  // the one person the rule was written for had to ask a platform admin to do
+  // it for them. This is that screen.
+  //
+  // The RPC does the rest: it refuses a recipient who is not an active member,
+  // demotes the outgoing owner to admin, writes both role_changes rows and the
+  // audit row, and tells both people. Nothing here re-implements any of that.
+  const [showHandoverModal, setShowHandoverModal] = useState(false);
+  const [handoverCandidates, setHandoverCandidates] = useState<
+    { userId: string; displayName: string; role: string }[]
+  >([]);
+  const [handoverLoading, setHandoverLoading] = useState(false);
+  const [handoverTarget, setHandoverTarget] = useState('');
+  const [handoverConfirm, setHandoverConfirm] = useState('');
+  const [isHandingOver, setIsHandingOver] = useState(false);
+  const [handoverError, setHandoverError] = useState<string | null>(null);
+  const handoverTriggerRef = useRef<HTMLButtonElement | null>(null);
   // What a delete would actually destroy. tables and club_wallets are both
   // ON DELETE CASCADE from clubs, so the modal must show real numbers and
   // refuse while anything is live.
   const [deleteImpact, setDeleteImpact] = useState<ClubDeletionImpact | null>(null);
   const [impactLoading, setImpactLoading] = useState(false);
+  /** Why the deletion check failed. Without it the modal said only "Could Not
+   *  Check What This Would Delete" and the Delete button stayed permanently
+   *  disabled with no retry - Cancel and reopen was the only recourse. */
+  const [impactError, setImpactError] = useState<string | null>(null);
+  /** True when we could not confirm the reader's role, so the page can say so
+   *  instead of silently degrading them to `player`. */
+  const [roleLoadFailed, setRoleLoadFailed] = useState(false);
   const [showStatsExport, setShowStatsExport] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [confirmText, setConfirmText] = useState('');
   const [userRole, setUserRole] = useState<ClubRole>('player');
   // Mirrors the audit_trail SELECT policies: owner, or is_club_admin() which
-  // accepts role IN ('owner','admin','manager','agent').
-  const canSeeAuditLog = isOwner || userRole === 'admin' || userRole === 'agent';
+  // accepts role IN ('owner','co_owner','admin','manager','agent').
+  const canSeeAuditLog =
+    isOwner || isClubStaff(userRole) || userRole === 'agent' || userRole === 'super_agent';
   const deleteBlockedReason = deleteImpact ? blockingDeletionReason(deleteImpact) : null;
 
   // What the Rake Cap setting actually means in money, at two reference
@@ -191,6 +287,8 @@ export default function ClubSettingsPage() {
   // React Router reuses the component when only the clubId param changes.
   useEffect(() => {
     setSaving(false);
+    setClubNumericId(null);
+    setClubCode(null);
     setIsOwner(false);
     setUserRole('player');
     setShowDeleteModal(false);
@@ -210,6 +308,11 @@ export default function ClubSettingsPage() {
     });
     loadingRef.current = false;
     originalSettings.current = null;
+    // Was not reset: navigating from a club whose role read failed to a club
+    // you OWN skips the lookup entirely (ownerMatch short-circuits it), so the
+    // "We Could Not Confirm Your Role" notice stayed on screen for a club where
+    // the role is known for certain.
+    setRoleLoadFailed(false);
   }, [clubId]);
 
   // Release the pending-logo blob URL when the page goes away. The per-club
@@ -219,6 +322,9 @@ export default function ClubSettingsPage() {
   // can clean it up if the row update fails.
   const uploadedPathRef = useRef<string | null>(null);
   const currentLogoUrlRef = useRef<string | null>(null);
+  const isMountedRef = useIsMounted();
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
+  const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     pendingLogoRef.current = pendingLogo;
   }, [pendingLogo]);
@@ -235,7 +341,11 @@ export default function ClubSettingsPage() {
   // Re-fetch settings when user tabs back (covers WS disconnect gap).
   // Silent: tabbing away and back must not replace the form with a skeleton,
   // and must not throw away edits the owner has not saved yet.
-  useVisibilityRefresh(() => loadClubSettings(undefined, { silent: true }));
+  /* getIsMounted passed through (Dan 2026-08-25). Without it every branch of
+     the loader - setSettings, setLoadError, setNotFound, setLoading and
+     toast.error('Failed to load club settings') - ran after the user had
+     navigated away mid-request. A toast for a page they had left. */
+  useVisibilityRefresh(() => loadClubSettings(() => isMountedRef.current, { silent: true }));
 
   // In-app navigation loses edits silently. beforeunload only covers a reload
   // or a tab close; clicking the bottom nav is a React Router <Link>, which
@@ -270,7 +380,7 @@ export default function ClubSettingsPage() {
       // Leaving the origin is already covered by the beforeunload handler.
       if (dest.origin !== window.location.origin) return;
       if (dest.pathname === window.location.pathname) return; // same page
-      if (!window.confirm('You have unsaved settings changes. Leave this page and discard them?')) {
+      if (!window.confirm('You Have Unsaved Settings Changes. Leave This Page And Discard Them?')) {
         e.preventDefault();
         e.stopPropagation();
       }
@@ -292,12 +402,151 @@ export default function ClubSettingsPage() {
     return () => window.removeEventListener('beforeunload', warn);
   }, [hasUnsavedChanges, isOwner]);
 
-  // Keyboard shortcut: Ctrl+S to save settings
+  /**
+   * Escape closes the delete modal, and focus returns to the button that
+   * opened it.
+   *
+   * This was written once and lost in a merge, which is why `deleteTriggerRef`
+   * existed with nothing reading it and the modal carried `role="dialog"
+   * aria-modal="true"` with nothing enforcing either. On the control that
+   * permanently destroys a club, dismissal was overlay-click only.
+   */
+  /**
+   * `isDeleting` goes through a REF, not the dep array (Dan 2026-08-25).
+   *
+   * It was a dependency, so pressing Delete Club - which sets isDeleting true -
+   * tore this effect down and ran its cleanup, and the cleanup moves focus back
+   * to the trigger BEHIND the overlay. Focus left an open `aria-modal` dialog
+   * at the exact moment the irreversible request was in flight. Depending only
+   * on `showDeleteModal` means the cleanup runs when the modal actually closes,
+   * which is the only time returning focus is correct.
+   */
+  /**
+   * Who may receive the club. The RPC's own rule is "an active member of this
+   * club", so this asks for exactly that set and nothing cleverer - a list on
+   * screen that disagrees with the write behind it is how somebody ends up
+   * picking a name and being told no.
+   */
+  const loadHandoverCandidates = async () => {
+    if (!clubId) return;
+    setHandoverLoading(true);
+    setHandoverError(null);
+    try {
+      const members = await MembershipService.getClubMembers(clubId);
+      const eligible = members
+        .filter((m) => m.userId !== user?.id)
+        // The server's rule is status IN ('active','approved'). MemberStatus does
+        // not list 'approved', but club_members does hold it, so narrowing to the
+        // TS union here would hide real members from a list whose whole job is to
+        // agree with the write behind it. Compared as strings, deliberately.
+        .filter((m) => HANDOVER_ELIGIBLE_STATUSES.has(m.status as string))
+        .map((m) => ({
+          userId: m.userId,
+          displayName: m.displayName || 'Unnamed Member',
+          role: m.role as string,
+        }))
+        .sort((a, b) => a.displayName.localeCompare(b.displayName));
+      if (!isMountedRef.current) return;
+      setHandoverCandidates(eligible);
+    } catch (e) {
+      reportError(e, 'ClubSettingsPage.loadHandoverCandidates');
+      if (isMountedRef.current) setHandoverError('Could Not Load The Member List. Try Again.');
+    } finally {
+      if (isMountedRef.current) setHandoverLoading(false);
+    }
+  };
+
+  /**
+   * The write. Everything that makes this safe lives in the RPC, so the only
+   * job here is to not swallow its reason: it refuses a non-member, a recipient
+   * who already owns the club, and any caller who is not the current owner, and
+   * each of those refusals is a sentence worth showing.
+   */
+  const handOverClub = async () => {
+    if (!clubId || !handoverTarget || isHandingOver) return;
+    setIsHandingOver(true);
+    setHandoverError(null);
+    try {
+      const uuid = await resolveClubUUID(clubId);
+      const { error } = await supabase.rpc('transfer_club_ownership', {
+        p_club_id: uuid,
+        p_new_owner_id: handoverTarget,
+      });
+      if (error) throw error;
+
+      const recipient =
+        handoverCandidates.find((c) => c.userId === handoverTarget)?.displayName ?? 'The New Owner';
+      toast.success(`${savedClubName} Now Belongs To ${recipient}. You Are An Admin Of It.`);
+      masterBus.emit('CLUB_UPDATED', { clubId: uuid });
+      masterBus.emit('MEMBER_ROLE_CHANGED', {
+        clubId: uuid,
+        userId: handoverTarget,
+        newRole: 'owner',
+        previousRole: 'admin',
+      });
+
+      // Every permission on this page just changed hands. Reloading is the
+      // honest response: staying put would leave owner-only controls on screen
+      // for somebody who is now an admin, and every one of them would fail.
+      setShowHandoverModal(false);
+      navigate(`/clubs/${clubId}`, { replace: true });
+    } catch (e) {
+      reportError(e, 'ClubSettingsPage.handOverClub');
+      if (isMountedRef.current) {
+        setHandoverError(
+          e instanceof Error && e.message
+            ? e.message
+            : 'The Handover Was Refused. Nothing Was Changed.'
+        );
+      }
+    } finally {
+      if (isMountedRef.current) setIsHandingOver(false);
+    }
+  };
+
+  // Escape closes the handover dialog, and focus goes back to the control that
+  // opened it - the same contract the delete dialog got on 2026-08-25.
+  const isHandingOverRef = useRef(isHandingOver);
+  isHandingOverRef.current = isHandingOver;
+  useEffect(() => {
+    if (!showHandoverModal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isHandingOverRef.current) setShowHandoverModal(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      handoverTriggerRef.current?.focus();
+    };
+  }, [showHandoverModal]);
+
+  const isDeletingRef = useRef(isDeleting);
+  isDeletingRef.current = isDeleting;
+  useEffect(() => {
+    if (!showDeleteModal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isDeletingRef.current) setShowDeleteModal(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      deleteTriggerRef.current?.focus();
+    };
+  }, [showDeleteModal]);
+
+  /**
+   * Ctrl+S. Through a REF (Dan 2026-08-25).
+   *
+   * `saveSettings` closes over `settings`, but this effect only re-registered
+   * when one of four booleans changed. Rename the club A -> B (the effect
+   * re-runs, capturing B), then B -> C, press Ctrl+S: it wrote **B**.
+   */
+  const saveRef = useRef<(() => void | Promise<void>) | null>(null);
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        if (isOwner && hasUnsavedChanges && !saving && !formError) saveSettings();
+        if (isOwner && hasUnsavedChanges && !saving && !formError) void saveRef.current?.();
       }
     };
     window.addEventListener('keydown', handler);
@@ -306,6 +555,22 @@ export default function ClubSettingsPage() {
 
   useEffect(() => {
     let isMounted = true;
+    if (user?.id) {
+      supabase
+        .from('profiles')
+        .select('player_number')
+        .eq('id', user.id)
+        // .maybeSingle(), never .single(): a profile row that does not exist
+        // yet is a normal state, and .single() resolves with a PGRST116 error
+        // and null data. The .then below only reads `data`, so the failure was
+        // invisible and the player number silently never rendered.
+        .maybeSingle()
+        .then(({ data }) => {
+          if (isMounted && data) {
+            setPlayerNumber(data.player_number);
+          }
+        });
+    }
     if (clubId) loadClubSettings(() => isMounted);
     return () => {
       isMounted = false;
@@ -403,8 +668,20 @@ export default function ClubSettingsPage() {
   ) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
-    setLoadError(false);
-    setNotFound(false);
+    /**
+     * SILENT MEANS SILENT (Dan 2026-08-25).
+     *
+     * These were cleared at the TOP of every load, including background ones.
+     * On a deleted or RLS-hidden club that flipped `notFound` to false while
+     * `loading` stayed false, so for the duration of the request the page
+     * rendered the full EDITABLE settings form, with defaults, for a club that
+     * does not exist. Reset only on a foreground load, where the skeleton
+     * covers the gap.
+     */
+    if (!opts?.silent) {
+      setLoadError(false);
+      setNotFound(false);
+    }
     // silent = a background refresh (tab focus, realtime, bus). It must not
     // tear the rendered form down to a skeleton.
     if (!opts?.silent && (!getIsMounted || getIsMounted())) setLoading(true);
@@ -415,7 +692,7 @@ export default function ClubSettingsPage() {
           supabase
             .from('clubs')
             .select(
-              'id, owner_id, club_id, logo_url, name, description, is_public, requires_approval, default_rake_percent, rake_cap, allow_straddle, allow_run_it_twice, allow_rabbit_hunt, min_buyin_bb, max_buyin_bb'
+              'id, owner_id, club_id, logo_url, name, description, tagline, lobby_message, is_public, requires_approval, default_rake_percent, rake_cap, bbj_rake_enabled, spins_enabled, spins_preseed_amount, spins_wallet_funding, union_id'
             )
             .eq(clubCol, clubVal)
             .maybeSingle()
@@ -436,15 +713,16 @@ export default function ClubSettingsPage() {
         const fromServer: ClubSettings = {
           name: data.name || '',
           description: data.description || '',
+          tagline: data.tagline || '',
+          lobby_message: data.lobby_message || '',
           is_public: data.is_public ?? true,
           requires_approval: data.requires_approval ?? false,
           default_rake_percent: data.default_rake_percent ?? RAKE_INHERIT,
           rake_cap: data.rake_cap ?? RAKE_INHERIT,
-          allow_straddle: data.allow_straddle ?? true,
-          allow_run_it_twice: data.allow_run_it_twice ?? true,
-          allow_rabbit_hunt: data.allow_rabbit_hunt ?? true,
-          min_buyin_bb: data.min_buyin_bb ?? 40,
-          max_buyin_bb: data.max_buyin_bb ?? 200,
+          bbj_rake_enabled: data.bbj_rake_enabled ?? true,
+          spins_enabled: data.spins_enabled ?? false,
+          spins_preseed_amount: data.spins_preseed_amount ?? 0,
+          spins_wallet_funding: data.spins_wallet_funding || 'PROMO',
         };
 
         // A background refresh must never overwrite edits the owner has typed
@@ -453,6 +731,7 @@ export default function ClubSettingsPage() {
         // and every one of them used to call setSettings() unconditionally.
         // The page even renders an "N unsaved changes" banner while doing it.
         setClubCode(typeof data.club_id === 'number' ? data.club_id : null);
+        setClubNumericId(typeof data.club_id === 'number' ? data.club_id : null);
         setCurrentLogoUrl(data.logo_url || null);
         const wouldDiscardEdits = !opts?.force && hasUnsavedChangesRef.current;
         if (wouldDiscardEdits) {
@@ -476,12 +755,23 @@ export default function ClubSettingsPage() {
         } else if (user?.id) {
           // Fetch actual role from club_members
           try {
-            const { data: membership } = await supabase
+            // Supabase RETURNS errors, it does not throw them, so the
+            // surrounding try/catch could never fire and `error` was discarded.
+            // A failed or RLS-blocked read left userRole at 'player', which
+            // hides Role Management and the Admin Activity Log from an
+            // admin/agent with no indication anything went wrong.
+            const { data: membership, error: roleErr } = await supabase
               .from('club_members')
               .select('role')
               .eq('club_id', data.id)
               .eq('user_id', user.id)
               .maybeSingle();
+            if (roleErr) {
+              reportError(roleErr, 'ClubSettingsPage.role_lookup');
+              setRoleLoadFailed(true);
+            } else {
+              setRoleLoadFailed(false);
+            }
             if (getIsMounted && !getIsMounted()) return;
             if (membership?.role) {
               setUserRole(membership.role as ClubRole);
@@ -496,7 +786,11 @@ export default function ClubSettingsPage() {
       }
     } catch (error) {
       reportError(error, 'ClubSettingsPage.Failed_to_load_club_settings');
-      setLoadError(true);
+      // A SILENT refresh must not replace the whole form with the error screen.
+      // Tab away for 30s, come back, hit a network blip, and the owner's typed
+      // changes vanished from view - and the only control offered was a Retry
+      // that overwrites them with the server copy.
+      if (!opts?.silent) setLoadError(true);
       if (!getIsMounted || getIsMounted()) toast.error('Failed to load club settings');
     } finally {
       loadingRef.current = false;
@@ -518,6 +812,11 @@ export default function ClubSettingsPage() {
       ...settings,
       name: sanitizeInput(settings.name),
       description: sanitizeInput(settings.description),
+      tagline: sanitizeInput(settings.tagline).slice(0, TAGLINE_MAX),
+      lobby_message: sanitizeInput(settings.lobby_message)
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, LOBBY_MESSAGE_MAX),
     };
     setSaving(true);
     try {
@@ -543,27 +842,45 @@ export default function ClubSettingsPage() {
           supabase.storage.from('club-assets').getPublicUrl(path).data?.publicUrl || null;
       }
       // Phase 13: Optimistic save — emit events instantly, then confirm with server
+      /**
+       * ROLLBACK, AND EMIT AFTER THE WRITE (Dan 2026-08-25).
+       *
+       * Two faults in one call. `executeOptimistic` takes a fourth argument,
+       * the rollback payload it emits when the async function throws, and this
+       * call omitted it - so a rejected save left every other surface holding
+       * the un-saved values for the rest of the session. And CLUB_UPDATED /
+       * CLUB_SETTINGS_UPDATED were emitted BEFORE the UPDATE ran, so the lobby
+       * and every open club surface repainted with a name and a rake that might
+       * never land. Both moved below the zero-rows guard.
+       */
       await masterBus.executeOptimistic(
         'SETTINGS_UPDATED',
         { settings: { clubId, ...toSave } },
         async () => {
-          if (clubId) masterBus.emit('CLUB_UPDATED', { clubId });
-          if (clubId) masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
           const { data: updated, error } = await supabase
             .from('clubs')
             .update({
               ...(newLogoUrl ? { logo_url: newLogoUrl } : {}),
               name: toSave.name,
               description: toSave.description,
+              tagline: toSave.tagline || null,
+              /* The lobby's own inline editor writes this through
+                 fn_set_club_lobby_message, which is what lets a co-owner or an
+                 admin set it too. Here the owner is already updating the row
+                 directly under RLS, so the column rides along with the rest of
+                 Basic Information - and carries its own timestamp, exactly as
+                 the RPC does, so "how fresh is the day's message" cannot depend
+                 on which surface wrote it. */
+              lobby_message: toSave.lobby_message || null,
+              lobby_message_updated_at: toSave.lobby_message ? new Date().toISOString() : null,
               is_public: toSave.is_public,
               requires_approval: toSave.requires_approval,
               default_rake_percent: toSave.default_rake_percent,
               rake_cap: toSave.rake_cap,
-              allow_straddle: toSave.allow_straddle,
-              allow_run_it_twice: toSave.allow_run_it_twice,
-              allow_rabbit_hunt: toSave.allow_rabbit_hunt,
-              min_buyin_bb: toSave.min_buyin_bb,
-              max_buyin_bb: toSave.max_buyin_bb,
+              bbj_rake_enabled: toSave.bbj_rake_enabled,
+              spins_enabled: toSave.spins_enabled,
+              spins_preseed_amount: toSave.spins_preseed_amount,
+              spins_wallet_funding: toSave.spins_wallet_funding,
             })
             .eq(resolveClubIdFilter(clubId!).column, resolveClubIdFilter(clubId!).value)
             // .select() is what makes a rejected write observable. Without it
@@ -579,7 +896,13 @@ export default function ClubSettingsPage() {
               'Settings were not saved - you may no longer own this club, or it no longer exists.'
             );
           }
-        }
+          // Only now is it true.
+          if (clubId) {
+            masterBus.emit('CLUB_UPDATED', { clubId });
+            masterBus.emit('CLUB_SETTINGS_UPDATED', { clubId });
+          }
+        },
+        { settings: { clubId, ...(originalSettings.current ?? settings) } }
       );
       // Saving strips HTML. Silently changing what the owner typed and
       // showing a plain success toast made the edit look corrupted.
@@ -600,7 +923,11 @@ export default function ClubSettingsPage() {
       if (newLogoUrl) {
         // The logo it replaced would otherwise sit in the bucket forever.
         // Best-effort: a failed cleanup must never fail a successful save.
-        const stale = clubAssetPathFromPublicUrl(currentLogoUrl);
+        // The REF, not the closure. currentLogoUrlRef is maintained for exactly
+        // this: if another admin replaces the logo during the save, the closed-
+        // over value is stale and the wrong object gets deleted (or the real
+        // predecessor leaks in the bucket).
+        const stale = clubAssetPathFromPublicUrl(currentLogoUrlRef.current);
         if (stale) {
           await supabase.storage
             .from('club-assets')
@@ -633,9 +960,18 @@ export default function ClubSettingsPage() {
       toast.error(error instanceof Error ? error.message : 'Failed to save settings');
     } finally {
       uploadedPathRef.current = null;
+      // INSIDE the finally. Anything that threw within the catch above - the
+      // storage remove() rejecting before .catch attached, reportError, the
+      // toast - skipped this line and left `saving` stuck true: Save
+      // permanently disabled with a spinner, Remove Logo disabled with it, and
+      // no way out but a reload.
+      setSaving(false);
     }
-    setSaving(false);
   };
+
+  // Kept current on every render so the Ctrl+S handler above always calls the
+  // latest closure rather than the one captured when it last re-registered.
+  saveRef.current = saveSettings;
 
   const updateSetting = <K extends keyof ClubSettings>(key: K, value: ClubSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -689,8 +1025,9 @@ export default function ClubSettingsPage() {
     } catch (e) {
       reportError(e, 'ClubSettingsPage.Failed_to_remove_logo');
       toast.error(e instanceof Error ? e.message : 'Failed to remove logo');
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   const clearPendingLogo = () => {
@@ -714,6 +1051,7 @@ export default function ClubSettingsPage() {
     if (!clubId) return;
     setImpactLoading(true);
     setDeleteImpact(null);
+    setImpactError(null);
     try {
       const resolvedId = await resolveClubUUID(clubId);
       // One authoritative read instead of three client queries. The previous
@@ -726,19 +1064,38 @@ export default function ClubSettingsPage() {
         p_club_id: resolvedId,
       });
       if (error) throw error;
-      const impact = (data || {}) as {
-        members?: number;
-        running_tables?: number;
-        wallet_chips?: number | string;
-      };
-      setDeleteImpact({
-        members: Number(impact.members ?? 0),
-        runningTables: Number(impact.running_tables ?? 0),
-        walletChips: Number(impact.wallet_chips ?? 0),
-      });
+      /**
+       * SHAPE-CHECKED (Dan 2026-08-25).
+       *
+       * `(data || {})` plus `?? 0` meant that if the RPC ever returned a row
+       * SET rather than a json object, every field was undefined, every figure
+       * became 0, blockingDeletionReason returned null - and the Delete button
+       * armed on a live club with members and running tables. A non-numeric
+       * wallet_chips gave NaN, and `NaN > 0` is false, for the same outcome.
+       */
+      const impact = (Array.isArray(data) ? data[0] : data) as {
+        members?: unknown;
+        running_tables?: unknown;
+        wallet_chips?: unknown;
+      } | null;
+      const members = Number(impact?.members ?? NaN);
+      const runningTables = Number(impact?.running_tables ?? NaN);
+      const walletChips = Number(impact?.wallet_chips ?? NaN);
+      if (
+        !impact ||
+        typeof impact !== 'object' ||
+        !Number.isFinite(members) ||
+        !Number.isFinite(runningTables) ||
+        !Number.isFinite(walletChips)
+      ) {
+        throw new Error('The deletion check returned something unreadable.');
+      }
+      setImpactError(null);
+      setDeleteImpact({ members, runningTables, walletChips });
     } catch (e) {
       reportError(e, 'ClubSettingsPage.Failed_to_load_delete_impact');
       // Unknown impact must not read as "safe to delete".
+      setImpactError(e instanceof Error ? e.message : 'Could not check what this would delete.');
       setDeleteImpact(null);
     } finally {
       setImpactLoading(false);
@@ -812,7 +1169,6 @@ export default function ClubSettingsPage() {
             Browse Clubs
           </button>
         </div>
-        <ClubBottomNav clubId={clubId} userRole={userRole} />
       </div>
     );
   }
@@ -838,7 +1194,6 @@ export default function ClubSettingsPage() {
             Retry
           </button>
         </div>
-        {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
       </div>
     );
   }
@@ -864,7 +1219,146 @@ export default function ClubSettingsPage() {
             Read-Only View. Only The Club Owner Can Change These Settings.
           </div>
         )}
+        {/* Share Club Link */}
+        <section
+          className="settings-section"
+          style={{
+            background: 'linear-gradient(145deg, #1f1f2e 0%, #151522 100%)',
+            border: '1px solid #333',
+          }}
+        >
+          <h3>Share Club</h3>
+          <p className="setting-description" style={{ marginBottom: 16 }}>
+            Invite Players To Join Your Club By Sharing Your Unique Referral Link.
+          </p>
+          <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: 16 }}>
+            <div
+              style={{
+                flex: 1,
+                minWidth: '120px',
+                padding: '12px',
+                background: 'rgba(0,0,0,0.4)',
+                borderRadius: '8px',
+                border: '1px solid rgba(255,255,255,0.05)',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '11px',
+                  textTransform: 'uppercase',
+                  color: 'rgba(255,255,255,0.5)',
+                  marginBottom: '4px',
+                }}
+              >
+                Club Code
+              </div>
+              <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#fff' }}>
+                {clubNumericId || '...'}
+              </div>
+            </div>
+            {playerNumber && (
+              <div
+                style={{
+                  flex: 1,
+                  minWidth: '120px',
+                  padding: '12px',
+                  background: 'rgba(0,0,0,0.4)',
+                  borderRadius: '8px',
+                  border: '1px solid rgba(255,255,255,0.05)',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '11px',
+                    textTransform: 'uppercase',
+                    color: 'rgba(255,255,255,0.5)',
+                    marginBottom: '4px',
+                  }}
+                >
+                  Referral Code
+                </div>
+                <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#4caf50' }}>
+                  {playerNumber}
+                </div>
+              </div>
+            )}
+          </div>
+          {playerNumber && (
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={() => {
+                // The canonical invite link, the same one InvitePage and the
+                // agent modal hand out. What was here before was dead three
+                // separate ways and had never carried a single person into a
+                // club:
+                //   1. it omitted the router basename, so `origin + '/clubs'`
+                //      landed outside the SPA entirely;
+                //   2. `/clubs` is `<Navigate to="/" replace />` in App.tsx and
+                //      Navigate carries no search string, so `c` and `ref` were
+                //      destroyed even at the right path (the real list page is
+                //      `/clubs-list`);
+                //   3. `?c=` fed a five-digit code to a form that demanded six.
+                // Corroboration: club_members has 1502 rows and exactly ONE
+                // non-null invited_by.
+                const url = `${window.location.origin}/hub/club-arena/invite/${clubId}?ref=${playerNumber}`;
+                navigator.clipboard.writeText(url);
+                toast.success('Invite Link Copied To Clipboard!');
+              }}
+              style={{
+                width: '100%',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                gap: '8px',
+              }}
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+              </svg>
+              Copy Invite Link
+            </button>
+          )}
+        </section>
+
         {/* Basic Info */}
+        {/* A failed role lookup used to leave the reader silently demoted to
+            `player`, which hides Role Management and the Admin Activity Log.
+            Say it out loud instead of quietly removing their tools. */}
+        {roleLoadFailed && (
+          <div className="settings-notice" role="status">
+            We Could Not Confirm Your Role In This Club, So Some Staff Tools May Be Hidden. Reload
+            To Try Again.
+          </div>
+        )}
+        {/* Role Management (Moved to Profile Tab conceptually as requested) */}
+        {canSeeAuditLog && (
+          <section className="settings-section">
+            <h3>Role Management</h3>
+            <p className="setting-description" style={{ marginBottom: 16 }}>
+              Assign And Manage Roles For Your Club Members. Promote Players To Admin, Manager,
+              Agent, Or Sub-Agent To Help Run The Club.
+            </p>
+            <button
+              className="btn btn-primary"
+              onClick={() => navigate(`/clubs/${clubId}/members`)}
+              style={{ padding: '0 24px', height: '40px' }}
+            >
+              Assign Roles & Manage Players
+            </button>
+          </section>
+        )}
+
         <section className="settings-section">
           <h3>Basic Information</h3>
           <div className="form-group">
@@ -886,6 +1380,45 @@ export default function ClubSettingsPage() {
               style={nameError ? { color: '#ff6b6b' } : undefined}
             >
               {nameError || `${settings.name.length}/${CLUB_NAME_MAX}`}
+            </small>
+          </div>
+          <div className="form-group">
+            <label htmlFor="club-tagline">Club Tag Line</label>
+            <input
+              id="club-tagline"
+              type="text"
+              value={settings.tagline}
+              onChange={(e) => updateSetting('tagline', e.target.value)}
+              disabled={!isOwner}
+              maxLength={TAGLINE_MAX}
+              aria-invalid={Boolean(taglineError)}
+              aria-describedby="club-tagline-hint"
+            />
+            <small id="club-tagline-hint" className="form-hint">
+              {taglineError ||
+                `${settings.tagline.length}/${TAGLINE_MAX} · Write An Original Line For This Club`}
+            </small>
+          </div>
+          {/* Dan 2026-09-01: "that should be the 'custom clickable message' for
+              the club owners to put the days message, or something custom".
+              The lobby rail shows this above the club card and opens it in
+              full when tapped; club staff can also write it from there. This
+              is the same field, where an owner already manages the club. */}
+          <div className="form-group">
+            <label htmlFor="club-lobby-message">Club Message</label>
+            <textarea
+              id="club-lobby-message"
+              value={settings.lobby_message}
+              onChange={(e) => updateSetting('lobby_message', e.target.value)}
+              rows={2}
+              disabled={!isOwner}
+              maxLength={LOBBY_MESSAGE_MAX}
+              placeholder="Tonight At 8, Double Rakeback On Every Nine Handed Table"
+              aria-describedby="club-lobby-message-hint"
+            />
+            <small id="club-lobby-message-hint" className="form-hint">
+              {settings.lobby_message.length}/{LOBBY_MESSAGE_MAX} &middot; Shown At The Top Of The
+              Club Lobby. Leave It Empty To Fall Back To The Tag Line
             </small>
           </div>
           <div className="form-group">
@@ -922,7 +1455,7 @@ export default function ClubSettingsPage() {
                   className="btn btn-secondary"
                   style={{ padding: '4px 12px', fontSize: '0.75rem' }}
                   onClick={copyClubCode}
-                  aria-label="Copy club code"
+                  aria-label="Copy Club Code"
                 >
                   Copy
                 </button>
@@ -938,7 +1471,7 @@ export default function ClubSettingsPage() {
               {pendingLogo?.preview || currentLogoUrl ? (
                 <img
                   src={pendingLogo?.preview || currentLogoUrl || undefined}
-                  alt="Club logo"
+                  alt="Club Logo"
                   style={{
                     width: 56,
                     height: 56,
@@ -964,19 +1497,32 @@ export default function ClubSettingsPage() {
                   No Logo
                 </div>
               )}
+              {/* A REAL BUTTON (Dan 2026-08-25). This was a <label> wrapping an
+                  input with `display: none` - which removes the input from the
+                  tab order, and a <label> is not focusable, so there was no
+                  keyboard or screen-reader path to the file picker AT ALL. The
+                  input is now visually hidden but still focusable, and the
+                  button drives it. */}
               {isOwner && (
-                <label
-                  className="btn btn-secondary"
-                  style={{ cursor: 'pointer', padding: '6px 14px', fontSize: '0.8rem' }}
-                >
-                  {pendingLogo ? 'Change' : currentLogoUrl ? 'Replace' : 'Upload'}
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+                    onClick={() => logoInputRef.current?.click()}
+                  >
+                    {pendingLogo ? 'Change' : currentLogoUrl ? 'Replace' : 'Upload'}
+                  </button>
                   <input
+                    ref={logoInputRef}
+                    id="club-logo-input"
+                    className="visually-hidden-input"
                     type="file"
+                    aria-label="Choose A Club Logo"
                     accept="image/png,image/jpeg,image/webp,image/gif"
-                    style={{ display: 'none' }}
                     onChange={onLogoSelect}
                   />
-                </label>
+                </>
               )}
               {pendingLogo && (
                 <button
@@ -1022,13 +1568,9 @@ export default function ClubSettingsPage() {
               className={`toggle-btn ${settings.is_public ? 'on' : ''}`}
               onClick={() => {
                 const nextPublic = !settings.is_public;
-                // Going private also switches approval on, matching what club
-                // creation already does (requires_approval = !isPublic).
-                // Without it the club is merely hidden, not closed.
                 setSettings((prev) => ({
                   ...prev,
                   is_public: nextPublic,
-                  requires_approval: nextPublic ? prev.requires_approval : true,
                 }));
               }}
               disabled={!isOwner}
@@ -1061,10 +1603,12 @@ export default function ClubSettingsPage() {
           </div>
         </section>
 
-        {/* Game Rules */}
-        <section className="settings-section">
-          <h3>Game Rules</h3>
-          {/* 2026-08-18: these two are real now. They used to persist to
+        {/* Rake & BBJ Settings */}
+        {!inUnion && (
+          <section className="settings-section">
+            <h3>Rake & BBJ Settings</h3>
+
+            {/* 2026-08-18: these two are real now. They used to persist to
               clubs.default_rake_percent / clubs.rake_cap and be read by
               nothing — the engine took 10% with a fixed cash cap whatever an
               owner set here.
@@ -1076,161 +1620,106 @@ export default function ClubSettingsPage() {
               run here, so the previous handler happily saved 500. The real
               guard is server-side in getFullRakeConfig, since any club admin
               can UPDATE this row directly through RLS. */}
-          <div className="form-group">
-            <label htmlFor="club-rake-percent">Default Rake (%)</label>
-            <input
-              id="club-rake-percent"
-              type="number"
-              placeholder="Use house schedule"
-              value={settings.default_rake_percent < 0 ? '' : settings.default_rake_percent}
-              onChange={(e) => {
-                if (e.target.value === '') {
-                  updateSetting('default_rake_percent', RAKE_INHERIT);
-                  return;
-                }
-                const val = parseFloat(e.target.value);
-                updateSetting(
-                  'default_rake_percent',
-                  isNaN(val) ? RAKE_INHERIT : Math.min(MAX_RAKE_PERCENT, Math.max(0, val))
-                );
-              }}
-              min={0}
-              max={MAX_RAKE_PERCENT}
-              step={0.5}
-              disabled={!isOwner}
-            />
-            <small className="form-hint">
-              Leave Blank To Use The House Schedule (10%). A Club Can Take Less, Never More.{' '}
-              {settings.default_rake_percent < 0
-                ? 'Currently: house schedule.'
-                : `Currently: ${settings.default_rake_percent}% (house caps still apply).`}
-            </small>
-          </div>
-          <div className="form-group">
-            <label htmlFor="club-rake-cap">Rake Cap (BB)</label>
-            <input
-              id="club-rake-cap"
-              type="number"
-              placeholder="Use house schedule"
-              value={settings.rake_cap < 0 ? '' : settings.rake_cap}
-              onChange={(e) => {
-                if (e.target.value === '') {
-                  updateSetting('rake_cap', RAKE_INHERIT);
-                  return;
-                }
-                const val = parseFloat(e.target.value);
-                updateSetting(
-                  'rake_cap',
-                  isNaN(val) ? RAKE_INHERIT : Math.min(MAX_RAKE_CAP_BB, Math.max(0, val))
-                );
-              }}
-              min={0}
-              max={MAX_RAKE_CAP_BB}
-              step={0.5}
-              disabled={!isOwner}
-            />
-            <small className="form-hint">
-              Most That Can Be Raked From One Pot, In Big Blinds. Blank Uses The House Cap For Each
-              Stake ($3-$20 Depending On Blinds).{' '}
-              {settings.rake_cap < 0 ? 'Currently: house cap.' : capPreview}
-            </small>
-          </div>
-          {/* 2026-08-18: the "Time Bank (seconds)" field was removed. It
+            <div className="form-group">
+              <label htmlFor="club-rake-percent">Default Rake (%)</label>
+              <input
+                id="club-rake-percent"
+                type="number"
+                placeholder="Use House Schedule"
+                /* DECIMALS HAVE TO BE TYPEABLE (Dan 2026-08-25).
+                 This clamped on every keystroke against a CONTROLLED value, so
+                 typing "0.5" went "0" -> 0, then "0." -> parseFloat -> 0 -> the
+                 input re-rendered as "0", and the next keystroke produced **5**
+                 - ten times the intended rake, on the field that decides how
+                 much money the club takes. Hold the raw string while typing and
+                 clamp on blur, which is exactly what the buy-in inputs below
+                 already do. */
+                value={rakePercentText}
+                onChange={(e) => setRakePercentText(e.target.value)}
+                onBlur={() => {
+                  const raw = rakePercentText.trim();
+                  if (raw === '') {
+                    updateSetting('default_rake_percent', RAKE_INHERIT);
+                    return;
+                  }
+                  const val = parseFloat(raw);
+                  updateSetting(
+                    'default_rake_percent',
+                    isNaN(val) ? RAKE_INHERIT : Math.min(MAX_RAKE_PERCENT, Math.max(0, val))
+                  );
+                }}
+                min={0}
+                max={MAX_RAKE_PERCENT}
+                step={0.5}
+                disabled={!isOwner}
+              />
+              <small className="form-hint">
+                Leave Blank To Use The House Schedule (10%). A Club Can Take Less, Never More.{' '}
+                {settings.default_rake_percent < 0
+                  ? 'Currently: House Schedule.'
+                  : `Currently: ${settings.default_rake_percent}% (House Caps Still Apply).`}
+              </small>
+            </div>
+            <div className="form-group">
+              <label htmlFor="club-rake-cap">Rake Cap (BB)</label>
+              <input
+                id="club-rake-cap"
+                type="number"
+                placeholder="Use House Schedule"
+                /* Same shape as the rake field above: raw while typing, clamp on
+                 blur, so "1.5" cannot be read as 15. */
+                value={rakeCapText}
+                onChange={(e) => setRakeCapText(e.target.value)}
+                onBlur={() => {
+                  const raw = rakeCapText.trim();
+                  if (raw === '') {
+                    updateSetting('rake_cap', RAKE_INHERIT);
+                    return;
+                  }
+                  const val = parseFloat(raw);
+                  updateSetting(
+                    'rake_cap',
+                    isNaN(val) ? RAKE_INHERIT : Math.min(MAX_RAKE_CAP_BB, Math.max(0, val))
+                  );
+                }}
+                min={0}
+                max={MAX_RAKE_CAP_BB}
+                step={0.5}
+                disabled={!isOwner}
+              />
+              <small className="form-hint">
+                Most That Can Be Raked From One Pot, In Big Blinds. Blank Uses The House Cap For
+                Each Stake ($3-$20 Depending On Blinds).{' '}
+                {settings.rake_cap < 0 ? 'Currently: House Cap.' : capPreview}
+              </small>
+            </div>
+            {/* 2026-08-18: the "Time Bank (seconds)" field was removed. It
               persisted to clubs.time_bank_seconds, which no engine code has
               ever read — an owner could set it to 15 or to 120 and every table
               behaved identically. A time bank is a flat 20-second grant, 2 per
               street (Bible V8 s6.2); there is nothing per-club left to set. */}
-          <div className="toggle-row">
-            <div className="toggle-info">
-              <span className="toggle-label">Allow Straddle</span>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={settings.allow_straddle}
-              aria-label="Allow Straddle"
-              className={`toggle-btn ${settings.allow_straddle ? 'on' : ''}`}
-              onClick={() => updateSetting('allow_straddle', !settings.allow_straddle)}
-              disabled={!isOwner}
-            >
-              {settings.allow_straddle ? 'ON' : 'OFF'}
-            </button>
-          </div>
-          <div className="toggle-row">
-            <div className="toggle-info">
-              <span className="toggle-label">Run It Twice</span>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={settings.allow_run_it_twice}
-              aria-label="Run It Twice"
-              className={`toggle-btn ${settings.allow_run_it_twice ? 'on' : ''}`}
-              onClick={() => updateSetting('allow_run_it_twice', !settings.allow_run_it_twice)}
-              disabled={!isOwner}
-            >
-              {settings.allow_run_it_twice ? 'ON' : 'OFF'}
-            </button>
-          </div>
-          <div className="toggle-row">
-            <div className="toggle-info">
-              <span className="toggle-label">Rabbit Hunt</span>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={settings.allow_rabbit_hunt}
-              aria-label="Rabbit Hunt"
-              className={`toggle-btn ${settings.allow_rabbit_hunt ? 'on' : ''}`}
-              onClick={() => updateSetting('allow_rabbit_hunt', !settings.allow_rabbit_hunt)}
-              disabled={!isOwner}
-            >
-              {settings.allow_rabbit_hunt ? 'ON' : 'OFF'}
-            </button>
-          </div>
-        </section>
-
-        {/* Buy-in Limits */}
-        <section className="settings-section">
-          <h3>Buy-In Limits</h3>
-          <div className="form-row">
-            <div className="form-group">
-              <label htmlFor="club-min-buyin">Min (BB)</label>
-              <input
-                type="number"
-                id="club-min-buyin"
-                value={Number.isFinite(settings.min_buyin_bb) ? settings.min_buyin_bb : ''}
-                onChange={(e) => updateSetting('min_buyin_bb', parseInt(e.target.value, 10))}
-                onBlur={() =>
-                  updateSetting('min_buyin_bb', clampBuyin(settings.min_buyin_bb, BUYIN_BB_FLOOR))
-                }
-                min={BUYIN_BB_FLOOR}
-                max={BUYIN_BB_CEILING}
+            <div className="toggle-row">
+              <div className="toggle-info">
+                <span className="toggle-label">BBJ Rake</span>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={settings.bbj_rake_enabled}
+                aria-label="BBJ Rake"
+                className={`toggle-btn ${settings.bbj_rake_enabled ? 'on' : ''}`}
+                onClick={() => updateSetting('bbj_rake_enabled', !settings.bbj_rake_enabled)}
                 disabled={!isOwner}
-              />
+              >
+                {settings.bbj_rake_enabled ? 'ON' : 'OFF'}
+              </button>
             </div>
-            <div className="form-group">
-              <label htmlFor="club-max-buyin">Max (BB)</label>
-              <input
-                type="number"
-                id="club-max-buyin"
-                value={Number.isFinite(settings.max_buyin_bb) ? settings.max_buyin_bb : ''}
-                onChange={(e) => updateSetting('max_buyin_bb', parseInt(e.target.value, 10))}
-                onBlur={() =>
-                  updateSetting('max_buyin_bb', clampBuyin(settings.max_buyin_bb, BUYIN_BB_CEILING))
-                }
-                min={BUYIN_BB_FLOOR}
-                max={BUYIN_BB_CEILING}
-                disabled={!isOwner}
-              />
-            </div>
-          </div>
-          {buyinError && (
-            <small className="form-hint" role="alert" style={{ color: '#ff6b6b' }}>
-              {buyinError}
-            </small>
-          )}
-        </section>
+          </section>
+        )}
+        {/* Spins — the owner's switch and the wallet behind it.
+            Placed here, after Buy-In Limits, because it is the only other
+            setting on this page that commits the club's own money. */}
+        {clubId && <SpinActivationPanel clubId={clubId} />}
 
         {/* Audit Log — visible to anyone the audit_trail RLS lets read it:
             the owner, plus club admins/agents via is_club_admin(). It was
@@ -1261,6 +1750,35 @@ export default function ClubSettingsPage() {
           </section>
         )}
 
+        {/* Ownership - Owner Only */}
+        {isOwner && (
+          <section className="settings-section handover-section">
+            <h3>Ownership</h3>
+            <div className="danger-item">
+              <div className="danger-info">
+                <span className="danger-label">Hand Over This Club</span>
+                <span className="danger-desc">
+                  Another Active Member Becomes The Owner And You Become An Admin. Only You Can Do
+                  This, And Only The New Owner Can Undo It.
+                </span>
+              </div>
+              <button
+                ref={handoverTriggerRef}
+                className="btn btn-secondary"
+                onClick={() => {
+                  setHandoverTarget('');
+                  setHandoverConfirm('');
+                  setHandoverError(null);
+                  setShowHandoverModal(true);
+                  void loadHandoverCandidates();
+                }}
+              >
+                Hand Over Club
+              </button>
+            </div>
+          </section>
+        )}
+
         {/* Danger Zone - Owner Only */}
         {isOwner && (
           <section className="settings-section danger-zone">
@@ -1273,6 +1791,7 @@ export default function ClubSettingsPage() {
                 </span>
               </div>
               <button
+                ref={deleteTriggerRef}
                 className="btn btn-danger"
                 onClick={() => {
                   setShowDeleteModal(true);
@@ -1290,7 +1809,11 @@ export default function ClubSettingsPage() {
             className="btn btn-primary save-btn"
             onClick={saveSettings}
             disabled={saving || !hasUnsavedChanges || !!formError}
-            title={hasUnsavedChanges ? undefined : 'No changes to save'}
+            /* formError first: blanking the club name greyed the button out
+               while the tooltip stayed empty, because there ARE changes - so
+               the owner got no explanation at all. The unsaved bar already
+               does it in this order. */
+            title={formError || (hasUnsavedChanges ? undefined : 'No Changes To Save')}
           >
             {saving ? (
               <>
@@ -1303,11 +1826,135 @@ export default function ClubSettingsPage() {
         )}
       </div>
 
+      {/* Handover Confirmation Modal */}
+      {showHandoverModal && (
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={() => !isHandingOver && setShowHandoverModal(false)}
+        >
+          <div
+            className="modal-content handover-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="handover-club-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="handover-club-title">Hand Over {savedClubName}</h3>
+            <p>
+              The Member You Choose Becomes The Owner Of <strong>{savedClubName}</strong> And Holds
+              Every Permission In It. You Become An <strong>Admin</strong>. Only The New Owner Can
+              Hand It Back.
+            </p>
+
+            {handoverLoading && <p className="delete-impact">Loading Members...</p>}
+
+            {!handoverLoading && handoverCandidates.length === 0 && (
+              <p className="delete-impact">
+                This Club Has No Other Active Members, So There Is Nobody To Hand It To.
+              </p>
+            )}
+
+            {!handoverLoading && handoverCandidates.length > 0 && (
+              <>
+                <label className="handover-label" htmlFor="handover-target">
+                  New Owner
+                </label>
+                <select
+                  id="handover-target"
+                  className="handover-select"
+                  value={handoverTarget}
+                  onChange={(e) => setHandoverTarget(e.target.value)}
+                  disabled={isHandingOver}
+                >
+                  <option value="">Choose A Member...</option>
+                  {handoverCandidates.map((c) => (
+                    <option key={c.userId} value={c.userId}>
+                      {c.displayName} ({roleLabelForHandover(c.role)})
+                    </option>
+                  ))}
+                </select>
+
+                {/* Typing the name is the same guard the delete dialog uses. A
+                    handover is not destructive, but it is the one action on
+                    this page the owner cannot reverse alone. */}
+                <label className="handover-label" htmlFor="handover-confirm">
+                  Type <strong>{savedClubName}</strong> To Confirm
+                </label>
+                <input
+                  id="handover-confirm"
+                  className="handover-input"
+                  type="text"
+                  value={handoverConfirm}
+                  onChange={(e) => setHandoverConfirm(e.target.value)}
+                  disabled={isHandingOver}
+                  autoComplete="off"
+                />
+              </>
+            )}
+
+            {handoverError && (
+              <p className="handover-error" role="alert">
+                {handoverError}
+              </p>
+            )}
+
+            <div className="modal-actions">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setShowHandoverModal(false)}
+                disabled={isHandingOver}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={handOverClub}
+                disabled={
+                  isHandingOver ||
+                  !handoverTarget ||
+                  handoverConfirm.trim() !== savedClubName.trim()
+                }
+                title={
+                  !handoverTarget
+                    ? 'Choose A Member First'
+                    : handoverConfirm.trim() !== savedClubName.trim()
+                      ? 'Type The Club Name To Confirm'
+                      : undefined
+                }
+              >
+                {isHandingOver ? (
+                  <>
+                    <span className="btn-spinner" /> Handing Over...
+                  </>
+                ) : (
+                  'Hand Over Club'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Delete Confirmation Modal */}
+      {/* Dialog semantics (Dan 2026-08-25). The overlay was an interactive div
+          with no role, Escape did nothing, Tab walked straight out into the
+          page behind it, and nothing announced this as a modal - on the control
+          that permanently destroys a club. */}
       {showDeleteModal && (
-        <div className="modal-overlay" onClick={() => setShowDeleteModal(false)}>
-          <div className="modal-content delete-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>Delete Club</h3>
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={() => !isDeleting && setShowDeleteModal(false)}
+        >
+          <div
+            className="modal-content delete-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-club-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="delete-club-title">Delete Club</h3>
             <p>
               This Action <strong>Cannot Be Undone</strong>. This Will Permanently Delete The Club{' '}
               <strong>{savedClubName}</strong>.
@@ -1319,8 +1966,8 @@ export default function ClubSettingsPage() {
                 <li>
                   Every Table In This Club
                   {deleteImpact.runningTables > 0
-                    ? `, including ${deleteImpact.runningTables} currently running`
-                    : ' (none are running)'}
+                    ? `, Including ${deleteImpact.runningTables} Currently Running`
+                    : ' (None Are Running)'}
                 </li>
                 <li>Club Wallets Holding {deleteImpact.walletChips.toLocaleString()} Chips</li>
               </ul>
@@ -1329,6 +1976,10 @@ export default function ClubSettingsPage() {
               <p className="delete-impact delete-impact--blocked">
                 Could Not Check What This Would Delete. Deletion Is Disabled Until That Check
                 Succeeds.
+                {impactError ? ` ${impactError}` : ''}{' '}
+                <button type="button" className="settings-inline-link" onClick={loadDeleteImpact}>
+                  Check Again
+                </button>
               </p>
             )}
             {deleteBlockedReason && (
@@ -1386,47 +2037,23 @@ export default function ClubSettingsPage() {
       />
 
       {/* Someone else saved this club while you were editing */}
+      {/* Moved out of inline styles into .conflict-bar (Dan 2026-08-25). It was
+          a fixed flex row with no flex-wrap holding ~90 characters plus a
+          button inside 90vw - at 375px that is ~338px, so it squashed or
+          overflowed. Everything about it duplicated .unsaved-bar, which had
+          already been fixed for exactly this. The `bottom` was also inline and
+          sat UNDER the bottom nav; both bars now use the shared clearance. */}
       {serverChanged && isOwner && (
-        <div
-          role="status"
-          style={{
-            position: 'fixed',
-            bottom: clubId ? 128 : 72,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 999,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-            padding: '0.6rem 1.2rem',
-            borderRadius: '14px',
-            background: 'rgba(255, 176, 32, 0.14)',
-            border: '1px solid rgba(255, 176, 32, 0.35)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            maxWidth: '90vw',
-          }}
-        >
-          <span style={{ color: '#ffb020', fontSize: '0.75rem', fontWeight: 600 }}>
-            These Settings Changed Elsewhere
-          </span>
-          <span style={{ color: '#6a7a8a', fontSize: '0.7rem' }}>
+        <div className="conflict-bar" role="status">
+          <span className="conflict-bar__title">These Settings Changed Elsewhere</span>
+          <span className="conflict-bar__body">
             Your Edits Are Still Here. Saving Overwrites The Newer Values.
           </span>
           <button
+            className="conflict-bar__action"
             onClick={() => {
               setServerChanged(false);
               loadClubSettings(undefined, { force: true });
-            }}
-            style={{
-              padding: '0.35rem 0.75rem',
-              background: 'rgba(255, 255, 255, 0.1)',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '8px',
-              color: '#ddd',
-              fontSize: '0.7rem',
-              cursor: 'pointer',
-              flexShrink: 0,
             }}
           >
             Load Theirs
@@ -1449,6 +2076,10 @@ export default function ClubSettingsPage() {
             onClick={() => {
               if (originalSettings.current) setSettings({ ...originalSettings.current });
               clearPendingLogo();
+              // Without this the "These Settings Changed Elsewhere / Your Edits
+              // Are Still Here" banner kept warning about edits that had just
+              // been thrown away. The save path already clears it.
+              setServerChanged(false);
             }}
           >
             Discard
@@ -1464,8 +2095,6 @@ export default function ClubSettingsPage() {
           </button>
         </div>
       )}
-
-      {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
     </div>
   );
 }

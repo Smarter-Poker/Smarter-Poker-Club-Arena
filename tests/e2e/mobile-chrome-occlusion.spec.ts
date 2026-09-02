@@ -28,9 +28,10 @@
  * the bar while its children stop short is not a defect, and counting it
  * would make this spec cry wolf on every page with a full-height background.
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 const CLUB = process.env.AUDIT_CLUB_ID || 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4';
+const CLUB_ARENA_PATH = '/hub/club-arena';
 
 /* The routes that carry the fixed bottom nav, plus a few plain ones so the
    top check has non-club coverage too. */
@@ -60,6 +61,75 @@ interface Occlusion {
   text: string;
 }
 
+type ChromeProbeResult = {
+  hits: Array<Omit<Occlusion, 'route'>>;
+  hadTop: boolean;
+  hadBottom: boolean;
+};
+
+const TRANSIENT_DOCUMENT_ERROR =
+  /execution context was destroyed|cannot find context with specified id|frame was detached/i;
+
+async function evaluateAcrossDocumentReplacement(
+  page: Page,
+  pageFunction: (arg: { SLACK: number }) => Promise<ChromeProbeResult>,
+  arg: { SLACK: number }
+): Promise<ChromeProbeResult> {
+  let lastNavigationError: unknown;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await page.evaluate(pageFunction, arg);
+    } catch (error) {
+      if (!TRANSIENT_DOCUMENT_ERROR.test(String(error))) throw error;
+      lastNavigationError = error;
+
+      // A World Hub publish can replace the document once while this audit is
+      // measuring it. Wait for that real navigation to settle, then measure
+      // the replacement page. This is not a Playwright test retry, and it does
+      // not skip the strict geometry assertion.
+      await page.waitForLoadState('domcontentloaded').catch(() => undefined);
+      await page.waitForTimeout(750);
+    }
+  }
+  throw new Error(
+    `Club Arena document did not stabilize after navigation: ${String(lastNavigationError)}`
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   THE WELCOME MODAL MUST NOT BE IN FRONT OF WHAT THIS MEASURES (2026-08-29)
+
+   The first complete run of the post-deploy tier reported three controls as
+   unreachable on production, including a "Challenge" button with ZERO reachable
+   pixels. Probed live, none of them was a tap-target defect: `ClubArenaWelcomeModal`
+   was open, and `document.elementFromPoint` was returning its overlay
+   (_overlay_ > _modal_ > _content_) for every point on the page. A suite that
+   reports every control on every route as unreachable is not a guard, it is a
+   wolf-crier, and a wolf-crier gets muted - which would have quietly undone the
+   whole reason this spec was given a job to run in.
+
+   global-setup writes STORAGE_KEYS.WELCOME_ACCEPTED into the storageState it
+   captures, and that is correct and stays. It is not sufficient here: these
+   specs open their own context (`test.use({ isMobile })`), and any route that
+   boots before the key is read - or any session where the app rewrites its own
+   storage on entry - puts the overlay back. An init script runs before every
+   document in this context, so the flag is set no matter how the page arrives.
+   Cheap, local, and it cannot affect any other spec.
+
+   If a control genuinely cannot be reached, this now says so about the control.
+   ───────────────────────────────────────────────────────────────────────────── */
+const WELCOME_ACCEPTED_KEY = 'club_arena_welcome_accepted'; // src/lib/storage.ts
+
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript((k) => {
+    try {
+      localStorage.setItem(k, 'true');
+    } catch {
+      /* storage blocked - the spec will surface the overlay as a real miss */
+    }
+  }, WELCOME_ACCEPTED_KEY);
+});
+
 test('no chrome covers reachable content at 375px', async ({ page }) => {
   test.setTimeout(ROUTES.length * 15_000 + 120_000);
   await page.setViewportSize({ width: 375, height: 812 });
@@ -82,8 +152,18 @@ test('no chrome covers reachable content at 375px', async ({ page }) => {
       skipped.push(route);
       continue;
     }
+    const pathname = new URL(page.url()).pathname.replace(/\/$/, '');
+    if (pathname !== CLUB_ARENA_PATH && !pathname.startsWith(`${CLUB_ARENA_PATH}/`)) {
+      /* Some Club Arena links intentionally hand off to another World Hub
+         application (club Messages opens Messenger). That destination owns
+         its own chrome and has its own audits; measuring it against Club
+         Arena's fixed bottom-nav contract produces a cross-app false alarm. */
+      skipped.push(`${route}: routes outside Club Arena to ${pathname}`);
+      continue;
+    }
 
-    const found = await page.evaluate(
+    const found = await evaluateAcrossDocumentReplacement(
+      page,
       async ({ SLACK }) => {
         const vw = window.innerWidth;
         const vh = window.innerHeight;
@@ -112,14 +192,21 @@ test('no chrome covers reachable content at 375px', async ({ page }) => {
           const out: Array<{ el: Element; b: DOMRect }> = [];
           for (const el of root.querySelectorAll('*')) {
             if (el.children.length > 0) continue;
+            if (el.closest('[aria-hidden="true"]')) continue;
             const s = getComputedStyle(el);
             if (s.visibility === 'hidden' || s.display === 'none' || +s.opacity === 0) continue;
             let b = el.getBoundingClientRect();
             if (b.width === 0 || b.height === 0) continue;
             if (b.right <= 0 || b.left >= vw) continue;
             const txt = (el.textContent || '').trim();
-            const pressable = ['IMG', 'INPUT', 'BUTTON', 'SVG', 'PATH'].includes(el.tagName);
-            if (!txt && !pressable) continue;
+            const pressable = Boolean(
+              el.closest(
+                'button,a[href],input,select,textarea,[role="button"],[role="link"],[role="checkbox"],[role="switch"],[tabindex]:not([tabindex="-1"])'
+              )
+            );
+            const meaningfulImage =
+              el.tagName === 'IMG' && Boolean((el.getAttribute('alt') || '').trim());
+            if (!txt && !pressable && !meaningfulImage) continue;
 
             /* MEASURE THE GLYPHS, NOT THE BOX. A text leaf inside a flex row
                stretches to the row's height by default, so its BOX can run
@@ -133,6 +220,10 @@ test('no chrome covers reachable content at 375px', async ({ page }) => {
               const rb = range.getBoundingClientRect();
               if (rb.width > 0 && rb.height > 0) b = rb;
             }
+            let clippedTop = b.top;
+            let clippedRight = b.right;
+            let clippedBottom = b.bottom;
+            let clippedLeft = b.left;
             let p: Element | null = el;
             let inFixed = false;
             while (p && p !== root) {
@@ -141,9 +232,29 @@ test('no chrome covers reachable content at 375px', async ({ page }) => {
                 inFixed = true;
                 break;
               }
+              const clipsX = /(auto|scroll|hidden|clip)/.test(ps.overflowX);
+              const clipsY = /(auto|scroll|hidden|clip)/.test(ps.overflowY);
+              if (clipsX || clipsY) {
+                const pb = p.getBoundingClientRect();
+                if (clipsX) {
+                  clippedLeft = Math.max(clippedLeft, pb.left);
+                  clippedRight = Math.min(clippedRight, pb.right);
+                }
+                if (clipsY) {
+                  clippedTop = Math.max(clippedTop, pb.top);
+                  clippedBottom = Math.min(clippedBottom, pb.bottom);
+                }
+              }
               p = p.parentElement;
             }
             if (inFixed) continue;
+            if (clippedRight <= clippedLeft || clippedBottom <= clippedTop) continue;
+            b = DOMRect.fromRect({
+              x: clippedLeft,
+              y: clippedTop,
+              width: clippedRight - clippedLeft,
+              height: clippedBottom - clippedTop,
+            });
             out.push({ el, b });
           }
           return out;
@@ -159,9 +270,26 @@ test('no chrome covers reachable content at 375px', async ({ page }) => {
 
         const hits: Array<{ edge: 'top' | 'bottom' } & ReturnType<typeof describe>> = [];
 
+        /* The app deliberately enables smooth scrolling. `window.scrollTo`
+               therefore returned while long pages were still moving, and the
+               old fixed 350/450ms sleeps measured ordinary mid-page content as
+               if it were the unreachable final row. Move the real scrolling
+               element synchronously and verify the boundary instead of timing
+               an animation whose duration grows with the page. */
+        const scrollingElement = document.scrollingElement ?? document.documentElement;
+        const scrollingStyle = (scrollingElement as HTMLElement).style;
+        const scrollInstantlyTo = async (top: number) => {
+          const previousScrollBehavior = scrollingStyle.scrollBehavior;
+          scrollingStyle.scrollBehavior = 'auto';
+          scrollingElement.scrollTop = top;
+          await new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+          );
+          scrollingStyle.scrollBehavior = previousScrollBehavior;
+        };
+
         // ── TOP: at rest, nothing should already be under the header.
-        window.scrollTo(0, 0);
-        await new Promise((r) => setTimeout(r, 350));
+        await scrollInstantlyTo(0);
         if (topBar) {
           const headerBottom = topBar.getBoundingClientRect().bottom;
           let worst: ReturnType<typeof describe> | null = null;
@@ -177,8 +305,28 @@ test('no chrome covers reachable content at 375px', async ({ page }) => {
 
         // ── BOTTOM: only provable once the page cannot scroll further.
         if (bottomBar) {
-          window.scrollTo(0, document.documentElement.scrollHeight);
-          await new Promise((r) => setTimeout(r, 450));
+          let stableBottomSamples = 0;
+          // Live sections can append an RPC-backed history after DOMContentLoaded.
+          // A single scroll then measures an obsolete maximum and can report a
+          // middle row as "unreachable" even though more page exists below it.
+          // Require two consecutive height/bottom samples; if live content
+          // never settles, fail as an indeterminate audit instead of passing.
+          for (let attempt = 1; attempt <= 6; attempt += 1) {
+            const heightBefore = scrollingElement.scrollHeight;
+            await scrollInstantlyTo(heightBefore);
+            await new Promise((r) => setTimeout(r, 350));
+            const heightAfter = scrollingElement.scrollHeight;
+            const maxScrollTop = Math.max(0, heightAfter - scrollingElement.clientHeight);
+            const reachedBottom = Math.abs(scrollingElement.scrollTop - maxScrollTop) <= SLACK;
+            stableBottomSamples =
+              reachedBottom && heightAfter === heightBefore ? stableBottomSamples + 1 : 0;
+            if (stableBottomSamples >= 2) break;
+          }
+          if (stableBottomSamples < 2) {
+            throw new Error(
+              'Club Arena document height did not settle at its reachable bottom; the mobile chrome audit did not reach its scroll boundary.'
+            );
+          }
           const navTop = bottomBar.getBoundingClientRect().top;
           let worst: ReturnType<typeof describe> | null = null;
           for (const { el, b } of leaves()) {
@@ -196,6 +344,15 @@ test('no chrome covers reachable content at 375px', async ({ page }) => {
       },
       { SLACK }
     );
+
+    // The replacement document may be an intentional cross-app handoff. The
+    // first pathname check ran before the publish reload; classify the settled
+    // destination again before applying Club Arena's chrome contract to it.
+    const settledPathname = new URL(page.url()).pathname.replace(/\/$/, '');
+    if (settledPathname !== CLUB_ARENA_PATH && !settledPathname.startsWith(`${CLUB_ARENA_PATH}/`)) {
+      skipped.push(`${route}: routes outside Club Arena to ${settledPathname}`);
+      continue;
+    }
 
     if (!found.hadTop && !found.hadBottom) noChrome.push(route);
     for (const h of found.hits) {

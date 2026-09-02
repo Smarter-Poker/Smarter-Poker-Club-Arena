@@ -64,11 +64,6 @@
   font-size: 0.8125rem;
   cursor: pointer;
 }
-.glp__close:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
-
 .glp__scroll {
   flex: 1;
   overflow-y: auto;
@@ -171,9 +166,14 @@
   align-items: center;
   justify-content: center;
   background: rgba(65, 105, 225, 0.15);
-  color: var(--club-blue-light, #5b83e8);
-  font-size: 0.625rem;
-  font-weight: 700;
+}
+.glp__wl-name {
+  color: var(--text-primary, #ffffff);
+}
+.glp__wl-time {
+  margin-left: auto;
+  opacity: 0.5;
+  font-size: 0.85em;
 }
 
 /* Tournament tabs */
@@ -250,10 +250,6 @@
   text-decoration: none;
   background: rgba(65, 105, 225, 0.07);
 }
-.glp__fulllink:hover {
-  background: rgba(65, 105, 225, 0.14);
-}
-
 .glp__foot {
   display: flex;
   align-items: center;
@@ -271,9 +267,6 @@
   font-weight: 600;
   cursor: pointer;
 }
-.glp__deletebtn:hover {
-  background: rgba(255, 71, 87, 0.15);
-}
 .glp__backlink {
   font-size: 0.75rem;
   color: var(--text-tertiary, #8b8f98);
@@ -285,15 +278,26 @@
   cursor: pointer;
   font-family: inherit;
 }
-.glp__backlink:hover {
-  color: var(--text-secondary, #c8ccd4);
-}
-
 /* Small screens: full-width sheet */
 @media (max-width: 640px) {
   .glp {
     width: 100%;
     border-left: none;
+  }
+
+  /* Dan 2026-08-24, from an iPhone: "there is no padding at the top, so you
+     can't even X off the page." The sheet is position:fixed and fills the
+     viewport, which under viewport-fit=cover means its first row — the title
+     and the close button — renders under the status bar and the notch. The
+     header pays the inset back, so the X is always reachable. */
+  .glp__head {
+    padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  }
+}
+
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .glp__head {
+    padding-top: calc(12px + max(env(safe-area-inset-top, 0px), 24px));
   }
 }
 

@@ -141,8 +141,22 @@ while IFS= read -r repo; do
   fi
   EXAMINED=$((EXAMINED+1))
 
-  SCRIPT="$repo/scripts/agent-trees-snapshot.sh"
-  [ -f "$SCRIPT" ] || SCRIPT="$CANON"
+  # THE CANONICAL COPY WINS. Corrected 2026-08-26; this used to prefer
+  # "$repo/scripts/agent-trees-snapshot.sh" and fall back to $CANON.
+  #
+  # Why that was backwards: the per-repo copy is whatever the clone's CURRENT
+  # BRANCH happens to hold, and these clones are routinely parked on a feature
+  # branch (club-arena sat on agent-rescue/uncommitted-migrations, the World Hub
+  # on fix/avatar-layout-fix). A fix merged to main therefore did not reach the
+  # running snapshotter at all. On 2026-08-26 the dedupe fix was merged in four
+  # repos and every launchd run still executed the old script, quietly writing a
+  # fresh ref per worktree every ten minutes - the exact bug the merge closed.
+  #
+  # $CANON is refreshed by this installer and lives outside any working tree, so
+  # nothing can revert it. The per-repo copy stays as the fallback for a repo
+  # that was never installed from.
+  SCRIPT="$CANON"
+  [ -f "$SCRIPT" ] || SCRIPT="$repo/scripts/agent-trees-snapshot.sh"
 
   OUT=$(cd "$repo" && bash "$SCRIPT" 2>&1)
   case "$OUT" in

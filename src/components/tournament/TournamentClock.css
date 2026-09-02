@@ -115,11 +115,6 @@
   transition: all 0.2s;
 }
 
-.tc-fullscreen-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-}
-
 /* ── Level Badge ── */
 .tc-level-badge {
   display: inline-block;

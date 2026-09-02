@@ -8,7 +8,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import { useToast } from '../components/common/Toast';
 import { sanitizeInput } from '../utils/sanitizeInput';
 import ConfirmModal from '../components/common/ConfirmModal';
@@ -265,6 +264,11 @@ export default function ClubAnnouncementsPage() {
       }
     } catch (error) {
       reportError(error, 'ClubAnnouncementsPage.Failed_to_post_announcement');
+      // 2026-08-28: this catch was Sentry-only. A thrown failure (network,
+      // resolveClubUUID) left the composer open with no success and no error
+      // — the user could not tell whether the post landed. The in-band error
+      // branch above already toasts; a thrown one must too.
+      toast.error('Failed to post announcement');
     }
     setPosting(false);
   };
@@ -362,7 +366,7 @@ export default function ClubAnnouncementsPage() {
             maxLength={100}
           />
           <textarea
-            placeholder="Write your announcement..."
+            placeholder="Write Your Announcement..."
             value={newContent}
             onChange={(e) => setNewContent(e.target.value)}
             rows={4}
@@ -428,8 +432,6 @@ export default function ClubAnnouncementsPage() {
           ))
         )}
       </div>
-
-      {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
 
       {/* Confirm Modal */}
       <ConfirmModal

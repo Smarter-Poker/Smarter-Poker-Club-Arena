@@ -18,6 +18,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import './BBJTicker.css';
+import { titleCase } from '../../utils/handReplay';
 
 export interface BBJTickerProps {
   clubId: string | null;
@@ -152,7 +153,12 @@ export function BBJTicker({
       onKeyDown={
         onClick
           ? (e) => {
-              if (e.key === 'Enter' || e.key === ' ') onClick();
+              // preventDefault first: Space on a div activates AND scrolls the
+              // page underneath. BBJRecentHits already gets this right.
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick();
+              }
             }
           : undefined
       }
@@ -164,7 +170,7 @@ export function BBJTicker({
 
       <div className="bbj-ticker__feed">
         {hits.length === 0 ? (
-          <span className="bbj-ticker__empty">No Hits Yet &mdash; It Could Be You.</span>
+          <span className="bbj-ticker__empty">No Hits Yet - It Could Be You.</span>
         ) : (
           <div className="bbj-ticker__track">
             {hits.map((h) => (
@@ -172,7 +178,11 @@ export function BBJTicker({
                 <span className="bbj-ticker__hit-amount">${money(h.total_payout)}</span>
                 <span className="bbj-ticker__hit-who">
                   {h.loser_display_name || 'Player'}
-                  {h.loser_hand ? ` - ${h.loser_hand}` : ''}
+                  {/* titleCase, because loser_hand is written by the engine
+                      as its own enum - `four_of_a_kind` reached the screen
+                      verbatim here while every other BBJ surface printed
+                      "Four Of A Kind" for the same value. */}
+                  {h.loser_hand ? ` - ${titleCase(h.loser_hand)}` : ''}
                 </span>
                 <span className="bbj-ticker__hit-when">{timeAgo(h.awarded_at)}</span>
               </span>

@@ -11,7 +11,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { getFreshAccessToken } from '../lib/authToken';
 import EngineStateClient, {
   type EngineConnectionStatus,
   type EngineSnapshot,
@@ -55,12 +55,10 @@ export function useEngineTableState(
     const client = new EngineStateClient({
       baseUrl: GAME_SERVER_URL,
       tableId,
-      getToken: async () => {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        return session?.access_token ?? null;
-      },
+      // 2026-08-24: synchronous in-memory token cache (src/lib/authToken.ts).
+      // The join-table path no longer awaits auth-js — the cached JWT resolves
+      // in the same microtask; getSession() runs only when a refresh is due.
+      getToken: getFreshAccessToken,
       onSnapshot: (snap, s) => {
         setSnapshot(snap);
         setSeq(s);

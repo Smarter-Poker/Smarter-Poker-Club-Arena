@@ -114,3 +114,14 @@
   line-height: 1.5;
   color: rgba(255, 255, 255, 0.45);
 }
+
+/* Shown only when bbj_stakes_tiers could not be read and the panel is falling
+   back to the client's published copy (see the file header for why the two can
+   disagree). Deliberately muted: it is a caveat, not an error. */
+.bbj-basic__stale {
+  margin: 6px 0 0;
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  color: #9fb4d0;
+  opacity: 0.85;
+}

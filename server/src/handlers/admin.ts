@@ -41,8 +41,7 @@ async function authorizeTableAdmin(
   req: IncomingMessage,
   tableId: string | undefined
 ): Promise<
-  | { ok: true; userId: string; clubId: string }
-  | { ok: false; status: number; error: string }
+  { ok: true; userId: string; clubId: string } | { ok: false; status: number; error: string }
 > {
   const auth = await authenticateRequest(req);
   if (!auth) return { ok: false, status: 401, error: 'Authentication required' };
@@ -80,12 +79,36 @@ async function authorizeTableAdmin(
     if (unionAdmin) {
       return { ok: true, userId: auth.userId, clubId: tableRow.club_id };
     }
-    const { data: memberClubs } = await supabase
-      .from('union_clubs')
-      .select('club_id')
-      .eq('union_id', tableRow.union_id)
-      .limit(100);
-    const clubIds = (memberClubs ?? []).map((r) => r.club_id).filter(Boolean);
+    /* THIS IS AN AUTHORIZATION READ, AND IT WAS CAPPED (fixed 2026-08-27).
+       It lists the clubs in a union so the caller's role in one of them can
+       grant access. At `.limit(100)` a union with 101 clubs would silently
+       drop the last one, and a legitimate admin of that club would be DENIED
+       - a permission failure that looks like a bug in their account rather
+       than a truncated query, and one that only appears once a union grows.
+       Unions hold 2 clubs today, so this was latent; an auth path is the last
+       place to leave a "big enough for now" number. Ordered because paging an
+       unordered read can skip a row, and skipping a row here is the denial
+       this is fixing. */
+    const memberClubs: Array<{ club_id?: string }> = [];
+    for (let page = 0; ; page++) {
+      if (page > 1000) {
+        reportError(
+          new Error('[admin] union club paging did not terminate'),
+          'admin.union_clubs_paging_runaway'
+        );
+        break;
+      }
+      const { data: chunk } = await supabase
+        .from('union_clubs')
+        .select('club_id')
+        .eq('union_id', tableRow.union_id)
+        .order('club_id', { ascending: true })
+        .range(page * 1000, page * 1000 + 999);
+      if (!chunk || chunk.length === 0) break;
+      memberClubs.push(...chunk);
+      if (chunk.length < 1000) break;
+    }
+    const clubIds = memberClubs.map((r) => r.club_id).filter(Boolean);
     if (clubIds.length > 0) {
       const { data: roles } = await supabase
         .from('club_members')
@@ -93,7 +116,7 @@ async function authorizeTableAdmin(
         .eq('user_id', auth.userId)
         .in('club_id', clubIds);
       const adminRow = (roles ?? []).find((r) =>
-        ['owner', 'admin', 'super_agent'].includes(String(r.role))
+        ['owner', 'co_owner', 'admin', 'super_agent'].includes(String(r.role))
       );
       if (adminRow) {
         return { ok: true, userId: auth.userId, clubId: tableRow.club_id };
@@ -111,8 +134,11 @@ async function authorizeTableAdmin(
   if (mErr || !membership) {
     return { ok: false, status: 403, error: 'Not a club member' };
   }
-  // Admin tier = owner OR admin OR super_agent (matches kick / waitlist / lobby).
-  if (!['owner', 'admin', 'super_agent'].includes(String(membership.role))) {
+  // Admin tier = owner OR co_owner OR admin OR super_agent (matches kick /
+  // waitlist / lobby). co_owner was missing from both lists in this file, which
+  // made it the only role in the seven that a promotion could grant and the
+  // engine would then refuse - a co-owner could not pause, resume or kick.
+  if (!['owner', 'co_owner', 'admin', 'super_agent'].includes(String(membership.role))) {
     return { ok: false, status: 403, error: 'Admin role required' };
   }
   return { ok: true, userId: auth.userId, clubId: tableRow.club_id };

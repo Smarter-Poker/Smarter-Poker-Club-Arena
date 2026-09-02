@@ -25,12 +25,48 @@ interface RakeReportsProps {
   clubId: string;
 }
 
+/**
+ * WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): per-hand breakdown returned by
+ * fn_hand_rake_breakdown — the operator's dispute/audit drill-down. The RPC is
+ * authorised server-side (club owner, union overseer, or engine); this panel
+ * is a viewer, not the control.
+ */
+interface HandBreakdown {
+  found: boolean;
+  error?: string;
+  hand_id?: string;
+  rake_method?: string;
+  gross_pot?: number | null;
+  regular_rake_collected?: number;
+  bbj_drop_collected?: number | null;
+  net_pot_paid_to_players?: number | null;
+  total_eligible_contributions?: number;
+  players?: Array<{
+    player_id: string;
+    gross_contribution: number | null;
+    returned_uncalled: number | null;
+    eligible_contribution: number | null;
+    contribution_weight: number | null;
+    weighted_rake_credit: number | null;
+    bbj_attributed_contribution: number | null;
+  }>;
+  reconciliation?: {
+    expected_regular_rake: number;
+    allocated_regular_rake: number;
+    difference: number;
+    valid: boolean;
+  };
+}
+
 export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
   const toast = useToast();
   const [data, setData] = useState<RakeData | null>(null);
   const [rawRecords, setRawRecords] = useState<any[]>([]);
   const [period, setPeriod] = useState<'today' | 'week' | 'month' | 'year'>('week');
   const [loading, setLoading] = useState(true);
+  const [lookupInput, setLookupInput] = useState('');
+  const [lookupBusy, setLookupBusy] = useState(false);
+  const [breakdown, setBreakdown] = useState<HandBreakdown | null>(null);
   const isMounted = useIsMounted();
   const { style: barStyle } = useStaggerAnimation(data?.dailyBreakdown.length || 0);
 
@@ -138,6 +174,61 @@ export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
     document.body.removeChild(link);
   };
 
+  const lookupHand = async () => {
+    const raw = lookupInput.trim();
+    if (!raw) {
+      toast.info('Enter a hand id or hand number to look up.');
+      return;
+    }
+    setLookupBusy(true);
+    setBreakdown(null);
+    try {
+      let handId: string | null = null;
+      const isUuid =
+        /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(raw);
+      if (isUuid) {
+        handId = raw;
+      } else if (/^\d+$/.test(raw)) {
+        // A hand NUMBER: resolve it to the hand id through this club's
+        // rake_records (RLS keeps the lookup club-scoped).
+        const resolvedId = await resolveClubUUID(clubId);
+        const { data: rec, error: lookupErr } = await supabase
+          .from('rake_records')
+          .select('hand_id')
+          .eq('club_id', resolvedId)
+          .eq('global_hand_id', Number(raw))
+          .not('hand_id', 'is', null)
+          .limit(1)
+          .maybeSingle();
+        if (lookupErr) throw lookupErr;
+        handId = (rec?.hand_id as string) ?? null;
+      }
+      if (!handId) {
+        toast.info('No raked hand found for that id or number in this club.');
+        return;
+      }
+      const { data: result, error } = await supabase.rpc('fn_hand_rake_breakdown', {
+        p_hand_id: handId,
+      });
+      if (error) throw error;
+      const bd = result as HandBreakdown;
+      if (!bd?.found) {
+        toast.info(
+          bd?.error === 'not_authorised'
+            ? 'Only the club owner or a union overseer can view hand breakdowns.'
+            : 'No rake record exists for that hand.'
+        );
+        return;
+      }
+      setBreakdown(bd);
+    } catch (err) {
+      reportError(err, 'RakeReports.Hand_breakdown_lookup_failed');
+      toast.error('Could not load the hand breakdown.');
+    } finally {
+      if (isMounted.current) setLookupBusy(false);
+    }
+  };
+
   if (loading || !data) {
     return (
       <div className="rake-reports loading">
@@ -208,6 +299,80 @@ export const RakeReports: React.FC<RakeReportsProps> = ({ clubId }) => {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Hand Rake Breakdown (weighted contributed rake drill-down) */}
+      <div className="top-games">
+        <h3>Hand Rake Breakdown</h3>
+        <p style={{ opacity: 0.7, fontSize: '0.85rem', margin: '4px 0 10px' }}>
+          Look Up Any Raked Hand By Hand ID Or Hand Number To See Each Player&apos;S Contribution,
+          Weight And Credited Rake.
+        </p>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <input
+            value={lookupInput}
+            onChange={(e) => setLookupInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') lookupHand();
+            }}
+            placeholder="Hand ID Or Hand Number"
+            style={{ flex: 1, padding: '8px 10px', borderRadius: 8 }}
+            aria-label="Hand ID Or Hand Number"
+          />
+          <button className="export-btn" onClick={lookupHand} disabled={lookupBusy}>
+            {lookupBusy ? 'Loading' : 'Look Up'}
+          </button>
+        </div>
+        {breakdown && breakdown.found && (
+          <div>
+            <div className="summary-cards">
+              <div className="summary-card">
+                <span className="card-value">
+                  {Number(breakdown.regular_rake_collected ?? 0).toLocaleString()}
+                </span>
+                <span className="card-label">Rake Collected</span>
+              </div>
+              <div className="summary-card">
+                <span className="card-value">
+                  {Number(breakdown.bbj_drop_collected ?? 0).toLocaleString()}
+                </span>
+                <span className="card-label">BBJ Drop</span>
+              </div>
+              <div className="summary-card">
+                <span className="card-value">
+                  {breakdown.reconciliation?.valid ? 'Valid' : 'MISMATCH'}
+                </span>
+                <span className="card-label">
+                  Reconciliation (
+                  {breakdown.rake_method === 'WEIGHTED_CONTRIBUTED' ? 'Weighted' : 'Legacy Equal'})
+                </span>
+              </div>
+            </div>
+            <div className="games-list">
+              {(breakdown.players ?? []).map((p, index) => (
+                <div key={p.player_id} className="game-row">
+                  <span className="game-rank">#{index + 1}</span>
+                  <span className="game-name" title={p.player_id}>
+                    {p.player_id.slice(0, 8)}
+                  </span>
+                  <div className="game-stats">
+                    <span className="game-rake">
+                      Credit {Number(p.weighted_rake_credit ?? 0).toFixed(2)}
+                    </span>
+                    <span className="game-hands">
+                      In {Number(p.eligible_contribution ?? 0).toLocaleString()}
+                      {Number(p.returned_uncalled ?? 0) > 0
+                        ? ` (Returned ${Number(p.returned_uncalled).toLocaleString()})`
+                        : ''}
+                      {' | '}
+                      {(Number(p.contribution_weight ?? 0) * 100).toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Export Button */}

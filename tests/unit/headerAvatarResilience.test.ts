@@ -31,6 +31,13 @@ const supabaseMock = vi.hoisted(() => ({
 }));
 
 const reported = vi.hoisted(() => ({ calls: [] as Array<[unknown, string]> }));
+const busMock = vi.hoisted(() => ({
+  handlers: new Map<string, Array<(event: { payload: any }) => void>>(),
+}));
+
+function emitBus(event: string, payload: unknown) {
+  for (const handler of busMock.handlers.get(event) ?? []) handler({ payload });
+}
 
 vi.mock('@/lib/supabase', () => {
   const builder = (table: string) => {
@@ -62,7 +69,15 @@ vi.mock('@/utils/errorReporter', () => ({
 vi.mock('@/core/MasterBus', () => ({
   masterBus: {
     emit: vi.fn(),
-    subscribe: vi.fn(() => () => {}),
+    subscribe: vi.fn((event: string, handler: (event: { payload: any }) => void) => {
+      const handlers = busMock.handlers.get(event) ?? [];
+      handlers.push(handler);
+      busMock.handlers.set(event, handlers);
+      return () => {
+        const index = handlers.indexOf(handler);
+        if (index >= 0) handlers.splice(index, 1);
+      };
+    }),
     getOrCreateChannel: vi.fn(() => ({
       on: vi.fn(function (this: unknown) {
         return this;
@@ -75,6 +90,7 @@ vi.mock('@/core/MasterBus', () => ({
 
 const USER = '47965354-0e56-43ef-931c-ddaab82af765';
 const OTHER_USER = '00000000-0000-0000-0000-000000000999';
+const PROFILE_PHOTO = '/profile-photos/player.jpg';
 const AVATAR = '/avatars/table/free_owl@2x.webp';
 
 async function freshStore() {
@@ -86,12 +102,13 @@ async function freshStore() {
 
 /** The store writes through localStorage; jsdom gives us a real one. */
 function seedCache(userId: string, url: string) {
-  localStorage.setItem('ca-avatar-cache', JSON.stringify({ u: userId, a: url }));
+  localStorage.setItem('ca-header-portrait-cache-v2', JSON.stringify({ u: userId, a: url }));
 }
 
 describe('header avatar resilience', () => {
   beforeEach(() => {
     localStorage.clear();
+    busMock.handlers.clear();
     supabaseMock.profileResult = { data: null, error: null };
   });
 
@@ -108,7 +125,9 @@ describe('header avatar resilience', () => {
 
     useHeaderDataStore.getState().loadOnce(USER);
     await vi.waitFor(() => {
-      expect(reported.calls.some(([, ctx]) => ctx === 'useHeaderDataStore.avatar_fetch')).toBe(true);
+      expect(reported.calls.some(([, ctx]) => ctx === 'useHeaderDataStore.avatar_fetch')).toBe(
+        true
+      );
     });
   });
 
@@ -156,7 +175,7 @@ describe('header avatar resilience', () => {
     await vi.waitFor(() => {
       expect(useHeaderDataStore.getState().avatarUrl).toBeNull();
     });
-    expect(localStorage.getItem('ca-avatar-cache')).toBeNull();
+    expect(localStorage.getItem('ca-header-portrait-cache-v2')).toBeNull();
   });
 
   it('drops the cached avatar on teardown so the next login starts clean', async () => {
@@ -166,7 +185,116 @@ describe('header avatar resilience', () => {
     useHeaderDataStore.getState().loadOnce(USER);
     useHeaderDataStore.getState().teardown();
 
-    expect(localStorage.getItem('ca-avatar-cache')).toBeNull();
+    expect(localStorage.getItem('ca-header-portrait-cache-v2')).toBeNull();
+    expect(useHeaderDataStore.getState().avatarUrl).toBeNull();
+  });
+
+  it('keeps an optimistic avatar visible when the initial read returns an older value', async () => {
+    const useHeaderDataStore = await freshStore();
+    supabaseMock.profileResult = {
+      data: {
+        avatar_url: PROFILE_PHOTO,
+        arena_avatar_url: '/avatars/table/old.webp',
+        use_avatar_as_profile_pic: true,
+      },
+      error: null,
+    };
+
+    useHeaderDataStore.getState().loadOnce(USER);
+    await vi.waitFor(() => {
+      expect(useHeaderDataStore.getState().avatarUrl).toBe('/avatars/table/old.webp');
+    });
+    emitBus('CUSTOMIZATION_MUTATION_STATE', {
+      kind: 'player-appearance',
+      scope: USER,
+      mutationId: 'avatar-2',
+      state: 'pending',
+    });
+    emitBus('PLAYER_APPEARANCE_CHANGED', {
+      userId: USER,
+      avatar: '/avatars/table/new.webp',
+      mutationId: 'avatar-2',
+      source: 'avatar-picker',
+    });
+
+    await vi.waitFor(() => {
+      expect(useHeaderDataStore.getState().avatarUrl).toBe('/avatars/table/new.webp');
+    });
+  });
+
+  it('uses the real profile photo globally by default', async () => {
+    const useHeaderDataStore = await freshStore();
+    supabaseMock.profileResult = {
+      data: {
+        avatar_url: PROFILE_PHOTO,
+        arena_avatar_url: AVATAR,
+        use_avatar_as_profile_pic: false,
+      },
+      error: null,
+    };
+
+    useHeaderDataStore.getState().loadOnce(USER);
+    await vi.waitFor(() => {
+      expect(useHeaderDataStore.getState().avatarUrl).toBe(PROFILE_PHOTO);
+    });
+  });
+
+  it('uses the Arena avatar only after the user enables Use Avatar', async () => {
+    const useHeaderDataStore = await freshStore();
+    supabaseMock.profileResult = {
+      data: {
+        avatar_url: PROFILE_PHOTO,
+        arena_avatar_url: AVATAR,
+        use_avatar_as_profile_pic: true,
+      },
+      error: null,
+    };
+
+    useHeaderDataStore.getState().loadOnce(USER);
+    await vi.waitFor(() => {
+      expect(useHeaderDataStore.getState().avatarUrl).toBe(AVATAR);
+    });
+  });
+
+  it('does not let an Arena avatar event replace the global photo without opt-in', async () => {
+    const useHeaderDataStore = await freshStore();
+    supabaseMock.profileResult = {
+      data: {
+        avatar_url: PROFILE_PHOTO,
+        arena_avatar_url: AVATAR,
+        use_avatar_as_profile_pic: false,
+      },
+      error: null,
+    };
+    useHeaderDataStore.getState().loadOnce(USER);
+    await vi.waitFor(() => expect(useHeaderDataStore.getState().avatarUrl).toBe(PROFILE_PHOTO));
+
+    emitBus('PLAYER_APPEARANCE_CHANGED', {
+      userId: USER,
+      avatar: '/avatars/table/new.webp',
+      source: 'avatar-picker',
+    });
+
+    expect(useHeaderDataStore.getState().avatarUrl).toBe(PROFILE_PHOTO);
+    expect(useHeaderDataStore.getState().arenaAvatarUrl).toBe('/avatars/table/new.webp');
+  });
+
+  it('activates VIP only while the entitlement has not expired', async () => {
+    const { resolveActiveVip } = await import('@/stores/useHeaderDataStore');
+    expect(resolveActiveVip(true, null, 100)).toBe(true);
+    expect(resolveActiveVip(true, '2030-01-01T00:00:00.000Z', 100)).toBe(true);
+    expect(resolveActiveVip(true, '2020-01-01T00:00:00.000Z', Date.now())).toBe(false);
+    expect(resolveActiveVip(false, '2030-01-01T00:00:00.000Z', 100)).toBe(false);
+  });
+
+  it('does not apply an avatar event from another signed-in account', async () => {
+    const useHeaderDataStore = await freshStore();
+    useHeaderDataStore.getState().loadOnce(USER);
+    emitBus('PLAYER_APPEARANCE_CHANGED', {
+      userId: OTHER_USER,
+      avatar: AVATAR,
+      source: 'avatar-picker',
+    });
     expect(useHeaderDataStore.getState().avatarUrl).toBeNull();
   });
 });

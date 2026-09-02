@@ -86,6 +86,48 @@ export function Tooltip({
     setIsVisible(false);
   }, []);
 
+  /**
+   * A TAP OPENS IT TOO (2026-08-29).
+   *
+   * The trigger listened for `mouseenter`, `mouseleave`, `focus` and `blur`.
+   * Focus was the right instinct and did nothing: a bare `<span>` is not
+   * focusable, so nothing ever focused it, and `focus` only fired when a child
+   * happened to be a control. On a phone — where Club Arena is mostly used, and
+   * where `mouseenter` does not exist — this component delivered its content to
+   * nobody. Hover was removed estate-wide on 2026-08-29, which makes the
+   * pointer-only route the only route there was.
+   *
+   * Toggle rather than show, so the same tap that opens it closes it, and the
+   * span is now genuinely focusable so the `onFocus` above finally means
+   * something.
+   */
+  const toggleTooltip = useCallback(() => {
+    if (disabled) return;
+    clearTimeout(timeoutRef.current);
+    setIsVisible((v) => !v);
+  }, [disabled]);
+
+  /* Tap-anywhere and Escape both dismiss. Without these a tooltip opened by tap
+     has no way to close on a device with no pointer to move away. */
+  useEffect(() => {
+    if (!isVisible) return;
+    const onDocDown = (e: Event) => {
+      const t = e.target as Node | null;
+      if (t && triggerRef.current?.contains(t)) return;
+      if (t && tooltipRef.current?.contains(t)) return;
+      hideTooltip();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') hideTooltip();
+    };
+    document.addEventListener('pointerdown', onDocDown, true);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDocDown, true);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [isVisible, hideTooltip]);
+
   useEffect(() => {
     if (isVisible && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect();
@@ -122,10 +164,23 @@ export function Tooltip({
     <>
       <span
         ref={triggerRef as React.RefObject<HTMLSpanElement>}
+        /* Focusable, so `onFocus` is reachable and a keyboard user can read the
+           content at all -- the span carried focus handlers but no tabIndex, so
+           they had never once fired on their own. */
+        tabIndex={disabled ? -1 : 0}
+        role="button"
+        aria-expanded={isVisible}
         onMouseEnter={showTooltip}
         onMouseLeave={hideTooltip}
         onFocus={showTooltip}
         onBlur={hideTooltip}
+        onClick={toggleTooltip}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggleTooltip();
+          }
+        }}
         style={{ display: 'inline-flex' }}
       >
         {children}

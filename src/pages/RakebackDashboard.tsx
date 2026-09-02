@@ -27,11 +27,20 @@ interface RakebackStats {
   handsPlayed: number;
 }
 
+/**
+ * WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): this ladder now MIRRORS the
+ * authoritative server ladder (fn_close_settlement_period / RakebackSettler:
+ * 5/10/15/20/30% at 0/100/500/2000/10000 of WEEKLY weighted rake). The old
+ * page carried its own 10-30% ladder and derived "rake contributed" from
+ * wallet_transactions category 'rake' debits — a category cash players never
+ * receive, so it displayed a tier the settler would never pay. Display only:
+ * the rate that pays is always the one stored on the rakeback period row.
+ */
 const TIERS = [
-  { name: 'Bronze', minRake: 0, percent: 10, color: '#cd7f32', icon: '☆' },
-  { name: 'Silver', minRake: 100, percent: 15, color: '#c0c0c0', icon: '☆' },
-  { name: 'Gold', minRake: 500, percent: 20, color: '#ffd700', icon: '★' },
-  { name: 'Platinum', minRake: 2000, percent: 25, color: '#e5e4e2', icon: '◆' },
+  { name: 'Bronze', minRake: 0, percent: 5, color: '#cd7f32', icon: '☆' },
+  { name: 'Silver', minRake: 100, percent: 10, color: '#c0c0c0', icon: '☆' },
+  { name: 'Gold', minRake: 500, percent: 15, color: '#ffd700', icon: '★' },
+  { name: 'Platinum', minRake: 2000, percent: 20, color: '#e5e4e2', icon: '◆' },
   { name: 'Diamond', minRake: 10000, percent: 30, color: '#b9f2ff', icon: '♛' },
 ];
 
@@ -95,19 +104,35 @@ export default function RakebackDashboard() {
     loadingRef.current = true;
     setLoading(true);
     try {
-      // Count rake from wallet transactions
-      const { data: rakeData } = await supabase
-        .from('wallet_transactions')
-        .select('amount')
+      // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): every number on this page
+      // now comes from the AUTHORITATIVE pipeline —
+      //   rake generated  -> rakeback_periods.rake_generated (written by the
+      //                      settler / fn_rakeback_recompute_periods from the
+      //                      canonical weighted allocation of rake_records)
+      //   pending         -> pending periods' rakeback_amount (what the close
+      //                      will actually pay, at the rate it will pay)
+      //   earned          -> real rakeback wallet credits (actual payouts)
+      // The old page summed wallet_transactions category 'rake' debits, which
+      // cash players never receive (rake leaves the POT), so it permanently
+      // showed zero rake and an unearned Bronze tier.
+      const { data: periods } = await supabase
+        .from('rakeback_periods')
+        .select('rake_generated, rakeback_amount, rakeback_rate, status, period_start')
         .eq('user_id', user.id)
-        .eq('category', 'rake')
-        .eq('type', 'debit');
+        .order('period_start', { ascending: false })
+        .limit(200);
 
-      const totalRakeContributed = Math.abs(
-        (rakeData || []).reduce((s, r) => s + (r.amount || 0), 0)
-      );
+      const periodRows = periods || [];
+      const totalRakeContributed =
+        Math.round(periodRows.reduce((s, p) => s + (Number(p.rake_generated) || 0), 0) * 100) / 100;
+      const pendingRakeback =
+        Math.round(
+          periodRows
+            .filter((p) => p.status === 'pending')
+            .reduce((s, p) => s + (Number(p.rakeback_amount) || 0), 0) * 100
+        ) / 100;
 
-      // Count rakeback credits
+      // Real payouts (actual wallet credits) — unchanged source, it was right.
       const { data: rakebackData } = await supabase
         .from('wallet_transactions')
         .select('amount, created_at')
@@ -121,10 +146,12 @@ export default function RakebackDashboard() {
       if (!isMounted.current) return;
       setRecentPayouts(rakebackData || []);
 
-      // Determine tier
+      // Tier: the rate is decided PER WEEK by the server ladder against that
+      // week's weighted rake. Show the current (most recent) week's position.
+      const currentWeekRake = Number(periodRows[0]?.rake_generated) || 0;
       let currentTierIdx = 0;
       for (let i = TIERS.length - 1; i >= 0; i--) {
-        if (totalRakeContributed >= TIERS[i].minRake) {
+        if (currentWeekRake >= TIERS[i].minRake) {
           currentTierIdx = i;
           break;
         }
@@ -132,24 +159,19 @@ export default function RakebackDashboard() {
       const currentTier = TIERS[currentTierIdx];
       const nextTier = currentTierIdx < TIERS.length - 1 ? TIERS[currentTierIdx + 1] : null;
 
-      // Calculate progress to next tier
       let tierProgress = 100;
       if (nextTier) {
         const range = nextTier.minRake - currentTier.minRake;
-        const progress = totalRakeContributed - currentTier.minRake;
-        tierProgress = Math.min(100, (progress / range) * 100);
+        const progress = currentWeekRake - currentTier.minRake;
+        tierProgress = Math.min(100, Math.max(0, (progress / range) * 100));
       }
 
-      // Pending rakeback estimate
-      const pendingRakeback =
-        totalRakeContributed * (currentTier.percent / 100) - totalRakebackEarned;
-
-      // Hands played (approximate from hand events)
-      const { count: handsPlayed } = await supabase
-        .from('wallet_transactions')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id)
-        .eq('category', 'rake');
+      // Raked hands played, from the settler-maintained per-club stats.
+      const { data: statRows } = await supabase
+        .from('player_stats')
+        .select('hands_played')
+        .eq('user_id', user.id);
+      const handsPlayed = (statRows || []).reduce((s, r) => s + (Number(r.hands_played) || 0), 0);
 
       if (!isMounted.current) return;
       setStats({
@@ -159,7 +181,7 @@ export default function RakebackDashboard() {
         currentTier: currentTier.name,
         nextTier: nextTier?.name || null,
         tierProgress,
-        handsPlayed: handsPlayed || 0,
+        handsPlayed,
       });
     } catch (err) {
       if (!isMounted.current) return;
@@ -180,7 +202,17 @@ export default function RakebackDashboard() {
   });
 
   return (
-    <div style={{ padding: '16px', maxWidth: '600px', margin: '0 auto', paddingBottom: '100px' }}>
+    <div
+      style={{
+        padding: '16px',
+        width: '100%',
+        maxWidth: '600px',
+        margin: '0 auto',
+        paddingBottom: '100px',
+        boxSizing: 'border-box',
+        overflowX: 'hidden',
+      }}
+    >
       {/* Header */}
       {loading ? (
         <PageSkeleton variant="stats" />
@@ -195,7 +227,9 @@ export default function RakebackDashboard() {
                 color: '#3b82f6',
                 cursor: 'pointer',
                 fontSize: '0.85rem',
-                padding: 0,
+                padding: '10px 10px 10px 0',
+                minHeight: '44px',
+                touchAction: 'manipulation',
                 marginBottom: '6px',
               }}
             >
@@ -479,10 +513,7 @@ export default function RakebackDashboard() {
                       }}
                       itemStyle={{ color: '#10b981', fontWeight: 700 }}
                       labelStyle={{ color: 'rgba(255,255,255,0.6)', marginBottom: '4px' }}
-                      formatter={(val: number | undefined) => [
-                        `${(val || 0).toLocaleString()} chips`,
-                        'Payout',
-                      ]}
+                      formatter={(val) => [`${Number(val || 0).toLocaleString()} chips`, 'Payout']}
                     />
                     <Area
                       type="monotone"

@@ -39,9 +39,26 @@ async function openHamburgerMenu(page: any) {
   } catch {
     return false;
   }
-  await btn.click({ timeout: 8000 });
-  await page.waitForTimeout(400);
-  return true;
+  const drawer = page.getByRole('dialog', { name: 'Club Arena' });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    // Resolve the opener again on retry. Session/profile hydration can replace
+    // the header immediately after the first click; a successful click on that
+    // retiring node does not prove the newly mounted drawer is open.
+    await page.locator('button[aria-label="Open Menu"]').first().click({ timeout: 8000 });
+    if (
+      await drawer
+        .waitFor({ state: 'visible', timeout: 5000 })
+        .then(() => true)
+        .catch(() => false)
+    ) {
+      return true;
+    }
+  }
+  throw new Error('The hamburger opener was clickable, but its Club Arena drawer never opened.');
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /* Open the menu, or account honestly for why we could not.
@@ -93,22 +110,16 @@ test.describe('Hamburger Menu — Open / Close', () => {
     // If redirected to auth, skip this test
     if (!(await openMenuOrSkip(page))) return;
 
-    // The drawer should be visible (check for a section header like "Game Modes")
-    const gameModes = page.locator('text=Game Modes');
+    // The drawer should be visible (check for the canonical first section)
+    const gameModes = page.getByRole('heading', { name: 'Play' });
     await expect(gameModes).toBeVisible({ timeout: 3000 });
+    await expect(page.getByRole('dialog', { name: 'Club Arena' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Close' })).toBeFocused();
 
-    /* Press Escape to close.
-       NOT `not.toBeVisible()`. The drawer closes by sliding out - it keeps its
-       full 320px box and `visibility: visible`, it just sits at x = -320. That
-       is closed to a user and OPEN to Playwright, whose definition of visible
-       is "non-empty bounding box and not visibility:hidden" - nothing about
-       being on screen. Measured live after Escape: {w:320, h:43, x:-320,
-       visibility:'visible'}. So this assertion failed on a working Escape
-       handler (HamburgerMenu.tsx:136) the moment the suite ran signed in.
-       `toBeInViewport` is the check that means what this test meant. */
+    // Escape removes the focusable dialog tree and restores the opener.
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(350);
-    await expect(gameModes).not.toBeInViewport({ timeout: 2000 });
+    await expect(gameModes).not.toBeAttached({ timeout: 2000 });
+    await expect(page.locator('button[aria-label="Open Menu"]').first()).toBeFocused();
   });
 });
 
@@ -124,53 +135,35 @@ test.describe('Hamburger Menu — Profile Card', () => {
 });
 
 test.describe('Hamburger Menu — Navigation Links', () => {
-  // All navigation links in the hamburger menu
+  // Canonical global navigation links in the cleaned information architecture.
   const allNavLinks = [
-    // Game Modes
-    { label: 'Home', path: '/' },
+    // Play
+    { label: 'Play & Review', path: '/play' },
+    { label: 'Club Arena', path: '/' },
     { label: 'Tournaments', path: '/tournaments' },
-    { label: 'Tournament Lobby', path: '/tournament-lobby' },
     { label: 'Tournament Results', path: '/tournament-results' },
     { label: 'Hand History', path: '/hand-history' },
-    { label: 'Session History', path: '/history' },
-    { label: 'Leaderboard', path: '/leaderboard' },
-    // Clubs
-    { label: 'My Clubs', path: '/clubs' },
-    { label: 'Create Club', path: '/clubs/create' },
-    { label: 'Messages', path: '/messages' },
-    { label: 'Club Messages', path: '/messages/clubs' },
-    { label: 'Players', path: '/players' },
-    { label: 'Cashier', path: '/cashier' },
-    // The menu has never had an item called "Search" - the row that routes to
-    // /search is labelled "Find Player" (HamburgerMenu.tsx:695). Signed out this
-    // test skipped before it could notice.
-    { label: 'Find Player', path: '/search' },
-    // Unions
-    { label: 'Browse Unions', path: '/unions' },
-    { label: 'Create Union', path: '/unions/create' },
-    // Player
-    { label: 'My Profile', path: '/profile' },
-    { label: 'My Wallet', path: '/wallet' },
-    { label: 'Achievements', path: '/achievements' },
-    { label: 'Player Stats', path: '/stats' },
-    { label: 'VIP Status', path: '/vip' },
-    { label: 'Rakeback', path: '/rakeback' },
-    { label: 'Promotions', path: '/promotions' },
-    { label: 'Bonuses', path: '/bonuses' },
-    { label: 'Transactions', path: '/transactions' },
+    { label: 'Session History', path: '/session-history' },
+    { label: 'Leaderboards', path: '/leaderboard' },
+    // Community
+    { label: 'Community Center', path: '/community' },
+    { label: 'Find Players & Clubs', path: '/search' },
     { label: 'Friends', path: '/friends' },
-    { label: 'Waitlist', path: '/waitlist' },
-    { label: 'Invite Players', path: '/invite' },
-    // Agent & Admin
-    { label: 'Agent Management', path: '/agent-management' },
-    { label: 'Club Dashboard', path: '/data' },
-    { label: 'Club Settings', path: '/admin' },
+    { label: 'Unions', path: '/unions' },
+    // Wallet & Rewards
+    { label: 'Rewards Center', path: '/rewards' },
+    { label: 'Wallet', path: '/wallet' },
+    { label: 'Cashier', path: '/cashier' },
+    { label: 'Marketplace', path: '/marketplace' },
+    { label: 'VIP & Rakeback', path: '/vip' },
+    { label: 'Promotions', path: '/promotions' },
+    { label: 'Achievements', path: '/achievements' },
     // Settings
     { label: 'App Settings', path: '/settings' },
     { label: 'Notifications', path: '/notifications' },
     // Support & Legal
-    { label: 'Help & FAQ', path: '/help' },
-    { label: 'Terms of Service', path: '/legal/tos' },
+    { label: 'Help Center', path: '/help' },
+    { label: 'Terms Of Service', path: '/legal/tos' },
     { label: 'Privacy Policy', path: '/legal/privacy' },
     { label: 'Fair Gaming', path: '/legal/fair-gaming' },
     { label: 'Promotion Rules', path: '/legal/promotions' },
@@ -182,8 +175,14 @@ test.describe('Hamburger Menu — Navigation Links', () => {
 
       if (!(await openMenuOrSkip(page))) return;
 
-      // Find the menu item by text
-      const menuItem = page.locator(`span:text-is("${link.label}")`).first();
+      // Use the interactive control's accessible name. The button also owns a
+      // short description, so its name begins with the destination label.
+      const menuItem = page
+        .getByRole('dialog', { name: 'Club Arena' })
+        .getByRole('button', {
+          name: new RegExp(`^${escapeRegExp(link.label)}(?:\\s|$)`),
+        })
+        .first();
       await expect(menuItem).toBeVisible({ timeout: 3000 });
       await menuItem.click();
 
@@ -210,6 +209,9 @@ test.describe('Hamburger Menu — Settings Toggles', () => {
     // The toggle is a sibling button in the same container div
     const soundsToggle = soundsLabel.locator('..').locator('button');
     await expect(soundsToggle).toBeVisible();
+    await expect(soundsToggle).toHaveAttribute('role', 'switch');
+    await expect(soundsToggle).toHaveAttribute('aria-label', 'Sounds');
+    expect((await soundsToggle.boundingBox())?.height).toBeGreaterThanOrEqual(44);
     await soundsToggle.click();
     await page.waitForTimeout(200);
     // No crash = success
@@ -249,47 +251,22 @@ test.describe('Hamburger Menu — Settings Toggles', () => {
     await expect(tableSettingsRow).toBeVisible({ timeout: 5000 });
     await tableSettingsRow.click();
 
-    const bbLabel = page.locator('.tsp-item__label:text-is("Show Stack in Big Blinds")').first();
-    await expect(bbLabel).toBeVisible({ timeout: 15000 });
-
-    // The toggle is a sibling of the label's wrapper, not of the label itself.
-    const bbToggle = bbLabel.locator('../..').locator('button').first();
+    const bbToggle = page.getByRole('switch', { name: 'Show Stack In Big Blinds' }).first();
     await expect(bbToggle).toBeVisible();
     await bbToggle.click();
     await page.waitForTimeout(200);
   });
 });
 
-test.describe('Hamburger Menu — Keyboard Shortcuts Section', () => {
-  test('should display all keyboard shortcuts', async ({ page }) => {
+test.describe('Hamburger Menu — Information Architecture', () => {
+  test('should display the cleaned navigation groups', async ({ page }) => {
     await navigateAndWait(page, '/');
 
     if (!(await openMenuOrSkip(page))) return;
 
-    // The section header should be visible
-    const sectionHeader = page.locator('text=Keyboard Shortcuts').first();
-    await expect(sectionHeader).toBeVisible({ timeout: 5000 });
-
-    // Verify shortcut keys are rendered in <kbd> elements
-    const shortcuts = ['?', 'Esc', 'H', 'L', 'T', 'P', 'S'];
-    for (const key of shortcuts) {
-      const kbd = page.locator(`kbd:text-is("${key}")`);
-      await expect(kbd).toBeVisible({ timeout: 2000 });
-    }
-
-    // Verify descriptions
-    const descriptions = [
-      'Show Shortcuts',
-      'Close Menu / Modal',
-      'Go Home',
-      'Go to Home',
-      'Go to Tournaments',
-      'Go to Profile',
-      'Go to Settings',
-    ];
-    for (const desc of descriptions) {
-      const descEl = page.locator(`text=${desc}`).first();
-      await expect(descEl).toBeVisible({ timeout: 2000 });
+    const sections = ['Play', 'Community', 'Wallet & Rewards', 'Support & Legal'];
+    for (const section of sections) {
+      await expect(page.getByRole('heading', { name: section })).toBeVisible({ timeout: 3000 });
     }
   });
 });
@@ -300,7 +277,7 @@ test.describe('Hamburger Menu — Log Out', () => {
 
     if (!(await openMenuOrSkip(page))) return;
 
-    const logOut = page.locator('span:text-is("Log Out")');
+    const logOut = page.getByRole('button', { name: 'Log Out' });
     await expect(logOut).toBeVisible({ timeout: 3000 });
   });
 });
@@ -324,7 +301,8 @@ test.describe('Hamburger Menu — Version Footer', () => {
     // "Club Arena V1.12" (capital V — house Title Case), and the original
     // lower-case regex could never match it. It never had to: signed out this
     // spec skipped, so the assertion was first evaluated on 2026-08-23.
-    const version = page.locator('text=/Club Arena v/i');
+    const version = page.getByText(/Club Arena .* Command Deck V\d/i).first();
+    await version.scrollIntoViewIfNeeded();
     await expect(version).toBeVisible({ timeout: 3000 });
   });
 });

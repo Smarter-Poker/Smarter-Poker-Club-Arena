@@ -11,6 +11,7 @@
  */
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import './TableMenu.css';
 import { haptic, soundService } from '../../services/SoundService';
 import {
@@ -31,6 +32,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { AvatarGallery } from '../customization/AvatarGallery';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
+import { useButtonImage } from '../../hooks/useButtonImage';
 
 // ─── SVG Icons for Identity section ─── */
 const AvatarIcon = () => (
@@ -90,44 +92,61 @@ export interface TableMenuProps {
   sessionDuration?: string;
   /** Observers watching the table — shown in menu dropdown */
   observers?: TableMenuObserver[];
+  /**
+   * AUDIT 2026-08-25 — A HANDLER THAT REACHED NOTHING.
+   *
+   * `createDefaultMenuSections` DECLARED `onChangeAvatar`, `onToggleAlias` and
+   * `aliasLabel` in its handlers object and then never put any of them on a
+   * menu action. TableTabBar passed `onToggleAlias` (emitting
+   * TABLE_MENU_ACTION / 'TOGGLE_ALIAS', which TablePage answers by opening
+   * IdentityModal) and it was dropped on the floor, so the identity dialog was
+   * unreachable from the only menu in the app that offers it.
+   *
+   * The Identity section is injected by THIS component, not by
+   * `createDefaultMenuSections`, so the handler has to arrive here to be usable.
+   * That is what this prop is. When it is absent the section still renders its
+   * own real-name switch, so a standalone TableMenu is unchanged.
+   */
+  onOpenIdentity?: () => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // DEFAULT MENU SECTIONS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export function createDefaultMenuSections(handlers: {
-  onSitOut?: () => void;
-  onRebuy?: () => void;
-  onAddOn?: () => void;
-  onSessionStats?: () => void;
-  onSettings?: () => void;
-  onHandHistory?: () => void;
-  onLeaderboard?: () => void;
-  onHelp?: () => void;
-  onLeaveTable?: () => void;
-  onChangeAvatar?: () => void;
-  onToggleAlias?: () => void;
-  aliasLabel?: string;
-}): MenuSection[] {
+export function createDefaultMenuSections(
+  handlers: {
+    onSitOut?: () => void;
+    onStandUpBB?: () => void;
+    onRebuy?: () => void;
+    onAutoTopUp?: () => void;
+    onAddOn?: () => void;
+    onSessionStats?: () => void;
+    onSettings?: () => void;
+    onToggleSounds?: () => void;
+    onToggleVibrations?: () => void;
+    /** Dan 2026-08-30: hamburger switch "Multi Table Profit Tracking" ON/OFF. */
+    onToggleProfitTracking?: () => void;
+    onHandHistory?: () => void;
+    onLeaderboard?: () => void;
+    onHelp?: () => void;
+    onLeaveTable?: () => void;
+    /* `onChangeAvatar`, `onToggleAlias` and `aliasLabel` were declared here and
+       used by nothing — see the note on TableMenuProps.onOpenIdentity. The
+       Identity section belongs to TableMenu itself; the alias handler now
+       arrives there as `onOpenIdentity`, and the avatar picker is TableMenu's
+       own in-app AvatarGallery (a popup WINDOW at a live table, which the old
+       CHANGE_AVATAR path opened, loses you the table). */
+  },
+  state?: {
+    standUpBBBadge?: string;
+    autoTopUpBadge?: string;
+    soundsBadge?: string;
+    vibrationsBadge?: string;
+    profitTrackingBadge?: string;
+  }
+): MenuSection[] {
   return [
-    {
-      title: 'Identity',
-      actions: [
-        {
-          id: 'avatar',
-          label: 'Change Avatar',
-          icon: <AvatarIcon />,
-          onClick: handlers.onChangeAvatar || (() => {}),
-        },
-        {
-          id: 'display-name',
-          label: handlers.aliasLabel || 'Display Name',
-          icon: <NameTagIcon />,
-          onClick: handlers.onToggleAlias || (() => {}),
-        },
-      ],
-    },
     {
       title: 'Quick Actions',
       actions: [
@@ -138,10 +157,24 @@ export function createDefaultMenuSections(handlers: {
           onClick: handlers.onSitOut || (() => {}),
         },
         {
+          id: 'standup-bb',
+          label: 'Stand Up Next Big Blind',
+          icon: <SitOutIcon />,
+          badge: state?.standUpBBBadge,
+          onClick: handlers.onStandUpBB || (() => {}),
+        },
+        {
           id: 'rebuy',
           label: 'Add Chips',
           icon: <RebuyIcon />,
           onClick: handlers.onRebuy || (() => {}),
+        },
+        {
+          id: 'auto-top-up',
+          label: 'Auto Top Up',
+          icon: <RebuyIcon />,
+          badge: state?.autoTopUpBadge,
+          onClick: handlers.onAutoTopUp || (() => {}),
         },
       ],
     },
@@ -172,10 +205,39 @@ export function createDefaultMenuSections(handlers: {
           : []),
         {
           id: 'settings',
-          label: 'Settings',
+          label: 'Table Settings',
           icon: <SettingsIcon />,
           onClick: handlers.onSettings || (() => {}),
         },
+        {
+          id: 'sounds',
+          label: 'Sounds',
+          icon: <SettingsIcon />,
+          badge: state?.soundsBadge,
+          onClick: handlers.onToggleSounds || (() => {}),
+        },
+        {
+          id: 'vibrations',
+          label: 'Vibrations',
+          icon: <SettingsIcon />,
+          badge: state?.vibrationsBadge,
+          onClick: handlers.onToggleVibrations || (() => {}),
+        },
+        /* Dan 2026-08-30: "IT SHOULD ALSO BE AN ON OFF SWITCH IN THE
+           HAMBURGER MENU 'MULTI TABLE PROFIT TRACKING' ON / OFF." Only
+           rendered when a handler arrives (MultiTablePage owns the setting);
+           the profit chip is a cash-game-only feature either way. */
+        ...(handlers.onToggleProfitTracking
+          ? [
+              {
+                id: 'profit-tracking',
+                label: 'Multi Table Profit Tracking',
+                icon: <SettingsIcon />,
+                badge: state?.profitTrackingBadge,
+                onClick: handlers.onToggleProfitTracking,
+              },
+            ]
+          : []),
       ],
     },
     {
@@ -183,7 +245,7 @@ export function createDefaultMenuSections(handlers: {
       actions: [
         {
           id: 'help',
-          label: 'Help & Rules',
+          label: 'Game Rules',
           icon: <HelpIcon />,
           onClick: handlers.onHelp || (() => {}),
         },
@@ -219,11 +281,25 @@ export function TableMenu({
   handNumber,
   sessionDuration,
   observers = [],
+  onOpenIdentity,
 }: TableMenuProps) {
-  const [activeSection, setActiveSection] = useState<string | null>(null);
+  const hamburgerIcon = useButtonImage('icon-hamburger');
+  /* `activeSection` / `setActiveSection` deleted 2026-08-25: state written by
+     nobody and read by nobody since the file was written. */
   const menuRef = useRef<HTMLDivElement>(null);
   const [showAvatarGallery, setShowAvatarGallery] = useState(false);
-  const [useRealName, setUseRealName] = useState(false);
+  // LAZY INITIALIZER (2026-08-28): the stored value was read one tick later
+  // in an effect, so the menu's "Real Name / Username" badge flashed wrong on
+  // mount. TablePage reads the very same key in its initializer — TableMenu
+  // now matches. (isVip stays async by design: entitlements are not cached
+  // locally, see useHeaderDataStore's cosmetics note.)
+  const [useRealName, setUseRealName] = useState(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEYS.USE_REAL_NAME) === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [isVip, setIsVip] = useState(false);
   const { user } = useAuthUser();
   const avatarUrl = useHeaderDataStore((s) => s.avatarUrl);
@@ -274,20 +350,54 @@ export function TableMenu({
   // Inject Identity section dynamically into the passed sections
   const sections: MenuSection[] = [
     {
-      title: 'Identity Component',
+      title: 'Identity',
       actions: [
         {
           id: 'avatar',
           label: 'Change Avatar',
-          icon: <AvatarIcon />,
+          icon: avatarUrl ? (
+            <img
+              src={avatarUrl}
+              alt="Avatar"
+              style={{ width: 18, height: 18, borderRadius: '50%', objectFit: 'contain' }}
+            />
+          ) : (
+            <AvatarIcon />
+          ),
           onClick: () => setShowAvatarGallery(true),
         },
+        /* Two DIFFERENT identity settings live here, and until this pass one of
+           them was unreachable while the other called itself by the other's
+           name.
+
+           `use_real_name` (this row) picks between the player's real name and
+           their username, is read by utils/playerDisplayName and by TablePage's
+           hero-name derivation, and is genuinely live. Its old label —
+           "Using Real Name (vs Alias)" — called the USERNAME an alias, which is
+           the term the OTHER setting uses, so the two were indistinguishable in
+           a list. Relabelled to what it actually switches, with the current
+           value as the badge.
+
+           `use_alias` / `table_alias` (the row below) is a club alias worn at
+           the table, and it wins over both of the above on the felt. It is
+           edited in IdentityModal, which is what `onOpenIdentity` opens. */
         {
-          id: 'alias-toggle',
-          label: useRealName ? 'Using Real Name (vs Alias)' : 'Using Alias (vs Real Name)',
+          id: 'display-name',
+          label: 'Display Name',
           icon: <NameTagIcon />,
+          badge: useRealName ? 'Real Name' : 'Username',
           onClick: handleUseRealNameToggle,
         },
+        ...(onOpenIdentity
+          ? [
+              {
+                id: 'table-alias',
+                label: 'Table Alias',
+                icon: <NameTagIcon />,
+                onClick: onOpenIdentity,
+              },
+            ]
+          : []),
       ] as MenuAction[],
     },
     ...propSections,
@@ -313,25 +423,39 @@ export function TableMenu({
     }
     prevOpenRef.current = isOpen;
   }, [isOpen]);
-  const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  // CSS handles the animation now
 
-  useEffect(() => {
-    if (!isOpen) {
-      // Reset animation state when menu closes so items animate in on next open
-      setVisibleItems(new Set());
-      return;
-    }
-    const allActions = sections.flatMap((s) => s.actions);
-    const timeouts = allActions.map((_, i) =>
-      setTimeout(() => setVisibleItems((prev) => new Set(prev).add(i)), i * 40)
-    );
-    return () => timeouts.forEach((t) => clearTimeout(t));
-  }, [isOpen, sections.length]);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close on click outside
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  THE AVATAR PICKER IS NOT "OUTSIDE" (Dan 2026-08-31, binding)
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Dan: "you cant ... hit anything inside the avatar selection and keep it
+   * up, it auto closes."
+   *
+   * AvatarGallery is rendered as a CHILD of this menu (bottom of this file)
+   * but portals itself to document.body (AvatarGallery.tsx, createPortal). Its
+   * DOM therefore sits outside BOTH `menuRef` and `dropdownRef`, so the very
+   * first mousedown on an avatar tile satisfied the test below, closed the
+   * menu, and unmounted the gallery along with it. Every click inside the
+   * picker was being read as a click outside the menu.
+   *
+   * While the gallery is open this menu is not the thing being interacted
+   * with, so neither dismissal applies: the gallery runs its own focus trap
+   * and owns the Escape key, and it has its own backdrop. Closing it returns
+   * `showAvatarGallery` to false and both listeners resume.
+   */
   useEffect(() => {
+    if (showAvatarGallery) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      const target = e.target as Node;
+      if (
+        menuRef.current &&
+        !menuRef.current.contains(target) &&
+        (!dropdownRef.current || !dropdownRef.current.contains(target))
+      ) {
         onClose();
       }
     };
@@ -339,10 +463,11 @@ export function TableMenu({
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, showAvatarGallery]);
 
-  // Close on escape
+  // Close on escape — but not while the avatar picker owns the keyboard.
   useEffect(() => {
+    if (showAvatarGallery) return;
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
@@ -350,7 +475,7 @@ export function TableMenu({
       document.addEventListener('keydown', handleEscape);
       return () => document.removeEventListener('keydown', handleEscape);
     }
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, showAvatarGallery]);
 
   const handleActionClick = useCallback(
     (action: MenuAction) => {
@@ -369,119 +494,119 @@ export function TableMenu({
       <button
         className={`table-menu__trigger ${isOpen ? 'table-menu__trigger--active' : ''}`}
         onClick={onToggle}
-        aria-label="Table menu"
+        aria-label="Table Menu"
         aria-haspopup="menu"
         aria-expanded={isOpen}
       >
-        <span className="table-menu__hamburger">
-          <span />
-          <span />
-          <span />
-        </span>
+        <img src={hamburgerIcon} className="table-menu__trigger-img" alt="" draggable={false} />
         {/* Notification badge */}
         {badgeCount != null && badgeCount > 0 && (
-          <span className="table-menu__badge" aria-label={`${badgeCount} notifications`}>
+          <span className="table-menu__badge" aria-label={`${badgeCount} Notifications`}>
             {badgeCount > 9 ? '9+' : badgeCount}
           </span>
         )}
       </button>
 
       {/* Backdrop overlay for mobile focus */}
-      {isOpen && <div className="table-menu__backdrop" onClick={onClose} aria-hidden="true" />}
-
-      {/* Dropdown */}
-      {isOpen && (
-        <div className="table-menu__dropdown" role="menu" aria-label={tableName || 'Table menu'}>
-          {/* Header */}
-          {/* Header with table name, connection, and hand info */}
-          {(tableName || connectionStatus) && (
-            <div className="table-menu__header">
-              <div className="table-menu__header-row">
-                {tableName && <span className="table-menu__table-name">{tableName}</span>}
-                {connectionStatus && (
-                  <span className={`table-menu__conn table-menu__conn--${connectionStatus}`}>
-                    <span className="table-menu__conn-dot" />
-                    {connectionStatus === 'connected'
-                      ? 'Live'
-                      : connectionStatus === 'reconnecting'
-                        ? 'Reconnecting…'
-                        : 'Offline'}
-                  </span>
-                )}
-              </div>
-              {(handNumber != null || sessionDuration) && (
-                <div className="table-menu__header-meta">
-                  {handNumber != null && <span>Hand #{handNumber}</span>}
-                  {handNumber != null && sessionDuration && (
-                    <span className="table-menu__meta-sep">·</span>
+      {isOpen &&
+        createPortal(
+          <>
+            <div className="table-menu__backdrop" onClick={onClose} aria-hidden="true" />
+            <div
+              ref={dropdownRef}
+              className="table-menu__dropdown"
+              role="menu"
+              aria-label={tableName || 'Table Menu'}
+            >
+              {/* Header */}
+              {/* Header with table name, connection, and hand info */}
+              {(tableName || connectionStatus) && (
+                <div className="table-menu__header">
+                  <div className="table-menu__header-row">
+                    {tableName && <span className="table-menu__table-name">{tableName}</span>}
+                    {connectionStatus && (
+                      <span className={`table-menu__conn table-menu__conn--${connectionStatus}`}>
+                        <span className="table-menu__conn-dot" />
+                        {connectionStatus === 'connected'
+                          ? 'Live'
+                          : connectionStatus === 'reconnecting'
+                            ? 'Reconnecting…'
+                            : 'Offline'}
+                      </span>
+                    )}
+                  </div>
+                  {(handNumber != null || sessionDuration) && (
+                    <div className="table-menu__header-meta">
+                      {handNumber != null && <span>Hand #{handNumber}</span>}
+                      {handNumber != null && sessionDuration && (
+                        <span className="table-menu__meta-sep">·</span>
+                      )}
+                      {sessionDuration && <span>{sessionDuration}</span>}
+                    </div>
                   )}
-                  {sessionDuration && <span>{sessionDuration}</span>}
+                </div>
+              )}
+
+              {/* Sections */}
+              <div className="table-menu__body">
+                {sections.map((section, sIdx) => (
+                  <div
+                    key={sIdx}
+                    className="table-menu__section"
+                    role="group"
+                    aria-label={section.title}
+                  >
+                    {section.title && (
+                      <span className="table-menu__section-title">{section.title}</span>
+                    )}
+                    {section.actions.map((action, i) => {
+                      /* `sections.indexOf(section)` (object identity, O(n^2))
+                         replaced with the index the map already hands us. Two
+                         sections that happened to be the same object reference
+                         would have shared a stagger origin. */
+                      const actionIndex =
+                        sections.slice(0, sIdx).reduce((n, s) => n + s.actions.length, 0) + i;
+                      return (
+                        <button
+                          key={action.id}
+                          role="menuitem"
+                          className={`table-menu__action ${action.danger ? 'table-menu__action--danger' : ''} ${action.disabled ? 'table-menu__action--disabled' : ''}`}
+                          onClick={() => handleActionClick(action)}
+                          disabled={action.disabled}
+                          style={{ '--stagger-idx': actionIndex } as React.CSSProperties}
+                        >
+                          <span className="table-menu__action-icon">{action.icon}</span>
+                          <span className="table-menu__action-label">{action.label}</span>
+                          {action.badge != null && (
+                            <span className="table-menu__action-badge">{action.badge}</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+
+              {/* Observers Section */}
+              {observers.length > 0 && (
+                <div className="table-menu__observers">
+                  <span className="table-menu__observers-title">
+                    <span className="table-menu__observers-icon">◉</span>
+                    {observers.length} Watching
+                  </span>
+                  <div className="table-menu__observers-list">
+                    {observers.map((obs) => (
+                      <span key={obs.id} className="table-menu__observer-name">
+                        {obs.name}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
-          )}
-
-          {/* Sections */}
-          <div className="table-menu__body">
-            {sections.map((section, sIdx) => (
-              <div
-                key={sIdx}
-                className="table-menu__section"
-                role="group"
-                aria-label={section.title}
-              >
-                {section.title && (
-                  <span className="table-menu__section-title">{section.title}</span>
-                )}
-                {section.actions.map((action, i) => {
-                  const actionIndex =
-                    sections.slice(0, sections.indexOf(section)).flatMap((s) => s.actions).length +
-                    i;
-                  return (
-                    <button
-                      key={action.id}
-                      role="menuitem"
-                      className={`table-menu__action ${action.danger ? 'table-menu__action--danger' : ''} ${action.disabled ? 'table-menu__action--disabled' : ''}`}
-                      onClick={() => handleActionClick(action)}
-                      disabled={action.disabled}
-                      style={{
-                        opacity: visibleItems.has(actionIndex) ? 1 : 0,
-                        transform: visibleItems.has(actionIndex)
-                          ? 'translateY(0)'
-                          : 'translateY(8px)',
-                        transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                      }}
-                    >
-                      <span className="table-menu__action-icon">{action.icon}</span>
-                      <span className="table-menu__action-label">{action.label}</span>
-                      {action.badge != null && (
-                        <span className="table-menu__action-badge">{action.badge}</span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-
-          {/* Observers Section */}
-          {observers.length > 0 && (
-            <div className="table-menu__observers">
-              <span className="table-menu__observers-title">
-                <span className="table-menu__observers-icon">◉</span>
-                {observers.length} Watching
-              </span>
-              <div className="table-menu__observers-list">
-                {observers.map((obs) => (
-                  <span key={obs.id} className="table-menu__observer-name">
-                    {obs.name}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+          </>,
+          document.body
+        )}
 
       {/* Avatar Gallery Modal */}
       {user && (

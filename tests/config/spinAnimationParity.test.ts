@@ -47,6 +47,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { resolveThemeBucket } from '../../src/hooks/useUserThemeSettings';
 
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
@@ -79,7 +80,19 @@ describe('1. a Spin resolves its own theme, not the MTT default', () => {
   it('refuses to resolve a theme for a tournament whose format is unknown', () => {
     // Without this the hook answers MTT for one render and the felt changes
     // under the player when the real format arrives.
-    expect(themeHook).toMatch(/if \(isTournament && !tournamentType\) return;/);
+    //
+    // 2026-08-25: this used to grep the hook's source for the literal line
+    // `if (isTournament && !tournamentType) return;`. The guard moved into an
+    // exported function during the theme-persistence audit, unchanged in
+    // behaviour, and a text match cannot tell those two things apart. Asserting
+    // the behaviour instead: a tournament with no format resolves NO bucket,
+    // and one with a format resolves the right one.
+    expect(resolveThemeBucket(undefined, true, undefined)).toBeNull();
+    expect(resolveThemeBucket(undefined, true, '')).toBeNull();
+    expect(resolveThemeBucket(undefined, true, 'spin')).toBe('SNG');
+    expect(resolveThemeBucket(undefined, true, 'mtt')).toBe('MTT');
+    // A cash table has nothing to wait for and must resolve immediately.
+    expect(resolveThemeBucket('nlh', false, undefined)).toBe('NLH');
   });
 });
 
@@ -102,7 +115,8 @@ describe('3. an empty seat is decided by whether it can be taken', () => {
     const empty = seat.slice(seat.indexOf('if (!player) {'), seat.indexOf('OCCUPIED SEAT'));
     expect(empty).not.toMatch(/if \(isTournament\)/);
     expect(empty).toMatch(/if \(!canSit\)/);
-    expect(empty).toMatch(/seat__empty-word/);
+    // 2026-08-26: text spans replaced by <img class="seat__empty-img">
+    expect(empty).toMatch(/seat__empty-img/);
   });
 
   it('branches no visual inside SeatSlot on tournament-ness at all', () => {
@@ -118,11 +132,10 @@ describe('3. an empty seat is decided by whether it can be taken', () => {
     expect(canSit).toMatch(/!tableState\.isTournament \|\| !!seatFirstBuyIn/);
   });
 
-  it('keeps the breathing ring on a seat that is open, and off one that is not', () => {
-    expect(seatCss).toMatch(
-      /\.seat--empty::before\s*\{[^}]*animation:\s*emptyPulse 3s[^}]*infinite/
-    );
-    expect(seatCss).toMatch(/\.seat--empty\.seat--empty-locked::before\s*\{[^}]*animation:\s*none/);
+  it('keeps the pseudo-element disabled on all empty seats (no breathing ring)', () => {
+    // 2026-08-26: the pulse ring was replaced by the coin image asset.
+    // The ::before pseudo-element is suppressed via content:none on all seats.
+    expect(seatCss).toMatch(/\.seat--empty::before\s*\{[^}]*content:\s*none/);
   });
 });
 
@@ -171,18 +184,40 @@ describe('4. the two beats after the wheel are animated on the engine clock', ()
 
   it('keeps the stack-arrival animations the chip beat relies on', () => {
     expect(seatCss).toMatch(/\.seat__stack--up\s*\{[^}]*animation:\s*stackBounceUp 0\.4s/);
-    expect(seatCss).toMatch(/animation:\s*stackDeltaFloat 2s/);
+    /* UPDATED 2026-08-28. `stackDeltaFloat 2s` became
+       `stackDeltaFloat calc(2s * var(--animation-speed, 1))` so the float
+       honours the table-wide speed setting, like every other keyframe on this
+       felt. The 2s BASE this pin was protecting is intact; only the multiplier
+       is new.
+
+       The update comes with a second assertion, because the drift it allows is
+       exactly what had already happened: --animation-speed is a DURATION
+       multiplier running to 3, and the JS that unmounts the indicator was still
+       a flat 2000ms, so on "slow" the node was removed after two seconds of a
+       six-second animation and the +/- simply disappeared. A CSS-only pin
+       cannot see that. Pin the pair. */
+    expect(seatCss).toMatch(
+      /animation:\s*stackDeltaFloat calc\(2s \* var\(--animation-speed, 1\)\)/
+    );
+    // The React window that clears it must scale on the same multiplier.
+    expect(seat).toMatch(/setStackDelta\(0\), 2000 \* getAnimationSpeed\(\)/);
   });
 });
 
 describe('the shared hand loop stays shared', () => {
   it('no table component or table hook branches on tournament-ness', () => {
+    /* ActionPanel.tsx left this list on 2026-08-26, deliberately: Dan -
+       "in cash games [the bet slider] should go out by dollars one at a
+       time, in tournaments same functionality, just scaled per chip depth."
+       That is a bet-GRANULARITY rule, not a hand-loop or animation rule, and
+       it cannot be expressed without knowing which kind of table this is.
+       The test below this one confines ActionPanel's tournament-awareness to
+       exactly that: the slider unit, nothing else. */
     const shared = [
       'src/components/table/DealAnimation.tsx',
       'src/components/table/CommunityCards.tsx',
       'src/components/table/PotDisplay.tsx',
       'src/components/table/ChipPhysics.tsx',
-      'src/components/table/ActionPanel.tsx',
       'src/hooks/useTableAnimations.ts',
       'src/hooks/useTableSound.ts',
     ];
@@ -197,5 +232,26 @@ describe('the shared hand loop stays shared', () => {
       if (/\bisTournament\b|\btournamentId\b|\btournamentFormat\b/.test(src)) offenders.push(f);
     }
     expect(offenders).toEqual([]);
+  });
+
+  it("ActionPanel's tournament branch is the slider unit and nothing else", () => {
+    /* The exception above is scoped, not open-ended. ActionPanel may read
+       `isTournament` only to pick the slider's travel unit (sliderUnitFor);
+       the animation/identity fields stay banned, and every line that names
+       the flag must be part of that one feature - a prop declaration, the
+       destructuring default, or the sliderUnitFor call. A new branch on the
+       flag anywhere else in the panel re-fails this test. */
+    const src = tsCode(read('src/components/table/ActionPanel.tsx'));
+    expect(src).not.toMatch(/\btournamentId\b|\btournamentFormat\b/);
+    const lines = src.split('\n').filter((l) => /\bisTournament\b/.test(l));
+    expect(lines.length).toBeGreaterThan(0); // the feature exists
+    for (const l of lines) {
+      expect(
+        /isTournament\?:|isTournament: boolean|isTournament = false|sliderUnitFor\(!!isTournament|\[isTournament,|!isTournament && bigBlind/.test(
+          l
+        ),
+        `unexpected tournament branch in ActionPanel: ${l.trim()}`
+      ).toBe(true);
+    }
   });
 });

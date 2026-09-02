@@ -3,9 +3,12 @@
  *
  * Rake is generated continuously, and an agent needs to watch it as it happens
  * rather than waiting for the weekly statement. These reads go straight at
- * rake_records and use the SAME even-split attribution as
- * fn_rakeback_recompute_periods, so the live figure an agent sees is the figure
- * they are eventually paid on.
+ * rake_records and use the SAME attribution as fn_rakeback_recompute_periods —
+ * WEIGHTED CONTRIBUTED rake (Dan 2026-08-29): each player's credit is
+ * proportional to their eligible contribution to the rakeable pot, with
+ * historical DEALT_EQUAL rows still reported under their historical equal
+ * split. So the live figure an agent sees is the figure they are eventually
+ * paid on.
  *
  * Every function here is role-gated in the database: a plain player calling
  * them gets `not_an_agent`, and an agent asking for a peer's book gets
@@ -59,8 +62,8 @@ export interface DownlineRakeSummary {
 export const RAKE_WINDOWS = [
   { key: 'today', label: 'Today', hours: null as number | null, today: true },
   { key: '24h', label: '24h', hours: 24 },
-  { key: 'week', label: 'This week', hours: null },
-  { key: '30d', label: '30 days', hours: 24 * 30 },
+  { key: 'week', label: 'This Week', hours: null },
+  { key: '30d', label: '30 Days', hours: 24 * 30 },
 ] as const;
 
 export type RakeWindowKey = (typeof RAKE_WINDOWS)[number]['key'];

@@ -30,8 +30,25 @@ export interface ClubArenaApiOptions {
    * naturally-repeatable reads.
    */
   idempotent?: boolean;
-  /** Override the HTTP method. Defaults to POST (all mutating routes are POST). */
-  method?: 'POST' | 'GET';
+  /**
+   * The key to send, when the caller owns one.
+   *
+   * WHY THIS EXISTS (Dan 2026-08-25). Without it this function minted a fresh
+   * uuid() on EVERY call - per request, not per purchase INTENT. So the shape
+   * the header is meant to defend against was undefended: Confirm fires, the
+   * server commits, the response is lost (mobile network drop, tab
+   * backgrounded), the user sees "Purchase failed" and taps Confirm again -
+   * and the server receives a DIFFERENT key for the same intent, so it debits
+   * a second time. A retry has to carry the same key as the attempt it is
+   * retrying, which only the caller knows.
+   */
+  idempotencyKey?: string;
+  /** Override the HTTP method. Defaults to POST (most mutating routes are POST).
+   *  PATCH/DELETE added 2026-08-27 for the house-ads admin route, which is a
+   *  real CRUD surface rather than a single action. */
+  method?: 'POST' | 'GET' | 'PATCH' | 'DELETE';
+  /** Query-string parameters. DELETE carries its target in the URL, not a body. */
+  query?: Record<string, string | number | undefined | null>;
 }
 
 /**
@@ -57,15 +74,30 @@ export async function callClubArenaApi<T = Record<string, unknown>>(
     'Content-Type': 'application/json',
   };
   if (opts.idempotent !== false) {
-    // crypto.randomUUID is undefined on http origins and Safari < 15.4; every
-    // purchase/mutation goes through here, so it must not throw there.
-    headers['X-Idempotency-Key'] = uuid();
+    // The caller's key when it has one (a retry of the SAME intent must reuse
+    // it); otherwise a fresh one. crypto.randomUUID is undefined on http
+    // origins and Safari < 15.4, so uuid() must not throw there.
+    headers['X-Idempotency-Key'] = opts.idempotencyKey || uuid();
   }
 
-  const response = await fetch(`/api/club-arena/${endpoint}`, {
-    method: opts.method || 'POST',
+  const method = opts.method || 'POST';
+  let url = `/api/club-arena/${endpoint}`;
+  if (opts.query) {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(opts.query)) {
+      if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+    }
+    const q = qs.toString();
+    if (q) url += `?${q}`;
+  }
+
+  const response = await fetch(url, {
+    method,
     headers,
-    body: JSON.stringify(body),
+    /* GET and DELETE carry no body. Sending one is a spec violation that some
+       runtimes reject outright, and a GET with a body silently breaks caching
+       proxies. */
+    ...(method === 'GET' || method === 'DELETE' ? {} : { body: JSON.stringify(body) }),
   });
 
   const data = await response

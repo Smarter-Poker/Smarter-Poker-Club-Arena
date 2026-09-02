@@ -19,6 +19,8 @@ vi.mock('@/lib/supabase', () => ({
 
 import {
   eligibleQuickLinkClubs,
+  eligibleCashierWallets,
+  resolveCashierWallet,
   isUnionEntity,
   resolveTargetClub,
   readLastClubId,
@@ -79,6 +81,29 @@ describe('eligibleQuickLinkClubs', () => {
 
   it('returns empty for empty input', () => {
     expect(eligibleQuickLinkClubs([])).toEqual([]);
+  });
+});
+
+describe('eligibleCashierWallets', () => {
+  it('includes every club wallet and only an owned union wallet', () => {
+    expect(
+      eligibleCashierWallets([A, { ...U_FLAG, is_owner: false }, { ...U, is_owner: true }, B])
+    ).toEqual([A, { ...U, is_owner: true }, B]);
+  });
+
+  it('does not role-filter club wallets for the permitted cashier hierarchy', () => {
+    const roles = ['owner', 'co_owner', 'admin', 'super_agent', 'agent', 'sub_agent'];
+    const roleClubs = roles.map((role, index) => ({
+      ...A,
+      id: `aaaaaaaa-0000-0000-0000-00000000000${index + 1}`,
+      role,
+    }));
+    expect(eligibleCashierWallets(roleClubs).map((club) => club.role)).toEqual(roles);
+  });
+
+  it('resolves an owned union when it is the requested wallet', () => {
+    const owned = { ...U_FLAG, is_owner: true };
+    expect(resolveCashierWallet([A, owned], owned.id)).toEqual(owned);
   });
 });
 
@@ -143,8 +168,9 @@ describe('fetchClubChipBalances', () => {
       error: null,
     });
     const balances = await fetchClubChipBalances(USER);
-    expect(balances.get(A.id)).toBe(1234.5);
-    expect(balances.get(B.id)).toBe(0);
+    expect(balances).not.toBeNull();
+    expect(balances!.get(A.id)).toBe(1234.5);
+    expect(balances!.get(B.id)).toBe(0);
   });
 
   it('only counts active/approved memberships', async () => {
@@ -167,10 +193,33 @@ describe('fetchClubChipBalances', () => {
     expect(inMock).toHaveBeenCalledTimes(2);
   });
 
-  it('returns empty map on query error without throwing', async () => {
+  it('returns NULL on a failed read with no cache — unknown is not zero', async () => {
+    /* Cashier audit 2026-08-27: an empty map here flowed into
+       `map.get(clubId) ?? 0`, telling the cashout modal the player has 0
+       chips in the club and refusing every cashout locally. "Could not find
+       out" and "has no chips" are different answers. */
+    clearClubChipBalanceCache();
     inMock.mockResolvedValue({ data: null, error: { message: 'boom' } });
     const balances = await fetchClubChipBalances(USER);
-    expect(balances.size).toBe(0);
+    expect(balances).toBeNull();
+  });
+
+  it('returns the STALE cache on a failed read when one exists — stale beats wrong-empty', async () => {
+    clearClubChipBalanceCache();
+    inMock.mockResolvedValue({ data: [{ club_id: A.id, chip_balance: 7 }], error: null });
+    await fetchClubChipBalances(USER);
+    // Age the cache past the 30s TTL so the next call REQUERIES...
+    const realNow = Date.now;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + 60_000);
+    try {
+      // ...and that query fails: the expired-but-present cache is the answer.
+      inMock.mockResolvedValue({ data: null, error: { message: 'boom' } });
+      const balances = await fetchClubChipBalances(USER);
+      expect(balances).not.toBeNull();
+      expect(balances!.get(A.id)).toBe(7);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it('exposes the bus events that should invalidate it', () => {

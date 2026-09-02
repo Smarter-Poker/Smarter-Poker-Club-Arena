@@ -184,12 +184,22 @@ class PromotionServiceClass {
 
   async claimPromotion(promotionId: string, userId: string): Promise<PromotionClaim> {
     // Check if already claimed
-    const { data: existingClaim } = await supabase
+    const { data: existingClaim, error: existingClaimErr } = await supabase
       .from('promotion_claims')
       .select('id')
       .eq('promotion_id', promotionId)
       .eq('user_id', userId)
       .maybeSingle();
+
+    /* A FAILED CHECK IS NOT "NOT CLAIMED YET" (2026-08-29). Only `data` was
+       destructured, and a Supabase builder resolves with {data: null, error}
+       rather than rejecting -- so a failed read fell through to the claim
+       below, which pays out. The unique constraint stops the second row, but
+       this path leads to money and a guard that cannot see its own failure is
+       not a guard. */
+    if (existingClaimErr) {
+      throw new Error('Could not verify that promotion. Please try again.');
+    }
 
     if (existingClaim) {
       throw new Error('Promotion already claimed');
@@ -376,17 +386,38 @@ class PromotionServiceClass {
 
   async applyDepositBonus(userId: string, depositAmount: number): Promise<number> {
     // Find applicable deposit bonus promotion
-    const { data: promotions } = await supabase
+    /**
+     * `is_active` DOES NOT EXIST ON THIS TABLE (2026-08-29).
+     *
+     * `promotions` carries `status text CHECK (status IN ('scheduled','active',
+     * 'paused','completed','cancelled'))`. Filtering on a boolean `is_active`
+     * makes PostgREST return 42703 -- the whole query fails -- and because the
+     * error was not destructured, the failure was indistinguishable from "no
+     * such promotion" and this function returned 0 every single time.
+     *
+     * `getPromotions` in this same file filters on `status` correctly, and the
+     * mapper thirty lines below even says so: "promotions has `status`
+     * (open/active/...), not a boolean is_active." Two paths in one file
+     * disagreeing, with only one of them reachable.
+     *
+     * The error is now checked, because a deposit bonus that cannot be read is
+     * not a deposit bonus that does not exist.
+     */
+    const { data: promotions, error: promoErr } = await supabase
       .from('promotions')
       .select(
         'id, club_id, title:name, description, type, image_url:banner_url, start_date, end_date, prize_pool, status, requirements, max_claims, min_deposit, bonus_percent, wager_requirement, created_at'
       )
       .eq('type', 'deposit_match')
-      .eq('is_active', true)
+      .eq('status', 'active')
       .lte('start_date', new Date().toISOString())
       .gte('end_date', new Date().toISOString())
       .limit(1);
 
+    if (promoErr) {
+      reportError(promoErr, 'PromotionService.deposit_bonus_lookup_failed');
+      return 0;
+    }
     if (!promotions?.length) return 0;
 
     const promo = this.mapPromotion(promotions[0]);
@@ -404,15 +435,10 @@ class PromotionServiceClass {
     await this.claimPromotion(promo.id, userId);
 
     // Add bonus to promo wallet with audit trail
-    const { error: bonusErr } = await retryAsync(
-      () =>
-        // Round 19: prod sig (p_user_id, p_amount). p_description silently 404'd.
-        supabase.rpc('add_to_promo_wallet', {
-          p_user_id: userId,
-          p_amount: finalBonus,
-        }),
-      3
-    );
+    const { error: bonusErr } = await supabase.rpc('add_to_promo_wallet', {
+      p_user_id: userId,
+      p_amount: finalBonus,
+    });
     if (bonusErr) {
       reportError(bonusErr, 'PromotionService.Deposit_bonus_credit_failed');
       return 0;
@@ -451,30 +477,32 @@ class PromotionServiceClass {
     if (!referrer) return;
 
     // Check for refer-a-friend promotion
-    const { data: promotions } = await supabase
+    // Same defect as applyDepositBonus above: `is_active` is not a column on
+    // `promotions`, so this query always failed and the discarded error made
+    // it look like no referral promotion was configured.
+    const { data: promotions, error: promoErr } = await supabase
       .from('promotions')
       .select(
         'id, club_id, title:name, description, type, image_url:banner_url, start_date, end_date, prize_pool, status, requirements, max_claims, min_deposit, bonus_percent, wager_requirement, created_at'
       )
       .eq('type', 'refer_friend')
-      .eq('is_active', true)
+      .eq('status', 'active')
       .limit(1);
 
+    if (promoErr) {
+      reportError(promoErr, 'PromotionService.referral_promo_lookup_failed');
+      return;
+    }
     if (!promotions?.length) return;
 
     const promo = this.mapPromotion(promotions[0]);
 
     // Award referrer bonus
     const referralBonus = Math.trunc((promo.prizePool || 10) * 100) / 100;
-    const { error: refErr } = await retryAsync(
-      () =>
-        // Round 19: drop p_description (not a prod param).
-        supabase.rpc('add_to_promo_wallet', {
-          p_user_id: referrer.id,
-          p_amount: referralBonus,
-        }),
-      3
-    );
+    const { error: refErr } = await supabase.rpc('add_to_promo_wallet', {
+      p_user_id: referrer.id,
+      p_amount: referralBonus,
+    });
     if (refErr) {
       reportError(refErr, 'PromotionService.Referral_bonus_credit_failed');
       return;
@@ -496,11 +524,19 @@ class PromotionServiceClass {
     masterBus.emit('BALANCE_UPDATED', { source: 'promotion_referral_bonus', userId: referrer.id });
 
     // Record the referral
+    // The column is `referee_id`, not `referred_id`; `promotion_id` and
+    // `bonus_amount` do not exist on this table at all; and
+    // `referral_code_used` is NOT NULL with no default. Every one of these rows
+    // was rejected, so the bonus above was paid and the referral it paid for
+    // was never recorded. The amount is not lost with the two dropped fields:
+    // WalletService.logTransaction wrote it a few lines above.
     const { error: refInsertErr } = await supabase.from('referrals').insert({
       referrer_id: referrer.id,
-      referred_id: referredUserId,
-      promotion_id: promo.id,
-      bonus_amount: promo.prizePool || 10,
+      referee_id: referredUserId,
+      referral_code_used: referrerCode,
+      status: 'completed',
+      reward_claimed_referrer: true,
+      completed_at: new Date().toISOString(),
     });
     if (refInsertErr) {
       reportError(refInsertErr, 'PromotionService.Referral_record_insert_failed');

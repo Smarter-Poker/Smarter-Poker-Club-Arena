@@ -4,6 +4,35 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    # CATCH-UP, because `push` alone is not a guarantee that main publishes.
+    #
+    # The concurrency rule below is right and deliberate: when a new push
+    # arrives, GitHub cancels the run that was PENDING in the group, which is
+    # what makes each wave converge on the newest main instead of publishing
+    # nothing.
+    #
+    # It USED to mean that the publish of a given commit could be cancelled
+    # and then never re-attempted, because only another push started this
+    # workflow. As of 2026-09-02 that is no longer true by construction: every
+    # run resolves and publishes the TIP of main (see "NO COMMIT LEFT BEHIND"
+    # in publish-needed), so a cancelled run carries nothing that the surviving
+    # run does not also carry.
+    #
+    # This catch-up still earns its place for the case the tip-resolution
+    # cannot cover: no run at all. If every run in a wave fails, or the pushes
+    # stop at the moment of a failure, nothing is queued to converge anything.
+    # publish-watchdog.yml also notices and re-dispatches (up to three times,
+    # not counting cancellations). Three overlapping nets, each catching a
+    # different hole.
+    #
+    # `publish-needed` below keeps an up-to-date cycle down to one curl.
+    #
+    # 2026-09-01 (cost audit): */20 -> */30. The catch-up only matters when
+    # pushes STOP right after a cancellation, and publish-watchdog re-dispatches
+    # within its own cycle anyway. 24 fewer runs a day, each of which was
+    # usually just the dedupe curl plus a billed minute.
+    - cron: '*/30 * * * *'
 
 # 2026-08-21: was cancel-in-progress: true, which deadlocked publishing.
 # This build takes about 4 minutes. With several agents pushing to main every
@@ -21,7 +50,182 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ── IS THERE ANYTHING TO PUBLISH AT ALL? ──────────────────────────────────
+  # A job rather than a step, because the work this guards is spread across
+  # TWO jobs that run in parallel (`client-tests` and `build-and-store`), and
+  # a step output cannot cross a runner. Putting the check inside
+  # build-and-store would have let the whole test suite run anyway on a cycle
+  # that had nothing to publish, which is most of the cost it is meant to save.
+  #
+  # Only the SCHEDULE is deduped. A push is by definition new work, and a human
+  # dispatching this by hand is usually forcing a republish of something that
+  # looks stuck - deduping either would be the publish bug this exists to
+  # prevent.
+  publish-needed:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      skip: ${{ steps.dedupe.outputs.skip }}
+      target_sha: ${{ steps.target.outputs.sha }}
+    steps:
+      # ═══════════════════════════════════════════════════════════════════════
+      # NO COMMIT LEFT BEHIND — publish the TIP OF MAIN, not the commit that
+      # happened to trigger this run. Added 2026-09-02.
+      #
+      # `actions/checkout` with no `ref` checks out `github.sha`, so every run
+      # used to be "publish commit X" rather than "make production equal main".
+      # That is what let commits go missing. When a wave of pushes arrives,
+      # `cancel-in-progress: false` cancels the older PENDING runs — correctly,
+      # they are superseded — and the survivor published only ITS OWN sha. So
+      # the backlog was only ever drained if that one specific run succeeded.
+      # If it failed, was cancelled at the wrong moment, hit a runner outage or
+      # an expired token, the commits behind it were never re-attempted by
+      # anything except a catch-up cron, and its retry was capped at one. That
+      # is the "my last 3 pushes have not published" report.
+      #
+      # Resolving the tip here makes every run a CONVERGENCE step instead of a
+      # per-commit delivery. Any single successful run now drains the entire
+      # backlog, however many runs were cancelled behind it, because it builds
+      # whatever main is at the moment it starts. Cancellation becomes
+      # structurally harmless rather than merely usually-harmless.
+      #
+      # If main moves again while this run builds, this run publishes a
+      # slightly older tip and the next run (push, */30 catch-up, or watchdog
+      # dispatch) converges the remainder. The sync job's compare-API guard
+      # further refuses to publish a bundle OLDER than what is deployed, so a
+      # slow run can never overwrite a newer one.
+      #
+      # FAILS OPEN: if the API cannot be read we fall back to github.sha, which
+      # is the old behaviour. Never publish nothing because a lookup failed.
+      # ═══════════════════════════════════════════════════════════════════════
+      - name: Resolve the tip of main
+        id: target
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TIP=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha 2>/dev/null || echo "")
+          if [ -z "$TIP" ]; then
+            TIP="${{ github.sha }}"
+            echo "::warning::Could not resolve the tip of main - falling back to the trigger sha ${TIP:0:7}."
+          fi
+          echo "sha=$TIP" >> "$GITHUB_OUTPUT"
+          echo "Publishing target: ${TIP:0:7} (trigger was ${GITHUB_SHA:0:7})"
+          if [ "$TIP" != "$GITHUB_SHA" ]; then
+            echo "::notice::main has moved past the trigger commit - this run carries the newer tip, so nothing queued behind it is stranded."
+          fi
+
+      - name: Compare production against the tip of main
+        id: dedupe
+        if: github.event_name == 'schedule'
+        run: |
+          LIVE=$(curl -fsS --max-time 20 \
+            https://smarter.poker/hub/club-arena/build-info.json 2>/dev/null \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ca_sha",""))' \
+            2>/dev/null || echo "")
+          HEAD_SHA="${{ steps.target.outputs.sha }}"
+          if [ -z "$LIVE" ]; then
+            # Unreadable is NOT up to date. FAIL OPEN and publish: a stale CDN
+            # or a broken build-info is exactly when this needs to run, and
+            # reading "cannot tell" as "current" would make the safety net
+            # silently useless.
+            echo "::notice::build-info.json unreadable - publishing rather than assuming."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          elif [ "$LIVE" = "$HEAD_SHA" ]; then
+            echo "::notice::Production already serves ${HEAD_SHA:0:7} - nothing to publish."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Production serves ${LIVE:0:7}, main is ${HEAD_SHA:0:7} - publishing."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # CLIENT TESTS GATE THE BUNDLE, BUT NO LONGER DELAY IT — split out 2026-08-26.
+  #
+  # This suite used to run as step 5 of build-and-store, IN FRONT of the build.
+  # Measured on run 32993261791, the critical path was:
+  #
+  #     Client tests          5m19s
+  #     Build Club Arena      1m59s
+  #     Checkout World Hub    3m36s
+  #     everything else       ~1m
+  #     ------------------------------
+  #     publish              ~12m
+  #
+  # Pushes land on main every two to three minutes. A twelve minute pipeline
+  # under a two to three minute arrival rate can only ever publish a sha that
+  # is already twelve minutes stale, and every push in between is cancelled
+  # while PENDING by `cancel-in-progress: false` — which is that setting
+  # working correctly, not failing. Production was fourteen commits behind
+  # while every one of those cancels looked like a broken deploy.
+  #
+  # The tests are 13s on a developer machine and 5m19s here because a GitHub
+  # runner has two cores and the suite is ~285s of aggregate work across 429
+  # files. Nothing is misconfigured; it is simply serialised.
+  #
+  # So it runs BESIDE the build instead of in front of it. The gate is exactly
+  # as strong: sync-to-world-hub needs BOTH jobs, so a red test still stops the
+  # bundle from shipping. It just stops adding its five minutes to the build's
+  # two.
+  # ═════════════════════════════════════════════════════════════════════════
+  # SHARDED 2026-09-02 to unblock publishing. This suite is the authoritative
+  # gate on the bundle (a red test still stops the sync via `needs` below), and
+  # it ran ~11 minutes on one 2-core runner. sync-to-world-hub waits for it, so
+  # every publish took ~18 minutes end to end - slower than the merge rate, so
+  # production perpetually lagged and intermediate publish runs were cancelled
+  # ("last 3 pushes haven't published"). Nothing was ever lost: main is durable
+  # and the publisher converges to the latest. But the LAG is the bug.
+  #
+  # Four shards run in parallel, so wall clock drops to ~3 minutes and the whole
+  # publish pipeline to ~7. The gate is exactly as strong: sync-to-world-hub
+  # `needs: [build-and-store, client-tests]`, and `needs` on a matrix waits for
+  # EVERY shard, so one red shard still stops the bundle. fail-fast cancels the
+  # siblings the moment one fails, which is what a gate wants. The self-hosted
+  # runner (CI_RUNNER) will make even this near-instant; until then, shard.
+  client-tests:
+    needs: publish-needed
+    if: needs.publish-needed.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        shard: [1, 2, 3, 4]
+    env:
+      HUSKY: '0'
+    steps:
+      - name: Checkout Club Arena at the publish target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish-needed.outputs.target_sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # Cache the installed tree so npm ci is skipped on a hit - ~2 min off
+      # each shard. Keyed on the lockfile, so any dependency change installs
+      # fresh; identical behaviour, minus the wait.
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-bfwh-${{ runner.os }}-node22-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Client tests must pass before the bundle ships (shard ${{ matrix.shard }}/4)
+        run: npx vitest run tests/ --shard=${{ matrix.shard }}/4
+
   build-and-store:
+    needs: publish-needed
+    if: needs.publish-needed.outputs.skip != 'true'
     runs-on: ubuntu-latest
     permissions:
       # read is enough now: this job uploads an artifact instead of pushing a
@@ -31,8 +235,13 @@ jobs:
       HUSKY: '0'
 
     steps:
-      - name: Checkout Club Arena
+      # The publish target, not the trigger sha — see "NO COMMIT LEFT BEHIND"
+      # in publish-needed. The bundle this job builds IS what production gets,
+      # so this checkout is the one that decides whether a queued commit ships.
+      - name: Checkout Club Arena at the publish target
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.publish-needed.outputs.target_sha }}
 
       # STAGE MARKERS REMOVED (2026-08-21).
       #
@@ -62,22 +271,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # ═══════════════════════════════════════════════════════════════════
-      # CLIENT TESTS GATE THE BUNDLE — added 2026-08-21.
-      #
-      # ci.yml's unit job exists but NEVER COMPLETES on main: pushes land
-      # faster than the ~6-minute CI and cancel-in-progress kills every run,
-      # while this workflow ships the bundle on push regardless. Proven live:
-      # a format pass mangled the em-dash classes in popupStyle.ts (Dan's
-      # BINDING popup rule) and 19 client tests sat red on main while the
-      # broken bundle served production. Same philosophy as the engine's
-      # "Server tests must pass before anything is deployed": the suite runs
-      # HERE, in the workflow that publishes, so a red suite means no sync.
-      # The whole suite is ~15s; a superseding push re-tests its own commit.
-      # ═══════════════════════════════════════════════════════════════════
-      - name: Client tests must pass before the bundle ships
-        run: npx vitest run tests/
-
       - name: Build Club Arena
         env:
           NODE_ENV: production
@@ -86,6 +279,9 @@ jobs:
           VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
           VITE_ENGINE_URL: 'https://engine.smarter.poker'
           VITE_APP_ENV: production
+          VITE_SENTRY_DSN: 'https://842977a65e398b038728a05e8d892089@o4510810580779008.ingest.us.sentry.io/4510816835600384'
+          VITE_APP_VERSION: ${{ needs.publish-needed.outputs.target_sha }}
+          VITE_ONESIGNAL_APP_ID: '2fde0e83-cd01-4f93-a9a0-9be6cfe36e8c'
         run: npm run build
 
       # Build provenance: record the commit this dist was actually built from,
@@ -98,7 +294,7 @@ jobs:
         run: |
           cat > dist/build-info.json <<JSON
           {
-            "ca_sha": "${{ github.sha }}",
+            "ca_sha": "${{ needs.publish-needed.outputs.target_sha }}",
             "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
             "built_by": "build-for-world-hub.yml",
             "run_id": "${{ github.run_id }}"
@@ -132,7 +328,7 @@ jobs:
       - name: Upload dist for the sync job
         uses: actions/upload-artifact@v4
         with:
-          name: club-arena-dist-${{ github.sha }}
+          name: club-arena-dist-${{ needs.publish-needed.outputs.target_sha }}
           path: dist
           # A courier, not a record: the World Hub sync commit is the
           # permanent copy. One day is plenty for a retry.
@@ -141,7 +337,7 @@ jobs:
           compression-level: 6
 
       # Prove the thing the next job depends on actually exists, rather than
-      # discovering it is missing halfway through the rsync. Kept from the
+      # discovering it is missing halfway through publication. Kept from the
       # branch version, which checked the same file for the same reason.
       - name: Verify dist is complete
         run: |
@@ -154,11 +350,17 @@ jobs:
       - name: Build summary
         run: |
           echo "### Build Complete" >> $GITHUB_STEP_SUMMARY
-          echo "dist uploaded as artifact \`club-arena-dist-${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "dist uploaded as artifact \`club-arena-dist-${{ needs.publish-needed.outputs.target_sha }}\`" >> $GITHUB_STEP_SUMMARY
           echo "Proceeding to sync directly to World Hub..." >> $GITHUB_STEP_SUMMARY
 
   sync-to-world-hub:
-    needs: build-and-store
+    # BOTH: the bundle, and the tests that say it may ship.
+    # publish-needed is here for its `target_sha` output — the commit this
+    # whole run is converging production onto. Every sha this job names (the
+    # artifact it downloads, the provenance it compares, the commit message it
+    # writes) must be that one, or production would report serving a commit it
+    # is not actually serving.
+    needs: [publish-needed, build-and-store, client-tests]
     runs-on: ubuntu-latest
     # Needed by the sync-branch cleanup at the end of this job. build-and-store
     # already declares this because it PUSHES the branch; without it here the
@@ -166,12 +368,31 @@ jobs:
     # accumulating — which is the failure mode this cleanup exists to end.
     permissions:
       contents: write
+      # actions: write is for the convergence chain at the end of this job —
+      # it dispatches the next publish itself rather than leaving the remainder
+      # to a cron. workflow_dispatch is the documented exception to "events
+      # raised by GITHUB_TOKEN do not start workflows", so this genuinely runs.
+      actions: write
 
     steps:
+      # This job does not inherit the source checkout from build-and-store.
+      # Keep the retention helper beside the downloaded artifact so the
+      # publish retry path executes code from this exact CA SHA.
+      - name: Checkout Club Arena sync tooling
+        uses: actions/checkout@v4
+        with:
+          # The publish target, so the sync helper is the version that belongs
+          # to the bundle being shipped rather than to whichever commit
+          # happened to trigger the run.
+          ref: ${{ needs.publish-needed.outputs.target_sha }}
+          path: club-arena-source
+          sparse-checkout: scripts/ci/sync-club-arena-dist.mjs
+          sparse-checkout-cone-mode: false
+
       - name: Download the dist built by the previous job
         uses: actions/download-artifact@v4
         with:
-          name: club-arena-dist-${{ github.sha }}
+          name: club-arena-dist-${{ needs.publish-needed.outputs.target_sha }}
           path: club-arena-build/dist
 
       # WHY THE APP AND NOT THE PAT.
@@ -209,12 +430,21 @@ jobs:
           # rejected, and the publish watchdog is what will say so out loud.
           token: ${{ steps.wh-token.outputs.token || secrets.WORLD_HUB_SYNC_TOKEN }}
           path: world-hub
-
-      - name: Sync dist/ to World Hub public/hub/club-arena/
-        run: |
-          rsync -av --delete \
-            club-arena-build/dist/ \
-            world-hub/public/hub/club-arena/
+          # 3m36s on run 32993261791, materialising an entire Next.js app to
+          # write one directory inside it. This job reads nothing outside
+          # public/hub/club-arena and writes nothing outside it either: the
+          # synchronizer below targets exactly that path and the commit that
+          # follows stages exactly that path. Cone-mode sparse checkout gives
+          # us that directory and the git metadata to commit it, and skips the
+          # rest.
+          #
+          # fetch-depth: 1 is already the action's default; it is written out
+          # because the cost here was never history, it was tree size, and the
+          # next person to look at a slow checkout should not have to re-derive
+          # which of the two it was.
+          sparse-checkout: public/hub/club-arena
+          sparse-checkout-cone-mode: true
+          fetch-depth: 1
 
       - name: Commit and push to World Hub
         # 2026-08-21: this step used to `git pull --rebase` on a rejected push
@@ -229,10 +459,11 @@ jobs:
         # already built.
         #
         # A merge is the wrong tool for a build artifact. There is nothing to
-        # reconcile: our dist/ is a COMPLETE directory (`rsync --delete`), so
-        # instead of replaying our commit onto the new tip we throw the commit
-        # away and rebuild it on top of the new tip. That cannot conflict, by
-        # construction.
+        # reconcile: our dist/ is a COMPLETE release input, so instead of
+        # replaying our commit onto the new tip we throw the commit away and
+        # rebuild it on top of the new tip. That cannot conflict, by
+        # construction. The synchronizer bounds runtime compatibility to the
+        # current and immediately previous JS/CSS generations.
         #
         # The one thing that must not happen is publishing an OLDER bundle over
         # a newer one, which is how a "retry" turns into a regression.
@@ -258,7 +489,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
 
-          OURS_SHA="${{ github.sha }}"
+          OURS_SHA="${{ needs.publish-needed.outputs.target_sha }}"
           OURS_AT=$(sed -n 's/.*"built_at"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
                     ../club-arena-build/dist/build-info.json 2>/dev/null || true)
           echo "this bundle: sha ${OURS_SHA}, built at ${OURS_AT:-unknown}"
@@ -266,21 +497,15 @@ jobs:
           for attempt in 1 2 3 4 5; do
             # READ THE DEPLOYED PROVENANCE FROM GIT, NOT FROM THE WORKING TREE.
             #
-            # 2026-08-23: the "Sync dist/" step above rsyncs OUR bundle into
-            # public/hub/club-arena/ before this step runs, so reading that
-            # path here read our own build-info.json back and compared the
-            # bundle to itself. THEIRS_SHA equalled OURS_SHA on attempt 1,
-            # every time, and the stand-down guard could not fire on the one
-            # attempt that usually decides the outcome. It only worked from
-            # attempt 2, after `git reset --hard origin/main` restored the
-            # file - which is to say only when the push had already been
-            # rejected.
+            # The working tree is intentionally untouched until this verdict
+            # is complete. Otherwise an eager sync would make the first
+            # attempt compare our build-info.json to itself and could publish
+            # an older bundle over a newer one.
             #
-            # That leaves the original regression open: a losing older-sha run
-            # that checks World Hub out AFTER the winner has pushed sees the
-            # newer bundle, overwrites it with rsync, compares ours-to-ours,
-            # and pushes cleanly as a fast-forward. Production goes backwards
-            # with every check green.
+            # The ordering prevents the original regression: a losing
+            # older-sha run that checked World Hub out after the winner could
+            # otherwise overwrite the newer bundle, compare ours-to-ours, and
+            # push the regression as a clean fast-forward.
             #
             # origin/main (freshly fetched) is the only honest answer to "what
             # is deployed", and it is correct on every attempt, not just
@@ -324,13 +549,23 @@ jobs:
               exit 0
             fi
 
-            rsync -a --delete ../club-arena-build/dist/ public/hub/club-arena/
+            node ../club-arena-source/scripts/ci/sync-club-arena-dist.mjs \
+              ../club-arena-build/dist \
+              public/hub/club-arena
             git add -A public/hub/club-arena/
             if git diff --cached --quiet; then
               echo "No changes to sync — World Hub already carries this bundle."
               exit 0
             fi
-            git commit -q -m "chore(club-arena): sync build ${{ github.sha }}"
+            # `[skip actions]` (2026-09-01 cost audit): this commit is a
+            # machine-built bundle that Club Arena's own CI already gated, yet
+            # its push woke ~9 World Hub workflows ~76 times a day - none of
+            # which have anything to say about minified output (their own
+            # comments agree). The token is GitHub's documented skip
+            # instruction for ACTIONS ONLY: Vercel's git integration does not
+            # read it, so the production deploy still fires exactly as before.
+            # Deliberately NOT `[skip ci]`, which other platforms interpret.
+            git commit -q -m "chore(club-arena): sync build ${{ needs.publish-needed.outputs.target_sha }} [skip actions]"
 
             if git push; then
               echo "World Hub updated successfully (attempt ${attempt})."
@@ -351,4 +586,65 @@ jobs:
         run: |
           echo "### Sync Complete" >> $GITHUB_STEP_SUMMARY
           echo "Club Arena \`dist/\` → World Hub \`public/hub/club-arena/\`" >> $GITHUB_STEP_SUMMARY
-          echo "Commit: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: \`${{ needs.publish-needed.outputs.target_sha }}\`" >> $GITHUB_STEP_SUMMARY
+
+      # ═══════════════════════════════════════════════════════════════════════
+      # CONVERGE NOW, DO NOT WAIT FOR A CRON — added 2026-09-02.
+      #
+      # Resolving the tip of main at the START of a run (see publish-needed)
+      # means no commit is ever skipped. It does NOT mean no commit ever waits:
+      # main keeps moving while this build runs, and everything merged during
+      # those ~7 minutes was still sitting there until the next push, the */30
+      # catch-up or the watchdog. Measured over the last 100 publisher runs,
+      # the worst gap between two SUCCESSFUL publishes was 154 minutes.
+      #
+      # So the publish closes its own loop. If main has moved past what this
+      # run just shipped, it dispatches the next publish itself, immediately.
+      #
+      # WHY THIS TERMINATES. The chain fires on one condition only: main is
+      # strictly ahead of the sha just published. The chained run publishes
+      # that newer tip and asks again; when main stops moving the answer is
+      # "converged" and the chain ends. It cannot outpace the merge rate,
+      # because it produces at most one run per merge — exactly what the push
+      # trigger already produced. It is a convergence loop with a real fixed
+      # point, not a retry loop with a counter.
+      #
+      # It is also the net that covers a push which never triggered a run at
+      # all: a commit carrying [skip ci] starts no publisher (454fa1da4 on main
+      # did exactly this), and this step picks it up on the next publish
+      # without caring how it got there.
+      #
+      # Never fails the job. A publish that succeeded must not be marked failed
+      # because the follow-up dispatch could not be sent; the cron and the
+      # watchdog are still behind it.
+      # ═══════════════════════════════════════════════════════════════════════
+      - name: Converge - chain another publish if main moved while this one built
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -u
+          PUBLISHED="${{ needs.publish-needed.outputs.target_sha }}"
+          TIP=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha 2>/dev/null || echo "")
+
+          if [ -z "$TIP" ]; then
+            echo "::warning::Could not read the tip of main to check for convergence. The catch-up cron and publish-watchdog still cover this."
+            exit 0
+          fi
+
+          if [ "$TIP" = "$PUBLISHED" ]; then
+            echo "CONVERGED: production is being served ${PUBLISHED:0:7}, which is the tip of main."
+            echo "- Converged on \`${PUBLISHED:0:7}\` (tip of main)" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+
+          AHEAD=$(gh api "repos/${{ github.repository }}/compare/${PUBLISHED}...${TIP}" \
+                    --jq .ahead_by 2>/dev/null || echo "?")
+          echo "::notice::main is ${AHEAD} commit(s) past ${PUBLISHED:0:7} - chaining the next publish now rather than waiting for the catch-up."
+          echo "- main moved ${AHEAD} commit(s) to \`${TIP:0:7}\` during this build; chained the next publish" >> $GITHUB_STEP_SUMMARY
+
+          if gh workflow run "build-for-world-hub.yml" --repo "${{ github.repository }}" --ref main; then
+            echo "chained publish dispatched for ${TIP:0:7}"
+          else
+            echo "::warning::Chain dispatch failed. The */30 catch-up and publish-watchdog remain."
+          fi

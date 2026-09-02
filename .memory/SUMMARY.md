@@ -22,7 +22,7 @@
 
 ## Key Decisions
 
-- [001] Rake is EQUAL SHARE, never weighted (FIX 144)
+- [001] SUPERSEDED 2026-08-29: cash rake is WEIGHTED CONTRIBUTED (see [004]); DEALT_EQUAL survives only for historical rows
 - [002] BBJ requires 3+ players dealt in (FIX 145)
 - [003] Sit-out mid-hand must be deferred (FIX 143)
 - [004] Broadcast await only on TURN_CHANGE (FIX 217) — non-critical broadcasts stay fire-and-forget
@@ -31,8 +31,9 @@
 ## Key Preferences
 
 - [001] Dan's verification standard: deep line-by-line, no rubber-stamping
-- [002] Rakeback equal share is THE key metric for weekly player/agent earnings
+- [002] Rakeback (now weighted contributed rake, Dan 2026-08-29) is THE key metric for weekly player/agent earnings
 - [003] NO TERMINAL PROMPTS — Antigravity prompts only. Never tell Dan to run a shell command; emit an AG agent prompt instead. See preferences/002-no-terminal-prompts-only-antigravity.md
+- [004] CLUB ARENA IS MOBILE FIRST — every design and flow starts at phone size and is progressively enhanced for desktop. Mobile is never a compressed afterthought. See preferences/003-mobile-first-design.md
 
 ## Key Context
 
@@ -85,11 +86,12 @@ Built live-verification harness (c33b3277), ran it against production, then exte
 
 | ID     | Type       | File                                           | Summary                                                                                                        |
 | ------ | ---------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| D-001  | DECISION   | decisions/001-rake-equal-share.md              | Rake credit is always equal share                                                                              |
+| D-001  | DECISION   | decisions/001-rake-equal-share.md              | SUPERSEDED by D-004: weighted contributed rake                                                                 |
 | D-002  | DECISION   | decisions/002-bbj-min-players.md               | BBJ requires 3+ players                                                                                        |
 | D-003  | DECISION   | decisions/003-deferred-sitout.md               | Sit-out deferred until hand end                                                                                |
 | D-004  | DECISION   | decisions/004-broadcast-await.md               | Await broadcast only on TURN_CHANGE                                                                            |
 | P-001  | PREFERENCE | preferences/001-verification-standard.md       | Deep verification, no rubber-stamps                                                                            |
+| P-003  | PREFERENCE | preferences/003-mobile-first-design.md         | Every Club Arena design and flow is authored mobile first, then progressively enhanced                         |
 | C-001  | CONTEXT    | context/001-architecture.md                    | Platform architecture overview                                                                                 |
 | C-002  | CONTEXT    | context/002-migration-status.md                | Current migration progress                                                                                     |
 | C-003  | CONTEXT    | context/003-hetzner-vps.md                     | Hetzner VPS credentials and deploy                                                                             |

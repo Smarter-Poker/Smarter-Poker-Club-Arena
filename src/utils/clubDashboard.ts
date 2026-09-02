@@ -101,7 +101,9 @@ export function formatSigned(num: number): string {
 
 /** RFC4180-ish CSV escaping: wrap in quotes and double any embedded quote. */
 export function csvEscape(value: unknown): string {
-  return `"${String(value ?? '').replace(/"/g, '""')}"`;
+  let s = String(value ?? '');
+  if (typeof value === 'string' && /^[\t ]*[=+\-@]/.test(s)) s = `'${s}`;
+  return `"${s.replace(/"/g, '""')}"`;
 }
 
 export function leaderboardToCsv(players: RankablePlayer[]): string {

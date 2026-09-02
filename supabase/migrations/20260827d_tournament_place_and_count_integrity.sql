@@ -1,0 +1,40 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- TOURNAMENT PLACE + COUNT INTEGRITY 2026-08-27 — APPLIED via Supabase MCP
+-- before this file was committed; both probed inside rolled-back transactions.
+--
+-- 1. duplicate_finishing_place_cannot_be_silent
+--    Finishing places were derived from a LIVE count of players still playing,
+--    which is not monotonic (late reg promotes entrants after eliminations
+--    begin). A later sweep could stamp a place an earlier sweep had already
+--    PAID, and the wallet key `tourney:{id}:prize:{user}:{place}` dedupes a
+--    repeated USER, not a repeated PLACE — so the second prize was paid.
+--    Confirmed live: 206 duplicated places across 138 tournaments; the worst
+--    disbursed 107% of its prize pool.
+--    The engine fix (free-place walk, both assignment sites) prevents it at
+--    source. This adds the second lock: tournament_place_collisions +
+--    a BEFORE INSERT OR UPDATE OF position trigger that RECORDS a collision,
+--    and fn_recent_place_collisions to read them.
+--    NOT a unique index, deliberately: 206 historical rows would make it
+--    un-creatable without rewriting settled results, and a constraint that can
+--    REFUSE an elimination could strand a busted player in `playing` forever.
+--    Same doctrine as 20260825_chips_cannot_leave_the_felt_unnoticed — never
+--    block, always be loud. Settled history is left untouched.
+--    Probe: stamping a duplicate place logged exactly 1 collision row.
+--
+-- 2. seat_first_count_sync_is_seat_first_only
+--    fn_sync_seat_first_player_count sets tournaments.current_players to the
+--    seat count at the PRIMARY table — correct for a Spin or heads-up SNG,
+--    wrong for a multi-table MTT. The engine called it on every bust in every
+--    format, so a RUNNING 43-entrant 2-table event read 6, and every completed
+--    MTT ended at 1 (the reconciler only repairs live rows, so those are
+--    permanent). The guard now lives INSIDE the function — the same predicate
+--    fn_reconcile_tournament_denormals uses — so every caller inherits it.
+--    Restores the tournament_full cap during late reg, stops club dashboards
+--    reporting 1 player for a 45-player event, and keeps a clobbered counter
+--    away from fn_spin_sweep_unbooked's settlement math.
+--    Probe: a 23-entrant MTT (5 seats at primary table) kept current_players
+--    unchanged at 14; before the fix it would have been overwritten to 5.
+--
+-- Full bodies are in the migration history; this file records WHY.
+-- ═══════════════════════════════════════════════════════════════════════════
+SELECT 1;

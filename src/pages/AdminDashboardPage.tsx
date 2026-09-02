@@ -386,7 +386,6 @@ function DashboardTab({ clubId }: { clubId: string }) {
       // User-initiated: fast response (500ms)
       masterBus.subscribeDebounced('TABLE_CREATED', load, 500),
       masterBus.subscribeDebounced('TABLE_UPDATED', load, 500),
-      masterBus.subscribeDebounced('TABLE_DELETED', load, 500),
       masterBus.subscribeDebounced('TABLE_CLOSED', load, 500),
       masterBus.subscribeDebounced('ADMIN_ACTION', load, 500),
       masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', load, 500),
@@ -394,7 +393,8 @@ function DashboardTab({ clubId }: { clubId: string }) {
       masterBus.subscribeDebounced('CLUB_UPDATED', load, 500),
       masterBus.subscribeDebounced('SETTINGS_CHANGED', load, 500),
       masterBus.subscribeDebounced('CLUB_SETTINGS_UPDATED', load, 500),
-      masterBus.subscribeDebounced('COLLUSION_DETECTED', load, 500),
+      // COLLUSION_DETECTED removed 2026-08-28: nothing emits it on the client
+      // bus (detection is server-side), so the refresh could never fire.
       // Financial events: medium debounce (1500ms)
       masterBus.subscribeDebounced('CASHOUT_REQUESTED', load, 1500),
       masterBus.subscribeDebounced('CASHOUT_APPROVED', load, 1500),
@@ -508,7 +508,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
     return (
       <div className="admin-error-state">
         <div className="admin-error-icon">⚠</div>
-        <div className="admin-error-msg">{loadError || 'Failed to load health metrics'}</div>
+        <div className="admin-error-msg">{loadError || 'Failed To Load Health Metrics'}</div>
         <button onClick={load} className="admin-btn admin-btn-primary">
           ↻ Retry
         </button>
@@ -837,7 +837,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
               {(data.pendingCommissions || []).map((c) => (
                 <tr key={c.id}>
                   <td className="admin-mono">{c.user_id?.substring(0, 8)}...</td>
-                  <td style={{ textAlign: 'right' }}>{c.source_type || 'rake'}</td>
+                  <td style={{ textAlign: 'right' }}>{c.source_type || 'Rake'}</td>
                   <td style={{ textAlign: 'center' }}>
                     {((c.commission_rate || 0) * 100).toFixed(1)}%
                   </td>
@@ -1062,7 +1062,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
               }
             }}
             className="admin-btn admin-btn-ghost admin-btn-sm"
-            title="Export audit log as CSV"
+            title="Export Audit Log As CSV"
           >
             Export
           </button>
@@ -1140,6 +1140,12 @@ function AuditLogTab({ clubId }: { clubId: string }) {
 // TAB 4: ANNOUNCEMENTS
 // ═══════════════════════════════════════════════════════════════════════════════
 function AnnouncementsTab({ clubId }: { clubId: string }) {
+  // club_announcements.author_id is NOT NULL with no default and has a foreign
+  // key to profiles(id). The insert below never supplied it, so creating an
+  // announcement has always been rejected: Save cleared the form, closed the
+  // editor and reloaded a list that had not changed. Editing an existing one
+  // worked, which is why it read as a save that "sometimes" did nothing.
+  const { user } = useAuthUser();
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<any>(null);
@@ -1174,6 +1180,12 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
 
   const handleSave = async () => {
     if (!title.trim()) return;
+    // An author is required by the table, so refuse with a readable message
+    // rather than sending a statement the database will refuse silently.
+    if (!editing && !user?.id) {
+      setActionError('Your session could not be identified, so this announcement was not saved.');
+      return;
+    }
     setSaving(true);
     setActionError(null);
     try {
@@ -1187,7 +1199,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
       } else {
         const { error: insErr } = await supabase
           .from('club_announcements')
-          .insert({ club_id: uuid, title, content });
+          .insert({ club_id: uuid, title, content, author_id: user!.id });
         if (insErr) throw insErr;
       }
       setTitle('');
@@ -1205,7 +1217,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
   const handleDelete = async (id: string) => {
     if (
       !(await confirmDialog({
-        title: 'Delete announcement',
+        title: 'Delete Announcement',
         message: 'Delete this announcement?',
         confirmText: 'Delete',
         variant: 'danger',
@@ -1231,7 +1243,10 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
       setActionError(null);
       const { error: pinErr } = await supabase
         .from('club_announcements')
-        .update({ pinned: !item.pinned })
+        // `pinned` is a SELECT alias for `is_pinned` (see the query above). An
+        // alias is a read-side name: writing through it made every Pin and
+        // Unpin a rejected statement, so the button did nothing and said nothing.
+        .update({ is_pinned: !item.pinned })
         .eq('id', item.id);
       if (pinErr) throw pinErr;
       load();
@@ -1270,7 +1285,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
         <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder="Content (optional)"
+          placeholder="Content (Optional)"
           rows={3}
           className="admin-input admin-textarea"
         />
@@ -1434,8 +1449,8 @@ function SettingsTab({ clubId }: { clubId: string }) {
   const TOGGLES = [
     { key: 'allow_observer', label: 'Allow Observers' },
     { key: 'show_hand_history', label: 'Show Hand History' },
-    { key: 'auto_cashout', label: 'Auto Cashout on Leave' },
-    { key: 'require_kyc', label: 'Require KYC for Cashouts' },
+    { key: 'auto_cashout', label: 'Auto Cashout On Leave' },
+    { key: 'require_kyc', label: 'Require KYC For Cashouts' },
     { key: 'gps_verification', label: 'GPS Verification' },
     { key: 'ip_restriction', label: 'IP Restriction' },
     { key: 'emulator_detection', label: 'Emulator Detection' },
@@ -1796,7 +1811,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
             <input
               value={theme.welcomeMessage || ''}
               onChange={(e) => setTheme((prev) => ({ ...prev, welcomeMessage: e.target.value }))}
-              placeholder="Welcome to our club!"
+              placeholder="Welcome To Our Club!"
               className="admin-input"
             />
           </div>
@@ -1839,7 +1854,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
         <div style={{ display: 'flex', gap: '8px' }}>
           <input
             id="ownership-target"
-            placeholder="New owner's User ID (UUID)"
+            placeholder="New Owner's User ID (UUID)"
             className="admin-input"
             style={{ flex: 1 }}
           />
@@ -1902,13 +1917,19 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
         // P2-1: union games carry the union container as club_id
         const gamesScope = await clubGamesOrFilter(uuid);
         // Generate recommendations based on club state
-        const [{ data: members }, { data: tables }, { data: annCount }] = await Promise.all([
+        /* `count: 'exact'` removed from both queries 2026-08-26. Neither count was
+           ever destructured - only `data` is - and the code below works off
+           `mems.length` and `anns.length`. An exact count is not free: PostgREST
+           runs a SECOND full scan of the same predicate to produce it, and on
+           club_members that scan goes through four RLS policies. It was paying
+           twice for a number nothing read. */
+        const [{ data: members }, { data: tables }, { data: anns }] = await Promise.all([
           supabase
             .from('club_members')
-            .select('user_id, is_active, role, last_active_at', { count: 'exact' })
+            .select('user_id, is_active, role, last_active_at')
             .eq('club_id', uuid),
           supabase.from('tables').select('id, current_players, status').or(gamesScope),
-          supabase.from('club_announcements').select('id', { count: 'exact' }).eq('club_id', uuid),
+          supabase.from('club_announcements').select('id').eq('club_id', uuid),
         ]);
         const mems = members || [];
         const tbls = tables || [];
@@ -1942,7 +1963,10 @@ function RecommendationsTab({ clubId }: { clubId: string }) {
         }
 
         // Check announcements
-        if ((annCount as any) === 0 || !(annCount as any)?.length) {
+        /* Was `annCount === 0 || !annCount?.length`. The first clause was dead:
+           the variable holds `data`, which is an array or null, never the number
+           0. The length check is the one that was doing the work. */
+        if (!anns || anns.length === 0) {
           recommendations.push({
             icon: '◉',
             severity: 'info',
@@ -2115,24 +2139,32 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                     onClick={async () => {
                       setActionError(null);
                       try {
-                        const uuid = await resolveClubUUID(clubId);
-                        const { data: newTable, error: insErr } = await supabase
-                          .from('tables')
-                          .insert({
-                            club_id: uuid,
-                            name: tmpl.name || 'New Table',
-                            game_type: tmpl.game_type || 'nlh',
-                            small_blind: tmpl.small_blind || 1,
-                            big_blind: tmpl.big_blind || 2,
-                            max_players: tmpl.max_players || 9,
-                            min_buy_in: tmpl.min_buy_in || 40,
-                            max_buy_in: tmpl.max_buy_in || 200,
-                            status: 'active',
-                          })
-                          .select('id')
-                          .maybeSingle();
+                        /**
+                         * LAUNCH COPIES THE WHOLE ROW (2026-08-25).
+                         *
+                         * This used to hand-copy EIGHT fields out of a row with
+                         * over a hundred columns, so every rule the host had
+                         * configured on the template - straddle, bomb pots,
+                         * ante, insurance, run it twice, cap, no-rathole,
+                         * VIP-only, all of it - was silently discarded. A
+                         * launched template was a plain table wearing the
+                         * template's name.
+                         *
+                         * fn_launch_table_from_template copies the row and
+                         * overrides only identity and live state, so a column
+                         * added tomorrow is carried without anyone remembering
+                         * to add it here. It also checks club staff itself,
+                         * which the client-side insert never could.
+                         */
+                        const { data: newId, error: insErr } = await supabase.rpc(
+                          'fn_launch_table_from_template',
+                          { p_template_id: tmpl.id }
+                        );
                         if (insErr) throw insErr;
-                        masterBus.emit('TABLE_CREATED', { tableId: newTable?.id || '', clubId });
+                        masterBus.emit('TABLE_CREATED', {
+                          tableId: (newId as string) || '',
+                          clubId,
+                        });
                       } catch (e: unknown) {
                         setActionError(`Launch failed: ${safeErrorMessage(e)}`);
                       }
@@ -2145,7 +2177,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                     onClick={async () => {
                       if (
                         !(await confirmDialog({
-                          title: 'Delete template',
+                          title: 'Delete Template',
                           message: `Delete template "${tmpl.name}"?`,
                           confirmText: 'Delete',
                           variant: 'danger',
@@ -2350,7 +2382,7 @@ function MintChipsTab({ clubId }: { clubId: string }) {
             <input
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Reason for minting..."
+              placeholder="Reason For Minting..."
               className="admin-input"
             />
           </div>
@@ -2390,7 +2422,7 @@ function MintChipsTab({ clubId }: { clubId: string }) {
               }
             }}
           >
-            {processing ? 'Minting...' : `Mint ${amount ? fmtChips(Number(amount)) : '0'} chips`}
+            {processing ? 'Minting...' : `Mint ${amount ? fmtChips(Number(amount)) : '0'} Chips`}
           </button>
         </div>
       </div>

@@ -126,12 +126,43 @@ export interface ActionResult {
   code?: string;
   hint?: Record<string, unknown>;
   /**
+   * Dan 2026-08-30: /preaction replies carry this — the price to call that the
+   * ENGINE recorded when it armed the pre-action, from its own authoritative
+   * state. The client's panel-suppression rule
+   * (src/lib/preActionPanelGate.ts) used to judge "can the engine still honour
+   * this?" against a price the BROWSER snapshotted at tap time. Two snapshots
+   * of one number, taken at two moments on two machines, agree almost always —
+   * and the "almost" is a visible flash on a hand the engine was going to act,
+   * or no panel on a hand where the arm had already been invalidated. Adopting
+   * this collapses the two to one.
+   */
+  armedToCall?: number;
+  /**
+   * Dan 2026-08-29: /post-bb replies carry this. true = the player is in
+   * between the blinds, so the post has been ACCEPTED AND HELD rather than
+   * done — the engine posts it for them once the button is past, and the
+   * caller must not ask them again. `error` then carries the sentence to
+   * show, which is a status line and not a failure.
+   */
+  deferred?: boolean;
+  /**
    * Dan 2026-08-21: /leave replies carry this. true = the engine has no live
    * hand holding the player (safe for the client to run the DB cashout now);
    * false = a hand is running and the ENGINE will cash the player out at
    * settlement (processLeavePending) — the client must NOT touch the stack.
    */
   immediate?: boolean;
+  /**
+   * Cashier audit 2026-08-27: /addchips replies have ALWAYS carried these two
+   * and the client threw them away. `applied` is what the engine actually
+   * debited after capping to the seat's headroom — ask for 5,000 with 1,200
+   * of room and the wallet moves 1,200, while the client used to subtract
+   * the full 5,000 from every session figure. `queued` means the debit
+   * committed but the chips land at the END of the current hand
+   * (table_pending_addons), not immediately.
+   */
+  applied?: number;
+  queued?: boolean;
 }
 
 export interface PlayerActions {
@@ -350,7 +381,26 @@ export async function getServerStatus(): Promise<ServerStatus | null> {
  * Bible V8 §6.3: Send heartbeat to reset disconnect timer.
  * Must be called every 5 seconds while player is at the table.
  */
-export async function sendHeartbeat(tableId: string): Promise<ActionResult> {
+export async function sendHeartbeat(
+  tableId: string,
+  /**
+   * PHASE 2 (2026-08-31) — THE DIFFERENCE BETWEEN ONLINE AND WORKING.
+   *
+   * A heartbeat only proves the app is running and the network is up. It says
+   * nothing about whether the player can SEE anything, and on 2026-08-31 that
+   * gap cost somebody their seat: his client had erased his own seat from the
+   * table, so the engine offered him turns nobody could see, timed each one
+   * out, force-sat him out and evicted him — while his heartbeat landed
+   * perfectly every five seconds throughout.
+   *
+   * `turnRendered` closes that gap. When the client has actually DRAWN the
+   * action controls for this player, it says so, and the engine can tell an
+   * absent player from a broken one. Optional by design: it can only ever
+   * make the engine quieter about a player, never harsher, so a client that
+   * never sends it is treated exactly as every client is treated today.
+   */
+  opts?: { turnRendered?: boolean }
+): Promise<ActionResult> {
   // Circuit breaker: skip if game server is known-unreachable
   if (circuitBreaker.isOpen()) {
     return { success: false, error: 'Circuit breaker open - server unreachable' };
@@ -360,7 +410,7 @@ export async function sendHeartbeat(tableId: string): Promise<ActionResult> {
     const response = await fetch(`${GAME_SERVER_URL}/heartbeat`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ tableId }),
+      body: JSON.stringify(opts?.turnRendered ? { tableId, turnRendered: true } : { tableId }),
     });
     if (!response.ok) {
       circuitBreaker.recordFailure(new Error(`HTTP ${response.status}`), 'GameServerAPI.heartbeat');
@@ -371,6 +421,55 @@ export async function sendHeartbeat(tableId: string): Promise<ActionResult> {
   } catch (err: unknown) {
     circuitBreaker.recordFailure(err, 'GameServerAPI.heartbeat');
     return { success: false, error: 'Server unreachable' };
+  }
+}
+
+/**
+ * Dan 2026-08-23: tell the server we are leaving the page or the app.
+ *
+ * Fires from `pagehide`, the last event a browser reliably delivers before it
+ * tears the document down (`unload` does not fire on mobile Safari at all,
+ * and an ordinary fetch started there is cancelled with the document).
+ *
+ * Why this exists when the websocket close already tells the server
+ * something: a socket close is ambiguous, so it only opens an 8s grace window
+ * in case the player is still there on the HTTP heartbeat. This is
+ * unambiguous — the server marks them AWAY immediately and the
+ * one-SB-one-BB cap starts counting. Coming back cancels it for free.
+ *
+ * Uses `fetch(..., { keepalive: true })` rather than `navigator.sendBeacon`
+ * deliberately. sendBeacon cannot set an Authorization header, which would
+ * force the JWT into the request body and force the SERVER's shared auth
+ * helper to learn a second way to receive a token — a change to the one
+ * function guarding every money route, for the benefit of the least
+ * important route on the server. Not a trade worth making. A keepalive fetch
+ * carries the normal Bearer header, is owned by the browser's network stack
+ * once dispatched, and outlives the document exactly like a beacon does.
+ *
+ * Best-effort by design: if it fails, the websocket close still reaches the
+ * server, just 8 seconds later via the transport grace window. Nothing is
+ * lost, the player is simply marked away slightly less promptly.
+ *
+ * Takes the token as an argument rather than awaiting `getAuthHeaders()` —
+ * `pagehide` handlers must be synchronous, and an `await` there means the
+ * request is never dispatched at all.
+ */
+export function sendAwayBeacon(tableId: string, accessToken: string | null): void {
+  if (!tableId || !accessToken) return;
+  try {
+    void fetch(`${GAME_SERVER_URL}/away`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ tableId }),
+      keepalive: true,
+    }).catch(() => {
+      /* the page is going away; there is nobody left to tell */
+    });
+  } catch {
+    /* never let a teardown path throw */
   }
 }
 
@@ -425,13 +524,20 @@ export async function setPreAction(
  * @param tableId Table ID
  * @param amount Amount of chips to add
  */
-export async function addChips(tableId: string, amount: number): Promise<ActionResult> {
+export async function addChips(
+  tableId: string,
+  amount: number,
+  /** Caller-held per-attempt id (Cashier audit 2026-08-27, P0-1): hold it
+   *  across retries of the SAME attempt so a re-send after a lost response
+   *  de-duplicates server-side instead of debiting twice. */
+  opId?: string
+): Promise<ActionResult> {
   try {
     const headers = await getAuthHeaders();
     const res = await fetch(`${GAME_SERVER_URL}/addchips`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ tableId, amount }),
+      body: JSON.stringify(opId ? { tableId, amount, opId } : { tableId, amount }),
     });
 
     if (!res.ok) {
@@ -440,10 +546,23 @@ export async function addChips(tableId: string, amount: number): Promise<ActionR
     }
 
     const data = await res.json();
-    return { success: data.success, error: data.error };
+    /* `applied` and `queued` propagate — the engine caps the top-up to the
+       seat's headroom and says what actually moved; discarding that made the
+       client account for the REQUESTED amount (Cashier audit 2026-08-27). */
+    return {
+      success: data.success,
+      error: data.error,
+      applied: typeof data.applied === 'number' ? data.applied : undefined,
+      queued: data.queued === true,
+    };
   } catch (err: any) {
     console.error(`[GameServerAPI] addChips error:`, err);
-    return { success: false, error: err.message || 'Network error' };
+    /* TRANSPORT means the OUTCOME IS UNKNOWN: the request may have reached
+       the engine and committed before the response was lost. Callers must
+       not tell the player "your wallet was not charged" on this path —
+       that claim is only true for a server refusal (Cashier audit
+       2026-08-27, P0-1). */
+    return { success: false, error: err.message || 'Network error', code: 'TRANSPORT' };
   }
 }
 
@@ -473,7 +592,9 @@ export async function removeChips(tableId: string, amount: number): Promise<Acti
     return { success: data.success, error: data.error };
   } catch (err: any) {
     console.error(`[GameServerAPI] removeChips error:`, err);
-    return { success: false, error: err.message || 'Network error' };
+    // Same TRANSPORT contract as addChips: outcome unknown, never claim
+    // "nothing moved" on this path.
+    return { success: false, error: err.message || 'Network error', code: 'TRANSPORT' };
   }
 }
 
@@ -492,8 +613,25 @@ export async function setSitOut(
       headers,
       body: JSON.stringify({ tableId, sitOut }),
     });
+    /* READ THE BODY BEFORE JUDGING THE STATUS (2026-08-28).
+     *
+     * `handlers/sitout.ts` answers a refusal with HTTP 400 and the REASON in
+     * the body. This used to return `Server error (400)` on any non-2xx, so
+     * every sit-out refusal the engine could produce was replaced with a status
+     * code before a human ever saw it. That was survivable while the only
+     * refusal was "Player not found at this table"; it stops being survivable
+     * now that a 400 also means "you must play at least one hand before you can
+     * sit out" (Dan 2026-08-28), which is a rule the player has to be told or
+     * the button just looks broken.
+     *
+     * The status code is still the fallback for a response with no usable body
+     * — a proxy error page, a 502, an empty 500. */
+    const body = (await response.json().catch(() => null)) as
+      | (ActionResult & { willFoldNextHand?: boolean })
+      | null;
+    if (body && typeof body.success === 'boolean') return body;
     if (!response.ok) return { success: false, error: `Server error (${response.status})` };
-    return await response.json();
+    return { success: false, error: 'Server sent an unreadable response' };
   } catch (err: unknown) {
     reportError(err, 'GameServerAPI.setSitOut');
     return { success: false, error: 'Server unreachable' };
@@ -580,7 +718,8 @@ export async function respondToRIT(
  */
 export async function respondToInsurance(
   tableId: string,
-  response: 'accept' | 'decline',
+  // EV CASHOUT 2026-08-28: 'cashout' locks pot x equity (minus fee) now.
+  response: 'accept' | 'decline' | 'cashout',
   coveragePercent: number = 100,
   declineForHand: boolean = false
 ): Promise<ActionResult & { status?: string; premium?: number; insuredAmount?: number }> {
@@ -694,13 +833,41 @@ export async function notifyServerLeave(tableId: string): Promise<ActionResult> 
 }
 
 /**
+ * POST /reject_rebuy — Notify the game server that a player rejected the rebuy modal.
+ */
+export async function notifyServerRejectRebuy(tableId: string): Promise<ActionResult> {
+  try {
+    const headers = await getAuthHeaders();
+    const resp = await fetch(`${GAME_SERVER_URL}/reject_rebuy`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tableId }),
+    });
+    if (!resp.ok) return { success: false, error: `Server error (${resp.status})` };
+    return (await resp.json()) as ActionResult;
+  } catch (err: unknown) {
+    console.warn('[GameServerAPI] notifyServerRejectRebuy failed:', err);
+    return { success: false, error: 'Server unreachable' };
+  }
+}
+
+/**
  * POST /post-bb — Bible V8 §4.2: Post the BB to enter the next hand
  * immediately, skipping the normal "wait for BB to rotate to your seat" delay.
  *
- * Walkthrough Step 4 fix 2026-04-29: previously the engine accepted this
- * request but the frontend had no way to call it. Now the SeatSlot renders
- * a "Post BB" button when the hero player is in the engine's
- * waiting_for_bb_user_ids list, and that button calls this function.
+ * THIS COMMENT WAS STALE AND SAID THE OPPOSITE OF THE TRUTH (corrected
+ * 2026-08-29). It read "NOTHING IN THE UI CALLS THIS ANY MORE, deliberately...
+ * cash entry is free", which was the 2026-08-25 rule Dan reversed on
+ * 2026-08-26: "Every single player needs to either wait for the BB or post
+ * when entering a cash game... no free hands." TablePage has called this from
+ * two places ever since — the post-or-wait modal and the on-felt overlay.
+ *
+ * Three outcomes, and the caller must read them in this order:
+ *   deferred:true          in between the blinds. Accepted and HELD; the
+ *                          engine posts it when the button passes. Do not
+ *                          ask again. `error` is the status line to show.
+ *   success:true           posted; dealt into the next hand, billed one BB.
+ *   success:false          not held out at all (already in the rotation).
  */
 export async function postBBToEnter(tableId: string): Promise<ActionResult> {
   try {
@@ -714,6 +881,55 @@ export async function postBBToEnter(tableId: string): Promise<ActionResult> {
     return (await resp.json()) as ActionResult;
   } catch (err: unknown) {
     console.warn('[GameServerAPI] postBBToEnter failed:', err);
+    return { success: false, error: 'Server unreachable' };
+  }
+}
+
+/**
+ * POST /rabbit-hunt — buy the cards that would have come. Dan 2026-08-25.
+ *
+ * This is the ONLY way the rabbit-hunt cards reach a client. They are not in
+ * any broadcast and never have been since this endpoint existed: the engine
+ * used to put all five into the room-wide `rabbit_hunt_available` event, so
+ * every opponent received them in cleartext and the charge was a client-side
+ * `if` anyone could skip.
+ *
+ * The server charges first (VIP monthly pool, then a purchased pack, then five
+ * diamonds) and returns the cards only to the caller that paid. So the response
+ * is the reveal — there is nothing to re-fetch and nothing to bill afterwards.
+ */
+export interface RabbitHuntResult {
+  success: boolean;
+  error?: string;
+  cards?: { rank: string; suit: string }[];
+  board_length?: number;
+  source?: string;
+  diamonds_spent?: number;
+  diamonds_remaining?: number | null;
+  vip_remaining?: number | null;
+  /** Uses left on a purchased rabbit-hunt pack, when a pack paid for this one. */
+  uses_remaining?: number | null;
+}
+
+export async function requestRabbitHunt(
+  tableId: string,
+  handNumber?: number
+): Promise<RabbitHuntResult> {
+  try {
+    const headers = await getAuthHeaders();
+    const resp = await fetch(`${GAME_SERVER_URL}/rabbit-hunt`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ tableId, handNumber }),
+    });
+    // A 400 carries a real, human-readable reason from the engine ("Not Enough
+    // Diamonds", "You Were Not Dealt Into That Hand"), so parse the body rather
+    // than flattening every non-200 into a generic failure.
+    const data = (await resp.json().catch(() => null)) as RabbitHuntResult | null;
+    if (data) return data;
+    return { success: false, error: `Server error (${resp.status})` };
+  } catch (err: unknown) {
+    console.warn('[GameServerAPI] requestRabbitHunt failed:', err);
     return { success: false, error: 'Server unreachable' };
   }
 }
@@ -749,4 +965,10 @@ export default {
   previewInsurance,
   showHand,
   submitDiscard, // FIX 120: Crazy Pineapple
+  notifyServerRejectRebuy,
+  // Was the only member of this module missing from the default export, so
+  // anyone reaching for GameServerAPI.requestRabbitHunt got undefined while
+  // its seventeen siblings resolved.
+  requestRabbitHunt,
+  postBBToEnter,
 };

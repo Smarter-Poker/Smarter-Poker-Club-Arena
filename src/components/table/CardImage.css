@@ -82,12 +82,13 @@
    STATES
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* POKERBROS PARITY 2026-08-26: the reference never lifts or scales a winning
+   card, and the gold border + amber halo live on the OUTER wrappers
+   (.community-cards__card--highlighted / .seat__card--winner) so they wrap
+   the card edge exactly. The old translateY(-4px) scale(1.05) + own glow
+   here double-styled every winning card and moved it off its slot. The
+   class is kept as a structural marker only. */
 .card-image--highlighted {
-  transform: translateY(-4px) scale(1.05);
-  box-shadow:
-    0 0 24px rgba(255, 215, 0, 0.9),
-    0 0 12px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
   z-index: 10;
 }
 
@@ -123,12 +124,34 @@
  * Adding a ninth design is now one rule of two lines, and it cannot be
  * silently overridden by an ancestor-scoped rule again.
  */
+/* 2026-08-25: `--cb-gradient` was SET twelve times below and READ nowhere. This
+   rule painted `var(--cb-image, none)` alone, so a card back whose .webp 404s
+   or has not downloaded yet drew NOTHING but the 2px border - an empty outline
+   on dark felt, which is the exact symptom the 2026-08-23 note above was
+   written to have fixed. The comment at the end of that note ("The gradient and
+   border stay here as the fallback for a missing file") described a fallback
+   that did not exist, and the note in TableVisualHotfix.css line 348 asserts
+   this rule "paints two layers, `var(--cb-image), gradient`" - it did not.
+
+   It does now. `background-image` takes a LAYER LIST, first layer on top:
+   the artwork covers the gradient when it loads, and when it 404s or is still
+   in flight the browser paints nothing for that layer and the gradient below
+   shows through. That is the whole mechanism - no JS error handler, no
+   onerror, no class toggle, and nothing to keep in sync.
+
+   `background-size: cover` with a single value applies to BOTH layers, which
+   is what a gradient wants anyway. The literal in the var() fallback is
+   classic_blue, matching --cb-border's own default on the next line, so an
+   element that somehow carries neither a design class nor an inline image is
+   still a solid navy card rather than a hole. */
 .card-image--back .card-back {
   width: 100%;
   height: 100%;
-  background:
+  background-image:
     var(--cb-image, none), var(--cb-gradient, linear-gradient(135deg, #1e3a5f 0%, #0d2137 100%));
   background-size: cover;
+  background-position: center center;
+  background-repeat: no-repeat;
   border: 2px solid var(--cb-border, #3a6ea5);
   border-radius: inherit;
   display: flex;
@@ -256,4 +279,57 @@
 
 .card-image--flipping {
   animation: card-flip 0.4s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UNREADABLE CARD (2026-08-26)
+   ═══════════════════════════════════════════════════════════════════════════
+   getCardImagePath used to substitute the ACE OF SPADES for any card it could
+   not parse, so a corrupt card rendered as a real, plausible, playable one and
+   the player bet behind it. It returns null now, and this is what null looks
+   like.
+
+   Designed to be impossible to mistake for a card: no white face, no rank, no
+   suit pip, a dashed amber border and a single question mark. If a player ever
+   sees this they should know the slot is untrustworthy without being told. */
+.card-image--unreadable {
+  background: transparent;
+  box-shadow: none;
+}
+
+.card-image__unreadable {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: inherit;
+  /* Amber, not red: red on a poker felt reads as the hearts/diamonds colour. */
+  border: 2px dashed #f59e0b;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(245, 158, 11, 0.12) 0 6px,
+    rgba(15, 23, 42, 0.55) 6px 12px
+  );
+  color: #f59e0b;
+  font-weight: 800;
+  font-size: 1.1em;
+  line-height: 1;
+  user-select: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .card-image__unreadable {
+    animation: cardUnreadablePulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes cardUnreadablePulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.62;
+  }
 }

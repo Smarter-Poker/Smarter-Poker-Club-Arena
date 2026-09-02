@@ -178,11 +178,6 @@
   transition: all 0.2s;
 }
 
-.dndBtn:hover {
-  background: rgba(139, 92, 246, 0.25);
-  color: #fff;
-}
-
 @keyframes fadeIn {
   from {
     opacity: 0;

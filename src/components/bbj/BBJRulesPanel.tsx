@@ -21,7 +21,6 @@ import {
   BBJ_RULES,
   getBBJPayoutPercentForBB,
   getBBJQualifyingInfo,
-  normalizeVariantKey,
 } from '../../config/RakeConfig';
 import './BBJRulesPanel.css';
 
@@ -45,52 +44,60 @@ const VARIANT_ROWS: Array<{ key: string; games: string }> = [
   { key: 'short_deck', games: 'Short Deck' },
 ];
 
+/**
+ * AUDIT 2026-08-27 — four props removed, because nothing could ever pass them.
+ *
+ * `section`, `embedded`, `highlightVariantKey` and `highlightBB` were declared
+ * here and never supplied by any caller: the sole call site is the jackpot page
+ * (`<BBJRulesPanel poolAmount={...} />`), and the BBJ modal, which is the one
+ * surface that HAS table context, renders `BBJBasicPanel` and
+ * `BBJQualifyingHands` instead - those two take `highlightBB` and
+ * `highlightVariantKey` and are already wired to it.
+ *
+ * So every branch they gated was unreachable: the single-section render, the
+ * `bbj-rules--embedded` class and its two CSS rules, the variant-alias
+ * collapsing, and both YOUR GAME / YOUR STAKES markers. Dead configuration on a
+ * rules panel is worse than dead code elsewhere - the next person to want the
+ * highlight would have wired it here and watched nothing happen.
+ */
 export interface BBJRulesPanelProps {
   /** Live main pool, so the payout table can show real chip figures. */
   poolAmount?: number;
-  /**
-   * Which section(s) to render. 'both' keeps the panel's own tab bar (the
-   * jackpot page); a single section renders bare, so a host that already has
-   * tabs (the BBJ modal) never nests one tab bar inside another.
-   */
-  section?: 'qualifying' | 'payout' | 'both';
-  /** Variant key of the table the player is sitting at — its row is marked. */
-  highlightVariantKey?: string | null;
-  /** Big blind of that table — its stakes row is marked. */
-  highlightBB?: number | null;
-  /** Drop the outer card chrome when rendered inside another surface. */
-  embedded?: boolean;
 }
 
 function chips(n: number): string {
   return Math.round(n).toLocaleString('en-US');
 }
 
-export function BBJRulesPanel({
-  poolAmount = 0,
-  section = 'both',
-  highlightVariantKey = null,
-  highlightBB = null,
-  embedded = false,
-}: BBJRulesPanelProps) {
-  const [tab, setTab] = useState<'qualifying' | 'payout'>(
-    section === 'payout' ? 'payout' : 'qualifying'
-  );
-  const active = section === 'both' ? tab : section;
-  // Which variant row belongs to the player's current table (aliases collapse
-  // onto the row that actually renders — plo/plo_hilo/flh have no own row).
-  const hlKey = highlightVariantKey ? normalizeVariantKey(highlightVariantKey) : null;
-  const hlRowKey =
-    hlKey === 'flh' ? 'nlh' : hlKey === 'plo' ? 'plo4' : hlKey === 'plo_hilo' ? 'plo8' : hlKey;
-  const hlPct = typeof highlightBB === 'number' ? getBBJPayoutPercentForBB(highlightBB) : null;
+export function BBJRulesPanel({ poolAmount = 0 }: BBJRulesPanelProps) {
+  const [tab, setTab] = useState<'qualifying' | 'payout'>('qualifying');
+  const active = tab;
 
   return (
-    <div className={`bbj-rules${embedded ? ' bbj-rules--embedded' : ''}`}>
-      {section === 'both' && (
-        <div className="bbj-rules__tabs" role="tablist">
+    <div className="bbj-rules">
+      {
+        <div
+          className="bbj-rules__tabs"
+          role="tablist"
+          aria-label="Jackpot Rules"
+          onKeyDown={(e) => {
+            // Half a tablist is worse than none: a reader announced "tab 1 of 2"
+            // and the arrow keys did nothing.
+            if (e.key === 'ArrowLeft' || e.key === 'Home') {
+              e.preventDefault();
+              setTab('qualifying');
+            } else if (e.key === 'ArrowRight' || e.key === 'End') {
+              e.preventDefault();
+              setTab('payout');
+            }
+          }}
+        >
           <button
             role="tab"
+            id="bbj-rules-tab-qualifying"
             aria-selected={tab === 'qualifying'}
+            aria-controls="bbj-rules-panel"
+            tabIndex={tab === 'qualifying' ? 0 : -1}
             className={`bbj-rules__tab${tab === 'qualifying' ? ' is-active' : ''}`}
             onClick={() => setTab('qualifying')}
           >
@@ -98,17 +105,26 @@ export function BBJRulesPanel({
           </button>
           <button
             role="tab"
+            id="bbj-rules-tab-payout"
             aria-selected={tab === 'payout'}
+            aria-controls="bbj-rules-panel"
+            tabIndex={tab === 'payout' ? 0 : -1}
             className={`bbj-rules__tab${tab === 'payout' ? ' is-active' : ''}`}
             onClick={() => setTab('payout')}
           >
             What It Pays
           </button>
         </div>
-      )}
+      }
 
       {active === 'qualifying' && (
-        <div className="bbj-rules__body">
+        <div
+          className="bbj-rules__body"
+          id="bbj-rules-panel"
+          role="tabpanel"
+          aria-labelledby="bbj-rules-tab-qualifying"
+          tabIndex={0}
+        >
           <table className="bbj-rules__table">
             <thead>
               <tr>
@@ -122,17 +138,9 @@ export function BBJRulesPanel({
                 const info = getBBJQualifyingInfo(row.key);
                 const eligible = q?.eligible !== false;
                 return (
-                  <tr
-                    key={row.key}
-                    className={`${eligible ? '' : 'is-ineligible'}${
-                      hlRowKey === row.key ? ' is-current' : ''
-                    }`}
-                  >
-                    <td>
-                      {row.games}
-                      {hlRowKey === row.key && <span className="bbj-rules__here">YOUR GAME</span>}
-                    </td>
-                    <td>{eligible ? info.shortLabel : 'Jackpot not available'}</td>
+                  <tr key={row.key} className={eligible ? '' : 'is-ineligible'}>
+                    <td>{row.games}</td>
+                    <td>{eligible ? info.shortLabel : 'Jackpot Not Available'}</td>
                   </tr>
                 );
               })}
@@ -140,12 +148,13 @@ export function BBJRulesPanel({
           </table>
 
           <ul className="bbj-rules__list">
-            <li>Minimum Pot: {BBJ_RULES.minPotBB} Big Blinds</li>
+            <li>Drop Collected On Every Flop With {BBJ_RULES.minPlayersDealt}+ Players Dealt In</li>
+            <li>Minimum Pot To Win The Jackpot: {BBJ_RULES.minPotBB} Big Blinds</li>
             <li>Minimum Players Dealt In: {BBJ_RULES.minPlayersDealt}</li>
             {BBJ_RULES.requireBothHoleCards && (
               <li>
-                Both Hole Cards Must Play (In Omaha Games, Exactly Two) &mdash; For Both The Losing
-                And The Winning Hand
+                Both Hole Cards Must Play (In Omaha Games, Exactly Two) - For Both The Losing And
+                The Winning Hand
               </li>
             )}
             {BBJ_RULES.onlyFirstRunout && (
@@ -156,11 +165,17 @@ export function BBJRulesPanel({
       )}
 
       {active === 'payout' && (
-        <div className="bbj-rules__body">
+        <div
+          className="bbj-rules__body"
+          id="bbj-rules-panel"
+          role="tabpanel"
+          aria-labelledby="bbj-rules-tab-payout"
+          tabIndex={0}
+        >
           <p className="bbj-rules__note">
-            A Jackpot Hit Pays A Share Of The Main Pool Set By The Stakes You Were Playing &mdash;
-            Not The Whole Pool. That Share Is Then Split 50% To The Bad-Beat Hand, 25% To The Hand
-            That Won, And 25% Between Everyone Else Dealt Into The Hand.
+            A Jackpot Hit Pays A Share Of The Main Pool Set By The Stakes You Were Playing - Not The
+            Whole Pool. That Share Is Then Split 50% To The Bad-Beat Hand, 25% To The Hand That Won,
+            And 25% Between Everyone Else Dealt Into The Hand.
           </p>
 
           <table className="bbj-rules__table">
@@ -175,14 +190,10 @@ export function BBJRulesPanel({
               {PAYOUT_TIERS.map((t) => {
                 const pct = getBBJPayoutPercentForBB(t.sampleBB);
                 const total = (poolAmount * pct) / 100;
-                const isHere = hlPct !== null && hlPct === pct;
                 return (
-                  <tr key={t.label} className={isHere ? 'is-current' : ''}>
+                  <tr key={t.label}>
                     <td>
-                      <span className="bbj-rules__tier">
-                        {t.label}
-                        {isHere && <span className="bbj-rules__here">YOUR STAKES</span>}
-                      </span>
+                      <span className="bbj-rules__tier">{t.label}</span>
                       <span className="bbj-rules__blinds">{t.blinds}</span>
                     </td>
                     <td className="bbj-rules__pct">{pct}%</td>

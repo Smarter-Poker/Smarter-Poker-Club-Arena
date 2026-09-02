@@ -11,6 +11,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
+import { clearCachedIdentity } from '../lib/cachedIdentity';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -32,7 +33,8 @@ export interface UserProfile {
   username: string;
   display_name: string | null;
   avatar_url: string | null;
-  vip_level: 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond'; // Maps to DB `tier` column
+  vip_level: 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond';
+  player_number?: number;
   stats?: PlayerStats;
   created_at: string;
 }
@@ -109,6 +111,10 @@ export const useUserStore = create<UserState>()(
           currentClubId: null,
           totalChips: 0,
         });
+        // First-paint identity cache (2026-08-28): forget the name/face on
+        // logout so the next account on this device cannot cold-open as the
+        // previous one.
+        clearCachedIdentity();
       },
 
       updateProfile: (updates: Partial<UserProfile>) => {
@@ -124,6 +130,7 @@ export const useUserStore = create<UserState>()(
           display_name: userData.display_name || userData.username || 'Player',
           avatar_url: userData.avatar_url || null,
           vip_level: userData.vip_level || 'bronze',
+          player_number: userData.player_number,
           stats: userData.stats || DEFAULT_STATS,
           created_at: userData.created_at || new Date().toISOString(),
         };
@@ -151,7 +158,9 @@ export const useUserStore = create<UserState>()(
            */
           const { data, error } = await supabase
             .from('profiles')
-            .select('id, username, display_name, avatar_url:arena_avatar_url, tier, created_at')
+            .select(
+              'id, username, display_name, avatar_url:arena_avatar_url, tier, created_at, player_number'
+            )
             .eq('id', userId)
             .maybeSingle();
 
@@ -175,6 +184,7 @@ export const useUserStore = create<UserState>()(
             display_name: data.display_name,
             avatar_url: data.avatar_url,
             vip_level: data.tier || 'bronze', // DB uses `tier`, not `vip_level`
+            player_number: data.player_number,
             // `stats` is NOT a column on profiles (verified against the live
             // schema), so this was always DEFAULT_STATS via the `||`. Kept
             // explicit so the default reads as intent rather than as a

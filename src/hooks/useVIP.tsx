@@ -16,6 +16,7 @@ import {
 } from '../services/VIPService';
 import { useAuthUser } from './useAuthUser';
 import { reportError } from '../utils/errorReporter';
+import { masterBus } from '../core/MasterBus';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -64,20 +65,28 @@ export function VIPProvider({ children }: { children: ReactNode }) {
       const vipStatus = await vipService.checkVIPStatus(user.id);
       setStatus(vipStatus);
     } catch (error) {
+      /**
+       * 2026-08-28: this used to write "not VIP, zero allowance" on ANY
+       * failure, so one unreadable query took a paying member's features away
+       * mid-session. The service now throws instead of inventing that answer,
+       * and the right response to "we could not find out" is to KEEP WHAT WE
+       * ALREADY KNEW — a stale true is far better than a fabricated false,
+       * and the next call re-checks. Only the very first check on a fresh
+       * mount has nothing to keep, and its initial state is already
+       * non-VIP-with-zero-limits, so nothing is granted by accident either.
+       */
       reportError(error, 'useVIP.Failed_to_check_VIP_status');
-      setStatus({
-        isVIP: false,
-        expiresAt: null,
-        monthlyLimits: {
-          rabbitHunts: { used: 0, limit: 0 },
-          timeBankSeconds: { used: 0, limit: 0 },
-          emojis: { used: 0, limit: 0 },
-          tags: { used: 0, limit: 0 },
-        },
-      });
     }
     setIsLoading(false);
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return undefined;
+    return masterBus.subscribe('ENTITLEMENTS_CHANGED', (event) => {
+      if (event.payload.userId !== user.id || event.payload.category !== 'vip') return;
+      void checkVIPStatus();
+    });
+  }, [checkVIPStatus, user?.id]);
 
   const checkFeature = useCallback(
     async (feature: VIPFeature): Promise<FeatureAccess> => {
@@ -170,8 +179,12 @@ export function useVIPStatus() {
     };
 
     check();
+    const unsubscribe = masterBus.subscribe('ENTITLEMENTS_CHANGED', (event) => {
+      if (event.payload.userId === user?.id && event.payload.category === 'vip') void check();
+    });
     return () => {
       mounted = false;
+      unsubscribe();
     };
   }, [user?.id]);
 

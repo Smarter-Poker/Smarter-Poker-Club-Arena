@@ -12,16 +12,27 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+// Records every `.update()` payload so the level actually written to
+// `tournaments.current_level` can be asserted, not just inferred.
+const { writes } = vi.hoisted(() => ({
+  writes: [] as { table: string; payload: Record<string, unknown> }[],
+}));
+
 // ─── Mock dependencies ────────────────────────────────────────────────────
 
 vi.mock('../../src/lib/supabase', () => {
-  const buildChain = (): any => {
+  const buildChain = (table: string): any => {
     const handler: ProxyHandler<any> = {
       get: (_target, prop) => {
         if (prop === 'maybeSingle' || prop === 'single')
           return () => Promise.resolve({ data: null, error: null });
         if (prop === 'then')
           return (resolve: (v: any) => void) => resolve({ data: null, error: null });
+        if (prop === 'update')
+          return (payload: Record<string, unknown>) => {
+            writes.push({ table, payload });
+            return new Proxy({}, handler);
+          };
         return vi.fn().mockReturnValue(new Proxy({}, handler));
       },
     };
@@ -29,7 +40,7 @@ vi.mock('../../src/lib/supabase', () => {
   };
   return {
     supabase: {
-      from: () => buildChain(),
+      from: (table: string) => buildChain(table),
       rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
     },
   };
@@ -48,15 +59,15 @@ vi.mock('../../src/core/MasterBus', () => ({
   },
 }));
 
+const { mockGetTournament, mockGetCurrentLevelState } = vi.hoisted(() => ({
+  mockGetTournament: vi.fn(),
+  mockGetCurrentLevelState: vi.fn(),
+}));
+
 vi.mock('../../src/services/TournamentService', () => ({
   tournamentService: {
-    getTournament: vi.fn().mockResolvedValue(null), // No tournament = stops timer
-    getCurrentLevelState: vi.fn().mockReturnValue({
-      levelIndex: 0,
-      currentLevel: { smallBlind: 25, bigBlind: 50, ante: 0 },
-      nextLevel: { smallBlind: 50, bigBlind: 100, ante: 10 },
-      timeRemainingSeconds: 600,
-    }),
+    getTournament: mockGetTournament,
+    getCurrentLevelState: mockGetCurrentLevelState,
   },
 }));
 
@@ -68,6 +79,15 @@ describe('TournamentTimerService', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    writes.length = 0;
+    // Default: no tournament, so a tick stops the timer without writing.
+    mockGetTournament.mockResolvedValue(null);
+    mockGetCurrentLevelState.mockReturnValue({
+      levelIndex: 0,
+      currentLevel: { smallBlind: 25, bigBlind: 50, ante: 0 },
+      nextLevel: { smallBlind: 50, bigBlind: 100, ante: 10 },
+      timeRemainingSeconds: 600,
+    });
   });
 
   afterEach(() => {
@@ -135,7 +155,12 @@ describe('TournamentTimerService', () => {
       expect(state).not.toBeNull();
       expect(state!.tournamentId).toBe('t1');
       expect(state!.isPaused).toBe(false);
-      expect(state!.currentLevel).toBe(0); // Not yet ticked
+      // UPDATED 2026-08-25 (was `toBe(0)`): `currentLevel` is a 0-BASED index
+      // now, so 0 is a real level - the opening one. A timer that starts at 0
+      // would treat the opening level as "already seen" and skip the first
+      // transition entirely (no blind write to the tables, no broadcast). The
+      // sentinel has to sit outside the value range.
+      expect(state!.currentLevel).toBe(-1); // Not yet ticked
     });
 
     it('should return null for unknown tournament', () => {
@@ -173,6 +198,44 @@ describe('TournamentTimerService', () => {
   // ─────────────────────────────────────────────────────────────────────────
   // STOP ALL TIMERS
   // ─────────────────────────────────────────────────────────────────────────
+
+  // ---------------------------------------------------------------------------
+  // WHAT REACHES `tournaments.current_level`
+  // ---------------------------------------------------------------------------
+  //
+  // The client no longer writes to `tournaments.current_level`.
+  // It is authoritative to the Hetzner engine.
+
+  describe('current_level is not written by the client', () => {
+    const runningTournament = {
+      id: 't-write',
+      status: 'RUNNING',
+      blind_structure: [],
+    };
+
+    const tickOnce = async (levelIndex: number) => {
+      mockGetTournament.mockResolvedValue(runningTournament as never);
+      mockGetCurrentLevelState.mockReturnValue({
+        levelIndex,
+        currentLevel: { smallBlind: 25, bigBlind: 50, ante: 0 },
+        nextLevel: { smallBlind: 50, bigBlind: 100, ante: 10 },
+        timeRemainingSeconds: 600,
+      });
+      tournamentTimerService.startTimer('t-write');
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(0);
+    };
+
+    const levelsWritten = () =>
+      writes
+        .filter((w) => w.table === 'tournaments' && 'current_level' in w.payload)
+        .map((w) => w.payload.current_level);
+
+    it('does not write the level index to the database', async () => {
+      await tickOnce(3);
+      expect(levelsWritten()).toEqual([]);
+    });
+  });
 
   describe('stopAllTimers', () => {
     it('should clean up all active timers', () => {

@@ -31,9 +31,21 @@ beforeEach(() => rpc.mockReset());
 
 describe('buyStreakFreeze', () => {
   it('reports success only when the RPC actually granted the freeze', async () => {
-    rpc.mockResolvedValue({ data: { success: true, freezesAvailable: 2 }, error: null });
-    await expect(dailyChallengeService.buyStreakFreeze(USER)).resolves.toEqual({ success: true });
-    expect(rpc).toHaveBeenCalledWith('buy_streak_freeze', { p_user_id: USER, p_cost: 5000 });
+    rpc.mockResolvedValue({
+      data: { success: true, freezesAvailable: 2, diamondBalance: 45000 },
+      error: null,
+    });
+    await expect(dailyChallengeService.buyStreakFreeze(USER)).resolves.toMatchObject({
+      success: true,
+      alreadyPurchased: false,
+      freezesAvailable: 2,
+      diamondBalance: 45000,
+    });
+    expect(rpc).toHaveBeenCalledWith('buy_streak_freeze', {
+      p_user_id: USER,
+      p_cost: 5000,
+      p_request_id: expect.any(String),
+    });
   });
 
   it('does NOT claim success when the RPC is missing — the original bug', async () => {
@@ -44,6 +56,23 @@ describe('buyStreakFreeze', () => {
     const out = await dailyChallengeService.buyStreakFreeze(USER);
     expect(out.success).toBe(false);
     expect(out.error).toBeTruthy();
+  });
+
+  it('reuses one request id across a transient retry', async () => {
+    rpc.mockRejectedValueOnce(new Error('network unavailable')).mockResolvedValueOnce({
+      data: {
+        success: true,
+        alreadyPurchased: true,
+        freezesAvailable: 2,
+        diamondBalance: 45000,
+      },
+      error: null,
+    });
+
+    const out = await dailyChallengeService.buyStreakFreeze(USER);
+    expect(out).toMatchObject({ success: true, alreadyPurchased: true });
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(rpc.mock.calls[0][1].p_request_id).toBe(rpc.mock.calls[1][1].p_request_id);
   });
 
   it('surfaces the cap refusal instead of swallowing it', async () => {

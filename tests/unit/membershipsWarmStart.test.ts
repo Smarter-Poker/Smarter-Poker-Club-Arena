@@ -23,12 +23,17 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 /** Counts how many times the membership query actually reaches "the network". */
 let selectCalls = 0;
 let failNext = false;
+let holdNext = false;
+let heldResolvers: Array<() => void> = [];
 
 vi.mock('@/lib/supabase', () => {
-  const result = () =>
-    failNext
-      ? Promise.reject(new Error('network down'))
-      : Promise.resolve({ data: [], error: null });
+  const result = () => {
+    if (failNext) return Promise.reject(new Error('network down'));
+    if (!holdNext) return Promise.resolve({ data: [], error: null });
+    return new Promise<{ data: never[]; error: null }>((resolve) => {
+      heldResolvers.push(() => resolve({ data: [], error: null }));
+    });
+  };
 
   const builder: any = {
     select: (..._a: unknown[]) => {
@@ -54,11 +59,15 @@ import {
   warmUserMemberships,
   clearMembershipsWarmCache,
 } from '@/services/ClubsService';
+import { clearUserCaches } from '@/utils/clearUserCaches';
 
 describe('membership warm start', () => {
   beforeEach(() => {
     selectCalls = 0;
     failNext = false;
+    holdNext = false;
+    heldResolvers = [];
+    vi.useRealTimers();
     clearMembershipsWarmCache();
   });
 
@@ -67,6 +76,21 @@ describe('membership warm start', () => {
     const b = getUserMemberships({ id: 'user-1' });
     await Promise.all([a, b]);
     expect(selectCalls, 'the lobby issued its own request instead of joining the warm one').toBe(1);
+  });
+
+  it('never duplicates a still-pending request after the five-second warm window', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-31T09:00:00Z'));
+    holdNext = true;
+    const first = getUserMemberships({ id: 'user-1' });
+
+    await vi.advanceTimersByTimeAsync(6_000);
+    holdNext = false;
+    const second = getUserMemberships({ id: 'user-1' });
+
+    expect(selectCalls, 'a slow in-flight request was duplicated after the TTL').toBe(1);
+    heldResolvers[0]?.();
+    await Promise.all([first, second]);
   });
 
   it('warmUserMemberships() is what the later caller joins', async () => {
@@ -81,19 +105,22 @@ describe('membership warm start', () => {
     expect(selectCalls, 'a different user reused the first user cached promise').toBe(2);
   });
 
-  it('does not memoise a failure', async () => {
+  it('does not memoise a failure after the bounded recovery window', async () => {
+    vi.useFakeTimers();
     failNext = true;
-    await expect(getUserMemberships({ id: 'user-1' })).rejects.toBeTruthy();
+    const exhausted = expect(getUserMemberships({ id: 'user-1' })).rejects.toBeTruthy();
+    await vi.advanceTimersByTimeAsync(7_500);
+    await exhausted;
     failNext = false;
     // Without the rejection cleanup this would return the failed promise again
     // for five seconds - a transient blip would look like a broken lobby.
     await expect(getUserMemberships({ id: 'user-1' })).resolves.toEqual([]);
-    expect(selectCalls).toBe(2);
+    expect(selectCalls).toBe(6);
   });
 
   it('is dropped on sign-out', async () => {
     await getUserMemberships({ id: 'user-1' });
-    clearMembershipsWarmCache(); // what clearUserCaches() calls
+    clearUserCaches();
     await getUserMemberships({ id: 'user-1' });
     expect(selectCalls, 'the warm window survived sign-out').toBe(2);
   });

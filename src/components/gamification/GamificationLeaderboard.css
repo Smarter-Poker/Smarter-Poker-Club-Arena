@@ -67,11 +67,6 @@
   transition: transform 0.2s;
 }
 
-.gl-item:hover {
-  background: rgba(255, 255, 255, 0.04);
-  transform: translateX(4px);
-}
-
 .gl-rank {
   width: 24px;
   text-align: center;

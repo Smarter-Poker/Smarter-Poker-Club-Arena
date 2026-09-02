@@ -96,6 +96,8 @@ export interface ThrowEvent {
 export interface ThrowAllowance {
   isVip: boolean;
   freeThrowsRemaining: number;
+  /** Club-shop pack credits consumed before a diamond is charged. */
+  packThrowsRemaining: number;
   diamondCost: number; // 0 if free throws available, otherwise 1
 }
 
@@ -872,17 +874,31 @@ class ThrowableServiceClass {
    */
   async getThrowAllowance(userId: string): Promise<ThrowAllowance> {
     try {
-      // Check if user has VIP
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('is_vip')
-        .eq('id', userId)
-        .maybeSingle();
+      const [profileResult, packResult] = await Promise.all([
+        supabase.from('profiles').select('is_vip').eq('id', userId).maybeSingle(),
+        supabase
+          .from('feature_purchases')
+          .select('uses_remaining, expires_at')
+          .eq('user_id', userId)
+          .eq('feature', 'throwable'),
+      ]);
+      if (profileResult.error) throw profileResult.error;
+      if (packResult.error) throw packResult.error;
 
-      const isVip = profile?.is_vip || false;
+      const now = Date.now();
+      const packThrowsRemaining = (packResult.data || [])
+        .filter((row) => !row.expires_at || Date.parse(row.expires_at) > now)
+        .reduce((sum, row) => sum + Math.max(0, Number(row.uses_remaining) || 0), 0);
+
+      const isVip = profileResult.data?.is_vip || false;
 
       if (!isVip) {
-        return { isVip: false, freeThrowsRemaining: 0, diamondCost: DIAMOND_COST_PER_THROW };
+        return {
+          isVip: false,
+          freeThrowsRemaining: 0,
+          packThrowsRemaining,
+          diamondCost: packThrowsRemaining > 0 ? 0 : DIAMOND_COST_PER_THROW,
+        };
       }
 
       // Get this month's usage for VIP
@@ -902,11 +918,17 @@ class ThrowableServiceClass {
       return {
         isVip: true,
         freeThrowsRemaining: remaining,
-        diamondCost: remaining > 0 ? 0 : DIAMOND_COST_PER_THROW,
+        packThrowsRemaining,
+        diamondCost: remaining > 0 || packThrowsRemaining > 0 ? 0 : DIAMOND_COST_PER_THROW,
       };
     } catch (err) {
       reportError(err, 'ThrowableService.Error');
-      return { isVip: false, freeThrowsRemaining: 0, diamondCost: DIAMOND_COST_PER_THROW };
+      return {
+        isVip: false,
+        freeThrowsRemaining: 0,
+        packThrowsRemaining: 0,
+        diamondCost: DIAMOND_COST_PER_THROW,
+      };
     }
   }
 

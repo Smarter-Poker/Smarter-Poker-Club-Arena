@@ -70,7 +70,7 @@
   --shadow-glow-blue: 0 0 20px rgba(37, 99, 235, 0.4);
   --shadow-glow-gold: 0 0 20px rgba(255, 215, 0, 0.4);
   --shadow-glow-red: 0 0 20px rgba(239, 68, 68, 0.4);
-  --shadow-glow-green: 0 0 20px rgba(34, 197, 94, 0.4);
+  --shadow-glow-green: 0 0 20px rgba(63, 185, 80, 0.4);
   --shadow-glow-purple: 0 0 20px rgba(124, 58, 237, 0.4);
   --shadow-inset: inset 0 2px 4px rgba(0, 0, 0, 0.3);
 
@@ -108,9 +108,11 @@
   --border-strong: rgba(255, 255, 255, 0.25);
 
   /* ─── Table Theme Colors — Green (Default) ─── */
+  /* --felt-gradient and --rail-gradient were removed here and in every
+     [data-theme] block on 2026-08-25: 14 declarations in this file, 23 more in
+     TablePage.css, and not one `var()` anywhere read either of them. The felt
+     is an image (resolveSkin) and the rail is part of that image. */
   --felt-color: #0f5132;
-  --felt-gradient: radial-gradient(ellipse at 50% 50%, #1a7a4a 0%, #0f5132 60%, #0a3d24 100%);
-  --rail-gradient: linear-gradient(180deg, #4a3728 0%, #2c1d12 50%, #1a0f08 100%);
   --rail-highlight: rgba(255, 255, 255, 0.08);
   --rail-shadow: rgba(0, 0, 0, 0.5);
   --table-border: 4px solid #2c1d12;
@@ -119,12 +121,12 @@
   --color-fold: #dc2626;
   --color-fold-dark: #991b1b;
   --color-fold-glow: rgba(239, 68, 68, 0.3);
-  --color-check: #16a34a;
-  --color-check-dark: #15803d;
-  --color-check-glow: rgba(34, 197, 94, 0.3);
-  --color-call: #16a34a;
-  --color-call-dark: #15803d;
-  --color-call-glow: rgba(34, 197, 94, 0.3);
+  --color-check: #3fb950;
+  --color-check-dark: #2ea043;
+  --color-check-glow: rgba(63, 185, 80, 0.3);
+  --color-call: #3fb950;
+  --color-call-dark: #2ea043;
+  --color-call-glow: rgba(63, 185, 80, 0.3);
   --color-raise: #f59e0b;
   --color-raise-dark: #d97706;
   --color-raise-glow: rgba(245, 158, 11, 0.3);
@@ -133,26 +135,38 @@
   --color-allin-glow: rgba(124, 58, 237, 0.4);
 
   /* ─── Status Colors ─── */
-  --color-success: #22c55e;
+  --color-success: #3fb950;
   --color-warning: #f59e0b;
   --color-danger: #ef4444;
   --color-info: #3b82f6;
 
   /* ─── Stack Color Thresholds ─── */
   --stack-healthy: #f3f4f6; /* ≥100 BB — white */
-  --stack-normal: #22c55e; /* 50-99 BB — green */
+  --stack-normal: #3fb950; /* 50-99 BB — house green */
   --stack-warning: #f59e0b; /* 20-49 BB — amber */
   --stack-danger: #f97316; /* 10-19 BB — orange */
   --stack-critical: #ef4444; /* <10 BB — red */
 
-  /* ─── Timer Colors (PokerBros-style arc) ─── */
+  /* ─── Timer Colors — DEAD, AND DELIBERATELY DEFUSED (2026-08-26) ───
+     Nothing consumes any of these: `var(--timer-…)` appears nowhere in src/.
+     The action arc is driven by `spTimerColorShift` in SeatSlot.css, which is a
+     constant neon blue by Dan's instruction (2026-08-25, item 6): "it should
+     just show the existing frame of the chip box frame, with the neon blue
+     running out, NOT the red behind it."
+
+     They are left in place rather than deleted because other agents ship into
+     this file concurrently and a vanished token is a merge conflict waiting to
+     happen — but the two red ones now RESOLVE TO THE NEON BLUE. A dead token
+     holding #ef4444 next to a rule that says "no red on the timer" is a loaded
+     gun: the next person to reach for a plausible-looking name reintroduces the
+     exact thing that was reported. Reaching for them now is harmless. */
   --timer-color: #ffd700;
   --timer-glow: rgba(255, 215, 0, 0.6);
   --timer-safe: #22c55e;
   --timer-caution: #eab308;
   --timer-warning: #f97316;
-  --timer-urgent: #ef4444;
-  --timer-urgent-glow: rgba(239, 68, 68, 0.6);
+  --timer-urgent: #00e5ff;
+  --timer-urgent-glow: rgba(0, 229, 255, 0.6);
 
   /* ─── Table Layout (from UI Overhaul spec) ─── */
   --header-height: 44px;
@@ -180,6 +194,9 @@
   /* ─── Seat Info Box ─── */
   --seat-bg: rgba(15, 20, 35, 0.92);
   --seat-border: rgba(255, 255, 255, 0.08);
+  /* Seat plate text is ALWAYS light-on-dark: it must not follow the interface
+     theme's --text-primary (which goes dark in light mode). */
+  --seat-text: #f3f4f6;
   --seat-active-border: var(--timer-color);
   --seat-allin-border: var(--color-danger);
   /* Dan 2026-08-15: all table avatars 50% larger (was 56px).
@@ -231,16 +248,9 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
    THEME: Blue (Ocean / Deep Sea)
    ═══════════════════════════════════════════════════════════════════════════════ */
-[data-theme='blue'] {
+[data-theme='blue'],
+[data-color-theme='blue'] {
   --felt-color: #1e3a5f;
-  --felt-gradient: radial-gradient(
-    ellipse at 50% 45%,
-    #2a5a8f 0%,
-    #1e3a5f 45%,
-    #152a47 75%,
-    #0d1b2e 100%
-  );
-  --rail-gradient: linear-gradient(180deg, #4a5568 0%, #2d3748 30%, #1a202c 70%, #0f1218 100%);
   --rail-highlight: rgba(100, 160, 255, 0.06);
   --table-border: 4px solid #2d3748;
   --timer-color: #60a5fa;
@@ -257,16 +267,9 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
    THEME: Red (ClubGG / Casino Red)
    ═══════════════════════════════════════════════════════════════════════════════ */
-[data-theme='red'] {
+[data-theme='red'],
+[data-color-theme='red'] {
   --felt-color: #7f1d1d;
-  --felt-gradient: radial-gradient(
-    ellipse at 50% 45%,
-    #a83232 0%,
-    #7f1d1d 45%,
-    #581818 75%,
-    #3b0f0f 100%
-  );
-  --rail-gradient: linear-gradient(180deg, #6b3a1a 0%, #451a03 30%, #2c0d00 70%, #1a0800 100%);
   --rail-highlight: rgba(255, 120, 80, 0.06);
   --table-border: 4px solid #451a03;
   --seat-bg: rgba(59, 15, 15, 0.93);
@@ -283,16 +286,9 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
    THEME: Purple (Twilight / VIP Lounge)
    ═══════════════════════════════════════════════════════════════════════════════ */
-[data-theme='purple'] {
+[data-theme='purple'],
+[data-color-theme='purple'] {
   --felt-color: #4c1d95;
-  --felt-gradient: radial-gradient(
-    ellipse at 50% 45%,
-    #6d3abf 0%,
-    #4c1d95 45%,
-    #3b0f80 75%,
-    #2a0a5e 100%
-  );
-  --rail-gradient: linear-gradient(180deg, #4a3560 0%, #2e1f45 30%, #1a1030 70%, #0d0818 100%);
   --rail-highlight: rgba(167, 139, 250, 0.06);
   --table-border: 4px solid #2e1f45;
   --timer-color: #a78bfa;
@@ -309,16 +305,9 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
    THEME: Black (Stealth / Midnight)
    ═══════════════════════════════════════════════════════════════════════════════ */
-[data-theme='black'] {
+[data-theme='black'],
+[data-color-theme='black'] {
   --felt-color: #18181b;
-  --felt-gradient: radial-gradient(
-    ellipse at 50% 45%,
-    #2c2c30 0%,
-    #18181b 45%,
-    #0e0e10 75%,
-    #050506 100%
-  );
-  --rail-gradient: linear-gradient(180deg, #3f3f46 0%, #27272a 30%, #18181b 70%, #09090b 100%);
   --rail-highlight: rgba(255, 255, 255, 0.03);
   --table-border: 4px solid #27272a;
   --seat-bg: rgba(10, 10, 14, 0.95);
@@ -334,16 +323,9 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
    THEME: Gold (VIP / High Roller)
    ═══════════════════════════════════════════════════════════════════════════════ */
-[data-theme='gold'] {
+[data-theme='gold'],
+[data-color-theme='gold'] {
   --felt-color: #1c1a0e;
-  --felt-gradient: radial-gradient(
-    ellipse at 50% 45%,
-    #3d3518 0%,
-    #1c1a0e 45%,
-    #14120a 75%,
-    #0a0906 100%
-  );
-  --rail-gradient: linear-gradient(180deg, #b8940e 0%, #92700a 30%, #5c4512 70%, #3a2c0e 100%);
   --rail-highlight: rgba(255, 215, 0, 0.1);
   --table-border: 4px solid #7a5c14;
   --timer-color: #fbbf24;
@@ -360,7 +342,8 @@
 /* ═══════════════════════════════════════════════════════════════════════════════
    THEME: Light Mode (Day Table)
    ═══════════════════════════════════════════════════════════════════════════════ */
-[data-theme='light'] {
+[data-theme='light'],
+[data-color-theme='light'] {
   --bg-primary: #f0f4f0;
   --bg-secondary: #e8ede8;
   --bg-surface: #ffffff;
@@ -374,20 +357,16 @@
   --border-default: rgba(0, 0, 0, 0.08);
   --border-active: rgba(0, 0, 0, 0.15);
   --border-strong: rgba(0, 0, 0, 0.25);
-  --felt-color: #1a7a4a;
-  --felt-gradient: radial-gradient(
-    ellipse at 50% 45%,
-    #28a060 0%,
-    #1a7a4a 45%,
-    #0f5132 75%,
-    #0a3d24 100%
-  );
-  --rail-gradient: linear-gradient(180deg, #a07830 0%, #8b6914 30%, #5c4512 70%, #3a2c0e 100%);
-  --rail-highlight: rgba(255, 255, 255, 0.12);
-  --seat-bg: rgba(255, 255, 255, 0.94);
-  --seat-border: rgba(0, 0, 0, 0.1);
-  --timer-color: #d97706;
-  --timer-glow: rgba(217, 119, 6, 0.5);
+  /* TABLE TOKENS DO NOT BELONG HERE (Dan 2026-08-30, binding).
+     `data-theme` on <html> is the INTERFACE mode (dark/light chrome for the
+     lobby and menus), but the same attribute namespace also carries the table
+     color themes above. When this block declared the seat-plate, felt and
+     timer tokens it turned every seat plate on a live table WHITE the moment
+     the interface was in light mode, while the image-based felt stayed dark:
+     dark table, white "action boxes" on every player. The game
+     table always keeps its dark plates regardless of interface mode, so the
+     light theme may only restyle chrome tokens. Enforced by
+     tests/seat-plates-stay-dark.law.test.ts — do not re-add table tokens. */
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.1);
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.15);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.15);

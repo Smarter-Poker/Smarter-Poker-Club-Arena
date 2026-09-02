@@ -8,10 +8,8 @@
  * to automatically increment achievement progress.
  */
 
-import { supabase, getAuthUser } from '../lib/supabase';
-import { achievementService, ACHIEVEMENTS, type Achievement } from './AchievementService';
-import { pushNotificationService } from './PushNotificationService';
-import { dailyChallengeService, handRankScore } from './DailyChallengeService';
+import { supabase } from '../lib/supabase';
+import { achievementService, type Achievement } from './AchievementService';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
 
@@ -38,53 +36,13 @@ interface TriggerResult {
  * challenge complete" alone gives the player nothing to act on, and an unclaimed
  * reward they never hear about is the same as no reward at all.
  */
-function notifyChallengesCompleted(
-  completed: Array<{ name: string; chipReward: number; diamondReward: number }>
-): void {
-  if (!completed || completed.length === 0) return;
-  try {
-    if (completed.length === 1) {
-      const c = completed[0];
-      const parts: string[] = [];
-      if (c.diamondReward > 0) parts.push(`${c.diamondReward.toLocaleString()} diamonds`);
-      if (c.chipReward > 0) parts.push(`${c.chipReward.toLocaleString()} chips`);
-      masterBus.emit('SHOW_TOAST', {
-        message: parts.length
-          ? `Challenge complete: ${c.name} - ${parts.join(' and ')} ready to claim`
-          : `Challenge complete: ${c.name}`,
-        severity: 'info',
-        source: 'daily_challenge',
-        durationMs: 6000,
-      });
-      return;
-    }
-    // Several at once (common on the hand that finishes a daily and its weekly
-    // parent). One line beats a stack of toasts covering the table.
-    const diamonds = completed.reduce((s, c) => s + (c.diamondReward || 0), 0);
-    const chips = completed.reduce((s, c) => s + (c.chipReward || 0), 0);
-    const parts: string[] = [];
-    if (diamonds > 0) parts.push(`${diamonds.toLocaleString()} diamonds`);
-    if (chips > 0) parts.push(`${chips.toLocaleString()} chips`);
-    masterBus.emit('SHOW_TOAST', {
-      message: parts.length
-        ? `${completed.length} challenges complete - ${parts.join(' and ')} ready to claim`
-        : `${completed.length} challenges complete`,
-      severity: 'info',
-      source: 'daily_challenge',
-      durationMs: 6000,
-    });
-  } catch {
-    // A missed toast must never break a hand from settling.
-  }
-}
-
 // ════════════════════════════════════════════════════════════════════════════════════
 // SERVICE
 // ════════════════════════════════════════════════════════════════════════════════════
 class AchievementTriggerServiceClass {
   /**
    * Process a completed hand and check for achievements
-   * Called by HandPersistenceService or HandController after HAND_COMPLETE
+   * Called after HAND_COMPLETE (HandPersistenceService was deleted 2026-08-29; the engine owns hand persistence)
    */
   async onHandComplete(
     userId: string,
@@ -169,78 +127,33 @@ class AchievementTriggerServiceClass {
         icon: ach.icon,
         ...(ach.chipReward ? { reward: { chips: ach.chipReward } } : {}),
       });
-      pushNotificationService
-        .notifyAchievement(userId, ach.name)
-        .catch((err) => reportError(err, 'AchievementTriggerService.Push_notification_failed'));
+      /* THE PUSH IS RAISED SERVER-SIDE NOW (2026-08-30, issue #1498).
+       *
+       * This called pushNotificationService.notifyAchievement, which has
+       * delivered nothing since 2026-08-19, when OneSignal was removed from
+       * the platform. Issue #1498 lists EIGHT such flows; this is a NINTH it
+       * missed, because the call was split across lines and every
+       * `pushNotificationService\.(...)` grep used to build that list walked
+       * straight past it.
+       *
+       * It cannot simply be repointed at a working transport from here. The
+       * browser has no write access to `notifications` or `push_outbox` (RLS,
+       * service_role only), and granting it one would be the
+       * arbitrary-recipient spam vector World Hub closed on 2026-07-25.
+       *
+       * `trg_notify_achievement_unlocked` now fires on the NULL to non-NULL
+       * transition of `training_user_achievements.unlocked_at` — the trusted
+       * context that already performs the action. It covers every writer of
+       * that table rather than this one call site, so the next path that
+       * unlocks something cannot forget it, and push-dispatch applies the
+       * consent gate to what it enqueues. Nothing is needed here.
+       */
     }
 
-    // 6. Update Daily Challenge progress (fire-and-forget, non-blocking)
-    try {
-      // ONE round trip for all three counters. This used to be up to three
-      // parallel updateProgress() calls, each doing its own select plus an RPC
-      // per matching row -- roughly 3 selects and 8 RPCs per player per hand at
-      // table speed. bump_challenge_progress does it in a single statement and
-      // returns only the challenges that just crossed into completion.
-      // Everything below is derived from the payload this callback already
-      // receives -- { won, potSize, handRank, showdown } -- so richer, more
-      // specific challenges needed no new engine plumbing, only counters that
-      // stopped throwing the detail away.
-      const won = handData.won === true;
-      const pot = Math.max(0, Math.floor(Number(handData.potSize) || 0));
-      const rank = handRankScore(handData.handRank);
+    // Daily Missions progress is recorded by the authoritative game server
+    // after hand-history persistence; the browser never writes economy state.
 
-      const { advanced, completed } = await dailyChallengeService.bumpProgress(
-        userId,
-        {
-          hands_played: 1,
-          ...(won ? { hands_won: 1 } : {}),
-          ...(handData.showdown ? { showdowns: 1 } : {}),
-          // Winning AT showdown and winning WITHOUT one are different skills,
-          // and a challenge set that cannot tell them apart cannot ask for
-          // either. They are mutually exclusive by construction.
-          ...(won && handData.showdown ? { showdowns_won: 1 } : {}),
-          ...(won && !handData.showdown ? { hands_won_no_showdown: 1 } : {}),
-          // A big pot counts only if it was actually WON. Sitting in a large
-          // pot you lost is not an achievement.
-          ...(won && pot > 0 ? { big_pots: 1 } : {}),
-          // Likewise hand strength: the catalog asks players to WIN with a
-          // flush or better, not merely to table one and lose.
-          ...(won && rank > 0 ? { strong_hands: 1 } : {}),
-          // Cumulative, so the amount is the chips themselves, not a count.
-          ...(won && pot > 0 ? { chips_won: pot } : {}),
-        },
-        {
-          // Magnitudes. The server compares each against the row's own
-          // threshold, so one hand can advance "500 Or More" while leaving
-          // "5,000 Or More" untouched.
-          big_pots: won ? pot : 0,
-          strong_hands: won ? rank : 0,
-        }
-      );
-
-      // Fire on ANY movement, not just completion. This previously only emitted
-      // when a challenge finished, so a challenges tab left open beside the
-      // table sat frozen for a whole session -- which reads as "this feature is
-      // broken", not as "you are three hands away".
-      if (advanced.length > 0) {
-        masterBus.emit('CHALLENGE_PROGRESS_UPDATED', {
-          userId,
-          source: 'hand_complete',
-          // Distinct per hand so the 500ms bus dedup cannot swallow a real tick.
-          at: Date.now(),
-        });
-      }
-
-      // Tell the player, wherever they are. Finishing a challenge used to be
-      // completely silent unless they happened to have /challenges open: the
-      // reward landed in a list they had no reason to visit. A daily loop that
-      // never announces its own payoff does not loop.
-      notifyChallengesCompleted(completed);
-    } catch (dcErr) {
-      console.debug('[AchievementTrigger] Daily challenge progress update failed:', dcErr);
-    }
-
-    // 7. Bump any active 'hand_grinder' friend challenges (most hands wins).
+    // 6. Bump any active 'hand_grinder' friend challenges (most hands wins).
     supabase
       .rpc('fn_bump_friend_challenge_progress', { p_challenge_type: 'hand_grinder', p_amount: 1 })
       .then(({ error }) => {
@@ -286,21 +199,6 @@ class AchievementTriggerServiceClass {
       }
     }
 
-    // Update Daily Challenge progress for tournaments
-    try {
-      const dcResult = await dailyChallengeService.updateProgress(userId, 'tournaments_played', 1);
-      if (dcResult.completed.length > 0) {
-        masterBus.emit('CHALLENGE_PROGRESS_UPDATED', {
-          userId,
-          source: 'tournament_complete',
-          at: Date.now(),
-        });
-        notifyChallengesCompleted(dcResult.completed.map((c) => c.challenge));
-      }
-    } catch (dcErr) {
-      console.debug('[AchievementTrigger] Daily challenge tournament progress failed:', dcErr);
-    }
-
     return result;
   }
 
@@ -330,24 +228,87 @@ class AchievementTriggerServiceClass {
   /**
    * Process login (for login streak achievements)
    */
+  /**
+   * ─────────────────────────────────────────────────────────────────────────
+   * LOGIN STREAKS — once a DAY, not once a PAGE LOAD
+   * ─────────────────────────────────────────────────────────────────────────
+   * This used to loop three streak ids and call `incrementProgress` on each,
+   * serially, EVERY time Supabase raised an auth event. Supabase raises one
+   * on INITIAL_SESSION, on SIGNED_IN and on TOKEN_REFRESHED, so a player
+   * reloading the page advanced "Log in 7 days in a row" seven times in an
+   * afternoon and collected its reward. `streak_30` pays 100 chips and
+   * `streak_100` pays 500, through `add_to_promo_wallet`. Production showed
+   * the tell plainly: 3 of 5 `streak_7` unlocks and 1 of 2 `streak_30`
+   * unlocks carried `unlocked_at` on the SAME DAY the row was created, which
+   * a consecutive-day achievement cannot legitimately do.
+   *
+   * The streak is now a real streak, computed once per UTC day from columns
+   * that already existed and that nothing had ever maintained:
+   *
+   *   profiles.last_login_date  the day we last counted   (all 1,023 stale)
+   *   profiles.login_streak     the run length            (0 on all 1,023)
+   *
+   * Same day  -> nothing happens at all, and that is the whole fix: one
+   *              SELECT and no writes, however many times the page reloads.
+   * Yesterday -> the run continues, streak + 1.
+   * Older     -> the run is broken, back to 1.
+   *
+   * The three achievements are then SET to the real streak rather than
+   * incremented, so they say what their description says. They are written in
+   * parallel — three independent rows, no ordering between them — where the
+   * old loop awaited each in turn.
+   */
   async onLogin(userId: string): Promise<TriggerResult> {
-    const result: TriggerResult = {
-      triggeredAchievements: [],
-      chipsAwarded: 0,
-    };
+    const result: TriggerResult = { triggeredAchievements: [], chipsAwarded: 0 };
 
-    // Login streak achievements
+    const today = new Date().toISOString().slice(0, 10); // UTC calendar day
+
+    const { data: profile, error: readErr } = await supabase
+      .from('profiles')
+      .select('login_streak, last_login_date')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (readErr) {
+      reportError(readErr, 'AchievementTriggerService.onLogin.read');
+      return result;
+    }
+
+    // Already counted today. Nothing to write, nothing to award.
+    if (profile?.last_login_date === today) return result;
+
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    const continuing = profile?.last_login_date === yesterday;
+    const streak = continuing ? Number(profile?.login_streak || 0) + 1 : 1;
+
+    // Claim the day FIRST. If the achievement writes below fail, the worst
+    // outcome is a streak that did not advance — not a day counted twice.
+    const { error: writeErr } = await supabase
+      .from('profiles')
+      .update({ login_streak: streak, last_login_date: today })
+      .eq('id', userId);
+
+    if (writeErr) {
+      reportError(writeErr, 'AchievementTriggerService.onLogin.claimDay');
+      return result;
+    }
+
     const streakIds = ['streak_7', 'streak_30', 'streak_100'];
-    for (const streakId of streakIds) {
-      try {
-        const streakResult = await achievementService.incrementProgress(userId, streakId);
-        if (streakResult.unlocked && streakResult.achievement) {
-          result.triggeredAchievements.push(streakResult.achievement);
-          result.chipsAwarded += streakResult.achievement.chipReward || 0;
+    const outcomes = await Promise.all(
+      streakIds.map(async (id) => {
+        try {
+          return await achievementService.incrementProgressTo(userId, id, streak);
+        } catch (e) {
+          reportError(e, 'AchievementTriggerService.onLogin');
+          return { unlocked: false } as { unlocked: boolean; achievement?: Achievement };
         }
-      } catch (e) {
-        reportError(e, 'AchievementTriggerService.onLogin');
-        // Achievement not found or already unlocked — skip
+      })
+    );
+
+    for (const outcome of outcomes) {
+      if (outcome.unlocked && outcome.achievement) {
+        result.triggeredAchievements.push(outcome.achievement);
+        result.chipsAwarded += outcome.achievement.chipReward || 0;
       }
     }
 
@@ -367,11 +328,25 @@ class AchievementTriggerServiceClass {
     // NOTE: player_stats has no total_wins column (win count is not tracked) and
     // friends_count lives on `profiles`, not here. tournament_wins is aliased from
     // the real column tournaments_won. Absent stats default to 0.
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('player_stats')
       .select('hands_played, tournaments_played, tournament_wins:tournaments_won')
       .eq('user_id', userId)
       .maybeSingle();
+
+    /**
+     * A FAILED READ IS NOT A PLAYER WITH NO HISTORY (2026-08-29).
+     *
+     * Only `data` was destructured, and every field below coalesces to 0. So a
+     * refused or failed read returned the profile of somebody who has never
+     * played a hand — which is the input the achievement checks then reason
+     * from. "First hand" and "first tournament" milestones are exactly the ones
+     * that go off on that reading, and some of them pay chips.
+     *
+     * The reads stay non-fatal — a stats hiccup must not break a hand — but the
+     * failure is now visible instead of being laundered into a zero.
+     */
+    if (error) reportError(error, 'AchievementTriggerService.getUserStats');
 
     return {
       handsPlayed: data?.hands_played || 0,
@@ -446,42 +421,3 @@ class AchievementTriggerServiceClass {
 
 export const achievementTriggerService = new AchievementTriggerServiceClass();
 export default achievementTriggerService;
-
-// ════════════════════════════════════════════════════════════════════════════════════
-// AUTO-WIRE: tournaments_played challenge trigger via bus event
-//
-// onTournamentComplete() — the only thing that increments 'tournaments_played'
-// — had ZERO production call sites (only tests referenced it). Every tournament
-// challenge was therefore unwinnable: tourney_1, tourney_2, tourney_3,
-// weekly_tourneys_10 and monthly_tourneys_50 could be assigned, shown with a
-// progress bar, and never move. With 5 daily challenges drawn from a pool that
-// guarantees one per activity type, a tournament challenge appears EVERY day.
-//
-// TOURNAMENT_REGISTERED is the correct signal: the challenge copy is "Play N
-// tournaments today", which is entering, not finishing. It also fires once per
-// entrant with the userId in the payload, so it works for every player rather
-// than only the one whose client happens to run the completion path.
-// ════════════════════════════════════════════════════════════════════════════════════
-masterBus.subscribe('TOURNAMENT_REGISTERED', async (payload: any) => {
-  try {
-    let userId: string | undefined = payload?.userId;
-    if (!userId) {
-      const {
-        data: { user },
-      } = await getAuthUser();
-      userId = user?.id;
-    }
-    if (!userId) return;
-    const res = await dailyChallengeService.updateProgress(userId, 'tournaments_played', 1);
-    if (res.completed.length > 0) {
-      masterBus.emit('CHALLENGE_PROGRESS_UPDATED', {
-        userId,
-        source: 'tournament_registered',
-        at: Date.now(),
-      });
-      notifyChallengesCompleted(res.completed.map((c) => c.challenge));
-    }
-  } catch (err) {
-    console.debug('[AchievementTrigger] Tournament challenge update failed:', err);
-  }
-});

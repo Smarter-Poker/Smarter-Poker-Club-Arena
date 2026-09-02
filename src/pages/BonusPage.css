@@ -9,7 +9,15 @@
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
-  padding-bottom: 2rem;
+  width: 100%;
+  max-width: 100vw;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
+  padding-bottom: max(70px, env(safe-area-inset-bottom));
 }
 
 .bonus-section {
@@ -110,12 +118,6 @@
 .claim-btn {
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.claim-btn:hover:not(:disabled) {
-  box-shadow: 0 0 30px rgba(0, 212, 255, 0.6);
-  transform: translateY(-2px);
-}
-
 .claim-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -144,15 +146,6 @@
   border-left: 4px solid #f59e0b;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.special-card:hover {
-  border-color: #3a4a5a;
-  border-left-color: #f59e0b;
-  transform: translateY(-2px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 8px 24px rgba(245, 158, 11, 0.15);
 }
 
 .special-card.claimed {
@@ -206,12 +199,6 @@
 .btn-sm {
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.btn-sm:hover {
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.4);
-  transform: translateY(-2px);
-}
-
 .loading-state {
   display: flex;
   justify-content: center;
@@ -222,6 +209,14 @@
    RESPONSIVE
    ───────────────────────────────────────────────────────────────────────────── */
 
+@media (max-width: 768px) {
+  .btn-sm,
+  .claim-btn {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+}
+
 @media (max-width: 640px) {
   .bonus-grid {
     grid-template-columns: 1fr;
@@ -229,13 +224,14 @@
 
   .bonus-page {
     padding: 0.75rem;
+    padding-bottom: max(70px, env(safe-area-inset-bottom));
   }
 }
 
 /* ═══════ PHONE ═══════ */
 @media (max-width: 480px) {
   .bonus-page {
-    padding-bottom: 1rem;
+    padding-bottom: max(70px, env(safe-area-inset-bottom));
   }
 
   .bonus-section {

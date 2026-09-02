@@ -39,16 +39,15 @@ export const SpectatorBadge: React.FC<SpectatorBadgeProps> = ({ observers, class
           backdropFilter: 'blur(8px)',
           animation: 'spectatorFloating 3s ease-in-out infinite',
         }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.85)';
-          e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.4)';
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-          e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
-        }}
       >
-        <span style={{ fontSize: '14px' }}></span>
+        {/* Audit 2026-08-25: this span was EMPTY — the leftover shell of an
+            emoji that a no-emoji pass stripped without removing its wrapper, so
+            the badge rendered a 14px gap before its own label. Filled with the
+            same ring glyph SpectatorOverlay uses for the identical badge, which
+            is a plain Unicode text symbol, not an emoji. */}
+        <span style={{ fontSize: '14px' }} aria-hidden="true">
+          ◉
+        </span>
         <span>{count} Watching</span>
       </button>
 

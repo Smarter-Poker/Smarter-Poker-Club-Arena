@@ -1,38 +1,83 @@
 /**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  UNIT TESTS — useAuthUser
- * ═══════════════════════════════════════════════════════════════════════════════
+ * useAuthUser owns the session-to-Zustand handoff used by guarded pages.
+ * A successful setUser() synchronously rerenders the hook, so these tests use
+ * the real store — a passive mock cannot reproduce that lifecycle.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const authMocks = vi.hoisted(() => ({ getSession: vi.fn() }));
 
 vi.mock('../../src/lib/supabase', () => ({
   supabase: {
     auth: {
-      getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }),
-      onAuthStateChange: vi.fn(() => ({
-        data: { subscription: { unsubscribe: vi.fn() } },
-      })),
+      getSession: authMocks.getSession,
     },
   },
 }));
 
-import { renderHook } from '@testing-library/react';
 import { useAuthUser } from '../../src/hooks/useAuthUser';
+import { useUserStore } from '../../src/stores/useUserStore';
 
 describe('useAuthUser', () => {
-  it('should be a function', () => {
-    expect(typeof useAuthUser).toBe('function');
+  beforeEach(() => {
+    authMocks.getSession.mockReset();
+    authMocks.getSession.mockResolvedValue({ data: { session: null } });
+    useUserStore.setState({
+      user: null,
+      isAuthenticated: false,
+      isLoading: false,
+      loadProfile: vi.fn().mockResolvedValue(null),
+    });
   });
 
-  it('should return user state', () => {
+  it('returns an existing user without hydrating again', () => {
+    useUserStore.getState().setUser({ id: 'user-1', username: 'player' });
     const { result } = renderHook(() => useAuthUser());
-    expect(result.current).toBeDefined();
+
+    expect(result.current.user?.id).toBe('user-1');
+    expect(result.current.isHydrating).toBe(false);
+    expect(authMocks.getSession).not.toHaveBeenCalled();
   });
 
-  it('should return loading state', () => {
+  it('clears hydration after an anonymous session check', async () => {
     const { result } = renderHook(() => useAuthUser());
-    // Should return an object or tuple with user/loading properties
-    const val = result.current;
-    expect(val).toBeDefined();
+
+    await waitFor(() => expect(result.current.isHydrating).toBe(false));
+    expect(authMocks.getSession).toHaveBeenCalledOnce();
+    expect(result.current.user).toBeNull();
+  });
+
+  it('clears hydration after restoring a valid session', async () => {
+    let resolveSession!: (value: unknown) => void;
+    authMocks.getSession.mockReturnValue(
+      new Promise((resolve) => {
+        resolveSession = resolve;
+      })
+    );
+
+    const { result } = renderHook(() => useAuthUser());
+    await waitFor(() => expect(result.current.isHydrating).toBe(true));
+
+    await act(async () => {
+      resolveSession({
+        data: {
+          session: {
+            user: {
+              id: 'restored-user',
+              email: 'restored@example.com',
+              user_metadata: { display_name: 'Restored Player' },
+            },
+          },
+        },
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.user?.id).toBe('restored-user');
+      expect(result.current.isHydrating).toBe(false);
+    });
+    expect(result.current.user?.display_name).toBe('Restored Player');
   });
 });

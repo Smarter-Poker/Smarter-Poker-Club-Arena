@@ -26,14 +26,39 @@ const ACTIVE_STATUSES = ['active', 'approved'] as const;
  * @returns The count of active members (0 if error or empty)
  */
 export async function getActiveMemberCount(clubId: string): Promise<number> {
+  /*
+   * A DIRECT club_members COUNT ANSWERS THE WRONG QUESTION.
+   *
+   * club_members carries four permissive SELECT policies. A viewer who is not a
+   * member, admin, owner or union overseer of the club matches none of them, so
+   * a direct count returns how many rows THAT VIEWER may enumerate - which is 0
+   * - and not how many members the club has. Measured on production against a
+   * club with 588 active members, as a real authenticated non-member:
+   *
+   *   direct count ................... 0
+   *   fn_get_club_member_count ..... 588
+   *
+   * It is also ~370x slower, because the RLS filter runs a SECURITY DEFINER
+   * function per row: 204.61 ms against 0.55 ms as the club owner.
+   *
+   * This file's header calls itself the single source of truth for member
+   * counts, and it was not: this function disagreed with getActiveMemberCountBatch
+   * below, which has always used the SECURITY DEFINER RPC family. Both now go
+   * through the same definition, so the promise in the header is true.
+   *
+   * NOTE ON status: the RPC counts `status IS NULL OR status IN (...)` while this
+   * function counted only the IN list. There are currently 0 rows with a NULL
+   * status platform-wide, so the two agree today; adopting the RPC's rule makes
+   * the whole family agree tomorrow as well.
+   */
   try {
-    const { count, error } = await supabase
-      .from('club_members')
-      .select('user_id', { count: 'exact', head: true })
-      .eq('club_id', clubId)
-      .in('status', [...ACTIVE_STATUSES]);
+    const { data, error } = await supabase.rpc('fn_get_club_member_count', {
+      p_club_id: clubId,
+    });
 
-    if (!error && typeof count === 'number') {
+    // bigint over PostgREST can arrive as a JSON number or a string.
+    const count = data == null ? NaN : Number(data);
+    if (!error && Number.isFinite(count)) {
       return count;
     }
   } catch (e) {

@@ -62,7 +62,12 @@ function scan() {
         if (!subscribed.has(n[1])) subscribed.set(n[1], rel);
       }
     }
-    for (const m of src.matchAll(/masterBus\.subscribe\(\s*'([A-Z0-9_]+)'/g)) {
+    // BLIND SPOT (fixed 2026-08-28): this matched only `masterBus.subscribe(`
+    // and could never match `masterBus.subscribeDebounced(` — the single most
+    // common direct idiom in the repo. Nine dead subscriptions hid behind
+    // that one missing word while the suite stayed green, including three
+    // security dashboards and the VIP points feed.
+    for (const m of src.matchAll(/masterBus\.subscribe(?:Debounced)?\(\s*'([A-Z0-9_]+)'/g)) {
       if (!subscribed.has(m[1])) subscribed.set(m[1], rel);
     }
     for (const m of src.matchAll(/masterBus\.emit\(\s*'([A-Z0-9_]+)'/g)) emitted.add(m[1]);
@@ -82,9 +87,23 @@ function scan() {
  *     handleToggleStraddle is optimistic and reverts from the RPC's return
  *     value, so the echo confirms nothing the client does not already know.
  *   ACTION_REJECTED / ACTION_TIMER_STARTED / ACTION_TIMER_EXPIRED /
- *   STATE_INTEGRITY_VIOLATION / PRE_ACTION_EXECUTED / HAND_WON /
- *   SHOWDOWN_START / WS_RECONNECTING / TRANSACTION_LOGGED
+ *   STATE_INTEGRITY_VIOLATION / PRE_ACTION_EXECUTED / WS_RECONNECTING /
+ *   TRANSACTION_LOGGED
  *     Superseded by the server-authoritative snapshot during the migration.
+ *
+ * REVIVED 2026-08-28, and removed from this list: HAND_WON and SHOWDOWN_START.
+ * Their entry above claimed the snapshot superseded them, and that was wrong
+ * in a way worth recording, because this file's header calls itself "a debt
+ * list, not a permission slip" and promises every entry was CHECKED. A
+ * snapshot cannot produce a chat line. Those two subscribers are the only
+ * code in the app that writes `type: 'DEALER'` messages — "Ari & Sam split
+ * the pot - 4,200", "Showdown: Ari (Flush) vs Sam (Two Pair)" — and the only
+ * other route to one, a `message_type = 'dealer'` row, is refused by the chat
+ * RLS policy. So the dealer voice was not redundant, it was missing: every
+ * hand ended with the chat panel silent about who won. TablePage now emits
+ * HAND_WON once per hand at HAND_COMPLETE (from the merged winner mirror, so
+ * side pots and hi-lo splits announce once with the true total) and
+ * SHOWDOWN_START from the showdown event's revealed hands.
  *
  * REVIVED 2026-08-23, and removed from this list: BREAK_START, BREAK_END,
  * TOURNAMENT_BREAK, TOURNAMENT_BREAK_END, TABLE_BALANCE_EXECUTED and
@@ -97,9 +116,7 @@ const KNOWN_DEAD = new Set([
   'ACTION_REJECTED',
   'ACTION_TIMER_EXPIRED',
   'ACTION_TIMER_STARTED',
-  'HAND_WON',
   'PRE_ACTION_EXECUTED',
-  'SHOWDOWN_START',
   'STATE_INTEGRITY_VIOLATION',
   'STRADDLE_TOGGLED',
   'TIME_BANK_DEPLETED',

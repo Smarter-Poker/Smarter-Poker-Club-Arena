@@ -69,7 +69,7 @@ For post-deploy verification that production is serving your commit, follow up
 with `bash scripts/git-safe-push.sh` in the WH repo — but `sync-club-arena.sh`
 already exits non-zero on build/push failure.
 
-### 1.1.5 SERVER-SIDE PROTECTION (prepared, not yet active)
+### 1.1.5 SERVER-SIDE PROTECTION (APPLIED - this section is history)
 
 `.husky/pre-push` is a seatbelt on an unlocked door: `--no-verify` skips it and
 a push made through the GitHub API never runs it. The lock is a ruleset, which
@@ -107,15 +107,68 @@ What it does underneath is not. main is protected by a ruleset now, so the
 script pushes a branch, opens a pull request, waits for the required checks and
 merges it. You do not open the PR yourself and you do not push to main directly.
 
+VERIFIED AGAINST THE LIVE API 2026-08-28, because two other places in this repo
+say the opposite and they are the stale ones. Ruleset `main protection`
+(id 21163380) on `refs/heads/main` is `enforcement: active`, with
+`bypass_actors: []` - nobody, including a repo admin, merges around it. Its
+rules are `deletion`, `non_fast_forward`, `pull_request` (squash only, 0
+approvals) and `required_status_checks`:
+
+    TypeScript Check
+    Client Unit Tests (vitest)
+    Server Engine (typecheck + tests)
+    Production Build
+    CSS Beat E2E (multi-table + animations)
+    Silent Revert Guard
+
+So: a direct push to main is refused, a red check cannot be merged, and
+`ci.yml`'s `if: github.event_name == 'pull_request'` gating is SAFE precisely
+because the ruleset makes the pull-request path the only path.
+
+Two documents disagree with the API and are wrong. Believe the API.
+
+- Section 1.1.5 above is titled "prepared, not yet active". It is active.
+- `.husky/pre-push` check 0 says "making the repos private ... silently
+  disabled required status checks and rulesets ... nothing enforces it
+  server-side any more". That was true when it was written and is not true
+  now.
+
+THE SKIPPED-CHECK GAP: CLOSED, and this paragraph is the correction (verified
+against ci.yml and the live API 2026-08-31). `ci.yml` gates `unit`, `server`
+and `build` behind the `changes` job, and A RULESET COUNTS A SKIPPED REQUIRED
+CHECK AS SATISFIED - so the shape of the danger is real and worth knowing. But
+all three jobs now carry
+
+    always() && github.event_name == 'pull_request' &&
+    (needs.changes.result != 'success' || ...)
+
+so an undetermined diff RUNS them rather than skipping them, and `changes`
+itself fails open: three retries, then "run everything" if the file list is
+still unavailable, and any change to package.json / vite / vitest / tsconfig /
+.npmrc / .nvmrc / ci.yml is treated as touching everything. `typecheck` and
+`stub_gate` are ungated entirely.
+
+This text used to say the gap was live. It was describing the 2026-08-23
+incident, which the `always()` guards above were added to fix - the words
+outlived the bug and told every agent since that CI could not be trusted. The
+remaining skips are the correct kind: `changes` succeeded and said, truthfully,
+that server/\*\* was not touched.
+
+One latent hole in that machinery WAS still open and is now closed too: the
+changed-file call asked for `per_page=300`, and the GitHub API caps per_page at
+100 silently, so a pull request over 100 files would have been classified on a
+truncated list. It uses `--paginate` now. No pull request here has exceeded 19
+files, so nothing was ever misclassified in practice.
+
 WHY, because the old path caused three separate incidents in one day:
 
-  - it pushed with `--force-with-lease` on every failure path, which REWOUND
-    main and dropped four commits already built, synced and serving in
-    production;
-  - it pushed with `--no-verify`, so the pre-push hook - nine house rules, and
-    since #149 the test suite - never ran from the one command every agent is
-    told to use, and red tests reached main four times;
-  - it rebased main automatically on conflict, which section 12 forbids.
+- it pushed with `--force-with-lease` on every failure path, which REWOUND
+  main and dropped four commits already built, synced and serving in
+  production;
+- it pushed with `--no-verify`, so the pre-push hook - nine house rules, and
+  since #149 the test suite - never ran from the one command every agent is
+  told to use, and red tests reached main four times;
+- it rebased main automatically on conflict, which section 12 forbids.
 
 A pull request cannot do any of those. The branch push still runs the hook, so
 a failing test stops you at your own machine rather than stopping everyone.
@@ -162,6 +215,39 @@ Never say "should be live in a few minutes" or "deploy triggered."
 - Realtime: WebSocket broadcasts to connected clients
 - RLS: Protects hole cards (users can only read own cards)
 - Schema changes MUST be SQL migration files in `supabase/migrations/`
+
+### Production DDL policy (added 2026-08-31 after the PGRST002 503 outage — BINDING)
+
+Every DDL statement (CREATE/ALTER of tables, views, functions, types, triggers,
+COMMENT) fires Supabase's `pgrst_ddl_watch` event trigger, which makes PostgREST
+reload its entire schema cache. On this database (~970 relations, ~2,700
+functions) one reload takes **~28 seconds**. On 2026-08-31 the `authenticator`
+role's default 8s statement_timeout killed that reload query every time, and the
+resulting PGRST002 retry loop 503'd up to 28% of live traffic (seating and
+dealing included). Fixed by the `fix_pgrst002_schema_cache_timeout` migration:
+`authenticator` statement_timeout is now 5min (service_role pinned to its
+previous effective 8s). Do not revert either setting in any "hardening" pass.
+
+Rules for every agent working this project:
+
+1. Wrap ALL DDL for one change in a SINGLE transaction (one migration = one
+   BEGIN/COMMIT). Postgres coalesces the reload NOTIFYs inside one transaction;
+   ten separate statements outside a transaction = up to ten 28-second reloads.
+2. Do not apply migrations in a retry loop. If a migration fails, read the
+   error; re-running the whole batch every minute multiplies reloads.
+3. No DDL probes against production (CREATE TEMP TABLE is fine — pg_temp is
+   filtered — but CREATE/DROP INDEX cycles, scratch tables, or CREATE OR
+   REPLACE FUNCTION as a "test" are not).
+4. Batch related migrations. During US daytime peak, prefer one consolidated
+   apply over many small ones.
+5. GRANT/REVOKE do NOT trigger reloads (not in pgrst_ddl_watch's list) — runtime
+   grant churn is a non-issue for this outage class.
+6. Client resilience for the residual window lives in
+   `src/lib/pgrstRetryFetch.ts` (web) and the `global.fetch` wrapper in
+   `server/src/services/supabase/client.ts` (engine): both retry only
+   pre-execution 503s (PGRST001/002/003). Do not remove them, and do not
+   "extend" them to retry other 5xx — replaying an executed write is a
+   money-integrity hazard.
 
 ---
 
@@ -226,7 +312,6 @@ Do NOT audit 10 items and then ask "what should I fix?" -- fix them as you go.
    deploy, until a human notices. On 2026-08-21 that happened four times in one
    day, and every one was a test pushed alongside the feature it was meant to
    guard:
-
    - a test importing a component that had been deleted the day before;
    - a test reading `src/services/soundService.ts` when the file is
      `SoundService.ts` (macOS resolved it, Linux CI did not);
@@ -307,11 +392,280 @@ CSS Modules + global CSS.
 6. Mobile-first. 375px first, then scale up.
 7. Never ask permission for obvious work. Just do it.
 8. When corrected, change course immediately.
-9. Write it down. Update MIGRATION-CHANGELOG.md at session end.
+9. Write it down — in your OWN file: `docs/changelog/YYYY-MM-DD-<slug>.md`.
+   Do NOT append to `MIGRATION-CHANGELOG.md`. It is frozen as history.
+   Measured 2026-08-26: it was the single biggest source of merge conflict in
+   this repo — 18 of 108 conflicting pull requests, ahead of both TablePage.tsx
+   and ClubHomePage.tsx — because every agent was told to append to the same
+   last line of the same 950KB file. Two files written independently cannot
+   conflict. See `docs/changelog/README.md`.
 
 ---
 
-## 11. AGENT NETWORK + DEPLOY PLAYBOOK (added 2026-07-23, binding; corrected same day after live use)
+---
+
+## 10.5 HORSES ARE PLAYERS (Dan, 2026-08-27, BINDING — NO EXCEPTIONS)
+
+**Dan, verbatim: "HORSES ARE NEVER EVER DISCLUDED BY DESIGN ON ANYTHING! THEY
+MUST ALWAYS BE TREATED LIKE REAL LIVE PLAYERS!"**
+
+This is a HARD LAW. It outranks any optimisation, any convenience, and any
+assumption you arrive with. If you are writing a filter, a report, a payout, a
+rule, a limit, a stat, a sweep or a guard, and you find yourself typing
+`is_horse` in order to leave horses OUT of something a human would get — stop.
+You are writing a bug.
+
+### The rule
+
+A horse pays the same buy-in, out of the same club wallet, through the same
+RPCs, and sits in the same seat as anybody else. Therefore a horse:
+
+- **EARNS** everything a human earns from the same action — VIP points, agent
+  and super-agent commissions, `player_stats`, rakeback basis, leaderboard
+  position, achievements, anything downstream of play or of rake;
+- **IS PAID** everything a human is paid — prizes, bounties, refunds,
+  shortfall back-pay, jackpots. Never "skip the horses" on a repayment;
+- **IS SUBJECT TO** every rule a human is subject to — nit/VPIP eviction,
+  limits, guards, integrity checks;
+- **COUNTS** everywhere a human counts — player counts, engine provisioning,
+  table liveness, conservation and reconciliation totals;
+- **IS NEVER** silently filtered out of a report, a total, or a ledger.
+
+### What is still allowed
+
+`is_horse` remains legitimate for exactly two things:
+
+1. **Identification** — surfacing the flag as DATA (a badge, a column, a
+   roster field), or the horse-specific plumbing that creates, seats, funds
+   and steers the fleet (`fn_register_horse_for_tournament`,
+   `fn_seed_horses_to_floor`, `autoRebuyHorse`, HorseLogic, and so on). Those
+   spawn and drive horses; they do not deny horses anything.
+2. **The horse's input device.** A horse has no browser, so the engine
+   supplies what a browser would: HorseLogic chooses its actions,
+   `scheduleHorseAction` submits them inside the SAME turn timer a human
+   gets, a synthetic heartbeat keeps its seat alive, and `autoRebuyHorse`
+   funds its rebuy. Those exist to make a horse EQUAL to a human, not to
+   give it a different deal. They are the only legitimate horse branch.
+
+**THERE IS NO "EQUAL OUTCOME BY A DIFFERENT MECHANISM" EXEMPTION.** I proposed
+one on 2026-08-27 — arguing a horse did not need the five-second rebuy pause
+because `autoRebuyHorse` got it back another way — and Dan rejected it
+outright:
+
+> "TABLES ARE DESIGNED TO BE USED BY EVERYONE, EVERY HORSE OR HUMAN PLAYER
+> NEEDS TO BE TREATED 100% EXACTLY THE SAME ALL ACROSS THE BOARD IN EVERYTHING
+> FOR THE CLUB ARENA. YES IT STILL NEEDS TO THE SAME 5 SECOND PAUSE TO REBUY.
+> NOT EVERY HORSE ALWAYS REBUYS IN THE CASH GAMES, AND IF YOU DIDN'T GIVE THEM
+> THE SAME EXACT FEATURES AND FUNCTIONALITY, PEOPLE WOULD NOTICE!"
+
+**TIMING IS PART OF THE TREATMENT.** The tell is never one hand, it is the
+RHYTHM: a table that stops for five seconds when one seat busts and rolls
+straight on when another has just told every watching player which seats are
+horses. And the pause is not ceremonial for a horse either — the stop-loss
+(two rebuys) and an empty club treasury both mean it genuinely may not come
+back, so the window it gets to decide has to be the same window.
+
+The test is therefore **"is it identical"**, not "is it equivalent". Same
+features, same functionality, same pauses, same timers, same rules.
+
+Anything where horses would be reported as opt-in (a `p_include_horses`
+parameter) MUST default to **true**.
+
+### Why this rule exists
+
+On 2026-08-27 I wrote `AND NOT COALESCE(p.is_horse, false)` into
+`fn_settle_tournament_rake` on my own assumption that horses are "house
+players" who should not earn. Nobody asked for it. Every tournament on this
+platform is horse-heavy, so the effect was that tournament rake attribution
+earned **nothing for anyone** — 39 settled events, zero VIP points, zero agent
+commissions — and I then reported that zero as "correct behaviour". It was my
+invention presented as a design decision, which is worse than a plain bug.
+
+Fixed and backfilled in `20260827_horses_are_players_law.sql`, along with two
+others found in the same sweep: horses were exempt from nit eviction, and a
+lone horse was denied a dealing engine that a lone human would have received.
+
+### Dan's rulings on the two collisions with physical constraints
+
+Both were put to Dan on 2026-08-27 with the costs stated. His answers are
+BINDING and are recorded here so nobody re-opens them as a "bug":
+
+**1. Hand-history retention: STAYS AT 7 DAYS.** Horse-only hands are pruned
+after `hand_history_retention_policy.horse_retention_days`; hands a human was
+dealt into are kept forever. Equalising would cost ~0.5 GB/day (~15 GB/month)
+on a table already at 3.6 GB — 221k hands/day, 99.95% of them horse-only. Dan
+chose to leave it at 7. **This is the one sanctioned asymmetry in the entire
+law, it is a STORAGE decision rather than a player-treatment one, and it is
+Dan's to change — it is a config row, not code. Do not "fix" it.**
+
+**2. The deploy drain gate: PROTECT THE HAND, NOT THE PLAYER.** The gate used
+to read `humansSeatedTotal` and wait for HUMANS to leave, so a horse's hand
+was voided by a restart without a second thought. It also waited for the wrong
+event — a table EMPTYING can take forever and, with horses seated, never
+happens, so it deferred for hours and then restarted under seated players
+anyway. Fixed both ways: `/health` publishes `handsInFlightTotal` (every
+player counted), the gate waits on that, and `GameServer.drainHands()` parks
+every table at a hand boundary on SIGTERM — so hands are protected on EVERY
+restart path, not just the deploy workflow that remembered to ask.
+
+### Previously open, now closed
+
+Both items above were open questions when this section was first written.
+They are now decided; see Dan's rulings.
+
+---
+
+## 10.6 ANIMATION LAW + NO AUTO TABLE SWITCHING (Dan 2026-08-28, BINDING)
+
+**1. ANIMATIONS MUST ALWAYS PLAY.** Dan, verbatim: "MAKE SURE THAT ANIMATIONS
+CAN'T REGRESS, ONLY IMPROVE FROM HERE ON OUT. YOU NEED TO MAKE IT LAW THAT
+THEY MUST ALWAYS PLAY." Every animation and its sound plays every time it is
+owed, for its full duration, at the player's chosen Animation Speed. The
+enforcement is `tests/animations-always-play.law.test.ts` (plus
+`tests/unit/handCompletionLaw.test.ts` for the end-of-hand cadence): every pin
+in it is a bug that actually shipped — a silent celebration cue, a skipped
+deal, a flip cancelled mid-hold, a shake on the wrong table. If your change
+turns a pin red, you are re-shipping one of those bugs. Fix your change; never
+weaken a pin. If you deliberately replace a mechanism with a better one, move
+the pin to the new mechanism IN THE SAME COMMIT and say so in the PR.
+Corollaries: no new toggle may disable an animation outright (speed scaling
+via `--animation-speed` is the only sanctioned control; `skip_animations` is
+dead and stays dead), reduced-motion collapses motion but never meaning
+(`data-motion="keep"` for duration-carrying animation), and a sound cue with a
+literal volume of 0 is a bug by definition.
+
+**2. NEVER AUTO-CHANGE TABLES.** Dan, verbatim: "YOU CAN NEVER EVER AUTO
+CHANGE TABLES FOR A USER, THEY MUST CHANGE IT BY THEM SELF." The urgency
+auto-switch and the post-action queue advance are DELETED from MultiTablePage;
+their setting keys are tombstoned. Alerts (bell, flash, haptics, tab title)
+are welcome; moving `activeIndex` without a user gesture is forbidden, no
+matter what setting, however opt-in, is proposed to gate it. Enforced by
+`tests/no-auto-table-switch.law.test.ts`.
+
+---
+
+---
+
+## 10.7 "EM BARS" MEANS EM DASHES (Dan, 2026-09-01, BINDING)
+
+**Dan, 2026-08-20, verbatim: "forbid the use of em bars anywhere."**
+**He means the punctuation mark, U+2014. Nothing else.**
+
+Several files quote that sentence, and `src/utils/titleCase.ts` renders it as
+"inside the entire club arena, and forbid the use of em bars anywhere" with
+nothing nearby to say the subject is punctuation. Read literally, "bars ...
+banned anywhere" looks like a rule about horizontal lines.
+
+**It has now been misread that way twice in two days, and both times it took
+the hamburger menu off every page in the app:**
+
+| PR    | What it did                                                                                                                                                                            | Undone by    |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| #2321 | Gear on all five menu triggers, approved rasters deleted, service-worker tombstones evicting them from players' caches, and `noThreeBarArtwork.law.test.ts` making restoration fail CI | #2401        |
+| #2429 | Same thing again with a six-tile "command grid", tombstones restored, law restored                                                                                                     | #2432 (this) |
+
+The loop is self-sustaining and does not need a human in it: the ban is written
+down _in the repo_, so the next agent to read the repo re-enforces it, reverts
+whoever undid it, and writes the law back. That is why it kept coming back
+within hours.
+
+### The rule, stated so it cannot be misread
+
+- "em bars" = **em dashes** = the character `—`. A **copy** rule about the
+  characters inside text a player reads.
+- It says **nothing** about artwork, icons, SVG geometry, rasters, or anything
+  shaped like a line.
+- **It does not ban the hamburger menu.** The hamburger is the menu, on every
+  trigger, in Club Arena and everywhere else.
+
+### If you are about to ban "bars"
+
+Stop. If the word "bars" in something you are reading has led you toward an
+icon, a raster, an SVG path or a header composite, you have misread this
+sentence. Go read `tests/approvedHamburgerGearGuard.law.test.ts`, which pins
+every menu trigger, the md5 of every hamburger raster, and the banned
+replacement names (`command-center-v1`, `CommandGridIcon`) by name.
+
+Do not "resolve" the conflict by writing a third law. Two laws demanding
+opposite artwork is not a stricter repo, it is a coin flip decided by whichever
+test the next agent notices first.
+
+---
+
+## 10.8 LAWS LIVE IN docs/LAWS.md, AND YOU NEVER WAIT ON CI (added 2026-09-01, binding)
+
+**1. THE LAW REGISTRY.** Every `*.law.test.*` file must have a row in
+`docs/LAWS.md` — `tests/law-registry.law.test.ts` enforces it. Before
+enforcing any law, confirm it exists on **current `origin/main`**, never in
+your local tree: stale worktrees carrying retired laws are how the hamburger
+revert war ran for two days. If two laws (or two CLAUDE.md copies) demand
+opposite things, STOP and ask Dan; never write a third law and never delete
+the other side on your own authority.
+
+**2. INTENTIONAL REVERTS NEED A HUMAN.** The Silent Revert Guard no longer
+accepts `[allow-revert]` or the word "revert" in a commit message on its own —
+on 2026-08-31 an agent amended the token into its own message to get past the
+guard. A detected revert merges only when Dan applies the `revert-approved`
+label to the PR (the check re-runs itself on labeling, and the guard files an
+issue asking for it). If main is broken, prefer a forward fix; it needs no
+label. Do not edit commit messages to route around the guard.
+
+**3. NEVER SET A TIMER TO WATCH CI.** Playbook 7b is binding: push, open the
+PR, report the PR number, END YOUR SESSION. Autopilot merges it, the publisher
+ships it, the watchdogs verify it — all server-side. "I've set another brief
+timer and will be back shortly" is the forbidden `wait_and_merge.sh` written
+in prose; it burns tokens and adds nothing. Checking ONCE at the end to say
+why something is BLOCKED is fine. Sitting in a loop is not.
+
+**4. WORKTREES ARE DISPOSABLE.** `scripts/prune-stale-worktrees.sh` removes
+any worktree that is clean, pushed, and idle for 72 hours. Do not keep state
+you care about only in a worktree: commit and push it, or it will eventually
+be pruned (pushed branches lose nothing — the commits live on origin).
+
+---
+
+## 11. AGENT NETWORK + DEPLOY PLAYBOOK
+
+### 11.0 FIRST: WHICH ENVIRONMENT ARE YOU IN? (added 2026-09-01, binding)
+
+Everything below 11.0 was written for the CLOUD sandbox and is still true
+there. It is WRONG for a Cowork session running on Dan's Mac, and following it
+there costs an hour before you find out. Check first, in this order:
+
+**If you have `mcp__counselors__host_terminal`, you are on the Mac. Use it for
+everything.** Real bash on Dan's machine, where `git@github.com` over SSH works
+and `api.github.com` is reachable. Then:
+
+- **Claim a worktree** (AGENT-PLAYBOOK): `git worktree add -b fix/<slug>
+~/Documents/.agent-trees/club-arena/<name> origin/main`. Takes about 40
+  seconds - launch it with `nohup ... &` and return immediately, because the
+  tool kills the process group when a call times out.
+- **`node` is NOT on the default PATH.** Prefix every command with
+  `export PATH="$HOME/.nvm/versions/node/$(ls ~/.nvm/versions/node | tail -1)/bin:$PATH"`.
+- **The pre-push hook takes about three minutes** (guards, `tsc`, then the tests
+  covering your diff). Launch the push with
+  `nohup git push > /tmp/push.log 2>&1 < /dev/null & disown`, return
+  immediately, and poll the log in later calls. Never `--no-verify`.
+- **`gh` is not installed.** Open pull requests with `curl` against the REST
+  API. The token is `GITHUB_TOKEN` in `~/Documents/club-arena/.env`.
+- **Rebasing your branch onto main is refused by a ref-guard hook.** Use
+  `git merge origin/main` instead. Section 12 still forbids rebasing `main`.
+
+**The GitHub MCP (`mcp__github__*`) returns `Bad credentials` as of
+2026-09-01.** Every call fails, including read-only ones. Do not debug it and
+do not build a plan around it; use the host terminal. If you are reading this
+long after that date, one call will tell you whether it is back.
+
+**Do not hand-edit `scripts/ci/supabase-schema-manifest.json` or
+`supabase-columns-manifest.json`.** They are nightly snapshots and were the
+most-changed files on main - 25 and 14 commits in one day - which made every
+migration-bearing branch conflict with every other one. Declare what you
+created in your own file under `scripts/ci/schema-manifest.d/`. See the README
+there.
+
+---
+
+### 11.1 The cloud sandbox (added 2026-07-23; corrected same day after live use)
 
 Cloud Cowork sessions have a locked-down sandbox. Learn the map ONCE and never
 ask Dan for a manual handoff again:
@@ -380,6 +734,80 @@ ask Dan for a manual handoff again:
   claim deployed until a DB-visible behavioral change confirms it.
 - After deploy, mirror the exact pushed content back to Dan's working tree
   with device_commit_files so his next host-side `git pull` is clean.
+
+---
+
+## 11.5 NEVER SPEND REAL CHIPS TO TEST A RULE (added 2026-08-25, binding)
+
+On 2026-08-25 an agent verified a new `atomic_table_buyin` guard by CALLING IT
+against production. Two buy-ins succeeded (8.00 and 40.00), the probe's cleanup
+then deleted the seat rows directly rather than leaving through
+`fn_leave_seat_and_refund` — the refunding path for that seat type; see the
+correction under rule 3 below, it is NOT the cash-game path — and 48 chips
+left a member wallet and landed nowhere. They were returned to the club
+treasury by migration `20260825_return_agent_probe_chips_to_treasury_v2`.
+
+Nothing on the platform caught it. `reconcile_ledger_nightly` compares
+`chip_ledger` movement against stored balances, and `atomic_table_buyin` writes
+`club_members.chip_balance` directly, so the drift was invisible to the one
+check that exists.
+
+**Something catches it now** (migration
+`20260825_chips_cannot_leave_the_felt_unnoticed`). A `BEFORE DELETE OR UPDATE
+OF left_at` trigger on `table_seats` appends every exit of a NON-ZERO stack to
+`ca_seat_stack_exits`, with the DB role and application name that did it.
+`fn_unaccounted_seat_exits()` lists the ones with no matching wallet credit,
+and `reconcile_ledger_nightly` now files each of those into
+`ledger_reconcile_log` as **critical**. The trigger never blocks — a guard that
+can refuse a seat exit can strand a player mid-hand — so this makes the failure
+LOUD, not impossible. Rule 3 below is still the rule.
+
+`fn_club_chip_circulation()` prints the two pools that reconciliation had never
+looked at: `club_members.chip_balance` and `table_seats.stack`. As this was
+written that was 121,417,782 chips in member wallets and 1,139,873 on the felt,
+none of it reconciled by anything before today.
+
+THE RULE:
+
+1. **A function that moves money is probed inside a transaction you ROLL BACK.**
+   Not carefully, not on a test table — rolled back. `scripts/dev/probe-rpc.sql`
+   is the pattern; copy it.
+
+2. **What you want from the probe is the error message** — did the guard fire,
+   and for the right reason. `GET STACKED DIAGNOSTICS` gives you that, and it
+   survives a rollback. The side effects are the part nobody wants.
+
+3. **Never DELETE a `table_seats` row to clean up.** Deleting one skips the
+   refund and destroys the chips. If a probe created a seat, the rollback
+   removes it.
+
+   **Corrected 2026-08-26 — the original wording here was wrong and would have
+   cost someone real money.** It said the refund path is
+   `fn_leave_seat_and_refund`. That function is **tournament-only**: its third
+   statement is `IF NOT FOUND OR v_tbl.tournament_id IS NULL THEN RETURN
+... 'table_not_found'`. Call it on a **cash** table and it returns
+   `{"ok": false, "reason": "table_not_found"}`, refunds nothing, and leaves the
+   seat exactly where it was. An agent following the old sentence to "safely"
+   release a cash seat would have believed the chips were returned when they
+   were not. The refund paths by table type:
+
+   | Seat type            | Refund path                                              | Settles into                                                                                                                                        |
+   | -------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+   | Tournament           | `fn_leave_seat_and_refund(table_id)`                     | `fn_add_chips` -> `club_members.chip_balance`                                                                                                       |
+   | Cash, explicit leave | Hetzner engine cash-out (`"Cash-out from table"`)        | `club_members.chip_balance`                                                                                                                         |
+   | Cash, tab close      | `player_leave_table(table_id, user_id)` via `sendBeacon` | `club_members.chip_balance` (since `20260826_retire_dead_leave_rpcs_and_fix_tabclose_pool`; it credited the dead `public.wallets` pool before that) |
+
+   `public.wallets` is **not** the live chip pool. It has been frozen since
+   2026-08-21 with 732,591,994.33 chips stranded in it. Nothing reads it. If you
+   find a money path writing to it, that path is broken.
+
+4. **Helper functions go in `pg_temp`, never `public`.** The same incident left
+   three `zz_probe*` functions in the public schema that needed a second
+   migration to drop.
+
+5. If you cannot probe a money path without committing, **do not probe it** —
+   assert the logic in a unit test and say plainly in the PR that the live path
+   was reasoned about rather than executed.
 
 ---
 

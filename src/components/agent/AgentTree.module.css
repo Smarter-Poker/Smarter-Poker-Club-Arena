@@ -31,12 +31,6 @@
   -webkit-backdrop-filter: blur(2px);
 }
 
-.controlBtn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.25);
-  color: white;
-}
-
 /* Tree Container */
 .treeContainer {
   display: flex;
@@ -66,12 +60,6 @@
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
-.nodeCard:hover {
-  background: linear-gradient(135deg, rgba(40, 40, 55, 0.95), rgba(30, 30, 45, 0.98));
-  border-color: rgba(251, 191, 36, 0.3);
-  transform: translateX(2px);
-}
-
 .nodeCard.inactive {
   opacity: 0.5;
 }
@@ -91,11 +79,6 @@
   cursor: pointer;
   flex-shrink: 0;
   transition: all 0.2s ease;
-}
-
-.expandBtn:hover {
-  background: rgba(251, 191, 36, 0.2);
-  color: #fbbf24;
 }
 
 .expandPlaceholder {
@@ -220,11 +203,6 @@
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;
-}
-
-.transferBtn:hover {
-  background: rgba(251, 191, 36, 0.25);
-  transform: scale(1.1);
 }
 
 /* Children */

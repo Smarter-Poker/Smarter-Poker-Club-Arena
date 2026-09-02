@@ -34,8 +34,15 @@
 
 import { supabase } from './supabase.js';
 import { reportError } from './errorReporter.js';
-import { buyInFor, wholeChips } from '../config/buyIn.js';
+import { buyInFor, rakeRateFor, wholeChips } from '../config/buyIn.js';
 import { TournamentRecurringService } from './TournamentRecurringService.js';
+import { buildLadder, type GeneratedBlindLevel } from '../tournament/blindLadder.js';
+import { SPIN_SEATS, SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
+import {
+  HEADS_UP_BLIND_STRUCTURE,
+  HEADS_UP_PAYOUTS,
+  HEADS_UP_SEATS,
+} from '../config/headsUpSpec.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -77,24 +84,109 @@ export const TIMED_WINDOW_PAST_MS = 5 * 60 * 1000;
  *
  * A day's look-ahead publishes the whole card the way a real room does:
  * tomorrow's events are on the board tonight, with their buy-ins, guarantees
- * and start times, and a player can register whenever they like. The lobby's
- * own display window is 72 hours, so 24 fits inside what the UI already
- * shows, and `spawnAheadMinutes` still overrides per schedule (the Sunday
- * Major uses a week so its satellites can resolve it all week).
+ * and start times, and a player can register whenever they like.
+ *
+ * (That paragraph used to end "and `spawnAheadMinutes` still OVERRIDES per
+ * schedule". It does not, any more, and leaving the sentence here would be an
+ * invitation to restore the exact bug documented under spawnAheadMsFor below:
+ * every live schedule carries 1440, so an override that wins outright pins the
+ * whole platform to a 24-hour board no matter what this constant says. It
+ * raises the floor now. The Sunday Major's week still wins because a week is
+ * LONGER, which was always the only case that mattered.)
+ *
+ * NOW 72 HOURS (Dan 2026-08-26: "USE 72H/6 DAY FOR $200 BUY IN
+ * OR MORE", revising the 48 hours he first asked for). The lobby cannot list a row that does
+ * not exist, so every client-side attempt to widen the board was capped by
+ * THIS constant -- with 60 active schedules the board carried one day of card
+ * and looked, correctly, like a room with almost nothing on tomorrow.
+ *
+ * PARITY: `src/utils/tournamentScheduleWindow.ts` holds the same two numbers
+ * for the client, and `tests/unit/scheduleWindowParity.test.ts` fails if they
+ * drift. They are duplicated rather than imported because `server/` compiles
+ * standalone -- the same arrangement RakeConfig has.
  */
-export const TIMED_WINDOW_AHEAD_MS = 24 * 60 * 60 * 1000;
+export const TIMED_WINDOW_AHEAD_MS = 72 * 60 * 60 * 1000;
+
 /**
- * Horses are seeded only when the start is this close.
+ * Total buy-in ABOVE which a schedule publishes on the long window instead.
+ *
+ * Dan 2026-08-26: "ANY TOURNAMENT WITH A BUY IN OF MORE THEN 200 THAT IS ON
+ * THE SCHEDULE CAN BE SHOWN 6 DAYS OUT." Strictly greater than, so a flat 200
+ * chip event is a 48-hour event. Measured on the TOTAL a player pays, which
+ * for a schedule is `cfg.buyIn` before the prize/fee split -- the two columns
+ * the lobby adds back together.
+ */
+export const FEATURE_BUYIN_THRESHOLD = 200;
+/* INCLUSIVE since 2026-08-26 ("$200 BUY IN OR MORE"). The first pass used a
+   strict `>`, which put a flat 200 event — the Sunday Deep Stack's exact
+   price — on the short window. */
+export const FEATURE_WINDOW_AHEAD_MS = 6 * 24 * 60 * 60 * 1000;
+
+/**
+ * The look-ahead for one schedule.
+ *
+ * `spawnAheadMinutes` RAISES THE FLOOR. IT DOES NOT LOWER IT.
+ *
+ * THIS IS THE WHOLE FIX, AND THE FIRST VERSION OF IT WAS DEAD CODE. The
+ * override used to win outright, on the reasoning that a flagship sets it to a
+ * week so its satellites can resolve the target all week. That reasoning is
+ * sound in ONE direction only, and the data says so plainly: every one of the
+ * 60 active schedules on this platform carries `spawnAheadMinutes: 1440`,
+ * written when 24 hours WAS the house window. An override that wins outright
+ * therefore means all 60 schedules keep publishing 24 hours of card no matter
+ * what TIMED_WINDOW_AHEAD_MS says -- the constant would have moved to 48, CI
+ * would have gone green, the PR would have merged, and Dan's board would have
+ * looked exactly as empty as it did before.
+ *
+ * The house window is a FLOOR: "it should be displaying all events that are
+ * scheduled over the next 48 hours" is not a default to be opted out of. A
+ * schedule may ask for MORE (the Sunday Major's 10080 still wins, because it
+ * is larger). It may not ask for less.
+ *
+ * An out-of-range or unreadable override is ignored entirely rather than
+ * clamped, which is the same fail-closed choice the rest of this file makes.
+ */
+export function spawnAheadMsFor(cfg: Record<string, unknown>): number {
+  const byRule =
+    wholeChips(cfg.buyIn) >= FEATURE_BUYIN_THRESHOLD
+      ? FEATURE_WINDOW_AHEAD_MS
+      : TIMED_WINDOW_AHEAD_MS;
+
+  const explicit = Number(cfg.spawnAheadMinutes);
+  if (Number.isFinite(explicit) && explicit >= 30 && explicit <= 10_080) {
+    return Math.max(byRule, Math.round(explicit) * 60_000);
+  }
+  return byRule;
+}
+/**
+ * Horses are seeded at SPAWN only when the start is this close.
  *
  * Seeding at spawn was harmless at a 30-minute look-ahead and is actively
  * harmful at 24 hours: a horse registered into tomorrow's event is a horse
- * that cannot deal a cash table or fill a spin today, and the pool is
- * finite. Events therefore open EMPTY and stay genuinely open for humans;
- * GameServer's past-start top-up fills whatever is short the moment the
- * clock strikes, which is the same mechanism that already rescues every
- * short field.
+ * that cannot deal a cash table or fill a spin today, and the pool is finite.
+ *
+ * Dan 2026-08-23: aligned to the one-hour MTT ramp (MTT_PRESTART_RAMP_MS), so
+ * an event that spawns already inside the hour gets its opening field
+ * immediately instead of waiting up to a ramp tick for it.
+ *
+ * WHAT THIS CONSTANT NO LONGER MEANS. It used to be the whole policy, and the
+ * note here used to say events "open EMPTY and stay genuinely open", with the
+ * past-start top-up as the only filler. That was checked ONCE, at creation, so
+ * a day-ahead event answered "no" and was never asked again - which is how a
+ * 200-seat MTT sat in the lobby for seventeen hours reading 0/200. The field
+ * is now built by the pre-start ramp in GameServer.discoverTournaments, which
+ * re-evaluates every REGISTERING tournament on a timer. This is just the
+ * head start; the ramp is the rule.
  */
-export const HORSE_SEED_WITHIN_MS = 15 * 60 * 1000;
+export const HORSE_SEED_WITHIN_MS = 60 * 60 * 1000;
+/* DELIBERATELY NO LONGER EQUAL TO MTT_PRESTART_RAMP_MS (2026-08-26).
+   They were aligned on 2026-08-23 when both meant "about to start". The ramp
+   now runs for the full 72-hour publish window so the board is never a wall of
+   empty games; this constant is a different thing - the head start given at
+   SPAWN, before the ramp has ticked once. Seeding three days early would put
+   chips into a pool for an event that has only just appeared, and the ramp
+   reaches it within one tick anyway. One hour is still exactly right for a
+   head start. */
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PURE SCHEDULING LOGIC — exported so the matching rules are testable with no DB
@@ -219,52 +311,59 @@ const MYSTERY_MAX_MULT = 13;
  * additions (12-minute early levels, extra depth). An explicit
  * `blindStructure` array in the config always wins over the preset.
  */
-export const SCHEDULE_BLIND_PRESETS: Record<string, Array<Record<string, number>>> = {
-  SLOW: [
-    { level: 1, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 12 },
-    { level: 2, smallBlind: 50, bigBlind: 100, ante: 0, durationMinutes: 12 },
-    { level: 3, smallBlind: 75, bigBlind: 150, ante: 15, durationMinutes: 12 },
-    { level: 4, smallBlind: 100, bigBlind: 200, ante: 25, durationMinutes: 12 },
-    { level: 5, smallBlind: 150, bigBlind: 300, ante: 30, durationMinutes: 10 },
-    { level: 6, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 10 },
-    { level: 7, smallBlind: 250, bigBlind: 500, ante: 50, durationMinutes: 10 },
-    { level: 8, smallBlind: 300, bigBlind: 600, ante: 60, durationMinutes: 10 },
-    { level: 9, smallBlind: 400, bigBlind: 800, ante: 80, durationMinutes: 8 },
-    { level: 10, smallBlind: 500, bigBlind: 1000, ante: 100, durationMinutes: 8 },
-    { level: 11, smallBlind: 600, bigBlind: 1200, ante: 120, durationMinutes: 8 },
-    { level: 12, smallBlind: 800, bigBlind: 1600, ante: 160, durationMinutes: 8 },
-  ],
-  STANDARD: [
-    { level: 1, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 10 },
-    { level: 2, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 10 },
-    { level: 3, smallBlind: 75, bigBlind: 150, ante: 15, durationMinutes: 10 },
-    { level: 4, smallBlind: 100, bigBlind: 200, ante: 25, durationMinutes: 8 },
-    { level: 5, smallBlind: 150, bigBlind: 300, ante: 30, durationMinutes: 8 },
-    { level: 6, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 8 },
-    { level: 7, smallBlind: 300, bigBlind: 600, ante: 60, durationMinutes: 6 },
-    { level: 8, smallBlind: 400, bigBlind: 800, ante: 80, durationMinutes: 6 },
-    { level: 9, smallBlind: 500, bigBlind: 1000, ante: 100, durationMinutes: 5 },
-    { level: 10, smallBlind: 750, bigBlind: 1500, ante: 150, durationMinutes: 5 },
-  ],
-  TURBO: [
-    { level: 1, smallBlind: 25, bigBlind: 50, ante: 5, durationMinutes: 4 },
-    { level: 2, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 4 },
-    { level: 3, smallBlind: 100, bigBlind: 200, ante: 20, durationMinutes: 3 },
-    { level: 4, smallBlind: 150, bigBlind: 300, ante: 30, durationMinutes: 3 },
-    { level: 5, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 3 },
-    { level: 6, smallBlind: 300, bigBlind: 600, ante: 75, durationMinutes: 2 },
-    { level: 7, smallBlind: 500, bigBlind: 1000, ante: 100, durationMinutes: 2 },
-    { level: 8, smallBlind: 750, bigBlind: 1500, ante: 150, durationMinutes: 2 },
-  ],
-  HYPER_TURBO: [
-    { level: 1, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 2 },
-    { level: 2, smallBlind: 100, bigBlind: 200, ante: 25, durationMinutes: 2 },
-    { level: 3, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 2 },
-    { level: 4, smallBlind: 400, bigBlind: 800, ante: 100, durationMinutes: 1 },
-    { level: 5, smallBlind: 800, bigBlind: 1600, ante: 200, durationMinutes: 1 },
-  ],
+export const SCHEDULE_BLIND_PRESETS: Record<string, GeneratedBlindLevel[]> = {
+  /**
+   * GENERATED AND DEEP (2026-08-31). These were hand-written 5-12 level arrays.
+   * Measured over 579 completed MTTs the average event reached level 14 and the
+   * deepest reached 124, so 95.7% of tournaments played their late game on the
+   * overflow path — which doubled the blinds every level. 38.1% ended with all
+   * chips in play worth under three big blinds.
+   *
+   * Level 1 of every preset is unchanged, so advertised structures still read
+   * exactly as they did. See tournament/blindLadder.ts.
+   */
+  SLOW: buildLadder({
+    startBigBlind: 50,
+    speed: 'SLOW',
+    levels: 40,
+    openingMinutes: 12,
+    floorMinutes: 6,
+    anteFromLevel: 3,
+  }),
+  STANDARD: buildLadder({
+    startBigBlind: 50,
+    speed: 'STANDARD',
+    levels: 40,
+    openingMinutes: 10,
+    floorMinutes: 5,
+    anteFromLevel: 2,
+  }),
+  TURBO: buildLadder({
+    startBigBlind: 50,
+    speed: 'TURBO',
+    levels: 24,
+    openingMinutes: 4,
+    floorMinutes: 2,
+    anteFromLevel: 1,
+  }),
+  HYPER_TURBO: buildLadder({
+    startBigBlind: 100,
+    speed: 'HYPER_TURBO',
+    levels: 16,
+    openingMinutes: 2,
+    floorMinutes: 1,
+    anteFromLevel: 1,
+  }),
 };
 SCHEDULE_BLIND_PRESETS.DEEP = SCHEDULE_BLIND_PRESETS.SLOW;
+// DEEPSTACK is what the schedule seeds actually wrote (19 active schedules on
+// production carry `blindPreset: "DEEPSTACK"`, all created 2026-08-25) and it
+// resolved to NOTHING — every one of those events was silently skipped with
+// `structure_missing` on each spawn attempt: Morning Grind Deepstack,
+// Five-Card Big Stack, Midweek Morning Stack, Wednesday PLO Stack, Sunday
+// Funday Six-Card Closer, and fourteen more never ran once. Same structure as
+// DEEP/SLOW — a deep stack IS the slow structure.
+SCHEDULE_BLIND_PRESETS.DEEPSTACK = SCHEDULE_BLIND_PRESETS.SLOW;
 
 /** Named payout presets, resolvable as `payoutPreset`. */
 export const SCHEDULE_PAYOUT_PRESETS: Record<
@@ -326,13 +425,20 @@ export class ScheduledTournamentService {
    */
   private readonly horseSeeder = new TournamentRecurringService();
 
+  /**
+   * Schedules already refused for naming a seat-first format, so the refusal
+   * is reported once rather than on every poll of a schedule that will never
+   * be spawnable.
+   */
+  private readonly refusedSeatFirstSchedules = new Set<string>();
+
   start(): void {
     if (this.isRunning) {
       console.log('[ScheduledTournaments] Already running');
       return;
     }
     this.isRunning = true;
-    console.log('[ScheduledTournaments] Service started — polling every 60s');
+    console.log('[ScheduledTournaments] Service started - polling every 60s');
     this.pollTimer = setInterval(() => void this.poll(), POLL_INTERVAL_MS);
     void this.poll();
   }
@@ -420,16 +526,39 @@ export class ScheduledTournamentService {
     schedule: TournamentScheduleRow,
     cfg: Record<string, unknown>
   ): Promise<void> {
-    // Optional per-schedule look-ahead (minutes, 30 min .. 7 days). Flagship
-    // events set this to several days so they exist in the lobby early and
-    // satellite schedules can resolve them by name all week.
-    const aheadRaw = Number(cfg.spawnAheadMinutes);
-    const aheadMs =
-      Number.isFinite(aheadRaw) && aheadRaw >= 30 && aheadRaw <= 10_080
-        ? Math.round(aheadRaw) * 60_000
-        : TIMED_WINDOW_AHEAD_MS;
-    const due = timedSpawnsDue(schedule, new Date(), aheadMs);
+    // Optional per-schedule look-ahead (minutes, 30 min .. 7 days), else the
+    // buy-in decides: 48 hours, or 6 days above 200. See spawnAheadMsFor.
+    const cadence = String(cfg.recurrenceCadence ?? 'weekly').toLowerCase();
+    const monthlyDay = Math.min(31, Math.max(1, Number(cfg.recurrenceDayOfMonth) || 1));
+    const due = timedSpawnsDue(schedule, new Date(), spawnAheadMsFor(cfg)).filter((spawn) =>
+      cadence === 'monthly' ? spawn.startTime.getUTCDate() === monthlyDay : true
+    );
+    if (due.length === 0) return;
+
+    // 2026-08-31: pre-filter instances whose spawn key is already claimed.
+    // The INSERT + UNIQUE(spawn_key) in claimSpawn remains the atomic claim —
+    // this read is purely a courtesy check. Without it, every poll (60s)
+    // re-INSERTed every already-claimed instance inside the multi-day
+    // look-ahead and ate a 23505 for each: a permanent ~2/sec duplicate-key
+    // error storm in the Postgres logs that buried real unique violations and
+    // wasted a doomed write per schedule instance per minute. A claim that
+    // lands between this read and the INSERT still gets its 23505 and stands
+    // down exactly as before; if the read itself fails, fall back to
+    // attempting everything (the old behaviour), never to skipping spawns.
+    let claimedSet: Set<string> | null = null;
+    const { data: claimedRows, error: claimedErr } = await supabase
+      .from('tournament_schedule_spawns')
+      .select('spawn_key')
+      .in(
+        'spawn_key',
+        due.map((d) => d.spawnKey)
+      );
+    if (!claimedErr && Array.isArray(claimedRows)) {
+      claimedSet = new Set(claimedRows.map((r: { spawn_key: string }) => r.spawn_key));
+    }
+
     for (const spawn of due) {
+      if (claimedSet?.has(spawn.spawnKey)) continue; // already spawned
       await this.spawnInstance(schedule, cfg, spawn.spawnKey, spawn.startTime);
     }
   }
@@ -521,7 +650,7 @@ export class ScheduledTournamentService {
         // the key would burn the 21:00 game for the day. Releasing lets it be
         // retried each poll and spawn the moment the earlier instance starts.
         console.log(
-          `[ScheduledTournaments] "${row.name}" already live pre-start — spawn ${spawnKey} deferred`
+          `[ScheduledTournaments] "${row.name}" already live pre-start - spawn ${spawnKey} deferred`
         );
         await supabase
           .from('tournament_schedule_spawns')
@@ -555,6 +684,30 @@ export class ScheduledTournamentService {
         new Error(`[ScheduledTournaments] insert failed for ${spawnKey}: ${msg}`),
         'ScheduledTournaments.insert_failed'
       );
+      // THE POP-UP (Dan 2026-08-29): "IF THE BANK DOESN'T HOLD ENOUGH CHIPS A
+      // POP UP MUST APPEAR LETTING THE CLUB OR UNION KNOW THEY NEED MORE CHIPS
+      // IN THE BANK TO COVER THE GUARANTEE."
+      //
+      // The guard is a BEFORE INSERT trigger, and a trigger that raises rolls
+      // back everything it wrote itself — so the refusal CANNOT write its own
+      // notification. This is the other half: on the guard's signature
+      // ('cannot guarantee', errcode 55000), write the durable owner-facing
+      // notification from a fresh transaction. fn_notify_guarantee_bank_short
+      // dedupes on unread per recipient per bank, so a schedule that re-fails
+      // every 30s poll produces ONE standing bell notification, not a storm.
+      if (/cannot guarantee/i.test(msg) && row.club_id) {
+        const { error: notifyErr } = await supabase.rpc('fn_notify_guarantee_bank_short', {
+          p_club_id: row.club_id,
+        });
+        if (notifyErr) {
+          reportError(
+            new Error(
+              `[ScheduledTournaments] guarantee refusal could not notify the owners: ${notifyErr.message}`
+            ),
+            'ScheduledTournaments.guarantee_notify_failed'
+          );
+        }
+      }
       return;
     }
 
@@ -589,7 +742,7 @@ export class ScheduledTournamentService {
     }
 
     console.log(
-      `[ScheduledTournaments] Spawned "${row.name}" (${spawnKey}) start ${startTime.toISOString()} — ${
+      `[ScheduledTournaments] Spawned "${row.name}" (${spawnKey}) start ${startTime.toISOString()} - ${
         seedNow ? `${seeded} horse(s) seeded` : 'open for registration, horses join at start'
       }`
     );
@@ -630,7 +783,7 @@ export class ScheduledTournamentService {
     if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) {
       reportError(
         new Error(
-          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} config is not an object — skipping`
+          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} config is not an object - skipping`
         ),
         'ScheduledTournaments.config_invalid'
       );
@@ -658,7 +811,7 @@ export class ScheduledTournamentService {
     if (!KNOWN_TYPES.has(rawType)) {
       reportError(
         new Error(
-          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} has unknown type "${rawType}" — skipping`
+          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} has unknown type "${rawType}" - skipping`
         ),
         'ScheduledTournaments.unknown_type'
       );
@@ -670,6 +823,51 @@ export class ScheduledTournamentService {
     const isSatellite = type === 'satellite';
     const isBountyType = ['bounty', 'progressive_bounty', 'mystery_bounty'].includes(type);
 
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  A SPIN AND A HEADS-UP HAVE NO SCHEDULED TIME (Dan, 2026-09-01, BINDING)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Dan, verbatim: "SPINS AND HEADS UP DO NOT HAVE SCHEDULED TIMES THEY
+     * START WHEN 3 PLAYERS HAVE BOUGHT IN AND PAID FOR SPINS, AND WHEN TWO
+     * PLAYERS FOR HEADS UP."
+     *
+     * This is not a preference, it is what the format IS, and this path could
+     * not honour it even by accident. Everything it writes is clock-shaped: a
+     * TIMED schedule spawns at an `HH:MM` from start_times_utc, an INTERVAL
+     * schedule at now + 5 minutes, and the restart clone at ended_at +
+     * restart_every_minutes.
+     *
+     * Worse than wrong, it produced games that could not run. A seat-first
+     * game is started by GameServer on paid seats alone -- `shouldStart =
+     * isSngOrSpin ? seatFirstReady : maxReached || timeReached` -- and
+     * seatFirstReady counts seats on an OPEN SEAT TABLE. Only
+     * TournamentRecurringService.createSpin / createSNG create that table.
+     * This path never has, so a row it spawned was invisible to the seat-first
+     * gate and deliberately excluded from the clock gate: unstartable by both.
+     * The live example was "Spin Royale", every 30 minutes, at a 25-chip stake
+     * the Spin board does not even offer.
+     *
+     * The board is the creator for both formats and it runs continuously.
+     * There is nothing for a schedule to add.
+     */
+    const isHeadsUpShape = isSng && clampInt(cfg.maxPlayers, 2, 10000, 0) <= HEADS_UP_SEATS;
+    if (isSpin || isHeadsUpShape) {
+      if (!this.refusedSeatFirstSchedules.has(schedule.id)) {
+        this.refusedSeatFirstSchedules.add(schedule.id);
+        reportError(
+          new Error(
+            `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} asks for a ` +
+              `${isSpin ? 'Spin' : 'heads-up'}, which has no scheduled time - it starts when ` +
+              `${isSpin ? 'three players have' : 'two players have'} bought in. The board creates ` +
+              `these continuously (TournamentRecurringService). Deactivate the schedule row.`
+          ),
+          'ScheduledTournaments.seat_first_format_refused'
+        );
+      }
+      return null;
+    }
+
     const gameVariant = String(cfg.gameVariant ?? 'nlh').toLowerCase();
     const dbGameType = GAME_TYPE_MAP[gameVariant] || 'NLH';
 
@@ -678,34 +876,155 @@ export class ScheduledTournamentService {
     // full structure arrays in every config blob.
     const blindPreset = SCHEDULE_BLIND_PRESETS[String(cfg.blindPreset ?? '').toUpperCase()];
     const payoutPreset = SCHEDULE_PAYOUT_PRESETS[String(cfg.payoutPreset ?? '').toUpperCase()];
-    const blinds =
+    let blinds =
       Array.isArray(cfg.blindStructure) && cfg.blindStructure.length > 0
         ? cfg.blindStructure
         : (blindPreset ?? []);
-    const payouts =
+    let payouts =
       Array.isArray(cfg.payoutStructure) && cfg.payoutStructure.length > 0
         ? cfg.payoutStructure
         : (payoutPreset ?? []);
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  A ROW TYPED SPIN IS A SPIN (2026-08-31, Phase 3)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * This path let a schedule pick ANY named blind preset for a row it then
+     * stamped `tournament_type = 'SPIN'`. One schedule does exactly that --
+     * "Spin Royale", active, every 30 minutes -- with `blindPreset:
+     * "HYPER_TURBO"`, an MTT ladder that opens at 50/100 with a 15 ante and
+     * doubles from there. A Spin's stack is written at DRAW time from
+     * SPIN_TIERS, so the draw handed those games a 300-chip stack against a
+     * 100 big blind.
+     *
+     * Measured on production, every completed Spin Royale over three days:
+     *
+     *     96 of 96 games opened at big blind 100
+     *     average starting depth  3.7 big blinds   (a spec spin starts at 15)
+     *     average length          12.7 hands       (a spec spin plays 49.8)
+     *
+     * That is not a fast tournament, it is a coin flip wearing a Spin's name,
+     * and it is charged as a Spin, booked against the Spin reserve pool, and
+     * paid out on the Spin multiplier table. TournamentManagerBase rewrites a
+     * Spin's blinds from spinSpec at start, but only on the draw path -- a row
+     * that already carries a multiplier skips it -- so creation writing the
+     * wrong ladder is not something a later stage reliably corrects.
+     *
+     * The format owns its structure. Same ladder, same shape, same 12 rows the
+     * one true creation path (TournamentRecurringService.createSpin) writes,
+     * so the two creators cannot disagree. A heads-up SNG gets the same
+     * treatment from headsUpSpec, for the same reason.
+     */
+    if (isSpin) {
+      const placeholderTier = SPIN_TIERS[0];
+      blinds = Array.from({ length: 12 }, (_, i) => {
+        const b = spinBlindsForLevel(i + 1);
+        return {
+          level: i + 1,
+          smallBlind: b.small,
+          bigBlind: b.big,
+          ante: 0,
+          duration: placeholderTier.levelMinutes * 60,
+        };
+      }) as typeof blinds;
+      payouts = [{ place: 1, percentage: 100 }] as typeof payouts;
+    } else if (isSng && clampInt(cfg.maxPlayers, 2, 10000, 0) <= HEADS_UP_SEATS) {
+      blinds = HEADS_UP_BLIND_STRUCTURE as unknown as typeof blinds;
+      payouts = HEADS_UP_PAYOUTS as typeof payouts;
+    }
+
     if (blinds.length === 0 || payouts.length === 0) {
       reportError(
         new Error(
-          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} missing blind/payout structure — skipping`
+          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} missing blind/payout structure - skipping`
         ),
         'ScheduledTournaments.structure_missing'
       );
       return null;
     }
 
-    // Whole-chip pricing. buyIn is the TOTAL the player pays; 0 stays a
-    // freeroll with 0/0 columns, and a spin's fee lives in its multiplier
-    // distribution rather than the fee column.
+    /**
+     * THE FIELD SIZE IS RESOLVED FIRST, because the price depends on it.
+     * It used to be computed four lines BELOW the split that needs it, which
+     * is why the rate could only ever be keyed on the format label.
+     */
+    /* SPIN_SEATS, not a config value: "SPINS ARE ALWAYS 3 HANDED" (Dan
+       2026-08-19) and the multiplier maths, the reserve booking and the payout
+       shape are all built around exactly three. A duel is two by the same
+       argument -- see headsUpSpec. Everything else keeps its configured field. */
+    const maxPlayers = isSpin
+      ? SPIN_SEATS
+      : clampInt(cfg.maxPlayers, 2, 10000, 0) || (isSng ? HEADS_UP_SEATS : 100);
+    /**
+     * MORE PAID PLACES THAN SEATS (2026-08-31 audit).
+     *
+     * Non-empty was the only test on this array. This service writes the row
+     * DIRECTLY rather than through fn_create_tournament, so it never met that
+     * function's `more_paid_places_than_players` guard — the one the modal
+     * surfaces as "There are more paid places than players allowed to enter".
+     * A schedule row carrying `"maxPlayers": 2` with a five-place preset would
+     * have created a two-handed game paying five.
+     *
+     * Not live today: the only 2-seat seeded schedule uses HEADS_UP. It was a
+     * gap in the writer, not an incident.
+     *
+     * As of the same day `tournaments_creation_guard` refuses this at the
+     * DATABASE, so it can no longer reach a row from any of the four writers.
+     * This check stays anyway, one layer earlier, because a refusal that
+     * arrives as a Postgres error in a background poll names the constraint
+     * and not the schedule — and the operator needs to know WHICH schedule is
+     * misconfigured. Paying every seat is legal (a Spin pays 3 of 3); paying
+     * more places than can enter is not.
+     */
+    if (payouts.length > maxPlayers) {
+      reportError(
+        new Error(
+          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} pays ${payouts.length} places on ${maxPlayers} seats - skipping`
+        ),
+        'ScheduledTournaments.more_paid_places_than_players'
+      );
+      return null;
+    }
+    const minPlayers = Math.min(Math.max(clampInt(cfg.minPlayers, 2, 10000, 3), 2), maxPlayers);
+
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  THIS IS THE PATH THAT ACTUALLY CHARGED THE WRONG RAKE
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * Whole-chip pricing. buyIn is the TOTAL the player pays; 0 stays a freeroll
+     * with 0/0 columns, and a spin's fee lives in its multiplier distribution
+     * rather than the fee column.
+     *
+     * Until 2026-08-27 this called `buyInFor(buyIn)` — the 10% default — for
+     * every format including a two-seat SNG. Six creation paths computed a
+     * heads-up fee, five of them at 10%, and for four of those it was only a
+     * misquote: `fn_create_tournament` is authoritative, knows the rule, and
+     * rewrote the split before it reached a column.
+     *
+     * THIS ONE DOES NOT GO THROUGH THE RPC. It builds the row and writes
+     * `buy_in_amount` / `buy_in_fee` directly, so any schedule row carrying
+     * `type: 'sng'` with two seats produced a REAL 10% heads-up game — twice the
+     * rake Dan set, charged to real players, on a recurring schedule. Measured
+     * 2026-08-27: 18 heads-up scheduled rows written at 6.67% instead of 5%.
+     *
+     * rakeRateFor is now the single source of truth for which rate a format
+     * pays, and it is keyed on seats rather than on the word "SNG".
+     */
     const buyIn = wholeChips(cfg.buyIn);
-    const split = buyIn > 0 ? buyInFor(buyIn) : { total: 0, prize: 0, fee: 0 };
+    const rakeRate = rakeRateFor({
+      tournamentType: isSng ? 'SNG' : isSpin ? 'SPIN' : 'MTT',
+      variant: type,
+      maxPlayers,
+    });
+    const split = buyIn > 0 ? buyInFor(buyIn, rakeRate) : { total: 0, prize: 0, fee: 0 };
+    // rakeRateFor already returns 0 for a Spin, so these two ternaries are now
+    // belt and braces rather than the rule. Kept because the whole buy-in
+    // reaching buy_in_amount (rather than a snapped `split.prize`) is a Spin
+    // invariant the tournaments_spin_no_extra_rake constraint enforces, and it
+    // should not depend on a helper somewhere else staying correct.
     const buyInAmount = isSpin ? buyIn : split.prize;
     const buyInFee = isSpin ? 0 : split.fee;
-
-    const maxPlayers = clampInt(cfg.maxPlayers, 2, 10000, 0) || (isSpin ? 3 : isSng ? 6 : 100);
-    const minPlayers = Math.min(Math.max(clampInt(cfg.minPlayers, 2, 10000, 3), 2), maxPlayers);
 
     // Bounty head: absolute bountyAmount wins; else the recurring service's
     // percent-of-total convention (default 30), never exceeding the prize half.
@@ -721,7 +1040,7 @@ export class ScheduledTournamentService {
       if (bountyAmount <= 0) {
         reportError(
           new Error(
-            `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} bounty type with no bounty head — skipping`
+            `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)} bounty type with no bounty head - skipping`
           ),
           'ScheduledTournaments.bounty_missing'
         );
@@ -748,7 +1067,7 @@ export class ScheduledTournamentService {
       const target = targetName ? await this.resolveSatelliteTarget(schedule, targetName) : null;
       if (!target) {
         console.log(
-          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)}: no pre-start satellite target matching "${targetName}" — skipping this spawn`
+          `[ScheduledTournaments] schedule ${schedule.id.slice(0, 8)}: no pre-start satellite target matching "${targetName}" - skipping this spawn`
         );
         return null;
       }
@@ -827,7 +1146,20 @@ export class ScheduledTournamentService {
       label_as_new: asBool(cfg.labelAsNew),
       hide_club_name: asBool(cfg.hideClubName),
       action_time_seconds: clampInt(cfg.actionTimeSeconds, 5, 60, 15),
-      table_size: clampInt(cfg.tableSize, 2, 10, 9),
+      /**
+       * 2026-08-27: the default was a flat 9, which is right for an MTT and
+       * wrong for every game that fits at ONE table. A two-seat SNG scheduled
+       * here was written claiming nine seats, and TournamentBrainContext then
+       * resolved it to 'mtt' — the horses played a duel with ICM and bubble
+       * ranges. A single-table format defaults to its own field size; an MTT is
+       * unchanged.
+       */
+      table_size: clampInt(
+        cfg.tableSize,
+        2,
+        10,
+        isSng || isSpin ? Math.min(10, Math.max(2, maxPlayers)) : 9
+      ),
       accelerated_mtt: asBool(cfg.acceleratedMtt),
       addon_break_minutes: clampInt(cfg.addonBreakMinutes, 1, 10, 1),
       big_blind_ante: asBool(cfg.bigBlindAnte),
@@ -837,8 +1169,23 @@ export class ScheduledTournamentService {
       bubble_protection: asBool(cfg.bubbleProtection),
       final_table_deal_enabled: asBool(cfg.finalTableDealEnabled),
       restart_every_minutes: restartEvery,
+      /**
+       * A SHORT FORMAT NEVER TAKES THE :55 BREAK (2026-08-31, Phase 3).
+       *
+       * Three places had an opinion and only one was consulted: the seed rows
+       * said `true`, the docs said heads-up takes the break, and the ENGINE
+       * refuses it on format (`breakEligibility.ts` -- a Spin or a duel is
+       * never eligible, whatever the column says). The engine is right; the row
+       * was drift. Written honestly now so a reader of the row and a reader of
+       * the code reach the same conclusion. See headsUpSpec
+       * HEADS_UP_SYNCHRONIZED_BREAKS.
+       */
       synchronized_breaks:
-        cfg.synchronizedBreaks === undefined ? true : asBool(cfg.synchronizedBreaks),
+        isSpin || isSng
+          ? false
+          : cfg.synchronizedBreaks === undefined
+            ? true
+            : asBool(cfg.synchronizedBreaks),
       max_rebuys: Number.isFinite(maxRebuysRaw) ? Math.max(0, Math.round(maxRebuysRaw)) : null,
       max_reentries: Number.isFinite(maxReentriesRaw)
         ? Math.max(0, Math.round(maxReentriesRaw))
@@ -853,6 +1200,9 @@ export class ScheduledTournamentService {
       row.spin_locked_tiers = null;
       row.max_players = 3;
       row.min_players = 3;
+      // Forced with the seat count it forces: a Spin is 3-handed by definition,
+      // so a table_size carried in from cfg cannot be allowed to disagree.
+      row.table_size = 3;
     }
 
     return row;
@@ -981,6 +1331,22 @@ export class ScheduledTournamentService {
 
   private async maybeRestartTournament(old: Record<string, unknown>): Promise<void> {
     if (!old.ended_at || !old.club_id || !old.name) return;
+
+    /**
+     * A SEAT-FIRST FORMAT IS NEVER RESTARTED ON A CLOCK (Dan, 2026-09-01).
+     *
+     * This clone writes `start_time = max(now + 2min, ended_at +
+     * restart_every_minutes)`, which is a scheduled time by construction, and
+     * it copies the row's columns without ever creating the open-seat table
+     * the seat-first start gate counts. A cloned Spin or heads-up is therefore
+     * a game that cannot start: invisible to the seat gate, excluded from the
+     * clock gate. The board already replaces both continuously the moment one
+     * finishes, which is what "restart" was reaching for.
+     */
+    const clonedVariant = String(old.variant ?? '').toLowerCase();
+    const clonedSeats = Number(old.max_players ?? 0);
+    if (clonedVariant === 'spin' || (clonedSeats > 0 && clonedSeats <= HEADS_UP_SEATS)) return;
+
     const endedAt = new Date(String(old.ended_at));
 
     // Never while a same-named event is live in the same club.
@@ -1027,12 +1393,36 @@ export class ScheduledTournamentService {
     // player-paid total (floor 10%, splitBuyIn's arithmetic without the
     // ladder snap — a manual event keeps its price). Compliant splits,
     // including every spin's fee-free 0, pass through untouched.
+    //
+    // CENTS FIX 2026-08-26: this block used to floor the cap to WHOLE chips
+    // (Math.floor((amt+fee)*0.1)), so a restarted 1-chip game saw its 0.10
+    // fee "exceed" a cap of 0 and had the fee silently folded into the prize
+    // — undoing Dan's 2026-08-25 fractional-fee rule on every restart of the
+    // micro rungs. The cap now floors to CENTS, same as feeToCents, and the
+    // player-paid total is preserved to the cent (a legacy 19.80 stays 19.80
+    // — clampRakeToCap is NOT used here because it whole-rounds the total).
     {
+      /**
+       * THE CAP IS THE FORMAT'S OWN RATE (2026-08-31, Phase 3).
+       *
+       * This floored at a flat 0.1 -- the DB constraint's number, which covers
+       * every shape at once. A two-seat game pays 5% (headsUpSpec), so a
+       * legacy heads-up row carrying a 10% split was re-cut to... 10%, and the
+       * clone was written at twice the rake Dan set. The row's own seats decide
+       * the rate here exactly as they do at creation, through the one helper
+       * that knows the rule.
+       */
       const amt = Number(row.buy_in_amount) || 0;
       const fee = Number(row.buy_in_fee) || 0;
-      const cap = Math.floor((amt + fee) * 0.1 + 1e-9);
+      const total = Math.round((amt + fee) * 100) / 100;
+      const cloneRate = rakeRateFor({
+        tournamentType: String(row.tournament_type ?? ''),
+        variant: String(row.variant ?? ''),
+        maxPlayers: Number(row.max_players) || 0,
+      });
+      const cap = Math.floor(total * cloneRate * 100 + 1e-9) / 100;
       if (fee > cap) {
-        row.buy_in_amount = amt + fee - cap;
+        row.buy_in_amount = Math.round((total - cap) * 100) / 100;
         row.buy_in_fee = cap;
       }
     }
@@ -1053,13 +1443,26 @@ export class ScheduledTournamentService {
         ),
         'ScheduledTournaments.restart_insert_failed'
       );
+      // Same pop-up rule as the scheduled spawn path: a guarantee refusal must
+      // reach the owners, and the raising trigger cannot write it itself.
+      if (/cannot guarantee/i.test(msg) && (row as { club_id?: string }).club_id) {
+        const { error: notifyErr } = await supabase.rpc('fn_notify_guarantee_bank_short', {
+          p_club_id: (row as { club_id?: string }).club_id,
+        });
+        if (notifyErr) {
+          reportError(
+            new Error(`restart guarantee refusal could not notify: ${notifyErr.message}`),
+            'ScheduledTournaments.guarantee_notify_failed'
+          );
+        }
+      }
       return;
     }
 
     // No horse seeding here: restart clones are manual club events, and
     // GameServer's past-start top-up fills any short field once the clock hits.
     console.log(
-      `[ScheduledTournaments] Restarted "${old.name}" as ${String(created.id).slice(0, 8)} — start ${startTime.toISOString()} (restart:${String(old.id).slice(0, 8)})`
+      `[ScheduledTournaments] Restarted "${old.name}" as ${String(created.id).slice(0, 8)} - start ${startTime.toISOString()} (restart:${String(old.id).slice(0, 8)})`
     );
   }
 }

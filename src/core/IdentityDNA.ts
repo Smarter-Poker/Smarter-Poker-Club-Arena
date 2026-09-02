@@ -20,7 +20,6 @@ import { masterBus } from './MasterBus';
 import { achievementTriggerService } from '../services/AchievementTriggerService';
 import { postgresSyncHooks } from '../services/PostgresSyncHooks';
 import { setSentryUser, clearSentryUser } from './SentryInit';
-import { pushNotificationService } from '../services/PushNotificationService';
 import { clearSessionCache } from '../hooks/useSessionCache';
 import { useHeaderDataStore } from '../stores/useHeaderDataStore';
 import { reportError } from '../utils/errorReporter';
@@ -39,6 +38,7 @@ export interface UserProfile {
   tier?: string; // Raw DB tier value (e.g. "Newcomer")
   created_at: string;
   updated_at?: string;
+  player_number?: number;
 }
 
 export interface IdentityDNAStatus {
@@ -209,13 +209,12 @@ class IdentityDNACore {
                   .onLogin(session.user.id)
                   .catch((err) => console.warn('[Achievements] Login trigger failed:', err));
 
-                // Register push notifications
-                pushNotificationService
-                  .init()
-                  .then(() => {
-                    pushNotificationService.setExternalUserId(session.user.id);
-                  })
-                  .catch((err) => console.warn('[IdentityDNA] Auth fallback error:', err));
+                // Push enrolment is NOT wired here. It used to boot the
+                // OneSignal SDK and hand it this user id; OneSignal was retired
+                // on 2026-08-19 and the SDK was removed on 2026-08-29, so both
+                // calls are gone. The live path is PushSubscriptionSync +
+                // FirstRunPushPrompt, mounted at the app root in App.tsx, which
+                // enrol against the ROOT service worker. Nothing belongs here.
 
                 // Phase 7: Absolute Realtime Perfection (Listen to external/Admin Postgres mutations)
                 // FIX 5: Wrapped in try/catch — don't let realtime init failure crash the auth flow
@@ -356,6 +355,7 @@ class IdentityDNACore {
             vip_level: ((profile as any).tier ||
               profile.vip_level ||
               'bronze') as UserProfile['vip_level'],
+            player_number: profile.player_number,
           });
           console.debug('[IdentityDNA] Full profile loaded from database');
         }
@@ -385,7 +385,7 @@ class IdentityDNACore {
     const { data, error } = await supabase
       .from('profiles')
       .select(
-        'id, username, display_name, avatar_url:arena_avatar_url, tier, created_at, updated_at'
+        'id, username, display_name, avatar_url:arena_avatar_url, tier, created_at, updated_at, player_number'
       )
       .eq('id', userId)
       .maybeSingle();

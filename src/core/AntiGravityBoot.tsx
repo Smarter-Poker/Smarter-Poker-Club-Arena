@@ -425,7 +425,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: '#4169E1',
     filter: 'blur(20px)',
     opacity: 0.5,
-    animation: 'pulse 2s ease-in-out infinite',
+    animation: 'animationsPulse 2s ease-in-out infinite',
   },
   loadingTitle: {
     fontSize: '1.75rem',

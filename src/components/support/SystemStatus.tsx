@@ -3,39 +3,48 @@
  *  SYSTEM STATUS — Health Indicator
  * ═══════════════════════════════════════════════════════════════════════════════
  *
- * Shows system health status.
- * - Green/Yellow/Red indicator
- * - Maintenance messages
+ * Shows the same live Supabase readiness check as /health.
  */
 
-import React from 'react';
-import './SystemStatus.css';
+import { useSystemHealth } from '../../hooks/useSystemHealth';
+import styles from './SystemStatus.module.css';
 
-export type SystemState = 'operational' | 'degraded' | 'maintenance';
-
-export interface SystemStatusProps {
-  status: SystemState;
-  message?: string;
-}
-
-export function SystemStatus({ status, message }: SystemStatusProps) {
-  // If operational and no message, show nothing or minimal dot
-  if (status === 'operational' && !message) return null;
+export function SystemStatus() {
+  const { health, isChecking, retry } = useSystemHealth();
+  const isOperational = health?.status === 'ok';
 
   return (
-    <div className={`system-status-bar status-${status}`}>
-      <div className="status-indicator">
-        <span className="status-dot-pulse" />
+    <section
+      className={`${styles.status} ${!isChecking && !isOperational ? styles.degraded : ''}`}
+      aria-label="Club Arena System Status"
+      aria-live="polite"
+    >
+      <div className={styles.signal} aria-hidden="true">
+        <span />
       </div>
-      <span className="status-text">
-        {status === 'maintenance'
-          ? 'System Maintenance'
-          : status === 'degraded'
-            ? 'System Issues'
-            : 'System Operational'}
-      </span>
-      {message && <span className="status-message"> - {message}</span>}
-    </div>
+      <div className={styles.copy}>
+        <span className={styles.label}>Live Platform Check</span>
+        <strong>
+          {isChecking
+            ? 'Checking Systems'
+            : isOperational
+              ? 'Systems Operational'
+              : 'Service Degraded'}
+        </strong>
+        <span>
+          {isChecking
+            ? 'Confirming The Live Data Circuit'
+            : isOperational
+              ? `Supabase Responded In ${health?.latencyMs ?? 0} Ms`
+              : 'The Data Circuit Did Not Respond Normally'}
+        </span>
+      </div>
+      {!isChecking && !isOperational && (
+        <button type="button" onClick={retry}>
+          Check Again
+        </button>
+      )}
+    </section>
   );
 }
 

@@ -16,6 +16,8 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import { retryAsync } from '../utils/retryAsync';
 import { formatDateShort as formatDate } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
+import { ErrorState } from '../components/common/EmptyState';
+import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 interface RakebackPeriod {
   id: string;
@@ -38,6 +40,7 @@ export default function RakebackPage() {
 
   const [periods, setPeriods] = useState<RakebackPeriod[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [totalEarned, setTotalEarned] = useState(0);
   const [currentRate, setCurrentRate] = useState(0);
   const [claimStatus, setClaimStatus] = useState<ClaimStatus>('idle');
@@ -63,6 +66,7 @@ export default function RakebackPage() {
     if (loadingRef.current) return;
     loadingRef.current = true;
     if (!getIsMounted || getIsMounted()) setLoading(true);
+    if (!getIsMounted || getIsMounted()) setLoadError(null);
     try {
       const { data, error } = await supabase
         .from('rakeback_periods')
@@ -74,15 +78,17 @@ export default function RakebackPage() {
         .limit(12);
 
       if (getIsMounted && !getIsMounted()) return;
-      if (!error && data) {
-        setPeriods(data);
-        setTotalEarned(data.reduce((sum, p) => sum + (p.rakeback_earned || 0), 0));
-        if (data.length > 0) {
-          setCurrentRate(data[0].rakeback_rate || 0);
-        }
+      if (error) throw error;
+      setPeriods(data || []);
+      setTotalEarned((data || []).reduce((sum, p) => sum + (p.rakeback_earned || 0), 0));
+      if (data && data.length > 0) {
+        setCurrentRate(data[0].rakeback_rate || 0);
       }
     } catch (error) {
       reportError(error, 'RakebackPage.Failed_to_load_rakeback');
+      if (!getIsMounted || getIsMounted()) {
+        setLoadError('Rakeback history could not be loaded. Your balance has not been changed.');
+      }
       if (!getIsMounted || getIsMounted()) toast.error('Failed to load rakeback data.');
     } finally {
       loadingRef.current = false;
@@ -109,19 +115,18 @@ export default function RakebackPage() {
     enabled: !!user?.id,
   });
 
-  // Real-time updates when wallet changes (balance/earnings)
-  const handleWalletUpdate = useCallback(() => {
-    loadRakebackDataRef.current();
-  }, []);
-
-  useMasterBusChannel({
-    channelName: user?.id ? `wallet-updates-${user.id}` : null,
-    table: 'wallets',
-    filter: user?.id ? `user_id=eq.${user.id}` : null,
-    event: 'UPDATE',
-    onPayload: handleWalletUpdate,
-    enabled: !!user?.id,
-  });
+  // Real-time wallet updates: NOT subscribed here any more (2026-08-24).
+  //
+  // A `wallet-updates-<uid>` channel on `wallets` filtered by user_id used to
+  // sit here with a handleWalletUpdate callback. PostgresSyncHooks'
+  // `global_db_sync:<userId>` channel already carries that exact listener -
+  // same table, same filter - created once at sign-in and never torn down by
+  // navigation, and it emits BALANCE_UPDATED. The bus subscriber below already
+  // reloads on BALANCE_UPDATED, so the refresh path is unchanged and one
+  // subscription per visit to this page disappears.
+  //
+  // The rakeback_periods channel above STAYS: it is genuinely specific to this
+  // page and has no equivalent in the global channel.
 
   // Bus listeners: reload when balance changes or settlements complete
   useEffect(() => {
@@ -247,6 +252,18 @@ export default function RakebackPage() {
 
   return (
     <div className="rakeback-page">
+      <RewardsSurfaceHeader
+        eyebrow="Rewards Circuit / Rakeback"
+        title="Rakeback Engine"
+        description="See The Value Returning From Completed Play, Inspect Every Earning Period, And Claim Eligible Funds Through The Existing Settlement Workflow."
+        art="diamonds"
+        status="RAKEBACK ENGINE // LIVE"
+        metrics={[
+          { label: 'Total Earned', value: totalEarned.toLocaleString(), tone: 'live' },
+          { label: 'Current Rate', value: `${(currentRate * 100).toFixed(1)}%` },
+          { label: 'Ready To Claim', value: pendingAmount.toLocaleString(), tone: 'attention' },
+        ]}
+      />
       {/* Promotional Banner — WPT-style */}
       {currentRate > 0 && (
         <div className="rakeback-promo-banner">
@@ -279,6 +296,8 @@ export default function RakebackPage() {
                 style={{
                   marginTop: '8px',
                   padding: '6px 16px',
+                  minHeight: '44px',
+                  touchAction: 'manipulation',
                   background:
                     claimStatus === 'success' ? '#34c759' : 'var(--accent-success, #34c759)',
                   color: '#fff',
@@ -360,6 +379,8 @@ export default function RakebackPage() {
           <div className="loading-state">
             <PageSkeleton variant="financial" />
           </div>
+        ) : loadError ? (
+          <ErrorState message={loadError} onRetry={() => void loadRakebackData()} />
         ) : periods.length === 0 ? (
           <div className="empty-state">
             <p>No Rakeback History Yet. Play Some Hands To Earn Rakeback!</p>

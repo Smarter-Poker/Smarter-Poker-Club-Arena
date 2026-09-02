@@ -35,7 +35,27 @@ import {
   restoreFastRandom,
   fastRandom,
   scoreHoldem,
+  scoreOmahaHi,
+  variantInfo,
 } from '../engine/HorseEval.js';
+
+// V16 DEEP-READS HARNESS: hand-category names matching the engine's showdown
+// vocabulary, so sandboxed league play can feed observeHandComplete and the
+// v16_deep_reads matchup measures a layer that otherwise only learns in
+// production.
+const CAT_NAMES = [
+  '',
+  'High Card',
+  'Pair',
+  'Two Pair',
+  'Three of a Kind',
+  'Straight',
+  'Flush',
+  'Full House',
+  'Four of a Kind',
+  'Straight Flush',
+  'Royal Flush',
+];
 import { SUITS, RANKS, validateAction, calculateBettingState } from '../engine/PokerEngine.js';
 import { supabase } from '../services/supabase.js';
 import { reportError } from '../services/errorReporter.js';
@@ -59,6 +79,19 @@ export interface LeagueResult {
 
 export interface LeagueMatchup {
   name: string;
+  /** game variant the matchup deals (default 'nlh'). V15: the plo6 matchup
+   *  exists because the Omaha discipline layer cannot be measured by an NLH
+   *  deal at all. */
+  variant?: string;
+  /** V16: seats at the table (default 6). 2 = heads-up. */
+  seats?: number;
+  /** V16: starting stack in big blinds (default 100). 40 exercises the
+   *  short-stack push/fold and reshove tiers the 100bb card never touches. */
+  stackBB?: number;
+  /** V16: duplicate pairs for this matchup (default PAIRS_PER_MATCHUP).
+   *  Newer exploratory matchups run fewer pairs so the whole card still
+   *  fits the wall-clock budget; stderr scales as 1/sqrt(pairs). */
+  pairs?: number;
   a: HorseDecideOpts;
   b: HorseDecideOpts;
   /** V12.3: RETIRED as an opt-in — EVERY matchup is now sandboxed. It was
@@ -71,10 +104,11 @@ export interface LeagueMatchup {
   mind?: 'sandbox';
 }
 
-const SEATS = 6;
+const DEFAULT_SEATS = 6;
 const BB = 2;
 const SB = 1;
-const START_STACK = 200; // 100bb
+// START_STACK is per-matchup now (stackBB * BB); 100bb was the only depth
+// the league ever measured before V16.
 // V12.3: raised from 24. A six-way preflop raise war can legitimately exceed
 // 24 actions, and hitting the cap now folds the debtors (see runStreet)
 // rather than silently forgiving their unpaid bets.
@@ -114,8 +148,20 @@ export function playHand(
   counters?: { illegal: number; truncated: number },
   /** V12.2: when present, decisions run against this sandboxed HorseMind and
    *  the per-seat `mind` flag is honored (default on) instead of forced off. */
-  sandbox?: HorseMindSandbox
+  sandbox?: HorseMindSandbox,
+  /** V15: game variant to deal (default 'nlh'). Omaha variants deal the full
+   *  hole count, enforce pot-limit sizing in validation, and score showdowns
+   *  with the Omaha evaluator. */
+  gameVariant: string = 'nlh',
+  /** V16: seats at the table (default 6; 2 = heads-up). */
+  numSeats: number = 6,
+  /** V16: starting stack in big blinds (default 100). */
+  stackBB: number = 100
 ): number[] {
+  const SEATS = numSeats;
+  const START_STACK = stackBB * BB;
+  const vi = variantInfo(gameVariant);
+  const holeCount = vi.holeCount;
   seedFastRandom(handSeed);
   // Deterministic deck for this seed (Fisher-Yates on fastRandom).
   const deck = [...FULL_DECK];
@@ -143,7 +189,7 @@ export function playHand(
         stack: START_STACK,
         bet: 0,
         totalInvested: 0,
-        cards: [deck[s * 2], deck[s * 2 + 1]],
+        cards: deck.slice(s * holeCount, s * holeCount + holeCount),
         is_folded: false,
         is_all_in: false,
         is_sitting_out: false,
@@ -151,7 +197,7 @@ export function playHand(
       } as SeatPlayer,
     });
   }
-  const board = deck.slice(SEATS * 2, SEATS * 2 + 5);
+  const board = deck.slice(SEATS * holeCount, SEATS * holeCount + 5);
 
   const idx = (seatNo: number) => (seatNo - 1 + SEATS) % SEATS;
   const sbIdx = idx(dealerSeat + 1);
@@ -228,7 +274,7 @@ export function playHand(
         minRaise,
         lastRaise,
         stage,
-        gameVariant: 'nlh',
+        gameVariant,
         bigBlind: BB,
         dealerSeat,
         actionHistory: history,
@@ -245,7 +291,7 @@ export function playHand(
       // Validate against the engine's own rules; downgrade an illegal action
       // to the safe fallback and count it (the conservation test asserts 0).
       let action = d.action as string;
-      let amount = d.amount ?? 0;
+      const amount = d.amount ?? 0;
       if (action === 'check' && toCall > 0) action = 'fold';
       if (action === 'call' && toCall === 0) action = 'check';
       if (action === 'bet' && currentBet > 0) action = 'raise';
@@ -255,7 +301,7 @@ export function playHand(
       // different code path from production and could never catch an illegal
       // sizing. `tally` keeps the counting optional without changing the path.
       if (action === 'bet' || action === 'raise') {
-        const bs = calculateBettingState(pot, currentBet, p.bet, BB, lastRaise, false);
+        const bs = calculateBettingState(pot, currentBet, p.bet, BB, lastRaise, vi.isPotLimit);
         if (!validateAction(action as never, amount, p.stack, bs).valid) {
           tally.illegal++;
           action = toCall > 0 ? 'fold' : 'check';
@@ -408,7 +454,11 @@ export function playHand(
     winnings[seats.indexOf(live()[0])] = pot;
   } else {
     const scores = seats.map((s) =>
-      s.player.is_folded ? -1 : scoreHoldem(s.player.cards.concat(board), 7, false)
+      s.player.is_folded
+        ? -1
+        : vi.isOmaha
+          ? scoreOmahaHi(s.player.cards, board)
+          : scoreHoldem(s.player.cards.concat(board), s.player.cards.length + 5, vi.isShortDeck)
     );
     // Layered side pots by contribution level.
     const levels = [...new Set(contenders.map((c) => c.contributed))].sort((a, b) => a - b);
@@ -442,6 +492,38 @@ export function playHand(
     }
   }
 
+  // ═══ V16 DEEP-READS HARNESS (2026-08-26) ═══
+  // Production learns fold-to-c-bet / fold-to-3-bet / sizing tells from
+  // COMPLETED hands at settlement. The league sandbox never ran settlement,
+  // so those reads stayed empty and the layer was unmeasurable (stated
+  // plainly in the deep-reads PR). Feed the same observation here, inside
+  // the SANDBOX so nothing synthetic touches live memory. Showdown identity
+  // comes from the same evaluators that settled the pot.
+  if (sandbox) {
+    try {
+      const showdown: Array<{ user_id: string; mucked: boolean; hand_name?: string }> = [];
+      const liveSeats = seats.filter((s) => !s.player.is_folded);
+      if (liveSeats.length >= 2) {
+        for (const s of liveSeats) {
+          const score = vi.isOmaha
+            ? scoreOmahaHi(s.player.cards, board)
+            : scoreHoldem(s.player.cards.concat(board), s.player.cards.length + 5, vi.isShortDeck);
+          const cat = Math.floor(score / 0x100000);
+          showdown.push({
+            user_id: s.player.user_id,
+            mucked: false,
+            hand_name: CAT_NAMES[cat] ?? '',
+          });
+        }
+      }
+      HorseMind.runInSandbox(sandbox, () =>
+        HorseMind.observeHandComplete(`league:${ts}`, history, BB, showdown)
+      );
+    } catch {
+      /* the harness is measurement plumbing — never let it break a deal */
+    }
+  }
+
   return seats.map((s, i) => winnings[i] - s.contributed);
 }
 
@@ -459,6 +541,7 @@ export async function runMatchup(
   pairs: number,
   runSeed: number
 ): Promise<LeagueResult> {
+  const SEATS = matchup.seats ?? DEFAULT_SEATS;
   const t0 = Date.now();
   const counters = { illegal: 0, truncated: 0 };
   const perPairDiff: number[] = [];
@@ -489,8 +572,26 @@ export async function runMatchup(
     const evenIsA = (s: number) => (s % 2 === 0 ? matchup.a : matchup.b);
     const evenIsB = (s: number) => (s % 2 === 0 ? matchup.b : matchup.a);
 
-    const net1 = playHand(handSeed, dealerSeat, evenIsA, counters, sb1);
-    const net2 = playHand(handSeed, dealerSeat, evenIsB, counters, sb2);
+    const net1 = playHand(
+      handSeed,
+      dealerSeat,
+      evenIsA,
+      counters,
+      sb1,
+      matchup.variant ?? 'nlh',
+      SEATS,
+      matchup.stackBB ?? 100
+    );
+    const net2 = playHand(
+      handSeed,
+      dealerSeat,
+      evenIsB,
+      counters,
+      sb2,
+      matchup.variant ?? 'nlh',
+      SEATS,
+      matchup.stackBB ?? 100
+    );
 
     let aNet = 0;
     for (let s = 0; s < SEATS; s++) {
@@ -541,6 +642,86 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
   // it, both sides with the mind on — the matchup the 2026-08-22 handoff
   // deferred for lack of a pollution-free mind mode.
   { name: 'v12_ranges_river', a: {}, b: { v12: false } },
+  // V15 Omaha nut discipline, measured where it lives: a plo6 deal. The
+  // other matchups deal NLH, where v15 changes nothing by construction.
+  { name: 'plo6_v15_discipline', variant: 'plo6', a: {}, b: { v15: false } },
+  // ── V16 (2026-08-26): measure the variants and depths the fleet actually
+  // plays. Exploratory pairs counts keep the whole card inside the budget;
+  // stderr ~4.6 bb/100 at 6000 pairs — enough to catch layer-scale edges. ──
+  { name: 'plo4_v15_discipline', variant: 'plo4', pairs: 6000, a: {}, b: { v15: false } },
+  { name: 'plo8_hilo_layer', variant: 'plo8', pairs: 6000, a: {}, b: { v8HiLo: false } },
+  { name: 'shortdeck_v8_layer', variant: 'short_deck', pairs: 6000, a: {}, b: { v8: false } },
+  { name: 'nlh_40bb_preflop', stackBB: 40, pairs: 6000, a: {}, b: { v7Preflop: false } },
+  { name: 'hu_mind_layer', seats: 2, pairs: 6000, a: {}, b: { mind: false } },
+  // ── V16 strategy matchups (2026-08-26) ──
+  { name: 'hu_v16_overlay', seats: 2, pairs: 6000, a: {}, b: { v16Hu: false } },
+  { name: 'v16_ratio_rescale', pairs: 6000, a: { v16Ratio: true }, b: {} },
+  { name: 'v16_sizecond', pairs: 6000, a: {}, b: { v16SizeCond: false } },
+  { name: 'plo4_v16_polarity', variant: 'plo4', pairs: 6000, a: {}, b: { v16PloPolar: false } },
+  // Measurable because playHand's sandbox settlement now feeds
+  // observeHandComplete — the reads accumulate inside each pass's sandbox.
+  { name: 'v16_deep_reads', pairs: 6000, a: {}, b: { v16Reads: false } },
+  // ── V17 (2026-08-26) ──
+  { name: 'v17_positional', pairs: 6000, a: {}, b: { v17Pos: false } },
+  { name: 'v17_river_probe', pairs: 6000, a: {}, b: { v17RiverProbe: false } },
+  { name: 'shortdeck_v17', variant: 'short_deck', pairs: 6000, a: {}, b: { v17ShortDeck: false } },
+  // ── V18 (2026-08-26) ──
+  { name: 'v18_squeeze_response', pairs: 6000, a: {}, b: { v18Squeeze: false } },
+  // ── V29-V33 (2026-09-01) ── THE SOLVER STACK HAD NO ABLATION MATCHUP AT
+  // ALL. V29/V30/V31/V32 shipped between 08-29 and 08-30, they short-circuit
+  // the mature V15-V23 layers on every spot they answer, and nothing on the
+  // card could say whether that trade was positive. Their gates need heads-up
+  // hold'em with the betting lead, so they are dealt at seats: 2 - the same
+  // shape hu_mind_layer uses.
+  { name: 'v29_gto_flop', seats: 2, pairs: 6000, a: {}, b: { v29GtoFlop: false } },
+  { name: 'v30_gto_turn_river', seats: 2, pairs: 6000, a: {}, b: { v30GtoTurnRiver: false } },
+  { name: 'v31_gto_suit_aware', seats: 2, pairs: 6000, a: {}, b: { v31GtoSuitAware: false } },
+  { name: 'v32_facing_defense', seats: 2, pairs: 6000, a: {}, b: { v32FacingDefense: false } },
+  // The depth ceiling only changes a decision ABOVE it, so dealing this at
+  // the standard 100bb would measure exactly nothing and report 0.00 +/- 0.00
+  // forever - the inert-matchup shape the audit now flags. 400bb is past
+  // GTO_MAX_DEPTH_BB (300), which is the only place the flag has an effect.
+  {
+    name: 'v33_depth_ceiling_400bb',
+    seats: 2,
+    stackBB: 400,
+    pairs: 6000,
+    a: {},
+    b: { v33DepthCeiling: false },
+  },
+  { name: 'v18_self_image', pairs: 6000, a: {}, b: { v18SelfImage: false } },
+  { name: 'v18_exploit_size', pairs: 6000, a: {}, b: { v18ExploitSize: false } },
+  // 2026-08-27: the bet-ratio scale repair. There is no "off" for a fixed
+  // arithmetic bug, so this measures the sizing-read layer as a whole
+  // against playing without size reads at all - if the repair helps, this
+  // matchup should grow relative to its own history.
+  { name: 'v19_size_reads', pairs: 6000, a: {}, b: { v7SizeReads: false } },
+  // ── V20 (2026-08-27) ──
+  // Multiway discipline lives postflop in every variant; measure it on the
+  // standard NLH card where multiway all-in chains actually occur. The
+  // M-zone layer only fires in tournament mode, which the league does not
+  // deal (gameMode: 'cash'), so it is validated by scenario tests instead —
+  // same position V16 real ICM shipped from.
+  { name: 'v20_multiway', pairs: 6000, a: {}, b: { v20Multiway: false } },
+  // ── V21 (2026-08-27, Phase 2) ── river endgame: NLH nut status, dominated
+  // caps, the raise-war governor. Measured on the standard NLH card where
+  // the -500bb river wars actually happened.
+  { name: 'v21_river_endgame', pairs: 6000, a: {}, b: { v21River: false } },
+  // Deep-stack discipline only differs past 120bb — deal it at 250bb.
+  { name: 'v21_deep_250bb', stackBB: 250, pairs: 6000, a: {}, b: { v21Deep: false } },
+  // ── V23 (2026-08-28) ── the cash-measurable slices. The endgame and spin
+  // layers only fire in tournament/spin modes the league does not deal;
+  // they ship scenario-tested with telemetry, the way V16 real ICM did.
+  { name: 'v23_raise_plans', pairs: 6000, a: {}, b: { v23Plan: false } },
+  { name: 'v23_river_reads', pairs: 6000, a: {}, b: { v23Reads: false } },
+  { name: 'shortdeck_v23', variant: 'short_deck', pairs: 6000, a: {}, b: { v23Variants: false } },
+  { name: 'plo8_v23_lowdraw', variant: 'plo8', pairs: 6000, a: {}, b: { v23Variants: false } },
+  // ── V24 (2026-08-28) ── Dan full-potted 8 PLO hands in a PKO and was never
+  // called once. The price defense is measurable on a PLO card; the bounty
+  // layer and the tempo floors only exist in tournament/live conditions the
+  // league cannot deal, so those ship scenario-tested with telemetry.
+  { name: 'plo4_v24_price', variant: 'plo4', pairs: 6000, a: {}, b: { v24PloDefense: false } },
+  { name: 'plo6_v24_price', variant: 'plo6', pairs: 6000, a: {}, b: { v24PloDefense: false } },
   // The whole opponent-intelligence layer vs playing blind. B-seats skip
   // both reads and writes; A-seats read a memory that includes B's actions.
   { name: 'mind_layer', a: {}, b: { mind: false } },
@@ -558,6 +739,34 @@ export const LEAGUE_MATCHUPS: LeagueMatchup[] = [
       // LeagueAblationCompleteness.test.ts now fails if a future layer
       // drifts out of this list the same way.
       v12: false,
+      v15: false,
+      v16Reads: false,
+      v16Icm: false,
+      v16Hu: false,
+      v16Blockers: false,
+      v16SizeCond: false,
+      v16PloPolar: false,
+      v17Pos: false,
+      v17RiverProbe: false,
+      v17CatchBlock: false,
+      v17ShortDeck: false,
+      v18Straddle: false,
+      v18Squeeze: false,
+      v18SelfImage: false,
+      v18ExploitSize: false,
+      v18Families: false,
+      v20Multiway: false,
+      v20Mzone: false,
+      v21River: false,
+      v21Deep: false,
+      v23Endgame: false,
+      v23Plan: false,
+      v23Reads: false,
+      v23Variants: false,
+      v23Spin: false,
+      v24Bounty: false,
+      v24PloDefense: false,
+      v25PloTourney: false,
       mind: false,
       streetIQ: false,
       handReading: false,
@@ -580,6 +789,15 @@ const LEAGUE_HOUR_UTC = 4;
 const LEAGUE_CHECK_MS = 10 * 60 * 1000;
 /** Hours after LEAGUE_HOUR_UTC during which a missed run is still picked up. */
 const LEAGUE_CATCHUP_HOURS = 3;
+/** V23 (2026-08-28): a SECOND daily window. One 90-minute budget covers 4-6
+ *  matchups against a ~30-matchup card — even staleness-first, a matchup got
+ *  measured every ~5 nights and a new layer waited most of a week for its
+ *  first read. The afternoon window doubles throughput: the staleness-first
+ *  ordering naturally hands it the matchups the night window did not reach
+ *  (their run_date is older), and (run_date, matchup) upserts make any
+ *  overlap harmless. Claimed under its own job name so leader/standby pairs
+ *  cannot both run it. */
+const LEAGUE_PM_HOUR_UTC = 16;
 /** Settle time before the boot check, so it never competes with table startup. */
 const LEAGUE_BOOT_DELAY_MS = 90 * 1000;
 // V12.3: raised 1500 -> 10000. At 1500 pairs the standard error was ~7 bb/100
@@ -589,7 +807,15 @@ const LEAGUE_BOOT_DELAY_MS = 90 * 1000;
 // 2.8 bb/100. The cost is wall clock, not responsiveness: runMatchup yields
 // every 16 hands, so this is ~70s of shared CPU per matchup rather than 70s
 // of frozen tables.
-const PAIRS_PER_MATCHUP = 10000;
+// 2026-08-27 (measured, not guessed): the 23-matchup card completed FOUR
+// matchups in its 90-minute budget - roughly 22 minutes each at 10,000 pairs -
+// so every V15/V16/V17/V18 layer went unmeasured while the four oldest
+// matchups were re-measured for the fourth time. A card whose tail never runs
+// is not a card. Two changes: a smaller default (stderr ~4.5 bb/100, still
+// well inside layer-scale edges), and DAILY ROTATION so the starting index
+// walks the list - every matchup is measured every few nights instead of the
+// same head forever.
+const PAIRS_PER_MATCHUP = 4000;
 /** Wall-clock ceiling for a whole run. See the note in runLeague. */
 const MAX_RUN_MS = 90 * 60 * 1000;
 
@@ -616,6 +842,149 @@ let leagueRunning = false;
  * run already happened. `horse_league_results` is keyed (run_date, matchup),
  * which makes it the authoritative record of what has been done.
  */
+
+/**
+ * V13.1: claim a night's work for exactly one engine instance. Returns true
+ * when THIS process won the claim. The INSERT is the lock — a duplicate-key
+ * violation means another instance got there first.
+ *
+ * Fails CLOSED on an unexpected error: if we cannot tell whether someone else
+ * owns tonight, not running is the safe answer, because the other instance
+ * almost certainly is. (The date guard below fails OPEN, deliberately — there,
+ * nobody is holding the work and both writers upsert.)
+ */
+/**
+ * A DEAD CLAIM MUST NOT BURN THE DAY (2026-08-28).
+ *
+ * MEASURED, on the day the PM window shipped. The 04:04 UTC league run
+ * claimed 2026-08-28 and wrote ZERO rows: the engine container was recreated
+ * at 04:06, two minutes in. The claim is the lock, so nothing retried, and
+ * the AM slot was simply gone - the only reason that day has any measurement
+ * at all is that the new 16:00 window happened to exist.
+ *
+ * Every ingredient of that failure is routine here. `server/**` merges deploy
+ * automatically, the engine restarts several times a day, and a league run
+ * takes ~20 minutes; a restart landing inside one is expected, not exotic.
+ *
+ * So a claim now carries a LIVENESS test: it owns the day only while it is
+ * either fresh or has something to show for itself. A claim older than
+ * CLAIM_STALE_MS whose job wrote no rows for that date is a crashed run, and
+ * the next instance takes the work over by stamping its own name on the row.
+ *
+ * The takeover is a CONDITIONAL update - `.eq('claimed_by', dead.claimed_by)`
+ * - so when two instances notice the same corpse simultaneously, exactly one
+ * UPDATE matches and the loser stands down. That is the same
+ * one-winner property the INSERT gives, applied to the second attempt.
+ */
+/*
+ * 2026-09-01: was 60 minutes against a 3-hour window. The threshold only ever
+ * bites when the claim wrote NOTHING (see claimNightlyJob: age AND no rows),
+ * and at PAIRS_PER_MATCHUP=4000 a matchup completes in roughly nine minutes -
+ * so a live run proves itself long before this. An hour of grace bought no
+ * safety and cost most of the window: it left only two chances to notice a
+ * corpse. Thirty minutes is still triple the measured first-row time, and a
+ * mistaken takeover is harmless anyway - the (run_date, matchup) upsert makes
+ * a duplicated matchup idempotent.
+ */
+const CLAIM_STALE_MS = 30 * 60 * 1000;
+
+/**
+ * Where each nightly job leaves its evidence.
+ *
+ * ── 2026-08-30, found by the daily analysis it was supposed to enable ──
+ * This map used to hold only the two league jobs, with every other job
+ * "asked to prove nothing". That sounds conservative. It is the opposite:
+ * `claimNightlyJob` treats a null answer as "cannot be judged" and DECLINES
+ * the takeover, so the liveness test above - the whole point of this block -
+ * was switched off for exactly the jobs that had no other retry.
+ *
+ * What that cost, measured: 'daily_audit' claimed 2026-08-29 at 06:09 UTC and
+ * the container was replaced mid-run. Nothing took it over, the orphaned claim
+ * permanently satisfied the INSERT lock, and the day's audit did not exist
+ * until an agent generated it by hand ~28 hours later. 'self_tuner' lost
+ * 2026-08-26 the same way. The engine restarts several times a day
+ * (RestartCount 7, six boots in 30h as this was written), so a restart inside
+ * a job window is routine, not exotic - which is precisely the reasoning in
+ * the comment above that this map failed to apply.
+ *
+ * A job belongs here the moment it writes a row somewhere. Anything genuinely
+ * unjudgeable still returns null and keeps the old all-or-nothing claim.
+ */
+const CLAIM_EVIDENCE: Record<string, { table: string; column: string; dateColumn: string }> = {
+  league: { table: 'horse_league_results', column: 'matchup', dateColumn: 'run_date' },
+  league_pm: { table: 'horse_league_results', column: 'matchup', dateColumn: 'run_date' },
+  daily_audit: { table: 'horse_daily_audit', column: 'day', dateColumn: 'day' },
+  self_tuner: { table: 'horse_self_tune_log', column: 'id', dateColumn: 'run_date' },
+};
+
+/** Rows already written for this job+date - the proof a claim did work. */
+async function claimProducedRows(job: string, date: string): Promise<boolean | null> {
+  const evidence = CLAIM_EVIDENCE[job];
+  if (evidence === undefined) return null;
+  const { data, error } = await supabase
+    .from(evidence.table)
+    .select(evidence.column)
+    .eq(evidence.dateColumn, date)
+    .limit(1);
+  if (error) throw new Error(error.message);
+  return (data?.length ?? 0) > 0;
+}
+
+export async function claimNightlyJob(job: string, date: string): Promise<boolean> {
+  const me = process.env.HOSTNAME ?? 'engine';
+  try {
+    const { error } = await supabase
+      .from('horse_job_runs')
+      .insert({ job, run_date: date, claimed_by: me });
+    if (!error) return true;
+    const code = (error as { code?: string }).code;
+    if (code !== '23505') throw new Error(error.message);
+
+    // Somebody owns it. Is that owner alive?
+    const { data: existing, error: readErr } = await supabase
+      .from('horse_job_runs')
+      .select('claimed_at, claimed_by')
+      .eq('job', job)
+      .eq('run_date', date)
+      .maybeSingle();
+    if (readErr) throw new Error(readErr.message);
+    if (!existing) return false; // vanished under us - let the next tick retry
+
+    const claimedAtMs = Date.parse(String(existing.claimed_at));
+    const ageMs = isFinite(claimedAtMs) ? Date.now() - claimedAtMs : 0;
+    if (ageMs < CLAIM_STALE_MS) return false; // still plausibly working
+
+    const produced = await claimProducedRows(job, date);
+    if (produced !== false) return false; // it delivered, or cannot be judged
+
+    // Snapshot the owner BEFORE the update: the row object may be a live
+    // reference (a test double, a future client that returns the same
+    // object), and reading it afterwards would report OUR name as the
+    // corpse's - which is exactly the confusing message this line exists to
+    // avoid emitting.
+    const prevOwner = String(existing.claimed_by);
+    const { data: taken, error: takeErr } = await supabase
+      .from('horse_job_runs')
+      .update({ claimed_by: me, claimed_at: new Date().toISOString() })
+      .eq('job', job)
+      .eq('run_date', date)
+      .eq('claimed_by', prevOwner) // the race-loser matches nothing
+      .select('job');
+    if (takeErr) throw new Error(takeErr.message);
+    if (!taken || taken.length === 0) return false;
+
+    console.warn(
+      `[HorseLeague] ${job} ${date} was claimed by ${prevOwner} ` +
+        `${Math.round(ageMs / 60000)} min ago and wrote NOTHING - taking it over. ` +
+        `A restart inside a run is the usual cause.`
+    );
+    return true;
+  } catch (err) {
+    reportError(err, 'HorseLeague.claimNightlyJob');
+    return false;
+  }
+}
+
 async function alreadyRanToday(date: string): Promise<boolean> {
   try {
     const { data, error } = await supabase
@@ -626,7 +995,11 @@ async function alreadyRanToday(date: string): Promise<boolean> {
     if (error) throw new Error(error.message);
     // A partial run (fewer rows than matchups) SHOULD be resumed, so only a
     // complete card counts as done.
-    return (data?.length ?? 0) >= LEAGUE_MATCHUPS.length;
+    // 2026-08-27: with a rotating card the budget legitimately leaves the
+    // tail unrun, so "complete" can no longer mean every matchup. A run
+    // counts as done for the day once ANY rows exist for it - the rotation,
+    // not a same-night retry, is what covers the rest.
+    return (data?.length ?? 0) > 0;
   } catch (err) {
     // Never let a failed lookup silently skip the night; the upsert on
     // (run_date, matchup) makes a duplicate run harmless.
@@ -635,18 +1008,84 @@ async function alreadyRanToday(date: string): Promise<boolean> {
   }
 }
 
+let lastLeaguePmDate: string | null = null;
+
 async function maybeRunLeague(): Promise<void> {
   const now = new Date();
   const today = now.toISOString().slice(0, 10);
   const hour = now.getUTCHours();
   const inWindow = hour >= LEAGUE_HOUR_UTC && hour < LEAGUE_HOUR_UTC + LEAGUE_CATCHUP_HOURS;
-  if (!inWindow || leagueRunning || lastLeagueDate === today) return;
-  if (await alreadyRanToday(today)) {
-    lastLeagueDate = today; // remember for the rest of this process's life
+  const inPmWindow = hour >= LEAGUE_PM_HOUR_UTC && hour < LEAGUE_PM_HOUR_UTC + LEAGUE_CATCHUP_HOURS;
+  if (leagueRunning) return;
+
+  if (inWindow && lastLeagueDate !== today) {
+    if (await alreadyRanToday(today)) {
+      lastLeagueDate = today; // remember for the rest of this process's life
+      return;
+    }
+    // NOTE: lastLeagueDate is per-process, so a RESTARTED instance arrives
+    // here with it empty and reaches the claim - which is exactly how a
+    // crashed run gets taken over by its own replacement.
+
+    // V13.1: leader/standby means TWO containers boot the full engine path and
+    // both reach this line within seconds. Claim the night before working it.
+    if (!(await claimNightlyJob('league', today))) {
+      /*
+       * DO NOT LATCH lastLeagueDate HERE (2026-09-01, measured).
+       *
+       * Standing down is not the same as settling the day. This line used to
+       * latch the per-process "settled today" flag, and that single
+       * assignment defeated the whole takeover mechanism below it:
+       *
+       *   04:04  instance A claims 'league' and starts the run.
+       *   04:10  the container is replaced (server/** merges deploy, so this
+       *          is routine). The run dies having written ZERO rows - the
+       *          first matchup had not finished yet.
+       *   04:12  the replacement boots, finds no rows, tries to claim, and is
+       *          refused because the dead claim is only EIGHT MINUTES old and
+       *          therefore judged "still plausibly working". It then latched
+       *          lastLeagueDate = today and every 10-minute tick for the rest
+       *          of the process's life returned immediately - including every
+       *          tick after the claim went stale and became reclaimable.
+       *
+       * The window is three hours precisely so a corpse can be taken over
+       * inside it. Latching on stand-down threw that away and cost the league
+       * 2026-08-29, 2026-08-30 and 2026-09-01 - three days in four with a
+       * claim row and no results, while nothing said so.
+       *
+       * Leaving the flag unset costs one extra claim probe per ten minutes
+       * per standby, and buys a retry every ten minutes until either the run
+       * lands rows (alreadyRanToday short-circuits above) or the stale claim
+       * is taken over.
+       */
+      console.log(
+        `[HorseLeague] run ${today} claimed by another instance - standing down, ` +
+          `will re-check in ${Math.round(LEAGUE_CHECK_MS / 60000)} min in case that claim dies`
+      );
+      return;
+    }
+    lastLeagueDate = today;
+    await runLeague(today);
     return;
   }
-  lastLeagueDate = today;
-  await runLeague(today);
+
+  // V23 PM WINDOW: no alreadyRanToday here — the night run's rows exist by
+  // design. The claim itself is the dedup (unique on job + run_date), and
+  // the staleness-first card ordering serves the matchups the night window
+  // left unmeasured.
+  if (inPmWindow && lastLeaguePmDate !== today) {
+    if (!(await claimNightlyJob('league_pm', today))) {
+      // Same reasoning as the AM window above: standing down is not settling
+      // the day, so the flag stays unset and the next tick re-checks.
+      console.log(
+        `[HorseLeague] pm run ${today} claimed by another instance - standing down, ` +
+          `will re-check in ${Math.round(LEAGUE_CHECK_MS / 60000)} min in case that claim dies`
+      );
+      return;
+    }
+    lastLeaguePmDate = today;
+    await runLeague(today);
+  }
 }
 
 export function startHorseLeague(): void {
@@ -676,13 +1115,52 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
   // dealing live poker — so a run in progress and a run that never began were
   // indistinguishable from outside. That is exactly the state this whole audit
   // keeps finding: a job that looks identical whether or not it is working.
+  // DAILY ROTATION (2026-08-27): start the card at a different index each
+  // day so the budget cannot permanently starve the tail. Deterministic from
+  // the run date, so a re-run of the same date repeats the same order.
+  const dayIndex = Math.floor(Date.parse(date) / 86_400_000);
+  const rotateBy =
+    ((dayIndex % LEAGUE_MATCHUPS.length) + LEAGUE_MATCHUPS.length) % LEAGUE_MATCHUPS.length;
+  let card = LEAGUE_MATCHUPS.slice(rotateBy).concat(LEAGUE_MATCHUPS.slice(0, rotateBy));
+  // STALENESS-FIRST (2026-08-27, Phase 2): rotation alone walks the start
+  // index by ONE per night while the budget covers ~4-6 matchups, so a new
+  // layer's matchup could wait a week for its first measurement — and the
+  // v16_ratio decision needs THREE significant runs. Order the card by how
+  // long each matchup has gone unmeasured (never-run first, then oldest),
+  // with the rotation order as the deterministic tie-break. The DB is the
+  // authority on what has been measured; if it cannot answer, rotation alone
+  // still runs the night.
+  try {
+    const { data, error } = await supabase
+      .from('horse_league_results')
+      .select('matchup, run_date')
+      .order('run_date', { ascending: false })
+      .limit(2000);
+    if (!error && data) {
+      const lastRun = new Map<string, string>();
+      for (const r of data as Array<{ matchup: string; run_date: string }>) {
+        if (!lastRun.has(r.matchup)) lastRun.set(r.matchup, r.run_date);
+      }
+      const pos = new Map(card.map((m, i) => [m.name, i]));
+      card = card
+        .slice()
+        .sort(
+          (a, b) =>
+            (lastRun.get(a.name) ?? '0000').localeCompare(lastRun.get(b.name) ?? '0000') ||
+            pos.get(a.name)! - pos.get(b.name)!
+        );
+    }
+  } catch {
+    /* staleness ordering is best-effort — rotation already covers the night */
+  }
   console.log(
-    `[HorseLeague] run ${date} starting: ${LEAGUE_MATCHUPS.length} matchups x ` +
-      `${PAIRS_PER_MATCHUP} pairs (budget ${Math.round(MAX_RUN_MS / 60000)} min)`
+    `[HorseLeague] run ${date} starting: ${card.length} matchups x ` +
+      `${PAIRS_PER_MATCHUP} pairs (budget ${Math.round(MAX_RUN_MS / 60000)} min), ` +
+      `rotation offset ${rotateBy} -> first up ${card[0]?.name}`
   );
   try {
     const runSeed = (Date.parse(date) / 86_400_000) >>> 0;
-    for (const m of LEAGUE_MATCHUPS) {
+    for (const m of card) {
       // V13: a wall-clock budget. The league shares the event loop with live
       // tables by design, so its duration depends on how busy the fleet is,
       // not on its own CPU cost — an unbounded run could still be going when
@@ -691,11 +1169,15 @@ export async function runLeague(runDate?: string): Promise<LeagueResult[]> {
       if (Date.now() - startedAt > MAX_RUN_MS) {
         console.warn(
           `[HorseLeague] run ${date} hit its ${Math.round(MAX_RUN_MS / 60000)}-minute budget ` +
-            `after ${results.length}/${LEAGUE_MATCHUPS.length} matchups - stopping cleanly`
+            `after ${results.length}/${card.length} matchups - stopping cleanly. ` +
+            `Unrun tonight: ${card
+              .slice(results.length)
+              .map((x) => x.name)
+              .join(', ')} (they lead tomorrow's rotation)`
         );
         break;
       }
-      const r = await runMatchup(m, PAIRS_PER_MATCHUP, runSeed ^ hash32(m.name));
+      const r = await runMatchup(m, m.pairs ?? PAIRS_PER_MATCHUP, runSeed ^ hash32(m.name));
       results.push(r);
       try {
         const { error } = await supabase.from('horse_league_results').upsert(

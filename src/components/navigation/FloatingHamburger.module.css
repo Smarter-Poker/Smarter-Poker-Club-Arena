@@ -22,13 +22,22 @@
   z-index: 1001;
   padding: 0;
 }
-
-.floatingButton:hover {
-  transform: translateY(-2px) scale(1.08);
-}
-
 .floatingButton:active {
   transform: scale(0.95);
+}
+
+/* NO BOXES OVER CHROME ICONS (Dan, 2026-09-01, binding). club-engine.css
+   paints a global `button:focus-visible` outline plus a 4px halo on every
+   button; on this round, transparent trigger it reads as a rectangle sitting
+   on the icon. Focus stays visible as a round glow. */
+.floatingButton:focus,
+.floatingButton:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.floatingButton:focus-visible {
+  background: radial-gradient(closest-side, rgba(210, 220, 232, 0.26), rgba(210, 220, 232, 0) 76%);
 }
 
 /* Hide when menu is open — belt-and-suspenders via CSS */

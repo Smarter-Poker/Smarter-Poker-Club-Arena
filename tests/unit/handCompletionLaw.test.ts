@@ -15,6 +15,7 @@
  * dealt on top of the number telling the player what they had won.
  */
 import { describe, it, expect } from 'vitest';
+import { HEADS_UP_SEATS } from '../../src/config/headsUpSpec';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import {
@@ -37,9 +38,26 @@ describe('the spec is mirrored byte-for-byte into the engine', () => {
 });
 
 describe('every beat is inside the hold', () => {
-  it('a fold win still waits for sweep + pot push + muck', () => {
+  it('a fold win still waits for sweep + pot push + muck + the one-second rest', () => {
     const hold = handCompletionHoldMs({ wentToShowdown: false });
     expect(hold).toBe(
+      HAND_COMPLETION.BETS_SWEEP_MS +
+        HAND_COMPLETION.POT_PUSH_MS +
+        HAND_COMPLETION.MUCK_MS +
+        HAND_COMPLETION.POST_PUSH_PAUSE_MS
+    );
+  });
+
+  it("Dan 2026-08-27: the pause is a FULL second, and the button glide is the client's own beat", () => {
+    // "...PUSH POT ANIMATION PLUS THE +XXX TOTAL ANIMATION, PAUSE 1 SECOND,
+    // MOVE THE BUTTON ANIMATION... START DEALING NEXT HAND."
+    expect(HAND_COMPLETION.POST_PUSH_PAUSE_MS).toBe(1000);
+    // The button beat exists and covers the 600ms CSS glide with settle. It
+    // is NOT in the engine hold (the client cannot know the new button seat
+    // until HAND_STARTED arrives) — TablePage delays the deal start by it.
+    expect(HAND_COMPLETION.BUTTON_MOVE_MS).toBeGreaterThanOrEqual(600);
+    const fold = handCompletionHoldMs({ wentToShowdown: false });
+    expect(fold - HAND_COMPLETION.POST_PUSH_PAUSE_MS).toBe(
       HAND_COMPLETION.BETS_SWEEP_MS + HAND_COMPLETION.POT_PUSH_MS + HAND_COMPLETION.MUCK_MS
     );
   });
@@ -66,7 +84,8 @@ describe('every beat is inside the hold', () => {
       HAND_COMPLETION.SHOWDOWN_READ_MAX_MS +
       HAND_COMPLETION.BETS_SWEEP_MS +
       HAND_COMPLETION.POT_PUSH_MS +
-      HAND_COMPLETION.MUCK_MS;
+      HAND_COMPLETION.MUCK_MS +
+      HAND_COMPLETION.POST_PUSH_PAUSE_MS;
     expect(massive).toBe(capped);
   });
 
@@ -81,6 +100,47 @@ describe('every beat is inside the hold', () => {
 
   it('the board clear is its own beat, longer after a showdown', () => {
     expect(boardClearMs(true)).toBeGreaterThan(boardClearMs(false));
+  });
+
+  it('a run-it-twice hand holds for the whole client reveal timeline (2026-08-26)', () => {
+    // The engine settles RIT synchronously; the CLIENT deals the boards
+    // street by street afterwards. The hold must cover that timeline or the
+    // next hand deals over a board still turning its river.
+    const single = handCompletionHoldMs({ wentToShowdown: true, showdownHands: 2 });
+    const rit2 = handCompletionHoldMs({
+      wentToShowdown: true,
+      showdownHands: 2,
+      ritRuns: 2,
+      ritStreetsPerRun: 3,
+    });
+    const rit3 = handCompletionHoldMs({
+      wentToShowdown: true,
+      showdownHands: 2,
+      ritRuns: 3,
+      ritStreetsPerRun: 3,
+    });
+    // Exactly the client timeline in TablePage's rit_result handler: the
+    // street-by-street reveal, then one RESULT window per run (ribbon →
+    // ship → settle — the 3X recording shows the winner phase replays run
+    // by run), then the pot-push/muck beats every hand carries.
+    const H = HAND_COMPLETION;
+    const push = H.BETS_SWEEP_MS + H.POT_PUSH_MS + H.MUCK_MS + H.POST_PUSH_PAUSE_MS;
+    const reveal2 = H.RIT_REVEAL_LEAD_MS + 2 * 3 * H.RIT_STREET_MS + 1 * H.RIT_RUN_GAP_MS;
+    expect(rit2).toBe(reveal2 + 2 * H.RIT_RESULT_RUN_MS + push);
+    expect(rit3).toBeGreaterThan(rit2);
+    // A river-only re-deal (turn all-in) holds far less than a full re-deal.
+    const rit2river = handCompletionHoldMs({
+      wentToShowdown: true,
+      showdownHands: 2,
+      ritRuns: 2,
+      ritStreetsPerRun: 1,
+    });
+    expect(rit2river).toBeLessThan(rit2);
+    expect(rit2river).toBeGreaterThan(single);
+    // ritRuns 0/undefined leaves the single-run hold untouched.
+    expect(handCompletionHoldMs({ wentToShowdown: true, showdownHands: 2, ritRuns: 0 })).toBe(
+      single
+    );
   });
 });
 
@@ -159,7 +219,15 @@ describe('heads-up is the only sit-n-go we run', () => {
       REC.indexOf('const SNG_BOARD_SHAPES'),
       REC.indexOf('const SNG_BOARD_VARIANTS')
     );
-    expect(shapes).toMatch(/seats: 2/);
+    /**
+     * 2026-08-31 (Phase 3): the seat count moved into
+     * src/config/headsUpSpec.ts, so the shapes array names HEADS_UP_SEATS
+     * rather than a literal. The guarantee is unchanged -- both bands are
+     * two-handed and no 6-max or 9-max shape exists -- and it is now asserted
+     * against the spec as well as the source, so neither can move alone.
+     */
+    expect(HEADS_UP_SEATS).toBe(2);
+    expect(shapes).toMatch(/seats: (?:2|HEADS_UP_SEATS)\b/);
     expect(shapes).not.toMatch(/seats: 6/);
     expect(shapes).not.toMatch(/seats: 9/);
   });

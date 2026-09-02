@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
 import { reportError } from '../../utils/errorReporter';
+import { formatPopupText } from '../../utils/popupStyle';
 
 interface LedgerEntry {
   id: string;
@@ -106,7 +107,7 @@ export default function TransactionLedgerView({
   }, [loadLedger]);
 
   // Auto-refresh on new transactions
-  useMasterBusSubscriptions(['BALANCE_UPDATED', 'TRANSACTION_LOGGED' as any], () => loadLedger(), {
+  useMasterBusSubscriptions(['BALANCE_UPDATED', 'TRANSACTION_LOGGED'], () => loadLedger(), {
     debounce: 2000,
   });
 
@@ -121,7 +122,7 @@ export default function TransactionLedgerView({
   if (entries.length === 0) {
     return (
       <div style={{ padding: '24px', textAlign: 'center', color: '#666' }}>
-        <div style={{ fontSize: '32px', marginBottom: '8px', opacity: 0.5 }}>{'\u{1F4CB}'}</div>
+        <div style={{ fontSize: '32px', marginBottom: '8px', opacity: 0.5 }}>{'▤'}</div>
         <div>No Transactions Yet</div>
       </div>
     );
@@ -212,7 +213,7 @@ export default function TransactionLedgerView({
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {e.description}
+                    {formatPopupText(e.description)}
                   </div>
                 )}
               </div>

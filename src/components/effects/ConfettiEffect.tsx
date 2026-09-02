@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import './ConfettiEffect.css';
 
 interface ConfettiEffectProps {
@@ -14,18 +14,28 @@ export const ConfettiEffect: React.FC<ConfettiEffectProps> = ({
   colors = ['#ffd700', '#ff6b6b', '#4ecdc4', '#45b7d1', '#f7dc6f'],
   duration = 3000,
 }) => {
-  if (!isActive) return null;
-
   const particleCount = intensity === 'light' ? 30 : intensity === 'heavy' ? 100 : 50;
 
-  const particles = Array.from({ length: particleCount }, (_, i) => ({
-    id: i,
-    color: colors[i % colors.length],
-    left: `${Math.random() * 100}%`,
-    delay: `${Math.random() * 0.5}s`,
-    size: `${4 + Math.random() * 6}px`,
-    rotation: `${Math.random() * 360}deg`,
-  }));
+  // ANIMATION AUDIT 2026-08-28: this was built with Math.random() in the
+  // render body — every parent re-render while active re-randomised all the
+  // particles mid-fall and the burst visibly jittered. Memoised on the burst
+  // identity so a re-render can never scramble a burst in flight. (Hooks
+  // before the early return, per the rules of hooks.)
+  const particles = useMemo(
+    () =>
+      Array.from({ length: particleCount }, (_, i) => ({
+        id: i,
+        color: colors[i % colors.length],
+        left: `${Math.random() * 100}%`,
+        delay: `${Math.random() * 0.5}s`,
+        size: `${4 + Math.random() * 6}px`,
+        rotation: `${Math.random() * 360}deg`,
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isActive, particleCount]
+  );
+
+  if (!isActive) return null;
 
   return (
     <div

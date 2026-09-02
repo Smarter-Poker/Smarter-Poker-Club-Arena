@@ -55,7 +55,7 @@ function getCardTexturePath(cardStr: string): string {
   // no long-lived Cache-Control, and a dependency on the World Hub happening
   // to host a copy at the apex. MEDIA_BASE serves the same files from
   // /hub/club-arena/cards/, where both cache layers now apply.
-  if (!cardStr || cardStr === '??') return `${MEDIA_BASE}cards/backs/carbon.webp`;
+  if (!cardStr || cardStr === '??') return `${MEDIA_BASE}cards/backs/table/carbon.webp`;
 
   const rankChar = cardStr[0].toLowerCase();
   const suitChar = cardStr[1].toLowerCase();
@@ -196,7 +196,7 @@ class PokerTable3D {
 
   private createCardMesh(cardStr: string): THREE.Mesh {
     const geo = new THREE.BoxGeometry(CARD_WIDTH, 0.005, CARD_HEIGHT);
-    const backTex = getTexture(`${MEDIA_BASE}cards/backs/carbon.webp`);
+    const backTex = getTexture(`${MEDIA_BASE}cards/backs/table/carbon.webp`);
     let frontTex = backTex;
 
     if (cardStr !== '??') {

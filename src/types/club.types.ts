@@ -58,6 +58,10 @@ export interface ClubSettings {
   allow_rakeback: boolean;
   rakeback_percentage: number;
   default_time_bank: number; // seconds
+  bbj_rake_enabled: boolean;
+  spins_enabled: boolean;
+  spins_preseed_amount: number;
+  spins_wallet_funding: string;
 }
 
 export interface ClubWithDistance extends Club {
@@ -120,7 +124,7 @@ export interface ClubMember {
   rank_level?: number;
   sessions_played?: number;
   orange_ball_status?: string | null;
-  parent_agent_id?: string | null;
+  agent_id?: string | null;
   hands_played?: number; // DB column name (was 'total_hands')
   chips_won?: number; // DB column name (was 'total_won')
   chips_lost?: number; // DB column name (was 'total_lost')
@@ -276,7 +280,14 @@ export type TableStatus = 'waiting' | 'running' | 'paused' | 'closed';
 
 export type GameType = 'cash' | 'tournament' | 'sng' | 'spin';
 
-// FIX 116: Dead variants removed — Dan's 9 approved variants only
+// FIX 116: Dead variants removed — Dan's approved variants only.
+//
+// 2026-08-23: `flh` restored and `flo8` added. FIX 116 called them dead because
+// nothing could create one, but the lobby's LIMIT tab and ClubHomePage's
+// cashKind() never stopped classifying on them — so the tab could only ever be
+// empty, which is the bug this change exists to fix. The engine now actually
+// plays them fixed-limit; see server/src/engine/BettingStructure.ts. Keep in
+// lockstep with the identical union in server/src/types.ts.
 export type GameVariant =
   | 'nlh' // No-Limit Hold'em
   | 'plo4' // Pot-Limit Omaha 4-card
@@ -284,7 +295,9 @@ export type GameVariant =
   | 'plo6' // Pot-Limit Omaha 6-card
   | 'plo8' // Omaha Hi-Lo (8 or better)
   | 'pineapple' // Pineapple Hold'em
-  | 'short_deck'; // Short Deck (6+)
+  | 'short_deck' // Short Deck (6+)
+  | 'flh' // Fixed Limit Hold'em
+  | 'flo8'; // Fixed Limit Omaha Hi-Lo
 
 export interface TableSettings {
   // Blinds & Stakes
@@ -307,6 +320,16 @@ export interface TableSettings {
   bomb_pot_ante_bb: number; // In big blinds
   /** DOUBLE-BOARD BOMB POT 2026-08-20: deal two boards, split pots across them. */
   bomb_pot_double_board?: boolean;
+  /* BOMB POT STANDARDIZATION 2026-08-27 (spec §3): canonical config — board
+     count 1-3 supersedes the boolean; trigger mode, timed interval, minimum
+     players and optional fixed ante. */
+  bomb_pot_board_count?: number;
+  bomb_pot_trigger_mode?: 'every_n_hands' | 'once_per_orbit' | 'timed' | 'bomb_pot_only';
+  bomb_pot_interval_seconds?: number | null;
+  bomb_pot_min_players?: number;
+  bomb_pot_ante_fixed?: number | null;
+  /** VARIANT OVERRIDE (spec §10.1): bomb hand variant; NULL = same as table. */
+  bomb_pot_variant?: 'nlh' | 'plo4' | 'plo5' | 'plo6' | null;
   double_board: boolean;
 
   // Table Rules
@@ -379,7 +402,24 @@ export interface TablePlayer {
   current_visual_state: SeatVisualState; // CSS class driver
   current_highlight_state: SeatHighlightState; // Glow/border style
   action_pending_here: boolean; // True when it's this seat's turn
-  rebuy_prompt_active: boolean; // Rebuy dialog is showing for this player
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  `rebuy_prompt_active` DELETED 2026-08-27 — IT NEVER EXISTED
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * It was declared here as a non-optional `boolean` on the seat row, and no
+   * such column has ever existed on `table_seats` — nor anywhere else in the
+   * schema. Nothing read it, which is the only reason a required field that is
+   * always `undefined` at runtime never became a crash.
+   *
+   * The real state lives on the TOURNAMENT entry, not the seat, and it is not a
+   * boolean: `tournament_players.rebuy_prompt_until timestamptz NULL`. It is
+   * declared as `TournamentRebuyPrompt` below. A boolean cannot express the
+   * thing that matters here, which is HOW LONG the server is still holding the
+   * seat — the elimination sweep must not eliminate while
+   * `now() < rebuy_prompt_until`, and a client reading a boolean would be right
+   * back to inventing its own window.
+   */
 
   // Bible V8 2.8: Per-hand player state
   manual_time_banks_used_this_hand: number;
@@ -691,6 +731,39 @@ export interface Tournament {
   [key: string]: any; // For flexibility
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  THE REBUY PROMPT IS A DEADLINE THE SERVER OWNS (2026-08-27)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * `public.tournament_players.rebuy_prompt_until timestamptz NULL`, live in
+ * production. It replaces the `rebuy_prompt_active: boolean` that TablePlayer
+ * declared above and that no database has ever had.
+ *
+ * THE CONTRACT:
+ *   - On bust the server sets `rebuy_prompt_until = now() + window`.
+ *   - The elimination sweep MUST NOT eliminate while `now() < rebuy_prompt_until`.
+ *   - Accepting OR declining clears it, so a decline releases the table at once.
+ *   - NULL means no prompt is open.
+ *
+ * A boolean could not carry this. The client used to hold the rebuy modal for a
+ * flat 120,000 ms of its own choosing while the sweep ran on a five-second
+ * clock: a player who took six seconds to read the price was refused with "No
+ * live seat for this rebuy" for a rebuy they were entitled to, and had already
+ * been stamped with a finishing position. The window has to be a number the
+ * server states and the client reads, and the client may only ever shorten it.
+ *
+ * `tournament_players` carries a SELECT policy and nothing else, so the CLIENT
+ * only ever READS this column: a browser UPDATE returns zero rows with no
+ * error, which is a silent no-op. Writing and clearing it belongs to the engine
+ * and to `process_tournament_rebuy`.
+ *
+ * ISO 8601 string, as PostgREST returns it. Parse with `Date.parse`.
+ */
+export interface TournamentRebuyPrompt {
+  rebuy_prompt_until: string | null;
+}
+
 export type TournamentType = 'mtt' | 'sng' | 'spin' | 'satellite';
 
 export type TournamentStatus =
@@ -993,7 +1066,7 @@ export const TRAINING_LEVELS: TrainingLevel[] = [
   {
     level: 1,
     name: 'Foundations',
-    description: 'Basic pre-flop scenarios',
+    description: 'Basic Pre-Flop Scenarios',
     timer_seconds: 30,
     difficulty: 'easy',
     min_questions: 20,
@@ -1002,7 +1075,7 @@ export const TRAINING_LEVELS: TrainingLevel[] = [
   {
     level: 2,
     name: 'Position Play',
-    description: 'Positional awareness',
+    description: 'Positional Awareness',
     timer_seconds: 28,
     difficulty: 'easy',
     min_questions: 20,
@@ -1011,7 +1084,7 @@ export const TRAINING_LEVELS: TrainingLevel[] = [
   {
     level: 3,
     name: 'Bet Sizing',
-    description: 'Optimal bet sizes',
+    description: 'Optimal Bet Sizes',
     timer_seconds: 25,
     difficulty: 'medium',
     min_questions: 20,
@@ -1020,7 +1093,7 @@ export const TRAINING_LEVELS: TrainingLevel[] = [
   {
     level: 4,
     name: 'C-Bet Strategy',
-    description: 'Continuation betting',
+    description: 'Continuation Betting',
     timer_seconds: 22,
     difficulty: 'medium',
     min_questions: 20,
@@ -1029,7 +1102,7 @@ export const TRAINING_LEVELS: TrainingLevel[] = [
   {
     level: 5,
     name: 'Turn Decisions',
-    description: 'Complex turn strategy',
+    description: 'Complex Turn Strategy',
     timer_seconds: 20,
     difficulty: 'medium',
     min_questions: 20,
@@ -1038,7 +1111,7 @@ export const TRAINING_LEVELS: TrainingLevel[] = [
   {
     level: 6,
     name: 'River Play',
-    description: 'River value & bluffs',
+    description: 'River Value & Bluffs',
     timer_seconds: 18,
     difficulty: 'hard',
     min_questions: 20,
@@ -1047,7 +1120,7 @@ export const TRAINING_LEVELS: TrainingLevel[] = [
   {
     level: 7,
     name: '3-Bet Pots',
-    description: 'Navigating 3-bet pots',
+    description: 'Navigating 3-Bet Pots',
     timer_seconds: 15,
     difficulty: 'hard',
     min_questions: 20,
@@ -1056,7 +1129,7 @@ export const TRAINING_LEVELS: TrainingLevel[] = [
   {
     level: 8,
     name: 'Multi-Way Pots',
-    description: 'Multi-way dynamics',
+    description: 'Multi-Way Dynamics',
     timer_seconds: 12,
     difficulty: 'expert',
     min_questions: 20,
@@ -1074,7 +1147,7 @@ export const TRAINING_LEVELS: TrainingLevel[] = [
   {
     level: 10,
     name: 'Elite GTO',
-    description: 'Solver-level play',
+    description: 'Solver-Level Play',
     timer_seconds: 8,
     difficulty: 'master',
     min_questions: 20,
@@ -1115,6 +1188,49 @@ export interface VariantConfig {
 
 /** Default variant configs for all supported variants */
 export const VARIANT_CONFIGS: Record<GameVariant, VariantConfig> = {
+  // ── LIMIT (2026-08-23) ────────────────────────────────────────────────────
+  // `betting_structure` has carried a 'fixed_limit' member since this interface
+  // was written; there was simply never a variant that used it, because FIX 116
+  // had removed them all. These two deal exactly like nlh and plo8 — only the
+  // BETTING differs, which is what server/src/engine/BettingStructure.ts now
+  // enforces: fixed wager sizes, small bet preflop and flop, big bet turn and
+  // river, capped at one bet and three raises per street.
+  flh: {
+    variant: 'flh',
+    display_name: "Fixed Limit Hold'em",
+    hole_cards: 2,
+    mandatory_hole_card_usage: 'any',
+    board_cards_total: 5,
+    board_reveal_pattern: [3, 1, 1],
+    discard_phase_enabled: false,
+    discard_after_street: null,
+    discard_count: 0,
+    hi_lo_enabled: false,
+    hi_lo_qualifier: null,
+    short_deck: false,
+    short_deck_min_rank: null,
+    betting_structure: 'fixed_limit',
+    min_players: 2,
+    max_players: 9,
+  },
+  flo8: {
+    variant: 'flo8',
+    display_name: 'Fixed Limit Omaha Hi-Lo',
+    hole_cards: 4,
+    mandatory_hole_card_usage: 'exactly_2',
+    board_cards_total: 5,
+    board_reveal_pattern: [3, 1, 1],
+    discard_phase_enabled: false,
+    discard_after_street: null,
+    discard_count: 0,
+    hi_lo_enabled: true,
+    hi_lo_qualifier: 8,
+    short_deck: false,
+    short_deck_min_rank: null,
+    betting_structure: 'fixed_limit',
+    min_players: 2,
+    max_players: 9,
+  },
   nlh: {
     variant: 'nlh',
     display_name: "No-Limit Hold'em",

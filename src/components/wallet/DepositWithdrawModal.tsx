@@ -171,12 +171,21 @@ const StepProgress = ({ current }: { current: 'method' | 'amount' | 'confirm' | 
   );
 };
 
+/**
+ * The server route that would accept a funding request. `null` means there is
+ * none — see the block comment on handleConfirm for the four separate reasons
+ * the old direct `wallet_transactions` insert could never work, and why it must
+ * not simply be repaired into working. Set this to the route path once it
+ * exists and the POST below starts carrying real requests.
+ */
+const FUNDING_ENDPOINT: string | null = null;
+
 const PAYMENT_METHODS: PaymentMethodInfo[] = [
   {
     id: 'agent',
     icon: '',
     label: 'Agent',
-    description: 'Transfer through your agent',
+    description: 'Transfer Through Your Agent',
     minAmount: 10,
     maxAmount: 50000,
     fee: 0,
@@ -206,7 +215,7 @@ const PAYMENT_METHODS: PaymentMethodInfo[] = [
     id: 'zelle',
     icon: 'Z',
     label: 'Zelle',
-    description: 'pay@clubarena.com',
+    description: 'Pay@Clubarena.Com',
     minAmount: 10,
     maxAmount: 10000,
     fee: 2,
@@ -306,32 +315,67 @@ export default function DepositWithdrawModal({
     [handleClose]
   );
 
+  /* THE EFFECT BELOW MUST DEPEND ON `isOpen` AND NOTHING ELSE.
+     It used to list `handleFocusTrap`, which is a useCallback on `handleClose`,
+     which is a useCallback on the `onClose` PROP — and PlayerWalletPage passes
+     `onClose={() => setShowDepositModal(false)}`, a fresh arrow on every one of
+     its renders. That page also runs three `useAnimatedNumber` counters, so it
+     re-renders at 60fps whenever a balance moves. The effect therefore tore
+     itself down and rebuilt sixty times a second while the sheet was open:
+     the keydown listener was churned, the 100ms autofocus timer was cancelled
+     and restarted before it could ever fire (so the sheet never focused
+     anything), and the cleanup's `previousFocusRef.current?.focus()` ran on
+     every one of those passes — pulling focus back out of the modal, from
+     inside an open modal, while the user was typing an amount into it.
+
+     The handler goes in a ref instead: one stable listener for the life of the
+     open sheet, one restore of focus when it actually closes. */
+  const focusTrapRef = useRef(handleFocusTrap);
   useEffect(() => {
-    if (isOpen) {
-      previousFocusRef.current = document.activeElement as HTMLElement;
-      document.addEventListener('keydown', handleFocusTrap);
-      const t = setTimeout(() => {
-        if (modalRef.current) {
-          const first = modalRef.current.querySelector<HTMLElement>(
-            'button:not([disabled]), input:not([disabled])'
-          );
-          first?.focus();
-        }
-      }, 100);
-      return () => {
-        document.removeEventListener('keydown', handleFocusTrap);
-        clearTimeout(t);
-        previousFocusRef.current?.focus();
-      };
-    }
-  }, [isOpen, handleFocusTrap]);
+    focusTrapRef.current = handleFocusTrap;
+  }, [handleFocusTrap]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    previousFocusRef.current = document.activeElement as HTMLElement;
+    const onKeyDown = (e: KeyboardEvent) => focusTrapRef.current(e);
+    document.addEventListener('keydown', onKeyDown);
+    const t = setTimeout(() => {
+      if (modalRef.current) {
+        const first = modalRef.current.querySelector<HTMLElement>(
+          'button:not([disabled]), input:not([disabled])'
+        );
+        first?.focus();
+      }
+    }, 100);
+    /* The page behind a bottom sheet must not scroll under it. Every other
+       modal in the wallet family does this (PlayerWalletModal locks it on the
+       same `isOpen`); this one did not, so dragging the sheet on a phone
+       scrolled the wallet page underneath and left the sheet floating over a
+       different part of the document. */
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      clearTimeout(t);
+      document.body.style.overflow = prevOverflow;
+      previousFocusRef.current?.focus();
+    };
+  }, [isOpen]);
 
   const currentMethod = PAYMENT_METHODS.find((m) => m.id === selectedMethod);
-  const numericAmount = parseFloat(amount) || 0;
+  const parsed = parseFloat(amount);
+  const numericAmount = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   // Use integer math to avoid floating-point precision errors:
   // fee = round((amount_cents * fee_percent) / 100) / 100
   const feeAmount = currentMethod ? Math.round(numericAmount * currentMethod.fee) / 100 : 0;
-  const totalAmount = mode === 'deposit' ? numericAmount : numericAmount + feeAmount;
+  /* `totalAmount` used to be computed here and never read once. It was also
+     WRONG: it said a withdrawal costs `amount + fee`, while the confirm screen
+     below says you receive `amount - fee` and the balance check compares the
+     bare `amount`. Two contradictory fee models in one component, with the
+     unused one quietly waiting for somebody to render it. Deleted rather than
+     reconciled - the confirm screen and the balance check already agree with
+     each other, and they are the two the player actually sees. */
 
   const handleMethodSelect = (method: PaymentMethod) => {
     triggerHaptic(10);
@@ -343,24 +387,28 @@ export default function DepositWithdrawModal({
   const handleAmountSubmit = () => {
     if (!currentMethod) return;
 
+    // Casing: Dan's popup law is about what the player reads, not about which
+    // component renders it. These four are in-page messages, so the Toast
+    // layer's formatPopupText never reached them and they alone on this screen
+    // were in sentence case.
     if (numericAmount < currentMethod.minAmount) {
-      setError(`Minimum amount is ${currentMethod.minAmount}`);
+      setError(`Minimum Amount Is ${currentMethod.minAmount.toLocaleString()}`);
       triggerHaptic([30, 50, 30]);
       return;
     }
     if (numericAmount > currentMethod.maxAmount) {
-      setError(`Maximum amount is ${currentMethod.maxAmount.toLocaleString()}`);
+      setError(`Maximum Amount Is ${currentMethod.maxAmount.toLocaleString()}`);
       triggerHaptic([30, 50, 30]);
       return;
     }
     if (mode === 'withdraw' && numericAmount > currentBalance) {
-      setError('Insufficient balance');
+      setError(`Insufficient Balance. Available: ${currentBalance.toLocaleString()}`);
       triggerHaptic([30, 50, 30]);
       return;
     }
     // Require withdrawal destination for non-agent methods
     if (mode === 'withdraw' && selectedMethod !== 'agent' && !withdrawAddress.trim()) {
-      setError('Please enter a withdrawal destination');
+      setError('Please Enter A Withdrawal Destination');
       triggerHaptic([30, 50, 30]);
       return;
     }
@@ -370,44 +418,97 @@ export default function DepositWithdrawModal({
     setError(null);
   };
 
+  /**
+   * ══ THE CONFIRM STEP COULD NOT SUCCEED. AUDIT 2026-08-25. ══════════════════
+   *
+   * It inserted into `wallet_transactions` and that insert was impossible in
+   * FOUR independent ways, every one of them verified against production:
+   *
+   *  1. RLS. `wallet_transactions` carries exactly one policy — "Users view own
+   *     transactions", cmd SELECT. There is no INSERT policy for `public` or
+   *     `authenticated`, so the write returned 42501 every single time. This is
+   *     the same control WalletService.logTransaction documents at length: the
+   *     browser is deliberately not allowed to forge ledger rows, and "the
+   *     denial is the control working".
+   *  2. FOUR COLUMNS THAT DO NOT EXIST. It set `fee`, `payment_method`,
+   *     `status` and `metadata`. The table has none of them — its columns are
+   *     id, user_id, wallet_type, amount, type, category, description,
+   *     related_entity_id, table_id, hand_id, created_at, balance_after.
+   *  3. A CHECK VIOLATION. `type` was set to 'deposit' / 'withdraw';
+   *     `wallet_transactions_type_check` admits only 'credit' and 'debit'.
+   *  4. NO CATEGORY. The row carried none, and the category check has no
+   *     default that fits a pending request.
+   *
+   * So both hero buttons on the Player Wallet page have been a guaranteed
+   * failure toast plus one Sentry report per click, for as long as this code
+   * has existed.
+   *
+   * AND IT SHOULD NOT BE REPAIRED INTO WORKING. `wallet_transactions` is the
+   * SETTLED ledger — TransactionHistory, three lines up the same page, reads
+   * it. A pending deposit written there would render to the player as a
+   * completed credit for money that has not arrived, above a running balance it
+   * did not change. There is no client-writable table for a funding REQUEST
+   * either: `chip_requests` holds one row in all of production, and there is no
+   * /api/club-arena/ route for deposits or withdrawals.
+   *
+   * So the modal stops pretending. It says plainly that the channel is not
+   * open and sends the player to the agent, which is the real chip path in this
+   * product. The seam for the server route is one constant below: give
+   * FUNDING_ENDPOINT a URL and restore the POST, exactly as
+   * WalletService.mintChips does against /api/club-arena/mint-chips.
+   */
   const handleConfirm = async () => {
     if (!currentMethod) return;
     // Double-submit guard: if already processing, ignore subsequent clicks
     if (processing) return;
 
+    if (!FUNDING_ENDPOINT) {
+      // Not an exception: nothing failed, the feature has no server side. A
+      // reportError here would file a bug report on every click of a button we
+      // already know about, which is the noise the logTransaction audit
+      // removed from this codebase in the first place.
+      setError(
+        mode === 'deposit'
+          ? 'Deposits Are Not Open On This Channel Yet. Ask Your Agent To Send You Chips'
+          : 'Withdrawals Are Not Open On This Channel Yet. Ask Your Agent To Cash You Out'
+      );
+      triggerHaptic([30, 50, 30]);
+      return;
+    }
+
     setProcessing(true);
     setError(null);
 
     try {
-      // Create transaction record
-      const { data, error: txError } = await supabase
-        .from('wallet_transactions')
-        .insert({
-          user_id: userId,
-          type: mode,
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error('Authentication required');
+
+      const resp = await fetch(FUNDING_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'X-Idempotency-Key': crypto.randomUUID(),
+        },
+        body: JSON.stringify({
+          userId,
+          mode,
           amount: numericAmount,
           fee: feeAmount,
-          payment_method: selectedMethod,
-          status: mode === 'deposit' ? 'pending' : 'processing',
-          wallet_type: 'PLAYER',
-          metadata: {
-            withdraw_address: mode === 'withdraw' ? withdrawAddress : null,
-          },
-        })
-        .select()
-        .maybeSingle();
-
-      if (txError) throw txError;
-
-      // NOTE: a per-wallet withdrawal lock was removed here — it wrote a
-      // non-existent `wallets.locked_until` column and `wallets` is
-      // service-role-write-only, so the update always failed silently (0 rows)
-      // and the lock never engaged. A real concurrency lock must be enforced
-      // server-side (SECURITY DEFINER RPC) if needed; the previous code was
-      // dead financial-safety theater.
+          method: selectedMethod,
+          destination: mode === 'withdraw' ? withdrawAddress : null,
+        }),
+      });
+      const result = await resp
+        .json()
+        .catch(() => ({ success: false, error: `HTTP ${resp.status}` }));
+      if (!result.success) throw new Error(result.error || `HTTP ${resp.status}`);
 
       if (!isMounted.current) return;
-      setReferenceId(data?.id ?? null);
+      setReferenceId(result.referenceId ?? null);
       setStep('success');
       triggerHaptic([20, 100, 20]);
       onComplete?.();
@@ -416,8 +517,12 @@ export default function DepositWithdrawModal({
     } catch (err) {
       reportError(err, 'DepositWithdrawModal.mode_failed');
       if (isMounted.current) {
-        toast.error(`Failed to process ${mode}. Please try again.`);
-        setError(`Failed to process ${mode}. Please try again.`);
+        const msg =
+          mode === 'deposit'
+            ? 'Could Not Start That Deposit. Please Try Again'
+            : 'Could Not Start That Withdrawal. Please Try Again';
+        toast.error(msg);
+        setError(msg);
       }
     }
     if (isMounted.current) setProcessing(false);
@@ -487,7 +592,7 @@ export default function DepositWithdrawModal({
                 <span className={styles.methodLabel}>{method.label}</span>
                 <span className={styles.methodDesc}>{method.description}</span>
                 <span className={styles.methodFee}>
-                  {method.fee > 0 ? `${method.fee}% fee` : 'No fee'}
+                  {method.fee > 0 ? `${method.fee}% Fee` : 'No Fee'}
                 </span>
               </button>
             ))}
@@ -546,9 +651,22 @@ export default function DepositWithdrawModal({
               ))}
             </div>
 
+            {/* A WITHDRAWAL'S REAL CEILING IS THE BALANCE.
+                This showed the METHOD's limit for both directions, so a player
+                with 300 chips reading "Max: 100,000" typed 5,000, pressed
+                Continue, and only then learned they had 300 — the balance check
+                is in handleAmountSubmit, one screen later. Stating the binding
+                limit is not a new rule, it is the rule that was already being
+                enforced, moved to where it can be read before it bites. */}
             <div className={styles.limits}>
-              <span>Min: {currentMethod.minAmount}</span>
-              <span>Max: {currentMethod.maxAmount.toLocaleString()}</span>
+              <span>Min: {currentMethod.minAmount.toLocaleString()}</span>
+              <span>
+                Max:{' '}
+                {(mode === 'withdraw'
+                  ? Math.min(currentMethod.maxAmount, Math.max(0, currentBalance))
+                  : currentMethod.maxAmount
+                ).toLocaleString()}
+              </span>
             </div>
 
             {mode === 'withdraw' && (
@@ -566,7 +684,7 @@ export default function DepositWithdrawModal({
                 </label>
                 <input
                   type="text"
-                  placeholder="Enter destination..."
+                  placeholder="Enter Destination..."
                   value={withdrawAddress}
                   onChange={(e) => setWithdrawAddress(e.target.value)}
                 />
@@ -636,7 +754,24 @@ export default function DepositWithdrawModal({
               </div>
             )}
 
-            <button className={styles.confirmBtn} onClick={handleConfirm} disabled={processing}>
+            {/* Say it BEFORE the button, not after the click. Leading someone
+                through three steps of a money flow and only then telling them
+                the channel does not exist is the same discourtesy as the old
+                generic "Please try again" - it just costs them more time
+                first. */}
+            {!FUNDING_ENDPOINT && (
+              <div className={styles.error}>
+                {mode === 'deposit'
+                  ? 'Deposits Are Not Open On This Channel Yet. Ask Your Agent To Send You Chips'
+                  : 'Withdrawals Are Not Open On This Channel Yet. Ask Your Agent To Cash You Out'}
+              </div>
+            )}
+
+            <button
+              className={styles.confirmBtn}
+              onClick={handleConfirm}
+              disabled={processing || !FUNDING_ENDPOINT}
+            >
               {processing
                 ? 'Processing...'
                 : `Confirm ${mode === 'deposit' ? 'Deposit' : 'Withdrawal'}`}
@@ -658,7 +793,7 @@ export default function DepositWithdrawModal({
                 alignItems: 'center',
                 justifyContent: 'center',
                 boxShadow: '0 8px 32px rgba(0, 200, 83, 0.3)',
-                animation: 'successIconPulse 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                animation: 'animationsSuccessIconPulse 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)',
               }}
             >
               <svg

@@ -64,17 +64,6 @@
 .size-large .level-label {
   font-size: 0.7rem;
 }
-
-/* ═══════════════════════════════════════════════════════════════════
-   TIER-SPECIFIC MICRO-ANIMATIONS
-   ═══════════════════════════════════════════════════════════════════ */
-
-/* All badges: subtle hover scale */
-.level-badge:hover {
-  transform: scale(1.08);
-  box-shadow: 0 0 12px rgba(255, 255, 255, 0.15);
-}
-
 /* Enterprise tier (41-45): subtle pulse glow */
 .level-badge.tier-enterprise {
   animation: badge-pulse 3s ease-in-out infinite;

@@ -1,197 +1,95 @@
 /**
- * Minimal bus contract verification — tests the MasterBus event system
- * without importing the singleton (avoids store/supabase dependency chain)
+ * Bus contract verification — against the REAL MasterBus.
+ *
+ * REWRITTEN 2026-08-28. The previous version of this file was a decoy: it
+ * never imported MasterBus. All four tests defined a LOCAL reimplementation
+ * of subscribe/emit inside the test body and asserted against that — so the
+ * file passed green whatever src/core/MasterBus.ts did, including a total
+ * rewrite. That is precisely the false assurance that let the wrapper bug
+ * class ship (handlers reading payload fields off the event wrapper): the
+ * one file named "verify-bus-listeners" verified nothing.
+ *
+ * tests/setup.ts replaces MasterBus with a no-op global mock, so this file
+ * restores the real module the same way useUserThemeSettings.live.test.ts
+ * does. What is pinned here:
+ *
+ *   1. Subscribers receive the WRAPPER ({ type, payload, timestamp }) — the
+ *      payload's fields are NOT on the top-level object. Every handler must
+ *      read event.payload (or unwrap with `event?.payload ?? event`).
+ *   2. The wrapper's `type` is the EVENT NAME — a payload that carries its
+ *      own `type` field (WHEEL_SPIN_RESULT does) is only reachable through
+ *      .payload, never through the wrapper.
+ *   3. Unsubscribe detaches, for both subscribe and subscribeDebounced.
+ *   4. subscribeDebounced delivers the wrapper too — it shares the contract,
+ *      and it is the idiom the dead-subscription scanner missed for months.
  */
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { describe, it, expect, vi } from 'vitest';
+vi.mock('../src/core/MasterBus', async () => await vi.importActual('../src/core/MasterBus'));
 
-describe('Bus Event Contract Verification', () => {
+import { masterBus } from '../src/core/MasterBus';
 
-  it('subscribe and emit pattern works (mimics page bus listeners)', () => {
-    // Simulate MasterBus subscriber pattern used in our pages
-    type Handler = (event: any) => void;
-    const subscribers = new Map<string, Set<Handler>>();
-    
-    function subscribe(eventType: string, handler: Handler): () => void {
-      if (!subscribers.has(eventType)) subscribers.set(eventType, new Set());
-      subscribers.get(eventType)!.add(handler);
-      return () => { subscribers.get(eventType)?.delete(handler); };
-    }
-    
-    function emit(eventType: string, payload: any) {
-      const handlers = subscribers.get(eventType);
-      if (handlers) {
-        handlers.forEach(h => {
-          try { h({ type: eventType, payload, timestamp: new Date().toISOString() }); }
-          catch (e) { console.error('Handler error:', e); }
-        });
-      }
-    }
-
-    // Test HAND_COMPLETED — used by HandHistoryPage, PlayerStatsPage, LeaderboardPage, CashierPage
-    const handCompletedHandler = vi.fn();
-    const unsub1 = subscribe('HAND_COMPLETED', handCompletedHandler);
-    
-    emit('HAND_COMPLETED', { handId: 'h1', tableId: 't1' });
-    expect(handCompletedHandler).toHaveBeenCalledTimes(1);
-    expect(handCompletedHandler).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'HAND_COMPLETED',
-      payload: { handId: 'h1', tableId: 't1' },
-    }));
-
-    // Test BALANCE_UPDATED — used by PlayerStatsPage, CashierPage
-    const balanceHandler = vi.fn();
-    const unsub2 = subscribe('BALANCE_UPDATED', balanceHandler);
-    
-    emit('BALANCE_UPDATED', { source: 'hand-payout' });
-    expect(balanceHandler).toHaveBeenCalledTimes(1);
-
-    // Test unsubscribe works
-    unsub1();
-    emit('HAND_COMPLETED', { handId: 'h2', tableId: 't2' });
-    expect(handCompletedHandler).toHaveBeenCalledTimes(1); // not 2
-
-    unsub2();
-    emit('BALANCE_UPDATED', { source: 'agent-send' });
-    expect(balanceHandler).toHaveBeenCalledTimes(1); // not 2
+describe('MasterBus subscriber contract (real bus)', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
   });
 
-  it('debounced subscribe pattern works (mimics LeaderboardPage/CashierPage)', async () => {
-    const timers = new Map<string, ReturnType<typeof setTimeout>>();
-    let subId = 0;
-    type Handler = (event: any) => void;
-    const subscribers = new Map<string, Set<Handler>>();
-    
-    function subscribe(eventType: string, handler: Handler): () => void {
-      if (!subscribers.has(eventType)) subscribers.set(eventType, new Set());
-      subscribers.get(eventType)!.add(handler);
-      return () => { subscribers.get(eventType)?.delete(handler); };
-    }
-    
-    function subscribeDebounced(eventType: string, handler: Handler, debounceMs: number): () => void {
-      const id = ++subId;
-      const timerKey = `${eventType}_${id}`;
-      
-      const debouncedHandler: Handler = (event) => {
-        const existing = timers.get(timerKey);
-        if (existing) clearTimeout(existing);
-        timers.set(timerKey, setTimeout(() => {
-          handler(event);
-          timers.delete(timerKey);
-        }, debounceMs));
-      };
-      
-      const unsubFromBus = subscribe(eventType, debouncedHandler);
-      return () => {
-        unsubFromBus();
-        const pending = timers.get(timerKey);
-        if (pending) { clearTimeout(pending); timers.delete(timerKey); }
-      };
-    }
-    
-    function emit(eventType: string, payload: any) {
-      const handlers = subscribers.get(eventType);
-      if (handlers) handlers.forEach(h => h({ type: eventType, payload }));
-    }
+  it('hands subscribers the wrapper, with payload fields ONLY under .payload', () => {
+    const seen: unknown[] = [];
+    const off = masterBus.subscribe('HAND_COMPLETED', (e) => seen.push(e));
+    masterBus.emit('HAND_COMPLETED', { handId: 'h1', tableId: 't1' } as never);
+    off();
 
-    // Test debounced HAND_COMPLETED (LeaderboardPage uses 2000ms debounce)
+    expect(seen).toHaveLength(1);
+    const evt = seen[0] as { type?: string; payload?: Record<string, unknown> } & Record<
+      string,
+      unknown
+    >;
+    expect(evt.payload).toMatchObject({ handId: 'h1', tableId: 't1' });
+    // The trap this file exists to pin: these are NOT on the wrapper.
+    expect(evt.handId).toBeUndefined();
+    expect(evt.tableId).toBeUndefined();
+  });
+
+  it("the wrapper's .type is the event name — a payload's own type only lives under .payload", () => {
+    const seen: Array<{ type?: string; payload?: { type?: string } }> = [];
+    const off = masterBus.subscribe('WHEEL_SPIN_RESULT', (e) => seen.push(e as never));
+    masterBus.emit('WHEEL_SPIN_RESULT', { segmentId: 's1', amount: 5, type: 'diamonds' } as never);
+    off();
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0].type).toBe('WHEEL_SPIN_RESULT'); // NOT 'diamonds'
+    expect(seen[0].payload?.type).toBe('diamonds');
+  });
+
+  it('unsubscribe detaches a plain subscription', () => {
     const handler = vi.fn();
-    const unsub = subscribeDebounced('HAND_COMPLETED', handler, 50);
-    
-    // Rapid fire 10 events
-    for (let i = 0; i < 10; i++) {
-      emit('HAND_COMPLETED', { handId: `h${i}`, tableId: 't1' });
-    }
-    expect(handler).toHaveBeenCalledTimes(0); // not yet
-    
-    await new Promise(r => setTimeout(r, 100));
-    expect(handler).toHaveBeenCalledTimes(1); // debounced to 1
+    const off = masterBus.subscribe('BALANCE_UPDATED', handler);
+    masterBus.emit('BALANCE_UPDATED', { source: 'hand-payout' } as never);
+    expect(handler).toHaveBeenCalledTimes(1);
 
-    // Test unsubscribe clears timer
-    const handler2 = vi.fn();
-    const unsub2 = subscribeDebounced('BALANCE_UPDATED', handler2, 100);
-    emit('BALANCE_UPDATED', { source: 'test' });
-    unsub2(); // kill before timer
-    
-    await new Promise(r => setTimeout(r, 150));
-    expect(handler2).toHaveBeenCalledTimes(0); // timer was cleared
-
-    unsub();
+    off();
+    masterBus.emit('BALANCE_UPDATED', { source: 'agent-send' } as never);
+    expect(handler).toHaveBeenCalledTimes(1);
   });
 
-  it('multiple subscribers on same event all fire', () => {
-    type Handler = (event: any) => void;
-    const subscribers = new Map<string, Set<Handler>>();
-    
-    function subscribe(eventType: string, handler: Handler): () => void {
-      if (!subscribers.has(eventType)) subscribers.set(eventType, new Set());
-      subscribers.get(eventType)!.add(handler);
-      return () => { subscribers.get(eventType)?.delete(handler); };
-    }
-    
-    function emit(eventType: string, payload: any) {
-      const handlers = subscribers.get(eventType);
-      if (handlers) handlers.forEach(h => h({ type: eventType, payload }));
-    }
+  it('subscribeDebounced delivers the wrapper and detaches on unsubscribe', async () => {
+    vi.useFakeTimers();
+    const seen: unknown[] = [];
+    const off = masterBus.subscribeDebounced('MISSION_CLAIMED', (e) => seen.push(e), 50);
 
-    // Simulate: HandHistoryPage + PlayerStatsPage + LeaderboardPage + CashierPage
-    // all listening to HAND_COMPLETED simultaneously
-    const h1 = vi.fn(); // HandHistory
-    const h2 = vi.fn(); // PlayerStats
-    const h3 = vi.fn(); // Leaderboard
-    const h4 = vi.fn(); // Cashier
-    
-    const u1 = subscribe('HAND_COMPLETED', h1);
-    const u2 = subscribe('HAND_COMPLETED', h2);
-    const u3 = subscribe('HAND_COMPLETED', h3);
-    const u4 = subscribe('HAND_COMPLETED', h4);
-    
-    emit('HAND_COMPLETED', { handId: 'h1', tableId: 't1' });
-    
-    expect(h1).toHaveBeenCalledTimes(1);
-    expect(h2).toHaveBeenCalledTimes(1);
-    expect(h3).toHaveBeenCalledTimes(1);
-    expect(h4).toHaveBeenCalledTimes(1);
-    
-    // Unsubscribe one, others still fire
-    u2();
-    emit('HAND_COMPLETED', { handId: 'h2', tableId: 't1' });
-    
-    expect(h1).toHaveBeenCalledTimes(2);
-    expect(h2).toHaveBeenCalledTimes(1); // unsubbed
-    expect(h3).toHaveBeenCalledTimes(2);
-    expect(h4).toHaveBeenCalledTimes(2);
-    
-    u1(); u3(); u4();
-  });
+    masterBus.emit('MISSION_CLAIMED', { missionId: 'm1', rewardType: 'diamonds' } as never);
+    await vi.advanceTimersByTimeAsync(80);
 
-  it('handler errors dont crash other handlers (error isolation)', () => {
-    type Handler = (event: any) => void;
-    const subscribers = new Map<string, Set<Handler>>();
-    
-    function subscribe(eventType: string, handler: Handler): () => void {
-      if (!subscribers.has(eventType)) subscribers.set(eventType, new Set());
-      subscribers.get(eventType)!.add(handler);
-      return () => { subscribers.get(eventType)?.delete(handler); };
-    }
-    
-    function emit(eventType: string, payload: any) {
-      const handlers = subscribers.get(eventType);
-      if (handlers) handlers.forEach(h => {
-        try { h({ type: eventType, payload }); } catch { /* isolated */ }
-      });
-    }
-    
-    const crashingHandler = vi.fn(() => { throw new Error('BOOM'); });
-    const goodHandler = vi.fn();
-    
-    subscribe('HAND_COMPLETED', crashingHandler);
-    subscribe('HAND_COMPLETED', goodHandler);
-    
-    // Should NOT throw
-    emit('HAND_COMPLETED', { handId: 'h1', tableId: 't1' });
-    
-    expect(crashingHandler).toHaveBeenCalledTimes(1);
-    expect(goodHandler).toHaveBeenCalledTimes(1); // still fires despite crash
+    expect(seen.length).toBeGreaterThanOrEqual(1);
+    const evt = seen[0] as { payload?: { rewardType?: string }; rewardType?: string };
+    expect(evt.payload?.rewardType).toBe('diamonds');
+    expect(evt.rewardType).toBeUndefined();
+
+    off();
+    masterBus.emit('MISSION_CLAIMED', { missionId: 'm2', rewardType: 'chips' } as never);
+    await vi.advanceTimersByTimeAsync(80);
+    expect(seen.length).toBe(1);
+    vi.useRealTimers();
   });
 });

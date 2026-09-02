@@ -2,6 +2,12 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  UNIT TESTS — useTableTimer
  * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * 2026-08-25: the hook returns an ActionClockStore rather than three loose
+ * numbers, because returning the numbers meant the CALLER (TablePage) held them
+ * in state and re-rendered the whole table once a second for the length of every
+ * turn. The values themselves are unchanged — they are read off the snapshot
+ * here instead of off `result.current`.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -31,25 +37,25 @@ describe('useTableTimer', () => {
     expect(result.current).toBeDefined();
   });
 
-  it('should return timeRemaining as number', () => {
+  it('should publish timeRemaining as number', () => {
     const { result } = renderHook(() =>
       useTableTimer({ isHeroTurn: false, isSoundEnabled: false, onTimeout: vi.fn() })
     );
-    expect(typeof result.current.timeRemaining).toBe('number');
+    expect(typeof result.current.clock.getSnapshot().seconds).toBe('number');
   });
 
-  it('should return timerProgress as number', () => {
+  it('should publish timerProgress as number', () => {
     const { result } = renderHook(() =>
       useTableTimer({ isHeroTurn: false, isSoundEnabled: false, onTimeout: vi.fn() })
     );
-    expect(typeof result.current.timerProgress).toBe('number');
+    expect(typeof result.current.clock.getSnapshot().progress).toBe('number');
   });
 
-  it('should return isUrgent flag', () => {
+  it('should publish isUrgent flag', () => {
     const { result } = renderHook(() =>
       useTableTimer({ isHeroTurn: false, isSoundEnabled: false, onTimeout: vi.fn() })
     );
-    expect(typeof result.current.isUrgent).toBe('boolean');
+    expect(typeof result.current.clock.getSnapshot().isUrgent).toBe('boolean');
   });
 
   it('should return resetTimer function', () => {
@@ -63,13 +69,23 @@ describe('useTableTimer', () => {
     const { result } = renderHook(() =>
       useTableTimer({ isHeroTurn: false, isSoundEnabled: false, onTimeout: vi.fn() })
     );
-    expect(result.current.isUrgent).toBe(false);
+    expect(result.current.clock.getSnapshot().isUrgent).toBe(false);
   });
 
   it('should default to 15 seconds', () => {
     const { result } = renderHook(() =>
       useTableTimer({ isHeroTurn: false, isSoundEnabled: false, onTimeout: vi.fn() })
     );
-    expect(result.current.timeRemaining).toBe(15);
+    expect(result.current.clock.getSnapshot().seconds).toBe(15);
+  });
+
+  it('hands back the SAME store on every render, so subscribers are never orphaned', () => {
+    const { result, rerender } = renderHook(() =>
+      useTableTimer({ isHeroTurn: false, isSoundEnabled: false, onTimeout: vi.fn() })
+    );
+    const first = result.current.clock;
+    rerender();
+    rerender();
+    expect(result.current.clock).toBe(first);
   });
 });

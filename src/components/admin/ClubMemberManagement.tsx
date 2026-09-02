@@ -5,14 +5,17 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import type { ClubRole } from '../../types/clubRoles';
+import { CLUB_ROLES, ROLE_LABEL, normaliseRole, type ClubRole } from '../../types/clubRoles';
+import { roleColor } from '../club/RoleBadge';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
+import { MembershipService } from '../../services/MembershipService';
 import { useToast } from '../common/Toast';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import './ClubMemberManagement.css';
 import { reportError } from '../../utils/errorReporter';
+import { safeErrorMessage } from '../../utils/safeErrorMessage';
 
 interface ClubMemberManagementProps {
   clubId: string;
@@ -32,12 +35,15 @@ interface Member {
   isBanned: boolean;
 }
 
-const ROLE_COLORS: Record<string, string> = {
-  owner: '#ffd700',
-  admin: '#ef4444',
-  agent: '#22c55e',
-  member: '#6b7280',
-};
+// The canonical colour and label for all seven roles live in RoleBadge and
+// clubRoles. The local map this replaces knew four names, one of which
+// ('member') is not a role, so a co-owner, super agent or sub agent rendered
+// with no colour at all.
+//
+// Only the roles that carry no rate are offered here. An agent tier needs a
+// commission and a rakeback percentage chosen at the same moment (the server
+// refuses one without them), and Member Management is the screen that asks.
+const ASSIGNABLE_HERE: ClubRole[] = ['co_owner', 'admin', 'player'];
 
 export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementProps) {
   const toast = useToast();
@@ -57,6 +63,7 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
     };
   }, []);
+
   const loadMembers = useCallback(async () => {
     setLoading(true);
     try {
@@ -116,24 +123,18 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
     loadMembers();
   }, [loadMembers]);
 
-  const updateRole = async (memberId: string, newRole: string) => {
+  // This wrote club_members.role directly, which trg_club_members_role_guard
+  // refuses outright, so the select has been failing into the catch below and
+  // toasting "Failed to update role" for every choice. Route through the one
+  // write path, and show the reason the server gives rather than a generic one.
+  const updateRole = async (memberId: string, newRole: ClubRole) => {
     try {
-      const resolvedId = await resolveClubUUID(clubId);
-      const { error } = await supabase
-        .from('club_members')
-        .update({ role: newRole })
-        .eq('club_id', resolvedId)
-        .eq('user_id', memberId);
-
-      if (error) throw error;
-
-      if (isMounted.current) toast.success('Role updated');
-      masterBus.emit('CLUB_UPDATED', { clubId });
+      await MembershipService.updateRole(clubId, memberId, newRole);
+      if (isMounted.current) toast.success(`Role Updated To ${ROLE_LABEL[newRole]}`);
       loadMembers();
     } catch (err) {
-      console.error(err);
-      reportError(err, 'ClubMemberManagement.Error');
-      if (isMounted.current) toast.error('Failed to update role');
+      reportError(err, 'ClubMemberManagement.updateRole');
+      if (isMounted.current) toast.error(safeErrorMessage(err, 'Failed To Update Role'));
     }
   };
 
@@ -219,10 +220,11 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
       <div className="member-management__filters">
         <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
           <option value="all">All Roles</option>
-          <option value="owner">Owner</option>
-          <option value="admin">Admin</option>
-          <option value="agent">Agent</option>
-          <option value="member">Member</option>
+          {CLUB_ROLES.map((r) => (
+            <option key={r} value={r}>
+              {ROLE_LABEL[r]}
+            </option>
+          ))}
         </select>
         <select value={sortBy} onChange={(e) => setSortBy(e.target.value as any)}>
           <option value="name">Sort By Name</option>
@@ -247,8 +249,8 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
             <div className="info">
               <span className="name">
                 {member.username}
-                <span className="role" style={{ color: ROLE_COLORS[member.role] }}>
-                  {member.role}
+                <span className="role" style={{ color: roleColor(member.role) }}>
+                  {ROLE_LABEL[normaliseRole(member.role)]}
                 </span>
               </span>
               <span className="stats">
@@ -258,10 +260,21 @@ export function ClubMemberManagement({ clubId, isAdmin }: ClubMemberManagementPr
             </div>
             {isAdmin && member.role !== 'owner' && (
               <div className="actions">
-                <select value={member.role} onChange={(e) => updateRole(member.id, e.target.value)}>
-                  <option value="member">Member</option>
-                  <option value="agent">Agent</option>
-                  <option value="admin">Admin</option>
+                <select
+                  value={ASSIGNABLE_HERE.includes(normaliseRole(member.role)) ? member.role : ''}
+                  onChange={(e) => updateRole(member.id, e.target.value as ClubRole)}
+                >
+                  {/* An agent tier is not offered: it needs a rate chosen with it. */}
+                  {!ASSIGNABLE_HERE.includes(normaliseRole(member.role)) && (
+                    <option value="" disabled>
+                      {ROLE_LABEL[normaliseRole(member.role)]}
+                    </option>
+                  )}
+                  {ASSIGNABLE_HERE.map((r) => (
+                    <option key={r} value={r}>
+                      {ROLE_LABEL[r]}
+                    </option>
+                  ))}
                 </select>
                 <button
                   className={member.isBanned ? 'unban' : 'ban'}

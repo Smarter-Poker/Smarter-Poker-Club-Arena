@@ -6,6 +6,15 @@
   max-width: 900px;
   margin: 0 auto;
   padding: 24px 16px;
+  width: 100%;
+  box-sizing: border-box;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
+  padding-bottom: max(70px, env(safe-area-inset-bottom));
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   color: #e0e0e0;
@@ -17,6 +26,7 @@
   align-items: center;
   gap: 16px;
   margin-bottom: 20px;
+  flex-wrap: wrap;
 }
 
 .alerts-header h2 {
@@ -30,6 +40,8 @@
   display: flex;
   gap: 10px;
   flex: 1;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .alert-stats .stat {
@@ -65,16 +77,18 @@
   transition: all 0.2s;
 }
 
-.alerts-header .refresh-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-}
-
 /* ── Filter Tabs ── */
 .filter-tabs {
   display: flex;
   gap: 8px;
   margin-bottom: 20px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.filter-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .filter-tab {
@@ -87,11 +101,9 @@
   font-size: 0.85rem;
   font-weight: 500;
   transition: all 0.2s;
-}
-
-.filter-tab:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
+  white-space: nowrap;
+  flex-shrink: 0;
+  touch-action: manipulation;
 }
 
 .filter-tab.active {
@@ -199,6 +211,7 @@
   font-size: 0.78rem;
   color: #a0a0a0;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   margin: 6px 0 0 0;
   max-height: 200px;
 }
@@ -218,10 +231,6 @@
   font-size: 0.82rem;
   font-weight: 600;
   transition: all 0.2s;
-}
-
-.resolve-btn:hover {
-  background: rgba(34, 197, 94, 0.2);
 }
 
 .resolve-btn:disabled {
@@ -309,5 +318,24 @@
 
   .alert-meta {
     font-size: 0.68rem;
+  }
+
+  .filter-tab {
+    min-height: 44px;
+  }
+
+  .resolve-btn {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .alerts-header .refresh-btn {
+    min-height: 44px;
+    min-width: 44px;
+    touch-action: manipulation;
+  }
+
+  .alerts-header h2 {
+    font-size: 1.1rem;
   }
 }

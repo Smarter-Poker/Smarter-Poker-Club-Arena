@@ -1,0 +1,623 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  TOURNAMENT LOBBY — SHARED 3D DEPTH LAYER
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * Dan 2026-08-25. Every tab of the tournament lobby (Detail, Blinds, Ranking,
+ * Entries, Unions, Tables, Rewards) is built from THIS vocabulary, so the eight
+ * tabs read as one product instead of seven people's ideas of a dark panel.
+ *
+ * STRICT SMARTER.POKER PALETTE. NO BROWN. NO YELLOW. NO GOLD.
+ *   surfaces  #223046 -> #1a2436 -> #131b28 -> #0d1120
+ *   accent    #6fdcff / #00b4e6
+ *   action    #1877f2 / #0a5dc2
+ *   text      #e8eaf0 primary / #8892a4 secondary / #6b7686 hints
+ *   refusal   #ef4444 / #ffb4b4
+ *
+ * HOW THE DEPTH IS BUILT — the house recipe, three layers, always in this
+ * order, because faking it with a single drop shadow is what makes a dark UI
+ * look flat and cheap:
+ *   1. a top-down gradient       (the surface has a lit edge and a shaded foot)
+ *   2. `inset 0 1px 0` highlight (a real bevel catching the light above it)
+ *      and `inset 0 -1px 0` shade (the underside of that same bevel)
+ *   3. a cast shadow             (the card sits ABOVE the page, not on it)
+ *
+ * All classes are `tl-` prefixed and self-contained: importing this file can
+ * never restyle anything outside the tournament lobby.
+ */
+
+/* ─────────────────────────────────────────────────────────────────────────
+   TOKENS
+   Declared on :root so the tab components can compose them, but every name
+   is `--tl-` scoped: nothing here can collide with globals.css.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  --tl-surface-raised: #223046;
+  --tl-surface: #1a2436;
+  --tl-surface-sunk: #131b28;
+  --tl-surface-deep: #0d1120;
+
+  --tl-accent: #6fdcff;
+  --tl-accent-strong: #00b4e6;
+  --tl-action: #1877f2;
+  --tl-action-deep: #0a5dc2;
+
+  --tl-text: #e8eaf0;
+  --tl-text-dim: #8892a4;
+  --tl-text-hint: #6b7686;
+
+  --tl-danger: #ef4444;
+  --tl-danger-soft: #ffb4b4;
+  --tl-good: #22c55e;
+
+  --tl-hairline: rgba(111, 220, 255, 0.14);
+  --tl-hairline-soft: rgba(255, 255, 255, 0.06);
+
+  /* The three-layer recipe, pre-mixed. */
+  --tl-bevel: inset 0 1px 0 rgba(255, 255, 255, 0.08), inset 0 -1px 0 rgba(0, 0, 0, 0.5);
+  --tl-bevel-strong: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 -1px 0 rgba(0, 0, 0, 0.62);
+  --tl-cast: 0 6px 18px rgba(0, 0, 0, 0.42);
+  --tl-cast-high: 0 12px 32px rgba(0, 0, 0, 0.55);
+  --tl-glow: 0 0 20px rgba(111, 220, 255, 0.28);
+
+  --tl-radius: 14px;
+  --tl-radius-sm: 10px;
+  --tl-radius-pill: 999px;
+
+  --tl-gap: 10px;
+  --tl-pad: 14px;
+
+  --tl-ease: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PANEL — the outer container for a tab's content
+   ───────────────────────────────────────────────────────────────────────── */
+.tl-panel {
+  position: relative;
+  border-radius: var(--tl-radius);
+  padding: var(--tl-pad);
+  color: var(--tl-text);
+  background: linear-gradient(180deg, rgba(34, 48, 70, 0.72) 0%, rgba(19, 27, 40, 0.92) 100%);
+  border: 1px solid var(--tl-hairline);
+  box-shadow: var(--tl-bevel), var(--tl-cast);
+  backdrop-filter: blur(14px) saturate(1.15);
+  -webkit-backdrop-filter: blur(14px) saturate(1.15);
+}
+
+/* A hairline of accent light along the very top edge — the single detail that
+   reads as "glass with a lit rim" rather than "grey box with a border". */
+.tl-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  border-radius: var(--tl-radius) var(--tl-radius) 0 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(111, 220, 255, 0.45) 30%,
+    rgba(111, 220, 255, 0.45) 70%,
+    transparent 100%
+  );
+  pointer-events: none;
+}
+
+.tl-panel--flush {
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+}
+
+.tl-panel--sunk {
+  background: linear-gradient(180deg, rgba(13, 17, 32, 0.9) 0%, rgba(10, 14, 26, 0.96) 100%);
+  box-shadow:
+    inset 0 2px 8px rgba(0, 0, 0, 0.6),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+}
+.tl-panel--sunk::before {
+  display: none;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SECTION HEADER
+   ───────────────────────────────────────────────────────────────────────── */
+.tl-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.tl-section-head h3,
+.tl-section-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--tl-accent);
+  text-shadow: 0 0 12px rgba(111, 220, 255, 0.35);
+}
+
+.tl-section-note {
+  font-size: 11px;
+  color: var(--tl-text-hint);
+  font-weight: 600;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   STAT TILE — the unit the Detail overview is assembled from
+   ───────────────────────────────────────────────────────────────────────── */
+.tl-stat-grid {
+  display: grid;
+  gap: var(--tl-gap);
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+}
+
+.tl-stat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 62px;
+  padding: 9px 8px;
+  border-radius: var(--tl-radius-sm);
+  text-align: center;
+  background: linear-gradient(180deg, #223046 0%, #16202f 100%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow:
+    var(--tl-bevel),
+    0 4px 12px rgba(0, 0, 0, 0.38);
+}
+
+.tl-stat__label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--tl-text-hint);
+  line-height: 1.1;
+}
+
+.tl-stat__value {
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.05;
+  color: var(--tl-text);
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.tl-stat__value--accent {
+  color: var(--tl-accent);
+  text-shadow: 0 0 14px rgba(111, 220, 255, 0.45);
+}
+.tl-stat__value--good {
+  color: var(--tl-good);
+}
+.tl-stat__value--warn {
+  color: var(--tl-danger-soft);
+}
+
+.tl-stat__sub {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--tl-text-dim);
+}
+
+/* A tile that is the hero of its grid. */
+.tl-stat--feature {
+  grid-column: 1 / -1;
+  min-height: 84px;
+  background: linear-gradient(180deg, rgba(24, 119, 242, 0.22) 0%, rgba(13, 17, 32, 0.95) 100%);
+  border-color: rgba(111, 220, 255, 0.3);
+  box-shadow: var(--tl-bevel-strong), var(--tl-cast), var(--tl-glow);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   ROWS / LISTS — Ranking, Entries, Tables, Rewards all share this
+   ───────────────────────────────────────────────────────────────────────── */
+.tl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tl-row {
+  display: grid;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 12px;
+  border-radius: var(--tl-radius-sm);
+  text-align: left;
+  color: var(--tl-text);
+  background: linear-gradient(180deg, rgba(34, 48, 70, 0.62) 0%, rgba(19, 27, 40, 0.88) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow:
+    var(--tl-bevel),
+    0 3px 10px rgba(0, 0, 0, 0.34);
+  transition:
+    transform 0.16s var(--tl-ease),
+    box-shadow 0.16s var(--tl-ease),
+    border-color 0.16s ease;
+}
+
+/* Only rows that DO something advertise that they do. */
+.tl-row--interactive {
+  cursor: pointer;
+  appearance: none;
+  font: inherit;
+}
+
+/* HOVER is allowed to be subtle. FOCUS is not: it is the only thing telling a
+   keyboard user where they are.
+
+   This used to `outline: none` and lean on the border tint above, which is
+   invisible on any row that is already tinted - the hero row, an agent's
+   downline row - i.e. exactly the rows worth tabbing to. A real outline,
+   offset so it sits outside the bevel rather than fighting it. */
+.tl-row--interactive:focus-visible {
+  border-color: rgba(111, 220, 255, 0.4);
+  outline: 2px solid var(--tl-accent);
+  outline-offset: 2px;
+}
+
+.tl-row--interactive:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.55);
+}
+
+/* The signed-in player's own row, pinned or inline. */
+.tl-row--hero {
+  background: linear-gradient(180deg, rgba(24, 119, 242, 0.34) 0%, rgba(10, 40, 78, 0.9) 100%);
+  border-color: rgba(111, 220, 255, 0.5);
+  box-shadow: var(--tl-bevel-strong), var(--tl-cast), var(--tl-glow);
+}
+
+/* An agent's own downline, so they can find their players at a glance. */
+.tl-row--downline {
+  border-color: rgba(0, 180, 230, 0.45);
+  background: linear-gradient(180deg, rgba(0, 180, 230, 0.16) 0%, rgba(19, 27, 40, 0.9) 100%);
+}
+.tl-row--downline::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--tl-accent-strong);
+  box-shadow: 0 0 10px rgba(0, 180, 230, 0.8);
+}
+.tl-row--downline {
+  position: relative;
+  overflow: hidden;
+}
+
+.tl-row--eliminated {
+  opacity: 0.5;
+  filter: saturate(0.5);
+}
+
+.tl-rank {
+  min-width: 30px;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--tl-text-dim);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.tl-rank--podium {
+  color: var(--tl-accent);
+  text-shadow: 0 0 12px rgba(111, 220, 255, 0.55);
+}
+
+.tl-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--tl-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tl-sub {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--tl-text-hint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tl-num {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--tl-text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.tl-num--accent {
+  color: var(--tl-accent);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   AVATAR
+   ───────────────────────────────────────────────────────────────────────── */
+.tl-avatar {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: linear-gradient(180deg, #223046 0%, #0d1120 100%);
+  border: 1px solid rgba(111, 220, 255, 0.25);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 2px 6px rgba(0, 0, 0, 0.5);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--tl-accent);
+  text-transform: uppercase;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   BADGES
+   ───────────────────────────────────────────────────────────────────────── */
+.tl-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--tl-radius-pill);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--tl-accent);
+  background: rgba(111, 220, 255, 0.12);
+  border: 1px solid rgba(111, 220, 255, 0.32);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.tl-badge--action {
+  color: #dbeafe;
+  background: rgba(24, 119, 242, 0.22);
+  border-color: rgba(24, 119, 242, 0.55);
+}
+.tl-badge--good {
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.16);
+  border-color: rgba(34, 197, 94, 0.45);
+}
+.tl-badge--danger {
+  color: var(--tl-danger-soft);
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.45);
+}
+.tl-badge--mute {
+  color: var(--tl-text-hint);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   METERS — chip-stack bars, bounty pools, field progress
+   ───────────────────────────────────────────────────────────────────────── */
+.tl-meter {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  border-radius: var(--tl-radius-pill);
+  overflow: hidden;
+  background: rgba(13, 17, 32, 0.9);
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.7),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.tl-meter__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--tl-action) 0%, var(--tl-accent) 100%);
+  box-shadow: 0 0 10px rgba(111, 220, 255, 0.5);
+  transition: width 0.5s ease;
+}
+
+.tl-meter__fill--under {
+  background: linear-gradient(90deg, #b91c1c 0%, var(--tl-danger) 100%);
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+}
+
+/* Marker for the average stack sitting inside a meter. */
+.tl-meter__mark {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--tl-text);
+  opacity: 0.75;
+  box-shadow: 0 0 6px rgba(232, 234, 240, 0.8);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   CLOCK — the big numerals on Detail and Blinds
+   ───────────────────────────────────────────────────────────────────────── */
+.tl-clock {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  letter-spacing: 2px;
+  line-height: 1;
+  color: var(--tl-accent);
+  text-shadow:
+    0 0 22px rgba(111, 220, 255, 0.55),
+    0 2px 4px rgba(0, 0, 0, 0.7);
+}
+.tl-clock--urgent {
+  color: var(--tl-danger-soft);
+  text-shadow:
+    0 0 22px rgba(239, 68, 68, 0.6),
+    0 2px 4px rgba(0, 0, 0, 0.7);
+}
+.tl-clock--paused {
+  color: var(--tl-text-dim);
+  text-shadow: none;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SCROLL AREA — a list that scrolls INSIDE its panel, so the page itself
+   never grows a second scrollbar and the locked footer never moves.
+   ───────────────────────────────────────────────────────────────────────── */
+.tl-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(111, 220, 255, 0.3) transparent;
+}
+.tl-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.tl-scroll::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: rgba(111, 220, 255, 0.3);
+}
+.tl-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   EMPTY / LOADING
+   ───────────────────────────────────────────────────────────────────────── */
+.tl-empty {
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--tl-text-dim);
+  font-size: 13px;
+  font-weight: 600;
+}
+.tl-empty__hint {
+  font-size: 11px;
+  color: var(--tl-text-hint);
+  font-weight: 500;
+}
+
+.tl-skeleton {
+  border-radius: var(--tl-radius-sm);
+  background: linear-gradient(
+    90deg,
+    rgba(34, 48, 70, 0.5) 25%,
+    rgba(46, 64, 92, 0.7) 37%,
+    rgba(34, 48, 70, 0.5) 63%
+  );
+  background-size: 400% 100%;
+  animation: tlShimmer 1.4s ease infinite;
+}
+
+@keyframes tlShimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+/* A value that just changed, so a realtime update is visible rather than
+   merely correct.
+
+   This animated `background-color` until 2026-08-26, which made it very nearly
+   INVISIBLE on the surface it was written for: `.tl-row` paints an ~88% opaque
+   gradient of its own, and a background tint underneath that barely reaches
+   the eye. RankingTab had to override the whole rule locally to get a legible
+   pulse, which is the tell that the shared one was wrong.
+
+   Light the RIM instead. Nothing covers a border, so this reads on every
+   surface in the vocabulary - panel, row, stat tile - without any tab needing
+   its own copy. */
+@keyframes tlPulse {
+  0% {
+    border-color: rgba(111, 220, 255, 0.85);
+    box-shadow:
+      var(--tl-bevel),
+      0 0 18px rgba(111, 220, 255, 0.5);
+  }
+  100% {
+    border-color: rgba(255, 255, 255, 0.05);
+    box-shadow:
+      var(--tl-bevel),
+      0 3px 10px rgba(0, 0, 0, 0.34);
+  }
+}
+.tl-pulse {
+  animation: tlPulse 0.9s ease-out;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   RESPECT THE PLAYER'S MOTION SETTING
+   ───────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .tl-skeleton,
+  .tl-pulse {
+    animation: none;
+  }
+  .tl-row,
+  .tl-row--interactive:focus-visible,
+  .tl-row--interactive:active {
+    transform: none;
+    transition: none;
+  }
+  .tl-meter__fill {
+    transition: none;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   MOBILE FIRST — 375px is the design target, everything above is a bonus
+   ───────────────────────────────────────────────────────────────────────── */
+@media (max-width: 480px) {
+  :root {
+    --tl-pad: 12px;
+    --tl-gap: 8px;
+  }
+  .tl-stat {
+    min-height: 56px;
+    padding: 8px 6px;
+  }
+  .tl-stat__value {
+    font-size: 15px;
+  }
+  .tl-row {
+    min-height: 48px;
+    padding: 7px 10px;
+    gap: 8px;
+  }
+  .tl-avatar {
+    width: 30px;
+    height: 30px;
+    flex-basis: 30px;
+  }
+  .tl-name {
+    font-size: 13px;
+  }
+  .tl-num {
+    font-size: 13px;
+  }
+}

@@ -15,7 +15,7 @@ const isCI = !!process.env.CI;
  * goto('cashier') to /hub/cashier. Normalise it here rather than relying on
  * every caller to remember.
  */
-const rawBaseURL = process.env.BASE_URL || 'http://localhost:5173';
+const rawBaseURL = process.env.BASE_URL || 'http://localhost:5173/hub/club-arena/';
 const baseURL = rawBaseURL.endsWith('/') ? rawBaseURL : `${rawBaseURL}/`;
 
 export default defineConfig({
@@ -59,6 +59,11 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'webkit-footer',
+      testMatch: /footer-(?:visual-regression|route)\.spec\.ts$/,
+      use: { ...devices['iPhone 13'] },
     },
   ],
   // Skip local dev server in CI — tests run against production (BASE_URL)

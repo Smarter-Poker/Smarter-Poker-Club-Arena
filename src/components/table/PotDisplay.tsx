@@ -12,11 +12,32 @@
  *    and the lower pill disappears.
  *  - The old casino chip-pile visualization next to the pot is GONE — it is
  *    what kept leaving stray red chips painted in the middle of the felt.
+ *
+ * Dan 2026-08-23 (chips and pots): "THE POT SHOULD SHOW THE AMOUNT OF CHIPS
+ * NECESSARY TO EQUAL THE TOTAL CHIPS IN THE POT, AND THATS HOW IT SHOULD LOOK
+ * WHEN ITS CALCULATED... ALWAYS COLORING UP TO USE THE FEWEST AMOUNT OF CHIPS
+ * IN THE POT."
+ *
+ * So a chip pile is back — but NOT the one removed on 2026-08-20, and it
+ * cannot fail the same way. The old pile was table/ChipStack's own `PotDisplay`
+ * export: a separately-positioned block that drew a fixed red chip whatever
+ * the pot held, and when it and the flying-chip layer disagreed about who
+ * owned the middle of the felt, its chips were the ones left painted there.
+ * This pile is a child of `.pot-display` itself, so it mounts, moves and
+ * unmounts with the pot pill and cannot outlive it; it is derived purely from
+ * `displayPot`, so no animation owns its lifetime; and it is pointer-events
+ * none like the rest of the pot.
+ *
+ * It is also absolutely positioned ABOVE the pill instead of sitting in the
+ * column flow, so `.pot-display__main` does not move by a pixel. That is load
+ * bearing: tests/e2e/pot-above-chips.spec.ts pins the pill's box against a
+ * checked-in pre-fix stylesheet at four viewport widths.
  */
 
 import React, { useMemo, memo, useState, useEffect, useRef } from 'react';
 import { AnimatedNumber } from '../common/AnimatedNumber';
 import { soundService } from '../../services/SoundService';
+import { visualChipStacks } from '../../lib/chipDenominations';
 import './PotDisplay.css';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -47,6 +68,12 @@ export interface PotDisplayProps {
    */
   streetBets?: number;
   /**
+   * The hand this pot belongs to. Used ONLY to expire the carried-over amount
+   * below - see lastNonZeroPotRef. Without it the component has no idea a hand
+   * ended, because it stays mounted for the life of the table.
+   */
+  handNumber?: number;
+  /**
    * Dan 2026-08-19, bug list item 6: "pot-push animation to the winner after
    * every hand showing chip amounts, not auto-advancing."
    *
@@ -55,6 +82,13 @@ export interface PotDisplayProps {
    * The offset is in pixels from the pot's own centre toward that seat.
    */
   collectTo?: { dx: number; dy: number } | null;
+  /**
+   * What the engine says was won, from POT_WIN. Used ONLY as the last resort
+   * for the push label on a hand where the running total was never non-zero
+   * — a fold-around, where the blinds sit in front of the seats all hand and
+   * `mainPot === streetBets` throughout. Without it that push showed 0.
+   */
+  awardedPot?: number;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -106,14 +140,69 @@ function SidePotBadge({
   );
 }
 
-/** Tiny decorative chip stack for the street-bets pill (pure CSS circles). */
-function MiniChipIcon() {
+/**
+ * The pot, drawn as actual chips.
+ *
+ * Replaces MiniChipIcon, which drew three identical teal circles no matter
+ * what the pot held — decoration, not information. This draws the fewest chips
+ * that add up to `amount` on Dan's ladder, so a 21 pot is four red and one
+ * white and it is readable at a glance without reading the number.
+ *
+ * `size` is the only difference between the two places it appears: `pot` is
+ * the collected pot floating above the POT pill, `street` is the inline icon
+ * in the live-bets pill under it, which has one line of pill height to live in.
+ */
+function PotChipPile({ amount, size }: { amount: number; size: 'pot' | 'street' }) {
+  // The pot can hold far more denominations than a single bet, and it has the
+  // middle of the felt to spread across, so it gets more room than a seat.
+  // Dan 2026-08-24: one tower, highest denomination on the bottom, chips
+  // slightly offset so every one of them is visible. `maxTotal` is the tower's
+  // height in discs - see chipDenominations.ts. The collected pot floats over
+  // the middle of the felt and can afford ten; the street pill has one line of
+  // pill height, so it gets four.
+  const stacks = useMemo(
+    () =>
+      visualChipStacks(
+        amount,
+        size === 'pot'
+          ? { maxStacks: 6, maxPerStack: 10, maxTotal: 10 }
+          : { maxStacks: 3, maxPerStack: 4, maxTotal: 4 }
+      ),
+    [amount, size]
+  );
+
+  if (stacks.length === 0) return null;
+
+  // Flatten the stacks to render multiple chips in one column, highest denom on bottom
+  const flattenedChips: { denom: any; partial: boolean }[] = [];
+  stacks.forEach((stack) => {
+    for (let i = 0; i < stack.drawn; i++) {
+      flattenedChips.push({
+        denom: stack.denom,
+        partial: stack.partial,
+      });
+    }
+  });
+
   return (
-    <span className="pot-display__mini-chips" aria-hidden="true">
-      <span className="pot-display__mini-chip pot-display__mini-chip--b" />
-      <span className="pot-display__mini-chip pot-display__mini-chip--m" />
-      <span className="pot-display__mini-chip pot-display__mini-chip--t" />
-    </span>
+    /* aria-hidden: the amount is already announced by the pill's aria-label. */
+    <div className={`pot-display__pile pot-display__pile--${size}`} aria-hidden="true">
+      <div className="pot-display__pile-stack" style={{ '--pile-group': 0 } as React.CSSProperties}>
+        {flattenedChips.map((chip, index) => (
+          <span
+            key={index}
+            className={`pot-display__pile-chip${chip.partial ? ' pot-display__pile-chip--partial' : ''}`}
+            style={
+              {
+                '--pile-chip-color': chip.denom.color,
+                '--pile-chip-accent': chip.denom.accent,
+                transform: `translateX(${Math.sin(index * 23.45) * 1.5}px)`,
+              } as React.CSSProperties
+            }
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -130,6 +219,9 @@ function PotDisplayComponent({
   onToggleDisplayMode,
   streetBets = 0,
   collectTo = null,
+  awardedPot = 0,
+  handNumber = 0,
+  showChipAnimation = true,
 }: PotDisplayProps) {
   // Chips only belong to the pot once swept to the middle: the top pill shows
   // the collected portion, the lower pill shows what's still in front of seats.
@@ -160,8 +252,41 @@ function PotDisplayComponent({
   // ANIMATION AUDIT 2026-08-19: during the pot-push (collectTo set) a
   // snapshot may already have zeroed the pot. Show the last real amount for
   // the slide so the pot travels to the winner still reading its value.
+  //
+  // Dan 2026-08-23: that carried amount must EXPIRE WITH ITS HAND. The ref was
+  // only ever assigned, never cleared, and this component stays mounted for the
+  // life of the table - so it held the last non-zero pot indefinitely.
+  //
+  // The failing shape is the commonest hand in poker. Hand N takes a 5,000 pot,
+  // so the ref holds 5000. Hand N+1 folds around preflop: the blinds are still
+  // in FRONT of the seats, so mainPot === streetBets on every snapshot and
+  // collectedPot is 0 for the entire hand. collectTo is set for the push, which
+  // is exactly the branch that reads the ref - so the pill, the chip pile and
+  // the aria-live label all announced 5,000 sliding to a player who won 15.
   const lastNonZeroPotRef = useRef(collectedPot);
-  const displayPot = collectedPot > 0 ? collectedPot : collectTo ? lastNonZeroPotRef.current : 0;
+  const carriedHandRef = useRef(handNumber);
+  if (carriedHandRef.current !== handNumber) {
+    // Reset during render rather than in an effect: the push for the NEW hand
+    // can be painted in the same commit as the hand-number change, and an
+    // effect would clear the stale value one frame too late - after it had
+    // already been shown.
+    carriedHandRef.current = handNumber;
+    lastNonZeroPotRef.current = 0;
+  }
+  /* Dan 2026-08-26: the push must show what was actually won, on EVERY hand.
+     The reset above is right — the previous hand's 5,000 must never ride
+     along — but it left the commonest hand with nothing at all to show: on a
+     fold-around, `mainPot === streetBets` for the whole hand, so
+     `collectedPot` is 0 throughout, the ref is never assigned, and the pill
+     slid a ZERO to the winner.
+
+     `awardedPot` is the amount the engine says was won (POT_WIN's own pot
+     figure, handed down by TablePage). It is the correct number precisely in
+     the case the running total cannot see, so it is the last resort before
+     zero rather than a competing source: a live pot still wins while the
+     hand is being played. */
+  const displayPot =
+    collectedPot > 0 ? collectedPot : collectTo ? lastNonZeroPotRef.current || awardedPot || 0 : 0;
   useEffect(() => {
     if (collectedPot > 0) lastNonZeroPotRef.current = collectedPot;
   }, [collectedPot]);
@@ -194,13 +319,13 @@ function PotDisplayComponent({
       }
       role="status"
       aria-live="polite"
-      aria-label={`Pot: ${formatAmount(displayPot, currency)}${streetBets > 0 ? `, ${formatAmount(streetBets, currency)} in front of players` : ''}${sidePots && sidePots.length > 0 ? ` plus ${sidePots.length} side pot${sidePots.length > 1 ? 's' : ''}` : ''}`}
+      aria-label={`Pot: ${formatAmount(displayPot, currency)}${streetBets > 0 ? `, ${formatAmount(streetBets, currency)} In Front Of Players` : ''}${sidePots && sidePots.length > 0 ? ` Plus ${sidePots.length} Side pot${sidePots.length > 1 ? 's' : ''}` : ''}`}
     >
       {/* Main Pot pill — click to toggle chips/BB display */}
       <div
         className={`pot-display__main ${onToggleDisplayMode ? 'pot-display__main--clickable' : ''}`}
         onClick={onToggleDisplayMode}
-        title={onToggleDisplayMode ? 'Click to toggle Chips/BB display' : undefined}
+        title={onToggleDisplayMode ? 'Click To Toggle Chips/BB Display' : undefined}
       >
         <span className="pot-display__label">POT</span>
         <span className="pot-display__amount">
@@ -208,16 +333,8 @@ function PotDisplayComponent({
         </span>
       </div>
 
-      {/* Current street's bets — thin pill below the pot; folds into the pot
-          total when the street completes and the chips sweep in. */}
-      {streetBets > 0 && (
-        <div className="pot-display__street" aria-hidden="true">
-          <MiniChipIcon />
-          <span className="pot-display__street-amount">
-            <AnimatedNumber value={streetBets} duration={250} format={fmt} />
-          </span>
-        </div>
-      )}
+      {/* ── CHIP PILE ── */}
+      {showChipAnimation && displayPot > 0 && <PotChipPile amount={displayPot} size="pot" />}
 
       {/* Side Pots */}
       {sidePots.length > 0 && (

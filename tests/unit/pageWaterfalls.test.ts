@@ -12,8 +12,7 @@
  * Fixed on three pages, all of the same shape: a query needing only an id
  * already in hand, sitting behind a query it never reads.
  *
- *   HomePage      card-colour preference behind the membership list
- *                 active-player counts behind the club rows they don't need
+ *   HomePage      active-player counts behind the club rows they don't need
  *   ProfilePage   achievements + transactions behind the profile row
  *   CashierPage   display names and agent records in series, and the names
  *                 fetched one 200-id chunk at a time
@@ -39,16 +38,6 @@ function indexOf(src: string, needle: string, label: string): number {
 describe('HomePage issues independent queries together', () => {
   const src = read('src/pages/HomePage.tsx');
 
-  it('starts the card-colour preference before awaiting the membership list', () => {
-    const start = indexOf(src, 'const colorPrefPromise = supabase', 'HomePage');
-    const memberships = indexOf(src, 'await ClubsService.getUserMemberships', 'HomePage');
-    expect(
-      start,
-      'the card-colour preference is queued behind the membership fetch again'
-    ).toBeLessThan(memberships);
-    expect(src).toContain('await Promise.allSettled([colorPrefPromise])');
-  });
-
   it('asks for active-player counts with the ids it already has', () => {
     const counts = indexOf(src, 'const activeCountsPromise = supabase', 'HomePage');
     const clubRows = indexOf(src, 'const { data: clubRows } = await supabase', 'HomePage');
@@ -69,7 +58,11 @@ describe('ProfilePage issues independent queries together', () => {
       'const secondaryDataPromise = Promise.allSettled(',
       'ProfilePage'
     );
-    const profile = indexOf(src, 'const { data: profile } = await retryFetch(', 'ProfilePage');
+    const profile = indexOf(
+      src,
+      'const { data: profile, error: profileError } = await retryFetch(',
+      'ProfilePage'
+    );
     expect(
       secondary,
       'the achievements/transactions batch is behind the profile fetch again'

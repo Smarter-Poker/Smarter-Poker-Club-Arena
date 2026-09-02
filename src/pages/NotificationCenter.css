@@ -1,9 +1,17 @@
 .notification-center {
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
+  width: 100%;
+  max-width: 100vw;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
   background: linear-gradient(180deg, #0a0f18 0%, #0d1520 100%);
   color: #fff;
-  padding-bottom: 80px;
+  padding-bottom: var(--bottom-nav-clearance, 74px);
 }
 
 .notif-header {
@@ -36,20 +44,13 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
     0 0 10px rgba(0, 212, 255, 0.2);
 }
-
-.mark-all-btn:hover {
-  transform: translateY(-2px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 0 15px rgba(0, 212, 255, 0.3);
-}
-
 .notif-filters {
   display: flex;
   gap: 6px;
   padding: 0 16px 12px;
   overflow-x: auto;
   scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
 }
 
 .notif-filter {
@@ -63,6 +64,7 @@
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
+  touch-action: manipulation;
 }
 
 .notif-filter.active {
@@ -90,14 +92,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   position: relative;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.notif-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  transform: translateY(-2px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 8px 24px rgba(0, 212, 255, 0.15);
 }
 
 .notif-item.unread {
@@ -317,5 +311,38 @@
 
   .nc-item-body {
     font-size: 0.68rem;
+  }
+
+  /* The component renders .notif-* classes (the .nc-* rules above target a
+     legacy naming) — these are the selectors that actually apply. */
+  .notif-header {
+    padding: 12px;
+  }
+
+  .notif-header h1 {
+    font-size: 1rem;
+  }
+
+  .mark-all-btn {
+    min-height: 44px;
+    padding: 6px 12px;
+    touch-action: manipulation;
+  }
+
+  .notif-filters {
+    padding: 0 12px 10px;
+  }
+
+  .notif-filter {
+    min-height: 44px;
+    padding: 5px 12px;
+  }
+
+  .notif-list {
+    padding: 0 12px;
+  }
+
+  .notif-item {
+    padding: 12px;
   }
 }

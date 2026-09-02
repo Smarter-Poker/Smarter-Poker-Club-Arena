@@ -17,6 +17,9 @@
 
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
+import { normalizeThemePresetId } from '../../lib/tableTheme';
+import { ALL_COSMETICS, normalizeCosmeticToken } from '../../cosmetics/avatarCosmetics';
+import { uuid } from '../../utils/uuid';
 
 /* ═══ Types ═══ */
 
@@ -117,15 +120,15 @@ export function describeGrant(
   const qty = Math.max(1, Math.floor(Number(spec.qty) || 1));
   switch (spec.type) {
     case 'time_bank':
-      return `+${qty * secondsPerUse}s table time (${qty} ${qty === 1 ? 'use' : 'uses'})`;
+      return `+${qty * secondsPerUse}s Table Time (${qty} ${qty === 1 ? 'Use' : 'Uses'})`;
     case 'throwable':
-      return `${qty} free ${qty === 1 ? 'throw' : 'throws'}`;
+      return `${qty} Free ${qty === 1 ? 'Throw' : 'Throws'}`;
     case 'emote_pack':
-      return 'Unlocks the emote pack';
+      return 'Unlocks The Emote Pack';
     case 'table_skin':
-      return 'Unlocks the table theme';
+      return 'Unlocks The Table Theme';
     case 'avatar':
-      return 'Unlocks the avatar';
+      return 'Unlocks The Avatar';
     default:
       return null;
   }
@@ -135,6 +138,8 @@ export interface ShopPurchase {
   id: string;
   item_id: string;
   price_paid: number;
+  /** 'diamonds' for every purchase since 2026-08-23; 'chips' = legacy rows */
+  currency?: 'chips' | 'diamonds';
   created_at: string;
   item_name?: string | null;
   item_category?: string | null;
@@ -150,11 +155,15 @@ export interface ShopPurchase {
 export interface InventoryRow {
   id: string;
   item_id?: string | null;
+  /** links back to club_shop_purchases so the row can inherit its currency */
+  purchase_id?: string | null;
   item_name: string | null;
   category: string | null;
   price_paid: number;
   status: string;
   acquired_at: string;
+  /** Non-null once the benefit has actually reached its entitlement ledger. */
+  redeemed_at?: string | null;
 }
 
 export interface WalletInfo {
@@ -192,6 +201,28 @@ export function isOwnedRow(row: { status?: string | null }): boolean {
   // explicitly spent still belongs to the player, so the Store can never offer
   // to re-sell something My Items is calling Owned.
   return !SPENT_STATUSES.has(String(row.status ?? 'owned'));
+}
+
+/**
+ * Permanent grants stay owned after activation. Derive ownership from the
+ * entitlement ledger as well as inventory, otherwise a redeemed avatar/theme
+ * becomes purchasable again even though the picker still knows it is owned.
+ */
+export function isMarketplaceItemOwned(item: MarketplaceItem, entitlements: Entitlements): boolean {
+  if (!entitlements.loaded || !item.grant_spec) return false;
+  const spec = item.grant_spec;
+  if (spec.type === 'table_skin' && spec.theme_id) {
+    const themeId = normalizeThemePresetId(spec.theme_id);
+    return !!themeId && entitlements.themes.includes(themeId);
+  }
+  if (spec.type === 'avatar' && spec.avatar_id) {
+    const wanted = normalizeCosmeticToken(spec.avatar_id);
+    return [...entitlements.avatars, ...entitlements.avatarCosmetics].some(
+      (owned) => normalizeCosmeticToken(owned) === wanted
+    );
+  }
+  if (spec.type === 'emote_pack') return entitlements.emotePack;
+  return false;
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -235,19 +266,11 @@ export function safeImageUrl(raw?: string | null): string | null {
   }
 }
 
-export { uuid } from '../../utils/uuid';
+export { uuid };
 
 /* ═══ Club shop categories (must match WH shop-items.js VALID_CATEGORIES) ═══ */
 
-export const CATEGORIES = [
-  'All',
-  'Time Banks',
-  'Table Skins',
-  'Throwables',
-  'Emotes',
-  'Avatars',
-  'Exclusive',
-];
+export const CATEGORIES = ['All', 'Time Banks', 'Table Skins', 'Throwables', 'Emotes', 'Avatars'];
 
 export type SortMode = 'newest' | 'price-low' | 'price-high' | 'popular';
 
@@ -298,13 +321,13 @@ const FALLBACK_VIP_PLANS: VipPlan[] = [
     planKey: null,
     checkoutPlan: null,
     name: 'Daily Pass',
-    period: '24 hours',
+    period: '24 Hours',
     priceUsd: null,
     priceDiamonds: 150,
     features: [
-      'All VIP table features for 24h',
-      'Rabbit hunt + stack in BB',
-      'Great for trying VIP',
+      'All VIP Table Features For 24h',
+      'Rabbit Hunt + Stack In BB',
+      'Great For Trying VIP',
     ],
   },
   {
@@ -312,14 +335,14 @@ const FALLBACK_VIP_PLANS: VipPlan[] = [
     planKey: 'monthly',
     checkoutPlan: 'vip-monthly',
     name: 'Monthly VIP',
-    period: 'per month',
+    period: 'Per Month',
     priceUsd: 19.99,
     priceDiamonds: 1999,
     features: [
-      'All VIP features, all month',
-      'Daily + monthly diamond bonuses',
-      'Time bank, offline protection, throwables',
-      'VIP badge across Smarter.Poker',
+      'All VIP Features, All Month',
+      'Daily + Monthly Diamond Bonuses',
+      'Time Bank, Offline Protection, Throwables',
+      'VIP Badge Across Smarter.Poker',
     ],
     featured: true,
   },
@@ -328,10 +351,10 @@ const FALLBACK_VIP_PLANS: VipPlan[] = [
     planKey: 'annual',
     checkoutPlan: 'vip-annual',
     name: 'Annual VIP',
-    period: 'per year',
+    period: 'Per Year',
     priceUsd: 199.99,
     priceDiamonds: 19999,
-    features: ['Everything in Monthly', 'Two months free vs monthly', 'Best long-run value'],
+    features: ['Everything In Monthly', 'Two Months Free Vs Monthly', 'Best Long-Run Value'],
   },
 ];
 
@@ -390,6 +413,18 @@ export interface Entitlements {
   emotePack: boolean;
   themeUnlock: boolean;
   avatars: string[];
+  /** Frames and auras share avatar_unlocks, but are not avatar artwork. */
+  avatarCosmetics: string[];
+  /**
+   * The SPECIFIC themes the player owns, from `theme_asset_unlocks`.
+   *
+   * `themeUnlock` above preserves the retired generic
+   * `feature_purchases.theme_unlock` receipt. It cannot say WHICH theme, so
+   * "you own a table theme" was the most the strip could ever claim. The modern
+   * category ledger carries the exact preset and each bundled asset, which is
+   * what Table Studio and the database guard both gate on.
+   */
+  themes: string[];
   loaded: boolean;
 }
 
@@ -400,27 +435,39 @@ export const EMPTY_ENTITLEMENTS: Entitlements = Object.freeze({
   emotePack: false,
   themeUnlock: false,
   avatars: [],
+  avatarCosmetics: [],
+  themes: [],
   loaded: false,
 });
 
 /**
- * Read the player's live entitlement balances. Both tables are RLS-scoped to
- * the caller (feature_purchases_select_own / "Users can view their own
+ * Read the player's live entitlement balances. Every table is RLS-scoped
+ * to the caller (feature_purchases_select_own / "Users can view their own
  * unlocks"), so this is a safe direct read.
+ *
+ * EVERY read is checked. `avatar_unlocks` used to be read with its error
+ * discarded, so a failed request rendered as "you own no avatars" - the same
+ * failure-as-empty-success shape the Store tab already had to fix. A caller
+ * that cannot tell "none" from "could not ask" will always print the wrong one.
  */
 export async function loadEntitlements(
   userId: string,
   secondsPerUse = DEFAULT_SECONDS_PER_TIME_BANK_USE
 ): Promise<Entitlements> {
   const nowIso = new Date().toISOString();
-  const [fp, av] = await Promise.all([
+  const [fp, av, th, themeAssets] = await Promise.all([
     supabase
       .from('feature_purchases')
       .select('feature, uses_remaining, expires_at')
       .eq('user_id', userId),
     supabase.from('avatar_unlocks').select('avatar_id').eq('user_id', userId),
+    supabase.from('theme_unlocks').select('theme_id').eq('user_id', userId),
+    supabase.from('theme_asset_unlocks').select('category, asset_id').eq('user_id', userId),
   ]);
   if (fp.error) throw fp.error;
+  if (av.error) throw av.error;
+  if (th.error) throw th.error;
+  if (themeAssets.error) throw themeAssets.error;
 
   const live = (fp.data || []).filter((r) => !r.expires_at || r.expires_at > nowIso);
   const sumUses = (feature: string) =>
@@ -431,13 +478,49 @@ export async function loadEntitlements(
     live.some((r) => r.feature === feature && r.uses_remaining == null);
 
   const timeBankUses = sumUses('time_bank_seconds');
+  const styleTokens = new Set(ALL_COSMETICS.map((cosmetic) => cosmetic.unlockToken));
+  const legacyStyleAliases: Record<string, string> = {
+    gold_frame: 'frame_gold',
+    royal_crown: 'frame_hellfire',
+    diamond_halo: 'frame_diamond',
+  };
+  const avatarLedger = Array.from(new Set((av.data || []).map((row) => String(row.avatar_id))));
+  const normalizedAvatarLedger = avatarLedger.map((raw) => {
+    const normalized = normalizeCosmeticToken(raw);
+    return { raw, styleToken: legacyStyleAliases[normalized] || normalized };
+  });
+
+  // Composite theme receipts are deduped across the modern ledger and rolling-
+  // deployment compatibility rows.
+  const themes = Array.from(
+    new Set(
+      [
+        ...(themeAssets.data || [])
+          .filter((row) => row.category === 'theme_id')
+          .map((row) => String(row.asset_id)),
+        // Legacy rows remain readable during rolling deployment and preserve the
+        // receipt trail; the migration backfills every recognised one above.
+        ...(th.data || []).map((row) => normalizeThemePresetId(String(row.theme_id))),
+      ].filter((themeId): themeId is string => !!themeId)
+    )
+  );
   return {
     timeBankUses,
     timeBankSeconds: timeBankUses * secondsPerUse,
     throwables: sumUses('throwable'),
     emotePack: hasPermanent('emoji_pack'),
-    themeUnlock: hasPermanent('theme_unlock'),
-    avatars: (av.data || []).map((r) => String(r.avatar_id)),
+    themeUnlock: hasPermanent('theme_unlock') || themes.length > 0,
+    avatars: normalizedAvatarLedger
+      .filter(({ styleToken }) => !styleTokens.has(styleToken))
+      .map(({ raw }) => raw),
+    avatarCosmetics: Array.from(
+      new Set(
+        normalizedAvatarLedger
+          .map(({ styleToken }) => styleToken)
+          .filter((styleToken) => styleTokens.has(styleToken))
+      )
+    ),
+    themes,
     loaded: true,
   };
 }
@@ -468,7 +551,8 @@ export async function loadWalletInfo(): Promise<WalletInfo> {
 export async function startCheckout(
   type: 'diamonds' | 'subscription',
   items: Record<string, unknown>[],
-  returnParams: string
+  returnParams: string,
+  idempotencyKey: string = uuid()
 ): Promise<void> {
   const base = `${window.location.origin}${window.location.pathname}`;
   const data = await storeFetch<{ success: true; data: { url: string } }>(
@@ -477,6 +561,7 @@ export async function startCheckout(
       body: {
         type,
         items,
+        idempotencyKey,
         successUrl: `${base}?${returnParams}&purchase=success`,
         cancelUrl: `${base}?${returnParams}&purchase=canceled`,
       },
@@ -515,7 +600,6 @@ const FALLBACK_SHOP_CATEGORIES: ShopCategoryInfo[] = [
   { name: 'Throwables', grantType: 'throwable', grantUnit: 'throws' },
   { name: 'Emotes', grantType: 'emote_pack', grantUnit: null },
   { name: 'Avatars', grantType: 'avatar', grantUnit: null },
-  { name: 'Exclusive', grantType: 'none', grantUnit: null },
 ];
 
 /** Shape guards — the server response is `any` until proven otherwise. */
@@ -536,6 +620,13 @@ const isCategory = (c: unknown): c is ShopCategoryInfo =>
   !!c &&
   typeof (c as ShopCategoryInfo).name === 'string' &&
   typeof (c as ShopCategoryInfo).grantType === 'string';
+
+const pickFulfillableCategories = (raw: unknown): ShopCategoryInfo[] => {
+  const picked = pick(raw, isCategory, FALLBACK_SHOP_CATEGORIES).filter(
+    (category) => category.grantType !== 'none'
+  );
+  return picked.length > 0 ? picked : FALLBACK_SHOP_CATEGORIES;
+};
 
 function pick<T>(raw: unknown, guard: (v: unknown) => v is T, fallback: T[]): T[] {
   if (!Array.isArray(raw)) return fallback;
@@ -570,7 +661,9 @@ export async function loadStoreCatalog(): Promise<StoreCatalog> {
     catalogCache = {
       diamondPackages: pick(data.diamondPackages, isDiamondPkg, FALLBACK_DIAMOND_PACKAGES),
       vipPlans: pick(data.vipPlans, isVipPlan, FALLBACK_VIP_PLANS),
-      shopCategories: pick(data.shopCategories, isCategory, FALLBACK_SHOP_CATEGORIES),
+      // A category with `grantType: none` is not a product. It creates a paid
+      // receipt with no executable fulfillment path, so it is never offered.
+      shopCategories: pickFulfillableCategories(data.shopCategories),
       fromServer: true,
     };
     catalogFetchedAt = Date.now();

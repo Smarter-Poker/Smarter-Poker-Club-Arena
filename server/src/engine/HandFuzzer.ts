@@ -48,6 +48,13 @@
 
 import { HandController } from './HandController.js';
 import { calculatePots, cardsToString } from './PokerEngine.js';
+import {
+  isPotLimitVariant,
+  isFixedLimitVariant,
+  isFixedLimitCapped,
+  fixedLimitBetSize,
+} from './BettingStructure.js';
+
 import type { ActionType, GameVariant, HandConfig, SeatPlayer } from '../types.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -105,6 +112,14 @@ const VARIANT_CARDS: Record<
   plo8: { perPlayer: 4, deckSize: 52, maxSeats: 9 },
   pineapple: { perPlayer: 3, deckSize: 52, maxSeats: 9 },
   short_deck: { perPlayer: 2, deckSize: 36, maxSeats: 9 },
+  // 2026-08-23: fixed-limit variants deal exactly like their no-limit and
+  // pot-limit counterparts — only the BETTING differs — so the card maths is
+  // nlh's and plo4's. Including them here is deliberate: the fuzzer is the only
+  // thing that will ever drive a capped street into the chip-conservation
+  // invariant, and a capped street is where a wrong clamp would silently
+  // create or destroy chips.
+  flh: { perPlayer: 2, deckSize: 52, maxSeats: 9 },
+  flo8: { perPlayer: 4, deckSize: 52, maxSeats: 9 },
 };
 
 export const VARIANTS = Object.keys(VARIANT_CARDS) as GameVariant[];
@@ -221,13 +236,18 @@ export function randomTable(rnd: () => number): FuzzConfig {
     config.straddles = [{ seat: straddleSeat, amount: cents(bb * 2) }];
   }
   if (rnd() < 0.08) {
+    // Round 2 (2026-08-20): multi-board bomb pots ride the standing
+    // chip-conservation corpus, not just their own test file. TRIPLE-BOARD
+    // 2026-08-28: the mix is now one third each of 1, 2 and 3 boards, and a
+    // quarter of bomb hands use the FIXED-ante mode instead of the BB
+    // multiple. HandController downgrades itself when the deck cannot cover
+    // the requested boards.
+    const boardCount = ([1, 2, 3] as const)[Math.floor(rnd() * 3)];
     config.bombPot = {
       anteMultiplier: [1, 2, 5][Math.floor(rnd() * 3)],
-      // Round 2 (2026-08-20): half the fuzzed bomb pots run the double-board
-      // variant so the split-pot settlement and lockstep dealing sit inside
-      // the standing chip-conservation corpus, not just their own test file.
-      // HandController downgrades itself when the deck cannot cover it.
-      doubleBoard: rnd() < 0.5,
+      boardCount,
+      doubleBoard: boardCount >= 2,
+      anteFixed: rnd() < 0.25 ? cents(bb * (1 + rnd() * 4)) : undefined,
     };
   }
   if (rnd() < 0.12) {
@@ -336,9 +356,7 @@ function fail(ctx: Ctx, invariant: string, detail: string): never {
  *     joins the main pot
  * and asserts the engine agrees on both the amounts and the eligible sets.
  */
-function expectedPots(
-  players: SeatPlayer[]
-): { amount: number; eligiblePlayers: string[] }[] {
+function expectedPots(players: SeatPlayer[]): { amount: number; eligiblePlayers: string[] }[] {
   const r = (n: number) => Math.round(n * 100) / 100;
   const live = (p: SeatPlayer) => Math.max(0, r((p.totalInvested ?? 0) - (p.deadInvested ?? 0)));
   const active = players.filter((p) => !p.is_folded);
@@ -362,7 +380,10 @@ function expectedPots(
     const reached = contributors.filter((p) => live(p) >= level).length;
     const eligible = active.filter((p) => live(p) >= level);
     if (reached > 0 && eligible.length > 0) {
-      pots.push({ amount: contribution * reached, eligiblePlayers: eligible.map((p) => p.user_id) });
+      pots.push({
+        amount: contribution * reached,
+        eligiblePlayers: eligible.map((p) => p.user_id),
+      });
     } else if (reached > 0) {
       orphaned = r(orphaned + contribution * reached);
     }
@@ -477,15 +498,13 @@ function checkMidHand(ctx: Ctx, where: string): void {
     // A folded player among the eligible is the single most dangerous shape,
     // so name it explicitly when that is what differs.
     const foldedIds = new Set(players.filter((p) => p.is_folded).map((p) => p.user_id));
-    const foldedEligible = pots
-      .flatMap((p) => p.eligiblePlayers)
-      .filter((id) => foldedIds.has(id));
+    const foldedEligible = pots.flatMap((p) => p.eligiblePlayers).filter((id) => foldedIds.has(id));
     fail(
       ctx,
       'INV-10',
       `side-pot partition disagrees with the rules at ${where}` +
         (foldedEligible.length
-          ? ` — FOLDED player(s) ${JSON.stringify([...new Set(foldedEligible)])} are eligible to win`
+          ? ` - FOLDED player(s) ${JSON.stringify([...new Set(foldedEligible)])} are eligible to win`
           : '') +
         `\n  engine:   ${JSON.stringify(got)}` +
         `\n  expected: ${JSON.stringify(want)}`
@@ -502,10 +521,25 @@ function amountFor(
 ): number | null {
   const st = (hc as any).state;
   const cfg = (hc as any).config as HandConfig;
-  const isPotLimit = cfg.gameVariant.startsWith('plo');
+  const isPotLimit = isPotLimitVariant(cfg.gameVariant);
   const toCall = st.currentBet - player.bet;
   const minRaise = Math.max(cfg.bigBlind, st.lastRaise || cfg.bigBlind);
   const plCap = isPotLimit ? st.pot + toCall : Infinity;
+
+  // 2026-08-23: fixed limit has no range to sample — there is exactly one legal
+  // wager per street. Returning a random size here would make the fuzzer report
+  // its own illegal amounts as engine failures. Null when the stack cannot
+  // cover the fixed bet; the caller then picks a different action, which is the
+  // same escape it already uses for a pot-limit cap below a full raise.
+  if (isFixedLimitVariant(cfg.gameVariant)) {
+    if (isFixedLimitCapped(st.actionHistory, st.stage)) return null;
+    const betSize = fixedLimitBetSize(cfg.bigBlind, st.stage);
+    if (action === 'bet') {
+      return player.stack + EPS < betSize ? null : cents(betSize);
+    }
+    const raiseTo = cents(st.currentBet + betSize);
+    return player.bet + player.stack + EPS < raiseTo ? null : raiseTo;
+  }
 
   if (action === 'bet') {
     const lo = minRaise;
@@ -608,6 +642,15 @@ export function fuzzOneHand(seed: number): FuzzHandResult {
         hc.performDiscard(seat, Math.floor(rnd() * 3));
         checkMidHand(ctx, `after discard seat ${seat}`);
       }
+      /* PHASE 3 2026-08-31: the last discard buys a HAND_COMPLETION
+         .DISCARD_SETTLE_MS beat so the card leaving the hand finishes its
+         flight before a betting round opens over it. This driver has no
+         clock - it walks an entire hand inside one synchronous loop - so it
+         collapses the beat instead of waiting it out. Without this the very
+         next iteration finds a stage with nobody to act and reports LIVENESS,
+         which would be the fuzzer correctly describing a hand that, in wall
+         clock, is 600ms from continuing. */
+      if (hc.flushPineappleSettle()) checkMidHand(ctx, 'after discard settle beat');
       continue;
     }
 
@@ -804,7 +847,7 @@ export function fuzzOneHand(seed: number): FuzzHandResult {
     fail(
       ctx,
       'INV-9',
-      `sawFlop=${st.sawFlop} but the board has ${board.length} card(s) — ` +
+      `sawFlop=${st.sawFlop} but the board has ${board.length} card(s) - ` +
         `the rake / BBJ gate and the dealt board disagree`
     );
   }

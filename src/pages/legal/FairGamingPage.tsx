@@ -1,188 +1,159 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- * CLUB ARENA — Fair Gaming Policy
- * ═══════════════════════════════════════════════════════════════════════════════
- */
+import { Link } from 'react-router-dom';
+import LegalDocumentLayout, {
+  type LegalDocumentSection,
+} from '../../components/legal/LegalDocumentLayout';
 
-import { useNavigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
-import styles from './LegalPage.module.css';
-
-const sectionAnimationStyle = (index: number) => ({
-  opacity: 0,
-  transform: 'translateY(8px)',
-  animation: `fadeInUp 0.5s ease-out ${index * 70}ms forwards`,
-});
+const SECTIONS: LegalDocumentSection[] = [
+  {
+    id: 'commitment',
+    title: 'Our Commitment To Fair Play',
+    content: (
+      <p>
+        Club Arena Is Built To Provide A Fair, Secure, And Reviewable Social Poker Experience. Game
+        Outcomes, Player Actions, And Operator Decisions Must Remain Traceable To Authoritative
+        Records.
+      </p>
+    ),
+  },
+  {
+    id: 'card-randomness',
+    title: 'Card Randomness',
+    content: (
+      <>
+        <p>
+          Live Card Paths Use Cryptographically Secure Random Values And An Unbiased Fisher-Yates
+          Shuffle. Equity Simulations Use Separate Deterministic Sampling And Do Not Deal Live
+          Cards.
+        </p>
+        <ul>
+          <li>Each Live Deck Is Shuffled Before The Deal</li>
+          <li>Live Dealing Does Not Use Predictable Math.Random Values</li>
+          <li>Card Outcomes Are Not Selected By A Club Owner Or Player Client</li>
+          <li>Distribution Monitoring Is Segmented By Game Variant</li>
+        </ul>
+      </>
+    ),
+  },
+  {
+    id: 'integrity-records',
+    title: 'Game Integrity Records',
+    content: (
+      <ul>
+        <li>
+          <strong>Server Authority:</strong> The Game Engine Owns Legal Actions And Final Outcomes
+        </li>
+        <li>
+          <strong>Hand History:</strong> Completed Hands Preserve The Action Record For Review
+        </li>
+        <li>
+          <strong>Secure Transport:</strong> Platform Traffic Uses Encrypted Connections
+        </li>
+        <li>
+          <strong>Audit Signals:</strong> Suspicious Patterns Can Be Flagged For Investigation
+        </li>
+      </ul>
+    ),
+  },
+  {
+    id: 'prohibited-conduct',
+    title: 'Prohibited Conduct',
+    content: (
+      <ul>
+        <li>
+          <strong>Collusion:</strong> Coordinating With Other Players For An Unfair Advantage
+        </li>
+        <li>
+          <strong>Multi-Accounting:</strong> Controlling Multiple Accounts In The Same Game
+        </li>
+        <li>
+          <strong>Chip Dumping:</strong> Intentionally Moving Chips Through Artificial Losses
+        </li>
+        <li>
+          <strong>Automation:</strong> Using Unauthorized Software To Make Or Submit Decisions
+        </li>
+        <li>
+          <strong>Real-Time Assistance:</strong> Using Prohibited External Decision Tools During
+          Play
+        </li>
+        <li>
+          <strong>Account Sharing:</strong> Allowing Another Person To Play Through Your Account
+        </li>
+        <li>
+          <strong>Ghosting:</strong> Receiving Live Strategic Direction From Another Person
+        </li>
+      </ul>
+    ),
+  },
+  {
+    id: 'detection-review',
+    title: 'Detection And Review',
+    content: (
+      <>
+        <p>Integrity Review Can Use Multiple Signals:</p>
+        <ul>
+          <li>Automated Pattern And Relationship Detection</li>
+          <li>Manual Review Of Flagged Accounts And Hands</li>
+          <li>Player Reports And Supporting Evidence</li>
+          <li>Statistical Analysis Of Actions And Outcomes</li>
+          <li>Account, Session, Device, And Network Signals Where Permitted</li>
+        </ul>
+      </>
+    ),
+  },
+  {
+    id: 'reporting',
+    title: 'Player Reporting',
+    content: (
+      <>
+        <p>
+          Use Report Player From A Table Or Player Profile. Include The Hand Number, The Conduct You
+          Observed, And Any Relevant Context. Reports Are Kept Within The Review Process.
+        </p>
+        <p>
+          Review Your Own Evidence In <Link to="/hand-history">Hand History</Link> Or Contact{' '}
+          <a href="mailto:support@smarter.poker">Support@Smarter.Poker</a>.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: 'enforcement',
+    title: 'Enforcement',
+    content: (
+      <p>
+        Confirmed Violations May Lead To Warnings, Feature Restrictions, Temporary Suspension, Chip
+        Reversal Or Confiscation Where Supported By The Record, And Permanent Account Removal.
+        Severity, Repetition, Evidence, And Player Impact Inform The Response.
+      </p>
+    ),
+  },
+  {
+    id: 'disputes',
+    title: 'Disputes And Continuous Review',
+    content: (
+      <>
+        <p>
+          Send A Dispute With The Hand Number And Specific Concern To Support@Smarter.Poker. The
+          Review Uses The Authoritative Hand And Account Records Available To The Platform.
+        </p>
+        <p>
+          Security Controls, Detection Rules, And Fairness Measurements Are Reviewed As The Engine
+          And Supported Game Variants Evolve.
+        </p>
+      </>
+    ),
+  },
+];
 
 export default function FairGamingPage() {
-  const navigate = useNavigate();
-
   return (
-    <div className={styles.page}>
-      <div className={styles.header}>
-        <button className={styles.backBtn} onClick={() => navigate(-1)}>
-          ← Back
-        </button>
-        <h1>Fair Gaming Policy</h1>
-      </div>
-
-      <div className={styles.content}>
-        <section style={sectionAnimationStyle(0)}>
-          <h2>Our Commitment To Fair Play</h2>
-          <p>
-            Club Arena Is Committed To Providing A Fair, Secure, And Enjoyable Poker Experience For
-            All Players. We Employ Industry-Leading Technology And Practices To Ensure Game
-            Integrity.
-          </p>
-        </section>
-
-        <section style={sectionAnimationStyle(1)}>
-          <h2>Random Number Generation (RNG)</h2>
-          <p>
-            All Card Shuffling And Dealing In Club Arena Uses A Certified Random Number Generator
-            (RNG):
-          </p>
-          <ul>
-            <li>Cryptographically Secure Random Number Generation</li>
-            <li>Each Shuffle Is Completely Independent And Unpredictable</li>
-            <li>No Patterns Or Predictability In Card Distribution</li>
-            <li>Regular Third-Party Audits To Verify Randomness</li>
-          </ul>
-        </section>
-
-        <section style={sectionAnimationStyle(2)}>
-          <h2>Game Integrity</h2>
-          <p>We Maintain Game Integrity Through Multiple Safeguards:</p>
-          <ul>
-            <li>
-              <strong>Secure Servers:</strong> All Games Run On Secure, Monitored Servers
-            </li>
-            <li>
-              <strong>Encrypted Communication:</strong> All Data Transmission Is Encrypted
-            </li>
-            <li>
-              <strong>Anti-Cheating Detection:</strong> Automated Systems Detect Suspicious Patterns
-            </li>
-            <li>
-              <strong>Hand History Verification:</strong> All Hands Are Logged And Can Be Reviewed
-            </li>
-          </ul>
-        </section>
-
-        <section style={sectionAnimationStyle(3)}>
-          <h2>Prohibited Activities</h2>
-          <p>
-            The Following Activities Are Strictly Prohibited And Will Result In Immediate Account
-            Termination:
-          </p>
-          <ul>
-            <li>
-              <strong>Collusion:</strong> Working With Other Players To Gain An Unfair Advantage
-            </li>
-            <li>
-              <strong>Multi-Accounting:</strong> Using Multiple Accounts At The Same Table
-            </li>
-            <li>
-              <strong>Chip Dumping:</strong> Intentionally Losing Chips To Another Player
-            </li>
-            <li>
-              <strong>Unauthorized Software:</strong> Using Automated Software To Play
-            </li>
-            <li>
-              <strong>Real-Time Assistance (RTA):</strong> Using External Tools During Play
-            </li>
-            <li>
-              <strong>Account Sharing:</strong> Allowing Others To Play On Your Account
-            </li>
-            <li>
-              <strong>Ghosting:</strong> Receiving Advice From Others During Play
-            </li>
-          </ul>
-        </section>
-
-        <section style={sectionAnimationStyle(4)}>
-          <h2>Detection And Monitoring</h2>
-          <p>Our Security Team Actively Monitors For Unfair Play:</p>
-          <ul>
-            <li>Automated Pattern Detection Algorithms</li>
-            <li>Manual Review Of Flagged Accounts</li>
-            <li>Player Reports And Investigations</li>
-            <li>Statistical Analysis Of Play Patterns</li>
-            <li>IP Address And Device Fingerprinting</li>
-          </ul>
-        </section>
-
-        <section style={sectionAnimationStyle(5)}>
-          <h2>Player Reporting</h2>
-          <p>If You Suspect Unfair Play, You Can Report It:</p>
-          <ul>
-            <li>Use The "Report Player" Button At The Table</li>
-            <li>Provide Hand Numbers And Specific Details</li>
-            <li>Include Any Supporting Evidence</li>
-            <li>Reports Are Reviewed Within 24-48 Hours</li>
-          </ul>
-          <p>All Reports Are Confidential And Investigated Thoroughly.</p>
-        </section>
-
-        <section style={sectionAnimationStyle(6)}>
-          <h2>Consequences Of Cheating</h2>
-          <p>Players Found Violating Fair Play Rules Face:</p>
-          <ul>
-            <li>
-              <strong>First Offense:</strong> Warning And Temporary Suspension (7-30 Days)
-            </li>
-            <li>
-              <strong>Second Offense:</strong> Extended Suspension (30-90 Days) And Chip
-              Confiscation
-            </li>
-            <li>
-              <strong>Third Offense:</strong> Permanent Account Termination
-            </li>
-            <li>
-              <strong>Severe Violations:</strong> Immediate Permanent Ban
-            </li>
-          </ul>
-          <p>
-            Ill-Gotten Chips Will Be Confiscated And Redistributed To Affected Players When
-            Possible.
-          </p>
-        </section>
-
-        <section style={sectionAnimationStyle(7)}>
-          <h2>Hand History Access</h2>
-          <p>All Players Have Access To Their Hand Histories:</p>
-          <ul>
-            <li>View All Hands You've Played</li>
-            <li>Download Hand Histories For Analysis</li>
-            <li>Share Hands With Friends Or Coaches</li>
-            <li>Verify Game Outcomes And Actions</li>
-          </ul>
-        </section>
-
-        <section style={sectionAnimationStyle(8)}>
-          <h2>Dispute Resolution</h2>
-          <p>If You Believe A Game Outcome Was Unfair:</p>
-          <ul>
-            <li>Contact Support@Smarter.Poker With The Hand Number</li>
-            <li>Our Team Will Review The Hand History</li>
-            <li>You Will Receive A Response Within 48 Hours</li>
-            <li>If An Error Is Found, Appropriate Compensation Will Be Provided</li>
-          </ul>
-        </section>
-
-        <section style={sectionAnimationStyle(9)}>
-          <h2>Continuous Improvement</h2>
-          <p>We Continuously Improve Our Fair Play Systems:</p>
-          <ul>
-            <li>Regular Security Audits</li>
-            <li>Updates To Detection Algorithms</li>
-            <li>Community Feedback Integration</li>
-            <li>Industry Best Practice Adoption</li>
-          </ul>
-        </section>
-
-        <div className={styles.lastUpdated}>Last Updated: January 29, 2026</div>
-      </div>
-    </div>
+    <LegalDocumentLayout
+      documentCode="CA-FGP-02"
+      eyebrow="Integrity Standard"
+      title="Fair Gaming Policy"
+      summary="The Live-Deal Safeguards, Review Records, Prohibited Conduct, And Reporting Paths That Protect Social Poker."
+      lastUpdated="August 29, 2026"
+      sections={SECTIONS}
+    />
   );
 }

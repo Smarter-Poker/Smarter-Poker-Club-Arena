@@ -23,6 +23,10 @@ import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
+// The seven roles the DATABASE uses. The MemberRole union below is a second,
+// older vocabulary that club_members_role_check has never accepted; anything
+// that writes a role must speak ClubRole.
+import type { ClubRole } from '../types/clubRoles';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -208,21 +212,71 @@ export const MembershipService = {
   },
 
   /**
-   * Update member role
+   * Change a member's club role.
+   *
+   * TWO BUGS LIVED HERE. It wrote `club_members.role` directly, and it typed
+   * the new role as `MemberRole` - the vocabulary declared at the top of this
+   * file, which the database has never used. `club_owner`, `club_admin`,
+   * `member` and `guest` are not in club_members_role_check, so every write it
+   * made was refused: by the CHECK for those names, and by
+   * trg_club_members_role_guard for the three that do overlap - a trigger that
+   * exists precisely to stop a role changing without the grant matrix being
+   * asked. Both callers (ClubDetailPage's Promote and Demote) had been failing
+   * in production behind a generic "Failed to promote member" toast.
+   *
+   * ONE WRITE PATH: fn_club_set_member_role. It asks fn_club_grantable_roles,
+   * refuses to orphan a downline, applies the co-owner/admin rakeback rule and
+   * writes the audit_trail row. `rates` is REQUIRED by the server when granting
+   * an agent role to somebody who has no agents row yet - MemberManagementPage
+   * is the screen that collects them.
+   *
+   * `funding` is required alongside them, on the same terms. Dan, 2026-08-31:
+   * "THEY ALSO NEED TO BE ASSIGNED 'PRE PAID' OR CREDIT LINE, (AND IF SO, THEN
+   * HOW MUCH)". Omitting it returns needs_funding rather than storing a default,
+   * because a promotion that silently picks "not prepaid, zero limit" produces
+   * an agent who cannot send a single chip.
+   *
+   * Neither is defaulted from the agents row when the member is being PROMOTED
+   * rather than re-graded: a demoted agent's old deal does not return on its own
+   * (Dan's ruling on re-promotion, 2026-08-31).
+   *
+   * Throws with the server's own reason so the caller can show it, rather than
+   * returning false and leaving the user to guess.
    */
-  async updateRole(clubId: string, userId: string, newRole: MemberRole): Promise<boolean> {
+  async updateRole(
+    clubId: string,
+    userId: string,
+    newRole: ClubRole,
+    rates?: { commissionRate: number; playerRakebackRate: number },
+    funding?: { isPrepaid: boolean; creditLimit: number }
+  ): Promise<boolean> {
     const resolvedId = await resolveClubUUID(clubId);
-    const { error } = await supabase
-      .from('club_members')
-      .update({ role: newRole })
-      .eq('club_id', resolvedId)
-      .eq('user_id', userId);
+    const { data, error } = await supabase.rpc('fn_club_set_member_role', {
+      p_club_id: resolvedId,
+      p_user_id: userId,
+      p_role: newRole,
+      ...(rates
+        ? {
+            p_commission_rate: rates.commissionRate,
+            p_player_rakeback_rate: rates.playerRakebackRate,
+          }
+        : {}),
+      ...(funding
+        ? {
+            p_is_prepaid: funding.isPrepaid,
+            p_credit_limit: funding.creditLimit,
+          }
+        : {}),
+    });
 
-    if (!error) {
-      masterBus.emit('CLUB_UPDATED', { clubId: resolvedId });
-    }
+    if (error) throw error;
 
-    return !error;
+    const result = data as { success?: boolean; error?: string } | null;
+    if (!result?.success) throw new Error(result?.error || 'Role change refused');
+
+    masterBus.emit('CLUB_UPDATED', { clubId: resolvedId });
+    masterBus.emit('MEMBER_ROLE_CHANGED', { clubId: resolvedId, userId, newRole });
+    return true;
   },
 
   /**
@@ -271,7 +325,10 @@ export const MembershipService = {
       .select('club_id, user_id, role, status, joined_at')
       .eq('club_id', resolvedId)
       .in('status', ['active', 'approved'])
-      .in('role', ['member', 'guest'])
+      // 'member' and 'guest' are not roles this database has - both were ways
+      // of saying "not staff", which is what 'player' means now. Filtering on
+      // them meant AgentManagementPage's promotion picker was always empty.
+      .in('role', ['player'])
       .order('joined_at', { ascending: false })
       .limit(QUERY_LIMITS.MODERATE);
 
@@ -406,32 +463,43 @@ export const MembershipService = {
   ): Promise<{ total: number; active: number; pending: number; online: number }> {
     try {
       const resolvedId = await resolveClubUUID(clubId);
-      const { count: total, error: totalErr } = await supabase
-        .from('club_members')
-        .select('*', { count: 'exact', head: true })
-        .eq('club_id', resolvedId);
+      /* ONE SCAN, AND THE CLUB'S NUMBERS RATHER THAN THE CALLER'S.
+       *
+       * This was three `count: 'exact'` scans of the SAME club_members
+       * partition. A 2026-08-24 note here observed they were expensive and made
+       * them parallel, which was right and did not touch either real problem:
+       * there were still three scans, and all three were RLS-FILTERED.
+       *
+       * club_members has four permissive SELECT policies. Someone who is not a
+       * member of the club matches none of them, so total, active and pending
+       * all came back 0 - for a club with 588 members. Measured as the club
+       * owner, who can see every row, three runs:
+       *
+       *   three direct counts ........ 174.50 ms
+       *   fn_club_member_counts .......  0.63 ms
+       *
+       * The RPC is SECURITY DEFINER with a pinned search_path and computes all
+       * three with FILTER in a single pass. Its `active` is asserted at apply
+       * time to equal fn_get_club_member_count on every club, so this is not a
+       * fourth definition of "active member".
+       */
+      const { data: countRows, error: countErr } = await supabase.rpc('fn_club_member_counts', {
+        p_club_id: resolvedId,
+      });
+      if (countErr) reportError(countErr, 'MembershipService.getMemberCounts_error');
 
-      if (totalErr) reportError(totalErr, 'MembershipService.getMemberCounts_total_error');
+      // RETURNS TABLE arrives as an array of one row; bigint may be a number or
+      // a string over PostgREST.
+      const row = Array.isArray(countRows) ? countRows[0] : countRows;
+      const total = row?.total == null ? 0 : Number(row.total);
+      const active = row?.active == null ? 0 : Number(row.active);
+      const pending = row?.pending == null ? 0 : Number(row.pending);
 
-      const { count: active, error: activeErr } = await supabase
-        .from('club_members')
-        .select('*', { count: 'exact', head: true })
-        .eq('club_id', resolvedId)
-        .in('status', ['active', 'approved']);
-
-      if (activeErr) reportError(activeErr, 'MembershipService.getMemberCounts_active_error');
-
-      const { count: pending, error: pendingErr } = await supabase
-        .from('club_members')
-        .select('*', { count: 'exact', head: true })
-        .eq('club_id', resolvedId)
-        .eq('status', 'pending');
-
-      if (pendingErr) reportError(pendingErr, 'MembershipService.getMemberCounts_pending_error');
+      let online = 0;
       // Estimate online count — creating a channel just to check presenceState()
       // on an unsubscribed channel always returned 0 and caused side-effect churn.
       // Real online tracking should come from a dedicated presence subscription.
-      const online = Math.floor((active || 0) * 0.15);
+      online = Math.floor((active || 0) * 0.15);
 
       return {
         total: total || 0,

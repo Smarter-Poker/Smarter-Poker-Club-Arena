@@ -11,6 +11,10 @@
 .cashier-overlay {
   position: fixed;
   inset: 0;
+  /* Cashier audit 2026-08-27 (P1-8): breathing room so the panel's own
+     max-height below never touches the screen edges. */
+  padding: 16px;
+  box-sizing: border-box;
   background: rgba(0, 0, 0, 0.7);
   display: flex;
   align-items: center;
@@ -43,7 +47,16 @@
     0 20px 60px rgba(0, 0, 0, 0.5),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
   animation: slideUp 0.25s ease;
-  overflow: hidden;
+  /* Cashier audit 2026-08-27 (P1-8): this panel had NO height ceiling and
+     `overflow: hidden` clipped whatever did not fit — and the table page is
+     landscape on phones (~390-430px tall), where the media queries below
+     (max-WIDTH keyed) never fire. The failure mode was vicious: a refused
+     top-up adds the error banner, the banner pushes Confirm below the clip
+     line, and both the error and the retry become invisible. Same shape
+     WalletCashierModal already uses: cap the panel, scroll inside it. */
+  max-height: min(85vh, calc(100dvh - 32px));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   backdrop-filter: blur(12px) saturate(1.2);
   -webkit-backdrop-filter: blur(12px) saturate(1.2);
 }
@@ -93,12 +106,6 @@
   font-size: 1.25rem;
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.cashier-modal__close:hover {
-  background: rgba(248, 81, 73, 0.3);
-  color: #f85149;
-  transform: translateY(-2px);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -155,11 +162,6 @@
   color: #6e7681;
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.cashier-modal__tab:hover {
-  color: #e4e6eb;
-  transform: translateY(-2px);
 }
 
 .cashier-modal__tab--active {
@@ -250,12 +252,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.cashier-modal__quick-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
-  color: #e4e6eb;
-  transform: translateY(-2px);
-}
-
 .cashier-modal__quick-btn--active {
   background: rgba(24, 119, 242, 0.2);
   border-color: #1877f2;
@@ -322,11 +318,6 @@
   color: #ffffff;
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.cashier-modal__confirm-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #4dc660 0%, #3fb950 100%);
-  transform: translateY(-2px);
 }
 
 .cashier-modal__confirm-btn--disabled {

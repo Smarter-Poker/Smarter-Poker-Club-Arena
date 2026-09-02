@@ -87,10 +87,6 @@
   transition: background 0.2s;
 }
 
-.close-btn:hover {
-  background: var(--surface-hover, #3a3a5a);
-}
-
 .modal-body {
   padding: 24px;
 }
@@ -165,6 +161,41 @@
   color: var(--text-secondary, #8a8a9a);
 }
 
+/* The pending list's loading row. `loadingPending` existed in the component for
+   months without ever being rendered, so there was no style for this state
+   either. Deliberately quiet: it is a "hold on" line, not a headline. */
+.pending-loading {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #8a8a9a);
+  text-align: center;
+  padding: 10px 12px;
+  background: var(--surface, #1a1a2e);
+  border-radius: 8px;
+  animation: cashoutPendingPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes cashoutPendingPulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cashout-modal {
+    animation: none;
+  }
+  .pending-loading {
+    animation: none;
+  }
+  .step-dot.active {
+    animation: none;
+  }
+}
+
 .pending-status {
   font-size: 0.75rem;
   color: #ffa726;
@@ -179,11 +210,6 @@
   font-size: 0.8rem;
   cursor: pointer;
   transition: all 0.2s;
-}
-
-.pending-item .cancel-btn:hover {
-  background: #ef5350;
-  color: #fff;
 }
 
 .pending-note {
@@ -262,14 +288,9 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.quick-btn:hover,
 .quick-btn:active {
   background: var(--primary, #667eea);
   border-color: var(--primary, #667eea);
-  transform: scale(0.96);
-  box-shadow:
-    0 0 12px rgba(102, 126, 234, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .cashout-form textarea {
@@ -330,13 +351,8 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.submit-btn:hover:not(:disabled),
 .submit-btn:active:not(:disabled) {
   opacity: 0.9;
-  transform: scale(0.97);
-  box-shadow:
-    0 0 24px rgba(102, 126, 234, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 .submit-btn:disabled {

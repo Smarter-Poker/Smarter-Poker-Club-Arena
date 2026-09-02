@@ -8,6 +8,14 @@
 .bbj-page {
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
+  width: 100%;
+  max-width: 100vw;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
   background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
   /* Reserve the fixed bottom nav this page renders (2026-08-23). The bar is
      out of flow, so whatever it covers is simply unreachable — the token
@@ -15,86 +23,14 @@
   padding-bottom: var(--bottom-nav-clearance, 74px);
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   JACKPOT DISPLAY — Premium Gold Glow
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.jackpot-display {
-  position: relative;
-  margin: 1rem;
-  padding: 2.5rem 2rem;
-  background: linear-gradient(135deg, #1a2535 0%, #0d1520 50%, #1a2535 100%);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  border: 2px solid rgba(213, 218, 226, 0.5);
-  border-radius: 20px;
-  text-align: center;
-  overflow: hidden;
-  box-shadow:
-    0 0 60px rgba(213, 218, 226, 0.15),
-    0 0 30px rgba(213, 218, 226, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+.bbj-clubbuttons-hero-wrap {
+  display: grid;
+  place-items: center;
+  padding: 12px 12px 4px;
 }
 
-.jackpot-glow {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 200px;
-  height: 200px;
-  background: radial-gradient(circle, rgba(213, 218, 226, 0.4) 0%, transparent 70%);
-  transform: translate(-50%, -50%);
-  animation: badBeatJackpotPagePulse 2s ease-in-out infinite;
-}
-
-@keyframes badBeatJackpotPagePulse {
-  0%,
-  100% {
-    transform: translate(-50%, -50%) scale(1);
-    opacity: 0.5;
-  }
-
-  50% {
-    transform: translate(-50%, -50%) scale(1.2);
-    opacity: 0.8;
-  }
-}
-
-.jackpot-label {
-  display: block;
-  font-size: 0.8rem;
-  color: rgba(213, 218, 226, 0.9);
-  text-transform: uppercase;
-  letter-spacing: 3px;
-  margin-bottom: 0.5rem;
-  position: relative;
-  z-index: 1;
-  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
-}
-
-.jackpot-amount {
-  display: block;
-  font-size: 3rem;
-  font-weight: 800;
-  background: linear-gradient(135deg, #d5dae2 0%, #fff 40%, #d5dae2 100%);
-  background-size: 200% auto;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  animation: goldShimmer 3s linear infinite;
-  filter: drop-shadow(0 0 20px rgba(213, 218, 226, 0.4));
-  position: relative;
-  z-index: 1;
-  font-family: 'Rajdhani', monospace;
-}
-
-@keyframes goldShimmer {
-  0% {
-    background-position: 0% center;
-  }
-  100% {
-    background-position: 200% center;
-  }
+.bbj-clubbuttons-hero {
+  width: min(100%, 760px);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -120,14 +56,6 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.info-card:hover {
-  transform: translateY(-2px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 8px 24px rgba(0, 212, 255, 0.15);
-}
-
 .info-label {
   display: block;
   font-size: 0.7rem;
@@ -236,76 +164,21 @@
   letter-spacing: 1px;
 }
 
-.history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.history-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.05) 0%, rgba(100, 100, 100, 0.02) 100%);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
-  border: 1px solid #2a3a4a;
-  border-radius: 12px;
-  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.history-row:hover {
-  border-color: #3a4a5a;
-  transform: translateY(-2px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 8px 24px rgba(213, 218, 226, 0.15);
-}
-
-.hit-date {
-  display: block;
-  font-size: 0.75rem;
-  color: #6a7a8a;
-}
-
-.hit-hands {
-  font-size: 0.85rem;
-  color: #8a9aaa;
-}
-
-.hit-amount {
-  font-weight: 700;
-  font-size: 1.125rem;
-  color: #d5dae2;
-  font-family: 'Rajdhani', monospace;
-  text-shadow: 0 0 10px rgba(213, 218, 226, 0.4);
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   STATES
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.loading-state,
-.empty-state {
-  display: flex;
-  justify-content: center;
-  padding: 2rem;
-  color: #6a7a8a;
-}
 /* ─── MOBILE RESPONSIVE ─── */
+@media (max-width: 768px) {
+  /* Up to 3 flex:1 info cards scrunch below ~420px — let them wrap instead */
+  .jackpot-info {
+    flex-wrap: wrap;
+  }
+  .info-card {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+}
+
 @media (max-width: 480px) {
-  .jackpot-display {
-    margin: 0.75rem;
-    padding: 1.25rem;
-    border-radius: 16px;
-  }
-  .jackpot-amount {
-    font-size: 2rem;
-  }
-  .jackpot-label {
-    font-size: 0.7rem;
+  .payout-label {
+    width: 80px;
   }
   .payout-grid {
     padding: 0.75rem;
@@ -317,10 +190,9 @@
   .payout-percent {
     font-size: 1.25rem;
   }
-  .bbj-info {
-    margin: 0 0.75rem;
-    padding: 0.75rem;
-  }
+  /* `.bbj-info` rule removed 2026-08-26: no markup on this page has ever
+     carried the class (the table widget's popover of that name was deleted
+     2026-08-25 — see BadBeatJackpot.css for the full reasoning). */
   .qualifying-hands {
     padding: 0.75rem;
   }
@@ -333,32 +205,8 @@
   }
 }
 @media (max-width: 380px) {
-  .jackpot-amount {
-    font-size: 1.5rem;
-  }
   .payout-grid {
     grid-template-columns: 1fr;
-  }
-}
-
-/* Just Updated — Green flash when jackpot increases */
-.jackpot-display.just-updated {
-  animation: jackpotFlash 0.6s ease-out;
-}
-
-@keyframes jackpotFlash {
-  0% {
-    border-color: #00c853;
-    box-shadow:
-      0 0 80px rgba(0, 200, 83, 0.4),
-      inset 0 0 40px rgba(0, 200, 83, 0.1);
-  }
-  100% {
-    border-color: rgba(213, 218, 226, 0.5);
-    box-shadow:
-      0 0 60px rgba(213, 218, 226, 0.15),
-      0 0 30px rgba(213, 218, 226, 0.1),
-      inset 0 1px 0 rgba(255, 255, 255, 0.06);
   }
 }
 
@@ -370,4 +218,66 @@
   color: #d5dae2;
   margin: 2px 0 1px;
   overflow-wrap: anywhere;
+}
+
+/* No pool, or the read failed. This page used to render a full jackpot screen
+   made entirely of zeros in both cases, with a transient toast as the only
+   signal - indistinguishable from a club whose jackpot is genuinely at zero. */
+.bbj-page__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin: 32px 16px;
+  padding: 32px 20px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  text-align: center;
+}
+
+.bbj-page__empty-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.bbj-page__empty-body {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.bbj-page__retry {
+  margin-top: 4px;
+  padding: 9px 22px;
+  border-radius: 10px;
+  border: 1px solid rgba(240, 185, 11, 0.5);
+  background: rgba(240, 185, 11, 0.12);
+  color: #f0b90b;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.bbj-page__retry:focus-visible {
+  outline: 2px solid #f0b90b;
+  outline-offset: 2px;
+}
+
+/* The page's loading wrapper was styled by whichever OTHER page's stylesheet
+   happened to be in the bundle: `.loading-state` is defined in 21 unrelated
+   page CSS files and in none of this page's own. Under Vite's per-chunk CSS
+   splitting that resolves only by luck, which is the exact failure this repo
+   has already hit once (see the note in BBJHandDetail.css). */
+.bbj-page .loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  padding: 24px 16px;
 }

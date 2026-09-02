@@ -3,7 +3,9 @@
  *  CLUB ARENA — MARKETPLACE / CASHIER STOREFRONT (2026-08-19 full rebuild)
  *
  *  Tabs:
- *    Store       — club shop items bought with club chips (server-authoritative)
+ *    Store       — club shop items bought with DIAMONDS from the player's
+ *                  global wallet (server-authoritative). The marketplace is
+ *                  fully funded by diamonds, never chips (Dan, 2026-08-23).
  *    (Get Chips was removed 2026-08-19: chips are won and transferred,
  *     never bought. The diamonds -> chips conversion no longer exists.)
  *    Diamonds    — real-money diamond packages via Stripe Checkout (/api/store)
@@ -31,7 +33,6 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
 import { masterBus } from '../core/MasterBus';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import PageSkeleton from '../components/common/PageSkeleton';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { fmt } from '../utils/format';
@@ -42,6 +43,7 @@ import {
   EMPTY_WALLET,
   FALLBACK_CATALOG,
   isOwnedRow,
+  isMarketplaceItemOwned,
   isUuid,
   loadEntitlements,
   loadStoreCatalog,
@@ -58,6 +60,11 @@ import DiamondsTab from './marketplace/DiamondsTab';
 import MembershipTab from './marketplace/MembershipTab';
 import MyItemsTab from './marketplace/MyItemsTab';
 import ManageTab from './marketplace/ManageTab';
+// Banners are not toasts, so they never went through the Toast layer's Title
+// Case / em-dash transform. They are the only user-facing strings on this page
+// that render raw server text.
+import { formatPopupText } from '../utils/popupStyle';
+import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 type TabKey = 'store' | 'diamonds' | 'membership' | 'my_items' | 'manage';
 const VALID_TABS: TabKey[] = ['store', 'diamonds', 'membership', 'my_items', 'manage'];
@@ -152,10 +159,14 @@ export default function MarketplacePage() {
         if (!mountedRef.current || myReq !== reqRef.current) return;
 
         setItems(
-          (data.items || []).map((i: MarketplaceItem) => ({
-            ...i,
-            purchase_count: i.purchase_count || 0,
-          }))
+          (data.items || [])
+            // Rolling-deploy guard: a paid row with no executable grant must
+            // never reach a Buy button, even before the DB migration lands.
+            .filter((i: MarketplaceItem) => !!i.grant_spec && i.grant_spec.type !== 'none')
+            .map((i: MarketplaceItem) => ({
+              ...i,
+              purchase_count: i.purchase_count || 0,
+            }))
         );
         setPurchases(data.purchases || []);
         setBalance(data.balance || 0);
@@ -213,9 +224,11 @@ export default function MarketplacePage() {
     }
   }, [user?.id, secondsPerUse, mountedRef]);
 
+  // Ownership drives Store buttons, so entitlements are eager rather than
+  // waiting for the member to visit My Items.
   useEffect(() => {
-    if (tab === 'my_items') loadEnt();
-  }, [tab, loadEnt]);
+    loadEnt();
+  }, [loadEnt]);
 
   /* ═══ Delivered inventory (loaded eagerly — ownership state depends on it) ═══ */
   const invReqRef = useRef(0);
@@ -230,7 +243,9 @@ export default function MarketplacePage() {
         // "you own nothing" and invited the user to re-buy what they already had.
         const { data, error } = await supabase
           .from('club_shop_inventory')
-          .select('id, item_id, item_name, category, price_paid, status, acquired_at')
+          .select(
+            'id, item_id, purchase_id, item_name, category, price_paid, status, acquired_at, redeemed_at'
+          )
           .eq('club_id', target)
           .eq('user_id', user.id)
           .order('acquired_at', { ascending: false });
@@ -256,9 +271,12 @@ export default function MarketplacePage() {
       let targetClub: string | null = null;
       if (qClubParam) {
         // Accept both UUIDs and legacy 6-digit club codes
+        // resolveClubUUID never throws - it swallows the miss, warns, and
+        // returns the raw param, which is exactly what the catch did. Optional
+        // catch binding so the belt costs no unused variable.
         try {
           targetClub = await resolveClubUUID(qClubParam);
-        } catch (_e) {
+        } catch {
           targetClub = qClubParam;
         }
       }
@@ -288,6 +306,9 @@ export default function MarketplacePage() {
         setClubId((prev) => (prev === targetClub ? prev : targetClub));
         if (clubIdRef.current && clubIdRef.current !== targetClub) resetClubState();
         clubIdRef.current = targetClub;
+        // targetClub passed EXPLICITLY: the closed-over clubId is a render
+        // behind here, and this effect's dep array deliberately omits it. Do
+        // not drop the argument.
         loadShop(targetClub);
         loadInventory(targetClub);
       } else {
@@ -345,7 +366,17 @@ export default function MarketplacePage() {
       // changed that key, so the cleanup killed every timer within ~10ms and
       // the buyer was left staring at a stale balance.
       pollTimersRef.current = [1500, 5000, 12000].map((ms) =>
-        setTimeout(() => loadWalletRef.current(), ms)
+        setTimeout(() => {
+          void loadWalletRef.current().then(() => {
+            if (qTabParam === 'membership' && user?.id) {
+              masterBus.emit('ENTITLEMENTS_CHANGED', {
+                userId: user.id,
+                category: 'vip',
+                source: 'vip-purchase',
+              });
+            }
+          });
+        }, ms)
       );
     } else if (purchaseResult === 'canceled') {
       toast.error('Checkout canceled. You have not been charged.');
@@ -370,9 +401,19 @@ export default function MarketplacePage() {
       masterBus.subscribeDebounced('CHIPS_DISTRIBUTED', refresh, 500),
       masterBus.subscribeDebounced('BALANCE_UPDATED', refresh, 500),
       masterBus.subscribeDebounced('CASHIER_BALANCE_CHANGED', refresh, 500),
+      masterBus.subscribeDebounced(
+        'ENTITLEMENTS_CHANGED',
+        (event) => {
+          if (event.payload.userId !== user?.id) return;
+          loadInventory(clubId, true);
+          loadEnt();
+          refresh();
+        },
+        100
+      ),
     ];
     return () => unsubs.forEach((u) => u());
-  }, [clubId, loadShop, loadWallet]);
+  }, [clubId, loadShop, loadWallet, loadInventory, loadEnt, user?.id]);
 
   useVisibilityRefresh(async () => {
     if (clubId) {
@@ -393,8 +434,13 @@ export default function MarketplacePage() {
   // something the inventory list is calling "Owned".
   const ownedItemIds = useMemo(
     () =>
-      new Set(inventory.filter((r) => isOwnedRow(r) && r.item_id).map((r) => r.item_id as string)),
-    [inventory]
+      new Set([
+        ...inventory.filter((r) => isOwnedRow(r) && r.item_id).map((r) => r.item_id as string),
+        ...items
+          .filter((item) => isMarketplaceItemOwned(item, entitlements))
+          .map((item) => item.id),
+      ]),
+    [inventory, items, entitlements]
   );
   const ownedCount = useMemo(() => inventory.filter(isOwnedRow).length, [inventory]);
   const isAdmin = ['owner', 'co_owner', 'admin'].includes(role);
@@ -421,30 +467,68 @@ export default function MarketplacePage() {
     }
   };
 
+  /**
+   * "3d" / "6h" / "Today" until the VIP pass lapses. Empty for lifetime, for a
+   * missing date, and for anything already expired - the pill should never
+   * announce a negative remainder.
+   */
+  const vipRemaining = useMemo(() => {
+    if (!wallet.isVip || !wallet.vipExpiresAt || wallet.vipTier === 'lifetime') return '';
+    const t = new Date(wallet.vipExpiresAt).getTime();
+    if (!Number.isFinite(t)) return '';
+    const ms = t - Date.now();
+    if (ms <= 0) return '';
+    const hours = Math.floor(ms / 3_600_000);
+    if (hours < 1) return '<1h';
+    if (hours < 48) return `${hours}h`;
+    return `${Math.floor(hours / 24)}d`;
+  }, [wallet.isVip, wallet.vipExpiresAt, wallet.vipTier]);
+
   /* ═══ Render ═══ */
   // FAILSAFE: ensure skeleton does not display indefinitely.
   useEffect(() => {
     // Browser build has no NodeJS namespace -- infer the platform's timer type.
     let timer: ReturnType<typeof setTimeout> | undefined;
-    if (loading) {
+    // GATED on a fetch actually being in flight (Dan 2026-08-25). `loading`
+    // starts true and the init effect returns immediately when there is no
+    // user, so a slow auth hydration produced "Could Not Load The Shop:
+    // Failed to load shop (timeout)" while clubId was still null - and that
+    // banner's Retry called loadShop(undefined), which returns instantly,
+    // so the banner could never be cleared.
+    //
+    // 12s, not 5: loadShop retries twice with 500ms + 1000ms backoff, so a
+    // slow-but-succeeding request routinely crossed the old window and
+    // flashed a failure over a request that then worked.
+    if (loading && clubId && user) {
       timer = setTimeout(() => {
         if (mountedRef.current) {
           setLoading(false);
-          // If we hit this failsafe, we didn't receive items in time.
-          // Don't overwrite a shop error if one exists.
-          setShopError((prev) => prev || 'Failed to load shop (timeout)');
+          setShopError((prev) => prev || 'The Shop Took Too Long To Answer.');
         }
-      }, 5000);
+      }, 12000);
     }
     return () => clearTimeout(timer);
-  }, [loading, mountedRef]);
+  }, [loading, mountedRef, clubId, user]);
 
-  if (loading && items.length === 0 && !shopError) {
-    return <PageSkeleton variant="dashboard" />;
-  }
+  /* THE CHROME STAYS UP (Dan 2026-08-25).
+     This returned <PageSkeleton variant="dashboard" /> for the WHOLE page -
+     header, wallet pill, tab bar and bottom nav included. Two consequences: a
+     player tapping Market from the footer saw an unrecognisable page for the
+     first second and could not tell they had arrived; and on a club switch the
+     tabs vanished and reappeared, throwing someone reading the Diamonds tab
+     back to a skeleton for a load that has nothing to do with Diamonds -
+     Diamonds and Membership do not read `items` at all. The Store's own
+     "Loading The Shop..." state is the correct, scoped fallback. */
 
   const TABS: { key: TabKey; label: string; badge?: number; adminOnly?: boolean }[] = [
-    { key: 'store', label: 'Store', badge: items.length },
+    // undefined, not 0, while the shop is still loading: a badge reading "0"
+    // states the shop is empty, which is the claim this page must not make
+    // before it knows.
+    {
+      key: 'store',
+      label: 'Store',
+      badge: loading && items.length === 0 ? undefined : items.length,
+    },
     { key: 'diamonds', label: 'Diamonds' },
     { key: 'membership', label: 'Membership' },
     { key: 'my_items', label: 'My Items', badge: ownedCount || undefined },
@@ -453,42 +537,124 @@ export default function MarketplacePage() {
 
   return (
     <div className={styles.page}>
-      {/* Header */}
-      <header className={styles.header}>
-        <div className={styles.headerLeft}>
-          <h1 className={styles.title}>Marketplace</h1>
-          <div className={styles.walletBar}>
-            <span className={styles.walletPill}>{fmt(balance)} Chips</span>
-            <span className={styles.walletPillDiamond} aria-live="polite">
-              {wallet.loaded ? `${fmt(wallet.diamonds)} diamonds` : 'diamonds -'}
+      <RewardsSurfaceHeader
+        eyebrow="Rewards Circuit / Marketplace"
+        title="Club Marketplace"
+        description="Acquire Table Upgrades, Player Perks, Club Exclusives, Diamond Packages, And VIP Access Through The Existing Server-Priced Storefront."
+        art="market"
+        status="PLAYER EXCHANGE // LIVE"
+        metrics={[
+          {
+            label: 'Diamonds',
+            value: wallet.loaded ? fmt(wallet.diamonds) : 'Checking',
+            tone: 'attention',
+          },
+          {
+            label: 'Store Items',
+            value: loading && items.length === 0 ? 'Checking' : items.length,
+          },
+          { label: 'Owned', value: ownedCount, tone: 'live' },
+        ]}
+        actions={
+          <>
+            <Link to="/" className={styles.btnGhost}>
+              Back To Lobby
+            </Link>
+            <button
+              onClick={refreshAll}
+              className={styles.btnGhost}
+              disabled={refreshing}
+              aria-busy={refreshing}
+            >
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </>
+        }
+      />
+
+      <div className={styles.marketStatusBar} aria-label="Marketplace Wallet Status">
+        <div className={styles.walletBar}>
+          {/* One wallet, one currency: diamonds. The shop API and the VIP
+                status API both report the same profiles.diamonds balance. */}
+          {/* Never assert a balance we do not have. `balance` initialises to 0
+                and resetClubState puts it back to 0, so with no club - or with
+                both the wallet and the shop failing - this pill confidently
+                read "0 Diamonds", which is the one thing it must never say. */}
+          <span className={styles.walletPillDiamond} aria-live="polite">
+            {wallet.loaded
+              ? `${fmt(wallet.diamonds)} Diamonds`
+              : !wallet.error && clubId && !shopError
+                ? `${fmt(balance)} Diamonds`
+                : 'Diamonds Unavailable'}
+          </span>
+          {/* vipExpiresAt is fetched by loadWalletInfo and rendered ONLY inside
+                the Membership tab, so someone who bought a 24-hour pass had no
+                idea when it lapses unless they opened a tab they have no reason
+                to open. `title` alone is useless on touch, so the short form is
+                visible and the full date stays in the title. Dan 2026-08-25. */}
+          {wallet.isVip && (
+            <span
+              className={styles.vipPill}
+              title={
+                wallet.vipExpiresAt
+                  ? `Expires ${new Date(wallet.vipExpiresAt).toLocaleString()}`
+                  : undefined
+              }
+            >
+              VIP{vipRemaining ? ` \u00b7 ${vipRemaining}` : ''}
             </span>
-            {wallet.isVip && <span className={styles.vipPill}>VIP</span>}
-          </div>
+          )}
         </div>
-        <div className={styles.headerActions}>
-          <Link to="/" className={styles.btnGhost}>
-            Lobby
-          </Link>
-          <button onClick={refreshAll} className={styles.btnGhost} disabled={refreshing}>
-            {refreshing ? 'Refreshing...' : 'Refresh'}
-          </button>
-        </div>
-      </header>
+      </div>
 
       {/* Tabs */}
-      <nav className={styles.tabNav} role="tablist" aria-label="Marketplace sections">
+      <nav
+        className={styles.tabNav}
+        role="tablist"
+        aria-label="Marketplace Sections"
+        onKeyDown={(e) => {
+          /* Same fix as the Stats tablist: selection was moving, focus was not.
+             Each tab is `tabIndex={tab === t.key ? 0 : -1}`, so the previously
+             selected button dropped out of the tab order with focus still on it.
+             Note the key list is the ADMIN-FILTERED one, so End lands on the last
+             tab this particular user can actually see. */
+          const KEYS = ['ArrowRight', 'ArrowLeft', 'Home', 'End'];
+          if (!KEYS.includes(e.key)) return;
+          e.preventDefault();
+          const keys = TABS.filter((t) => !t.adminOnly || isAdmin).map((t) => t.key);
+          const i = keys.indexOf(tab);
+          if (i < 0) return;
+          const next =
+            e.key === 'Home'
+              ? keys[0]
+              : e.key === 'End'
+                ? keys[keys.length - 1]
+                : e.key === 'ArrowRight'
+                  ? keys[(i + 1) % keys.length]
+                  : keys[(i - 1 + keys.length) % keys.length];
+          switchTab(next);
+          document.getElementById(`market-tab-${next}`)?.focus();
+        }}
+      >
         {TABS.filter((t) => !t.adminOnly || isAdmin).map((t) => (
           <button
             key={t.key}
             role="tab"
+            id={`market-tab-${t.key}`}
+            aria-controls="market-panel"
             aria-selected={tab === t.key}
+            /* The badge carried its own aria-label INSIDE the button, so the
+               button's computed name came out as "Store 5 Store". A count
+               belongs in the button's name, not as a second labelled node. */
+            aria-label={t.badge ? `${t.label}, ${t.badge.toLocaleString()} Items` : undefined}
+            tabIndex={tab === t.key ? 0 : -1}
             className={`${styles.tab} ${tab === t.key ? styles.tabActive : ''}`}
             onClick={() => switchTab(t.key)}
           >
             {t.label}
             {t.badge ? (
-              <span className={styles.tabBadge} aria-label={`${t.badge} ${t.label}`}>
-                {t.badge}
+              <span className={styles.tabBadge} aria-hidden="true">
+                {t.badge.toLocaleString()}
               </span>
             ) : null}
           </button>
@@ -498,7 +664,7 @@ export default function MarketplacePage() {
       {/* Failure banners — these used to be silent on every refresh path */}
       {shopError && (
         <div className={styles.errorBanner} role="alert">
-          <span>Could Not Load The Shop: {shopError}</span>
+          <span>Could Not Load The Shop: {formatPopupText(shopError)}</span>
           <button className={styles.inlineLink} onClick={refreshAll} disabled={refreshing}>
             Retry
           </button>
@@ -506,29 +672,46 @@ export default function MarketplacePage() {
       )}
       {wallet.error && (
         <div className={styles.errorBanner} role="alert">
-          <span>{wallet.error}</span>
+          <span>{formatPopupText(wallet.error)}</span>
           <button className={styles.inlineLink} onClick={() => loadWallet()}>
             Retry
           </button>
         </div>
       )}
 
-      <div className={styles.section}>
+      {/* The tabs declared role="tab" with nothing to control: a screen reader
+          announced "tab 3 of 5" and then landed in unlabelled content. */}
+      <div
+        className={styles.section}
+        role="tabpanel"
+        id="market-panel"
+        aria-labelledby={`market-tab-${tab}`}
+        tabIndex={-1}
+      >
         {tab === 'store' && clubId && (
           <StoreTab
             clubId={clubId}
+            userId={user?.id || ''}
             items={items}
             ownedItemIds={ownedItemIds}
-            balance={balance}
+            balance={wallet.loaded ? wallet.diamonds : balance}
+            onGoDiamonds={() => switchTab('diamonds')}
             isAdmin={isAdmin}
             loading={loading}
+            error={shopError}
             categories={catalog.shopCategories}
             onGoManage={() => switchTab('manage')}
             onPurchased={(newBalance) => {
               // The BALANCE_UPDATED bus subscription reloads the shop + wallet;
-              // only the optimistic balance and the inventory are needed here.
-              if (typeof newBalance === 'number') setBalance(newBalance);
+              // only the optimistic diamond balance and the inventory are
+              // needed here. Both balance mirrors must move together or the
+              // header pill and the buy modal disagree until the reload lands.
+              if (typeof newBalance === 'number') {
+                setBalance(newBalance);
+                setWallet((prev) => (prev.loaded ? { ...prev, diamonds: newBalance } : prev));
+              }
               loadInventory(clubId);
+              loadEnt();
             }}
           />
         )}
@@ -546,6 +729,7 @@ export default function MarketplacePage() {
         {tab === 'membership' && (
           <MembershipTab
             clubId={clubId || ''}
+            userId={user?.id || ''}
             wallet={wallet}
             plans={catalog.vipPlans}
             onWalletChanged={loadWallet}
@@ -579,7 +763,7 @@ export default function MarketplacePage() {
         {tab === 'manage' && (!isAdmin || !clubId) && (
           <div className={styles.emptyState}>
             <span className={styles.emptyText}>
-              {clubId ? 'The Manage tab is for club owners and admins.' : 'Join a club first.'}
+              {clubId ? 'The Manage Tab Is For Club Owners And Admins.' : 'Join A Club First.'}
             </span>
             <button className={styles.emptyButton} onClick={() => switchTab('store')}>
               Back To Store

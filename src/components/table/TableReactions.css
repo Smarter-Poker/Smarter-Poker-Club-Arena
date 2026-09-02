@@ -144,11 +144,6 @@
   }
 }
 
-.tr-picker__btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  transform: scale(1.2) translateY(-2px);
-}
-
 .tr-picker__btn:active {
   transform: scale(0.85);
   background: rgba(255, 215, 0, 0.15);
@@ -165,20 +160,11 @@
   pointer-events: none;
 }
 
-.tr-picker__btn:hover::after {
-  border-color: rgba(255, 215, 0, 0.25);
-}
-
 .tr-picker__emoji {
   font-size: 1.75rem;
   line-height: 1;
   transition: transform 0.15s var(--tr-ease-spring);
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
-}
-
-.tr-picker__btn:hover .tr-picker__emoji {
-  transform: scale(1.1);
-  filter: drop-shadow(0 2px 8px rgba(255, 215, 0, 0.3));
 }
 
 .tr-picker__label {
@@ -188,10 +174,6 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   transition: color 0.2s;
-}
-
-.tr-picker__btn:hover .tr-picker__label {
-  color: rgba(255, 255, 255, 0.7);
 }
 
 /* =================================================================================

@@ -263,8 +263,8 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
         <h3>Session History</h3>
         <p className="session-subtitle">
           {allSessions.length > 0
-            ? `${sessions.length} sessions${dateRange !== 'all' ? ` (${dateRange === '7d' ? 'last 7 days' : 'last 30 days'})` : ''}`
-            : 'No sessions yet'}
+            ? `${sessions.length} Sessions${dateRange !== 'all' ? ` (${dateRange === '7d' ? 'Last 7 Days' : 'Last 30 Days'})` : ''}`
+            : 'No Sessions Yet'}
         </p>
       </div>
 
@@ -421,7 +421,7 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
                 <div
                   className="session-details"
                   style={{
-                    animation: 'slideDown 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                    animation: 'animationsSlideDown 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
                   }}
                 >
                   <div className="details-grid">
@@ -454,8 +454,8 @@ const SessionHistory: React.FC<SessionHistoryProps> = ({ userId, initialSessions
           <span className="empty-icon">--</span>
           <p>
             {allSessions.length > 0
-              ? 'No sessions in this date range'
-              : 'No sessions recorded yet. Play some hands to start tracking!'}
+              ? 'No Sessions In This Date Range'
+              : 'No Sessions Recorded Yet. Play Some Hands To Start Tracking!'}
           </p>
         </div>
       )}

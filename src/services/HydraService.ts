@@ -411,58 +411,40 @@ export const HydraService = {
     bigBlind: number = 2,
     isTournament: boolean = false
   ): Promise<HorsePlayer[]> {
-    const status = await this.getTableLiquidityStatus(tableId);
-    // Cash games: hard cap of 4 horses. Tournaments: no limit.
-    const maxHorses = isTournament ? 9 : Math.min(this.config.maxHorsesPerTable, 4);
-    const horsesToAdd = maxHorses - status.horsePlayers;
-
-    if (horsesToAdd <= 0) {
-      return [];
-    }
-
-    const availableHorses = await this.getAvailableHorses(horsesToAdd);
-    const seatedHorses: HorsePlayer[] = [];
-
-    // Track locally claimed seats to avoid RLS-blind collisions.
-    // Without this, every horse tries seat 1 because table_seats SELECT returns empty (RLS).
-    const localClaimedSeats = new Set<number>();
-
-    // Seat horses SEQUENTIALLY to avoid seat collisions (stagger delay between each)
-    for (let i = 0; i < Math.min(horsesToAdd, availableHorses.length); i++) {
-      const horse = availableHorses[i];
-      const delay =
-        randomInRange(this.config.entryDelayRange[0], this.config.entryDelayRange[1]) * 1000;
-
-      // Re-check seat count before each seating to prevent multi-tab over-seeding
-      const { data: currentSeats } = await supabase
-        .from('table_seats')
-        .select('id')
-        .eq('table_id', tableId)
-        .is('left_at', null);
-      if ((currentSeats?.length || 0) >= maxHorses) {
-        console.debug(
-          `[Hydra] Table ${tableId} already has ${currentSeats?.length} seats (max ${maxHorses}) - stopping seed`
-        );
-        break;
-      }
-
-      // Stagger for natural appearance
-      if (i > 0) {
-        await new Promise<void>((resolve) => setTimeout(resolve, delay));
-      }
-
-      try {
-        const seatedHorse = await this.seatHorse(horse.id, tableId, bigBlind, localClaimedSeats);
-        if (seatedHorse) {
-          seatedHorses.push(seatedHorse);
-          localClaimedSeats.add(seatedHorse.seatNumber);
-        }
-      } catch (err: unknown) {
-        console.debug(`Failed to seat horse ${horse.id}:`, err);
-      }
-    }
-
-    return seatedHorses;
+    /**
+     * ═══════════════════════════════════════════════════════════════════════
+     *  THE BROWSER DOES NOT SEAT HORSES. ANYWHERE. (Dan 2026-08-28)
+     * ═══════════════════════════════════════════════════════════════════════
+     *
+     * "PROCEED AND REMOVE IT."
+     *
+     * This was a browser-side seat writer: `seatHorse` below INSERTs
+     * `table_seats` rows — and DELETEs departed ones — with no money movement
+     * behind either. That is pre-migration legacy. The server fleet
+     * (HorseFleetManager) owns horses on every table now, cash included:
+     * measured at 201 horses across 44 live cash tables on the day this was
+     * removed, none of them seated by a browser.
+     *
+     * On 2026-08-28 it was fenced out of TOURNAMENT tables, because a
+     * client-planted seat is indistinguishable from a bought one to a
+     * seat-first game's start gate. The fence was the narrow fix; this is the
+     * real one. On a CASH table the same write is still wrong for the same
+     * reasons — it invents a seat nobody paid for, and its DELETE of departed
+     * rows is exactly the shape the chips-cannot-leave-the-felt ledger watch
+     * exists to notice.
+     *
+     * It refuses rather than being deleted so that any caller that regrows —
+     * HorseOrchestrator still calls it — fails loudly and visibly instead of
+     * quietly resurrecting browser seat writes. The read-only helpers on this
+     * service (getActiveHorses, checkWaitlistAndYield) are untouched.
+     */
+    reportError(
+      new Error(
+        `HydraService.seedTable refused for table ${tableId}: the server fleet owns horses`
+      ),
+      'HydraService.seedTable_refused_client_seating'
+    );
+    return [];
   },
 
   /**
@@ -688,15 +670,17 @@ export const HydraService = {
     const remainingStack = seatData.stack || 0;
 
     // 2. Remove ALL seat rows for this horse at this table (active + departed)
-    const { error: deleteErr } = await retryAsync(
-      () => supabase.from('table_seats').delete().eq('table_id', tableId).eq('user_id', horseId),
+    // FIX: Using atomic_table_cashout instead of direct delete so chips are returned
+    // to the wallet ledger and the tf_table_seats_audit trigger is satisfied.
+    const { error: cashoutErr } = await retryAsync(
+      () => supabase.rpc('atomic_table_cashout', { p_user_id: horseId, p_table_id: tableId }),
       3
     );
 
-    if (deleteErr) {
+    if (cashoutErr) {
       console.debug(
-        `[HydraService] table_seats DELETE FAILED for horse ${horseId}:`,
-        deleteErr.message
+        `[HydraService] atomic_table_cashout FAILED for horse ${horseId}:`,
+        cashoutErr.message
       );
       return false;
     }
@@ -709,6 +693,7 @@ export const HydraService = {
         `[HydraService] Credited ${returnedChips} chips to horse ${horseId} Player Wallet`
       );
 
+      // Note: This is a no-op client-side, but the RPC already did the actual wallet update!
       await WalletService.logTransaction(
         horseId,
         'PLAYER',

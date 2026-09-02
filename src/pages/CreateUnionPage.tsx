@@ -17,6 +17,7 @@ import { sanitizeInput } from '../utils/sanitizeInput';
 import { reportError } from '../utils/errorReporter';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -111,7 +112,7 @@ export default function CreateUnionPage() {
             <span className={styles.noClubIcon}></span>
             <h2>Create A Club First</h2>
             <p>You Need To Own At Least One Club Before You Can Create A Union.</p>
-            <button className={styles.createClubBtn} onClick={() => navigate('/clubs/create')}>
+            <button className={styles.createClubBtn} onClick={() => navigate('/?create=club')}>
               Create Your First Club
             </button>
           </div>
@@ -188,10 +189,18 @@ export default function CreateUnionPage() {
   return (
     <div className={styles.page}>
       <div className={styles.container}>
-        {/* Header */}
-        <div className={styles.header}>
-          <h1>Create Your Union</h1>
-        </div>
+        <CasinoSurfaceHeader
+          eyebrow="Union Network / Creation"
+          title="Forge A Union"
+          description="Configure A Governed Club Network, Revenue Rules, And Shared Features Through The Existing Server-Authorized Creation Workflow."
+          artPath="assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp"
+          status="UNION FORGE // SECURE"
+          metrics={[
+            { label: 'Step', value: `${step} / ${totalSteps}`, tone: 'attention' },
+            { label: 'Club Authority', value: ownsClub ? 'Verified' : 'Checking', tone: 'live' },
+            { label: 'Visibility', value: form.isPublic ? 'Public' : 'Private' },
+          ]}
+        />
 
         {/* Progress */}
         <div className={styles.progress}>
@@ -235,7 +244,7 @@ export default function CreateUnionPage() {
                 <input
                   type="text"
                   className={styles.textInput}
-                  placeholder="Enter union name..."
+                  placeholder="Enter Union Name..."
                   value={form.name}
                   onChange={(e) => updateForm({ name: e.target.value })}
                   maxLength={50}
@@ -246,7 +255,7 @@ export default function CreateUnionPage() {
                 <label>Description</label>
                 <textarea
                   className={styles.textArea}
-                  placeholder="Describe your union..."
+                  placeholder="Describe Your Union..."
                   value={form.description}
                   onChange={(e) => updateForm({ description: e.target.value })}
                   rows={4}

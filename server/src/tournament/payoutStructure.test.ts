@@ -25,6 +25,7 @@ import {
   resolvePayoutStructure,
   remainingPoolAfterAwards,
   isSpinTournament,
+  trimStructureToField,
 } from './payoutStructure.js';
 import { computePlacePrize } from './payoutMath.js';
 import { SPIN_TIERS } from '../config/spinSpec.js';
@@ -140,7 +141,7 @@ describe('a rebuilt Spin structure pays out exactly the pool', () => {
   });
 });
 
-describe('remainingPoolAfterAwards — the universal cap', () => {
+describe('remainingPoolAfterAwards - the universal cap', () => {
   it('is the pool minus what has already gone out', () => {
     expect(remainingPoolAfterAwards(100, 20)).toBe(80);
     expect(remainingPoolAfterAwards(33.33, 6.67)).toBe(26.66);
@@ -186,5 +187,116 @@ describe('every payout path actually uses the rule', () => {
     for (const s of selects) {
       expect(s, `select missing spin_multiplier: ${s}`).toMatch(/spin_multiplier/);
     }
+  });
+});
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  A STRUCTURE CANNOT PAY A PLACE NOBODY REACHED
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * SHORT-FIELD RESIDUAL 2026-08-27. computePlacePrize gives the LAST place in
+ * the structure whatever is left over, so the paid places sum to the pool to
+ * the cent. Nothing trimmed the structure to the size of the field, so when
+ * fewer players entered than the structure pays, the residual sat on a place no
+ * finisher ever held and never left the house.
+ *
+ * Sunday Midway Major: 9 places, 8 entrants, 250.00 of a 10,000.00 pool
+ * stranded. PLO Daily 18155d71: 5 places, 4 entrants, 52.50. Eight events with
+ * a pool in thirty days, each also leaving fn_tournament_payout_reconcile
+ * holding a no_finisher_recorded critical it correctly refuses to resolve alone.
+ *
+ * Trimming is the direction that OVERPAYS - a field size that is too small
+ * promotes an earlier place to residual holder - so most of these pin the cases
+ * where the trim must NOT happen.
+ */
+describe('the structure is trimmed to the field that can fill it', () => {
+  const NINE = [
+    { place: 1, percentage: 30 },
+    { place: 2, percentage: 20 },
+    { place: 3, percentage: 14 },
+    { place: 4, percentage: 10 },
+    { place: 5, percentage: 8 },
+    { place: 6, percentage: 6 },
+    { place: 7, percentage: 5 },
+    { place: 8, percentage: 4.5 },
+    { place: 9, percentage: 2.5 },
+  ];
+
+  it('drops the places the field can never reach', () => {
+    const trimmed = trimStructureToField(NINE, 8)!;
+    expect(trimmed.map((p) => p.place)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+  });
+
+  it('moves the residual onto the last place a player actually held', () => {
+    // The whole point, in money. 10,000 pool, 9-place structure, 8 entrants.
+    const stranded =
+      10000 - NINE.reduce((sum, p) => sum + computePlacePrize(10000, NINE, p.place), 0);
+    // Untrimmed, place 9 holds the residual and nobody is there to take it.
+    expect(computePlacePrize(10000, NINE, 9)).toBeCloseTo(250, 2);
+    expect(stranded).toBeCloseTo(0, 2); // the pool balances only if place 9 pays
+
+    const trimmed = trimStructureToField(NINE, 8)!;
+    const paid = trimmed.reduce((sum, p) => sum + computePlacePrize(10000, trimmed, p.place), 0);
+    expect(paid).toBeCloseTo(10000, 2);
+
+    /**
+     * The 2.5% that had nowhere to go is spread PROPORTIONALLY, not dumped on
+     * the last place. That falls out of computePlacePrize's existing
+     * normalisation rather than from anything new here: it scales whatever
+     * structure it is handed to 100% before splitting, so a set summing to
+     * 97.5 is scaled by 100/97.5 and every remaining place grows by the same
+     * factor. The last place still takes the rounding residual on top, so the
+     * eight places sum to the pool to the cent.
+     */
+    expect(computePlacePrize(10000, trimmed, 1)).toBeCloseTo(3076.92, 2);
+    expect(computePlacePrize(10000, trimmed, 8)).toBeCloseTo(461.55, 2);
+    // Nobody is paid less than they would have been in a full field.
+    for (const p of trimmed) {
+      expect(computePlacePrize(10000, trimmed, p.place)).toBeGreaterThanOrEqual(
+        computePlacePrize(10000, NINE, p.place)
+      );
+    }
+  });
+
+  it('leaves a full field completely alone', () => {
+    expect(trimStructureToField(NINE, 9)).toBe(NINE);
+    expect(trimStructureToField(NINE, 40)).toBe(NINE);
+  });
+
+  it('trims nothing when the field size is unknown or nonsense', () => {
+    // Every existing caller passes nothing and must keep its exact behaviour.
+    expect(trimStructureToField(NINE)).toBe(NINE);
+    expect(trimStructureToField(NINE, undefined)).toBe(NINE);
+    expect(trimStructureToField(NINE, null)).toBe(NINE);
+    expect(trimStructureToField(NINE, 0)).toBe(NINE);
+    expect(trimStructureToField(NINE, -3)).toBe(NINE);
+    expect(trimStructureToField(NINE, 2.5)).toBe(NINE);
+    expect(trimStructureToField(NINE, NaN)).toBe(NINE);
+  });
+
+  it('never trims itself down to nothing', () => {
+    // A structure that starts at place 2 (malformed, but reachable) with a
+    // field of 1 would otherwise leave no places at all and pay the pool to
+    // nobody.
+    const oddball = [
+      { place: 2, percentage: 60 },
+      { place: 3, percentage: 40 },
+    ];
+    expect(trimStructureToField(oddball, 1)).toBe(oddball);
+  });
+
+  it('trims the structure resolvePayoutStructure hands back, stored or rebuilt', () => {
+    const stored = resolvePayoutStructure({ payout_structure: NINE } as any, 8)!;
+    expect(stored.map((p) => p.place)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+
+    // A Spin rebuilt from its multiplier goes through the same trim, so the
+    // two ways of getting a structure cannot disagree about the field.
+    const spin = resolvePayoutStructure(
+      { variant: 'spin', spin_multiplier: 10, payout_structure: null } as any,
+      1
+    );
+    expect(Array.isArray(spin)).toBe(true);
+    expect(spin!.every((p) => p.place <= 1)).toBe(true);
   });
 });

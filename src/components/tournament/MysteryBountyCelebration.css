@@ -1,0 +1,215 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *  MYSTERY BOUNTY CELEBRATION — loud, brief, and not gold
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * The instinct for a jackpot banner is gold and confetti. The house palette has
+ * no gold in it and there is no emoji anywhere in this file, so the celebration
+ * is carried by LIGHT: an accent card that arrives with a sweep of rim light,
+ * sits higher off the page than anything else in the lobby, and clears itself.
+ *
+ * Three intensities, one per rung. The top prize gets the full sweep; second
+ * and third step down so a player can tell them apart at a glance without
+ * reading the text.
+ *
+ * Pinned near the top so it does not sit over the action bar on a phone, and
+ * pointer-events: none throughout: a celebration must never eat a tap that was
+ * meant for a bet.
+ */
+
+.mbcel {
+  position: fixed;
+  top: max(14px, env(safe-area-inset-top));
+  left: 0;
+  right: 0;
+  z-index: 9600;
+  display: flex;
+  justify-content: center;
+  padding: 0 12px;
+  pointer-events: none;
+}
+
+.mbcel__card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  max-width: 400px;
+  padding: 11px 14px 12px;
+  border-radius: 14px;
+  text-align: center;
+
+  /* The house three-layer recipe: gradient, bevel, cast shadow. */
+  background: linear-gradient(180deg, rgba(0, 180, 230, 0.34) 0%, rgba(13, 17, 32, 0.96) 100%);
+  border: 1px solid rgba(111, 220, 255, 0.5);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.62),
+    0 14px 34px rgba(0, 0, 0, 0.6),
+    0 0 26px rgba(111, 220, 255, 0.3);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+
+  animation: mbcel-in 420ms cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+}
+
+.mbcel__card--out {
+  animation: mbcel-out 320ms ease forwards;
+}
+
+/* The sweep. One pass of rim light across the card as it lands, which is the
+   whole of the "celebration" and costs one pseudo element. */
+.mbcel__flare {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(111, 220, 255, 0.28) 45%,
+    rgba(232, 240, 255, 0.4) 52%,
+    rgba(111, 220, 255, 0.28) 59%,
+    transparent 82%
+  );
+  transform: translateX(-120%);
+  animation: mbcel-sweep 1100ms ease-out 180ms both;
+}
+
+.mbcel__label {
+  position: relative;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: #6fdcff;
+  text-shadow: 0 0 12px rgba(111, 220, 255, 0.6);
+}
+
+.mbcel__text {
+  position: relative;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.35;
+  color: #e8eaf0;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+  overflow-wrap: anywhere;
+}
+
+/* ── INTENSITY BY RUNG ─────────────────────────────────────────────────── */
+
+.mbcel__card--r1 {
+  padding: 13px 16px 14px;
+  border-color: rgba(111, 220, 255, 0.72);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.66),
+    0 18px 44px rgba(0, 0, 0, 0.68),
+    0 0 38px rgba(111, 220, 255, 0.45);
+}
+.mbcel__card--r1 .mbcel__text {
+  font-size: 15px;
+}
+
+.mbcel__card--r2 {
+  background: linear-gradient(180deg, rgba(0, 180, 230, 0.24) 0%, rgba(13, 17, 32, 0.96) 100%);
+  border-color: rgba(111, 220, 255, 0.44);
+}
+
+.mbcel__card--r3 {
+  background: linear-gradient(180deg, rgba(24, 119, 242, 0.22) 0%, rgba(13, 17, 32, 0.96) 100%);
+  border-color: rgba(111, 220, 255, 0.32);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.58),
+    0 10px 26px rgba(0, 0, 0, 0.55),
+    0 0 16px rgba(111, 220, 255, 0.2);
+}
+
+/* ── MOTION ────────────────────────────────────────────────────────────── */
+
+@keyframes mbcel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-22px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes mbcel-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.97);
+  }
+}
+
+@keyframes mbcel-sweep {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(120%);
+  }
+}
+
+/* A plain fade. The card still arrives and still clears itself; it simply does
+   not move, and the light does not sweep. */
+@media (prefers-reduced-motion: reduce) {
+  .mbcel__card {
+    animation: mbcel-fade-in 220ms ease both;
+  }
+  .mbcel__card--out {
+    animation: mbcel-fade-out 220ms ease forwards;
+  }
+  .mbcel__flare {
+    display: none;
+  }
+
+  @keyframes mbcel-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes mbcel-fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+}
+
+/* ── 375px FIRST ───────────────────────────────────────────────────────── */
+
+@media (max-width: 359px) {
+  .mbcel__text {
+    font-size: 13px;
+  }
+  .mbcel__card--r1 .mbcel__text {
+    font-size: 14px;
+  }
+}
+
+@media (min-width: 640px) {
+  .mbcel__card {
+    max-width: 460px;
+  }
+  .mbcel__text {
+    font-size: 15px;
+  }
+  .mbcel__card--r1 .mbcel__text {
+    font-size: 17px;
+  }
+}

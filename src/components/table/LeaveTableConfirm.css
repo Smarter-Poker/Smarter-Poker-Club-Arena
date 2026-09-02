@@ -105,19 +105,10 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-.leave-confirm__btn--cancel:hover {
-  background: rgba(255, 255, 255, 0.14);
-}
-
 .leave-confirm__btn--confirm {
   background: linear-gradient(180deg, #ef4444 0%, #dc2626 100%);
   color: #ffffff;
   box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
-}
-
-.leave-confirm__btn--confirm:hover {
-  background: linear-gradient(180deg, #f87171 0%, #ef4444 100%);
-  box-shadow: 0 4px 16px rgba(239, 68, 68, 0.4);
 }
 
 .leave-confirm__btn--confirm:active {

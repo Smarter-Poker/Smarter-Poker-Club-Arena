@@ -28,8 +28,6 @@ export interface TableSettingsPanelProps {
   mode?: 'overlay' | 'inline';
   /** Show close button (overlay mode only) */
   onClose?: () => void;
-  /** Optional: open theme settings modal */
-  onOpenThemeSettings?: () => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -42,7 +40,6 @@ export function TableSettingsPanel({
   onToggle,
   mode = 'overlay',
   onClose,
-  onOpenThemeSettings,
 }: TableSettingsPanelProps) {
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
 
@@ -59,25 +56,32 @@ export function TableSettingsPanel({
     return () => timers.forEach(clearTimeout);
   }, []);
 
-  if (loading) {
-    return (
-      <div className={`tsp-container tsp-${mode}`}>
-        <div className="tsp-loading">Loading Settings...</div>
-      </div>
-    );
-  }
-
   return (
-    <div className={`tsp-container tsp-${mode}`}>
+    <div className={`tsp-container tsp-${mode}`} aria-busy={loading}>
       {/* Header (overlay mode only) */}
       {mode === 'overlay' && (
         <div className="tsp-header">
           <h3 className="tsp-title">Table Settings</h3>
           {onClose && (
-            <button className="tsp-close" onClick={onClose} aria-label="Close settings">
+            <button
+              type="button"
+              className="tsp-close"
+              onClick={onClose}
+              aria-label="Close Settings"
+            >
               ×
             </button>
           )}
+        </div>
+      )}
+
+      {/* Cached or default settings are already safe to use while the
+          canonical row refreshes. Keeping the switches mounted makes a slow
+          preference read non-blocking; the hook preserves any choice made
+          before that background read settles. */}
+      {loading && (
+        <div className="tsp-loading" role="status" aria-live="polite">
+          Refreshing Settings In Background...
         </div>
       )}
 
@@ -87,12 +91,19 @@ export function TableSettingsPanel({
           (meta, idx) => {
             const isEnabled = !!settings[meta.key];
             const isVisible = visibleItems.has(idx);
+            const labelId = `table-setting-${String(meta.key)}-label`;
+            const descriptionId = `table-setting-${String(meta.key)}-description`;
 
             return (
-              <div
+              <button
+                type="button"
                 key={meta.key}
                 className={`tsp-item ${isEnabled ? 'tsp-item--active' : ''}`}
                 onClick={() => onToggle(meta.key)}
+                role="switch"
+                aria-checked={isEnabled}
+                aria-labelledby={labelId}
+                aria-describedby={descriptionId}
                 style={{
                   opacity: isVisible ? 1 : 0,
                   transform: isVisible ? 'translateY(0)' : 'translateY(6px)',
@@ -100,36 +111,26 @@ export function TableSettingsPanel({
                 }}
               >
                 <div className="tsp-item__info">
-                  <span className="tsp-item__label">{meta.label}</span>
-                  <span className="tsp-item__desc">{meta.description}</span>
+                  <span className="tsp-item__label" id={labelId}>
+                    {meta.label}
+                  </span>
+                  <span className="tsp-item__desc" id={descriptionId}>
+                    {meta.description}
+                  </span>
                 </div>
-                <button
+                <span
                   className={`tsp-toggle ${isEnabled ? 'tsp-toggle--on' : 'tsp-toggle--off'}`}
-                  role="switch"
-                  aria-checked={isEnabled ? 'true' : 'false'}
-                  aria-label={`${meta.label}: ${isEnabled ? 'on' : 'off'}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onToggle(meta.key);
-                  }}
+                  aria-hidden="true"
                 >
                   <span className="tsp-toggle__track">
                     <span className="tsp-toggle__thumb" />
                   </span>
-                </button>
-              </div>
+                </span>
+              </button>
             );
           }
         )}
       </div>
-
-      {/* Theme Settings Link */}
-      {onOpenThemeSettings && (
-        <div className="tsp-theme-link" onClick={onOpenThemeSettings}>
-          <span className="tsp-theme-link__label">Theme Settings</span>
-          <span className="tsp-theme-link__arrow">›</span>
-        </div>
-      )}
     </div>
   );
 }

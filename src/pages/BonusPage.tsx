@@ -15,6 +15,7 @@ import { retryFetch } from '../utils/retryFetch';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { reportError } from '../utils/errorReporter';
+import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 interface DailyBonus {
   day: number;
@@ -282,6 +283,18 @@ export default function BonusPage() {
 
   return (
     <div className="bonus-page">
+      <RewardsSurfaceHeader
+        eyebrow="Rewards Circuit / Bonuses"
+        title="Bonus Vault"
+        description="Claim The Server-Authorized Daily Reward Ladder And Inspect Active Special Bonuses From One Secure Reward Surface."
+        art="diamonds"
+        status="BONUS SCHEDULE // LIVE"
+        metrics={[
+          { label: 'Current Day', value: currentDay, tone: 'live' },
+          { label: 'Daily Claim', value: canClaimDaily ? 'Ready' : 'Collected', tone: 'attention' },
+          { label: 'Special Offers', value: specialBonuses.length },
+        ]}
+      />
       {/* Confetti Celebration (Initiative 7) */}
       {showConfetti && (
         <div className="bonus-confetti-container">

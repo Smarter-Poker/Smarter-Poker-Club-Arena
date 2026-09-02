@@ -26,7 +26,7 @@ import DiamondWalletModal from '../components/wallet/DiamondWalletModal';
 import './VIPPage.css';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
-import { reportError } from '../utils/errorReporter';
+import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 export default function VIPPage() {
   const { user } = useAuthUser();
@@ -42,6 +42,10 @@ export default function VIPPage() {
   const [showTopUpModal, setShowTopUpModal] = useState(false);
   const [showDiamondHistory, setShowDiamondHistory] = useState(false);
   const [purchasing, setPurchasing] = useState<string | null>(null);
+  // React state is not synchronous: two taps in the same frame can both see
+  // `purchasing === null`. This ref closes that mobile double-tap window before
+  // the first network request leaves the device.
+  const purchaseInFlightRef = useRef(false);
   const [vipEntranceComplete, setVIPEntranceComplete] = useState(false);
 
   // VIP Points System
@@ -67,42 +71,20 @@ export default function VIPPage() {
     let isMounted = true;
     loadVIPStatus(() => isMounted);
 
-    // Real-time profile updates (diamonds, VIP status)
-    if (user?.id) {
-      const channelKey = 'vip-status';
-
-      const channel = masterBus.getOrCreateChannel(channelKey);
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'profiles',
-            filter: `id=eq.${user.id}`,
-          },
-          (payload) => {
-            if (!isMounted) return;
-            const newData = payload.new as any;
-            if (newData.diamonds !== undefined) {
-              setDiamonds(newData.diamonds);
-            }
-          }
-        )
-        .subscribe((status: string, err?: Error) => {
-          if (status === 'CHANNEL_ERROR') {
-            if (err) reportError(err?.message || err, 'VIPPage._Realtime_channel_error');
-          }
-          if (status === 'TIMED_OUT') {
-            console.warn('[VIPPage] Realtime channel timed out');
-          }
-        });
-
-      return () => {
-        isMounted = false;
-        masterBus.removeRegisteredChannel(channelKey);
-      };
-    }
+    // Real-time profile updates (diamonds, VIP status): NOT subscribed here.
+    //
+    // 2026-08-24: a `vip-status` channel used to live here carrying a single
+    // `profiles` (id=eq.<uid>) listener that did setDiamonds(payload.new.diamonds).
+    // PostgresSyncHooks' `global_db_sync:<userId>` channel already carries that
+    // exact listener - same table, same filter - created once at sign-in and
+    // never torn down by navigation. When profiles.diamonds changes it emits
+    // DIAMOND_BALANCE_CHANGED carrying { newBalance }, and the bus subscriber
+    // further down this file already does setDiamonds(newBalance) from exactly
+    // that payload.
+    //
+    // The whole channel is removed rather than just the listener: it had no
+    // other `.on()`, so keeping it would have left a Realtime subscription that
+    // listens to nothing, reconnects on error, and reports status for no reason.
     return () => {
       isMounted = false;
     };
@@ -123,24 +105,12 @@ export default function VIPPage() {
     return unsubDiamond;
   }, [user?.id]);
 
-  // Bus listener: update VIP points when awarded locally (debounced)
-  useEffect(() => {
-    if (!user?.id) return;
-    const unsubVIP = masterBus.subscribeDebounced(
-      'VIP_POINTS_UPDATED',
-      (event: any) => {
-        if (event?.payload?.added && event.payload.userId === user.id) {
-          setVipPoints((prev) => ({
-            ...prev,
-            current: prev.current + event.payload.added,
-            lifetime: prev.lifetime + event.payload.added,
-          }));
-        }
-      },
-      500
-    );
-    return unsubVIP;
-  }, [user?.id]);
+  // Removed 2026-08-28: a VIP_POINTS_UPDATED listener lived here, but NOTHING
+  // emits that event on the client bus — points are awarded server-side
+  // (rake settlement), so the handler could never run and "live" VIP points
+  // silently did not exist. Found when noDeadBusSubscriptions learned to see
+  // subscribeDebounced. If live points are wanted, they need a server->client
+  // bridge (tournamentEventBridge pattern), not a dead subscription.
 
   const loadingRef = useRef(false);
 
@@ -205,7 +175,7 @@ export default function VIPPage() {
             id: entry.id,
             date: new Date(entry.created_at),
             action: delta > 0 ? 'earned' : 'spent',
-            description: entry.type || (delta > 0 ? 'Diamonds earned' : 'Diamonds spent'),
+            description: entry.type || (delta > 0 ? 'Diamonds Earned' : 'Diamonds Spent'),
             points: Math.abs(delta),
             balanceAfter: Number(entry.balance_after ?? 0),
             // Unicode triangles (allowed per CLAUDE.md §8) instead of the previous emojis
@@ -223,26 +193,75 @@ export default function VIPPage() {
   };
 
   const handlePurchase = async (feature: VIPFeature) => {
-    if (!user?.id) return;
+    if (!user?.id || purchaseInFlightRef.current) return;
 
+    purchaseInFlightRef.current = true;
     setPurchasing(feature);
     try {
       const result = await vipService.purchaseFeature(user.id, feature);
       if (result.success) {
-        toast.success(`Purchased ${feature} for ${result.charged} `);
-        setDiamonds((prev) => prev - result.charged);
+        const nextBalance = Math.max(0, diamonds - result.charged);
+        toast.success(`Purchased ${feature.replace(/_/g, ' ')} for ${result.charged} Diamonds`);
+        setDiamonds(nextBalance);
+        masterBus.emit('DIAMOND_BALANCE_CHANGED', {
+          newBalance: nextBalance,
+          delta: -result.charged,
+          source: 'vip_feature_purchase',
+        });
+
+        const category =
+          feature === 'emoji_pack'
+            ? 'emote_pack'
+            : feature === 'throwable'
+              ? 'throwable'
+              : feature === 'time_bank_seconds' || feature === 'auto_time_bank'
+                ? 'time_bank'
+                : null;
+        if (category) {
+          masterBus.emit('ENTITLEMENTS_CHANGED', {
+            userId: user.id,
+            category,
+            assetId: feature,
+            quantity: 1,
+            source: 'vip-purchase',
+          });
+        }
+      } else if (result.alreadyOwned) {
+        toast.success(`You already own ${feature.replace(/_/g, ' ')}`);
+        if (feature === 'emoji_pack') {
+          masterBus.emit('ENTITLEMENTS_CHANGED', {
+            userId: user.id,
+            category: 'emote_pack',
+            assetId: feature,
+            source: 'vip-purchase',
+          });
+        }
       } else {
         toast.error(result.error || 'Purchase failed');
       }
     } catch (error) {
       toast.error('Purchase failed');
+    } finally {
+      purchaseInFlightRef.current = false;
+      setPurchasing(null);
     }
-    setPurchasing(null);
   };
 
   if (loading) {
     return (
       <div className="vip-page">
+        <RewardsSurfaceHeader
+          eyebrow="Rewards Circuit / VIP"
+          title="VIP Command Deck"
+          description="Track Live Tier Progress, Review Earned Privileges, And Redeem VIP Rewards Through The Existing Protected Reward Services."
+          art="vip"
+          status="VIP TELEMETRY // SYNCING"
+          metrics={[
+            { label: 'Current Points', value: 'Syncing', tone: 'attention' },
+            { label: 'Monthly', value: 'Syncing', tone: 'live' },
+            { label: 'Active Streak', value: 'Syncing' },
+          ]}
+        />
         <div className="loading-state">
           <PageSkeleton variant="stats" />
         </div>
@@ -252,6 +271,18 @@ export default function VIPPage() {
 
   return (
     <div className="vip-page">
+      <RewardsSurfaceHeader
+        eyebrow="Rewards Circuit / VIP"
+        title="VIP Command Deck"
+        description="Track Live Tier Progress, Review Earned Privileges, And Redeem VIP Rewards Through The Existing Protected Reward Services."
+        art="vip"
+        status="VIP TELEMETRY // LIVE"
+        metrics={[
+          { label: 'Current Points', value: vipPoints.current.toLocaleString(), tone: 'attention' },
+          { label: 'Monthly', value: vipPoints.monthly.toLocaleString(), tone: 'live' },
+          { label: 'Active Streak', value: `${vipPoints.activeStreak} days` },
+        ]}
+      />
       {/* VIP Stats Header */}
       {vipEntranceComplete && (
         <VIPStatsHeader
@@ -281,22 +312,61 @@ export default function VIPPage() {
         <RewardsMarketplace
           currentPoints={vipPoints.current}
           onRedeem={async (reward: Reward) => {
-            // Real spend: deduct points server-side (validates balance, records the
-            // ledger entry). Only update the UI on success.
+            if (!user?.id) {
+              toast.error('Please Sign In To Redeem Rewards.');
+              return;
+            }
+            // Real spend AND a real grant. `p_reward_id` is what makes this
+            // honest: without it the RPC charged whatever `p_cost` the browser
+            // sent (so a 5,000-point pass cost one point) and granted nothing
+            // at all. With it, vip_reward_catalog prices the reward and the
+            // cosmetic lands in the live entitlement ledgers. p_cost is still
+            // sent for the audit trail; the server ignores it for catalog
+            // rewards. Migration 20260825_vip_reward_catalog.
             const { data, error } = await supabase.rpc('fn_redeem_vip_points', {
               p_cost: reward.pointsCost,
               p_reason: `Reward: ${reward.name}`,
+              p_reward_id: reward.id,
             });
+            // Refusals come back as `{ success: false, error }` with NO
+            // postgres error, so both halves must be checked.
             if (error || !data?.success) {
               toast.error(
                 data?.error === 'insufficient_points'
-                  ? 'Not enough VIP points for this reward.'
-                  : 'Redemption failed. Please try again.'
+                  ? 'Not Enough VIP Points For This Reward.'
+                  : data?.error === 'already_owned'
+                    ? 'You Already Own This Reward.'
+                    : data?.error === 'sold_out'
+                      ? 'That Reward Is Sold Out.'
+                      : 'Redemption Failed. Please Try Again.'
               );
               return;
             }
             setVipPoints((prev) => ({ ...prev, current: Number(data.balance ?? prev.current) }));
-            toast.success(`Redeemed: ${reward.name}`);
+            if (data.status === 'granted') {
+              const granted = data.granted as
+                | { type?: string; theme_id?: string; avatar_id?: string }
+                | undefined;
+              masterBus.emit('COSMETIC_OWNERSHIP_CHANGED', {
+                userId: user.id,
+                category: granted?.type === 'avatar' ? 'avatar' : 'theme_id',
+                assetId: granted?.avatar_id || granted?.theme_id,
+                source: 'vip-reward',
+              });
+              masterBus.emit('ENTITLEMENTS_CHANGED', {
+                userId: user.id,
+                category: granted?.type === 'avatar' ? 'avatar' : 'table_skin',
+                assetId: granted?.avatar_id || granted?.theme_id,
+                source: 'vip-reward',
+              });
+            }
+            // Say what actually happened: a cosmetic is yours now, a physical
+            // or tournament reward still needs somebody to fulfil it.
+            toast.success(
+              data.status === 'granted'
+                ? `Unlocked: ${reward.name}`
+                : `Claimed: ${reward.name}. Your Club Will Fulfil This.`
+            );
           }}
         />
       )}
@@ -356,56 +426,63 @@ export default function VIPPage() {
                 id: 'rabbit',
                 icon: '◆',
                 title: 'Rabbit Hunt',
-                description: 'See undealt cards',
-                value: 'Unlimited',
+                description: 'See Undealt Cards',
+                // Dan 2026-08-25: 100 a month, then diamonds. This said
+                // "Unlimited" while the server charged from the 101st, which is
+                // a billing promise the product could not keep. Derived from
+                // VIP_GOLD_LIMITS like its sibling below, rather than a third
+                // hardcoded copy of the number — the cap lives in
+                // fn_consume_rabbit_hunt and this is the only place that quotes
+                // it to a customer.
+                value: `${VIP_GOLD_LIMITS.rabbitHunts} / month`,
               },
               {
                 id: 'timebank',
                 icon: '◷',
                 title: 'Time Bank',
-                description: `${VIP_GOLD_LIMITS.timeBankSeconds}s free per month`,
+                description: `${VIP_GOLD_LIMITS.timeBankSeconds}s Free Per Month`,
                 value: `${VIP_GOLD_LIMITS.timeBankSeconds}s`,
               },
               {
                 id: 'throwable',
                 icon: '◆',
                 title: 'Throwables',
-                description: '500 free throws per month',
+                description: '500 Free Throws Per Month',
                 value: '500/mo',
               },
               {
                 id: 'offline',
                 icon: '◈',
                 title: 'Offline Protection',
-                description: 'Unlimited timeout protection',
+                description: 'Unlimited Timeout Protection',
                 value: 'Unlimited',
               },
               {
                 id: 'autobank',
                 icon: '◷',
                 title: 'Auto Time Bank',
-                description: 'Automatic time bank usage',
+                description: 'Automatic Time Bank Usage',
                 value: 'Free',
               },
               {
                 id: 'themes',
                 icon: '◇',
                 title: 'Themes',
-                description: `${VIP_GOLD_LIMITS.themes} premium themes`,
+                description: `${VIP_GOLD_LIMITS.themes} Premium Themes`,
                 value: `${VIP_GOLD_LIMITS.themes}`,
               },
               {
                 id: 'boost',
                 icon: '▦',
                 title: 'Leaderboard Boost',
-                description: `${(VIP_GOLD_LIMITS.leaderboardBoost * 100).toFixed(0)}% score boost`,
+                description: `${(VIP_GOLD_LIMITS.leaderboardBoost * 100).toFixed(0)}% Score Boost`,
                 value: `+${(VIP_GOLD_LIMITS.leaderboardBoost * 100).toFixed(0)}%`,
               },
               {
                 id: 'emojis',
                 icon: '◆',
                 title: 'Emojis',
-                description: 'Access to all emoji packs',
+                description: 'Access To All Emoji Packs',
                 value: 'All Packs',
               },
             ]}
@@ -416,7 +493,15 @@ export default function VIPPage() {
       {/* Diamond Balance */}
       <section className="vip-section">
         <div className="diamond-balance">
-          <span className="diamond-icon"></span>
+          {/* The glyph is IN THE MARKUP, the way Shell.tsx does it. It used to
+              come from a `.diamond-icon::before { content: '◆' }` declared in
+              ClubHomePage.css - a page-scoped stylesheet that is loaded
+              globally, so this element rendered blank on any session that had
+              not visited a club lobby, and blank permanently once that leaked
+              rule was removed. */}
+          <span className="diamond-icon" aria-hidden="true">
+            ◆
+          </span>
           <span className="diamond-count">{diamonds.toLocaleString()}</span>
           <span className="diamond-label">Diamonds</span>
           <button className="diamond-buy-btn" onClick={() => setShowTopUpModal(true)}>
@@ -442,7 +527,11 @@ export default function VIPPage() {
 
           <div className="purchase-grid">
             {Object.entries(FEATURE_PRICING)
-              .filter(([, pricing]) => pricing.cost > 0)
+              // A generic "theme_unlock" does not identify a theme and cannot
+              // issue a usable entitlement. Themes are bought/redeemed from
+              // Table Studio and the rewards catalog, where the exact preset
+              // bundle is part of the server-side SKU.
+              .filter(([feature, pricing]) => feature !== 'theme_unlock' && pricing.cost > 0)
               .map(([feature, pricing]) => (
                 <div key={feature} className="purchase-card">
                   <div className="purchase-info">

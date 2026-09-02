@@ -1,18 +1,17 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  FRIEND ACTIVITY FEED — Real-time friend activity from Supabase
- * ═══════════════════════════════════════════════════════════════════════════════
- * Fetches recent friend activities from Supabase (achievements, challenges,
- * wheel spins) and augments with real-time bus events.
- */
-
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useIsMounted } from '../../hooks/useIsMounted';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuthUser } from '../../hooks/useAuthUser';
-import { supabase } from '../../lib/supabase';
+import { useIsMounted } from '../../hooks/useIsMounted';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
-import './FriendActivityFeed.css';
+import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
+import './FriendActivityFeed.css';
+
+interface FeedFriend {
+  user_id: string;
+  username: string;
+  avatar_url?: string;
+}
 
 interface ActivityItem {
   id: string;
@@ -25,254 +24,255 @@ interface ActivityItem {
   icon: string;
 }
 
-export default function FriendActivityFeed({ friends }: { friends: any[] }) {
+export default function FriendActivityFeed({ friends }: { friends: FeedFriend[] }) {
   const { user } = useAuthUser();
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const isMounted = useIsMounted();
-  const achieveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Build a lookup map for friend data
+  const achievementTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const friendMap = useRef(new Map<string, { username: string; avatar_url?: string }>());
 
   useEffect(() => {
     const map = new Map<string, { username: string; avatar_url?: string }>();
-    for (const f of friends) {
-      if (f.user_id) map.set(f.user_id, { username: f.username, avatar_url: f.avatar_url });
+    for (const friend of friends) {
+      if (friend.user_id) {
+        map.set(friend.user_id, { username: friend.username, avatar_url: friend.avatar_url });
+      }
     }
     friendMap.current = map;
   }, [friends]);
 
+  useEffect(() => {
+    return () => {
+      if (achievementTimerRef.current) clearTimeout(achievementTimerRef.current);
+    };
+  }, []);
+
   const loadRealActivities = useCallback(async () => {
-    // Guard: don't query if not authenticated or no friends
     if (!user?.id || friends.length === 0) {
-      if (isMounted.current) setLoading(false);
-      return;
-    }
-
-    const friendIds = friends.map((f) => f.user_id).filter(Boolean);
-    if (friendIds.length === 0) {
-      if (isMounted.current) setLoading(false);
-      return;
-    }
-
-    try {
-      const feed: ActivityItem[] = [];
-
-      // Fetch friends' recent achievements
-      const { data: achievements } = await supabase
-        .from('training_user_achievements')
-        .select('id, user_id, achievement_id, unlocked_at')
-        .in('user_id', friendIds)
-        .not('unlocked_at', 'is', null)
-        .order('unlocked_at', { ascending: false })
-        .limit(10);
-
-      if (achievements) {
-        for (const a of achievements) {
-          const friend = friendMap.current.get(a.user_id);
-          if (friend) {
-            feed.push({
-              id: `ach-${a.id}`,
-              userId: a.user_id,
-              username: friend.username || 'Player',
-              avatar: friend.avatar_url,
-              action: 'unlocked',
-              target: a.achievement_id
-                .replace(/_/g, ' ')
-                .replace(/\b\w/g, (c: string) => c.toUpperCase()),
-              timestamp: new Date(a.unlocked_at),
-              icon: '★',
-            });
-          }
-        }
-      }
-
-      // Fetch friends' recent daily challenge completions
-      const { data: challenges } = await supabase
-        .from('user_daily_challenges')
-        .select('id, user_id, challenge_id, completed, assigned_date')
-        .in('user_id', friendIds)
-        .eq('completed', true)
-        .order('assigned_date', { ascending: false })
-        .limit(10);
-
-      if (challenges) {
-        for (const c of challenges) {
-          const friend = friendMap.current.get(c.user_id);
-          if (friend) {
-            feed.push({
-              id: `chal-${c.id}`,
-              userId: c.user_id,
-              username: friend.username || 'Player',
-              avatar: friend.avatar_url,
-              action: 'completed mission',
-              target: c.challenge_id
-                .replace(/_/g, ' ')
-                .replace(/\b\w/g, (ch: string) => ch.toUpperCase()),
-              timestamp: new Date(c.assigned_date),
-              icon: '◎',
-            });
-          }
-        }
-      }
-
-      // Sort all by timestamp descending, limit to 30
-      feed.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-
       if (isMounted.current) {
-        setActivities(feed.slice(0, 30));
+        setActivities([]);
         setLoading(false);
+        setError(null);
       }
-    } catch (err) {
-      reportError(err, 'FriendActivityFeed.load_error');
+      return;
+    }
+
+    const friendIds = friends.map((friend) => friend.user_id).filter(Boolean);
+    if (friendIds.length === 0) return;
+
+    setLoading(true);
+    setError(null);
+    try {
+      const [achievementResult, challengeResult] = await Promise.all([
+        supabase
+          .from('training_user_achievements')
+          .select('id, user_id, achievement_id, unlocked_at')
+          .in('user_id', friendIds)
+          .not('unlocked_at', 'is', null)
+          .order('unlocked_at', { ascending: false })
+          .limit(10),
+        supabase
+          .from('user_daily_challenges')
+          .select('id, user_id, challenge_id, completed, assigned_date')
+          .in('user_id', friendIds)
+          .eq('completed', true)
+          .order('assigned_date', { ascending: false })
+          .limit(10),
+      ]);
+      if (achievementResult.error) throw achievementResult.error;
+      if (challengeResult.error) throw challengeResult.error;
+
+      const feed: ActivityItem[] = [];
+      for (const achievement of achievementResult.data || []) {
+        const friend = friendMap.current.get(achievement.user_id);
+        if (!friend) continue;
+        feed.push({
+          id: `ach-${achievement.id}`,
+          userId: achievement.user_id,
+          username: friend.username || 'Player',
+          avatar: friend.avatar_url,
+          action: 'unlocked',
+          target: achievement.achievement_id
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, (letter: string) => letter.toUpperCase()),
+          timestamp: new Date(achievement.unlocked_at),
+          icon: '◆',
+        });
+      }
+
+      for (const challenge of challengeResult.data || []) {
+        const friend = friendMap.current.get(challenge.user_id);
+        if (!friend) continue;
+        feed.push({
+          id: `chal-${challenge.id}`,
+          userId: challenge.user_id,
+          username: friend.username || 'Player',
+          avatar: friend.avatar_url,
+          action: 'completed mission',
+          target: challenge.challenge_id
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, (letter: string) => letter.toUpperCase()),
+          timestamp: new Date(challenge.assigned_date),
+          icon: '◎',
+        });
+      }
+
+      feed.sort((first, second) => second.timestamp.getTime() - first.timestamp.getTime());
+      if (isMounted.current) setActivities(feed.slice(0, 30));
+    } catch (loadError) {
+      reportError(loadError, 'FriendActivityFeed.load_error');
+      if (isMounted.current) setError('Live friend activity could not be reached.');
+    } finally {
       if (isMounted.current) setLoading(false);
     }
-  }, [friends, user?.id]);
+  }, [friends, user?.id, isMounted]);
 
   useEffect(() => {
     loadRealActivities();
-  }, [friends, loadRealActivities]);
+  }, [loadRealActivities]);
 
-  // Real-time bus listeners — augment feed with live events
   useMasterBusSubscription('HAND_COMPLETED', (payload: any) => {
-    if (!isMounted.current) return;
-    if (payload?.winnerId && friendMap.current.has(payload.winnerId)) {
-      const friend = friendMap.current.get(payload.winnerId)!;
-      setActivities((prev) =>
-        [
-          {
-            id: `live-${Date.now()}`,
-            userId: payload.winnerId,
-            username: friend.username,
-            avatar: friend.avatar_url,
-            action: 'won a massive pot',
-            timestamp: new Date(),
-            icon: '◆',
-          },
-          ...prev,
-        ].slice(0, 20)
-      );
-    }
+    if (!isMounted.current || !payload?.winnerId || !friendMap.current.has(payload.winnerId))
+      return;
+    const friend = friendMap.current.get(payload.winnerId)!;
+    setActivities((previous) =>
+      [
+        {
+          id: `live-${Date.now()}`,
+          userId: payload.winnerId,
+          username: friend.username,
+          avatar: friend.avatar_url,
+          action: 'won a massive pot',
+          timestamp: new Date(),
+          icon: '◆',
+        },
+        ...previous,
+      ].slice(0, 20)
+    );
   });
 
   useMasterBusSubscription('FRIEND_REQUEST_ACCEPTED', (payload: any) => {
-    if (!isMounted.current) return;
-    if (payload?.friendId || payload?.username) {
-      setActivities((prev) =>
-        [
-          {
-            id: `live-${Date.now()}`,
-            userId: payload.friendId || '',
-            username: payload.username || 'A player',
-            avatar: payload.avatarUrl,
-            action: 'became friends with you',
-            timestamp: new Date(),
-            icon: '◈',
-          },
-          ...prev,
-        ].slice(0, 20)
-      );
-    }
+    if (!isMounted.current || (!payload?.friendId && !payload?.username)) return;
+    setActivities((previous) =>
+      [
+        {
+          id: `live-${Date.now()}`,
+          userId: payload.friendId || '',
+          username: payload.username || 'A player',
+          avatar: payload.avatarUrl,
+          action: 'became friends with you',
+          timestamp: new Date(),
+          icon: '◈',
+        },
+        ...previous,
+      ].slice(0, 20)
+    );
   });
 
-  // Refresh feed when achievements are unlocked
   useMasterBusSubscription('ACHIEVEMENT_UNLOCKED', () => {
     if (!isMounted.current) return;
-    if (achieveTimerRef.current) clearTimeout(achieveTimerRef.current);
-    achieveTimerRef.current = setTimeout(() => {
+    if (achievementTimerRef.current) clearTimeout(achievementTimerRef.current);
+    achievementTimerRef.current = setTimeout(() => {
       if (isMounted.current) loadRealActivities();
     }, 1500);
   });
 
   if (loading) {
     return (
-      <div className="friend-activity-feed">
-        <div className="activity-header">
-          <h3>Friend Activity</h3>
-          <div className="live-indicator">
-            <span className="live-dot"></span> Live
-          </div>
-        </div>
-        <div className="activity-list">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="activity-item" style={{ opacity: 0.4 }}>
-              <div className="activity-avatar">
-                <span>◷</span>
-              </div>
-              <div className="activity-content">
-                <p
-                  style={{
-                    background: 'rgba(255,255,255,0.08)',
-                    borderRadius: 4,
-                    width: '70%',
-                    height: 14,
-                  }}
-                >
-                  &nbsp;
-                </p>
-                <span
-                  className="activity-time"
-                  style={{
-                    background: 'rgba(255,255,255,0.05)',
-                    borderRadius: 4,
-                    width: 40,
-                    height: 10,
-                    display: 'inline-block',
-                  }}
-                >
-                  &nbsp;
-                </span>
+      <section className="friend-activity-feed" aria-labelledby="friend-activity-title">
+        <ActivityHeader />
+        <div className="activity-skeleton-list" role="status" aria-label="Loading Friend Activity">
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div className="activity-skeleton" key={index}>
+              <span />
+              <div>
+                <i />
+                <i />
               </div>
             </div>
           ))}
         </div>
-      </div>
+      </section>
     );
   }
 
-  if (activities.length === 0) return null;
+  if (error) {
+    return (
+      <section className="friend-activity-feed" aria-labelledby="friend-activity-title">
+        <ActivityHeader />
+        <div className="activity-state is-error" role="alert">
+          <p>{error}</p>
+          <button type="button" onClick={loadRealActivities}>
+            Retry Activity
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  if (activities.length === 0) {
+    return (
+      <section className="friend-activity-feed" aria-labelledby="friend-activity-title">
+        <ActivityHeader />
+        <div className="activity-state">
+          <span aria-hidden="true">⌁</span>
+          <p>No Recent Friend Activity. New Hands, Achievements, And Missions Will Appear Live.</p>
+        </div>
+      </section>
+    );
+  }
 
   return (
-    <div className="friend-activity-feed">
-      <div className="activity-header">
-        <h3>Friend Activity</h3>
-        <div className="live-indicator">
-          <span className="live-dot"></span> Live
-        </div>
-      </div>
+    <section className="friend-activity-feed" aria-labelledby="friend-activity-title">
+      <ActivityHeader />
       <div className="activity-list">
-        {activities.map((item, index) => (
-          <div
-            key={item.id}
-            className="activity-item"
-            style={{ animationDelay: `${index * 100}ms` }}
-          >
-            <div className="activity-avatar">
+        {activities.map((item) => (
+          <article className="activity-item" key={item.id}>
+            <Link
+              className="activity-avatar"
+              to={`/profile/${item.userId}`}
+              aria-label={`Open ${item.username}'s Profile`}
+            >
               {item.avatar ? (
                 <img loading="lazy" decoding="async" src={item.avatar} alt="" />
               ) : (
                 <span>{item.username[0]?.toUpperCase()}</span>
               )}
-              <div className="activity-icon-badge">{item.icon}</div>
-            </div>
+              <i aria-hidden="true">{item.icon}</i>
+            </Link>
             <div className="activity-content">
               <p>
-                <span className="activity-username">{item.username}</span> {item.action}{' '}
-                {item.target && <span className="activity-target">{item.target}</span>}
+                <Link to={`/profile/${item.userId}`}>{item.username}</Link> {item.action}{' '}
+                {item.target && <strong>{item.target}</strong>}
               </p>
-              <span className="activity-time">{formatTimeAgo(item.timestamp)}</span>
+              <time dateTime={item.timestamp.toISOString()}>{formatTimeAgo(item.timestamp)}</time>
             </div>
-          </div>
+          </article>
         ))}
       </div>
+    </section>
+  );
+}
+
+function ActivityHeader() {
+  return (
+    <div className="activity-header">
+      <div>
+        <span>Verified Events</span>
+        <h3 id="friend-activity-title">Friend Activity</h3>
+      </div>
+      <strong>
+        <i /> Live
+      </strong>
     </div>
   );
 }
 
 function formatTimeAgo(date: Date) {
   const diff = Date.now() - date.getTime();
-  const minutes = Math.floor(diff / 60000);
+  const minutes = Math.floor(diff / 60_000);
   if (minutes < 1) return 'Just now';
   if (minutes < 60) return `${minutes}m ago`;
   const hours = Math.floor(minutes / 60);

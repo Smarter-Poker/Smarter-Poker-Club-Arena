@@ -17,7 +17,7 @@
   font-weight: 600;
   letter-spacing: 0.8px;
   text-transform: uppercase;
-  color: #b0b3b8;
+  color: #8892a4;
   flex-shrink: 0;
 }
 
@@ -29,9 +29,9 @@
   max-width: 260px;
   padding: 6px 10px;
   border-radius: 8px;
-  border: 1px solid rgba(69, 153, 255, 0.25);
-  background: rgba(24, 25, 26, 0.6);
-  color: #e4e6eb;
+  border: 1px solid rgba(111, 220, 255, 0.25);
+  background: rgba(19, 27, 40, 0.6);
+  color: #e8eaf0;
   font: inherit;
   font-size: 13px;
   font-weight: 700;
@@ -41,23 +41,13 @@
     border-color 0.2s ease;
 }
 
-.trigger:hover {
-  background: rgba(69, 153, 255, 0.1);
-  border-color: rgba(69, 153, 255, 0.45);
-}
-
 .trigger:focus-visible {
-  outline: 2px solid rgba(69, 153, 255, 0.7);
+  outline: 2px solid rgba(111, 220, 255, 0.7);
   outline-offset: 2px;
 }
 
 .triggerStatic {
   cursor: default;
-}
-
-.triggerStatic:hover {
-  background: rgba(24, 25, 26, 0.6);
-  border-color: rgba(69, 153, 255, 0.25);
 }
 
 .name {
@@ -69,7 +59,7 @@
 
 .chevron {
   font-size: 10px;
-  color: #b0b3b8;
+  color: #8892a4;
   flex-shrink: 0;
 }
 
@@ -85,8 +75,8 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: rgba(69, 153, 255, 0.15);
-  color: #4599ff;
+  background: rgba(111, 220, 255, 0.15);
+  color: #6fdcff;
   font-size: 10px;
   font-weight: 700;
   display: flex;
@@ -111,8 +101,8 @@
   max-width: 300px;
   max-height: 280px;
   overflow-y: auto;
-  background: linear-gradient(160deg, rgba(36, 37, 38, 0.98) 0%, rgba(28, 29, 30, 0.98) 100%);
-  border: 1px solid rgba(69, 153, 255, 0.25);
+  background: linear-gradient(160deg, rgba(26, 36, 54, 0.98) 0%, rgba(13, 17, 32, 0.98) 100%);
+  border: 1px solid rgba(111, 220, 255, 0.25);
   border-radius: 10px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
   padding: 6px;
@@ -127,7 +117,7 @@
   font-weight: 700;
   letter-spacing: 1px;
   text-transform: uppercase;
-  color: #b0b3b8;
+  color: #8892a4;
 }
 
 .item {
@@ -136,7 +126,7 @@
   gap: 8px;
   background: none;
   border: none;
-  color: #e4e6eb;
+  color: #e8eaf0;
   font: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -147,18 +137,14 @@
   min-width: 0;
 }
 
-.item:hover {
-  background: rgba(69, 153, 255, 0.1);
-}
-
 .item:focus-visible {
-  outline: 2px solid rgba(69, 153, 255, 0.7);
+  outline: 2px solid rgba(111, 220, 255, 0.7);
   outline-offset: -2px;
 }
 
 .itemActive {
-  color: #4599ff;
-  background: rgba(69, 153, 255, 0.08);
+  color: #6fdcff;
+  background: rgba(111, 220, 255, 0.08);
 }
 
 .itemText {
@@ -177,7 +163,7 @@
 .itemBalance {
   font-size: 10px;
   font-weight: 600;
-  color: #b0b3b8;
+  color: #8892a4;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

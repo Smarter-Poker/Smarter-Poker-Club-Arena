@@ -57,7 +57,7 @@
   align-items: center;
 }
 .mtt-ticker__track:focus-visible {
-  outline: 2px solid #00d4ff;
+  outline: 2px solid var(--ticker-accent, #00d4ff);
   outline-offset: -2px;
 }
 
@@ -66,17 +66,14 @@
   align-items: center;
   white-space: nowrap;
   will-change: transform;
-  animation: mttScroll 22s linear infinite;
-}
-.mtt-ticker__track:hover .mtt-ticker__scroll {
-  animation-play-state: paused;
+  animation: mttScroll var(--ticker-speed, 22s) linear infinite;
 }
 
 .mtt-ticker__msg {
   padding: 0 28px;
   font-size: 0.78rem;
   font-weight: 700;
-  color: #eaf4ff;
+  color: var(--ticker-text, #eaf4ff);
   letter-spacing: 0.01em;
 }
 
@@ -90,11 +87,8 @@
   line-height: 1;
   cursor: pointer;
 }
-.mtt-ticker__close:hover {
-  color: #fff;
-}
 .mtt-ticker__close:focus-visible {
-  outline: 2px solid #00d4ff;
+  outline: 2px solid var(--ticker-accent, #00d4ff);
   outline-offset: -2px;
 }
 
@@ -122,13 +116,41 @@
   }
   .mtt-ticker__scroll {
     animation: none;
+    /* The scroller is `inline-flex` and sized by its content, so without these
+       it stays wider than the bar and the text is simply cut at the edge with
+       no sign that anything follows. */
+    max-width: 100%;
+    min-width: 0;
   }
   /* Static: show the first copy, truncated, instead of a moving strip. */
   .mtt-ticker__msg + .mtt-ticker__msg {
     display: none;
   }
+  .mtt-ticker__msg {
+    /* Ellipsis, not a hard cut: reduced motion collapses the MOVEMENT, and the
+       reader still has to be able to tell that the line continues. The strip is
+       a button on to the event either way, and the message is built
+       most-important-part-first ("505 Overlay Right Now - <event> - ..."), so
+       what survives the truncation is the part worth reading. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
   .mtt-ticker__track {
     overflow: hidden;
+  }
+}
+
+/* Mobile: a thinner strip. 34px reads fine on desktop; on a phone it eats a
+   meaningful slice of a small viewport, and Dan called it out ("the ticker is
+   way too thick on mobile"). 26px still clears the 0.72rem message line. */
+@media (max-width: 768px) {
+  .mtt-ticker {
+    height: 26px;
+  }
+  .mtt-ticker__close {
+    width: 28px;
+    font-size: 15px;
   }
 }
 
@@ -140,5 +162,57 @@
   .mtt-ticker__msg {
     font-size: 0.72rem;
     padding: 0 18px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   OVERLAY ANNOUNCEMENTS (Dan 2026-08-26)
+   ───────────────────────────────────────────────────────────────────────────
+   "alerting players if there is an overlay or potential overlay to jump in
+   and play."
+
+   Deliberately a DIFFERENT colour from the cyan STARTING SOON flag. The two
+   say different things and a player should be able to tell which one is on
+   the bar without reading it: cyan means "hurry", gold means "there is money
+   here". Reusing the cyan would have made the strongest message this room can
+   send look like the routine one.
+
+   Gold on near-black rather than the usual green: green reads as "success /
+   confirmed" everywhere else in this app (ClubAnnouncementBanner uses it for
+   exactly that), and an overlay is neither. It is treasure.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.mtt-ticker__flag--overlay {
+  background: linear-gradient(180deg, #d8dce0 0%, #9ba1a8 100%);
+  color: #111418;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+/* A LIVE overlay - late registration open on a running event - is the one
+   with a closing door, so it is the only thing on this strip allowed to
+   pulse. The potential one is information; this one is a countdown with
+   money attached. */
+.mtt-ticker__flag--overlay-live {
+  animation: mttOverlayPulse 1.8s ease-in-out infinite;
+}
+
+@keyframes mttOverlayPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(180, 186, 194, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 10px 2px rgba(180, 186, 194, 0.85);
+  }
+}
+
+/* The house rule the rest of this file already follows: nothing moves for a
+   player who asked for no motion. They still get the flag and the colour,
+   which is the whole message - only the pulse goes. */
+@media (prefers-reduced-motion: reduce) {
+  .mtt-ticker__flag--overlay-live {
+    animation: none;
+    box-shadow: 0 0 8px 1px rgba(180, 186, 194, 0.7);
   }
 }

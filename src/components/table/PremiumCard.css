@@ -13,12 +13,6 @@
   transition: transform 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.premium-card-wrapper:hover {
-  transform: translateY(-8px) scale(1.05);
-  z-index: 10;
-  filter: drop-shadow(0 0 16px rgba(255, 215, 0, 0.3));
-}
-
 .premium-card-wrapper.dealing {
   opacity: 0;
   transform: translateX(-100px) translateY(-50px) rotate(-20deg) scale(0.5);
@@ -65,7 +59,7 @@
    CARD FRONT - Premium white gradient with subtle texture
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-.card-front {
+.premium-card__front {
   position: absolute;
   inset: 0;
   background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 50%, #eef0f2 100%);
@@ -79,16 +73,12 @@
   overflow: hidden;
 }
 
-/* Card front image - digital deck card faces */
-.card-front-image {
+/* The canonical renderers carry their own fallback and theme behavior. Their
+   catalog sizes are overridden only inside this fixed cinematic shell. */
+.premium-card__canonical {
   width: 100%;
   height: 100%;
-  object-fit: contain;
-  border-radius: 8px;
-  /* See CardImage.css: crisp-edges stair-steps a downscaled card. */
-  image-rendering: auto;
-  transform: translateZ(0);
-  backface-visibility: hidden;
+  border-radius: inherit;
 }
 
 /* Card corners */
@@ -154,7 +144,7 @@
    CARD BACK - Custom image design
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-.card-back {
+.premium-card__back {
   position: absolute;
   inset: 0;
   border-radius: 8px;
@@ -166,15 +156,15 @@
   overflow: hidden;
 }
 
-.card-back-image {
+.premium-card__back > .premium-card__canonical {
   width: 100%;
   height: 100%;
-  object-fit: contain;
   border-radius: 8px;
-  /* See CardImage.css: crisp-edges stair-steps a downscaled card. */
-  image-rendering: auto;
-  transform: translateZ(0);
   backface-visibility: hidden;
+}
+
+.premium-card__back .card-back {
+  transform: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

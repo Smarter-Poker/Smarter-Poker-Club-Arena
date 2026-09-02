@@ -11,6 +11,17 @@
 
 set -e
 
+# ── One working tree per agent (rule 1a) ────────────────────────────────────
+# Runs FIRST, for the same reason it runs first on pre-commit: if this push
+# should not be coming from this tree at all, none of the content checks below
+# matter. git-safe-push.sh and the World Hub sync export AGENT_SHARED_CLONE_OK=1
+# because they legitimately push from the one-and-only tree; CI is exempt too.
+#
+# Added 2026-08-23. Commit-only enforcement missed the shape that actually
+# loses work: an agent edits in the shared clone, never commits there, and the
+# next checkout or `git reset --hard` takes the lot with nobody warned.
+bash "$(git rev-parse --show-toplevel)/scripts/guard-shared-clone.sh" push
+
 REMOTE="$1"
 URL="$2"
 FAIL=0
@@ -184,12 +195,14 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
       ;;
   esac
 
-  # 0. Repo-wide invariants. These normally run in CI as blocking checks, but
-  #    branch protection is UNAVAILABLE on a private repo without GitHub Pro —
-  #    making the repos private (correctly, after keys leaked into history) also
-  #    silently disabled required status checks and rulesets. CI still runs and
-  #    still goes red; nothing enforces it server-side any more. Running the two
-  #    fast guards here is the only enforcement left. Both are ~100ms.
+  # 0. Repo-wide invariants. Both are ~100ms.
+  #
+  #    CORRECTED 2026-08-28. This comment used to say branch protection was
+  #    unavailable without GitHub Pro and that "nothing enforces it server-side
+  #    any more". Checked against the API: ruleset `main protection` (21163380)
+  #    is ACTIVE on main with `bypass_actors: []` and six required checks. It
+  #    enforces. These two guards run here because catching them in 100ms beats
+  #    catching them in a three-minute CI cycle, not because nothing else will.
   if [ -f scripts/ci/check-allin-pointer-events.mjs ]; then
     if ! node scripts/ci/check-allin-pointer-events.mjs; then
       echo "[club-arena pre-push] BLOCKED: all-in action panel would lose pointer events"
@@ -200,6 +213,76 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
     if ! node scripts/ci/check-monitoring-drift.mjs; then
       echo "[club-arena pre-push] BLOCKED: monitoring wiring is broken"
       FAIL=1
+    fi
+  fi
+  # A commit carrying [skip ci] starts NO workflow run, so the bundle is never
+  # built and production keeps serving the previous one with nothing red
+  # anywhere. Every other net in the estate RECOVERS from that; this one
+  # prevents it. Real precedent: 454fa1da4.
+  if [ -f scripts/ci/check-no-skip-markers.mjs ]; then
+    if ! node scripts/ci/check-no-skip-markers.mjs; then
+      echo "[club-arena pre-push] BLOCKED: a commit would suppress its own publish"
+      FAIL=1
+    fi
+  fi
+  # A SECURITY DEFINER function that writes and that a browser can call must
+  # consult the request. Nineteen did not on 2026-08-27; one let any member
+  # rewrite a club's member_count, another pays chips. Scoped to the migrations
+  # this branch adds, because supabase/migrations/ is intentionally stale.
+  # An insert that omits a NOT NULL column with no default cannot land, and the
+  # error lands in a catch. Whole-tree and currently at zero, so any new one is
+  # this push's doing.
+  if [ -f scripts/ci/check-required-columns.mjs ]; then
+    if ! node scripts/ci/check-required-columns.mjs; then
+      echo "[club-arena pre-push] BLOCKED: an insert omits a column its table requires."
+      FAIL=1
+    fi
+  fi
+  if [ -f scripts/ci/check-definer-authorization.mjs ]; then
+    DEF_BASE=$(git merge-base HEAD origin/main 2>/dev/null || echo "HEAD~1")
+    if ! node scripts/ci/check-definer-authorization.mjs "$DEF_BASE"; then
+      echo "[club-arena pre-push] BLOCKED: a SECURITY DEFINER writer a browser can reach"
+      echo "                      never asks who is calling. See the remedy above."
+      FAIL=1
+    fi
+  fi
+
+  # 0b. TYPE CHECK — added 2026-08-27, re-justified 2026-08-28.
+  #
+  #    THIS IS FAST FEEDBACK, NOT ENFORCEMENT. Be clear about that, because the
+  #    commit that added it was not: it claimed a direct push to main went
+  #    unchecked and that this hook was the only gate left. Both were wrong.
+  #    The `main protection` ruleset requires a pull request and six green
+  #    checks, `TypeScript Check` among them, and nobody bypasses it — so a
+  #    type error has never been able to reach main.
+  #
+  #    What it buys is the three minutes between pushing a branch and CI
+  #    telling you what tsc would have told you in four seconds. That is worth
+  #    a hook; pretending it is the last line of defence is not.
+  #
+  #    COST: about 40s cold, about 4s warm — tsconfig.json already sets
+  #    `incremental` with a tsBuildInfoFile, so only the first run pays. Runs
+  #    at all only when the push touches src/**.ts(x).
+  #
+  #    It SKIPS, loudly, when a worktree has no node_modules — same reasoning
+  #    as the formatter in .husky/pre-commit: a gate people wait on is a gate
+  #    people --no-verify past, and --no-verify also disables the rewind guard
+  #    in check 5, which must never be skipped.
+  if echo "$FILES" | grep -qE '^src/.*\.tsx?$'; then
+    TSC="$(git rev-parse --show-toplevel)/node_modules/.bin/tsc"
+    if [ -x "$TSC" ]; then
+      echo "[club-arena pre-push] type-checking src/ ..."
+      if ! "$TSC" --noEmit; then
+        echo ""
+        echo "[club-arena pre-push] BLOCKED: src/ does not type-check."
+        echo "                      Fix the errors above. CI's TypeScript Check"
+        echo "                      is a required check and would refuse this"
+        echo "                      pull request anyway - this just tells you"
+        echo "                      now instead of in three minutes."
+        FAIL=1
+      fi
+    else
+      echo "[club-arena pre-push] no local node_modules - skipped the type check."
     fi
   fi
 
@@ -307,6 +390,27 @@ if [ -f scripts/ci/check-title-case.mjs ]; then
   fi
 fi
 
+# The third surface of the same rule: text painted from a string ATTRIBUTE or
+# from a string literal inside a JSX EXPRESSION. Autofix:
+#   node scripts/ci/check-painted-text-case.mjs --fix
+if [ -f scripts/ci/check-painted-text-case.mjs ]; then
+  if ! node scripts/ci/check-painted-text-case.mjs; then
+    FAIL=1
+  fi
+fi
+
+# The other half of the same rule. check-title-case.mjs inspects JsxText only
+# and states in its own header that expression values "are cased at their
+# source" - a promise nothing enforced. Every navigation surface renders its
+# copy from a config registry through {item.label}, so 55 menu strings sat
+# uncased for months in the gap between the two. Autofix:
+#   node scripts/ci/check-nav-title-case.mjs --fix
+if [ -f scripts/ci/check-nav-title-case.mjs ]; then
+  if ! node scripts/ci/check-nav-title-case.mjs; then
+    FAIL=1
+  fi
+fi
+
 # Protected work must not be orphaned from main.
 # Two of the 2026-08-21 throwables regressions were stale bundles (now covered
 # by the World Hub provenance gate). The third was a commit that stopped being
@@ -378,15 +482,87 @@ fi
 bash "$(git rev-parse --show-toplevel)/scripts/check-node-modules.sh" --check || true
 
 VITEST="$(git rev-parse --show-toplevel)/node_modules/.bin/vitest"
-if [ -z "${CA_SKIP_TESTS:-}" ] && [ -f package.json ] && [ ! -x "$VITEST" ]; then
-  echo ""
-  echo "[club-arena pre-push] WARNING: no local vitest in this tree, so the test"
-  echo "                      gate did NOT run. CI still catches a red test - but"
-  echo "                      only after it has blocked the World Hub bundle for"
-  echo "                      everyone. Fix:  bash scripts/agent-workspace.sh <you> <slug>"
-  echo ""
+
+# 2026-08-25: REPAIR IT, DO NOT NARRATE IT — corrected same day.
+#
+# This used to print a WARNING and push anyway, which meant the one rule that
+# stops a red test blocking the World Hub bundle was a printed sentence in the
+# 124 of 162 trees that had no server/node_modules.
+#
+# The first attempt at repairing it carried four defects worth recording,
+# because each is a shape that recurs:
+#
+#   - it copied with `cp -R src dst` while `dst` might already exist, which
+#     nests into node_modules/node_modules and leaves a tree that every later
+#     `[ -e ]` check calls "provisioned" forever. Copy to a temp and rename.
+#   - it refused when run IN the main clone, which is where git-safe-push.sh
+#     and the World Hub sync push from. A guard that can brick the deploy path
+#     is worse than the hole it closes. That case now advises `npm ci` and
+#     does not block.
+#   - it had no CI exemption, unlike every other guard in this file.
+#   - it read `[ -z "$CA_SKIP_TESTS" ]`, so CA_SKIP_TESTS=0 SKIPPED the gate —
+#     the opposite of what the message it prints says. Compare to "1".
+CA_IN_CI=0
+[ -n "${CI:-}" ] && CA_IN_CI=1
+[ -n "${GITHUB_ACTIONS:-}" ] && CA_IN_CI=1
+
+CA_TESTS_ON=1
+[ "${CA_SKIP_TESTS:-0}" = "1" ] && CA_TESTS_ON=0
+[ "$CA_IN_CI" = "1" ] && CA_TESTS_ON=0
+
+CA_ROOT_MAIN="$HOME/Documents/club-arena"
+CA_TREE_TOP="$(git rev-parse --show-toplevel)"
+
+# Same repository only. A second full clone of this remote exists on this
+# machine and its node_modules answers to a different package-lock.
+ca_same_repo() {
+  [ -d "$CA_ROOT_MAIN/.git" ] || [ -f "$CA_ROOT_MAIN/.git" ] || return 1
+  [ "$(git -C "$CA_ROOT_MAIN" rev-parse --git-common-dir 2>/dev/null)" = "$(git rev-parse --git-common-dir 2>/dev/null)" ]
+}
+
+# Clone one package root's deps in, atomically. Never copies onto an existing
+# directory, so a gutted or half-copied tree is replaced rather than nested.
+ca_provision() {
+  src="$1"; dst="$2"
+  [ -d "$src" ] || return 1
+  rm -rf "$dst.provision.$$" 2>/dev/null
+  if cp -Rc "$src" "$dst.provision.$$" 2>/dev/null || cp -R "$src" "$dst.provision.$$" 2>/dev/null; then
+    rm -rf "$dst" 2>/dev/null
+    mv "$dst.provision.$$" "$dst" 2>/dev/null && return 0
+  fi
+  rm -rf "$dst.provision.$$" 2>/dev/null
+  return 1
+}
+
+if [ "$CA_TESTS_ON" = "1" ] && [ -f package.json ] && [ ! -x "$VITEST" ]; then
+  if [ "$CA_TREE_TOP" = "$CA_ROOT_MAIN" ]; then
+    echo ""
+    echo "[club-arena pre-push] this clone's node_modules is missing or gutted, so the"
+    echo "                      test gate cannot run. NOT refusing: git-safe-push.sh and"
+    echo "                      the World Hub sync push from here, and bricking that is"
+    echo "                      worse than the gate being down for one push."
+    echo "                      Repair it:  (cd $CA_ROOT_MAIN && npm ci)"
+    echo ""
+  elif ca_same_repo && ca_provision "$CA_ROOT_MAIN/node_modules" "$CA_TREE_TOP/node_modules"; then
+    echo "[club-arena pre-push] no local vitest - provisioned from the main clone so the gate can run."
+  fi
 fi
-if [ -z "${CA_SKIP_TESTS:-}" ] && [ -f package.json ] && [ -x "$VITEST" ]; then
+
+if [ "$CA_TESTS_ON" = "1" ] && [ -f package.json ] && [ ! -x "$VITEST" ] \
+   && [ "$CA_TREE_TOP" != "$CA_ROOT_MAIN" ]; then
+  echo ""
+  echo "[club-arena pre-push] REFUSING: no vitest in this tree and it could not be"
+  echo "                      provisioned, so the test gate cannot run. Pushing now"
+  echo "                      would put an ungated commit on a branch CI publishes"
+  echo "                      from."
+  echo "                      Fix:  bash scripts/agent-workspace.sh <you> <slug>"
+  echo "                      or:   npm ci"
+  echo "                      Deliberate override: CA_SKIP_TESTS=1"
+  echo ""
+  exit 1
+fi
+
+if [ "$CA_TESTS_ON" = "1" ] && [ -f package.json ] && [ -x "$VITEST" ]; then
   CHANGED_TESTS=""
   CHANGED_SRC=""
   for f in $FILES; do
@@ -427,6 +603,79 @@ if [ -z "${CA_SKIP_TESTS:-}" ] && [ -f package.json ] && [ -x "$VITEST" ]; then
       echo "                      replaced, UPDATE the test in this same commit."
       echo "                      Leaving it red blocks every deploy until"
       echo "                      somebody else finds it."
+      FAIL=1
+    fi
+  fi
+fi
+
+# ── THE SERVER GATE (2026-08-25) ──
+#
+# server/ is its OWN vitest project: server/vitest.config.ts includes
+# 'src/**/*.test.ts', while the root config includes only 'tests/**'. So the
+# gate above — which runs the ROOT vitest — can never execute a single one of
+# the 137 server test files, whatever it is handed. A changed
+# server/src/x.test.ts matched no branch at all, and a changed server/src/x.ts
+# was passed to `vitest related` in a project that does not know those tests
+# exist.
+#
+# The engine is the highest-stakes code in this repository and it was the one
+# part with NO pre-push test gate. The first version of this change provisioned
+# server/node_modules and wrote a comment saying the hole was closed, which
+# bought exactly nothing, because nothing here ever invoked server's vitest.
+# Provisioning is necessary and it is not sufficient; this is the part that
+# enforces.
+SERVER_VITEST="$CA_TREE_TOP/server/node_modules/.bin/vitest"
+if [ "$CA_TESTS_ON" = "1" ] && [ -f server/package.json ]; then
+  SRV_TESTS=""
+  SRV_SRC=""
+  for f in $FILES; do
+    [ -f "$f" ] || continue
+    case "$f" in
+      server/src/*.test.ts|server/src/**/*.test.ts)
+        SRV_TESTS="$SRV_TESTS ${f#server/}" ;;
+      server/src/*.ts|server/src/**/*.ts)
+        case "$f" in
+          *.d.ts) ;;
+          *) SRV_SRC="$SRV_SRC ${f#server/}" ;;
+        esac ;;
+    esac
+  done
+
+  if [ -n "$SRV_TESTS$SRV_SRC" ]; then
+    if [ ! -x "$SERVER_VITEST" ] && ca_same_repo; then
+      ca_provision "$CA_ROOT_MAIN/server/node_modules" "$CA_TREE_TOP/server/node_modules" \
+        && echo "[club-arena pre-push] provisioned server deps so the engine gate can run."
+    fi
+  fi
+
+  if [ -n "$SRV_TESTS$SRV_SRC" ] && [ ! -x "$SERVER_VITEST" ]; then
+    echo ""
+    echo "[club-arena pre-push] REFUSING: you changed server/** and there is no vitest"
+    echo "                      in server/, so the ENGINE gate cannot run. This is the"
+    echo "                      code that deals real hands."
+    echo "                      Fix:  (cd server && npm ci)"
+    echo "                      Deliberate override: CA_SKIP_TESTS=1"
+    echo ""
+    FAIL=1
+  elif [ -n "$SRV_TESTS" ]; then
+    echo "[club-arena pre-push] running the server test files you changed..."
+    if ! ( cd server && "$SERVER_VITEST" run $SRV_TESTS ); then
+      echo ""
+      echo "[club-arena pre-push] BLOCKED: a server test you changed is failing."
+      echo "                      auto-deploy-hetzner.yml runs the server suite BEFORE"
+      echo "                      it builds, so a red one here does not fail a report -"
+      echo "                      it stops the engine deploying at all."
+      FAIL=1
+    fi
+  fi
+
+  if [ -n "$SRV_SRC" ] && [ -x "$SERVER_VITEST" ]; then
+    echo "[club-arena pre-push] running the server tests that cover your changes..."
+    if ! ( cd server && "$SERVER_VITEST" related --run $SRV_SRC ); then
+      echo ""
+      echo "[club-arena pre-push] BLOCKED: your engine change breaks a test that covers it."
+      echo "                      If the test pins behaviour you deliberately replaced,"
+      echo "                      UPDATE it in this same commit."
       FAIL=1
     fi
   fi

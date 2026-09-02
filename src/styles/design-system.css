@@ -125,9 +125,9 @@
      ═══════════════════════════════════════════════════════════════ */
 
   --header-height: 56px;
-  /* Kept in step with globals.css — measured at 74px, not 60px. See the
-       note there; a 14px shortfall put page content under the nav bar. */
-  --bottom-nav-height: 74px;
+  /* Keep all six approved controls visible in a compact fixed bar. The floor
+     is a full touch target and the ceiling protects the content viewport. */
+  --bottom-nav-height: clamp(44px, 13.72vw, 132px);
   --bottom-nav-clearance: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
   --sidebar-width: 280px;
   --max-width-mobile: 480px;
@@ -180,7 +180,36 @@ body {
   background: var(--bg-primary);
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
+  /* ─── CLIP, NOT HIDDEN. THIS IS THE FOOTER RULE. ────────────────────────
+     Dan, 2026-08-29, from a phone: "THE FOOTER IS COMING UP ON MOBILE AND
+     ISN'T STAYING LOCKED TO THE FOOTER."
+
+     CSS Overflow 3: when one axis is a non-visible value and the other is
+     `visible`, the `visible` one COMPUTES TO `auto`. So `overflow-x: hidden`
+     silently makes this element a scroll container on BOTH axes. Measured on
+     the live club lobby at 375px the same day: body and <main> both computed
+     `overflow-y: auto` with nobody having asked for it.
+
+     WebKit resolves a `position: fixed` descendant against the nearest
+     scrolling ancestor rather than the viewport, so ClubBottomNav — fixed at
+     `bottom: 0`, meant to be welded to the bottom of the screen — was being
+     pinned to the bottom of a 25,000px scroll box instead. It leaves the
+     screen and rides up the page over the game cards. Chrome does not do
+     this, which is why it kept surviving review and only ever showed up on
+     Dan's iPhone.
+
+     `clip` is the one non-visible value the spec exempts from that
+     promotion (`visible` stays `visible` when its partner is `clip`), so the
+     sideways clipping this line was always for is kept while the element
+     stops being a scrollport. `hidden` stays first as the fallback for
+     anything older than Safari 16 / Chrome 90.
+
+     This is the third time this exact mechanism has been fixed one element at
+     a time: `.club-home` on 2026-08-25, `.main` and every page root on
+     2026-08-29. Do not put a bare `overflow-x: hidden` back on any element
+     that can contain the bottom nav. */
   overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -308,18 +337,9 @@ body {
   opacity: 0.5;
   cursor: not-allowed;
 }
-
-.btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-}
-
 .btn-primary {
   background: var(--fb-blue);
   color: white;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: var(--fb-blue-hover);
 }
 
 .btn-gold {
@@ -341,10 +361,6 @@ body {
   background: transparent;
   color: var(--text-primary);
   border: 1px solid var(--border-medium);
-}
-
-.btn-ghost:hover:not(:disabled) {
-  background: var(--bg-tertiary);
 }
 
 /* Action Button Sizes (for poker actions) */
@@ -545,10 +561,6 @@ body {
   text-align: center;
 }
 
-.tab:hover {
-  color: var(--text-primary);
-}
-
 .tab.active {
   background: var(--fb-blue);
   color: white;
@@ -594,8 +606,4 @@ body {
 ::-webkit-scrollbar-thumb {
   background: var(--bg-tertiary);
   border-radius: 3px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
 }

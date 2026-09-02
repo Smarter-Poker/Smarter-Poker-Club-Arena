@@ -67,11 +67,6 @@
   transition: all 0.2s ease;
 }
 
-.closeBtn:hover {
-  background: rgba(239, 68, 68, 0.2);
-  color: #ef4444;
-}
-
 /* Tabs */
 .tabs {
   display: flex;
@@ -91,11 +86,6 @@
   transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   backdrop-filter: blur(2px);
   -webkit-backdrop-filter: blur(2px);
-}
-
-.tab:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
 }
 
 .tab.active {
@@ -161,11 +151,6 @@
   cursor: pointer;
   transition: transform 0.2s ease;
 }
-
-.searchBar button:hover:not(:disabled) {
-  transform: scale(1.05);
-}
-
 .searchBar button:disabled {
   opacity: 0.5;
 }
@@ -196,11 +181,6 @@
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.resultCard:hover {
-  background: rgba(255, 255, 255, 0.08);
-  transform: translateY(-1px);
 }
 
 .playerAvatar {
@@ -257,10 +237,6 @@
   transition: all 0.2s ease;
 }
 
-.addBtn:hover:not(:disabled) {
-  background: rgba(16, 185, 129, 0.3);
-}
-
 .addBtn:disabled {
   opacity: 0.5;
 }
@@ -314,11 +290,6 @@
   cursor: pointer;
   transition: transform 0.2s ease;
 }
-
-.generateBtn:hover:not(:disabled) {
-  transform: scale(1.02);
-}
-
 .generateBtn:disabled {
   opacity: 0.7;
 }

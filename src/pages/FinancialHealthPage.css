@@ -8,6 +8,15 @@
   padding: 16px;
   max-width: 800px;
   margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
+  padding-bottom: max(70px, env(safe-area-inset-bottom));
 }
 
 .fh-header {
@@ -31,9 +40,6 @@
   font-size: 1.1rem;
   cursor: pointer;
   transition: all 0.2s;
-}
-.fh-refresh-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
 }
 
 /* Section */
@@ -107,9 +113,6 @@
   font-weight: 700;
   cursor: pointer;
   transition: all 0.2s;
-}
-.fh-action-btn:hover:not(:disabled) {
-  background: rgba(24, 119, 242, 0.2);
 }
 .fh-action-btn:disabled {
   opacity: 0.5;
@@ -191,6 +194,7 @@
 .fh-quick-actions {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 .fh-nav-btn {
   flex: 1;
@@ -204,10 +208,6 @@
   cursor: pointer;
   transition: all 0.2s;
   text-align: center;
-}
-.fh-nav-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.15);
 }
 
 /* Empty state */
@@ -235,8 +235,9 @@
   }
 
   .fh-refresh-btn {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
+    touch-action: manipulation;
   }
 
   .fh-status-grid {
@@ -253,8 +254,14 @@
   }
 
   .fh-action-btn {
-    min-height: 36px;
+    min-height: 44px;
     padding: 6px 12px;
+    touch-action: manipulation;
+  }
+
+  .fh-nav-btn {
+    min-height: 44px;
+    touch-action: manipulation;
   }
 
   .fh-section-title {

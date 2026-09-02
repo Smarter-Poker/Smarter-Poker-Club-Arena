@@ -1,111 +1,323 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- * 🎭 CLUB ARENA — Empty State Styles
- * ═══════════════════════════════════════════════════════════════════════════════
- */
-
 .container {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 300px;
-  padding: 2rem;
+  --state-energy: #2e9bff;
+  --state-energy-rgb: 46, 155, 255;
+  display: grid;
+  place-items: center;
+  min-height: clamp(300px, 48vh, 540px);
+  width: 100%;
+  padding: clamp(22px, 5vw, 52px) 16px;
+  color: #edf4fb;
 }
 
 .content {
+  position: relative;
+  isolation: isolate;
+  width: min(100%, 560px);
+  padding: clamp(30px, 6vw, 54px) clamp(20px, 6vw, 48px) clamp(26px, 5vw, 42px);
+  overflow: hidden;
+  border: 1px solid rgba(199, 210, 222, 0.38);
+  border-radius: 4px;
   text-align: center;
-  max-width: 400px;
+  background:
+    linear-gradient(116deg, rgba(24, 32, 41, 0.96), rgba(4, 8, 12, 0.985) 68%),
+    url('/hub/club-arena/assets/club-buttons/lobby/lobby-command-chassis-v2.png') center / cover;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.1),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.86),
+    0 24px 62px rgba(0, 0, 0, 0.48);
+  clip-path: polygon(14px 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%, 0 14px);
 }
 
-.icon {
-  font-size: 4rem;
+.content::before,
+.content::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.content::before {
+  inset: 0;
+  background:
+    linear-gradient(90deg, transparent, rgba(var(--state-energy-rgb), 0.11), transparent),
+    repeating-linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.018) 0,
+      rgba(255, 255, 255, 0.018) 1px,
+      transparent 1px,
+      transparent 6px
+    );
+}
+
+.content::after {
+  inset: auto 12% 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--state-energy), transparent);
+  box-shadow: 0 0 14px rgba(var(--state-energy-rgb), 0.66);
+}
+
+.beacon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  margin: 0 auto 22px;
+  border: 1px solid rgba(202, 217, 231, 0.46);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(var(--state-energy-rgb), 0.25), transparent 46%),
+    conic-gradient(from 42deg, #121a22, #667585, #0a0e13, #46515d, #121a22);
+  box-shadow:
+    inset 0 0 0 6px #080d12,
+    inset 0 0 0 7px rgba(204, 218, 231, 0.3),
+    0 0 26px rgba(var(--state-energy-rgb), 0.2);
+}
+
+.beacon::after {
+  content: '';
+  position: absolute;
+  inset: 13px;
+  border: 1px solid rgba(var(--state-energy-rgb), 0.72);
+  border-radius: 50%;
+  box-shadow: 0 0 12px rgba(var(--state-energy-rgb), 0.38);
+}
+
+.beaconCore {
+  position: relative;
+  z-index: 1;
+  max-width: 46px;
+  overflow: hidden;
+  color: #dcecff;
+  font-family: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-overflow: clip;
+}
+
+.eyebrow {
   display: block;
-  margin-bottom: 1rem;
-  opacity: 0.8;
+  margin-bottom: 9px;
+  color: var(--state-energy);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
 }
 
 .title {
-  font-size: 1.25rem;
+  margin: 0 0 10px;
+  color: #f2f6fa;
+  font-family: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  font-size: clamp(24px, 5vw, 34px);
   font-weight: 600;
-  color: #ffffff;
-  margin: 0 0 0.5rem 0;
+  letter-spacing: 0.025em;
+  line-height: 1.04;
 }
 
 .description {
-  font-size: 0.9rem;
-  color: #8888aa;
-  margin: 0 0 1.5rem 0;
-  line-height: 1.5;
+  max-width: 440px;
+  margin: 0 auto;
+  color: #a9b6c3;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.content > details {
+  max-width: 440px;
+  margin: 20px auto 0;
+  color: #8fa0b1;
+  font-size: 11px;
+  text-align: left;
+}
+
+.content > details summary {
+  min-height: 44px;
+  padding: 13px 10px;
+  border: 1px solid rgba(161, 180, 198, 0.22);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.content > details code {
+  display: block;
+  margin-top: 6px;
+  padding: 10px;
+  overflow-wrap: anywhere;
+  border: 1px solid rgba(161, 180, 198, 0.16);
+  border-radius: 3px;
+  color: #aab8c5;
+  background: rgba(0, 0, 0, 0.36);
+  line-height: 1.45;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 24px;
+}
+
+.actionButton,
+.secondaryButton {
+  min-height: 44px;
+  padding: 10px 18px;
+  border-radius: 3px;
+  font-family: 'Rajdhani', 'Roboto Condensed', system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
 }
 
 .actionButton {
-  padding: 0.75rem 1.5rem;
-  background: linear-gradient(135deg, #4169e1 0%, #5b7fee 100%);
-  border: none;
-  border-radius: 8px;
-  color: #ffffff;
-  font-size: 0.9rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  border: 1px solid rgba(111, 183, 255, 0.68);
+  color: #eef7ff;
+  background: linear-gradient(180deg, rgba(27, 94, 154, 0.94), rgba(7, 31, 54, 0.98));
   box-shadow:
-    0 4px 15px rgba(65, 105, 225, 0.3),
-    0 0 20px rgba(65, 105, 225, 0.25);
+    inset 0 1px rgba(255, 255, 255, 0.12),
+    inset 0 -1px rgba(var(--state-energy-rgb), 0.66);
 }
 
-.actionButton:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(65, 105, 225, 0.4);
+.secondaryButton {
+  border: 1px solid rgba(174, 192, 208, 0.34);
+  color: #d4dee7;
+  background: linear-gradient(180deg, rgba(30, 38, 46, 0.96), rgba(8, 12, 17, 0.98));
 }
 
-/* Loading State */
+.actionButton:focus-visible,
+.secondaryButton:focus-visible {
+  border-color: rgba(126, 196, 255, 0.88);
+  color: #fff;
+  outline: 2px solid #75beff;
+  outline-offset: 3px;
+}
+
+.error {
+  --state-energy: #ff5d73;
+  --state-energy-rgb: 255, 93, 115;
+}
+
+.permission {
+  --state-energy: #d7b55b;
+  --state-energy-rgb: 215, 181, 91;
+}
+
+.success {
+  --state-energy: #4fd29b;
+  --state-energy-rgb: 79, 210, 155;
+}
+
 .loadingContainer {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 200px;
-  gap: 1rem;
+  min-height: 240px;
+  gap: 18px;
+  color: #aab7c4;
 }
 
-.spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid rgba(65, 105, 225, 0.2);
-  border-top-color: #4169e1;
+.loadingBeacon {
+  position: relative;
+  width: 54px;
+  height: 54px;
+  border: 1px solid rgba(199, 210, 222, 0.42);
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  background: conic-gradient(from 0deg, #101820, #526172, #0a0f14, #526172, #101820);
+  box-shadow:
+    inset 0 0 0 6px #060a0e,
+    0 0 22px rgba(46, 155, 255, 0.2);
+  animation: beaconTurn 1.2s linear infinite;
 }
 
-@keyframes spin {
+.loadingBeacon span {
+  position: absolute;
+  inset: 14px;
+  border: 1px solid #54adff;
+  border-radius: 50%;
+  background: rgba(46, 155, 255, 0.18);
+  box-shadow: 0 0 14px rgba(46, 155, 255, 0.62);
+}
+
+.loadingText {
+  margin: 0;
+  color: #9bacbc;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+@keyframes beaconTurn {
   to {
     transform: rotate(360deg);
   }
 }
 
-.loadingText {
-  color: #8888aa;
-  font-size: 0.9rem;
-  margin: 0;
-}
-
-/* Touch target (2026-08-23): measured under 44px at 375px. The control keeps
-   its painted size; an invisible 44px-tall ::after gives the thumb something
-   to hit. Vertical only — these sit in horizontal rows and widening would
-   steal the neighbour's taps. See club-engine.css for the full rationale. */
-@media (pointer: coarse) {
-  .actionButton {
-    position: relative;
+/* A short landscape viewport must show the complete physical frame. The
+   message scrolls inside that frame when necessary; the page edge never cuts
+   through its lower corners or strands its actions below the viewport. */
+@media (max-height: 560px) {
+  .container {
+    min-height: 0;
+    padding-block: 8px;
   }
 
-  .actionButton::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    height: 44px;
-    background: transparent;
+  .content {
+    max-height: calc(100dvh - 96px);
+    padding: 18px 20px 16px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .beacon {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 12px;
+  }
+
+  .beacon::after {
+    inset: 9px;
+  }
+
+  .title {
+    font-size: clamp(23px, 4vw, 29px);
+  }
+
+  .description {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .actions {
+    margin-top: 14px;
+  }
+}
+
+@media (max-width: 520px) {
+  .container {
+    min-height: 330px;
+    padding-inline: 8px;
+  }
+
+  .actions {
+    flex-direction: column;
+  }
+
+  .actionButton,
+  .secondaryButton {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingBeacon {
+    animation: none;
   }
 }

@@ -191,14 +191,22 @@ describe('TournamentService', () => {
       expect(BOUNTY_PRESETS.fixed.bountyType).toBe('fixed');
     });
 
-    it('mystery should have mysteryTiers array', () => {
-      expect(BOUNTY_PRESETS.mystery.mysteryTiers).toBeDefined();
-      expect(BOUNTY_PRESETS.mystery.mysteryTiers!.length).toBeGreaterThan(0);
+    // REPLACED 2026-08-25. These two used to assert that the mystery preset
+    // carried a client-side multiplier ladder whose probabilities summed to
+    // 100. That ladder is gone: it was never sent to the server, nothing ever
+    // read it, and the tier sizes are now derived server-side from the funded
+    // pool (server/src/config/mysteryBountySpec.ts). The preset's job is to
+    // name the format and its base bounty, and that is what is pinned here.
+    it('mystery should name the format and a whole-chip base bounty', () => {
+      expect(BOUNTY_PRESETS.mystery.bountyType).toBe('mystery');
+      expect(BOUNTY_PRESETS.mystery.baseBounty).toBeGreaterThan(0);
+      expect(Number.isInteger(BOUNTY_PRESETS.mystery.baseBounty)).toBe(true);
     });
 
-    it('mystery tier probabilities should sum to ≈100%', () => {
-      const total = BOUNTY_PRESETS.mystery.mysteryTiers!.reduce((s, t) => s + t.probability, 0);
-      expect(total).toBe(100);
+    it('no preset carries a client-side tier ladder', () => {
+      for (const preset of Object.values(BOUNTY_PRESETS)) {
+        expect(preset).not.toHaveProperty('mysteryTiers');
+      }
     });
   });
 
@@ -207,11 +215,19 @@ describe('TournamentService', () => {
   // ─────────────────────────────────────────────────────────────────────────
 
   describe('SPIN_BLIND_STRUCTURE', () => {
-    it('should have 15 levels at 2m each', () => {
-      expect(SPIN_BLIND_STRUCTURE).toHaveLength(15);
-      for (const lvl of SPIN_BLIND_STRUCTURE) {
-        expect(lvl.durationMinutes).toBe(2);
-      }
+    // 2026-08-30 audit: the ladder is DERIVED from spinSpec SPIN_BLINDS now
+    // (one source of truth; the old hand-typed 15-level 2-minute ladder
+    // diverged from what the engine actually plays). Pin the derivation.
+    it('mirrors spinSpec SPIN_BLINDS at 3 minutes per level', async () => {
+      const { SPIN_BLINDS } = await import('../../src/config/spinSpec');
+      expect(SPIN_BLIND_STRUCTURE).toHaveLength(SPIN_BLINDS.length);
+      SPIN_BLIND_STRUCTURE.forEach((lvl, i) => {
+        expect(lvl.smallBlind).toBe(SPIN_BLINDS[i].small);
+        expect(lvl.bigBlind).toBe(SPIN_BLINDS[i].big);
+        expect(lvl.ante).toBe(0);
+        expect(lvl.durationMinutes).toBe(3);
+        expect(lvl.level).toBe(i + 1);
+      });
     });
   });
 
@@ -333,6 +349,167 @@ describe('TournamentService', () => {
       // Pure function used to show projected payouts in the lobby. Legitimate
       // client concern; must never be wired back into a credit.
       expect(typeof tournamentService.calculatePayout).toBe('function');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // getCurrentLevelState - THE BASE OF `tournaments.current_level`
+  // ---------------------------------------------------------------------------
+  //
+  // `tournaments.current_level` is a 0-BASED ARRAY INDEX. Verified three ways
+  // on 2026-08-25:
+  //
+  //   1. the engine writes `this.currentLevel`, which it uses as
+  //      `blindStructure[this.currentLevel]` (TournamentManagerBase);
+  //   2. production agrees - for every RUNNING event with a uniform structure,
+  //      current_level == floor(elapsed / level_duration), and
+  //      blind_structure[current_level].level == current_level + 1;
+  //   3. process_tournament_rebuy reads the column into v_level and closes the
+  //      window on `v_level >= v_cap`, which is the comparison this file makes
+  //      against `levelIndex`.
+  //
+  // These tests pin the blinds a player at a given level actually faces, so
+  // that a future "1-indexed for display" +1 cannot be reintroduced silently
+  // on either side of the read.
+
+  describe('getCurrentLevelState - level indexing', () => {
+    // Four levels, each distinguishable by every field.
+    const structure = [
+      { level: 1, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 10 },
+      { level: 2, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 10 },
+      { level: 3, smallBlind: 100, bigBlind: 200, ante: 25, durationMinutes: 10 },
+      { level: 4, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 10 },
+    ];
+
+    const running = (currentLevel: number | null) =>
+      ({
+        id: 't-lvl',
+        status: 'RUNNING',
+        started_at: new Date(Date.now() - 60_000).toISOString(),
+        level_started_at: new Date(Date.now() - 60_000).toISOString(),
+        blind_structure: structure,
+        current_level: currentLevel,
+      }) as never;
+
+    it('reads the OPENING level from current_level = 0, not the second one', () => {
+      // The one case the old code got right by accident under either reading.
+      const s = tournamentService.getCurrentLevelState(running(0));
+      expect(s.levelIndex).toBe(0);
+      expect(s.currentLevel.smallBlind).toBe(25);
+      expect(s.currentLevel.bigBlind).toBe(50);
+      expect(s.currentLevel.ante).toBe(0);
+      expect(s.nextLevel?.bigBlind).toBe(100);
+    });
+
+    it('reads level 1 as the SECOND row - 50/100 ante 10', () => {
+      // If current_level were treated as 1-based this would return 100/200.
+      const s = tournamentService.getCurrentLevelState(running(1));
+      expect(s.levelIndex).toBe(1);
+      expect(s.currentLevel.smallBlind).toBe(50);
+      expect(s.currentLevel.bigBlind).toBe(100);
+      expect(s.currentLevel.ante).toBe(10);
+      expect(s.nextLevel?.bigBlind).toBe(200);
+    });
+
+    it('reads a mid-structure level without drifting one ahead', () => {
+      const s = tournamentService.getCurrentLevelState(running(2));
+      expect(s.levelIndex).toBe(2);
+      expect(s.currentLevel.smallBlind).toBe(100);
+      expect(s.currentLevel.bigBlind).toBe(200);
+      expect(s.currentLevel.ante).toBe(25);
+      // The structure's own label is index + 1.
+      expect(s.currentLevel.level).toBe(3);
+    });
+
+    it('returns the REAL final level, not a wall-clock guess', () => {
+      // index 3 is the last row of a 4-row structure. The guard used to be
+      // `serverLevel < blinds.length`; anything that reads current_level as
+      // 1-based makes the final level fail that test and silently fall through
+      // to a wall-clock derivation the code itself documents as drifting.
+      const s = tournamentService.getCurrentLevelState(running(3));
+      expect(s.levelIndex).toBe(3);
+      expect(s.currentLevel.smallBlind).toBe(200);
+      expect(s.currentLevel.bigBlind).toBe(400);
+      expect(s.currentLevel.ante).toBe(50);
+      expect(s.nextLevel).toBeNull();
+    });
+
+    it('keeps the TRUE level past the end of the structure (auto-escalation)', () => {
+      // The engine keeps incrementing current_level past the structure and
+      // doubles the last playable level's blinds in memory. 3079 production
+      // rows sat in this state. The array cannot describe those levels, so the
+      // lookup clamps to the last row - but levelIndex must stay truthful,
+      // because that is the number the money gates and the SQL RPC compare.
+      const s = tournamentService.getCurrentLevelState(running(9));
+      expect(s.levelIndex).toBe(9);
+      expect(s.currentLevel.bigBlind).toBe(400); // last known row
+      expect(s.nextLevel).toBeNull();
+    });
+
+    it('falls back to wall-clock only when current_level is absent', () => {
+      // A select that omitted the column. 60s elapsed into 10-minute levels.
+      const s = tournamentService.getCurrentLevelState(running(null));
+      expect(s.levelIndex).toBe(0);
+      expect(s.currentLevel.bigBlind).toBe(50);
+    });
+
+    it('reports the opening level before the tournament starts', () => {
+      const s = tournamentService.getCurrentLevelState({
+        id: 't-lvl',
+        status: 'REGISTERING',
+        started_at: null,
+        blind_structure: structure,
+        current_level: 0,
+      } as never);
+      expect(s.levelIndex).toBe(0);
+      expect(s.currentLevel.bigBlind).toBe(50);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // MONEY GATES - the two that read levelIndex
+  // ---------------------------------------------------------------------------
+  //
+  // RULE 11.5: process_tournament_rebuy moves chips, so it is NOT called
+  // against production here. The RPC is mocked; what is asserted is the level
+  // number this client hands it and the gate it applies before doing so. The
+  // live path was reasoned about (and its source read out of pg_proc
+  // read-only), not executed.
+
+  describe('rebuy / re-entry gate reads a 0-based level', () => {
+    const structure = [
+      { level: 1, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 10 },
+      { level: 2, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 10 },
+      { level: 3, smallBlind: 100, bigBlind: 200, ante: 25, durationMinutes: 10 },
+    ];
+
+    const at = (currentLevel: number) =>
+      tournamentService.getCurrentLevelState({
+        id: 't-gate',
+        status: 'RUNNING',
+        started_at: new Date(Date.now() - 60_000).toISOString(),
+        level_started_at: new Date(Date.now() - 60_000).toISOString(),
+        blind_structure: structure,
+        current_level: currentLevel,
+      } as never);
+
+    it('matches the SQL gate `v_level >= v_cap` exactly', () => {
+      // canRebuy closes on `levelIndex >= cap`; process_tournament_rebuy closes
+      // on `v_level >= v_cap` reading the same column. With a cap of 2 that is
+      // open at 0 and 1, closed from 2 - two levels of rebuys, as advertised.
+      const cap = 2;
+      expect(at(0).levelIndex >= cap).toBe(false);
+      expect(at(1).levelIndex >= cap).toBe(false);
+      expect(at(2).levelIndex >= cap).toBe(true);
+    });
+
+    it('does not close the window a level early', () => {
+      // A 1-based reading would make the last level of the window (index
+      // cap - 1) compare as cap and shut rebuys one level ahead of the
+      // database, which would still have accepted them.
+      const cap = 8;
+      expect(at(7).levelIndex).toBe(7);
+      expect(at(7).levelIndex >= cap).toBe(false);
     });
   });
 });

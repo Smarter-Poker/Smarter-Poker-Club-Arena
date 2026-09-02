@@ -84,6 +84,7 @@ export const PayoutStructureEditor: React.FC<PayoutStructureEditorProps> = ({
       <div className="pe-templates">
         {templateOptions.map((opt) => (
           <button
+            type="button"
             key={opt.value}
             className={`pe-template-btn ${template === opt.value ? 'active' : ''}`}
             onClick={() => handleTemplateChange(opt.value)}
@@ -132,7 +133,11 @@ export const PayoutStructureEditor: React.FC<PayoutStructureEditorProps> = ({
                   max={100}
                   step={0.5}
                 />
-                <button className="pe-remove-btn" onClick={() => removeCustomPlace(i)}>
+                <button
+                  type="button"
+                  className="pe-remove-btn"
+                  onClick={() => removeCustomPlace(i)}
+                >
                   ✕
                 </button>
               </div>
@@ -144,7 +149,7 @@ export const PayoutStructureEditor: React.FC<PayoutStructureEditorProps> = ({
       {/* ── Custom Add / Validation ── */}
       {template === 'custom' && (
         <div className="pe-custom-footer">
-          <button className="pe-add-place" onClick={addCustomPlace}>
+          <button type="button" className="pe-add-place" onClick={addCustomPlace}>
             + Add Place
           </button>
           <span className={`pe-total ${isValid ? 'pe-valid' : 'pe-invalid'}`}>

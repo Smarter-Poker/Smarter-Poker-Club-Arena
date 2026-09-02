@@ -1,35 +1,22 @@
 /**
- *  PREMIUM CARD COMPONENT
- * High-end video game style playing card with 3D effects and animations
- * Now using premium digital deck card images
+ * Premium animated card shell.
+ *
+ * The face and back deliberately render through CardImage and CardBack. That
+ * keeps this cinematic treatment on the same deck preference, fallback chain,
+ * media base, and twelve-design card-back catalog as gameplay and Table Studio.
  */
 
-import { useState, useEffect } from 'react';
-import { MEDIA_BASE } from '../../utils/mediaBase';
-import { getCardImagePath, withPngFallback } from './CardImage';
-import type { Card as CardImageCard } from './CardImage';
+import { useEffect, useState } from 'react';
+import { CardBack, CardImage, normalizeCardBack, type Card as CardImageCard } from './CardImage';
 import './PremiumCard.css';
 
-// Local type definitions (compatible with club-engine Card type)
 export interface PremiumCardType {
   rank: string;
   suit: 'h' | 'd' | 'c' | 's' | 'hearts' | 'diamonds' | 'clubs' | 'spades';
 }
 
-// Deck theme definitions with custom card back images
-export type DeckTheme = 'classic' | 'burgundy' | 'navy' | 'gold';
-
-// Build base path for card-back images
-function getBackBase(): string {
-  return MEDIA_BASE;
-}
-
-export const DECK_THEMES: Record<DeckTheme, { name: string; image: string }> = {
-  classic: { name: 'Classic', image: `${getBackBase()}cards/backs/classic.webp` },
-  burgundy: { name: 'Burgundy', image: `${getBackBase()}cards/backs/burgundy.webp` },
-  navy: { name: 'Navy', image: `${getBackBase()}cards/backs/navy.webp` },
-  gold: { name: 'Premium Gold', image: `${getBackBase()}cards/backs/gold.webp` },
-};
+/** Any stored id is accepted and normalized by the canonical renderer. */
+export type DeckTheme = string;
 
 interface PremiumCardProps {
   card?: PremiumCardType;
@@ -42,7 +29,6 @@ interface PremiumCardProps {
   onClick?: () => void;
 }
 
-// Normalize PremiumCardType to CardImage Card format
 const SUIT_ABBREV: Record<string, CardImageCard['suit']> = {
   h: 'h',
   d: 'd',
@@ -83,7 +69,6 @@ function toCentralCard(card: PremiumCardType): CardImageCard {
   };
 }
 
-// Card sizes (aspect ratio 5:7 matches our 750x1050 images)
 const SIZES = {
   sm: { width: 44, height: 62 },
   md: { width: 56, height: 78 },
@@ -103,29 +88,28 @@ export default function PremiumCard({
   const [isFlipped, setIsFlipped] = useState(isHidden);
   const [isDealt, setIsDealt] = useState(!isDealing);
 
-  // Handle deal animation
   useEffect(() => {
-    if (isDealing) {
-      const timer = setTimeout(() => {
-        setIsDealt(true);
-      }, dealDelay);
-      return () => clearTimeout(timer);
+    if (!isDealing) {
+      setIsDealt(true);
+      return undefined;
     }
-  }, [isDealing, dealDelay]);
+    setIsDealt(false);
+    const timer = setTimeout(() => setIsDealt(true), dealDelay);
+    return () => clearTimeout(timer);
+  }, [dealDelay, isDealing]);
 
-  // Handle flip animation
   useEffect(() => {
-    if (!isHidden && isFlipped && isDealt) {
-      const timer = setTimeout(() => {
-        setIsFlipped(false);
-      }, 150);
-      return () => clearTimeout(timer);
+    if (isHidden) {
+      setIsFlipped(true);
+      return undefined;
     }
-  }, [isHidden, isFlipped, isDealt]);
+    if (!isFlipped || !isDealt) return undefined;
+    const timer = setTimeout(() => setIsFlipped(false), 150);
+    return () => clearTimeout(timer);
+  }, [isDealt, isFlipped, isHidden]);
 
   const dimensions = SIZES[size];
-  const theme = DECK_THEMES[deckTheme];
-  const cardImagePath = card ? getCardImagePath(toCentralCard(card)) : null;
+  const canonicalBack = normalizeCardBack(deckTheme);
 
   return (
     <div
@@ -138,40 +122,26 @@ export default function PremiumCard({
       onClick={onClick}
     >
       <div className={`premium-card ${isFlipped || isHidden ? 'flipped' : ''}`}>
-        {/* Card Front - Using premium digital deck images */}
-        <div className="card-front">
-          {card && cardImagePath && (
-            <>
-              <img
-                loading="lazy"
-                decoding="async"
-                src={cardImagePath}
-                alt={`${card.rank} of ${card.suit}`}
-                className="card-front-image"
-                onError={withPngFallback}
-              />
-              {/* Shine Effect */}
-              <div className="card-shine" />
-            </>
+        <div className="premium-card__front">
+          {card && (
+            <CardImage card={toCentralCard(card)} size={size} className="premium-card__canonical" />
           )}
+          <div className="card-shine" aria-hidden="true" />
         </div>
 
-        {/* Card Back - Using custom image */}
-        <div className="card-back">
-          <img
-            loading="lazy"
-            decoding="async"
-            src={theme.image}
-            alt="Card Back"
-            className="card-back-image"
+        <div className="premium-card__back">
+          <CardBack
+            style={normalizeCardBack(deckTheme)}
+            size={size}
+            className="premium-card__canonical"
           />
+          <span className="sr-only">{canonicalBack.replace(/[-_]/g, ' ')} Card Back</span>
         </div>
       </div>
     </div>
   );
 }
 
-// Card placeholder for empty slots
 export function CardPlaceholder({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
   const dimensions = SIZES[size];
   return (

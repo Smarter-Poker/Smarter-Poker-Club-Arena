@@ -67,7 +67,7 @@ export default function CreateUnionModal({ onClose, onSuccess }: CreateUnionModa
               <input
                 type="text"
                 className="input"
-                placeholder="e.g. Global Poker Alliance"
+                placeholder="E.G. Global Poker Alliance"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
@@ -78,7 +78,7 @@ export default function CreateUnionModal({ onClose, onSuccess }: CreateUnionModa
               <label>Description (Optional)</label>
               <textarea
                 className="input"
-                placeholder="Briefly describe your union's purpose and region..."
+                placeholder="Briefly Describe Your Union's Purpose And Region..."
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={4}

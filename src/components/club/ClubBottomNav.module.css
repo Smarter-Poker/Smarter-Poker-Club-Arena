@@ -1,274 +1,109 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- * ♠ CLUB ARENA — Club Bottom Navigation Styles
- * PokerBros-style fixed bottom navigation bar
- * ═══════════════════════════════════════════════════════════════════════════════
- */
-
 .bottomNav {
+  /* Global chrome law: this container never moves with page content or scroll. */
   position: fixed;
+  z-index: 1000;
+  top: auto;
+  right: 0;
   bottom: 0;
   left: 0;
-  right: 0;
-  z-index: 1000;
-  /* Pin the component to the token pages reserve space with, so the two cannot
-     drift apart again (they were 14px apart until 2026-08-20). */
-  min-height: var(--bottom-nav-height, 74px);
-  /* The home-indicator inset always applies, not only inside the media query
-     further down this file — that block sat behind a viewport condition, so on
-     a notched phone in the other orientation the bar sat flush against the
-     indicator and its bottom row of labels was unreadable. */
+  width: 100%;
+  max-width: 100vw;
+  margin: 0;
+  box-sizing: border-box;
+  min-height: var(--bottom-nav-height, 44px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
-  /* position:fixed resolves against the nearest ancestor with a transform,
-     filter, perspective, contain or will-change — NOT the viewport. Several
-     lobby pages animate their containers, and the in-tab lobby sets
-     `contain: layout paint`, which is exactly how this bar ended up measured
-     at y=3870 inside the swipe track. Owning its own stacking context here
-     does not fix an ancestor's containing block, but it does stop this
-     component from contributing another one. */
+  overflow: hidden;
+  color: #f4f4f4;
+  background: #000;
   transform: none;
+  translate: none;
+  transition: none;
+  animation: none;
   contain: none;
-  background: linear-gradient(180deg, #0f4c9c 0%, #06285a 100%);
-  border-top: 1px solid rgba(0, 180, 255, 0.15);
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(10px) saturate(1.1);
-  -webkit-backdrop-filter: blur(10px) saturate(1.1);
+  isolation: isolate;
 }
 
-/* Club header bar showing active tables/tournaments */
-.clubHeader {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 6px 12px;
-  background: linear-gradient(
-    90deg,
-    rgba(0, 80, 120, 0.6) 0%,
-    rgba(0, 100, 150, 0.4) 50%,
-    rgba(0, 80, 120, 0.6) 100%
-  );
-  border-bottom: 1px solid rgba(0, 180, 255, 0.15);
-  font-size: 11px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.9);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  overflow-x: auto;
-  white-space: nowrap;
+.viewport {
+  width: 100%;
+  overflow: hidden;
 }
 
-.clubBadge {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
-  color: #000;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-weight: 700;
-  font-size: 10px;
+.artwork {
+  position: relative;
+  width: 100%;
+  height: var(--bottom-nav-height, 44px);
+  margin: 0;
+  background: #000;
 }
 
-.clubName {
-  color: #fff;
-  font-weight: 600;
+.artworkImage {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  display: block;
+  /* The source has a 25px built-in black gutter on each 1916px edge. This
+     exact overscan places its visible chrome at viewport x=0 without moving
+     any of the six full-width semantic hit targets off-screen. */
+  width: 102.68%;
+  height: 100%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  user-select: none;
 }
 
-.clubStats {
-  color: rgba(0, 200, 255, 0.9);
-  font-weight: 500;
-}
-
-.divider {
-  color: rgba(255, 255, 255, 0.3);
-  margin: 0 4px;
-}
-
-/* Navigation items container */
 .navItems {
-  display: flex;
-  align-items: stretch;
-  justify-content: space-around;
-  padding: 8px 0;
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 21.1fr 15.7fr 15.1fr 14.9fr 14.1fr 19.1fr;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  list-style: none;
 }
 
-/* Individual nav item */
+.navCell {
+  display: flex;
+  min-width: 0;
+}
+
 .navItem {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  /* `flex: 1` alone is `1 1 0%` with an AUTO min-width, and a flex item refuses
-     to shrink below its content — so with 6 tabs on a 375px phone (Msgs,
-     Players, Cashier, Market, Data, Admin) the row overflowed instead of
-     dividing. min-width:0 lets each cell take its true 1/6 and hand the
-     overflow to the label's existing ellipsis. Added 2026-08-20 with the
-     Marketplace tab, which is what pushed staff from five tabs to six. */
-  flex: 1 1 0;
-  min-width: 0;
-  padding: 8px 4px;
-  text-decoration: none;
-  color: rgba(255, 255, 255, 0.5);
-  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  border-radius: 8px;
-  margin: 0 4px;
+  display: block;
+  flex: 1 1 auto;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 28px;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.navItem:hover {
-  color: rgba(0, 200, 255, 0.9);
-  background: rgba(0, 180, 255, 0.1);
-  transform: translateY(-2px);
+/* NO BOXES OVER FOOTER ICONS (Dan, 2026-09-01, binding). Same law as the
+   global header: the icon art is the control, and an outline or inset ring
+   drawn on top of it is a defect. Focus stays visible as a soft glow. */
+.navItem:focus,
+.navItem:focus-visible {
+  outline: none;
+  box-shadow: none;
 }
 
-.navItem.active {
-  color: #00d4ff;
-  background: linear-gradient(145deg, rgba(0, 180, 255, 0.18), rgba(0, 130, 200, 0.1));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+.navItem:focus-visible {
+  background: radial-gradient(closest-side, rgba(255, 239, 196, 0.22), rgba(255, 239, 196, 0) 78%);
 }
 
-.navItem.active::after {
-  content: '';
+.visuallyHidden {
   position: absolute;
-  bottom: 0;
-  left: 20%;
-  width: 60%;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, #00d4ff, transparent);
-  border-radius: 2px;
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
-  animation: activeSlide 0.3s ease-out;
-}
-
-@keyframes activeSlide {
-  from {
-    transform: scaleX(0);
-    opacity: 0;
-  }
-  to {
-    transform: scaleX(1);
-    opacity: 1;
-  }
-}
-
-.navItem.active .icon {
-  filter: drop-shadow(0 0 6px rgba(0, 212, 255, 0.6));
-  transform: scale(1.05);
-}
-
-/* Icon styling */
-.icon {
-  width: 24px;
-  height: 24px;
-  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-.navItem:hover .icon {
-  filter: drop-shadow(0 0 4px rgba(0, 212, 255, 0.3));
-  transform: scale(1.05);
-}
-
-/* Label styling */
-.label {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  white-space: nowrap;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-  text-align: center;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
-/* Six tabs on a narrow phone. At 375px each cell is ~58px wide and the
-   horizontal margin/padding eats 16 of them, so "CASHIER" and "PLAYERS" hit
-   the ellipsis and read as "CASHI…". Tightening the gutters below 400px buys
-   back the characters instead of shortening the words — the house rule is
-   short labels precisely because this row truncates (CLAUDE.md §9). */
-@media (max-width: 400px) {
-  .navItem {
-    margin: 0 1px;
-    padding: 8px 2px;
-    gap: 3px;
-  }
-
-  .label {
-    font-size: 9px;
-    letter-spacing: 0.2px;
-  }
-
-  .icon {
-    width: 21px;
-    height: 21px;
-  }
-}
-
-/* Notification badge */
-.badge {
-  position: absolute;
-  top: 2px;
-  right: 8px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: #ef4444;
-  color: #fff;
-  font-size: 9px;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
-  pointer-events: none;
-  animation: badgePop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-@keyframes badgePop {
-  0% {
-    transform: scale(0);
-  }
-  70% {
-    transform: scale(1.2);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-/* Disabled state for players tab when not admin */
-.navItem.disabled {
-  opacity: 0.4;
-  pointer-events: none;
-}
-
-/* Responsive adjustments */
-@media (max-width: 400px) {
-  .navItem {
-    padding: 6px 2px;
-    margin: 0 2px;
-  }
-
-  .icon {
-    width: 20px;
-    height: 20px;
-  }
-
-  .label {
-    font-size: 8px;
-    letter-spacing: 0;
-  }
-
-  .clubHeader {
-    font-size: 10px;
-    padding: 4px 8px;
-  }
-}
-
-/* Safe area for devices with home indicators */
-@supports (padding-bottom: env(safe-area-inset-bottom)) {
+@media print {
   .bottomNav {
-    padding-bottom: env(safe-area-inset-bottom);
+    display: none;
   }
 }

@@ -16,6 +16,16 @@
  * cards, and then to the engine's own hand name. It never draws a hand it cannot
  * prove.
  *
+ * THE AVATAR IS THE CLUB AVATAR (Dan, 2026-08-27: "you need to use there club
+ * avatar as the image, not there profile pics"). fn_bbj_recent_hits serves
+ * profiles.arena_avatar_url - Club Arena's own column, library art, the same
+ * one the felt reads - and never profiles.avatar_url, which is the social
+ * media photo and is not this app's to display. That arrives as a Hub-relative
+ * path like /avatars/table/vip_spartan@2x.webp, so it goes through
+ * getAvatarWithFallback exactly as SeatSlot does: absolute Hub origin (so it
+ * also resolves in local dev), and a deterministic monogram when a winner has
+ * not picked one.
+ *
  * Every figure comes from fn_bbj_recent_hits, which reads the payout ledger and
  * derives each player's ROLE from which uid actually received which share. It
  * deliberately does not trust the stored column names: in bbj_payouts /
@@ -27,12 +37,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import CardImage from '../table/CardImage';
-import Avatar from '../common/Avatar';
 import { toDeckCards } from '../../utils/deckCards';
 import type { Card as DeckCard } from '../table/CardImage';
 import { bestFive } from '../../utils/handEvaluator';
+import { getAvatarWithFallback } from '../../utils/avatarGenerator';
+import { titleCase } from '../../utils/handReplay';
 import { reportError } from '../../utils/errorReporter';
 import './BBJRecentHits.css';
+import { gameTypeLabel, money, stamp } from '../../utils/handFormat';
 
 export interface BBJRecentHitsProps {
   poolId: string | null;
@@ -79,6 +91,8 @@ interface Hit {
   game_variant: string | null;
   table_player_count: number | null;
   recipients: Recipient[];
+  /** How many jackpots this pool has paid in total, not just on this page. */
+  total_hits?: number | null;
 }
 
 /**
@@ -97,9 +111,20 @@ interface Hit {
  * The hands are the published minimum qualifying hands from the Qualifying
  * Hands tab, so all three tabs teach the same rule.
  */
-const EXAMPLE_HITS: Array<{ id: string; hand: string; cards: DeckCard[]; share: number }> = [
+const EXAMPLE_HITS: Array<{
+  id: string;
+  hand: string;
+  cards: DeckCard[];
+  share: number;
+  name: string;
+  playerId: string;
+  dateStr: string;
+}> = [
   {
     id: 'ex-nlh',
+    name: 'TexasShark',
+    playerId: '394821',
+    dateStr: '2026-06-12 14:22:05',
     hand: 'Aces Full Of Jacks',
     cards: [
       { rank: 'A', suit: 's' },
@@ -112,6 +137,9 @@ const EXAMPLE_HITS: Array<{ id: string; hand: string; cards: DeckCard[]; share: 
   },
   {
     id: 'ex-plo',
+    name: 'OmahaKing88',
+    playerId: '821034',
+    dateStr: '2026-07-04 22:15:10',
     hand: 'Four Of A Kind, Kings',
     cards: [
       { rank: 'K', suit: 's' },
@@ -124,6 +152,9 @@ const EXAMPLE_HITS: Array<{ id: string; hand: string; cards: DeckCard[]; share: 
   },
   {
     id: 'ex-sf',
+    name: 'RiverRat',
+    playerId: '105822',
+    dateStr: '2026-08-01 09:05:44',
     hand: 'Straight Flush, Eight High',
     cards: [
       { rank: '8', suit: 's' },
@@ -136,22 +167,37 @@ const EXAMPLE_HITS: Array<{ id: string; hand: string; cards: DeckCard[]; share: 
   },
 ];
 
-function money(n: number | null | undefined, dp = 2): string {
-  return Number(n || 0).toLocaleString('en-US', {
-    minimumFractionDigits: dp,
-    maximumFractionDigits: dp,
-  });
-}
+/**
+ * Dan 2026-08-27: "double the size of the current avatar, and remove the circle
+ * frame. avatars should display here like they do on the table with no
+ * background. remove the 1 pill tag at the bottom."
+ *
+ * So this row no longer uses PlayerAvatar, which draws a circular crop, a VIP
+ * ring, a presence dot and the level badge that pill came from. The library art
+ * is a free-standing bust with its own transparency — the felt renders it as a
+ * bare <img> and so does this, at 96px against the old 48. DOUBLE, which is what
+ * was asked for: it was drawn at 60 for a week, and 60 is not double 48.
+ *
+ * The number must match the CSS box (.bbj-hits__avatar). It has now been wrong
+ * twice - 96 against a 76px box, then 76 against a 60px box - each time
+ * over-fetching the image AND writing intrinsic width/height attributes that
+ * disagree with what is rendered. tests/unit/bbjAvatarSize.test.ts reads both
+ * files and fails if they part company again.
+ */
+const BBJ_AVATAR_PX = 96;
 
-/** Absolute timestamp, the way a jackpot board states one. */
-function stamp(iso: string): string {
-  const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return (
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
-    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-  );
+/**
+ * jsonb arrives parsed, but this renders money - never let a shape surprise
+ * throw inside the map and blank the whole panel.
+ */
+function normalize(data: unknown): Hit[] {
+  return ((data || []) as Hit[]).map((h) => ({
+    ...h,
+    recipients: Array.isArray(h.recipients) ? h.recipients : [],
+    board: Array.isArray(h.board) ? h.board : [],
+    bad_beat_cards: Array.isArray(h.bad_beat_cards) ? h.bad_beat_cards : null,
+    hand_winner_cards: Array.isArray(h.hand_winner_cards) ? h.hand_winner_cards : null,
+  }));
 }
 
 export function BBJRecentHits({
@@ -164,10 +210,71 @@ export function BBJRecentHits({
 }: BBJRecentHitsProps) {
   const [hits, setHits] = useState<Hit[] | null>(null);
   const [failed, setFailed] = useState(false);
+  /**
+   * PAGING. The list ended at `limit` and said nothing about the rest.
+   *
+   * `fn_bbj_recent_hits` capped at 25 with no cursor, so the 26th jackpot a
+   * club ever paid was unreachable from the product entirely; on top of that
+   * the popup asked for 5 and the page for 10, so a pool with 24 hits showed
+   * ten and gave no hint the other fourteen existed. The RPC now takes a
+   * keyset cursor and returns `total_hits`, which is what lets this offer
+   * another page only when there genuinely is one.
+   */
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [total, setTotal] = useState<number | null>(null);
+  const [moreFailed, setMoreFailed] = useState(false);
+  /**
+   * Bumped by a live `bbj_winners` INSERT.
+   *
+   * AUDIT 2026-08-27: every other BBJ surface was already live — the table's
+   * pool ticker, BBJTicker, BadBeatJackpotPage's toast — and this one, the list
+   * a player actually opens after a jackpot lands, was the only mount-only
+   * fetch on the feature. Its effect keyed on [poolId, limit], and neither
+   * changes when a hit arrives, so the rows sat stale until the component
+   * unmounted. The pool number above it would tick up while the list under it
+   * still showed the previous five winners.
+   */
+  const [revision, setRevision] = useState(0);
+
+  useEffect(() => {
+    if (!poolId) return;
+    const channel = supabase
+      .channel(`bbj-recent-hits-${poolId}`)
+      /* FILTERED. The channel NAME was scoped to the pool and the subscription
+         was not, so every jackpot anywhere on the platform - any club, any
+         union - forced a full refetch of this pool's list. Both sibling
+         surfaces (BBJTicker, BadBeatJackpotPage) already filter on pool_id. */
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'bbj_winners',
+          filter: `pool_id=eq.${poolId}`,
+        },
+        () => setRevision((r) => r + 1)
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [poolId]);
 
   useEffect(() => {
     if (!poolId) return;
     let alive = true;
+    /* A NEW POOL IS NOT THE OLD POOL'S ROWS.
+       `hits` was only ever assigned on success, so switching clubs left the
+       previous club's winners and payout figures mounted - and because
+       `hits !== null` the skeleton never showed, so there was no visible moment
+       of loading to suggest they were stale. `failed` had the mirror problem:
+       nothing ever set it back to false, so one transient RPC error stuck the
+       panel on its error message for the life of the component, including
+       through the realtime refetch after a real jackpot landed. */
+    setHits(null);
+    setTotal(null);
+    setFailed(false);
+    setMoreFailed(false);
     (async () => {
       try {
         const { data, error } = await supabase.rpc('fn_bbj_recent_hits', {
@@ -182,14 +289,10 @@ export function BBJRecentHits({
         }
         // jsonb arrives parsed, but this renders money - never let a shape
         // surprise throw inside the map and blank the whole panel.
-        const rows = ((data || []) as Hit[]).map((h) => ({
-          ...h,
-          recipients: Array.isArray(h.recipients) ? h.recipients : [],
-          board: Array.isArray(h.board) ? h.board : [],
-          bad_beat_cards: Array.isArray(h.bad_beat_cards) ? h.bad_beat_cards : null,
-          hand_winner_cards: Array.isArray(h.hand_winner_cards) ? h.hand_winner_cards : null,
-        }));
+        const rows = normalize(data);
         setHits(rows);
+        setTotal(rows[0]?.total_hits ?? rows.length);
+        setMoreFailed(false);
       } catch (e) {
         if (alive) {
           setFailed(true);
@@ -200,7 +303,54 @@ export function BBJRecentHits({
     return () => {
       alive = false;
     };
-  }, [poolId, limit]);
+  }, [poolId, limit, revision]);
+
+  /**
+   * The next page, appended.
+   *
+   * The cursor is the OLDEST row currently held, passed as the pair
+   * (awarded_at, payout_id) - a timestamp alone would silently skip a jackpot
+   * if two ever shared a microsecond, and on a money surface that is the one
+   * failure mode worth two parameters to rule out.
+   *
+   * A page that fails does NOT clear what is already on screen: the rows the
+   * player is reading stay, and the button says the extra ones could not be
+   * fetched.
+   */
+  const loadMore = async () => {
+    const held = hits || [];
+    const last = held[held.length - 1];
+    if (!poolId || !last || loadingMore) return;
+    setLoadingMore(true);
+    setMoreFailed(false);
+    try {
+      const { data, error } = await supabase.rpc('fn_bbj_recent_hits', {
+        p_pool_id: poolId,
+        p_limit: Math.max(limit, 10),
+        p_before: last.awarded_at,
+        p_before_id: last.payout_id,
+      });
+      if (error) {
+        setMoreFailed(true);
+        reportError(error, 'BBJRecentHits.more_failed');
+        return;
+      }
+      const rows = normalize(data);
+      if (rows.length > 0) {
+        // Guard the append against a duplicate: a jackpot landing between the
+        // two calls shifts nothing here (the cursor is anchored to a row, not
+        // an offset), but a retry or a double tap could.
+        const seen = new Set(held.map((h) => h.payout_id));
+        setHits([...held, ...rows.filter((r) => !seen.has(r.payout_id))]);
+      }
+      if (rows[0]?.total_hits != null) setTotal(rows[0].total_hits);
+    } catch (e) {
+      setMoreFailed(true);
+      reportError(e, 'BBJRecentHits.more_threw');
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   // Reconstructing a made hand walks up to 150 combinations per row. Cheap, but
   // there is no reason to redo it on every keystroke-level re-render.
@@ -209,17 +359,46 @@ export function BBJRecentHits({
       const hole = toDeckCards(hit.bad_beat_cards);
       const board = toDeckCards(hit.board);
       const made = bestFive(hole, board, hit.game_variant);
+      const winnerHole = toDeckCards(hit.hand_winner_cards);
+      const winnerMade = bestFive(winnerHole, board, hit.game_variant);
       return {
         hit,
         cards: made ? made.cards : hole,
+        /**
+         * THE HAND THAT BEAT IT. `fn_bbj_recent_hits` has always returned
+         * `hand_winner_cards`, `hand_winner_hand` and `hand_winner_name`, and
+         * this row rendered none of them — so a list headed "Bad Beat Jackpot
+         * Winners" showed the losing hand and left out the beat that made it
+         * a jackpot at all.
+         */
+        beatBy: winnerMade ? winnerMade.cards : winnerHole,
+        beatByLabel: titleCase(hit.hand_winner_hand || winnerMade?.name || ''),
         // Prefer what the engine actually recorded; fall back to what we derived.
-        label: hit.bad_beat_hand || made?.name || 'Qualifying Hand',
-        derived: !!made,
+        // Title Cased per the house rule, so "Four of a Kind" reads
+        // "Four Of A Kind" the way every other label on this surface does.
+        label: titleCase(hit.bad_beat_hand || made?.name || 'Qualifying Hand'),
       };
     });
   }, [hits]);
 
-  if (!poolId) return null;
+  /**
+   * A NULL POOL IS A STATE, NOT A REASON TO DRAW NOTHING.
+   *
+   * This returned null, so a player who opened the jackpot popup before the
+   * pool id resolved — or on a club with no pool row at all — got the header,
+   * the tab strip, and an empty box. Indistinguishable from a broken feature,
+   * which is exactly how the whole thing gets reported.
+   */
+  if (!poolId) {
+    return (
+      <div className="bbj-hits">
+        <div className="bbj-hits__empty">
+          No Jackpot Pool For This Club Yet.
+          <span className="bbj-hits__empty-sub">Winners Appear Here Once The Pool Is Running.</span>
+        </div>
+      </div>
+    );
+  }
 
   if (failed) {
     return (
@@ -244,19 +423,38 @@ export function BBJRecentHits({
     const examplePool = poolAmount > 0 ? (poolAmount * 40) / 100 : 0;
     return (
       <div className="bbj-hits">
-        <div className="bbj-hits__caption">No Jackpot Has Hit Here Yet</div>
+        {/* NOT "Last 3 Bad Beat Jackpot Winners". That is a factual claim that
+            this club has paid three jackpots, printed above three invented
+            players with plausible dates and a real chip figure. The rows are
+            illustrations of the rule; the caption and the per-row tag now say
+            so, which is what the doc-comment at the top of this file has
+            always claimed was happening. */}
+        <div className="bbj-hits__caption">What A Winning Hand Looks Like</div>
         <p className="bbj-hits__examplenote">
-          Here Is What A Win Looks Like. These Three Are Examples, Not Real Wins.
+          No Jackpot Has Been Paid On This Pool Yet. These Are Examples.
         </p>
         {EXAMPLE_HITS.map((ex) => (
-          <div className="bbj-hits__row is-example" key={ex.id} aria-label="Example jackpot win">
-            <Avatar name="?" size="medium" className="bbj-hits__avatar" />
+          <div
+            className="bbj-hits__row is-example"
+            key={ex.id}
+            role="img"
+            aria-label={`Example Only: ${ex.hand}`}
+          >
+            <img
+              className="bbj-hits__avatar"
+              src={getAvatarWithFallback(null, ex.id, ex.name, BBJ_AVATAR_PX)}
+              alt=""
+              aria-hidden="true"
+              loading="lazy"
+              width={BBJ_AVATAR_PX}
+              height={BBJ_AVATAR_PX}
+            />
             <div className="bbj-hits__who">
               <span className="bbj-hits__name">
-                Your Name Here
+                {ex.name}
                 <span className="bbj-hits__tag">EXAMPLE</span>
               </span>
-              <span className="bbj-hits__id">Not A Real Win</span>
+              <span className="bbj-hits__id">{ex.playerId}</span>
             </div>
             <div className="bbj-hits__hand">
               <div className="bbj-hits__cards">
@@ -270,7 +468,7 @@ export function BBJRecentHits({
               <span className="bbj-hits__amt">
                 {examplePool > 0 ? `+ ${money(examplePool * ex.share)}` : 'Bad Beat Share'}
               </span>
-              <span className="bbj-hits__when">The Next One Could Be Yours</span>
+              <span className="bbj-hits__when">{ex.dateStr}</span>
             </div>
           </div>
         ))}
@@ -280,18 +478,24 @@ export function BBJRecentHits({
 
   return (
     <div className="bbj-hits">
+      {/* The caption stated a count as though it were the whole history. It is
+          a page, so it says which page of what. */}
       <div className="bbj-hits__caption">
-        Last {hits.length} Bad Beat Jackpot {hits.length === 1 ? 'Winner' : 'Winners'}
+        {total && total > hits.length
+          ? `Bad Beat Jackpot Winners (${hits.length} Of ${total})`
+          : `Last ${hits.length} Bad Beat Jackpot ${hits.length === 1 ? 'Winner' : 'Winners'}`}
       </div>
 
-      {shown.map(({ hit, cards, label }) => {
+      {shown.map(({ hit, cards, label, beatBy, beatByLabel }) => {
         // Id first: two players can share a display name, and lighting up the
         // wrong row on a money surface is not a cosmetic mistake.
         const isYou = currentUserId
           ? hit.bad_beat_user_id === currentUserId
-          : !!currentUserName && hit.bad_beat_name.toLowerCase() === currentUserName.toLowerCase();
+          : !!currentUserName &&
+            String(hit.bad_beat_name || '').toLowerCase() === currentUserName.toLowerCase();
         const clickable = !!onOpenHand;
         const amount = hit.bad_beat_amount ?? hit.total_payout;
+        const gameType = gameTypeLabel(hit.game_variant);
 
         return (
           <div
@@ -301,7 +505,9 @@ export function BBJRecentHits({
             tabIndex={clickable ? 0 : undefined}
             aria-label={
               clickable
-                ? `${hit.bad_beat_name} won ${money(amount, 0)} with ${label}. Open the hand.`
+                ? `${hit.bad_beat_name} Won ${money(amount, 0)} With ${label}` +
+                  (beatByLabel ? `, Beaten By ${hit.hand_winner_name} With ${beatByLabel}` : '') +
+                  '. Open The Hand.'
                 : undefined
             }
             onClick={clickable ? () => onOpenHand(hit.payout_id) : undefined}
@@ -316,11 +522,19 @@ export function BBJRecentHits({
                 : undefined
             }
           >
-            <Avatar
-              src={hit.bad_beat_avatar_url || undefined}
-              name={hit.bad_beat_name}
-              size="medium"
+            <img
               className="bbj-hits__avatar"
+              src={getAvatarWithFallback(
+                hit.bad_beat_avatar_url,
+                hit.bad_beat_user_id || hit.payout_id,
+                hit.bad_beat_name,
+                BBJ_AVATAR_PX
+              )}
+              alt=""
+              aria-hidden="true"
+              loading="lazy"
+              width={BBJ_AVATAR_PX}
+              height={BBJ_AVATAR_PX}
             />
 
             <div className="bbj-hits__who">
@@ -332,27 +546,54 @@ export function BBJRecentHits({
             </div>
 
             <div className="bbj-hits__hand">
-              {cards.length > 0 ? (
-                <>
-                  <div className="bbj-hits__cards" title={label}>
-                    {cards.map((card, i) => (
-                      <CardImage key={`${hit.payout_id}-${i}`} card={card} size="xs" />
+              {cards.length > 0 && (
+                <div className="bbj-hits__cards" title={label}>
+                  {cards.map((card, i) => (
+                    <CardImage key={`${hit.payout_id}-${i}`} card={card} size="xs" />
+                  ))}
+                </div>
+              )}
+              <span className="bbj-hits__handname">{label}</span>
+
+              {beatBy.length > 0 && (
+                <div className="bbj-hits__beat">
+                  <span className="bbj-hits__beat-label">Lost To</span>
+                  <div className="bbj-hits__cards" title={beatByLabel}>
+                    {beatBy.map((card, i) => (
+                      <CardImage key={`${hit.payout_id}-w-${i}`} card={card} size="xs" />
                     ))}
                   </div>
-                  <span className="bbj-hits__handname">{label}</span>
-                </>
-              ) : (
-                <span className="bbj-hits__handname">{label}</span>
+                  <span className="bbj-hits__beat-name">
+                    {hit.hand_winner_name}
+                    {beatByLabel ? ` - ${beatByLabel}` : ''}
+                  </span>
+                </div>
               )}
             </div>
 
             <div className="bbj-hits__right">
+              {gameType && <span className="bbj-hits__gametype">{gameType}</span>}
               <span className="bbj-hits__amt">+ {money(amount)}</span>
               <span className="bbj-hits__when">{stamp(hit.awarded_at)}</span>
             </div>
           </div>
         );
       })}
+
+      {total !== null && hits.length < total && (
+        <button
+          type="button"
+          className="bbj-hits__more"
+          onClick={() => void loadMore()}
+          disabled={loadingMore}
+        >
+          {loadingMore
+            ? 'Loading'
+            : moreFailed
+              ? 'Could Not Load More. Tap To Retry'
+              : `Show More (${total - hits.length} Older)`}
+        </button>
+      )}
 
       {onOpenHand && <p className="bbj-hits__hint">Tap A Winner To See The Hand.</p>}
     </div>

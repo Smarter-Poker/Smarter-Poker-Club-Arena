@@ -16,7 +16,6 @@
 import { supabase } from '../lib/supabase';
 import { CommissionService } from './CommissionService';
 import { WalletService } from './WalletService';
-import { pushNotificationService } from './PushNotificationService';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { retryAsync } from '../utils/retryAsync';
@@ -174,9 +173,7 @@ export const SettlementService = {
 
     if (clubId) query = query.eq('club_id', clubId);
 
-    const { data, error } = await query
-      .order('start_at', { ascending: false })
-      .limit(limit);
+    const { data, error } = await query.order('start_at', { ascending: false }).limit(limit);
 
     if (error) throw error;
     return data.map(this.mapPeriod);

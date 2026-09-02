@@ -9,7 +9,11 @@
  * key and profiles.settings, and the table read neither.
  */
 import type { TableUserSettings } from '../hooks/useTableSettings';
-import { normalizeCardBack, SELECTABLE_CARD_BACK_IDS } from '../components/table/CardImage';
+import {
+  normalizeCardBack,
+  SELECTABLE_CARD_BACK_IDS,
+  CARD_BACK_CATALOG,
+} from '../components/table/CardImage';
 
 /**
  * 2026-08-18 — this page used to persist ~30 settings to localStorage and to
@@ -38,6 +42,8 @@ export interface UserSettings {
   fourColorDeck: boolean;
   animationSpeed: 'slow' | 'normal' | 'fast';
   showPotOdds: boolean;
+  /** Dan 2026-08-28: the scrolling tournament/announcement ticker. */
+  showTicker: boolean;
 
   // Gameplay
   confirmAllIn: boolean;
@@ -55,13 +61,21 @@ export interface UserSettings {
 
 export const DEFAULT_SETTINGS: UserSettings = {
   soundEnabled: true,
-  soundVolume: 80,
+  /* 70, not 80. This was the ONE outlier among four copies of this default:
+     useTableSettings, SettingsPanel and the `sound_volume` column all say 70,
+     and that migration's COMMENT ON COLUMN says the client and DB "MUST agree".
+     It was masked on the normal path because `fromTableSettings` overrides it
+     from the table store — but `validateSettings` falls back to this value for
+     any stored blob that fails validation, at which point saving raised the
+     player's volume by 14% without being asked. */
+  soundVolume: 70,
 
   theme: 'dark',
   cardBack: 'classic_blue',
   fourColorDeck: false,
   animationSpeed: 'normal',
   showPotOdds: false,
+  showTicker: true,
 
   confirmAllIn: true,
   autoMuckWinners: false,
@@ -107,6 +121,7 @@ export function validateSettings(raw: unknown): UserSettings {
     fourColorDeck: bool('fourColorDeck'),
     animationSpeed: enumVal('animationSpeed', ['slow', 'normal', 'fast']),
     showPotOdds: bool('showPotOdds'),
+    showTicker: bool('showTicker'),
     confirmAllIn: bool('confirmAllIn'),
     autoMuckWinners: bool('autoMuckWinners'),
     tournamentReminders: bool('tournamentReminders'),
@@ -125,20 +140,28 @@ export function validateSettings(raw: unknown): UserSettings {
 // data-felt-theme CSS understood, so four of its five options changed nothing
 // and the fifth was already the default. It was removed rather than reskinned.
 
-// These ids must match the .card-back--<id> rules in
-// src/components/table/CardImage.css. The previous list
-// ('classic' | 'modern' | 'minimal' | 'premium') matched none of them, so every
-// option rendered the same unstyled back.
-export const CARD_BACKS = [
-  { id: 'classic_blue', name: 'Classic Blue' },
-  { id: 'classic_red', name: 'Classic Red' },
-  { id: 'diamond', name: 'Diamond' },
-  { id: 'gold', name: 'Gold' },
-  { id: 'dragon', name: 'Dragon' },
-  { id: 'neon', name: 'Neon' },
-  { id: 'galaxy', name: 'Galaxy' },
-  { id: 'royal', name: 'Royal' },
-];
+/**
+ * The card backs the /settings dropdown may offer.
+ *
+ * DERIVED from the one catalogue (CARD_BACK_CATALOG in CardImage.tsx) rather
+ * than hand-listed. 2026-08-26: the hand-written list had drifted twice over.
+ * It carried EIGHT ids against the shipped twelve — so four owned designs
+ * were unreachable from this page — and, worse, five of the eight were PAID
+ * (`diamond` 100, `dragon` 125, `gold` 150, `neon` 75, `galaxy` 75) and this
+ * was the only card-back picker in the app that never called
+ * `isCardBackUnlocked`. A player could equip a 150-diamond design from a
+ * plain dropdown while the store charged everyone else for it.
+ *
+ * Restricted to the FREE tier for exactly that reason: a `<select>` has
+ * nowhere to show a lock, a price or a purchase flow. Paid designs are sold
+ * by Table Studio, which gates every category on permanent ownership.
+ * Deriving means a design added to the catalogue appears here automatically
+ * if it is free, and can never appear here by accident if it is not.
+ */
+export const CARD_BACKS = CARD_BACK_CATALOG.filter((d) => d.tier === 'standard').map((d) => ({
+  id: d.id as string,
+  name: d.name,
+}));
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENTS
@@ -153,9 +176,31 @@ export const CARD_BACKS = [
  * Every key below is one the table genuinely consumes; the file:line of each
  * consumer is noted so a future edit can check the other end still exists.
  */
-export function toTableSettings(s: UserSettings): Partial<TableUserSettings> {
+export function toTableSettings(
+  s: UserSettings,
+  /**
+   * What the table store currently holds. Optional so existing callers keep
+   * working; passing it is what makes the animation-speed round trip lossless.
+   */
+  current?: TableUserSettings
+): Partial<TableUserSettings> {
+  /* PRESERVE A SPEED THIS PAGE CANNOT NAME. The store's scale is
+     0.5 | 1 | 1.5 | 2 and this page offers three labels, so a stored 2 comes in
+     as 'slow' and would go back out as 1.5 — a value silently changed by a page
+     the user opened to change something else. If the label still describes the
+     stored number, keep the number. */
+  const labelOf = (n: number) => (n >= 1.5 ? 'slow' : n <= 0.5 ? 'fast' : 'normal');
+  const animationSpeed =
+    current && labelOf(current.animationSpeed) === s.animationSpeed
+      ? current.animationSpeed
+      : s.animationSpeed === 'slow'
+        ? 1.5
+        : s.animationSpeed === 'fast'
+          ? 0.5
+          : 1;
+
   return {
-    // soundService.setMasterVolume — TablePage useEffect on soundVolume
+    // soundService.setMasterVolume — useTableSettings applyGateChanges
     isSoundEnabled: s.soundEnabled,
     soundVolume: s.soundVolume,
     // SeatSlot cardBack -> <CardBack style> -> .card-back--<id>
@@ -164,13 +209,17 @@ export function toTableSettings(s: UserSettings): Partial<TableUserSettings> {
     fourColorDeck: s.fourColorDeck,
     // --animation-speed CSS custom property. It is a DURATION MULTIPLIER, so
     // a bigger number is a SLOWER animation. Inverting this is the easy bug.
-    animationSpeed: s.animationSpeed === 'slow' ? 1.5 : s.animationSpeed === 'fast' ? 0.5 : 1,
+    animationSpeed,
     // ActionPanel showPotOdds
     showPotOdds: s.showPotOdds,
+    // TournamentStartingTicker — Dan 2026-08-28 ticker on/off
+    showTicker: s.showTicker,
     // ActionPanel confirmAllIn
     confirmAllIn: s.confirmAllIn,
-    // TablePage: suppress the show/muck prompt on an uncontested win
-    autoMuckWinners: s.autoMuckWinners,
+    /* autoMuckWinners: NOT written. Its control was removed from SettingsPage on
+       2026-08-29 because the prompt it governs has been hard-disabled since
+       2026-08-23 — see the note where the toggle used to be. Writing a column
+       that no control governs is how `live_notifications` got clobbered. */
   };
 }
 
@@ -186,9 +235,35 @@ export function fromTableSettings(t: TableUserSettings, base: UserSettings): Use
       ? t.cardBack
       : normalizeCardBack(t.cardBack) || base.cardBack,
     fourColorDeck: t.fourColorDeck,
+    /* LOSSY, and knowingly so. `TableUserSettings.animationSpeed` is documented
+       as 0.5 | 1 | 1.5 | 2, and this page offers three choices, so a stored 2
+       reads back as 'slow' and `toTableSettings` maps 'slow' to 1.5. Opening
+       /settings and pressing Save — without touching the animation control —
+       used to change a 2 into a 1.5 permanently.
+
+       `toTableSettings` now preserves an unchanged selection instead of
+       re-deriving it, so the round trip is only lossy if the user actually
+       picks a different speed, which is a choice rather than a side effect. */
     animationSpeed: t.animationSpeed >= 1.5 ? 'slow' : t.animationSpeed <= 0.5 ? 'fast' : 'normal',
     showPotOdds: t.showPotOdds,
+    showTicker: t.showTicker,
     confirmAllIn: t.confirmAllIn,
     autoMuckWinners: t.autoMuckWinners,
+  };
+}
+
+/**
+ * Restore the card-back control to the last table value after the canonical
+ * appearance write rejects a change. The Settings page persists the returned
+ * object locally and to profiles.settings, so no surface can claim a failed
+ * design is equipped.
+ */
+export function rollbackFailedCardBack(
+  settings: UserSettings,
+  previousCardBack: string
+): UserSettings {
+  return {
+    ...settings,
+    cardBack: normalizeCardBack(previousCardBack),
   };
 }

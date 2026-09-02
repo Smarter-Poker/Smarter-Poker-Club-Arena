@@ -1,0 +1,82 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# RUNNER MAINTENANCE — the self-hosted box cleans up after itself.
+#
+# GitHub-hosted runners throw their disks away after every job. The estate's
+# self-hosted runners (estate-ci-*) are persistent, which is why they are fast
+# and free - and why leftover _work checkouts, stale node_modules and dangling
+# docker layers will eventually fill the disk and take ALL CI down at once
+# (Day-2 roadmap item 2, 2026-09-02).
+#
+# SAFETY, in order of importance:
+#   1. ENGINE-HOST GUARD. If this runner ever shares a box with the poker
+#      engine, every docker operation is refused outright. The deploy design
+#      notes exist because a blanket prune once deleted the only rollback
+#      image; this workflow must be incapable of repeating that.
+#   2. DANGLING-ONLY. Even on a dedicated CI box, `prune -f` (never -af): a
+#      TAGGED image can never be collected here, whatever box this is.
+#   3. IDLE-ONLY. Workspace and tmp sweeps take only what has sat untouched
+#      for 48h. A runner executes one job at a time, so nothing this job can
+#      see in its own workspace root is concurrently in use.
+#   4. Every step tolerates failure - a GC that can fail CI is a new outage.
+# ─────────────────────────────────────────────────────────────────────────────
+name: Runner Maintenance
+
+on:
+  schedule:
+    # 09:37 UTC = deep night in Chicago, the platform's quietest hour, and
+    # far from the :40-:55 deploy machinery.
+    - cron: '37 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runner-maintenance
+  cancel-in-progress: false
+
+jobs:
+  gc:
+    name: Sweep the self-hosted runner box
+    runs-on: [self-hosted, estate-linux]
+    timeout-minutes: 15
+    steps:
+      - name: Disk before
+        run: |
+          echo "host: $(hostname)  runner: ${RUNNER_NAME:-?}"
+          df -h / | tail -1
+          docker system df 2>/dev/null || echo "docker not readable"
+
+      - name: Engine-host guard
+        id: guard
+        run: |
+          if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^club-arena-engine$' \
+             || docker images --format '{{.Repository}}' 2>/dev/null | grep -q '^club-arena-engine$'; then
+            echo "engine=yes" >> "$GITHUB_OUTPUT"
+            echo "::warning title=ENGINE HOST DETECTED::this runner shares a box with the poker engine, so ALL docker pruning is refused - the :previous rollback image must never be collectable. Workspace and tmp cleanup still run."
+          else
+            echo "engine=no" >> "$GITHUB_OUTPUT"
+            echo "no engine container or image on this box - docker GC permitted (dangling only)"
+          fi
+
+      - name: Docker GC (dangling only, tagged images untouchable)
+        if: steps.guard.outputs.engine == 'no'
+        run: |
+          docker system prune -f 2>/dev/null || true
+          docker builder prune -f --filter 'until=72h' 2>/dev/null || true
+
+      - name: Workspace GC (checkouts idle over 48h, never this job's own)
+        run: |
+          ROOT="$(dirname "$RUNNER_WORKSPACE")"
+          echo "workspace root: $ROOT"
+          find "$ROOT" -mindepth 1 -maxdepth 1 -type d -mmin +2880 \
+            ! -path "$RUNNER_WORKSPACE" -print -exec rm -rf {} + 2>/dev/null || true
+
+      - name: Tmp GC (this user's files idle over 48h)
+        run: |
+          find /tmp -mindepth 1 -maxdepth 1 -user "$(id -un)" -mmin +2880 -print -exec rm -rf {} + 2>/dev/null || true
+
+      - name: Disk after
+        run: |
+          df -h / | tail -1
+          docker system df 2>/dev/null || true

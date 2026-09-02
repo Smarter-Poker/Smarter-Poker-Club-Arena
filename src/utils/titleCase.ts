@@ -6,6 +6,23 @@
  * Dan 2026-08-20: "Capitalize the first letter of every word inside the entire
  * club arena, and forbid the use of em bars anywhere."
  *
+ * WHAT "EM BARS" MEANS, BECAUSE IT HAS ALREADY BEEN MISREAD TWICE
+ *
+ * Dan's phrase "em bars" means EM DASHES: the punctuation mark, U+2014.
+ * This is a rule about COPY -- the characters inside text a player reads.
+ * It is NOT a rule about artwork, icons, or anything shaped like a line,
+ * and it does NOT ban the hamburger menu.
+ *
+ * Read the other way it has now cost the hamburger menu twice in two days:
+ * #2321 replaced it with a gear on every trigger, deleted the approved
+ * rasters, and added a law forbidding its return; #2429 did it again with a
+ * six-tile grid after #2401 reverted the first one. Each time Dan opened the
+ * app and found a different icon where his menu button used to be.
+ *
+ * If you are about to ban "bars" anywhere near an ICON, you have misread this
+ * sentence. The hamburger is the menu. See
+ * tests/approvedHamburgerGearGuard.law.test.ts.
+ *
  * TWO RULES, ONE HELPER
  *
  *   1. Every word starts with a capital.       "hands played" -> "Hands Played"
@@ -70,35 +87,6 @@ const ACRONYMS = new Set([
 ]);
 
 /**
- * Words that stay lowercase INSIDE a phrase (never at the start).
- *
- * Dan's instruction reads "every word", and for labels that is what happens.
- * But real Title Case leaves short joining words down, and forcing "Of", "To",
- * "The" mid-sentence makes prose read like a ransom note. Labels are one or two
- * words and are unaffected either way; this only shows up in longer strings.
- */
-const MINOR_WORDS = new Set([
-  'a',
-  'an',
-  'and',
-  'as',
-  'at',
-  'but',
-  'by',
-  'for',
-  'in',
-  'nor',
-  'of',
-  'on',
-  'or',
-  'per',
-  'the',
-  'to',
-  'via',
-  'vs',
-]);
-
-/**
  * Replace em and en dashes with plain punctuation.
  *
  * An em dash between clauses becomes a hyphen with its spacing kept, so
@@ -126,22 +114,30 @@ export function stripEmDashes(input: string): string {
  * Title Case a user-facing string.
  *
  * Preserves any word that is ALREADY all-caps (so "BBJ" and a deliberately
- * shouted "LIVE" survive), uppercases known acronyms, keeps minor words down
- * mid-phrase, and capitalises everything else. Hyphenated and slashed
- * compounds are cased on both sides: "add-ons" -> "Add-Ons".
+ * shouted "LIVE" survive), uppercases known acronyms, and capitalises every
+ * prose word. Hyphenated and slashed compounds are cased on both sides:
+ * "add-ons" -> "Add-Ons". Machine-readable examples remain unchanged.
  */
 export function titleCase(input: string | null | undefined): string {
   if (!input) return '';
   const cleaned = stripEmDashes(String(input));
+  const trimmed = cleaned.trim();
+
+  if (
+    /^\S+:\/\/\S+$/.test(trimmed) ||
+    /^\S+@\S+\.\S+$/.test(trimmed) ||
+    /^\/\S+$/.test(trimmed) ||
+    /^[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+$/.test(trimmed)
+  ) {
+    return cleaned;
+  }
 
   // Split on whitespace but KEEP it, so the original spacing survives verbatim.
   const parts = cleaned.split(/(\s+)/);
-  let wordIndex = -1;
 
   return parts
     .map((part) => {
       if (/^\s+$/.test(part) || part === '') return part;
-      wordIndex += 1;
 
       /* Case each side of a hyphen/slash compound independently.
          The leading character class INCLUDES digits on purpose. Matching only
@@ -150,19 +146,39 @@ export function titleCase(input: string | null | undefined): string {
          hero line ("3rd Of 128"). A token that begins with a digit is an
          ordinal, a stake or a seat count ("6max", "2x"); its letters are a
          suffix and are never title-cased. */
-      return part.replace(/[A-Za-z0-9][A-Za-z0-9'’]*/g, (word, offset: number) => {
+      return part.replace(/[A-Za-z0-9][A-Za-z0-9'’]*/g, (word, offset, whole) => {
         if (/^[0-9]/.test(word)) return word;
         const lower = word.toLowerCase();
+        if (whole[offset - 1] === '(' && (lower === 's' || lower === 'es')) return lower;
         if (ACRONYMS.has(lower)) return lower.toUpperCase();
         // Already shouting (LIVE, GTD, a name in caps) - leave it alone.
         if (word.length > 1 && word === word.toUpperCase()) return word;
-        // Minor words stay down, but never as the first word of the string
-        // and never as the first segment of a compound.
-        if (wordIndex > 0 && offset === 0 && MINOR_WORDS.has(lower)) return lower;
         return word.charAt(0).toUpperCase() + word.slice(1);
       });
     })
     .join('');
+}
+
+/**
+ * Alias. The Players tab and the three pages behind it (Member Management,
+ * Player Statistics, Promo Vault) were written against `toTitleCase`, which is
+ * the name the same transform carries inside utils/popupStyle.ts. Exporting it
+ * here rather than renaming call sites keeps one implementation -- the
+ * acronym-aware one above, which is the reason NLH does not render as "Nlh".
+ */
+export const toTitleCase = titleCase;
+
+/**
+ * Postgres hands roles and statuses over as snake_case enums: 'super_agent',
+ * 'sub_agent', 'vip_card'. An underscore is not a word boundary a reader sees,
+ * so it becomes a space before the casing runs: 'super_agent' -> 'Super Agent'.
+ *
+ * Acronyms still survive the trip, which is the whole point of routing through
+ * titleCase rather than doing this inline: 'mtt_fee' -> 'MTT Fee'.
+ */
+export function enumToTitleCase(value: string | null | undefined): string {
+  if (!value) return '';
+  return titleCase(String(value).replace(/_/g, ' '));
 }
 
 export default titleCase;

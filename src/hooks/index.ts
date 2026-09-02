@@ -11,6 +11,7 @@ import { useUnionStore } from '@/stores/useUnionStore';
 import { useWalletStore } from '@/stores/useWalletStore';
 import { useAuthUser } from './useAuthUser';
 import { MembershipService } from '@/services/MembershipService';
+import { isAgentRole, isClubPrincipal, isClubStaff } from '@/types/clubRoles';
 import type { ClubMembership, MemberRole } from '@/services/MembershipService';
 import { reportError } from '../utils/errorReporter';
 
@@ -57,9 +58,12 @@ export function useClubRole(clubId: string): {
     role,
     membership,
     isLoading,
-    isOwner: role === 'club_owner' || role === 'platform_admin',
-    isAdmin: role === 'club_admin' || role === 'club_owner' || role === 'platform_admin',
-    isAgent: role === 'agent' || role === 'sub_agent',
+    // These compared against 'club_owner' / 'club_admin' / 'platform_admin',
+    // none of which club_members.role has ever contained, so all three were
+    // permanently false. Ask clubRoles, which is the definition.
+    isOwner: isClubPrincipal(role),
+    isAdmin: isClubStaff(role),
+    isAgent: isAgentRole(role),
     canManageMembers: MembershipService.canPerformAction(role || 'guest', 'manage_members'),
     canManageSettings: MembershipService.canPerformAction(role || 'guest', 'change_settings'),
     canCreateTables: MembershipService.canPerformAction(role || 'guest', 'create_tables'),
@@ -227,10 +231,14 @@ export function useWallet() {
     // GameServerAPI.removeChips -> atomic_table_withdraw; see WalletService.
     internalTransfer,
     mintChips,
+    // force: this is the EXPLICIT "give me fresh numbers" entry point. A caller
+    // reaching for refresh() is stating that what is on screen may be wrong, so
+    // the store's freshness window (which exists to make mounts free) must not
+    // turn it into a no-op.
     refresh: () => {
       if (user?.id) {
-        loadBalances(user.id);
-        loadDiamonds(user.id);
+        loadBalances(user.id, { force: true });
+        loadDiamonds(user.id, { force: true });
       }
     },
   };

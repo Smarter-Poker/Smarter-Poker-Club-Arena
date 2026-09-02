@@ -133,6 +133,58 @@ export interface InsuranceEquityResult {
 }
 
 /**
+ * POKERBROS PARITY 2026-08-26: the outs the insurance popup displays.
+ *
+ * An "out" is a NEXT-street card that puts an opponent strictly in the lead
+ * when it lands (evaluated on the partial board, exactly like the per-street
+ * leader re-evaluation in ServerTableEngineRunout). This is the intuitive
+ * "cards that beat you right now" list a player expects to see next to the
+ * premium, not the full-runout loss probability (that is strictLossPct and
+ * already prices the contract).
+ *
+ * Only meaningful with a flop or turn on board (insurance is only offered
+ * there); anything else returns an empty list.
+ */
+export function leaderOuts(
+  heroCards: Card[],
+  opponentsCards: Card[][],
+  board: Card[],
+  variant: string,
+  shortDeck: boolean = false
+): Card[] {
+  if (board.length < 3 || board.length >= 5) return [];
+  const isOmaha = variant.startsWith('plo');
+  const evalFn: EvalFn = isOmaha
+    ? (h, b) => evaluateOmahaHand(h, b)
+    : (h, b) => evaluateHand(h, b, shortDeck);
+
+  const known = new Set<string>();
+  for (const c of heroCards) known.add(cardKey(c));
+  for (const opp of opponentsCards) for (const c of opp) known.add(cardKey(c));
+  for (const c of board) known.add(cardKey(c));
+
+  const baseDeck = shortDeck ? FULL_DECK.filter((c) => !SHORT_DECK_REMOVED.has(c.rank)) : FULL_DECK;
+  const remaining = baseDeck.filter((c) => !known.has(cardKey(c)));
+
+  const outs: Card[] = [];
+  for (const next of remaining) {
+    const nextBoard = [...board, next];
+    const heroEval = evalFn(heroCards, nextBoard);
+    for (const opp of opponentsCards) {
+      if (compareHands(heroEval, evalFn(opp, nextBoard)) < 0) {
+        outs.push(next);
+        break;
+      }
+    }
+  }
+
+  // Highest rank first so the popup reads like a dealer counting outs.
+  const rankOrder = new Map(RANKS.map((r, i) => [r, i]));
+  outs.sort((a, b) => (rankOrder.get(b.rank) ?? 0) - (rankOrder.get(a.rank) ?? 0));
+  return outs;
+}
+
+/**
  * Exact (or sampled) insurance equity for the leader against KNOWN opponents.
  *
  * @param heroCards      Leader's hole cards.

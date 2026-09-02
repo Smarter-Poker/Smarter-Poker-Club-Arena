@@ -1,0 +1,326 @@
+.page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding-bottom: var(--bottom-nav-clearance, 74px);
+  overflow-x: clip;
+  background: #05070a;
+  color: #edf5fb;
+  font-family: 'Roboto Condensed', system-ui, sans-serif;
+}
+.workspace {
+  width: min(100%, 1180px);
+  margin: 0 auto;
+  padding: clamp(24px, 4vw, 48px) clamp(14px, 4vw, 44px) 54px;
+  box-sizing: border-box;
+}
+.workspaceHeading,
+.panelHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+.workspaceHeading {
+  margin-bottom: 18px;
+}
+.workspaceHeading h2,
+.panelHeader h2 {
+  margin: 0;
+  font-family: 'Rajdhani', system-ui, sans-serif;
+  font-size: clamp(1.35rem, 3vw, 2rem);
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+}
+.workspaceHeading > a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  color: #85bcea;
+  font-size: 0.82rem;
+  text-decoration: none;
+}
+.workspaceHeading > a:focus-visible,
+.page button:focus-visible,
+.page input:focus-visible,
+.tableScroll:focus-visible {
+  outline: 2px solid #75bdff;
+  outline-offset: 3px;
+}
+.kicker {
+  margin: 0 0 3px;
+  color: #657c8f;
+  font-family: 'Rajdhani', system-ui, sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.addButton,
+.dangerButton,
+.secondaryButton,
+.removeButton,
+.errorPanel button {
+  min-height: 44px;
+  padding: 9px 15px;
+  border: 1px solid #324250;
+  border-radius: 2px;
+  font-family: 'Rajdhani', system-ui, sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.addButton {
+  border-color: #3ba7ff;
+  background: #0a2740;
+  color: #e7f5ff;
+  box-shadow:
+    inset 0 -2px 0 #3ba7ff,
+    0 0 16px rgba(59, 167, 255, 0.16);
+}
+.formPanel,
+.ledger,
+.errorPanel {
+  border: 1px solid #26313d;
+  background: #0d1218;
+  clip-path: polygon(
+    0 0,
+    calc(100% - 10px) 0,
+    100% 10px,
+    100% 100%,
+    10px 100%,
+    0 calc(100% - 10px)
+  );
+}
+.formPanel {
+  padding: clamp(18px, 3vw, 28px);
+  margin-bottom: 18px;
+}
+.ledger {
+  padding: clamp(16px, 3vw, 26px);
+}
+.panelHeader {
+  padding-bottom: 15px;
+  border-bottom: 1px solid #26313d;
+}
+.panelHeader > span {
+  color: #6f8597;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+}
+.formGrid {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr 0.8fr;
+  gap: 14px;
+  margin-top: 20px;
+}
+.field {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+.field label {
+  color: #9bb0bf;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.field input {
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  border: 1px solid #334351;
+  border-radius: 2px;
+  background: #070b0f;
+  color: #edf5fb;
+  font: inherit;
+  font-size: 16px;
+}
+.formActions,
+.confirmActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.formActions {
+  margin-top: 18px;
+}
+.dangerButton {
+  border-color: #7f3036;
+  background: #351116;
+  color: #ffb7ba;
+}
+.secondaryButton {
+  background: #141c23;
+  color: #b5c2cb;
+}
+.removeButton {
+  border-color: #543039;
+  background: transparent;
+  color: #ff979d;
+}
+.page button:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+.errorPanel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+  padding: 17px;
+  border-left: 3px solid #ff5a5f;
+}
+.errorPanel strong {
+  color: #ffd4d6;
+}
+.errorPanel p {
+  margin: 4px 0 0;
+  color: #ad9295;
+}
+.errorPanel button {
+  background: #1b242c;
+  color: #eef6fb;
+}
+.state {
+  min-height: 180px;
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  padding: 25px;
+  color: #8395a3;
+  text-align: center;
+}
+.state strong {
+  color: #d9e5ed;
+  font-family: 'Rajdhani', system-ui, sans-serif;
+  text-transform: uppercase;
+}
+.state p {
+  margin: 0;
+}
+.tableScroll {
+  max-width: 100%;
+  overflow-x: auto;
+  margin-top: 14px;
+}
+.tableScroll table {
+  width: 100%;
+  min-width: 780px;
+  border-collapse: collapse;
+}
+.tableScroll th,
+.tableScroll td {
+  padding: 13px 11px;
+  border-bottom: 1px solid #202b34;
+  text-align: left;
+  vertical-align: middle;
+}
+.tableScroll th {
+  color: #718697;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.tableScroll td {
+  color: #bdcad3;
+  font-size: 0.85rem;
+}
+.tableScroll code {
+  color: #8fc7f1;
+  font-family: ui-monospace, monospace;
+  font-size: 0.72rem;
+}
+.activeBadge,
+.expiredBadge {
+  display: inline-block;
+  padding: 5px 8px;
+  border: 1px solid;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.activeBadge {
+  border-color: #7e3036;
+  color: #ff8e93;
+  background: #2c1014;
+}
+.expiredBadge {
+  border-color: #36444f;
+  color: #8293a0;
+  background: #141a1f;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 760px) {
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+  .workspaceHeading {
+    align-items: flex-start;
+  }
+}
+@media (max-width: 620px) {
+  .workspace {
+    padding-inline: 10px;
+  }
+  .workspaceHeading {
+    padding-inline: 5px;
+  }
+  .errorPanel {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .tableScroll {
+    overflow: visible;
+  }
+  .tableScroll table,
+  .tableScroll tbody,
+  .tableScroll tr,
+  .tableScroll td {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .tableScroll thead {
+    display: none;
+  }
+  .tableScroll tr {
+    margin-bottom: 12px;
+    border: 1px solid #26313d;
+    background: #090d12;
+  }
+  .tableScroll td {
+    display: grid;
+    grid-template-columns: 100px minmax(0, 1fr);
+    gap: 10px;
+    border-bottom: 1px solid #1b252d;
+    overflow-wrap: anywhere;
+  }
+  .tableScroll td::before {
+    content: attr(data-label);
+    color: #657b8c;
+    font-size: 0.67rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .tableScroll code {
+    overflow-wrap: anywhere;
+  }
+}

@@ -1,96 +1,81 @@
 .image-viewer-thumb {
-    position: relative;
-    overflow: hidden;
-    border-radius: 10px;
-    cursor: pointer;
-    background: rgba(255, 255, 255, 0.05);
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.04);
-    transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.2s;
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.2s;
 }
-
-.image-viewer-thumb:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 0 12px rgba(24, 119, 242, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
 .image-viewer-thumb.ratio-1-1 {
-    aspect-ratio: 1/1;
+  aspect-ratio: 1/1;
 }
 
 .image-viewer-thumb.ratio-4-3 {
-    aspect-ratio: 4/3;
+  aspect-ratio: 4/3;
 }
 
 .image-viewer-thumb.ratio-16-9 {
-    aspect-ratio: 16/9;
+  aspect-ratio: 16/9;
 }
 
 .image-viewer-thumb img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    transition: transform 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.image-viewer-thumb:hover img {
-    transform: scale(1.05);
-}
-
 .image-error {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    color: rgba(255, 255, 255, 0.4);
-    font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.85rem;
 }
 
 .image-viewer-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 9999;
-    background: rgba(0, 0, 0, 0.95);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    animation: fadeIn 0.2s;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.2s;
 }
 
 @keyframes fadeIn {
-    from {
-        opacity: 0;
-    }
+  from {
+    opacity: 0;
+  }
 
-    to {
-        opacity: 1;
-    }
+  to {
+    opacity: 1;
+  }
 }
 
 .image-viewer-full {
-    max-width: 90vw;
-    max-height: 90vh;
-    object-fit: contain;
-    border-radius: 8px;
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 8px;
 }
 
 .image-viewer-close {
-    position: absolute;
-    top: 20px;
-    right: 20px;
-    background: rgba(255, 255, 255, 0.1);
-    border: none;
-    color: white;
-    font-size: 28px;
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    cursor: pointer;
-    transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.2s;
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
-}
-
-.image-viewer-close:hover {
-    background: rgba(255, 255, 255, 0.2);
-    transform: translateY(-2px);
-    box-shadow: 0 0 12px rgba(255, 255, 255, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: white;
+  font-size: 28px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.2s;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
 }

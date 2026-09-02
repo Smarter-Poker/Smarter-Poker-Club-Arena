@@ -12,7 +12,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  /* 2026-08-23 (live mobile audit): the tournament STARTING SOON strip is
+     fixed at z-index 9400 and was drawing straight across this modal's text.
+     House convention (TournamentStartingTicker.css): dialogs live at 9600+. */
+  z-index: 9600;
   padding: 1rem;
 }
 
@@ -177,10 +180,6 @@
   font-weight: 500;
 }
 
-.infoBox a:hover {
-  text-decoration: underline;
-}
-
 .footer {
   padding: 1.25rem 1.5rem;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
@@ -252,13 +251,5 @@
   cursor: pointer;
   box-shadow:
     0 0 20px rgba(24, 119, 242, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.enterButton:not(:disabled):hover {
-  background: #166fe5;
-  transform: translateY(-1px);
-  box-shadow:
-    0 4px 24px rgba(24, 119, 242, 0.5),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }

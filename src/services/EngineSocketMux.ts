@@ -35,7 +35,14 @@
  * / RESYNC / watchdog logic runs unchanged on top.
  */
 
-const LINGER_AFTER_LAST_RELEASE_MS = 5_000;
+/**
+ * 2026-08-24: raised 5s -> 60s. With the mux now default-ON this socket IS the
+ * lobby connection: a player who stands up, browses the lobby, and sits at
+ * another table within a minute reuses the warm socket instead of paying a
+ * fresh TLS handshake. One idle WS per browsing player is far cheaper for the
+ * engine than the reconnect storm of per-join handshakes it replaces.
+ */
+const LINGER_AFTER_LAST_RELEASE_MS = 60_000;
 /** Physical socket stuck in CONNECTING longer than this is torn down. */
 const HANDSHAKE_TIMEOUT_MS = 15_000;
 /** A facade whose SUBSCRIBE gets no SUBSCRIBED within this is failed. */
@@ -51,12 +58,20 @@ const WATCHDOG_TICK_MS = 10_000;
  */
 export const CLOSE_MUX_SUPERSEDED = 4901;
 
-/** Read the opt-in flag. Safe under Safari private mode's throwing storage. */
+/**
+ * Mux flag. DEFAULT ON as of 2026-08-24 (Dan: kill the per-join TLS handshake
+ * globally — every table join must be a SUBSCRIBE frame on the already-open
+ * lobby socket, not a fresh wss:// negotiation). `ca_ws_mux`:
+ *   unset / '1'  -> mux ON (shared /ws/multi socket)
+ *   '0'          -> mux OFF (legacy per-table /ws/table/:id sockets) — the
+ *                   kill switch if a soak regression appears.
+ * Safe under Safari private mode's throwing storage (throw -> default ON).
+ */
 export function isMuxEnabled(): boolean {
   try {
-    return localStorage.getItem('ca_ws_mux') === '1';
+    return localStorage.getItem('ca_ws_mux') !== '0';
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -182,6 +197,28 @@ class EngineSocketMuxImpl {
       if (silent) this.teardownPhysical(4001, 'no inbound traffic across subscribe window');
     }, SUBSCRIBE_TIMEOUT_MS);
     return facade;
+  }
+
+  /**
+   * LOBBY PRE-WARM (2026-08-24). Open the physical /ws/multi socket during app
+   * boot, before any table is joined, so the first join pays only a SUBSCRIBE
+   * round-trip (~30ms) instead of TCP + TLS + WS upgrade (~300-600ms).
+   *
+   * Best-effort by design: no reconnect ladder of its own. If the pre-warmed
+   * socket dies with no facades attached, failAll() is a no-op and the next
+   * acquire() simply establishes a fresh socket — exactly the pre-existing
+   * cold path. Cancels a pending linger-close so a warm socket is never
+   * thrown away moments before a join.
+   */
+  prewarm(baseUrl: string, token: string): void {
+    if (this.lingerTimer) {
+      clearTimeout(this.lingerTimer);
+      this.lingerTimer = null;
+    }
+    if (this.ws && this.ws.readyState <= WebSocket.OPEN) return; // already warm
+    this.baseUrl = baseUrl;
+    this.token = token;
+    this.ensureSocket();
   }
 
   /** Force-close and detach the physical socket; surviving facades fail and

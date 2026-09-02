@@ -71,16 +71,6 @@
   background: linear-gradient(135deg, rgba(0, 0, 0, 0.1), transparent);
 }
 
-.benefit-card.unlocked:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 24px var(--tier-color);
-  border-color: var(--tier-color);
-}
-
-.benefit-card.locked:hover {
-  background: linear-gradient(135deg, rgba(0, 0, 0, 0.15), transparent);
-}
-
 /* Top section with icon */
 .benefit-top {
   display: flex;
@@ -108,8 +98,8 @@
 
 .checkmark {
   font-size: 18px;
-  color: #FFD700;
-  text-shadow: 0 0 8px #FFD700;
+  color: #ffd700;
+  text-shadow: 0 0 8px #ffd700;
   font-weight: 700;
 }
 
@@ -144,20 +134,39 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.3);
-  backdrop-filter: blur(2px);
+  /* Lighter than the 0.3 + blur(2px) it used to carry. That treatment was
+     designed to appear only on hover, over a card the reader had deliberately
+     pointed at; permanently applied on top of `.benefit-card.locked`'s own
+     0.5 opacity it buried the benefit text underneath it. The lock is the
+     message, not the dimming. */
+  background: rgba(0, 0, 0, 0.12);
   border-radius: 12px;
   z-index: 2;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-.benefit-card.locked:hover .lock-overlay {
+  /**
+   * VISIBLE AT REST (2026-08-29).
+   *
+   * This was `opacity: 0`, raised to 1 only by `.benefit-card.locked:hover`.
+   * So the lock icon that tells a player WHY a benefit is greyed out has never
+   * once appeared on a phone — no hover, no icon — and since hover was removed
+   * estate-wide it would now never appear anywhere at all: a node React
+   * renders on every locked card, painted, and permanently invisible.
+   *
+   * The locked state was still legible without it (`.benefit-card.locked` dims
+   * the whole card to 0.5), so this is not a fix for a broken screen. It is
+   * the difference between "this one looks faded" and "this one is locked",
+   * which is the question the player is actually asking.
+   */
   opacity: 1;
+  pointer-events: none;
 }
 
 .lock-icon {
   font-size: 28px;
+  /* Was invisible until the overlay faded in, so it never needed a colour of
+     its own. Now that it is always on screen it has to read against the card
+     rather than inherit whatever the card is using. */
+  color: rgba(255, 255, 255, 0.75);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
 
 /* Glow effect for unlocked cards */
@@ -183,7 +192,7 @@
 .tier-benefits-section h4 {
   font-size: 16px;
   font-weight: 700;
-  color: #FFD700;
+  color: #ffd700;
   margin: 0;
   letter-spacing: 0.3px;
 }
@@ -217,7 +226,7 @@
 .tier-benefit-item .value {
   font-size: 18px;
   font-weight: 700;
-  color: #FFD700;
+  color: #ffd700;
 }
 
 /* Responsive */

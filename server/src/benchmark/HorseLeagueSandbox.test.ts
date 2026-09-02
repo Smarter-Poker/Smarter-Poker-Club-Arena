@@ -28,7 +28,7 @@ const liveHand = (ts: number): ActionRecord[] =>
     },
   ] as never;
 
-describe('HorseMind V12.2 — sandbox isolation', () => {
+describe('HorseMind V12.2 - sandbox isolation', () => {
   it('runInSandbox reads and writes only the sandbox state', async () => {
     HorseMind.observe(liveHand(100), []);
     expect(HorseMind.getStats('real-player')?.hands).toBe(1);
@@ -72,7 +72,7 @@ describe('HorseMind V12.2 — sandbox isolation', () => {
   });
 });
 
-describe('HorseLeague V12.2 — sandbox-mode simulator integrity', () => {
+describe('HorseLeague V12.2 - sandbox-mode simulator integrity', () => {
   it('a sandboxed matchup leaves live HorseMind completely untouched', async () => {
     HorseMind.observe(liveHand(500), []);
     const liveDirty = HorseMind.dirtyCount();

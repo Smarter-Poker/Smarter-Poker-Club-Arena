@@ -11,7 +11,7 @@ import { PreActionEngine } from './PreActionEngine.js';
 const T = 'table-1';
 const P = 'player-1';
 
-describe('PreActionEngine — auto_call respects maxCallAmount (A9)', () => {
+describe('PreActionEngine - auto_call respects maxCallAmount (A9)', () => {
   let eng: PreActionEngine;
   beforeEach(() => {
     eng = new PreActionEngine();
@@ -62,7 +62,10 @@ describe('PreActionEngine — auto_call respects maxCallAmount (A9)', () => {
     expect(r.action).toBe('check');
   });
 
-  it('with no cap set, an all-in call still commits the stack', () => {
+  it('LEGACY SHAPE: with neither cap nor armed price recorded, the call goes through', () => {
+    // No maxCallAmount AND no toCallAtSet — a shape only a pre-2026-08-28
+    // caller could produce (the engine now always records toCallAtSet).
+    // Kept so the entry-with-no-information path is defined behaviour.
     eng.setPreAction(T, P, 'auto_call');
     const r = eng.executePreAction(T, P, false, 5000, 1000);
     expect(r.executed).toBe(true);
@@ -75,11 +78,95 @@ describe('PreActionEngine — auto_call respects maxCallAmount (A9)', () => {
     const e2 = new PreActionEngine((ev) => events.push(ev as never));
     e2.setPreAction(T, P, 'auto_call', 50);
     e2.executePreAction(T, P, false, 5000, 1000);
-    expect(events.some((ev) => ev.type === 'PRE_ACTION_INVALIDATED' && ev.reason === 'call_exceeds_max')).toBe(true);
+    expect(
+      events.some((ev) => ev.type === 'PRE_ACTION_INVALIDATED' && ev.reason === 'call_exceeds_max')
+    ).toBe(true);
   });
 });
 
-describe('PreActionEngine — auto_call_any is deliberately uncapped', () => {
+describe('PreActionEngine - auto_call can NEVER call a raise past the armed price (Dan 2026-08-28)', () => {
+  // Dan, verbatim: "I was in the small blind and clicked the Call 15 button
+  // (NOT the Call Any button), it auto called a raise which was more than the
+  // 15. THAT CAN NEVER EVER EVER HAPPEN." The engine records the price at arm
+  // time (5th setPreAction arg, computed server-side) and refuses any higher
+  // price at fire time — with or without a client-sent maxCallAmount.
+  let eng: PreActionEngine;
+  const events: Array<{ type: string; reason?: string }> = [];
+  beforeEach(() => {
+    events.length = 0;
+    eng = new PreActionEngine((ev) => events.push(ev as never));
+  });
+
+  it('THE 10/25 SB BUG: armed at 15, raised to 65 - invalidated, nothing called', () => {
+    eng.setPreAction(T, P, 'auto_call', undefined, 15);
+    const r = eng.executePreAction(T, P, false, 65, 1000);
+    expect(r.executed).toBe(false);
+    expect(r.invalidated).toBe(true);
+    expect(r.amount).toBeUndefined();
+    expect(
+      events.some((ev) => ev.type === 'PRE_ACTION_INVALIDATED' && ev.reason === 'call_exceeds_max')
+    ).toBe(true);
+  });
+
+  it('still calls when the price did not move', () => {
+    eng.setPreAction(T, P, 'auto_call', undefined, 15);
+    const r = eng.executePreAction(T, P, false, 15, 1000);
+    expect(r.executed).toBe(true);
+    expect(r.action).toBe('call');
+    expect(r.amount).toBe(15);
+  });
+
+  it('the tighter of maxCallAmount and the armed price wins', () => {
+    // Client said "up to 100" but the price on screen was 15 — a raise to 40
+    // is inside the client cap and still refused: the player pressed a button
+    // that said Call 15.
+    eng.setPreAction(T, P, 'auto_call', 100, 15);
+    const r = eng.executePreAction(T, P, false, 40, 1000);
+    expect(r.executed).toBe(false);
+    expect(r.invalidated).toBe(true);
+  });
+
+  it('armed while checking was free (price 0): ANY bet invalidates rather than calls', () => {
+    eng.setPreAction(T, P, 'auto_call', undefined, 0);
+    const r = eng.executePreAction(T, P, false, 25, 1000);
+    expect(r.executed).toBe(false);
+    expect(r.invalidated).toBe(true);
+  });
+});
+
+describe('PreActionEngine - single-shot, never re-arms (Dan 2026-08-28)', () => {
+  // Reverses the 2026-08-21 sticky re-arm: "the check fold, folds... but then
+  // re-appears again after the fold, same bug for check or call any." One
+  // press, one action — the engine forgets the entry the moment it executes.
+  let eng: PreActionEngine;
+  beforeEach(() => {
+    eng = new PreActionEngine();
+  });
+
+  it('auto_check executes once and is gone on the next street', () => {
+    eng.setPreAction(T, P, 'auto_check');
+    expect(eng.executePreAction(T, P, true, 0, 1000).executed).toBe(true);
+    expect(eng.executePreAction(T, P, true, 0, 1000).executed).toBe(false);
+  });
+
+  it('auto_check_fold checks once and does NOT come back armed', () => {
+    eng.setPreAction(T, P, 'auto_check_fold');
+    const first = eng.executePreAction(T, P, true, 0, 1000);
+    expect(first.executed).toBe(true);
+    expect(first.action).toBe('check');
+    // Next street, a bet arrives — the old sticky re-arm would have FOLDED
+    // here off a press the player made a street ago.
+    expect(eng.executePreAction(T, P, false, 50, 1000).executed).toBe(false);
+  });
+
+  it('auto_fold executes once and is gone', () => {
+    eng.setPreAction(T, P, 'auto_fold');
+    expect(eng.executePreAction(T, P, false, 50, 1000).executed).toBe(true);
+    expect(eng.executePreAction(T, P, false, 50, 1000).executed).toBe(false);
+  });
+});
+
+describe('PreActionEngine - auto_call_any is deliberately uncapped', () => {
   let eng: PreActionEngine;
   beforeEach(() => {
     eng = new PreActionEngine();
@@ -95,7 +182,7 @@ describe('PreActionEngine — auto_call_any is deliberately uncapped', () => {
   });
 });
 
-describe('PreActionEngine — lifecycle', () => {
+describe('PreActionEngine - lifecycle', () => {
   let eng: PreActionEngine;
   beforeEach(() => {
     eng = new PreActionEngine();

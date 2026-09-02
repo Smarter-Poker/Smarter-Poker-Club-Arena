@@ -9,7 +9,21 @@
 import { describe, it, expect } from 'vitest';
 import { playHand, runMatchup } from './HorseLeague.js';
 
-describe('HorseLeague V12 — simulator integrity', () => {
+/* ── WHY THIS FILE STATES ITS OWN BUDGET (2026-08-27) ────────────────────
+   These are CPU-bound simulations - hundreds of real hands per spec - and
+   they take ~8.5s of the suite-wide 10s `testTimeout` when run ALONE.
+   That leaves no headroom, so under a parallel `vitest run` they lose the
+   race and time out: measured on main, a full run failed 2, then 4, then 5
+   specs across DIFFERENT files on three consecutive runs, while every one of
+   those files passed on its own. A suite that reddens at random teaches
+   everyone to re-run it until it is green, which is how a REAL failure gets
+   waved through.
+
+   The budget is stated per-describe rather than raised globally on purpose:
+   a global bump would also hide a genuine hang in the ~1,900 specs that
+   legitimately finish in milliseconds. 60s is ~7x the measured solo cost, so
+   it absorbs a loaded machine without ever masking a wedge. */
+describe('HorseLeague V12 - simulator integrity', { timeout: 60_000 }, () => {
   it('conserves chips on every hand (side pots included)', async () => {
     for (let h = 0; h < 300; h++) {
       const net = playHand(1000 + h * 7919, (h % 6) + 1, () => ({}));

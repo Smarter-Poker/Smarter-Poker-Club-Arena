@@ -11,18 +11,32 @@ export function ChallengeToastListener() {
   // on reconnects or duplicate payloads
   const processedRef = useRef<Set<string>>(new Set());
 
+  // PERF 2026-08-24: the effect below used to depend on [user, toast].
+  // `user` is the whole object out of useUserStore, so ANY store write - a
+  // profile load, a balance tick, an avatar change - gave it a fresh identity
+  // and tore this Realtime channel down and re-subscribed it. This component is
+  // mounted in the app shell (App.tsx), so that churn happened for EVERY user
+  // for the entire session. Depending on user?.id (a string) makes the channel
+  // outlive unrelated store writes; `toast` rides in a ref so its identity
+  // cannot re-trigger the effect either.
+  const userId = user?.id;
+  const toastRef = useRef(toast);
   useEffect(() => {
-    if (!user) return;
+    toastRef.current = toast;
+  }, [toast]);
+
+  useEffect(() => {
+    if (!userId) return;
 
     const channel = supabase
-      .channel(`challenges-toast-${user.id}`)
+      .channel(`challenges-toast-${userId}`)
       .on(
         'postgres_changes',
         {
           event: 'UPDATE',
           schema: 'public',
           table: 'user_daily_challenges',
-          filter: `user_id=eq.${user.id}`,
+          filter: `user_id=eq.${userId}`,
         },
         (payload) => {
           const oldRecord = payload.old;
@@ -36,7 +50,9 @@ export function ChallengeToastListener() {
             // Resolve the challenge metadata
             const challenge = dailyChallengeService.findInPools(newRecord.challenge_id);
             if (challenge) {
-              toast.success(`🏆 Challenge Complete: ${challenge.name}! Check Hub to claim.`);
+              toastRef.current.success(
+                `Challenge Complete: ${challenge.name}! Check Hub to claim.`
+              );
             }
           }
         }
@@ -46,7 +62,7 @@ export function ChallengeToastListener() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, toast]);
+  }, [userId]);
 
   return null;
 }

@@ -48,7 +48,10 @@ export interface VoiceLine {
 
 /** Per-throwable spoken line. Items absent from this map simply do not talk. */
 export const VOICE_LINES: Record<string, VoiceLine> = {
-  boxing_glove: { text: 'K O!', rate: 0.85, pitch: 0.7, volume: 1, delay: 260 },
+  /* boxing_glove has NO spoken line. Dan 2026-08-29: the throwable plays the
+     knockout animation "MINUS THE K.O. AT THE END" — and a voice calling a
+     knockout at a player who is still sitting there is exactly the part he
+     asked to remove. The punches carry it. */
   anvil: { text: "That's gotta hurt", rate: 1, pitch: 0.8, delay: 420 },
   beer: { text: 'Cheers!', rate: 0.95, pitch: 1.1, delay: 300 },
   trophy: { text: "You're the best", rate: 0.95, pitch: 1.15, delay: 320 },

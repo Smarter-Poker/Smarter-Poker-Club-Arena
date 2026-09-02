@@ -11,7 +11,7 @@ function makeTableIds(n: number): string[] {
   return ids;
 }
 
-describe('TableRouter — basics', () => {
+describe('TableRouter - basics', () => {
   it('returns null when there are no workers', () => {
     const r = new TableRouter();
     expect(r.route('table-1')).toBeNull();
@@ -51,7 +51,7 @@ describe('TableRouter — basics', () => {
   });
 });
 
-describe('TableRouter — distribution', () => {
+describe('TableRouter - distribution', () => {
   it('spreads tables roughly evenly across equal-weight workers', () => {
     const workers = ['w1', 'w2', 'w3', 'w4'];
     const r = new TableRouter(workers);
@@ -75,14 +75,16 @@ describe('TableRouter — distribution', () => {
     const tables = makeTableIds(20_000);
     let big = 0;
     let small = 0;
-    for (const t of tables) r.route(t) === 'big' ? big++ : small++;
+    for (const t of tables)
+      if (r.route(t) === 'big') big++;
+      else small++;
     const ratio = big / small;
     expect(ratio).toBeGreaterThan(2.5);
     expect(ratio).toBeLessThan(3.5);
   });
 });
 
-describe('TableRouter — minimal reassignment (stability)', () => {
+describe('TableRouter - minimal reassignment (stability)', () => {
   const tables = makeTableIds(20_000);
 
   it('adding a worker only moves keys ONTO the new worker (~1/(N+1))', () => {

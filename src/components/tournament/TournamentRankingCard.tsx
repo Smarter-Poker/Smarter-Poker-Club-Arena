@@ -37,6 +37,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { readLocalSession } from '../../lib/authUtils';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
+import { CardImage } from '../table/CardImage';
 import { formatGameTitle } from '../../utils/formatGameTitle';
 import type { TournamentResult } from '../../services/pendingSessionSummary';
 import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
@@ -104,6 +105,60 @@ function medalClass(place: number | null): string {
   return 'trc2-medal--steel';
 }
 
+/**
+ * PODIUM TROPHY (Dan 2026-08-23: "the '1' should be a 1st place trophy (if they
+ * finished 2nd or 3rd add those trophies)").
+ *
+ * Drawn, not an image, for the same reason the medal always was: it has to sit
+ * inside the medal ring at any size and take the ring's metal colour. The cup
+ * is one shape in all three cases — the METAL is what says which place it is,
+ * and the ordinal band directly beneath already spells it out in words. Places
+ * outside the podium keep the numeral, because a 47th-place trophy is a lie.
+ */
+function PlacementTrophy({ place }: { place: number }) {
+  return (
+    <svg
+      className="trc2__trophy"
+      viewBox="0 0 48 48"
+      role="img"
+      aria-label={`${ordinal(place)} Place Trophy`}
+    >
+      {/* Handles */}
+      <path
+        d="M13 10H8a1 1 0 0 0-1 1v3a8 8 0 0 0 7 7.94"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.6"
+        strokeLinecap="round"
+      />
+      <path
+        d="M35 10h5a1 1 0 0 1 1 1v3a8 8 0 0 1-7 7.94"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.6"
+        strokeLinecap="round"
+      />
+      {/* Cup */}
+      <path
+        d="M13 7h22v11c0 6.08-4.92 11-11 11S13 24.08 13 18V7Z"
+        fill="currentColor"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      {/* Stem and base */}
+      <path
+        d="M24 29v6M17 41h14a1 1 0 0 0 1-1v-1a4 4 0 0 0-4-4h-8a4 4 0 0 0-4 4v1a1 1 0 0 0 1 1Z"
+        fill="currentColor"
+        stroke="currentColor"
+        strokeWidth="2.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function formatMoney(n: number): string {
   return (Math.round(n * 100) / 100).toLocaleString('en-US', {
     minimumFractionDigits: 2,
@@ -132,6 +187,9 @@ export default function TournamentRankingCard({
   onPlayAgain,
 }: TournamentRankingCardProps) {
   const navigate = useNavigate();
+  /* Desktop has no share sheet, so the button reports the clipboard copy on
+     itself rather than assuming a toast provider above this portal. */
+  const [shared, setShared] = useState(false);
   const [profile, setProfile] = useState<{
     username: string;
     avatarUrl: string;
@@ -196,14 +254,60 @@ export default function TournamentRankingCard({
   const place = result.finishPlace;
   const eventName = formatGameTitle(result.name || tableName || 'Tournament');
   const totalWon = (result.prize || 0) + (result.bountyWinnings || 0);
+  /* MYSTERY BOUNTY (section 43). Cents, and absent on any non-mystery event. */
+  const mysteryBounties = Math.max(0, Number(result.mysteryBounties) || 0);
+  const mysteryCents = Math.max(0, Math.round(Number(result.mysteryBountyCents) || 0));
+  const largestMysteryCents = Math.max(
+    0,
+    Math.round(Number(result.largestMysteryBountyCents) || 0)
+  );
 
-  /* "FIDGET SPINNER #3(11)" — event, finishing place, field size. The field
-     size is in brackets exactly as the reference has it, so the place reads as
-     "3 of 11" without spelling it out. */
+  /* "FIDGET SPINNER #3(11)" — event, finishing place, field size.
+     Dan 2026-08-23: "remove the (3) after Spin PLO6 #1". On a Spin the field
+     is ALWAYS three, so the bracket carries no information and just clutters
+     the line. An MTT keeps it: there "#3(128)" is most of the result. */
+  const showEntrants = !result.isSpin && !!result.entrants;
   const eventLine =
     place != null
-      ? `${eventName} #${place}${result.entrants ? `(${result.entrants})` : ''}`
+      ? `${eventName} #${place}${showEntrants ? `(${result.entrants})` : ''}`
       : eventName;
+
+  /**
+   * SHARE (Dan 2026-08-23: "REMOVE 'STAY OBSERVING' WITH A SHARE BUTTON").
+   *
+   * "Stay Observing" was the same action as the X and the backdrop — three
+   * controls doing one thing, and the least interesting thing on the card.
+   * A result is worth showing off, so this is the slot that earns its width.
+   *
+   * navigator.share is the native sheet on mobile, which is where this card is
+   * read. Desktop has no sheet, so fall back to the clipboard and say so on
+   * the button itself — a toast provider is not guaranteed at this portal.
+   */
+  const handleShare = async () => {
+    const text =
+      place != null
+        ? `I finished ${ordinal(place)} in ${eventName} on Smarter.Poker` +
+          (totalWon > 0 ? ` for ${formatMoney(totalWon)}.` : '.')
+        : `I just played ${eventName} on Smarter.Poker.`;
+    try {
+      const nav = navigator as Navigator & {
+        share?: (d: { title?: string; text?: string; url?: string }) => Promise<void>;
+      };
+      if (typeof nav.share === 'function') {
+        await nav.share({
+          title: 'Smarter.Poker',
+          text,
+          url: `${window.location.origin}/hub/club-arena`,
+        });
+        return;
+      }
+      await navigator.clipboard.writeText(`${text} ${window.location.origin}/hub/club-arena`);
+      setShared(true);
+      window.setTimeout(() => setShared(false), 2000);
+    } catch {
+      /* A cancelled share sheet throws. Nothing to report — the player closed it. */
+    }
+  };
 
   const handlePlayAgain = () => {
     if (onPlayAgain) {
@@ -211,12 +315,16 @@ export default function TournamentRankingCard({
       return;
     }
     onDismiss();
-    navigate('/tournaments');
+    navigate(result.isSpin ? '/tournaments?type=spin' : '/tournaments');
   };
 
   return createPortal(
-    <div className="trc2" role="dialog" aria-modal="true" aria-label="Tournament ranking">
-      <div className="trc2__backdrop" onClick={onDismiss} />
+    <div className="trc2" role="dialog" aria-modal="true" aria-label="Tournament Ranking">
+      {/* Dan 2026-08-30: "USER MUST CLICK THE 'X' TO CLOSE IT." The backdrop
+          used to be a third dismiss control; a stray tap while reading the
+          result threw the card away. It is scenery now - the X (and Escape,
+          for keyboards) are the only ways out. */}
+      <div className="trc2__backdrop" />
 
       <div className="trc2__card">
         {/* ── Title bar ── */}
@@ -229,14 +337,18 @@ export default function TournamentRankingCard({
 
         {/* ── Event banner ── */}
         <div className="trc2__banner">
-          <div className="trc2__banner-lights" aria-hidden="true" />
+          {/* Dan 2026-08-23: "remove the dots on the top." The marquee-bulb
+              strip read as a rendering artefact rather than decoration. */}
           <div className="trc2__brand">
             SMARTER<span className="trc2__brand-accent">POKER</span>
             {/* AUDIT 2026-08-22: this said SPIN unconditionally, so a
                 128-runner MTT finished under a Spin badge. `isSpin` is
                 resolved from the tournament row by isSpinTournament, not
-                guessed from the event name. */}
-            <span className="trc2__brand-mark">{result.isSpin ? 'SPIN' : 'TOURNAMENT'}</span>
+                guessed from the event name.
+                Dan 2026-08-23: "remove the 'spin' after SmarterPoker" — the
+                line below already names the game, so on a Spin the badge is
+                pure repetition. An MTT keeps its badge. */}
+            {!result.isSpin && <span className="trc2__brand-mark">TOURNAMENT</span>}
           </div>
           <div className="trc2__event">
             <span className="trc2__event-date">
@@ -248,7 +360,11 @@ export default function TournamentRankingCard({
           {/* ── Medal ── */}
           <div className={`trc2__medal ${medalClass(place)}`}>
             <div className="trc2__medal-ring">
-              <span className="trc2__medal-place">{place ?? '-'}</span>
+              {place != null && place <= 3 ? (
+                <PlacementTrophy place={place} />
+              ) : (
+                <span className="trc2__medal-place">{place ?? '-'}</span>
+              )}
             </div>
             <span className="trc2__medal-glow" aria-hidden="true" />
           </div>
@@ -276,10 +392,43 @@ export default function TournamentRankingCard({
             )}
           </div>
           <div className="trc2__reward">
-            <span className="trc2__reward-label">Reward:</span>
+            {/* Dan section 44: the champion's card must not imply the placement
+                prize was the whole story. It never was on this card - "Reward"
+                has always been prize + bounties - but a single opaque figure
+                does not SAY so, and in a mystery bounty event the split is
+                frequently most of the interest. The label names it as the
+                total, and the line underneath shows the two halves whenever
+                there are two. */}
+            <span className="trc2__reward-label">Total Payout:</span>
             <span className="trc2__reward-value">{formatMoney(totalWon)}</span>
           </div>
         </div>
+
+        {/* ── Winning hand (if applicable) ── */}
+        {result.winningCards && result.winningCards.length > 0 && (
+          <div className="trc2__winning-hand">
+            <span className="trc2__winning-hand-label">Winning Hand</span>
+            <div className="trc2__winning-cards">
+              {result.winningCards.map((c, i) => (
+                <CardImage key={i} card={c} size="lg" className="trc2__winning-card" />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {result.bountyWinnings > 0 && (
+          <div className="trc2__payout-split">
+            <span className="trc2__payout-part">
+              Prize <strong>{formatMoney(result.prize || 0)}</strong>
+            </span>
+            <span className="trc2__payout-plus" aria-hidden="true">
+              +
+            </span>
+            <span className="trc2__payout-part">
+              Bounties <strong>{formatMoney(result.bountyWinnings)}</strong>
+            </span>
+          </div>
+        )}
 
         {/* Knockouts only appear when there were any — the reference card has
             no room for a zero, and a zero says nothing. Same rule for rebuys
@@ -287,6 +436,8 @@ export default function TournamentRankingCard({
             never shown: in a rebuy event they are most of the story. */}
         {(result.knockouts > 0 ||
           result.bountyWinnings > 0 ||
+          mysteryCents > 0 ||
+          mysteryBounties > 0 ||
           result.rebuys > 0 ||
           result.addOns > 0) && (
           <div className="trc2__extras">
@@ -298,6 +449,26 @@ export default function TournamentRankingCard({
             {result.bountyWinnings > 0 && (
               <span className="trc2__extra">
                 <strong>{formatMoney(result.bountyWinnings)}</strong> In Bounties
+              </span>
+            )}
+            {/* MYSTERY BOUNTY (Dan section 43). Three facts the bounty line
+                above cannot carry: how many of those bounties were CHESTS, what
+                they paid, and the biggest single one. In cents, so divided by
+                100 here and nowhere else. */}
+            {mysteryBounties > 0 && (
+              <span className="trc2__extra">
+                <strong>{mysteryBounties.toLocaleString('en-US')}</strong> Mystery Bount
+                {mysteryBounties === 1 ? 'y' : 'ies'}
+              </span>
+            )}
+            {mysteryCents > 0 && (
+              <span className="trc2__extra">
+                <strong>{formatMoney(mysteryCents / 100)}</strong> In Mystery Bounties
+              </span>
+            )}
+            {largestMysteryCents > 0 && (
+              <span className="trc2__extra">
+                <strong>{formatMoney(largestMysteryCents / 100)}</strong> Largest Mystery Bounty
               </span>
             )}
             {result.rebuys > 0 && (
@@ -339,8 +510,8 @@ export default function TournamentRankingCard({
 
         {/* ── Actions ── */}
         <div className="trc2__actions">
-          <button className="trc2__btn" onClick={onDismiss}>
-            Stay Observing
+          <button className="trc2__btn" onClick={() => void handleShare()}>
+            {shared ? 'Link Copied' : 'Share'}
           </button>
           <button className="trc2__btn trc2__btn--primary" onClick={handlePlayAgain}>
             Play Again

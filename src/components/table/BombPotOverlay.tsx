@@ -76,6 +76,10 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId, playSou
   const [phase, setPhase] = useState<BombPhase>('idle');
   const [anteAmount, setAnteAmount] = useState(0);
   const [doubleBoard, setDoubleBoard] = useState(false);
+  /** TRIPLE-BOARD 2026-08-27: boards actually dealt (1-3), for the badge. */
+  const [boardCount, setBoardCount] = useState(1);
+  /** VARIANT OVERRIDE 2026-08-28: 'PLO4' etc. when the bomb variant differs. */
+  const [variantLabel, setVariantLabel] = useState<string | undefined>(undefined);
   const [bbMultiplier, setBBMultiplier] = useState(0);
   const [artFailed, setArtFailed] = useState(false);
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -118,6 +122,8 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId, playSou
     if (payload?.tableId !== tableId) return;
     setAnteAmount(payload.anteAmount || 0);
     setDoubleBoard(payload.doubleBoard || false);
+    setBoardCount(Number(payload.boardCount) || (payload.doubleBoard ? 2 : 1));
+    setVariantLabel(typeof payload.variantLabel === 'string' ? payload.variantLabel : undefined);
     setBBMultiplier(payload.bbMultiplier || 0);
 
     // Restart the sequence cleanly if a stale one is somehow still running
@@ -137,10 +143,12 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId, playSou
     });
     at(T_EXPLODE, () => {
       setPhase('explode');
-      if (playSounds) {
-        soundService.playBombExplosion();
-        triggerScreenShake('heavy', containerRef.current);
-      }
+      if (playSounds) soundService.playBombExplosion();
+      // ANIMATION AUDIT 2026-08-27: the shake lived INSIDE the sound gate — a
+      // muted (or background-tab) player lost the screen shake along with the
+      // audio. The shake is motion, not sound; it plays regardless of mute.
+      // (reducedMotion.css flattens the keyframe for reduced-motion players.)
+      triggerScreenShake('heavy', containerRef.current);
     });
     at(T_TITLE, () => setPhase('title'));
     at(T_HIDE, () => setPhase('idle'));
@@ -164,6 +172,32 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId, playSou
 
   return (
     <div className="bomb-pot-overlay" ref={containerRef} data-phase={phase} aria-hidden="true">
+      {/*
+        THE ANTE IS ANNOUNCED IN WORDS, NOT ONLY IN MOTION (2026-08-29).
+
+        The overlay is aria-hidden, and correctly so — a cherry bomb, a wick,
+        a blast and a screen shake are decoration, and reading them out would
+        be noise. But every WORD of the event lived inside that decoration: the
+        BOMB POT title, the DOUBLE BOARD / TRIPLE BOARD badge and the "Everyone
+        Antes n" line. So a player using a screen reader was charged a forced
+        ante with no announcement of any kind.
+
+        CLAUDE.md §10.6 is the rule this breaks: reduced motion collapses the
+        motion but never the meaning. The same applies when the motion is
+        hidden rather than reduced. This live region carries the meaning
+        alongside the decoration — one sentence, announced once when the title
+        lands, in the same words the felt shows. The scoop banner already had
+        aria-live; this is the pattern catching up with it.
+      */}
+      {phase === 'title' && (
+        <div className="bpo-sr-only" role="status" aria-live="assertive" aria-hidden={false}>
+          {`Bomb Pot. ${
+            boardCount >= 3 ? 'Triple Board. ' : doubleBoard ? 'Double Board. ' : ''
+          }${variantLabel ? `Played As ${variantLabel}. ` : ''}${
+            anteAmount > 0 ? `Everyone Antes ${anteAmount.toLocaleString()}.` : ''
+          }`}
+        </div>
+      )}
       {/* ── Phases 1-2: the cherry bomb, wick lit ───────────────────────── */}
       {bombVisible && (
         <div className={`bpo-bomb bpo-bomb--${phase}`}>
@@ -275,7 +309,15 @@ export const BombPotOverlay: React.FC<BombPotOverlayProps> = ({ tableId, playSou
               );
             })}
           </div>
-          <div className="bpo-subtitle">{doubleBoard ? 'DOUBLE BOARD' : 'ALL PLAYERS IN'}</div>
+          {/* Spec §6.1 step 5: the badge names the board count before the
+              first board is shown — TRIPLE BOARD / DOUBLE BOARD / single —
+              and, on a variant-override bomb (spec §10.1), the game it will
+              be played as: "PLO4 DOUBLE BOARD". */}
+          <div className="bpo-subtitle">
+            {`${variantLabel ? `${variantLabel} ` : ''}${
+              boardCount >= 3 ? 'TRIPLE BOARD' : doubleBoard ? 'DOUBLE BOARD' : 'ALL PLAYERS IN'
+            }`}
+          </div>
           {anteAmount > 0 && (
             <div className="bpo-ante">
               Everyone Antes {anteAmount.toLocaleString()}

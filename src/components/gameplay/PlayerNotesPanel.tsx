@@ -5,7 +5,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { useStaggerAnimation } from '../../hooks/useStaggerAnimation';
@@ -53,6 +53,8 @@ export default function PlayerNotesPanel({
   const [selectedColor, setSelectedColor] = useState('none');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  /** In-flight latch for the paid tag purchase — see toggleTag. */
+  const tagPurchaseRef = useRef(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isVIP, setIsVIP] = useState(false);
   const navigate = useNavigate();
@@ -76,12 +78,20 @@ export default function PlayerNotesPanel({
 
   const loadSingleNote = async () => {
     setLoading(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('player_notes')
       .select('id, user_id, target_user_id, notes, color_label, tags')
       .eq('user_id', user?.id)
       .eq('target_user_id', targetUserId)
       .maybeSingle();
+
+    /* A FAILED READ IS NOT "NO NOTE ON THIS PLAYER" (2026-08-29). Only `data`
+       was destructured, and a Supabase builder resolves with {data: null,
+       error} rather than rejecting, so a failure left the panel showing an
+       empty note -- and the player, believing they had never written one,
+       types a fresh one over the top of the note they already had. The sibling
+       loadAllNotes twenty lines below already destructures `error`. */
+    if (error) reportError(error, 'PlayerNotesPanel.loadSingleNote');
 
     if (data) {
       setCurrentNote(data.notes || '');
@@ -162,20 +172,38 @@ export default function PlayerNotesPanel({
       return;
     }
 
-    // Adding a tag: VIPs get unlimited, non-VIPs pay 1💎 per tag
+    /**
+     * AUDIT 2026-08-28 — A NON-VIP COULD ADD EXACTLY ONE TAG, EVER.
+     *
+     * `tag_pack` is priced `permanent` (VIPService FEATURE_PRICING even notes
+     * it is "advertised per_use, actually written permanent"), so after the
+     * first successful purchase fn_purchase_feature answers `already_owned`
+     * with `success: false`. This site checked only `success`, so every
+     * subsequent tag opened the buy-more-diamonds sheet for something the
+     * player already owned, and `setSelectedTags` was never reached.
+     * Ownership is permission. Also given an in-flight ref, because two taps
+     * inside one commit both passed the `includes` test above (state had not
+     * committed) and both charged.
+     */
     if (!isVIP) {
       if (!user?.id) return;
-      const result = await vipService.purchaseFeature(user.id, 'tag_pack');
-      if (!result.success) {
-        showDiamondTopUp(toast, navigate, {
-          feature: 'Player Tag',
-          cost: FEATURE_PRICING.tag_pack.cost,
-        });
-        return;
+      if (tagPurchaseRef.current) return;
+      tagPurchaseRef.current = true;
+      try {
+        const result = await vipService.purchaseFeature(user.id, 'tag_pack');
+        if (!result.success && !result.alreadyOwned) {
+          showDiamondTopUp(toast, navigate, {
+            feature: 'Player Tag',
+            cost: FEATURE_PRICING.tag_pack.cost,
+          });
+          return;
+        }
+      } finally {
+        tagPurchaseRef.current = false;
       }
     }
 
-    setSelectedTags((prev) => [...prev, tag]);
+    setSelectedTags((prev) => (prev.includes(tag) ? prev : [...prev, tag]));
   };
 
   const deleteNote = async (noteId: string) => {
@@ -232,7 +260,7 @@ export default function PlayerNotesPanel({
 
         <textarea
           className={styles.noteInput}
-          placeholder="Add notes about this player..."
+          placeholder="Add Notes About This Player..."
           value={currentNote}
           onChange={(e) => setCurrentNote(e.target.value)}
           rows={compact ? 3 : 5}
@@ -288,7 +316,7 @@ export default function PlayerNotesPanel({
       <input
         type="text"
         className={styles.searchInput}
-        placeholder="Search notes..."
+        placeholder="Search Notes..."
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
       />
@@ -297,7 +325,7 @@ export default function PlayerNotesPanel({
         {loading ? (
           <div className={styles.loading}>Loading Notes...</div>
         ) : filteredNotes.length === 0 ? (
-          <div className={styles.empty}>{searchQuery ? 'No matching notes' : 'No notes yet'}</div>
+          <div className={styles.empty}>{searchQuery ? 'No Matching Notes' : 'No Notes Yet'}</div>
         ) : (
           filteredNotes.map((note, idx) => (
             <div

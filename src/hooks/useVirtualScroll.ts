@@ -1,101 +1,79 @@
-/**
- * useVirtualScroll — IntersectionObserver-based windowed rendering
- *
- * Renders only visible items + buffer to prevent DOM bloat on long lists.
- * No external dependencies — uses native IntersectionObserver.
- *
- * Usage:
- *   const { visibleItems, containerRef, sentinelRef } = useVirtualScroll(items, { buffer: 5 });
- *   return (
- *     <div ref={containerRef}>
- *       {visibleItems.map(item => <Row key={item.id} />)}
- *       <div ref={sentinelRef} />
- *     </div>
- *   );
- */
-
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 
 interface VirtualScrollOptions {
-  /** How many items to render beyond the visible window (default: 10) */
+  itemHeight?: number;
+  viewportHeight?: number;
   buffer?: number;
-  /** Initial number of items to render (default: 20) */
   initialCount?: number;
-  /** How many more items to load when sentinel is intersected (default: 20) */
   pageSize?: number;
 }
 
 interface VirtualScrollResult<T> {
-  /** The subset of items currently rendered */
   visibleItems: T[];
-  /** Ref to attach to the scroll container */
   containerRef: React.RefObject<HTMLDivElement>;
-  /** Ref to attach to the sentinel element (placed at the bottom) */
   sentinelRef: React.RefObject<HTMLDivElement>;
-  /** Whether there are more items to show */
   hasMore: boolean;
-  /** Total items count */
   totalCount: number;
-  /** Currently visible count */
   visibleCount: number;
-  /** Reset the virtual window (e.g., on filter change) */
+  startIndex: number;
+  endIndex: number;
+  paddingTop: number;
+  paddingBottom: number;
   reset: () => void;
 }
 
+/**
+ * Fixed-height windowing with row recycling. Only the viewport plus overscan is
+ * mounted; a 10,000-player roster keeps roughly a dozen row trees in the DOM.
+ */
 export function useVirtualScroll<T>(
   items: T[],
   options: VirtualScrollOptions = {}
 ): VirtualScrollResult<T> {
-  const { buffer = 10, initialCount = 20, pageSize = 20 } = options;
-
-  const [visibleCount, setVisibleCount] = useState(Math.min(initialCount, items.length));
+  const { itemHeight = 112, viewportHeight = 640, buffer = 6 } = options;
   const containerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
-  const prevLengthRef = useRef(items.length);
+  const [scrollTop, setScrollTop] = useState(0);
 
-  // Reset visible count when items change length (new data loaded)
+  // The viewport is conditionally mounted after the first page arrives. On a
+  // true cold load the ref is null during the hook's first effect; an empty
+  // dependency list therefore never attaches a scroll listener and the window
+  // remains frozen on its first slice. Re-run when the list crosses the
+  // empty/non-empty boundary so the newly mounted viewport is always wired.
+  const hasItems = items.length > 0;
   useEffect(() => {
-    if (items.length !== prevLengthRef.current) {
-      setVisibleCount(Math.min(initialCount, items.length));
-      prevLengthRef.current = items.length;
-    }
-  }, [items.length, initialCount]);
+    const node = containerRef.current;
+    if (!node) return;
+    const update = () => setScrollTop(node.scrollTop);
+    update();
+    node.addEventListener('scroll', update, { passive: true });
+    return () => node.removeEventListener('scroll', update);
+  }, [hasItems]);
 
-  // IntersectionObserver to load more items when sentinel is visible
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting) {
-          setVisibleCount((prev) => Math.min(prev + pageSize, items.length));
-        }
-      },
-      {
-        root: containerRef.current,
-        rootMargin: `${buffer * 50}px`, // Buffer zone in pixels
-        threshold: 0.1,
-      }
-    );
-
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [items.length, buffer, pageSize]);
-
-  const visibleItems = useMemo(() => items.slice(0, visibleCount), [items, visibleCount]);
+  const visibleCapacity = Math.max(1, Math.ceil(viewportHeight / itemHeight));
+  const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - buffer);
+  const endIndex = Math.min(items.length, startIndex + visibleCapacity + buffer * 2);
+  const visibleItems = useMemo(
+    () => items.slice(startIndex, endIndex),
+    [items, startIndex, endIndex]
+  );
 
   const reset = useCallback(() => {
-    setVisibleCount(Math.min(initialCount, items.length));
-  }, [initialCount, items.length]);
+    if (containerRef.current) containerRef.current.scrollTop = 0;
+    setScrollTop(0);
+  }, []);
 
   return {
     visibleItems,
     containerRef: containerRef as React.RefObject<HTMLDivElement>,
     sentinelRef: sentinelRef as React.RefObject<HTMLDivElement>,
-    hasMore: visibleCount < items.length,
+    hasMore: endIndex < items.length,
     totalCount: items.length,
-    visibleCount,
+    visibleCount: visibleItems.length,
+    startIndex,
+    endIndex,
+    paddingTop: startIndex * itemHeight,
+    paddingBottom: Math.max(0, (items.length - endIndex) * itemHeight),
     reset,
   };
 }

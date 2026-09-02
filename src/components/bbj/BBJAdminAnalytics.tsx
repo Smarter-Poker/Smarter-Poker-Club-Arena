@@ -16,6 +16,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import './BBJAdminAnalytics.css';
+import { money } from '../../utils/handFormat';
 
 export interface BBJAdminAnalyticsProps {
   poolId: string | null;
@@ -39,12 +40,6 @@ interface Analytics {
   days_since_last_hit: number | null;
   net_pool_position: number;
 }
-
-const money = (n: number | null | undefined, dp = 2): string =>
-  Number(n || 0).toLocaleString('en-US', {
-    minimumFractionDigits: dp,
-    maximumFractionDigits: dp,
-  });
 
 export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
   const [data, setData] = useState<Analytics | null>(null);
@@ -102,8 +97,8 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
           <span className="bbj-admin__stat-value">{Number(data.hit_count).toLocaleString()}</span>
           <span className="bbj-admin__stat-sub">
             {data.avg_days_between_hits != null
-              ? `every ~${Number(data.avg_days_between_hits).toFixed(1)} days`
-              : 'not enough history'}
+              ? `Every ~${Number(data.avg_days_between_hits).toFixed(1)} Days`
+              : 'Not Enough History'}
           </span>
         </div>
 
@@ -121,7 +116,7 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
               : '-'}
           </span>
           <span className="bbj-admin__stat-sub">
-            {data.last_hit_at ? new Date(data.last_hit_at).toLocaleDateString() : 'never hit'}
+            {data.last_hit_at ? new Date(data.last_hit_at).toLocaleDateString() : 'Never Hit'}
           </span>
         </div>
 
@@ -136,8 +131,8 @@ export function BBJAdminAnalytics({ poolId }: BBJAdminAnalyticsProps) {
 
       <div className="bbj-admin__bar">
         <div className="bbj-admin__bar-label">
-          Pool Split &mdash; Main ${money(data.main_balance, 0)} / Backup $
-          {money(data.backup_balance, 0)} / Promo ${money(data.promo_balance, 0)}
+          Pool Split - Main ${money(data.main_balance, 0)} / Backup ${money(data.backup_balance, 0)}{' '}
+          / Promo ${money(data.promo_balance, 0)}
         </div>
         <div className="bbj-admin__bar-track">
           {(() => {

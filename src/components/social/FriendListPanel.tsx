@@ -121,7 +121,7 @@ function FriendListPanelInner({
         try {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, username, display_name, avatar_url:arena_avatar_url, level, tier')
+            .select('id, username, display_name, avatar_url, level, tier')
             .in('id', allFriendIds);
           if (profiles) {
             for (const p of profiles) profileMap[p.id] = p;
@@ -228,7 +228,7 @@ function FriendListPanelInner({
       }
 
       // Check if already friends
-      const { data: existing } = await supabase
+      const { data: existing, error: existingErr } = await supabase
         .from('friendships')
         .select('id')
         .eq('user_id', user.id)
@@ -236,6 +236,19 @@ function FriendListPanelInner({
         .maybeSingle();
 
       if (!isMounted.current) return;
+
+      /* A FAILED CHECK IS NOT "NOT FRIENDS YET" (2026-08-29). Only `data` was
+         destructured, and a Supabase builder resolves with {data: null, error}
+         rather than rejecting -- so any failure of this lookup read as "no
+         friendship" and fell through to the insert below. The unique
+         constraint refuses the duplicate, so what the player actually saw was
+         a raw database error where "Already friends" was the truth. */
+      if (existingErr) {
+        reportError(existingErr, 'FriendListPanel.friendship_check');
+        setError('Could not check that friendship. Try again.');
+        setAddingFriend(false);
+        return;
+      }
 
       if (existing) {
         setError('Already friends');
@@ -321,7 +334,7 @@ function FriendListPanelInner({
       <div className={styles.searchBar}>
         <input
           type="text"
-          placeholder="Search friends..."
+          placeholder="Search Friends..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
@@ -335,7 +348,7 @@ function FriendListPanelInner({
         <div className={styles.addFriendRow}>
           <input
             type="text"
-            placeholder="Enter username..."
+            placeholder="Enter Username..."
             value={addFriendInput}
             onChange={(e) => setAddFriendInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleAddFriend()}
@@ -354,7 +367,7 @@ function FriendListPanelInner({
           <div className={styles.loading}>Loading...</div>
         ) : filteredFriends.length === 0 ? (
           <div className={styles.empty}>
-            {searchQuery ? 'No friends match your search' : 'No friends yet'}
+            {searchQuery ? 'No Friends Match Your Search' : 'No Friends Yet'}
           </div>
         ) : (
           filteredFriends.map((friend, idx) => (
@@ -408,8 +421,8 @@ function FriendListPanelInner({
                       haptic.light();
                       onInviteClick(friend.friendId);
                     }}
-                    title="Invite to table"
-                    aria-label="Invite to table"
+                    title="Invite To Table"
+                    aria-label="Invite To Table"
                   ></button>
                 )}
               </div>

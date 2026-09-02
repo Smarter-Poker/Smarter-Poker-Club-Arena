@@ -44,8 +44,8 @@
   background: var(--card-surface, #3a3b3c);
   border: none;
   color: var(--off-white, #e4e6eb);
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   font-size: 18px;
   cursor: pointer;
@@ -53,10 +53,6 @@
   align-items: center;
   justify-content: center;
   transition: background 0.15s ease;
-}
-
-.tsp-close:hover {
-  background: rgba(255, 255, 255, 0.15);
 }
 
 /* ── Loading ── */
@@ -83,10 +79,6 @@
   margin: 0 8px;
   transition: background 0.15s ease;
   gap: 12px;
-}
-
-.tsp-item:hover {
-  background: rgba(255, 255, 255, 0.05);
 }
 
 .tsp-item--active {
@@ -136,8 +128,8 @@
 }
 
 .tsp-toggle--on .tsp-toggle__track {
-  background-color: #22c55e;
-  border: 2px solid #4ade80;
+  background-color: #3fb950;
+  border: 2px solid #4dc660;
 }
 
 .tsp-toggle--off .tsp-toggle__track {
@@ -177,10 +169,6 @@
   transition: background 0.15s ease;
 }
 
-.tsp-theme-link:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-
 .tsp-theme-link__label {
   font-size: 14px;
   font-weight: 500;
@@ -190,4 +178,121 @@
 .tsp-theme-link__arrow {
   font-size: 18px;
   color: var(--soft-white, #b0b3b8);
+}
+
+/* Table Studio companion treatment: in-game controls use the same tactile
+   obsidian/cobalt language as the appearance picker they open. */
+.tsp-container {
+  --tsp-accent: #48bfff;
+  --tsp-line: rgba(148, 178, 205, 0.16);
+  color: #edf7ff;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
+}
+
+.tsp-overlay {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.035), transparent 44%), #090f16;
+  border: 1px solid rgba(161, 197, 224, 0.2);
+  border-radius: 4px;
+  box-shadow:
+    0 24px 70px rgba(0, 0, 0, 0.62),
+    inset 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.tsp-header {
+  min-height: 64px;
+  padding: 14px 16px;
+  background: linear-gradient(90deg, rgba(25, 40, 55, 0.8), rgba(10, 17, 25, 0.8));
+  border-bottom-color: var(--tsp-line);
+}
+
+.tsp-title {
+  color: #f2f8fc;
+  font-family: 'Rajdhani', 'Arial Narrow', sans-serif;
+  font-size: 19px;
+  letter-spacing: 0.025em;
+}
+
+.tsp-close {
+  color: #9db1c1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--tsp-line);
+}
+.tsp-close:focus-visible {
+  color: #fff;
+  background: rgba(72, 191, 255, 0.12);
+  outline: 2px solid rgba(72, 191, 255, 0.45);
+  outline-offset: 2px;
+}
+
+.tsp-list {
+  padding: 8px;
+}
+.tsp-item {
+  width: 100%;
+  min-height: 56px;
+  margin: 2px 0;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  font: inherit;
+  appearance: none;
+}
+.tsp-item--active {
+  background: rgba(72, 191, 255, 0.035);
+}
+.tsp-item__label {
+  color: #dce9f2;
+  font-size: 13px;
+  font-weight: 650;
+}
+.tsp-item__desc {
+  color: #71889a;
+  font-size: 10px;
+}
+
+.tsp-item:focus-visible {
+  outline: 2px solid var(--tsp-accent);
+  outline-offset: 2px;
+}
+.tsp-toggle__track {
+  width: 46px;
+  height: 26px;
+  border-radius: 999px;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.35);
+}
+.tsp-toggle--on .tsp-toggle__track {
+  background: linear-gradient(180deg, #52c7ff, #198cc5);
+  border-color: rgba(130, 220, 255, 0.75);
+  box-shadow:
+    0 0 15px rgba(42, 170, 230, 0.24),
+    inset 0 1px rgba(255, 255, 255, 0.25);
+}
+.tsp-toggle--off .tsp-toggle__track {
+  background: #17222d;
+  border-color: #34495a;
+}
+.tsp-toggle__thumb {
+  width: 18px;
+  height: 18px;
+  background: linear-gradient(145deg, #fff, #dce7ee);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.tsp-toggle--on .tsp-toggle__thumb {
+  transform: translateX(20px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tsp-item,
+  .tsp-toggle__track,
+  .tsp-toggle__thumb {
+    transition: none !important;
+  }
 }

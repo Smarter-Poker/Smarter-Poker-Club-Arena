@@ -2,7 +2,15 @@
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   background: var(--bg-primary);
-  padding-bottom: 2rem;
+  width: 100%;
+  max-width: 100vw;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
+  padding-bottom: max(70px, env(safe-area-inset-bottom));
 }
 
 .waitlist-content {
@@ -30,15 +38,6 @@
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
   transition: all var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275)) 0.2s;
 }
-
-.waitlist-card:hover {
-  transform: translateY(-1px);
-  box-shadow:
-    0 0 12px rgba(34, 197, 94, 0.15),
-    0 0 0 1px rgba(255, 255, 255, 0.06),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
 .waitlist-info {
   flex: 1;
 }
@@ -87,6 +86,8 @@
 .leave-btn {
   color: var(--accent-danger);
   border-color: var(--accent-danger);
+  touch-action: manipulation;
+  min-height: 44px;
 }
 
 .loading-state,

@@ -6,20 +6,21 @@
  * Root application with routing, auth guards, and global providers
  */
 
-import { Routes, Route, Link, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { SessionSummaryHost } from './components/session/SessionSummaryHost';
 import TournamentRankingHost from './components/tournament/TournamentRankingHost';
 import TournamentStartingTicker from './components/tournament/TournamentStartingTicker';
 import TournamentAutoSeat from './components/tournament/TournamentAutoSeat';
 import { MEDIA_BASE } from './utils/mediaBase';
 import { Suspense, useState, useEffect } from 'react';
-import { lazyWithRetry as lazy } from './utils/lazyWithRetry';
 import { supabase } from './lib/supabase';
 import { realtimeChannelService } from './services/RealtimeChannelService';
 import { OfflineQueueService } from './services/OfflineQueueService';
-import { busEventLogger } from './services/BusEventLogger';
 import GlobalWaitlistListener from './components/common/GlobalWaitlistListener';
+import UnionSkinGuard from './components/common/UnionSkinGuard';
 import { ChallengeToastListener } from './components/notifications/ChallengeToastListener';
+import PushSubscriptionSync from './components/notifications/PushSubscriptionSync';
+import FirstRunPushPrompt from './components/notifications/FirstRunPushPrompt';
 import LastClubTracker from './components/common/LastClubTracker';
 import WaitlistBanner from './components/common/WaitlistBanner';
 import { addBreadcrumb } from './core/SentryInit';
@@ -27,13 +28,17 @@ import { addBreadcrumb } from './core/SentryInit';
 // Intro Video — lazy-loaded (only shown once per session, not needed for initial paint)
 const IntroVideo = lazyWithRetry(() => import('./components/IntroVideo'));
 import { useSettingsStore } from './stores/useSettingsStore';
+import { useShellUpdateGate } from './hooks/useShellUpdateGate';
+import { startShellTelemetry } from './services/ShellTelemetryService';
 
 // Layouts
 import AppLayout from './components/layouts/AppLayout';
+import LegacyClubToolRedirect from './components/navigation/LegacyClubToolRedirect';
 import { ToastProvider } from './components/common/Toast';
 import ErrorBoundary from './components/common/ErrorBoundary';
 import RouteErrorBoundary from './components/common/RouteErrorBoundary';
 import { PageErrorBoundary } from './components/common/PageErrorBoundary';
+import { LoadingState } from './components/common/EmptyState';
 import OfflineQueueBadge from './components/common/OfflineQueueBadge';
 import NavigationProgress from './components/common/NavigationProgress';
 import ConnectionIndicator from './components/common/ConnectionIndicator';
@@ -41,14 +46,16 @@ import ConnectionStatusBar from './components/ConnectionStatusBar';
 import PersistentTableLayer from './components/table/PersistentTableLayer';
 import BusToastBridge from './components/common/BusToastBridge';
 import { ConfirmHost } from './components/common/confirmDialog';
+import { SignUpHost } from './components/tournament/signUpDialog';
 import MilestoneToast from './components/common/MilestoneToast';
-import { bootServices, shutdownServices } from './services/ServiceBootstrap';
-import { preloadCriticalChunks } from './utils/ChunkPreloader';
 import { GlobalBalanceSync } from './core/useGlobalBalanceSync';
-import { supabaseConnectionWatchdog } from './utils/supabaseConnectionWatchdog';
+import ClubBottomNav from './components/club/ClubBottomNav';
+import { shouldShowClubFooter } from './components/club/clubFooterVisibility';
 
 // Auth Guards
 import { AuthGuard, GuestGuard } from './components/auth/AuthGuard';
+import ClubMemberGuard from './components/auth/ClubMemberGuard';
+import GameCreationGuard from './components/auth/GameCreationGuard';
 import TOSGuard from './components/legal/TOSGuard';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 
@@ -60,9 +67,10 @@ const ClubsPage = lazyWithRetry(() => import('./pages/ClubsPage'));
 const ClubHomePage = lazyWithRetry(() => import('./pages/ClubHomePage'));
 const ClubDashboard = lazyWithRetry(() => import('./pages/club/ClubDashboard'));
 const ClubDataPage = lazyWithRetry(() => import('./pages/club/ClubDataPage'));
-const CreateClubPage = lazyWithRetry(() => import('./pages/CreateClubPage'));
+const ClubOperationsPage = lazyWithRetry(() => import('./pages/club/ClubOperationsPage'));
 const CreateTablePage = lazyWithRetry(() => import('./pages/CreateTablePage'));
 const TableConfigPage = lazyWithRetry(() => import('./pages/TableConfigPage'));
+const GameManagementPage = lazyWithRetry(() => import('./pages/GameManagementPage'));
 const AgentManagementPage = lazyWithRetry(() => import('./pages/AgentManagementPage'));
 const TournamentPage = lazyWithRetry(() => import('./pages/TournamentPage'));
 const TournamentDetails = lazyWithRetry(() => import('./pages/tournament/TournamentDetails'));
@@ -85,8 +93,7 @@ const LeaderboardPage = lazyWithRetry(() => import('./pages/LeaderboardPage'));
 const HandHistoryPage = lazyWithRetry(() => import('./pages/HandHistoryPage'));
 const PlayerWalletPage = lazyWithRetry(() => import('./pages/PlayerWalletPage'));
 const NotificationsPage = lazyWithRetry(() => import('./pages/NotificationsPage'));
-const MessagesPage = lazyWithRetry(() => import('./pages/MessagesPage'));
-const ClubMessagesPage = lazyWithRetry(() => import('./pages/ClubMessagesPage'));
+const NavigateToMessenger = lazyWithRetry(() => import('./pages/NavigateToMessenger'));
 const SearchPage = lazyWithRetry(() => import('./pages/SearchPage'));
 const HelpPage = lazyWithRetry(() => import('./pages/HelpPage'));
 const CashierPage = lazyWithRetry(() => import('./pages/CashierPage'));
@@ -94,6 +101,9 @@ const CashierTradePage = lazyWithRetry(() => import('./pages/CashierTradePage'))
 const SuperAgentDashboard = lazyWithRetry(() => import('./pages/SuperAgentDashboard'));
 const AchievementsPage = lazyWithRetry(() => import('./pages/AchievementsPage'));
 const ClubMembersPage = lazyWithRetry(() => import('./pages/ClubMembersPage'));
+const MemberManagementPage = lazyWithRetry(() => import('./pages/MemberManagementPage'));
+const PlayerStatisticsPage = lazyWithRetry(() => import('./pages/PlayerStatisticsPage'));
+const PromoVaultPage = lazyWithRetry(() => import('./pages/PromoVaultPage'));
 const FriendsPage = lazyWithRetry(() => import('./pages/FriendsPage'));
 const RakebackPage = lazyWithRetry(() => import('./pages/RakebackPage'));
 const BadBeatJackpotPage = lazyWithRetry(() => import('./pages/BadBeatJackpotPage'));
@@ -102,25 +112,45 @@ const PromotionsPage = lazyWithRetry(() => import('./pages/PromotionsPage'));
 const ClubSettingsPage = lazyWithRetry(() => import('./pages/ClubSettingsPage'));
 const TransactionHistoryPage = lazyWithRetry(() => import('./pages/TransactionHistoryPage'));
 const InvitePage = lazyWithRetry(() => import('./pages/InvitePage'));
-const TableCreationPage = lazyWithRetry(() => import('./pages/TableCreationPage'));
+const NotFoundPage = lazyWithRetry(() => import('./pages/NotFoundPage'));
 const ReportPlayerPage = lazyWithRetry(() => import('./pages/ReportPlayerPage'));
 const ReportReviewPage = lazyWithRetry(() => import('./pages/ReportReviewPage'));
+// INSURANCE REPORT 2026-08-28: staff-facing funnel + P&L for all-in insurance.
+const ClubInsuranceReportPage = lazyWithRetry(() => import('./pages/club/ClubInsuranceReportPage'));
+const ClubBombPotReportPage = lazyWithRetry(() => import('./pages/club/ClubBombPotReportPage'));
+const TableBombSettingsPage = lazyWithRetry(() => import('./pages/club/TableBombSettingsPage'));
 const ClubAnnouncementsPage = lazyWithRetry(() => import('./pages/ClubAnnouncementsPage'));
 const VIPPage = lazyWithRetry(() => import('./pages/VIPPage'));
 const ClubFinancialsPage = lazyWithRetry(() => import('./pages/ClubFinancialsPage'));
 const BonusPage = lazyWithRetry(() => import('./pages/BonusPage'));
-const WaitlistPage = lazyWithRetry(() => import('./pages/WaitlistPage'));
 const ClubRulesPage = lazyWithRetry(() => import('./pages/ClubRulesPage'));
 const NotificationCenter = lazyWithRetry(() => import('./pages/NotificationCenter'));
 const BusDevToolsPage = lazyWithRetry(() => import('./pages/BusDevToolsPage'));
+const ClubButtonsShowcasePage = lazyWithRetry(() => import('./pages/dev/ClubButtonsShowcasePage'));
+const ClubWalletPreviewPage = lazyWithRetry(() => import('./pages/dev/ClubWalletPreviewPage'));
+const ArenaGameCardsShowcasePage = lazyWithRetry(
+  () => import('./pages/dev/ArenaGameCardsShowcasePage')
+);
+const ClubFooterShowcasePage = lazyWithRetry(() => import('./pages/dev/ClubFooterShowcasePage'));
+const CustomizationStudioShowcasePage = lazyWithRetry(
+  () => import('./pages/dev/CustomizationStudioShowcasePage')
+);
+const FinancialDecisionShowcasePage = lazyWithRetry(
+  () => import('./pages/dev/FinancialDecisionShowcasePage')
+);
+const clubButtonsPreviewEnabled = import.meta.env.VITE_CLUB_BUTTONS_PREVIEW === 'true';
+const customizationHarnessEnabled =
+  import.meta.env.DEV || import.meta.env.VITE_CUSTOMIZATION_TEST_HARNESS === 'true';
+const financialDecisionHarnessEnabled =
+  import.meta.env.DEV || import.meta.env.VITE_FINANCIAL_DECISION_TEST_HARNESS === 'true';
 const FinancialAlertsPage = lazyWithRetry(() => import('./pages/FinancialAlertsPage'));
 const DisputeManagementPage = lazyWithRetry(() => import('./pages/DisputeManagementPage'));
 const FinancialHealthPage = lazyWithRetry(() => import('./pages/FinancialHealthPage'));
+const DriftIncidentsPage = lazyWithRetry(() => import('./pages/DriftIncidentsPage'));
 const FinancialAdminHub = lazyWithRetry(() => import('./pages/FinancialAdminHub'));
 const RateAuditPage = lazyWithRetry(() => import('./pages/RateAuditPage'));
 const SettlementDashboardPage = lazyWithRetry(() => import('./pages/SettlementDashboardPage'));
 const AgentPortalPage = lazyWithRetry(() => import('./pages/AgentPortalPage'));
-const RakebackDashboard = lazyWithRetry(() => import('./pages/RakebackDashboard'));
 const CreditAdminPanel = lazyWithRetry(() => import('./pages/CreditAdminPanel'));
 const SettlementHistoryPage = lazyWithRetry(() => import('./pages/SettlementHistoryPage'));
 const FlashPoolPage = lazyWithRetry(() => import('./pages/FlashPoolPage'));
@@ -133,9 +163,38 @@ const XMTTPage = lazyWithRetry(() => import('./pages/XMTTPage'));
 const MarketplacePage = lazyWithRetry(() => import('./pages/MarketplacePage'));
 const UnionGamesPage = lazyWithRetry(() => import('./pages/UnionGamesPage'));
 const AdminDashboardPage = lazyWithRetry(() => import('./pages/AdminDashboardPage'));
-const PlayerSessionsPage = lazyWithRetry(() => import('./pages/PlayerSessionsPage'));
 const AgentDashboardPage = lazyWithRetry(() => import('./pages/AgentDashboardPage'));
 const UnionDashboardPage = lazyWithRetry(() => import('./pages/UnionDashboardPage'));
+const CommunityWorkspacePage = lazyWithRetry(() =>
+  import('./pages/workspaces/ArenaWorkspacePages').then((module) => ({
+    default: module.CommunityWorkspacePage,
+  }))
+);
+const PlayWorkspacePage = lazyWithRetry(() =>
+  import('./pages/workspaces/ArenaWorkspacePages').then((module) => ({
+    default: module.PlayWorkspacePage,
+  }))
+);
+const RewardsWorkspacePage = lazyWithRetry(() =>
+  import('./pages/workspaces/ArenaWorkspacePages').then((module) => ({
+    default: module.RewardsWorkspacePage,
+  }))
+);
+const LegalWorkspacePage = lazyWithRetry(() =>
+  import('./pages/workspaces/ArenaWorkspacePages').then((module) => ({
+    default: module.LegalWorkspacePage,
+  }))
+);
+const ClubFinanceWorkspacePage = lazyWithRetry(() =>
+  import('./pages/workspaces/ArenaWorkspacePages').then((module) => ({
+    default: module.ClubFinanceWorkspacePage,
+  }))
+);
+const ClubControlWorkspacePage = lazyWithRetry(() =>
+  import('./pages/workspaces/ArenaWorkspacePages').then((module) => ({
+    default: module.ClubControlWorkspacePage,
+  }))
+);
 
 // Q3: Social, Messaging & Discovery Pages
 const PublicProfilePage = lazyWithRetry(() => import('./pages/PublicProfilePage'));
@@ -159,15 +218,13 @@ const PrivacyPolicyPage = lazyWithRetry(() => import('./pages/legal/PrivacyPolic
 // Admin Singletons
 const EngineDashboard = lazyWithRetry(() => import('./pages/admin/EngineDashboard'));
 const AnalyticsDashboard = lazyWithRetry(() => import('./pages/admin/AnalyticsDashboard'));
+/* House ads: smarter.poker's own promotions, platform-staff only. The page
+   gates on profiles.role and the API route behind it checks again. */
+const HouseAdsPage = lazyWithRetry(() => import('./pages/admin/HouseAdsPage'));
 
 // Loading fallback
 function LoadingSpinner() {
-  return (
-    <div className="loading-container">
-      <div className="spinner" />
-      <p style={{ marginTop: '1rem', color: 'var(--text-secondary)' }}>Loading...</p>
-    </div>
-  );
+  return <LoadingState message="Preparing Club Arena" />;
 }
 
 /**
@@ -184,8 +241,44 @@ function TableRouteSurface() {
 // Imported from centralized storage keys
 import { STORAGE_KEYS } from './lib/storage';
 import { reportError } from './utils/errorReporter';
+import SlugEnforcer from './components/common/SlugEnforcer';
 
-export default function App() {
+function ClubFooterMount() {
+  return <ClubBottomNav />;
+}
+
+/** The footer probe must stay outside auth, TOS, realtime, and data providers.
+ * It is used by CI and the post-deploy monitor to prove the shipped footer in
+ * a clean Safari/WebKit context, even when Supabase is slow or unavailable. */
+function ClubFooterProbe() {
+  return (
+    <ErrorBoundary>
+      <Suspense fallback={<LoadingSpinner />}>
+        <ClubFooterShowcasePage />
+      </Suspense>
+      <ClubFooterMount />
+    </ErrorBoundary>
+  );
+}
+
+function FullApp() {
+  const location = useLocation();
+  /* The listener the service worker has always been posting SHELL_UPDATED to
+     and never had. Without it a cache-first shell — and the exact hashed
+     chunks it names — is served for the life of the session, so a player can
+     run a days-old bundle while production serves the fix. Applies the update
+     only away from a table and only with the tab visible; see the hook. */
+  useShellUpdateGate();
+  /* And the reader for what that gate emits (2026-08-30). The gate has been
+     publishing SHELL_STALENESS_CHECKED / SHELL_RELOADED since 2026-08-29 with
+     nothing subscribed — the same shape as SHELL_UPDATED itself, which was
+     posted for months to a client that had no handler. This fix is INVISIBLE
+     when it works (no reload happens), so without a sink there is no way to
+     tell "holding" from "quietly broken". Idempotent; see the service. */
+  useEffect(() => {
+    startShellTelemetry();
+  }, []);
+
   // Check if intro video has been shown this session
   // DISABLED — intro video turned off. To re-enable, restore the original useState initializer.
   const [showIntro, setShowIntro] = useState(false);
@@ -255,45 +348,111 @@ export default function App() {
 
   // ── Start BusEventLogger, Connection Watchdog & register Service Worker ──
   useEffect(() => {
-    busEventLogger.start();
+    let disposed = false;
 
-    // Start Supabase connection watchdog (monitors connectivity, emits bus events,
-    // auto-reconnects realtime channels on recovery)
-    supabaseConnectionWatchdog.start();
+    // PERF 2026-08-24. Every module started below runs AFTER first paint, and
+    // every one of them was a STATIC import at the top of this file — so its
+    // whole dependency tree was welded into the entry chunk and had to be
+    // downloaded, parsed and evaluated BEFORE the lobby could paint. That is
+    // how SettlementCronService and FinancialCronService, neither of which the
+    // lobby has any use for, ended up on the critical path of every boot.
+    //
+    // Importing them here instead is behaviour-neutral (they already only ran
+    // from this effect) and takes them out of the first paint entirely.
+    const deferred = Promise.all([
+      import('./services/BusEventLogger'),
+      import('./utils/supabaseConnectionWatchdog'),
+      import('./services/ServiceBootstrap'),
+      import('./utils/ChunkPreloader'),
+    ])
+      .then(([logger, watchdog, bootstrap, preloader]) => {
+        // Unmounted while the chunks were in flight: start nothing, so the
+        // cleanup below has nothing to tear down.
+        if (disposed) return null;
 
-    // Register SW for background notifications
-    // FIX: Use base-relative path so the SW is found under /hub/club-arena/
-    // HARDENED: Force update check every time to bust stale SW caches after re-deploy
+        logger.busEventLogger.start();
+
+        // Start Supabase connection watchdog (monitors connectivity, emits bus
+        // events, auto-reconnects realtime channels on recovery)
+        watchdog.supabaseConnectionWatchdog.start();
+
+        // Boot all engine services
+        bootstrap.bootServices().catch((err) => {
+          reportError(err, 'App.Service_bootstrap_failed');
+        });
+
+        // Preload critical page chunks during idle time so they're cached
+        // for instant re-entry when navigating back from the World Hub
+        preloader.preloadCriticalChunks();
+
+        return { logger, watchdog, bootstrap };
+      })
+      .catch((err) => {
+        reportError(err, 'App.Deferred_service_start_failed');
+        return null;
+      });
+
+    // ── Register the service worker ────────────────────────────────────────
+    //
+    // SCOPE, 2026-08-24. This registered `/hub/club-arena/sw-bus.js` with no
+    // scope option, so it took the default: the script's own directory,
+    // `/hub/club-arena/` — WITH the trailing slash. Scope matching is a plain
+    // string prefix, and `/hub/club-arena/` is not a prefix of
+    // `/hub/club-arena`. That bare URL is exactly what the World Hub tile
+    // links to and what the SPA fallback rewrite serves, so the single most
+    // common way into this app produced an UNCONTROLLED page: no precached
+    // shell, no cache-first chunks, no media cache. Every one of those
+    // optimisations was live in the file and reached nobody who arrived by
+    // the front door. Deep links (/hub/club-arena/clubs/x) were in scope,
+    // which is why it looked like it worked when tested.
+    //
+    // Asking for `/hub/club-arena` covers the bare URL and everything under
+    // it. That is wider than the script's directory, so the server must say
+    // `Service-Worker-Allowed: /hub/club-arena` (World Hub vercel.json). If
+    // that header is ever absent the registration rejects with a SecurityError
+    // — we fall back to the default scope so behaviour is never worse than it
+    // was, rather than ending up with no service worker at all.
     if ('serviceWorker' in navigator) {
-      const swPath =
+      const base =
         import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/'
-          ? `${import.meta.env.BASE_URL}sw-bus.js`
-          : '/sw-bus.js';
+          ? import.meta.env.BASE_URL
+          : '/';
+      const swPath = `${base}sw-bus.js`;
+      // BASE_URL carries a trailing slash; the scope must not, or we are back
+      // to the bug above.
+      const wideScope = base.length > 1 ? base.replace(/\/$/, '') : '/';
+
+      const afterRegister = (reg: ServiceWorkerRegistration) => {
+        // Force the browser to check for a new version of the SW immediately.
+        // If sw-bus.js has changed (e.g., DEPLOY_TS updated), the browser will
+        // install the new SW, which triggers activate → clears old caches.
+        reg.update().catch(() => {});
+      };
+
       navigator.serviceWorker
-        .register(swPath)
-        .then((reg) => {
-          // Force the browser to check for a new version of the SW immediately.
-          // If sw-bus.js has changed (e.g., DEPLOY_TS updated), the browser will
-          // install the new SW, which triggers activate → clears old caches.
-          reg.update().catch(() => {});
-        })
-        .catch((err) => console.warn('[App] Service worker registration failed:', err));
+        .register(swPath, { scope: wideScope })
+        .then(afterRegister)
+        .catch(() =>
+          navigator.serviceWorker
+            .register(swPath)
+            .then(afterRegister)
+            .catch((err) => console.warn('[App] Service worker registration failed:', err))
+        );
     }
 
-    // Boot all engine services
-    bootServices().catch((err) => {
-      reportError(err, 'App.Service_bootstrap_failed');
-    });
-
-    // Preload critical page chunks during idle time so they're cached
-    // for instant re-entry when navigating back from the World Hub
-    preloadCriticalChunks();
-
     return () => {
-      busEventLogger.stop();
-      supabaseConnectionWatchdog.stop();
-      // Tear down engine services (online listener, cron timer, IndexedDB)
-      shutdownServices();
+      disposed = true;
+      // Tear down whatever actually started. If the chunks never resolved, or
+      // resolved after unmount, `deferred` is null and there is nothing to do.
+      deferred
+        .then((mods) => {
+          if (!mods) return;
+          mods.logger.busEventLogger.stop();
+          mods.watchdog.supabaseConnectionWatchdog.stop();
+          // Tear down engine services (online listener, cron timer, IndexedDB)
+          mods.bootstrap.shutdownServices();
+        })
+        .catch(() => {});
     };
   }, []);
 
@@ -301,10 +460,34 @@ export default function App() {
     <ErrorBoundary>
       <ToastProvider>
         <ChallengeToastListener />
+        {/* Web push enrolment. Club Arena had no path to a push subscription at
+          all until 2026-08-27: the prompt lived in the World Hub's _app.js,
+          which this SPA never loads, so 2,432 seat offers in seven days were
+          skipped for `no_subscription` against 2 subscribed accounts platform
+          wide. Both mount at the root because neither belongs to a route: the
+          sync repairs a rotated subscription on any page, and the prompt has
+          to be able to appear wherever the player actually is. See
+          src/lib/pushClient.ts for why enrolment targets the ROOT service
+          worker and not Club Arena's own sw-bus.js. */}
+        <PushSubscriptionSync />
+        <FirstRunPushPrompt />
         <GlobalBalanceSync />
         <LastClubTracker />
+        {/* Dan 2026-08-23, binding: "players, agents, super agents, nobody
+          should ever see the union skins." A union is a `clubs` row, so every
+          /clubs/:clubId/* route will render it through the club chrome. The
+          links that did so are fixed at source; this is the backstop for a
+          bookmark, a shared URL, or the next feature to make the same mistake.
+          Owner and union admins pass through. */}
+        <UnionSkinGuard />
         <BusToastBridge />
         <ConfirmHost />
+        {/* Dan 2026-08-25: the ONE tournament buy-in confirmation. Mounted here
+          for the same reason ConfirmHost is - every register button in the app
+          goes through useTournamentRegistration, which awaits this imperatively,
+          and it must be reachable from the club lobby, the tournament page, XMTT
+          and union games alike, not only from the tournament details route. */}
+        <SignUpHost />
         {/* Dan 2026-08-18: Session Complete now pops in the LOBBY, so its host
           lives outside <Routes> - it has to survive the navigate() off the
           table, and "the lobby" is HomePage OR ClubHomePage (which now serves
@@ -345,6 +528,8 @@ export default function App() {
           {/* Offline Banner — subtle amber bar, only for navigator.onLine === false */}
           {isOffline && (
             <div
+              role="status"
+              aria-live="polite"
               style={{
                 position: 'fixed',
                 top: 0,
@@ -373,6 +558,7 @@ export default function App() {
               </>
             }
           >
+            <SlugEnforcer />
             <Routes>
               {/* ═══════════════════════════════════════════════════════════════
                         PUBLIC ROUTES (No Auth Required)
@@ -394,6 +580,37 @@ export default function App() {
 
               {/* Scenario Sim — deterministic UI regression playback, no auth */}
               <Route path="/sim" element={<SimPage />} />
+
+              {/* Approved footer visual harness — intentionally blank except
+                  for the one application-root footer mounted below Routes. */}
+              <Route path="/dev/footer" element={<ClubFooterShowcasePage />} />
+
+              {/* Real-component browser harness. Development/test builds only;
+                  production navigation cannot expose the deterministic user. */}
+              <Route
+                path="/dev/customization"
+                element={
+                  customizationHarnessEnabled ? (
+                    <CustomizationStudioShowcasePage />
+                  ) : (
+                    <Navigate to="/" replace />
+                  )
+                }
+              />
+
+              {/* Real insurance and Rabbit Hunt components, driven by a
+                  deterministic no-money backend. The route is unavailable in
+                  normal production builds. */}
+              <Route
+                path="/dev/financial-decisions"
+                element={
+                  financialDecisionHarnessEnabled ? (
+                    <FinancialDecisionShowcasePage />
+                  ) : (
+                    <Navigate to="/" replace />
+                  )
+                }
+              />
 
               {/* ═══════════════════════════════════════════════════════════════
                     PROTECTED ROUTES (Auth Required)
@@ -418,9 +635,9 @@ export default function App() {
                 path="table/:tableId"
                 element={
                   <AuthGuard>
-                    <RouteErrorBoundary>
+                    <PageErrorBoundary pageName="Table">
                       <TableRouteSurface />
-                    </RouteErrorBoundary>
+                    </PageErrorBoundary>
                   </AuthGuard>
                 }
               />
@@ -453,23 +670,24 @@ export default function App() {
                    in tests/unit/deadLobbyIsGone.test.ts fails if either the
                    route or the component comes back. */}
                 <Route path="clubs" element={<Navigate to="/" replace />} />
-                <Route
-                  path="clubs/create"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Create Club">
-                        <CreateClubPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
-                />
+
+                {/* CreateClubPage was deleted with the modal redesign, but
+                    old links (hamburger menu, CreateUnionPage, bookmarks)
+                    still pointed here — and without this redirect they fell
+                    through to clubs/:clubId with clubId="create", a club
+                    that does not exist. The lobby opens CreateClubModal
+                    when it sees ?create=club. */}
+                <Route path="clubs/create" element={<Navigate to="/?create=club" replace />} />
+
                 <Route
                   path="clubs/:clubId"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Home">
-                        <ClubHomePage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Home">
+                          <ClubHomePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -477,9 +695,11 @@ export default function App() {
                   path="clubs/:clubId/agents"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Agent Management">
-                        <AgentManagementPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Agent Management">
+                          <AgentManagementPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -487,9 +707,23 @@ export default function App() {
                   path="clubs/:clubId/create-table"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Create Table">
-                        <CreateTablePage />
-                      </PageErrorBoundary>
+                      <GameCreationGuard>
+                        <PageErrorBoundary pageName="Create Table">
+                          <CreateTablePage />
+                        </PageErrorBoundary>
+                      </GameCreationGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/table-management"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Table Management">
+                          <GameManagementPage scope="club" />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -497,19 +731,58 @@ export default function App() {
                   path="clubs/:clubId/create-table/:gameType"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Table Config">
-                        <TableConfigPage />
-                      </PageErrorBoundary>
+                      <GameCreationGuard>
+                        <PageErrorBoundary pageName="Table Config">
+                          <TableConfigPage />
+                        </PageErrorBoundary>
+                      </GameCreationGuard>
                     </AuthGuard>
                   }
                 />
                 <Route
                   path="clubs/:clubId/dashboard"
+                  /* TWO URLS, ONE PAGE (Phase 7).
+                     This rendered exactly the same ClubDataPage as
+                     clubs/:clubId/data, which the operations rail links. The
+                     allowlist called it "superseded by dashboard-full", which
+                     was never what it rendered. `relative="path"` resolves
+                     ../data against the current URL, so the club id follows
+                     without a component to carry it. */
+                  element={<Navigate to="../data" relative="path" replace />}
+                />
+                <Route
+                  path="clubs/:clubId/operations"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Data">
-                        <ClubDataPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Operations">
+                          <ClubOperationsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/finance"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Finance And Risk">
+                          <ClubFinanceWorkspacePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/control"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Control">
+                          <ClubControlWorkspacePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -517,9 +790,11 @@ export default function App() {
                   path="clubs/:clubId/dashboard-full"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Dashboard">
-                        <ClubDashboard />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Dashboard">
+                          <ClubDashboard />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -539,9 +814,11 @@ export default function App() {
                   path="clubs/:clubId/lobby"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Lobby">
-                        <ClubHomePage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Lobby">
+                          <ClubHomePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -549,9 +826,11 @@ export default function App() {
                   path="clubs/:clubId/tournaments"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Tournaments">
-                        <TournamentPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Tournaments">
+                          <TournamentPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -559,9 +838,11 @@ export default function App() {
                   path="clubs/:clubId/messages"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Messages">
-                        <MessagesPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Messages">
+                          <NavigateToMessenger />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -575,16 +856,7 @@ export default function App() {
                     </AuthGuard>
                   }
                 />
-                <Route
-                  path="tournament-lobby"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Tournament Lobby">
-                        <TournamentLobbyPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
-                />
+                <Route path="tournament-lobby" element={<Navigate to="/tournaments" replace />} />
                 <Route
                   path="tournaments"
                   element={
@@ -620,7 +892,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Agent Management">
-                        <AgentManagementPage />
+                        <LegacyClubToolRedirect destination="agents" toolName="Agent Management" />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -657,6 +929,26 @@ export default function App() {
                     </AuthGuard>
                   }
                 />
+                <Route
+                  path="unions/:unionId/operations"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Union Operations">
+                        <UnionDashboardPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="unions/:unionId/table-management"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Union Table Management">
+                        <GameManagementPage scope="union" />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
                 {/*
                   The union lead's side of the weekly square-up. Separate from
                   settlement because settlement moves chips and this does not:
@@ -688,9 +980,11 @@ export default function App() {
                   path="clubs/:clubId/settlement"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Settlement">
-                        <SettlementPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Settlement">
+                          <SettlementPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -739,6 +1033,16 @@ export default function App() {
 
                 {/* New Pages */}
                 <Route
+                  path="play"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Play And Review">
+                        <PlayWorkspacePage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
                   path="leaderboard"
                   element={
                     <AuthGuard>
@@ -748,12 +1052,13 @@ export default function App() {
                     </AuthGuard>
                   }
                 />
+                <Route path="history" element={<Navigate to="/hand-history" replace />} />
                 <Route
-                  path="history"
+                  path="rewards"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Hand History">
-                        <HandHistoryPage />
+                      <PageErrorBoundary pageName="Rewards Center">
+                        <RewardsWorkspacePage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -779,11 +1084,21 @@ export default function App() {
                   }
                 />
                 <Route
+                  path="community"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Community Center">
+                        <CommunityWorkspacePage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
                   path="messages"
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Messages">
-                        <MessagesPage />
+                        <NavigateToMessenger />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -793,7 +1108,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="New Message">
-                        <MessagesPage />
+                        <NavigateToMessenger />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -803,7 +1118,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Messages">
-                        <MessagesPage />
+                        <NavigateToMessenger />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -813,7 +1128,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Club Messages">
-                        <ClubMessagesPage />
+                        <NavigateToMessenger />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -823,7 +1138,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Club Messages">
-                        <ClubMessagesPage />
+                        <NavigateToMessenger />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -864,7 +1179,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Club Members">
-                        <ClubMembersPage />
+                        <LegacyClubToolRedirect destination="members" toolName="Players" />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -877,7 +1192,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Club Data">
-                        <ClubDataPage />
+                        <LegacyClubToolRedirect destination="data" toolName="Club Data" />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -886,9 +1201,11 @@ export default function App() {
                   path="clubs/:clubId/data"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Data">
-                        <ClubDataPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Data">
+                          <ClubDataPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -904,10 +1221,16 @@ export default function App() {
                 />
                 <Route
                   path="player-sessions"
+                  /* CLUB PLAYER OPERATIONS ARE CLUB-SCOPED (Phase 7).
+                     PlayerSessionsPage was a global, unparameterised twin of
+                     clubs/:clubId/members with no door. It resolved a club for
+                     itself, which is exactly what LegacyClubToolRedirect does
+                     for the other four legacy operator URLs - so it joins them
+                     rather than keeping a second answer to the same question. */
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Players">
-                        <PlayerSessionsPage />
+                        <LegacyClubToolRedirect destination="members" toolName="Players" />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -930,9 +1253,11 @@ export default function App() {
                   path="clubs/:clubId/cashier"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Cashier">
-                        <CashierTradePage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Cashier">
+                          <CashierTradePage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -940,29 +1265,24 @@ export default function App() {
                   path="clubs/:clubId/cashier-classic"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Cashier">
-                        <CashierPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Cashier">
+                          <CashierPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
-                <Route
-                  path="hands"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Hand History">
-                        <HandHistoryPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
-                />
+                <Route path="hands" element={<Navigate to="/hand-history" replace />} />
                 <Route
                   path="clubs/:clubId/agent-dashboard"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Super Agent Dashboard">
-                        <SuperAgentDashboard />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Super Agent Dashboard">
+                          <SuperAgentDashboard />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -980,9 +1300,47 @@ export default function App() {
                   path="clubs/:clubId/members"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Members">
-                        <ClubMembersPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Members">
+                          <ClubMembersPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/promo-vault"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Promo Vault">
+                          <PromoVaultPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/members/:userId"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Member Management">
+                          <MemberManagementPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/members/:userId/statistics"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Player Statistics">
+                          <PlayerStatisticsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1010,9 +1368,11 @@ export default function App() {
                   path="clubs/:clubId/jackpot"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Bad Beat Jackpot">
-                        <BadBeatJackpotPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Bad Beat Jackpot">
+                          <BadBeatJackpotPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1050,9 +1410,11 @@ export default function App() {
                   path="clubs/:clubId/promotions"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Promotions">
-                        <PromotionsPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Promotions">
+                          <PromotionsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1060,9 +1422,11 @@ export default function App() {
                   path="clubs/:clubId/settings"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Settings">
-                        <ClubSettingsPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Settings">
+                          <ClubSettingsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1091,7 +1455,7 @@ export default function App() {
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Invite">
-                        <InvitePage />
+                        <LegacyClubToolRedirect destination="invite" toolName="Club Invite" />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -1110,9 +1474,47 @@ export default function App() {
                   path="clubs/:clubId/reports"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Report Review">
-                        <ReportReviewPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Report Review">
+                          <ReportReviewPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/insurance-report"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Insurance Report">
+                          <ClubInsuranceReportPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/tables/:tableId/bomb-settings"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Table Bomb Settings">
+                          <TableBombSettingsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/bomb-pot-report"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Bomb Pot Report">
+                          <ClubBombPotReportPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1120,9 +1522,11 @@ export default function App() {
                   path="clubs/:clubId/announcements"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Announcements">
-                        <ClubAnnouncementsPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Announcements">
+                          <ClubAnnouncementsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1140,9 +1544,11 @@ export default function App() {
                   path="clubs/:clubId/financials"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Financials">
-                        <ClubFinancialsPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Financials">
+                          <ClubFinancialsPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1152,6 +1558,16 @@ export default function App() {
                     <AuthGuard>
                       <PageErrorBoundary pageName="Financial Alerts">
                         <FinancialAlertsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="financial-incidents"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="Drift Incidents">
+                        <DriftIncidentsPage />
                       </PageErrorBoundary>
                     </AuthGuard>
                   }
@@ -1170,9 +1586,11 @@ export default function App() {
                   path="clubs/:clubId/disputes"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Disputes">
-                        <DisputeManagementPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Disputes">
+                          <DisputeManagementPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1228,13 +1646,12 @@ export default function App() {
                 />
                 <Route
                   path="rakeback-dashboard"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Rakeback">
-                        <RakebackDashboard />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
+                  /* ONE RAKEBACK DISPLAY (Phase 7, Dan 2026-08-31).
+                     RakebackDashboard was a second player-facing rakeback view
+                     beside /rakeback, reachable only by typing the URL. Same
+                     ruling as notification-center on 2026-08-25: one display
+                     per thing. Kept as a redirect so bookmarks still land. */
+                  element={<Navigate to="/rakeback" replace />}
                 />
                 <Route
                   path="credit-admin"
@@ -1288,21 +1705,23 @@ export default function App() {
                 />
                 <Route
                   path="waitlist"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Waitlist">
-                        <WaitlistPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
+                  /* THE WAITLIST LIVES WHERE THE TABLES ARE (Phase 7).
+                     table_waitlist carries 10,055 rows, every one of them put
+                     there by the lobby and table flow. This standalone page was
+                     a second view of the same queue that nothing linked to.
+                     Redirected to the arena, where the tables and their queues
+                     actually are. */
+                  element={<Navigate to="/" replace />}
                 />
                 <Route
                   path="clubs/:clubId/blacklist"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Blacklist Manager">
-                        <BlacklistManagerPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Blacklist Manager">
+                          <BlacklistManagerPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1310,9 +1729,11 @@ export default function App() {
                   path="clubs/:clubId/rules"
                   element={
                     <AuthGuard>
-                      <PageErrorBoundary pageName="Club Rules">
-                        <ClubRulesPage />
-                      </PageErrorBoundary>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Club Rules">
+                          <ClubRulesPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1336,25 +1757,31 @@ export default function App() {
                     </AuthGuard>
                   }
                 />
-                <Route
-                  path="clubs/:clubId/table-creation"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Table Creation">
-                        <TableCreationPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
-                />
 
                 {/* Q4: Backported Pages (Hub → Club Arena) */}
                 <Route
                   path="anti-cheat"
+                  /* The legacy global entrance. Anti-cheat is club-owned data,
+                     so it now has a club-scoped route below and a door on the
+                     operations rail. This one resolves a club and forwards,
+                     exactly as the four other legacy operator URLs do. */
                   element={
                     <AuthGuard>
                       <PageErrorBoundary pageName="Anti-Cheat">
-                        <AntiCheatPage />
+                        <LegacyClubToolRedirect destination="anti-cheat" toolName="Anti-Cheat" />
                       </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
+                  path="clubs/:clubId/anti-cheat"
+                  element={
+                    <AuthGuard>
+                      <ClubMemberGuard>
+                        <PageErrorBoundary pageName="Anti-Cheat">
+                          <AntiCheatPage />
+                        </PageErrorBoundary>
+                      </ClubMemberGuard>
                     </AuthGuard>
                   }
                 />
@@ -1370,13 +1797,12 @@ export default function App() {
                 />
                 <Route
                   path="union-dashboard"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Union Dashboard">
-                        <UnionDashboardPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
+                  /* THE SAME PAGE, WITHOUT ITS UNION (Phase 7).
+                     UnionDashboardPage serves at /unions/:unionId/operations and
+                     is reachable there. This was the unparameterised twin: it
+                     guessed a union for itself and nothing linked to it. Its
+                     3,130 lines were never invisible - only this door was. */
+                  element={<Navigate to="/unions" replace />}
                 />
                 <Route
                   path="marketplace"
@@ -1400,13 +1826,11 @@ export default function App() {
                 />
                 <Route
                   path="union-games"
-                  element={
-                    <AuthGuard>
-                      <PageErrorBoundary pageName="Union Games">
-                        <UnionGamesPage />
-                      </PageErrorBoundary>
-                    </AuthGuard>
-                  }
+                  /* THE SAME PAGE, WITHOUT ITS UNION (Phase 7).
+                     UnionGamesPage serves at /unions/:unionId/games and is
+                     reachable there. Same unparameterised twin as
+                     union-dashboard above. */
+                  element={<Navigate to="/unions" replace />}
                 />
 
                 {/* DevTools (admin diagnostics) */}
@@ -1418,6 +1842,38 @@ export default function App() {
                         <BusDevToolsPage />
                       </PageErrorBoundary>
                     </AuthGuard>
+                  }
+                />
+                <Route
+                  path="dev/club-ui"
+                  element={
+                    clubButtonsPreviewEnabled ? (
+                      <PageErrorBoundary pageName="Club Wallet Preview">
+                        <ClubWalletPreviewPage />
+                      </PageErrorBoundary>
+                    ) : (
+                      <AuthGuard>
+                        <PageErrorBoundary pageName="ClubButtons UI Laboratory">
+                          <ClubButtonsShowcasePage />
+                        </PageErrorBoundary>
+                      </AuthGuard>
+                    )
+                  }
+                />
+                <Route
+                  path="dev/game-cards"
+                  element={
+                    clubButtonsPreviewEnabled ? (
+                      <PageErrorBoundary pageName="Arena Game Card Preview">
+                        <ArenaGameCardsShowcasePage />
+                      </PageErrorBoundary>
+                    ) : (
+                      <AuthGuard>
+                        <PageErrorBoundary pageName="Arena Game Card Laboratory">
+                          <ArenaGameCardsShowcasePage />
+                        </PageErrorBoundary>
+                      </AuthGuard>
+                    )
                   }
                 />
 
@@ -1432,6 +1888,14 @@ export default function App() {
                 />
 
                 {/* Legal Pages — public (no AuthGuard) so users can read terms before signup */}
+                <Route
+                  path="legal"
+                  element={
+                    <PageErrorBoundary pageName="Legal Center">
+                      <LegalWorkspacePage />
+                    </PageErrorBoundary>
+                  }
+                />
                 <Route
                   path="legal/tos"
                   element={
@@ -1467,6 +1931,16 @@ export default function App() {
 
                 {/* Engine Dashboard */}
                 <Route
+                  path="house-ads"
+                  element={
+                    <AuthGuard>
+                      <PageErrorBoundary pageName="House Ads">
+                        <HouseAdsPage />
+                      </PageErrorBoundary>
+                    </AuthGuard>
+                  }
+                />
+                <Route
                   path="engine"
                   element={
                     <AuthGuard>
@@ -1488,65 +1962,11 @@ export default function App() {
                 />
 
                 {/* 404 catch-all */}
-                <Route
-                  path="*"
-                  element={
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        minHeight: '80vh',
-                        color: 'var(--off-white, #E4E6EB)',
-                        textAlign: 'center',
-                        padding: '2rem',
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontSize: '6rem',
-                          fontWeight: 800,
-                          lineHeight: 1,
-                          background: 'linear-gradient(135deg, #1877F2 0%, #00d4ff 100%)',
-                          WebkitBackgroundClip: 'text',
-                          WebkitTextFillColor: 'transparent',
-                          marginBottom: '0.5rem',
-                        }}
-                      >
-                        404
-                      </div>
-                      <p
-                        style={{
-                          fontSize: '1.25rem',
-                          color: 'var(--soft-white, #B0B3B8)',
-                          marginBottom: '2rem',
-                        }}
-                      >
-                        This Page Doesn't Exist
-                      </p>
-                      <Link
-                        to="/"
-                        style={{
-                          padding: '12px 32px',
-                          background: 'linear-gradient(135deg, #1877F2 0%, #0D5DC7 100%)',
-                          color: '#fff',
-                          borderRadius: 12,
-                          fontWeight: 600,
-                          fontSize: '1rem',
-                          textDecoration: 'none',
-                          transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-                          boxShadow: '0 4px 12px rgba(24, 119, 242, 0.3)',
-                        }}
-                      >
-                        Back To Home
-                      </Link>
-                    </div>
-                  }
-                />
+                <Route path="*" element={<NotFoundPage />} />
               </Route>
             </Routes>
           </Suspense>
+          {shouldShowClubFooter(location.pathname) && <ClubFooterMount />}
           {/* Persistent multi-table layer — mounted BESIDE <Routes>, it never
               unmounts on navigation: engine sockets for seated tables survive
               every route. Off /table/* it collapses to display:none and
@@ -1556,4 +1976,14 @@ export default function App() {
       </ToastProvider>
     </ErrorBoundary>
   );
+}
+
+export default function App() {
+  const location = useLocation();
+
+  if (location.pathname === '/dev/footer') {
+    return <ClubFooterProbe />;
+  }
+
+  return <FullApp />;
 }

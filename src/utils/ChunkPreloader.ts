@@ -35,20 +35,43 @@ const CRITICAL_CHUNKS: Array<() => Promise<any>> = [
   () => import('../pages/HandHistoryPage'),
   () => import('../pages/CashierPage'),
   () => import('../pages/NotificationsPage'),
-  () => import('../pages/MessagesPage'),
-  // PERF PASS 3 (2026-08-22): TablePage is the single heaviest chunk
-  // (~413KB JS + ~383KB CSS) and the most common heavy destination — every
-  // player who sits down needs it. Warming it last (after the light pages)
-  // makes the first table entry instant instead of paying ~150KB gzipped at
-  // the moment the player taps a table.
-  () => import('../pages/TablePage'),
-  // MultiTablePage is the live table surface PersistentTableLayer actually
-  // mounts — small itself, but warming it completes the instant-seat path.
-  () => import('../pages/MultiTablePage'),
-  // PlayerStatsPage intentionally NOT preloaded: it pulls the ~314KB recharts
-  // chart bundle, which most users never open. It lazy-loads on navigation
-  // instead (route intent), saving that bandwidth on mobile.
+  () => import('../pages/NavigateToMessenger'),
+  // PERF PASS 2026-08-24 (boot cost): TablePage (~438KB JS + ~389KB CSS) and
+  // MultiTablePage were preloaded here. Together they were the bulk of a
+  // ~1.7MB speculative download paid by EVERY boot, including by the many
+  // sessions that never open a table at all. They are still warmed the moment
+  // the player shows intent: ROUTE_CHUNKS['/table/'] below is fired by
+  // prefetchIntent() on hover / touchstart / focus of any table row, which
+  // lands ~100ms before the tap and is enough to hide the fetch.
+  // Do NOT put them back in this list.
+  //
+  // PlayerStatsPage intentionally NOT preloaded either: it pulls the ~314KB
+  // recharts chart bundle, which most users never open. It lazy-loads on
+  // navigation instead (route intent), saving that bandwidth on mobile.
 ];
+
+/**
+ * Should we speculatively download anything at all?
+ *
+ * Preloading is a bet that bandwidth is cheap. On a metered or slow connection
+ * that bet is simply wrong: the user pays for chunks they may never navigate
+ * to, and those fetches compete with the requests the current page actually
+ * needs. `navigator.connection` is not implemented everywhere (Safari, Firefox),
+ * so an absent API is treated as "proceed" — this guard only suppresses
+ * preloading when the browser explicitly tells us the connection is poor or
+ * metered.
+ */
+function shouldPreload(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const connection = (navigator as any).connection;
+  if (!connection) return true; // API unavailable — assume a normal connection
+  if (connection.saveData === true) return false; // Data Saver is an explicit "no"
+  const effectiveType = connection.effectiveType;
+  // Only '4g' (which is what Chrome reports for wifi and ethernet too) is fast
+  // enough to justify speculative downloads. 'slow-2g' / '2g' / '3g' are not.
+  if (typeof effectiveType === 'string' && effectiveType !== '4g') return false;
+  return true;
+}
 
 /**
  * Preload critical chunks during idle time.
@@ -58,6 +81,18 @@ export function preloadCriticalChunks(): void {
   if (preloaded) return;
   preloaded = true;
 
+  // Data Saver on, or a connection the browser rates below 4g: do nothing at
+  // all. Every chunk here is still reachable through lazyWithRetry on real
+  // navigation, so skipping costs latency on one navigation and saves ~1MB.
+  //
+  // NOTE the gate is applied to the CHUNK LIST ONLY, further down. It must not
+  // wrap the whole function: the deck warmer below carries its own, more
+  // permissive guard (it only refuses Data Saver and 2g), and Chrome commonly
+  // reports effectiveType '3g' on perfectly usable mobile connections. An
+  // early return here meant those users never warmed their card deck and paid
+  // an image fetch on the first hand dealt.
+  const preloadChunks = shouldPreload();
+
   const schedule =
     typeof requestIdleCallback === 'function'
       ? requestIdleCallback
@@ -66,14 +101,15 @@ export function preloadCriticalChunks(): void {
   // Wait for browser idle before starting preload
   schedule(() => {
     // Stagger imports to avoid a network burst
-    CRITICAL_CHUNKS.forEach((importFn, index) => {
-      setTimeout(() => {
-        importFn().catch(() => {
-          // Silently ignore — if a chunk fails to preload, the normal
-          // lazyWithRetry mechanism will handle it when the user navigates
-        });
-      }, index * 150); // 150ms stagger between each chunk
-    });
+    if (preloadChunks)
+      CRITICAL_CHUNKS.forEach((importFn, index) => {
+        setTimeout(() => {
+          importFn().catch(() => {
+            // Silently ignore — if a chunk fails to preload, the normal
+            // lazyWithRetry mechanism will handle it when the user navigates
+          });
+        }, index * 150); // 150ms stagger between each chunk
+      });
 
     // PERF PASS 2026-08-22: after the chunk preloads have been scheduled,
     // warm the player's card deck (~500KB of WebP) so the first hands dealt
@@ -93,33 +129,132 @@ export function preloadCriticalChunks(): void {
 }
 
 /**
+ * Route-prefix -> chunk map for intent-driven warming.
+ *
+ * 2026-08-24 (perf pass): was an exact-match lookup, so every parameterised
+ * route — '/table/:id', '/clubs/:id/...', '/profile/:userId' — could NEVER
+ * match and hovering a table row warmed nothing. Now longest-prefix matched.
+ * Each import is the same dynamic import App.tsx hands to lazyWithRetry, so
+ * Vite emits no extra chunks and the browser module cache is shared; warming
+ * an already-loaded chunk resolves instantly from cache.
+ */
+const ROUTE_CHUNKS: Record<string, () => Promise<any>> = {
+  '/': () => import('../pages/HomePage'),
+  '/profile': () => import('../pages/ProfilePage'),
+  '/challenges': () => import('../pages/DailyChallengesPage'),
+  '/settings': () => import('../pages/SettingsPage'),
+  '/wallet': () => import('../pages/PlayerWalletPage'),
+  '/hand-history': () => import('../pages/HandHistoryPage'),
+  '/history': () => import('../pages/HandHistoryPage'),
+  '/cashier': () => import('../pages/CashierPage'),
+  // The lobby Cashier tile opens the Trade room, not the legacy/classic
+  // cashier. It uses this intent-only key so a hover/hold warms the exact
+  // chunk navigation will render without pretending it is a public route.
+  '/cashier/trade': () => import('../pages/CashierTradePage'),
+  '/marketplace': () => import('../pages/MarketplacePage'),
+  '/notifications': () => import('../pages/NotificationsPage'),
+  '/messages': () => import('../pages/NavigateToMessenger'),
+  '/leaderboard': () => import('../pages/LeaderboardPage'),
+  '/tournaments': () => import('../pages/TournamentPage'),
+  '/tournament-lobby': () => import('../pages/tournament/TournamentLobbyPage'),
+  '/tournament-results': () => import('../pages/tournament/TournamentResultsPage'),
+  '/stats': () => import('../pages/PlayerStatsPage'),
+  '/players': () => import('../pages/PlayerStatsPage'),
+  // Both are needed: PersistentTableLayer lazy-loads MultiTablePage, so
+  // without this entry the first table open after boot blocks on that chunk.
+  // (2026-08-24: it was removed from CRITICAL_CHUNKS on the stated grounds
+  // that ROUTE_CHUNKS already warmed it - which was true of TablePage only.)
+  '/table/': () => {
+    void import('../pages/MultiTablePage').catch(() => {});
+    return import('../pages/TablePage');
+  },
+  '/clubs/': () => import('../pages/ClubHomePage'),
+  '/unions': () => import('../pages/UnionsPage'),
+  '/achievements': () => import('../pages/AchievementsPage'),
+  '/friends': () => import('../pages/FriendsPage'),
+  '/search': () => import('../pages/SearchPage'),
+  '/help': () => import('../pages/HelpPage'),
+};
+
+/**
  * Manually warm the cache for a specific path.
  * Call this when the user is likely to navigate to a specific page soon
- * (e.g., hovering over a navigation link).
+ * (e.g., hovering over a navigation link, touching a table row).
+ * Longest matching prefix wins: '/clubs/123/tournaments' warms via its
+ * longest matching entry rather than the bare '/clubs/' one. Root ('/')
+ * only matches exactly, never as a prefix.
  */
-export function preloadRoute(path: string): void {
-  const routeMap: Record<string, () => Promise<any>> = {
-    '/': () => import('../pages/HomePage'),
-    '/profile': () => import('../pages/ProfilePage'),
-    '/challenges': () => import('../pages/DailyChallengesPage'),
-    '/settings': () => import('../pages/SettingsPage'),
-    '/wallet': () => import('../pages/PlayerWalletPage'),
-    '/hand-history': () => import('../pages/HandHistoryPage'),
-    '/cashier': () => import('../pages/CashierPage'),
-    '/marketplace': () => import('../pages/MarketplacePage'),
-    '/notifications': () => import('../pages/NotificationsPage'),
-    '/messages': () => import('../pages/MessagesPage'),
-    '/leaderboard': () => import('../pages/LeaderboardPage'),
-    '/tournaments': () => import('../pages/tournament/TournamentLobbyPage'),
-    '/stats': () => import('../pages/PlayerStatsPage'),
-  };
+/** Keys already warmed this session; a chunk only needs importing once. */
+const warmedKeys = new Set<string>();
 
-  const importFn = routeMap[path];
-  if (importFn) {
-    importFn().catch(() => {
-      // Silently ignore preload failures
-    });
+/** Pure route resolver, exported so intent wiring is behaviorally testable. */
+export function resolvePreloadRouteKey(path: string): string | null {
+  if (!path) return null;
+  /* ROUND 10 (2026-08-29): menu links may carry a query string now (the
+     deep-linked results filters). The chunk is keyed by the PATH; a query
+     made every key miss and the prefetch silently did nothing. */
+  path = path.split('?')[0];
+  let bestKey: string | null = null;
+  for (const key of Object.keys(ROUTE_CHUNKS)) {
+    /* SEGMENT BOUNDARIES, not a bare prefix. '/profile' also matched
+       '/profiles-directory', and '/stats' matched '/statsomething'. */
+    const matches =
+      key === '/'
+        ? path === '/'
+        : path === key || path.startsWith(key.endsWith('/') ? key : `${key}/`);
+    if (matches) {
+      if (bestKey === null || key.length > bestKey.length) bestKey = key;
+    }
   }
+  return bestKey;
+}
+
+export function preloadRoute(path: string): void {
+  const bestKey = resolvePreloadRouteKey(path);
+  if (!bestKey) return;
+  // A hover that also focuses fired the same dynamic import twice.
+  if (warmedKeys.has(bestKey)) return;
+  warmedKeys.add(bestKey);
+  ROUTE_CHUNKS[bestKey]().catch(() => {
+    // Silently ignore preload failures — real navigation retries via lazyWithRetry
+    warmedKeys.delete(bestKey!);
+  });
+}
+
+/**
+ * Spread-ready intent props for links, rows and buttons:
+ *   <div {...prefetchIntent('/table/' + t.id)} onClick={...}>
+ * Covers mouse (hover), touch (touchstart fires ~100ms before click) and
+ * keyboard focus. Spread FIRST so a component's own handlers win when it also
+ * needs the event.
+ */
+type IntentProps = {
+  onMouseEnter: () => void;
+  onTouchStart: () => void;
+  onFocus: () => void;
+};
+
+/* ONE HANDLER SET PER PATH, FOR THE LIFE OF THE TAB.
+   This used to allocate three new closures on every call, and it is spread
+   into every row of a list that runs to a hundred-plus entries - so every
+   render handed those rows three new prop identities and no amount of memo()
+   below could ever skip one. The functions depend on nothing but the path, so
+   they are cached by it. */
+const intentCache = new Map<string, IntentProps>();
+/** Bounded: table ids are unique, so an unbounded map would grow all session. */
+const INTENT_CACHE_MAX = 300;
+
+export function prefetchIntent(path: string): IntentProps {
+  const hit = intentCache.get(path);
+  if (hit) return hit;
+  const fire = () => preloadRoute(path);
+  const props: IntentProps = { onMouseEnter: fire, onTouchStart: fire, onFocus: fire };
+  if (intentCache.size >= INTENT_CACHE_MAX) {
+    const oldest = intentCache.keys().next().value;
+    if (oldest !== undefined) intentCache.delete(oldest);
+  }
+  intentCache.set(path, props);
+  return props;
 }
 
 /**

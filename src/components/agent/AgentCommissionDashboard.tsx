@@ -14,6 +14,7 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
 import './AgentCommissionDashboard.css';
 import { reportError } from '../../utils/errorReporter';
+import { CommissionService } from '../../services/CommissionService';
 
 interface CommissionSummary {
   totalEarned: number;
@@ -40,12 +41,13 @@ interface SubAgent {
   username: string;
   avatarUrl: string;
   totalPlayers: number;
-  totalCommission: number;
+  /** Unclaimed commission. `null` means the read failed, NOT that it is zero. */
+  totalCommission: number | null;
   commissionRate: number;
   joinedAt: Date;
 }
 
-export function AgentCommissionDashboard() {
+export function AgentCommissionDashboard({ clubId }: { clubId?: string } = {}) {
   const isMounted = useIsMounted();
   const { user } = useAuthUser();
   const toast = useToast();
@@ -55,6 +57,14 @@ export function AgentCommissionDashboard() {
   const [subAgents, setSubAgents] = useState<SubAgent[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'summary' | 'records' | 'subagents'>('summary');
+
+  // WHAT THIS AGENT IS ACTUALLY OWED, read from agent_commissions rather than
+  // agents.pending_commission - a column written by no function and no trigger
+  // anywhere in the database. On 2026-08-31 it claimed 26,859.87 owed across 5
+  // agents while the ledger held 394,904.61 across 96.
+  const [owed, setOwed] = useState<number | null>(null);
+  const [claiming, setClaiming] = useState(false);
+  const [claimProgress, setClaimProgress] = useState<number>(0);
 
   // Stagger animations for each tab
   const { style: summaryStyle } = useStaggerAnimation(summary ? 4 : 0);
@@ -76,7 +86,14 @@ export function AgentCommissionDashboard() {
   useEffect(() => {
     if (!user?.id) return;
 
-    // Postgres Changes: live commission_records updates
+    // Postgres Changes: live commission updates.
+    //
+    // PHASE 7. This listened to commission_records, filtered on agent_id. That
+    // table held zero rows on the day it was dropped and was never in the
+    // supabase_realtime publication, so this subscription could not fire even
+    // if a row had ever been written to it. agent_commissions is the ledger the
+    // engine writes as hands settle, it IS in the publication, and its rows are
+    // keyed by the auth user id.
     const channelKey = `agent-commission-live-${user.id}`;
     const channel = masterBus.getOrCreateChannel(channelKey);
     channel
@@ -85,21 +102,18 @@ export function AgentCommissionDashboard() {
         {
           event: '*',
           schema: 'public',
-          table: 'commission_records',
-          filter: `agent_id=eq.${user.id}`,
-        },
-        () => loadDataRef.current()
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'wallets',
+          table: 'agent_commissions',
           filter: `user_id=eq.${user.id}`,
         },
         () => loadDataRef.current()
       )
+      // 2026-08-24: the `wallets` (user_id=eq.<uid>) listener that sat here is
+      // gone. PostgresSyncHooks' `global_db_sync:<userId>` channel already
+      // carries that exact listener - same table, same filter - created once at
+      // sign-in and never torn down by navigation, and it emits BALANCE_UPDATED.
+      // The bus subscriber further down already calls loadDataRef.current() on
+      // BALANCE_UPDATED, so the refresh is unchanged and one duplicate
+      // subscription per mount disappears.
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
           if (err)
@@ -130,46 +144,75 @@ export function AgentCommissionDashboard() {
     setLoading(true);
 
     try {
-      // Load commission summary
+      // Load commission summary.
+      //
+      // PHASE 7. Until this phase fn_get_agent_commission_summary was a stub
+      // whose entire body was "return zeros" - and it RETURNED TABLE, which
+      // reaches PostgREST as an array, so summaryData.total_earned was
+      // undefined and every one of these four cards rendered 0 for every agent
+      // on the platform. It answers from agent_commissions now, in chips rather
+      // than whole numbers, and scoped to the club being looked at when there
+      // is one.
       const { data: summaryData, error: summaryErr } = await supabase.rpc(
         'fn_get_agent_commission_summary',
-        { p_agent_id: user.id }
+        { p_agent_id: user.id, p_club_id: clubId ?? null }
       );
       if (summaryErr) reportError(summaryErr, 'AgentCommissionDashboard.Summary_RPC_failed');
 
       if (summaryData) {
         setSummary({
-          totalEarned: summaryData.total_earned || 0,
-          thisWeek: summaryData.this_week || 0,
-          thisMonth: summaryData.this_month || 0,
-          pendingPayout: summaryData.pending_payout || 0,
+          totalEarned: Number(summaryData.total_earned) || 0,
+          thisWeek: Number(summaryData.this_week) || 0,
+          thisMonth: Number(summaryData.this_month) || 0,
+          pendingPayout: Number(summaryData.pending_payout) || 0,
           lastPayout: summaryData.last_payout ? new Date(summaryData.last_payout) : null,
         });
       }
 
-      // Load recent records
-      // commission_records schema: id, agent_id, period_id, gross_rake, commission_rate, commission_amount, status, paid_at, created_at, updated_at
-      const { data: recordsData } = await supabase
-        .from('commission_records')
-        .select(
-          'id, agent_id, period_id, gross_rake, commission_rate, commission_amount, status, created_at'
-        )
-        .eq('agent_id', user.id)
+      // The real outstanding figure, per club. Cheap enough for a page load
+      // (one indexed sum) and deliberately not inside the claim itself, where
+      // it cost 1,474ms of an 8 second budget.
+      if (clubId && user?.id) {
+        try {
+          const amount = await CommissionService.unsettledCommission(clubId, user.id);
+          if (isMounted.current) setOwed(amount);
+        } catch (e) {
+          reportError(e, 'AgentCommissionDashboard.unsettled');
+          if (isMounted.current) setOwed(null);
+        }
+      }
+
+      // Load recent records.
+      //
+      // PHASE 7. These came from commission_records, a table that never held a
+      // row, so this tab said "No Commission Records Yet" to agents with tens of
+      // thousands of them. agent_commissions is the ledger: one row per piece of
+      // rake, keyed by the auth user id, and RLS lets the agent read their own
+      // and nobody else's. settled_at is what says whether it has been claimed;
+      // there is no status column and there does not need to be.
+      let recordsQuery = supabase
+        .from('agent_commissions')
+        .select('id, club_id, amount, source_type, source_id, notes, created_at, settled_at')
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(50);
+      if (clubId) recordsQuery = recordsQuery.eq('club_id', clubId);
+
+      const { data: recordsData, error: recordsErr } = await recordsQuery;
+      if (recordsErr) reportError(recordsErr, 'AgentCommissionDashboard.Records_load_failed');
 
       if (recordsData) {
         setRecords(
           recordsData.map((r: any) => ({
             id: r.id,
-            playerId: r.period_id || '',
-            playerName: r.status || 'pending',
-            amount: r.commission_amount || 0,
-            rakeAmount: r.gross_rake || 0,
-            commissionRate: r.commission_rate || 0,
+            playerId: r.source_id || '',
+            playerName: r.settled_at ? 'claimed' : 'unclaimed',
+            amount: Number(r.amount) || 0,
+            rakeAmount: 0,
+            commissionRate: 0,
             createdAt: new Date(r.created_at),
             tableId: undefined,
-            tableName: undefined,
+            tableName: r.source_type || undefined,
           }))
         );
       }
@@ -186,9 +229,39 @@ export function AgentCommissionDashboard() {
       const { data: subAgentsData } = myAgent
         ? await supabase
             .from('agents')
-            .select('id, user_id, total_players, pending_commission, commission_rate, created_at')
+            .select('id, user_id, total_players, commission_rate, created_at')
             .eq('parent_agent_id', myAgent.id)
         : { data: null };
+
+      // PHASE 7. What each downline is owed comes from the ledger, through a
+      // definer function, because RLS on agent_commissions lets an agent read
+      // THEIR OWN rows and nobody else's - which is right, and is why this
+      // cannot be a select. It used to be agents.pending_commission, a column
+      // nothing wrote, so this column of the tab was zeros.
+      //
+      // 2026-09-01: another change landed on main the same afternoon that fixed
+      // this by looping fn_agent_unsettled_commission once per downline. Same
+      // symptom, and it worked. This shape is kept over it for two reasons: it
+      // is one round trip rather than one per sub agent, and it asks a function
+      // that answers ONLY for the caller's own downline, rather than one that
+      // will report any user id it is handed.
+      const downlineOwed: Record<string, number> = {};
+      // PHASE 7 AUDIT (2026-09-02). `downlineFailed` exists because the catch
+      // below used to leave downlineOwed empty, and every sub agent card then
+      // rendered `0` - "the club owes this downline nothing" - which is
+      // indistinguishable from the truth and is exactly the class of lie the
+      // rest of this phase removed. A failed read renders Unavailable now.
+      let downlineFailed = false;
+      if (myAgent) {
+        try {
+          for (const row of await CommissionService.downlineCommission(clubId)) {
+            downlineOwed[row.agentId] = row.unclaimed;
+          }
+        } catch (e) {
+          downlineFailed = true;
+          reportError(e, 'AgentCommissionDashboard.downline');
+        }
+      }
 
       if (subAgentsData) {
         // Batch-fetch sub-agent profiles (no FK hint needed)
@@ -216,7 +289,7 @@ export function AgentCommissionDashboard() {
               subProfileMap[a.user_id]?.display_name || a.user_id?.substring(0, 8) || 'Unknown',
             avatarUrl: subProfileMap[a.user_id]?.avatar_url || '',
             totalPlayers: a.total_players || 0,
-            totalCommission: a.pending_commission || 0,
+            totalCommission: downlineFailed ? null : (downlineOwed[a.id] ?? 0),
             commissionRate: a.commission_rate || 0,
             joinedAt: new Date(a.created_at),
           }))
@@ -229,13 +302,49 @@ export function AgentCommissionDashboard() {
     if (isMounted.current) setLoading(false);
   };
 
-  const requestPayout = () => {
-    // Agent commissions are not paid on-demand — they accrue (pending_commission /
-    // agent_commissions) and are disbursed automatically at the weekly settlement.
-    // There is no request-payout RPC; give the agent clear feedback instead of a
-    // silently-dead button.
-    if (isMounted.current) {
-      toast.info('Commissions are paid out automatically at the weekly settlement.');
+  /**
+   * CLAIM IT.
+   *
+   * This button used to tell the agent "Commissions are paid out automatically
+   * at the weekly settlement." Nothing paid them out - no function, no cron, no
+   * settlement job. It was a reassuring sentence in front of 394,904.61 chips
+   * that had been sitting unclaimed since April.
+   *
+   * fn_agent_claim_commission pays the caller from the club bank and marks the
+   * rows settled. It works in batches, so this reports progress rather than
+   * appearing to hang: the largest agent has 192,135 rows to stamp.
+   */
+  const claimPayout = async () => {
+    if (!clubId || claiming) return;
+    setClaiming(true);
+    setClaimProgress(0);
+    try {
+      const { claimed, stoppedEarly, reason } = await CommissionService.claimCommission(
+        clubId,
+        (soFar) => {
+          if (isMounted.current) setClaimProgress(soFar);
+        }
+      );
+      if (!isMounted.current) return;
+      if (claimed > 0) {
+        toast.success(`${claimed.toLocaleString()} Chips Are Now In Your Balance`);
+      }
+      if (stoppedEarly) {
+        toast.info(reason || 'Some Commission Is Still Owed. Claim Again To Continue.');
+      }
+      await loadData();
+    } catch (e) {
+      reportError(e, 'AgentCommissionDashboard.claim');
+      if (isMounted.current) {
+        // The server's own sentence, which names the shortfall when the club
+        // bank cannot cover the claim.
+        toast.error(e instanceof Error ? e.message : 'The Claim Was Refused');
+      }
+    } finally {
+      if (isMounted.current) {
+        setClaiming(false);
+        setClaimProgress(0);
+      }
     }
   };
 
@@ -280,14 +389,23 @@ export function AgentCommissionDashboard() {
             { className: 'total', label: 'Total Earned', value: summary.totalEarned },
             { className: '', label: 'This Week', value: summary.thisWeek },
             { className: '', label: 'This Month', value: summary.thisMonth },
-            { className: 'pending', label: 'Pending Payout', value: summary.pendingPayout },
+            {
+              className: 'pending',
+              label: 'Unclaimed Commission',
+              value: owed ?? summary.pendingPayout,
+            },
           ].map((card, idx) => (
             <div key={idx} className={`summary-card ${card.className}`} style={summaryStyle(idx)}>
               <span className="label">{card.label}</span>
               <span className="value">{card.value.toLocaleString()}</span>
-              {card.className === 'pending' && summary.pendingPayout > 0 && (
-                <button className="payout-btn" onClick={requestPayout}>
-                  Request Payout
+              {card.className === 'pending' && (owed ?? 0) > 0 && (
+                <button
+                  className="payout-btn"
+                  onClick={claimPayout}
+                  disabled={claiming || !clubId}
+                  title={!clubId ? 'Open This From A Club To Claim' : undefined}
+                >
+                  {claiming ? `Claiming... ${claimProgress.toLocaleString()}` : 'Claim Commission'}
                 </button>
               )}
             </div>
@@ -403,18 +521,38 @@ export function AgentCommissionDashboard() {
         </div>
       )}
 
+      {/* PHASE 7 AUDIT. The Summary panel is gated on `summary &&`, which is
+          right - a failed read must never render four zero cards, because a
+          zero on this screen means "you earned nothing" and the agent cannot
+          tell it from "we could not ask". But the gate rendered NOTHING at
+          all: a blank tab with no explanation and no way back. Say what
+          happened and offer the retry. */}
+      {activeTab === 'summary' && !summary && (
+        <div className="empty-state">
+          <p>Your Commission Summary Could Not Be Loaded.</p>
+          <button className="payout-btn" onClick={() => loadDataRef.current()}>
+            Try Again
+          </button>
+        </div>
+      )}
+
       {/* Records Tab */}
       {activeTab === 'records' && (
         <div className="agent-commission__records">
           {records.length === 0 ? (
             <div className="empty-state">No Commission Records Yet</div>
           ) : (
+            /* PHASE 7. Gross Rake and Rate are gone from this table rather
+               than being filled with zeros. A commission row records the
+               amount earned and what it came from; the rake behind it and the
+               rate applied at the time are not on the row, and printing 0 and
+               0.0% for them is the same class of thing this phase exists to
+               remove. */
             <table>
               <thead>
                 <tr>
                   <th>Status</th>
-                  <th>Gross Rake</th>
-                  <th>Rate</th>
+                  <th>Source</th>
                   <th>Commission</th>
                   <th>Date</th>
                 </tr>
@@ -426,19 +564,15 @@ export function AgentCommissionDashboard() {
                       <span
                         style={{
                           textTransform: 'capitalize',
-                          color:
-                            record.playerName === 'paid'
-                              ? '#10b981'
-                              : record.playerName === 'pending'
-                                ? '#f59e0b'
-                                : 'inherit',
+                          color: record.playerName === 'claimed' ? '#10b981' : '#f59e0b',
                         }}
                       >
                         {record.playerName}
                       </span>
                     </td>
-                    <td>{record.rakeAmount.toLocaleString()}</td>
-                    <td>{(record.commissionRate * 100).toFixed(1)}%</td>
+                    <td style={{ textTransform: 'capitalize' }}>
+                      {(record.tableName || 'rake').replace(/_/g, ' ')}
+                    </td>
                     <td className="commission">{record.amount.toLocaleString()}</td>
                     <td>{record.createdAt.toLocaleDateString()}</td>
                   </tr>
@@ -465,7 +599,20 @@ export function AgentCommissionDashboard() {
                       {agent.totalPlayers} Players • {(agent.commissionRate * 100).toFixed(0)}% Rate
                     </span>
                   </div>
-                  <span className="earnings">{agent.totalCommission.toLocaleString()}</span>
+                  {/* Unclaimed, not lifetime: what the club still owes this
+                      downline, which is the figure their upline can act on. */}
+                  <span
+                    className="earnings"
+                    title={
+                      agent.totalCommission === null
+                        ? 'This Figure Could Not Be Loaded'
+                        : 'Unclaimed Commission'
+                    }
+                  >
+                    {agent.totalCommission === null
+                      ? 'Unavailable'
+                      : agent.totalCommission.toLocaleString()}
+                  </span>
                 </div>
               ))}
             </div>

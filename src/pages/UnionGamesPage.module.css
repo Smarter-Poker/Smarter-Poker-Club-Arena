@@ -3,11 +3,18 @@
    ═══════════════════════════════════════════════════════════════ */
 
 .page {
+  width: 100%;
   max-width: 1200px;
   margin: 0 auto;
   padding: 20px 16px 100px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: #e4e6eb;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 .header {
@@ -103,9 +110,6 @@
   gap: 6px;
   transition: all 0.15s;
 }
-.tab:hover {
-  color: #e4e6eb;
-}
 .tabActive {
   color: #4599ff;
   border-bottom-color: #4599ff;
@@ -167,9 +171,6 @@
   border: 1px solid #3a3b3c;
   transition: border-color 0.15s;
 }
-.tournCard:hover {
-  border-color: #4599ff44;
-}
 .tournHeader {
   display: flex;
   justify-content: space-between;
@@ -213,9 +214,6 @@
   color: inherit;
   display: block;
   transition: border-color 0.15s;
-}
-.tableCard:hover {
-  border-color: #31a24c;
 }
 .tableCardHeader {
   display: flex;
@@ -309,9 +307,6 @@
   cursor: pointer;
   text-decoration: none;
 }
-.btnPrimary:hover {
-  background: #357ce6;
-}
 .btnGhost {
   padding: 8px 16px;
   background: transparent;
@@ -323,10 +318,6 @@
   cursor: pointer;
   text-decoration: none;
 }
-.btnGhost:hover {
-  border-color: #4599ff;
-  color: #4599ff;
-}
 .btnRegister {
   padding: 8px 16px;
   background: #31a24c;
@@ -336,9 +327,6 @@
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
-}
-.btnRegister:hover {
-  background: #2a8a40;
 }
 
 /* Empty State */
@@ -363,9 +351,92 @@
    RESPONSIVE — Mobile
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+@media (max-width: 768px) {
+  .page {
+    padding: 16px 12px 100px;
+  }
+
+  .title {
+    font-size: 18px;
+  }
+
+  .statsGrid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .statCard {
+    padding: 12px;
+  }
+
+  .statValue,
+  .statValueGold,
+  .statValueGreen,
+  .statValueBlue,
+  .statValuePurple {
+    font-size: 18px;
+  }
+
+  .tabNav {
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tab {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .btnPrimary,
+  .btnGhost,
+  .btnRegister {
+    min-height: 44px;
+    touch-action: manipulation;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .bbjPoolCard {
+    padding: 24px 16px;
+  }
+
+  .bbjAmount {
+    font-size: 32px;
+  }
+}
+
+/* Phase 6: align live union games with the black-first network command deck. */
+.page {
+  background:
+    radial-gradient(circle at 82% 5%, rgba(58, 168, 255, 0.08), transparent 28rem),
+    linear-gradient(180deg, #05080c, #020407);
+}
+
+.statCard,
+.tournCard,
+.tableCard,
+.bbjCard,
+.filterBar {
+  border: 1px solid #26333d;
+  border-radius: 4px;
+  background: linear-gradient(112deg, #101820, #080d12 72%, #05080c);
+}
+
+.page button,
+.page a {
+  min-height: 44px;
+  border-radius: 3px;
+}
+
+.statValueGold,
+.statValuePurple {
+  color: #ddf3ff;
+}
+
 @media (max-width: 480px) {
   .page {
-    padding: 12px;
+    padding: 12px 12px 100px;
   }
 
   .header h2 {

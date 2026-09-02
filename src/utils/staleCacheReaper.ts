@@ -25,6 +25,9 @@
  *   club_home_cache_ → ClubHomePage (Phase 8)
  */
 
+import { ROSTER_CACHE_PREFIX, ROSTER_CACHE_TTL_MS, ROSTER_SEARCH_PREFIX } from '../lib/rosterCache';
+import { CLUB_DATA_CACHE_PREFIX } from '../lib/clubDataCache';
+
 /**
  * The canonical list of sessionStorage SWR cache prefixes.
  *
@@ -48,10 +51,60 @@ export const SWR_CACHE_PREFIXES = [
   'members_cache_',
   'tx_cache_',
   'club_home_cache_',
+  ROSTER_CACHE_PREFIX,
+  ROSTER_SEARCH_PREFIX,
+  CLUB_DATA_CACHE_PREFIX,
 ];
 
-/** Maximum cache age in milliseconds (1 hour) */
-const MAX_AGE_MS = 60 * 60 * 1000;
+/**
+ * Wallet instant-paint entries live in LOCALstorage (they must survive a
+ * reload — that is their whole point) under this prefix, with a timestamped
+ * envelope `{ at, data }`. readWalletCache already ignores-and-deletes
+ * expired entries on READ, but an entry for a club never revisited would
+ * otherwise sit on the device until sign-out. The idle reaper sweeps them.
+ * Kept as a literal here (mirrored by walletCache.ts and pinned by its
+ * tests) to avoid pulling the whole cache module into this tiny utility.
+ */
+const WALLET_CACHE_PREFIX_LOCAL = 'wallet_cache_';
+const WALLET_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+/** Removes expired wallet instant-paint entries from localStorage. */
+function reapExpiredWalletCaches(): void {
+  try {
+    const doomed: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(WALLET_CACHE_PREFIX_LOCAL)) continue;
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        const parsed = JSON.parse(raw);
+        if (
+          !parsed ||
+          typeof parsed !== 'object' ||
+          typeof parsed.at !== 'number' ||
+          Date.now() - parsed.at > WALLET_CACHE_MAX_AGE_MS
+        ) {
+          doomed.push(key);
+        }
+      } catch {
+        doomed.push(key); // corrupt — remove
+      }
+    }
+    doomed.forEach((k) => {
+      try {
+        localStorage.removeItem(k);
+      } catch {
+        /* silent */
+      }
+    });
+    if (doomed.length > 0) {
+      console.debug(`[StaleCacheReaper] Cleaned ${doomed.length} expired wallet cache entries`);
+    }
+  } catch {
+    /* localStorage unavailable — silent */
+  }
+}
 
 /**
  * Removes stale SWR cache entries from sessionStorage.
@@ -82,6 +135,13 @@ function reapStaleCaches(): void {
 
         // If the data is null or empty, remove it
         const parsed = JSON.parse(raw);
+        if (
+          key.startsWith(ROSTER_CACHE_PREFIX) &&
+          (typeof parsed?.at !== 'number' || Date.now() - parsed.at > ROSTER_CACHE_TTL_MS)
+        ) {
+          keysToRemove.push(key);
+          continue;
+        }
         if (
           parsed === null ||
           (Array.isArray(parsed) && parsed.length === 0) ||
@@ -116,7 +176,10 @@ function reapStaleCaches(): void {
  * Uses requestIdleCallback if available, otherwise falls back to setTimeout.
  */
 export function scheduleStaleCacheReaper(): void {
-  const run = () => reapStaleCaches();
+  const run = () => {
+    reapStaleCaches();
+    reapExpiredWalletCaches();
+  };
 
   if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
     (window as any).requestIdleCallback(run, { timeout: 30000 });

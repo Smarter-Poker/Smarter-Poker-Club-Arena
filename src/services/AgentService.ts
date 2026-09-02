@@ -11,12 +11,11 @@
  */
 
 import { supabase, getAuthUser } from '../lib/supabase';
-import { callClubArenaApi } from './clubArenaApi';
 import { WalletService } from './WalletService';
-import { ChipFlowService } from './ChipFlowService';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { uuid } from '../utils/uuid';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 
@@ -497,67 +496,132 @@ class AgentServiceClass {
    *
    * The player's club_members.agent_id is set to the agent's user_id.
    */
+  /**
+   * Redeem an invite/referral code for the CALLING player.
+   *
+   * The returned `status` and `agentId` come from the RPC's own RETURNING row,
+   * so they describe the membership as it exists AFTER redemption. Callers must
+   * prefer them over anything they read before this ran: for an approval-gated
+   * club this call is what promotes the row from 'pending' to 'active', and a
+   * caller that keeps its earlier copy will show an approval wall to a player
+   * the database has already let in.
+   *
+   * `code` is the machine-readable reason on failure (`unknown_inviter`,
+   * `inviter_not_in_club`, `self_referral`, `not_a_member`, ...). It is never a
+   * thrown error — a bad code is an ordinary outcome, not an exception.
+   */
   async linkPlayerByReferral(
     playerId: string,
-    referralCode: number,
+    referralCode: string | number,
     clubId: string
-  ): Promise<{ success: boolean; agentName?: string }> {
-    // 1. Find the agent by player_number (referral code)
-    const { data: agentProfile } = await supabase
-      .from('profiles')
-      .select('id, username')
-      .eq('player_number', referralCode)
-      .maybeSingle();
-
-    if (!agentProfile) {
-      return { success: false };
-    }
-
-    // 2. Verify this user is an agent in the specified club
+  ): Promise<{
+    success: boolean;
+    agentName?: string;
+    agentId?: string | null;
+    status?: string;
+    code?: string;
+    error?: string;
+  }> {
     const resolvedClubId = await resolveClubUUID(clubId);
-    const { data: agentRecord } = await supabase
-      .from('agents')
-      .select('id, user_id')
-      .eq('user_id', agentProfile.id)
-      .eq('club_id', resolvedClubId)
-      .maybeSingle();
 
-    if (!agentRecord) {
-      return { success: false };
+    // 1. Fetch the agent's name first just for the UI toast
+    let agentName: string | undefined;
+    let agentProfileQuery = supabase.from('profiles').select('id, username');
+    if (typeof referralCode === 'string' && referralCode.includes('-')) {
+      agentProfileQuery = agentProfileQuery.eq('id', referralCode);
+    } else {
+      agentProfileQuery = agentProfileQuery.eq(
+        'player_number',
+        typeof referralCode === 'string' ? parseInt(referralCode, 10) : referralCode
+      );
+    }
+    const { data: agentProfile } = await agentProfileQuery.maybeSingle();
+    if (agentProfile) {
+      agentName = agentProfile.username;
     }
 
-    // 3. Update the player's club_members record to link under this agent
-    const { error } = await supabase
-      .from('club_members')
-      .update({ agent_id: agentProfile.id })
-      .eq('user_id', playerId)
-      .eq('club_id', resolvedClubId);
+    // 2. Run the secure RPC that links them and admits them
+    const { data, error } = await supabase.rpc('fn_redeem_club_invite_code', {
+      p_club_id: resolvedClubId,
+      p_user_id: playerId,
+      p_referral_code: String(referralCode),
+    });
 
-    if (error) {
-      reportError(error, 'AgentService.linkPlayerByReferral', {
-        playerId,
-        agentUsername: agentProfile.username,
-      });
-      return { success: false };
+    if (error || !data?.success) {
+      // Report the RPC's own reason code, not just "it failed". Until
+      // 2026-08-26 this branch was hit on EVERY call — the RPC compared a text
+      // player_number to an integer and raised 42883 every time — and because
+      // the reason never reached the report, a totally broken money-adjacent
+      // path looked like a stream of players simply arriving without a code.
+      reportError(
+        error || new Error(data?.error || 'redeem failed'),
+        'AgentService.linkPlayerByReferral',
+        {
+          playerId,
+          referralCode,
+          reason: data?.code ?? error?.code ?? 'unknown',
+        }
+      );
+      return { success: false, code: data?.code, error: data?.error ?? error?.message };
     }
 
-    // 4. Increment agent player count
-    const { error: countErr } = await supabase
-      .from('agents')
-      .update({
-        total_players: (agentRecord as any).total_players + 1,
-        active_player_count: (agentRecord as any).active_player_count + 1,
-      })
-      .eq('id', agentRecord.id);
-    if (countErr) reportError(countErr, 'AgentService.updatePlayerCount');
-
-    console.debug(
-      `[AgentService] Linked player ${playerId} under agent ${agentProfile.username} via referral code ${referralCode}`
-    );
-
+    console.debug(`[AgentService] Linked player ${playerId} via referral code ${referralCode}`);
     masterBus.emit('CLUB_UPDATED', { clubId });
+    return {
+      success: true,
+      agentName: data.agent_name ?? agentName,
+      agentId: data.agent_id ?? null,
+      status: data.status,
+    };
+  }
 
-    return { success: true, agentName: agentProfile.username };
+  /**
+   * Attach a player to an agent's downline, creating the membership if the
+   * player is not in the club yet.
+   *
+   * This is what the "Add Player" button behind an agent row calls. It used to
+   * be a direct `club_members` insert carrying `referrer_id: agentId` --
+   * `club_members` HAS NO referrer_id column, so PostgREST rejected the whole
+   * statement (PGRST204) and the button had never once succeeded. It also never
+   * wrote `agent_id`, which is the column the hierarchy is actually built from,
+   * and it was handed the `agents` table primary key where a user id belonged.
+   *
+   * The RPC does the permission check server-side: an agent may claim a player
+   * nobody has, club staff may move one, and nobody else may do either. The new
+   * membership is created with zero chips by the BEFORE INSERT guard on
+   * club_members -- there is no path here that can mint a balance.
+   *
+   * @param agentUserId the agent's USER id (Agent.userId), not Agent.id.
+   */
+  async attachPlayerToAgent(
+    clubId: string,
+    agentUserId: string,
+    playerId: string
+  ): Promise<{ success: boolean; code?: string; error?: string }> {
+    const resolvedClubId = await resolveClubUUID(clubId);
+
+    const { data, error } = await supabase.rpc('fn_agent_attach_player', {
+      p_club_id: resolvedClubId,
+      p_agent_user_id: agentUserId,
+      p_player_id: playerId,
+    });
+
+    if (error || !data?.success) {
+      reportError(
+        error || new Error(data?.error || 'attach failed'),
+        'AgentService.attachPlayerToAgent',
+        {
+          clubId: resolvedClubId,
+          agentUserId,
+          playerId,
+          reason: data?.code ?? error?.code ?? 'unknown',
+        }
+      );
+      return { success: false, code: data?.code, error: data?.error ?? error?.message };
+    }
+
+    masterBus.emit('CLUB_UPDATED', { clubId: resolvedClubId });
+    return { success: true };
   }
 
   /**
@@ -613,11 +677,20 @@ class AgentServiceClass {
     const assignedBy = currentUser?.userId || 'system';
     await supabase
       .from('audit_trail')
+      // The columns are actor_id / target_type / target_id / after_state, and
+      // actor_role and target_type are NOT NULL with no default. This insert
+      // named three columns that do not exist and omitted two that are
+      // required, so the agent audit trail has never recorded a single
+      // assignment: every write was rejected into the catch below.
       .insert({
         action: 'ASSIGN_PLAYER_TO_AGENT',
-        performed_by: assignedBy,
-        target_user_id: playerId,
-        details: {
+        actor_id: assignedBy,
+        actor_role: 'club_admin',
+        target_type: 'user',
+        target_id: playerId,
+        club_id: resolvedClubId,
+        agent_id: agentRecord.id,
+        after_state: {
           agent_user_id: agentUserId,
           agent_record_id: agentRecord.id,
           club_id: resolvedClubId,
@@ -843,25 +916,45 @@ class AgentServiceClass {
   }
 
   /**
-   * Transfer chips to a player
+   * Send chips from the caller's AGENT WALLET to a player in their downline.
+   *
+   * TWO BUGS LIVED HERE, and the second one made the first academic.
+   *
+   *   1. WRONG ACCOUNT. It called ChipFlowService.transfer, a peer-to-peer move
+   *      between two users' PLAYER wallets. Dan, 2026-08-25: "Any chips sent or
+   *      claimed back transact from the Agent Wallet." This debited the agent's
+   *      personal chips and never touched agents.agent_wallet_balance.
+   *   2. WRONG ID. SuperAgentDashboard passes `agent.id` - the agents-table row
+   *      id - into a parameter that ChipFlowService.transfer reads as a USER
+   *      id. No wallet has ever matched it, so the one live caller of this
+   *      method could not have moved a chip.
+   *
+   * It is now fn_agent_wallet_send: the same call the Cashier, the Trade grid,
+   * the Wallet Cashier and ChipTransferModal make. The SENDER IS NO LONGER A
+   * PARAMETER - the RPC derives it from auth.uid(), which is the only identity
+   * a browser can establish and the reason bug 2 was possible at all.
    */
-  async transferToPlayer(
-    agentId: string,
-    playerId: string,
-    clubId: string,
-    amount: number
-  ): Promise<boolean> {
+  async transferToPlayer(playerId: string, clubId: string, amount: number): Promise<boolean> {
     if (amount <= 0) throw new Error('Transfer amount must be positive');
 
-    // Use ChipFlowService for proper atomic wallet transfer with full audit trail
-    await ChipFlowService.transfer(
-      agentId,
-      playerId,
-      amount,
-      'transfer',
-      `Agent chip transfer to player via hierarchy`,
-      clubId
-    );
+    const resolvedId = (await resolveClubUUID(clubId)) || clubId;
+    const { data, error } = await supabase.rpc('fn_agent_wallet_send', {
+      p_club_id: resolvedId,
+      p_to_user_id: playerId,
+      p_amount: amount,
+      p_destination: 'player_wallet',
+      p_reason: 'Agent Transfer To Player',
+      // Every send carries a retry key, so a lost response and the obvious
+      // retry replay instead of debiting a second time.
+      p_op_id: uuid(),
+    });
+    if (error) throw error;
+
+    const res = (Array.isArray(data) ? data[0] : data) as {
+      success?: boolean;
+      error?: string;
+    } | null;
+    if (!res?.success) throw new Error(res?.error || 'The Cashier Refused That Transfer');
 
     return true;
   }
@@ -901,222 +994,24 @@ class AgentServiceClass {
     return rootAgents;
   }
 
-  /**
-   * Distribute chips from agent to sub-agents or players
-   * Uses ChipFlowService for atomic wallet transfers with full audit trail
-   */
-  async distributeChips(
-    fromAgentId: string,
-    distributions: Array<{ toId: string; type: 'agent' | 'player'; amount: number }>
-  ): Promise<boolean> {
-    const agent = await this.getAgent(fromAgentId);
-    if (!agent) throw new Error('Agent not found');
-
-    let distributed = 0;
-    for (const dist of distributions) {
-      try {
-        const amt = Math.trunc(dist.amount * 100) / 100;
-        if (dist.type === 'agent') {
-          // Agent → Sub-Agent: Get sub-agent's user_id
-          const subAgent = await this.getAgent(dist.toId);
-          if (!subAgent) {
-            reportError(
-              `Sub-agent ${dist.toId} not found`,
-              'AgentService.distributeChips.subAgentMissing'
-            );
-            continue;
-          }
-          await ChipFlowService.transfer(
-            agent.userId,
-            subAgent.userId,
-            amt,
-            'transfer',
-            'Agent chip distribution to sub-agent'
-          );
-        } else {
-          // Agent → Player: toId IS the user_id
-          await ChipFlowService.transfer(
-            agent.userId,
-            dist.toId,
-            amt,
-            'transfer',
-            'Agent chip distribution to player'
-          );
-        }
-        distributed += amt;
-      } catch (err: unknown) {
-        reportError(err, 'AgentService.distributeChips', { toId: dist.toId });
-        // Continue with remaining distributions — partial failures are logged
-      }
-    }
-
-    if (distributed === 0 && distributions.length > 0) {
-      throw new Error('All distributions failed');
-    }
-
-    return true;
-  }
-
-  /**
-   * Transfer chips from one agent to another (horizontal peer transfer)
-   * Unlike distributeChips which is parent→child, this allows any agent-to-agent transfer
-   * within the same club hierarchy.
-   */
-  async transferToAgent(
-    fromAgentId: string,
-    toAgentId: string,
-    amount: number,
-    reason?: string
-  ): Promise<{ success: boolean; transactionId?: string }> {
-    // 1. Validate both agents exist and are in the same club
-    const fromAgent = await this.getAgent(fromAgentId);
-    const toAgent = await this.getAgent(toAgentId);
-
-    if (!fromAgent) throw new Error('Source agent not found');
-    if (!toAgent) throw new Error('Destination agent not found');
-    if (fromAgent.clubId !== toAgent.clubId) {
-      throw new Error('Agents must be in the same club');
-    }
-
-    // 2. Validate amount is positive
-    if (amount <= 0) {
-      throw new Error('Transfer amount must be positive');
-    }
-
-    const amt = Math.trunc(amount * 100) / 100;
-    const desc =
-      reason ||
-      `Agent transfer: ${fromAgent.displayName || fromAgentId} to ${toAgent.displayName || toAgentId}`;
-
-    // 3. Use ChipFlowService for atomic wallet transfer with audit trail
-    const result = await ChipFlowService.transfer(
-      fromAgent.userId,
-      toAgent.userId,
-      amt,
-      'transfer',
-      desc,
-      fromAgent.clubId
-    );
-
-    return {
-      success: true,
-      transactionId: result.transactionIds?.[0],
-    };
-  }
-
-  /**
-   * Get transfer history between agents
-   */
-  async getAgentTransferHistory(
-    agentId: string,
-    limit = 50
-  ): Promise<
-    {
-      id: string;
-      fromAgentName: string;
-      toAgentName: string;
-      amount: number;
-      notes: string;
-      createdAt: string;
-    }[]
-  > {
-    const agent = await this.getAgent(agentId);
-    if (!agent) return [];
-
-    const { data, error } = await supabase
-      .from('chip_transactions')
-      .select('id, from_user_id, to_user_id, amount, notes, created_at')
-      .eq('transaction_type', 'agent_transfer')
-      .or(`from_user_id.eq.${agent.userId},to_user_id.eq.${agent.userId}`)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    if (error || !data) return [];
-
-    // Fetch user display names
-    const userIds = [...new Set(data.flatMap((t) => [t.from_user_id, t.to_user_id]))];
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, display_name')
-      .in('id', userIds);
-
-    const nameMap = new Map(profiles?.map((p) => [p.id, p.display_name]) || []);
-
-    return data.map((t) => ({
-      id: t.id,
-      fromAgentName: nameMap.get(t.from_user_id) || 'Unknown',
-      toAgentName: nameMap.get(t.to_user_id) || 'Unknown',
-      amount: t.amount,
-      notes: t.notes || '',
-      createdAt: t.created_at,
-    }));
-  }
-
   // ─────────────────────────────────────────────────────────────────────────────
-  // TREASURY DISTRIBUTION (Owner/Admin → Player)
+  // TREASURY DISTRIBUTION — REMOVED (phase 3 of 7, 2026-08-31)
   // ─────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Distribute chips from club treasury to a member.
-   * Uses the `distribute_chips` Supabase RPC for atomic wallet transfer.
-   * Only club owners and admins can use this (agents use transferToPlayer instead).
-   */
-  async distributeFromTreasury(
-    clubId: string,
-    toUserId: string,
-    amount: number,
-    distributedBy: string,
-    notes?: string
-  ): Promise<{
-    success: boolean;
-    treasuryBefore?: number;
-    treasuryAfter?: number;
-    memberBefore?: number;
-    memberAfter?: number;
-    error?: string;
-  }> {
-    if (amount <= 0 || !Number.isFinite(amount) || amount > 100_000_000) {
-      return { success: false, error: 'Amount must be a positive integer (max 100M)' };
-    }
-
-    const sanitizedAmount = Math.floor(amount);
-
-    // Distribute SERVER-SIDE. `distribute_chips` is service_role-only, so the old
-    // direct browser rpc() returned 42501 and this button could never work. The
-    // route derives the distributor from the JWT (p_distributed_by cannot be
-    // spoofed), branches correctly for agent-vs-owner, enforces the settlement
-    // lock and rate limits, and writes the audit trail.
-    let result: {
-      treasury_before?: number;
-      treasury_after?: number;
-      member_before?: number;
-      member_after?: number;
-    };
-    try {
-      result = await callClubArenaApi('distribute-chips', {
-        clubId,
-        toUserId,
-        amount: sanitizedAmount,
-        notes,
-      });
-    } catch (err) {
-      reportError(err, 'AgentService.treasuryDistribution');
-      return {
-        success: false,
-        error: err instanceof Error ? err.message : 'Distribution failed',
-      };
-    }
-
-    masterBus.emit('BALANCE_UPDATED', { source: 'treasury_distribution' });
-
-    return {
-      success: true,
-      treasuryBefore: result.treasury_before,
-      treasuryAfter: result.treasury_after,
-      memberBefore: result.member_before,
-      memberAfter: result.member_after,
-    };
-  }
+  //
+  // distributeFromTreasury is deleted. It was the ONLY client of the World Hub
+  // route POST /api/club-arena/distribute-chips, and NOTHING CALLED IT - no
+  // page, no component, no other service. The route's agent branch called
+  // transfer_chips_agent_to_player, which debits club_members.chip_balance, so
+  // the whole chain moved the wrong account and, in a year, never once ran:
+  // zero chip_distribution audit rows and zero agent_to_player_transfer
+  // chip_transactions on production.
+  //
+  // The route is removed in Smarter-Poker-World-Hub#1120.
+  //
+  // The club bank is spent through fn_club_bank_send, which the Cashier, the
+  // Wallet Cashier and ChipTransferModal already use: it enforces its own
+  // authorization, takes a uuid op_id, writes one ledger row and opens a ten
+  // minute clawback window.
 
   // ─────────────────────────────────────────────────────────────────────────────
   // CLAWBACK — Reverse a chip distribution within 10-minute window

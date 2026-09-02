@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { handHistoryService } from '../services/HandHistoryService';
 import type { HandRecord } from '../services/HandHistoryService';
 import { useAuthUser } from '../hooks/useAuthUser';
@@ -22,6 +22,8 @@ import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
 import './HandHistoryPage.css';
 import { reportError } from '../utils/errorReporter';
+import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
+import { filterHandsByStatsDrilldown, readStatsDrilldown } from '../lib/handHistoryDrilldown';
 
 // ── SWR Cache ──
 const HH_CACHE_KEY = 'hh_cache_';
@@ -60,7 +62,7 @@ type HistoryFilter = 'all' | 'won' | 'lost' | 'big-pots';
    Order still matters: PLO8 must be tested before the PLO catch-all. */
 function toShareVariant(gameType: string | undefined): ShareableHand['variant'] {
   const g = (gameType || '').toUpperCase();
-  if (g.includes('PINEAPPLE')) return 'Pineapple';
+  if (g.includes('PINEAPPLE')) return 'Crazy Pineapple';
   if (g.includes('SHORT')) return 'Short Deck';
   if (g.includes('PLO8')) return 'PLO8';
   if (g.includes('PLO6')) return 'PLO6';
@@ -75,7 +77,14 @@ export default function HandHistoryPage() {
   }, []);
 
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuthUser();
+  const drilldownKey = searchParams.toString();
+  const statsDrilldown = useMemo(
+    () => readStatsDrilldown(new URLSearchParams(drilldownKey)),
+    [drilldownKey]
+  );
+  const hasStatsDrilldown = Object.keys(statsDrilldown).length > 0;
   const toast = useToast();
   useVisibilityRefresh(() => loadHands(true));
   const [hands, setHands] = useState<HandRecord[]>([]);
@@ -102,13 +111,13 @@ export default function HandHistoryPage() {
 
   // SWR: show cached hands instantly on mount
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || hasStatsDrilldown) return;
     const cached = getCachedHands(user.id);
     if (cached && cached.length > 0) {
       setHands(cached);
       setLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, hasStatsDrilldown]);
 
   /* Safety timeout: prevent an infinite skeleton if auth/Supabase hangs.
      This used to drop `loading` and nothing else, so a slow-but-healthy fetch
@@ -143,7 +152,7 @@ export default function HandHistoryPage() {
     return () => {
       isMounted = false;
     };
-  }, [user?.id, filter]);
+  }, [user?.id, filter, drilldownKey]);
 
   // ── Realtime backstop ──
   // Removed postgres_changes subscription on public.hand_history (Phase 2 cost
@@ -220,11 +229,12 @@ export default function HandHistoryPage() {
         } else if (filter === 'big-pots') {
           filtered = data.filter((h) => h.main_pot >= 1000);
         }
+        filtered = filterHandsByStatsDrilldown(filtered, statsDrilldown, user.id);
 
         setHands(filtered);
         setHasMore(data.length === PAGE_SIZE * currentPage);
         // Update SWR cache with latest data
-        if (reset && user?.id) setCachedHands(user.id, filtered);
+        if (reset && user?.id && !hasStatsDrilldown) setCachedHands(user.id, filtered);
       } catch (error) {
         reportError(error, 'HandHistoryPage.Failed_to_load_hands');
         if (!getIsMounted || getIsMounted()) {
@@ -338,7 +348,19 @@ export default function HandHistoryPage() {
   };
 
   return (
-    <div className="hand-history-page">
+    <div className="hand-history-page" data-arena-surface="play">
+      <CasinoSurfaceHeader
+        eyebrow="Play & Review / Hands"
+        title="Hand Archive"
+        description="Filter, Replay, Export, Share, Or Send Loaded Hands Into Jarvis Analysis While The Existing Hand-History Service Remains The Record Authority."
+        artPath="assets/club-buttons/lobby/lobby-command-chassis-v2.png"
+        status="HAND INDEX // SYNCHRONIZED"
+        metrics={[
+          { label: 'Loaded', value: hands.length },
+          { label: 'Won', value: stats.wins, tone: 'live' },
+          { label: 'Biggest Pot', value: stats.biggestPot.toLocaleString(), tone: 'attention' },
+        ]}
+      />
       {/* Filters — Pill Chips (Initiative 5) */}
       <div className="hh-filters">
         {(['all', 'won', 'lost', 'big-pots'] as HistoryFilter[]).map((f) => (
@@ -351,6 +373,20 @@ export default function HandHistoryPage() {
           </button>
         ))}
       </div>
+
+      {hasStatsDrilldown && (
+        <div className="hh-stats-drilldown" role="status">
+          <span>
+            Showing Stats Evidence
+            {statsDrilldown.variant ? ` · ${statsDrilldown.variant.toUpperCase()}` : ''}
+            {statsDrilldown.position ? ` · ${statsDrilldown.position}` : ''}
+            {statsDrilldown.bigBlind ? ` · ${statsDrilldown.bigBlind} BB` : ''}
+          </span>
+          <button type="button" onClick={() => navigate('/hand-history', { replace: true })}>
+            Clear Evidence Filter
+          </button>
+        </div>
+      )}
 
       {/* Stats Summary */}
       {!loading && hands.length > 0 && (
@@ -381,7 +417,7 @@ export default function HandHistoryPage() {
           <button
             className="export-btn"
             onClick={handleExport}
-            aria-label="Export the loaded hands to CSV"
+            aria-label="Export The Loaded Hands To CSV"
           >
             {' '}
             Export

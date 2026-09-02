@@ -1,77 +1,149 @@
 /**
- * Timebank Counter — spec §5.7 visual design.
- * Bottom-left anchored, small clock + diamond badge + count.
+ * Timebank Counter — bottom-left HUD tile (spec §5.7).
+ *
+ * Dan 2026-08-25 round 2 (item 6c): a small flat dark rounded square with one
+ * monochrome glyph and the count. See TimebankCounter.tsx for what the ornate
+ * alarm-clock chip it replaces was, and why it went.
  */
 
 .tbc-widget {
   /* Dan 2026-08-21: no longer a free-floating fixed pill — it lives in the
-     TableHUD bottom-left stack, directly above the previous-hand card. */
+     TableHUD bottom-left stack, with the previous-hand card. */
   position: static;
+
+  /* ═══ WHICH ONE IS ON TOP (Dan 2026-08-25 round 2, item 6b) ═══
+     "THE PREVIOUS HAND IS SUPPOSED TO BE ON THE BOTTOM, WITH THE TIME BANK ON
+     TOP."
+
+     There is no `order` here any more, and that IS the fix. The stack's DOM
+     order in TablePage.tsx is <TimebankCounter> then <PreviousHandCard>, so the
+     default order already reads time-bank-above-previous-hand. An `order: 1` on
+     this chip was added on 2026-08-25 to push it to the bottom of the column,
+     on the theory that only the bottom-most item can rest on THE BOTTOM-EDGE
+     LINE. That theory is wrong about which box the line touches: the line is
+     `.table-hud__lower`'s padding-bottom and the row is `align-items:
+     flex-end`, so the CORNER's bottom edge is on the line no matter what is
+     inside it. Whatever is last in the column rests on the line by
+     construction. Removing the override therefore satisfies both halves of
+     Dan's instruction at once — the stack reads time-bank over previous-hand,
+     and its bottom edge is still the same number as `.chat-collapsed`'s.
+
+     Do not re-add `order` here. It cannot move the line; it can only decide
+     which of the two chips is sitting on it, and Dan has now named that chip. */
+
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
-  border-radius: 14px;
-  background: rgba(14, 17, 24, 0.82);
-  backdrop-filter: blur(10px) saturate(1.2);
-  -webkit-backdrop-filter: blur(10px) saturate(1.2);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
+  justify-content: center;
+  /* 1px, not a gap token: glyph and numeral are one object, and any more space
+     makes a 36px tile read as two stacked things. */
+  gap: 1px;
+  width: var(--sp-hud-tile-size, 36px);
+  height: var(--sp-hud-tile-size, 36px);
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--sp-hud-tile-radius, 10px);
+  background: var(--sp-hud-tile-bg, rgba(10, 12, 18, 0.72));
+  /* Blur is legibility, not ornament: the tile sits over a painted felt whose
+     colour changes per theme, and without it the glyph reads differently on
+     every skin. */
+  backdrop-filter: blur(8px) saturate(1.1);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+  color: var(--sp-hud-tile-fg, rgba(255, 255, 255, 0.86));
   line-height: 1;
-  letter-spacing: 0.02em;
   cursor: pointer;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
   transition:
     transform 0.15s ease,
-    background 0.2s ease,
-    border-color 0.2s ease;
+    background 0.2s ease;
 }
 
-.tbc-widget:hover {
-  background: rgba(28, 34, 48, 0.92);
-  border-color: rgba(255, 255, 255, 0.2);
+/* ═══ 36px PAINTED, 44px TOUCHED (audit 2026-08-25) ═══
+   Dan asked for a small flat tile and the tile stays small — but 36px is under
+   the 44px minimum touch target, and this is a control a player reaches for
+   with a hand in progress. A transparent pseudo-element grows the target
+   without moving a single pixel of the layout the last two rounds settled.
+
+   The numbers are not symmetric on purpose. Sideways there is nothing to
+   collide with: this tile hugs the left edge of the screen inside a corner
+   that is `pointer-events: auto` over dead rail. Vertically it is stacked 8px
+   above `.prev-hand-card` (`.hud-ul-column--stack`), so 3px each leaves 2px of
+   dead zone between two controls that do entirely different things — grow it
+   to 4px and the two hit areas touch, and a tap on the seam becomes a coin
+   flip between the time-bank store and the hand history. */
+@media (max-width: 1023px) {
+  .tbc-widget {
+    /* `relative`, not the base rule's `static`. That `static` exists to undo an
+       old `position: fixed` (see the comment on the base rule) and `relative`
+       undoes it just as completely: the tile stays in the stack's flow and is
+       laid out identically. All it adds is a containing block for the ::after
+       below. Do NOT change it back to `static` without also removing that
+       pseudo, or the hit area escapes to the page. */
+    position: relative;
+  }
+
+  .tbc-widget::after {
+    content: '';
+    position: absolute;
+    inset: -3px -4px;
+  }
 }
 
 .tbc-widget:active {
-  transform: scale(0.96);
+  transform: scale(0.94);
 }
 
-/* Dan 2026-08-20 (alarm-clock redesign): golden alarm clock with "20s" on the
-   face; count beside it. The pink diamond and generic clock glyph are gone. */
-.tbc-alarm {
+/* ── Icon image + count overlay ───────────────────────────────────────────── */
+.tbc-img-wrap {
+  position: relative;
   display: inline-flex;
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
 }
 
-.tbc-count {
-  min-width: 12px;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-  font-size: 13px;
+.tbc-icon-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: inherit;
+  display: block;
+}
+
+/* White bold count overlaid bottom-right of the icon image */
+.tbc-count-overlay {
+  position: absolute;
+  bottom: 1px;
+  right: 2px;
+  /* Dan 2026-08-26 mobile pass, item 6: smaller numeral so it no longer
+     covers the stopwatch artwork. */
+  font-size: 8px;
   font-weight: 800;
   color: #ffffff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  line-height: 1;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.9),
+    0 0 6px rgba(0, 0, 0, 0.7);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
-/* Low state — 1 or 0 timebanks remaining. Pulsing halo draws the eye. */
-.tbc-widget--low {
-  border-color: rgba(255, 107, 182, 0.5);
-  animation: tbcPulse 1.6s ease-in-out infinite;
+.tbc-count-overlay--low {
+  color: #ff9b9b;
 }
 
-@keyframes tbcPulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(255, 107, 182, 0.25);
-  }
-  50% {
-    box-shadow: 0 0 0 6px rgba(255, 107, 182, 0);
-  }
+/* Dan 2026-08-28: "Remove the backgrounds of all the icons on the club table,
+   they all have black backgrounds still." Same treatment every other HUD icon
+   button received on 2026-08-26 — the 3D artwork carries its own shape, the
+   tile behind it is what read as a black box. Declared last so it wins the
+   base rule and the hover above. */
+.tbc-widget {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
-
-/* Phase 2 cleanup 2026-08-22: the old mobile block set bottom/left on this
-   widget, but it has been `position: static` inside the TableHUD stack since
-   2026-08-21 — those offsets were dead on every phone. Removed. */

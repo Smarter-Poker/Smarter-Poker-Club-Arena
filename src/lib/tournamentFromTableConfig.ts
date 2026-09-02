@@ -8,24 +8,35 @@
  * setting would come back, so it is the part worth pinning.
  */
 import { BLIND_STRUCTURES, SPIN_BLIND_STRUCTURE } from '../config/blindStructures';
+import { SPIN_TIERS } from '../config/spinSpec';
 // Type-only: erased at compile time, so this module never boots the Supabase
 // client that TournamentService constructs at import.
 import type { TournamentConfig } from '../services/TournamentService';
 import { payoutEngine } from '../services/PayoutEngine';
-import { splitBuyIn } from '../utils/buyIn';
+import { rakeRateFor, splitBuyIn } from '../utils/buyIn';
+import { maxSeatsTheDeckAllows } from '../config/tableSeating';
+/* Value imports as well as the re-export below: `export … from` does not bind
+   the names locally, and buildTournamentConfig uses both. */
+import {
+  TOURNAMENT_GAME_VARIANTS as VARIANT_MAP,
+  canRunAsSpin as gameTypeCanRunAsSpin,
+} from '../config/tournamentVariants';
 
 /**
- * The route's :gameType -> the tournament engine's variant vocabulary.
- * Anything not listed cannot be run as a tournament: HandController defaults an
- * unknown variant to 2 cards and a full deck, so 'flh' or 'mixed' would quietly
- * deal plain Hold'em. Those game types hide the SNG/MTT tabs instead.
+ * THE VARIANT CATALOGUE MOVED (2026-08-31) to `src/config/tournamentVariants`,
+ * so the lobby's filter spec can read the same list without importing
+ * PayoutEngine and the blind ladders through this file. Re-exported here
+ * because `canRunAsTournament` is this module's published API — TableConfigPage
+ * and the tests both import it from this path.
  */
-const TOURNAMENT_GAME_VARIANTS: Record<string, 'NLH' | 'PLO4' | 'SHORT_DECK'> = {
-  nlh: 'NLH',
-  plo: 'PLO4',
-  shortdeck: 'SHORT_DECK',
-};
-
+export {
+  TOURNAMENT_GAME_VARIANTS,
+  TOURNAMENT_VARIANT_KEYS,
+  SPIN_VARIANT_KEYS,
+  canRunAsTournament,
+  canRunAsSpin,
+  type TournamentGameVariant,
+} from '../config/tournamentVariants';
 
 /** The subset of the create-table form a tournament actually uses. */
 export interface TournamentFormInput {
@@ -82,30 +93,33 @@ export interface TournamentFormInput {
   satelliteSeats?: number;
 }
 
-export function canRunAsTournament(gameType: string | undefined): boolean {
-  return Boolean(TOURNAMENT_GAME_VARIANTS[gameType ?? 'nlh']);
-}
-
-  /**
-   * SNG / MTT tabs -> a real tournament.
-   *
-   * 2026-08-19. Until now these tabs inserted a row into `tables` exactly like
-   * the Regular tab and produced an ordinary CASH GAME with the configured
-   * blinds. Every tournament control on them — buy-in, blind structure,
-   * payouts, starting chips, late registration, rebuys, add-ons, bounties —
-   * wrote a `tables` column that nothing in server/src reads. Real tournaments
-   * live in the `tournaments` table and are run by TournamentManager.
-   *
-   * Only fields the tournament engine actually consumes are mapped here.
-   * Controls it cannot honour are hidden on these tabs rather than left on
-   * screen doing nothing.
-   */
+/**
+ * SNG / MTT tabs -> a real tournament.
+ *
+ * 2026-08-19. Until now these tabs inserted a row into `tables` exactly like
+ * the Regular tab and produced an ordinary CASH GAME with the configured
+ * blinds. Every tournament control on them — buy-in, blind structure,
+ * payouts, starting chips, late registration, rebuys, add-ons, bounties —
+ * wrote a `tables` column that nothing in server/src reads. Real tournaments
+ * live in the `tournaments` table and are run by TournamentManager.
+ *
+ * Only fields the tournament engine actually consumes are mapped here.
+ * Controls it cannot honour are hidden on these tabs rather than left on
+ * screen doing nothing.
+ */
 export function buildTournamentConfig(
   config: TournamentFormInput,
   gameType: string | undefined
 ): TournamentConfig {
   const isSng = config.gameMode === 'sng';
-  const isSpins = isSng && config.isSpins;
+  /* THE SPIN CATALOGUE IS ENFORCED HERE, NOT ONLY IN THE FORM (2026-08-31).
+     The seat dropdown no longer offers "3 Players (Spins)" outside the
+     catalogue, but a restored draft or a saved template can carry
+     `isSpins: true` alongside any variant, and this function is what turns
+     that into a row. A variant outside the catalogue becomes an ordinary
+     three-handed SNG — the same game, sold as what it is — rather than a Spin
+     the Spins board has no chip for and the tier table was never tuned for. */
+  const isSpins = isSng && config.isSpins && gameTypeCanRunAsSpin(gameType);
 
   // Field size. For an SNG the engine starts the tournament only when it is
   // FULL (GameServer: isSngOrSpin ? maxReached : ...), so min must equal max
@@ -127,35 +141,66 @@ export function buildTournamentConfig(
   const preset = isSpins
     ? SPIN_BLIND_STRUCTURE
     : (BLIND_STRUCTURES[
-      ({
-        slow: 'deepStack',
-        standard: 'regular',
-        turbo: 'turbo',
-        hyper_turbo: 'hyperTurbo',
-      } as const)[config.blindStructure] ?? 'regular'
-    ] as typeof SPIN_BLIND_STRUCTURE);
+        (
+          {
+            slow: 'deepStack',
+            standard: 'regular',
+            turbo: 'turbo',
+            hyper_turbo: 'hyperTurbo',
+          } as const
+        )[config.blindStructure] ?? 'regular'
+      ] as typeof SPIN_BLIND_STRUCTURE);
   const levelMinutes = Math.max(1, config.blindsUpMinutes);
   const blindStructure = preset.map((lvl) =>
     lvl.isBreak ? lvl : { ...lvl, durationMinutes: levelMinutes }
   );
 
-  // Payouts. A spin is winner-take-all by definition; otherwise the owner's
-  // Payout Structure choice is HONOURED (2026-08-22 — payout1/2/3 used to
-  // fall through to autoSelectPayouts, so all four choices were identical).
-  // payoutsForChoice normalizes to exactly 100%, which the service and the
-  // engine both require, and pays fewer places than the field.
+  /* Payouts. The owner's Payout Structure choice is HONOURED (2026-08-22 —
+     payout1/2/3 used to fall through to autoSelectPayouts, so all four choices
+     were identical). payoutsForChoice normalizes to exactly 100%, which the
+     service and the engine both require.
+
+     A SPIN IS NOT "WINNER-TAKE-ALL BY DEFINITION" (2026-08-31). That comment
+     stood here and it was false: three of the seven tiers in `SPIN_TIERS` pay
+     more than one place, and 25x / 50x / 100x pay 80 / 12 / 8 across all three
+     seats. The literal was a workaround for `fn_create_tournament`, which
+     refused `paid_places >= max_players` until
+     `20260831200000_a_spin_pays_three_places_at_three_seats`.
+
+     What a Spin gets at CREATION is the ladder of the placeholder tier, read
+     from the spec rather than typed out — the same value, from the same
+     source, that `TournamentRecurringService.createSpin` writes. It is a
+     placeholder on purpose and not out of caution: the tier is drawn at START
+     (TournamentManagerBase), which rewrites stack, blinds, pool and
+     `payout_structure` from the real tier before a card is dealt. Writing the
+     true ladder here would leak the draw, because only the 25x-and-up tiers
+     pay three places — a lobby showing 80 / 12 / 8 has told the player the
+     multiplier is at least 25x before the wheel exists. */
   const payoutStructure = isSpins
-    ? [{ place: 1, percentage: 100 }]
+    ? SPIN_TIERS[0].payouts.map((pct, i) => ({
+        place: i + 1,
+        percentage: Math.round(pct * 10000) / 100,
+      }))
     : payoutEngine.payoutsForChoice(config.payoutStructure, maxPlayers);
 
   // WHOLE-DOLLAR BUY-IN (Dan 2026-08-20): "Sit and Go and any tournament
   // buy-ins must never be decimal buy-ins, whole numbers only." The Buy-in
   // slider on the create-table form already steps in whole chips; rounding here
   // is the backstop for a restored draft or a programmatic config. `buyIn` is
-  // the TOTAL the player pays and the 10% fee is a cut OUT of it, so both
-  // halves of the split are whole numbers too.
+  // the TOTAL the player pays and the fee is a cut OUT of it, so the total the
+  // player is charged is always a whole number.
   const buyIn = Math.max(0, Math.round(Number(config.buyIn) || 0));
-  const split = splitBuyIn(buyIn);
+  // The rate depends on the FORMAT (2026-08-27). A 2-seat SNG pays 5% and a
+  // Spin pays nothing at all — its rake is engineered into the multiplier
+  // distribution and `buy_in_fee` must be 0 or the
+  // tournaments_spin_no_extra_rake constraint refuses the row. This path used a
+  // flat 10% for all three, so an owner building a duel or a Spin from the
+  // table-config form was shown a fee that fn_create_tournament then wrote
+  // differently. rakeRateFor is the single source of truth.
+  const split = splitBuyIn(
+    buyIn,
+    rakeRateFor({ variant: isSpins ? 'spin' : isSng ? 'sng' : 'mtt', maxPlayers })
+  );
 
   const isMtt = config.gameMode === 'mtt';
   const clampInt = (v: number, lo: number, hi: number) =>
@@ -189,9 +234,10 @@ export function buildTournamentConfig(
             ? 'bounty'
             : 'mtt',
     buyIn: split.total,
-    // The house takes 10% of the buy-in on every tournament, rounded to a whole
-    // number. It is recomputed identically server-side in fn_create_tournament;
-    // this is only what the UI shows.
+    // The house cut, floored to cents, at the rate THIS format pays: 10% on an
+    // MTT, 5% on a two-seat duel, nothing on a Spin. It is recomputed
+    // identically server-side in fn_create_tournament; this is only what the UI
+    // shows, which is exactly why it has to agree with it.
     rake: split.fee,
     startingStack: config.startingChips,
     maxPlayers,
@@ -205,14 +251,14 @@ export function buildTournamentConfig(
     // time in the past would trip the 30-minute auto-cancel immediately — so
     // anything not in the future falls back to the service default.
     startTime:
-    config.gameMode === 'mtt' && config.startTime
-      ? (() => {
-        const when = new Date(config.startTime);
-        return Number.isFinite(when.getTime()) && when.getTime() > Date.now()
-        ? when
-        : undefined;
-      })()
-      : undefined,
+      config.gameMode === 'mtt' && config.startTime
+        ? (() => {
+            const when = new Date(config.startTime);
+            return Number.isFinite(when.getTime()) && when.getTime() > Date.now()
+              ? when
+              : undefined;
+          })()
+        : undefined,
     isRebuy: isMtt && config.numberOfRebuysReentries > 0,
     isReentry: isMtt && config.numberOfRebuysReentries > 0,
     rebuyCost,
@@ -223,13 +269,14 @@ export function buildTournamentConfig(
     addOnLevels: 1,
     guaranteedPrize:
       isMtt && config.gtdPrizePool ? Math.max(0, Math.round(config.gtdPrizeAmount ?? 0)) : 0,
-    gameVariant: TOURNAMENT_GAME_VARIANTS[gameType ?? 'nlh'] ?? 'NLH',
+    gameVariant: VARIANT_MAP[String(gameType ?? 'nlh').toLowerCase()] ?? 'NLH',
     spinType: isSpins ? 'standard' : undefined,
     // Half the buy-in as the head, floored to a whole number so the bounty can
     // never be a decimal and can never exceed the prize half of the split.
-    bountyConfig: !isSatellite && config.koBounty
-    ? { baseBounty: Math.min(split.prize, Math.floor(split.total * 0.5)) }
-    : undefined,
+    bountyConfig:
+      !isSatellite && config.koBounty
+        ? { baseBounty: Math.min(split.prize, Math.floor(split.total * 0.5)) }
+        : undefined,
     satelliteTarget: isSatellite
       ? {
           tournamentId: config.satelliteTargetId!,
@@ -250,19 +297,40 @@ export function buildTournamentConfig(
     actionTimeSeconds: clampInt(config.actionTimeSeconds ?? 15, 5, 60),
     // For an SNG the field IS the table (or a fixed multiple of 9), so the
     // table can never seat more than the field itself.
-    tableSize: isSng
-      ? Math.min(clampInt(config.tableSize ?? 9, 2, 10), maxPlayers)
-      : clampInt(config.tableSize ?? 9, 2, 10),
+    // 2026-08-24: clamped by what the DECK can physically deal, and by NOTHING
+    // ELSE. tableSeating's cash cap is deliberately NOT used here: its header
+    // is explicit that "TOURNAMENTS ARE NOT BOUND BY THIS", because the cash
+    // cap is kept tight so Run It Twice has three boards to come out of, and a
+    // tournament cannot run it twice at all. Applying it would shrink 9-handed
+    // MTT tables and turn 3-max Spin & Gos into 8-max — a structural change,
+    // not a seat cap. (I tried it that way first; the seat-law parity guard and
+    // that header are what caught it.)
+    //
+    // Physics still applies. PLO6 deals six cards a seat, so a ten-handed PLO6
+    // table wants 60 hole cards plus a board out of one 52-card deck, and
+    // PokerEngine.deal() THROWS rather than dealing short — the tournament
+    // would start and then sit there. This forbids only the undealable:
+    // Hold'em stays 10, PLO4 and PLO8 stay 10, and only PLO5 (9) and PLO6 (7)
+    // are actually reduced.
+    tableSize: Math.min(
+      isSng
+        ? Math.min(clampInt(config.tableSize ?? 9, 2, 10), maxPlayers)
+        : clampInt(config.tableSize ?? 9, 2, 10),
+      maxSeatsTheDeckAllows(gameType)
+    ),
+
     bigBlindAnte: config.bigBlindAnte ?? false,
     authorizedToRegister: config.authorizedToRegister ?? false,
     synchronizedBreaks: config.synchronizedBreaks ?? true,
     acceleratedMtt: isMtt ? (config.acceleratedMtt ?? false) : false,
-    maxRebuys: isMtt && config.numberOfRebuysReentries > 0
-      ? clampInt(config.numberOfRebuysReentries, 0, 100)
-      : undefined,
-    maxReentries: isMtt && config.numberOfRebuysReentries > 0
-      ? clampInt(config.numberOfRebuysReentries, 0, 100)
-      : undefined,
+    maxRebuys:
+      isMtt && config.numberOfRebuysReentries > 0
+        ? clampInt(config.numberOfRebuysReentries, 0, 100)
+        : undefined,
+    maxReentries:
+      isMtt && config.numberOfRebuysReentries > 0
+        ? clampInt(config.numberOfRebuysReentries, 0, 100)
+        : undefined,
     addonBreakMinutes:
       isMtt && config.addOnMultiplier > 0
         ? clampInt(config.addOnBreakLengthMinutes ?? 1, 1, 10)
@@ -278,8 +346,18 @@ export function buildTournamentConfig(
       isMtt && config.restartTournamentEvery
         ? clampInt(config.restartEveryMinutes ?? 60, 5, 1440)
         : undefined,
-    isMultiDay: isMtt ? (config.multiDayMtt ?? false) : false,
-    totalDays: isMtt && config.multiDayMtt ? clampInt(config.totalDays ?? 2, 2, 7) : undefined,
+    /* MULTI-DAY IS NOT BUILT, SO IT IS NOT SENT (2026-08-26).
+       `is_multi_day` and `total_days` are stored, badged in two places, and
+       read by NOTHING that runs a tournament: there is no day end, no Day 2
+       resume, no flight merge, and nothing has ever written
+       `flight_end_chips_snapshot`. An event with the flag set played down to a
+       single winner in one session while the lobby card said Multi-Day.
+       `trg_tournaments_refuse_unbuilt_multi_day` now refuses the write at the
+       database, for every caller including the engine; this keeps the client
+       from composing a payload that would be refused. 0 of 34,072 production
+       tournaments ever set it, so nothing is taken away.
+       Delete both of these lines in the commit that implements Day 2. */
+    isMultiDay: false,
+    totalDays: undefined,
   } as TournamentConfig;
 }
-

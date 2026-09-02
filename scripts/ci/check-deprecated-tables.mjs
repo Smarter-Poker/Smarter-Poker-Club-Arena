@@ -42,11 +42,32 @@ const EXTS = new Set(['.ts', '.tsx', '.js', '.jsx']);
 const DEPRECATED = {
   rake_history: 'rake_records',
   hand_players: 'hand_history (or the ca_player_stats_full RPC for aggregates)',
-  rake_attributions: 'rake_records.player_contributions',
+  // rake_attributions: NO LONGER DEPRECATED (Dan 2026-08-29/30). It was
+  // genuinely dead — declared with a unique guard and 0 rows, which is why it
+  // was listed here. The weighted contributed rake migration made it the
+  // AUTHORITATIVE per-player rake ledger: atomic_distribute_rake writes one
+  // row per contributor per hand inside the banking transaction, the SQL
+  // consumers read it through fn_rake_shares_for_record, and the settler
+  // reads it through sharesForRakeRecordWithLedger. A register that still
+  // called it dead would push the next reader back onto recomputation — the
+  // dual-implementation shape that produced the equal-dealt bug. Removed
+  // from DEPRECATED deliberately, in the commit that started reading it.
   // hands / hand_actions: zero rows ever. saveHand inserts into `hands` first
   // and returns early when it fails, so everything below it is unreachable.
   hands: 'hand_history',
   hand_actions: 'hand_history.actions (jsonb)',
+  // Added 2026-08-27. The global chip pool, FROZEN since 2026-08-21 00:59 UTC
+  // with 732,591,994.33 chips stranded in it (club-arena CLAUDE.md 11.5).
+  // The rule said "nothing reads it"; eleven sites did, and because the table
+  // still HOLDS numbers the reads did not render zeros - they rendered
+  // six-day-stale, plausible, formatted lies. One sampled player read
+  // 3,313,727.73 against a true 34,818.60, and the frozen pool summed to six
+  // times the entire real economy. That is why a comment was not enough and
+  // this line exists: a read is now a build failure.
+  wallets:
+    'club_members.chip_balance / .promo_balance / .locked_chips (club-scoped, live), ' +
+    'agents.agent_wallet_balance for BUSINESS, or the fn_player_spendable_balance RPC ' +
+    'when the question is what a player can SPEND at a table',
 };
 
 /** "<path>:<table>" entries that are deliberately permitted, with a reason. */

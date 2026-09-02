@@ -88,6 +88,8 @@ export const ChipFlowService = {
       );
     }
 
+    const idempotencyKey = crypto.randomUUID();
+
     // 1. Execute atomic transfer & logging in a single Postgres transaction
     const { error: transferErr } = await retryAsync(
       () =>
@@ -98,6 +100,7 @@ export const ChipFlowService = {
           p_category: category,
           p_description: description,
           p_related_entity_id: relatedEntityId || null,
+          p_idempotency_key: idempotencyKey,
         }),
       3
     );
@@ -118,19 +121,18 @@ export const ChipFlowService = {
     masterBus.emit('CASHIER_BALANCE_CHANGED', { clubId: relatedEntityId || '' });
 
     // 5. Get final balances
-    const { data: fromWallet } = await supabase
-      .from('wallets')
-      .select('balance')
-      .eq('user_id', fromUserId)
-      .eq('wallet_type', 'PLAYER')
-      .maybeSingle();
-
-    const { data: toWallet } = await supabase
-      .from('wallets')
-      .select('balance')
-      .eq('user_id', toUserId)
-      .eq('wallet_type', 'PLAYER')
-      .maybeSingle();
+    /* Live pool read (2026-08-27): the old table is frozen - see
+   WalletService.getBalances for the measurements. club_members.chip_balance is
+   what every server money path actually moves. */
+    const liveChips = async (uid: string): Promise<{ balance: number } | null> => {
+      const { data } = await supabase
+        .from('club_members')
+        .select('chip_balance')
+        .eq('user_id', uid);
+      if (!data) return null;
+      return { balance: data.reduce((sum, r) => sum + (Number(r.chip_balance ?? 0) || 0), 0) };
+    };
+    const [fromWallet, toWallet] = await Promise.all([liveChips(fromUserId), liveChips(toUserId)]);
 
     return {
       success: true,
@@ -171,13 +173,17 @@ export const ChipFlowService = {
         clubId
       );
 
-      // Return real balance instead of zeros
-      const { data: wallet } = await supabase
-        .from('wallets')
-        .select('balance')
-        .eq('user_id', unionOwnerId)
-        .eq('wallet_type', 'PLAYER')
-        .maybeSingle();
+      // Return real balance instead of zeros. Live pool (2026-08-27): the
+      // old table is frozen; club_members.chip_balance is the live one.
+      const { data: ownerRows } = await supabase
+        .from('club_members')
+        .select('chip_balance')
+        .eq('user_id', unionOwnerId);
+      const wallet = ownerRows
+        ? {
+            balance: ownerRows.reduce((sum, r) => sum + (Number(r.chip_balance ?? 0) || 0), 0),
+          }
+        : null;
 
       return {
         success: true,
@@ -198,70 +204,32 @@ export const ChipFlowService = {
     );
   },
 
-  /**
-   * Club Owner → Agent
-   * Club owner funds an agent's PLAYER wallet for distribution to their players.
-   */
-  async clubToAgent(
-    clubOwnerId: string,
-    agentUserId: string,
-    clubId: string,
-    amount: number,
-    agentName: string,
-    clubName: string
-  ): Promise<ChipTransferResult> {
-    return this.transfer(
-      clubOwnerId,
-      agentUserId,
-      amount,
-      'transfer',
-      `${clubName} → Agent ${agentName}: player funding allocation`,
-      clubId
-    );
-  },
-
-  /**
-   * Agent → Player
-   * Agent funds a player under them from their own PLAYER wallet.
-   */
-  async agentToPlayer(
-    agentUserId: string,
-    playerId: string,
-    amount: number,
-    agentName: string,
-    playerName: string,
-    clubName: string
-  ): Promise<ChipTransferResult> {
-    return this.transfer(
-      agentUserId,
-      playerId,
-      amount,
-      'transfer',
-      `Agent ${agentName} → ${playerName}: player funding (${clubName})`,
-      agentUserId
-    );
-  },
-
-  /**
-   * Club Owner → Player (direct)
-   * Club owners can send chips directly to any player, bypassing agents.
-   */
-  async clubToPlayer(
-    clubOwnerId: string,
-    playerId: string,
-    amount: number,
-    playerName: string,
-    clubName: string
-  ): Promise<ChipTransferResult> {
-    return this.transfer(
-      clubOwnerId,
-      playerId,
-      amount,
-      'transfer',
-      `${clubName} Owner → ${playerName}: direct player funding`,
-      clubOwnerId
-    );
-  },
+  // ───────────────────────────────────────────────────────────────────────────
+  // THE CLUB HIERARCHY MOVES — REMOVED (phase 3 of 7, 2026-08-31)
+  // ───────────────────────────────────────────────────────────────────────────
+  //
+  // clubToAgent, agentToPlayer and clubToPlayer are deleted. All three were
+  // peer-to-peer moves between two users' PLAYER wallets, and every one of them
+  // debited the wrong account for the transfer it was named after:
+  //
+  //   - clubToAgent moved the OWNER'S PERSONAL wallet, never clubs.chip_treasury;
+  //   - agentToPlayer moved the agent's own PLAYER wallet, never
+  //     agents.agent_wallet_balance - its own doc comment said "from their own
+  //     PLAYER wallet", which was accurate and was the bug;
+  //   - none carried an idempotency key, asked whether the recipient was in the
+  //     caller's downline, or wrote a chip_transactions ledger row.
+  //
+  // Dan, 2026-08-25: "Any chips sent or claimed back transact from the Agent
+  // Wallet." 2026-08-31: "CHIPS MUST FLOW FROM THE MAIN BANK TO THE AGENT
+  // WALLET TO SEND OUT TO AGENTS AND PLAYERS."
+  //
+  // Their only caller was ChipTransferModal, which now makes the same two calls
+  // every other cashier surface makes: fn_club_bank_send for the four bank
+  // roles, fn_agent_wallet_send for the three agent roles. Both enforce their
+  // own authorization, take a uuid op_id, and write one ledger row.
+  //
+  // `transfer` below is NOT one of these and stays: it is a genuine
+  // player-to-player wallet move, and AgentService still uses it.
 
   // ─────────────────────────────────────────────────────────────────────────────
   // MINTING (System → Union Owner) — REMOVED
@@ -296,14 +264,17 @@ export const ChipFlowService = {
     userId: string,
     reason: string = 'Balance reset for proper funding chain'
   ): Promise<number> {
-    const { data: wallet } = await supabase
-      .from('wallets')
-      .select('balance')
-      .eq('user_id', userId)
-      .eq('wallet_type', 'PLAYER')
-      .maybeSingle();
+    // Live pool (2026-08-27): the old table is frozen; deducting against a
+    // six-day-stale figure would have reset the wrong amount.
+    const { data: resetRows } = await supabase
+      .from('club_members')
+      .select('chip_balance')
+      .eq('user_id', userId);
 
-    const currentBalance = wallet?.balance || 0;
+    const currentBalance = (resetRows || []).reduce(
+      (sum, r) => sum + (Number(r.chip_balance ?? 0) || 0),
+      0
+    );
 
     if (currentBalance > 0) {
       const { error: deductErr } = await retryAsync(
@@ -416,14 +387,33 @@ export const ChipFlowService = {
 
     while (hasMoreWallets && walletPages < MAX_PAGES) {
       walletPages++;
+      /* AN AUDIT THAT COUNTED A FROZEN POOL (fixed 2026-08-27): this paged
+         the retired table and reported its 732,591,994.33 stranded chips as
+         circulating - six times the real economy of 121,018,710.03 - inside
+         the one function whose job is to say how many chips exist. It counts
+         the live pool now, with locked_chips as the at-table portion. */
+      /* ORDERED, BECAUSE THIS IS PAGED. Without an explicit order Postgres may
+         return rows in any order it likes, so across pages a row can be served
+         twice or skipped entirely - and in a function that SUMS chips, that is
+         a total which is quietly wrong. The house rule in
+         tests/unit/clubMemberStatus.test.ts caught this in review, and it was
+         written after ten horses vanished from a cashier for the same reason.
+         Ordering by the composite key makes the paging deterministic.
+
+         The prose lives ABOVE the statement rather than inside the call chain:
+         that rule reads a chain by slicing to the next semicolon, so a comment
+         sitting between .select() and .order() both truncates the slice and
+         donates its own words to it. */
       const { data: wallets, error } = await supabase
-        .from('wallets')
-        .select('balance, locked_balance')
+        .from('club_members')
+        .select('chip_balance, locked_chips')
+        .order('user_id', { ascending: true })
+        .order('club_id', { ascending: true })
         .range(offsetWallets, offsetWallets + 999);
 
       if (error || !wallets) break;
-      totalInWallets += wallets.reduce((s, w) => s + Number(w.balance || 0), 0);
-      totalInLockedBalance += wallets.reduce((s, w) => s + Number(w.locked_balance || 0), 0);
+      totalInWallets += wallets.reduce((s, w) => s + Number(w.chip_balance || 0), 0);
+      totalInLockedBalance += wallets.reduce((s, w) => s + Number(w.locked_chips || 0), 0);
 
       if (wallets.length < 1000) hasMoreWallets = false;
       else offsetWallets += 1000;

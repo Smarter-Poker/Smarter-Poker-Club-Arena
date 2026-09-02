@@ -6,11 +6,10 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { masterBus } from '../../core/MasterBus';
 import { useAuthUser } from '../../hooks/useAuthUser';
-import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { tournamentService } from '../../services/TournamentService';
 import TournamentLobbyCard from '../../components/tournament/TournamentLobbyCard';
 import { CardSkeleton } from '../../components/skeletons/CardSkeleton';
@@ -24,6 +23,8 @@ import { reportError } from '../../utils/errorReporter';
 // Whole-number tournament money (Dan 2026-08-20).
 import { totalBuyIn } from '../../utils/buyIn';
 import { relayTournamentEvent } from '../../services/tournamentEventBridge';
+import { useTournamentRegistration } from '../../hooks/useTournamentRegistration';
+import CasinoSurfaceHeader from '../../components/rewards/RewardsSurfaceHeader';
 
 type TournamentStatus = 'all' | 'upcoming' | 'REGISTERING' | 'RUNNING' | 'COMPLETED';
 type TournamentTypeFilter = 'all' | 'mtt' | 'sng' | 'spin' | 'bounty' | 'pko' | 'mystery';
@@ -34,6 +35,11 @@ interface Tournament {
   clubId: string;
   clubName: string;
   buyIn: number;
+  /* The two halves behind `buyIn`, kept so the Sign Up card can print the
+     "20 (18 + 2)" split the rest of the app uses. `buyIn` alone is the rounded
+     total and cannot be un-summed (2026-08-25). */
+  buyInPrize: number;
+  buyInFee: number;
   prizePool: number;
   guaranteedPrize: number;
   startTime: string;
@@ -61,15 +67,23 @@ interface Tournament {
 }
 
 export default function TournamentLobbyPage() {
+  const { register: registerMtt, isRegistering: isRegisteringMtt } = useTournamentRegistration();
+
   const { clubId } = useParams<{ clubId?: string }>();
   const { user } = useAuthUser();
   const toast = useToast();
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<TournamentStatus>('upcoming');
-  const [typeFilter, setTypeFilter] = useState<TournamentTypeFilter>('all');
+  const [searchParams] = useSearchParams();
+  const initialType = (searchParams.get('type') as TournamentTypeFilter) || 'all';
+  const [typeFilter, setTypeFilter] = useState<TournamentTypeFilter>(initialType);
+
+  useEffect(() => {
+    const currentType = (searchParams.get('type') as TournamentTypeFilter) || 'all';
+    setTypeFilter(currentType);
+  }, [searchParams]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [visibleTournaments, setVisibleTournaments] = useState<Set<string>>(new Set());
   const [isInUnion, setIsInUnion] = useState(false);
 
   const isMounted = useIsMounted();
@@ -106,51 +120,19 @@ export default function TournamentLobbyPage() {
     tournamentsRef.current = tournaments;
   }, [tournaments]);
 
-  // Stagger animation for tournament cards
-  useEffect(() => {
-    if (tournaments.length === 0) return;
-    setVisibleTournaments(new Set());
-    tournaments.forEach((tourn, index) => {
-      setTimeout(() => {
-        setVisibleTournaments((prev) => new Set(prev).add(tourn.id));
-      }, index * 60);
-    });
-  }, [tournaments]);
-
   useEffect(() => {
     loadTournaments();
   }, [clubId, statusFilter]);
 
-  // Callback for tournament updates
-  const handleTournamentUpdate = useCallback((payload: any) => {
-    if (payload.eventType === 'UPDATE' && payload.new) {
-      // Update tournament in list
-      setTournaments((prev) =>
-        prev.map((t) =>
-          t.id === payload.new.id
-            ? {
-                ...t,
-                currentPlayers: payload.new.current_players,
-                prizePool: Math.round(Number(payload.new.prize_pool) || 0),
-                status: payload.new.status,
-              }
-            : t
-        )
-      );
-    } else if (payload.eventType === 'INSERT') {
-      // Reload to get new tournament with club name (uses ref to get current filter)
-      loadTournamentsRef.current();
-    }
-  }, []);
-
-  useMasterBusChannel({
-    channelName: 'tournament-lobby-updates',
-    table: 'tournaments',
-    filter: null,
-    event: '*',
-    onPayload: handleTournamentUpdate,
-    enabled: true,
-  });
+  // 2026-08-24: a useMasterBusChannel({ table: 'tournaments', filter: null })
+  // used to sit here and NEVER SUBSCRIBED - the hook early-returns on a null
+  // filter (useMasterBusChannel.ts:93), so it was silently inert while reading
+  // as live coverage. The bus subscriptions and the poll below are what have
+  // actually been keeping this page current.
+  //
+  // Not repaired, for the same reason as LeaderboardPage: the repair is an
+  // unfiltered subscription to `tournaments`, i.e. every tournament row change
+  // platform-wide pushed to every client sitting in the lobby.
 
   // Subscribe to realtime tournament updates
   useEffect(() => {
@@ -170,14 +152,8 @@ export default function TournamentLobbyPage() {
       300
     );
 
-    const unsubMerge = masterBus.subscribeDebounced(
-      'TABLE_MERGED',
-      () => {
-        // Refresh tournament list to reflect table changes
-        loadTournamentsRef.current();
-      },
-      500
-    );
+    // TABLE_MERGED listener removed 2026-08-28: nothing emits it client-side
+    // (see TournamentDetails for the full note).
 
     // Refresh profile/wallet when balance changes (e.g., after register/unregister)
     const unsubBalance = masterBus.subscribeDebounced(
@@ -199,7 +175,6 @@ export default function TournamentLobbyPage() {
 
     return () => {
       unsubElim();
-      unsubMerge();
       unsubBalance();
       unsubTableCreated();
     };
@@ -512,6 +487,8 @@ export default function TournamentLobbyPage() {
           // the split - buy_in_amount alone understated every price by the fee.
           // totalBuyIn also rounds, so no decimal reaches the lobby.
           buyIn: totalBuyIn(t.buy_in_amount || 0, t.buy_in_fee),
+          buyInPrize: Number(t.buy_in_amount) || 0,
+          buyInFee: Number(t.buy_in_fee) || 0,
           prizePool: Math.round(Number(t.prize_pool) || 0),
           startTime: t.start_time,
           status: t.status,
@@ -572,18 +549,48 @@ export default function TournamentLobbyPage() {
     if (isMounted.current) setLoading(false);
   };
 
+  /**
+   * Dan 2026-08-25 (binding): "you don't need a secondary confirmation for buy
+   * ins" — but you do need ONE, and this surface had NONE.
+   *
+   * This is the GLOBAL tournament lobby, the busiest register button in the
+   * app, and it called `tournamentService.registerPlayer` directly: one tap on
+   * a card and the buy-in was gone, no price confirmed, no balance shown, no
+   * way back. The hook was already imported at the top of this file and its
+   * return value was never used — so the page LOOKED wired to the shared path
+   * and was not.
+   *
+   * It now goes through `useTournamentRegistration`, which is the only thing
+   * that shows the Sign Up card, and which also handles the re-entrancy guard
+   * (a double-tapped card used to debit twice) and the post-registration seat
+   * lookup. The list refresh stays, as the hook's onSuccess.
+   */
   const handleRegister = async (tournamentId: string) => {
     if (!user?.id) return;
-    try {
-      await tournamentService.registerPlayer(tournamentId, user.id, user.username || 'Player');
-      toast.success('Registered! Buy-in deducted from your wallet');
-      loadTournaments();
-    } catch (error) {
-      reportError(error, 'TournamentLobbyPage.Registration_failed');
-      const msg = (error as Error).message || 'Unknown error';
-      toast.error(`Registration failed: ${msg}`);
-      throw error; // Re-throw so card can react
+    const t = tournamentsRef.current.find((x) => x.id === tournamentId);
+    if (!t) {
+      toast.error('That Tournament Is No Longer Listed');
+      return;
     }
+    await registerMtt(
+      {
+        id: t.id,
+        name: t.name,
+        // This page's row shape is camelCase and carries the split separately
+        // from the rounded total — see `buyInPrize` / `buyInFee` above.
+        buy_in_amount: t.buyInPrize,
+        buy_in_fee: t.buyInFee,
+        bounty_amount: t.isBounty ? t.bountyAmount || 0 : 0,
+        is_pko: !!t.isPko,
+        is_mystery_bounty: !!t.isMysteryBounty,
+        start_time: t.startTime,
+        club_id: t.clubId ?? null,
+        // The hook derives late-registration from status — one definition for
+        // every surface, because five hand-rolled copies all missed LATE_REG.
+        status: t.status,
+      },
+      () => loadTournaments()
+    );
   };
 
   const handleUnregister = async (tournamentId: string) => {
@@ -668,9 +675,9 @@ export default function TournamentLobbyPage() {
       // Already started or completed
       return { label: 'Now', order: 0 };
     } else if (diffMins < 30) {
-      return { label: 'Starting Soon (< 30 min)', order: 1 };
+      return { label: 'Starting Soon (< 30 Min)', order: 1 };
     } else if (diffMins < 120) {
-      return { label: 'Next Hour (30 min - 2 hours)', order: 2 };
+      return { label: 'Next Hour (30 Min - 2 Hours)', order: 2 };
     } else if (diffHours < 6) {
       return { label: 'Later Today', order: 3 };
     } else if (diffHours < 24) {
@@ -702,7 +709,19 @@ export default function TournamentLobbyPage() {
   const runningCount = tournaments.filter((t) => t.status === 'RUNNING').length;
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} data-arena-surface="play">
+      <CasinoSurfaceHeader
+        eyebrow="Play & Review / Tournament Lobby"
+        title="Tournament Command"
+        description="Discover Scheduled Fields, Inspect Live Events, And Enter Registration Through The Existing Tournament Service And Server-Authoritative Buy-In Flow."
+        artPath="assets/club-buttons/lobby/shark-club-championship-ad-v2.png"
+        status="TOURNAMENT NETWORK // LIVE"
+        metrics={[
+          { label: 'Upcoming', value: upcomingCount, tone: 'attention' },
+          { label: 'Live Now', value: runningCount, tone: 'live' },
+          { label: 'Loaded', value: tournaments.length },
+        ]}
+      />
       {/* Quick Stats */}
       <div className={styles.quickStats}>
         <div className={styles.stat}>
@@ -723,7 +742,7 @@ export default function TournamentLobbyPage() {
       <div className={styles.searchBar}>
         <input
           type="text"
-          placeholder="Search tournaments..."
+          placeholder="Search Tournaments..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className={styles.searchInput}
@@ -797,7 +816,11 @@ export default function TournamentLobbyPage() {
             <span className={styles.emptyIcon}></span>
             <p>No Tournaments Found</p>
             {clubId && !isInUnion && (
-              <Link to={`/clubs/${clubId}/create-tournament`} className={styles.createBtn}>
+              /* 2026-08-27: this linked to /clubs/:id/create-tournament, a
+                 route that has never existed — the button 404'd into the
+                 catch-all. The create-table picker is the real entry: its
+                 SNG/MTT tabs build tournaments. */
+              <Link to={`/clubs/${clubId}/create-table`} className={styles.createBtn}>
                 + Create Tournament
               </Link>
             )}
@@ -813,15 +836,7 @@ export default function TournamentLobbyPage() {
 
               {/* Tournaments in Group */}
               {group.tournaments.map((tournament) => (
-                <div
-                  key={tournament.id}
-                  className={`${visibleTournaments.has(tournament.id) ? styles.fadeInUp : styles.hidden}`}
-                  style={
-                    visibleTournaments.has(tournament.id)
-                      ? undefined
-                      : { opacity: 0, transform: 'translateY(8px)' }
-                  }
-                >
+                <div key={tournament.id} className={styles.fadeInUp}>
                   <TournamentLobbyCard
                     tournament={{
                       id: tournament.id,

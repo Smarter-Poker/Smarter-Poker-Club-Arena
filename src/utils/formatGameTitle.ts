@@ -36,6 +36,8 @@ const VARIANT_TOKENS = new Set([
   'plo6',
   'plo8',
   'flh',
+  'flo8',
+
   'flo',
   'sng',
   'mtt',
@@ -59,13 +61,23 @@ const VARIANT_TOKENS = new Set([
  */
 export function formatGameTitle(name: string | null | undefined): string {
   if (!name) return '';
-  return name.replace(/[a-z0-9+]+/gi, (token) => {
-    const lower = token.toLowerCase();
-    if (VARIANT_TOKENS.has(lower)) return lower.toUpperCase();
-    // '6+' arrives as '6' plus a separate '+' under this regex; the short-deck
-    // marker is already digit-only so there is nothing to case.
-    return token;
-  });
+  return name
+    .replace(/[a-z0-9+]+/gi, (token) => {
+      const lower = token.toLowerCase();
+      if (VARIANT_TOKENS.has(lower)) return lower.toUpperCase();
+      // '6+' arrives as '6' plus a separate '+' under this regex; the short-deck
+      // marker is already digit-only so there is nothing to case.
+      return token;
+    })
+    .replace(/\b(\d+)\.(\d{2})\b/g, (match, p1, p2) => {
+      if (p2 === '00') {
+        return p1;
+      }
+      if (p1 === '0') {
+        return '.' + p2;
+      }
+      return match;
+    });
 }
 
 export default formatGameTitle;

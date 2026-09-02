@@ -49,6 +49,10 @@
       "destination": "/images/:path*"
     },
     {
+      "source": "/hub/club-arena/fonts/:path*",
+      "destination": "/fonts/:path*"
+    },
+    {
       "source": "/hub/club-arena/videos/:path*",
       "destination": "/videos/:path*"
     },

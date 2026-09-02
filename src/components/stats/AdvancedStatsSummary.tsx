@@ -23,7 +23,7 @@ const BENCHMARKS: Record<string, { avg: number; good: number; label: string }> =
   threeBet: { avg: 7, good: 10, label: '%' },
   foldTo3Bet: { avg: 55, good: 45, label: '%' },
   cbetFreq: { avg: 65, good: 70, label: '%' },
-  bbPer100: { avg: 2, good: 5, label: 'bb' },
+  bbPer100: { avg: 2, good: 5, label: 'BB' },
 };
 
 // ── SWR cache ──
@@ -60,7 +60,6 @@ interface AdvancedStat {
 }
 
 interface AdvancedStatsSummaryProps {
-  userId?: string;
   initialData?: any; // Pre-fetched player_stats from parent (dedup)
 }
 
@@ -92,7 +91,7 @@ const AnimatedNumber: React.FC<{
   return <>{format(display)}</>;
 };
 
-const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, initialData }) => {
+const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ initialData }) => {
   const [stats, setStats] = useState<AdvancedStat[]>([]);
   const [visibleStats, setVisibleStats] = useState<Set<number>>(new Set());
   const [selectedStat, setSelectedStat] = useState<string | null>(null);
@@ -112,7 +111,6 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
   }, []);
 
   const resolveUserId = useCallback(async (): Promise<string | null> => {
-    if (userId) return userId;
     try {
       const { data: userResp } = await getAuthUser();
       return userResp.user?.id || null;
@@ -120,7 +118,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
       reportError(e, 'AdvancedStatsSummary.useCallback');
       return null;
     }
-  }, [userId]);
+  }, []);
 
   // If parent passes initialData, use it directly (dedup)
   useEffect(() => {
@@ -149,7 +147,9 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
       // player has rows in more than one club (the original cause of the empty
       // stats page) — and it selected none of the advanced columns this panel
       // exists to show, so the standalone render was six zeroed cards.
-      const { data, error } = await supabase.rpc('ca_player_stats_full', { p_user: uid });
+      const { data, error } = await supabase.rpc('ca_player_stats_overview_v2', {
+        p_user: uid,
+      });
 
       if (!mountedRef.current) return;
 
@@ -189,7 +189,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
         value: hourlyRate,
         format: (val) => `${val >= 0 ? '+' : ''}${val.toFixed(2)}`,
         unit: '/hr',
-        description: 'Profit per hour played',
+        description: 'Profit Per Hour Played',
         benchmark: BENCHMARKS.hourly,
       },
       {
@@ -197,7 +197,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
         label: 'Total Hands',
         value: totalHands,
         format: (val) => Math.floor(val).toLocaleString(),
-        description: 'Total hands played across all sessions',
+        description: 'Total Hands Played Across All Sessions',
         benchmark: BENCHMARKS.totalHands,
       },
       {
@@ -205,7 +205,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
         label: 'Showdown Win %',
         value: showdownWinPct,
         format: (val) => `${val.toFixed(1)}%`,
-        description: 'Win percentage when reaching showdown',
+        description: 'Win Percentage When Reaching Showdown',
         benchmark: BENCHMARKS.showdownWin,
       },
       {
@@ -213,7 +213,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
         label: 'Aggression Factor',
         value: d.aggression_factor || 0,
         format: (val) => val.toFixed(2),
-        description: 'Ratio of aggressive actions to passive actions',
+        description: 'Ratio Of Aggressive Actions To Passive Actions',
         benchmark: BENCHMARKS.aggression,
       },
       {
@@ -221,15 +221,15 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
         label: '3-Bet %',
         value: (d.three_bet_percent || 0) * 100,
         format: (val) => `${val.toFixed(1)}%`,
-        description: 'Percentage of re-raises preflop',
+        description: 'Percentage Of Re-Raises Preflop',
         benchmark: BENCHMARKS.threeBet,
       },
       {
         id: 'foldTo3Bet',
-        label: 'Fold to 3-Bet %',
+        label: 'Fold To 3-Bet %',
         value: (d.fold_to_three_bet || 0) * 100,
         format: (val) => `${val.toFixed(1)}%`,
-        description: 'How often you fold to 3-bet raises',
+        description: 'How Often You Fold To 3-Bet Raises',
         benchmark: BENCHMARKS.foldTo3Bet,
       },
       {
@@ -237,7 +237,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
         label: 'C-Bet Frequency',
         value: (d.cbet_flop || 0) * 100,
         format: (val) => `${val.toFixed(1)}%`,
-        description: 'How often you continuation bet on the flop',
+        description: 'How Often You Continuation Bet On The Flop',
         benchmark: BENCHMARKS.cbetFreq,
       },
       {
@@ -245,7 +245,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
         label: 'BB/100',
         value: d.bb_per_100 || 0,
         format: (val) => `${val >= 0 ? '+' : ''}${val.toFixed(2)}`,
-        description: 'Big blinds won per 100 hands - key profitability metric',
+        description: 'Big Blinds Won Per 100 Hands - Key Profitability Metric',
         benchmark: BENCHMARKS.bbPer100,
       },
     ];
@@ -340,7 +340,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
               whiteSpace: 'nowrap',
             }}
           >
-            {showBenchmarks ? 'Hide Avg' : 'vs Average'}
+            {showBenchmarks ? 'Hide Avg' : 'Vs Average'}
           </button>
         </div>
       </div>
@@ -421,7 +421,7 @@ const AdvancedStatsSummary: React.FC<AdvancedStatsSummaryProps> = ({ userId, ini
                 <div
                   className="card-description"
                   style={{
-                    animation: 'slideDown 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                    animation: 'animationsSlideDown 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
                   }}
                 >
                   <p>{stat.description}</p>

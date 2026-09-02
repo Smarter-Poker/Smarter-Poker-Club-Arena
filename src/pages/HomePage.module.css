@@ -114,93 +114,21 @@
 }
 
 /* Enhancement #1: Neuron lights — traveling cyan pulses along grid lines */
-.neuronLights {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 50vh;
-  z-index: 0;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.neuronLights::before,
-.neuronLights::after {
-  content: '';
-  position: absolute;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: rgba(0, 212, 255, 0.8);
-  box-shadow:
-    0 0 12px rgba(0, 212, 255, 0.6),
-    0 0 24px rgba(0, 212, 255, 0.3);
-  filter: blur(1px);
-}
-
-.neuronLights::before {
-  animation: neuronTravelH 8s linear infinite;
-  top: 30%;
-}
-
-.neuronLights::after {
-  animation: neuronTravelV 10s linear infinite 3s;
-  left: 60%;
-}
-
-@keyframes neuronTravelH {
-  0% {
-    left: -10px;
-    opacity: 0;
-  }
-  5% {
-    opacity: 1;
-  }
-  95% {
-    opacity: 1;
-  }
-  100% {
-    left: 100%;
-    opacity: 0;
-  }
-}
-
-@keyframes neuronTravelV {
-  0% {
-    top: 100%;
-    opacity: 0;
-  }
-  5% {
-    opacity: 0.8;
-  }
-  95% {
-    opacity: 0.8;
-  }
-  100% {
-    top: -10px;
-    opacity: 0;
-  }
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    MAIN CONTENT - All scrollable content
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .mainContent {
-  /* Empty artwork above and below the console band in ACTION_BAR_HORIZONTAL.
-     Declared here, on the common ancestor of both consumers, so the crop is
-     one number to tune rather than two magic negatives in separate rules. */
-  --action-bar-dead-top: 92px;
-  --action-bar-dead-bottom: 88px;
-
   width: 100%;
   max-width: 960px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 0 16px 16px 16px;
+  /* The root lobby is intentionally footerless. Reserving the global footer
+     here still removed a card row even after the footer itself was hidden. */
+  padding: 0 16px 16px;
   box-sizing: border-box;
   z-index: 10;
   position: relative;
@@ -225,98 +153,88 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .actionBarRow {
-  display: flex;
-  justify-content: center;
-  align-items: center;
   width: 100%;
-  z-index: 0;
-  /* Dan 2026-08-21: "MOVE THE CREATE A CLUB, FIND A PLAYER, JOIN A CLUB ACTION
-     BAR TO THE VERY TOP OF THE PAGE, SO THE CLUB CARDS HAVE MORE SPACE AND CAN
-     BE AS LARGE AS POSSIBLE."
-
-     The bar could not simply be moved: it already IS the first child of
-     .mainContent. What pushed it down is the artwork itself - a 1024x682
-     canvas whose console occupies only the middle band, so at 600px wide the
-     img runs ~400px tall and roughly a quarter of that is empty pixels above
-     the bar. Cropping that dead band with a negative top margin is what
-     actually lifts the bar to the top, and it hands the reclaimed height
-     straight to the carousel. */
-  margin: calc(-1 * var(--action-bar-dead-top)) 0 0 0;
-  padding: 0;
-  /* Pull the carousel up over the decorative bottom portion of the same image. */
-  margin-bottom: calc(-1 * var(--action-bar-dead-bottom));
-  /* Allow clicks to pass through the empty decorative area to the carousel beneath */
-  pointer-events: none;
+  z-index: 4;
+  padding: 16px 0 13px;
 }
 
 .actionBarWrapper {
   position: relative;
   width: 100%;
-  max-width: 600px;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-  /* Dan 2026-08-21 ("do not let the background image bleed through the game
-     cards"): the console art is a 1024x682 canvas that is mostly empty — at
-     600px wide the IMG runs ~400px tall and its semi-opaque junk pixels
-     painted rectangular ghosts over the top corners of the club cards
-     (white over JAQK, grey over Midway — measured with elementsFromPoint).
-     The cards are LAYER 1: pin this whole bar underneath them, and hand
-     pointer events to the three click zones only so card taps can never be
-     eaten by the oversized canvas. */
-  z-index: 0;
-  pointer-events: none;
+  max-width: 960px;
+  aspect-ratio: 2065 / 399;
+  display: grid;
+  grid-template-columns: 34% 32% 34%;
+  isolation: isolate;
 }
 
-.actionBarImage {
-  width: 100%;
-  height: auto;
-  object-fit: contain;
-  display: block;
-  /* Prevent layout shift — reserve space matching the image aspect ratio */
-  aspect-ratio: 1024 / 682;
-}
-
-/* Clickable zones overlaid on action bar */
-.actionZoneLeft,
-.actionZoneCenter,
-.actionZoneRight {
+.actionBarArtwork {
   position: absolute;
-  /* Dan 2026-08-21: the wrapper is pointer-events:none now (see above) —
-     the zones are the ONLY click surface of the console. */
-  pointer-events: auto;
-  top: 15%;
-  height: 70%;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+.actionControl {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
   background: transparent;
-  border: none;
+  border: 0;
+  border-radius: 28px;
+  color: transparent;
   cursor: pointer;
-  border-radius: 8px;
-  /* Smooth transition for press feedback */
   transition:
-    transform 0.12s ease,
-    background 0.12s ease,
-    box-shadow 0.12s ease;
+    box-shadow 140ms ease,
+    background-color 140ms ease;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.actionZoneLeft:active,
-.actionZoneCenter:active,
-.actionZoneRight:active {
-  background: rgba(0, 212, 255, 0.2);
-  box-shadow: inset 0 0 40px rgba(0, 212, 255, 0.25);
-  transform: scale(0.97);
+.actionControl:active {
+  background-color: rgba(0, 169, 255, 0.08);
+  box-shadow: inset 0 0 28px rgba(0, 169, 255, 0.25);
+}
+.actionControl:disabled {
+  background-color: rgba(0, 0, 0, 0.58);
+  cursor: not-allowed;
+}
+.actionControl:focus-visible {
+  outline: 3px solid #25b7ff;
+  outline-offset: -7px;
+  box-shadow: inset 0 0 28px rgba(0, 169, 255, 0.25);
 }
 
-.actionZoneLeft {
-  left: 0;
-  width: 25%;
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
-.actionZoneCenter {
-  left: 25%;
-  width: 50%;
+
+@media (max-width: 640px) {
+  .actionBarRow {
+    padding: 8px 0 6px;
+  }
+  .actionBarWrapper {
+    min-height: 64px;
+  }
 }
-.actionZoneRight {
-  right: 0;
-  width: 25%;
+
+@media (prefers-contrast: more) {
+  .actionControl:focus-visible {
+    outline-color: #fff;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -451,6 +369,23 @@
   animation: carouselEntrance 0.6s ease-out 200ms both;
 }
 
+/* CLS FIX (2026-08-24, measured live): the carousel's height is solved from
+   its absolutely-positioned cards, which only exist after club data loads —
+   so the section grew from ~0 to ~394px (at 390vw) and shoved the bottom tile
+   row down, scoring CLS 0.14 on the lobby (threshold for "good" is 0.10).
+   Reserve the final height up front. The curve below was fitted from live
+   measurements: 394px @390vw, 364px @360vw, 343px @320vw → h ≈ 73vw + 109px.
+   A few px of over-reserve at mid sizes is invisible; under-reserving brings
+   the shift back. Mobile-only: desktop's layout never exhibited the shift. */
+@media (max-width: 768px) {
+  .clubCarousel {
+    /* Re-fitted 2026-08-24 after the narrow-track card cap dropped from
+       ~84% to 66% of the track ("THE CLUB CARDS... NEED TO BE SMALLER"):
+       reserve scales by the same 0.85 factor. Verified live post-deploy. */
+    min-height: calc(62vw + 93px);
+  }
+}
+
 @keyframes carouselEntrance {
   from {
     opacity: 0;
@@ -536,13 +471,6 @@
     background-position: -100% 0;
   }
 }
-
-/* Hover lift */
-.carouselCardFeatured:hover {
-  transform: scale(1.04) translateY(-4px);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
-}
-
 /* Tap/active feedback */
 .carouselCardFeatured:active {
   transform: scale(0.97);
@@ -564,9 +492,6 @@
   transition: opacity 0.4s ease;
   pointer-events: none;
   z-index: 20;
-}
-.carouselCardFeatured:hover::after {
-  opacity: 1;
 }
 
 /* Keyboard focus indicator */
@@ -925,20 +850,6 @@
 
 /* (noClubsMessage removed — replaced with auto-dismiss toast) */
 
-/* ── CTA Card Hover/Focus States ──────────────────────────────────────── */
-
-.ctaCard:hover {
-  transform: translateY(-4px);
-  border-color: rgba(0, 212, 255, 0.5);
-  box-shadow:
-    0 12px 36px rgba(0, 0, 0, 0.4),
-    0 0 20px rgba(0, 212, 255, 0.12);
-  transition:
-    transform 0.25s ease,
-    border-color 0.25s ease,
-    box-shadow 0.25s ease;
-}
-
 .ctaCard:focus-visible {
   outline: 2px solid rgba(0, 212, 255, 0.6);
   outline-offset: 3px;
@@ -949,13 +860,6 @@
 .ctaCard:active {
   transform: scale(0.97);
   transition-duration: 0.1s;
-}
-
-.ctaCard:hover .ctaCardIcon {
-  border-color: rgba(0, 212, 255, 0.6);
-  background: radial-gradient(circle, rgba(0, 212, 255, 0.25) 0%, transparent 70%);
-  color: rgba(0, 212, 255, 1);
-  transition: all 0.25s ease;
 }
 
 /* ── Carousel Scroll Fade Indicators (mobile) ─────────────────────────── */
@@ -992,8 +896,20 @@
    transform is additionally reset because a transform here would make this a
    containing block for the cards' absolute positioning. */
 .carouselScrollFade {
+  overflow: hidden;
   width: 100%;
   max-width: 1360px;
+  /* This stage contains a tall, absolutely-positioned carousel whose in-flow
+     sizer supplies its intrinsic height. It is one item in .mainContent's
+     flex column, alongside the action console and the five quick-action
+     tiles. At a 1280x720 desktop viewport their combined preferred height is
+     taller than the available area, so the default flex-shrink: 1 collapsed
+     this wrapper all the way to 0px. The cards still painted inside it, under
+     the quick-action row, but the wrapper's overflow clipped them and their
+     centre points could not be clicked. The parent already scrolls vertically;
+     preserve the carousel's measured height and let that intended scroller
+     absorb short viewports instead of deleting the primary navigation. */
+  flex: 0 0 auto;
   margin-left: auto;
   margin-right: auto;
   align-self: center;
@@ -1165,18 +1081,6 @@
 }
 
 /* Hover lift on desktop — bevel intensifies as card rises */
-@media (hover: hover) {
-  .tileCard:hover {
-    transform: translateY(-4px) scale(1.03);
-    filter: brightness(1.08);
-  }
-  .tileCard:hover .tileImageWrapper {
-    box-shadow:
-      0 16px 36px rgba(0, 0, 0, 0.7),
-      0 6px 24px rgba(0, 0, 0, 0.6);
-  }
-}
-
 /* Enhancement #2: Staggered entrance delays per tile */
 .tileCard:nth-child(1) {
   animation-delay: 400ms;
@@ -1272,6 +1176,13 @@
   justify-content: center;
   gap: 16px;
   z-index: 100;
+  /* Dan 2026-08-24 (live, DB under IO saturation): this overlay sat over the
+     WHOLE screen while the club list loaded, and on a slow database that
+     meant up to 12 seconds where NOT ONE header button or the hamburger
+     answered a tap — measured on production: every header button's tap
+     landed on this element. The overlay is purely visual (skeletons and a
+     spinner); it must never eat input. */
+  pointer-events: none;
 }
 
 .spinner {
@@ -1558,11 +1469,6 @@
     color 0.2s ease;
 }
 
-.staleCacheBadge:hover {
-  color: rgba(0, 212, 255, 0.6);
-  border-color: rgba(0, 212, 255, 0.15);
-}
-
 .staleCacheDot {
   width: 5px;
   height: 5px;
@@ -1633,6 +1539,9 @@
   justify-content: center;
   z-index: 1000;
   animation: fadeIn 0.2s ease-out;
+  /* Mobile-fit sweep 2026-08-23: side padding so the 320px-min modal never
+     touches the screen edge on narrow phones. */
+  padding: 16px;
 }
 
 @keyframes fadeIn {
@@ -1742,12 +1651,6 @@
   transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.modalButtonPrimary:hover {
-  background: linear-gradient(135deg, #33ddff, #33aaff);
-  box-shadow: 0 12px 30px rgba(0, 212, 255, 0.3);
-  transform: translateY(-2px);
-}
-
 .modalButtonPrimary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -1774,12 +1677,6 @@
   transition: all 0.3s ease;
 }
 
-.modalButtonSecondary:hover {
-  border-color: rgba(255, 255, 255, 0.5);
-  color: #fff;
-  background: rgba(255, 255, 255, 0.06);
-}
-
 .modalButtonSecondary:active {
   transform: scale(0.97);
   transition-duration: 0.1s;
@@ -1791,8 +1688,31 @@
 
 @media (max-width: 700px) {
   .mainContent {
-    padding: 0 8px 16px 8px;
+    /* Dan 2026-08-24 (screenshot): the action bar sat flush against the
+       header. 14px of top air shifts the whole column down. */
+    padding: 14px 8px 16px 8px;
     max-width: 100%;
+    /* Dan 2026-08-24 round 2: "THE ACTION BAR NEEDS TO BE MOVED DOWN."
+       The bar's vertical position is the negative crop of its artwork's dead
+       band — cropping 20px LESS lowers the whole console by 20px and the
+       carousel follows. */
+    /* Dan 2026-08-24 round 3: "IT'S CURRENTLY TOUCHING THE TOP OF THE GLOBAL
+       HEADER." Measured live at 72: the FIND A PLAYER zone's top landed at
+       y=21 with the header ending at y=41 — 20px of overlap. Cropping 42px
+       less of the dead art drops the console clear of the bar. */
+    --action-bar-dead-top: 30px;
+    /* MEASURED, not guessed (2026-08-24): the console art is 1024x682 with
+       the console band in the middle. At 378px wide it renders 252px tall and
+       carries ~55px of empty canvas below the console — which is why the gap
+       above the club cards read 53px while the gap below read 37px, and why
+       the mismatch grew on a bigger phone (68 vs 43 at 430px).
+
+       A percentage margin resolves against the container's WIDTH, so 14.6%
+       is the same fraction of the artwork at every screen size — the crop
+       now scales with the art instead of drifting from it. (14.6% of 378 =
+       55px; the original 88px constant was tuned at 600px wide, which is the
+       same 14.7%.) */
+    --action-bar-dead-bottom: 14.6%;
   }
 
   .featuredCard {
@@ -1807,7 +1727,45 @@
     /* gap / scroll-padding-inline are dead here: the strip is neither a flex
        row nor a scroll container any more. Removed rather than left to read
        like live layout. */
-    padding: 8px 12px 24px 12px;
+    /* Measured live at 24px bottom: 36px above the cards, 44px below. The
+       carousel centres its track, so trimming 8px off the bottom padding
+       moves the midpoint 4px down and the two gaps meet at 40px. */
+    padding: 8px 12px 16px 12px;
+    /* Dan 2026-08-24 round 3: "THERE SHOULD BE THE EXACT SAME AMOUNT OF
+       SPACING BETWEEN THE ACTION BAR AND THE 5 BOTTOM CARDS. THE CARDS SHOULD
+       BE PERFECTLY SPACED BETWEEN THEM." Auto margins on both sides of the
+       carousel split the column's free space into two equal shares — one
+       above the cards, one below — so the carousel sits exactly centred
+       between the console and the footer at any viewport height. */
+    /* Take every pixel between the console and the footer and centre the
+       cards inside it. Auto margins did this too, but only until a negative
+       crop margin moved the region's top edge — measured live: 38px of
+       overlap above, 44px of gap below. Growing into the gap and centring
+       makes the two gaps equal by construction at any viewport height. */
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+
+  /* Dan 2026-08-24 round 2: "THE B CARDS ON THE BOTTOM... ARE THE FOOTER."
+     .mainContent is a flex column scroller; auto top margin hands any slack
+     height to the space ABOVE the tile row, pinning it to the bottom of the
+     viewport whenever the content is shorter than the screen. */
+  .bottomRow {
+    /* The carousel's auto bottom margin already pins this row to the bottom;
+       an auto margin here too would steal a third share and break the equal
+       spacing above. */
+    max-width: 100%;
+    gap: 4px;
+    padding: 0 2px max(16px, env(safe-area-inset-bottom)) 2px;
+    /* Dan 2026-08-24: "PLAYER STATS ... NEEDS TO BE LOWERED SO IT'S EVENLY
+       SPACED BETWEEN THE CARDS ON THE LEFT AND RIGHT." Bottom-aligning made
+       the taller card grow only upward; centring splits its extra height
+       evenly above and below its neighbours, matching the reference. */
+    align-items: center;
   }
 
   .ctaCard {
@@ -1830,7 +1788,7 @@
 
 @media (max-width: 480px) {
   .mainContent {
-    padding: 0 6px 16px 6px;
+    padding: 14px 6px 16px 6px;
   }
 
   .featuredCard {
@@ -1842,7 +1800,12 @@
   }
 
   .clubCarousel {
-    padding: 8px 8px 20px 8px;
+    /* The pagination dots sit INSIDE this box, under the cards: measured
+       24px of dots + gap, plus 12px of padding = 36px below the cards but
+       only 8px above them, so centring the box left the cards sitting high.
+       Matching the top padding to what the dots occupy below puts the CARDS
+       — not the box — in the middle. */
+    padding: 36px 8px 12px 8px;
   }
 
   .ctaCard {
@@ -2009,10 +1972,6 @@
   text-align: left;
 }
 
-.contextMenuItem:hover {
-  background: rgba(0, 212, 255, 0.08);
-}
-
 .contextMenuDivider {
   height: 1px;
   background: rgba(0, 212, 255, 0.1);
@@ -2127,12 +2086,6 @@
   cursor: pointer;
   transition: all 0.3s ease;
 }
-
-.errorBoundaryRetry:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 212, 255, 0.3);
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    PHASE 4 ENHANCEMENTS
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -2280,11 +2233,6 @@
   color: #fff !important;
 }
 
-.modalButtonDanger:hover {
-  background: linear-gradient(135deg, #ff6666, #dd3333) !important;
-  box-shadow: 0 12px 30px rgba(255, 0, 0, 0.3) !important;
-}
-
 /* #2: Pinned Club Badge */
 .pinnedBadge {
   position: absolute;
@@ -2371,60 +2319,6 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 /* P4-1: Floating Dust Particles — subtle atmospheric dots drifting upward */
-.dustParticles {
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  overflow: hidden;
-}
-
-.dustParticles::before,
-.dustParticles::after {
-  content: '';
-  position: absolute;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: rgba(0, 212, 255, 0.35);
-  box-shadow: 0 0 6px rgba(0, 212, 255, 0.2);
-}
-
-.dustParticles::before {
-  left: 20%;
-  animation: dustFloat 12s linear infinite;
-}
-
-.dustParticles::after {
-  left: 65%;
-  animation: dustFloat 16s linear infinite 5s;
-  width: 2px;
-  height: 2px;
-  background: rgba(0, 255, 180, 0.3);
-  box-shadow: 0 0 4px rgba(0, 255, 180, 0.15);
-}
-
-@keyframes dustFloat {
-  0% {
-    bottom: -10px;
-    opacity: 0;
-    transform: translateX(0) scale(1);
-  }
-  10% {
-    opacity: 0.6;
-  }
-  50% {
-    transform: translateX(30px) scale(0.8);
-  }
-  90% {
-    opacity: 0.4;
-  }
-  100% {
-    bottom: 100%;
-    opacity: 0;
-    transform: translateX(-20px) scale(0.5);
-  }
-}
 
 /* P4-2: Presence section REMOVED from JSX — CSS cleaned up */
 /* P4-4: Section separator REMOVED from JSX — CSS cleaned up */
@@ -2608,11 +2502,6 @@
     transform 0.2s ease;
 }
 
-.cashierSwitchBtn:hover {
-  background: rgba(0, 212, 255, 0.2);
-  transform: scale(1.08);
-}
-
 .cashierSwitchBtn:focus-visible {
   outline: 2px solid rgba(0, 212, 255, 0.7);
   outline-offset: 2px;
@@ -2654,6 +2543,41 @@
   color: rgba(255, 255, 255, 0.5);
 }
 
+.cashierSwitchStatus {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  padding: 5px 10px;
+  color: rgba(221, 237, 250, 0.72);
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.cashierSwitchStatus button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid rgba(0, 212, 255, 0.55);
+  border-radius: 5px;
+  color: #dff8ff;
+  background: rgba(8, 33, 49, 0.96);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cashierSwitchStatus button:focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.8);
+  outline-offset: 2px;
+}
+
+.cashierSwitchItems {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .cashierSwitchItem {
   display: flex;
   align-items: center;
@@ -2669,6 +2593,7 @@
   border-radius: 6px;
   cursor: pointer;
   min-width: 0;
+  min-height: 44px;
 }
 
 .cashierSwitchItem:focus-visible {
@@ -2720,11 +2645,94 @@
   flex-shrink: 0;
 }
 
-.cashierSwitchItem:hover {
-  background: rgba(0, 212, 255, 0.15);
-}
-
 .cashierSwitchItemActive {
   color: #00d4ff;
   background: rgba(0, 212, 255, 0.1);
+}
+
+/* Dan 2026-08-24 (screenshot): on phones the five bottom tiles rendered near-
+   uniform — the desktop hierarchy (STATS card largest in the centre, inner
+   pair medium, edge pair smallest) had collapsed under equal flex. Restore it
+   scaled down. Selectors target .bottomRow's CHILDREN (positions), because
+   tiles 4-5 are wrapped in .cashierTileWrap divs and .tileCard:nth-child
+   cannot see row position through the wrapper. */
+/* Dan 2026-08-24 round 3 (reference image): the five footer cards fill the
+   width edge to edge, near-equal, with PLAYER STATS slightly wider AND taller
+   so it rises above its neighbours. The old 160px/200px caps were what kept
+   them tiny — five 2:3 cards across a 390px phone want ~70px each, and the
+   caps had nothing to do with it; removing them lets flex do the work. */
+@media (max-width: 768px) {
+  .bottomRow > * {
+    max-width: none;
+  }
+  .bottomRow > :nth-child(1),
+  .bottomRow > :nth-child(2),
+  .bottomRow > :nth-child(4),
+  .bottomRow > :nth-child(5) {
+    flex: 1 1 0;
+  }
+  /* Dan's reference layout, measured off the image he sent: the five cards
+     are near-equal in WIDTH (165-195 of 974 = 17-20% each) and the stats
+     card stands out by being TALLER, because its art is a phone — a 0.53
+     frame, not the 2:3 the other four use. Widening it instead (flex 1.2)
+     made it fat rather than tall, which is what looked wrong. */
+  .bottomRow > :nth-child(3) {
+    flex: 1.06 1 0;
+  }
+
+  .bottomRow > :nth-child(3) .tileImageWrapper {
+    aspect-ratio: 0.53;
+  }
+  .tileCard {
+    max-width: none;
+  }
+}
+
+/* Dan 2026-08-24: "THE CASHIER CARD AND MARKETPLACE CARD NEED TO BE THE SAME
+   SIZE AS THE DAILY CHALLENGES AND LEADERBOARD CARDS." Their boxes already
+   matched to the pixel — what did not match was their CONTENT: tiles 4 and 5
+   carry a club-name caption under the art that the other three do not, so
+   their cards ran ~12px taller and, in a centre-aligned row, read as a
+   different size. The caption is desktop affordance (which club the cashier
+   will open); on a phone the row is five icons wide and it is noise. */
+@media (max-width: 768px) {
+  .tileClubName {
+    display: none;
+  }
+}
+
+/* ── THE FOUR SIDE TILES ARE ONE SIZE, PINNED (Dan 2026-08-24, twice) ───────
+   Measured on the deployed build: all four already reported 64x103 at the
+   same y, and the four artworks are the same 480x715 canvas with the same
+   3px frame inset — so nothing in the DOM or the art explained a difference.
+   Rather than keep measuring, the geometry is now declared outright: equal
+   flex basis, one shared aspect, centre-aligned, no max-width anywhere in the
+   chain (.cashierTileWrap carried a 160px cap of its own). If these ever
+   differ again it is a rendering bug, not a layout one. */
+@media (max-width: 768px) {
+  .bottomRow > :nth-child(1),
+  .bottomRow > :nth-child(2),
+  .bottomRow > :nth-child(4),
+  .bottomRow > :nth-child(5) {
+    flex: 1 1 0;
+    max-width: none;
+    align-self: center;
+  }
+
+  .cashierTileWrap {
+    max-width: none;
+    align-items: center;
+  }
+
+  .cashierTileWrap .tileCard {
+    align-self: center;
+    max-width: none;
+  }
+
+  .bottomRow > :nth-child(1) .tileImageWrapper,
+  .bottomRow > :nth-child(2) .tileImageWrapper,
+  .bottomRow > :nth-child(4) .tileImageWrapper,
+  .bottomRow > :nth-child(5) .tileImageWrapper {
+    aspect-ratio: 2 / 3;
+  }
 }

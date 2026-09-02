@@ -33,9 +33,9 @@ import AgentCommissionDashboard from '@/components/agent/AgentCommissionDashboar
 import { useToast } from '@/components/common/Toast';
 import AgentAssignmentPanel from '@/components/agent/AgentAssignmentPanel';
 import AgentCashoutPanel from '@/components/agent/AgentCashoutPanel';
-import ClubBottomNav from '@/components/club/ClubBottomNav';
 import { PlayerSearch } from '@/components/admin/PlayerSearch';
 import PageSkeleton from '../components/common/PageSkeleton';
+import { EmptyState, ErrorState } from '../components/common/EmptyState';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { retryFetch } from '../utils/retryFetch';
 import { useSwipeTabs } from '../hooks/useSwipeTabs';
@@ -86,7 +86,9 @@ export default function AgentManagementPage() {
   const [commissionAgentId, setCommissionAgentId] = useState<string | null>(null);
   const [commissionAgentName, setCommissionAgentName] = useState<string>('');
   const [showPlayerInviteModal, setShowPlayerInviteModal] = useState(false);
-  const [playerInviteAgentId, setPlayerInviteAgentId] = useState<string | null>(null);
+  // The agent's USER id, not the agents-table primary key. It used to hold
+  // `agent.id` (the PK) and hand that to writes that wanted a user id.
+  const [playerInviteAgentUserId, setPlayerInviteAgentUserId] = useState<string | null>(null);
 
   // Confirm modal state for destructive actions
   const [confirmAction, setConfirmAction] = useState<{
@@ -263,7 +265,14 @@ export default function AgentManagementPage() {
         )
         // wallet_transactions subscription removed (Phase 2 cost cut): the
         // canonical balance / commission state is derived via joins against
-        // wallets + commission_records (both still in supabase_realtime).
+        // wallets and agent_commissions.
+        //
+        // PHASE 7 (2026-09-01): this comment used to name commission_records
+        // and say it was "still in supabase_realtime". Neither was true - that
+        // table held zero rows for its whole life, was never in the
+        // publication, and is now dropped. A comment that points at a dead
+        // table is how the next person wires a subscription to nothing.
+        //
         // Bus 'BALANCE_UPDATED' / 'WALLET_REFRESHED' listeners below backstop
         // admin-side commission edits.
         .subscribe((status: string, err?: Error) => {
@@ -563,13 +572,14 @@ export default function AgentManagementPage() {
   if (!clubId) {
     return (
       <div className={styles.page}>
-        <div className={styles.error}>
-          <h2>No Club Selected</h2>
-          <p>Please Select A Club To Manage Agents.</p>
-          <button className={styles.addButton} onClick={() => navigate('/clubs')}>
-            Go To Clubs
-          </button>
-        </div>
+        <EmptyState
+          icon="CLUB"
+          eyebrow="Club Context Required"
+          tone="permission"
+          title="Choose A Club To Manage Agents"
+          description="Agent Roles, Commissions, Credit Lines, And Players Belong To One Club. Open This Tool From That Club's Operations Menu."
+          action={{ label: 'Return To Arena', onClick: () => navigate('/') }}
+        />
       </div>
     );
   }
@@ -587,7 +597,17 @@ export default function AgentManagementPage() {
   if (error) {
     return (
       <div className={styles.page}>
-        <div className={styles.error}>Error: {error}</div>
+        <ErrorState
+          message={error}
+          onRetry={() => {
+            setIsLoading(true);
+            setError(null);
+            AgentService.getAgents(clubId)
+              .then(setAgents)
+              .catch((retryError) => setError(safeErrorMessage(retryError)))
+              .finally(() => setIsLoading(false));
+          }}
+        />
       </div>
     );
   }
@@ -775,7 +795,7 @@ export default function AgentManagementPage() {
                         <button
                           className={`${styles.actionBtn}`}
                           onClick={() => {
-                            setPlayerInviteAgentId(agent.id);
+                            setPlayerInviteAgentUserId(agent.userId);
                             setShowPlayerInviteModal(true);
                           }}
                         >
@@ -875,6 +895,11 @@ export default function AgentManagementPage() {
         {activeTab === 'players' && (
           <div className={styles.playersSection}>
             <PlayerSearch
+              /* Scopes the search to THIS club. The prop was declared on
+                 PlayerSearch all along and never passed, so a staff member on
+                 one club's Players tab searched every profile on the platform,
+                 email included. */
+              clubId={clubId}
               onPlayerSelect={(player) => {
                 toast.info(`Selected: ${player.username}`);
               }}
@@ -934,8 +959,8 @@ export default function AgentManagementPage() {
                           {tx.transaction_type} •{' '}
                           <span style={{ color: remainingSec > 0 ? '#F5A623' : '#FA383E' }}>
                             {remainingSec > 0
-                              ? `${remainingMin}:${String(remainingSecMod).padStart(2, '0')} left`
-                              : 'expired'}
+                              ? `${remainingMin}:${String(remainingSecMod).padStart(2, '0')} Left`
+                              : 'Expired'}
                           </span>
                         </div>
                       </div>
@@ -1152,7 +1177,7 @@ export default function AgentManagementPage() {
         {/* ═══════════════════════════════════════════════════════════════════════════════ */}
         {activeTab === 'commissions' && (
           <div className={styles.commissionsSection}>
-            <AgentCommissionDashboard />
+            <AgentCommissionDashboard clubId={clubId} />
           </div>
         )}
 
@@ -1398,7 +1423,7 @@ export default function AgentManagementPage() {
                     type="number"
                     min="0"
                     step="1000"
-                    placeholder="Enter credit limit"
+                    placeholder="Enter Credit Limit"
                     value={newAgentForm.creditLimit || ''}
                     onChange={(e) =>
                       setNewAgentForm({ ...newAgentForm, creditLimit: Number(e.target.value) })
@@ -1489,9 +1514,9 @@ export default function AgentManagementPage() {
         isOpen={showPlayerInviteModal}
         onClose={() => {
           setShowPlayerInviteModal(false);
-          setPlayerInviteAgentId(null);
+          setPlayerInviteAgentUserId(null);
         }}
-        agentId={playerInviteAgentId || ''}
+        agentUserId={playerInviteAgentUserId || ''}
         clubId={clubId || ''}
         onPlayerAdded={() => {
           // Refresh agents
@@ -1507,9 +1532,6 @@ export default function AgentManagementPage() {
           }
         }}
       />
-
-      {/* Bottom Navigation */}
-      {clubId && <ClubBottomNav clubId={clubId} />}
 
       {/* Confirm Modal */}
       <ConfirmModal

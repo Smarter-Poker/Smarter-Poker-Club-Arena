@@ -379,7 +379,11 @@
 .seat__avatar--bust .seat__avatar-rive {
   --sp-bust-clip: 0%;
   transform-origin: 50% calc(100% - var(--sp-bust-clip));
-  transform: translateY(var(--sp-bust-clip)) scale(var(--sp-bust-scale, 1.45));
+  /* --sp-bust-effective-scale, not --sp-bust-scale: the per-character gain is
+     part of the composed scale, and a rig standing in for a corrected character
+     has to match it - otherwise the rig renders at a different size than the
+     static art it replaces, which is this rule's entire stated purpose. */
+  transform: translateY(var(--sp-bust-clip)) scale(var(--sp-bust-effective-scale, 1.45));
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.55));
 }
 
@@ -402,12 +406,21 @@
 
        img      object-fit: contain   object-position: 50% 100%
        overlay  mask-size:   contain   mask-position:   50% 100%
-       both     transform: translateY(--sp-bust-clip) scale(--sp-bust-scale)
+       both     transform: translateY(--sp-bust-clip)
+                           scale(--sp-bust-effective-scale)
        both     transform-origin: 50% calc(100% - --sp-bust-clip)
 
-   Because both read the SAME variables, they cannot drift: change
-   --sp-bust-scale (the top rail already does, to 1.15) and the mask follows.
-   Confirmed identical computed matrices, not eyeballed.
+   Because both read the SAME variable, they cannot drift: change what feeds
+   --sp-bust-effective-scale and the mask follows. Confirmed identical computed
+   matrices, not eyeballed.
+
+   Dan 2026-08-23: this used to say --sp-bust-scale, and "they cannot drift"
+   was true right up until a per-character gain was multiplied into the img's
+   scale and not into this one. Both rules still named --sp-bust-scale, so the
+   claim still READ as true while the mask had already slid off the artwork.
+   The composition now lives in ONE variable (SeatSlot.css,
+   .seat__avatar--bust) precisely so a new term cannot reach one rule and miss
+   the other.
 
    ON the character, never behind the seat — Dan 2026-08-15 is still binding.
    `mix-blend-mode: screen` means it can only ever lighten pixels the character
@@ -444,7 +457,12 @@
   /* — geometry: identical to .seat__avatar-img — */
   --sp-bust-clip: 0%;
   transform-origin: 50% calc(100% - var(--sp-bust-clip));
-  transform: translateY(var(--sp-bust-clip)) scale(var(--sp-bust-scale, 1.45));
+  /* --sp-bust-effective-scale is what makes "identical" true again. The comment
+     above promises this mask and the img cannot drift because they read the
+     same variables; adding the per-character gain to the img alone quietly
+     broke that promise, and the band stopped hugging the silhouette for any
+     character whose gain is not 1. One composed variable, both rules. */
+  transform: translateY(var(--sp-bust-clip)) scale(var(--sp-bust-effective-scale, 1.45));
 
   /* — the band itself — */
   /* Tuned against the real vip_ artwork in chromium, not picked on paper. The

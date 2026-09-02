@@ -130,7 +130,7 @@ export default function ReportPlayerPage() {
         <section className="report-section" style={reportSectionAnimationStyle(2)}>
           <h3>Description</h3>
           <textarea
-            placeholder="Please describe what happened in detail..."
+            placeholder="Please Describe What Happened In Detail..."
             value={form.description}
             onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
             rows={5}
@@ -141,7 +141,7 @@ export default function ReportPlayerPage() {
           <h3>Hand ID (Optional)</h3>
           <input
             type="text"
-            placeholder="Enter hand ID if applicable..."
+            placeholder="Enter Hand ID If Applicable..."
             value={form.hand_id || ''}
             onChange={(e) => setForm((prev) => ({ ...prev, hand_id: e.target.value }))}
           />

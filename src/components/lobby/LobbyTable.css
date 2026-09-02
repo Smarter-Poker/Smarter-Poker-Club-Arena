@@ -31,7 +31,8 @@
   font-size: 0.8125rem;
   color: var(--text-primary, #f3f4f6);
   table-layout: fixed;
-  min-width: 640px;
+  min-width: 100%;
+  white-space: nowrap;
 }
 
 /* ── Sticky header ── */
@@ -46,7 +47,13 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  text-align: left;
+  /* Dan 2026-08-24: "EVERYTHING SHOULD BE CENTERED UNDER THE TITLE ON THIS,
+     NOT LEFT JUSTIFIED." The phone cards were centred back in the mobile
+     pass; the desktop table was still ragged-left, so a heading and the
+     values it names did not share an axis and the eye had to re-find the
+     column on every row. Heading and cell are centred together — one rule
+     each — so the alignment cannot drift apart again. */
+  text-align: center;
   padding: 8px 10px;
   white-space: nowrap;
   user-select: none;
@@ -54,15 +61,13 @@
 .lobby-table thead th.is-sortable {
   cursor: pointer;
 }
-.lobby-table thead th.is-sortable:hover {
-  color: var(--text-secondary, #c8ccd4);
-}
 .lobby-table thead th.is-sorted {
   color: var(--club-blue-light, #5b83e8);
 }
 .lt-th {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
 }
 .lt-sortmark {
@@ -87,10 +92,19 @@
   overflow: hidden;
   text-overflow: ellipsis;
   vertical-align: middle;
+  text-align: center;
 }
-.lt-row:hover {
-  background: rgba(65, 105, 225, 0.07);
-  box-shadow: inset 2px 0 0 rgba(65, 105, 225, 0.35);
+/* Dan 2026-08-25: "TITLES AND ALL GAME DESCRIPTIONS ON ALL PAGES MUST BE LEFT
+   JUSTIFIED ON ALL PAGES. ONLY THE TOP CATEGORY ROW SHOULD BE CENTERED HERE."
+
+   The centring rule from 2026-08-24 stands for every column that holds a
+   VALUE - a heading and the numbers it names still share an axis. A title is
+   not a value. It is a sentence of varying length, and centring sentences puts
+   every row's first character in a different place, so the eye has to re-find
+   the start of each name on every row. The name cell reads from a single left
+   edge now; the heading above it stays centred with all the others. */
+.lobby-table td.lt-col-name {
+  text-align: left;
 }
 .lt-row.is-selected {
   background: linear-gradient(90deg, rgba(65, 105, 225, 0.22), rgba(65, 105, 225, 0.08));
@@ -108,8 +122,19 @@
 .lt-col-fav {
   width: 34px;
 }
+/* Dan 2026-08-25: "TOURNAMENT TITLES HAVE BEEN REMOVED FROM THE ALL TAB AND
+   FROM THE MTT TAB." Nothing removed them. This table is `table-layout: fixed`,
+   which hands every column that STATES a width exactly that width and gives
+   what is LEFT to the ones that say `auto`. Name was the only auto column in
+   the file, and the wells added earlier the same day pushed the stated widths
+   past the table's own width - so what was left to give it was zero, and the
+   one cell carrying the game's identity was the only cell that could lose,
+   precisely because it was the only one asking for the remainder. It states a
+   width now, like every other column, so a new column can never again be paid
+   for out of the title. min-width stays at 140 for the phone card, where the
+   cell is a flex item and 232px would push a 320px screen sideways. */
 .lt-col-name {
-  width: auto;
+  width: 232px;
   min-width: 140px;
 }
 .lt-col-variant {
@@ -124,17 +149,134 @@
 .lt-col-players {
   width: 108px;
 }
-.lt-col-rules {
-  width: 168px;
-}
 .lt-col-starts {
   width: 110px;
 }
-.lt-col-speed {
-  width: 88px;
-}
 .lt-col-status {
   width: 148px;
+}
+/* Was an inline style object on the element, which no class rule could ever
+   beat - see LiveCountdown. */
+
+.lt-col-tstack {
+  width: 104px;
+}
+.lt-col-tlevel {
+  width: 112px;
+}
+.lt-col-payout {
+  width: 116px;
+}
+.lt-col-leveltime {
+  width: 104px;
+}
+.lt-col-format {
+  width: 92px;
+}
+
+/* The Spin headline prize is two lines: the multiplier a player shops by, and
+   what it comes to in chips at this buy-in. */
+.lt-payout {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+}
+.lt-payout__x {
+  font-weight: 700;
+  color: var(--club-blue-light, #5b83e8);
+}
+.lt-payout__cash {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-tertiary, #8b8f98);
+}
+.lt-format {
+  font-weight: 600;
+}
+
+/* ── A GAME THE PLAYER IS ALREADY IN ──────────────────────────────────────
+   Dan 2026-08-25: "needs to show a player is already at that table, spin, mtt
+   or heads up table." Green, because it is the one row state that is about the
+   PLAYER rather than about the game — every other colour on this board (blue
+   running, red full) describes the table. */
+.lt-mine {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  color: #9ff0c0;
+  background: linear-gradient(180deg, rgba(26, 66, 44, 0.95), rgba(16, 40, 28, 0.95));
+  border: 1px solid rgba(46, 213, 115, 0.45);
+}
+.lt-mine__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #2ed573;
+  box-shadow: 0 0 6px rgba(46, 213, 115, 0.9);
+}
+.lt-mine--waitlisted {
+  color: #bfdbfe;
+  background: linear-gradient(180deg, rgba(94, 104, 116, 0.95), rgba(64, 74, 86, 0.95));
+  border-color: rgba(96, 165, 250, 0.45);
+}
+.lt-mine--waitlisted .lt-mine__dot {
+  background: #60a5fa;
+  box-shadow: 0 0 6px rgba(96, 165, 250, 0.9);
+}
+
+/* The keyboard cursor. Distinct from selection, which OPENS a row — arrowing
+   through the list must show where you are without acting on it. */
+.lt-row.is-cursor {
+  outline: 2px solid var(--club-blue-light, #5b83e8);
+  outline-offset: -2px;
+}
+
+.lt-row.is-mine {
+  box-shadow: inset 3px 0 0 #2ed573;
+}
+.lt-row.is-mine:focus-within {
+  background: rgba(65, 105, 225, 0.07);
+}
+.lt-row.is-mine.is-selected {
+  box-shadow: inset 3px 0 0 #2ed573;
+}
+
+/* The cash card's second title line: the table's own name. */
+.lt-name__table {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-secondary, #c8ccd4);
+  letter-spacing: 0.01em;
+}
+
+/* Level and blinds are one answer on two lines — "Level 3" is the clock's
+   position, "100/200" is what it costs — so they stack in the cell and the
+   row grows by a line rather than the two facts sharing one crowded line. */
+.lt-tlevel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.25;
+}
+.lt-tlevel__n {
+  font-weight: 600;
+}
+.lt-tlevel__b {
+  /* Tabular figures, not a second typeface — the lobby is deliberately one
+     face (see lobbyMttTitle: "no mono face anywhere in the lobby table"), and
+     what blinds actually need is columns of digits that line up row to row. */
+  font-variant-numeric: tabular-nums;
+  font-size: 0.6875rem;
+  color: var(--text-tertiary, #8b8f98);
 }
 
 /* ── Cell pieces ── */
@@ -147,6 +289,74 @@
   text-overflow: ellipsis;
   font-weight: 500;
 }
+/* ── MTT two-line title (Dan 2026-08-23) ──
+   Line 1: name + variation. Line 2: guarantee, scheduled start clock, and a
+   live countdown — "Starting In 17:33..." — or, once running, how long late
+   registration has left. */
+.lt-name--mtt,
+.lt-name--cash,
+.lt-name--seatfirst {
+  display: flex;
+  flex-direction: column;
+  /* Line 1 (name and variation) and line 2 (the game's description - guarantee,
+     start clock, late-reg countdown, or the table's own name) share one left
+     edge, so a title reads as one block rather than two centred fragments. */
+  align-items: flex-start;
+  gap: 2px;
+  line-height: 1.25;
+}
+.lt-name__line1 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.lt-name__meta {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--text-tertiary, #8b8f98);
+}
+.lt-name__metapart {
+  display: inline-flex;
+  align-items: center;
+}
+.lt-name__sep {
+  margin: 0 5px;
+  opacity: 0.6;
+}
+/* Dan 2026-08-24: no yellow — smarter.poker schema only. The guarantee gets
+   its emphasis from the Club Arena blue, same accent as sorted headers and
+   the Registering badge. */
+.lt-name__gtd {
+  color: var(--club-blue-light, #5b83e8);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.lt-name__phase {
+  color: var(--text-secondary, #c8ccd4);
+  font-weight: 600;
+}
+/* The fixed 36px row height would clip line 2; let a multi-line title breathe.
+   Cash titles are two lines now too (game + stakes, then the table's own
+   name), and any title can carry the "You Are Seated" chip. */
+.lt-row td:has(.lt-name--mtt),
+.lt-row td:has(.lt-name--cash),
+.lt-row td:has(.lt-name--seatfirst) {
+  height: auto;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
 .lt-live {
   flex: none;
   width: 6px;
@@ -165,9 +375,11 @@
     opacity: 0.45;
   }
 }
+/* Dan 2026-08-23: one typeface everywhere. Every cell — numbers included —
+   uses the same font as the Tournament Name column (the table's
+   --font-primary), on every tab. The mono face is retired from the lobby. */
 .lt-mono {
-  font-family: var(--font-sans, system-ui, sans-serif);
-  font-variant-numeric: tabular-nums;
+  font-family: inherit;
   font-size: 0.75rem;
   letter-spacing: 0.01em;
 }
@@ -175,7 +387,7 @@
   color: var(--text-disabled, #565a63);
 }
 .lt-gtd {
-  color: var(--warning-gold, #ffd700);
+  color: var(--text-secondary, #c8ccd4);
 }
 .lt-kind,
 .lt-variant {
@@ -203,7 +415,7 @@ abbr.lt-variant[title] {
   gap: 7px;
 }
 .lt-seats__num {
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-family: inherit;
   font-size: 0.75rem;
   min-width: 34px;
 }
@@ -226,31 +438,6 @@ abbr.lt-variant[title] {
 }
 .lt-seats--full .lt-seats__num {
   color: var(--danger-red, #ff4757);
-}
-
-/* Rule tokens */
-.lt-rules {
-  display: inline-flex;
-  gap: 4px;
-  align-items: center;
-}
-.lt-rule {
-  padding: 1px 5px;
-  border-radius: 3px;
-  border: 1px solid rgba(65, 105, 225, 0.3);
-  background: rgba(65, 105, 225, 0.08);
-  color: var(--club-blue-light, #5b83e8);
-  font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-decoration: none;
-  cursor: help;
-}
-.lt-rule--more {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-tertiary, #8b8f98);
-  cursor: default;
 }
 
 /* Status badges — always text, never color alone */
@@ -286,9 +473,9 @@ abbr.lt-variant[title] {
   background: rgba(255, 255, 255, 0.05);
 }
 .lt-status--waitlist {
-  color: #ffffff;
-  border-color: rgba(255, 215, 0, 0.3);
-  background: rgba(255, 215, 0, 0.07);
+  color: var(--text-secondary, #c8ccd4);
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
 }
 .lt-status--registering {
   color: var(--club-blue-light, #5b83e8);
@@ -296,30 +483,26 @@ abbr.lt-variant[title] {
   background: rgba(65, 105, 225, 0.1);
 }
 .lt-status--late_reg {
-  color: #ffffff;
-  border-color: rgba(255, 215, 0, 0.35);
-  background: rgba(255, 215, 0, 0.08);
+  color: var(--text-secondary, #c8ccd4);
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
 }
 .lt-status--starting_soon {
-  color: #ffffff;
-  border-color: rgba(255, 176, 32, 0.35);
-  background: rgba(255, 176, 32, 0.08);
+  color: var(--text-secondary, #c8ccd4);
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
 }
 
-/* Player's own relationship to the game */
-.lt-mine {
-  display: inline-block;
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 0.625rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: #0a0b0f;
-  background: var(--club-blue-light, #5b83e8);
-}
-.lt-mine--wait {
-  background: var(--warning-gold, #ffd700);
-}
+/* ── THE OLD .lt-mine BLOCK LIVED HERE AND IS DELETED ──────────────────────
+   It was a second definition at the SAME specificity (0,1,0), later in source,
+   so it silently beat the styled block further up: the green "seated" and
+   amber "waitlisted" treatments were both dead and all three player states
+   rendered the identical blue. `display:inline-block` also killed the
+   `gap: 4px`, so the status dot sat flush against the text, and
+   `border-radius: 4px` squared off a pill.
+
+   `.lt-mine--wait` went with it: PLAYER_STATE_LABEL emits seated / waitlisted
+   / registered, and nothing has ever emitted `wait`. */
 
 /* Favorite star */
 .lt-fav {
@@ -334,10 +517,6 @@ abbr.lt-variant[title] {
   background: transparent;
   color: var(--text-disabled, #565a63);
   cursor: pointer;
-}
-.lt-fav:hover {
-  color: var(--warning-gold, #ffd700);
-  background: rgba(255, 215, 0, 0.08);
 }
 .lt-fav.is-on {
   color: var(--warning-gold, #ffd700);
@@ -365,24 +544,146 @@ abbr.lt-variant[title] {
 }
 
 /* ── Responsive: trim secondary columns before ever going back to cards ── */
-@media (max-width: 1100px) {
-  .lt-col-rules {
-    width: 120px;
+/* ═══ THE NARROWING LADDER IS MEASURED, NOT GUESSED ═══════════════════════
+   Every column here is content-box, so a stated width costs 20px more than it
+   says once the 10px side padding is added. Reasoning about this ladder in
+   STATED widths is how it came to be 20px per column short, across up to
+   thirteen columns, while the board quietly scrolled sideways and the title -
+   then the only `width: auto` column - paid for the whole overflow by
+   shrinking until it vanished. Nothing here is auto any more, so nothing can
+   absorb a miscalculation silently. Each rung is measured in Chromium against
+   the real column sets, and its threshold is the width the rung ABOVE it
+   actually needs:
+
+     everything                       MTT 1520px   ALL 1542px   -> rung at 1560
+     narrowed, nothing dropped        MTT 1310px   ALL 1336px   -> rung at 1340
+     - Blind Levels, Format           MTT 1079px   ALL 1100px   -> rung at 1110
+     - Starting Stack, Level, Payout  MTT  939px   ALL  939px   -> rung at  940
+     - Variant, Type                  fits 641px, the last width before the card
+
+   Each figure is the width the board ACTUALLY measured when it overflowed, so
+   the rung below it is set just above that number and the board never scrolls.
+
+   Re-measure these numbers whenever a column is added or removed - taking
+   Rules and Max Payout off the board on 2026-08-25 freed ~280px and let three
+   rungs move DOWN, which is why a 1440px laptop now keeps Starting Stack,
+   Current Level, Blind Levels and Format instead of losing them at 1550. */
+@media (max-width: 1560px) {
+  /* Narrow, do not drop. Every column is still here. */
+  .lt-col-name {
+    width: 200px;
   }
-  .lt-col-speed {
-    display: none;
+  .lt-col-status {
+    width: 110px;
+  }
+  .lt-col-num,
+  .lt-col-starts,
+  .lt-col-players {
+    width: 92px;
+  }
+  .lt-col-kind {
+    width: 64px;
+  }
+  .lt-col-variant {
+    width: 60px;
+  }
+  .lt-col-tstack {
+    width: 76px;
+  }
+  .lt-col-tlevel {
+    width: 80px;
+  }
+  .lt-col-payout {
+    width: 96px;
   }
 }
-@media (max-width: 900px) {
-  .lt-col-rules,
+@media (max-width: 1340px) {
+  /* First to go, in the ladder's standing priority order: detail about a game,
+     not the identity of one. The phone card takes them back below as labelled
+     wells, and the game panel carries both. */
+  .lt-col-leveltime,
+  .lt-col-format {
+    display: none;
+  }
+  /* ...but not on the two seat-first boards (#869). Blind speed is HOW a Spin
+     or a Heads-Up plays, and both boards are narrow enough by construction to
+     keep it at any desktop width. The rule above is about the wide boards. */
+  .lobby-table--spin .lt-col-leveltime,
+  .lobby-table--sng .lt-col-leveltime {
+    display: table-cell;
+  }
+}
+@media (max-width: 1110px) {
+  /* Max Payout only ever renders on the Spin board (Dan 2026-08-25), where it
+     is the whole point of the game - so it is the last of the three to go and
+     it goes here, with the other two, rather than earlier. */
+  .lt-col-tstack,
+  .lt-col-tlevel,
+  .lt-col-payout {
+    display: none;
+  }
+  /* ...except on the Spin board, which is five columns wide and has the room.
+     A Spin with its Max Payout hidden is a row that will not say the one thing
+     that distinguishes it from every other Spin. */
+  .lobby-table--spin .lt-col-payout {
+    display: table-cell;
+  }
+  /* And both seat-first boards keep the starting stack (#869): neither has a
+     Current Level column to spend the space on, and a seat-first game is
+     chosen on its stack as much as on its price. */
+  .lobby-table--spin .lt-col-tstack,
+  .lobby-table--sng .lt-col-tstack {
+    display: table-cell;
+  }
+}
+@media (max-width: 940px) {
+  /* Tablet landscape. Type goes with Variant - the row's own chip already says
+     MTT or Cash - and the title gives up another 20px, which is what keeps
+     this band off a sideways scroll now that the title states a width instead
+     of silently absorbing whatever was left over. */
+  .lt-col-name {
+    width: 180px;
+  }
+  .lt-col-status {
+    width: 104px;
+  }
+  .lt-col-kind,
   .lt-col-variant {
     display: none;
   }
   .lt-col-num {
     width: 92px;
   }
+  /* Same exception one band down. These two boards are narrow by
+     construction, so the tablet-landscape shedding written for the eight-column
+     ALL board does not apply to them. */
+  .lobby-table--spin .lt-col-payout,
+  .lobby-table--spin .lt-col-tstack,
+  .lobby-table--sng .lt-col-tstack {
+    display: table-cell;
+  }
 }
-/* ── PHONE (Dan's binding rule 6: 375px first) ────────────────────────────
+/* ── TABLET / LARGE PHONE (<=768px) ───────────────────────────────────────
+   THIS BLOCK MUST STAY ABOVE THE 640px CARD BLOCK. It used to sit at the very
+   end of the file, where - same selectors, same specificity, later in source -
+   it silently beat the card layout: its `.lobby-table { font-size: 0.65rem }`
+   overrode BOTH phone sizes written below (0.75rem and 0.71875rem, so every
+   phone rendered at 0.65rem and neither intended size existed), and its
+   `.lobby-table td { padding: 6px 4px }` beat the card's `padding: 0`, which
+   the whole card layout is measured against.
+
+   `.lt-badge` went with it: no element in this table has ever carried that
+   class. `.lt-countdown`'s `!important` went too - it was there to win a
+   fight with an inline style that no longer exists. */
+/* The 768px block that stood here is deleted (2026-08-26). Since #869 raised
+   the card ceiling to 900px, every viewport it covered is also <=900px, where
+   the card layout redeclares each of its selectors LATER at equal specificity:
+   `.lobby-table { font-size: 0.75rem }` beat its 0.65rem, `.lobby-table td
+   { padding: 0 }` beat its padding, and `thead { display: none }` made the th
+   half moot. `.hide-on-mobile` went with the flag nothing sets any more. Not
+   one declaration in it could apply. */
+
+/* ── PHONE (Dan's binding rule 6: 375px first) ─────────────────────────────
    The lobby must FIT, not scroll sideways. min-width: 520px used to force a
    horizontal scroll on every phone: the ALL column set alone measures
    34+140+78+92+108+148 = 600px, so a 375px screen scrolled ~225px sideways
@@ -394,48 +695,723 @@ abbr.lt-variant[title] {
    favourite star go, the seat meter keeps its numbers and drops its bar, and
    the status cell keeps its text badge. Never a card, never a sideways
    scroll. */
-@media (max-width: 640px) {
-  .lobby-table {
-    min-width: 0;
+@media (max-width: 900px) {
+  /* ═══════════════════════════════════════════════════════════════════════
+     PHONE AND TABLET LAYOUT
+
+     WHY 900 AND NOT 640 (2026-08-25): the card block used to stop at 640px,
+     which left a 641-1023px band running the stripped TABLE — and that band
+     was strictly worse than the phone. Every column the wide breakpoints shed
+     on the way down (Payout, Starting Stack, Level Time, Rules, Variant) is
+     re-shown by this block as a labelled well, so a Spin at 375px states its
+     100x, its stack and its level clock while the same Spin on an iPad stated
+     none of them. The action button was gone there too, so the only way to
+     enter a game on a tablet was to open the panel.
+
+     A tablet is a touch device with MORE room than a phone, so it gets the
+     card, two to a row (see the grid at min-width 641px below). 900 is the
+     ceiling because a 1024px iPad landscape has the width for the real table
+     and reads better as one.
+     ───────────────────────────────────────────────────────────────────────
+     PHONE LAYOUT — the row stops being a table row (Dan 2026-08-24)
+     ───────────────────────────────────────────────────────────────────────
+     Shedding columns was not enough and could not have been: measured live
+     at 390px, the four surviving columns still solved to 197 + 66 + 71 + 82
+     = 416px of content inside a 332px table, because a table cell will not
+     go narrower than the widest unbreakable thing inside it — a game name is
+     exactly that. The overflow-x clip then HID the difference by cutting the
+     status column off the right edge, which is what Dan photographed.
+
+     So on a phone each row becomes a small card: the game name owns its own
+     full-width line, and stakes / seats / status wrap underneath as chips.
+     Nothing has a fixed width any more, so nothing can overflow — the row is
+     a flex container that wraps, which is a guarantee rather than a budget.
+     ═══════════════════════════════════════════════════════════════════════ */
+  .lobby-table-wrap {
+    /* clip, not hidden — full reasoning on the body rule in
+       src/styles/design-system.css. `hidden` on one axis computes the other to
+       `auto`, which makes this a scroll container nobody asked for. This
+       particular wrapper is not an ancestor of the fixed bottom nav today, so
+       it was not part of the 2026-08-29 footer bug — but "not an ancestor
+       today" is one refactor away from being wrong, and clipping is what this
+       rule actually wants either way. */
+    overflow-x: hidden;
+    overflow-x: clip;
+  }
+
+  .lobby-table,
+  .lobby-table tbody {
+    display: block;
     width: 100%;
-    table-layout: fixed;
-    font-size: 0.75rem;
+    min-width: 0;
   }
-  .lobby-table thead th {
-    padding: 7px 6px;
-    font-size: 0.625rem;
-    letter-spacing: 0.03em;
-  }
-  .lt-row td {
-    padding: 6px;
-  }
-  .lt-col-starts,
-  .lt-col-kind,
-  .lt-col-fav {
+
+  .lobby-table thead {
     display: none;
   }
+
+  /* The wrapper stops being a framed table and becomes a plain stack, so
+     each row can read as its own object. */
+  .lobby-table-wrap {
+    border: none;
+    background: transparent;
+    border-radius: 0;
+  }
+
+  .lobby-table tbody {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 2px 0 4px;
+  }
+
+  /* A tablet has room for two cards side by side, and a single 900px-wide
+     card looks like a mistake. `align-items: start` matters: a grid row
+     stretches its items by default, which would drag a short cash card down
+     to match a tall MTT card beside it. */
+  @media (min-width: 641px) {
+    .lobby-table tbody {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: start;
+      gap: 10px;
+    }
+  }
+
+  /* ── THE GAME CARD ──────────────────────────────────────────────────────
+     Dan 2026-08-24: "IT FITS, BUT IT LOOKS FLAT, BORING AND SLIGHTLY
+     CONFUSING — ADD DESCRIPTIONS, SOME DEPTH, A 3D LOOK AND FEEL."
+
+     Depth here is three real layers, not a drop shadow bolted on: a vertical
+     surface gradient so the card catches light from above, a 1px inset
+     highlight along its top edge (the lit bevel), and an outer shadow that
+     separates it from the black page. The left edge carries a status-coloured
+     rail, so a column of cards can be read at a glance without parsing any
+     text — running is blue, registering is blue-dim, full is red. */
+  .lobby-table tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    /* WHY THIS LINE EXISTS: a wrapped flex container defaults to
+       align-content:stretch, which grows each LINE to share the container's
+       height — and with a card whose height comes from its content, the
+       result was the badge line and the button line settling on top of each
+       other, so the fourth medallion disappeared under the buttons. Packing
+       the lines to the start keeps every line its own height. */
+    align-content: flex-start;
+    gap: 6px 10px;
+    padding: 10px 12px 10px 14px;
+    position: relative;
+    border: 1px solid rgba(120, 150, 220, 0.16);
+    border-radius: 12px;
+    background: #0d1725;
+    box-shadow:
+      0 2px 0 rgba(0, 0, 0, 0.55),
+      0 6px 16px rgba(0, 0, 0, 0.55),
+      inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    /* Dan 2026-08-24: "IF YOU NEED TO MAKE THE BOXES LARGER TO FIT EVERYTHING,
+       DO IT — DO NOT CUT ANYTHING OFF." The card used to clip, because the
+       status rail was an ::after that needed the radius to shape its ends.
+       The rail is a border-left now, which needs no clipping, so the card is
+       free to grow to whatever its content is. */
+    overflow: visible;
+    border-left-width: 3px;
+    border-left-style: solid;
+    border-left-color: rgba(120, 150, 220, 0.4);
+  }
+
+  /* Mobile is a scan-first list. Structural tournament details remain in the
+     existing lobby panel reached by Details/the card; only a featured row
+     keeps the two most useful wells expanded in-place. */
+  .lobby-table tr[data-kind='mtt'] td.lt-col-tstack,
+  .lobby-table tr[data-kind='mtt'] td.lt-col-tlevel,
+  .lobby-table tr[data-kind='mtt'] td.lt-col-leveltime,
+  .lobby-table tr[data-kind='mtt'] td.lt-col-format {
+    display: none;
+  }
+
+  .lobby-table tr[data-kind='mtt'].is-featured td.lt-col-tstack,
+  .lobby-table tr[data-kind='mtt'].is-featured td.lt-col-tlevel {
+    display: block;
+  }
+
+  .lobby-table tr[data-kind='mtt']:not(.is-featured) {
+    padding-top: 11px;
+    padding-bottom: 11px;
+  }
+
+  /* ── ONE ORDER, EVERY TAB ───────────────────────────────────────────────
+     THE REASON THE MTT CARDS CAME OUT SCRAMBLED. Each tab declares its own
+     column order — the MTT set opens with Starting Time, the ALL set opens
+     with the name — and a wrapping flex row just follows the DOM. So the same
+     card read differently depending on which tab you were on, with the title
+     stranded in the middle. Explicit order pins the card's shape to the CARD,
+     not to whichever column list produced it. */
+  .lobby-table td {
+    order: 3;
+  }
+  .lobby-table td.lt-col-name {
+    order: 1;
+  }
+  .lobby-table td.lt-col-kind,
+  .lobby-table td.lt-col-variant {
+    order: 2;
+  }
+  .lobby-table td.lt-col-num,
+  .lobby-table td.lt-col-players,
+  .lobby-table td.lt-col-starts {
+    order: 3;
+  }
+  .lobby-table td.lt-col-payout {
+    order: 3;
+  }
+  .lobby-table td.lt-col-tstack,
+  .lobby-table td.lt-col-tlevel,
+  .lobby-table td.lt-col-leveltime,
+  .lobby-table td.lt-col-format {
+    order: 4;
+  }
+  .lobby-table td.lt-col-actions {
+    order: 6;
+  }
+
+  .lobby-table tr.lt-row--running,
+  .lobby-table tr.lt-row--late_reg {
+    border-left-color: #4dd2ff;
+  }
+  .lobby-table tr.lt-row--registering,
+  .lobby-table tr.lt-row--starting_soon {
+    border-left-color: #6f9bff;
+  }
+  .lobby-table tr.lt-row--full,
+  .lobby-table tr.lt-row--waitlist {
+    border-left-color: #ff7a6b;
+  }
+
+  /* Pressing a card pushes it into the page instead of just tinting it. */
+  .lobby-table tr:active {
+    transform: translateY(1px);
+    box-shadow:
+      0 1px 0 rgba(0, 0, 0, 0.5),
+      0 3px 8px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .lobby-table tr.is-selected {
+    border-color: rgba(77, 210, 255, 0.55);
+    box-shadow:
+      0 2px 0 rgba(0, 0, 0, 0.55),
+      0 6px 18px rgba(0, 0, 0, 0.6),
+      inset 0 1px 0 rgba(255, 255, 255, 0.09),
+      0 0 0 1px rgba(77, 210, 255, 0.25);
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════════
+     THE LINE THAT WAS CUTTING EVERY CARD IN HALF (Dan 2026-08-25)
+     ───────────────────────────────────────────────────────────────────────
+     `.lt-row td` at the top of this file sets `height: 36px`, `overflow:
+     hidden` and `white-space: nowrap` — the desktop table row. The phone
+     layout's `.lobby-table td` overrode `display`, `padding`, `border` and
+     `width`, and never mentioned those three, so they survived untouched into
+     the card. A declaration you do not restate is a declaration that is still
+     in force; source order only settles the properties both rules name. So
+     every card on every phone was a 36px-tall window onto content that was
+     routinely twice that:
+
+       - an MTT's rule medallions wrapped to two or three lines, and the
+         second line was sliced through the middle — which is exactly the
+         photograph Dan sent, FREEZEOUT and DEEPSTACK visible and the rest
+         guillotined (those medallions live in the game panel now);
+       - "Current Level 5 / 150/300" is a label and two lines, so the blinds
+         were cut in half;
+       - a cash table's name is line two of its title, so "INSURANCE TEST"
+         was shaved off under the chips.
+
+     None of it was a layout problem. The card had already been built to grow
+     ("IF YOU NEED TO MAKE THE BOXES LARGER TO FIT EVERYTHING, DO IT") and was
+     being held to 36px by a rule nobody could see. Same specificity, and the
+     card is free.
+     ═══════════════════════════════════════════════════════════════════════ */
+  .lobby-table .lt-row td,
+  .lobby-table td {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    vertical-align: top;
+  }
+
+  /* A cell with nothing in it must not become an empty well. Every tab now
+     renders the same column set, so a cash row carries a Max Payout cell and a
+     Spin carries no Guarantee — they render empty and disappear here rather
+     than punching holes in the card. */
+  .lobby-table td:empty {
+    display: none !important;
+  }
+
+  .lobby-table td {
+    display: block;
+    max-width: 100%;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    /* width:auto is the whole point. The desktop column widths (110/108/168)
+       are declared as `width` on these same classes, and a `width` on a flex
+       item is its flex-basis — so the three chips claimed 348px of a 312px
+       line and the status badge wrapped onto a third row. Measured live: the
+       row ran 134px tall for two values and a badge. */
+    width: auto;
+  }
+
+  /* The name owns line one. Everything else is a chip on line two, with the
+     status pushed to the right edge so the eye can scan one column of them. */
   .lt-col-name {
+    flex: 1 1 100%;
+  }
+  .lt-col-num,
+  .lt-col-players {
+    flex: 0 0 auto;
+  }
+
+  /* The badge is the card's top-right corner, not a third line. Measured on
+     the deployed card: the chips and value wells came to 352px of a 312px
+     line, so `margin-left:auto` pushed the status onto its own row and the
+     card ran 150px tall for three lines of content. Lifting it out of the
+     flow puts it where the desktop board has it and returns the card to two
+     lines. */
+  .lobby-table td.lt-col-status {
+    position: absolute;
+    top: 9px;
+    right: 11px;
+    margin-left: 0;
+  }
+
+  /* ...and the headline reserves the corner so a long game name wraps before
+     it reaches the badge instead of running underneath it.
+
+     Qualified with .lobby-table td for the third time in this file: the phone
+     layout's own `td { padding: 0 }` is (0,1,1) and silently beats a bare
+     class. Measured on the deployed card — "Monday Grind NLH Mystery Bounty"
+     ran straight under the Registering badge. */
+  .lobby-table td.lt-col-name {
+    padding-right: 104px;
+  }
+
+  /* ONE declaration. This was three - here, again 90 lines down as "the
+     card's right-hand anchor: raised, not flat", and a third time near the
+     end. Each later one kept whatever the earlier had not set, so the badge
+     ended up with the raised block's pill radius and shadow but the last
+     block's much smaller padding and type: a half-applied treatment nobody
+     designed. These are the values that were actually rendering. */
+  .lt-status {
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 2px 6px;
+    font-size: 0.625rem;
+    font-weight: 700;
+    border-radius: 999px;
+    box-shadow:
+      0 1px 0 rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+
+  /* A long game name now wraps instead of forcing the row wider. */
+  .lt-name,
+  .lt-name__line1,
+  .lt-name__meta {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .lobby-table {
+    font-size: 0.75rem;
+  }
+
+  /* ── DESCRIPTIONS ───────────────────────────────────────────────────────
+     Every value gets the word that belongs to it. The header row is gone on
+     a phone, so "5" and "7/50" were floating unlabelled — the "slightly
+     confusing" part. data-label comes from the column definition itself, so
+     Stakes and Buy-In are never mixed up even though they share a class. */
+  .lobby-table td.lt-col-num::before,
+  .lobby-table td.lt-col-players::before,
+  .lobby-table td.lt-col-starts::before,
+  .lobby-table td.lt-col-payout::before,
+  .lobby-table td.lt-col-leveltime::before,
+  .lobby-table td.lt-col-format::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.5625rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-tertiary, #7d8698);
+    margin-bottom: 1px;
+  }
+
+  /* Values sit in their own recessed well — the counter-depth to the card's
+     raised surface. */
+  .lobby-table td.lt-col-num,
+  .lobby-table td.lt-col-players,
+  .lobby-table td.lt-col-starts,
+  .lobby-table td.lt-col-payout,
+  .lobby-table td.lt-col-leveltime,
+  .lobby-table td.lt-col-format {
+    /* Dan 2026-08-24: "ALL FIELDS SHOULD BE CENTERED UNDER THEIR TITLE, NOT
+       LEFT JUSTIFIED." */
+    text-align: center;
+    padding: 3px 7px 4px;
+    border-radius: 7px;
+    background: rgba(0, 0, 0, 0.32);
+    box-shadow:
+      inset 0 1px 2px rgba(0, 0, 0, 0.6),
+      0 1px 0 rgba(255, 255, 255, 0.04);
+    line-height: 1.25;
+  }
+
+  /* The Spin and Heads-Up wells share a line rather than each claiming one:
+     four facts about a three-seat game do not need four rows. */
+  .lobby-table td.lt-col-leveltime,
+  .lobby-table td.lt-col-format {
+    flex: 1 1 0;
     min-width: 0;
   }
-  .lt-col-num {
-    width: 74px;
+
+  .lobby-table td.lt-col-num .lt-mono,
+  .lobby-table td.lt-col-starts .lt-dim,
+  .lobby-table td.lt-col-players .lt-seats__num,
+  .lobby-table td.lt-col-payout .lt-payout__x,
+  .lobby-table td.lt-col-format .lt-format {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: #eef2f8;
   }
-  .lt-col-players {
-    width: 58px;
+  /* ...except the prize ceiling, which keeps the Club Arena blue it carries on
+     the desktop board. It is the one number on a Spin card a player is
+     actually shopping for. */
+  .lobby-table td.lt-col-payout .lt-payout__x {
+    color: var(--club-blue-light, #7fb0ff);
   }
-  .lt-col-status {
-    width: 92px;
+  .lobby-table td.lt-col-payout .lt-payout__cash {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    color: #eef2f8;
   }
+  /* Blind Levels is a bare string in its cell, so it is styled here rather
+     than through a child like its neighbours. It was in the group above AND
+     overridden here, which rendered it a size smaller than every well beside
+     it - one declaration now, matching the group. */
+  .lobby-table td.lt-col-leveltime {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    color: #eef2f8;
+  }
+
+  .lt-name__line1 {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #f4f7fb;
+    letter-spacing: 0.01em;
+  }
+  .lt-name:not(.lt-name--mtt) {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #f4f7fb;
+  }
+  .lt-name__meta {
+    font-size: 0.6875rem;
+    margin-top: 1px;
+  }
+  /* Line 2 of a cash title is the table's own name. It wraps to as many lines
+     as it needs and reserves the status corner, which is the whole of Dan's
+     2026-08-25 complaint: "the 2nd line ... is for the table name, make sure
+     it doesn't get cut off by the other fields." */
+  .lt-name__table {
+    font-size: 0.75rem;
+    line-height: 1.25;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  /* ...and the line is RESERVED whether or not there is a name to put in it.
+     Dan 2026-08-25: "the spacing needs to be there even if there isn't a table
+     name." Without this a nameless table's chips and value wells sit a line
+     higher than its neighbour's, so a column of cards has no shared baseline
+     and the eye re-finds every value on every card. A min-height on the title
+     costs one line on the tables that do not need it and buys a straight edge
+     down the whole board. */
+  .lobby-table tr[data-kind='cash'] td.lt-col-name {
+    min-height: 38px;
+  }
+  .lt-name__line1 {
+    white-space: normal;
+    overflow: visible;
+  }
+
+  /* ── "YOU ARE IN THIS GAME" ─────────────────────────────────────────────
+     The chip rides in the title, so no breakpoint can hide it, and the card
+     takes a green rail and a green ring so the row is findable without being
+     read. The rail overrides the status colour deliberately: which game YOU
+     are sitting in outranks what the game is doing. */
+  .lt-mine {
+    margin-top: 2px;
+    font-size: 0.5875rem;
+    padding: 2px 7px;
+  }
+  .lobby-table tr.is-mine {
+    border-left-color: #2ed573;
+    box-shadow:
+      0 2px 0 rgba(0, 0, 0, 0.55),
+      0 6px 16px rgba(0, 0, 0, 0.55),
+      inset 0 1px 0 rgba(255, 255, 255, 0.07),
+      0 0 0 1px rgba(46, 213, 115, 0.35);
+  }
+
+  /* The live dot earns a halo so a running game is visible while scrolling. */
+  .lt-live {
+    box-shadow: 0 0 8px rgba(46, 213, 115, 0.85);
+  }
+
+  /* ── ACTIONS ────────────────────────────────────────────────────────────
+     A full-width row along the bottom of the card. Full width because a
+     44px-tall target is the one thing a phone layout must not negotiate, and
+     because the button is the point of the card — everything above it is the
+     reason to press it. */
+  .lobby-table td.lt-col-actions {
+    display: block;
+    flex: 0 0 100%;
+    width: 100%;
+    margin-top: 2px;
+  }
+
+  .lt-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .lt-act {
+    flex: 1 1 0;
+    /* 44px, which is what the comment above has always promised and what WCAG
+       2.5.5 and the iOS HIG both ask for. It was 38. This is the primary
+       commit control of the card; it is the last thing that should be
+       negotiated down. */
+    min-height: 44px;
+    border-radius: 9px;
+    font-size: 0.8125rem;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    touch-action: manipulation;
+    transition:
+      transform 0.08s ease,
+      filter 0.15s ease;
+  }
+  .lt-act:active {
+    transform: translateY(3px);
+    filter: brightness(1.04);
+    box-shadow:
+      0 1px 0 #03060a,
+      inset 0 2px 0 rgba(0, 0, 0, 0.25);
+  }
+
+  .lt-act--primary {
+    color: #04121f;
+    border: 1px solid rgba(120, 205, 255, 0.75);
+    border-bottom-color: #073453;
+    background: #35a9eb;
+    box-shadow:
+      0 4px 0 #073453,
+      inset 0 1px 0 rgba(255, 255, 255, 0.55);
+  }
+
+  .lt-act--ghost {
+    color: #cfe0ff;
+    border: 1px solid rgba(120, 160, 240, 0.35);
+    border-bottom-color: #050a12;
+    background: #1d2a40;
+    box-shadow:
+      0 4px 0 #050a12,
+      inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  }
+
+  .lt-act--done {
+    color: #9ff0c0;
+    border: 1px solid rgba(46, 213, 115, 0.4);
+    border-bottom-color: #07140d;
+    background: #163c29;
+    box-shadow:
+      0 4px 0 #07140d,
+      inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  }
+
+  /* Type and variant come back as small chips — they are the "what game is
+     this" line, and hiding them is what left the card reading as two numbers
+     and a badge. */
+  .lobby-table td.lt-col-kind,
+  .lobby-table td.lt-col-variant {
+    display: block;
+  }
+  .lt-kind,
+  .lt-variant {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 6px;
+    font-size: 0.5875rem;
+    font-weight: 800;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: #cfe0ff;
+    background: #21345c;
+    border: 1px solid rgba(120, 160, 240, 0.3);
+    text-decoration: none;
+  }
+  /* `.lobby-table thead { display: none }` above removes the header row on a
+     card, so the thead th sizing that used to live here styled nothing. The
+     `.lt-row td { padding: 6px }` beside it was the same weight (0,1,1) as
+     the card's own `.lobby-table td { padding: 0 }` and came later, so it was
+     quietly undoing the zero-padding the card layout is built on. */
+  /* `.lobby-table td { display: block }` above is (0,1,1); a bare
+     `.lt-col-fav` is (0,1,0) and loses NO MATTER WHERE IT SITS in the file.
+     Measured live: every one of these columns was still rendering, which is
+     why the phone row wrapped to 211px tall. Same weight, and they win. */
+  /* Rules, start time, speed and the favourite star stay off the card: the
+     panel shows all four the moment a card is opened, and they are what push
+     the card past two lines. Type and variant are NOT in this list any more
+     — see the chip styling below. */
+  /* ── THE RIGHT-HAND COLUMN OF A TOURNAMENT CARD ─────────────────────────
+     Dan 2026-08-24: "MTTs just need to clean up the layout — utilise the
+     right side of the card. That is where you can add bounty, PKO, mystery
+     bounty badges, rebuys, add-ons, starting stack."
+
+     The left of the card answers "which game"; the right now answers "what
+     kind of tournament", and the two read as columns rather than one long
+     wrap. */
+  .lobby-table tr[data-kind='mtt'],
+  .lobby-table tr[data-kind='sng'],
+  .lobby-table tr[data-kind='spin'] {
+    padding-right: 10px;
+  }
+
+  /* On a card the two now behave like every other labelled value: the well
+     prints its own heading from data-label (Starting Stack / Current Level),
+     which is the same word the desktop header carries, so the two layouts
+     cannot say different things. They share one row and split it. */
+  .lobby-table td.lt-col-tstack,
+  .lobby-table td.lt-col-tlevel {
+    display: block;
+    /* A basis of 0 with min-width: 0 contributes NOTHING to flex line
+       measurement, so these two could never wrap onto a line of their own -
+       they joined the tail of the buy-in / guarantee / start-time line, where
+       every sibling is `flex: 0 0 auto`, and absorbed all of the negative
+       free space themselves. At 390px that left about 20px each: a heading
+       wrapped over four lines above no value at all. A half-line basis plus a
+       floor makes them take a line and split it, which is what the row was
+       always meant to look like. */
+    flex: 1 1 calc(50% - 5px);
+    min-width: 8rem;
+  }
+  .lobby-table td.lt-col-tstack::before,
+  .lobby-table td.lt-col-tlevel::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.5625rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--text-tertiary, #7d8698);
+    margin-bottom: 1px;
+  }
+  .lobby-table td.lt-col-tstack,
+  .lobby-table td.lt-col-tlevel {
+    text-align: center;
+    /* The value was losing its descenders: the well inherited the table's
+       0.75rem line-height, which is shorter than the 0.75rem digits it had to
+       hold once the label sat above them. */
+    line-height: 1.3;
+    padding: 4px 7px 5px;
+    border-radius: 7px;
+    background: rgba(0, 0, 0, 0.32);
+    box-shadow:
+      inset 0 1px 2px rgba(0, 0, 0, 0.6),
+      0 1px 0 rgba(255, 255, 255, 0.04);
+  }
+  /* A cash row has neither, and an empty well is a hole in the card. */
+  .lobby-table tr[data-kind='cash'] td.lt-col-tstack,
+  .lobby-table tr[data-kind='cash'] td.lt-col-tlevel {
+    display: none;
+  }
+  .lobby-table td.lt-col-tstack .lt-mono,
+  .lobby-table td.lt-col-tlevel .lt-tlevel__n {
+    /* "IT DOESN'T NEED TO BE THAT BIG." */
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #eef2f8;
+  }
+
+  /* Dan: "you can remove the Late Reg pill in the right corner." On a
+     tournament card the badge was saying what the headline already says in
+     more detail — "Late Reg 3:40 Left" — so it was a duplicate that also cost
+     the title 104px of its line. Cash cards keep theirs: Full / Running is
+     not written anywhere else on those. */
+  .lobby-table tr[data-kind='mtt'] td.lt-col-status {
+    display: none;
+  }
+  .lobby-table tr[data-kind='mtt'] td.lt-col-name {
+    padding-right: 0;
+  }
+  /* Heads-Up kept losing its badge to that rule. An MTT card can afford to
+     drop the badge because its title's second line already says "Late Reg 3:40
+     Left" in more detail — a seat-first game has no such line, so Open Seats /
+     Filling / Starting / Running was the only thing on the card describing
+     what the game was doing, and it was being hidden. */
+  .lobby-table tr[data-kind='sng'] td.lt-col-status,
+  .lobby-table tr[data-kind='spin'] td.lt-col-status {
+    display: block;
+  }
+
+  /* Rules, speed and the favourite star stay off the card — the panel shows
+     them the moment a card is opened, and they are what push it past its
+     lines. Starting Time is NOT one of them any more: Dan 2026-08-24, "it
+     should have starting time and countdown clocks for when it starts, or how
+     long until late reg is over." That is the single most time-critical fact
+     on a tournament card, so it gets a well of its own beside the buy-in. */
+  .lobby-table td.lt-col-fav {
+    display: none;
+  }
+
+  /* THE MEDALLIONS MOVED, THEY DID NOT GO (Dan 2026-08-25): "FOR RULES, REMOVE
+     IT FROM THE MAIN SCREEN BUT MAKE SURE ALL RULES AND TAGS ARE ON THE LOBBY
+     SCREEN WHEN YOU CLICK THE GAME." Everything cashRuleMedallions and
+     tournamentMedallions compute - RIT, INSURANCE, STRADDLE, BOMB POTS, ANTE,
+     DOUBLE BOARD, SEVEN DEUCE, TIME BANK, VPIP, CALL TIME, NO RATHOLE, and the
+     tournament traits - is rendered by GameLobbyPanel one tap away, with the
+     full sentence beside each one instead of an abbreviation you had to hover
+     to read. */
+  .lobby-table td.lt-col-starts {
+    display: block;
+    flex: 0 0 auto;
+  }
+
+  /* The MTT title's meta line sheds the wall-clock start time on phones —
+     the countdown is the information. If the clock was the first part
+     (no guarantee), the next part's separator goes with it so the line
+     never opens with a stray dot. */
+  .lt-name__clockpart {
+    display: none;
+  }
+  .lt-name__clockpart:first-child + .lt-name__metapart .lt-name__sep {
+    display: none;
+  }
+  /* No widths here on purpose: the row is a flex container now, and a width
+     on a flex item is the one thing that can bring the overflow back. */
   /* The bar is decoration; the numbers are the information. */
   .lt-seats__bar {
     display: none;
   }
   .lt-seats__num {
     min-width: 0;
-  }
-  .lt-status {
-    padding: 2px 6px;
-    font-size: 0.625rem;
   }
   /* Seated / Registered / Waitlisted drops below the badge rather than
      widening the column. */
@@ -451,21 +1427,14 @@ abbr.lt-variant[title] {
 /* Very narrow phones (320-360px): the buy-in column is the next to go, since
    the panel shows the full range the moment a row is opened. */
 @media (max-width: 380px) {
-  .lt-col-num {
-    width: 64px;
+  .lobby-table tr {
+    padding: 7px 8px;
+    gap: 2px 8px;
   }
-  .lt-col-status {
-    width: 84px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .lt-live,
-  .lt-skel {
-    animation: none;
+  .lobby-table {
+    font-size: 0.71875rem;
   }
 }
-
 
 @keyframes rowFadeIn {
   from {
@@ -482,14 +1451,494 @@ abbr.lt-variant[title] {
   animation: rowFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
-.lobby-table tbody tr:nth-child(1) { animation-delay: 0.00s; }
-.lobby-table tbody tr:nth-child(2) { animation-delay: 0.03s; }
-.lobby-table tbody tr:nth-child(3) { animation-delay: 0.06s; }
-.lobby-table tbody tr:nth-child(4) { animation-delay: 0.09s; }
-.lobby-table tbody tr:nth-child(5) { animation-delay: 0.12s; }
-.lobby-table tbody tr:nth-child(6) { animation-delay: 0.15s; }
-.lobby-table tbody tr:nth-child(7) { animation-delay: 0.18s; }
-.lobby-table tbody tr:nth-child(8) { animation-delay: 0.21s; }
-.lobby-table tbody tr:nth-child(9) { animation-delay: 0.24s; }
-.lobby-table tbody tr:nth-child(10) { animation-delay: 0.27s; }
-.lobby-table tbody tr:nth-child(n+11) { animation-delay: 0.30s; }
+.lobby-table tbody tr:nth-child(1) {
+  animation-delay: 0s;
+}
+.lobby-table tbody tr:nth-child(2) {
+  animation-delay: 0.03s;
+}
+.lobby-table tbody tr:nth-child(3) {
+  animation-delay: 0.06s;
+}
+.lobby-table tbody tr:nth-child(4) {
+  animation-delay: 0.09s;
+}
+.lobby-table tbody tr:nth-child(5) {
+  animation-delay: 0.12s;
+}
+.lobby-table tbody tr:nth-child(6) {
+  animation-delay: 0.15s;
+}
+.lobby-table tbody tr:nth-child(7) {
+  animation-delay: 0.18s;
+}
+.lobby-table tbody tr:nth-child(8) {
+  animation-delay: 0.21s;
+}
+.lobby-table tbody tr:nth-child(9) {
+  animation-delay: 0.24s;
+}
+.lobby-table tbody tr:nth-child(10) {
+  animation-delay: 0.27s;
+}
+.lobby-table tbody tr:nth-child(n + 11) {
+  animation-delay: 0.3s;
+}
+
+/* The action buttons are a CARD affordance, so this hides them from 901px up,
+   where the layout goes back to being a real table. It said 641px until
+   2026-08-25, which is what left tablets with no way to enter a game from the
+   lobby at all. On the desktop board the game-lobby panel is one click away
+   and already carries every commit action, so a ninth column would only make
+   the dense table denser. */
+@media (min-width: 901px) {
+  .lobby-table .lt-col-actions {
+    display: none;
+  }
+}
+
+/* ── Lobby flag chips: FEATURED / VIP / NEW ────────────────────────────────
+   Three flags the creation page has always written and nothing ever read
+   (2026-08-25). They sit inline in the title so they read as facts about the
+   game rather than as a second status. Deliberately smaller and quieter than
+   the status pill: a badge that shouts competes with the one piece of state
+   the player actually has to act on. */
+.lt-flags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.lt-flag {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.lt-flag--featured {
+  border-color: rgba(255, 199, 44, 0.5);
+  background: rgba(255, 199, 44, 0.13);
+  color: var(--gold, #ffc72c);
+}
+.lt-flag--vip {
+  border-color: rgba(186, 128, 255, 0.5);
+  background: rgba(186, 128, 255, 0.14);
+  color: #d3b4ff;
+}
+.lt-flag--club {
+  border-color: rgba(120, 150, 220, 0.42);
+  background: rgba(120, 150, 220, 0.12);
+  color: var(--text-secondary, #c8ccd4);
+  letter-spacing: 0.02em;
+  /* A club name is arbitrary text, unlike the three fixed words beside it, so
+     it is the one chip that has to be allowed to run out of room gracefully. */
+  max-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lt-flag--new {
+  border-color: rgba(0, 210, 106, 0.5);
+  background: rgba(0, 210, 106, 0.13);
+  color: var(--success-green, #00d26a);
+}
+
+/* ── Spin top-tier badge ──────────────────────────────────────────────────
+   Shown on a Spin row only while the Reserve Pool can actually pay the top
+   multiplier (see SpinTopTierBadge in LobbyTable.tsx). Gold, because it is
+   the one thing on the row that is worth more than the buy-in suggests -
+   but small and inline, so it reads as a fact about the game rather than an
+   advertisement bolted onto it. */
+.lt-spintop {
+  flex: none;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 199, 44, 0.55);
+  background: rgba(255, 199, 44, 0.12);
+  color: var(--gold, #ffc72c);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lt-live,
+  .lt-skel {
+    animation: none;
+  }
+  /* The staggered row entrance is the largest motion on this screen - up to
+     111 rows sliding and fading in. Moving this block was not enough on its
+     own: `.lobby-table tbody tr` here and `.lobby-table tbody tr` below are
+     the SAME specificity (0,1,2) and a media query adds none, so whichever is
+     written last wins. This block now sits after the animation AND after the
+     nth-child delays, which is what actually silences it. */
+  .lobby-table tbody tr {
+    animation: none;
+  }
+  .lt-act,
+  .lobby-table tr {
+    transition: none;
+  }
+}
+
+/* LIVE EVENT BOARD — visual-only row/card treatment. */
+@media (min-width: 901px) {
+  .lobby-table-wrap {
+    border-color: rgba(88, 142, 235, 0.25);
+    border-radius: 14px;
+    background: #080b11;
+    box-shadow: 0 18px 38px rgba(0, 0, 0, 0.44);
+  }
+
+  .lobby-table {
+    border-collapse: separate;
+    border-spacing: 0 4px;
+    padding: 0 5px 5px;
+  }
+
+  .lobby-table thead th {
+    padding-block: 12px;
+    background: rgba(13, 17, 25, 0.97);
+    border-bottom-color: rgba(80, 135, 225, 0.26);
+    color: #758198;
+  }
+
+  .lt-row {
+    background: #111722;
+    box-shadow: inset 3px 0 0 rgba(88, 137, 225, 0.28);
+  }
+
+  .lt-row td {
+    height: 48px;
+    border-top: 1px solid rgba(105, 137, 193, 0.1);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.68);
+  }
+
+  .lt-row td:first-child {
+    border-radius: 9px 0 0 9px;
+  }
+
+  .lt-row td:last-child {
+    border-radius: 0 9px 9px 0;
+  }
+  .lt-row.is-featured {
+    background: #162b50;
+    box-shadow:
+      inset 4px 0 0 #56d3ff,
+      0 6px 18px rgba(0, 45, 130, 0.22);
+  }
+
+  .lt-name__line1,
+  .lt-name:not(.lt-name--mtt) {
+    font-size: 0.86rem;
+    font-weight: 760;
+    color: #f4f8ff;
+  }
+}
+
+@media (max-width: 900px) {
+  .lobby-table tbody {
+    gap: 12px;
+  }
+
+  .lobby-table tr {
+    padding: 13px 13px 12px 16px;
+    border-top-color: rgba(101, 148, 222, 0.25);
+    border-right-color: rgba(101, 148, 222, 0.25);
+    border-bottom-color: #03070d;
+    border-radius: 9px;
+    background: #0d1725;
+    box-shadow:
+      0 5px 0 #02050a,
+      0 10px 22px rgba(0, 0, 0, 0.42),
+      inset 0 1px 0 rgba(160, 213, 255, 0.12);
+  }
+
+  .lobby-table tr.is-featured {
+    border-top-color: rgba(85, 207, 255, 0.48);
+    border-right-color: rgba(85, 207, 255, 0.48);
+    border-bottom-color: #04142a;
+    background: #12294b;
+    box-shadow:
+      0 5px 0 #04142a,
+      0 12px 26px rgba(0, 29, 90, 0.46),
+      inset 0 1px 0 rgba(170, 226, 255, 0.13);
+  }
+
+  .lobby-table td.lt-col-name {
+    padding-right: 112px;
+    padding-bottom: 3px;
+  }
+
+  .lt-name__line1,
+  .lt-name:not(.lt-name--mtt) {
+    font-size: 0.94rem;
+    line-height: 1.25;
+  }
+
+  .lobby-table td.lt-col-num,
+  .lobby-table td.lt-col-players,
+  .lobby-table td.lt-col-starts,
+  .lobby-table td.lt-col-payout,
+  .lobby-table td.lt-col-tstack,
+  .lobby-table td.lt-col-tlevel,
+  .lobby-table td.lt-col-leveltime,
+  .lobby-table td.lt-col-format {
+    min-height: 46px;
+    padding: 5px 8px 6px;
+    border: 1px solid rgba(106, 137, 191, 0.11);
+    border-radius: 9px;
+    background: rgba(2, 5, 11, 0.54);
+  }
+
+  .lobby-table td.lt-col-actions {
+    margin-top: 3px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(120, 150, 205, 0.12);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE TOURNAMENT-BOARD CARDS
+   Solid raised surface, status rail, recessed data bays and balanced actions.
+═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  .lobby-table tbody {
+    gap: 11px;
+    padding: 4px 7px 8px;
+  }
+
+  .lobby-table tr {
+    gap: 8px;
+    padding: 11px 11px 12px 13px;
+    border: 1px solid #29435f;
+    border-bottom-color: #02060b;
+    border-left-width: 4px;
+    border-radius: 10px;
+    background: #0d1928;
+    box-shadow:
+      0 5px 0 #02050a,
+      0 11px 22px rgba(0, 0, 0, 0.48),
+      inset 0 1px 0 rgba(184, 223, 255, 0.11),
+      inset 0 -2px 0 #07101b;
+  }
+
+  .lobby-table tr[data-kind='mtt']:not(.is-featured) {
+    padding-top: 11px;
+    padding-bottom: 12px;
+  }
+
+  .lobby-table td.lt-col-name {
+    min-height: 0;
+    padding: 0 92px 8px 0;
+    border-bottom: 1px solid #20354c;
+  }
+
+  .lobby-table tr[data-kind='mtt'] td.lt-col-name {
+    padding-right: 0;
+  }
+
+  .lt-name__line1,
+  .lt-name:not(.lt-name--mtt) {
+    color: #f5f8fc;
+    font-size: 0.9rem;
+    font-weight: 850;
+    letter-spacing: 0.005em;
+    line-height: 1.18;
+  }
+
+  .lt-name__table {
+    margin-top: 3px;
+    color: #aeb9ca;
+    font-size: 0.68rem;
+    font-weight: 650;
+    line-height: 1.2;
+  }
+
+  .lt-name__meta {
+    margin-top: 3px;
+    color: #8ca0ba;
+    font-size: 0.62rem;
+    line-height: 1.2;
+  }
+
+  .lobby-table td.lt-col-status {
+    top: 10px;
+    right: 10px;
+  }
+
+  .lt-status {
+    max-width: 88px;
+    padding: 4px 7px;
+    border: 1px solid currentColor;
+    border-bottom-color: #02060b;
+    border-radius: 7px;
+    background: #102235;
+    font-size: 0.59rem;
+    letter-spacing: 0.015em;
+    box-shadow:
+      0 3px 0 #02050a,
+      inset 0 1px 0 rgba(255, 255, 255, 0.13);
+  }
+
+  .lobby-table td.lt-col-kind,
+  .lobby-table td.lt-col-variant {
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+  }
+
+  .lt-kind,
+  .lt-variant {
+    min-height: 29px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 7px;
+    border-color: #3c5e8a;
+    border-bottom-color: #02060b;
+    border-radius: 6px;
+    background: #1b3154;
+    color: #d7e7ff;
+    box-shadow:
+      0 3px 0 #02050a,
+      inset 0 1px 0 rgba(255, 255, 255, 0.13);
+  }
+
+  .lobby-table td.lt-col-num,
+  .lobby-table td.lt-col-players,
+  .lobby-table td.lt-col-starts,
+  .lobby-table td.lt-col-payout,
+  .lobby-table td.lt-col-leveltime,
+  .lobby-table td.lt-col-format,
+  .lobby-table td.lt-col-tstack,
+  .lobby-table td.lt-col-tlevel {
+    flex: 1 1 82px;
+    min-width: 72px;
+    min-height: 47px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 5px 7px 6px;
+    border: 1px solid #1d334b;
+    border-bottom-color: #02050a;
+    border-radius: 7px;
+    background: #07111d;
+    box-shadow:
+      0 3px 0 #02050a,
+      inset 0 2px 3px rgba(0, 0, 0, 0.55),
+      inset 0 1px 0 rgba(122, 180, 235, 0.06);
+  }
+
+  .lobby-table td.lt-col-num::before,
+  .lobby-table td.lt-col-players::before,
+  .lobby-table td.lt-col-starts::before,
+  .lobby-table td.lt-col-payout::before,
+  .lobby-table td.lt-col-leveltime::before,
+  .lobby-table td.lt-col-format::before,
+  .lobby-table td.lt-col-tstack::before,
+  .lobby-table td.lt-col-tlevel::before {
+    margin-bottom: 2px;
+    color: #7f91a9;
+    font-size: 0.52rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    line-height: 1.1;
+  }
+
+  .lobby-table td.lt-col-num .lt-mono,
+  .lobby-table td.lt-col-starts .lt-dim,
+  .lobby-table td.lt-col-players .lt-seats__num,
+  .lobby-table td.lt-col-payout .lt-payout__x,
+  .lobby-table td.lt-col-format .lt-format,
+  .lobby-table td.lt-col-tstack .lt-mono,
+  .lobby-table td.lt-col-tlevel .lt-tlevel__n {
+    color: #edf5ff;
+    font-size: 0.79rem;
+    font-weight: 820;
+    line-height: 1.1;
+  }
+
+  .lobby-table td.lt-col-actions {
+    margin-top: 4px;
+    padding-top: 9px;
+    border-top: 1px solid #20354c;
+  }
+
+  .lt-actions {
+    gap: 9px;
+  }
+
+  .lt-act {
+    min-height: 44px;
+    border-radius: 7px;
+    font-size: 0.76rem;
+  }
+
+  .lt-act--primary {
+    border-color: #84d4ff;
+    border-bottom-color: #05233b;
+    background: #2b9fdf;
+    box-shadow:
+      0 4px 0 #05233b,
+      inset 0 1px 0 rgba(255, 255, 255, 0.5),
+      inset 0 -2px 0 #1675ad;
+  }
+
+  .lt-act--ghost {
+    border-color: #49688f;
+    border-bottom-color: #02050a;
+    background: #1b2a40;
+    box-shadow:
+      0 4px 0 #02050a,
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      inset 0 -2px 0 #0d1624;
+  }
+}
+.arena-lobby-card-list {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .arena-lobby-card-list {
+    width: 100%;
+    display: grid;
+    justify-items: center;
+    gap: 14px;
+    padding: 8px 2px 28px;
+  }
+
+  .arena-lobby-card-list > div {
+    width: 100%;
+    display: grid;
+    justify-items: center;
+  }
+
+  .arena-lobby-card-list + .lobby-table-wrap {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .arena-lobby-card-list {
+    width: 100%;
+    gap: 10px;
+    padding: 0 0 24px;
+  }
+
+  .arena-lobby-card-list > div,
+  .arena-lobby-card-list .arena-game-card {
+    width: 100%;
+    max-width: none;
+    margin-inline: 0;
+  }
+}

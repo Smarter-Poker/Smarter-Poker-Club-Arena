@@ -71,7 +71,54 @@ export const LEADERSHIP_RENEW_MS = 10_000;
 
 export type EngineRole = 'leader' | 'standby';
 
-let role: EngineRole = 'leader';
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A FRESH PROCESS HAS NOT BEEN GRANTED ANYTHING, SO IT STARTS AS A STANDBY
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * This was 'leader'. On 2026-08-23 two containers served engine.smarter.poker
+ * at once, BOTH reporting leadership.role='leader', with the fleet split 14
+ * tables to 10 — which is the 404 / close-4404 state the Caddyfile exists to
+ * prevent, and it ran for hours.
+ *
+ * The mechanism is this line plus the fail-open below. Every path here is
+ * written to "retain, never assume", and the comment on the error branch even
+ * says a standby must not promote itself because it cannot reach the database.
+ * But a BOOTING process had already assumed it: role was 'leader' from the
+ * first instruction, so between process start and the first successful claim
+ * it answered /health with 200 and Caddy routed to it. With the database
+ * saturated — it was, statement timeouts on every hand insert — that window
+ * was not milliseconds, it was as long as the outage.
+ *
+ * The asymmetry the rest of this file describes only works if the starting
+ * point is the humble one: an INCUMBENT holds leadership through a blip
+ * because it was granted it and its heartbeat is still fresh; a NEWCOMER holds
+ * STANDBY through the same blip because nobody has granted it anything.
+ *
+ * See PROMOTE_AFTER_UNKNOWN for the one case where a newcomer may still
+ * promote itself.
+ */
+let role: EngineRole = 'standby';
+
+/**
+ * A brand-new engine on a database it cannot reach would otherwise stay a
+ * standby for ever and serve 503, turning "degraded" into "down" for a
+ * single-engine deployment. After this many consecutive claims that resolve
+ * to neither a grant nor a known holder, a standby promotes itself.
+ *
+ * Deliberately consecutive-and-unknown: if any answer named a holder, that
+ * holder exists and this instance stays down. Only genuine silence promotes,
+ * and only after ~30 seconds of it.
+ */
+const PROMOTE_AFTER_UNKNOWN = 3;
+let unknownStreak = 0;
+/**
+ * True when GameServer.start() took the standby early-return, meaning this
+ * process has NO discovery loop, NO fleet manager and NO stale-data cleanup.
+ */
+let bootedAsStandby = false;
+/** Guards restartIntoLeaderBoot against a second renewal re-entering it. */
+let restartScheduled = false;
 let holder: string | null = null;
 let holderAgeSeconds: number | null = null;
 let becameLeaderAt: number | null = null;
@@ -79,6 +126,75 @@ let errors = 0;
 let timer: ReturnType<typeof setInterval> | null = null;
 
 /** True unless we positively know another instance holds leadership. */
+/**
+ * Called by GameServer.start() when it takes the standby early-return.
+ *
+ * That return is the whole point of a standby - it claims nothing, cleans
+ * nothing and hydrates nothing - but it also means the process never started
+ * the discovery loops, the horse fleet, or lifecycle monitoring. Every promotion
+ * path below flips `role` in memory, and before this existed that produced a
+ * LEADER THAT DOES NOTHING: it holds the lease so no healthy instance can take
+ * over, reports role 'leader' on /health, and because it has no discovery loop
+ * its discoveryLoopStalledMs climbs in lockstep with uptime until liveness goes
+ * 'dead' and Docker kills it. Observed in production on 2026-08-24 as
+ * up=188s activeTables=0 liveness=dead discStall=188115ms - discStall equal to
+ * uptime is the signature: the loop never ran once.
+ *
+ * The standby branch's own comment already promised "will take the fleet if
+ * that lease goes stale". This is the part that makes that true.
+ */
+export function markBootedAsStandby(): void {
+  bootedAsStandby = true;
+}
+
+/**
+ * A standby cannot become a working leader in place, so it restarts into one.
+ *
+ * Re-running the boot sequence live is the alternative and it is worse: start()
+ * is not idempotent, and the standby contract is specifically that it must not
+ * mutate shared state while another instance is live - cleanupStaleData() cashes
+ * out seats and resets table counts. Exiting reuses the proven path this file
+ * already takes when leadership is LOST, and the supervisor brings the process
+ * straight back through the full leader boot.
+ */
+function restartIntoLeaderBoot(reason: string): void {
+  if (!bootedAsStandby) return;
+  /**
+   * ONCE ONLY. renewLeadership() runs on an interval and the hard-exit backstop
+   * below keeps this process alive for up to 5 seconds, so a renewal already in
+   * flight when the first promotion landed can re-enter here and schedule a
+   * second release plus a second pair of exit timers. Harmless today because
+   * the process is leaving either way, but it double-releases the lease and
+   * doubles the log, and the next reader of this function should not have to
+   * work out whether that matters.
+   */
+  if (restartScheduled) return;
+  restartScheduled = true;
+  console.error(
+    `[leadership] ${INSTANCE_ID} promoted (${reason}) but booted as a standby, so it has ` +
+      'no discovery loop or fleet - exiting so the supervisor restarts it as a real leader.'
+  );
+  /**
+   * HAND THE LEASE BACK BEFORE DYING (2026-08-24). The grant that got us here
+   * just wrote THIS instance into the lease row with a fresh heartbeat. Exiting
+   * while holding it forces the successor to boot as a standby (the row is not
+   * stale yet), wait out the staleness window, win the lease while
+   * standby-booted, and exit again: an infinite restart loop with a period of
+   * roughly the staleness window that never deals a hand. Observed in
+   * production within the hour of this function shipping — die/start every
+   * ~30s, activeTables pinned at 0. Releasing first means the successor's
+   * boot-time claim is granted immediately and it boots as a real leader.
+   *
+   * The hard timer is the backstop: a hung release (the same DB trouble that
+   * can put us here) must not keep a useless process alive.
+   */
+  const hardExit = setTimeout(() => process.exit(0), 5000);
+  (hardExit as { unref?: () => void }).unref?.();
+  void releaseLeadership().finally(() => {
+    setTimeout(() => process.exit(0), 250).unref?.();
+  });
+}
+
 export function isLeader(): boolean {
   return role === 'leader';
 }
@@ -111,18 +227,65 @@ export async function renewLeadership(): Promise<EngineRole> {
     if (error) {
       errors++;
       if (errors <= 3) {
-        console.warn(`[leadership] claim failed (${error.message}) — holding role '${role}'`);
+        console.warn(`[leadership] claim failed (${error.message}) - holding role '${role}'`);
       }
       // Retain, never assume. A standby that promotes itself because it cannot
       // reach the database is how two engines end up on one table.
+      //
+      // But a FRESH engine now starts as a standby, so "retain" would strand a
+      // single-engine deployment at 503 for as long as the database is
+      // unreachable. An unanswerable claim counts toward the unknown streak
+      // for exactly that case: nobody has been named as holder, so after
+      // PROMOTE_AFTER_UNKNOWN attempts this instance takes the fleet rather
+      // than leave it unowned. An incumbent leader is unaffected — it is
+      // already 'leader' and simply keeps the role.
+      unknownStreak++;
+      if (role === 'standby' && unknownStreak >= PROMOTE_AFTER_UNKNOWN && holder === null) {
+        console.warn(
+          `[leadership] ${unknownStreak} claims unanswerable and no holder known - promoting ${INSTANCE_ID}`
+        );
+        becameLeaderAt = Date.now();
+        role = 'leader';
+        holder = INSTANCE_ID;
+        holderAgeSeconds = 0;
+        restartIntoLeaderBoot('claims unanswerable');
+      }
       return role;
     }
     const row = (
       data as Array<{ granted: boolean; holder: string | null; holder_age_seconds: number | null }>
     )?.[0];
-    if (!row || row.granted) {
-      if (role !== 'leader') {
-        console.log(`[leadership] ${INSTANCE_ID} is now the LEADER — taking the fleet`);
+
+    /**
+     * NO ROW IS NOT A GRANT. This used to read `if (!row || row.granted)`, so
+     * an empty result promoted the caller — the same "assume leadership on bad
+     * news" that the error branch above is careful not to do. An empty answer
+     * means the question did not get answered; it says nothing about whether
+     * somebody else is leading.
+     *
+     * It is counted as unknown rather than simply ignored, so a genuinely
+     * unclaimed fleet still gets a leader. See PROMOTE_AFTER_UNKNOWN.
+     */
+    if (!row) {
+      unknownStreak++;
+      if (role === 'standby' && unknownStreak >= PROMOTE_AFTER_UNKNOWN) {
+        console.warn(
+          `[leadership] ${unknownStreak} claims resolved to nobody - promoting ${INSTANCE_ID}`
+        );
+        becameLeaderAt = Date.now();
+        role = 'leader';
+        holder = INSTANCE_ID;
+        holderAgeSeconds = 0;
+        restartIntoLeaderBoot('claims resolved to nobody');
+      }
+      return role;
+    }
+    unknownStreak = 0;
+
+    if (row.granted) {
+      const wasStandby = role !== 'leader';
+      if (wasStandby) {
+        console.log(`[leadership] ${INSTANCE_ID} is now the LEADER - taking the fleet`);
         becameLeaderAt = Date.now();
       } else if (becameLeaderAt === null) {
         becameLeaderAt = Date.now();
@@ -130,6 +293,11 @@ export async function renewLeadership(): Promise<EngineRole> {
       role = 'leader';
       holder = INSTANCE_ID;
       holderAgeSeconds = 0;
+      /**
+       * The ordinary route into the bug, and the most common: a standby simply
+       * outlives the previous leader's lease and its next renewal is granted.
+       */
+      if (wasStandby) restartIntoLeaderBoot('lease granted');
       return role;
     }
     holder = row.holder;
@@ -144,10 +312,10 @@ export async function renewLeadership(): Promise<EngineRole> {
        * supervisor bring us back as a standby.
        */
       reportError(
-        new Error(`Lost engine leadership to ${row.holder} — standing down`),
+        new Error(`Lost engine leadership to ${row.holder} - standing down`),
         'Leadership.lost'
       );
-      console.error('[leadership] LOST LEADERSHIP — exiting so we restart as a standby');
+      console.error('[leadership] LOST LEADERSHIP - exiting so we restart as a standby');
       role = 'standby';
       setTimeout(() => process.exit(0), 250).unref?.();
       return role;
@@ -158,8 +326,19 @@ export async function renewLeadership(): Promise<EngineRole> {
     errors++;
     if (errors <= 3) {
       console.warn(
-        `[leadership] claim threw (${(err as Error)?.message}) — holding role '${role}'`
+        `[leadership] claim threw (${(err as Error)?.message}) - holding role '${role}'`
       );
+    }
+    unknownStreak++;
+    if (role === 'standby' && unknownStreak >= PROMOTE_AFTER_UNKNOWN && holder === null) {
+      console.warn(
+        `[leadership] ${unknownStreak} claims threw and no holder known - promoting ${INSTANCE_ID}`
+      );
+      becameLeaderAt = Date.now();
+      role = 'leader';
+      holder = INSTANCE_ID;
+      holderAgeSeconds = 0;
+      restartIntoLeaderBoot('claims threw');
     }
     return role;
   }
@@ -188,7 +367,10 @@ export async function releaseLeadership(): Promise<void> {
 
 /** Test seam. */
 export function __resetLeadership(): void {
-  role = 'leader';
+  restartScheduled = false;
+  bootedAsStandby = false;
+  role = 'standby';
+  unknownStreak = 0;
   holder = null;
   holderAgeSeconds = null;
   becameLeaderAt = null;

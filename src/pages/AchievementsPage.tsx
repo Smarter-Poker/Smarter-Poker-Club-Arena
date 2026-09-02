@@ -23,7 +23,10 @@ import './AchievementsPage.css';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
+import StandardContentLayout from '../components/layouts/StandardContentLayout';
 import { reportError } from '../utils/errorReporter';
+import { ErrorState } from '../components/common/EmptyState';
+import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 
 type SortMode = 'default' | 'rarity' | 'progress' | 'recent';
 const RARITY_ORDER: Record<string, number> = { legendary: 0, epic: 1, rare: 2, common: 3 };
@@ -92,74 +95,74 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
   {
     id: 'hands_100',
     name: 'Getting Started',
-    description: 'Play 100 hands of poker',
+    description: 'Play 100 Hands Of Poker',
     icon: '♠',
     category: 'poker',
     rarity: 'common',
-    requirement: 'Play 100 hands',
+    requirement: 'Play 100 Hands',
   },
   {
     id: 'hands_1000',
     name: 'Regular',
-    description: 'Play 1,000 hands',
+    description: 'Play 1,000 Hands',
     icon: '◆',
     category: 'poker',
     rarity: 'rare',
-    requirement: 'Play 1,000 hands',
+    requirement: 'Play 1,000 Hands',
   },
   {
     id: 'hands_10000',
     name: 'Grinder',
-    description: 'Play 10,000 hands',
+    description: 'Play 10,000 Hands',
     icon: '▲',
     category: 'poker',
     rarity: 'epic',
-    requirement: 'Play 10,000 hands',
+    requirement: 'Play 10,000 Hands',
   },
   {
     id: 'hands_100000',
     name: 'Professional',
-    description: 'Play 100,000 hands',
+    description: 'Play 100,000 Hands',
     icon: '◆',
     category: 'poker',
     rarity: 'legendary',
-    requirement: 'Play 100,000 hands',
+    requirement: 'Play 100,000 Hands',
   },
 
   // ── Wins ──
   {
     id: 'wins_10',
     name: 'First Blood',
-    description: 'Win 10 hands',
-    icon: '✊',
+    description: 'Win 10 Hands',
+    icon: '☆',
     category: 'poker',
     rarity: 'common',
-    requirement: 'Win 10 hands',
+    requirement: 'Win 10 Hands',
   },
   {
     id: 'wins_100',
     name: 'Winner',
-    description: 'Win 100 hands',
+    description: 'Win 100 Hands',
     icon: '★',
     category: 'poker',
     rarity: 'rare',
-    requirement: 'Win 100 hands',
+    requirement: 'Win 100 Hands',
   },
   {
     id: 'wins_1000',
     name: 'Dominator',
-    description: 'Win 1,000 hands',
+    description: 'Win 1,000 Hands',
     icon: '▲',
     category: 'poker',
     rarity: 'epic',
-    requirement: 'Win 1,000 hands',
+    requirement: 'Win 1,000 Hands',
   },
 
   // ── Special Hands ──
   {
     id: 'royal_flush',
     name: 'Royal Blood',
-    description: 'Hit a Royal Flush',
+    description: 'Hit A Royal Flush',
     icon: '♛',
     category: 'poker',
     rarity: 'legendary',
@@ -168,7 +171,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
   {
     id: 'straight_flush',
     name: 'Straight Shooter',
-    description: 'Hit a Straight Flush',
+    description: 'Hit A Straight Flush',
     icon: '◆',
     category: 'poker',
     rarity: 'epic',
@@ -176,7 +179,7 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
   },
   {
     id: 'quads',
-    name: 'Four of a Kind',
+    name: 'Four Of A Kind',
     description: 'Hit Quads',
     icon: '◎',
     category: 'poker',
@@ -188,116 +191,116 @@ const ACHIEVEMENTS: Omit<Achievement, 'progress' | 'unlocked' | 'unlockedAt'>[] 
   {
     id: 'friends_5',
     name: 'Social Butterfly',
-    description: 'Add 5 friends',
+    description: 'Add 5 Friends',
     icon: '◆',
     category: 'social',
     rarity: 'common',
-    requirement: 'Add 5 friends',
+    requirement: 'Add 5 Friends',
   },
   {
     id: 'friends_25',
     name: 'Popular',
-    description: 'Add 25 friends',
+    description: 'Add 25 Friends',
     icon: '★',
     category: 'social',
     rarity: 'rare',
-    requirement: 'Add 25 friends',
+    requirement: 'Add 25 Friends',
   },
   {
     id: 'clubs_3',
     name: 'Club Hopper',
-    description: 'Join 3 clubs',
+    description: 'Join 3 Clubs',
     icon: '⌂',
     category: 'social',
     rarity: 'common',
-    requirement: 'Join 3 clubs',
+    requirement: 'Join 3 Clubs',
   },
 
   // ── Financial ──
   {
     id: 'profit_1000',
-    name: 'In the Green',
-    description: 'Profit 1,000 chips',
+    name: 'In The Green',
+    description: 'Profit 1,000 Chips',
     icon: '▲',
     category: 'financial',
     rarity: 'rare',
-    requirement: 'Profit 1K chips',
+    requirement: 'Profit 1K Chips',
   },
   {
     id: 'profit_10000',
     name: 'High Roller',
-    description: 'Profit 10,000 chips',
+    description: 'Profit 10,000 Chips',
     icon: '◆',
     category: 'financial',
     rarity: 'epic',
-    requirement: 'Profit 10K chips',
+    requirement: 'Profit 10K Chips',
   },
   {
     id: 'biggest_pot_500',
     name: 'Big Pot',
-    description: 'Win a 500+ chip pot',
+    description: 'Win A 500+ Chip Pot',
     icon: '★',
     category: 'financial',
     rarity: 'rare',
-    requirement: 'Win 500+ pot',
+    requirement: 'Win 500+ Pot',
   },
 
   // ── Tournament ──
   {
     id: 'tourney_win_1',
     name: 'Champion',
-    description: 'Win a tournament',
+    description: 'Win A Tournament',
     icon: '★',
     category: 'tournament',
     rarity: 'epic',
-    requirement: 'Win tournament',
+    requirement: 'Win Tournament',
   },
   {
     id: 'tourney_top3_10',
     name: 'Consistent',
-    description: 'Finish top 3 in 10 tournaments',
+    description: 'Finish Top 3 In 10 Tournaments',
     icon: '◆',
     category: 'tournament',
     rarity: 'rare',
-    requirement: 'Top 3 x10',
+    requirement: 'Top 3 X10',
   },
   {
     id: 'tourney_played_50',
     name: 'Tournament Regular',
-    description: 'Play 50 tournaments',
+    description: 'Play 50 Tournaments',
     icon: '◆',
     category: 'tournament',
     rarity: 'rare',
-    requirement: 'Play 50 tournaments',
+    requirement: 'Play 50 Tournaments',
   },
 
   // ── Streaks ──
   {
     id: 'streak_7',
     name: 'Weekly Warrior',
-    description: 'Log in 7 days in a row',
+    description: 'Log In 7 Days In A Row',
     icon: '▲',
     category: 'social',
     rarity: 'common',
-    requirement: '7-day streak',
+    requirement: '7-Day Streak',
   },
   {
     id: 'streak_30',
     name: 'Monthly Grinder',
-    description: 'Log in 30 days in a row',
+    description: 'Log In 30 Days In A Row',
     icon: '▤',
     category: 'social',
     rarity: 'rare',
-    requirement: '30-day streak',
+    requirement: '30-Day Streak',
   },
   {
     id: 'streak_100',
     name: 'Centurion',
-    description: 'Log in 100 days in a row',
+    description: 'Log In 100 Days In A Row',
     icon: '◆',
     category: 'social',
     rarity: 'legendary',
-    requirement: '100-day streak',
+    requirement: '100-Day Streak',
   },
 ];
 
@@ -311,6 +314,7 @@ export default function AchievementsPage() {
   const [category, setCategory] = useState<AchievementCategory>('all');
   const [achievements, setAchievements] = useState<Achievement[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const [newUnlock, setNewUnlock] = useState<Achievement | null>(null);
   const [visibleBadges, setVisibleBadges] = useState(new Set<number>());
@@ -412,6 +416,7 @@ export default function AchievementsPage() {
     if (!user?.id) return;
     if (loadingRef.current) return;
     loadingRef.current = true;
+    setLoadError(null);
     // SWR: show cached instantly
     const cached = getCachedAch(user.id);
     if (cached && cached.length > 0) {
@@ -459,6 +464,7 @@ export default function AchievementsPage() {
       }
     } catch (error) {
       reportError(error, 'AchievementsPage.Failed_to_load_achievements');
+      if (isMounted.current) setLoadError('Achievement progress could not be loaded.');
       if (isMounted.current) toast?.error('Failed to load achievements');
     } finally {
       loadingRef.current = false;
@@ -580,7 +586,19 @@ export default function AchievementsPage() {
   };
 
   return (
-    <div className="achievements-page">
+    <StandardContentLayout className="achievements-page">
+      <RewardsSurfaceHeader
+        eyebrow="Rewards Circuit / Achievements"
+        title="Achievement Archive"
+        description="A Live Record Of Milestones Earned Across Play, Competition, Community, Loyalty, And Special Events, With Every Badge Still Driven By The Existing Achievement Services."
+        art="diamonds"
+        status="MILESTONE INDEX // LIVE"
+        metrics={[
+          { label: 'Unlocked', value: animatedUnlocked, tone: 'live' },
+          { label: 'Total', value: animatedTotal },
+          { label: 'Login Streak', value: `${dailyStreak} days`, tone: 'attention' },
+        ]}
+      />
       {/* ═══════════════════════════════════════════════════════════════════════
                  STREAK & ACTIVITY HEADER (Initiative 14)
           ═══════════════════════════════════════════════════════════════════════ */}
@@ -817,6 +835,8 @@ export default function AchievementsPage() {
               <div key={i} className="ach-skeleton-card" />
             ))}
           </div>
+        ) : loadError ? (
+          <ErrorState message={loadError} onRetry={() => void loadAchievements()} />
         ) : filteredAchievements.length === 0 ? (
           <div className="empty-state" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
             <span
@@ -836,8 +856,8 @@ export default function AchievementsPage() {
             </p>
             <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
               {category === 'all'
-                ? 'Start playing to unlock your first badge!'
-                : `Play more to unlock ${category} achievements.`}
+                ? 'Start Playing To Unlock Your First Badge!'
+                : `Play More To Unlock ${category} Achievements.`}
             </p>
           </div>
         ) : (
@@ -1029,6 +1049,6 @@ export default function AchievementsPage() {
           onClose={() => setSharingAchievement(null)}
         />
       )}
-    </div>
+    </StandardContentLayout>
   );
 }

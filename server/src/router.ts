@@ -26,11 +26,14 @@ import { sendJSON, CORS_HEADERS } from './http/respond.js';
 import { handleHealth, handleWsMetrics, handleMetrics } from './handlers/health.js';
 import { handleAction } from './handlers/action.js';
 import { handleTimebank } from './handlers/timebank.js';
+import { handleRabbitHunt } from './handlers/rabbithunt.js';
 import { handleHeartbeat } from './handlers/heartbeat.js';
+import { handleAway } from './handlers/away.js';
 import { handlePreaction } from './handlers/preaction.js';
 import { handleAddchips } from './handlers/addchips.js';
 import { handleWithdrawchips } from './handlers/withdrawchips.js';
 import { handleLeave } from './handlers/leave.js';
+import { handleRejectRebuy } from './handlers/reject_rebuy.js';
 import { handleSitout } from './handlers/sitout.js';
 import { handleStraddle } from './handlers/straddle.js';
 import { handleRit } from './handlers/rit.js';
@@ -41,7 +44,7 @@ import { handleAdminPause, handleAdminResume, handleAdminKick } from './handlers
 import { handlePostBB } from './handlers/postbb.js';
 import { handleInjectFault } from './handlers/faultInjection.js';
 import { handleGetActions, handleGetState } from './handlers/state.js';
-import { handleAssistantLeaksDetect } from './handlers/assistant.js';
+import { handleVoiceIce } from './handlers/voice.js';
 import type { ChannelHub } from './hub/ChannelHub.js';
 
 // ─── Internal API key (set in Hetzner env, same secret used by World Hub) ─────
@@ -58,7 +61,10 @@ const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
  */
 type AnyGameServer = Parameters<typeof handleAction>[2]['gameServer'] &
   Parameters<typeof handleTimebank>[2]['gameServer'] &
+  Parameters<typeof handleRejectRebuy>[2]['gameServer'] &
+  Parameters<typeof handleRabbitHunt>[2]['gameServer'] &
   Parameters<typeof handleHeartbeat>[2]['gameServer'] &
+  Parameters<typeof handleAway>[2]['gameServer'] &
   Parameters<typeof handlePreaction>[2]['gameServer'] &
   Parameters<typeof handleAddchips>[2]['gameServer'] &
   Parameters<typeof handleWithdrawchips>[2]['gameServer'] &
@@ -125,7 +131,7 @@ async function readBody(req: IncomingMessage): Promise<Record<string, unknown> |
 function verifyInternalKey(req: IncomingMessage): boolean {
   if (!INTERNAL_API_KEY) {
     // If the key is not configured, reject all requests to these routes.
-    console.warn('[Router] INTERNAL_API_KEY is not set — rejecting channel broadcast request');
+    console.warn('[Router] INTERNAL_API_KEY is not set - rejecting channel broadcast request');
     return false;
   }
   const auth = req.headers['authorization'];
@@ -160,7 +166,9 @@ export function createRouter(
     // ─────────────────────────────────────────────────────────────────────────
     if (url === '/health' || url === '/') return handleHealth(res, { gameServer });
     if (url === '/ws-metrics' && method === 'GET')
-      return handleWsMetrics(res, { tableStateHub, engineWs });
+      // 2026-08-24: channelHub added — the wallet/tournament/club/lobby
+      // transport had zero metrics visibility before this.
+      return handleWsMetrics(res, { tableStateHub, engineWs, channelHub });
     if (url === '/metrics' && method === 'GET') return handleMetrics(res, { gameServer });
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -168,7 +176,27 @@ export function createRouter(
     // ─────────────────────────────────────────────────────────────────────────
     if (method === 'POST' && url === '/action') return handleAction(req, res, { gameServer });
     if (method === 'POST' && url === '/timebank') return handleTimebank(req, res, { gameServer });
+    /**
+     * ROUTED 2026-08-28. `handleRejectRebuy` was imported at the top of this
+     * file and never given a branch, so every POST fell through to the 404 at
+     * the bottom. Both client call sites fire-and-forget with a swallowing
+     * catch, so nothing ever surfaced it — and `engine.rejectRebuy()` had no
+     * reachable caller, which left `rejectedRebuys` the write-only set that
+     * the 2026-08-27 SNAP-CONTINUE work (waitForRebuyDecisions) exists to
+     * read. Effect on the felt: the table sat out the full 5-second rebuy
+     * pause after every bust even when the player pressed No, so Dan's rule
+     * ("...OR SNAP CONTINUES IF THEY CLICK NO TO THE REBUY") never worked.
+     */
+    if (method === 'POST' && url === '/reject_rebuy')
+      return handleRejectRebuy(req, res, { gameServer });
+    // The rabbit-hunt paywall. The cards are not in any broadcast; this is the
+    // only way they leave the server, and it charges before it answers.
+    if (method === 'POST' && url === '/rabbit-hunt')
+      return handleRabbitHunt(req, res, { gameServer });
     if (method === 'POST' && url === '/heartbeat') return handleHeartbeat(req, res, { gameServer });
+    // Dan 2026-08-23: pagehide/app-freeze beacon. Marks the player AWAY (blind
+    // cap armed) without removing them — see handlers/away.ts.
+    if (method === 'POST' && url === '/away') return handleAway(req, res, { gameServer });
     if (method === 'POST' && url === '/preaction') return handlePreaction(req, res, { gameServer });
     if (method === 'POST' && url === '/addchips') return handleAddchips(req, res, { gameServer });
     if (method === 'POST' && url === '/withdrawchips')
@@ -188,8 +216,13 @@ export function createRouter(
     if (method === 'POST' && url === '/admin/kick')
       return handleAdminKick(req, res, { gameServer });
     if (method === 'POST' && url === '/post-bb') return handlePostBB(req, res, { gameServer });
-    if (method === 'POST' && url === '/assistant/leaks/detect')
-      return handleAssistantLeaksDetect(req, res);
+
+    // The table voice mesh asks for its ICE servers here, once per join. It
+    // MINTS a short-lived TURN credential, so it is authenticated like any other
+    // player request — an open credential mint is an open relay. It answers the
+    // STUN-only list (never a 500) while no relay is configured, which is the
+    // state of every engine until one is deployed. See handlers/voice.ts.
+    if (method === 'GET' && url === '/voice/ice') return handleVoiceIce(req, res);
 
     // Fault injection for freeze drills. 404s unless FAULT_INJECTION_TOKEN is
     // set, requires that token, and refuses any table with a human seated.

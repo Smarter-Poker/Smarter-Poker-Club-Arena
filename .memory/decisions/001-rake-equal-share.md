@@ -19,3 +19,10 @@ IMPLEMENTATION:
 
 PREVIOUS (WRONG): (potContribution / totalPotContributions) \* totalRake (weighted)
 CORRECT: totalRake / playerCount (equal share)
+
+---
+
+SUPERSEDED 2026-08-29 BY DAN: cash-game rake credit is now WEIGHTED
+CONTRIBUTED (proportional to eligible contribution). This decision is kept
+only so historical DEALT_EQUAL rows can be understood; it no longer governs
+any new cash hand. See decisions/004-weighted-contributed-rake.md.

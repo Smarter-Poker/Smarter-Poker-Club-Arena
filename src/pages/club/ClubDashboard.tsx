@@ -24,7 +24,6 @@ import { useMasterBusChannel } from '../../hooks/useMasterBusChannel';
 import { getLocalStorage, setLocalStorage } from '../../lib/storage';
 import ClubStatsCards, { DashboardStats } from '../../components/club/ClubStatsCards';
 import ClubActivityFeed from '../../components/club/ClubActivityFeed';
-import ClubBottomNav from '../../components/club/ClubBottomNav';
 import PageSkeleton from '../../components/common/PageSkeleton';
 import { useToast } from '../../components/common/Toast';
 import ClubMemberManagement from '../../components/admin/ClubMemberManagement';
@@ -125,7 +124,27 @@ interface RevenueData {
     avg_pot: number;
     rake_per_hand: number;
   };
-  daily: Array<{ d: string; hands: number; rake: number; bbj: number; pot_total: number }>;
+  /**
+   * INSURANCE P&L 2026-08-27 (Dan): settled all-in insurance contracts at
+   * this club's tables. `bank` says where the money actually settles -
+   * 'union' for affiliated clubs, 'club' for standalone - so the label can
+   * be honest about whose profit it is.
+   */
+  insurance?: {
+    contracts: number;
+    premiums: number;
+    payouts: number;
+    net: number;
+    bank: 'union' | 'club';
+  };
+  daily: Array<{
+    d: string;
+    hands: number;
+    rake: number;
+    bbj: number;
+    pot_total: number;
+    ins_net?: number;
+  }>;
   by_table: Array<{
     table_id: string;
     name: string;
@@ -394,7 +413,7 @@ export default function ClubDashboard() {
       'ANNOUNCEMENT_CHANGED',
       'HAND_COMPLETED',
       'SETTLEMENT_CYCLE_COMPLETED',
-      'COLLUSION_DETECTED',
+      // COLLUSION_DETECTED removed 2026-08-28: nothing emits it client-side.
       'AGENT_UPDATED',
       'MEMBER_ROLE_CHANGED',
     ] as const;
@@ -857,7 +876,6 @@ export default function ClubDashboard() {
             Retry
           </button>
         </div>
-        {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
       </div>
     );
   }
@@ -906,7 +924,7 @@ export default function ClubDashboard() {
             </h1>
             <p>
               {formatInt(club.memberCount)} Members {'•'} {club.tableCount} Active{' '}
-              {club.tableCount === 1 ? 'table' : 'tables'}
+              {club.tableCount === 1 ? 'Table' : 'Tables'}
               {dashStats && dashStats.seatedNow > 0 && (
                 <>
                   {' '}
@@ -974,7 +992,7 @@ export default function ClubDashboard() {
 
       {/* Tab Navigation — real tablist semantics so screen readers announce
           the selected tab and arrow keys move between them. */}
-      <nav className={styles.tabNav} role="tablist" aria-label="Club dashboard sections">
+      <nav className={styles.tabNav} role="tablist" aria-label="Club Dashboard Sections">
         {(
           [
             { id: 'overview', label: 'Overview' },
@@ -1030,7 +1048,7 @@ export default function ClubDashboard() {
         <button
           onClick={() => loadDashboardData()}
           disabled={loading}
-          aria-label="Refresh dashboard data"
+          aria-label="Refresh Dashboard Data"
           style={{
             background: 'rgba(255,255,255,0.06)',
             color: 'inherit',
@@ -1098,7 +1116,7 @@ export default function ClubDashboard() {
                   <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as SortId)}
-                    aria-label="Sort leaderboard"
+                    aria-label="Sort Leaderboard"
                     style={{
                       background: 'rgba(255,255,255,0.06)',
                       color: 'inherit',
@@ -1152,8 +1170,8 @@ export default function ClubDashboard() {
                 {rankedPlayers.length === 0 ? (
                   <p className={styles.empty}>
                     {hideHorses && topPlayers.length > 0
-                      ? `No human players with hands ${rangeLabel}`
-                      : `No hands played ${rangeLabel}`}
+                      ? `No Human Players With Hands ${rangeLabel}`
+                      : `No Hands Played ${rangeLabel}`}
                   </p>
                 ) : (
                   rankedPlayers.slice(0, LEADERBOARD_VISIBLE).map((player) => (
@@ -1161,7 +1179,7 @@ export default function ClubDashboard() {
                       key={player.userId}
                       to={`/profile/${player.userId}`}
                       className={styles.playerRow}
-                      title={`View ${player.displayName}'s profile`}
+                      title={`View ${player.displayName}'s Profile`}
                       style={{
                         textDecoration: 'none',
                         color: 'inherit',
@@ -1315,8 +1333,8 @@ export default function ClubDashboard() {
             <input
               value={memberSearch}
               onChange={(e) => setMemberSearch(e.target.value)}
-              placeholder="Search members by name"
-              aria-label="Search members"
+              placeholder="Search Members By Name"
+              aria-label="Search Members"
               style={{
                 width: '100%',
                 boxSizing: 'border-box',
@@ -1345,7 +1363,7 @@ export default function ClubDashboard() {
               <select
                 value={memberSort}
                 onChange={(e) => setMemberSort(e.target.value as MemberSortId)}
-                aria-label="Sort members"
+                aria-label="Sort Members"
                 style={selectStyle}
               >
                 <option value="hands">Most Hands</option>
@@ -1357,7 +1375,7 @@ export default function ClubDashboard() {
               <select
                 value={memberRole}
                 onChange={(e) => setMemberRole(e.target.value)}
-                aria-label="Filter members by role"
+                aria-label="Filter Members By Role"
                 style={selectStyle}
               >
                 <option value="">All Roles</option>
@@ -1376,8 +1394,8 @@ export default function ClubDashboard() {
                 {membersLoading
                   ? 'Loading...'
                   : memberFiltered
-                    ? `${formatInt(memberTotal)} of ${formatInt(club.memberCount)} match`
-                    : `${formatInt(memberTotal)} members`}
+                    ? `${formatInt(memberTotal)} Of ${formatInt(club.memberCount)} Match`
+                    : `${formatInt(memberTotal)} Members`}
               </span>
             </div>
 
@@ -1386,7 +1404,7 @@ export default function ClubDashboard() {
                 <p className={styles.empty}>Loading Members...</p>
               ) : members.length === 0 ? (
                 <p className={styles.empty}>
-                  {memberSearch ? `No members matching "${memberSearch}"` : 'No members yet'}
+                  {memberSearch ? `No Members Matching "${memberSearch}"` : 'No Members Yet'}
                 </p>
               ) : (
                 members.map((m) => (
@@ -1394,7 +1412,7 @@ export default function ClubDashboard() {
                     key={m.userId}
                     to={`/profile/${m.userId}`}
                     className={styles.playerCard}
-                    title={`View ${m.displayName}'s profile`}
+                    title={`View ${m.displayName}'s Profile`}
                     style={{ textDecoration: 'none', color: 'inherit' }}
                   >
                     <div className={styles.playerAvatar} style={{ position: 'relative' }}>
@@ -1594,12 +1612,31 @@ export default function ClubDashboard() {
                   }}
                 >
                   {[
-                    { label: 'Rake collected', value: formatChips(revenue.totals.rake) },
-                    { label: 'Bad beat drop', value: formatChips(revenue.totals.bbj) },
-                    { label: 'Hands dealt', value: formatInt(revenue.totals.hands) },
-                    { label: 'Rake per hand', value: formatChips(revenue.totals.rake_per_hand) },
-                    { label: 'Average pot', value: formatChips(revenue.totals.avg_pot) },
-                    { label: 'Total pots', value: formatChips(revenue.totals.pot_total) },
+                    { label: 'Rake Collected', value: formatChips(revenue.totals.rake) },
+                    { label: 'Bad Beat Drop', value: formatChips(revenue.totals.bbj) },
+                    { label: 'Hands Dealt', value: formatInt(revenue.totals.hands) },
+                    { label: 'Rake Per Hand', value: formatChips(revenue.totals.rake_per_hand) },
+                    { label: 'Average Pot', value: formatChips(revenue.totals.avg_pot) },
+                    { label: 'Total Pots', value: formatChips(revenue.totals.pot_total) },
+                    // INSURANCE P&L 2026-08-27 (Dan): net = premiums - payouts
+                    // over the window. The bank suffix says whose profit it is
+                    // - a union-affiliated club's insurance settles to the
+                    // union bank, a standalone club keeps it.
+                    ...(revenue.insurance
+                      ? [
+                          {
+                            label:
+                              revenue.insurance.bank === 'union'
+                                ? 'Insurance Net (To Union)'
+                                : 'Insurance Net (Club Bank)',
+                            value: formatChips(revenue.insurance.net),
+                          },
+                          {
+                            label: 'Insurance Premiums / Payouts',
+                            value: `${formatChips(revenue.insurance.premiums)} / ${formatChips(revenue.insurance.payouts)}`,
+                          },
+                        ]
+                      : []),
                   ].map((m) => (
                     <div
                       key={m.label}
@@ -1617,6 +1654,46 @@ export default function ClubDashboard() {
                     </div>
                   ))}
                 </div>
+
+                {/* INSURANCE REPORT 2026-08-28: the headline net above raises
+                    questions only the funnel can answer — take rate, timeouts,
+                    cashouts, per-day money. That lives on its own page. */}
+                {revenue.insurance && (
+                  <Link
+                    to={`/clubs/${clubId}/insurance-report`}
+                    style={{
+                      display: 'inline-block',
+                      marginBottom: 14,
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      color: '#1877f2',
+                      textDecoration: 'none',
+                    }}
+                  >
+                    View Full Insurance Report
+                  </Link>
+                )}
+
+                {/* BOMB POT REPORT 2026-08-29. Unconditional, unlike the
+                    insurance link above: that one is gated on the club HAVING
+                    insurance revenue, but the first question about bomb pots is
+                    whether to run them at all, and an owner who has never
+                    switched them on is exactly who needs to see the page. It
+                    tells them plainly when there is nothing to show yet. */}
+                <Link
+                  to={`/clubs/${clubId}/bomb-pot-report`}
+                  style={{
+                    display: 'inline-block',
+                    marginBottom: 14,
+                    marginLeft: revenue.insurance ? 14 : 0,
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    color: '#1877f2',
+                    textDecoration: 'none',
+                  }}
+                >
+                  View Bomb Pot Report
+                </Link>
 
                 <Suspense fallback={<p className={styles.empty}>Loading Chart...</p>}>
                   <ClubActivityChart
@@ -1749,8 +1826,6 @@ export default function ClubDashboard() {
           </div>
         )}
       </div>
-
-      {clubId && <ClubBottomNav clubId={clubId} userRole={userRole} />}
 
       {clubId && user?.id && (
         <div style={{ padding: '0 16px 80px', maxWidth: '100%' }}>

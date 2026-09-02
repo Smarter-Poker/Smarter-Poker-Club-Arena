@@ -38,8 +38,246 @@ import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { queueUnbankedFee } from '../services/FeeReconciler.js';
 import { selectRevealedShowdownResults } from './revealedShowdown.js';
 import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
+import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
+import { buildDailyMissionHandEvents } from './dailyMissionEvents.js';
+
+/**
+ * How long a finished hand stays purchasable. A rabbit hunt is an impulse, and
+ * the only other bound is "the map holds the last two hands" — which stops
+ * bounding anything the moment a table stops dealing (an idle cash table, a
+ * tournament on break, the last two players standing up), leaving an offer from
+ * hours ago still buyable.
+ */
+const RABBIT_HUNT_OFFER_TTL_MS = 90_000;
+
+/**
+ * BOMB-POT AWARD LEDGER DURABILITY (2026-08-29).
+ *
+ * The award-unit write is deliberately fire-and-forget — the money is already
+ * recorded by logHandHistory, and a ledger that narrates a settlement must
+ * never be able to fail the hand it is narrating. But "cannot fail the hand"
+ * had been implemented as "one attempt, then a console.warn on the engine
+ * host", which means a single transient error loses a hand's award units
+ * PERMANENTLY and SILENTLY.
+ *
+ * Hand 3364829 (2026-08-29 02:35:08Z, table c4874708) is the proof: a clean
+ * two-board showdown, pot 88.00 paid out correctly to the cent, bracketed by
+ * hands at 02:31 and 02:37 whose rows both landed — and zero rows of its own.
+ * Nothing on the platform noticed; it was found by hand-written SQL.
+ *
+ * Three attempts with a linear backoff, then reportError. What still slips
+ * through is caught by fn_bomb_pot_ledger_gaps, which reconcile_ledger_nightly
+ * files as critical — the same "make it LOUD rather than impossible" shape
+ * CLAUDE.md section 11.5 settled on for seat-stack exits.
+ */
+/**
+ * MEASURED, THEN WIDENED (2026-08-29, same day).
+ *
+ * The first cut was 3 attempts with a LINEAR 250ms backoff — 750ms of cover in
+ * total. Production then reported the rate: of 457 bomb hands settled after the
+ * ledger became complete, 455 wrote their award units and **2 did not**. Both
+ * survived three attempts.
+ *
+ * Three independent transient failures in under a second is not what 0.44%
+ * looks like. A short outage window is: one blip a couple of seconds long
+ * swallows all three attempts, because they all land inside it.
+ *
+ * So the backoff is exponential now and the window is about 4.75 seconds
+ * (250ms, 750ms, 1.75s, 2s cap) instead of 750ms — long enough to outlast the
+ * kind of blip that produced both losses, at no cost to a hand that succeeds
+ * first time, which is every hand but two in 457.
+ *
+ * The cap matters as much as the growth: this runs per settled bomb hand, and
+ * an unbounded doubling would have a failing table holding retry timers open
+ * across several of its own subsequent hands.
+ */
+const BOMB_LEDGER_WRITE_ATTEMPTS = 4;
+const BOMB_LEDGER_RETRY_BASE_MS = 250;
+const BOMB_LEDGER_RETRY_MAX_MS = 2_000;
 
 export abstract class ServerTableEngineSettlement extends ServerTableEngineDealing {
+  /**
+   * RABBIT HUNT — the paid reveal. Dan 2026-08-25.
+   *
+   * "The rabbit hunt should pop up when the action is completed, no matter if
+   *  it's pre flop, on the flop, on the turn, or on the river... these should
+   *  ONLY APPEAR TO THE PLAYER WHO CLICKED the rabbit hunt. VIP members get 100
+   *  rabbit hunts a month for free, and they cost 5 diamonds each after that."
+   *
+   * Every one of those words is enforced HERE rather than on the client, because
+   * the previous implementation enforced none of them anywhere: the five cards
+   * went out in a room-wide broadcast the instant the hand ended, and the client
+   * decided on its own whether to bill. The cards were free to anyone who opened
+   * devtools, and visible to every opponent.
+   *
+   * Order matters: every free check runs BEFORE the charge, so a request that
+   * was never going to be honoured cannot take a player's diamonds. Payment is
+   * the last gate, and the cards are returned only on its success.
+   */
+  public async revealRabbitHunt(
+    userId: string,
+    handNumber?: number
+  ): Promise<{
+    success: boolean;
+    error?: string;
+    cards?: import('../types.js').Card[];
+    board_length?: number;
+    source?: string;
+    diamonds_spent?: number;
+    diamonds_remaining?: number | null;
+    vip_remaining?: number | null;
+    uses_remaining?: number | null;
+  }> {
+    const hand = handNumber ?? this.handCount;
+    const offer = this.rabbitHuntOffers.get(hand);
+
+    if (!offer) {
+      return { success: false, error: 'Rabbit Hunt Is No Longer Available For That Hand' };
+    }
+    // A rabbit hunt is an impulse, not a standing option. The only other bound
+    // is "the map holds the last two hands", which stops bounding anything the
+    // moment a table stops dealing — an idle cash table, a tournament on break,
+    // the last two players standing up — and an offer from hours ago stays
+    // purchasable. offeredAt was captured for exactly this and was never read.
+    if (Date.now() - offer.offeredAt > RABBIT_HUNT_OFFER_TTL_MS) {
+      return { success: false, error: 'That Hand Is Too Old To Rabbit Hunt' };
+    }
+    if ((this.tableInfo as { allow_rabbit_hunt?: boolean })?.allow_rabbit_hunt === false) {
+      return { success: false, error: 'Rabbit Hunt Is Disabled At This Table' };
+    }
+    if (offer.boardLength >= 5) {
+      // The whole board already ran out; there is nothing unseen to sell.
+      return { success: false, error: 'The Board Already Ran Out' };
+    }
+    if (!offer.eligible.has(userId)) {
+      return { success: false, error: 'You Were Not Dealt Into That Hand' };
+    }
+
+    const cards = offer.cards.slice(0, Math.max(0, 5 - offer.boardLength));
+    if (cards.length === 0) {
+      return { success: false, error: 'No Cards Remain To Reveal' };
+    }
+
+    // Already bought this hand: return the same cards, charge nothing. A dropped
+    // response or a double tap must never bill twice for one reveal.
+    if (offer.revealed.has(userId)) {
+      return { success: true, cards, board_length: offer.boardLength, source: 'already_revealed' };
+    }
+    if (this.rabbitHuntInFlight.has(userId)) {
+      // Two taps that race the RPC would both pass the `revealed` check above,
+      // because that set is only written after the charge returns. The advisory
+      // lock in fn_consume_rabbit_hunt serialises them, so they would not
+      // corrupt the pool — they would just both succeed, and bill twice.
+      return { success: false, error: 'Rabbit Hunt Is Already Loading' };
+    }
+    this.rabbitHuntInFlight.add(userId);
+
+    // VIP monthly pool -> purchased packs -> 5 diamonds. Engine-only RPC: a
+    // player's own JWT cannot execute it, which is what stops a client from
+    // simply not calling it.
+    let charge: Record<string, unknown> | null = null;
+    try {
+      const { data, error } = await supabase.rpc('fn_consume_rabbit_hunt', {
+        p_user_id: userId,
+      });
+      if (error) throw error;
+      charge = (data ?? null) as Record<string, unknown> | null;
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.rabbit_hunt_charge_error');
+      return { success: false, error: 'Could Not Complete Purchase' };
+    } finally {
+      // Released on EVERY path, including the throw above. Leaving it held would
+      // lock this player out of rabbit hunt for the life of the engine.
+      this.rabbitHuntInFlight.delete(userId);
+    }
+
+    if (!charge || charge.success !== true) {
+      // Name the reason. "Could Not Complete Purchase" for every refusal left
+      // the player unable to tell a shortfall from an outage, and support
+      // unable to tell either from a broken RPC.
+      const reason = String(charge?.error ?? '');
+      const message =
+        reason === 'insufficient_diamonds'
+          ? 'Not Enough Diamonds'
+          : reason === 'unknown user'
+            ? 'Your Account Could Not Be Verified'
+            : 'Could Not Complete Purchase';
+      return {
+        success: false,
+        error: message,
+        diamonds_remaining:
+          charge?.diamonds_remaining != null ? Number(charge.diamonds_remaining) : null,
+      };
+    }
+
+    // Mark the reveal before the audit write. Billing has succeeded and the
+    // in-flight guard has been released; an await before this line would let a
+    // second request slip between those states and call the billing RPC again.
+    offer.revealed.add(userId);
+
+    // `rabbit_hunt_reveals` is the metadata-only production ledger that was
+    // created for this path and never wired. Do not use the obsolete
+    // `rabbit_hunt_offers` table: it has a `cards` column, and persisting the
+    // unseen runout would recreate the private-card leak this endpoint removed.
+    // A ledger outage must not strand a player after a successful charge, so
+    // report it and still return the cards they bought.
+    try {
+      const { error: revealLogError } = await supabase.from('rabbit_hunt_reveals').insert({
+        user_id: userId,
+        table_id: this.tableId,
+        hand_number: hand,
+        charged: Number(charge.diamonds_spent ?? 0),
+      });
+      if (revealLogError) throw revealLogError;
+    } catch (err) {
+      reportError(err, 'ServerTableEngine.rabbit_hunt_reveal_log_error');
+    }
+
+    return {
+      success: true,
+      cards,
+      board_length: offer.boardLength,
+      source: String(charge.source ?? ''),
+      diamonds_spent: Number(charge.diamonds_spent ?? 0),
+      diamonds_remaining:
+        charge.diamonds_remaining != null ? Number(charge.diamonds_remaining) : null,
+      vip_remaining: charge.vip_remaining != null ? Number(charge.vip_remaining) : null,
+      // A purchased-pack reveal spends neither diamonds nor a VIP use, so
+      // without this the player burned one of a pack they paid for and the UI
+      // said nothing at all. The RPC has always returned it.
+      uses_remaining: charge.uses_remaining != null ? Number(charge.uses_remaining) : null,
+    };
+  }
+
+  /**
+   * What a rabbit hunt costs in diamonds, read from `feature_pricing` so a
+   * repricing in the dashboard reaches the button without a deploy — which is
+   * the promise the migration makes and the client was not keeping: it rendered
+   * a hardcoded 5 from FEATURE_PRICING while the charge came from the table.
+   *
+   * Cached for the life of the engine. A price change reaches players as tables
+   * turn over, and the CHARGE is always the live row regardless of this value,
+   * so the worst case is a stale label on a long-running table, never a
+   * mischarge.
+   */
+  protected async getRabbitHuntCost(): Promise<number> {
+    if (this.rabbitHuntCostCache != null) return this.rabbitHuntCostCache;
+    try {
+      const { data } = await supabase
+        .from('feature_pricing')
+        .select('diamond_cost')
+        .eq('feature', 'rabbit_hunt')
+        .maybeSingle();
+      const cost = Number((data as { diamond_cost?: number } | null)?.diamond_cost);
+      this.rabbitHuntCostCache = Number.isFinite(cost) && cost > 0 ? cost : 5;
+    } catch {
+      // Never let a pricing lookup stop the hand-complete path. The fallback
+      // matches the migration's own v_default_cost.
+      this.rabbitHuntCostCache = 5;
+    }
+    return this.rabbitHuntCostCache;
+  }
+
   /**
    * Bible V8 §1.9 settlement pipeline. Extracted verbatim (2026-08-08 file
    * split) from the `HAND_COMPLETE` case of `handleHandEvent`. The body is
@@ -49,10 +287,42 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
    * against the old monolith); the trailing
    * `break;` became the caller’s own `break;`.
    */
+  /**
+   * ═══ THE SETTLEMENT BARRIER COVERS THE WHOLE SETTLEMENT (2026-08-31) ═════
+   *
+   * The dealing loop waits on `postHandTasksPromise` before dealing the next
+   * hand, because dealHand RESETS every per-hand capture field
+   * (currentHandRake, currentHandCommunityCards, currentHandActions, ...) and
+   * reallocates handCount. Two holes let the next hand start while THIS
+   * hand's settlement was still reading those fields:
+   *
+   *   1. The promise was assigned mid-body (only around postHandTasks), so
+   *      any await BEFORE that line - the insurance-shortfall critical
+   *      alerts are awaits - yielded to a dealing loop that found the barrier
+   *      NULL, skipped it, and dealt.
+   *   2. The loop capped its wait at 45s and then proceeded anyway, with the
+   *      settlement still running in the background against fields the next
+   *      deal was about to blank. That is how a settled hand's history row
+   *      can record an empty board and the next hand's number - the exact
+   *      corpse the rake-law audit filed as `board_not_recorded`.
+   *
+   * The barrier is now assigned FIRST, synchronously, and covers this entire
+   * method INCLUDING the postHandTasks chain it fires (see the Promise.all
+   * where that chain starts). The loop-side hole is closed in dealingLoop:
+   * it waits with liveness instead of walking away at 45s.
+   */
   protected async handleHandCompleteEvent(
     event: HandEvent,
     players: SeatedPlayer[]
   ): Promise<void> {
+    const wholeSettlement = this.settleCompletedHand(event, players);
+    // Barrier only - failures are reported inside; the barrier must resolve
+    // either way or the table stops dealing forever.
+    this.postHandTasksPromise = wholeSettlement.catch(() => undefined);
+    return wholeSettlement;
+  }
+
+  private async settleCompletedHand(event: HandEvent, players: SeatedPlayer[]): Promise<void> {
     // ═══════════════════════════════════════════════════════════════════
     // Bible V8 §1.9: SETTLEMENT PIPELINE — 15-step mandatory order
     //
@@ -99,20 +369,85 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       winner_ids: this.currentHandWinnerIds,
       timestamp: Date.now(),
     });
-    // Rabbit Hunt: Capture remaining deck cards BEFORE handController is nulled
-    if (this.handController) {
+    // Rabbit Hunt: Capture remaining deck cards BEFORE handController is nulled.
+    //
+    // Dan 2026-08-25: the cards are NEVER broadcast. They are held here and
+    // handed to one player, once, by revealRabbitHunt() after that player has
+    // actually paid. Everything needed to police the request is captured in the
+    // same breath as the cards, while the controller is still alive:
+    //   - boardLength, because the broadcast below used to re-read the board
+    //     through an optional chain that returns [] once the controller is
+    //     nulled, which reads as "board length 0" and would offer a rabbit hunt
+    //     on a hand that had already run to the river;
+    //   - who was dealt in, so a spectator cannot buy a look at a hand they
+    //     were never part of.
+    // RUN IT TWICE IS NEVER OFFERED A RABBIT HUNT.
+    //
+    // On a RIT hand `communityCards` holds only the shared pre-all-in prefix —
+    // 0 cards for a pre-flop all-in — because each board is dealt into
+    // dealAndResolveRIT's own arrays. So the board-length gate reads 0, decides
+    // the hand ended pre-flop, and offers five cards. But RIT has already burned
+    // two or three run-outs off this deck: what is left is not "what would have
+    // come", it is noise the player would be charged five diamonds for. There is
+    // also nothing to rabbit hunt on a hand that ran out twice to showdown.
+    const ranItTwice = (this.currentHandRitBoards ?? 0) >= 2;
+    // A MULTI-BOARD BOMB POT IS NEVER OFFERED A RABBIT HUNT EITHER
+    // (Dan's bomb pot spec §19). Same defect shape as RIT: the boards were
+    // dealt interleaved from one deck, so `remainingDeck.slice(0, 5)` is not
+    // "what board 1 would have run" — it is noise the player would be charged
+    // five diamonds for, and there are two or three boards it could belong to.
+    const multiBoardBomb = this.handController?.isDoubleBoardActive?.() ?? false;
+    if (this.handController && !ranItTwice && !multiBoardBomb) {
       try {
+        const state = this.handController.getState();
         const remainingDeck = this.handController.getRemainingDeck();
-        // Only take the next 5 cards max (enough for any board completion)
-        this.currentHandRabbitCards = remainingDeck.slice(0, 5);
-      } catch {
-        this.currentHandRabbitCards = [];
+        // A local, not an instance field. This was `this.currentHandRabbitCards`,
+        // which nothing else read — and because the SAME array reference is
+        // stored into the offer below, the only thing keeping the previous
+        // hand's offer intact was that the per-hand reset reassigned the field
+        // rather than emptying it in place.
+        const rabbitCards = remainingDeck.slice(0, 5);
+        this.rabbitHuntOffers.set(this.handCount, {
+          cards: rabbitCards,
+          boardLength: (state?.communityCards ?? []).length,
+          eligible: new Set(
+            (state?.players ?? [])
+              .map((p: { user_id?: string }) => p?.user_id)
+              .filter((id): id is string => !!id)
+          ),
+          revealed: new Set<string>(),
+          offeredAt: Date.now(),
+        });
+        // Keep the two most recent offers, by INSERTION ORDER. Trimming on
+        // `handNumber < handCount - 1` looked equivalent and was not: hand
+        // numbers come from allocateGlobalHandNumber and are global to the
+        // server, so they jump by arbitrary amounts and `handCount - 1` is
+        // almost never the previous hand at this table. That silently kept one
+        // entry instead of two, cutting the grace period for a late click in
+        // half. Map iterates in insertion order, so this is exact.
+        while (this.rabbitHuntOffers.size > 2) {
+          const oldest = this.rabbitHuntOffers.keys().next().value;
+          if (oldest === undefined) break;
+          this.rabbitHuntOffers.delete(oldest);
+        }
+      } catch (err) {
+        // Never silent. A throw here means no offer, no event, and a rabbit hunt
+        // that has quietly stopped working on this table with nothing to explain
+        // why — which is precisely the blind spot that would hide a bug like the
+        // RIT one above.
+        reportError(err, 'ServerTableEngine.rabbit_hunt_capture_error');
       }
     }
 
     // SETTLEMENT STEP 8 (partial): Mark hand snapshot as complete
     // FIX 137: Bible V8 §7.17
-    completeHandSnapshot(this.tableId, this.handCount).catch(() => {});
+    // Reported, not swallowed. A snapshot that never completes leaves the hand
+    // marked in-flight in the recovery path, and `.catch(() => {})` meant the
+    // only way to learn that was to go looking for it. It still must not throw
+    // into settlement — the hand is over and the money is already moved.
+    completeHandSnapshot(this.tableId, this.handCount).catch((err) =>
+      reportError(err, 'ServerTableEngine.complete_hand_snapshot_error')
+    );
 
     // SETTLEMENT STEP 5: Capture rake and BBJ fee (calculated in HandController)
     if ((event as any).rake !== undefined) {
@@ -229,7 +564,9 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           : null;
 
         if (settlement.payout > 0) {
-          // LOSER with insurance: credit payout from union/club bank to table stack
+          // LOSER with insurance: credit payout from union/club bank to table
+          // stack. EV CASHOUT 2026-08-28: a cashed-out player's locked amount
+          // rides the same branch — paid from the bank regardless of outcome.
           if (seatedPlayer) {
             seatedPlayer.stack += settlement.payout;
             insuranceDeltas.set(
@@ -237,13 +574,58 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               (insuranceDeltas.get(settlement.playerId) ?? 0) + settlement.payout
             );
             console.log(
-              `[ServerTableEngine:${this.tableId}] Insurance payout: ${settlement.playerId} lost hand → +$${settlement.payout} from bank`
+              `[ServerTableEngine:${this.tableId}] ${settlement.kind === 'ev_cashout' ? 'EV cashout' : 'Insurance payout'}: ${settlement.playerId} → +$${settlement.payout} from bank`
             );
           }
         }
 
-        // ALL insured players: premium deducted from their stack at end (like rake)
-        // For losers: payout - premium = net gain. For winners: -premium = net cost.
+        // EV CASHOUT 2026-08-28: the bank BOUGHT this player's equity — the
+        // pot share the board actually delivered belongs to the bank, not the
+        // player. Distribution already credited it above (their hand stayed
+        // live), so claw exactly what they won back to the bank. Clamped like
+        // the premium below; a clamp means the bank under-collects and the
+        // same critical alert fires.
+        if (settlement.kind === 'ev_cashout') {
+          const wonAmt =
+            Math.round(
+              this.currentHandWinners
+                .filter((w) => w.userId === settlement.playerId)
+                .reduce((s, w) => s + w.amount, 0) * 100
+            ) / 100;
+          this.currentHandCashoutRedirects.set(settlement.playerId, 0);
+          if (wonAmt > 0 && seatedPlayer) {
+            const before = seatedPlayer.stack;
+            if (wonAmt > before) {
+              await raiseFinancialAlert(
+                'critical',
+                'ServerTableEngine.ev_cashout_redirect_exceeds_stack',
+                `EV cashout redirect ${wonAmt} exceeds stack ${before} for ${settlement.playerId}; clamped and under-collected`,
+                {
+                  tableId: this.tableId,
+                  playerId: settlement.playerId,
+                  redirect: wonAmt,
+                  stack: before,
+                  cashout: settlement.payout,
+                }
+              );
+            }
+            seatedPlayer.stack = Math.max(0, before - wonAmt);
+            const applied = before - seatedPlayer.stack;
+            this.currentHandCashoutRedirects.set(settlement.playerId, applied);
+            insuranceDeltas.set(
+              settlement.playerId,
+              (insuranceDeltas.get(settlement.playerId) ?? 0) - applied
+            );
+            console.log(
+              `[ServerTableEngine:${this.tableId}] EV cashout redirect: ${settlement.playerId} won $${wonAmt} → bank`
+            );
+          }
+        }
+
+        // POKERBROS PARITY 2026-08-28 (Dan's ruling): the fee is charged only
+        // when the insured player WINS — settle() reports premium 0 on a loss,
+        // so a losing leader receives the insured amount whole ("For Losing"
+        // in the dialog is literal) and only a winner pays the fee here.
         if (settlement.premium > 0) {
           // AUDIT M16: the clamps below silently absorb (Math.max(0, ...)) any
           // premium the stack cannot cover. A premium larger than the stack it
@@ -469,7 +851,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       if (this.currentHandShowdownResults.length >= 2 && bbjBoard.length < 5) {
         reportError(
           new Error(
-            `[BBJ] Board unavailable at settlement — jackpot detection will fail closed for ` +
+            `[BBJ] Board unavailable at settlement - jackpot detection will fail closed for ` +
               `table ${this.tableId} hand #${this.handCount}. ` +
               `raw=${JSON.stringify(this.currentHandCommunityCards)} parsed=${bbjBoard.length}. ` +
               `A qualifying hand cannot be verified without the board, so no payout is made; ` +
@@ -480,13 +862,26 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       }
       const bbjResult = detectBBJHit(
         this.currentHandShowdownResults,
-        this.currentHandWinnerIds[0],
+        // AUDIT FIX 2026-08-27: was `currentHandWinnerIds[0]`. On a chopped
+        // pot that examined one winner and ignored the other, so if the second
+        // held the quads the "winner must have quads or better" gate refused a
+        // real bad beat and nothing recorded that it had. All of them now; the
+        // detector applies the rule to the strongest.
+        this.currentHandWinnerIds,
         variant,
         this.currentHandPotSize,
         this.tableInfo.big_blind,
         dealtInPlayerIds.length,
         dealtInPlayerIds,
-        bbjBoard
+        bbjBoard,
+        {
+          // BBJ_RULES.excludeDoubleBoard has been published to players since it
+          // was written and enforced nowhere. A double-board bomb pot deals two
+          // boards for one pot, so a beat on one of them is not the hand the
+          // jackpot is for — and until now such a hand could pay, which made
+          // the rules panel wrong rather than the engine.
+          doubleBoard: this.currentHandCommunityCards2.length > 0,
+        }
       );
 
       if (bbjResult.hit) {
@@ -511,6 +906,23 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           type: 'bbj_hit',
           table_id: this.tableId,
           hand_number: this.handCount,
+          /* Dan 2026-08-26: "the notification keeps resending anytime you
+             refresh or open a page."
+
+             The hub RETAINS transient events and re-delivers them to a fresh
+             socket (see EngineStateClient: `lastEventSeq` is reset on every
+             reconnect precisely because "a fresh socket legitimately
+             re-receives retained reveal events"). Seq-based de-duplication is
+             therefore connection-scoped by design and cannot survive a
+             refresh - so every reload replayed the jackpot as though it had
+             just happened.
+
+             The wall-clock stamp is what makes a replay identifiable as a
+             replay. The client shows the celebration only for an event that
+             is genuinely NEW (see BBJ_FRESH_MS in TablePage), and pairs it
+             with table_id + hand_number as a stable identity so the same hit
+             can never be shown twice. Additive: an older client ignores it. */
+          emitted_at: Date.now(),
           loser: {
             userId: bbjResult.loserUserId,
             hand: bbjResult.loserHand,
@@ -579,7 +991,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     this.runItTwiceEngine.endHand(this.tableId);
     this.insuranceEngine.endHand(this.tableId);
     // Note: straddleEngine persists (auto-straddle enrollment persists)
-    // Note: rakebackEngine persists (accumulates across hands)
+    // (RakebackEngine deleted 2026-08-29 — weighted contributed rake law;
+    // per-player rake credit is allocated at banking time and by the settler.)
 
     // SETTLEMENT STEP 12: Calculate rakeback (done in postHandTasks)
     // SETTLEMENT STEP 9-11: Leaderboards, achievements, VIP points (done in postHandTasks)
@@ -589,9 +1002,18 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
 
     // FIX 211: Bible V8 §1.9 — Track postHandTasks promise so dealingLoop can await
     // it before starting the next hand, preventing stale DB stacks from race conditions.
-    this.postHandTasksPromise = this.postHandTasks(players).catch((err) =>
+    // 2026-08-31: the wrapper stored the whole-settlement promise in
+    // postHandTasksPromise. The async task chain fired here must ALSO hold
+    // the barrier, so chain it - the loop may deal only when BOTH the rest of
+    // this method and every post-hand task are done reading this hand's
+    // capture fields.
+    const priorBarrier = this.postHandTasksPromise;
+    const postTasks = this.postHandTasks(players).catch((err) =>
       reportError(err, 'ServerTableEnginethistableId.Posthand_error')
     );
+    this.postHandTasksPromise = priorBarrier
+      ? Promise.all([priorBarrier, postTasks]).then(() => undefined)
+      : postTasks;
     this.currentHandWinnerIds = [];
 
     // Rabbit Hunt: Broadcast captured remaining deck ONLY when the hand
@@ -599,24 +1021,70 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // cards revealed (full showdown), there's nothing to "see" — the
     // event would just confuse the UI by offering a paid reveal of cards
     // the player already saw. Round 65: gate on board.length < 5.
-    const board = this.handController?.getState()?.communityCards ?? [];
-    const handReachedRiver = board.length >= 5;
+    // Read the board length CAPTURED above, not the live controller: by the
+    // time this runs the controller may already be nulled, and an optional
+    // chain onto a null controller yields [], i.e. "board length 0", which
+    // offers a rabbit hunt on a hand that ran all the way to the river.
+    // Captured, not re-read. `this.handCount` is a live field reassigned by
+    // allocateGlobalHandNumber() at the next deal, and the emit below runs in a
+    // .then(). Reading it there could stamp the NEXT hand's number onto THIS
+    // hand's cards and eligibility set — the client posts that number back, the
+    // lookup misses, and the player is told the hand is no longer available for
+    // a hand they are still looking at.
+    const handNumber = this.handCount;
+    const offer = this.rabbitHuntOffers.get(handNumber);
+    const boardLength = offer?.boardLength ?? 5;
+    const handReachedRiver = boardLength >= 5;
     // FIX-D3 2026-07-19 (Bible V8 §11): honor the table's rabbit-hunt toggle.
     // The event was emitted unconditionally, offering rabbit hunt even where
     // the host disabled it. Default allowed unless explicitly off.
     const rabbitAllowed =
       (this.tableInfo as { allow_rabbit_hunt?: boolean })?.allow_rabbit_hunt !== false;
-    if (this.currentHandRabbitCards.length > 0 && !handReachedRiver && rabbitAllowed) {
-      this.hub?.emitEvent(this.tableId, {
-        type: 'rabbit_hunt_available',
-        table_id: this.tableId,
-        hand_number: this.handCount,
-        rabbit_cards: this.currentHandRabbitCards,
-        // Round 65: include current board length so client can slice the
-        // right number of additional cards (e.g. flop-fold → show turn+river,
-        // turn-fold → show river only, preflop-fold → show full 5).
-        current_board_length: board.length,
-      });
+    if (offer && offer.cards.length > 0 && !handReachedRiver && rabbitAllowed) {
+      // Dan 2026-08-25: this is an AVAILABILITY SIGNAL, not the cards.
+      //
+      // It used to carry `rabbit_cards` — the five real remaining cards — in a
+      // room-wide broadcast to every socket at the table, before anyone had
+      // paid anything. The paywall was a client-side `if`. Anyone watching the
+      // websocket read the run-out for free, and so did every opponent.
+      //
+      // The cards now leave the server only through revealRabbitHunt(), one
+      // authenticated player at a time, after fn_consume_rabbit_hunt has taken
+      // a VIP monthly use, a purchased use, or five diamonds.
+      //
+      // It is still a ROOM-WIDE broadcast, so it carries who may act on it
+      // rather than assuming everyone who receives it can. Without that, a
+      // spectator — or a player who had just sat down and was not dealt in —
+      // got a live Rabbit Hunt button whose only possible outcome was the
+      // server refusing them. The eligibility set is already held here; it
+      // simply was not being sent.
+      void this.getRabbitHuntCost()
+        .then((diamondCost) => {
+          this.hub?.emitEvent(this.tableId, {
+            type: 'rabbit_hunt_available',
+            table_id: this.tableId,
+            hand_number: handNumber,
+            // How many cards a reveal would show: flop-fold → turn+river, turn-fold
+            // → river only, preflop-fold → the full five.
+            current_board_length: boardLength,
+            cards_available: Math.min(offer.cards.length, 5 - boardLength),
+            // Only these players were dealt into the hand.
+            eligible_user_ids: Array.from(offer.eligible),
+            // The LIVE price from feature_pricing. The button used to render a
+            // hardcoded 5 from the client's FEATURE_PRICING while the charge came
+            // from the table, so a repricing in the dashboard made the label lie.
+            diamond_cost: diamondCost,
+            // Offers expire, so the client can stop showing a button that would
+            // now be refused.
+            expires_at: offer.offeredAt + RABBIT_HUNT_OFFER_TTL_MS,
+          });
+        })
+        .catch((err) =>
+          // Fire-and-forget off the settlement path, so it must carry its own
+          // catch: an unhandled rejection here would take the process down over
+          // a decoration. The player simply gets no rabbit-hunt offer.
+          reportError(err, 'ServerTableEngine.rabbit_hunt_offer_emit_error')
+        );
     }
 
     // ── ADDITIVE event-sourcing shadow (#1): replay + chip-conservation verify at hand end ──
@@ -650,6 +1118,43 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
   // ═════════════════════════════════════════════════════════════════════════════
 
   protected async postHandTasks(players: SeatedPlayer[]): Promise<void> {
+    /* ═══ THIS HAND'S RECORD IS CAPTURED BEFORE THE FIRST AWAIT (2026-08-31)
+       Everything below used to read the live `this.currentHand*` fields and
+       `this.handCount` between awaited database calls. Those fields belong to
+       whatever hand the table is on NOW - dealHand blanks them and reallocates
+       the hand number - so any path that let the dealing loop advance during
+       settlement (see handleHandCompleteEvent's barrier note) wrote hand N's
+       row from hand N+1's empty capture. Snapshot synchronously, before the
+       first await can yield, and read ONLY the snapshot from here down. The
+       Maps/arrays are copied shallowly: settlement only reads them, and
+       nothing else mutates their elements after HAND_COMPLETE. */
+    const snap = {
+      handNumber: this.handCount,
+      variant: this.currentHandVariant,
+      potSize: this.currentHandPotSize,
+      rake: this.currentHandRake,
+      bbjFee: this.currentHandBBJFee,
+      communityCards: [...this.currentHandCommunityCards],
+      communityCards2: [...this.currentHandCommunityCards2],
+      communityCards3: [...this.currentHandCommunityCards3],
+      bombPot: this.currentHandBombPot,
+      ritExtraBoards: this.currentHandRitExtraBoards,
+      ritBoards: this.currentHandRitBoards,
+      startedAt: this.currentHandStartedAt,
+      winners: [...this.currentHandWinners],
+      pots: this.currentHandPots,
+      actions: [...this.currentHandActions],
+      contributions: new Map(this.currentHandContributions),
+      holeCards: new Map(this.currentHandHoleCards),
+      dealerSeat: this.currentHandDealerSeat,
+      perPotAwards: [...this.currentHandPerPotAwards],
+      showdownResults: [...this.currentHandShowdownResults],
+      insuranceSettlements: [...this.currentHandInsuranceSettlements],
+      cashoutRedirects: new Map(this.currentHandCashoutRedirects),
+      returnedUncalled: new Map(this.currentHandReturnedUncalled),
+      bbjHit: this.currentHandBBJHit,
+      bbjPayoutConfig: this.currentHandBBJPayoutConfig,
+    };
     // ═══════════════════════════════════════════════════════════════════════
     // Bible V8 §1.9: SETTLEMENT PIPELINE (continued) — Steps 8-15
     // Steps 1-7 completed in HAND_COMPLETE handler above
@@ -674,16 +1179,16 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       } catch (err) {
         reportError(err, `postHandTasks.step_failed.${stepName}`, {
           tableId: this.tableId,
-          handNumber: this.handCount,
+          handNumber: snap.handNumber,
         });
         if (moneyCritical) {
           await raiseFinancialAlert(
             'critical',
             `postHandTasks.${stepName}_failed`,
-            `Post-hand step ${stepName} threw for hand #${this.handCount}; later steps continued`,
+            `Post-hand step ${stepName} threw for hand #${snap.handNumber}; later steps continued`,
             {
               table_id: this.tableId,
-              hand_number: this.handCount,
+              hand_number: snap.handNumber,
               error: err instanceof Error ? err.message : String(err),
             }
           );
@@ -705,7 +1210,16 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // source of truth.
           time_bank_uses_remaining: this.timeBankEngine.getUsesRemaining(this.tableId, p.user_id),
           time_bank_remaining: this.timeBankEngine.getRemainingSeconds(this.tableId, p.user_id),
-        }))
+        })),
+        // ZERO-DRIFT phase 5: identify the hand so the write is atomic and
+        // idempotent (fn_ca_settle_hand_stacks_absolute). The BBJ re-sync
+        // later in this file deliberately does NOT pass a hand number - it is
+        // a correction pass over the same hand and must not be swallowed by
+        // the idempotency replay.
+        // Read from the snapshot, never the live field (stale-continuation
+        // law): dealHand reassigns handCount while a stalled settlement is
+        // still writing.
+        snap.handNumber
       );
     });
 
@@ -765,29 +1279,112 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // players, so the leak this gate was added for on 2026-08-17 (3,953
         // losing holdings in one hour) stays closed - those players never
         // enter the array to begin with.
-        const winnerIds = new Set(this.currentHandWinners.map((w) => w.userId));
+        const winnerIds = new Set(snap.winners.map((w) => w.userId));
+        // SHOWDOWN SYSTEM 2026-08-25: the module's rule is "a holding may be
+        // exposed only if the table already showed it" — and a hand the engine
+        // ruled muckable was never shown. Filter mucked hands here (voluntary
+        // shows override via isMuckedAtShowdown) so the participant-readable
+        // hand_history matches what the table displayed. The full dealt-card
+        // record for audit/integrity still rides the separate holeCardsAll
+        // capture, exactly as before.
         const revealedShowdownResults = selectRevealedShowdownResults(
-          this.currentHandShowdownResults,
+          snap.showdownResults.filter((r) => !this.isMuckedAtShowdown(r.userId)),
           winnerIds,
           this.showHandPlayers,
           false
         );
 
+        // ── MUCKED-WINNER INVARIANT (2026-08-25) ────────────────────────────
+        // A hand the reveal system withheld can NEVER be a hand that was paid:
+        // applyShowdownRevealRules auto-tables every hand that wins or ties.
+        // If this ever fires, the muck ruling and the payout disagreed — a
+        // money/privacy consistency break worth a page, not a log line. It
+        // runs per hand, in the settlement path, so it can't be missed by a
+        // sampling job. RIT hands pass trivially (all hands force-revealed).
+        if (snap.showdownResults.length >= 2) {
+          const revealedIds = new Set(revealedShowdownResults.map((r) => r.userId));
+          const paidButHidden = [...winnerIds].filter(
+            (id) => !revealedIds.has(id) && snap.showdownResults.some((r) => r.userId === id)
+          );
+          if (paidButHidden.length > 0) {
+            await raiseFinancialAlert(
+              'critical',
+              'ServerTableEngine.mucked_winner_invariant',
+              `Hand ${snap.handNumber} on table ${this.tableId}: winner(s) ${paidButHidden.join(
+                ','
+              )} were withheld from the reveal set - the muck ruling and the payout disagree`,
+              { tableId: this.tableId, handNumber: snap.handNumber, userIds: paidButHidden }
+            );
+          }
+        }
+
+        // SHOWDOWN POLISH 2026-08-25 (persistence): what the table actually
+        // SAW, for replays and dispute review — reveal order, muck ruling,
+        // and hand identity for revealed hands only. A mucked entry carries
+        // no hand name, description, or cards: participants can read this
+        // row back, and a mucked range stays private (2026-08-17 leak rule).
+        const showdownReveal = snap.showdownResults.map((r) => {
+          const mucked = this.isMuckedAtShowdown(r.userId);
+          return mucked
+            ? {
+                user_id: r.userId,
+                seat: r.seat ?? -1,
+                reveal_order: r.revealOrder ?? 0,
+                mucked: true,
+              }
+            : {
+                user_id: r.userId,
+                seat: r.seat ?? -1,
+                reveal_order: r.revealOrder ?? 0,
+                mucked: false,
+                hand_name: r.handName,
+                hand_description: r.handDescription ?? '',
+              };
+        });
+
+        const dailyMissionEvents = buildDailyMissionHandEvents({
+          dealtPlayerIds: snap.holeCards.keys(),
+          roster: players.map((player) => ({
+            userId: player.user_id,
+            isHorse: player.is_horse,
+          })),
+          winners: snap.winners,
+          showdownResults: snap.showdownResults,
+        });
+
         const result = await logHandHistory({
           tableId: this.tableId,
+          nitGame: this.tableInfo.nit_game === true,
           tournamentId: this.tableInfo.tournament_id || undefined,
-          handNumber: this.handCount,
-          gameVariant: this.tableInfo.game_variant || 'nlh',
+          handNumber: snap.handNumber,
+          // VARIANT OVERRIDE 2026-08-28 (spec §10.1/§20): the variant this
+          // hand was DEALT as — plo4 on a PLO4 bomb hand at an NLH table.
+          // Falling back to the table label only when the capture is absent.
+          gameVariant: snap.variant || this.tableInfo.game_variant || 'nlh',
           smallBlind: this.tableInfo.small_blind,
           bigBlind: this.tableInfo.big_blind,
-          potSize: this.currentHandPotSize,
-          rakeAmount: this.currentHandRake,
-          bbjAmount: this.currentHandBBJFee,
-          communityCards: this.currentHandCommunityCards,
-          communityCards2: this.currentHandCommunityCards2,
-          startedAt: this.currentHandStartedAt || Date.now(),
+          potSize: snap.potSize,
+          rakeAmount: snap.rake,
+          bbjAmount: snap.bbjFee,
+          communityCards: snap.communityCards,
+          communityCards2: snap.communityCards2,
+          // TRIPLE-BOARD BOMB POT 2026-08-27: board 3 + the frozen bomb facts
+          // (trigger reason, ante, board count — spec §20).
+          communityCards3: snap.communityCards3,
+          bombPot: snap.bombPot,
+          // COMPLETENESS PASS 2026-08-26: RIT boards 2..N, first-class. The
+          // rit_board_N pseudo-actions in `actions` stay for old readers.
+          ritBoards: snap.ritExtraBoards,
+          startedAt: snap.startedAt || Date.now(),
           endedAt: Date.now(),
-          winners: this.currentHandWinners,
+          winners: snap.winners,
+          // POT-LEVEL SETTLEMENT (Dan section 29). Captured at WINNERS, when
+          // the breakdown still exists. `winners` already carry `potIndex`;
+          // this is the other half of that pair, and without it the number is
+          // an index into an array nobody stored. Together they let the
+          // elimination sweep credit a knockout to the winner(s) of the pot
+          // that held the busted player's last chips.
+          pots: snap.pots,
           players: players.map((p) => ({
             userId: p.user_id,
             username: p.username,
@@ -795,12 +1392,12 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             stack: p.stack,
             cards: [],
           })),
-          actions: this.currentHandActions,
+          actions: snap.actions,
           // STATS FACT LAYER 2026-08-21: engine-memory values the write used to
           // discard. Rationale in services/supabase/handFacts.ts.
           clubId: this.tableInfo.club_id,
-          contributions: this.currentHandContributions,
-          holeCardsAll: this.currentHandHoleCards,
+          contributions: snap.contributions,
+          holeCardsAll: snap.holeCards,
           roster: players.map((p) => ({ userId: p.user_id, isHorse: p.is_horse })),
           // ASSISTANT FIX 2026-08-16: both of these were already computed on
           // the engine for this hand and then thrown away at the write.
@@ -812,9 +1409,103 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           // the hand that proves it; without the second, it cannot compute a
           // positional leak at all.
           showdownResults: revealedShowdownResults,
-          buttonSeat: this.currentHandDealerSeat,
+          dailyMissionEvents,
+          buttonSeat: snap.dealerSeat,
+          showdownReveal,
         });
         v_handHistoryId = result.handId;
+
+        // ── AWARD-UNIT LEDGER (2026-08-28, spec §16.2/§17) ──────────────────
+        // One row per (pot layer, board, hi/lo side, winner) for every
+        // MULTI-BOARD bomb hand — the settlements that are genuinely hard to
+        // reconstruct from the merged winners list. Amounts are the same
+        // post-rake display shares perPotAwards broadcast. Idempotency is the
+        // table's UNIQUE key (hand + pot + board + side + winner): a retried
+        // insert conflicts and does nothing, exactly as spec §17.2 demands.
+        // Fire-and-forget: the ledger narrates money that logHandHistory has
+        // already recorded; it must never be able to fail a hand.
+        // SCOPE 2026-08-28: EVERY bomb hand, not only multi-board ones. The
+        // first cut gated on board_count >= 2 because that is where the
+        // reconstruction is hardest, but it made the ledger a partial record
+        // of a feature — `v_bomb_pot_outcomes` could not tell a single-board
+        // bomb from a hand that never happened, and a single-board bomb with
+        // three side pots is exactly as hard to rebuild from the merged
+        // winners list. `board` is 1 for those, which the UNIQUE key already
+        // accommodates.
+        // DEFENSIVE 2026-08-31: a bomb hand that produced WINNERS but no
+        // per-pot awards writes nothing here and looks, to
+        // `fn_bomb_pot_ledger_gaps` and to the hourly repair sweep, exactly
+        // like a transport loss — except no retry and no backfill can ever
+        // close it, because the units were never computed in the first place.
+        // The condition below is silent about that case by construction (it
+        // just does not run), so say it out loud instead of leaving a gap the
+        // sweep will chase forever.
+        if (
+          v_handHistoryId &&
+          snap.bombPot &&
+          snap.perPotAwards.length === 0 &&
+          (snap.winners?.length ?? 0) > 0
+        ) {
+          reportError(
+            new Error(
+              `[BombPot] hand ${snap.handNumber} settled with ` +
+                `${snap.winners?.length ?? 0} winner(s) but an EMPTY per-pot award ` +
+                'array - no award units can be written and none can be reconstructed'
+            ),
+            'ServerTableEngine.bomb_award_units_empty'
+          );
+        }
+        if (v_handHistoryId && snap.bombPot && snap.perPotAwards.length > 0) {
+          const ledgerRows = snap.perPotAwards.map((a) => ({
+            hand_history_id: v_handHistoryId,
+            table_id: this.tableId,
+            hand_number: snap.handNumber,
+            pot_index: a.potIndex,
+            board: a.board ?? 1,
+            side: a.low ? 'low' : 'high',
+            user_id: a.userId,
+            amount: a.amount,
+            hand_name: a.hand?.name ?? null,
+          }));
+          // DURABILITY 2026-08-29: see BOMB_LEDGER_WRITE_ATTEMPTS above. Still
+          // fire-and-forget — nothing here is awaited and nothing here can fail
+          // the hand — but a lost row now costs three attempts to lose, and the
+          // third failure is reported rather than logged to a host nobody reads.
+          const handNumberForLedger = snap.handNumber;
+          const writeAwardUnits = async (): Promise<void> => {
+            let lastMessage = 'unknown error';
+            for (let attempt = 1; attempt <= BOMB_LEDGER_WRITE_ATTEMPTS; attempt++) {
+              const { error } = await supabase.from('bomb_pot_award_units').upsert(ledgerRows, {
+                onConflict: 'hand_history_id,pot_index,board,side,user_id',
+                ignoreDuplicates: true,
+              });
+              if (!error) return;
+              lastMessage = error.message;
+              if (attempt < BOMB_LEDGER_WRITE_ATTEMPTS) {
+                // Exponential, capped: 250ms, 750ms, 1.75s. Was linear
+                // (250/500), which put all three attempts inside the first
+                // second and so inside the same blip. See the constants above
+                // for the production rate that motivated the change.
+                const backoff = Math.min(
+                  BOMB_LEDGER_RETRY_BASE_MS * (2 ** attempt - 1),
+                  BOMB_LEDGER_RETRY_MAX_MS
+                );
+                await new Promise((resolve) => setTimeout(resolve, backoff));
+              }
+            }
+            reportError(
+              new Error(
+                `[BombPot] award-unit ledger write failed after ${BOMB_LEDGER_WRITE_ATTEMPTS} ` +
+                  `attempts for hand ${handNumberForLedger} (${ledgerRows.length} units): ` +
+                  lastMessage
+              ),
+              'ServerTableEngine.bomb_award_ledger_write_failed'
+            );
+          };
+          void writeAwardUnits().catch((err: unknown) =>
+            reportError(err, 'ServerTableEngine.bomb_award_ledger_write_threw')
+          );
+        }
 
         // ── Dan 2026-08-15 (item 3): tell the clients the hand's row id ──
         //
@@ -833,7 +1524,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           this.hub?.emitEvent(this.tableId, {
             type: 'hand_history_saved',
             table_id: this.tableId,
-            hand_number: this.handCount,
+            hand_number: snap.handNumber,
             hand_id: v_handHistoryId,
             timestamp: Date.now(),
           });
@@ -845,22 +1536,22 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             const feedRow: HandHistoryRow = {
               id: v_handHistoryId,
               table_id: this.tableId,
-              hand_number: this.handCount,
+              hand_number: snap.handNumber,
               game_variant: this.tableInfo.game_variant || 'nlh',
               small_blind: this.tableInfo.small_blind,
               big_blind: this.tableInfo.big_blind,
-              pot_size: this.currentHandPotSize,
-              rake_amount: this.currentHandRake,
-              community_cards: this.currentHandCommunityCards,
-              started_at: this.currentHandStartedAt || Date.now(),
+              pot_size: snap.potSize,
+              rake_amount: snap.rake,
+              community_cards: snap.communityCards,
+              started_at: snap.startedAt || Date.now(),
               ended_at: Date.now(),
-              winners: this.currentHandWinners.map((w) => ({ userId: w.userId, amount: w.amount })),
+              winners: snap.winners.map((w) => ({ userId: w.userId, amount: w.amount })),
               players: players.map((pp) => ({
                 userId: pp.user_id,
                 seat: pp.seat_number,
                 stack: pp.stack,
               })),
-              actions: this.currentHandActions,
+              actions: snap.actions,
             };
             integrityFeed.ingestRow(feedRow);
           } catch {
@@ -882,10 +1573,18 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // UNION MODEL UNCHANGED: the union still holds 100% of cash rake; the weekly
     // settlement still returns 90% to clubs (nets 10%).
     await runStep('rake_distribution', true, async () => {
-      if (!this.isTournamentTable() && this.currentHandRake > 0 && this.tableInfo?.club_id) {
+      if (!this.isTournamentTable() && snap.rake > 0 && this.tableInfo?.club_id) {
         const contribsObj: Record<string, number> = {};
-        for (const [uid, amt] of this.currentHandContributions.entries()) {
+        for (const [uid, amt] of snap.contributions.entries()) {
           contribsObj[uid] = amt;
+        }
+        // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): pass the returned-
+        // uncalled audit map and stamp the methodology. contribsObj is already
+        // ELIGIBLE contribution (net of returned uncalled bets), so the RPC's
+        // weighted per-player attribution needs no further adjustment.
+        const returnedObj: Record<string, number> = {};
+        for (const [uid, amt] of snap.returnedUncalled.entries()) {
+          returnedObj[uid] = amt;
         }
         let rakeDistributed = false;
         for (let attempt = 0; attempt < 3 && !rakeDistributed; attempt++) {
@@ -893,13 +1592,15 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             p_table_id: this.tableId,
             p_club_id: this.tableInfo.club_id,
             p_hand_id: v_handHistoryId,
-            p_hand_number: this.handCount,
-            p_rake: this.currentHandRake,
-            p_bbj: this.currentHandBBJFee,
-            p_pot: this.currentHandPotSize,
-            p_num_players: this.currentHandContributions.size,
+            p_hand_number: snap.handNumber,
+            p_rake: snap.rake,
+            p_bbj: snap.bbjFee,
+            p_pot: snap.potSize,
+            p_num_players: snap.contributions.size,
             p_contributions: contribsObj,
             p_tournament_id: this.tableInfo.tournament_id || null,
+            p_returned_uncalled: returnedObj,
+            p_rake_method: 'WEIGHTED_CONTRIBUTED',
           });
           if (!rdErr) {
             rakeDistributed = true;
@@ -919,12 +1620,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
               tableId: this.tableId,
               clubId: this.tableInfo?.club_id,
               handId: v_handHistoryId,
-              handNumber: this.handCount,
-              rake: this.currentHandRake,
-              bbj: this.currentHandBBJFee,
-              pot: this.currentHandPotSize,
-              numPlayers: this.currentHandContributions.size,
+              handNumber: snap.handNumber,
+              rake: snap.rake,
+              bbj: snap.bbjFee,
+              pot: snap.potSize,
+              numPlayers: snap.contributions.size,
               contributions: contribsObj,
+              returnedUncalled: returnedObj,
+              rakeMethod: 'WEIGHTED_CONTRIBUTED',
               tournamentId: this.tableInfo?.tournament_id || null,
               bigBlind: this.tableInfo?.big_blind ?? null,
               lastError: rdErr.message,
@@ -940,7 +1643,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     // Round 44: pass v_handHistoryId so bbj_contributions.hand_id links to
     // hand_history (consistent with rake_records and club_wallet_transactions).
     await runStep('bbj_contribution', true, async () => {
-      if (!this.isTournamentTable() && this.currentHandBBJFee > 0 && this.tableInfo?.club_id) {
+      if (!this.isTournamentTable() && snap.bbjFee > 0 && this.tableInfo?.club_id) {
         // A5 FIX (2026-08-08): this return value used to be discarded, and
         // logBBJCollection swallowed every failure while logging 1 hand in 100.
         // That was not cosmetic. atomic_distribute_rake computes
@@ -955,8 +1658,8 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         const bbjBanked = await logBBJCollection(
           this.tableId,
           this.tableInfo.club_id,
-          this.handCount,
-          this.currentHandBBJFee,
+          snap.handNumber,
+          snap.bbjFee,
           this.tableInfo.big_blind,
           v_handHistoryId
         );
@@ -965,11 +1668,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             tableId: this.tableId,
             clubId: this.tableInfo.club_id,
             handId: v_handHistoryId,
-            handNumber: this.handCount,
-            rake: this.currentHandRake,
-            bbj: this.currentHandBBJFee,
-            pot: this.currentHandPotSize,
-            numPlayers: this.currentHandContributions.size,
+            handNumber: snap.handNumber,
+            rake: snap.rake,
+            bbj: snap.bbjFee,
+            pot: snap.potSize,
+            numPlayers: snap.contributions.size,
             contributions: {},
             tournamentId: this.tableInfo?.tournament_id || null,
             bigBlind: this.tableInfo?.big_blind ?? null,
@@ -998,7 +1701,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
     await runStep('promo_playthrough', false, async () => {
       if (!this.isTournamentTable() && this.tableInfo?.club_id) {
         const promoClubId = this.tableInfo.club_id;
-        for (const [uid, amt] of this.currentHandContributions.entries()) {
+        for (const [uid, amt] of snap.contributions.entries()) {
           if (!uid || amt <= 0) continue;
           Promise.resolve(
             supabase.rpc('promo_apply_playthrough', {
@@ -1026,19 +1729,28 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       if (
         !this.isTournamentTable() &&
         this.tableInfo?.club_id &&
-        this.currentHandInsuranceSettlements.length > 0
+        snap.insuranceSettlements.length > 0
       ) {
-        for (const settlement of this.currentHandInsuranceSettlements) {
+        for (const settlement of snap.insuranceSettlements) {
+          // EV CASHOUT 2026-08-28: the bank's IN side for a cashout is the
+          // redirected pot winnings (what the bank actually collected after
+          // clamps), logged in the premium column; the OUT side is the locked
+          // cashout in payout. bank_delta = premium − payout keeps working.
+          const bankIn =
+            settlement.kind === 'ev_cashout'
+              ? (snap.cashoutRedirects.get(settlement.playerId) ?? 0)
+              : settlement.premium;
           await logInsuranceSettlement({
             tableId: this.tableId,
             clubId: this.tableInfo.club_id,
-            handNumber: this.handCount,
+            handNumber: snap.handNumber,
             playerId: settlement.playerId,
             equityPercent: settlement.equity, // FIX-A12: real equity the premium was priced on
-            premium: settlement.premium,
+            premium: bankIn,
             insuredAmount: settlement.insuredAmount,
             payout: settlement.payout,
             playerWon: !settlement.won, // settlement.won = insurance paid out = player lost the hand
+            kind: settlement.kind,
           });
         }
       }
@@ -1050,15 +1762,15 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       if (
         !this.isTournamentTable() &&
         this.tableInfo?.club_id &&
-        this.currentHandBBJHit?.hit &&
-        this.currentHandBBJPayoutConfig
+        snap.bbjHit?.hit &&
+        snap.bbjPayoutConfig
       ) {
-        const bbjHit = this.currentHandBBJHit;
-        const payoutConfig = this.currentHandBBJPayoutConfig;
+        const bbjHit = snap.bbjHit;
+        const payoutConfig = snap.bbjPayoutConfig;
         const result = await processBBJPayout({
           tableId: this.tableId,
           clubId: this.tableInfo.club_id,
-          handNumber: this.handCount,
+          handNumber: snap.handNumber,
           loserUserId: bbjHit.loserUserId!,
           winnerUserId: bbjHit.winnerUserId!,
           loserHandName: bbjHit.loserHand?.name || 'Unknown',
@@ -1124,7 +1836,11 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
           this.hub?.emitEvent(this.tableId, {
             type: 'bbj_payout_complete',
             table_id: this.tableId,
-            hand_number: this.handCount,
+            hand_number: snap.handNumber,
+            /* The celebration's own trigger, so it carries the same stamp as
+               bbj_hit above - see the note there for why a retained replay is
+               otherwise indistinguishable from a live hit. */
+            emitted_at: Date.now(),
             totalPayout: result.totalPayout,
             loser: { userId: bbjHit.loserUserId, share: result.loserShare },
             winner: { userId: bbjHit.winnerUserId, share: result.winnerShare },
@@ -1166,8 +1882,14 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         for (const horse of bustHorses) {
           const currentRebuys = this.horseRebuys.get(horse.user_id) || 0;
 
-          // Stop-Loss Bankroll logic: if they have rebought twice already (lost 3 buy-ins total), they leave
-          if (currentRebuys >= 2) {
+          /**
+           * Stop-loss. This was a hard-coded `>= 2` for every horse alike;
+           * it is now the temperament's own figure, and `standard` - six in
+           * ten of the fleet - still stops at exactly the same place, so this
+           * is a spread around today's behaviour rather than a move away from
+           * it. A nit gives up a buy-in earlier, a gambler one later.
+           */
+          if (atRebuyStopLoss(horse.user_id, currentRebuys)) {
             await markSeatAsLeft(this.tableId, horse.user_id, horse.seat_number);
             // Round 57: clear FSM tracking so the horse doesn't leave a ghost
             // entry in disconnect_states.
@@ -1184,13 +1906,30 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             continue;
           }
 
-          const rebuyAmount = this.tableInfo?.big_blind ? this.tableInfo.big_blind * 100 : 200;
-          const success = await autoRebuyHorse(
-            this.tableId,
-            horse.user_id,
-            rebuyAmount,
-            this.tableInfo?.club_id || ''
-          );
+          /**
+           * WHETHER, and HOW MUCH. `bigBlind * 100` ignored the table's own
+           * limits and the horse's roll both; a horse that can no longer
+           * afford this stake now stands up instead of reloading it forever.
+           * Zero is a decision to leave and takes the same branch a failed
+           * funding call already took. The chips still come from the club
+           * treasury - this changes the answer, not the source.
+           */
+          const rebuyAmount = await horseRebuyAmount({
+            clubId: this.tableInfo?.club_id || '',
+            userId: horse.user_id,
+            bigBlind: Number(this.tableInfo?.big_blind) || 0,
+            minBuyIn: this.tableInfo?.min_buy_in as number | null | undefined,
+            maxBuyIn: this.tableInfo?.max_buy_in as number | null | undefined,
+            rebuysTaken: currentRebuys,
+          });
+          const success =
+            rebuyAmount > 0 &&
+            (await autoRebuyHorse(
+              this.tableId,
+              horse.user_id,
+              rebuyAmount,
+              this.tableInfo?.club_id || ''
+            ));
           if (success) {
             horse.stack = rebuyAmount;
             this.horseRebuys.set(horse.user_id, currentRebuys + 1);
@@ -1208,7 +1947,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
             this.preActionEngine.removePlayer(this.tableId, horse.user_id);
             this.horseRebuys.delete(horse.user_id);
             console.log(
-              `[ServerTableEngine:${this.tableId}] Horse ${horse.username} left — insufficient funds`
+              `[ServerTableEngine:${this.tableId}] Horse ${horse.username} left - insufficient funds`
             );
           }
         }
@@ -1227,7 +1966,13 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
         // seat-based from the current button. Next hand's button is the next
         // occupied seat clockwise from lastButtonSeat; BB is one seat past SB
         // (HU: BB is the non-button, i.e. one seat past the button).
-        const nextButtonSeat = this.getNextSeat(this.lastButtonSeat, players);
+        // Uses the SAME predictButtonSeat as getSBSeatIndex, getBBSeatIndex and
+        // the rotation itself. This was a fourth, independent walk over the raw
+        // roster, so once new players stopped being button-eligible it could
+        // name a different next button than the deal actually uses — and this
+        // one decides when a horse stands up to dodge the big blind, so
+        // disagreeing means it leaves on the wrong hand.
+        const nextButtonSeat = this.predictButtonSeat(players);
         const nextSbSeat =
           players.length === 2 ? nextButtonSeat : this.getNextSeat(nextButtonSeat, players);
         const nextBbSeat = this.getNextSeat(nextSbSeat, players);
@@ -1297,22 +2042,48 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
 
     // SETTLEMENT STEP 15: Unlock table — authoritative recount, ready for next hand
     await runStep('table_unlock', true, async () => {
-      const { count: dbPlayerCount } = await supabase
+      // PAYOUT-INTEGRITY 2026-08-28: this ran `dbPlayerCount ?? 0` on a count
+      // whose error was never destructured. It is the AUTHORITATIVE recount at
+      // the end of EVERY hand, so a single failed read wrote
+      // current_players = 0 on a live table, flipped it to 'waiting', and
+      // broadcast seated_count 0 to everyone sitting at it. TableService does
+      // the identical recount and checks the error first (TableService.ts:465);
+      // this path was the one without the guard.
+      //
+      // Same house rule as everywhere else in this engine: a count we could not
+      // read is UNKNOWN, not zero. Leave the table's status exactly as it is
+      // and let the next hand's recount settle it.
+      const { count: dbPlayerCount, error: countErr } = await supabase
         .from('table_seats')
         .select('*', { count: 'exact', head: true })
         .eq('table_id', this.tableId)
         .is('left_at', null);
-      const finalCount = dbPlayerCount ?? 0;
-      await updateTableStatus(this.tableId, finalCount, finalCount >= 2 ? 'running' : 'waiting');
+      let finalCount: number | null = null;
+      if (countErr || dbPlayerCount === null || dbPlayerCount === undefined) {
+        reportError(
+          new Error(
+            `[Table:${this.tableId.slice(0, 8)}] table_unlock: seat count unavailable (${countErr?.message ?? 'null count'}) - table status left unchanged`
+          ),
+          'ServerTableEngine.table_unlock_count_unavailable'
+        );
+      } else {
+        finalCount = dbPlayerCount;
+        await updateTableStatus(this.tableId, finalCount, finalCount >= 2 ? 'running' : 'waiting');
+      }
 
       // Phase X5 (2026-04-28): emit table_unlocked event paired with the
       // table_locked emitted at the start of settlement. Bible V8 §1.16.
+      // If the DB recount was unavailable, fall back to the engine's in-memory
+      // seat list for the event only: the unlock event must still pair with
+      // table_locked, and the in-memory roster is known state, not a
+      // fabricated zero. Table status itself was left unchanged above.
+      const unlockedCount = finalCount ?? this.seatedPlayers.length;
       this.hub?.emitEvent(this.tableId, {
         type: 'table_unlocked',
         table_id: this.tableId,
-        hand_number: this.handCount,
-        seated_count: finalCount,
-        next_state: finalCount >= 2 ? 'running' : 'waiting',
+        hand_number: snap.handNumber,
+        seated_count: unlockedCount,
+        next_state: unlockedCount >= 2 ? 'running' : 'waiting',
         timestamp: Date.now(),
       });
     });

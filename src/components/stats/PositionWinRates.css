@@ -58,10 +58,6 @@
   transition: all 0.2s ease-out;
 }
 
-.position-circle:hover {
-  filter: drop-shadow(0 0 8px currentColor);
-}
-
 .position-label {
   font-family: 'Rajdhani', 'Rajdhani', monospace;
   font-weight: 600;
@@ -233,12 +229,6 @@
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.position-stat-card:hover {
-  border-color: rgba(0, 212, 255, 0.4);
-  transform: translateY(-4px);
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.15);
 }
 
 .card-header {

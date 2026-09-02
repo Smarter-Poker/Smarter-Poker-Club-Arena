@@ -54,10 +54,11 @@ export async function handleInsurance(
     const { tableId, response, coveragePercent, declineForHand } = body;
     const userId = auth.userId;
 
-    if (!tableId || !response || !['accept', 'decline'].includes(response)) {
+    // EV CASHOUT 2026-08-28: 'cashout' locks pot x equity (minus fee) now.
+    if (!tableId || !response || !['accept', 'decline', 'cashout'].includes(response)) {
       return sendJSON(res, 400, {
         success: false,
-        error: 'Missing tableId or invalid response (must be accept or decline)',
+        error: 'Missing tableId or invalid response (must be accept, decline, or cashout)',
       });
     }
 

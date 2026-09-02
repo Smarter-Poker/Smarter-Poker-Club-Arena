@@ -13,23 +13,53 @@
  * Legacy URL: /table/:tableId still routes here with a single table
  */
 
-import React, { useState, useCallback, useRef, useEffect, useMemo, Suspense } from 'react';
+import React, {
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  Suspense,
+} from 'react';
 import { matchPath, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { TableTabBar, type TabInfo } from '../components/table/TableTabBar';
+import { isSitOutUrgent } from '../lib/sitOutDeadline';
 import LiveTablesBar from '../components/table/LiveTablesBar';
+import {
+  InTabLobbyContext,
+  tournamentTargetFromTo,
+  type InTabLobbyNav,
+  type InTabTournamentTarget,
+} from '../context/InTabLobbyContext';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
 import { masterBus } from '../core/MasterBus';
 import { useAuthUser } from '../hooks/useAuthUser';
+import { rankQuickJoinTables, bigBlindFromStakesLabel } from '../lib/quickJoinRanking';
+import { fetchFavoriteTableIds } from '../components/quickactions/favoriteTables';
 import { useUserTableSettings } from '../hooks/useUserTableSettings';
+import { formatGameTitle } from '../utils/formatGameTitle';
 import { useToast } from '../components/common/Toast';
 import { supabase } from '../lib/supabase';
 import { gameCode, gameCodeFromName } from '../utils/gameCode';
+import { stakesLabel } from '../lib/bettingStructure';
 import { swipeTargetIndex } from '../utils/swipeTarget';
+import {
+  LOBBY_TAB_PREFIX,
+  isLobbyLike,
+  isTournamentRow,
+  pickObserveSlot,
+  pruneStaleSeatedTabs,
+} from '../utils/tabSlots';
 import { soundService, haptic } from '../services/SoundService';
 import { setSitOut, submitAction } from '../services/GameServerAPI';
 import { sessionStatsService } from '../services/SessionStatsService';
 import './MultiTablePage.css';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
+import { resolveLobbyClubId } from '../utils/clubQuickLink';
+import { useUserStore } from '../stores/useUserStore';
+import { TableErrorBoundary } from '../components/common/TableErrorBoundary';
+import { betSliderStep, sliderUnitFor } from '../components/table/ActionPanel';
 
 // Lazy-load TablePage for code splitting
 const TablePage = lazyWithRetry(() => import('./TablePage'));
@@ -84,10 +114,18 @@ interface TableInstance {
   /** Amount the hero must call right now (0 = check legal); set while it is
    *  the hero's turn. Drives the tile-view action strip. */
   toCall?: number;
+  /** Raise-TO bounds for the tile raise slider, "minTo:maxTo:bb" ('' or
+   *  undefined = no raise legal). Primitive string so updateTableInfo's
+   *  shallow !== bail-out keeps working (P1-2). */
+  raiseBounds?: string;
   /** Hero's current stack at this table. */
   heroStack?: number;
   /** Hero is sitting out at this table. */
   sittingOut?: boolean;
+  /** Absolute epoch-ms this table's sit-out clock runs out. Cash only. */
+  sitOutDeadlineMs?: number;
+  /** Tournament tables sit out indefinitely; cash tables are on a clock. */
+  isTournament?: boolean;
   /** Dan 2026-08-21: short game code the tab shows when no hand is live
    *  (NLH / PLO5 / SPIN / MTT / HU). Best-effort at first paint, replaced by
    *  TablePage's authoritative value the moment it loads. */
@@ -107,7 +145,21 @@ interface TableInstance {
    *
    * Absent means 'table', so every pre-existing construction site stays valid.
    */
-  kind?: 'table' | 'lobby';
+  /**
+   * REQUIRED, and that is the fix (Dan 2026-08-31).
+   *
+   * This was optional, and three separate factories forgot it — the seat
+   * rebuild, the balancer-move branch, and the initial state built from the
+   * URL. `undefined` is not a harmless default here: a tab with no `kind` was
+   * invisible to the stale-seat prune, so a table the server had closed under
+   * the player stayed on screen, frozen. Two rounds of fixing individual
+   * factories only moved the hole.
+   *
+   * Required means the COMPILER refuses the next factory that forgets, which
+   * is the only guard that cannot itself rot. It is also what found the third
+   * site: tsc named it in one run.
+   */
+  kind: 'table' | 'lobby';
   /**
    * Does the hero hold an ACTIVE SEAT at this table right now?
    *
@@ -131,13 +183,162 @@ interface TableInstance {
    * TournamentDetails instead of the club lobby so the running tables never
    * unmount. Cleared by the tab's own "back to lobby" affordance, or wholesale
    * when TABLE_SEATED / the route effect converts the lobby tab into a table.
+   *
+   * Dan 2026-08-28 round 2: this is now the TOP OF `lobbyTournamentStack`,
+   * kept as its own field so every existing reader still works unchanged.
+   * Treat the stack as the source of truth when pushing or popping.
    */
   lobbyTournamentId?: string;
+  /**
+   * The drill-in history for this lobby tab, oldest first; the last entry is
+   * what is on screen and mirrors `lobbyTournamentId`.
+   *
+   * WHY A STACK. A tournament page lists its SATELLITES, and tapping one is a
+   * drill-in from a page that was itself a drill-in. Round 1 stored one scalar
+   * and overwrote it, so the parent event was simply gone: "← Lobby" jumped
+   * all the way out to the club lobby, and browser Back was dead too because
+   * an in-tab drill-in pushes no history entry. A player comparing a $200 Main
+   * with its $10 satellite could not get back to the Main without starting
+   * over from the schedule. On the real /tournaments/:id route Back did this
+   * correctly, so the in-tab version was a downgrade in exactly the flow it
+   * exists to serve.
+   */
+  lobbyTournamentStack?: InTabTournamentTarget[];
 }
 
-/** Lobby tabs carry a synthetic id so they can share the tabs array. */
-const LOBBY_TAB_PREFIX = 'lobby:';
-const isLobbyTab = (t: TableInstance) => t.kind === 'lobby' || t.id.startsWith(LOBBY_TAB_PREFIX);
+/**
+ * ─── THE DRILL-IN STACK (Dan 2026-08-28 round 2) ────────────────────────────
+ *
+ * `lobbyTournamentId` is the TOP of `lobbyTournamentStack`. These three helpers
+ * are the only writers, so the pair can never disagree — the round 1 bug was
+ * two writers keeping one scalar, and the second one silently winning.
+ */
+
+/** Push a tournament onto a lobby tab's drill-in history. */
+const pushLobbyTournament = (t: TableInstance, target: InTabTournamentTarget): TableInstance => {
+  const stack = t.lobbyTournamentStack ?? [];
+  // Re-opening the event already on screen is a no-op, not a second entry.
+  // Without this, a double tap on the same row would need two "back" presses
+  // to leave one page.
+  const top = stack[stack.length - 1];
+  if (top && top.tournamentId === target.tournamentId && top.search === target.search) return t;
+  const next = [...stack, target];
+  return { ...t, lobbyTournamentStack: next, lobbyTournamentId: target.tournamentId };
+};
+
+/** Pop one level. Returns the tab showing the club lobby when the stack empties. */
+const popLobbyTournament = (t: TableInstance): TableInstance => {
+  const stack = t.lobbyTournamentStack ?? [];
+  const next = stack.slice(0, -1);
+  const top = next[next.length - 1];
+  return {
+    ...t,
+    lobbyTournamentStack: next.length > 0 ? next : undefined,
+    lobbyTournamentId: top?.tournamentId,
+  };
+};
+
+/** Drop the whole drill-in history — the tab shows the club lobby again. */
+const clearLobbyTournaments = (t: TableInstance): TableInstance => ({
+  ...t,
+  lobbyTournamentStack: undefined,
+  lobbyTournamentId: undefined,
+});
+
+/**
+ * The `?name=&stakes=&code=` a /table/:id URL carries, rebuilt from a tab we
+ * already hold (Dan 2026-08-28 round 3).
+ *
+ * The route effect reads those three params to name and label a tab it has not
+ * built yet, falling back to `Table <n>` with blank stakes when they are
+ * absent. Three places navigated to /table/:id with NO query — the cap
+ * correction, the tournament backstop, and every tab switch — so any of them
+ * left the address bar carrying less information than the tab strip was
+ * already showing. Reload after one and a "PLO4 0.5/1" tab came back as
+ * "Table 1" with no stakes under it.
+ *
+ * Only emits the params it actually has, so a tab that genuinely knows nothing
+ * produces "" and behaves exactly as before.
+ */
+const tableQuery = (t: TableInstance): string => {
+  const p = new URLSearchParams();
+  if (t.name && !/^Table \d+$/.test(t.name)) p.set('name', t.name);
+  if (t.stakes) p.set('stakes', t.stakes);
+  if (t.gameCode) p.set('code', t.gameCode);
+  const qs = p.toString();
+  return qs ? `?${qs}` : '';
+};
+
+/**
+ * ─── THE DRILL-IN SURVIVES A RELOAD (Dan 2026-08-28 round 3) ────────────────
+ *
+ * Reloading while reading a tournament in a lobby tab used to drop the player
+ * onto a felt with no message: the stack is React state, tabs rebuild from
+ * `table_seats`, and a lobby tab is not a seat so nothing brought it back. The
+ * address bar could not help either — a lobby tab borrows a table's URL.
+ *
+ * WHY THIS IS NOT THE PERSISTENCE THAT WAS DELETED. The `multi_table_session`
+ * key removed above stored TABLES, and a resurrected table tab is a claim that
+ * you hold a seat you may have left — it implies chips. This stores a list of
+ * tournament ids somebody was READING. No seat, no stack of chips, no engine
+ * socket; the worst case is a lobby tab open on a page they had open a minute
+ * ago. Restored through the same `openTournamentTab` path a tap uses, so it
+ * cannot invent a state a tap could not reach.
+ *
+ * TTL, because "what you were reading" goes stale fast: a tab reopened
+ * tomorrow morning on last night's tournament is clutter, not continuity.
+ */
+const DRILL_IN_KEY = 'ca_lobby_drill_in';
+const DRILL_IN_TTL_MS = 30 * 60 * 1000;
+
+const saveDrillIn = (stack: InTabTournamentTarget[] | undefined) => {
+  try {
+    if (!stack || stack.length === 0) {
+      sessionStorage.removeItem(DRILL_IN_KEY);
+      return;
+    }
+    sessionStorage.setItem(DRILL_IN_KEY, JSON.stringify({ at: Date.now(), stack }));
+  } catch {
+    /* private-mode storage throws; the drill-in is a convenience, not a seat */
+  }
+};
+
+const readDrillIn = (): InTabTournamentTarget[] | null => {
+  try {
+    const raw = sessionStorage.getItem(DRILL_IN_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { at?: number; stack?: unknown };
+    if (typeof parsed?.at !== 'number' || Date.now() - parsed.at > DRILL_IN_TTL_MS) {
+      sessionStorage.removeItem(DRILL_IN_KEY);
+      return null;
+    }
+    // Validate every entry rather than trusting the blob: this is parsed JSON
+    // from storage, and a half-written or hand-edited value must not reach the
+    // renderer as a tournament id.
+    const stack = Array.isArray(parsed.stack) ? parsed.stack : [];
+    const clean = stack.filter(
+      (e): e is InTabTournamentTarget =>
+        !!e &&
+        typeof (e as InTabTournamentTarget).tournamentId === 'string' &&
+        (e as InTabTournamentTarget).tournamentId.length > 0 &&
+        typeof (e as InTabTournamentTarget).search === 'string'
+    );
+    return clean.length > 0 ? clean : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Lobby tabs carry a synthetic id so they can share the tabs array.
+ *
+ * The predicate itself now lives in src/utils/tabSlots.ts alongside the two
+ * decisions that turn on it (which slot a new table takes, which tabs a rebuild
+ * may close). They had drifted apart once — see `pruneStaleSeatedTabs` — and
+ * one definition is what stops that happening again. Aliased to the local name
+ * so every existing call site reads unchanged.
+ */
+const isLobbyTab = isLobbyLike;
 
 /**
  * Dan 2026-08-21: "4-table cap ... Desktop could reasonably run 6-8."
@@ -152,6 +353,16 @@ const isLobbyTab = (t: TableInstance) => t.kind === 'lobby' || t.id.startsWith(L
  * Read once at module load: a mid-session rotation cannot strand open tables,
  * and the server still has the final say on every buy-in.
  */
+/* Dan 2026-08-30: the 4-square (tile view) artwork - brushed-metal icon Dan
+   supplied, served from the same buttons bucket as every other table icon.
+   One artwork for both button skins: the metal piece is skin-neutral.
+
+   RETIRED 2026-08-31. That render carries a dark rounded PLATE baked into it
+   (no alpha channel), which the 40px button painted as a backdrop behind the
+   glyph - Dan: "remove the little pill behind the 4 square button." The icon
+   is now drawn inline at the button; see the note there. Restore this const
+   and the <img> together if the artwork is ever re-cut transparent. */
+
 const MAX_TABLES = typeof window !== 'undefined' && window.innerWidth >= 1024 ? 6 : 4;
 
 /**
@@ -172,18 +383,54 @@ const dockStateFor = (
   if (!hidden) return { kind: 'none' as const };
   const live = tabs.filter((t) => !isLobbyTab(t));
   if (live.length === 0) return { kind: 'none' as const };
-  const urgent = live
+  /**
+   * TWO KINDS OF CLOCK CAN RUN OUT WHILE YOU ARE LOOKING SOMEWHERE ELSE.
+   *
+   * This used to be gated on `isMyTurn` alone, so the dock had a countdown, a
+   * document-title flip, a favicon badge and a tick-tock loop for a TURN — and
+   * nothing whatsoever for a seat being reclaimed. A player who tapped Sit Out
+   * At All Tables started up to six five-minute eviction clocks and no surface
+   * outside the hidden tables reported one of them. Losing a turn costs a hand;
+   * losing a seat cashes out a stack.
+   *
+   * The turn still wins when both are running — it is the shorter fuse by an
+   * order of magnitude — and the sit-out only competes once it is inside the
+   * last minute, which is where `isSitOutUrgent` puts it. Otherwise a sat-out
+   * player would sit in a permanently "urgent" dock for five minutes.
+   */
+  const urgentTurn = live
     .filter((t) => t.isMyTurn)
     .sort((a, b) => (a.turnDeadlineMs ?? Infinity) - (b.turnDeadlineMs ?? Infinity))[0];
-  if (urgent) {
+  if (urgentTurn) {
     return {
       kind: 'urgent' as const,
-      targetId: urgent.id,
-      name: urgent.name,
+      targetId: urgentTurn.id,
+      name: urgentTurn.name,
       secondsLeft:
-        urgent.turnDeadlineMs !== undefined
-          ? Math.max(0, Math.ceil((urgent.turnDeadlineMs - nowMs) / 1000))
+        urgentTurn.turnDeadlineMs !== undefined
+          ? Math.max(0, Math.ceil((urgentTurn.turnDeadlineMs - nowMs) / 1000))
           : undefined,
+    };
+  }
+  const urgentSeat = live
+    .filter((t) => {
+      /* `> 0` as well as urgent. `isSitOutUrgent` is deliberately unbounded
+         below — it is the styling predicate, and a badge must stay red AT 0:00
+         when the seat is at its most at-risk. The dock is the opposite case: it
+         renders a COUNTDOWN, and once the deadline has passed the value only
+         gets more negative, so an unbounded test would pin this dock to
+         `urgent` with `0s` forever — favicon badge and tick-tock included —
+         which is exactly what the note above claims the design avoids. */
+      const left = t.sitOutDeadlineMs === undefined ? null : t.sitOutDeadlineMs - nowMs;
+      return left !== null && left > 0 && isSitOutUrgent(left);
+    })
+    .sort((a, b) => (a.sitOutDeadlineMs ?? Infinity) - (b.sitOutDeadlineMs ?? Infinity))[0];
+  if (urgentSeat) {
+    return {
+      kind: 'urgent' as const,
+      targetId: urgentSeat.id,
+      name: urgentSeat.name,
+      secondsLeft: Math.max(0, Math.ceil(((urgentSeat.sitOutDeadlineMs ?? nowMs) - nowMs) / 1000)),
     };
   }
   /**
@@ -289,13 +536,26 @@ export default function MultiTablePage() {
     sessionStorage.removeItem('multi_table_session');
     // Initialize with the table from URL
     if (routeTableId) {
+      /* Dan 2026-08-31: this is the FIRST tab of any session that lands
+         straight on /table/:id — a deep link, a refresh at the table, the dock
+         going back — and it was built with neither `kind` nor `gameCode`,
+         while the route effect below builds the very same tab WITH both. The
+         missing `kind` is what the required type now forbids; the missing
+         `gameCode` made the tab strip show a blank chip until TablePage
+         reported one. Same derivation as the route effect, so the two paths
+         can no longer disagree about a tab they both build. */
+      const nameFromUrl = formatGameTitle(searchParams.get('name')) || 'Table 1';
       return [
         {
           id: routeTableId,
-          name: searchParams.get('name') || 'Table 1',
+          name: nameFromUrl,
           stakes: searchParams.get('stakes') || '',
+          gameCode: searchParams.get('code') || gameCodeFromName(nameFromUrl),
           isMyTurn: false,
           pot: 0,
+          kind: 'table' as const,
+          // `seated` and `isTournament` stay unset on purpose: a URL proves
+          // neither. TABLE_SEATED sets the first, TablePage reports the second.
         },
       ];
     }
@@ -316,15 +576,60 @@ export default function MultiTablePage() {
   // on it (re-running on every tab switch would fight the router), so it reads
   // the live value through a ref instead of closing over a stale one.
   const activeIndexRef = useRef(0);
+  /* Assigned during render, exactly as `tablesRef` is two lines above.
+     Dan 2026-08-31: this used to be written in a passive effect, so between a
+     `setActiveIndex` and the following commit the ref still named the PREVIOUS
+     tab. Six readers consult it — the rebuild's focus restore, the observe
+     slot pick, the tab reorder, both quick-join reads and the route cap
+     branch — and every one of them wants the tab the player is on NOW; none
+     wants the one they were on a commit ago. A bus event landing in that
+     window (a seat, a balancer move) read the stale index and acted on the
+     wrong tab. Assigning here closes the window and matches the idiom this
+     file already uses for the tables array itself. */
+  activeIndexRef.current = activeIndex;
 
   // Swipe tracking refs
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const lastActiveTableIdRef = useRef<string | undefined>(undefined);
+  /**
+   * "The next route arrival must focus THIS tab, not the one its URL names."
+   *
+   * Set only by `handleTabSelect` when it borrows a real table's URL to make a
+   * LOBBY tab reachable from off-route (round 3). The route layout effect
+   * consumes it exactly once and clears it. A ref rather than state because it
+   * must be readable by that effect in the same commit as the navigation — a
+   * state write would land a render too late and the lobby tab would flash
+   * past on its way to the borrowed table.
+   */
+  const pendingTabIndexRef = useRef<number | null>(null);
+
+  /**
+   * Every `setActiveIndex` in this file was paired with a bare
+   * `setTimeout(() => setIsTransitioning(false), 320)` — four of them, none
+   * cleared. On an unmount (or a route teardown) inside that window each one
+   * calls setState on a dead component; and because the container is mounted
+   * for the whole session, a rapid sequence of switches also leaves several of
+   * them racing to clear a flag that a later switch has just re-set, which is
+   * what makes a fast tab-switch stutter. Tracked here, cleared on unmount.
+   */
+  const pendingTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const trackedTimeout = useCallback((fn: () => void, ms: number) => {
+    const id = setTimeout(() => {
+      pendingTimersRef.current.delete(id);
+      fn();
+    }, ms);
+    pendingTimersRef.current.add(id);
+    return id;
+  }, []);
   useEffect(() => {
-    activeIndexRef.current = activeIndex;
-  }, [activeIndex]);
+    const timers = pendingTimersRef.current;
+    return () => {
+      timers.forEach(clearTimeout);
+      timers.clear();
+    };
+  }, []);
 
   // Tab entrance animation — only used for multi-table mode with tab bar
   useEffect(() => {
@@ -365,6 +670,52 @@ export default function MultiTablePage() {
   // removed. Seat at a 2nd/3rd/4th table in the lobby, come back, and every
   // seat is a tab again — the PokerBros flow.
   const droppedRef = useRef(0);
+  /** True once the server-truth rebuild has completed (or failed) at least
+   *  once. Gates the drill-in restore; see DRILL_IN_KEY. */
+  const [tablesReady, setTablesReady] = useState(false);
+  /**
+   * A TABLE THE SERVER MOVED YOU OFF MUST NOT STAY ON SCREEN
+   * (Dan 2026-08-28, bug 1).
+   *
+   * Reported: "the connection failed (or maybe the server restarted). when it
+   * reconnected, it created 2 tables, and was displaying future hands on the
+   * table on the left that havent yet been dealt to the table on the right."
+   *
+   * Reproduced from production. In `Union PKO Afternoon (PLO4)` the balancer
+   * moved the hero from Table 1 seat 5 to Table 2 seat 2 at 17:30:21 — the
+   * source seat's `left_at` and the destination's `joined_at` are 270ms apart,
+   * so the SERVER did this correctly. The client did not follow:
+   *
+   *   - TABLE_SEATED fired for Table 2, so a second tab appeared;
+   *   - nothing fires for the table you were moved OFF (`TABLE_LEFT` is for a
+   *     leave the player initiated), so Table 1's tab stayed;
+   *   - its TablePage stayed mounted, frozen on hand #3299868 — a hand with no
+   *     `hand_history` row at all, because it never completed for him.
+   *
+   * That is the whole report: two tabs, both drawing the hero's last-delivered
+   * hole cards (SeatSlot keeps those alive on purpose), one of them stopped on
+   * a hand that was never finished anywhere. Which tab looks "ahead" depends
+   * only on which one you are looking at.
+   *
+   * Two things were missing, and it takes both.
+   *
+   * (a) THIS REBUILD ONLY EVER ADDED. It merges seats in additively so an
+   *     observer tab is never removed — right for observers, wrong for a tab
+   *     that says `seated: true` about a seat the server has since closed.
+   *     Those are pruned now. Observer and lobby tabs are still untouchable.
+   *
+   * (b) IT RAN ONCE, ON MOUNT. Its dep array is `[user?.id]`, so the one
+   *     moment it most needs to re-read server truth — a reconnect after the
+   *     socket dropped, which is when the client's picture is most likely to
+   *     be stale — was the one moment it never ran. `seatResyncToken` is
+   *     bumped by WS_CONNECTED.
+   *
+   * A failed read is UNKNOWN and prunes nothing: the early return on `seatErr`
+   * below is load-bearing, because an empty list would otherwise read as "you
+   * hold no seats" and close every table the player is sitting at.
+   */
+  const [seatResyncToken, setSeatResyncToken] = useState(0);
+  const prunedRef = useRef(0);
   useEffect(() => {
     if (!user?.id) return;
     let cancelled = false;
@@ -416,25 +767,108 @@ export default function MultiTablePage() {
             row && row.small_blind != null && row.big_blind != null
               ? `${row.small_blind}/${row.big_blind}`
               : '';
+          /* Dan 2026-08-30, second pass: this row already KNOWS whether it is a
+             tournament — it computed the flag for `gameCode` on the next line
+             and then threw it away. Four readers depend on the tab carrying it,
+             and `undefined` reads as "cash" at every one of them:
+
+               - the sit-out toast promises a tournament player "Your Seat Is
+                 Held For Up To 5 Minutes", which is not true of a seat that is
+                 blinded off;
+               - Sit Out All counts the tournament as a cash seat on an
+                 eviction clock;
+               - the profit chip aggregates it, against Dan 2026-08-30: "THE
+                 PROFIT COUNTER ... SHOULD NEVER WORK OR ENGAGE OR TRACK
+                 ANYTHING FOR TOURNAMENTS, THIS IS A 'CASHGAME ONLY FEATURE'";
+               - the tile raise slider steps in cash increments.
+
+             TablePage reports the flag up once its engine state loads, so each
+             of those self-corrects — but only AFTER a window that starts on
+             every reload, and the profit aggregation's first `compute()` runs
+             inside it (then every 5s). Carrying the flag the row already has
+             closes the window instead of racing it. */
+          const rowIsTournament = isTournamentRow(row);
           return {
             id,
-            name: (row?.name as string) || `Table ${prev.length + i + 1}`,
+            name: formatGameTitle(row?.name as string) || `Table ${prev.length + i + 1}`,
             stakes,
             gameCode: gameCode({
               variant: row?.game_variant as string | undefined,
-              isTournament: row?.game_type === 'tournament' || !!row?.tournament_id,
+              isTournament: rowIsTournament,
               maxPlayers: row?.max_players as number | undefined,
             }),
+            isTournament: rowIsTournament,
             isMyTurn: false,
             pot: 0,
+            // Dan 2026-08-30: `kind` was omitted here, and the prune below
+            // asked for it. Every other tab factory in this file sets it; this
+            // one now does too, so the tabs a reload restores are
+            // indistinguishable from the ones a live seat makes.
+            kind: 'table' as const,
             // These ids came from table_seats WHERE left_at IS NULL, which is
             // the definition of an active seat. Nothing else in this file has
             // stronger evidence than that.
             seated: true,
           };
         });
-        return additions.length > 0 ? [...prev, ...additions] : prev;
+        /**
+         * PRUNE (Dan 2026-08-28, bug 1). A tab claiming `seated: true` for a
+         * table that is NOT in the live seat set is a table the server moved
+         * the player off, or closed under them. Its TablePage is frozen on
+         * whatever it last saw.
+         *
+         * Only `seated` tabs. An observer tab has no seat by definition, and a
+         * lobby tab is not a table — pruning either would delete something the
+         * player deliberately opened.
+         *
+         * DAN 2026-08-30 — THIS PRUNE WAS INERT WHERE IT MATTERED MOST.
+         * It used to ask `t.kind === 'table' && t.seated === true`, and the
+         * `additions` built a few lines above carried NO `kind` field at all.
+         * So every tab this rebuild created was exempt from the rebuild's own
+         * prune — and after a page reload, rebuild-created tabs are the only
+         * tabs a player has. The 2026-08-28 fix therefore did nothing in the
+         * exact case it was written for: reload, reconnect, get moved, keep
+         * staring at a dead felt captioned "Connection Lost, Trying To Get You
+         * Back". `pruneStaleSeatedTabs` asks `!isLobbyLike` instead, which
+         * needs no field to be remembered by the next tab factory, and both
+         * halves are pinned behaviourally in tests/unit/tabSlots.test.ts.
+         */
+        const liveSeatIds = new Set(ids);
+        const survivors = pruneStaleSeatedTabs(prev, liveSeatIds);
+        prunedRef.current = prev.length - survivors.length;
+
+        if (prunedRef.current === 0 && additions.length === 0) return prev;
+        return [...survivors, ...additions];
       });
+
+      /**
+       * KEEP THE PLAYER ON THE TABLE THEY WERE LOOKING AT (Dan 2026-08-28,
+       * section 10.6: "YOU CAN NEVER EVER AUTO CHANGE TABLES FOR A USER").
+       *
+       * `activeIndex` is a POSITION, and a prune above it shifts every
+       * position after it down one. Leaving the index alone would therefore
+       * land the player on a DIFFERENT table without them touching anything —
+       * which is the auto-switch the law forbids, arriving by accident rather
+       * than by design. The existing clamp only catches an index past the end,
+       * not one that silently now means something else.
+       *
+       * So the identity is what is preserved, not the number. If the table
+       * they were watching survived, follow it to its new position; that is an
+       * index correction and moves nobody. If it is the one that was pruned,
+       * the clamp puts them somewhere valid — there is nothing else to honour.
+       *
+       * Deferred a tick for the same reason the focus restore below is:
+       * `tablesRef` reflects the committed array, and the setTables above has
+       * not committed at this line.
+       */
+      if (!cancelled) {
+        const watchedId = tablesRef.current[activeIndexRef.current]?.id;
+        setTimeout(() => {
+          if (cancelled || !watchedId) return;
+          const idx = tablesRef.current.findIndex((t) => t.id === watchedId);
+          if (idx !== -1 && idx !== activeIndexRef.current) setActiveIndex(idx);
+        }, 0);
+      }
       // Audit round 3: after a reload the rebuild used to land the player on
       // whichever seat sorted first. If the table they were LOOKING AT before
       // the reload came back, focus it. The id lives in sessionStorage; a
@@ -459,6 +893,18 @@ export default function MultiTablePage() {
       // pure — React may run it twice under StrictMode, and this file has been
       // bitten by side effects in updaters twice already (see TABLE_LEFT and
       // CLOSE_TABLE_TAB above).
+      if (!cancelled && prunedRef.current > 0) {
+        const n = prunedRef.current;
+        prunedRef.current = 0;
+        // Silently closing a table someone was playing is worse than saying
+        // so. Toast layer applies the house capitalisation; no em dashes.
+        toast.info(
+          n === 1
+            ? 'You were moved to a new table. The old one has been closed.'
+            : `You were moved from ${n} tables. They have been closed.`,
+          6000
+        );
+      }
       if (!cancelled && droppedRef.current > 0) {
         const n = droppedRef.current;
         droppedRef.current = 0;
@@ -468,11 +914,145 @@ export default function MultiTablePage() {
           7000
         );
       }
+      /* Server truth has landed (round 3). The drill-in restore waits on this
+         so a restored lobby tab is placed BESIDE the player's real seats
+         rather than racing them for the last slot — and so it never wins that
+         race, because a seat is worth more than a page you were reading. Set
+         even when the read failed: "we tried" is the signal, and a restore
+         blocked forever by a bad network is just the old bug again. */
+      if (!cancelled) setTablesReady(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    // seatResyncToken: bumped by WS_CONNECTED so a reconnect re-reads server
+    // truth. See the block comment above (b).
+  }, [user?.id, seatResyncToken]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ═══ THE BALANCER MOVED YOU: THE TAB FOLLOWS, IN PLACE, INSTANTLY ═══════
+     Dan 2026-08-30, from the first live auto table break: the move opened the
+     new table as ANOTHER tab ("that can never ever happen"), the old tab sat
+     frozen on "Reconnecting To The Table" with action pointed at him and no
+     buttons, the heartbeat toasted "This Table Is No Longer Running", and the
+     removal notice was the CASH one ("your chips are back in your wallet").
+
+     The server does the move right - old seat closed and new seat opened
+     within ~300ms (see movedTableTabIsClosed.test.ts's production trace). The
+     client just had no LIVE ear for it: the server-truth rebuild that would
+     have caught it runs only on mount and reconnect. This subscription is
+     that ear. On an INSERT of a hero seat row:
+
+       - same tournament as an existing tab  -> that tab is REPLACED in place
+         (same slot, active state preserved by position), so the new table
+         mounts inside the very game the player is looking at, and the toast
+         says what actually happened: "You Were Moved To <table>".
+       - anything else -> bump the server-truth rebuild, which appends or
+         prunes with all of its existing guards.
+
+     The dead old TablePage unmounts with the swap, which is also what ends
+     the frozen "Reconnecting" state and the ghost action prompts it showed. */
+  const heroSeatMoveBusyRef = useRef(false);
+  useEffect(() => {
+    if (!user?.id) return;
+    const chanKey = `hero-seat-moves-${user.id}`;
+    const channel = masterBus.getOrCreateChannel(chanKey);
+    channel
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'table_seats',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload: { new?: { table_id?: string; left_at?: string | null } }) => {
+          const row = payload.new;
+          const newId = row?.table_id;
+          if (!newId || row?.left_at) return;
+          if (tablesRef.current.some((t) => t.id === newId)) return;
+          if (heroSeatMoveBusyRef.current) return;
+          heroSeatMoveBusyRef.current = true;
+          void (async () => {
+            try {
+              const tabIds = tablesRef.current.filter((t) => !isLobbyTab(t)).map((t) => t.id);
+              const { data: rows, error: rowsErr } = await supabase
+                .from('tables')
+                .select(
+                  'id, name, game_variant, game_type, max_players, small_blind, big_blind, tournament_id'
+                )
+                .in('id', [newId, ...tabIds]);
+              if (rowsErr) {
+                /* Cannot identify the move - the rebuild path re-reads server
+                   truth with its own guards rather than guessing here. */
+                setSeatResyncToken((n) => n + 1);
+                return;
+              }
+              const newRow = rows?.find((r) => r.id === newId);
+              const tourId = newRow?.tournament_id as string | null | undefined;
+              const oldTab = tourId
+                ? tablesRef.current.find(
+                    (t) =>
+                      t.id !== newId &&
+                      !isLobbyTab(t) &&
+                      rows?.some((r) => r.id === t.id && r.tournament_id === tourId)
+                  )
+                : undefined;
+              if (!newRow || !oldTab) {
+                // Not a recognisable balancer move - let the rebuild sort it out.
+                setSeatResyncToken((n) => n + 1);
+                return;
+              }
+              const name = formatGameTitle(newRow.name as string) || 'Your New Table';
+              const stakes =
+                newRow.small_blind != null && newRow.big_blind != null
+                  ? `${newRow.small_blind}/${newRow.big_blind}`
+                  : '';
+              setTables((prev) =>
+                prev.map((t) =>
+                  t.id === oldTab.id
+                    ? {
+                        id: newId,
+                        name,
+                        stakes,
+                        gameCode: gameCode({
+                          variant: newRow.game_variant as string | undefined,
+                          isTournament: true,
+                          maxPlayers: newRow.max_players as number | undefined,
+                        }),
+                        /* This branch only runs for a balancer move, which is
+                           tournament-only by definition (`tourId` is required
+                           above) — the same reason `gameCode` hardcodes it.
+                           Carried on the tab too, so the table a player is
+                           MOVED to does not spend its first seconds being
+                           treated as a cash game by the sit-out toast, the
+                           profit chip and the raise slider. */
+                        isTournament: true,
+                        isMyTurn: false,
+                        pot: 0,
+                        kind: 'table' as const,
+                        seated: true,
+                      }
+                    : t
+                )
+              );
+              toast.info(`You Were Moved To ${name}`, 6000);
+            } catch {
+              setSeatResyncToken((n) => n + 1);
+            } finally {
+              heroSeatMoveBusyRef.current = false;
+            }
+          })();
+        }
+      )
+      .subscribe();
+    return () => {
+      try {
+        masterBus.removeRegisteredChannel(chanKey);
+      } catch {
+        /* channel cleanup is best-effort */
+      }
+    };
+  }, [user?.id]);
 
   useMasterBusSubscription('TABLE_SEATED', (payload: SeatedPayload) => {
     const e = payload;
@@ -499,7 +1079,7 @@ export default function MultiTablePage() {
 
       const seatedTab: TableInstance = {
         id: e.tableId,
-        name: e.tableName || `Table ${prev.length + 1}`,
+        name: formatGameTitle(e.tableName) || `Table ${prev.length + 1}`,
         stakes: '',
         isMyTurn: false,
         pot: 0,
@@ -599,7 +1179,18 @@ export default function MultiTablePage() {
     const prev = tablesRef.current;
     const existingLobby = prev.findIndex(isLobbyTab);
     if (existingLobby !== -1) {
-      // Already have one — just focus it rather than stacking duplicates.
+      /**
+       * Already have one — focus it rather than stacking duplicates, AND put
+       * it back on the lobby (Dan 2026-08-28 round 2).
+       *
+       * It used to focus the tab and leave `lobbyTournamentId` alone, so "+"
+       * — a button whose entire meaning is "show me the games" — reopened
+       * whatever tournament page the tab happened to be parked on. If that tab
+       * was already active it did nothing visible at all, which reads as the
+       * button being broken. Pressing "+" is a request for the lobby; give
+       * them the lobby.
+       */
+      setTables((cur) => cur.map((t) => (isLobbyTab(t) ? clearLobbyTournaments(t) : t)));
       setActiveIndex(existingLobby);
       return;
     }
@@ -620,6 +1211,72 @@ export default function MultiTablePage() {
     ]);
     setActiveIndex(prev.length);
   });
+
+  /**
+   * Dan 2026-08-25 — OBSERVE A TABLE IN A NEW SCREEN.
+   *
+   * The tournament lobby's Ranking and Tables tabs let a player watch any
+   * table in the event. "Watch" must never cost them a SEATED screen (chips,
+   * live engine socket) — those keep dealing behind it. A free screen (lobby
+   * tab, unseated observer) is a different story: see case 2.
+   *
+   * The ORDER of cases, and the reasoning for each, is documented on
+   * `pickObserveSlot` in src/utils/tabSlots.ts, which decides it. In short:
+   * focus a table already open, else take the ACTIVE tab's slot when that tab
+   * is free (Dan 2026-08-30 — changing tables from the lobby must change the
+   * screen you are ON), else any parked lobby tab, else append, else refuse
+   * out loud. Silently doing nothing is how "the button is broken" bugs are
+   * born (see the route effect below).
+   */
+  useMasterBusSubscription(
+    'OPEN_OBSERVE_TABLE',
+    (payload: { tableId: string; tableName?: string; stakes?: string }) => {
+      if (!payload?.tableId) return;
+      const prev = tablesRef.current;
+
+      /* Dan 2026-08-30: "WHEN I WENT INTO THE LOBBY TO CHANGE A TABLE, IT
+         DIDN'T CHANGE THE TABLE FOR THE PAGE I WAS IN, IT CREATED A NEW
+         ACTION BAR AND ADDED IT IN THE FIRST SLOT."
+
+         The choice of slot is `pickObserveSlot` (src/utils/tabSlots.ts): pure,
+         and pinned by tests/unit/tabSlots.test.ts. It lived inline here until
+         the missing 'active' case shipped as a bug that could only be caught
+         by opening four tables by hand — the same reason swipeTargetIndex was
+         lifted out of the touch handler. */
+      const slot = pickObserveSlot(prev, activeIndexRef.current, payload.tableId, MAX_TABLES);
+
+      if (slot.action === 'focus') {
+        setActiveIndex(slot.index);
+        return;
+      }
+
+      if (slot.action === 'full') {
+        notifyCapReached('add');
+        return;
+      }
+
+      const observerTab: TableInstance = {
+        id: payload.tableId,
+        name: formatGameTitle(payload.tableName) || `Table ${prev.length + 1}`,
+        stakes: payload.stakes || '',
+        isMyTurn: false,
+        pot: 0,
+        kind: 'table',
+        // `seated` stays undefined on purpose: that is what marks this tab an
+        // observer. TABLE_SEATED flips it if the player later takes a seat.
+      };
+
+      /* 'active' and 'lobby' both REPLACE a free slot; 'append' grows the
+         strip. Writing by index covers all three without a branch, because
+         'append' returns exactly `prev.length`. Focusing that slot is the
+         response to a user gesture, so it does not violate the no-auto-switch
+         law (10.6.2) — nothing here moves on its own. */
+      const next = [...prev];
+      next[slot.index] = observerTab;
+      setTables(next);
+      setActiveIndex(slot.index);
+    }
+  );
 
   useMasterBusSubscription('TABLE_LEFT', (payload: LeftPayload) => {
     const e = payload;
@@ -671,7 +1328,13 @@ export default function MultiTablePage() {
   const [realtimeDown, setRealtimeDown] = useState(false);
   useMasterBusSubscription('WS_DISCONNECTED', () => setRealtimeDown(true));
   useMasterBusSubscription('WS_RECONNECTING', () => setRealtimeDown(true));
-  useMasterBusSubscription('WS_CONNECTED', () => setRealtimeDown(false));
+  useMasterBusSubscription('WS_CONNECTED', () => {
+    setRealtimeDown(false);
+    // Dan 2026-08-28 bug 1: a reconnect is exactly when this client's picture
+    // of "which tables am I at" is most likely to be stale — the balancer may
+    // have moved the player while the socket was down. Re-read server truth.
+    setSeatResyncToken((n) => n + 1);
+  });
 
   // ─── Derived state ───────────────────────────────────────────────────
   const activeTableId = tables[activeIndex]?.id || '';
@@ -685,8 +1348,17 @@ export default function MultiTablePage() {
    * table had a TURN. A background table's discard / insurance / RIT offer or
    * a burning time bank left it stopped, so nothing counted down anywhere.
    */
+  /* 2026-08-29: a SIT-OUT clock is the fourth thing that has to keep counting.
+     It was not in this list, so the tab's SEAT countdown and the dock's
+     sit-out urgency would both have frozen at whatever second the last turn
+     ended — which is precisely when a sat-out player has nothing else running.
+     The most important clock on the page was the one that stopped. */
   const anyTurnLive = tables.some(
-    (t) => (t.isMyTurn && t.turnDeadlineMs !== undefined) || !!t.decision || !!t.timeBank
+    (t) =>
+      (t.isMyTurn && t.turnDeadlineMs !== undefined) ||
+      !!t.decision ||
+      !!t.timeBank ||
+      t.sitOutDeadlineMs !== undefined
   );
   useEffect(() => {
     if (!anyTurnLive) return;
@@ -739,6 +1411,17 @@ export default function MultiTablePage() {
           folded: t.folded,
           handResult: t.handResult,
           sittingOut: t.sittingOut,
+          /* Precomputed here, like every other countdown this bar renders. */
+          sitOutSecondsLeft:
+            t.sitOutDeadlineMs === undefined
+              ? undefined
+              : Math.max(0, Math.ceil((t.sitOutDeadlineMs - nowMs) / 1000)),
+          /* OBSERVING vs PLAYING. The bar goes quiet on a table the hero holds
+             no seat at (Dan 2026-08-26). `seated` is the only server-truth
+             answer to that question -- it is set by TABLE_SEATED and by the
+             rebuild that reads table_seats WHERE left_at IS NULL, and by
+             nothing else. */
+          seated: t.seated,
           // TablePage's value is authoritative; until it lands, recover what
           // the table NAME says so the box is never unlabeled.
           gameCode: t.gameCode || gameCodeFromName(t.name),
@@ -768,9 +1451,11 @@ export default function MultiTablePage() {
    * the AUDIT-2 note in TablePage). That left one hole: a background table's
    * clock entering its final seconds made no sound at all. One-shot per turn,
    * on the rising edge of the <=6s window, for non-active tabs only — the
-   * active tab's own warning loop covers itself, and the auto-switch below
-   * yanks focus at <5s anyway. Keyed by the turn's deadline so the same turn
-   * never re-alerts, even across re-renders.
+   * active tab's own warning loop covers itself. (2026-08-28: this bell is
+   * now the player's cue to switch BY THEMSELF — the auto-switch that used
+   * to yank focus at <5s is deleted under the NO AUTO TABLE SWITCHING law
+   * below.) Keyed by the turn's deadline so the same turn never re-alerts,
+   * even across re-renders.
    */
   /**
    * Dan 2026-08-21: "THE TABLE BOX AT THE TOP OF A PAGE SHOULD START FLASHING
@@ -831,57 +1516,35 @@ export default function MultiTablePage() {
     }
   }, [tables, activeIndex, hidden]);
 
-  // ─── Action queue (batch 2, GG-style) ─────────────────────────────────
-  // The moment the hero's turn ENDS on the focused table (they acted, or the
-  // clock resolved it), advance to the table that has been waiting on them
-  // the longest — most pressing deadline first. A short beat lets the action
-  // animation land before the view moves.
-  /**
-   * Audit round 3: this edge used to be a bare boolean, so SWITCHING AWAY
-   * from a my-turn table read as "the turn ended" and the queue yanked the
-   * player 400ms after their own deliberate tab choice. The edge is now
-   * keyed by table identity: it only fires when the SAME table that was
-   * focused loses its turn while still focused - i.e. the hero actually
-   * acted (or timed out) there.
-   */
-  const prevActiveTurnRef = useRef<{ id: string; turn: boolean }>({ id: '', turn: false });
-  const queueSwitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    const active = tables[activeIndex];
-    const activeId = active?.id ?? '';
-    const activeTurn = !!active && !isLobbyTab(active) && active.isMyTurn;
-    if (
-      prevActiveTurnRef.current.turn &&
-      prevActiveTurnRef.current.id === activeId &&
-      !activeTurn &&
-      !hidden &&
-      userSettings.multi_action_queue
-    ) {
-      const next = tables
-        .filter((t, i) => i !== activeIndex && !isLobbyTab(t) && t.isMyTurn)
-        .sort((a, b) => (a.turnDeadlineMs ?? Infinity) - (b.turnDeadlineMs ?? Infinity))[0];
-      if (next) {
-        if (queueSwitchTimerRef.current) clearTimeout(queueSwitchTimerRef.current);
-        queueSwitchTimerRef.current = setTimeout(() => {
-          queueSwitchTimerRef.current = null;
-          const idx = tablesRef.current.findIndex((t) => t.id === next.id);
-          // Only move if that table is still waiting on the hero.
-          if (idx !== -1 && tablesRef.current[idx].isMyTurn) {
-            setIsTransitioning(true);
-            setActiveIndex(idx);
-            setTimeout(() => setIsTransitioning(false), 320);
-          }
-        }, 400);
-      }
-    }
-    prevActiveTurnRef.current = { id: activeId, turn: activeTurn };
-  }, [tables, activeIndex, hidden, userSettings.multi_action_queue]);
-  useEffect(
-    () => () => {
-      if (queueSwitchTimerRef.current) clearTimeout(queueSwitchTimerRef.current);
-    },
-    []
-  );
+  /* ═══════════════════════════════════════════════════════════════════════
+     NO AUTO TABLE SWITCHING — LAW (Dan 2026-08-28, binding, NO EXCEPTIONS)
+
+     Verbatim: "YOU CAN NEVER EVER AUTO CHANGE TABLES FOR A USER, THEY MUST
+     CHANGE IT BY THEM SELF."
+
+     TWO features used to move `activeIndex` without a user gesture, and both
+     are deleted under this law:
+
+       1. The URGENCY AUTO-SWITCH (setting key multi underscore auto_switch):
+          when any background table's turn clock fell under 5 seconds, the
+          view yanked itself to that table. This is the behaviour Dan
+          reported: "IT AUTO CHANGES TABLES, OR AUTO SWIPES TO THE TABLE
+          RUNNING OUT OF TIME... THAT CAN NOT HAPPEN."
+       2. The ACTION QUEUE (setting key multi underscore action_queue): the
+          moment the hero's turn ended on the focused table, the view
+          advanced itself to the next table waiting on them.
+
+     Both settings' DB columns still exist but are DEAD; the toggles are gone
+     from the settings panel and their keys are tombstoned in
+     useUserTableSettings. DO NOT WIRE THEM BACK. Every SIGNAL survives — the
+     background-urgency bell, the tab flash + haptics at 5s, the browser-tab
+     retitle. Only the MOVE is forbidden: `setActiveIndex` may only ever run
+     from the player's own gesture (tab tap, swipe, Take Seat, opening or
+     closing a tab, restoring their own last-active tab at mount) or the
+     index-bounds repair when the tables array shrinks.
+
+     tests/no-auto-table-switch.law.test.ts pins this file to the rule.
+     ═══════════════════════════════════════════════════════════════════════ */
 
   // ─── Backgrounded-browser alerts (batch 2) ────────────────────────────
   // Everything above assumes the app is visible. When the BROWSER tab is
@@ -898,8 +1561,8 @@ export default function MultiTablePage() {
   }, [userSettings.multi_desktop_alerts]);
   useEffect(() => {
     const iconLink = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    const originalTitle = document.title;
-    const originalIcon = iconLink?.href ?? null;
+    let originalTitle = document.title;
+    let originalIcon = iconLink?.href ?? null;
     const BADGE_ICON =
       'data:image/svg+xml,' +
       encodeURIComponent(
@@ -908,12 +1571,35 @@ export default function MultiTablePage() {
           '<circle cx="78" cy="24" r="20" fill="#ef4444"/></svg>'
       );
 
+    /**
+     * AUDIT 2026-08-25 — THIS OWNED THE PAGE TITLE FOR THE WHOLE SESSION.
+     *
+     * The `else` branch ran once a second and assigned
+     * `document.title = originalTitle` unconditionally, where `originalTitle`
+     * is whatever the title happened to be when this component mounted. This
+     * container is mounted ONCE at the app root by PersistentTableLayer and
+     * never unmounts, so from that moment on every other page's title (and the
+     * favicon) was overwritten every second, everywhere in the app. Any route
+     * or component that sets a title was silently reverted within 1000ms.
+     *
+     * The restore now only happens when THIS effect is the one that changed
+     * them, which is what "restore" was supposed to mean.
+     */
+    let badged = false;
+
     const apply = () => {
       const live = tablesRef.current.filter((t) => !isLobbyTab(t));
       const urgent = live
         .filter((t) => t.isMyTurn)
         .sort((a, b) => (a.turnDeadlineMs ?? Infinity) - (b.turnDeadlineMs ?? Infinity))[0];
       if (document.visibilityState === 'hidden' && urgent) {
+        // Remember what the page was called just before WE renamed it, so the
+        // restore hands back the CURRENT title rather than a mount-time one.
+        if (!badged) {
+          originalTitle = document.title;
+          originalIcon = iconLink?.href ?? originalIcon;
+          badged = true;
+        }
         document.title = `YOUR TURN - ${urgent.name}`;
         if (iconLink) iconLink.href = BADGE_ICON;
         if (
@@ -937,7 +1623,8 @@ export default function MultiTablePage() {
             /* notification construction can throw on some platforms */
           }
         }
-      } else {
+      } else if (badged) {
+        badged = false;
         document.title = originalTitle;
         if (iconLink && originalIcon) iconLink.href = originalIcon;
       }
@@ -948,8 +1635,10 @@ export default function MultiTablePage() {
     return () => {
       clearInterval(iv);
       document.removeEventListener('visibilitychange', apply);
-      document.title = originalTitle;
-      if (iconLink && originalIcon) iconLink.href = originalIcon;
+      if (badged) {
+        document.title = originalTitle;
+        if (iconLink && originalIcon) iconLink.href = originalIcon;
+      }
     };
   }, []);
 
@@ -973,7 +1662,12 @@ export default function MultiTablePage() {
         case 'sitout': {
           const res = await setSitOut(tabId, true);
           if (res?.success) {
-            toast.info('Sitting Out', 2500);
+            /* SAY WHAT WAS JUST STARTED. "Sitting Out" alone omits the only
+               part with a consequence: on a cash table this begins a
+               five-minute clock that ends with the seat gone and the stack
+               cashed out. The tab now carries the countdown, but the toast is
+               what the player is looking at in the moment they tap. */
+            toast.info(sitOutStartedMessage(tablesRef.current, tabId), 3500);
           } else {
             toast.error(res?.error || 'Could Not Sit Out', 4000);
           }
@@ -997,12 +1691,37 @@ export default function MultiTablePage() {
   // One tap instead of four trips through per-table menus. Direct engine
   // calls, never the per-table SIT_OUT bus action - that opens each table's
   // modal, which is exactly the ceremony this shortcut exists to skip.
+  /**
+   * What a single Sit Out just committed the player to, in one sentence.
+   *
+   * A tournament seat is held indefinitely and blinded off; a cash seat is on a
+   * five-minute clock and is cashed out at the end of it. Those are different
+   * enough decisions that one toast cannot describe both.
+   */
+  const sitOutStartedMessage = (list: TableInstance[], tabId: string): string => {
+    const t = list.find((x) => x.id === tabId);
+    if (t && t.isTournament) return 'Sitting Out. You Will Be Blinded Off.';
+    return 'Sitting Out. Your Seat Is Held For Up To 5 Minutes.';
+  };
+
   const handleSitOutAll = useCallback(async () => {
     const live = tablesRef.current.filter((t) => !isLobbyTab(t) && t.seated);
     if (live.length === 0) return;
     const results = await Promise.all(live.map((t) => setSitOut(t.id, true)));
     const ok = results.filter((r) => r?.success).length;
-    if (ok > 0) toast.info(`Sitting Out At ${ok} ${ok === 1 ? 'Table' : 'Tables'}`, 3000);
+    if (ok > 0) {
+      /* One tap can start SIX five-minute eviction clocks. Saying only how many
+         tables were sat out leaves out the half that costs money. */
+      const cashCount = live.filter((t, i) => results[i]?.success && !t.isTournament).length;
+      toast.info(
+        cashCount > 0
+          ? `Sitting Out At ${ok} ${ok === 1 ? 'Table' : 'Tables'}. ${cashCount} Cash ${
+              cashCount === 1 ? 'Seat Is' : 'Seats Are'
+            } Held For Up To 5 Minutes.`
+          : `Sitting Out At ${ok} ${ok === 1 ? 'Table' : 'Tables'}`,
+        4500
+      );
+    }
     if (ok < live.length) toast.error('Some Tables Could Not Sit Out', 4000);
   }, [toast]);
 
@@ -1035,14 +1754,54 @@ export default function MultiTablePage() {
   } | null>(null);
   const [showSessionAgg, setShowSessionAgg] = useState(false);
 
+  /* Dan 2026-08-30: "MULTI TABLE PROFIT TRACKING" is a switch the player owns.
+     OFF kills the chip and the aggregation loop entirely; ON restores it.
+     Persisted per device - a preference, not account data. Also togglable by
+     right-click / long-press on the chip itself. */
+  const [profitTracking, setProfitTracking] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('ca-multi-table-profit-tracking') !== 'off';
+    } catch {
+      return true;
+    }
+  });
+  const toggleProfitTracking = useCallback(() => {
+    setProfitTracking((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('ca-multi-table-profit-tracking', next ? 'on' : 'off');
+      } catch {
+        /* preference only */
+      }
+      return next;
+    });
+    setShowSessionAgg(false);
+  }, []);
+  /* Long-press (mobile) support for turning the chip off. */
+  const pnlPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
-    if (hidden || tables.length < 2) {
+    /* Dan 2026-08-28: the P&L tracker "should only appear once a user is
+       playing MULTIPLE tables. It should never engage while playing 1 table."
+       The old gate counted `tables.length`, which includes LOBBY tabs — one
+       real table plus the lobby tab read as 2 and the chip appeared during
+       single-table play. Count actual game tables only, here AND inside
+       compute() (a tab closing between ticks must retire the chip too). */
+    const liveTableCount = tables.filter((t) => !isLobbyTab(t)).length;
+    /* Dan 2026-08-30: "THE PROFIT COUNTER NUMBER SHOULD NEVER WORK OR ENGAGE
+       OR TRACK ANYTHING FOR TOURNAMENTS, THIS IS A 'CASHGAME ONLY FEATURE'."
+       Tournament tables are excluded from the aggregation entirely - a
+       tournament stack is not a cash result, and mixing the two printed a
+       meaningless number. The chip therefore renders only when at least one
+       CASH table is being tracked, and the whole feature obeys the
+       Multi Table Profit Tracking switch. */
+    if (hidden || liveTableCount < 2 || !profitTracking) {
       setSessionAgg(null);
       return;
     }
     const compute = () => {
-      const live = tablesRef.current.filter((t) => !isLobbyTab(t));
-      if (live.length === 0) {
+      const live = tablesRef.current.filter((t) => !isLobbyTab(t) && !t.isTournament);
+      if (live.length < 1 || tablesRef.current.filter((t) => !isLobbyTab(t)).length < 2) {
         setSessionAgg(null);
         return;
       }
@@ -1074,7 +1833,9 @@ export default function MultiTablePage() {
     compute();
     const iv = setInterval(compute, 5000);
     return () => clearInterval(iv);
-  }, [hidden, tables.length]);
+    // `tables`, not `tables.length`: a lobby tab converting into a game table
+    // keeps the length constant while the live-table count changes.
+  }, [hidden, tables, profitTracking]);
 
   // ─── Batch 4: playable tile view ──────────────────────────────────────
   // Fold / Check / Call directly from a 2x2 tile - true simultaneous play on
@@ -1085,6 +1846,20 @@ export default function MultiTablePage() {
   // so a misclick can never throw away a free hand.
   const tileActionLockRef = useRef<Map<string, number>>(new Map());
   const [tilePending, setTilePending] = useState<Record<string, boolean>>({});
+  /**
+   * Variant A (Dan 2026-08-30): per-tile raise slider draft. A key present =
+   * the slider row is open on that tile, value = the raise-TO amount being
+   * dragged. Opened by the Raise key, closed by Confirm/any action/turn end.
+   */
+  const [tileRaiseDraft, setTileRaiseDraft] = useState<Record<string, number>>({});
+  const closeTileRaise = useCallback((tblId: string) => {
+    setTileRaiseDraft((p) => {
+      if (!(tblId in p)) return p;
+      const n = { ...p };
+      delete n[tblId];
+      return n;
+    });
+  }, []);
   const handleTileAction = useCallback(
     async (tblId: string, action: 'fold' | 'check' | 'call' | 'raise', amount?: number) => {
       const now = Date.now();
@@ -1107,10 +1882,30 @@ export default function MultiTablePage() {
           delete n[tblId];
           return n;
         });
+        closeTileRaise(tblId);
       }
     },
-    [user?.id, toast]
+    [user?.id, toast, closeTileRaise]
   );
+
+  // Close any open tile raise slider the moment that table's turn ends —
+  // the hand moved on, so a stale draft must not linger over the next turn.
+  useEffect(() => {
+    setTileRaiseDraft((p) => {
+      const openIds = Object.keys(p);
+      if (openIds.length === 0) return p;
+      let changed = false;
+      const n = { ...p };
+      for (const id of openIds) {
+        const t = tables.find((x) => x.id === id);
+        if (!t || !t.isMyTurn) {
+          delete n[id];
+          changed = true;
+        }
+      }
+      return changed ? n : p;
+    });
+  }, [tables]);
 
   // ─── Batch 3: drag-to-reorder tabs ────────────────────────────────────
   // The active TABLE follows the reorder (identity, not index).
@@ -1131,13 +1926,61 @@ export default function MultiTablePage() {
   const handleTabSelect = useCallback(
     (tabId: string) => {
       const idx = tables.findIndex((t) => t.id === tabId);
-      if (idx !== -1 && idx !== activeIndex) {
+      if (idx === -1) return;
+      /**
+       * `idx !== activeIndex` USED TO GATE THIS WHOLE BODY, and that was wrong
+       * once the bar could be tapped from off-route (round 3).
+       *
+       * Off-route the container is display:none, so tapping the tab that is
+       * ALREADY `activeIndex` is not a no-op from the player's point of view —
+       * it is "take me back to my table", and the gate made that one tab dead.
+       * The tab a player is most likely to press is the one they were last on.
+       * So: only the transition animation is skipped for a same-tab press; the
+       * navigation still happens.
+       */
+      if (idx !== activeIndex) {
         setIsTransitioning(true);
         setActiveIndex(idx);
-        setTimeout(() => setIsTransitioning(false), 320);
+        trackedTimeout(() => setIsTransitioning(false), 320);
       }
+
+      // Keep the address bar on the table the player is looking at (Dan
+      // 2026-08-28). A tab switch used to leave the URL naming the OLD
+      // table, so the next route arrival at that stale URL painted the
+      // wrong table first, and browser Back yanked the player to a tab
+      // they had already left. `replace` so switching tabs does not pile
+      // history entries.
+      const target = tables[idx];
+      if (!target) return;
+
+      if (!isLobbyTab(target)) {
+        navigate(`/table/${target.id}${tableQuery(target)}`, { replace: true });
+        return;
+      }
+
+      /**
+       * A LOBBY TAB HAS NO /table ROUTE OF ITS OWN, and on-route it does not
+       * need one — the container is already visible, so switching to it is
+       * pure state.
+       *
+       * OFF-ROUTE it needs one, or the tab is unreachable: the container only
+       * un-hides for a /table/:tableId URL. Round 3 borrows the URL of a real
+       * open table and then overrides the index the route effect derives from
+       * it, via `pendingTabIndexRef`. Without that override the layout effect
+       * would immediately snap `activeIndex` to the borrowed table and the
+       * lobby tab would flash past. Nothing is minted: the id in the URL
+       * belongs to a table the player genuinely has open, so a reload lands
+       * them on that table rather than on a phantom.
+       */
+      if (!hidden) return;
+      const host =
+        tables.find((t) => t.id === lastActiveTableIdRef.current && !isLobbyTab(t)) ??
+        tables.find((t) => !isLobbyTab(t));
+      if (!host) return; // lobby tabs only: nothing to borrow, nothing to do
+      pendingTabIndexRef.current = idx;
+      navigate(`/table/${host.id}${tableQuery(host)}`, { replace: true });
     },
-    [tables, activeIndex]
+    [tables, activeIndex, trackedTimeout, navigate, hidden]
   );
 
   // ─── Batch 3: quick-join sheet on "+" ─────────────────────────────────
@@ -1153,6 +1996,14 @@ export default function MultiTablePage() {
     max: number;
     /** Short game code, shown on the row and carried onto the new tab. */
     code: string;
+    /**
+     * Why this row is where it is ("Favourite", "Similar Game" ...). Rendered on
+     * the row so the ORDER explains itself - a ranked list whose reasoning is
+     * invisible just looks like a random list.
+     */
+    reason?: string;
+    /** Ranking tier, used to flag favourites in the UI. */
+    tier?: string;
   }
   const [quickJoin, setQuickJoin] = useState<{
     open: boolean;
@@ -1163,6 +2014,111 @@ export default function MultiTablePage() {
     () => setQuickJoin((q) => (q.open ? { ...q, open: false } : q)),
     []
   );
+
+  /**
+   * Escape closes the two sheets this page owns. Both already had a backdrop,
+   * so they were dismissible by tap and by nothing else — and the keyboard
+   * handler further down deliberately swallows 1-9 and Tab while the container
+   * is visible, so a keyboard user with the quick-join sheet open had no key
+   * that closed it and every number key switched the table behind it instead.
+   * Registered in capture so it runs before the table-switching handler.
+   */
+  useEffect(() => {
+    if (!quickJoin.open && !showSessionAgg) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      closeQuickJoin();
+      setShowSessionAgg(false);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [quickJoin.open, showSessionAgg, closeQuickJoin]);
+
+  /**
+   * How long "Finding Games…" is allowed to sit there before we give up and
+   * send the player to the lobby tab instead.
+   *
+   * 2026-08-23, measured on production: the two lookups below occasionally
+   * never settle AND never reach the network — no `/rest/v1/tables` request is
+   * issued at all, so this is not a slow query, it is the client's token path
+   * stalling before a request is built. Whatever the cause, an await that
+   * neither resolves nor rejects leaves the sheet spinning forever, and a
+   * permanent "Finding Games…" is indistinguishable from the "+" being broken.
+   * That is precisely how this was reported.
+   *
+   * Every other failure mode here already falls back to the lobby tab. A stall
+   * now does the same, so the button always takes you somewhere. 6s is well
+   * clear of the honest worst case: after the partial index landed the real
+   * query returns in 139-232ms.
+   */
+  const QUICK_JOIN_TIMEOUT_MS = 6000;
+
+  /**
+   * How many of the club's open cash tables Quick Join reads before ranking.
+   *
+   * Was 30, with no ORDER BY — see the note at the query. The lobby fetches 200
+   * for the same board; this matches it so the sheet and the lobby cannot
+   * disagree about what exists, and it is still one indexed read
+   * (idx_tables_open_by_club, 0.38ms).
+   */
+  const QUICK_JOIN_CANDIDATE_LIMIT = 200;
+
+  /**
+   * Resolve to `null` rather than hanging. Deliberately does not reject: the
+   * callers treat null as "no data", which is the same path a failed query
+   * already takes.
+   */
+  /* PromiseLike, not Promise: a PostgrestFilterBuilder is a thenable that only
+     issues the request when it is awaited, and it has no .catch/.finally. */
+  const withTimeout = useCallback(async <T,>(work: PromiseLike<T>): Promise<T | null> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        work,
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), QUICK_JOIN_TIMEOUT_MS);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }, []);
+
+  /**
+   * UNION LAW (Dan 2026-08-23) — "if I'm playing inside a club, SHARK CLUB or
+   * MIDWAY CLUB, and I click the + button and go to the lobby, it should never
+   * ever ever take me to the MIDWAY UNION lobby."
+   *
+   * It did. `homeClubId` was `tables.club_id` verbatim, and a union's games
+   * hang off the union's own HUB CLUB — so every union table reported the UNION
+   * as its club. The lobby tab then rendered <ClubHomePage> for the union,
+   * complete with Union Bank / rake treasury / clubs wallet, to players, agents
+   * and super agents who have no business seeing any of it.
+   *
+   * Every write to homeClubId now goes through here. `currentClubId` is the
+   * club the player ENTERED THROUGH (ClubHomePage stamps it on mount) — the
+   * club their chips and rake belong to — and it wins over the table's own
+   * club_id precisely so a union table cannot drag them into the union.
+   */
+  const commitHomeClub = useCallback(async (tableClubId: string | null) => {
+    const resolved = await resolveLobbyClubId({
+      viewerClubId: useUserStore.getState().currentClubId,
+      tableClubId,
+    });
+    // null means "nothing survived the union filter" — the lobby tab falls back
+    // to <HomePage>, which is a correct destination. Never store the union.
+    //
+    // But never DOWNGRADE either: once a real club is known, a later call with
+    // a cold cache must not blank it back to null. Both call sites can fire
+    // before the table lookup lands, and "no answer yet" is not "no club".
+    if (resolved === null && homeClubIdRef.current !== null) return homeClubIdRef.current;
+    if (homeClubIdRef.current !== resolved) {
+      homeClubIdRef.current = resolved;
+      setHomeClubId(resolved);
+    }
+    return resolved;
+  }, []);
 
   const handleAddTable = useCallback(async () => {
     if (tables.length >= MAX_TABLES) {
@@ -1183,35 +2139,39 @@ export default function MultiTablePage() {
      * club to pick from.
      */
     let club = homeClubIdRef.current;
-    if (!club) {
+    let tableClubId: string | null = null;
+    {
       const active = tablesRef.current.filter((t) => !isLobbyTab(t));
       const cached = active.map((t) => clubLookupCacheRef.current.get(t.id)).find(Boolean);
       if (cached) {
-        club = cached;
+        tableClubId = cached;
       } else if (active.length > 0) {
         setQuickJoin({ open: true, loading: true, rows: [] });
         try {
-          const { data } = await supabase
-            .from('tables')
-            .select('id, club_id')
-            .in(
-              'id',
-              active.map((t) => t.id)
-            );
+          const res = await withTimeout(
+            supabase
+              .from('tables')
+              .select('id, club_id')
+              .in(
+                'id',
+                active.map((t) => t.id)
+              )
+          );
+          const data = res?.data;
           for (const row of (data ?? []) as { id: string; club_id: string | null }[]) {
             if (row.club_id) clubLookupCacheRef.current.set(row.id, row.club_id);
           }
-          club = active.map((t) => clubLookupCacheRef.current.get(t.id)).find(Boolean) ?? null;
+          tableClubId =
+            active.map((t) => clubLookupCacheRef.current.get(t.id)).find(Boolean) ?? null;
         } catch {
-          club = null;
+          tableClubId = null;
         }
       }
-      if (club) {
-        homeClubIdRef.current = club;
-        setHomeClubId(club);
-      }
+      // UNION LAW: the table's club_id is the UNION on any union game, so it is
+      // a candidate here, never the answer. See commitHomeClub.
+      if (!club) club = await commitHomeClub(tableClubId);
     }
-    if (!club) {
+    if (!club && !tableClubId) {
       // Genuinely nothing to pick from — no club behind any open table.
       // Dan 2026-08-15: was `navigate('/?returnToMulti=true')` (dead param,
       // container unmounted). The lobby TAB keeps every game mounted.
@@ -1223,51 +2183,192 @@ export default function MultiTablePage() {
     try {
       const openIds = new Set(tablesRef.current.map((t) => t.id));
       const activeStakes = tablesRef.current[activeIndexRef.current]?.stakes || '';
-      const { data } = await supabase
-        .from('tables')
-        .select(
-          'id, name, game_variant, game_type, small_blind, big_blind, max_players, current_players, status'
-        )
-        .eq('club_id', club)
-        .is('tournament_id', null)
-        .neq('status', 'closed')
-        // Audit round 3: soft-deleted tables kept their status and listed as
-        // joinable. NULL must count as not-deleted, hence NOT IS TRUE.
-        .not('is_deleted', 'is', true)
-        .limit(30);
-      const rows: QuickJoinRow[] = (data ?? [])
-        .filter(
-          (r) =>
-            !openIds.has(r.id as string) &&
-            (Number(r.current_players) || 0) < (Number(r.max_players) || 0)
-        )
-        .map((r) => ({
+      const activeTableId = tablesRef.current[activeIndexRef.current]?.id || null;
+      /* Dan 2026-08-23: "quick join should be users favorite games, or similar
+         games to the one they are playing."
+
+         The favourites read runs ALONGSIDE the table list, not before it, and
+         through the same withTimeout. Ordering these would put a second network
+         round trip in front of the sheet, and a favourites table that is slow or
+         empty must only cost you the ORDER - never leave you looking at
+         "Finding Games..." forever, which is the failure this sheet already had
+         once (#526). A null here degrades to an unfavourited ranking. */
+      /* ── THE SCOPE BUG THAT EMPTIED THIS SHEET (Dan 2026-08-26) ───────────
+         "WHEN YOU CLICK THE + BUTTON ON THE GAME PAGE, AND GET THE QUICK JOIN
+          POP UP, THATS NOT WORKING."
+
+         It said "No Open Seats Right Now" while the club had 44 open cash
+         tables and 25 of them had a free seat, including three other 1/2 PLO5
+         games — the exact match the player was asking for.
+
+         The cause is that this query scoped to `club`, which is
+         `commitHomeClub`'s answer: deliberately NEVER a union, because sending
+         a player into the union hub's lobby would show them the union treasury
+         (UNION LAW, above). That rule is right for NAVIGATION and wrong as a
+         DATA SCOPE. Every one of Midway's tables carries
+         `club_id = <Midway Union>`, so filtering on the player's entry club
+         matched nothing at all, every time, for every union player. An empty
+         result and "there are no seats" are not the same sentence, and this
+         sheet has been saying the second one on behalf of the first.
+
+         Scoping to BOTH ids fixes it without touching UNION LAW: the union hub
+         (from `tables.club_id`) is where the games live, the entry club is
+         where a standalone club's games live, and RLS still decides what this
+         viewer may see either way. `club` continues to be the navigation
+         answer and is not used for scoping any more. */
+      const scopeClubIds = Array.from(new Set([tableClubId, club].filter(Boolean) as string[]));
+
+      const [res, favIds] = await Promise.all([
+        withTimeout(
+          supabase
+            .from('tables')
+            .select(
+              'id, name, game_variant, game_type, small_blind, big_blind, max_players, current_players, status'
+            )
+            .in('club_id', scopeClubIds)
+            .is('tournament_id', null)
+            .neq('status', 'closed')
+            // Audit round 3: soft-deleted tables kept their status and listed as
+            // joinable. NULL must count as not-deleted, hence NOT IS TRUE.
+            .not('is_deleted', 'is', true)
+            /* ORDERED, AND NOT THIRTY. `.limit(30)` with no `.order()` is a
+               lottery: PostgREST returns whatever rows the scan reaches first,
+               so on this 44-table club fourteen tables were invisible to Quick
+               Join at random — and if the ones it missed were the player's own
+               stakes, the sheet reported them as not existing. It also lost the
+               ACTIVE table's row often enough to matter, and without that row
+               `currentTable.variant` is null, which files every candidate under
+               'other' and quietly disables the entire same-game ranking.
+               Ordering by seats free first, then by table id for determinism,
+               and lifting the cap to the lobby's own 200 makes the fetch cover
+               a real club instead of sampling it. */
+            .order('current_players', { ascending: false })
+            .order('id', { ascending: true })
+            .limit(QUICK_JOIN_CANDIDATE_LIMIT)
+        ),
+        withTimeout(fetchFavoriteTableIds(user?.id)).catch(() => null),
+      ]);
+      if (res === null) {
+        // Stalled, not empty. "No Open Seats Right Now" would be a lie and a
+        // spinner would be worse: take the same exit as a failed query.
+        setQuickJoin({ open: false, loading: false, rows: [] });
+        masterBus.emit('OPEN_LOBBY_TAB', {});
+        return;
+      }
+      const all = res.data ?? [];
+      /* The table you are AT, read from this same result set rather than from
+         the open tab. TableInstance carries only a stakes label, so the variant -
+         the thing that decides whether another game is "similar" - is not on it.
+         Guessing it from the label is how a PLO player got offered Hold'em. */
+      type CandidateRow = (typeof all)[number];
+      let activeRow: CandidateRow | undefined = activeTableId
+        ? all.find((r) => r.id === activeTableId)
+        : undefined;
+
+      /* THE ACTIVE ROW IS LOAD-BEARING, SO ASK FOR IT DIRECTLY IF IT IS MISSING.
+         Everything below measures candidates AGAINST this row: without its
+         `game_variant` every table falls into the 'other' tier and the entire
+         same-game / same-stakes ranking silently switches itself off. The
+         200-row fetch above will contain it in any ordinary club, but a union
+         hub running more than 200 open tables is exactly the shape this
+         platform has, and "usually present" is not a basis for a ranking.
+         One indexed lookup by primary key, on the rare miss only, and a failure
+         here still degrades to the label parse rather than breaking the sheet. */
+      if (activeTableId && !activeRow) {
+        const one = await withTimeout(
+          supabase
+            .from('tables')
+            .select(
+              'id, name, game_variant, game_type, small_blind, big_blind, max_players, current_players, status'
+            )
+            .eq('id', activeTableId)
+            .maybeSingle()
+        ).catch(() => null);
+        if (one?.data) activeRow = one.data as CandidateRow;
+      }
+
+      const activeVariant = (activeRow?.game_variant as string | undefined) ?? null;
+      const currentTable = {
+        id: activeTableId,
+        variant: activeVariant,
+        bigBlind:
+          activeRow?.big_blind != null
+            ? Number(activeRow.big_blind)
+            : bigBlindFromStakesLabel(activeStakes, activeVariant),
+      };
+
+      /* A MISSING SEAT CAP IS NOT A FULL TABLE. This read
+         `current_players < (max_players || 0)`, so any row whose `max_players`
+         was null or 0 evaluated `0 < 0` and was dropped as though it were
+         full — a data gap presenting as "no seats". Unknown capacity now keeps
+         the row: the seat is validated on join anyway, and offering a table
+         that turns out to be full is recoverable in one tap, while hiding a
+         table that has seats is the bug being fixed here. */
+      const hasRoom = (r: { current_players?: unknown; max_players?: unknown }) => {
+        const cap = Number(r.max_players);
+        if (!Number.isFinite(cap) || cap <= 0) return true;
+        return (Number(r.current_players) || 0) < cap;
+      };
+
+      const ranked = rankQuickJoinTables(
+        all.filter(hasRoom).map((r) => ({
           id: r.id as string,
-          name: (r.name as string) || 'Table',
-          stakes:
-            r.small_blind != null && r.big_blind != null ? `${r.small_blind}/${r.big_blind}` : '',
+          name: formatGameTitle(r.name as string) || 'Table',
+          variant: (r.game_variant as string | undefined) ?? null,
+          smallBlind: r.small_blind != null ? Number(r.small_blind) : null,
+          bigBlind: r.big_blind != null ? Number(r.big_blind) : null,
           players: Number(r.current_players) || 0,
-          max: Number(r.max_players) || 0,
+          maxPlayers: Number(r.max_players) || 0,
+        })),
+        {
+          favoriteTableIds: favIds ?? [],
+          currentTable,
+          // Tables already open in a tab are not an offer to open a tab.
+          excludeIds: Array.from(openIds),
+          limit: 5,
+        }
+      );
+
+      const byId = new Map(all.map((r) => [r.id as string, r]));
+      const rows: QuickJoinRow[] = ranked.map((t) => {
+        const r = byId.get(t.id);
+        return {
+          id: t.id,
+          name: t.name,
+          /* THE SAME TABLE MUST NOT READ TWO WAYS. This interpolated the raw
+             columns, so a table the lobby lists as "0.50/1" appeared here as
+             "0.5/1", and a FIXED LIMIT table -- whose stakes ARE its bet sizes,
+             not its blinds -- was labelled with its blinds and so read as half
+             the game it is. `stakesLabel` is the formatter the lobby already
+             uses (lobbyEntries.ts:19); this is now the same call. The string
+             also travels onto the new tab as `?stakes=`, so a wrong label here
+             became a wrong label on the table itself. */
+          stakes:
+            t.smallBlind != null && t.bigBlind != null
+              ? stakesLabel(
+                  Number(t.smallBlind),
+                  Number(t.bigBlind),
+                  (r?.game_variant as string | undefined) ?? null
+                )
+              : '',
+          players: Number(t.players) || 0,
+          max: Number(t.maxPlayers) || 0,
           code: gameCode({
-            variant: r.game_variant as string | undefined,
-            isTournament: r.game_type === 'tournament',
-            maxPlayers: Number(r.max_players) || undefined,
+            variant: (r?.game_variant as string | undefined) ?? undefined,
+            isTournament: r?.game_type === 'tournament',
+            maxPlayers: Number(t.maxPlayers) || undefined,
           }),
-        }))
-        .sort((a, b) => {
-          const sameA = a.stakes === activeStakes ? 0 : 1;
-          const sameB = b.stakes === activeStakes ? 0 : 1;
-          if (sameA !== sameB) return sameA - sameB;
-          return b.players - a.players; // fullest first - games, not ghost towns
-        })
-        .slice(0, 5);
+          reason: t.reason,
+          tier: t.tier,
+        };
+      });
       setQuickJoin((q) => (q.open ? { open: true, loading: false, rows } : q));
     } catch {
       // Query failed - fall back to the lobby tab rather than a dead sheet.
       setQuickJoin({ open: false, loading: false, rows: [] });
       masterBus.emit('OPEN_LOBBY_TAB', {});
     }
-  }, [tables.length, notifyCapReached]);
+  }, [tables.length, notifyCapReached, withTimeout, commitHomeClub, user?.id]);
 
   const handleQuickJoinPick = useCallback(
     (row: QuickJoinRow) => {
@@ -1318,6 +2419,11 @@ export default function MultiTablePage() {
    * Resolve which club the open tables belong to, so leaving lands the player
    * in that club's lobby. Cached per table id; the value is sticky so closing
    * the last tab still knows where "home" was.
+   *
+   * UNION LAW (Dan 2026-08-23): this used to store `tables.club_id` RAW, and a
+   * union game's club_id is the union's hub club — so a SHARK CLUB player at a
+   * Midway Union table got the MIDWAY UNION lobby, union skins and all. The
+   * table's club is now only a candidate; commitHomeClub decides.
    */
   useEffect(() => {
     const unresolved = tables
@@ -1334,14 +2440,13 @@ export default function MultiTablePage() {
         for (const row of data as { id: string; club_id: string | null }[]) {
           if (row.club_id) clubLookupCacheRef.current.set(row.id, row.club_id);
         }
-        const firstKnown = tables
-          .filter((t) => !isLobbyTab(t))
-          .map((t) => clubLookupCacheRef.current.get(t.id))
-          .find(Boolean);
-        if (firstKnown && homeClubIdRef.current !== firstKnown) {
-          homeClubIdRef.current = firstKnown;
-          setHomeClubId(firstKnown);
-        }
+        const firstKnown =
+          tables
+            .filter((t) => !isLobbyTab(t))
+            .map((t) => clubLookupCacheRef.current.get(t.id))
+            .find(Boolean) ?? null;
+        if (cancelled) return;
+        await commitHomeClub(firstKnown);
       } catch {
         /* lobby routing falls back to the pre-lobby */
       }
@@ -1349,7 +2454,7 @@ export default function MultiTablePage() {
     return () => {
       cancelled = true;
     };
-  }, [tables]);
+  }, [tables, commitHomeClub]);
 
   /** Where to send a player who has no tables left open. */
   const goToLobby = useCallback(() => {
@@ -1369,6 +2474,109 @@ export default function MultiTablePage() {
     [updateTableInfo]
   );
 
+  /**
+   * ─── PRUNE THE PER-TABLE CACHES WHEN A TAB CLOSES (audit 2026-08-25) ──────
+   *
+   * `urgentAlertedRef` and `prevTurnMapRef` are already pruned on every change
+   * (their effects do it inline). Four more maps keyed by table id were not,
+   * and this container never unmounts, so they only ever grew: every table the
+   * player opened and closed in the session left a closure, a timestamp, a
+   * deadline and a club id behind for the rest of that session.
+   *
+   * Small individually. The one that matters is `tableInfoCbRef`, because it
+   * retains a callback closing over `updateTableInfo` for a table that is gone,
+   * and `notifiedDeadlineRef`, which is consulted on a 1s interval forever.
+   */
+  useEffect(() => {
+    const liveIds = new Set(tables.map((t) => t.id));
+    for (const id of tableInfoCbRef.current.keys()) {
+      if (!liveIds.has(id)) tableInfoCbRef.current.delete(id);
+    }
+    for (const id of notifiedDeadlineRef.current.keys()) {
+      if (!liveIds.has(id)) notifiedDeadlineRef.current.delete(id);
+    }
+    for (const id of tileActionLockRef.current.keys()) {
+      if (!liveIds.has(id)) tileActionLockRef.current.delete(id);
+    }
+    for (const id of clubLookupCacheRef.current.keys()) {
+      if (!liveIds.has(id)) clubLookupCacheRef.current.delete(id);
+    }
+    // Batch 3 mute list: a muted table that is closed and later reopened came
+    // back silently muted with no marker anyone had set in this session.
+    setMutedIds((prev) => {
+      const next = prev.filter((id) => liveIds.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [tables]);
+
+  /**
+   * Drill into a tournament INSIDE this container, never by navigating to
+   * /tournaments/:id — that route lives outside /table/:tableId, and following
+   * it collapses this whole container to display:none, taking the action bar,
+   * the tab strip and the Take Seat button with it while the player's other
+   * tables are still dealing.
+   *
+   * Three cases, same as OPEN_LOBBY_TAB: reuse a parked lobby tab, else append
+   * one, else say the cap is reached out loud. Returns whether it took the
+   * tournament — false means the caller must fall through to a real
+   * navigation rather than swallowing the tap.
+   */
+  const openTournamentTab = useCallback(
+    (target: InTabTournamentTarget): boolean => {
+      const prev = tablesRef.current;
+      const lobbyIdx = prev.findIndex(isLobbyTab);
+      if (lobbyIdx !== -1) {
+        /* FUNCTIONAL UPDATER, not `prev.map` (round 2). `prev` is a snapshot
+           read at call time, so two drill-ins landing in the same tick — a
+           double tap, or the click-capture and the route backstop both firing
+           for one navigation — meant the second overwrote the first's result
+           with stale data. `setActiveIndex` below is already an index into an
+           array whose identity cannot change here, so it stays direct. */
+        setTables((cur) => cur.map((t) => (isLobbyTab(t) ? pushLobbyTournament(t, target) : t)));
+        setActiveIndex(lobbyIdx);
+        return true;
+      }
+      if (prev.length >= MAX_TABLES) {
+        notifyCapReached('add');
+        /* Dan 2026-08-28: returning false is not a failure to handle the tap,
+           it is the honest answer. useAppNavigate falls through to a real
+           navigation so the player still reaches the tournament rather than
+           tapping a row that does nothing; the cap toast has already said
+           why no tab opened. */
+        return false;
+      }
+      setTables((cur) => [
+        ...cur,
+        {
+          id: `${LOBBY_TAB_PREFIX}${Date.now()}`,
+          name: 'Lobby',
+          stakes: '',
+          isMyTurn: false,
+          pot: 0,
+          kind: 'lobby',
+          lobbyTournamentId: target.tournamentId,
+          lobbyTournamentStack: [target],
+        },
+      ]);
+      setActiveIndex(prev.length);
+      return true;
+    },
+    [notifyCapReached]
+  );
+
+  /**
+   * ─── THE CONTEXT THE EMBEDDED LOBBY NAVIGATES THROUGH ────────────────────
+   *
+   * Provided around BOTH lobby-tab branches (the club lobby and the drilled-in
+   * tournament), so a satellite card inside TournamentDetails is intercepted
+   * exactly like a schedule row in ClubHomePage. See InTabLobbyContext.tsx for
+   * why a DOM click-capture could never do this job.
+   */
+  const inTabLobbyNav = useMemo<InTabLobbyNav>(
+    () => ({ openTournament: openTournamentTab }),
+    [openTournamentTab]
+  );
+
   // ─── In-tab lobby rendering (Dan 2026-08-19) ─────────────────────────
   // The lobby tab shows the club's real lobby. Its cash-game cards are
   // <Link to="/table/:id"> — safe, the route effect above converts this tab
@@ -1378,24 +2586,40 @@ export default function MultiTablePage() {
   // tab instead. Everything else (bottom nav, cashier, ...) passes through:
   // leaving is then an explicit user choice, and the server-truth rebuild
   // restores every seat as a tab on the way back.
-  const handleLobbyLinkCapture = useCallback((e: React.MouseEvent) => {
-    const anchor = (e.target as HTMLElement | null)?.closest?.('a');
-    if (!anchor) return;
-    const href = anchor.getAttribute('href') || '';
-    const match = href.match(/^\/tournaments\/([^/?#]+)/);
-    if (!match) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const tournamentId = match[1];
-    setTables((prev) =>
-      prev.map((t) => (isLobbyTab(t) ? { ...t, lobbyTournamentId: tournamentId } : t))
-    );
-  }, []);
+  const handleLobbyLinkCapture = useCallback(
+    (e: React.MouseEvent) => {
+      const anchor = (e.target as HTMLElement | null)?.closest?.('a');
+      if (!anchor) return;
+      const href = anchor.getAttribute('href') || '';
+      /* Round 2: parse through the SAME function useAppNavigate uses, so an
+         anchor and an imperative navigate cannot disagree about a destination.
+         It carries the query string too — this handler used to take `match[1]`
+         and drop everything after it, which is how href="/tournaments/x?watch=1"
+         arrived as a bare id and the Watch button stopped watching. */
+      const target = tournamentTargetFromTo(href);
+      if (!target) return;
+      /* Dan 2026-08-28: this used to inline its own setTables and never touch
+         activeIndex, so it and openTournamentTab could drift apart — two ways
+         to do one thing, and only one of them focused the tab it filled. One
+         implementation now. Only swallow the click if the container actually
+         took it; at the table cap the anchor is left to navigate for real. */
+      if (!openTournamentTab(target)) return;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    [openTournamentTab]
+  );
 
-  const clearLobbyTournament = useCallback((tabId: string) => {
-    setTables((prev) =>
-      prev.map((t) => (t.id === tabId ? { ...t, lobbyTournamentId: undefined } : t))
-    );
+  /**
+   * The tab's back affordance: ONE level, not all the way out (round 2).
+   *
+   * This used to blank `lobbyTournamentId` outright, so a player who went
+   * Main -> Satellite and pressed back landed in the club schedule rather than
+   * on the Main, with no way to the Main except finding it again. Browser Back
+   * could not help either: an in-tab drill-in pushes no history entry.
+   */
+  const popLobbyTournamentTab = useCallback((tabId: string) => {
+    setTables((prev) => prev.map((t) => (t.id === tabId ? popLobbyTournament(t) : t)));
   }, []);
 
   /**
@@ -1449,7 +2673,7 @@ export default function MultiTablePage() {
       >
         <div className="multi-table-page__take-seat-info">
           <span className="multi-table-page__take-seat-label">
-            {isUrgent ? 'Your turn' : liveCount > 1 ? `${liveCount} games running` : 'Game running'}
+            {isUrgent ? 'Your Turn' : liveCount > 1 ? `${liveCount} Games Running` : 'Game Running'}
           </span>
           <span className="multi-table-page__take-seat-name">{target.name}</span>
         </div>
@@ -1470,61 +2694,164 @@ export default function MultiTablePage() {
     );
   };
 
-  const renderLobbyTab = (table: TableInstance) =>
-    table.lobbyTournamentId ? (
-      // Drilling into a tournament from the in-tab lobby strands the player
-      // exactly as the lobby itself did, so the bar rides along. It renders in
-      // normal flow above the details page; the back-pill is absolute at
-      // top:10px and would otherwise sit on top of it, so that branch offsets
-      // the pill (see .multi-table-page__lobby-tab--tournament in the CSS).
-      <div className="multi-table-page__lobby-tab multi-table-page__lobby-tab--tournament">
-        {renderTakeSeatBar()}
-        <button
-          className="multi-table-page__lobby-back"
-          onClick={() => clearLobbyTournament(table.id)}
-        >
-          ← Lobby
-        </button>
-        <TournamentDetails tournamentIdOverride={table.lobbyTournamentId} />
-      </div>
-    ) : (
-      <div className="multi-table-page__lobby-tab" onClickCapture={handleLobbyLinkCapture}>
-        {renderTakeSeatBar()}
-        {homeClubId ? <ClubHomePage clubIdOverride={homeClubId} /> : <HomePage />}
-      </div>
-    );
+  /**
+   * ─── ONE BAD TABLE MUST NOT TAKE THE OTHER THREE (audit 2026-08-25) ───────
+   *
+   * Every TablePage instance rendered here was inside a <Suspense> and inside
+   * NOTHING ELSE. The only error boundary anywhere above them is the single one
+   * in PersistentTableLayer, which wraps this WHOLE container — so one render
+   * throw in one table unmounted all four at once, closing four live engine
+   * sockets and replacing the screen with a generic error page, mid-hand.
+   *
+   * A boundary per slot contains it: the table that threw shows this card, and
+   * the tables beside it keep dealing. Reload is a full page reload on purpose
+   * — the crashed subtree's state is exactly what is not trustworthy, and the
+   * server-truth rebuild (table_seats WHERE left_at IS NULL) restores every
+   * seat as a tab on the way back in. The seat itself is never at risk: it
+   * lives on the server, and this component crashing does not vacate it.
+   */
+  const tableCrashFallback = (name: string) => (
+    <div className="multi-table-page__crashed" role="alert">
+      <span className="multi-table-page__crashed-title">This Table Could Not Be Displayed</span>
+      <span className="multi-table-page__crashed-body">
+        Your Seat And Your Chips Are Safe On The Server. Your Other Tables Are Still Running.
+      </span>
+      <span className="multi-table-page__crashed-name">{formatGameTitle(name)}</span>
+      <button
+        type="button"
+        className="multi-table-page__crashed-btn"
+        onClick={() => window.location.reload()}
+      >
+        Reload
+      </button>
+    </div>
+  );
 
-  // ─── Auto-switch on urgent timer ─────────────────────────────────────
-  // 2026-08-15 fix: this compared against a hardcoded timeRemaining of 15,
-  // so it could never fire. Now derived from the real server deadline.
+  /**
+   * Dan 2026-08-28: BOTH branches are wrapped in InTabLobbyContext, and both
+   * keep `handleLobbyLinkCapture`.
+   *
+   * The context is the real guard — it catches the imperative `navigate()`
+   * calls that are how the lobby actually moves (see InTabLobbyContext.tsx).
+   * The click-capture stays as a second net for the handful of genuine
+   * `<Link to="/tournaments/:id">` anchors that still exist (GameLobbyPanel's
+   * "Open Full Tournament Lobby" and its "Return To Tournament" plaque CTA),
+   * which no navigate hook can see because react-router handles them itself.
+   * Neither one alone covers the screen; together they cover all of it.
+   *
+   * The TOURNAMENT branch used to have NO capture handler at all, which is why
+   * a satellite card inside the details page — TournamentLobbyCard, three
+   * separate navigate calls — dumped the player off the route every time.
+   */
+  const renderLobbyTab = (table: TableInstance) => {
+    const stack = table.lobbyTournamentStack ?? [];
+    const top = stack[stack.length - 1];
+    /* The back pill says where it actually goes. At depth 1 that is the club
+       lobby; deeper, it is the event you drilled in FROM, and calling that
+       "Lobby" was a lie that cost the player the page they wanted. */
+    const backLabel = stack.length > 1 ? '← Back' : '← Lobby';
+    /* No provider here any more — the whole container is inside one now (see
+       the top-level return). A second, identical provider nested inside the
+       first only invites the two to drift apart later. */
+    return (
+      <>
+        {top ? (
+          // Drilling into a tournament from the in-tab lobby strands the player
+          // exactly as the lobby itself did, so the bar rides along. It renders in
+          // normal flow above the details page; the back-pill is absolute at
+          // top:10px and would otherwise sit on top of it, so that branch offsets
+          // the pill (see .multi-table-page__lobby-tab--tournament in the CSS).
+          <div
+            className="multi-table-page__lobby-tab multi-table-page__lobby-tab--tournament"
+            onClickCapture={handleLobbyLinkCapture}
+          >
+            {renderTakeSeatBar()}
+            <button
+              className="multi-table-page__lobby-back"
+              onClick={() => popLobbyTournamentTab(table.id)}
+              aria-label={
+                stack.length > 1 ? 'Back To The Previous Tournament' : 'Back To The Lobby'
+              }
+            >
+              {backLabel}
+            </button>
+            {/* `key` on the id so switching events REMOUNTS the details page.
+                Without it React reuses the instance and TournamentDetails'
+                load effect (keyed on the id) races its own previous fetch —
+                the old event's data can land last and paint over the new one.
+                `searchOverride` carries ?watch=1 in, which is the whole reason
+                the WATCH button works in the tab again. */}
+            <TournamentDetails
+              key={top.tournamentId}
+              tournamentIdOverride={top.tournamentId}
+              searchOverride={top.search}
+            />
+          </div>
+        ) : (
+          <div className="multi-table-page__lobby-tab" onClickCapture={handleLobbyLinkCapture}>
+            {renderTakeSeatBar()}
+            {homeClubId ? <ClubHomePage clubIdOverride={homeClubId} /> : <HomePage />}
+          </div>
+        )}
+      </>
+    );
+  };
+
+  /* The urgency auto-switch that lived here is DELETED — see the NO AUTO
+     TABLE SWITCHING law above. The urgency ALERT (bell, tab flash, haptics,
+     browser-tab title) lives on; the focus yank does not. */
+
+  /**
+   * KEEP `activeIndex` INSIDE THE ARRAY (audit 2026-08-25).
+   *
+   * Six places move `activeIndex` and five places shorten `tables`, each with
+   * its own index arithmetic; two of them landing in the same commit phase can
+   * leave the index past the end. When that happens `tables[activeIndex]` is
+   * undefined, `activeTableId` is '', NO slot matches `idx === activeIndex`, so
+   * every slot takes the `display: none` branch — a completely black screen
+   * with a working tab bar above it and no error anywhere. Nothing else in the
+   * file would ever recover from it, because nothing else reads the pair
+   * together. One clamp, after the fact, costs nothing and makes that state
+   * unreachable.
+   */
   useEffect(() => {
-    // Dan 2026-08-19: only auto-switch the active TAB while the player is
-    // actually on /table/*. When they browse elsewhere the global dock
-    // surfaces the alert instead — yanking the route out from under them
-    // mid-cashier would be hostile.
-    if (hidden) return;
-    // Batch 2: the yank is now the player's choice (defaults on).
-    if (!userSettings.multi_auto_switch) return;
-    const urgentTable = tables.find((t, idx) => {
-      if (idx === activeIndex) return false;
-      const left = secondsLeft(t);
-      return left !== undefined && left < 5;
-    });
-    if (urgentTable) {
-      const idx = tables.findIndex((t) => t.id === urgentTable.id);
-      if (idx !== -1) {
-        setIsTransitioning(true);
-        setActiveIndex(idx);
-        setTimeout(() => setIsTransitioning(false), 320);
-      }
+    if (tables.length === 0) return;
+    if (activeIndex > tables.length - 1 || activeIndex < 0) {
+      setActiveIndex(Math.max(0, Math.min(activeIndex, tables.length - 1)));
     }
-  }, [tables, activeIndex, secondsLeft, hidden, userSettings.multi_auto_switch]);
+  }, [tables.length, activeIndex]);
+
+  /**
+   * Tile view is only reachable at 2+ tables (the toggle is gated on it), but
+   * `isTileView` was never reset when the count fell back to one. The flag then
+   * sat true and invisible — no toggle rendered to turn it off — and opening a
+   * second table later snapped straight into a grid the player had not asked
+   * for.
+   */
+  useEffect(() => {
+    if (tables.length <= 1 && isTileView) setIsTileView(false);
+  }, [tables.length, isTileView]);
+
+  /**
+   * The aggregated-session popover is gated on `sessionAgg &&`, so when the
+   * aggregate goes away (down to one table, or off /table/*) the popover
+   * vanished while `showSessionAgg` stayed true — and it reappeared unbidden
+   * the moment a second table was opened again.
+   */
+  useEffect(() => {
+    if (!sessionAgg && showSessionAgg) setShowSessionAgg(false);
+  }, [sessionAgg, showSessionAgg]);
 
   // ─── Keyboard shortcuts for table switching ───────────────────────────
   useEffect(() => {
     // Dan 2026-08-19: the container is now ALWAYS mounted; while hidden on
     // another route these shortcuts must not hijack Tab/1-4 from that page.
     if (hidden) return;
+    /* Audit 2026-08-25: these shortcuts also fired THROUGH the page's own
+       modal sheets. With Quick Join open, pressing 2 switched the table behind
+       it and Tab cycled tabs the player could not see — a dialog whose backdrop
+       stops the mouse and not the keyboard. */
+    if (quickJoin.open || showSessionAgg) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       // P1-5 FIX: never hijack keystrokes while the user is typing in an input,
       // textarea, select, or contenteditable (table chat, raise amount, modals),
@@ -1583,7 +2910,7 @@ export default function MultiTablePage() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [tables.length, hidden, handleReorder]);
+  }, [tables.length, hidden, handleReorder, quickJoin.open, showSessionAgg]);
 
   // ─── Swipe Gesture Handling ──────────────────────────────────────────
   const handleTouchStart = useCallback(
@@ -1650,12 +2977,18 @@ export default function MultiTablePage() {
     if (newIndex !== activeIndex) {
       setIsTransitioning(true);
       setActiveIndex(newIndex);
-      setTimeout(() => setIsTransitioning(false), 320);
+      trackedTimeout(() => setIsTransitioning(false), 320);
+      // Same URL agreement as handleTabSelect: a swipe is a tab switch by
+      // thumb, and the address bar must follow the felt (Dan 2026-08-28).
+      const target = tables[newIndex];
+      if (target && !isLobbyTab(target)) {
+        navigate(`/table/${target.id}${tableQuery(target)}`, { replace: true });
+      }
     }
 
     setSwipeOffset(0);
     touchStartRef.current = null;
-  }, [swipeOffset, activeIndex, tables.length]);
+  }, [swipeOffset, activeIndex, tables, trackedTimeout, navigate]);
 
   // ─── Handle route-based table ID changes ─────────────────────────────
   // Dan 2026-08-19: the cash-game cards in the in-tab lobby are plain
@@ -1664,9 +2997,38 @@ export default function MultiTablePage() {
   // append, which stranded the lobby tab the player had just used: it sat
   // there as a dead "Lobby" tab burning one of the four slots. Convert the
   // lobby tab in place, exactly like the TABLE_SEATED handler does.
-  useEffect(() => {
+  //
+  // LAYOUT effect, not a passive one (Dan 2026-08-28, "it shows the previous
+  // table for a split second"). `hidden` is derived SYNCHRONOUSLY from the URL
+  // (line ~224), but `tables`/`activeIndex` used to catch up in a passive
+  // effect — so on the commit where the URL became /table/B, the container
+  // un-hid and PAINTED the previously active, fully-populated table (real
+  // seats, real pot, real cards) for one frame before this effect switched to
+  // B. With two tables open and B focused, arriving at /table/A painted B
+  // first — literally "a different table for a split second". A layout effect
+  // runs before the browser paints, so the tab sync and the visibility flip
+  // now land in the same frame and the stale table can never reach the
+  // screen. The same window also flashed the "No Tables Open" empty state
+  // when the first table of a session arrived by route; that is gone too.
+  useLayoutEffect(() => {
     if (!routeTableId) return;
     const prev = tablesRef.current;
+    /**
+     * A BORROWED URL DOES NOT MEAN "FOCUS THAT TABLE" (round 3).
+     *
+     * `handleTabSelect` navigates to a real table's URL in order to un-hide
+     * this container when the player taps a LOBBY tab from off-route. Without
+     * this override the branch below would immediately focus the borrowed
+     * table and the lobby tab the player actually pressed would flash past.
+     * Consumed once, cleared always — including on the paths that return
+     * early, so a stale intent can never redirect a later, unrelated arrival.
+     */
+    const pending = pendingTabIndexRef.current;
+    pendingTabIndexRef.current = null;
+    if (pending !== null && pending >= 0 && pending < prev.length) {
+      setActiveIndex(pending);
+      return;
+    }
     const existingIdx = prev.findIndex((t) => t.id === routeTableId);
     if (existingIdx !== -1) {
       // Dan 2026-08-19: navigating to a table that is ALREADY mounted (dock
@@ -1714,9 +3076,137 @@ export default function MultiTablePage() {
        */
       notifyCapReached('route');
       const current = prev[activeIndexRef.current] ?? prev[0];
-      if (current && !isLobbyTab(current)) navigate(`/table/${current.id}`, { replace: true });
+      if (current && !isLobbyTab(current))
+        navigate(`/table/${current.id}${tableQuery(current)}`, { replace: true });
     }
   }, [routeTableId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * ─── THE BACKSTOP: A TOURNAMENT ROUTE CANNOT STRAND OPEN TABLES ──────────
+   *
+   * Dan 2026-08-28: "YOUR ACTION BAR STAYS AT THE TOP 100% OF THE TIME."
+   *
+   * `useAppNavigate` stops this at the source, which is where it should be
+   * stopped — no flash, no history entry, no unmount. But "100%" is a promise
+   * about every call site that exists today AND every one somebody adds next
+   * month, and an inventory of call sites is exactly the kind of thing that
+   * silently goes stale (this bug IS a stale inventory: the click-capture
+   * guard was written against lobby rows that were anchors, and they stopped
+   * being anchors). So the route itself is the last line: land on
+   * /tournaments/:id with tables open, and the container claims it back.
+   *
+   * Deliberately narrow, three ways:
+   * - Only when tabs are actually open. With nothing running, /tournaments/:id
+   *   is an ordinary page and is left completely alone.
+   * - Only when `openTournamentTab` says it took it. At the table cap it
+   *   returns false and the route stands, so a player can always still READ a
+   *   tournament page.
+   * - `replace`, and to the table the player was last looking at, so Back goes
+   *   where they came from rather than bouncing between the two URLs.
+   */
+  useEffect(() => {
+    const match = matchPath('/tournaments/:tournamentId', location.pathname);
+    const tournamentId = match?.params.tournamentId;
+    if (!tournamentId) return;
+    const open = tablesRef.current;
+    if (open.length === 0) return;
+    const returnTo =
+      open.find((t) => t.id === lastActiveTableIdRef.current && !isLobbyTab(t)) ??
+      open.find((t) => !isLobbyTab(t));
+    // Nothing but lobby tabs open: there is no /table URL to put back, and the
+    // container would hide itself again the moment we redirected. Leave it.
+    if (!returnTo) return;
+    /* Carry the query across the recovery too (round 2). Arriving here from a
+       "/tournaments/:id?watch=1" link that escaped the hook — the ticker, a
+       deep link, anything outside the provider — must still watch, or the
+       backstop would "rescue" the player by quietly discarding their intent. */
+    if (!openTournamentTab({ tournamentId, search: location.search })) return;
+    navigate(`/table/${returnTo.id}${tableQuery(returnTo)}`, { replace: true });
+  }, [location.pathname, location.search, openTournamentTab, navigate]);
+
+  /**
+   * ─── THE SAME BACKSTOP FOR THE TOURNAMENT *LIST* (round 2) ───────────────
+   *
+   * `matchPath('/tournaments/:tournamentId')` does not match a bare
+   * `/tournaments`, and TournamentStartingTicker — a marquee mounted at the app
+   * root, on screen over every table — falls back to exactly that when it
+   * cannot resolve an id: `if (targetId) navigate('/tournaments/'+targetId);
+   * else navigate('/tournaments')`. It uses plain `useNavigate` and lives
+   * outside the provider, so the else branch was a full-size, always-present
+   * tap target that dropped a seated player straight off /table/*.
+   *
+   * The list has no in-tab renderer of its own, so the honest recovery is the
+   * lobby tab, which is where a player looking for a tournament wanted to be.
+   * Same three narrowings as above: only with tables open, only when there is
+   * a real table to put back in the URL, and never when a lobby tab is already
+   * showing (that would fight OPEN_LOBBY_TAB).
+   */
+  useEffect(() => {
+    if (!matchPath('/tournaments', location.pathname)) return;
+    const open = tablesRef.current;
+    if (open.length === 0) return;
+    const returnTo =
+      open.find((t) => t.id === lastActiveTableIdRef.current && !isLobbyTab(t)) ??
+      open.find((t) => !isLobbyTab(t));
+    if (!returnTo) return;
+    masterBus.emit('OPEN_LOBBY_TAB', {});
+    navigate(`/table/${returnTo.id}${tableQuery(returnTo)}`, { replace: true });
+  }, [location.pathname, navigate]);
+
+  /**
+   * ─── MAKE ROOM FOR THE PINNED BAR (round 3) ──────────────────────────────
+   *
+   * The pinned strip is `position: fixed`, so it is out of flow and would
+   * otherwise sit ON TOP of the first thing on every page — a heading, a back
+   * button, the cashier's balance — unreadable and untappable.
+   *
+   * One attribute on <body> drives the padding (see MultiTablePage.css), so
+   * there is a single number to change and any page that needs to know can ask
+   * the DOM rather than this component. Cleared whenever the bar is not
+   * showing, and on unmount, so a stale 48px gap can never outlive it.
+   */
+  /**
+   * Mirror the lobby tab's drill-in to storage on every change, and restore it
+   * once on mount. See DRILL_IN_KEY for why this persistence is safe where the
+   * deleted table persistence was not.
+   */
+  useEffect(() => {
+    const lobby = tables.find(isLobbyTab);
+    saveDrillIn(lobby?.lobbyTournamentStack);
+  }, [tables]);
+
+  const drillInRestoredRef = useRef(false);
+  useEffect(() => {
+    if (drillInRestoredRef.current) return;
+    // Wait until the server-truth rebuild has had its say, so the restored
+    // lobby tab lands BESIDE the player's real seats rather than racing them
+    // for the last slot.
+    if (!tablesReady) return;
+    drillInRestoredRef.current = true;
+    const saved = readDrillIn();
+    if (!saved) return;
+    // Already showing a tournament (a deep link, a fast tap): the live state
+    // is newer than anything on disk and wins.
+    if (tablesRef.current.some((t) => isLobbyTab(t) && t.lobbyTournamentId)) return;
+    // Replay through the ordinary path so the restored tab is identical to a
+    // tapped one, then re-seat the parent levels underneath the top.
+    if (!openTournamentTab(saved[saved.length - 1])) return;
+    if (saved.length > 1) {
+      setTables((cur) =>
+        cur.map((t) => (isLobbyTab(t) ? { ...t, lobbyTournamentStack: saved } : t))
+      );
+    }
+  }, [tablesReady, openTournamentTab]);
+
+  const pinnedBarVisible = hidden && tables.length >= 1;
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const { body } = document;
+    if (!body) return;
+    if (pinnedBarVisible) body.setAttribute('data-ca-pinned-bar', '1');
+    else body.removeAttribute('data-ca-pinned-bar');
+    return () => body.removeAttribute('data-ca-pinned-bar');
+  }, [pinnedBarVisible]);
 
   // Remember the last REAL table the player had on screen, so the dock can
   // send them back to it rather than to whichever tab happens to be oldest.
@@ -1746,7 +3236,11 @@ export default function MultiTablePage() {
     (tableId: string) => {
       const idx = tablesRef.current.findIndex((t) => t.id === tableId);
       if (idx !== -1) setActiveIndex(idx);
-      navigate(`/table/${tableId}`);
+      /* Carry the tab's own name/stakes/code (round 3). The dock knows the id
+         and nothing else, but this container holds the whole tab — sending a
+         bare /table/:id would drop a labelled tab back to "Table 1". */
+      const t = idx !== -1 ? tablesRef.current[idx] : undefined;
+      navigate(`/table/${tableId}${t ? tableQuery(t) : ''}`);
     },
     [navigate]
   );
@@ -1773,15 +3267,91 @@ export default function MultiTablePage() {
     : 'none';
 
   return (
-    <>
-      {hidden && dock.kind !== 'none' && (
+    /**
+     * THE PROVIDER WRAPS THE WHOLE CONTAINER, not just the lobby tab
+     * (Dan 2026-08-28 round 2).
+     *
+     * Round 1 wrapped only `renderLobbyTab`, which left the felt itself
+     * outside it — and the felt has its own tournament surface:
+     * `TournamentLobbyModal`, opened from the upper-right button on a
+     * tournament table (TablePage), which renders TournamentDetails with its
+     * SatellitesTab. A satellite tap there went through plain `useNavigate`
+     * and did a real route change, so the container hid, the action bar went
+     * with it, and only the route backstop dragged the player back — after the
+     * flash, and by yanking them off the felt they were sitting at.
+     *
+     * Inside the provider the same tap is handled in place, with no route
+     * change at all. Nothing else changes: `useAppNavigate` is only consulted
+     * by components that opted into it, and it still rewrites nothing but
+     * /tournaments/:id.
+     */
+    <InTabLobbyContext.Provider value={inTabLobbyNav}>
+      {/**
+       * ─── THE BAR IS PINNED OFF-ROUTE (Dan 2026-08-28 round 3) ─────────────
+       *
+       * Dan, verbatim: "IF YOU ARE ON A PAGE THROUGH THE + BUTTON, THAT YOUR
+       * ACTION BAR STAYS AT THE TOP 100% OF THE TIME."
+       *
+       * Rounds 1 and 2 delivered that by never LEAVING /table/* — they
+       * intercept tournament destinations and render them in the tab. That is
+       * the right answer for a destination the tab can render. It is no answer
+       * at all for the ones it cannot: the club bottom nav's six links
+       * (Profile, Players, Cashier, Market, Data, Stats), the create-table and
+       * buy-diamonds buttons, a house ad pointing at /marketplace. Those have
+       * no in-tab renderer, so interception would mean building one — and
+       * REFUSING to navigate would be worse than the bug, because the player
+       * asked to go to the cashier.
+       *
+       * So the bar stops depending on the route. Off-route the container is
+       * still display:none — the felt must not paint over the cashier — but
+       * the strip itself is hoisted out and fixed to the top of the viewport,
+       * above whatever page the player went to. Every table stays one tap
+       * away, urgency still flashes on the tab that owns it, and "100% of the
+       * time" becomes literally true rather than true-for-the-destinations-we
+       * -enumerated.
+       *
+       * This is also what makes the enumeration stop mattering. A destination
+       * added next month keeps the bar without anyone remembering to add it to
+       * a list — which is the failure mode that produced this whole body of
+       * work (a guard written against anchors that quietly stopped matching).
+       */}
+      {hidden && tables.length >= 1 && (
+        <div className="multi-table-page__tab-bar-wrapper multi-table-page__tab-bar-wrapper--pinned">
+          <TableTabBar
+            tabs={tabInfos}
+            activeTabId={activeTableId}
+            onTabSelect={handleTabSelect}
+            onAddTable={handleAddTable}
+            maxTables={MAX_TABLES}
+            realtimeDown={realtimeDown}
+            onReorder={handleReorder}
+            mutedIds={mutedIds}
+            onQuickAction={handleQuickAction}
+            onSitOutAll={handleSitOutAll}
+            onBackAll={handleBackAll}
+            profitTrackingEnabled={profitTracking}
+            onToggleProfitTracking={toggleProfitTracking}
+          />
+        </div>
+      )}
+      {/**
+       * The dock stays for URGENCY ONLY now.
+       *
+       * It used to be the only thing a player had off-route, so it carried
+       * both jobs: "return to your game" and "a clock is running". The pinned
+       * strip above does the first one better — every table, not just one, and
+       * in the place the player already knows. Rendering both for a quiet
+       * table would be two controls saying the same thing in one screen.
+       *
+       * Urgency is different in kind: it is a countdown the player is about to
+       * lose money to, it wants to be loud, and the dock sits at the BOTTOM,
+       * within thumb reach, while the strip is at the top. Keeping it for that
+       * case only is why `dock.kind === 'urgent'` replaced `!== 'none'`.
+       */}
+      {hidden && dock.kind === 'urgent' && (
         <LiveTablesBar
           tables={tables.filter((t) => !isLobbyTab(t)).map((t) => ({ id: t.id, name: t.name }))}
-          urgent={
-            dock.kind === 'urgent'
-              ? { tableId: dock.targetId, name: dock.name, secondsLeft: dock.secondsLeft }
-              : null
-          }
+          urgent={{ tableId: dock.targetId, name: dock.name, secondsLeft: dock.secondsLeft }}
           onReturn={handleDockReturn}
         />
       )}
@@ -1801,17 +3371,16 @@ export default function MultiTablePage() {
               onAddTable={handleAddTable}
               maxTables={MAX_TABLES}
               realtimeDown={realtimeDown}
-              /* Audit 2026-08-20: TableTabBar's JACKPOT badge existed since
-                 the component was written but nothing ever passed the prop.
-                 The ACTIVE table's live BBJ pool — matching the reference
-                 footage, where the ticker above the felt follows the table
-                 you are looking at. */
-              jackpotAmount={tables[activeIndex]?.jackpot}
+              /* jackpotAmount removed 2026-08-23 with TableTabBar's JACKPOT
+                 badge: the BBJ banner below the bar already shows the active
+                 table's pool, and the header copy was a duplicate of it. */
               onReorder={handleReorder}
               mutedIds={mutedIds}
               onQuickAction={handleQuickAction}
               onSitOutAll={handleSitOutAll}
               onBackAll={handleBackAll}
+              profitTrackingEnabled={profitTracking}
+              onToggleProfitTracking={toggleProfitTracking}
             />
             {/* Batch 5: live multi-table P&L chip -> session breakdown */}
             {sessionAgg && sessionAgg.rows.some((r) => r.tracked) && (
@@ -1825,73 +3394,99 @@ export default function MultiTablePage() {
                       : ''
                 }`}
                 onClick={() => setShowSessionAgg((v) => !v)}
-                title="Session across all tables"
-                aria-label="Session across all tables"
+                /* Dan 2026-08-30: "IF YOU RIGHT CLICK OR HOLD DOWN AND MOBILE,
+                   YOU SHOULD BE ABLE TO TURN IT OFF." Right-click and a 600ms
+                   long-press both flip the same switch the hamburger owns. */
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  toggleProfitTracking();
+                }}
+                onTouchStart={() => {
+                  pnlPressTimerRef.current = setTimeout(() => {
+                    pnlPressTimerRef.current = null;
+                    toggleProfitTracking();
+                  }, 600);
+                }}
+                onTouchEnd={() => {
+                  if (pnlPressTimerRef.current) {
+                    clearTimeout(pnlPressTimerRef.current);
+                    pnlPressTimerRef.current = null;
+                  }
+                }}
+                onTouchMove={() => {
+                  if (pnlPressTimerRef.current) {
+                    clearTimeout(pnlPressTimerRef.current);
+                    pnlPressTimerRef.current = null;
+                  }
+                }}
+                title="Session Across Cash Tables (Right-Click Or Hold To Turn Off)"
+                aria-label="Session Across Cash Tables"
               >
                 {sessionAgg.net > 0 ? '+' : ''}
                 {sessionAgg.net.toLocaleString('en-US')}
               </button>
             )}
-            {tables.length > 1 && (
-              <button
-                className="tile-toggle-btn"
-                onClick={() => setIsTileView((prev) => !prev)}
-                title={isTileView ? 'Single view' : 'Tile view'}
+            {/* Dan 2026-08-30: the 4-square multi-table button. FIXED on the
+                right edge - the opposite side from the hamburger - the same
+                40px size as the hamburger trigger, wearing Dan's brushed-metal
+                four-screen artwork. Rendered always so the position is stable,
+                but it only ENGAGES with 2+ tables open (4 max); with one
+                table it is inert and dimmed. Positioning lives in
+                MultiTablePage.css (.tile-toggle-btn). */}
+            <button
+              className={`tile-toggle-btn${tables.length > 1 ? '' : ' tile-toggle-btn--inert'}`}
+              onClick={() => {
+                if (tables.length > 1) setIsTileView((prev) => !prev);
+              }}
+              aria-disabled={tables.length <= 1}
+              title={
+                tables.length > 1
+                  ? isTileView
+                    ? 'Single View'
+                    : 'Tile View'
+                  : 'Open A Second Table To Use Tile View'
+              }
+              aria-label={isTileView ? 'Single View' : 'Tile View'}
+            >
+              {/* ═══ NO PLATE BEHIND THE GLYPH (Dan 2026-08-31) ══════════════
+                  "Remove the little pill behind the 4 square button."
+
+                  It was not CSS - `.tile-toggle-btn` has painted
+                  `background: transparent` all along. The plate is inside the
+                  ARTWORK: the source render (1254x1254, RGB, no alpha channel)
+                  is a dark rounded rectangle with the four screens sitting in
+                  the middle at roughly 46% of its width, so `object-fit:
+                  contain` in the 40px button faithfully painted the plate too.
+                  Its sibling assets (hamburger, add-screen) are transparent
+                  cutouts, which is why this was the only button wearing one.
+
+                  Drawn inline instead, so the button is the glyph and nothing
+                  else - the same approach TableTabBar already uses for its "+".
+                  If the artwork is ever re-exported with a transparent
+                  background, this can go back to being an <img> in one line. */}
+              <svg
+                className="tile-toggle-btn__img"
+                viewBox="0 0 48 48"
+                aria-hidden="true"
+                focusable="false"
               >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  {isTileView ? (
-                    <rect
-                      x="2"
-                      y="2"
-                      width="12"
-                      height="12"
-                      rx="2"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                    />
-                  ) : (
-                    <>
-                      <rect
-                        x="2"
-                        y="2"
-                        width="5"
-                        height="5"
-                        rx="1"
-                        stroke="currentColor"
-                        strokeWidth="1.2"
-                      />
-                      <rect
-                        x="9"
-                        y="2"
-                        width="5"
-                        height="5"
-                        rx="1"
-                        stroke="currentColor"
-                        strokeWidth="1.2"
-                      />
-                      <rect
-                        x="2"
-                        y="9"
-                        width="5"
-                        height="5"
-                        rx="1"
-                        stroke="currentColor"
-                        strokeWidth="1.2"
-                      />
-                      <rect
-                        x="9"
-                        y="9"
-                        width="5"
-                        height="5"
-                        rx="1"
-                        stroke="currentColor"
-                        strokeWidth="1.2"
-                      />
-                    </>
-                  )}
-                </svg>
-              </button>
-            )}
+                <defs>
+                  <linearGradient id="tileToggleMetal" x1="0" y1="0" x2="0.9" y2="1">
+                    <stop offset="0%" stopColor="#fdfdfd" />
+                    <stop offset="28%" stopColor="#cdd2d8" />
+                    <stop offset="55%" stopColor="#8d949d" />
+                    <stop offset="78%" stopColor="#b6bcc4" />
+                    <stop offset="100%" stopColor="#6b727b" />
+                  </linearGradient>
+                </defs>
+                <g fill="url(#tileToggleMetal)">
+                  <rect x="5" y="5" width="17" height="17" rx="3.6" />
+                  <rect x="26" y="5" width="17" height="17" rx="3.6" />
+                  <rect x="5" y="26" width="17" height="17" rx="3.6" />
+                  <rect x="26" y="26" width="17" height="17" rx="3.6" />
+                </g>
+              </svg>
+            </button>
           </div>
         )}
 
@@ -1908,7 +3503,7 @@ export default function MultiTablePage() {
                 <div key={r.id} className="multi-table-page__session-row">
                   <span className="multi-table-page__session-name">{r.name}</span>
                   <span className="multi-table-page__session-hands">
-                    {r.tracked ? `${r.hands} hands` : 'observing'}
+                    {r.tracked ? `${r.hands} Hands` : 'Observing'}
                   </span>
                   <span
                     className={`multi-table-page__session-net${
@@ -1925,11 +3520,11 @@ export default function MultiTablePage() {
               ))}
               <div className="multi-table-page__session-row multi-table-page__session-row--total">
                 <span className="multi-table-page__session-name">
-                  {sessionAgg.rows.length} {sessionAgg.rows.length === 1 ? 'table' : 'tables'}
+                  {sessionAgg.rows.length} {sessionAgg.rows.length === 1 ? 'Table' : 'Tables'}
                 </span>
                 <span className="multi-table-page__session-hands">
                   {sessionAgg.hands} Hands
-                  {sessionAgg.handsPerHour > 0 ? ` - ${sessionAgg.handsPerHour}/hr` : ''}
+                  {sessionAgg.handsPerHour > 0 ? ` - ${sessionAgg.handsPerHour}/Hr` : ''}
                 </span>
                 <span
                   className={`multi-table-page__session-net${
@@ -1952,7 +3547,7 @@ export default function MultiTablePage() {
         {quickJoin.open && (
           <>
             <div className="multi-table-page__quickjoin-backdrop" onClick={closeQuickJoin} />
-            <div className="multi-table-page__quickjoin" role="dialog" aria-label="Quick join">
+            <div className="multi-table-page__quickjoin" role="dialog" aria-label="Quick Join">
               <div className="multi-table-page__quickjoin-title">Quick Join</div>
               {quickJoin.loading ? (
                 <div className="multi-table-page__quickjoin-empty">Finding Games…</div>
@@ -1966,7 +3561,18 @@ export default function MultiTablePage() {
                     className="multi-table-page__quickjoin-row"
                     onClick={() => handleQuickJoinPick(row)}
                   >
-                    <span className="multi-table-page__quickjoin-name">{row.name}</span>
+                    <span className="multi-table-page__quickjoin-name">
+                      {row.name}
+                      {row.reason && (
+                        <span
+                          className={`multi-table-page__quickjoin-tag${
+                            row.tier === 'favorite' ? ' multi-table-page__quickjoin-tag--fav' : ''
+                          }`}
+                        >
+                          {row.reason}
+                        </span>
+                      )}
+                    </span>
                     <span className="multi-table-page__quickjoin-meta">
                       {row.code && <span>{row.code}</span>}
                       {row.stakes && <span>{row.stakes}</span>}
@@ -2012,103 +3618,178 @@ export default function MultiTablePage() {
                   transition: 'box-shadow 0.3s ease',
                 }}
               >
-                <Suspense fallback={<div className="multi-table-loading">Loading...</div>}>
-                  {isLobbyTab(table) ? (
-                    renderLobbyTab(table)
-                  ) : (
-                    <TablePage
-                      key={table.id}
-                      embeddedTableId={table.id}
-                      onTableInfoUpdate={getTableInfoCb(table.id)}
-                      isMultiTable={true}
-                      isActive={idx === activeIndex && !hidden}
-                      muted={mutedIds.includes(table.id)}
-                    />
-                  )}
-                </Suspense>
-                {/* Batch 4: per-tile action strip - acts without focusing. */}
-                {!isLobbyTab(table) && table.isMyTurn && (
-                  <div className="multi-table-grid__actions" onClick={(e) => e.stopPropagation()}>
-                    {(table.toCall ?? 0) > 0 ? (
-                      <>
-                        <button
-                          type="button"
-                          className="multi-table-grid__action multi-table-grid__action--fold"
-                          disabled={!!tilePending[table.id]}
-                          onClick={() => handleTileAction(table.id, 'fold')}
-                        >
-                          Fold
-                        </button>
-                        <button
-                          type="button"
-                          className="multi-table-grid__action multi-table-grid__action--call"
-                          disabled={!!tilePending[table.id]}
-                          onClick={() => handleTileAction(table.id, 'call')}
-                        >
-                          Call {(table.toCall ?? 0).toLocaleString('en-US')}
-                        </button>
-                      </>
+                {/* Variant A (Dan 2026-08-30): the stage is the table's OWN
+                    flex row — when the band below is up, the stage shrinks and
+                    the felt rescales into it, so the hero's cards (their normal
+                    size, on the felt) are never covered by action chrome. */}
+                <div className="multi-table-grid__stage">
+                  <Suspense fallback={<div className="multi-table-loading">Loading...</div>}>
+                    {isLobbyTab(table) ? (
+                      renderLobbyTab(table)
                     ) : (
-                      <button
-                        type="button"
-                        className="multi-table-grid__action multi-table-grid__action--check"
-                        disabled={!!tilePending[table.id]}
-                        onClick={() => handleTileAction(table.id, 'check')}
+                      <TableErrorBoundary
+                        componentName={`TablePage(tile ${table.id})`}
+                        fallback={tableCrashFallback(table.name)}
                       >
-                        Check
-                      </button>
+                        <TablePage
+                          key={table.id}
+                          embeddedTableId={table.id}
+                          onTableInfoUpdate={getTableInfoCb(table.id)}
+                          isMultiTable={true}
+                          isActive={idx === activeIndex && !hidden}
+                          muted={mutedIds.includes(table.id)}
+                        />
+                      </TableErrorBoundary>
                     )}
-                    {secondsLeft(table) !== undefined && (
-                      <span className="multi-table-grid__action-clock">{secondsLeft(table)}s</span>
-                    )}
-                  </div>
-                )}
-                {/* Dan 2026-08-21: raise presets, so a 2x2 tile is genuinely
-                    playable instead of fold/call only. Sizes are computed from
-                    the pot the same way the full panel's presets are, and the
-                    server re-validates every one of them - a preset that is
-                    illegal (below min-raise, above stack) is simply refused,
-                    exactly as it would be from the table view. */}
-                {!isLobbyTab(table) && table.isMyTurn && (
-                  <div className="multi-table-grid__raises" onClick={(e) => e.stopPropagation()}>
-                    {(
-                      [
-                        ['½ Pot', 0.5],
-                        ['Pot', 1],
-                      ] as const
-                    ).map(([label, frac]) => {
-                      const pot = table.pot ?? 0;
-                      const toCall = table.toCall ?? 0;
-                      // Standard pot-raise size: call first, then raise the
-                      // pot that call creates.
-                      const size = Math.round(toCall + (pot + toCall * 2) * frac);
-                      const stack = table.heroStack ?? 0;
-                      const capped = stack > 0 ? Math.min(size, stack) : size;
-                      if (capped <= 0) return null;
-                      return (
-                        <button
-                          key={label}
-                          type="button"
-                          className="multi-table-grid__raise"
-                          disabled={!!tilePending[table.id]}
-                          onClick={() => handleTileAction(table.id, 'raise', capped)}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
-                    {(table.heroStack ?? 0) > 0 && (
-                      <button
-                        type="button"
-                        className="multi-table-grid__raise multi-table-grid__raise--allin"
-                        disabled={!!tilePending[table.id]}
-                        onClick={() => handleTileAction(table.id, 'raise', table.heroStack)}
-                      >
-                        All In
-                      </button>
-                    )}
-                  </div>
-                )}
+                  </Suspense>
+                </div>
+                {/* Batch 4 strip, rebuilt as a RESERVED in-flow band (Variant A)
+                    instead of an overlay: presets + Raise + slider on top,
+                    Fold / Check / Call + clock underneath. Every amount is
+                    still server re-validated exactly as before. */}
+                {!isLobbyTab(table) &&
+                  table.isMyTurn &&
+                  (() => {
+                    const pending = !!tilePending[table.id];
+                    const toCall = table.toCall ?? 0;
+                    const parts = (table.raiseBounds || '').split(':').map(Number);
+                    const hasBounds =
+                      parts.length === 3 &&
+                      parts.every((n) => Number.isFinite(n)) &&
+                      parts[1] >= parts[0] &&
+                      parts[0] > 0;
+                    const [minTo, maxTo, bb] = hasBounds ? parts : [0, 0, 1];
+                    const draft = tileRaiseDraft[table.id];
+                    const sliderOpen = hasBounds && draft !== undefined;
+                    const unit = sliderUnitFor(!!table.isTournament, bb, bb / 2 || 0.01);
+                    const step = betSliderStep(minTo, maxTo, unit);
+                    const fmt = (n: number) =>
+                      Number.isInteger(n) ? n.toLocaleString('en-US') : n.toFixed(2);
+                    return (
+                      <div className="multi-table-grid__band" onClick={(e) => e.stopPropagation()}>
+                        {sliderOpen && (
+                          <div className="multi-table-grid__slider-row">
+                            <input
+                              type="range"
+                              className="multi-table-grid__slider"
+                              min={minTo}
+                              max={maxTo}
+                              step={step}
+                              value={draft}
+                              aria-label="Raise Amount"
+                              onChange={(e) =>
+                                setTileRaiseDraft((p) => ({
+                                  ...p,
+                                  [table.id]: Math.min(
+                                    maxTo,
+                                    Math.max(minTo, Number(e.target.value))
+                                  ),
+                                }))
+                              }
+                            />
+                            <span className="multi-table-grid__slider-amount">
+                              {fmt(draft ?? minTo)}
+                            </span>
+                            <button
+                              type="button"
+                              className="multi-table-grid__raise multi-table-grid__raise--confirm"
+                              disabled={pending}
+                              onClick={() => handleTileAction(table.id, 'raise', draft)}
+                            >
+                              Raise {fmt(draft ?? minTo)}
+                            </button>
+                          </div>
+                        )}
+                        <div className="multi-table-grid__raises">
+                          {(
+                            [
+                              ['½ Pot', 0.5],
+                              ['Pot', 1],
+                            ] as const
+                          ).map(([label, frac]) => {
+                            const pot = table.pot ?? 0;
+                            // Standard pot-raise size: call first, then raise
+                            // the pot that call creates (server re-validates).
+                            const size = Math.round(toCall + (pot + toCall * 2) * frac);
+                            const stack = table.heroStack ?? 0;
+                            const capped = stack > 0 ? Math.min(size, stack) : size;
+                            if (capped <= 0) return null;
+                            return (
+                              <button
+                                key={label}
+                                type="button"
+                                className="multi-table-grid__raise"
+                                disabled={pending}
+                                onClick={() => handleTileAction(table.id, 'raise', capped)}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                          {hasBounds && (
+                            <button
+                              type="button"
+                              className={`multi-table-grid__raise${sliderOpen ? ' multi-table-grid__raise--open' : ''}`}
+                              disabled={pending}
+                              onClick={() =>
+                                sliderOpen
+                                  ? closeTileRaise(table.id)
+                                  : setTileRaiseDraft((p) => ({ ...p, [table.id]: minTo }))
+                              }
+                            >
+                              Raise
+                            </button>
+                          )}
+                          {(table.heroStack ?? 0) > 0 && (
+                            <button
+                              type="button"
+                              className="multi-table-grid__raise multi-table-grid__raise--allin"
+                              disabled={pending}
+                              onClick={() => handleTileAction(table.id, 'raise', table.heroStack)}
+                            >
+                              All In
+                            </button>
+                          )}
+                        </div>
+                        <div className="multi-table-grid__actions">
+                          {toCall > 0 ? (
+                            <>
+                              <button
+                                type="button"
+                                className="multi-table-grid__action multi-table-grid__action--fold"
+                                disabled={pending}
+                                onClick={() => handleTileAction(table.id, 'fold')}
+                              >
+                                Fold
+                              </button>
+                              <button
+                                type="button"
+                                className="multi-table-grid__action multi-table-grid__action--call"
+                                disabled={pending}
+                                onClick={() => handleTileAction(table.id, 'call')}
+                              >
+                                Call {toCall.toLocaleString('en-US')}
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              className="multi-table-grid__action multi-table-grid__action--check"
+                              disabled={pending}
+                              onClick={() => handleTileAction(table.id, 'check')}
+                            >
+                              Check
+                            </button>
+                          )}
+                          {secondsLeft(table) !== undefined && (
+                            <span className="multi-table-grid__action-clock">
+                              {secondsLeft(table)}s
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
               </div>
             ))}
           </div>
@@ -2188,18 +3869,23 @@ export default function MultiTablePage() {
                     {isLobbyTab(table) ? (
                       renderLobbyTab(table)
                     ) : (
-                      <TablePage
-                        key={table.id}
-                        embeddedTableId={table.id}
-                        onTableInfoUpdate={getTableInfoCb(table.id)}
-                        muted={mutedIds.includes(table.id)}
-                        // Dan 2026-08-19: while hidden on another route no tab is
-                        // "active" — ambient table sounds must not follow the
-                        // player into the cashier (isMultiTable true when hidden
-                        // so single-table mode is muted too).
-                        isMultiTable={tables.length > 1 || hidden}
-                        isActive={idx === activeIndex && !hidden}
-                      />
+                      <TableErrorBoundary
+                        componentName={`TablePage(${table.id})`}
+                        fallback={tableCrashFallback(table.name)}
+                      >
+                        <TablePage
+                          key={table.id}
+                          embeddedTableId={table.id}
+                          onTableInfoUpdate={getTableInfoCb(table.id)}
+                          muted={mutedIds.includes(table.id)}
+                          // Dan 2026-08-19: while hidden on another route no tab is
+                          // "active" — ambient table sounds must not follow the
+                          // player into the cashier (isMultiTable true when hidden
+                          // so single-table mode is muted too).
+                          isMultiTable={tables.length > 1 || hidden}
+                          isActive={idx === activeIndex && !hidden}
+                        />
+                      </TableErrorBoundary>
                     )}
                   </Suspense>
                 </div>
@@ -2208,6 +3894,6 @@ export default function MultiTablePage() {
           </div>
         )}
       </div>
-    </>
+    </InTabLobbyContext.Provider>
   );
 }

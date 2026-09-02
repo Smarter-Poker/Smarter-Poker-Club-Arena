@@ -7,55 +7,53 @@
  *   - Stack height proportional to bet size
  *   - Bet-to-pot arc trajectory
  *   - Splash animation (chips scatter then settle)
- *   - Denomination color system (white → gold per tier)
+ *   - Denomination color system (src/lib/chipDenominations.ts)
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Dan 2026-08-23: "IF A PLAYER RAISES, OR CALLS TO 7, ONE RED AND TWO WHITE
+ * CHIPS SHOULD BE ADDED IN FRONT OF THEM."
+ *
+ * SeatSlot renders this component in `compact` mode for every seat's live bet,
+ * and compact mode used to draw EXACTLY ONE CHIP regardless of the amount. The
+ * comment there said that was deliberate, "to avoid misleading chip counts
+ * that don't match the bet value" — the right instinct aimed at the wrong fix.
+ * The counts did not match because the local breakdown clamped each stack at
+ * five chips and then subtracted the UNCLAMPED count from the remainder, so
+ * the discs never summed to the bet. Drawing one chip for every bet is not
+ * less misleading than a wrong count, it only hides it.
+ *
+ * The breakdown now comes from src/lib/chipDenominations.ts, which is exact
+ * and unit-tested, so compact mode can draw the real chips: a 7 bet draws one
+ * red and two white.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import React, { useMemo, useEffect, useState } from 'react';
+import { visualChipStacks, type ChipStackVisual } from '../../lib/chipDenominations';
 import './ChipPhysics.css';
+import { formatTableChips } from '../../utils/format';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// DENOMINATION SYSTEM
+// DENOMINATION SYSTEM — see src/lib/chipDenominations.ts for the ladder, why
+// greedy descent is the "fewest chips" Dan asked for, and both spec
+// ambiguities (purple listed twice; the 5,000 -> 100,000 gap).
 // ═══════════════════════════════════════════════════════════════════════════════
 
-interface ChipDenom {
-  value: number;
-  color: string;
-  accent: string;
-  label: string;
-}
-
-const DENOMINATIONS: ChipDenom[] = [
-  { value: 1, color: '#e0e0e0', accent: '#ababab', label: '1' }, // White
-  { value: 5, color: '#ef4444', accent: '#b91c1c', label: '5' }, // Red
-  { value: 25, color: '#22c55e', accent: '#15803d', label: '25' }, // Green
-  { value: 100, color: '#1a1a2e', accent: '#374151', label: '100' }, // Black
-  { value: 500, color: '#7c3aed', accent: '#5b21b6', label: '500' }, // Violet
-  { value: 1000, color: '#f97316', accent: '#ea580c', label: '1K' }, // Orange
-  { value: 5000, color: '#a855f7', accent: '#7c3aed', label: '5K' }, // Purple
-];
-
-function getChipBreakdown(amount: number): { denom: ChipDenom; count: number }[] {
-  const breakdown: { denom: ChipDenom; count: number }[] = [];
-  let remaining = Math.abs(amount);
-
-  // Work from highest to lowest denomination
-  for (let i = DENOMINATIONS.length - 1; i >= 0; i--) {
-    const denom = DENOMINATIONS[i];
-    const count = Math.floor(remaining / denom.value);
-    if (count > 0) {
-      // Cap visual chips at 5 per denomination for clarity
-      breakdown.push({ denom, count: Math.min(count, 5) });
-      remaining -= count * denom.value;
-    }
-  }
-
-  // Ensure at least 1 chip displays
-  if (breakdown.length === 0 && amount > 0) {
-    breakdown.push({ denom: DENOMINATIONS[0], count: 1 });
-  }
-
-  return breakdown.slice(0, 3); // Max 3 denomination groups visible
-}
+/**
+ * In front of a seat there is room for a short row of short stacks; the pot in
+ * the middle of the felt can carry a taller pile. Neither cap ever changes the
+ * VALUE drawn — a clamped stack reports `truncated` and prints its real count
+ * beside itself, which is exactly what the old local breakdown failed to do.
+ */
+/*
+ * maxTotal is the height of the TOWER, in discs. Dan 2026-08-24 asked for one
+ * offset stack rather than a row of columns, and a single tower needs a single
+ * height budget - six groups of ten would be sixty discs tall. See maxTotal in
+ * chipDenominations.ts for how the budget is spent (bottom-up, largest chips
+ * first) and why it never changes the value drawn.
+ */
+const COMPACT_LAYOUT = { maxStacks: 4, maxPerStack: 6, maxTotal: 6 };
+const FULL_LAYOUT = { maxStacks: 5, maxPerStack: 10, maxTotal: 10 };
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -82,7 +80,41 @@ export function ChipPhysics({
 }: ChipPhysicsProps) {
   const [isVisible, setIsVisible] = useState(animate === 'none');
 
-  const breakdown = useMemo(() => getChipBreakdown(amount), [amount]);
+  /**
+   * The discs to draw, bottom-first.
+   *
+   * AUDIT 2026-08-25, two things. The flattening used to happen inline on every
+   * render while only the breakdown it reads was memoised, so a seat re-rendered
+   * for any reason at all rebuilt the whole disc list; and each entry carried a
+   * `groupIdx` that NOTHING read. That field was left over from the row-of-
+   * columns layout: `--group-idx` still exists in ChipPhysics.css (it staggers
+   * `.cp-stack`'s animation) but Dan 2026-08-24 replaced the row with a single
+   * offset tower, so there is exactly one `.cp-stack` and it is hard-coded to
+   * group 0 below. Carrying a per-chip group index that can only ever be
+   * discarded invites the next reader to stagger by it and get nothing.
+   */
+  const chips = useMemo(() => {
+    const stacks = visualChipStacks(amount, compact ? COMPACT_LAYOUT : FULL_LAYOUT);
+    const flat: {
+      denom: ChipStackVisual['denom'];
+      partial: boolean;
+      isTopInDenom: boolean;
+      truncated: boolean;
+      count: number;
+    }[] = [];
+    stacks.forEach((stack) => {
+      for (let i = 0; i < stack.drawn; i++) {
+        flat.push({
+          denom: stack.denom,
+          partial: stack.partial,
+          isTopInDenom: i === stack.drawn - 1,
+          truncated: stack.truncated,
+          count: stack.count,
+        });
+      }
+    });
+    return flat;
+  }, [amount, compact]);
 
   useEffect(() => {
     if (animate !== 'none') {
@@ -93,66 +125,40 @@ export function ChipPhysics({
 
   if (amount <= 0) return null;
 
-  // In compact mode (bet chips next to player), show single chip icon + amount
-  // to avoid misleading chip counts that don't match the bet value
-  if (compact) {
-    const topDenom = breakdown.length > 0 ? breakdown[0].denom : DENOMINATIONS[0];
-    return (
-      <div
-        className={`chip-physics cp--compact ${isVisible ? 'cp--visible' : ''} cp--${animate} ${className}`}
-      >
-        <div className="cp-stacks">
-          <div className="cp-stack" style={{ '--group-idx': 0 } as React.CSSProperties}>
+  return (
+    <div
+      className={`chip-physics${compact ? ' cp--compact' : ''} ${isVisible ? 'cp--visible' : ''} cp--${animate} ${className}`}
+    >
+      <div className="cp-stacks">
+        <div className="cp-stack" style={{ '--group-idx': 0 } as React.CSSProperties}>
+          {chips.map((chip, chipIdx) => (
             <div
-              className="cp-chip"
+              key={`${chip.denom.value}-${chipIdx}`}
+              className={`cp-chip${chip.partial ? ' cp-chip--partial' : ''}`}
               style={
                 {
-                  '--chip-color': topDenom.color,
-                  '--chip-accent': topDenom.accent,
-                  '--chip-idx': 0,
-                  '--total-chips': 1,
+                  '--chip-color': chip.denom.color,
+                  '--chip-accent': chip.denom.accent,
+                  '--chip-ink': chip.denom.ink,
+                  '--chip-idx': chipIdx,
+                  '--total-chips': chips.length,
+                  transform: `translateX(${Math.sin(chipIdx * 23.45) * 1.5}px)`,
                 } as React.CSSProperties
               }
             >
-              <div className="cp-chip__face" />
-            </div>
-          </div>
-        </div>
-        {showAmount && <span className="cp-amount">{formatChipAmount(amount)}</span>}
-      </div>
-    );
-  }
+              {/* Clamped stacks print their real count */}
+              {chip.truncated && chip.isTopInDenom && (
+                <span className="cp-stack__multi">×{chip.count.toLocaleString()}</span>
+              )}
 
-  return (
-    <div className={`chip-physics ${isVisible ? 'cp--visible' : ''} cp--${animate} ${className}`}>
-      {/* Full chip stacks — only used for pot display, not per-player bets */}
-      <div className="cp-stacks">
-        {breakdown.map(({ denom, count }, groupIdx) => (
-          <div
-            key={denom.value}
-            className="cp-stack"
-            style={{ '--group-idx': groupIdx } as React.CSSProperties}
-          >
-            {Array.from({ length: count }, (_, chipIdx) => (
-              <div
-                key={chipIdx}
-                className="cp-chip"
-                style={
-                  {
-                    '--chip-color': denom.color,
-                    '--chip-accent': denom.accent,
-                    '--chip-idx': chipIdx,
-                    '--total-chips': count,
-                  } as React.CSSProperties
-                }
-              >
-                <div className="cp-chip__face">
-                  <span className="cp-chip__label">{denom.label}</span>
-                </div>
+              <div className="cp-chip__face">
+                {!chip.partial && chip.isTopInDenom && (
+                  <span className="cp-chip__label">{chip.denom.label}</span>
+                )}
               </div>
-            ))}
-          </div>
-        ))}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Amount display */}
@@ -162,12 +168,8 @@ export function ChipPhysics({
 }
 
 function formatChipAmount(amount: number): string {
-  if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
-  if (amount >= 10000) return `${(amount / 1000).toFixed(1)}K`;
-  // Always show whole numbers for amounts >= 1. Sub-dollar shows 2 decimals.
-  if (amount >= 1) return Math.round(amount).toLocaleString();
-  if (amount > 0) return amount.toFixed(2);
-  return '0';
+  // Dan 2026-08-28: pot and bet chips on the felt show the real number.
+  return formatTableChips(amount);
 }
 
 export default ChipPhysics;

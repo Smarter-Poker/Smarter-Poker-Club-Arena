@@ -140,3 +140,52 @@ public/cards/4color/*.webp
 # cannot sweep a probe file or a staging directory into main (it did, twice:
 # 19 files were tracked on main by 2026-08-23).
 _agent_tmp/
+
+# More of the same, found untracked in the working tree on 2026-08-23 while
+# preparing a push. scripts/git-safe-push.sh runs `git add -A`, so anything
+# sitting here unignored is one push away from being source. These are all
+# one-off probes and staging dirs, not code:
+#   _to_delete/      quarantine for files the sandbox mount cannot unlink
+#   .cowork-trees/   per-agent worktrees
+#   test_db*.mjs     ad-hoc Supabase connectivity checks
+#   patch_*.cjs/.js  single-use codemods that have already been applied
+_to_delete/
+.cowork-trees/
+/check-locks.cjs
+/workspace-cmd.sh
+/test-query.cjs
+/test_db*.mjs
+/patch_*.cjs
+/patch_*.js
+.git-msg-*.txt
+
+# Agent worktrees created by scripts/agent-workspace.sh. These are live git
+# worktrees, not build output: they must never be committed, and leaving them
+# untracked makes the shared clone read dirty forever, which is how a clone
+# ends up stranded on a rescue branch with real work mixed into the noise.
+.agent-trees/
+
+# Python bytecode from dev scripts
+__pycache__/
+*.pyc
+.dr-backups/
+
+# ── Agent scratch that keeps landing in the shared clone ──────────────────
+# Found 2026-09-02 in ~/Documents/club-arena: a 5.8MB arm64 `actionlint`
+# binary sitting untracked and UNIGNORED in the repo root, next to a
+# `pr_list.txt` and a `scan-labels.tmp.mjs`, left behind by the Actions cost
+# audit. One `git add -A` from anybody and the binary is in the history for
+# good, and history is the one place you cannot delete a 5.8MB mistake from
+# cheaply.
+#
+# The tools themselves are fine to download - pin them here rather than ask
+# every agent to remember to clean up after itself, which is the instruction
+# that has never once worked.
+/actionlint
+/pr_list.txt
+/scan-labels.tmp.mjs
+*.tmp.mjs
+
+# Written by the entry-module-manifest plugin in vite.config.ts each build;
+# read by scripts/ci/entry-chunk-delta.mjs. Build output, never committed.
+.entry-modules.json

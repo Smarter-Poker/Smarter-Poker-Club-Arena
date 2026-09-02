@@ -86,11 +86,6 @@
   transition: all 0.15s;
 }
 
-.pd-close:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.1);
-}
-
 .pd-description {
   font-size: 0.8rem;
   color: rgba(255, 255, 255, 0.5);
@@ -208,12 +203,6 @@
   color: #fff;
   margin-top: 8px;
 }
-
-.pd-claim-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(124, 58, 237, 0.3);
-}
-
 .pd-claimed {
   background: rgba(34, 197, 94, 0.15);
   color: #22c55e;

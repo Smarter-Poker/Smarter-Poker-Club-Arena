@@ -6,215 +6,194 @@
  */
 
 .club-logo-selector {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 12px;
-    padding: 1.5rem;
-    max-width: 400px;
-    backdrop-filter: blur(12px) saturate(1.2);
-    -webkit-backdrop-filter: blur(12px) saturate(1.2);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 1.5rem;
+  max-width: 400px;
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    PREVIEW AREA
 ═══════════════════════════════════════════════════════════════════════════════ */
 .logo-preview {
-    width: 120px;
-    height: 120px;
-    margin: 0 auto 1.5rem;
-    border-radius: 12px;
-    overflow: hidden;
-    background: rgba(0, 0, 0, 0.3);
-    border: 2px solid rgba(255, 255, 255, 0.1);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 1.5rem;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.3);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .logo-preview__image {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .logo-preview__placeholder {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-    color: #666;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  color: #666;
 }
 
 .logo-preview__icon {
-    font-size: 1.5rem;
-    font-weight: bold;
-    opacity: 0.5;
+  font-size: 1.5rem;
+  font-weight: bold;
+  opacity: 0.5;
 }
 
 .logo-preview__text {
-    font-size: 0.75rem;
-    text-align: center;
+  font-size: 0.75rem;
+  text-align: center;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    TAB NAVIGATION
 ═══════════════════════════════════════════════════════════════════════════════ */
 .logo-tabs {
-    display: flex;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
 }
 
 .logo-tab {
-    flex: 1;
-    padding: 0.75rem 1rem;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    color: #888;
-    font-size: 0.85rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.logo-tab:hover {
-    background: rgba(255, 255, 255, 0.08);
-    color: white;
-    transform: translateY(-2px);
+  flex: 1;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #888;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
 .logo-tab--active {
-    background: #1877F2;
-    border-color: #1877F2;
-    color: white;
+  background: #1877f2;
+  border-color: #1877f2;
+  color: white;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    UPLOAD SECTION
 ═══════════════════════════════════════════════════════════════════════════════ */
 .logo-upload {
-    text-align: center;
-    padding: 2rem 1rem;
+  text-align: center;
+  padding: 2rem 1rem;
 }
 
 .logo-upload__input {
-    display: none;
+  display: none;
 }
 
 .logo-upload__button {
-    background: #1877F2;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    padding: 0.75rem 2rem;
-    font-size: 0.9rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.logo-upload__button:hover:not(:disabled) {
-    background: #166FE5;
-    transform: translateY(-2px);
+  background: #1877f2;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 2rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
 .logo-upload__button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .logo-upload__hint {
-    color: #666;
-    font-size: 0.75rem;
-    margin: 1rem 0 0;
+  color: #666;
+  font-size: 0.75rem;
+  margin: 1rem 0 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    PRESET GRID
 ═══════════════════════════════════════════════════════════════════════════════ */
 .logo-preset-grid {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 0.5rem;
-    max-height: 280px;
-    overflow-y: auto;
-    padding: 0.25rem;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.5rem;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 0.25rem;
 }
 
 .logo-preset {
-    aspect-ratio: 1;
-    padding: 0.25rem;
-    background: rgba(255, 255, 255, 0.05);
-    border: 2px solid rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-    overflow: hidden;
-}
-
-.logo-preset:hover {
-    border-color: rgba(24, 119, 242, 0.5);
-    background: rgba(24, 119, 242, 0.1);
-    transform: scale(1.05) translateY(-2px);
+  aspect-ratio: 1;
+  padding: 0.25rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  overflow: hidden;
 }
 
 .logo-preset--selected {
-    border-color: #1877F2;
-    background: rgba(24, 119, 242, 0.2);
-    box-shadow: 0 0 12px rgba(24, 119, 242, 0.4);
+  border-color: #1877f2;
+  background: rgba(24, 119, 242, 0.2);
+  box-shadow: 0 0 12px rgba(24, 119, 242, 0.4);
 }
 
 .logo-preset__image {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    border-radius: 4px;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
 }
 
 /* Scrollbar styling */
 .logo-preset-grid::-webkit-scrollbar {
-    width: 6px;
+  width: 6px;
 }
 
 .logo-preset-grid::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.2);
-    border-radius: 3px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
 }
 
 .logo-preset-grid::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 3px;
-}
-
-.logo-preset-grid::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    ERROR MESSAGE
 ═══════════════════════════════════════════════════════════════════════════════ */
 .logo-error {
-    color: #ef4444;
-    font-size: 0.8rem;
-    text-align: center;
-    margin: 1rem 0 0;
-    padding: 0.5rem;
-    background: rgba(239, 68, 68, 0.1);
-    border-radius: 4px;
+  color: #ef4444;
+  font-size: 0.8rem;
+  text-align: center;
+  margin: 1rem 0 0;
+  padding: 0.5rem;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 4px;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    RESPONSIVE
 ═══════════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 480px) {
-    .logo-preset-grid {
-        grid-template-columns: repeat(4, 1fr);
-    }
+  .logo-preset-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
 
-    .logo-preview {
-        width: 100px;
-        height: 100px;
-    }
+  .logo-preview {
+    width: 100px;
+    height: 100px;
+  }
 }

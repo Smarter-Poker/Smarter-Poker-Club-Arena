@@ -21,14 +21,16 @@ import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import type { PokerTable, Tournament } from '../types/database.types';
 import type { Club } from '../types/club.types';
 import { useUnionStore } from '../stores/useUnionStore';
-import PageSkeleton from '../components/common/PageSkeleton';
+import { EmptyState, ErrorState, LoadingState } from '../components/common/EmptyState';
 import styles from './UnionDetailPage.module.css';
 import { useToast } from '../components/common/Toast';
 import ConfirmModal from '../components/common/ConfirmModal';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
+import GameCreationActions from '../components/club/GameCreationActions';
 import { ensureMidwayUnionSetup } from '../services/HorseOrchestrator';
 import { getUnionLevel, getClubLevel } from '../utils/clubLevels';
 import { reportError } from '../utils/errorReporter';
+import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 // Whole-number tournament money (Dan 2026-08-20).
 import { formatBuyInShort } from '../utils/buyIn';
 import UnionClubGovernance from '../components/union/UnionClubGovernance';
@@ -71,20 +73,26 @@ export default function UnionDetailPage() {
   const toast = useToast();
   useVisibilityRefresh(async () => {
     if (!unionId) return;
-    const [unionData, tablesData] = await Promise.all([
-      unionService.getUnion(unionId),
-      tableService.getUnionTables(unionId),
-    ]);
-    if (unionData) setUnion(unionData);
-    if (tablesData) setTables(tablesData);
+    try {
+      const [unionData, tablesData] = await Promise.all([
+        unionService.getUnion(unionId),
+        tableService.getUnionTables(unionId),
+      ]);
+      if (unionData) setUnion(unionData);
+      if (tablesData) setTables(tablesData);
+    } catch (error) {
+      reportError(error, 'UnionDetailPage.Visibility_refresh_failed');
+    }
   });
 
   const navigate = useNavigate();
   const [union, setUnion] = useState<Union | null>(null);
   const [clubs, setClubs] = useState<UnionClub[]>([]);
   const [tables, setTables] = useState<PokerTable[]>([]);
-  const [unionTournaments, setUnionTournaments] = useState<any[]>([]);
+  const [unionTournaments, setUnionTournaments] = useState<Tournament[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadRevision, setLoadRevision] = useState(0);
 
   // UNION LAW (2026-08-19, Dan): the union surface is the owner's operations
   // page. Players never see a union card, and a deep link must not leak the
@@ -141,7 +149,6 @@ export default function UnionDetailPage() {
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, unionId]);
 
   const handleScheduleActiveToggle = async (row: TournamentScheduleRow, nextActive: boolean) => {
@@ -149,9 +156,7 @@ export default function UnionDetailPage() {
     setScheduleBusyId(row.id);
     try {
       await tournamentScheduleService.setActive(row.id, nextActive);
-      setSchedules((prev) =>
-        prev.map((s) => (s.id === row.id ? { ...s, active: nextActive } : s))
-      );
+      setSchedules((prev) => prev.map((s) => (s.id === row.id ? { ...s, active: nextActive } : s)));
       toast.success(nextActive ? 'Schedule activated.' : 'Schedule deactivated.');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not update the schedule.');
@@ -221,6 +226,7 @@ export default function UnionDetailPage() {
     setIsUpdatingSettings(false);
     setShowXmttModal(false);
     setOnlineCount(0);
+    setLoadError(null);
     loadingRef.current = false;
   }, [unionId]);
 
@@ -231,7 +237,10 @@ export default function UnionDetailPage() {
     const loadData = async () => {
       if (loadingRef.current) return;
       loadingRef.current = true;
-      if (isMounted) setLoading(true);
+      if (isMounted) {
+        setLoading(true);
+        setLoadError(null);
+      }
       try {
         let unionData = await unionService.getUnion(unionId);
 
@@ -364,6 +373,7 @@ export default function UnionDetailPage() {
       } catch (err) {
         reportError(err, 'UnionDetailPage.Error_loading_data');
         toast.error('Failed to load union data');
+        if (isMounted) setLoadError('Club Arena could not load this union workspace.');
       } finally {
         loadingRef.current = false;
         if (isMounted) setLoading(false);
@@ -374,7 +384,7 @@ export default function UnionDetailPage() {
     return () => {
       isMounted = false;
     };
-  }, [unionId]);
+  }, [unionId, loadRevision]);
 
   // Sync settings form when union data loads or tab switches to settings
   useEffect(() => {
@@ -526,17 +536,27 @@ export default function UnionDetailPage() {
           event: '*',
           schema: 'public',
           table: 'tournaments',
+          /* DB LOAD PASS 2026-08-24: unfiltered, every tournament write on the
+             platform woke this page, which then threw almost all of them away
+             with the clubIds check below. `tournaments.union_id` is the exact
+             scope this page cares about and it is evaluated server-side. The
+             clubIds check stays as a second, narrower gate. */
+          filter: `union_id=eq.${unionId}`,
         },
         (payload) => {
           // Reload tournaments on INSERT/UPDATE events
-          const newRecord = payload.new as any;
-          const oldRecord = payload.old as any;
+          const newRecord = payload.new as { club_id?: string; [key: string]: unknown } | null;
+          const oldRecord = payload.old as { club_id?: string; [key: string]: unknown } | null;
 
           // Check if this tournament belongs to any of our union clubs
           const clubIds = clubs.map((c) => c.clubId);
           const relevantRecord = newRecord || oldRecord;
 
-          if (relevantRecord && clubIds.includes(relevantRecord?.club_id)) {
+          if (
+            relevantRecord &&
+            relevantRecord.club_id &&
+            clubIds.includes(relevantRecord.club_id)
+          ) {
             void reloadUnionTournaments();
           }
         }
@@ -593,8 +613,10 @@ export default function UnionDetailPage() {
 
     try {
       const memberships = await getUserMemberships();
-      const myClubs = memberships.map((m: any) => m.club || m.clubs).filter(Boolean);
-      const owned = myClubs.filter((c: any) => c.owner_id === user.id);
+      const myClubs = memberships
+        .map((m: { club?: Club; clubs?: Club }) => m.club || m.clubs)
+        .filter(Boolean) as Club[];
+      const owned = myClubs.filter((c) => c?.owner_id === user.id);
 
       if (owned.length === 0) {
         toast.error('You must own a club to join a union.');
@@ -662,7 +684,15 @@ export default function UnionDetailPage() {
   if (loading) {
     return (
       <div className={styles.loading}>
-        <PageSkeleton variant="dashboard" />
+        <LoadingState message="Opening Union Command" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className={styles.error}>
+        <ErrorState message={loadError} onRetry={() => setLoadRevision((value) => value + 1)} />
       </div>
     );
   }
@@ -670,23 +700,56 @@ export default function UnionDetailPage() {
   if (!union) {
     return (
       <div className={styles.error}>
-        <h2>Union Not Found</h2>
+        <EmptyState
+          icon="UNION"
+          eyebrow="Network Unavailable"
+          title="Union Not Found"
+          description="This Union May Have Been Removed, Or The Link May Use An Outdated Identifier."
+          action={{ label: 'Browse Unions', onClick: () => navigate('/unions', { replace: true }) }}
+          secondaryAction={{ label: 'Return To Arena', onClick: () => navigate('/') }}
+        />
       </div>
     );
   }
 
   return (
     <div className={styles.page}>
+      <CasinoSurfaceHeader
+        eyebrow="Union Network / Overview"
+        title={union.name}
+        description={
+          union.description ||
+          'Inspect This Connected Club Network, Its Live Games, Player Scale, And Governed Operations.'
+        }
+        artPath="assets/club-buttons/wallets/desktop/wallet-union-bank-v1.webp"
+        status="UNION NETWORK // LIVE"
+        metrics={[
+          { label: 'Clubs', value: union.clubCount },
+          { label: 'Players', value: union.memberCount.toLocaleString(), tone: 'live' },
+          { label: 'Online', value: union.onlineCount.toLocaleString(), tone: 'attention' },
+        ]}
+      />
       <div className={styles.header}>
-        <div className={styles.unionAvatar}>{union.avatarUrl || union.name.charAt(0)}</div>
+        <div className={styles.unionAvatar}>
+          {union.avatarUrl ? <img src={union.avatarUrl} alt="" /> : union.name.charAt(0)}
+        </div>
         <div className={styles.unionInfo}>
-          <h1>{union.name}</h1>
+          <h2>{union.name}</h2>
           <p>{union.description}</p>
         </div>
         <div className={styles.headerActions}>
-          <button className={styles.applyButton} onClick={handleApplyClick} disabled={applying}>
-            {applying ? 'Applying...' : 'Apply to Join'}
-          </button>
+          {union.ownerId === user?.id ? (
+            <>
+              <Link className={styles.managementButton} to={`/unions/${unionId}/table-management`}>
+                Table Management
+              </Link>
+              <GameCreationActions managementPath={`/unions/${unionId}/table-management`} compact />
+            </>
+          ) : (
+            <button className={styles.applyButton} onClick={handleApplyClick} disabled={applying}>
+              {applying ? 'Applying...' : 'Apply To Join'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -1018,7 +1081,7 @@ export default function UnionDetailPage() {
                           >
                             Lv.{cLevel.level}
                           </span>
-                          {club.memberCount} {club.memberCount === 1 ? 'member' : 'members'}
+                          {club.memberCount} {club.memberCount === 1 ? 'Member' : 'Members'}
                         </span>
                       </div>
                     </Link>
@@ -1133,10 +1196,10 @@ export default function UnionDetailPage() {
                       </h4>
                       <p>Owner: {club.ownerName || 'Unknown'}</p>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        {club.memberCount} {club.memberCount === 1 ? 'member' : 'members'}
+                        {club.memberCount} {club.memberCount === 1 ? 'Member' : 'Members'}
                         {activeTableCount > 0 && (
                           <span style={{ color: '#6ee7b7', fontSize: '0.7rem', fontWeight: 600 }}>
-                            {activeTableCount} {activeTableCount === 1 ? 'table' : 'tables'}
+                            {activeTableCount} {activeTableCount === 1 ? 'Table' : 'Tables'}
                           </span>
                         )}
                       </span>
@@ -1303,7 +1366,10 @@ export default function UnionDetailPage() {
                     <div className={styles.tableCardDetails}>
                       {/* hide_club_name (2026-08-22): never leak the hosting
                           club's name when the owner chose to hide it. */}
-                      <span> {union?.name || (t.hide_club_name ? 'Union' : t.clubs?.name) || 'Union'}</span>
+                      <span>
+                        {' '}
+                        {union?.name || (t.hide_club_name ? 'Union' : t.clubs?.name) || 'Union'}
+                      </span>
                       {/* The advertised buy-in is the TOTAL (prize + fee), in
                           whole chips - never the prize half on its own. */}
                       <span> {formatBuyInShort(t.buy_in_amount || 0, t.buy_in_fee)}</span>
@@ -1331,10 +1397,16 @@ export default function UnionDetailPage() {
                 <h3 style={{ margin: '2rem 0 1rem' }}>Recurring Schedules</h3>
                 <div className={styles.tablesGrid}>
                   {schedules.map((s) => (
-                    <div key={s.id} className={styles.tableCard} style={!s.active ? { opacity: 0.55 } : undefined}>
+                    <div
+                      key={s.id}
+                      className={styles.tableCard}
+                      style={!s.active ? { opacity: 0.55 } : undefined}
+                    >
                       <div className={styles.tableCardHeader}>
                         <h4>{s.name}</h4>
-                        <span className={`${styles.statusBadge} ${s.active ? styles.paid : styles.overdue}`}>
+                        <span
+                          className={`${styles.statusBadge} ${s.active ? styles.paid : styles.overdue}`}
+                        >
                           {s.active ? 'ACTIVE' : 'OFF'}
                         </span>
                       </div>
@@ -1435,7 +1507,10 @@ export default function UnionDetailPage() {
                   people who own it. */}
               <p style={{ margin: '0 0 12px', fontSize: 13, opacity: 0.75 }}>
                 Weekly Player Win/Loss Settlement, Wallet And Treasury Live On The{' '}
-                <Link to="/union-dashboard" style={{ color: '#1877F2', fontWeight: 600 }}>
+                <Link
+                  to={`/unions/${unionId}/operations`}
+                  style={{ color: '#1877F2', fontWeight: 600 }}
+                >
                   Union Dashboard
                 </Link>
                 .

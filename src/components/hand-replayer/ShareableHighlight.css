@@ -42,7 +42,8 @@
 }
 
 @keyframes gradientShift {
-  0%, 100% {
+  0%,
+  100% {
     background-position: 0% 50%;
   }
   50% {
@@ -158,12 +159,6 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-
-.highlight-card:hover {
-  transform: translateY(-6px) scale(1.05);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
-}
-
 .highlight-card.red {
   color: #e74c3c;
 }
@@ -242,13 +237,6 @@
   white-space: nowrap;
 }
 
-.action-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(6, 182, 212, 0.5);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.2);
-}
-
 .action-btn:active {
   transform: translateY(0);
 }
@@ -258,21 +246,9 @@
   color: #06b6d4;
 }
 
-.share-btn:hover {
-  background: rgba(6, 182, 212, 0.1);
-  border-color: rgba(6, 182, 212, 0.6);
-  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
-}
-
 .copy-btn {
   border-color: rgba(139, 92, 246, 0.3);
   color: #a78bfa;
-}
-
-.copy-btn:hover {
-  background: rgba(139, 92, 246, 0.1);
-  border-color: rgba(139, 92, 246, 0.6);
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.2);
 }
 
 /* Footer branding */

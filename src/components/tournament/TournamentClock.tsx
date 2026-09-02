@@ -53,7 +53,41 @@ interface ClockState {
   totalChips: number;
   tournamentName: string;
   isPaused: boolean;
-  breakStartTime?: number; // Track when break started for countdown
+  /**
+   * WHEN THE BREAK ENDS, IN WALL-CLOCK MS. Replaces the old `breakStartTime`
+   * plus `breakDurationSeconds` pair (2026-08-27).
+   *
+   * `breakStartTime` was an anchor the client stamped with its OWN `Date.now()`
+   * and then counted a seeded duration from, because the end was assumed rather
+   * than known. Two things followed. The countdown could not survive a reload —
+   * there was no anchor to restore — and it could not be right even when it did
+   * run: `pauseForBreak` broadcasts one estimated end, then
+   * `beginBreakCountdown` writes the REAL `break_ends_at` afterwards, so the
+   * assumed five minutes expired up to two minutes before play resumed.
+   *
+   * An absolute instant fixes both. It is `tournaments.break_ends_at` (or the
+   * `breakEndsAt` / `resumeAt` the break broadcast carries), it survives a
+   * reload because it is persisted, and it cannot drift because nothing
+   * decrements it — `breakTimeRemaining` is subtraction, done at render.
+   *
+   * null = on a break whose end is not yet stamped (the gap between
+   * `tournament_break` and `tournament_break_started`). The overlay shows BREAK
+   * with no clock rather than inventing one.
+   */
+  breakEndsAtMs?: number | null;
+}
+
+/** Epoch ms, or null for absent/unparseable. Never NaN, never a silent zero. */
+function epochMs(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const t = typeof value === 'number' ? value : Date.parse(value);
+  return Number.isFinite(t) ? t : null;
+}
+
+/** Seconds left until `endsAtMs`, floored at 0. 0 when there is no deadline. */
+function secondsUntil(endsAtMs: number | null | undefined): number {
+  if (endsAtMs === null || endsAtMs === undefined) return 0;
+  return Math.max(0, Math.floor((endsAtMs - Date.now()) / 1000));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -82,7 +116,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
     totalChips: 0,
     tournamentName: '',
     isPaused: false,
-    breakStartTime: undefined,
+    breakEndsAtMs: null,
   });
 
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -148,6 +182,40 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
         averageStack = playersRemaining > 0 ? Math.round(totalChips / playersRemaining) : 0;
       }
 
+      /**
+       * ═══════════════════════════════════════════════════════════════════════
+       *  THE BREAK IS A COLUMN, NOT AN EVENT (2026-08-27)
+       * ═══════════════════════════════════════════════════════════════════════
+       *
+       * The two lines below used to read, in full:
+       *
+       *     isBreak: false, // Will be updated via BREAK_START event
+       *     breakTimeRemaining: 0,
+       *
+       * and this function runs on mount AND on a 30-second interval. So break
+       * state existed only for a client that happened to be connected at the
+       * instant one broadcast went out, and even that client had it ERASED
+       * within thirty seconds by its own poll. Reload, reconnect, or arrive
+       * mid-break and you saw an ordinary tournament clock counting a level
+       * down while no cards were being dealt anywhere.
+       *
+       * `tournaments.on_break` and `tournaments.break_ends_at` have been
+       * written by TournamentManagerBase the whole time (pauseForBreak,
+       * beginBreakCountdown, clearPersistedBreak). Nothing in src/ read them.
+       * They are the state; the broadcasts are only a fast path to it.
+       *
+       * `break_ends_at > now` on its own is enough to be on a break: a
+       * tournament that ENDS on a break can leave `on_break` true with nothing
+       * alive to clear it, so the expiring timestamp is what makes a stale flag
+       * self-correct.
+       */
+      const breakEndsAtMs = epochMs(
+        (tournament as { break_ends_at?: string | null }).break_ends_at
+      );
+      const onBreak =
+        Boolean((tournament as { on_break?: boolean | null }).on_break) ||
+        (breakEndsAtMs !== null && breakEndsAtMs > Date.now());
+
       setClock({
         currentLevel: levelState.levelIndex + 1,
         smallBlind: levelState.currentLevel.smallBlind,
@@ -157,15 +225,15 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
         nextBigBlind: levelState.nextLevel?.bigBlind || 0,
         nextAnte: levelState.nextLevel?.ante || 0,
         timeRemaining: levelState.timeRemainingSeconds,
-        isBreak: false, // Will be updated via BREAK_START event
-        breakTimeRemaining: 0,
+        isBreak: onBreak,
+        breakTimeRemaining: onBreak ? secondsUntil(breakEndsAtMs) : 0,
         playersRemaining,
         entrants,
         averageStack,
         totalChips,
         tournamentName: tournament.name || 'Tournament',
         isPaused: timerState?.isPaused || false,
-        breakStartTime: undefined,
+        breakEndsAtMs: onBreak ? breakEndsAtMs : null,
       });
     } catch (err) {
       reportError(err, 'TournamentClock.Refresh_error');
@@ -179,14 +247,17 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
     // Tick every second for smooth countdown
     tickRef.current = setInterval(() => {
       setClock((prev) => {
-        // Update break countdown if in a break
-        if (prev.isBreak && prev.breakStartTime) {
-          const elapsed = (Date.now() - prev.breakStartTime) / 1000;
-          const breakDuration = 300; // 5 minutes default
-          const remaining = Math.max(0, breakDuration - elapsed);
+        /* On a break: recompute from the ABSOLUTE end instant. Nothing is
+           decremented, so a throttled background tab cannot accumulate drift —
+           it can only render one second late. The old arithmetic counted a
+           seeded 300 assumed seconds from a client-stamped start, which is both
+           the drift and the two-minutes-early zero. A break whose end is not
+           stamped yet (the :55 last-hand window) shows no clock at all rather
+           than an invented one. */
+        if (prev.isBreak) {
           return {
             ...prev,
-            breakTimeRemaining: Math.floor(remaining),
+            breakTimeRemaining: secondsUntil(prev.breakEndsAtMs),
           };
         }
         // Normal level countdown
@@ -208,7 +279,10 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
     }, 1000);
 
     // Full refresh from DB every 30s
-    const refreshInterval = setInterval(refreshState, 30_000);
+    const refreshInterval = setInterval(() => {
+      if (document.hidden) return;
+      refreshState();
+    }, 30_000);
 
     // Eliminations and chip movements must reach the clock immediately, not up
     // to 30s later — the whole point of the fix above is that this footer
@@ -254,13 +328,32 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
     if (payload?.tournamentId === tournamentId) {
       setClock((prev) => ({
         ...prev,
-        currentLevel: payload.level,
+        /**
+         * NO `+ 1`: THE PAYLOAD IS ALREADY THE DISPLAY LEVEL (2026-08-29).
+         *
+         * `clock.currentLevel` is rendered raw as `LEVEL {n}` and the DB path
+         * above converts for itself (`levelState.levelIndex + 1`), so this fast
+         * path has to arrive at the same convention. It used to add one on the
+         * stated grounds that "BLIND_LEVEL_CHANGE.level is the identical value
+         * stored in tournaments.current_level". It is not.
+         * TournamentTimerService.handleLevelChange computes
+         * `const displayLevel = newLevel + 1`, writes the raw index to the row
+         * and emits the DISPLAY level here.
+         *
+         * So the 2026-08-26 fix corrected a clock that flashed one level
+         * BACKWARDS into a clock that flashes one level FORWARD — LEVEL 6 ->
+         * LEVEL 7 on the projector in front of the room — for the same window,
+         * between the advance and the next `refreshState()`. Same shape, other
+         * direction, which is why it read as a fix. See MasterBus's
+         * BLIND_LEVEL_CHANGE for the contract, now written down.
+         */
+        currentLevel: Math.max(1, Number(payload.level) || 1),
         smallBlind: payload.smallBlind,
         bigBlind: payload.bigBlind,
         ante: payload.ante,
         isBreak: false, // Clear break status on new level
         breakTimeRemaining: 0,
-        breakStartTime: undefined,
+        breakEndsAtMs: null,
       }));
       // Also do a full refresh to get timeRemaining for the new level
       refreshState();
@@ -271,14 +364,31 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
   // TournamentTimerService emits BREAK_START / BREAK_END
   const handleBreakStart = useCallback(
     (payload: any) => {
-      if (payload?.tournamentId === tournamentId) {
-        setClock((prev) => ({
-          ...prev,
-          isBreak: true,
-          breakTimeRemaining: payload.durationMinutes ? payload.durationMinutes * 60 : 300,
-          breakStartTime: Date.now(),
-        }));
-      }
+      if (payload?.tournamentId !== tournamentId) return;
+      /**
+       * ABSOLUTE FIRST, DURATION ONLY AS A LAST RESORT.
+       *
+       * The engine sends `breakEndsAt` (pauseForBreak, beginBreakCountdown)
+       * and `resumeAt`; a duration is what is left when neither travelled. A
+       * duration is also what this handler used to take unconditionally, which
+       * is why the countdown could not agree with the second broadcast — the
+       * one carrying the REAL end — that follows the first.
+       */
+      const endsAtMs =
+        epochMs(payload?.breakEndsAt) ??
+        epochMs(payload?.resumeAt) ??
+        epochMs(payload?.break_ends_at) ??
+        (Number(payload?.durationMinutes) > 0
+          ? Date.now() + Number(payload.durationMinutes) * 60_000
+          : null);
+      setClock((prev) => ({
+        ...prev,
+        isBreak: true,
+        /* The :55 announcement carries no end, the countdown-start event does.
+           Never let the announcement erase an end already known. */
+        breakEndsAtMs: endsAtMs ?? prev.breakEndsAtMs ?? null,
+        breakTimeRemaining: secondsUntil(endsAtMs ?? prev.breakEndsAtMs),
+      }));
     },
     [tournamentId]
   );
@@ -289,7 +399,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
           ...prev,
           isBreak: false,
           breakTimeRemaining: 0,
-          breakStartTime: undefined,
+          breakEndsAtMs: null,
         }));
         refreshState();
       }
@@ -335,7 +445,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
           <button
             className="tc-fullscreen-btn"
             onClick={() => setIsFullscreen(!isFullscreen)}
-            title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
           >
             {isFullscreen ? '⊟' : '⊞'}
           </button>
@@ -404,9 +514,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
             <span className="tc-stat-icon">◉</span>
             <span className="tc-stat-value">
               {clock.playersRemaining}
-              {clock.entrants > 0 && (
-                <span className="tc-stat-of"> / {clock.entrants}</span>
-              )}
+              {clock.entrants > 0 && <span className="tc-stat-of"> / {clock.entrants}</span>}
             </span>
             <span className="tc-stat-label">Remaining</span>
           </div>

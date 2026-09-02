@@ -27,10 +27,28 @@ import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
+import { resolveCosmetic } from '../cosmetics/avatarCosmetics';
 
 interface HeaderDataState {
   // Data
+  /** Resolved portrait shown by the global header. */
   avatarUrl: string | null;
+  profilePhotoUrl: string | null;
+  arenaAvatarUrl: string | null;
+  useAvatarAsProfilePic: boolean;
+  isVipActive: boolean;
+  _vipFlag: boolean;
+  _vipExpiresAt: string | null;
+  /**
+   * The player's own equipped cosmetics, for the header orb and the hamburger.
+   *
+   * They live beside `avatarUrl` rather than in a store of their own because
+   * they are drawn ON the avatar: a surface that has one and not the other
+   * paints a gold ring around a stale face. Same fetch, same cache, same
+   * realtime channel, same invalidation.
+   */
+  equippedFrame: string | null;
+  equippedAura: string | null;
   notificationCount: number;
   unreadMessages: number;
   isMessengerPageActive: boolean;
@@ -43,10 +61,14 @@ interface HeaderDataState {
 
   // Actions
   loadOnce: (userId: string) => void;
+  setProfileHeaderData: (row: Record<string, unknown>) => void;
   setAvatarUrl: (url: string | null) => void;
+  setCosmetics: (frame: string | null, aura: string | null) => void;
   setNotificationCount: (count: number) => void;
   setUnreadMessages: (count: number) => void;
   setMessengerPageActive: (active: boolean) => void;
+  clearUnreadNotifications: (userId: string) => Promise<boolean>;
+  clearUnreadMessages: (userId: string) => Promise<boolean>;
   teardown: () => void;
 }
 
@@ -82,7 +104,40 @@ function persistCount(key: string, value: number): void {
  * whoever logs in next on a shared device, which is worse than the flash it
  * removes.
  */
-const AVATAR_KEY = 'ca-avatar-cache';
+const AVATAR_KEY = 'ca-header-portrait-cache-v2';
+const LEGACY_AVATAR_KEY = 'ca-avatar-cache';
+
+function cleanUrl(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+/**
+ * Match the World Hub's existing profile-picture toggle exactly.
+ *
+ * The social photo is the global default. The Arena avatar is allowed onto a
+ * global surface only after the user explicitly enables "Use Avatar". When an
+ * opted-in avatar is later removed, fall back to the real photo rather than a
+ * placeholder.
+ */
+export function resolveHeaderPortrait(
+  profilePhotoUrl: string | null,
+  arenaAvatarUrl: string | null,
+  useAvatarAsProfilePic: boolean
+): string | null {
+  if (useAvatarAsProfilePic) return arenaAvatarUrl || profilePhotoUrl;
+  return profilePhotoUrl;
+}
+
+export function resolveActiveVip(
+  isVip: boolean,
+  expiresAt: string | null,
+  now = Date.now()
+): boolean {
+  if (!isVip) return false;
+  if (!expiresAt) return true;
+  const expiry = Date.parse(expiresAt);
+  return Number.isFinite(expiry) && expiry > now;
+}
 
 function hydrateAvatar(userId: string): string | null {
   try {
@@ -97,6 +152,9 @@ function hydrateAvatar(userId: string): string | null {
 
 function persistAvatar(userId: string | null, url: string | null): void {
   try {
+    // Never hydrate the old Arena-only value again. It is exactly the stale
+    // KingFish flash this versioned cache is intended to eliminate.
+    localStorage.removeItem(LEGACY_AVATAR_KEY);
     if (!userId || !url) {
       localStorage.removeItem(AVATAR_KEY);
       return;
@@ -107,8 +165,35 @@ function persistAvatar(userId: string | null, url: string | null): void {
   }
 }
 
+// PERF 2026-08-24: coalesce badge count refetches.
+// The realtime handlers below each ran an exact COUNT per delivered row. This
+// collapses a burst into a single trailing query per kind.
+const COUNT_DEBOUNCE_MS = 1200;
+const countTimers: Record<string, ReturnType<typeof setTimeout> | undefined> = {};
+function scheduleCount(kind: string, run: () => void | Promise<void>): void {
+  const existing = countTimers[kind];
+  if (existing) clearTimeout(existing);
+  countTimers[kind] = setTimeout(() => {
+    countTimers[kind] = undefined;
+    void run();
+  }, COUNT_DEBOUNCE_MS);
+}
+
 export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
   avatarUrl: null,
+  profilePhotoUrl: null,
+  arenaAvatarUrl: null,
+  useAvatarAsProfilePic: false,
+  isVipActive: false,
+  _vipFlag: false,
+  _vipExpiresAt: null,
+  /* Not hydrated from localStorage the way the avatar is, deliberately. The
+     avatar cache exists to kill a visible pop-in of the player's own face; a
+     frame that appears a beat later is not that, and caching an entitlement
+     locally means a lapsed VIP keeps seeing their frame until the cache is
+     cleared. Cosmetics come from the database or they do not appear. */
+  equippedFrame: null,
+  equippedAura: null,
   notificationCount: hydrateCount('ca-notif-count'),
   unreadMessages: hydrateCount('ca-msg-count'),
   isMessengerPageActive: false,
@@ -118,9 +203,57 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
   _channelKey: null,
   _busUnsubscribers: [],
 
+  setProfileHeaderData: (row) => {
+    const state = get();
+    const has = (column: string) => Object.prototype.hasOwnProperty.call(row, column);
+    const profilePhotoUrl = has('avatar_url') ? cleanUrl(row.avatar_url) : state.profilePhotoUrl;
+    const arenaAvatarUrl = has('arena_avatar_url')
+      ? cleanUrl(row.arena_avatar_url)
+      : state.arenaAvatarUrl;
+    const useAvatarAsProfilePic = has('use_avatar_as_profile_pic')
+      ? row.use_avatar_as_profile_pic === true
+      : state.useAvatarAsProfilePic;
+    const vipFlag = has('is_vip') ? row.is_vip === true : state._vipFlag;
+    const vipExpiresAt = has('vip_expires_at') ? cleanUrl(row.vip_expires_at) : state._vipExpiresAt;
+    const avatarUrl = resolveHeaderPortrait(profilePhotoUrl, arenaAvatarUrl, useAvatarAsProfilePic);
+
+    set({
+      avatarUrl,
+      profilePhotoUrl,
+      arenaAvatarUrl,
+      useAvatarAsProfilePic,
+      isVipActive: resolveActiveVip(vipFlag, vipExpiresAt),
+      _vipFlag: vipFlag,
+      _vipExpiresAt: vipExpiresAt,
+    });
+    persistAvatar(state._userId, avatarUrl);
+  },
+
+  // Backward-compatible action for the Arena's avatar picker events. It
+  // updates the Arena source but cannot replace the global photo unless the
+  // user's World Hub preference explicitly opted into that behaviour.
   setAvatarUrl: (url) => {
-    set({ avatarUrl: url });
-    persistAvatar(get()._userId, url);
+    get().setProfileHeaderData({ arena_avatar_url: url });
+  },
+
+  /**
+   * Resolved on the way in, never stored raw.
+   *
+   * A row can hold a token from a build that is not this one — a retired
+   * cosmetic, a Hub-only experiment, something typed into the SQL editor.
+   * Resolving here means every consumer of this store gets either a token it
+   * can render or null, and no surface has to defend itself individually.
+   *
+   * The self-echo guard is not decoration: this setter is called by the initial
+   * fetch, the retry, the realtime handler and the picker, and without it a
+   * realtime echo of the player's own write re-renders the whole header.
+   */
+  setCosmetics: (frame, aura) => {
+    const nextFrame = resolveCosmetic(frame, 'frame')?.id ?? null;
+    const nextAura = resolveCosmetic(aura, 'aura')?.id ?? null;
+    const state = get();
+    if (state.equippedFrame === nextFrame && state.equippedAura === nextAura) return;
+    set({ equippedFrame: nextFrame, equippedAura: nextAura });
   },
 
   setNotificationCount: (count) => {
@@ -137,6 +270,50 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
 
   setMessengerPageActive: (active) => set({ isMessengerPageActive: active }),
 
+  /* Opening either destination acknowledges the count the player just acted
+     on. Zero it synchronously so the badge disappears on the click, then make
+     the database authoritative before Messenger performs its full-page
+     redirect. A failed write restores the previous count instead of lying. */
+  clearUnreadNotifications: async (userId) => {
+    const previous = get().notificationCount;
+    get().setNotificationCount(0);
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('user_id', userId)
+        .eq('read', false);
+      if (error) throw error;
+      return true;
+    } catch (error) {
+      reportError(error, 'useHeaderDataStore.clear_unread_notifications');
+      if (get().notificationCount === 0 && (!get()._userId || get()._userId === userId)) {
+        get().setNotificationCount(previous);
+      }
+      return false;
+    }
+  },
+
+  clearUnreadMessages: async (userId) => {
+    const previous = get().unreadMessages;
+    get().setUnreadMessages(0);
+    try {
+      const { error } = await supabase
+        .from('messages')
+        .update({ is_read: true })
+        .eq('receiver_id', userId)
+        .eq('is_read', false);
+      if (error) throw error;
+      return true;
+    } catch (error) {
+      reportError(error, 'useHeaderDataStore.clear_unread_messages');
+      if (get().unreadMessages === 0 && (!get()._userId || get()._userId === userId)) {
+        get().setUnreadMessages(previous);
+      }
+      return false;
+    }
+  },
+
   /**
    * Load header data ONCE for a given userId.
    * Subsequent calls with the same userId are no-ops.
@@ -144,6 +321,7 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
    */
   loadOnce: (userId: string) => {
     const state = get();
+    const pendingPlayerAppearance = new Set<string>();
 
     // Already loaded for this user — skip
     if (state._loaded && state._userId === userId) return;
@@ -166,7 +344,17 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
 
     // Paint the cached avatar SYNCHRONOUSLY, before the fetch is even issued,
     // so the first frame of the header already has the player's face.
-    set({ _loaded: true, _userId: userId, avatarUrl: hydrateAvatar(userId) });
+    set({
+      _loaded: true,
+      _userId: userId,
+      avatarUrl: hydrateAvatar(userId),
+      profilePhotoUrl: null,
+      arenaAvatarUrl: null,
+      useAvatarAsProfilePic: false,
+      isVipActive: false,
+      _vipFlag: false,
+      _vipExpiresAt: null,
+    });
 
     // ── Fetch initial data (non-blocking) ──
     (async () => {
@@ -175,7 +363,9 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         const [profileResult, notifResult, msgResult] = await Promise.all([
           supabase
             .from('profiles')
-            .select('avatar_url:arena_avatar_url')
+            .select(
+              'avatar_url, arena_avatar_url, use_avatar_as_profile_pic, is_vip, vip_expires_at, equipped_frame, equipped_aura'
+            )
             .eq('id', userId)
             .maybeSingle(),
           supabase
@@ -216,10 +406,12 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
         // A FAILED avatar read must not overwrite the cached one with null.
         // Only a query that actually came back gets to say the player has no
         // avatar; anything else keeps the face already on screen.
-        if (!profileResult.error) {
-          const avatarUrl = profileResult.data?.avatar_url || null;
-          set({ avatarUrl });
-          persistAvatar(userId, avatarUrl);
+        if (!profileResult.error && pendingPlayerAppearance.size === 0) {
+          get().setProfileHeaderData((profileResult.data ?? {}) as Record<string, unknown>);
+          get().setCosmetics(
+            profileResult.data?.equipped_frame ?? null,
+            profileResult.data?.equipped_aura ?? null
+          );
         }
 
         set({ notificationCount: notifCount, unreadMessages: msgCount });
@@ -236,7 +428,9 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
             const [pR, nR, mR] = await Promise.all([
               supabase
                 .from('profiles')
-                .select('avatar_url:arena_avatar_url')
+                .select(
+                  'avatar_url, arena_avatar_url, use_avatar_as_profile_pic, is_vip, vip_expires_at, equipped_frame, equipped_aura'
+                )
                 .eq('id', userId)
                 .maybeSingle(),
               supabase
@@ -252,12 +446,12 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
             ]);
             if (get()._userId !== userId) return;
             if (pR.error) reportError(pR.error, 'useHeaderDataStore.avatar_fetch_retry');
-            if (nR.error) reportError(nR.error, 'useHeaderDataStore.notification_count_fetch_retry');
+            if (nR.error)
+              reportError(nR.error, 'useHeaderDataStore.notification_count_fetch_retry');
             if (mR.error) reportError(mR.error, 'useHeaderDataStore.message_count_fetch_retry');
-            if (!pR.error) {
-              const retriedAvatar = pR.data?.avatar_url || null;
-              set({ avatarUrl: retriedAvatar });
-              persistAvatar(userId, retriedAvatar);
+            if (!pR.error && pendingPlayerAppearance.size === 0) {
+              get().setProfileHeaderData((pR.data ?? {}) as Record<string, unknown>);
+              get().setCosmetics(pR.data?.equipped_frame ?? null, pR.data?.equipped_aura ?? null);
             }
             set({
               notificationCount: nR.count || 0,
@@ -291,18 +485,27 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
           table: 'notifications',
           filter: `user_id=eq.${userId}`,
         },
-        async () => {
-          try {
-            const { count } = await supabase
-              .from('notifications')
-              .select('*', { count: 'exact', head: true })
-              .eq('user_id', userId)
-              .eq('read', false);
-            get().setNotificationCount(count || 0);
-          } catch (e) {
-            reportError(e, 'useHeaderDataStore.async');
-            /* silent */
-          }
+        () => {
+          // PERF 2026-08-24: this used to run a `count: 'exact'` query
+          // SYNCHRONOUSLY ON EVERY EVENT. This channel lives on the global
+          // header, so it is mounted for every user for the whole session, and
+          // notifications arrive in bursts (a tournament finishing, a club
+          // announcement, a settlement run). Ten notifications meant ten exact
+          // counts. Coalesced: a burst now costs one query. A badge does not
+          // need sub-second precision.
+          scheduleCount('notifications', async () => {
+            try {
+              const { count } = await supabase
+                .from('notifications')
+                .select('*', { count: 'exact', head: true })
+                .eq('user_id', userId)
+                .eq('read', false);
+              get().setNotificationCount(count || 0);
+            } catch (e) {
+              reportError(e, 'useHeaderDataStore.async');
+              /* silent */
+            }
+          });
         }
       )
       .on(
@@ -323,17 +526,52 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
             );
             return;
           }
-          try {
-            const { count } = await supabase
-              .from('messages')
-              .select('*', { count: 'exact', head: true })
-              .eq('receiver_id', userId)
-              .eq('is_read', false);
-            get().setUnreadMessages(count || 0);
-          } catch (e) {
-            reportError(e, 'useHeaderDataStore.async');
-            /* silent */
-          }
+          // Coalesced for the same reason as the notifications handler above -
+          // an active conversation delivers many rows in quick succession and
+          // each one used to trigger its own exact count.
+          scheduleCount('messages', async () => {
+            try {
+              const { count } = await supabase
+                .from('messages')
+                .select('*', { count: 'exact', head: true })
+                .eq('receiver_id', userId)
+                .eq('is_read', false);
+              get().setUnreadMessages(count || 0);
+            } catch (e) {
+              reportError(e, 'useHeaderDataStore.async');
+              /* silent */
+            }
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${userId}`,
+        },
+        (payload: { new?: Record<string, unknown> }) => {
+          /* The player's own row changed. This is what makes a change made on
+             ANOTHER surface — the World Hub's avatar page, a second tab, the
+             table's settings panel — reach this header without a reload.
+             `profiles` is in the supabase_realtime publication (verified
+             2026-08-25); `table_seats` is NOT, which is why the identical-looking
+             `table-seats-live` subscription in TablePage has never delivered a
+             row and could not be copied here.
+
+             A partial payload must not blank the orb. setProfileHeaderData
+             merges only columns actually present in the replication payload,
+             then applies the same Photo/Avatar preference used by World Hub. */
+          const row = payload?.new;
+          if (!row) return;
+          if (pendingPlayerAppearance.size > 0) return;
+          get().setProfileHeaderData(row);
+          get().setCosmetics(
+            typeof row['equipped_frame'] === 'string' ? (row['equipped_frame'] as string) : null,
+            typeof row['equipped_aura'] === 'string' ? (row['equipped_aura'] as string) : null
+          );
         }
       )
       .subscribe((status: string, err?: Error) => {
@@ -390,15 +628,46 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
       }
     });
 
-    // ── Sync avatar changes from AvatarGallery (instant, no realtime delay) ──
+    const unsubAppearanceMutation = masterBus.subscribe('CUSTOMIZATION_MUTATION_STATE', (event) => {
+      if (event.payload.kind !== 'player-appearance' || event.payload.scope !== userId) return;
+      if (event.payload.state === 'pending') {
+        pendingPlayerAppearance.add(event.payload.mutationId);
+      } else if (event.payload.state !== 'rolling-back') {
+        pendingPlayerAppearance.delete(event.payload.mutationId);
+      }
+    });
+
+    const unsubPlayerAppearance = masterBus.subscribe('PLAYER_APPEARANCE_CHANGED', (event) => {
+      if (event.payload.userId !== userId) return;
+      if (typeof event.payload.avatar === 'string' && event.payload.avatar) {
+        get().setAvatarUrl(event.payload.avatar);
+      }
+      if (event.payload.frame !== undefined || event.payload.aura !== undefined) {
+        get().setCosmetics(
+          event.payload.frame !== undefined ? event.payload.frame : get().equippedFrame,
+          event.payload.aura !== undefined ? event.payload.aura : get().equippedAura
+        );
+      }
+    });
+
+    // ── Backward-compatible avatar events from older in-app surfaces ──
     const unsubProfileLoaded = masterBus.subscribe('USER_PROFILE_LOADED', (event) => {
+      if (event.payload.userId && event.payload.userId !== userId) return;
       const avatarUrl = event.payload?.avatarUrl;
       if (avatarUrl && typeof avatarUrl === 'string') {
         get().setAvatarUrl(avatarUrl);
       }
     });
 
-    set({ _busUnsubscribers: [unsubNotifRead, unsubDmCount, unsubProfileLoaded] });
+    set({
+      _busUnsubscribers: [
+        unsubNotifRead,
+        unsubDmCount,
+        unsubAppearanceMutation,
+        unsubPlayerAppearance,
+        unsubProfileLoaded,
+      ],
+    });
   },
 
   teardown: () => {
@@ -421,11 +690,23 @@ export const useHeaderDataStore = create<HeaderDataState>()((set, get) => ({
       localStorage.removeItem('ca-notif-count');
       localStorage.removeItem('ca-msg-count');
       localStorage.removeItem(AVATAR_KEY);
+      localStorage.removeItem(LEGACY_AVATAR_KEY);
     } catch {
       /* quota */
     }
     set({
       avatarUrl: null,
+      profilePhotoUrl: null,
+      arenaAvatarUrl: null,
+      useAvatarAsProfilePic: false,
+      isVipActive: false,
+      _vipFlag: false,
+      _vipExpiresAt: null,
+      // Cleared with the avatar for the same reason the avatar cache is: on a
+      // shared device the next account must not inherit the last one's face,
+      // and a frame is part of that face.
+      equippedFrame: null,
+      equippedAura: null,
       notificationCount: 0,
       unreadMessages: 0,
       _loaded: false,

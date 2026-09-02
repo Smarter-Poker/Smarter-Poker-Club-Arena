@@ -25,6 +25,42 @@ export const fmtChips = (n: number | null | undefined): string => {
 };
 
 /**
+ * CHIPS ON THE FELT ARE NEVER ABBREVIATED (Dan 2026-08-28, binding).
+ *
+ * `fmtChips` above renders 117000 as "117.0K" and 247100 as "247.1K". On a
+ * lobby row that is fine — it is a browsing surface and the exact number does
+ * not change a decision. On the TABLE it is not: a player sizing a bet, or
+ * reading how much is behind, is being shown a number that has been rounded
+ * away from the truth. "247K" is not a stack, it is a range 500 chips wide.
+ *
+ * So: separators, never a K/M suffix, and never a rounded magnitude.
+ *
+ * IT ALSO DOES NOT ROUND THE FRACTION AWAY. An earlier pass at this floored
+ * everything >= 1, which turned a typed 13.37 raise into "13" — the same
+ * class of lie in the other direction, and it broke the bet-granularity spec
+ * that pins the typed amount. Up to two decimals are kept WHEN THEY EXIST, so
+ * integers (every tournament stack) stay clean and micro-stakes stay exact.
+ *
+ * A caller that genuinely wants whole chips — a transient animation label
+ * carrying engine sub-chip noise — rounds before calling and says why. That
+ * is a display choice about one number, not a second abbreviation policy.
+ *
+ * @example formatTableChips(117000)  → "117,000"
+ * @example formatTableChips(247100)  → "247,100"
+ * @example formatTableChips(13.37)   → "13.37"
+ * @example formatTableChips(0.5)     → "0.50"
+ */
+export const formatTableChips = (n: number | null | undefined): string => {
+  const v = Number(n ?? 0);
+  if (!Number.isFinite(v)) return '0';
+  if (v === 0) return '0';
+  const sign = v < 0 ? '-' : '';
+  const abs = Math.abs(v);
+  if (abs < 1) return `${sign}${abs.toFixed(2)}`;
+  return `${sign}${abs.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+};
+
+/**
  * Format a timestamp as a relative "time ago" string.
  * @example timeAgo("2026-03-17T10:00:00Z") → "2h ago"
  */

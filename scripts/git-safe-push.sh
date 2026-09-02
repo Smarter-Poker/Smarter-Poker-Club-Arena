@@ -198,10 +198,17 @@ else
     exit 0
   fi
 
-  GIT_AUTHOR_NAME="Club Arena Agent" \
-  GIT_AUTHOR_EMAIL="agent@smarter.poker" \
-  GIT_COMMITTER_NAME="Club Arena Agent" \
-  GIT_COMMITTER_EMAIL="agent@smarter.poker" \
+  # 2026-08-29: this used to hardcode "Club Arena Agent <agent@smarter.poker>"
+  # WITH --no-verify — the exact identity the estate cannot deploy (Vercel
+  # sends such commits to BLOCKED with no build and no logs; see
+  # AGENT-PLAYBOOK.md §5 and CHECK 15), pushed past the identity guard by the
+  # very script every agent is told to trust. Found live on 2026-08-29: three
+  # local commits authored by it, all undeployable. The only identity this
+  # estate ships under, exactly as guard-commit-identity.sh enforces:
+  GIT_AUTHOR_NAME="Smarter-Poker" \
+  GIT_AUTHOR_EMAIL="254329056+Smarter-Poker@users.noreply.github.com" \
+  GIT_COMMITTER_NAME="Smarter-Poker" \
+  GIT_COMMITTER_EMAIL="254329056+Smarter-Poker@users.noreply.github.com" \
   git commit -m "$MSG" --no-verify 2>/dev/null || {
     echo "⚠️  Commit returned non-zero (may be empty commit). Continuing..."
   }

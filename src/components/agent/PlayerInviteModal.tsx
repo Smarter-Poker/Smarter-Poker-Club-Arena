@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
+import { AgentService } from '../../services/AgentService';
 import styles from './PlayerInviteModal.module.css';
 import { reportError } from '../../utils/errorReporter';
 
@@ -19,7 +20,14 @@ import { reportError } from '../../utils/errorReporter';
 interface PlayerInviteModalProps {
   isOpen: boolean;
   onClose: () => void;
-  agentId: string;
+  /**
+   * The agent's USER id (Agent.userId), NOT the agents-table primary key.
+   *
+   * The caller used to pass `agent.id` here, which is the agents row's PK. It
+   * was then written into columns that hold user ids, so even the writes that
+   * did not fail outright were storing the wrong identifier.
+   */
+  agentUserId: string;
   clubId: string;
   onPlayerAdded?: () => void;
 }
@@ -39,7 +47,7 @@ interface ExistingPlayer {
 export default function PlayerInviteModal({
   isOpen,
   onClose,
-  agentId,
+  agentUserId,
   clubId,
   onPlayerAdded,
 }: PlayerInviteModalProps) {
@@ -48,7 +56,9 @@ export default function PlayerInviteModal({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<ExistingPlayer[]>([]);
   const [searching, setSearching] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState('');
+  // `inviteCode` holds the shareable invite LINK. The name is kept because the
+  // styles and the copy button are keyed to it; what it contains changed when
+  // the dead club_invites code was replaced by a link that actually redeems.
   const [inviteCode, setInviteCode] = useState('');
   const [inviting, setInviting] = useState(false);
   const [adding, setAdding] = useState<string | null>(null);
@@ -69,7 +79,6 @@ export default function PlayerInviteModal({
     if (isOpen) {
       setSearchQuery('');
       setSearchResults([]);
-      setInviteEmail('');
       setInviteCode('');
       setMessage(null);
     }
@@ -123,33 +132,26 @@ export default function PlayerInviteModal({
     if (isMounted.current) setMessage(null);
 
     try {
-      // First add to club_memberships
-      const { error: membershipError } = await supabase.from('club_members').insert({
-        club_id: clubId,
-        user_id: player.id,
-        role: 'player',
-        referrer_id: agentId,
-        status: 'active',
-      });
+      // ONE permission-checked call that both creates the membership (at zero
+      // chips, enforced by the BEFORE INSERT guard on club_members) and writes
+      // agent_id, which is the column the hierarchy is built from.
+      //
+      // What this replaces: a direct insert carrying `referrer_id: agentId`.
+      // club_members has no referrer_id column, so PostgREST rejected the whole
+      // statement and this button had never once worked. It then wrote the
+      // agent link into credit_assignments only, which the hierarchy does not
+      // read, so even a hypothetical success would not have built a downline.
+      const res = await AgentService.attachPlayerToAgent(clubId, agentUserId, player.id);
 
-      if (membershipError && !membershipError.message.includes('duplicate')) {
-        throw membershipError;
+      if (!res.success) {
+        if (isMounted.current) {
+          setMessage({
+            type: 'error',
+            text: res.error || 'Failed to add player',
+          });
+        }
+        return;
       }
-
-      // Update player's agent assignment in credit_assignments
-      const { error: assignmentError } = await supabase.from('credit_assignments').upsert(
-        {
-          club_id: clubId,
-          player_id: player.id,
-          agent_id: agentId,
-          credit_limit: 0,
-          credits_used: 0,
-          status: 'active',
-        },
-        { onConflict: 'club_id,player_id' }
-      );
-
-      if (assignmentError) throw assignmentError;
 
       if (isMounted.current)
         setMessage({ type: 'success', text: `${player.displayName} added successfully!` });
@@ -162,39 +164,50 @@ export default function PlayerInviteModal({
     setAdding(null);
   };
 
-  // Generate invite code
+  // Build the agent's shareable invite link.
+  //
+  // This used to write a row into `club_invites` and show a code like
+  // "a414-X7QP". Nothing in the codebase has ever READ club_invites — the table
+  // holds zero rows — so that code could not be redeemed by any path, and an
+  // agent who shared it was sending a stranger a string that did nothing.
+  //
+  // The link below is the one the rest of the app already understands:
+  // fn_redeem_club_invite_code resolves `ref` to the agent, attaches the new
+  // player to their downline, and admits them to the club.
   const generateInviteCode = async () => {
     setInviting(true);
     if (isMounted.current) setMessage(null);
 
     try {
-      // Generate a unique invite code
-      const code = `${clubId.slice(0, 4)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+      const resolvedClubId = await resolveClubUUID(clubId);
 
-      const { error } = await supabase.from('club_invites').insert({
-        club_id: clubId,
-        agent_id: agentId,
-        code: code,
-        email: inviteEmail || null,
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days
-        status: 'pending',
-      });
+      // player_number is what the redemption RPC matches on; the raw user id
+      // works too and is the fallback when a profile has no number yet.
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('player_number')
+        .eq('id', agentUserId)
+        .maybeSingle();
 
-      if (error) throw error;
+      const ref = profile?.player_number || agentUserId;
+      const link = `${window.location.origin}/hub/club-arena/invite/${resolvedClubId}?ref=${ref}`;
 
-      setInviteCode(code);
-      if (isMounted.current) setMessage({ type: 'success', text: 'Invite code generated!' });
+      if (isMounted.current) {
+        setInviteCode(link);
+        setMessage({ type: 'success', text: 'Invite link ready!' });
+      }
     } catch (err) {
       reportError(err, 'PlayerInviteModal.Failed_to_generate_invite');
-      if (isMounted.current) setMessage({ type: 'error', text: 'Failed to generate invite code' });
+      if (isMounted.current) setMessage({ type: 'error', text: 'Failed to generate invite link' });
     }
     setInviting(false);
   };
 
-  // Copy invite code
+  // Copy the invite link
   const copyCode = () => {
+    if (!inviteCode) return;
     navigator.clipboard.writeText(inviteCode);
-    setMessage({ type: 'success', text: 'Code copied!' });
+    setMessage({ type: 'success', text: 'Link copied!' });
   };
 
   if (!isOpen) return null;
@@ -245,7 +258,7 @@ export default function PlayerInviteModal({
             <div className={styles.searchBar}>
               <input
                 type="text"
-                placeholder="Search by username..."
+                placeholder="Search By Username..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
@@ -258,7 +271,7 @@ export default function PlayerInviteModal({
             <div className={styles.results}>
               {searchResults.length === 0 ? (
                 <div className={styles.noResults}>
-                  {searchQuery ? 'No players found' : 'Search for players to add'}
+                  {searchQuery ? 'No Players Found' : 'Search For Players To Add'}
                 </div>
               ) : (
                 searchResults.map((player) => (
@@ -291,36 +304,25 @@ export default function PlayerInviteModal({
         {/* Invite Mode */}
         {mode === 'invite' && (
           <div className={styles.inviteSection}>
-            <div className={styles.inviteForm}>
-              <label>Email (Optional)</label>
-              <input
-                type="email"
-                placeholder="player@email.com"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-              />
-              <p className={styles.hint}>Leave Blank To Generate A Shareable Code</p>
-            </div>
-
             {!inviteCode ? (
               <button
                 className={styles.generateBtn}
                 onClick={generateInviteCode}
                 disabled={inviting}
               >
-                {inviting ? 'Generating...' : 'Generate Invite Code'}
+                {inviting ? 'Generating...' : 'Generate Invite Link'}
               </button>
             ) : (
               <div className={styles.codeDisplay}>
                 <span className={styles.code}>{inviteCode}</span>
-                <button onClick={copyCode}> Copy</button>
+                <button onClick={copyCode}>Copy</button>
               </div>
             )}
 
             <div className={styles.inviteInfo}>
-              <p> Share This Code With New Players</p>
-              <p> Code Expires In 7 Days</p>
-              <p> Player Will Be Assigned To You</p>
+              <p>Share This Link With New Players</p>
+              <p>Anyone Who Joins Through It Is Added To Your Downline</p>
+              <p>New Players Always Start With Zero Chips</p>
             </div>
           </div>
         )}

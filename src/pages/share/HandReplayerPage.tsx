@@ -262,8 +262,12 @@ export default function HandReplayerPage() {
         <div className="replayer-bg" />
 
         <div className="replayer-header-controls">
-          <button className="sound-toggle" onClick={() => setSoundEnabled(!soundEnabled)}>
-            {soundEnabled ? '🔊' : '🔇'}
+          <button
+            className="sound-toggle"
+            onClick={() => setSoundEnabled(!soundEnabled)}
+            aria-label={soundEnabled ? 'Turn Sound Off' : 'Turn Sound On'}
+          >
+            {soundEnabled ? 'ON' : 'OFF'}
           </button>
           <div className="view-toggle">
             <button
@@ -361,7 +365,10 @@ export default function HandReplayerPage() {
                       {actionAtStep && (
                         <div
                           className="action-bubble"
-                          style={{ marginTop: '4px', animation: 'fadeInUp 0.3s forwards' }}
+                          style={{
+                            marginTop: '4px',
+                            animation: 'animationsFadeInUp 0.3s forwards',
+                          }}
                         >
                           {actionAtStep.action.toUpperCase()}
                           {actionAtStep.amount ? ` ${actionAtStep.amount}` : ''}
@@ -518,7 +525,7 @@ export default function HandReplayerPage() {
             void (async () => {
               try {
                 if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-                  await navigator.share({ url: shareUrl, title: 'Check out this hand!' });
+                  await navigator.share({ url: shareUrl, title: 'Check Out This Hand!' });
                   return;
                 }
                 await navigator.clipboard.writeText(shareUrl);

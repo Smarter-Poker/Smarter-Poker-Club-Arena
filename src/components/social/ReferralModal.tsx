@@ -42,6 +42,10 @@ export function ReferralModal({
   if (!isOpen) return null;
 
   const handleCopy = () => {
+    // A link the caller could not build yet (no club in scope, profile still
+    // loading) must not be copied as an empty string and reported as "Copied!".
+    // Sharing nothing is worse than the button doing nothing.
+    if (!referralLink) return;
     navigator.clipboard.writeText(referralLink);
     setCopied(true);
     if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
@@ -75,8 +79,12 @@ export function ReferralModal({
           <div className="referral-link-box">
             <span className="link-label">Your Referral Link</span>
             <div className="link-input-group">
-              <input readOnly value={referralLink} />
-              <button onClick={handleCopy} className={copied ? 'copied' : ''}>
+              <input readOnly value={referralLink} placeholder="Preparing Your Link..." />
+              <button
+                onClick={handleCopy}
+                disabled={!referralLink}
+                className={copied ? 'copied' : ''}
+              >
                 {copied ? 'Copied!' : 'Copy'}
               </button>
             </div>

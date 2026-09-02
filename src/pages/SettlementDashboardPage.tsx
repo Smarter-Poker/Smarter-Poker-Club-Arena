@@ -186,6 +186,8 @@ export default function SettlementDashboardPage() {
   const [visibleRows, setVisibleRows] = useState<Set<number>>(new Set());
 
   const loadingRef = useRef(false);
+  // debounce timer for the agent_commissions realtime firehose (see below)
+  const commissionReloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadData = useCallback(async () => {
     if (loadingRef.current) return;
@@ -323,11 +325,7 @@ export default function SettlementDashboardPage() {
     );
     const unsub4 = masterBus.subscribeDebounced('SETTLEMENT_PAYOUT_FAILED', () => loadData(), 500);
     const unsub5 = masterBus.subscribeDebounced('BALANCE_UPDATED', () => loadData(), 2000);
-    const unsub6 = masterBus.subscribeDebounced(
-      'TRANSACTION_LOGGED' as any,
-      () => loadData(),
-      2000
-    );
+    const unsub6 = masterBus.subscribeDebounced('TRANSACTION_LOGGED', () => loadData(), 2000);
     return () => {
       unsub1();
       unsub2();
@@ -340,6 +338,19 @@ export default function SettlementDashboardPage() {
 
   // Real-time subscription on agent_commissions (the live per-hand commission
   // ledger — sweep #3: agent_settlements never existed in the schema)
+  //
+  // DEBOUNCED (2026-09-01). agent_commissions is a PER-HAND ledger: 1,539,684 rows
+  // since 2026-05-01, averaging 0.40 chips each, and 1,878,396 lifetime writes -
+  // the highest write volume of any table in the supabase_realtime publication.
+  // This handler used to call loadData() raw, once per inserted row, while the six
+  // masterBus subscriptions directly above it were all debounced 500-2000ms. The
+  // in-flight guard at the top of loadData() dropped the overlapping ones, so this
+  // was never as bad on the client as it looks - but it re-armed a full reload on
+  // every commission row, and a settlement dashboard does not need per-hand
+  // granularity to be correct.
+  //
+  // 2000ms matches the BALANCE_UPDATED and TRANSACTION_LOGGED subscriptions above,
+  // which carry the same kind of money-movement news.
   useEffect(() => {
     const channelKey = 'settlement-dashboard-rt';
     const channel = masterBus.getOrCreateChannel(channelKey);
@@ -347,7 +358,13 @@ export default function SettlementDashboardPage() {
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'agent_commissions' },
-        () => loadData()
+        () => {
+          if (commissionReloadTimer.current) clearTimeout(commissionReloadTimer.current);
+          commissionReloadTimer.current = setTimeout(() => {
+            commissionReloadTimer.current = null;
+            loadData();
+          }, 2000);
+        }
       )
       .subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
@@ -359,6 +376,10 @@ export default function SettlementDashboardPage() {
         }
       });
     return () => {
+      if (commissionReloadTimer.current) {
+        clearTimeout(commissionReloadTimer.current);
+        commissionReloadTimer.current = null;
+      }
       masterBus.removeRegisteredChannel(channelKey);
     };
   }, [loadData]);
@@ -430,7 +451,7 @@ export default function SettlementDashboardPage() {
     }
     if (
       !(await confirmDialog({
-        title: 'Settle pending rakeback now',
+        title: 'Settle Pending Rakeback Now',
         message: `Settle ${pending} pending rakeback period(s) across ${rakebackStatus?.pendingClubs ?? 0} club(s), paying out ~${owed.toLocaleString()} chips? This is idempotent - it can't pay the same period twice.`,
         confirmText: 'Settle now',
         variant: 'default',
@@ -602,7 +623,16 @@ export default function SettlementDashboardPage() {
   }
 
   return (
-    <div style={{ padding: '16px', maxWidth: '900px', margin: '0 auto', paddingBottom: '100px' }}>
+    <div
+      style={{
+        padding: '16px',
+        width: '100%',
+        maxWidth: '900px',
+        margin: '0 auto',
+        paddingBottom: '100px',
+        overflowX: 'hidden',
+      }}
+    >
       {isRefreshing && (
         <div
           style={{
@@ -627,7 +657,9 @@ export default function SettlementDashboardPage() {
             color: '#3b82f6',
             cursor: 'pointer',
             fontSize: '0.85rem',
-            padding: 0,
+            padding: '10px 0',
+            minHeight: 44,
+            touchAction: 'manipulation',
             marginBottom: '4px',
           }}
         >
@@ -667,6 +699,7 @@ export default function SettlementDashboardPage() {
               right: '-10%',
               width: 200,
               height: 200,
+              maxWidth: '100%',
               background: 'radial-gradient(circle, rgba(0,212,255,0.1) 0%, transparent 70%)',
               borderRadius: '50%',
               pointerEvents: 'none',
@@ -848,6 +881,8 @@ export default function SettlementDashboardPage() {
             color: '#10b981',
             fontWeight: 700,
             fontSize: '0.8rem',
+            minHeight: 44,
+            touchAction: 'manipulation',
             cursor: runningCanary ? 'wait' : 'pointer',
             opacity: runningCanary ? 0.5 : 1,
             transition: 'all 0.2s',
@@ -860,8 +895,8 @@ export default function SettlementDashboardPage() {
           disabled={runningSettlement}
           title={
             rakebackStatus
-              ? `${rakebackStatus.pendingPeriods} pending period(s), ~${rakebackStatus.estimatedOwed.toLocaleString()} chips owed`
-              : 'Player rakeback settles automatically; click to force it now'
+              ? `${rakebackStatus.pendingPeriods} Pending Period(s), ~${rakebackStatus.estimatedOwed.toLocaleString()} Chips Owed`
+              : 'Player Rakeback Settles Automatically; Click To Force It Now'
           }
           style={{
             padding: '10px 18px',
@@ -871,6 +906,8 @@ export default function SettlementDashboardPage() {
             color: '#8b5cf6',
             fontWeight: 700,
             fontSize: '0.8rem',
+            minHeight: 44,
+            touchAction: 'manipulation',
             cursor: runningSettlement ? 'wait' : 'pointer',
             opacity: runningSettlement ? 0.5 : 1,
             transition: 'all 0.2s',
@@ -892,6 +929,8 @@ export default function SettlementDashboardPage() {
             color: 'rgba(255,255,255,0.6)',
             fontWeight: 700,
             fontSize: '0.8rem',
+            minHeight: 44,
+            touchAction: 'manipulation',
             cursor: 'pointer',
           }}
         >
@@ -918,9 +957,9 @@ export default function SettlementDashboardPage() {
           {rakebackStatus.pendingPeriods > 0 ? (
             <>
               <strong style={{ color: '#8b5cf6' }}>
-                {rakebackStatus.pendingPeriods} Period(S)
+                {rakebackStatus.pendingPeriods} Period(s)
               </strong>{' '}
-              Across {rakebackStatus.pendingClubs} Club(S) Pending (~
+              Across {rakebackStatus.pendingClubs} Club(s) Pending (~
               {rakebackStatus.estimatedOwed.toLocaleString()} Chips) - Use “Settle Rakeback” To
               Clear Now.
             </>
@@ -1021,7 +1060,7 @@ export default function SettlementDashboardPage() {
         <div
           style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '24px' }}
           role="table"
-          aria-label="Agent payouts"
+          aria-label="Agent Payouts"
         >
           {agentPayouts.map((agent, idx) => {
             const statusStyle = getStatusColor(agent.status);
@@ -1124,7 +1163,7 @@ export default function SettlementDashboardPage() {
         <div
           style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}
           role="table"
-          aria-label="Settlement period history"
+          aria-label="Settlement Period History"
         >
           {periodHistory.map((period) => {
             const statusStyle = getStatusColor(period.status);

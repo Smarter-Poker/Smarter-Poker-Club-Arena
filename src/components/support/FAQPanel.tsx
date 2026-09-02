@@ -22,27 +22,27 @@ export const DEFAULT_FAQS: FAQItem[] = [
   {
     id: '1',
     category: 'General',
-    question: 'How do I create a club?',
-    answer: 'Go to the main lobby and click "Create Club". Follow the setup wizard.',
+    question: 'How Do I Create A Club?',
+    answer: 'Go To The Main Lobby And Click "Create Club". Follow The Setup Wizard.',
   },
   {
     id: '2',
     category: 'Game',
-    question: 'What is Rake?',
-    answer: 'Rake is a small fee taken by the club from each pot to cover operational costs.',
+    question: 'What Is Rake?',
+    answer: 'Rake Is A Small Fee Taken By The Club From Each Pot To Cover Operational Costs.',
   },
   {
     id: '3',
     category: 'Game',
-    question: 'How does Bad Beat Jackpot work?',
+    question: 'How Does Bad Beat Jackpot Work?',
     answer:
-      'Lose a monster hand and win big! In Hold\u2019em, Aces full of Jacks or better must lose to Quads or better (both hole cards play). In Omaha games, Quad Kings or better must lose. When it hits, the loser gets 50% of the payout, the winner 25%, and everyone else dealt in splits the rest \u2014 credited straight to your table stack.',
+      'Lose A Monster Hand And Win Big! In Hold\u2019em, Aces Full Of Jacks Or Better Must Lose To Quads Or Better (Both Hole Cards Play). In Omaha Games, Quad Kings Or Better Must Lose. When It Hits, The Loser Gets 50% Of The Payout, The Winner 25%, And Everyone Else Dealt In Splits The Rest - Credited Straight To Your Table Stack.',
   },
   {
     id: '4',
     category: 'Chips',
-    question: 'How do I get more chips?',
-    answer: 'Contact your club agent or admin to purchase more chips.',
+    question: 'How Do I Get More Chips?',
+    answer: 'Contact Your Club Agent Or Admin To Purchase More Chips.',
   },
 ];
 
@@ -71,7 +71,7 @@ export function FAQPanel({ isOpen, onClose }: { isOpen: boolean; onClose: () => 
         <div className="faq-search">
           <span className="search-icon">⌕</span>
           <input
-            placeholder="Search for answers..."
+            placeholder="Search For Answers..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />

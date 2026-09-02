@@ -15,7 +15,7 @@
  * - HTML/API → Network-first (always fresh)
  */
 
-// eslint-disable-next-line no-restricted-globals
+ 
 const sw = self;
 
 // DEPLOY VERSION — updated by CI/build to bust the service worker cache.
@@ -31,7 +31,25 @@ const DEPLOY_TS = '20260822000000';
 //   not changed. Media staleness is handled by stale-while-revalidate below.
 const CACHE_NAME = `club-arena-${DEPLOY_TS}`;
 const MEDIA_CACHE = 'club-arena-media-v1';
-const MAX_CACHE_ENTRIES = 300; // Evict oldest chunk entries beyond this
+// How stale a cached media entry may be before it is REALLY revalidated.
+// See the media branch of the fetch handler for why this number has to exist.
+const MEDIA_REVALIDATE_AFTER_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+/**
+ * Age of a cached response, from the origin's own Date header.
+ *
+ * Returns Infinity when there is no usable Date, which makes an unknown age
+ * behave as "revalidate now". That is the safe direction: the failure this
+ * whole mechanism exists to prevent is serving something old forever, so an
+ * entry we cannot date should be checked, not trusted.
+ */
+function cachedAgeMs(response) {
+  const raw = response && response.headers.get('date');
+  const parsed = raw ? Date.parse(raw) : NaN;
+  return Number.isFinite(parsed) ? Date.now() - parsed : Infinity;
+}
+const MAX_CACHE_ENTRIES = 400; // Evict oldest chunk entries beyond this (a full
+// deploy emits ~330 hashed chunks, so 300 could evict live code mid-session)
 const MAX_MEDIA_ENTRIES = 600; // Cards (104/deck-style) + tiles + icons + logos fit comfortably
 
 // App-shell assets to warm at install time. EMPTY in source — the build
@@ -42,54 +60,153 @@ const MAX_MEDIA_ENTRIES = 600; // Cards (104/deck-style) + tiles + icons + logos
 // pre-fetches the new hashed chunks the moment a deploy lands.
 const PRECACHE_URLS = [];
 
-/**
- * Trim cache to MAX_CACHE_ENTRIES — prevents unbounded growth across deploys.
- * Each deploy creates new hashed filenames; old ones stay cached forever without this.
- */
-async function trimCache(cacheName, maxEntries) {
-  const cache = await caches.open(cacheName);
-  const keys = await cache.keys();
-  if (keys.length > maxEntries) {
-    // Delete oldest entries (first in = oldest)
-    const deleteCount = keys.length - maxEntries + 50; // Batch-delete 50 extra for headroom
-    for (let i = 0; i < deleteCount; i++) {
-      await cache.delete(keys[i]);
-    }
-  }
-}
-
 // The canonical cache key for the SPA shell document. Every /hub/club-arena/*
 // navigation serves the same index.html (SPA fallback rewrite), so all of
 // them share one cached entry.
 const SHELL_KEY = '/hub/club-arena';
 
+// The shell entries are inserted FIRST, at install, so a naive oldest-first
+// eviction deletes exactly the files the app cannot boot without. Anything in
+// this set is exempt from trimming for the life of the versioned cache.
+const PROTECTED_PATHS = new Set([SHELL_KEY, '/hub/club-arena/offline.html', ...PRECACHE_URLS]);
+
 /**
- * Network-first navigation with a 3.5s deadline. A fresh response updates the
- * cached shell; a timeout, network error, or 5xx serves the shell that was
- * precached at install alongside its exact chunks.
+ * Trim cache to maxEntries — prevents unbounded growth across deploys.
+ * Each deploy creates new hashed filenames; old ones stay cached forever without this.
+ *
+ * 2026-08-24: this used to evict oldest-first with no exemptions. The shell,
+ * the entry chunk and the vendor chunks are written at install and are
+ * therefore the OLDEST entries in the cache, so the first trim past the cap
+ * threw away precisely the boot set the precache exists to hold — and the
+ * cache-first shell below would then serve an HTML file whose scripts were
+ * gone. Protected paths are skipped, and the cap is measured against the
+ * evictable remainder.
  */
-async function networkFirstShell(request) {
-  const cache = await caches.open(CACHE_NAME);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 3500);
-  try {
-    const response = await fetch(request, { signal: controller.signal });
-    clearTimeout(timer);
-    if (response.ok) {
-      cache.put(SHELL_KEY, response.clone());
-      return response;
+async function trimCache(cacheName, maxEntries) {
+  const cache = await caches.open(cacheName);
+  const keys = await cache.keys();
+  if (keys.length <= maxEntries) return;
+  const evictable = keys.filter((req) => {
+    try {
+      return !PROTECTED_PATHS.has(new URL(req.url).pathname);
+    } catch {
+      return true;
     }
-    // Server error: prefer the known-good cached shell over an error page
-    const cached = await cache.match(SHELL_KEY);
-    return cached || response;
-  } catch (err) {
-    clearTimeout(timer);
-    const cached = await cache.match(SHELL_KEY);
-    if (cached) return cached;
-    const offline = await cache.match('/hub/club-arena/offline.html');
-    if (offline) return offline;
-    throw err;
+  });
+  // Delete oldest evictable entries (first in = oldest), 50 extra for headroom
+  const deleteCount = Math.min(evictable.length, keys.length - maxEntries + 50);
+  for (let i = 0; i < deleteCount; i++) {
+    await cache.delete(evictable[i]);
   }
+}
+
+/**
+ * CACHE-FIRST navigation, revalidated in the background.
+ *
+ * 2026-08-24 — this was network-first with a 3.5s deadline, and that deadline
+ * was being paid by every single entry into Club Arena. Tapping the tile in
+ * the World Hub blocked on a full HTML round trip to Vercel before one byte of
+ * the app could start, even though a byte-identical shell was already sitting
+ * in this cache from install. On a phone that is 300-800ms of nothing, and it
+ * is the first thing the player experiences.
+ *
+ * The shell is now returned from cache immediately — no network in the
+ * critical path at all — and a fresh copy is fetched alongside it to update
+ * the cache for next time.
+ *
+ * WHY A STALE SHELL IS SAFE HERE, which is the whole question:
+ *
+ *  - The shell and the exact hashed chunks it references are precached
+ *    TOGETHER, in the same deploy-versioned cache, by the install handler
+ *    below. A cached shell can therefore always resolve its own scripts from
+ *    cache-first even after the server has rotated to new filenames.
+ *  - trimCache above will not evict that set, which is what would otherwise
+ *    break this the moment a session touched 400 chunks.
+ *  - A new deploy ships a new sw-bus.js (DEPLOY_TS changes), so the browser
+ *    installs a new SW, precaches the NEW shell + chunks, skipWaiting()s and
+ *    claims. The following navigation serves the new shell. One extra
+ *    navigation of latency on a deploy, in exchange for removing a round trip
+ *    from every navigation.
+ *  - When the background revalidation shows the shell has changed under a
+ *    still-current SW, clients are told, so the app can refresh itself at a
+ *    moment of its own choosing rather than mid-hand (see SHELL_UPDATED).
+ *
+ * ── THE BOUNDED FRESHNESS RACE (Dan 2026-08-29) ────────────────────────────
+ *
+ * Pure cache-first had a visible cost Dan ordered stopped: open Club Arena
+ * right after a deploy (which, at this repo's deploy cadence, is MOST opens)
+ * and the app boots the one-deploy-old shell, then SHELL_UPDATED lands and
+ * useShellUpdateGate hard-reloads the page seconds after it painted. Dan:
+ * "it like glitches and reloads... it looks like broken code."
+ *
+ * So the revalidation fetch — which was already being made on every
+ * navigation — is now given a short, fixed budget to answer BEFORE the
+ * cached shell is returned. If the network wins, the session boots the
+ * CURRENT shell and there is nothing to reload later: no glitch at all.
+ * If the budget expires first, the cached shell is served exactly as
+ * before and the gate remains the (verified) fallback.
+ *
+ * This is NOT the 2026-08-24 network-first regression coming back:
+ *  - the deadline is SHELL_FRESH_RACE_MS, not 3500ms, and on expiry the
+ *    answer is the instant cached shell, never a spinner;
+ *  - offline rejects the fetch immediately, so the offline path costs ~0ms;
+ *  - the request was already on the wire for revalidation — the race adds
+ *    no network traffic, only a bounded wait for work already in flight.
+ */
+const SHELL_FRESH_RACE_MS = 300;
+
+async function shellFromCache(event) {
+  const cache = await caches.open(CACHE_NAME);
+  const cached = await cache.match(SHELL_KEY);
+
+  const revalidate = fetch(event.request, { cache: 'no-cache' })
+    .then(async (response) => {
+      if (!response || !response.ok) return response;
+      // Compare before storing so we can tell clients something actually moved.
+      let changed = false;
+      if (cached) {
+        try {
+          const [before, after] = await Promise.all([cached.clone().text(), response.clone().text()]);
+          changed = before !== after;
+        } catch {
+          /* comparison is best-effort */
+        }
+      }
+      await cache.put(SHELL_KEY, response.clone());
+      if (changed) {
+        const clients = await sw.clients.matchAll({ type: 'window' });
+        clients.forEach((c) => c.postMessage({ type: 'SHELL_UPDATED' }));
+      }
+      return response;
+    })
+    .catch(() => null);
+
+  if (cached) {
+    // The bounded freshness race — see the block comment above. The fetch is
+    // already in flight for revalidation; give it SHELL_FRESH_RACE_MS to land
+    // so a post-deploy entry can boot the current shell instead of booting
+    // stale and being reloaded out from under the player seconds later.
+    const fresh = await Promise.race([
+      revalidate,
+      new Promise((resolve) => setTimeout(resolve, SHELL_FRESH_RACE_MS)),
+    ]);
+    if (fresh && fresh.ok) {
+      // revalidate has fully settled (compare + cache.put done); the response
+      // body itself is unconsumed — only clones were read. Serve it.
+      return fresh;
+    }
+    // Keep the revalidation alive past the response we are about to return.
+    event.waitUntil(revalidate);
+    return cached;
+  }
+
+  // Nothing cached yet (first ever visit, or the cache was cleared): this is
+  // the only path that waits on the network, and it is once per device.
+  const fresh = await revalidate;
+  if (fresh && fresh.ok) return fresh;
+  const offline = await cache.match('/hub/club-arena/offline.html');
+  if (offline) return offline;
+  return fresh || fetch(event.request);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -118,17 +235,16 @@ sw.addEventListener('fetch', (event) => {
   // the table and lobby feel slow) were never cached by this SW at all.
   const isMedia = /\.(png|jpg|jpeg|webp|avif|svg|gif|ico|mp4|webm|woff2?)$/i.test(url.pathname);
 
-  // Navigations into Club Arena: NETWORK-FIRST so deploys propagate exactly
-  // as before, but with a fast fallback to the precached app shell when the
-  // network is slow (>3.5s) or down. The shell HTML is precached at install
-  // time TOGETHER with the chunks it references (same versioned cache), so
-  // the fallback is always internally consistent — this is what lets the app
-  // boot instantly on a dead connection instead of white-screening.
+  // Navigations into Club Arena: CACHE-FIRST, revalidated in the background.
+  // The shell HTML is precached at install time TOGETHER with the chunks it
+  // references (same versioned cache), so what we serve is always internally
+  // consistent. See shellFromCache above for why serving a shell that may be
+  // one deploy old is the right trade here.
   const isClubArenaNav =
     (event.request.mode === 'navigate' || event.request.destination === 'document') &&
     (url.pathname === '/hub/club-arena' || url.pathname.startsWith('/hub/club-arena/'));
   if (isClubArenaNav) {
-    event.respondWith(networkFirstShell(event.request));
+    event.respondWith(shellFromCache(event));
     return;
   }
 
@@ -203,36 +319,89 @@ sw.addEventListener('fetch', (event) => {
       )
     );
   } else if (isImage) {
-    // Stale-while-revalidate: show cached media instantly, update in background.
-    // With the long-lived Cache-Control headers on these paths, the background
-    // revalidation is answered by the browser's HTTP cache — no network cost.
+    // ─────────────────────────────────────────────────────────────────────
+    // STALE-WHILE-REVALIDATE, AND THIS TIME THE REVALIDATE HALF RUNS
+    // ─────────────────────────────────────────────────────────────────────
+    // The previous version called plain `fetch(event.request)` here and the
+    // comment above it claimed the revalidation was "answered by the
+    // browser's HTTP cache — no network cost". That was true, and it was the
+    // bug. A default fetch for a response still inside its freshness window
+    // never reaches the server, and these paths are served
+    // `Cache-Control: public, max-age=2592000`. So the background half was a
+    // no-op for THIRTY DAYS, and MEDIA_CACHE is not versioned, so a file
+    // replaced at the same path was invisible to every returning player,
+    // indefinitely.
+    //
+    // Measured on production 2026-08-28: the satellite icon had been
+    // replaced twice and shipped correctly both times. A `fetch` from inside
+    // the page with `cache: 'reload'` still returned the ORIGINAL 19,441-byte
+    // artwork, because `cache: 'reload'` bypasses the HTTP cache but not this
+    // service worker. curl, which has neither, got the new bytes. Two clients
+    // on one machine seeing different images is what sent us looking here.
+    //
+    // THE FIX IS TWO PARTS, AND BOTH ARE LOAD-BEARING:
+    //
+    // 1. `cache: 'no-cache'` on the background request. That forces a
+    //    CONDITIONAL request — the browser sends If-None-Match with the
+    //    stored ETag — so the server actually gets asked. Unchanged media
+    //    answers 304 with no body, which is a few hundred bytes, not the
+    //    image. This is the line that makes the word "revalidate" true.
+    //
+    // 2. A 6-hour floor before we bother. Without it, part 1 would put a
+    //    conditional request on the wire for EVERY image on EVERY page view —
+    //    roughly 120 of them on a table, on a phone, on cellular — to
+    //    discover that ~all of them are unchanged. Below the floor we return
+    //    the cached copy and touch the network zero times, exactly as before.
+    //
+    // So a media file replaced at a stable path now reaches everyone within
+    // one revalidation window instead of never. That is a repair, not a
+    // licence: version the FILENAME when you replace artwork you need people
+    // to see immediately (`satellite-winner-v3.png`, `btn-hamburger-v4.png`),
+    // because a new URL is correct on the very first paint and this is only
+    // correct on the next one.
+    //
+    // `event.waitUntil` keeps the worker alive for the background half. We
+    // have already handed the page a response by then, and without it the
+    // browser is free to kill the worker mid-write and the cache never
+    // updates — which would leave this looking fixed while behaving exactly
+    // as it did before.
     event.respondWith(
       caches.open(MEDIA_CACHE).then((cache) =>
         cache.match(event.request).then((cached) => {
-          const fetchPromise = fetch(event.request).then((response) => {
+          if (cached && cachedAgeMs(cached) < MEDIA_REVALIDATE_AFTER_MS) {
+            return cached;
+          }
+
+          const revalidate = fetch(
+            new Request(event.request, { cache: 'no-cache' })
+          ).then((response) => {
             if (response.ok) {
               cache.put(event.request, response.clone());
               trimCache(MEDIA_CACHE, MAX_MEDIA_ENTRIES);
             }
             return response;
           }).catch(() => {
-            // Offline: return cached version, or a transparent 1x1 PNG if nothing cached
+            // Offline: the cached copy, however old, beats a broken image.
             if (cached) return cached;
-            // No cache + no network = return empty transparent image to prevent crash
+            // No cache and no network. An empty PNG keeps the layout intact
+            // rather than surfacing a browser error glyph mid-hand.
             return new Response(new Uint8Array(0), {
               status: 200,
               headers: { 'Content-Type': 'image/png' },
             });
           });
 
-          return cached || fetchPromise;
+          if (cached) {
+            event.waitUntil(revalidate);
+            return cached;
+          }
+          return revalidate;
         })
       )
     );
   }
   // All other requests (API, etc.) fall through to normal network fetch
 });
-
 // ═══════════════════════════════════════════════════════════════════════════════
 //  MASTER BUS NOTIFICATIONS — Background push for critical events
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -261,7 +430,8 @@ sw.addEventListener('message', (event) => {
         if (eventType === 'BALANCE_UPDATED') {
             body = `Source: ${payload?.source || 'unknown'}`;
         } else if (eventType === 'CLUB_JOINED' || eventType === 'CLUB_LEFT') {
-            body = payload?.clubName || payload?.clubId || '';
+            const rawName = payload?.clubName || payload?.clubId || '';
+            body = rawName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
         } else if (eventType === 'TABLE_SEATED' || eventType === 'TABLE_LEFT') {
             body = `Table: ${payload?.tableId || ''}`;
         }
@@ -338,4 +508,3 @@ sw.addEventListener('activate', (event) => {
         ])
     );
 });
-

@@ -1,0 +1,80 @@
+/*
+  Mobile Layout Standard (World Hub / Social Media)
+  Codified for Club Arena Content Pages
+*/
+
+.pageContainer {
+  width: 100%;
+  max-width: 100vw;
+  /* clip, not hidden — full reasoning on the body rule in
+     src/styles/design-system.css. This wrapper is shared by every
+     StandardContentLayout page, so `hidden` here made a scroll container
+     between the fixed bottom nav and the viewport on all of them at once. */
+  overflow-x: hidden;
+  overflow-x: clip;
+  /* Crucial: clears the fixed bottom nav bar on mobile */
+  padding-bottom: var(--bottom-nav-clearance, 74px);
+  /* Safe area inset for notched devices */
+  /* Dan 2026-08-25: was max(70px, env(safe-area-inset-bottom)). The bar is
+     74px PLUS the home-indicator inset (additive), and max() picks one or
+     the other - so this reserved 70px on every phone and hid the last row
+     of content under the footer, by 4px on a flat screen and ~38px on a
+     notched one. --bottom-nav-clearance is the token the bar itself is
+     pinned to. */
+  padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
+
+  display: flex;
+  justify-content: center;
+  min-height: 100%;
+}
+
+.contentColumn {
+  width: 100%;
+  max-width: 680px; /* Constrained for readability on desktop */
+  display: flex;
+  flex-direction: column;
+}
+
+.feedLayout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+.pageTitle {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 24px;
+  color: var(--text-primary);
+}
+
+/* 
+  Mandatory @media Breakpoints
+  These exact rules match the Social Media standard.
+*/
+@media (max-width: 768px) {
+  .pageContainer {
+    /* No padding on the sides, perfectly edge-to-edge on mobile */
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  .contentColumn {
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  .feedLayout {
+    /* Feed items stretch edge to edge and stack flush */
+    gap: 0 !important;
+    padding: 0 !important;
+  }
+
+  .pageTitle {
+    font-size: 18px !important;
+    margin-bottom: 16px !important;
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}

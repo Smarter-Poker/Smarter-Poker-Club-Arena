@@ -44,8 +44,15 @@ export async function handleLeave(
 
     const engine = deps.gameServer.getTableEngine(tableId);
     if (!engine) {
-      // Engine not running — do direct DB cleanup
-      console.warn(`[HTTP /leave] No engine for table ${tableId} — direct DB cleanup`);
+      // Engine not running — do direct DB cleanup.
+      //
+      // This is the one door the all-in refusal in leaveTable() cannot cover:
+      // `is_all_in` lives in engine memory, and there is no engine. With no
+      // engine there is also no dealing loop, so no hand can be in progress and
+      // nobody can be all-in in one — the seat is stale state, not a live pot.
+      // Said out loud because it IS a bypass, and if all-in ever needs to
+      // survive an engine restart it has to become a table_seats column first.
+      console.warn(`[HTTP /leave] No engine for table ${tableId} - direct DB cleanup`);
       return sendJSON(res, 200, {
         success: true,
         immediate: true,

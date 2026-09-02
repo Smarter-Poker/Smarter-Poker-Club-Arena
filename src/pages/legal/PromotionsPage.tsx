@@ -1,156 +1,143 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- * CLUB ARENA — Club Promotion Rules
- * ═══════════════════════════════════════════════════════════════════════════════
- */
+import { Link } from 'react-router-dom';
+import LegalDocumentLayout, {
+  type LegalDocumentSection,
+} from '../../components/legal/LegalDocumentLayout';
 
-import { useNavigate } from 'react-router-dom';
-import styles from './LegalPage.module.css';
-
-const sectionAnimationStyle = (index: number) => ({
-  opacity: 0,
-  transform: 'translateY(8px)',
-  animation: `fadeInUp 0.5s ease-out ${index * 70}ms forwards`,
-});
+const SECTIONS: LegalDocumentSection[] = [
+  {
+    id: 'general-rules',
+    title: 'General Promotion Rules',
+    content: (
+      <p>
+        Promotions, Bonuses, And Special Offers In Club Arena Are Subject To These Rules And The
+        Campaign-Specific Terms Displayed With The Live Offer. Participating In A Promotion Means
+        Accepting Both.
+      </p>
+    ),
+  },
+  {
+    id: 'eligibility',
+    title: 'Eligibility',
+    content: (
+      <ul>
+        <li>Users Must Have An Active Account In Good Standing</li>
+        <li>One Claim Per Eligible User Unless The Live Offer Says Otherwise</li>
+        <li>Suspended Or Banned Accounts Are Not Eligible</li>
+        <li>Club-Specific Offers May Add Membership Or Activity Requirements</li>
+        <li>Age, Location, Start Time, End Time, And Inventory Limits May Apply</li>
+      </ul>
+    ),
+  },
+  {
+    id: 'live-terms',
+    title: 'Live Offer Terms Are Authoritative',
+    content: (
+      <>
+        <p>
+          Reward Amounts, Rakeback Rates, VIP Benefits, Login Streak Values, Referral Awards, And
+          Claim Windows Are Live Data. They Are Not Fixed By This General Policy.
+        </p>
+        <ul>
+          <li>
+            Review Current Campaigns In <Link to="/promotions">Promotions</Link>
+          </li>
+          <li>
+            Review Claimable Inventory In <Link to="/bonuses">Bonuses</Link>
+          </li>
+          <li>
+            Review Your Recorded Rate In <Link to="/rakeback">Rakeback</Link>
+          </li>
+          <li>
+            Review Current Benefits In <Link to="/vip">VIP Status</Link>
+          </li>
+        </ul>
+      </>
+    ),
+  },
+  {
+    id: 'tournament-promotions',
+    title: 'Tournament Promotions',
+    content: (
+      <>
+        <p>Tournament Promotions May Include:</p>
+        <ul>
+          <li>Freeroll Events With Published Prize Pools</li>
+          <li>Reduced Entry Events</li>
+          <li>Satellite Paths To Larger Events</li>
+          <li>Series, Missions, Or Leaderboard Awards</li>
+        </ul>
+        <p>
+          The Live Tournament Structure, Registration Screen, And Promotion Detail Control The
+          Event-Specific Entry And Award Terms.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: 'club-promotions',
+    title: 'Club-Specific Promotions',
+    content: (
+      <ul>
+        <li>Club Operators Set The Published Terms And Eligibility</li>
+        <li>Club-Funded Offers Remain The Responsibility Of That Club</li>
+        <li>Players Should Capture The Live Terms Before Participating</li>
+        <li>Club Promotion Disputes Should Start With The Club Operator</li>
+      </ul>
+    ),
+  },
+  {
+    id: 'promotion-abuse',
+    title: 'Promotion Abuse',
+    content: (
+      <>
+        <p>Prohibited Promotion Conduct Includes:</p>
+        <ul>
+          <li>Creating Multiple Accounts To Claim The Same Offer</li>
+          <li>Colluding To Manipulate Eligibility Or Outcomes</li>
+          <li>Using Automation Or Unauthorized Software</li>
+          <li>Exploiting A Bug, Race Condition, Or Duplicate Claim Path</li>
+          <li>Providing False Information To Obtain A Reward</li>
+        </ul>
+        <p>
+          Confirmed Abuse May Cause Claim Reversal, Reward Forfeiture, Feature Restriction, Or
+          Account Action.
+        </p>
+      </>
+    ),
+  },
+  {
+    id: 'changes-cancellation',
+    title: 'Modification And Cancellation',
+    content: (
+      <p>
+        Club Arena Or The Responsible Club May Modify, Suspend, Or Cancel A Promotion When The Live
+        Terms Permit It, Including For Integrity, Funding, Configuration, Or Availability Problems.
+        Already Earned Awards Are Handled According To The Recorded Campaign And Claim State.
+      </p>
+    ),
+  },
+  {
+    id: 'disputes',
+    title: 'Questions And Disputes',
+    content: (
+      <p>
+        Include The Promotion Name, Club, Claim Time, And Any Confirmation Identifier When
+        Contacting <a href="mailto:support@smarter.poker">Support@Smarter.Poker</a>. Platform
+        Records And The Captured Live Terms Are Used To Review The Claim.
+      </p>
+    ),
+  },
+];
 
 export default function PromotionsPage() {
-  const navigate = useNavigate();
-
   return (
-    <div className={styles.page}>
-      <div className={styles.header}>
-        <button className={styles.backBtn} onClick={() => navigate(-1)}>
-          ← Back
-        </button>
-        <h1>Club Promotion Rules</h1>
-      </div>
-
-      <div className={styles.content}>
-        <section style={sectionAnimationStyle(0)}>
-          <h2>1. General Promotion Guidelines</h2>
-          <p>
-            All Promotions, Bonuses, And Special Offers In Club Arena Are Subject To These Rules. By
-            Participating In Any Promotion, You Agree To Abide By These Terms.
-          </p>
-        </section>
-
-        <section style={sectionAnimationStyle(1)}>
-          <h2>2. Eligibility</h2>
-          <p>
-            Promotions Are Available To All Registered Club Arena Users Unless Otherwise Specified.
-            Users Must Have An Active Account In Good Standing To Participate.
-          </p>
-          <ul>
-            <li>One Promotion Per User Unless Stated Otherwise</li>
-            <li>Users With Suspended Or Banned Accounts Are Not Eligible</li>
-            <li>
-              Club Owners May Set Additional Eligibility Requirements For Club-Specific Promotions
-            </li>
-          </ul>
-        </section>
-
-        <section style={sectionAnimationStyle(2)}>
-          <h2>3. Daily Bonuses</h2>
-          <p>Daily Bonuses Are Awarded For Consecutive Daily Logins:</p>
-          <ul>
-            <li>Day 1: 100 Chips</li>
-            <li>Day 2: 200 Chips</li>
-            <li>Day 3: 300 Chips</li>
-            <li>Day 4: 400 Chips</li>
-            <li>Day 5: 500 Chips</li>
-            <li>Day 6: 600 Chips</li>
-            <li>Day 7: 1000 Chips + 100 Diamonds</li>
-          </ul>
-          <p>Missing A Day Resets Your Streak To Day 1.</p>
-        </section>
-
-        <section style={sectionAnimationStyle(3)}>
-          <h2>4. Tournament Promotions</h2>
-          <p>Tournament Promotions May Include:</p>
-          <ul>
-            <li>Freeroll Tournaments With Guaranteed Prize Pools</li>
-            <li>Reduced Buy-In Tournaments</li>
-            <li>Satellite Tournaments To Larger Events</li>
-            <li>Special Tournament Series With Leaderboards</li>
-          </ul>
-          <p>
-            All Tournament Promotions Are Subject To The Tournament's Specific Terms And Conditions.
-          </p>
-        </section>
-
-        <section style={sectionAnimationStyle(4)}>
-          <h2>5. Rakeback And Loyalty Rewards</h2>
-          <p>
-            Rakeback Is Calculated Based On The Rake Contributed In Cash Games And Tournament Fees:
-          </p>
-          <ul>
-            <li>Bronze VIP: 5% Rakeback</li>
-            <li>Silver VIP: 10% Rakeback</li>
-            <li>Gold VIP: 15% Rakeback</li>
-            <li>Platinum VIP: 20% Rakeback</li>
-            <li>Diamond VIP: 25% Rakeback</li>
-          </ul>
-          <p>Rakeback Is Credited Weekly On Mondays For The Previous Week's Play.</p>
-        </section>
-
-        <section style={sectionAnimationStyle(5)}>
-          <h2>6. Referral Bonuses</h2>
-          <p>Refer Friends To Club Arena And Earn Rewards:</p>
-          <ul>
-            <li>Referrer Receives 500 Chips When Friend Completes Registration</li>
-            <li>Referrer Receives 1000 Chips When Friend Plays Their First Hand</li>
-            <li>Referrer Receives 5% Of Friend's Rake For Their First Month</li>
-          </ul>
-          <p>
-            Self-Referrals And Fake Accounts Are Prohibited And Will Result In Account Termination.
-          </p>
-        </section>
-
-        <section style={sectionAnimationStyle(6)}>
-          <h2>7. Club-Specific Promotions</h2>
-          <p>Individual Clubs May Run Their Own Promotions With Custom Rules:</p>
-          <ul>
-            <li>Club Owners Set Promotion Terms And Eligibility</li>
-            <li>Club Promotions Are Funded By The Club, Not Club Arena</li>
-            <li>Disputes Regarding Club Promotions Should Be Directed To The Club Owner</li>
-          </ul>
-        </section>
-
-        <section style={sectionAnimationStyle(7)}>
-          <h2>8. Promotion Abuse</h2>
-          <p>
-            The Following Activities Are Considered Promotion Abuse And Are Strictly Prohibited:
-          </p>
-          <ul>
-            <li>Creating Multiple Accounts To Claim Bonuses</li>
-            <li>Colluding With Other Players To Manipulate Promotions</li>
-            <li>Using Automated Tools Or Unauthorized Software</li>
-            <li>Exploiting Bugs Or Glitches To Gain Unfair Advantages</li>
-          </ul>
-          <p>
-            Promotion Abuse Will Result In Forfeiture Of Bonuses And Potential Account Termination.
-          </p>
-        </section>
-
-        <section style={sectionAnimationStyle(8)}>
-          <h2>9. Modification And Cancellation</h2>
-          <p>
-            Club Arena Reserves The Right To Modify, Suspend, Or Cancel Any Promotion At Any Time
-            Without Prior Notice. In The Event Of Cancellation, Users Will Be Notified And Any
-            Earned Rewards Will Be Honored.
-          </p>
-        </section>
-
-        <section style={sectionAnimationStyle(9)}>
-          <h2>10. Disputes</h2>
-          <p>
-            All Decisions Regarding Promotions Are Final And At The Sole Discretion Of Club Arena.
-            For Promotion-Related Questions Or Disputes, Contact Support@Smarter.Poker
-          </p>
-        </section>
-
-        <div className={styles.lastUpdated}>Last Updated: January 29, 2026</div>
-      </div>
-    </div>
+    <LegalDocumentLayout
+      documentCode="CA-PRM-02"
+      eyebrow="Campaign Governance"
+      title="Promotion Rules"
+      summary="The Eligibility, Live-Term Authority, Abuse Controls, And Dispute Process For Platform And Club Offers."
+      lastUpdated="August 29, 2026"
+      sections={SECTIONS}
+    />
   );
 }

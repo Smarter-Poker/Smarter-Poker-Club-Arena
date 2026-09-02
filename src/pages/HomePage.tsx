@@ -9,7 +9,6 @@
  * - Accessibility: ARIA, focus traps, keyboard nav, offline indicator
  */
 
-import { MEDIA_BASE } from '../utils/mediaBase';
 import {
   useState,
   useEffect,
@@ -21,32 +20,40 @@ import {
   type ReactNode,
   type ErrorInfo,
 } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
+/* Dan 2026-08-28: HomePage is the in-tab lobby's fallback branch when no home
+   club is resolved, so it inherits the same rule. See InTabLobbyContext.tsx. */
+import { useAppNavigate } from '../context/InTabLobbyContext';
 import { SHARK_CLUB_ID } from '../lib/constants';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { ClubsService } from '../services/ClubsService';
+import { ClubJoinService } from '../services/ClubJoinService';
+import { ClubEntryTrustService, type ClubEntryFlags } from '../services/ClubEntryTrustService';
 import { backfillClubCards } from '../services/ClubCardBackfill';
 import { useToast } from '../components/common/Toast';
 import GlobalHeader from '../components/navigation/GlobalHeader';
+import FloatingOrbs from '../components/home/FloatingOrbs';
 import haptic from '../services/HapticService';
 
-import PremiumSFX from '../services/PremiumSFX';
-import { masterBus } from '../core/MasterBus';
+import { playPremiumSfx } from '../utils/playPremiumSfx';
 import { useMasterBusSubscription } from '../hooks/useMasterBusSubscription';
-
 import ClubContextMenu from '../components/home/ClubContextMenu';
 import ClubQuickLinkTile from '../components/home/ClubQuickLinkTile';
 import LOBBY_TILES from '../config/lobbyTiles.config';
 import { preloadRoute } from '../utils/ChunkPreloader';
 import {
   eligibleQuickLinkClubs,
+  eligibleCashierWallets,
+  isUnionEntity,
+  resolveCashierWallet,
   resolveTargetClub,
   readLastClubId,
   rememberLastClub,
+  primeUnionFlags,
 } from '../utils/clubQuickLink';
 import CarouselSection from '../components/home/CarouselSection';
+import ClubEntryActionBar from '../components/home/ClubEntryActionBar';
 import { getClubLevelFromMembers } from '../utils/clubLevels';
-import { sanitizeInput } from '../utils/sanitizeInput';
 import type { UserClub, ClubStats } from '../components/home/CarouselSection';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 
@@ -57,18 +64,10 @@ import { lazyWithRetry } from '../utils/lazyWithRetry';
 
 // Lazy-load heavy components to reduce initial bundle
 const CreateClubModal = lazyWithRetry(() => import('../components/modals/CreateClubModal'));
+const JoinClubModal = lazyWithRetry(() => import('../components/modals/JoinClubModal'));
 const FindPlayerModal = lazyWithRetry(() => import('../components/modals/FindPlayerModal'));
 
 const SWR_CACHE_TTL = 60 * 60 * 1000; // 1 hour — skip stale cache from old sessions
-
-// Typed shape for the user preferences JSON column
-interface UserPreferences {
-  card_color_preset?: string;
-  [key: string]: unknown;
-}
-
-// Action button images
-const ACTION_BAR_HORIZONTAL = `${MEDIA_BASE}images/icons/action-bar-horizontal.webp`;
 
 // #12: Seasonal theme detection
 function getSeasonalTheme(): string {
@@ -117,7 +116,7 @@ class HomePageErrorBoundary extends Component<{ children: ReactNode }, ErrorBoun
           <div className={styles.errorBoundaryIcon}>!</div>
           <h2 className={styles.errorBoundaryTitle}>Something Went Wrong</h2>
           <p className={styles.errorBoundaryMessage}>
-            {this.state.errorMessage || 'An unexpected error occurred. Please try again.'}
+            {this.state.errorMessage || 'An Unexpected Error Occurred. Please Try Again.'}
           </p>
           <button
             className={styles.errorBoundaryRetry}
@@ -137,7 +136,7 @@ function HomePageInner() {
     document.title = 'Home | Smarter Poker';
   }, []);
 
-  const navigate = useNavigate();
+  const navigate = useAppNavigate();
   const toast = useToast();
 
   // Component-level mount guard — prevents setState after unmount in user-triggered handlers
@@ -162,7 +161,15 @@ function HomePageInner() {
       const isFresh = cacheTs && Date.now() - Number(cacheTs) < SWR_CACHE_TTL;
       if (cached && isFresh) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          if (
+            parsed.some(
+              (c: any) => c.slug === undefined && c.id !== 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'
+            )
+          )
+            return [];
+          return parsed;
+        }
       }
     } catch {
       /* ignore corrupt cache */
@@ -177,7 +184,15 @@ function HomePageInner() {
       const isFresh = cacheTs && Date.now() - Number(cacheTs) < SWR_CACHE_TTL;
       if (cached && isFresh) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) return false;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          if (
+            parsed.some(
+              (c: any) => c.slug === undefined && c.id !== 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4'
+            )
+          )
+            return true;
+          return false;
+        }
       }
     } catch {
       /* */
@@ -186,6 +201,8 @@ function HomePageInner() {
   });
 
   // Per-club stats for featured card rendering
+  // Club-card totals are live facts. Never hydrate them from localStorage or
+  // fall back to denormalised clubs.member_count/online_count columns.
   const [clubStats, setClubStats] = useState<Record<string, ClubStats>>({});
   // Guard: prevent welcome toast from firing before first server fetch completes
   const hasFetchedOnceRef = useRef(false);
@@ -229,19 +246,35 @@ function HomePageInner() {
 
   // JOIN A CLUB modal state
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [joinIntent, setJoinIntent] = useState<{
+    code: string;
+    watchTableId: string | null;
+  } | null>(null);
   const [showCreateClubModal, setShowCreateClubModal] = useState(false);
-  const [clubCode, setClubCode] = useState('');
-  const [isValidatingCode, setIsValidatingCode] = useState(false);
-  const [showReferralPrompt, setShowReferralPrompt] = useState(false);
-  const [validClubId, setValidClubId] = useState<string | null>(null);
-  const [validClubName, setValidClubName] = useState<string | null>(null);
-  const [isJoining, setIsJoining] = useState(false);
-  const [referralCode, setReferralCode] = useState('');
-  const joinInputRef = useRef<HTMLInputElement>(null);
+  const [entryFlags, setEntryFlags] = useState<ClubEntryFlags>({
+    create_club: true,
+    find_player: true,
+    join_club: true,
+  });
+  useEffect(() => {
+    ClubEntryTrustService.getFlags().then(setEntryFlags);
+  }, []);
 
-  // Focus trapping for modals (accessibility)
+  // The legacy /?create=club deep link opens the create modal once.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    if (searchParams.get('create') === 'club') {
+      setShowCreateClubModal(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete('create');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  // Focus trapping for modals (accessibility). The join modal owns its own
+  // trap internally (JoinClubModal) — the ref created here for it was never
+  // attached to anything, so it trapped nothing while looking like it did.
   const leaveModalRef = useFocusTrap(!!leaveConfirm?.visible);
-  const joinModalRef = useFocusTrap(showJoinModal);
 
   // Find Player modal state
   const [showFindPlayerModal, setShowFindPlayerModal] = useState(false);
@@ -264,22 +297,6 @@ function HomePageInner() {
     };
   }, []);
 
-  // #6: Listen for card color changes from hamburger menu — sync to localStorage only
-  useMasterBusSubscription(
-    'CARD_COLOR_CHANGED',
-    (payload: any) => {
-      const preset = payload?.preset as string;
-      if (preset) {
-        try {
-          localStorage.setItem(STORAGE_KEYS.CARD_COLOR, preset);
-        } catch {
-          /* quota */
-        }
-      }
-    },
-    { debounce: 300 }
-  );
-
   // ═══════════════════════════════════════════════════════════════════════════════
   // DATA FETCHING (with SWR cache)
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -288,10 +305,12 @@ function HomePageInner() {
     async (skipLoading = false, getIsMounted?: () => boolean) => {
       if (!skipLoading) setIsLoading(true);
 
-      // Safety timeout: never show loading spinner for more than 12 seconds
+      // Safety timeout: never show loading spinner for more than 6 seconds.
+      // Was 12 — on a saturated database that is 12 seconds of dimmed screen;
+      // the SWR cache + retry UI handle the rest.
       const loadingTimeout = setTimeout(() => {
         if (!getIsMounted || getIsMounted()) setIsLoading(false);
-      }, 12_000);
+      }, 6_000);
 
       try {
         if (getIsMounted && !getIsMounted()) {
@@ -303,22 +322,16 @@ function HomePageInner() {
           data: { user: authUser },
         } = await getAuthUser();
         if (authUser) {
-          // PERF 2026-08-23: the card-colour preference needs only
-          // authUser.id, and was sitting behind the membership fetch for no
-          // reason but code order. Started here, awaited unchanged below, so
-          // the two round trips overlap. The rejection handler keeps a
-          // pre-await failure from surfacing as an unhandled rejection.
-          const colorPrefPromise = supabase
-            .from('profiles')
-            .select('preferences')
-            .eq('id', authUser.id)
-            .maybeSingle()
-            .then(
-              (r) => r,
-              (error) => ({ data: null, error })
-            );
-
-          const memberships = await ClubsService.getUserMemberships(authUser);
+          const [memberships, ownedUnionResult] = await Promise.all([
+            ClubsService.getUserMemberships(authUser),
+            supabase
+              .from('clubs')
+              .select(
+                'id, club_id, name, slug, logo_url, card_image_url, member_count, owner_id, union_id, is_union'
+              )
+              .eq('owner_id', authUser.id)
+              .eq('is_union', true),
+          ]);
           const clubs =
             memberships?.map(
               (m) =>
@@ -331,11 +344,26 @@ function HomePageInner() {
                   // display stub. Regular member clubs also have union_id but don't
                   // have "union" in their name.
                   entity_type:
-                    (m.club as any)?.union_id && /union/i.test(m.club?.name || '')
+                    (m.club as any)?.is_union === true ||
+                    ((m.club as any)?.union_id && /union/i.test(m.club?.name || ''))
                       ? 'union'
                       : 'club',
                 }) as UserClub
             ) || [];
+          // Union ownership is authority in its own right; do not depend on a
+          // redundant club_members row existing for the union hub card.
+          if (ownedUnionResult.error) {
+            reportError(ownedUnionResult.error, 'HomePage.ownedUnionWallets');
+          } else {
+            for (const owned of ownedUnionResult.data || []) {
+              if (clubs.some((club) => club.id === owned.id)) continue;
+              clubs.push({
+                ...owned,
+                is_owner: true,
+                entity_type: 'union',
+              } as UserClub);
+            }
+          }
           // UNION LAW (2026-08-19, Dan): the union house-club card (club.id ===
           // club.union_id) is only shown to its owner. Players enter through
           // their own club; union games appear inside the club lobby.
@@ -355,27 +383,24 @@ function HomePageInner() {
           } catch {
             /* quota */
           }
-
-          // ── Batch: card color sync ──
-          const [colorResult] = await Promise.allSettled([colorPrefPromise]);
-
-          if (getIsMounted && !getIsMounted()) return;
-
-          // Process card color sync — persist to localStorage for other components
-          if (
-            colorResult.status === 'fulfilled' &&
-            (colorResult.value.data?.preferences as UserPreferences | null)?.card_color_preset
-          ) {
-            const preset = (colorResult.value.data?.preferences as UserPreferences)
-              .card_color_preset!;
-            if (preset !== localStorage.getItem(STORAGE_KEYS.CARD_COLOR)) {
-              try {
-                localStorage.setItem(STORAGE_KEYS.CARD_COLOR, preset);
-              } catch {
-                /* quota */
-              }
-            }
-          }
+          /**
+           * UNION LAW (2026-08-24). These rows came straight from `clubs` with
+           * an authoritative `is_union`, so hand them to the union-flag memo
+           * while we have them. Two reasons, and the second is the real one:
+           *
+           *  - it saves a `clubs.is_union` round trip per candidate the first
+           *    time UnionSkinGuard or resolveLobbyClubId asks about a club;
+           *  - it seeds that memo from the NETWORK rather than from
+           *    localStorage. A legacy cache row carries no union signal at
+           *    all, which is what let a stale cache hand back the union hub as
+           *    a lobby destination (see cachedUnionFlag). Priming here means
+           *    the fresh answer is already in memory before any stale row can
+           *    be consulted.
+           *
+           * Deliberately AFTER the write above: if setItem throws on quota the
+           * priming is still valid, and the flags are the half that matters.
+           */
+          primeUnionFlags(lawFilteredClubs);
         } else {
           if (getIsMounted && !getIsMounted()) return;
           setUserClubs([]);
@@ -410,6 +435,33 @@ function HomePageInner() {
     [toast]
   );
 
+  // A join started before an auth redirect or network loss keeps its request
+  // UUID in localStorage. Resume it from the lobby even if the player never
+  // reopens the modal; the database RPC makes replay safe.
+  useEffect(() => {
+    let active = true;
+    const resumeJoin = async () => {
+      try {
+        const result = await ClubJoinService.resumePending();
+        if (!active || !result?.success || !result.club) return;
+        if (result.status === 'pending') {
+          toast.info(`Your request to join ${result.club.name} is pending approval.`);
+        } else {
+          toast.success(`Joined ${result.club.name}.`);
+          navigate(`/clubs/${result.club.slug || result.club.id}`);
+        }
+      } catch (error) {
+        reportError(error, 'HomePage.ResumePendingClubJoin');
+      }
+    };
+    resumeJoin();
+    window.addEventListener('online', resumeJoin);
+    return () => {
+      active = false;
+      window.removeEventListener('online', resumeJoin);
+    };
+  }, [navigate, toast]);
+
   // Real-time updates handled by Supabase subscriptions + bus listeners below
   // No visibility refresh needed — data stays live via real-time channels
 
@@ -419,41 +471,24 @@ function HomePageInner() {
     const hasCachedClubs = userClubs.length > 0;
     fetchUserData(hasCachedClubs, () => isMounted);
 
-    let channel: ReturnType<typeof masterBus.getOrCreateChannel> | null = null;
-    let cachedAuthUserId: string | null = null; // Cache for cleanup — avoids async getAuthUser() in teardown
-    const setupRealtimeSubscription = async () => {
-      const {
-        data: { user: authUser },
-      } = await getAuthUser();
-      if (!authUser?.id) return;
-      cachedAuthUserId = authUser.id; // Cache for cleanup
-
-      const channelKey = `home-clubs-${authUser.id}`;
-      channel = masterBus.getOrCreateChannel(channelKey);
-      channel
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'club_members',
-            filter: `user_id=eq.${authUser.id}`,
-          },
-          () => {
-            if (isMounted) fetchUserData(true, () => isMounted);
-          }
-        )
-        .subscribe((status: string, err?: Error) => {
-          if (status === 'CHANNEL_ERROR') {
-            if (err) reportError(err?.message || err, 'HomePage._Realtime_channel_error');
-          }
-          if (status === 'TIMED_OUT') {
-            console.warn('[HomePage] Realtime channel timed out');
-          }
-        });
-    };
-
-    setupRealtimeSubscription();
+    // ── Club membership changes: handled GLOBALLY, not by this page ──────────
+    //
+    // A `home-clubs-<uid>` channel used to be created here, subscribing to
+    // `club_members` filtered by `user_id=eq.<uid>` and calling fetchUserData on
+    // any event. Removed 2026-08-24: it was a duplicate subscription AND it was
+    // torn down on every navigation away from Home, so returning re-negotiated
+    // it.
+    //
+    // PostgresSyncHooks' `global_db_sync:<userId>` channel already carries the
+    // IDENTICAL subscription - same table, same user_id filter - created once at
+    // sign-in and never torn down by routing. It emits CLUB_UPDATED (debounced,
+    // per club) on INSERT/UPDATE and CLUB_LEFT on DELETE, and this page ALREADY
+    // subscribes to CLUB_JOINED, CLUB_LEFT and CLUB_UPDATED on the bus further
+    // down. So the refresh path is unchanged; only the second, page-scoped
+    // socket subscription is gone.
+    //
+    // Net effect: one fewer realtime subscription per user sitting on Home, and
+    // no re-subscribe when they come back to it.
 
     // ═══════════════════════════════════════════════════════════════════════
     // MASTER BUS LISTENERS — cross-page state sync
@@ -461,14 +496,9 @@ function HomePageInner() {
 
     return () => {
       isMounted = false;
-      if (channel) {
-        channel.unsubscribe();
-      }
-      // Use cached userId from setup — avoids async getAuthUser() call in cleanup
-      // which was fire-and-forget and could leak channels if auth state changed
-      if (cachedAuthUserId) {
-        masterBus.removeRegisteredChannel(`home-clubs-${cachedAuthUserId}`);
-      }
+      // Nothing to unsubscribe here any more: the club_members listener this
+      // effect used to own now lives in PostgresSyncHooks' global channel (see
+      // the note above). `isMounted` still guards the in-flight fetchUserData.
     };
   }, [fetchUserData]);
 
@@ -577,13 +607,14 @@ function HomePageInner() {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't trigger when typing in inputs or when modals are open
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (showJoinModal || showCreateClubModal || showFindPlayerModal || leaveConfirm?.visible) {
-        // Only allow Escape when a modal is open
+      if (showJoinModal || showCreateClubModal || showFindPlayerModal) {
+        // Each dialog owns Escape so Create can protect a draft and nested
+        // logo/privacy dialogs can close in the right order.
+        return;
+      }
+      if (leaveConfirm?.visible) {
         if (e.key === 'Escape') {
           setContextMenu(null);
-          setShowJoinModal(false);
-          setShowCreateClubModal(false);
-          setShowFindPlayerModal(false);
           setLeaveConfirm(null);
           setShowShortcutHint(false);
         }
@@ -605,27 +636,36 @@ function HomePageInner() {
           break;
         case '4': {
           haptic.light();
-          PremiumSFX.navigate();
-          const target = resolveTargetClub(userClubs);
-          if (target) navigate(`/clubs/${target.id}/cashier`);
-          else toast.info('Join a club first to access the cashier');
+          playPremiumSfx('navigate');
+          const target = resolveCashierWallet(eligibleCashierWallets(userClubs), quickLinkClubId);
+          if (target) {
+            rememberLastClub(target.id);
+            navigate(
+              isUnionEntity(target)
+                ? `/unions/${String(target.union_id || target.id)}/operations?tab=wallet`
+                : `/clubs/${target.slug || target.id}/cashier`
+            );
+          } else toast.info('Join a club first to access the cashier');
           break;
         }
         case '5': {
           haptic.light();
-          PremiumSFX.navigate();
+          playPremiumSfx('navigate');
           const target = resolveTargetClub(userClubs);
           navigate(target ? `/marketplace?club=${target.id}` : '/marketplace');
           break;
         }
         case 'j':
-          setShowJoinModal(true);
+          if (entryFlags.join_club) setShowJoinModal(true);
+          else toast.info('Club joining is temporarily unavailable.');
           break;
         case 'c':
-          setShowCreateClubModal(true);
+          if (entryFlags.create_club) setShowCreateClubModal(true);
+          else toast.info('Club creation is temporarily unavailable.');
           break;
         case 'f':
-          setShowFindPlayerModal(true);
+          if (entryFlags.find_player) setShowFindPlayerModal(true);
+          else toast.info('Player search is temporarily unavailable.');
           break;
 
         case '?':
@@ -646,10 +686,14 @@ function HomePageInner() {
   }, [
     navigate,
     userClubs,
+    quickLinkClubId,
     showJoinModal,
     showCreateClubModal,
     showFindPlayerModal,
+    entryFlags,
+    toast,
     leaveConfirm?.visible,
+    toast,
   ]);
 
   // #2: Pin/unpin club
@@ -692,134 +736,6 @@ function HomePageInner() {
   // ═══════════════════════════════════════════════════════════════════════════════
   // JOIN A CLUB LOGIC
   // ═══════════════════════════════════════════════════════════════════════════════
-  const handleJoinClubSubmit = async () => {
-    if (!clubCode.trim()) {
-      toast.error('Please enter a club code');
-      return;
-    }
-
-    // Sanitize input for defense-in-depth, then validate the numeric code.
-    // Canonical codes are 5-digit, but 6-digit codes exist from a legacy
-    // generation bug — accept both so those clubs remain joinable.
-    const sanitized = sanitizeInput(clubCode.trim());
-    const numericCode = parseInt(sanitized, 10);
-    if (isNaN(numericCode) || numericCode < 10000 || numericCode > 999999) {
-      toast.error('Club code must be a 5-digit number');
-      return;
-    }
-
-    setIsValidatingCode(true);
-    try {
-      // Validate club code exists by club_id (5-digit integer)
-      const { data: club, error } = await supabase
-        .from('clubs')
-        .select('id, name, club_id')
-        .eq('club_id', numericCode)
-        .maybeSingle();
-
-      if (!isMountedRef.current) return;
-
-      if (error || !club) {
-        toast.error('Invalid club code. Please check and try again.');
-        setIsValidatingCode(false);
-        return;
-      }
-
-      // Check if user is already a member of this club
-      const {
-        data: { user: currentUser },
-      } = await getAuthUser();
-      if (currentUser) {
-        const { data: existingMembership } = await supabase
-          .from('club_members')
-          .select('user_id, status')
-          .eq('club_id', club.id)
-          .eq('user_id', currentUser.id)
-          .maybeSingle();
-        if (existingMembership) {
-          if (existingMembership.status === 'pending') {
-            toast.info('Your join request for this club is still pending approval.');
-          } else {
-            toast.info('You are already a member of this club!');
-          }
-          setIsValidatingCode(false);
-          return;
-        }
-
-        // Pre-check the 4-club limit for faster, friendlier feedback than the RPC error
-        const { canJoin } = await ClubsService.canJoinMoreClubs();
-        if (!canJoin) {
-          toast.error('You can only be a member of up to 4 clubs. Leave a club to join a new one.');
-          setIsValidatingCode(false);
-          return;
-        }
-      }
-
-      // Valid club found - show referral prompt
-      setValidClubId(club.id);
-      setValidClubName(club.name || null);
-      setShowReferralPrompt(true);
-    } catch (err) {
-      if (!isMountedRef.current) return;
-      reportError(err, 'HomePage.Error_validating_club_code');
-      toast.error('Failed to validate club code');
-    } finally {
-      if (isMountedRef.current) setIsValidatingCode(false);
-    }
-  };
-
-  const handleJoinClub = async (withReferral = false) => {
-    if (!validClubId || isJoining) return;
-
-    setIsJoining(true);
-    try {
-      if (withReferral && referralCode) {
-        localStorage.setItem(`referral_${validClubId}`, referralCode);
-      }
-      const membership = await ClubsService.join(validClubId);
-      if (!isMountedRef.current) return;
-
-      if (membership?.status === 'pending') {
-        // Approval-required club — request queued, NOT yet a member.
-        // No optimistic club card; it would vanish on the next refresh.
-        toast.info(
-          `Join request sent to ${validClubName || 'the club'} - you'll be added once an admin approves.`
-        );
-      } else {
-        // #2: Optimistic UI — add placeholder club immediately
-        const optimisticClub: UserClub = {
-          id: validClubId,
-          club_id: 0,
-          name: validClubName || 'Loading...',
-          avatar_url: null,
-          member_count: 1,
-          is_owner: false,
-        } as UserClub;
-        setUserClubs((prev) => [...prev, optimisticClub]);
-        toast.success(`Successfully joined ${validClubName || 'the club'}!`);
-      }
-
-      setShowJoinModal(false);
-      setShowReferralPrompt(false);
-      setClubCode('');
-      setReferralCode('');
-      // NOTE: ClubsService.join() already emits CLUB_JOINED via bus
-      setValidClubId(null);
-      setValidClubName(null);
-      // Background refresh to get real club data
-      fetchUserData(true, () => isMountedRef.current);
-    } catch (err: any) {
-      if (!isMountedRef.current) return;
-      toast.error(err.message || 'Failed to join club');
-    } finally {
-      if (isMountedRef.current) setIsJoining(false);
-    }
-  };
-
-  // ═══════════════════════════════════════════════════════════════════════════════
-  // USER'S CLUBS — sorted (pinned first); Shark Club renders like any other club
-  // ═══════════════════════════════════════════════════════════════════════════════
-
   const displayClubs = useMemo(() => {
     const clubs = [...userClubs];
 
@@ -849,7 +765,13 @@ function HomePageInner() {
         id: 'a41434bb-8d0c-400a-8f0d-e8b3d65afed4',
         club_id: SHARK_CLUB_ID,
         name: 'Shark Club',
-        member_count: 580,
+        /* member_count is deliberately NOT seeded (2026-08-28). It used to
+           carry a hard-coded 580 — a number nobody measured — and the sort
+           immediately below ranks by member count, so a fabricated figure
+           placed this card above real clubs with real members. The per-club
+           stats fetch further down already resolves the true count for every
+           id in this list, including this one; until it lands, unknown sorts
+           as unknown rather than as "the biggest club you are in". */
         entity_type: 'club',
       });
     }
@@ -859,12 +781,13 @@ function HomePageInner() {
       const aPinned = pinnedClubIds.includes(a.id) ? 1 : 0;
       const bPinned = pinnedClubIds.includes(b.id) ? 1 : 0;
       if (bPinned !== aPinned) return bPinned - aPinned;
-      const memberDiff = (b.member_count || 0) - (a.member_count || 0);
+      const memberDiff =
+        (clubStats[b.id]?.totalMembers ?? -1) - (clubStats[a.id]?.totalMembers ?? -1);
       if (memberDiff !== 0) return memberDiff;
       return (a.name || '').localeCompare(b.name || '');
     });
     return clubs;
-  }, [userClubs, pinnedClubIds, loadFailed, isLoading]);
+  }, [userClubs, pinnedClubIds, loadFailed, isLoading, clubStats]);
 
   // Stable string identity of club IDs — avoids .map().join() allocation on every render
   const displayClubIdsKey = useMemo(() => displayClubs.map((c) => c.id).join(','), [displayClubs]);
@@ -889,8 +812,14 @@ function HomePageInner() {
         // count of a club id that does not exist simply returns nothing for it,
         // and the lookup below is by id, so a superset is harmless. Both now
         // fly at once.
+        const memberCountsPromise = supabase
+          .rpc('fn_batch_club_realtime_member_counts', { p_club_ids: clubIds })
+          .then(
+            (r) => r,
+            (error) => ({ data: null, error })
+          );
         const activeCountsPromise = supabase
-          .rpc('fn_batch_active_player_counts', { p_club_ids: clubIds })
+          .rpc('fn_batch_club_realtime_active_counts', { p_club_ids: clubIds })
           .then(
             (r) => r,
             (error) => ({ data: null, error })
@@ -925,57 +854,22 @@ function HomePageInner() {
            throw that away and go back to the stale number - which then feeds
            BOTH the level ladder and the active-player clamp below, so one stale
            column silently wrongs three stats at once. */
-        const liveMemberCounts = new Map<string, number>(
-          displayClubs.map((c) => [c.id, Number(c.member_count) || 0])
-        );
+        const memberCountMap = new Map<string, number>();
+        try {
+          const { data: batchCounts } = await memberCountsPromise;
+          for (const r of batchCounts || [])
+            memberCountMap.set(r.club_id, Number(r.member_count) || 0);
+        } catch (e) {
+          reportError(e, 'HomePage.batchRealtimeMemberCounts');
+        }
 
         // Process each club in parallel
         await Promise.allSettled(
           clubRows.map(async (club: any) => {
-            const memberCount = Math.max(
-              Number(club.member_count) || 0,
-              liveMemberCounts.get(club.id) || 0
-            );
+            const memberCount = memberCountMap.get(club.id);
+            if (memberCount == null) return;
 
-            const activePlayers = activeCountMap.get(club.id) || 0;
-
-            // Auto-recompute club level if stuck at default
-            // Session dedup: only fire the RPC once per session per club
-            let effectiveLevel = club.level || 1;
-            const levelRecomputeKey = `level_recomputed_${club.id}`;
-            if (effectiveLevel <= 1 && !sessionStorage.getItem(levelRecomputeKey)) {
-              try {
-                const { error: rpcErr } = await supabase.rpc('recompute_club_levels', {
-                  p_club_id: club.id,
-                });
-                if (!rpcErr) {
-                  sessionStorage.setItem(levelRecomputeKey, '1');
-                  const { data: refreshed } = await supabase
-                    .from('clubs')
-                    .select(
-                      'level, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
-                    )
-                    .eq('id', club.id)
-                    .maybeSingle();
-                  if (refreshed && refreshed.level > 1) {
-                    effectiveLevel = refreshed.level;
-                    club.hierarchy_units_rounded_up =
-                      refreshed.hierarchy_units_rounded_up ?? club.hierarchy_units_rounded_up;
-                    club.player_threshold_current =
-                      refreshed.player_threshold_current ?? club.player_threshold_current;
-                    club.player_threshold_next =
-                      refreshed.player_threshold_next ?? club.player_threshold_next;
-                    club.hierarchy_threshold_current =
-                      refreshed.hierarchy_threshold_current ?? club.hierarchy_threshold_current;
-                    club.hierarchy_threshold_next =
-                      refreshed.hierarchy_threshold_next ?? club.hierarchy_threshold_next;
-                  }
-                }
-              } catch (e) {
-                reportError(e, 'HomePage');
-                // RPC not available
-              }
-            }
+            const activePlayers = activeCountMap.get(club.id) ?? null;
 
             /* Dan 2026-08-20: "a true 'club level' level 1-55 that is
                determined based on how many players are inside a club."
@@ -988,8 +882,6 @@ function HomePageInner() {
                stored clubs.level) is left alone for the progress bars that
                still read the legacy threshold columns. */
             const clubLevel = getClubLevelFromMembers(memberCount);
-            void effectiveLevel;
-
             if (isMounted) {
               statsMap[club.id] = {
                 totalMembers: memberCount,
@@ -1000,7 +892,11 @@ function HomePageInner() {
                    with tables running, which is the more alarming of the two
                    wrong answers. */
                 activePlayers:
-                  memberCount > 0 ? Math.min(activePlayers, memberCount) : activePlayers,
+                  activePlayers == null
+                    ? null
+                    : memberCount > 0
+                      ? Math.min(activePlayers, memberCount)
+                      : activePlayers,
               };
             }
           })
@@ -1026,12 +922,21 @@ function HomePageInner() {
 
             if (realUnionIds.length === 0) throw new Error('No union_id FK found on union clubs');
 
-            const { data: unionRows } = await supabase
-              .from('unions')
-              .select(
-                'id, level, total_players, member_count, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
-              )
-              .in('id', realUnionIds);
+            const [unionRowsResult, unionMembersResult, unionActiveResult] = await Promise.all([
+              supabase
+                .from('unions')
+                .select(
+                  'id, level, total_players, member_count, hierarchy_units_rounded_up, player_threshold_current, player_threshold_next, hierarchy_threshold_current, hierarchy_threshold_next'
+                )
+                .in('id', realUnionIds),
+              supabase.rpc('fn_batch_union_realtime_member_counts', {
+                p_union_ids: realUnionIds,
+              }),
+              supabase.rpc('fn_batch_union_realtime_active_counts', {
+                p_union_ids: realUnionIds,
+              }),
+            ]);
+            const unionRows = unionRowsResult.data;
 
             if (unionRows && isMounted) {
               /* ── Dan 2026-08-20: "'active players' isn't working inside the
@@ -1048,34 +953,34 @@ function HomePageInner() {
                  fn_union_active_player_counts answers for the union directly:
                  DISTINCT users across the union's own club row AND its member
                  clubs, in one query. */
+              const unionMemberMap: Record<string, number> = {};
               const unionActiveMap: Record<string, number> = {};
-              try {
-                const { data: unionCounts } = await supabase.rpc('fn_union_active_player_counts', {
-                  p_union_ids: realUnionIds,
-                });
-                for (const r of unionCounts || []) {
-                  unionActiveMap[(r as any).union_id] = Number((r as any).active_count) || 0;
-                }
-              } catch (e) {
-                reportError(e, 'HomePage.unionActiveCounts');
-              }
+              for (const r of unionMembersResult.data || [])
+                unionMemberMap[(r as any).union_id] = Number((r as any).member_count) || 0;
+              for (const r of unionActiveResult.data || [])
+                unionActiveMap[(r as any).union_id] = Number((r as any).active_count) || 0;
 
               for (const u of unionRows) {
                 const clubId = unionIdToClubId[u.id]; // Map back to clubs.id for statsMap
                 if (!clubId) continue;
-                const totalMembers = u.total_players || u.member_count || 0;
+                const totalMembers = unionMemberMap[u.id];
+                if (totalMembers == null) continue;
                 // Same 1-55 member ladder as a club — a union is measured by
                 // the players under it, on the same scale, so the two numbers
                 // sitting side by side on a carousel mean the same thing.
                 const clubLevel = getClubLevelFromMembers(totalMembers);
-                const unionActive = unionActiveMap[u.id] || 0;
+                const unionActive = unionActiveMap[u.id] ?? null;
                 statsMap[clubId] = {
                   totalMembers,
                   clubLevel,
                   // Same reasoning as the club clamp above: only clamp against a
                   // member count we actually have.
                   activePlayers:
-                    totalMembers > 0 ? Math.min(unionActive, totalMembers) : unionActive,
+                    unionActive == null
+                      ? null
+                      : totalMembers > 0
+                        ? Math.min(unionActive, totalMembers)
+                        : unionActive,
                 };
               }
             }
@@ -1086,7 +991,6 @@ function HomePageInner() {
 
         if (isMounted) {
           setClubStats(statsMap);
-
           // Lazy-backfill baked card images for clubs missing card_image_url
           const backfillTargets = displayClubs
             .filter((c) => c.logo_url && !c.card_image_url && c.club_id)
@@ -1107,21 +1011,49 @@ function HomePageInner() {
 
     fetchAllClubStats();
     // BUGFIX 2026-07-24: near-real-time active counts for every visible club card
-    // via a 20s poll (the table_seats realtime listener was removed for write volume).
-    const allStatsPoll = setInterval(fetchAllClubStats, 20000);
+    // via a poll (the table_seats realtime listener was removed for write volume).
+    //
+    // PERF 2026-08-24: this is the Home page - it is mounted for EVERY user, and
+    // each tick runs a multi-query club-stats fetch plus fn_union_active_player_counts
+    // plus a unions select. At 20s with NO visibility gate it kept firing in
+    // background tabs forever, so a player who left Home open in another tab was
+    // billing the database three queries every 20 seconds indefinitely.
+    //
+    // Two changes:
+    //   * 20s -> 45s. These are "players seated" counts on lobby cards, not
+    //     anything the player acts on; 45s is still near-real-time to the eye.
+    //   * skip the tick entirely while the tab is hidden, and fetch once on the
+    //     way back so a returning player never reads a stale card. This is the
+    //     pattern club/ClubDashboard.tsx:238 already uses correctly.
+    const POLL_MS = 45000;
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      fetchAllClubStats();
+    };
+    const allStatsPoll = setInterval(tick, POLL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') fetchAllClubStats();
+    };
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       isMounted = false;
       clearInterval(allStatsPoll);
+      document.removeEventListener('visibilitychange', onVisible);
     };
     // Stats re-fetch naturally when displayClubIdsKey changes (membership changes)
   }, [displayClubs.length, displayClubIdsKey]);
 
-  // Club quick links — shared resolution (utils/clubQuickLink): last-used
-  // club if still a member, else first club; unions excluded
+  // Marketplace remains club-only. Cashier additionally exposes an owned
+  // union treasury from its right-click / long-press wallet launcher.
   const quickLinkClubs = useMemo(() => eligibleQuickLinkClubs(userClubs), [userClubs]);
   const quickLinkClub = useMemo(
     () => resolveTargetClub(quickLinkClubs, quickLinkClubId),
     [quickLinkClubs, quickLinkClubId]
+  );
+  const cashierWallets = useMemo(() => eligibleCashierWallets(userClubs), [userClubs]);
+  const cashierWallet = useMemo(
+    () => resolveCashierWallet(cashierWallets, quickLinkClubId),
+    [cashierWallets, quickLinkClubId]
   );
 
   const openClubCashier = useCallback(
@@ -1129,8 +1061,12 @@ function HomePageInner() {
       rememberLastClub(club.id);
       setQuickLinkClubId(club.id);
       haptic.light();
-      PremiumSFX.navigate();
-      navigate(`/clubs/${club.id}/cashier`);
+      playPremiumSfx('navigate');
+      navigate(
+        isUnionEntity(club)
+          ? `/unions/${String(club.union_id || club.id)}/operations?tab=wallet`
+          : `/clubs/${club.slug || club.id}/cashier`
+      );
     },
     [navigate]
   );
@@ -1140,7 +1076,7 @@ function HomePageInner() {
       rememberLastClub(club.id);
       setQuickLinkClubId(club.id);
       haptic.light();
-      PremiumSFX.navigate();
+      playPremiumSfx('navigate');
       navigate(`/marketplace?club=${club.id}`);
     },
     [navigate]
@@ -1154,7 +1090,7 @@ function HomePageInner() {
 
   const marketplaceEmpty = useCallback(() => {
     haptic.light();
-    PremiumSFX.navigate();
+    playPremiumSfx('navigate');
     navigate('/marketplace');
   }, [navigate]);
 
@@ -1178,10 +1114,8 @@ function HomePageInner() {
 
       {/* Enhancement #6: Circuit brain background overlay */}
       <div className={styles.circuitOverlay}></div>
-      {/* Enhancement #1: Neuron lights — traveling cyan pulses */}
-      <div className={styles.neuronLights}></div>
-      {/* P4-1: Floating dust particles */}
-      <div className={styles.dustParticles}></div>
+      {/* Enhancement #1 & P4-1: 100% Random Floating Orbs replacing static dust/neurons */}
+      <FloatingOrbs count={20} color="rgba(0, 212, 255, 0.8)" />
 
       {/* GLOBAL HEADER */}
       <GlobalHeader />
@@ -1201,9 +1135,9 @@ function HomePageInner() {
             <div className={styles.shortcutGrid}>
               {[
                 ['1-5', 'Navigate Bottom Tiles'],
-                ['J', 'Join a Club'],
-                ['C', 'Create a Club'],
-                ['F', 'Find a Player'],
+                ['J', 'Join A Club'],
+                ['C', 'Create A Club'],
+                ['F', 'Find A Player'],
 
                 ['?', 'Toggle This Help'],
                 ['Esc', 'Close Modals'],
@@ -1225,44 +1159,33 @@ function HomePageInner() {
         {/* ═══════════════════════════════════════════════════════════════════════
                     HORIZONTAL ACTION BAR
                 ═══════════════════════════════════════════════════════════════════════ */}
-        <div className={styles.actionBarRow}>
-          <div className={styles.actionBarWrapper}>
-            <img
-              src={ACTION_BAR_HORIZONTAL}
-              alt="Action Bar"
-              className={styles.actionBarImage}
-              loading="eager"
-              width={1024}
-              height={682}
-            />
-            {/* Clickable zones positioned over the image */}
-            <button
-              className={styles.actionZoneLeft}
-              onClick={() => {
-                haptic.light();
-                setShowCreateClubModal(true);
-              }}
-              aria-label="Create a Club"
-            />
-            <button
-              className={styles.actionZoneCenter}
-              onClick={() => {
-                haptic.medium();
-                setShowFindPlayerModal(true);
-              }}
-              aria-label="Find a Player"
-            />
-            <button
-              className={styles.actionZoneRight}
-              onClick={() => {
-                haptic.light();
-                setShowJoinModal(true);
-                setTimeout(() => joinInputRef.current?.focus(), 100);
-              }}
-              aria-label="Join a Club"
-            />
-          </div>
-        </div>
+        <ClubEntryActionBar
+          flags={entryFlags}
+          onCreate={() => {
+            haptic.light();
+            ClubEntryTrustService.track('action_bar', 'opened', {
+              outcome: 'viewed',
+              metadata: { source: 'create' },
+            });
+            setShowCreateClubModal(true);
+          }}
+          onFind={() => {
+            haptic.medium();
+            ClubEntryTrustService.track('action_bar', 'opened', {
+              outcome: 'viewed',
+              metadata: { source: 'find' },
+            });
+            setShowFindPlayerModal(true);
+          }}
+          onJoin={() => {
+            haptic.light();
+            ClubEntryTrustService.track('action_bar', 'opened', {
+              outcome: 'viewed',
+              metadata: { source: 'join' },
+            });
+            setShowJoinModal(true);
+          }}
+        />
 
         {/* ═══════════════════════════════════════════════════════════════════════
                     CLUB CAROUSEL — Swipeable: [User Clubs ← SHARK CLUB (center) → User Clubs]
@@ -1352,7 +1275,7 @@ function HomePageInner() {
         {/* ═══════════════════════════════════════════════════════════════════════
                     BOTTOM ROW — from lobbyTiles.config.ts (#18)
                 ═══════════════════════════════════════════════════════════════════════ */}
-        <div className={styles.bottomRow} role="navigation" aria-label="Quick actions">
+        <div className={styles.bottomRow} role="navigation" aria-label="Quick Actions">
           {LOBBY_TILES.map((tile) =>
             tile.alt === 'Cashier' || tile.alt === 'Marketplace' ? (
               /* Club-aware quick links — club name on the tile, quick-switch
@@ -1360,12 +1283,12 @@ function HomePageInner() {
               <ClubQuickLinkTile
                 key={tile.alt}
                 tile={tile}
-                clubs={quickLinkClubs}
-                targetClub={quickLinkClub}
+                clubs={tile.alt === 'Cashier' ? cashierWallets : quickLinkClubs}
+                targetClub={tile.alt === 'Cashier' ? cashierWallet : quickLinkClub}
                 menuTitle={tile.alt === 'Cashier' ? 'Open Cashier For' : 'Open Marketplace For'}
                 onSelect={tile.alt === 'Cashier' ? openClubCashier : openClubMarketplace}
                 onEmpty={tile.alt === 'Cashier' ? cashierEmpty : marketplaceEmpty}
-                preloadPath={tile.alt === 'Cashier' ? '/cashier' : '/marketplace'}
+                preloadPath={tile.alt === 'Cashier' ? '/cashier/trade' : '/marketplace'}
               />
             ) : (
               <button
@@ -1386,7 +1309,7 @@ function HomePageInner() {
                 onMouseEnter={() => tile.route && preloadRoute(tile.route)}
                 onTouchStart={() => tile.route && preloadRoute(tile.route)}
                 onFocus={() => tile.route && preloadRoute(tile.route)}
-                aria-label={`${tile.alt} (press ${tile.shortcutKey})`}
+                aria-label={`${tile.alt} (Press ${tile.shortcutKey})`}
               >
                 <div className={styles.tilePedestal}></div>
                 <div className={styles.tileImageWrapper}>
@@ -1437,7 +1360,7 @@ function HomePageInner() {
             </h2>
             <p className={styles.modalSubtitle}>
               Are You Sure You Want To Leave{' '}
-              <strong>{leaveConfirm.club?.name || 'this club'}</strong>? This Action Cannot Be
+              <strong>{leaveConfirm.club?.name || 'This Club'}</strong>? This Action Cannot Be
               Undone.
             </p>
             <div className={styles.modalButtons}>
@@ -1455,95 +1378,23 @@ function HomePageInner() {
         </div>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════════════════
-                JOIN A CLUB MODAL
-            ═══════════════════════════════════════════════════════════════════════ */}
-      {showJoinModal && (
-        <div
-          className={styles.modalOverlay}
-          onClick={() => {
+      {/* JOIN A CLUB MODAL */}
+      <Suspense fallback={null}>
+        <JoinClubModal
+          isOpen={showJoinModal}
+          initialCode={joinIntent?.code}
+          onClose={() => {
             setShowJoinModal(false);
-            setShowReferralPrompt(false);
-            setClubCode('');
-            setReferralCode('');
-            setValidClubId(null);
-            setValidClubName(null);
+            setJoinIntent(null);
           }}
-        >
-          <div
-            ref={joinModalRef}
-            className={styles.modalContent}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {!showReferralPrompt ? (
-              <>
-                <h2 className={styles.modalTitle}>Join A Club</h2>
-                <div className={styles.inputGroup}>
-                  <input
-                    ref={joinInputRef}
-                    type="tel"
-                    inputMode="numeric"
-                    pattern="[0-9]{5,6}"
-                    maxLength={6}
-                    className={styles.clubCodeInput}
-                    placeholder="Enter 5-Digit Club Code"
-                    value={clubCode}
-                    onChange={(e) => setClubCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    onKeyDown={(e) => e.key === 'Enter' && handleJoinClubSubmit()}
-                  />
-                </div>
-                <div className={styles.modalButtons}>
-                  <button
-                    className={styles.modalButtonPrimary}
-                    onClick={handleJoinClubSubmit}
-                    disabled={isValidatingCode || clubCode.length < 5}
-                  >
-                    {isValidatingCode ? 'Validating...' : 'Continue'}
-                  </button>
-                  <button
-                    className={styles.modalButtonSecondary}
-                    onClick={() => setShowJoinModal(false)}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <h2 className={styles.modalTitle}>
-                  {validClubName ? `Join ${validClubName}` : 'Referral Code'}
-                </h2>
-                <p className={styles.modalSubtitle}>Enter A Referral Code Or Join Without One</p>
-                <div className={styles.inputGroup}>
-                  <input
-                    type="text"
-                    className={styles.clubCodeInput}
-                    placeholder="Referral Code (Optional)"
-                    value={referralCode}
-                    onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-                  />
-                </div>
-                <div className={styles.modalButtons}>
-                  <button
-                    className={styles.modalButtonPrimary}
-                    onClick={() => handleJoinClub(true)}
-                    disabled={isJoining}
-                  >
-                    {isJoining ? 'Joining...' : 'Join with Referral'}
-                  </button>
-                  <button
-                    className={styles.modalButtonSecondary}
-                    onClick={() => handleJoinClub(false)}
-                    disabled={isJoining}
-                  >
-                    {isJoining ? 'Joining...' : 'Join Without Referral'}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      )}
+          onSuccess={(clubId) => {
+            const watchTableId = joinIntent?.watchTableId;
+            setShowJoinModal(false);
+            setJoinIntent(null);
+            navigate(watchTableId ? `/table/${watchTableId}?observer=1` : `/clubs/${clubId}`);
+          }}
+        />
+      </Suspense>
 
       {/* CREATE A CLUB MODAL */}
       <Suspense fallback={null}>
@@ -1562,6 +1413,11 @@ function HomePageInner() {
         <FindPlayerModal
           isOpen={showFindPlayerModal}
           onClose={() => setShowFindPlayerModal(false)}
+          onMembershipRequired={({ code, watchTableId }) => {
+            setShowFindPlayerModal(false);
+            setJoinIntent({ code, watchTableId });
+            setShowJoinModal(true);
+          }}
         />
       </Suspense>
 

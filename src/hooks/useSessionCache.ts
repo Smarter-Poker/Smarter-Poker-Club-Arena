@@ -37,14 +37,35 @@ interface SessionCacheResult<T> {
 const CACHE_PREFIX = 'ca-swr-';
 const MAX_AGE_MS = 5 * 60 * 1000; // Cache entries older than 5 minutes are discarded
 
+/**
+ * 2026-08-24 (perf pass): backing store switched sessionStorage -> localStorage.
+ * sessionStorage dies with the tab — every fresh visit (and iOS Safari's
+ * aggressive tab reclaim) started from zero and showed skeletons everywhere.
+ * localStorage survives restarts, so a returning player paints instantly from
+ * the last visit and revalidates silently. The 5-minute max age still bounds
+ * staleness, and clearSessionCache() on logout still prevents cross-user
+ * bleed. Falls back to sessionStorage where localStorage throws (private
+ * mode / storage denied).
+ */
+function cacheStore(): Storage {
+  try {
+    // Touch it — Safari private mode throws on setItem, not on access.
+    localStorage.getItem(`${CACHE_PREFIX}__probe`);
+    return localStorage;
+  } catch {
+    return sessionStorage;
+  }
+}
+
 function readCache<T>(key: string): T | null {
   try {
-    const raw = sessionStorage.getItem(`${CACHE_PREFIX}${key}`);
+    const store = cacheStore();
+    const raw = store.getItem(`${CACHE_PREFIX}${key}`);
     if (!raw) return null;
     const { data, ts } = JSON.parse(raw);
     // Discard stale entries
     if (Date.now() - ts > MAX_AGE_MS) {
-      sessionStorage.removeItem(`${CACHE_PREFIX}${key}`);
+      store.removeItem(`${CACHE_PREFIX}${key}`);
       return null;
     }
     return data as T;
@@ -54,23 +75,22 @@ function readCache<T>(key: string): T | null {
 }
 
 function writeCache<T>(key: string, data: T): void {
+  const store = cacheStore();
   try {
-    sessionStorage.setItem(`${CACHE_PREFIX}${key}`, JSON.stringify({ data, ts: Date.now() }));
+    store.setItem(`${CACHE_PREFIX}${key}`, JSON.stringify({ data, ts: Date.now() }));
   } catch {
     // Quota exceeded — clear old entries
     try {
       const keysToRemove: string[] = [];
-      for (let i = 0; i < sessionStorage.length; i++) {
-        const k = sessionStorage.key(i);
+      for (let i = 0; i < store.length; i++) {
+        const k = store.key(i);
         if (k?.startsWith(CACHE_PREFIX)) keysToRemove.push(k);
       }
       // Remove oldest half
       keysToRemove.sort();
-      keysToRemove
-        .slice(0, Math.ceil(keysToRemove.length / 2))
-        .forEach((k) => sessionStorage.removeItem(k));
+      keysToRemove.slice(0, Math.ceil(keysToRemove.length / 2)).forEach((k) => store.removeItem(k));
       // Retry write
-      sessionStorage.setItem(`${CACHE_PREFIX}${key}`, JSON.stringify({ data, ts: Date.now() }));
+      store.setItem(`${CACHE_PREFIX}${key}`, JSON.stringify({ data, ts: Date.now() }));
     } catch {
       /* give up */
     }
@@ -127,14 +147,19 @@ export function useSessionCache<T>(
  * Call on logout to prevent stale cross-user data.
  */
 export function clearSessionCache(): void {
-  try {
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < sessionStorage.length; i++) {
-      const k = sessionStorage.key(i);
-      if (k?.startsWith(CACHE_PREFIX)) keysToRemove.push(k);
+  // Sweep BOTH stores: localStorage (current backing) and sessionStorage
+  // (legacy entries from before the 2026-08-24 switch, and the private-mode
+  // fallback). Cross-user bleed on a shared device is the failure this guards.
+  for (const store of [localStorage, sessionStorage] as Storage[]) {
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < store.length; i++) {
+        const k = store.key(i);
+        if (k?.startsWith(CACHE_PREFIX)) keysToRemove.push(k);
+      }
+      keysToRemove.forEach((k) => store.removeItem(k));
+    } catch {
+      /* silent */
     }
-    keysToRemove.forEach((k) => sessionStorage.removeItem(k));
-  } catch {
-    /* silent */
   }
 }

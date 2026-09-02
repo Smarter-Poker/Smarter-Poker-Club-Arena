@@ -12,6 +12,7 @@
  */
 
 import React from 'react';
+import { EmptyState } from './EmptyState';
 
 interface PageErrorBoundaryProps {
   children: React.ReactNode;
@@ -103,103 +104,22 @@ export class PageErrorBoundary extends React.Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div
-          style={{
-            padding: '32px 24px',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: 16,
-            minHeight: '40vh',
-            justifyContent: 'center',
-            color: 'rgba(255,255,255,0.7)',
-          }}
+        <EmptyState
+          icon="FAULT"
+          eyebrow="Page Recovery"
+          tone="error"
+          title={`${this.props.pageName || 'This Page'} Could Not Render`}
+          description="The Failure Was Recorded. Retry This Surface, Or Return To The Previous Page Without Losing The Rest Of Your Club Arena Session."
+          action={{ label: 'Try Again', onClick: this.handleRetry }}
+          secondaryAction={{ label: 'Go Back', onClick: () => window.history.back() }}
         >
-          <span style={{ fontSize: 40, opacity: 0.5 }}>Warning</span>
-          <h3
-            style={{
-              margin: 0,
-              fontSize: 18,
-              color: 'rgba(255,255,255,0.9)',
-              fontWeight: 600,
-            }}
-          >
-            Something Went Wrong
-          </h3>
-          <p
-            style={{
-              margin: 0,
-              fontSize: 14,
-              textAlign: 'center',
-              maxWidth: 320,
-              lineHeight: 1.5,
-            }}
-          >
-            {this.props.pageName || 'This page'} Encountered An Error.
-            <br />
-            Try Refreshing Or Go Back.
-          </p>
-
-          {/* The actual error, on screen. Without this the fallback is a dead
-              end for whoever is looking at it: they can see that something
-              broke and have no way to say WHAT, which is exactly how the
-              stats-page crash on 2026-08-21 cost an afternoon of guessing.
-              One line, monospaced, screenshot-able. */}
           {this.state.error?.message && (
-            <code
-              style={{
-                display: 'block',
-                maxWidth: 420,
-                padding: '8px 10px',
-                borderRadius: 6,
-                background: 'rgba(255,255,255,0.06)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                color: 'rgba(255,255,255,0.55)',
-                fontSize: 11,
-                lineHeight: 1.45,
-                textAlign: 'left',
-                wordBreak: 'break-word',
-                textTransform: 'none',
-              }}
-            >
-              {String(this.state.error.message).slice(0, 300)}
-            </code>
+            <details>
+              <summary>Technical Details</summary>
+              <code>{String(this.state.error.message).slice(0, 300)}</code>
+            </details>
           )}
-          <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-            <button
-              onClick={this.handleRetry}
-              aria-label="Retry loading page"
-              style={{
-                padding: '10px 20px',
-                borderRadius: 8,
-                border: 'none',
-                background: 'rgba(59, 130, 246, 0.8)',
-                color: '#fff',
-                cursor: 'pointer',
-                fontSize: 14,
-                fontWeight: 500,
-              }}
-            >
-              Try Again
-            </button>
-            <button
-              onClick={() => window.history.back()}
-              aria-label="Go back to previous page"
-              style={{
-                padding: '10px 20px',
-                borderRadius: 8,
-                border: '1px solid rgba(255,255,255,0.15)',
-                background: 'transparent',
-                color: 'rgba(255,255,255,0.7)',
-                cursor: 'pointer',
-                fontSize: 14,
-                fontWeight: 500,
-              }}
-            >
-              Go Back
-            </button>
-          </div>
-        </div>
+        </EmptyState>
       );
     }
 

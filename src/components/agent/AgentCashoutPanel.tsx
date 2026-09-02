@@ -7,10 +7,11 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
-import { cashoutService, CashoutRequest } from '../../services/CashoutService';
+import { cashoutService, newOpId, CashoutRequest } from '../../services/CashoutService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { masterBus } from '../../core/MasterBus';
 import { checkSettlementLock } from '../../utils/settlementLock';
+import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { formatRelativeShort as formatTime } from '@/lib/date';
 import './AgentCashoutPanel.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
@@ -32,15 +33,63 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
   const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
   const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
+  /**
+   * `disabled={processing === cashout.id}` needs a render to take effect. Two
+   * taps in the same frame both read the old value and both called an RPC that
+   * moves real chips. The set is written synchronously, so the second tap on the
+   * SAME card is refused in the same tick.
+   *
+   * Per cashout, not global: two different players' requests are two different
+   * decisions, and their buttons are separately enabled on screen. A global lock
+   * would leave the second card looking tappable and doing nothing.
+   */
+  const inFlightRef = useRef<Set<string>>(new Set());
+
+  /**
+   * One op id PER CASHOUT PER ACTION, minted once, held across a failure,
+   * dropped on success. The service used to mint a fresh one inside every call,
+   * which is no protection at all: the retry that matters is the agent's SECOND
+   * tap after their connection dropped, and a second call carried a second key.
+   * With this, that retry lands on fn_cashout_approve's replay branch instead of
+   * trying to release the escrow twice.
+   *
+   * Keyed by ACTION as well as id because the unique index behind the
+   * idempotency check spans every cashout transaction type at once
+   * (chip_transactions_agent_wallet_op_id_uidx). Reusing an approve's key for a
+   * later decline of the same request would collide on that index rather than
+   * replay, and fn_cashout_release has no unique_violation handler to soften it.
+   */
+  const opIdsRef = useRef<Map<string, string>>(new Map());
+  const opIdFor = (action: 'approve' | 'reject', cashoutId: string): string => {
+    const key = `${action}:${cashoutId}`;
+    const held = opIdsRef.current.get(key);
+    if (held) return held;
+    const fresh = newOpId();
+    opIdsRef.current.set(key, fresh);
+    return fresh;
+  };
+
+  /**
+   * The skeleton belongs to the FIRST load only. `setLoading(true)` on every
+   * refresh meant that each debounced BALANCE_UPDATED - and every cashout row
+   * changing anywhere in the club - replaced the whole worked queue with three
+   * shimmer bars and then re-ran the 60ms stagger fade. An agent reading a
+   * request watched it vanish and slide back in under their thumb.
+   */
+  const hasLoadedRef = useRef(false);
+
   // Load pending cashouts
   const loadCashouts = useCallback(async () => {
     if (!user?.id) return;
 
-    setLoading(true);
+    if (!hasLoadedRef.current) setLoading(true);
     try {
       const pending = await cashoutService.getAgentPendingCashouts(user.id, clubId);
       if (!isMounted.current) return;
       setCashouts(pending);
+      // A load that succeeded clears the previous failure. Without this the
+      // error banner sat above a perfectly fresh list forever.
+      setError(null);
       setVisibleItems(new Set());
       // Clear previous stagger timers
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
@@ -49,9 +98,11 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
       );
     } catch (err) {
       reportError(err, 'AgentCashoutPanel.Failed_to_load_cashouts');
+      if (isMounted.current) setError(safeErrorMessage(err, 'Failed to load cashout requests'));
     }
+    hasLoadedRef.current = true;
     if (isMounted.current) setLoading(false);
-  }, [user?.id, clubId]);
+  }, [user?.id, clubId, isMounted]);
 
   useEffect(() => {
     loadCashouts();
@@ -76,40 +127,60 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
 
     // Supabase real-time via masterBus channel manager: instant refresh on cashout_requests changes
     const channelKey = `agent-cashouts-${user?.id || 'anon'}-${clubId || 'all'}`;
-    // Scope the realtime subscription to THIS club so a cashout in any other club
-    // platform-wide no longer wakes every agent and forces a full refetch.
-    const changeFilter: {
-      event: '*';
-      schema: 'public';
-      table: 'cashout_requests';
-      filter?: string;
-    } = { event: '*', schema: 'public', table: 'cashout_requests' };
-    if (clubId) changeFilter.filter = `club_id=eq.${clubId}`;
-    const channel = masterBus
-      .getOrCreateChannel(channelKey)
-      .on('postgres_changes', changeFilter, () => {
-        loadCashouts();
-      })
-      .subscribe((status: string, err?: Error) => {
-        if (status === 'CHANNEL_ERROR') {
-          if (err) reportError(err?.message || err, 'AgentCashoutPanel._Realtime_channel_error');
-        }
-        if (status === 'TIMED_OUT') {
-          console.warn('[AgentCashoutPanel] Realtime channel timed out');
-        }
-      });
+
+    /**
+     * THE FILTER HAS TO CARRY A UUID.
+     *
+     * `clubId` arrives from a route param and is routinely a 6-digit club code
+     * or a slug - that is the entire reason every service call in this file goes
+     * through resolveClubUUID first. `club_id=eq.25450` against a uuid column
+     * matches nothing, so scoping the subscription silently switched realtime
+     * OFF for exactly the clubs whose id was not already a uuid, and the panel
+     * fell back to the debounced bus events alone. Resolve first, subscribe
+     * second; an unresolvable id subscribes unfiltered rather than to nothing.
+     */
+    let cancelled = false;
+    (async () => {
+      const resolved = clubId ? await resolveClubUUID(clubId) : null;
+      if (cancelled || !isMounted.current) return;
+
+      const changeFilter: {
+        event: '*';
+        schema: 'public';
+        table: 'cashout_requests';
+        filter?: string;
+      } = { event: '*', schema: 'public', table: 'cashout_requests' };
+      if (resolved) changeFilter.filter = `club_id=eq.${resolved}`;
+
+      masterBus
+        .getOrCreateChannel(channelKey)
+        .on('postgres_changes', changeFilter, () => {
+          loadCashouts();
+        })
+        .subscribe((status: string, err?: Error) => {
+          if (status === 'CHANNEL_ERROR') {
+            if (err) reportError(err?.message || err, 'AgentCashoutPanel._Realtime_channel_error');
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('[AgentCashoutPanel] Realtime channel timed out');
+          }
+        });
+    })();
 
     return () => {
+      cancelled = true;
       unsubBalance();
       unsubMutation();
       masterBus.removeRegisteredChannel(channelKey);
       staggerTimersRef.current.forEach((t) => clearTimeout(t));
       staggerTimersRef.current = [];
     };
-  }, [loadCashouts, user?.id]);
+  }, [loadCashouts, user?.id, clubId, isMounted]);
 
   const handleApprove = async (cashout: CashoutRequest) => {
     if (!user?.id) return;
+    if (inFlightRef.current.has(cashout.id)) return;
+    inFlightRef.current.add(cashout.id);
 
     setProcessing(cashout.id);
     setError(null);
@@ -118,7 +189,8 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     try {
       const lockResult = await checkSettlementLock(clubId || '');
       if (lockResult.locked) {
-        if (isMounted.current) setError('Settlement in progress - cashout actions frozen');
+        if (isMounted.current) setError('Settlement In Progress. Cashout Actions Are Frozen');
+        inFlightRef.current.delete(cashout.id);
         if (isMounted.current) setProcessing(null);
         return;
       }
@@ -128,22 +200,38 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     }
 
     try {
-      // approveCashout is atomic and terminal (server route moves the chips to the
-      // club treasury and sets status='approved' in one transaction). The old
-      // follow-up completeCashout() call is gone -- it is now a deprecated no-op.
-      await cashoutService.approveCashout(cashout.id, user.id);
+      // Atomic and terminal. fn_cashout_approve releases the escrow into THIS
+      // approver's agent wallet (Dan 2026-08-25: "Once approved the chips go
+      // into the agent's wallet"), writes the ledger row and notifies the
+      // player, all in one transaction. It used to credit the approver's
+      // club_members.chip_balance, which is their player wallet.
+      await cashoutService.approveCashout(
+        cashout.id,
+        user.id,
+        undefined,
+        opIdFor('approve', cashout.id)
+      );
+      opIdsRef.current.delete(`approve:${cashout.id}`);
       loadCashouts();
       onCashoutProcessed?.();
-      // Emit bus event so DynamicWallet and CashierPage refresh
-      masterBus.emit('BALANCE_UPDATED', { source: 'cashout_approved', playerId: cashout.playerId });
+      // The BALANCE_UPDATED event is emitted by approveCashout itself, carrying
+      // the player id under the `userId` key every listener filters on. The
+      // duplicate emitted here used the key `playerId`, which matched nothing,
+      // and fired a second refresh of every wallet surface for no reason.
     } catch (err: any) {
-      if (isMounted.current) setError(safeErrorMessage(err, 'Failed to approve cashout'));
+      // The op id is held, not dropped: this may have committed with the
+      // response lost, and the retry has to replay rather than release twice.
+      const msg = err instanceof Error ? err.message : err?.message || String(err);
+      if (isMounted.current) setError(msg);
     }
+    inFlightRef.current.delete(cashout.id);
     if (isMounted.current) setProcessing(null);
   };
 
   const handleReject = async (cashout: CashoutRequest, reason?: string) => {
     if (!user?.id) return;
+    if (inFlightRef.current.has(cashout.id)) return;
+    inFlightRef.current.add(cashout.id);
 
     setProcessing(cashout.id);
     setError(null);
@@ -152,7 +240,8 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     try {
       const lockResult = await checkSettlementLock(clubId || '');
       if (lockResult.locked) {
-        if (isMounted.current) setError('Settlement in progress - cashout actions frozen');
+        if (isMounted.current) setError('Settlement In Progress. Cashout Actions Are Frozen');
+        inFlightRef.current.delete(cashout.id);
         if (isMounted.current) setProcessing(null);
         return;
       }
@@ -162,14 +251,22 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     }
 
     try {
-      await cashoutService.rejectCashout(cashout.id, user.id, reason);
+      await cashoutService.rejectCashout(
+        cashout.id,
+        user.id,
+        reason,
+        opIdFor('reject', cashout.id)
+      );
+      opIdsRef.current.delete(`reject:${cashout.id}`);
       loadCashouts();
       onCashoutProcessed?.();
-      // Emit bus event so DynamicWallet and CashierPage refresh
-      masterBus.emit('BALANCE_UPDATED', { source: 'cashout_rejected', playerId: cashout.playerId });
+      // See handleApprove: rejectCashout already emits BALANCE_UPDATED with the
+      // correct `userId` key.
     } catch (err: any) {
-      if (isMounted.current) setError(safeErrorMessage(err, 'Failed to reject cashout'));
+      const msg = err instanceof Error ? err.message : err?.message || String(err);
+      if (isMounted.current) setError(msg);
     }
+    inFlightRef.current.delete(cashout.id);
     if (isMounted.current) setProcessing(null);
   };
 
@@ -177,7 +274,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     return (
       <div className="agent-cashout-panel">
         <div className="panel-header">
-          <h3> Pending Cashouts</h3>
+          <h3>Pending Cashouts</h3>
         </div>
         <div style={{ padding: '12px' }}>
           {Array.from({ length: 3 }).map((_, i) => (
@@ -191,7 +288,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
                 marginBottom: '8px',
                 borderRadius: '8px',
                 background: 'rgba(255,255,255,0.02)',
-                animation: `shimmerFade 1.4s ease-in-out ${i * 0.1}s infinite`,
+                animation: `animationsShimmerFade 1.4s ease-in-out ${i * 0.1}s infinite`,
               }}
             >
               <div
@@ -202,20 +299,20 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
                   background:
                     'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
                   backgroundSize: '200px 100%',
-                  animation: 'shimmerSlide 1.4s ease-in-out infinite',
+                  animation: 'animationsShimmerSlide 1.4s ease-in-out infinite',
                   flexShrink: 0,
                 }}
               />
               <div style={{ flex: 1 }}>
                 <div
                   style={{
-                    width: `${50 + Math.random() * 30}%`,
+                    width: `${50 + ((i * 13) % 30)}%`,
                     height: '12px',
                     borderRadius: '4px',
                     background:
                       'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
                     backgroundSize: '200px 100%',
-                    animation: 'shimmerSlide 1.4s ease-in-out infinite',
+                    animation: 'animationsShimmerSlide 1.4s ease-in-out infinite',
                     marginBottom: '6px',
                   }}
                 />
@@ -227,17 +324,20 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
                     background:
                       'linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%)',
                     backgroundSize: '200px 100%',
-                    animation: 'shimmerSlide 1.4s ease-in-out infinite',
+                    animation: 'animationsShimmerSlide 1.4s ease-in-out infinite',
                   }}
                 />
               </div>
             </div>
           ))}
         </div>
-        <style>{`
-          @keyframes shimmerSlide { 0% { background-position: -200px 0; } 100% { background-position: 200px 0; } }
-          @keyframes shimmerFade { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
-        `}</style>
+        {/* The <style> block that used to sit here declared @keyframes
+            shimmerSlide and shimmerFade. Every skeleton above asks for
+            animationsShimmerSlide / animationsShimmerFade, which live in
+            src/styles/animations.css, so these two definitions matched nothing
+            and were injected into the document on every render of the loading
+            state for nothing. Deleted, not renamed: the real ones already
+            exist. */}
       </div>
     );
   }
@@ -246,7 +346,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
     return (
       <div className="agent-cashout-panel">
         <div className="panel-header">
-          <h3> Pending Cashouts</h3>
+          <h3>Pending Cashouts</h3>
         </div>
         <div style={{ textAlign: 'center', padding: '24px 16px', color: '#94a3b8' }}>
           <div style={{ fontSize: '24px', marginBottom: '8px' }}>⚠</div>
@@ -274,7 +374,7 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
   return (
     <div className="agent-cashout-panel">
       <div className="panel-header">
-        <h3> Pending Cashouts</h3>
+        <h3>Pending Cashouts</h3>
         <span className="count-badge">{cashouts.length}</span>
         <button className="refresh-btn" onClick={loadCashouts} title="Refresh">
           ↻
@@ -328,19 +428,20 @@ export default function AgentCashoutPanel({ clubId, onCashoutProcessed }: AgentC
                   onClick={() => handleApprove(cashout)}
                   disabled={processing === cashout.id}
                 >
-                  {processing === cashout.id ? '...' : ' Approve & Complete'}
+                  {processing === cashout.id ? 'Approving...' : 'Approve & Complete'}
                 </button>
                 <button
                   className="action-btn reject"
                   onClick={() => handleReject(cashout, 'Request declined')}
                   disabled={processing === cashout.id}
                 >
-                  {processing === cashout.id ? '...' : ' Reject'}
+                  {processing === cashout.id ? 'Working...' : 'Reject'}
                 </button>
               </div>
 
               <div className="escrow-notice">
-                Chips Are Locked In Escrow. Approving Will Complete The Cashout.
+                Chips Are Locked In Escrow. Approving Moves Them Into Your Agent Wallet. Rejecting
+                Returns Them To The Player.
               </div>
             </div>
           ))}

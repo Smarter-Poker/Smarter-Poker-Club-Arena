@@ -6,170 +6,173 @@
 @import '../../styles/design-tokens.css';
 
 .mini-hud {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 3px 6px;
-    background: rgba(0, 0, 0, 0.82);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    font-family: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', monospace;
-    font-size: 0.5625rem;
-    line-height: 1;
-    color: rgba(255, 255, 255, 0.85);
-    white-space: nowrap;
-    pointer-events: auto;
-    user-select: none;
-    animation: hudSlideIn 0.35s var(--ease-spring);
-    margin-top: 2px;
-    cursor: help;
-    transition: all 0.2s ease;
-}
-
-.mini-hud:hover {
-    background: rgba(0, 0, 0, 0.88);
-    border-color: rgba(255, 255, 255, 0.12);
-    backdrop-filter: blur(12px);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-family: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', monospace;
+  font-size: 0.5625rem;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+  pointer-events: auto;
+  user-select: none;
+  animation: hudSlideIn 0.35s var(--ease-spring);
+  margin-top: 2px;
+  cursor: help;
+  transition: all 0.2s ease;
 }
 
 @keyframes hudSlideIn {
-    from {
-        opacity: 0;
-        transform: translateY(4px) scale(0.9);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-    }
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 /* Heat level glow on the HUD background */
 .mini-hud--heat-2 {
-    border-color: rgba(245, 158, 11, 0.15);
-    box-shadow: 0 0 8px rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.15);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.08);
 }
 
 .mini-hud--heat-3 {
-    border-color: rgba(239, 68, 68, 0.2);
-    box-shadow: 0 0 10px rgba(239, 68, 68, 0.12);
-    animation: hudSlideIn 0.35s var(--ease-spring), hudHotGlow 2s ease-in-out infinite;
+  border-color: rgba(239, 68, 68, 0.2);
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.12);
+  animation:
+    hudSlideIn 0.35s var(--ease-spring),
+    hudHotGlow 2s ease-in-out infinite;
 }
 
 @keyframes hudHotGlow {
-    0%, 100% { box-shadow: 0 0 8px rgba(239, 68, 68, 0.1); }
-    50% { box-shadow: 0 0 14px rgba(239, 68, 68, 0.2); }
+  0%,
+  100% {
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 14px rgba(239, 68, 68, 0.2);
+  }
 }
 
 .mini-hud--compact {
-    padding: 2px 5px;
-    gap: 3px;
-    font-size: 0.5rem;
-    border-radius: 5px;
+  padding: 2px 5px;
+  gap: 3px;
+  font-size: 0.5rem;
+  border-radius: 5px;
 }
 
 /* Player Type Label (Nit, TAG, LAG, Whale, etc.) */
 .mini-hud__type {
-    font-size: 0.5rem;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    line-height: 1;
-    min-width: 20px;
-    text-align: center;
+  font-size: 0.5rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1;
+  min-width: 20px;
+  text-align: center;
 }
 
 .mini-hud--compact .mini-hud__type {
-    font-size: 0.4375rem;
+  font-size: 0.4375rem;
 }
 
 /* Stats container with progress bars */
 .mini-hud__stats {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .mini-hud__stat-row {
-    display: flex;
-    align-items: center;
-    gap: 2px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .mini-hud__label {
-    font-size: 0.4375rem;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.45);
-    width: 7px;
-    text-align: center;
+  font-size: 0.4375rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.45);
+  width: 7px;
+  text-align: center;
 }
 
 /* Micro progress bar track */
 .mini-hud__bar {
-    width: 20px;
-    height: 3px;
-    background: rgba(255, 255, 255, 0.08);
-    border-radius: 2px;
-    overflow: hidden;
-    flex-shrink: 0;
+  width: 20px;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 2px;
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
 .mini-hud--compact .mini-hud__bar {
-    width: 16px;
-    height: 2px;
+  width: 16px;
+  height: 2px;
 }
 
 /* Progress bar fill */
 .mini-hud__bar-fill {
-    height: 100%;
-    border-radius: 2px;
-    transition: width 0.5s var(--ease-out);
-    min-width: 1px;
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.5s var(--ease-out);
+  min-width: 1px;
 }
 
 .mini-hud__bar-fill--vpip {
-    /* Color set inline based on heat level */
+  /* Color set inline based on heat level */
 }
 
 .mini-hud__bar-fill--pfr {
-    background: #a78bfa; /* Purple for PFR by default */
+  background: #a78bfa; /* Purple for PFR by default */
 }
 
 /* Stat value */
 .mini-hud__value {
-    font-weight: 700;
-    color: rgba(255, 255, 255, 0.9);
-    font-size: 0.5rem;
-    min-width: 14px;
-    text-align: right;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.5rem;
+  min-width: 14px;
+  text-align: right;
 }
 
 .mini-hud--compact .mini-hud__value {
-    font-size: 0.4375rem;
-    min-width: 12px;
+  font-size: 0.4375rem;
+  min-width: 12px;
 }
 
 /* Heat indicator dot */
 .mini-hud__heat {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    transition: background-color 0.5s ease, box-shadow 0.5s ease;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition:
+    background-color 0.5s ease,
+    box-shadow 0.5s ease;
 }
 
 .mini-hud--compact .mini-hud__heat {
-    width: 4px;
-    height: 4px;
+  width: 4px;
+  height: 4px;
 }
 
 /* Hands count */
 .mini-hud__hands {
-    font-size: 0.4375rem;
-    color: rgba(255, 255, 255, 0.35);
-    font-weight: 400;
-    margin-left: 1px;
+  font-size: 0.4375rem;
+  color: rgba(255, 255, 255, 0.35);
+  font-weight: 400;
+  margin-left: 1px;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -177,52 +180,44 @@
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 .mini-hud--glass {
-    background: rgba(10, 10, 20, 0.7);
-    backdrop-filter: blur(12px) brightness(1.05);
-    -webkit-backdrop-filter: blur(12px) brightness(1.05);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow:
-        0 4px 12px rgba(0, 0, 0, 0.3),
-        inset 0 1px 0 rgba(255, 255, 255, 0.05);
-}
-
-.mini-hud--glass:hover {
-    background: rgba(10, 10, 20, 0.75);
-    border-color: rgba(255, 255, 255, 0.12);
-    box-shadow:
-        0 6px 16px rgba(0, 0, 0, 0.4),
-        inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  background: rgba(10, 10, 20, 0.7);
+  backdrop-filter: blur(12px) brightness(1.05);
+  -webkit-backdrop-filter: blur(12px) brightness(1.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 /* Responsive */
 @media (max-width: 480px) {
-    .mini-hud {
-        padding: 2px 4px;
-        gap: 3px;
-        font-size: 0.5rem;
-    }
+  .mini-hud {
+    padding: 2px 4px;
+    gap: 3px;
+    font-size: 0.5rem;
+  }
 
-    .mini-hud__bar {
-        width: 14px;
-    }
+  .mini-hud__bar {
+    width: 14px;
+  }
 
-    .mini-hud__type {
-        font-size: 0.4375rem;
-    }
+  .mini-hud__type {
+    font-size: 0.4375rem;
+  }
 }
 
 @media (max-width: 380px) {
-    .mini-hud {
-        padding: 1px 3px;
-        gap: 2px;
-    }
+  .mini-hud {
+    padding: 1px 3px;
+    gap: 2px;
+  }
 
-    .mini-hud__bar {
-        width: 12px;
-        height: 2px;
-    }
+  .mini-hud__bar {
+    width: 12px;
+    height: 2px;
+  }
 
-    .mini-hud__stats {
-        gap: 1px;
-    }
+  .mini-hud__stats {
+    gap: 1px;
+  }
 }

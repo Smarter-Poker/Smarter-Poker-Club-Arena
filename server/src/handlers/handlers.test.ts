@@ -21,6 +21,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../http/auth.js', () => ({ authenticateRequest: vi.fn() }));
 vi.mock('../http/body.js', () => ({ readBody: vi.fn() }));
 vi.mock('../services/errorReporter.js', () => ({ reportError: vi.fn() }));
+vi.mock('../services/TableViewerAccess.js', () => ({ authorizeTableViewer: vi.fn() }));
 
 // Audit S1: admin/pause|resume now resolve the caller's club-admin role via
 // supabase (tables.club_id -> club_members.role). Mock it with mutable results.
@@ -34,7 +35,6 @@ const sb = vi.hoisted(() => ({
 vi.mock('../services/supabase.js', () => ({
   supabase: {
     from: (table: string) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const b: any = {
         select: () => b,
         eq: () => b,
@@ -44,7 +44,7 @@ vi.mock('../services/supabase.js', () => ({
             : table === 'club_members'
               ? sb.membersResult
               : { data: null, error: null },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
         insert: () => ({ then: (cb: any) => cb({ error: null }) }),
       };
       return b;
@@ -70,6 +70,7 @@ import { handleGetActions, handleGetState } from './state.js';
 
 import { authenticateRequest } from '../http/auth.js';
 import { readBody } from '../http/body.js';
+import { authorizeTableViewer } from '../services/TableViewerAccess.js';
 import { mockReq, mockRes, parseJson, mockEngine, mockGameServer } from './_testHelpers.js';
 
 // Every POST handler has the same signature: (req, res, deps).
@@ -162,7 +163,7 @@ const POST_CASES: HandlerCase[] = [
 ];
 
 describe.each(POST_CASES)(
-  'POST /$name — uniform contract',
+  'POST /$name - uniform contract',
   ({ name: _name, body, invoke, engineMethod }) => {
     beforeEach(() => {
       vi.clearAllMocks();
@@ -190,7 +191,7 @@ describe.each(POST_CASES)(
       const { res, captured } = mockRes();
       await invoke(mockReq(), res, mockGameServer(engine, 't1'));
       expect(captured.statusCode).toBe(200);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       expect((engine as any)[engineMethod]).toHaveBeenCalled();
     });
   }
@@ -201,7 +202,7 @@ describe.each(POST_CASES)(
 // sends only `{ tableId, runs }` - a human chooser's 1/2/3 pick was 400'd
 // at the HTTP layer, so no human could ever start a run-it-twice.
 
-describe('POST /rit — chooser phase sends runs without response', () => {
+describe('POST /rit - chooser phase sends runs without response', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'u1' });
@@ -213,7 +214,7 @@ describe('POST /rit — chooser phase sends runs without response', () => {
     const { res, captured } = mockRes();
     await handleRit(mockReq(), res, { gameServer: mockGameServer(engine, 't1') });
     expect(captured.statusCode).toBe(200);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     expect((engine as any).respondToRIT).toHaveBeenCalledWith('u1', undefined, 3);
   });
 
@@ -222,7 +223,7 @@ describe('POST /rit — chooser phase sends runs without response', () => {
     const engine = mockEngine();
     const { res } = mockRes();
     await handleRit(mockReq(), res, { gameServer: mockGameServer(engine, 't1') });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     expect((engine as any).respondToRIT).toHaveBeenCalledWith('u1', 'decline', undefined);
   });
 
@@ -264,7 +265,7 @@ describe.each([
     ) => handleAdminResume(req, res, { gameServer: gs }),
     engineMethod: 'adminResume',
   },
-])('POST /$name — club-admin authz contract', ({ name: _name, body, invoke, engineMethod }) => {
+])('POST /$name - club-admin authz contract', ({ name: _name, body, invoke, engineMethod }) => {
   beforeEach(() => {
     vi.clearAllMocks();
     // default: authenticated, table resolves to a club, caller is an owner
@@ -320,7 +321,7 @@ describe.each([
     const { res, captured } = mockRes();
     await invoke(mockReq(), res, mockGameServer(engine, 't1'));
     expect(captured.statusCode).toBe(200);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     expect((engine as any)[engineMethod]).toHaveBeenCalled();
   });
 });
@@ -382,19 +383,26 @@ describe('handleGetActions', () => {
     expect(captured.statusCode).toBe(404);
   });
 
-  it('200 returns engine.getPlayerActions — uses JWT userId not URL param', async () => {
+  it('200 returns engine.getPlayerActions - uses JWT userId not URL param', async () => {
     vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'auth_user' });
     const engine = mockEngine();
     const { res, captured } = mockRes();
     await handleGetActions(mockReq(), res, 't1', { gameServer: mockGameServer(engine, 't1') });
     expect(captured.statusCode).toBe(200);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     expect((engine as any).getPlayerActions).toHaveBeenCalledWith('auth_user');
   });
 });
 
 describe('handleGetState', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(authorizeTableViewer).mockResolvedValue({
+      allowed: true,
+      reason: 'club_member',
+      clubId: 'club-1',
+    });
+  });
 
   it('401 when unauthenticated', async () => {
     vi.mocked(authenticateRequest).mockResolvedValue(null);
@@ -418,14 +426,54 @@ describe('handleGetState', () => {
     const { res, captured } = mockRes();
     await handleGetState(mockReq(), res, 't1', { gameServer: mockGameServer(engine, 't1') });
     expect(captured.statusCode).toBe(200);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     expect((engine as any).getTableState).toHaveBeenCalledWith('u1');
+  });
+
+  it('403 prevents a non-member from reading live table state', async () => {
+    vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'outsider' });
+    vi.mocked(authorizeTableViewer).mockResolvedValue({
+      allowed: false,
+      reason: 'membership_required',
+      clubId: 'club-1',
+    });
+    const engine = mockEngine();
+    const { res, captured } = mockRes();
+
+    await handleGetState(mockReq(), res, 't1', { gameServer: mockGameServer(engine, 't1') });
+
+    expect(captured.statusCode).toBe(403);
+    expect(parseJson(captured)).toMatchObject({
+      code: 'CLUB_MEMBERSHIP_REQUIRED',
+      club_id: 'club-1',
+    });
+    expect((engine as any).getTableState).not.toHaveBeenCalled();
+  });
+
+  it('403 prevents a non-seated member from reading an observer-restricted table', async () => {
+    vi.mocked(authenticateRequest).mockResolvedValue({ userId: 'member-1' });
+    vi.mocked(authorizeTableViewer).mockResolvedValue({
+      allowed: false,
+      reason: 'observers_restricted',
+      clubId: 'club-1',
+    });
+    const engine = mockEngine();
+    const { res, captured } = mockRes();
+
+    await handleGetState(mockReq(), res, 't1', { gameServer: mockGameServer(engine, 't1') });
+
+    expect(captured.statusCode).toBe(403);
+    expect(parseJson(captured)).toMatchObject({
+      code: 'OBSERVERS_RESTRICTED',
+      club_id: 'club-1',
+    });
+    expect((engine as any).getTableState).not.toHaveBeenCalled();
   });
 });
 
 // ── /leave has a special 200 path when engine missing ──────────────────
 
-describe('handleLeave — engine-missing edge case', () => {
+describe('handleLeave - engine-missing edge case', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('200 with immediate:true when engine not running (client does DB cleanup)', async () => {

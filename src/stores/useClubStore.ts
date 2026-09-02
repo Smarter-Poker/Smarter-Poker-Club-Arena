@@ -8,8 +8,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Club, ClubWithDistance, ClubMember, ClubLocation } from '@/types/club.types';
-import { ClubsService } from '@/services/ClubsService';
+import type { CreateClubData } from '@/services/ClubsService';
+import { ClubJoinService } from '@/services/ClubJoinService';
 import { reportError } from '../utils/errorReporter';
+
+const getClubsService = async () => (await import('@/services/ClubsService')).ClubsService;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 📦 STORE TYPES
@@ -46,7 +49,7 @@ interface ClubState {
   loadClubMembers: (clubId: string) => Promise<void>;
   joinClub: (clubId: string) => Promise<void>;
   leaveClub: (clubId: string) => Promise<void>;
-  createClub: (data: Parameters<typeof ClubsService.create>[0]) => Promise<Club>;
+  createClub: (data: CreateClubData) => Promise<Club>;
   setActiveTab: (tab: 'discover' | 'my-clubs' | 'create') => void;
   reset: () => void;
 }
@@ -87,7 +90,8 @@ export const useClubStore = create<ClubState>()(
 
         set({ isDiscovering: true });
         try {
-          const clubs = await ClubsService.discoverNearby(userLocation, radiusKm);
+          const service = await getClubsService();
+          const clubs = await service.discoverNearby(userLocation, radiusKm);
           set({ nearbyClubs: clubs });
         } catch (error) {
           reportError(error, 'useClubStore.Discovery_failed');
@@ -104,7 +108,8 @@ export const useClubStore = create<ClubState>()(
 
         set({ isSearching: true });
         try {
-          const results = await ClubsService.search(query);
+          const service = await getClubsService();
+          const results = await service.search(query);
           set({ searchResults: results });
         } catch (error) {
           reportError(error, 'useClubStore.Search_failed');
@@ -116,7 +121,8 @@ export const useClubStore = create<ClubState>()(
       loadMemberships: async () => {
         set({ isLoadingMemberships: true });
         try {
-          const memberships = await ClubsService.getUserMemberships();
+          const service = await getClubsService();
+          const memberships = await service.getUserMemberships();
           set({ memberships });
         } catch (error) {
           reportError(error, 'useClubStore.Load_memberships_failed');
@@ -128,7 +134,8 @@ export const useClubStore = create<ClubState>()(
       loadClub: async (identifier) => {
         set({ isLoadingClub: true, activeClub: null });
         try {
-          const club = await ClubsService.get(identifier);
+          const service = await getClubsService();
+          const club = await service.get(identifier);
           set({ activeClub: club });
         } catch (error) {
           reportError(error, 'useClubStore.Load_club_failed');
@@ -139,7 +146,8 @@ export const useClubStore = create<ClubState>()(
 
       loadClubMembers: async (clubId) => {
         try {
-          const members = await ClubsService.getMembers(clubId);
+          const service = await getClubsService();
+          const members = await service.getMembers(clubId);
           set({ activeClubMembers: members });
         } catch (error) {
           reportError(error, 'useClubStore.Load_members_failed');
@@ -148,7 +156,8 @@ export const useClubStore = create<ClubState>()(
 
       joinClub: async (clubId) => {
         try {
-          await ClubsService.join(clubId);
+          const result = await ClubJoinService.join({ identifier: clubId });
+          if (!result.success) throw new Error(result.error || 'Failed to join club');
           // Refresh memberships
           await get().loadMemberships();
         } catch (error) {
@@ -159,7 +168,8 @@ export const useClubStore = create<ClubState>()(
 
       leaveClub: async (clubId) => {
         try {
-          await ClubsService.leave(clubId);
+          const service = await getClubsService();
+          await service.leave(clubId);
           // Refresh memberships
           await get().loadMemberships();
         } catch (error) {
@@ -170,7 +180,8 @@ export const useClubStore = create<ClubState>()(
 
       createClub: async (data) => {
         try {
-          const club = await ClubsService.create(data);
+          const service = await getClubsService();
+          const club = await service.create(data);
           // Refresh memberships to include new club
           await get().loadMemberships();
           return club;

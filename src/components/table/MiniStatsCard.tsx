@@ -13,39 +13,38 @@
  * Transparent glass design to not obstruct the table.
  */
 
-import React, { useState } from 'react';
+import React from 'react';
 import './MiniStatsCard.css';
+import { useButtonImage } from '../../hooks/useButtonImage';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export interface MiniStatsObserver {
-  id: string;
-  name: string;
-  avatar?: string;
-}
+/* `MiniStatsObserver` deleted 2026-08-26: it typed the `observers` prop, and
+   that prop went with the unreachable expanded panel. Exported from the barrel
+   and imported by nothing. */
 
 export interface MiniStatsCardProps {
   /** Current hero stack */
   currentStack: number;
   /** Total chips bought in (sum of all buy-ins/rebuys) */
   totalBuyIn: number;
-  /** Hands played this session */
-  handsPlayed: number;
-  /** VPIP count (hands voluntarily put money in) */
-  vpipCount: number;
-  /** Hands won this session */
-  handsWon: number;
   /** Whether the hero is seated */
   isSeated: boolean;
-  /** Tap handler — opens full session stats modal */
+  /** Tap handler — session stats on cash, the tournament lobby on a tournament */
   onTap?: () => void;
-  /** Observers watching the table */
-  observers?: MiniStatsObserver[];
-  /** Whether we are displaying real-time results (true overrides expanded logic) */
-  showRealTimeResults?: boolean;
+  /** Whether the table is a tournament */
+  isTournament?: boolean;
 }
+
+/* `handsPlayed`, `vpipCount` and `handsWon` were removed from this interface on
+   2026-08-28 along with the four-figure tournament bar that was their only
+   reader. Dan: "STATS SHOULD LIVE INSIDE THE HERO AVATAR." They are still
+   tracked in TablePage and still shown — in the session-stats surfaces the hero
+   hub launches — they are simply no longer passed to a corner button that does
+   not print them. Left in place they would have been three dead props that
+   every future reader had to check. */
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // COMPONENT
@@ -54,153 +53,111 @@ export interface MiniStatsCardProps {
 export function MiniStatsCard({
   currentStack,
   totalBuyIn,
-  handsPlayed,
-  vpipCount,
-  handsWon,
   isSeated,
   onTap,
-  observers = [],
-  // Dan 2026-04-17: stats panel was covering 40% of the table by default.
-  // Collapse by default — single-line P&L pill. Tap expands to full panel.
-  showRealTimeResults = false,
+  isTournament = false,
 }: MiniStatsCardProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  // Don't show if not seated
-  if (!isSeated) return null;
+  const statsIcon = useButtonImage('icon-stats');
+  // Don't show if not seated (unless in a tournament, where stats/lobby button is always visible)
+  if (!isSeated && !isTournament) return null;
 
   const pnl = currentStack - totalBuyIn;
-  const pnlColor = pnl >= 0 ? 'var(--success, #31A24C)' : 'var(--danger, #F02849)';
+  const pnlColor = pnl >= 0 ? 'var(--success, #3fb950)' : 'var(--danger, #F02849)';
   const pnlSign = pnl >= 0 ? '+' : '';
-  const vpipPct = handsPlayed > 0 ? Math.round((vpipCount / handsPlayed) * 100) : 0;
-  const winRate = handsPlayed > 0 ? Math.round((handsWon / handsPlayed) * 100) : 0;
-
-  // Resolve effective expand state. `onTap` (if provided) opens the full
-  // SessionStats modal; internal isExpanded toggle only matters when onTap
-  // is not wired. showRealTimeResults forces expanded display.
-  const expanded = showRealTimeResults || isExpanded;
+  /* `vpipPct` deleted 2026-08-28 with the tournament bar that was its only
+     reader; `winRate` went the same way on 2026-08-25. */
 
   const handleClick = () => {
-    if (onTap) {
-      onTap();
-    } else {
-      setIsExpanded((prev) => !prev);
-    }
+    onTap?.();
   };
 
-  // ─── Collapsed (default): icon-only stats button (Dan 2026-04-17). The
-  // previous "P&L +$N" pill was text — Dan wanted an icon. Renders a compact
-  // stats/chart SVG with a tiny status dot whose color signals P&L direction.
-  if (!expanded) {
-    const pnlDirection = pnl > 0 ? 'up' : pnl < 0 ? 'down' : 'flat';
+  /**
+   * ═══ ON A TOURNAMENT THIS CONTROL IS THE LOBBY DOOR (Dan 2026-08-28) ═══
+   *
+   * Dan, ruling on this exact corner: "ALL TOURNAMENTS NEED THE STATS ICON IN
+   * THE UPPER RIGHT HAND CORNER. IT SHOULDN'T SHOW THE STATS, BUT OPEN TO THE
+   * TOURNAMENT LOBBY PAGE AS AN IN GAME 3/4 POP UP", and then, asked whether
+   * the inline figures should stay: "STATS SHOULD LIVE INSIDE THE HERO AVATAR,
+   * WHEN YOU CLICK IT YOU SHOULD SEE STATS INSIDE THERE. STATS ICON IS NOT THE
+   * TOURNAMENT LOBBY BUTTON. USE THE EXACT BUTTON AS IT IS."
+   *
+   * So the corner is ONE button, the existing artwork unchanged, and it opens
+   * the tournament lobby. It does not print figures at it. A player's own
+   * numbers are reached by tapping their own seat, which is where somebody
+   * looking for their stats actually looks.
+   *
+   * THIS REPLACES the four-figure bar added on 2026-08-25 in response to
+   * "tournaments are still missing the stats bar in the right corner." That
+   * complaint was about the corner being EMPTY-looking on a tournament, and it
+   * was answered by cramming Stack / Hands / VPIP / Won into a 375px-wide
+   * corner. Dan has now said where those belong instead. Seated and observing
+   * collapse to the same branch, which also retires the separate spectator case
+   * that existed only to avoid printing four zeroes at somebody who was
+   * watching rather than playing.
+   */
+  if (isTournament) {
     return (
       <button
         type="button"
         className="mini-stats-card mini-stats-card--icon"
         onClick={handleClick}
-        aria-label={`Session stats, P&L ${pnlSign}${pnl.toLocaleString()}`}
-        title="Session Stats"
-        data-pnl-direction={pnlDirection}
+        aria-label="Tournament Lobby. Standings, Payouts And The Clock."
+        title="Tournament Lobby"
       >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+        <img
+          src={statsIcon}
+          className="mini-stats-card__icon-img"
+          alt=""
           aria-hidden="true"
-        >
-          {/* Bar-chart icon — 4 vertical bars ascending */}
-          <path d="M3 21h18" />
-          <rect x="5" y="13" width="3" height="6" rx="0.5" />
-          <rect x="10.5" y="9" width="3" height="10" rx="0.5" />
-          <rect x="16" y="5" width="3" height="14" rx="0.5" />
-        </svg>
-        <span
-          className="mini-stats-card__dot"
-          style={{ background: pnlColor }}
-          aria-hidden="true"
+          draggable={false}
         />
       </button>
     );
   }
 
+  // ─── Collapsed (default): icon-only stats button (Dan 2026-04-17). The
+  // previous "P&L +$N" pill was text — Dan wanted an icon. Renders a compact
+  // stats/chart SVG with a tiny status dot whose color signals P&L direction.
+  const pnlDirection = pnl > 0 ? 'up' : pnl < 0 ? 'down' : 'flat';
   return (
-    <div
-      className="mini-stats-card mini-stats-card--expanded"
+    <button
+      type="button"
+      className="mini-stats-card mini-stats-card--icon"
       onClick={handleClick}
-      role="button"
-      tabIndex={0}
-      aria-label="Session stats"
+      aria-label={`Session Stats, P&L ${pnlSign}${pnl.toLocaleString()}`}
+      title="Session Stats"
+      data-pnl-direction={pnlDirection}
     >
-      {/* Real-Time Results View */}
-      <div className="mini-stats-card__details">
-        <div className="mini-stats-card__row">
-          <span className="mini-stats-card__label">Buy-In</span>
-          <span className="mini-stats-card__value">{totalBuyIn.toLocaleString()}</span>
-        </div>
-        <div className="mini-stats-card__row">
-          <span className="mini-stats-card__label">P&L</span>
-          <span className="mini-stats-card__value" style={{ color: pnlColor, fontWeight: 700 }}>
-            {pnlSign}
-            {pnl.toLocaleString()}
-          </span>
-        </div>
-        <div className="mini-stats-card__row">
-          <span className="mini-stats-card__label">Stack</span>
-          <span className="mini-stats-card__value">{currentStack.toLocaleString()}</span>
-        </div>
-        <div className="mini-stats-card__row">
-          <span className="mini-stats-card__label">VPIP</span>
-          <span className="mini-stats-card__value">{vpipPct}%</span>
-        </div>
-
-        {/* Observers / Who's watching */}
-        <div
-          className="mini-stats-card__observers"
-          style={{
-            marginTop: '6px',
-            paddingTop: '6px',
-            borderTop: '1px dashed rgba(255,255,255,0.1)',
-          }}
-        >
-          <span
-            className="mini-stats-card__label"
-            style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
-          >
-            <span className="mini-stats-card__observer-icon" style={{ color: '#22c55e' }}>
-              ◉
-            </span>
-            Who's Watching: {observers.length}
-          </span>
-        </div>
-        {observers.length > 0 ? (
-          <div className="mini-stats-card__observer-list">
-            {observers.slice(0, 5).map((obs) => (
-              <span key={obs.id} className="mini-stats-card__observer-name">
-                {obs.name}
-              </span>
-            ))}
-            {observers.length > 5 && (
-              <span className="mini-stats-card__observer-more">+{observers.length - 5} More</span>
-            )}
-          </div>
-        ) : (
-          <div className="mini-stats-card__observer-list" style={{ opacity: 0.5 }}>
-            <span
-              className="mini-stats-card__observer-name"
-              style={{ fontStyle: 'italic', background: 'transparent', padding: 0 }}
-            >
-              Nobody Yet
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
+      <img
+        src={statsIcon}
+        className="mini-stats-card__icon-img"
+        alt=""
+        aria-hidden="true"
+        draggable={false}
+      />
+      <span className="mini-stats-card__dot" style={{ background: pnlColor }} aria-hidden="true" />
+    </button>
   );
 }
+
+/**
+ * THE EXPANDED PANEL IS GONE (2026-08-25, second audit).
+ *
+ * ~70 lines rendered Buy-In / P&L / Stack / VPIP / Who's Watching inline on
+ * the felt, and NOTHING COULD EVER REACH THEM. `expanded` is
+ * `showRealTimeResults || isExpanded`; no caller in the app passes
+ * `showRealTimeResults`, and TablePage always passes `onTap`, so
+ * `setIsExpanded` (the only writer of `isExpanded`) is unreachable. The
+ * branch had been dead in production since the card was collapsed to an icon
+ * on 2026-04-17, along with the `observers` prop that fed it.
+ *
+ * Nothing is lost: tapping the icon opens the full SessionStats modal, which
+ * shows the same figures with room to read them. If an inline panel is ever
+ * wanted again it belongs in that modal's component, not as a second
+ * rendering of the same numbers behind a flag nobody sets.
+ *
+ * Unreachable by construction, which is why the icon branch above simply
+ * returns and there is no third branch here.
+ */
 
 export default MiniStatsCard;

@@ -75,12 +75,6 @@
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
 }
 
-.setting-item:hover {
-  border-color: #3a4a5a;
-  transform: translateY(-2px);
-  box-shadow: 0 0 15px rgba(0, 212, 255, 0.1);
-}
-
 .setting-info {
   display: flex;
   flex-direction: column;
@@ -150,14 +144,6 @@
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
   color: #8a9aaa;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.btn-setting:hover {
-  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
-  border-color: #00d4ff;
-  color: #fff;
-  box-shadow: 0 0 15px rgba(0, 212, 255, 0.6);
-  transform: translateY(-2px);
 }
 
 .version-info {

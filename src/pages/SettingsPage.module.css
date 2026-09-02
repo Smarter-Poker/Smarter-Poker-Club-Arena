@@ -1,214 +1,317 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  SETTINGS PAGE — Premium Metal UI Theme
- *  Brushed Steel + Cyan Glow + Industrial Controls
- * ═══════════════════════════════════════════════════════════════════════════════
- */
-
 .page {
-  min-height: 100vh;
-  min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
-  padding: 1.5rem;
-  background: linear-gradient(180deg, #0a0a14 0%, #0d1520 50%, #0a0a14 100%);
+  --control-bg: #030609;
+  --control-panel: #080d12;
+  --control-raised: #0d141b;
+  --control-line: #26333d;
+  --control-steel: #b9cad7;
+  --control-blue: #3aa8ff;
+  padding-top: 1rem;
+  padding-right: 1rem;
+  padding-left: 1rem;
+  background:
+    radial-gradient(circle at 50% 0, rgba(58, 168, 255, 0.1), transparent 33rem), var(--control-bg);
+  color: #f4f8fb;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   HEADER — Metal Frame
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 1.5rem;
-  padding: 1.25rem;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.06) 0%, rgba(100, 100, 100, 0.03) 100%);
-  border: 2px solid #2a3a4a;
-  border-radius: 12px;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.15);
-}
-
-.header h1 {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #00d4ff;
-  margin: 0;
-  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
+.heroMetric {
+  display: grid;
+  min-width: 112px;
+  min-height: 48px;
+  align-content: center;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid rgba(185, 202, 215, 0.28);
+  border-radius: 2px;
+  background: rgba(3, 6, 9, 0.76);
+  color: #f4f8fb;
+  font:
+    800 0.78rem/1.1 'Rajdhani',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
-  letter-spacing: 2px;
-  text-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+}
+
+.heroMetric small {
+  margin-bottom: 0.25rem;
+  color: #77c9ff;
+  font:
+    700 0.56rem/1 ui-monospace,
+    'SFMono-Regular',
+    Consolas,
+    monospace;
+  letter-spacing: 0.12em;
+}
+
+.controlIndex {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  border: 1px solid var(--control-line);
+  border-radius: 3px;
+  background: #05090c;
+}
+
+.controlIndex button {
+  position: relative;
+  min-height: 46px;
+  padding: 0.65rem 0.4rem;
+  border: 0;
+  border-right: 1px solid var(--control-line);
+  background: transparent;
+  color: #91a3af;
+  font:
+    800 0.67rem/1 'Rajdhani',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.controlIndex button:last-child {
+  border-right: 0;
+}
+
+.controlIndex button::after {
+  content: '';
+  position: absolute;
+  right: 24%;
+  bottom: -1px;
+  left: 24%;
+  height: 2px;
+}
+
+.controlIndex button:focus-visible,
+.controlIndexActive {
+  color: #f4f8fb !important;
+  background: linear-gradient(180deg, rgba(58, 168, 255, 0.12), transparent) !important;
+  outline: none;
+}
+
+.controlIndex button:focus-visible {
+  box-shadow: inset 0 0 0 2px #77c9ff;
+}
+
+.controlIndexActive::after {
+  background: var(--control-blue);
+  box-shadow: 0 0 12px rgba(58, 168, 255, 0.8);
 }
 
 .headerActions {
   display: flex;
-  gap: 0.75rem;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--control-line);
+  border-radius: 3px;
+  background: linear-gradient(145deg, #0c1319, #060a0d);
 }
 
-.saveButton {
-  padding: 0.75rem 1.5rem;
-  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
-  border: none;
-  border-radius: 8px;
-  color: #fff;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
+.headerActions > div {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.changeState {
+  color: #91a3af;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.saveButton,
+.resetButton,
+.actionButton,
+.actionButtonSecondary,
+.dangerButton,
+.studioButton,
+.cancelBtn,
+.saveBtn {
+  min-height: 44px;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid #466071;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #15212a, #080d12);
+  color: #dce8f0;
+  font:
+    800 0.72rem/1 'Rajdhani',
+    Inter,
+    sans-serif;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  box-shadow: 0 0 15px rgba(0, 212, 255, 0.4);
-}
-
-.saveButton:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(0, 212, 255, 0.6);
-}
-
-.saveButton:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.resetButton {
-  padding: 0.75rem 1.5rem;
-  background: transparent;
-  border: 2px solid #3a4a5a;
-  border-radius: 8px;
-  color: #6a7a8a;
-  font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease;
 }
 
-.resetButton:hover {
-  border-color: #00d4ff;
-  color: #00d4ff;
+.saveButton,
+.studioButton,
+.saveBtn {
+  border-color: #77c9ff;
+  background: linear-gradient(180deg, #66c8ff, #238fc5);
+  color: #031019;
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.55),
+    0 0 18px rgba(58, 168, 255, 0.14);
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   CONTENT LAYOUT
-   ───────────────────────────────────────────────────────────────────────────── */
+.resetButton,
+.actionButtonSecondary,
+.cancelBtn {
+  color: #a9bac5;
+  background: #070b0f;
+}
+
+.dangerButton {
+  border-color: rgba(255, 124, 124, 0.55);
+  background: rgba(110, 20, 24, 0.18);
+  color: #ff9a9a;
+}
+
+.saveButton:focus-visible,
+.resetButton:focus-visible,
+.actionButton:focus-visible,
+.actionButtonSecondary:focus-visible,
+.dangerButton:focus-visible,
+.studioButton:focus-visible,
+.cancelBtn:focus-visible,
+.saveBtn:focus-visible {
+  border-color: #b7e6ff;
+  outline: none;
+  box-shadow: 0 0 18px rgba(58, 168, 255, 0.18);
+}
+
+.saveButton:disabled,
+.actionButton:disabled,
+.actionButtonSecondary:disabled,
+.dangerButton:disabled,
+.saveBtn:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+  box-shadow: none;
+}
 
 .content {
-  max-width: 800px;
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
+  gap: 0.8rem;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   SECTIONS — Brushed Metal Panels
-   ───────────────────────────────────────────────────────────────────────────── */
-
 .section {
-  background: linear-gradient(
-    145deg,
-    rgba(255, 255, 255, 0.06) 0%,
-    rgba(200, 200, 200, 0.03) 50%,
-    rgba(100, 100, 100, 0.02) 100%
-  );
-  border: 2px solid #2a3a4a;
-  border-radius: 14px;
-  padding: 1.5rem;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.15);
+  scroll-margin-top: 1rem;
+  overflow: hidden;
+  padding: 1.15rem;
+  border: 1px solid var(--control-line);
+  border-radius: 4px;
+  background:
+    linear-gradient(115deg, rgba(58, 168, 255, 0.035), transparent 35%),
+    linear-gradient(145deg, var(--control-raised), var(--control-panel));
+  box-shadow: inset 0 1px rgba(185, 202, 215, 0.07);
 }
 
 .section h2 {
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: #00d4ff;
-  margin: 0 0 1.25rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid rgba(0, 212, 255, 0.2);
-  font-family: 'Rajdhani', 'Rajdhani', sans-serif;
+  margin: 0;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid rgba(58, 168, 255, 0.2);
+  color: #77c9ff;
+  font:
+    800 0.75rem/1.2 ui-monospace,
+    'SFMono-Regular',
+    Consolas,
+    monospace;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  letter-spacing: 1px;
 }
-
-.dangerZone {
-  border-color: rgba(239, 68, 68, 0.4);
-  background: linear-gradient(145deg, rgba(239, 68, 68, 0.08) 0%, rgba(239, 68, 68, 0.03) 100%);
-}
-
-.dangerZone h2 {
-  color: #ff6b6b;
-  border-bottom-color: rgba(255, 107, 107, 0.2);
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   SETTING ROWS
-   ───────────────────────────────────────────────────────────────────────────── */
 
 .settingRow {
   display: flex;
+  min-height: 70px;
   align-items: center;
   justify-content: space-between;
-  gap: 2rem;
-  padding: 1rem 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  gap: 1.5rem;
+  padding: 0.82rem 0;
+  border-bottom: 1px solid #1c2730;
 }
 
 .settingRow:last-child {
-  border-bottom: none;
+  border-bottom: 0;
   padding-bottom: 0;
 }
 
-.settingRow:first-of-type {
-  padding-top: 0;
-}
-
 .settingInfo {
-  flex: 1;
   min-width: 0;
+  flex: 1;
 }
 
 .settingLabel {
   display: block;
-  font-size: 0.9rem;
-  font-weight: 500;
-  color: #fff;
+  color: #f0f5f8;
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.3;
 }
 
 .settingDesc {
   display: block;
-  font-size: 0.75rem;
-  color: #6a7a8a;
   margin-top: 0.25rem;
+  color: #91a3af;
+  font-size: 0.72rem;
+  line-height: 1.45;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   TOGGLE — Cyan Glow Switch
-   ───────────────────────────────────────────────────────────────────────────── */
+.settingEyebrow {
+  display: block;
+  margin-bottom: 0.3rem;
+  color: #77c9ff;
+  font:
+    800 0.56rem/1 ui-monospace,
+    'SFMono-Regular',
+    Consolas,
+    monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.studioRow {
+  position: relative;
+  margin: 0.65rem 0;
+  padding: 1rem;
+  border: 1px solid rgba(119, 201, 255, 0.38);
+  border-left: 2px solid var(--control-blue);
+  background: linear-gradient(105deg, rgba(58, 168, 255, 0.12), transparent 46%), #070c10;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.05);
+}
 
 .toggle {
   position: relative;
   display: inline-flex;
+  min-width: 52px;
+  min-height: 44px;
+  flex: 0 0 auto;
   align-items: center;
+  justify-content: center;
   cursor: pointer;
 }
 
 .toggle input {
   position: absolute;
+  width: 1px;
+  height: 1px;
   opacity: 0;
-  width: 0;
-  height: 0;
 }
 
 .toggleSlider {
-  width: 50px;
-  height: 28px;
-  background: linear-gradient(180deg, #1a2332 0%, #0d1520 100%);
-  border: 2px solid #3a4a5a;
-  border-radius: 14px;
   position: relative;
-  transition: all 0.3s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  width: 48px;
+  height: 26px;
+  border: 1px solid #4a5c68;
+  border-radius: 13px;
+  background: #101820;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease;
 }
 
 .toggleSlider::after {
@@ -218,332 +321,123 @@
   left: 3px;
   width: 18px;
   height: 18px;
-  background: linear-gradient(135deg, #6a7a8a 0%, #4a5a6a 100%);
   border-radius: 50%;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  background: linear-gradient(145deg, #b9cad7, #647985);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+  transition:
+    transform 180ms ease,
+    background 180ms ease;
 }
 
 .toggle input:checked + .toggleSlider {
-  background: linear-gradient(180deg, #00d4ff 0%, #0099cc 100%);
-  border-color: #00d4ff;
-  box-shadow: 0 0 15px rgba(0, 212, 255, 0.4);
+  border-color: #77c9ff;
+  background: #126b9c;
+  box-shadow: 0 0 14px rgba(58, 168, 255, 0.26);
 }
 
 .toggle input:checked + .toggleSlider::after {
   transform: translateX(22px);
-  background: linear-gradient(135deg, #fff 0%, #e0e0e0 100%);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  background: #f4f8fb;
 }
 
-.toggleLabel {
-  margin-left: 0.75rem;
-  font-size: 0.875rem;
-  color: #6a7a8a;
+.toggle input:focus-visible + .toggleSlider {
+  outline: 2px solid #77c9ff;
+  outline-offset: 3px;
 }
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   SLIDER — Metal Track
-   ───────────────────────────────────────────────────────────────────────────── */
 
 .sliderContainer {
   display: flex;
+  min-width: min(220px, 42vw);
   align-items: center;
-  gap: 1rem;
-  min-width: 180px;
+  gap: 0.65rem;
 }
 
 .sliderContainer.disabled {
-  opacity: 0.4;
+  opacity: 0.46;
 }
 
 .slider {
   flex: 1;
-  height: 8px;
-  background: linear-gradient(180deg, #1a2332 0%, #0d1520 100%);
-  border: 1px solid #3a4a5a;
-  border-radius: 4px;
+  height: 6px;
+  border: 1px solid #3d4d58;
+  border-radius: 3px;
   appearance: none;
+  background: #0a1015;
   cursor: pointer;
 }
 
 .slider::-webkit-slider-thumb {
-  appearance: none;
   width: 20px;
   height: 20px;
-  background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
+  border: 1px solid #b7e6ff;
   border-radius: 50%;
-  cursor: pointer;
-  border: 2px solid #fff;
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.5);
+  appearance: none;
+  background: var(--control-blue);
+  box-shadow: 0 0 12px rgba(58, 168, 255, 0.45);
+}
+
+.slider:focus-visible {
+  outline: 2px solid #77c9ff;
+  outline-offset: 5px;
 }
 
 .sliderValue {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #00d4ff;
-  min-width: 45px;
+  min-width: 3.2rem;
+  color: #77c9ff;
+  font:
+    800 0.85rem/1 ui-monospace,
+    'SFMono-Regular',
+    Consolas,
+    monospace;
   text-align: right;
-  font-family: 'Rajdhani', monospace;
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   SELECT — Metal Dropdown
-   ───────────────────────────────────────────────────────────────────────────── */
+.select,
+.input {
+  min-height: 44px;
+  box-sizing: border-box;
+  border: 1px solid #435460;
+  border-radius: 3px;
+  background: #070c10;
+  color: #f4f8fb;
+  font-size: 16px;
+}
 
 .select {
-  padding: 0.6rem 2.5rem 0.6rem 1rem;
-  background: linear-gradient(180deg, #0d1520 0%, #1a2332 100%);
-  border: 2px solid #2a3a4a;
-  border-radius: 8px;
-  color: #fff;
-  font-size: 16px; /* was 0.875rem; under 16px makes iOS zoom the page on focus */
-  cursor: pointer;
+  min-width: 150px;
+  padding: 0.55rem 2.3rem 0.55rem 0.75rem;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2300d4ff' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+  background-image:
+    linear-gradient(45deg, transparent 50%, #77c9ff 50%),
+    linear-gradient(135deg, #77c9ff 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) 19px,
+    calc(100% - 10px) 19px;
   background-repeat: no-repeat;
-  background-position: right 0.75rem center;
-  transition: all 0.2s;
+  background-size:
+    5px 5px,
+    5px 5px;
 }
 
-.select:focus {
-  outline: none;
-  border-color: #00d4ff;
-  box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
+.select:focus-visible,
+.input:focus-visible {
+  border-color: #77c9ff;
+  outline: 2px solid rgba(119, 201, 255, 0.35);
+  outline-offset: 2px;
 }
 
-.select option {
-  background: #0d1520;
-  color: #fff;
+.dangerZone {
+  border-color: rgba(255, 124, 124, 0.4);
+  background:
+    linear-gradient(115deg, rgba(130, 30, 34, 0.1), transparent 42%),
+    linear-gradient(145deg, #110d10, #07090b);
 }
 
-/* ─────────────────────────────────────────────────────────────────────────────
-   COLOR PICKER — Metal Rings
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.colorPicker {
-  display: flex;
-  gap: 0.5rem;
+.dangerZone h2 {
+  color: #ff9a9a;
+  border-bottom-color: rgba(255, 124, 124, 0.24);
 }
 
-.colorOption {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  border: 3px solid #2a3a4a;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
-}
-
-.colorOption:hover {
-  transform: scale(1.1);
-  border-color: #6a7a8a;
-}
-
-.colorOption.selected {
-  border-color: #00d4ff;
-  box-shadow:
-    0 0 15px rgba(0, 212, 255, 0.5),
-    inset 0 2px 4px rgba(0, 0, 0, 0.3);
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   BUTTONS — Metal Style
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.actionButton {
-  padding: 0.6rem 1.25rem;
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.08) 0%, rgba(100, 100, 100, 0.04) 100%);
-  border: 2px solid #3a4a5a;
-  border-radius: 8px;
-  color: #fff;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-}
-
-.actionButton:hover {
-  border-color: #00d4ff;
-  color: #00d4ff;
-  box-shadow: 0 0 15px rgba(0, 212, 255, 0.3);
-  transform: translateY(-1px);
-}
-
-.actionButtonSecondary {
-  padding: 0.6rem 1.25rem;
-  background: transparent;
-  border: 2px solid #3a4a5a;
-  border-radius: 8px;
-  color: #6a7a8a;
-  font-size: 0.85rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.actionButtonSecondary:hover {
-  border-color: #00d4ff;
-  color: #00d4ff;
-}
-
-.dangerButton {
-  padding: 0.6rem 1.25rem;
-  background: rgba(255, 107, 107, 0.1);
-  border: 2px solid rgba(255, 107, 107, 0.4);
-  border-radius: 8px;
-  color: #ff6b6b;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.dangerButton:hover {
-  background: rgba(255, 107, 107, 0.2);
-  border-color: #ff6b6b;
-  box-shadow: 0 0 15px rgba(255, 107, 107, 0.3);
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   RESPONSIVE
-   ───────────────────────────────────────────────────────────────────────────── */
-
-@media (max-width: 768px) {
-  .page {
-    padding: 1rem;
-  }
-
-  .header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1rem;
-  }
-
-  .settingRow {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1rem;
-  }
-
-  .sliderContainer {
-    width: 100%;
-  }
-
-  .colorPicker {
-    flex-wrap: wrap;
-  }
-}
-
-/* ── Mobile ≤480px ── */
-@media (max-width: 480px) {
-  .page {
-    padding: 0.75rem;
-  }
-  .header {
-    padding: 0.75rem;
-    border-radius: 10px;
-  }
-  .header h1 {
-    font-size: 1.1rem;
-    letter-spacing: 1px;
-  }
-  .saveButton,
-  .resetButton {
-    padding: 0.5rem 1rem;
-    font-size: 0.8rem;
-  }
-  .section {
-    padding: 1rem;
-    border-radius: 10px;
-  }
-  .section h2 {
-    font-size: 0.8rem;
-  }
-  .settingLabel {
-    font-size: 0.8rem;
-  }
-  .settingDesc {
-    font-size: 0.7rem;
-  }
-  .toggleSlider {
-    width: 44px;
-    height: 24px;
-  }
-  .toggleSlider::after {
-    width: 16px;
-    height: 16px;
-  }
-  .toggle input:checked + .toggleSlider::after {
-    transform: translateX(18px);
-  }
-  .sliderContainer {
-    min-width: 140px;
-  }
-  .select {
-    font-size: 16px; /* was 0.8rem; under 16px makes iOS zoom the page on focus */
-    padding: 0.5rem 2rem 0.5rem 0.75rem;
-  }
-  .colorOption {
-    width: 30px;
-    height: 30px;
-  }
-  .actionButton,
-  .actionButtonSecondary,
-  .dangerButton {
-    padding: 0.5rem 0.75rem;
-    font-size: 0.8rem;
-  }
-}
-
-/* ── Small phones ≤380px ── */
-@media (max-width: 380px) {
-  .page {
-    padding: 0.5rem;
-  }
-  .header h1 {
-    font-size: 1rem;
-  }
-  .section {
-    padding: 0.75rem;
-  }
-  .settingRow {
-    gap: 0.75rem;
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   ANIMATIONS
-   ═══════════════════════════════════════════════════════════════ */
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   CHANGE EMAIL / CHANGE PASSWORD MODALS
-   ─────────────────────────────────────────────────────────────────────────
-   Both modals were built out of seven classes this file never defined, so
-   every one resolved to className={undefined}. There was no overlay, no
-   panel, no backdrop: the dialog rendered inline at the bottom of the
-   settings page as unstyled text and default browser inputs, over the top of
-   the page content, with nothing to show it was modal at all. Two of the
-   most sensitive flows in the app (changing an account's email and its
-   password) looked like a rendering fault.
-
-   Styled to match .section / .select / .actionButton so they read as part of
-   this page rather than as a second design.
-═══════════════════════════════════════════════════════════════════════════ */
 .modalOverlay {
   position: fixed;
   inset: 0;
@@ -552,148 +446,155 @@
   align-items: center;
   justify-content: center;
   padding: 1rem;
-  background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.82);
+  backdrop-filter: blur(5px);
 }
 
 .modal {
   width: 100%;
-  max-width: 26rem;
-  padding: 1.5rem;
-  background: linear-gradient(145deg, #1a2332 0%, #0d1520 100%);
-  border: 2px solid #2a3a4a;
-  border-radius: 14px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  max-width: 28rem;
+  max-height: min(90vh, 720px);
+  overflow-y: auto;
+  padding: 1.35rem;
+  border: 1px solid #526875;
+  border-radius: 4px;
+  background:
+    linear-gradient(120deg, rgba(58, 168, 255, 0.08), transparent 36%),
+    linear-gradient(145deg, #111a21, #070b0f);
+  box-shadow:
+    inset 0 1px rgba(255, 255, 255, 0.08),
+    0 28px 70px rgba(0, 0, 0, 0.7);
 }
 
 .modal h3 {
   margin: 0 0 0.5rem;
-  color: #fff;
-  font-size: 1.1rem;
-  font-weight: 700;
+  color: #f4f8fb;
+  font:
+    800 1.35rem/1 'Rajdhani',
+    sans-serif;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
 }
 
 .modal p {
   margin: 0 0 1rem;
-  color: #8a9aaa;
-  font-size: 0.85rem;
-  line-height: 1.45;
+  color: #9fb1bd;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.fieldLabel {
+  display: block;
+  margin: 0.75rem 0 0.35rem;
+  color: #b9cad7;
+  font-size: 0.72rem;
+  font-weight: 700;
 }
 
 .input {
   width: 100%;
-  /* Without this, width:100% plus 1rem of horizontal padding measures wider
-     than the panel's content box and the field overflows the modal's right
-     edge. Caught by rendering it rather than by reading it. */
-  box-sizing: border-box;
-  padding: 0.6rem 1rem;
-  margin-bottom: 0.75rem;
-  background: linear-gradient(180deg, #0d1520 0%, #1a2332 100%);
-  border: 2px solid #2a3a4a;
-  border-radius: 8px;
-  color: #fff;
-  font-size: 16px; /* was 0.875rem; under 16px makes iOS zoom the page on focus */
-  transition: border-color 0.2s;
+  padding: 0.6rem 0.75rem;
+  margin-bottom: 0.35rem;
 }
 
 .input::placeholder {
-  color: #5a6a7a;
-}
-
-.input:focus {
-  outline: none;
-  border-color: #00d4ff;
+  color: #71838f;
 }
 
 .modalActions {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
-  margin-top: 0.5rem;
+  margin-top: 1rem;
 }
 
-.cancelBtn,
-.saveBtn {
-  padding: 0.6rem 1.25rem;
-  border-radius: 8px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.cancelBtn {
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.08) 0%, rgba(100, 100, 100, 0.04) 100%);
-  border: 2px solid #3a4a5a;
-  color: #c3cbd8;
-}
-
-.cancelBtn:hover {
-  color: #fff;
-  border-color: #4a5a6a;
-}
-
-.saveBtn {
-  background: linear-gradient(145deg, #1877f2 0%, #0f5bc4 100%);
-  border: 2px solid #4599ff;
-  color: #fff;
-}
-
-.saveBtn:hover:not(:disabled) {
-  filter: brightness(1.15);
-}
-
-/* Disabled until the field is filled, so it must look unavailable rather
-   than merely refuse to work when pressed. */
-.saveBtn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-  filter: none;
-}
-
-.cancelBtn:focus-visible,
-.saveBtn:focus-visible {
-  outline: 2px solid #00d4ff;
-  outline-offset: 2px;
-}
-
-/* "Active" beside a linked account. Was undefined, so a status indicator
-   rendered as plain body text and read as a label, not a state. */
-.statusBadge {
-  padding: 0.25rem 0.7rem;
-  border-radius: 999px;
-  background: rgba(124, 255, 176, 0.12);
-  border: 1px solid rgba(124, 255, 176, 0.45);
-  color: #7cffb0;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-
-/* Touch target (2026-08-23): measured under 44px at 375px. The control keeps
-   its painted size; an invisible 44px-tall ::after gives the thumb something
-   to hit. Vertical only — these sit in horizontal rows and widening would
-   steal the neighbour's taps. See club-engine.css for the full rationale. */
-@media (pointer: coarse) {
-  .resetButton,
-  .actionButton,
-  .actionButtonSecondary,
-  .dangerButton {
-    position: relative;
+@media (max-width: 768px) {
+  .page {
+    padding-top: 0;
   }
 
-  .resetButton::after,
-  .actionButton::after,
-  .actionButtonSecondary::after,
-  .dangerButton::after {
-    content: '';
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    height: 44px;
-    background: transparent;
+  .controlIndex,
+  .headerActions,
+  .section {
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+
+  .content {
+    gap: 0;
+  }
+
+  .settingRow {
+    min-height: 78px;
+  }
+}
+
+@media (max-width: 560px) {
+  .controlIndex {
+    overflow-x: auto;
+    grid-template-columns: repeat(5, minmax(98px, 1fr));
+    scrollbar-width: none;
+  }
+
+  .controlIndex::-webkit-scrollbar {
+    display: none;
+  }
+
+  .headerActions {
+    align-items: flex-start;
+  }
+
+  .changeState {
+    max-width: 11rem;
+  }
+
+  .settingRow {
+    align-items: flex-start;
+    gap: 0.8rem;
+  }
+
+  .settingRow:has(.sliderContainer),
+  .studioRow {
+    flex-direction: column;
+  }
+
+  .sliderContainer {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .studioButton {
+    width: 100%;
+  }
+}
+
+@media (max-width: 390px) {
+  .headerActions {
+    flex-direction: column;
+  }
+
+  .headerActions > div {
+    width: 100%;
+  }
+
+  .saveButton,
+  .resetButton {
+    flex: 1;
+  }
+
+  .settingRow {
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .saveButton,
+  .resetButton,
+  .actionButton,
+  .dangerButton,
+  .toggleSlider,
+  .toggleSlider::after {
+    transition: none;
   }
 }

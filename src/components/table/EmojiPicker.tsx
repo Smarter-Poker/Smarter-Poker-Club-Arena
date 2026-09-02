@@ -8,6 +8,7 @@ import React, { useState } from 'react';
 import { vipService, VIP_GOLD_LIMITS, FEATURE_PRICING } from '../../services/VIPService';
 import { useAuthUser } from '../../hooks/useAuthUser';
 import { useToast } from '../common/Toast';
+import { masterBus } from '../../core/MasterBus';
 import './EmojiPicker.css';
 
 interface EmojiPickerProps {
@@ -73,29 +74,95 @@ export function EmojiPicker({ isOpen, onClose, onSelect, position }: EmojiPicker
   const [loading, setLoading] = useState(true);
 
   React.useEffect(() => {
+    // 2026-08-28: no `mounted` guard here meant both setStates could land
+    // after the picker closed and unmounted.
+    let mounted = true;
     const check = async () => {
       if (!user?.id) {
-        setLoading(false);
+        if (mounted) setLoading(false);
         return;
       }
-      const vip = await vipService.isVIP(user.id);
-      setIsVIP(vip);
-      setLoading(false);
+      try {
+        const access = await vipService.checkFeatureAccess(user.id, 'emoji_pack');
+        if (!mounted) return;
+        setIsVIP(access.hasAccess);
+      } catch {
+        /* Keep the last known access on a transient read failure. */
+      } finally {
+        if (mounted) setLoading(false);
+      }
     };
     if (isOpen) check();
+    return () => {
+      mounted = false;
+    };
   }, [isOpen, user?.id]);
+
+  React.useEffect(() => {
+    if (!isOpen || !user?.id) return undefined;
+    return masterBus.subscribe('ENTITLEMENTS_CHANGED', (event) => {
+      if (event.payload.userId !== user.id || event.payload.category !== 'emote_pack') return;
+      void vipService.checkFeatureAccess(user.id, 'emoji_pack').then(
+        (access) => setIsVIP(access.hasAccess),
+        () => {
+          /* Keep the last known access on a transient read failure. */
+        }
+      );
+    });
+  }, [isOpen, user?.id]);
+
+  /**
+   * AUDIT 2026-08-28 — TWO DEFECTS, BOTH ON A PAID PATH.
+   *
+   * 1. THE PACK IS PERMANENT, SO EVERY TAP AFTER THE FIRST SAID "INSUFFICIENT
+   *    DIAMONDS". `emoji_pack` is priced `permanent` (VIPService FEATURE_
+   *    PRICING), and fn_purchase_feature answers an owned feature with
+   *    `{ success: false, error: 'already_owned' }` — a REFUSAL, not a
+   *    failure, which VIPService surfaces as `alreadyOwned`. This call site
+   *    checked only `success`, so once a player bought the pack, every
+   *    premium emoji told them they were broke and sent nothing. Ownership is
+   *    now treated as permission, which is what it is.
+   * 2. NO IN-FLIGHT LOCK. The buttons were never disabled and the declared
+   *    `loading` state gated nothing, so two quick taps issued two
+   *    fn_purchase_feature calls. `busyRef` is a REF, not state: two taps
+   *    inside one commit both read stale state, but both see the ref.
+   */
+  const busyRef = React.useRef(false);
+  const [purchasing, setPurchasing] = useState(false);
 
   const handleSelect = async (emoji: string, isPremium: boolean) => {
     if (!user?.id) return;
 
     if (isPremium && !isVIP) {
-      // Charge for premium emoji pack
-      const result = await vipService.purchaseFeature(user.id, 'emoji_pack');
-      if (!result.success) {
-        toast.error('Insufficient diamonds');
-        return;
+      if (busyRef.current) return;
+      busyRef.current = true;
+      setPurchasing(true);
+      try {
+        const result = await vipService.purchaseFeature(user.id, 'emoji_pack');
+        if (!result.success && !result.alreadyOwned) {
+          toast.error(
+            result.error === 'Insufficient diamonds'
+              ? 'Not Enough Diamonds For The Emoji Pack.'
+              : 'Could Not Buy The Emoji Pack. Please Try Again.'
+          );
+          return;
+        }
+        // Only announce a charge when one actually happened — an owned pack
+        // costs nothing and must not claim it did.
+        if (result.charged > 0) {
+          toast.info(`${result.charged} Diamonds Charged For The Emoji Pack.`);
+        }
+        setIsVIP(true);
+        masterBus.emit('ENTITLEMENTS_CHANGED', {
+          userId: user.id,
+          category: 'emote_pack',
+          quantity: 1,
+          source: 'diamond-purchase',
+        });
+      } finally {
+        busyRef.current = false;
+        setPurchasing(false);
       }
-      toast.info(` ${result.charged} diamond charged for emoji`);
     }
 
     onSelect(emoji);
@@ -129,6 +196,8 @@ export function EmojiPicker({ isOpen, onClose, onSelect, position }: EmojiPicker
               <button
                 key={emoji}
                 onClick={() => handleSelect(emoji, true)}
+                disabled={purchasing}
+                aria-busy={purchasing}
                 className={!isVIP ? 'premium' : ''}
               >
                 {emoji}

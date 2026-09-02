@@ -33,6 +33,7 @@
 
 import { supabase } from './client.js';
 import { reportError } from '../errorReporter.js';
+import { allocateWeightedShareCents } from '../rakeAllocation.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. ALL-IN EQUITY CAPTURE
@@ -186,12 +187,31 @@ const RIT_EVENT_TYPES = new Set([
   // Both names are accepted so neither rename can blind this again.
   'rit_resolved',
   'rit_result',
+  /**
+   * A hand that ran multiple boards WITHOUT anyone being asked (2026-08-25).
+   *
+   * `run_it_mode` mandatory_twice / mandatory_three skip the offer entirely —
+   * there is no chooser to elect and nothing to time out, so a mandatory hand
+   * emits no rit_offer and no rit_chooser_decided. Without a name of its own
+   * it would be a multi-board resolution with no antecedent, which reads in
+   * the telemetry exactly like the 2026-08-21 defect this file exists to stop
+   * (results with no offers). It is also the only way to tell a table where
+   * the host compelled the runs from one where the players agreed to them.
+   */
+  'rit_mandatory',
   // The outcome that produces ONE board: the chooser picking 1, an all-in
   // opponent declining, or nobody answering in time. Added 2026-08-23 with the
   // event itself. Recording it is the whole point of having it — a single-run
   // outcome used to be indistinguishable, in the data as well as on screen,
   // from a Run It Twice offer that never resolved at all.
   'rit_single_run',
+  // POKERBROS PARITY 2026-08-26: consent progress on the wire. Every accept
+  // broadcasts rit_response_update (live checkmarks in the Risk Management
+  // panel), and unanimous consent broadcasts rit_all_accepted (the "players
+  // have accepted running multi-times" banner). Named here the day they were
+  // added so RitTelemetryNames keeps its every-emitted-name-is-captured law.
+  'rit_response_update',
+  'rit_all_accepted',
   'insurance_offers',
 ]);
 
@@ -633,8 +653,16 @@ export interface HandFactsInput {
   contributions: Map<string, number>;
   winners: Array<{ userId: string; amount: number }>;
   actions: HandAction[];
-  /** Seat roster with horse flags — only humans get fact rows. */
+  /**
+   * Seat roster with horse flags. Humans always get fact rows; horses get them
+   * when the table runs NIT Game - see the note over `writeHandFacts`.
+   */
   roster: Array<{ userId: string; isHorse: boolean }>;
+  /**
+   * `tables.nit_game`. When the table enforces a VPIP minimum, horses need
+   * fact rows too, because those rows ARE the evidence the rule is judged on.
+   */
+  nitGame?: boolean;
 }
 
 /**
@@ -649,13 +677,38 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
   try {
     if (!input.handId) return;
 
-    const humanIds = new Set(
+    /**
+     * ── HORSES ARE PLAYERS, AND A RULE NEEDS EVIDENCE (Dan 2026-08-27) ──
+     *
+     * `fn_nit_evictions` had a horse-only predicate removed on 2026-08-27 so
+     * the fleet could be stood up by the maintain-VPIP rule like anybody else.
+     * That fix could never bite, because the rule is judged by `fn_nit_check`,
+     * which reads `ca_hand_facts`, and this function wrote rows for humans
+     * only. A horse's VPIP was therefore not "low", it was UNKNOWABLE: both
+     * branches of fn_nit_check compare a sample count against a floor, and a
+     * horse's sample was permanently zero, so `0 >= 100` was false and every
+     * horse returned `within_limits` for ever.
+     *
+     * Proved against production on 2026-08-27 inside a rolled-back
+     * transaction: with NIT Game set to demand a 99% VPIP - a threshold no
+     * player alive can meet - the human at the table was evicted on
+     * `career_vpip` (24.6% over 544 hands) and the horse beside them came back
+     * `ok: true, within_limits`.
+     *
+     * So horses get fact rows AT NIT TABLES: the rule and its evidence now
+     * cover exactly the same seats. It is scoped to those tables rather than
+     * switched on everywhere because horses play ~221k hands a day and this
+     * table carries one row per player per hand; writing every horse hand
+     * platform-wide is a storage decision with a real bill, and that is Dan's
+     * to make, not an agent's - the same line the retention policy draws.
+     */
+    const factIds = new Set(
       input.roster
-        .filter((p) => !p.isHorse)
+        .filter((p) => !p.isHorse || input.nitGame === true)
         .map((p) => p.userId)
         .filter(Boolean)
     );
-    if (humanIds.size === 0) return; // horse-only hand: nothing worth storing
+    if (factIds.size === 0) return; // nobody to store
 
     const dealtSeats: number[] = [];
     for (const v of input.holeCardsAll.values()) {
@@ -738,8 +791,17 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
 
     const factRows: Record<string, unknown>[] = [];
 
+    // WEIGHTED CONTRIBUTED RAKE (Dan 2026-08-29): rake_paid uses the SAME
+    // canonical allocator as the money pipeline (rake_attributions /
+    // RakebackSettler), so the stats ledger and the financial ledger agree to
+    // the cent — the old inline `rake * invested / total` float split could
+    // drift a cent from the authoritative allocation on remainder hands.
+    const rakeShares = allocateWeightedShareCents(Number(input.rakeAmount ?? 0), [
+      ...input.contributions.entries(),
+    ]);
+
     for (const uid of participants) {
-      if (!humanIds.has(uid)) continue; // humans only
+      if (!factIds.has(uid)) continue; // humans, plus horses at NIT tables
 
       const seatInfo = input.holeCardsAll.get(uid);
       const invested = r2(input.contributions.get(uid) ?? 0);
@@ -810,7 +872,32 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
             : 'UNKNOWN',
         players_dealt: playersDealt,
         opponent_ids: dealtIds.filter((id) => id !== uid),
-        hole_cards: cards,
+        /* ═══ A HAND NOBODY PAID INTO IS NOT RECORDED (Dan 2026-09-01) ══
+           Dan, verbatim: "MUCKED HANDS SHOULDN'T BE RECORDED AND TRACKED,
+           ONLY HANDS WHERE THE HERO PUTS CHIPS IN POT."
+
+           `invested` is the engine's own contributions map, so 0 means no
+           chips of this player's reached the pot at all - not a blind, not an
+           ante. They were dealt in and folded for free. 640 of the 2,265 rows
+           in this table on the day of the ruling, 28%, were exactly that:
+           the exact holding of a hand nobody played, kept forever.
+
+           WHAT IS KEPT, AND WHY IT IS NOT THE SAME THING. `hand_class` stays.
+           It is the 169-bucket label, not a holding: it carries no suit
+           identity and no board, and it is the DENOMINATOR of the only chart
+           that reads this column. `ca_player_hand_grid`'s default view is
+           "how often you played this hand", which is
+           `hands_vpip / hands` per class - drop the folded-for-free rows and
+           every cell reads 100% and the feature is gone rather than improved.
+           The grid never selects hole_cards at all; only the per-cell
+           drill-down does, and its example hands are now hands that were
+           actually played, which is what you would want from it anyway.
+
+           Enforced again at the database in
+           `20260901_no_cards_for_hands_nobody_paid_into.sql`, by a trigger
+           that NULLS rather than rejects - a CHECK would 400 the whole batch
+           upsert and lose every other player's stats row with it. */
+        hole_cards: invested > 0 ? cards : null,
         hand_class: cards ? computeHandClass(cards) : null,
         invested,
         returned,
@@ -824,7 +911,7 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
         //
         // Contribution-weighted, matching how the engine itself apportions rake
         // (atomic_distribute_rake takes p_contributions).
-        rake_paid: totalInvested > 0 ? r2((input.rakeAmount ?? 0) * (invested / totalInvested)) : 0,
+        rake_paid: rakeShares.get(uid) ?? 0,
         vpip: flags.vpip,
         pfr: flags.pfr,
         three_bet: flags.three_bet,
@@ -864,7 +951,7 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
     // Head-to-head transfers. Only rows touching a human are stored — a horse
     // beating another horse is not a rivalry anybody will read about.
     const transfers = computeTransfers(nets)
-      .filter((t) => humanIds.has(t.winnerId) || humanIds.has(t.loserId))
+      .filter((t) => factIds.has(t.winnerId) || factIds.has(t.loserId))
       .map((t) => ({
         hand_id: input.handId,
         winner_id: t.winnerId,

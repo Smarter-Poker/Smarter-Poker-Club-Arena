@@ -104,7 +104,7 @@ export function FriendsList({
           <input
             type="text"
             className="add-input"
-            placeholder="Add by username..."
+            placeholder="Add By Username..."
             value={addInput}
             onChange={(e) => setAddInput(e.target.value)}
           />
@@ -227,7 +227,7 @@ function FriendItem({
           <span className="friend-name">{friend.name}</span>
           <span className="friend-status-text">
             {friend.status === 'in-game' && friend.currentTable
-              ? `Playing at ${friend.currentTable}`
+              ? `Playing At ${friend.currentTable}`
               : friend.statusText
                 ? friend.statusText
                 : friend.status === 'in-game'

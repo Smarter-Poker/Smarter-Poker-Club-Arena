@@ -1,608 +1,210 @@
-/**
- * ═══════════════════════════════════════════════════════════════════════════════
- *  FindPlayerModal — Role-Based Player Search with Permission Enforcement
- * ═══════════════════════════════════════════════════════════════════════════════
- * Search visibility is determined by user's role:
- *
- * NORMAL USERS: Can only search friends (from friendships table)
- * AGENTS / SUB-AGENTS / SUPER AGENTS: Can search all players in their downline + club
- * CLUB ADMIN / CLUB OWNER: Can search all players in their club(s)
- * UNION OWNER / UNION ADMIN: Can search all players in their union's clubs
- *
- * Features:
- * - Auto-suggest after typing 3+ characters (typeahead)
- * - Results sortable by Real Name and Poker Alias
- * - Multi-result display with table presence
- */
-
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { isClubStaff } from '../../types/clubRoles';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase, getAuthUser } from '../../lib/supabase';
 import haptic from '../../services/HapticService';
-import styles from './FindPlayerModal.module.css';
-import { generateDefaultAvatar } from '../../utils/avatarGenerator';
-import { sanitizeInput } from '../../utils/sanitizeInput';
+import {
+  PlayerSearchService,
+  type PlayerPresenceFilter,
+  type PlayerSearchResult,
+  type PlayerSearchScope,
+  type PlayerSearchSort,
+  type PlayerSearchTable,
+} from '../../services/PlayerSearchService';
+import { generateDefaultAvatar, sizedStorageUrl } from '../../utils/avatarGenerator';
 import { reportError } from '../../utils/errorReporter';
+import { useFocusTrap } from '../../hooks/useFocusTrap';
+import { useDialogEscape } from '../../hooks/useDialogEscape';
+import { ClubEntryTrustService } from '../../services/ClubEntryTrustService';
+import { titleCase } from '../../utils/titleCase';
+import styles from './FindPlayerModal.module.css';
 
 interface FindPlayerModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onMembershipRequired: (intent: { code: string; watchTableId: string }) => void;
 }
 
-interface PlayerTable {
-  id: string;
-  name: string;
-  game_variant: string;
-  stakes: string;
-  club_name?: string;
-  is_tournament?: boolean;
-}
+const PAGE_SIZE = 20;
 
-interface PlayerResult {
-  id: string;
-  username: string;
-  display_name: string | null;
-  avatar_url: string | null;
-  tables: PlayerTable[];
-}
-
-interface SuggestedPlayer {
-  id: string;
-  username: string;
-  display_name: string | null;
-  avatar_url: string | null;
-}
-
-type SortField = 'display_name' | 'username';
-
-/** Capitalize the first letter of every word */
-function toTitleCase(str: string): string {
-  return str.replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-/**
- * Make user input safe for use inside a PostgREST .or(`...ilike.%q%...`) filter:
- * strip the or() delimiter characters (comma, parens, dot sequences that could
- * terminate the expression) and escape ilike wildcards so "100%" matches
- * literally instead of matching everything.
- */
-function escapeSearchQuery(raw: string): string {
-  return raw
-    .replace(/[(),]/g, ' ') // PostgREST or() syntax delimiters
-    .replace(/[\\%_]/g, (m) => `\\${m}`) // ilike wildcards / escape char
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/** Role scope for search permissions */
-interface SearchScope {
-  role: 'player' | 'agent' | 'admin' | 'owner' | 'union';
-  clubIds: string[];
-  friendIds: string[];
-  searchableUserIds: string[];
-}
-
-/** Determine the user's highest privilege role across all clubs/unions and cache searchable IDs */
-async function getUserSearchScope(userId: string): Promise<SearchScope> {
-  const result: SearchScope = {
-    role: 'player',
-    clubIds: [],
-    friendIds: [],
-    searchableUserIds: [],
-  };
-
-  try {
-    // ── 1. Get all club memberships to determine role ──
-    const { data: memberships } = await supabase
-      .from('club_members')
-      .select('club_id, role')
-      .eq('user_id', userId)
-      .in('status', ['active', 'approved']);
-
-    if (memberships && memberships.length > 0) {
-      const clubIds = memberships.map((m: any) => m.club_id);
-      result.clubIds = [...new Set(clubIds)];
-
-      // Determine highest role
-      for (const m of memberships) {
-        const r = (m as any).role as string;
-        if (r === 'owner' && result.role !== 'union') {
-          result.role = 'owner';
-        } else if (r === 'admin' && result.role !== 'owner' && result.role !== 'union') {
-          result.role = 'admin';
-        } else if (
-          (r === 'agent' || r === 'super_agent' || r === 'sub_agent') &&
-          result.role !== 'owner' &&
-          result.role !== 'admin' &&
-          result.role !== 'union'
-        ) {
-          result.role = 'agent';
-        }
-      }
-    }
-
-    // ── 2. Check if user is a union owner/admin ──
-    try {
-      const { data: ownedUnions } = await supabase
-        .from('unions')
-        .select('id')
-        .eq('owner_id', userId);
-
-      if (ownedUnions && ownedUnions.length > 0) {
-        result.role = 'union';
-        const unionIds = ownedUnions.map((u: any) => u.id);
-        const { data: unionClubs } = await supabase
-          .from('union_clubs')
-          .select('club_id')
-          .in('union_id', unionIds);
-
-        if (unionClubs) {
-          const additionalClubIds = unionClubs.map((uc: any) => uc.club_id);
-          result.clubIds = [...new Set([...result.clubIds, ...additionalClubIds])];
-        }
-      }
-    } catch {
-      // unions table may not exist — non-blocking
-    }
-
-    // ── 3. Get friend IDs ──
-    const [outbound, inbound] = await Promise.all([
-      supabase
-        .from('friendships')
-        .select('friend_id')
-        .eq('user_id', userId)
-        .eq('status', 'accepted'),
-      supabase
-        .from('friendships')
-        .select('user_id')
-        .eq('friend_id', userId)
-        .eq('status', 'accepted'),
-    ]);
-
-    const outIds = (outbound.data || []).map((f: any) => f.friend_id);
-    const inIds = (inbound.data || []).map((f: any) => f.user_id);
-    result.friendIds = [...new Set([...outIds, ...inIds])];
-
-    // ── 4. Build searchable user ID pool based on role ──
-    if (result.role === 'player') {
-      result.searchableUserIds = result.friendIds;
-    } else {
-      // Elevated role: get all club member IDs
-      if (result.clubIds.length > 0) {
-        const { data: clubMembers } = await supabase
-          .from('club_members')
-          .select('user_id')
-          .in('club_id', result.clubIds)
-          .in('status', ['active', 'approved']);
-
-        if (clubMembers) {
-          const memberIds = clubMembers.map((cm: any) => cm.user_id);
-          result.searchableUserIds = [...new Set([...memberIds, ...result.friendIds])];
-        }
-      }
-
-      if (result.searchableUserIds.length === 0) {
-        result.searchableUserIds = result.friendIds;
-      }
-    }
-
-    // Filter out self
-    result.searchableUserIds = result.searchableUserIds.filter((id) => id !== userId);
-  } catch (err) {
-    reportError(err, 'FindPlayerModal.getUserSearchScope');
-  }
-
-  return result;
-}
-
-export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProps) {
+export default function FindPlayerModal({
+  isOpen,
+  onClose,
+  onMembershipRequired,
+}: FindPlayerModalProps) {
   const navigate = useNavigate();
+  const trapRef = useFocusTrap(isOpen);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState<PlayerResult[]>([]);
-  const [notFound, setNotFound] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [visibleResults, setVisibleResults] = useState<Set<number>>(new Set());
-  const [sortField, setSortField] = useState<SortField>('display_name');
-  const [scopeLabel, setScopeLabel] = useState('');
-
-  // Auto-suggest state
-  const [suggestions, setSuggestions] = useState<SuggestedPlayer[]>([]);
+  const [results, setResults] = useState<PlayerSearchResult[]>([]);
+  const [suggestions, setSuggestions] = useState<PlayerSearchResult[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [isSuggesting, setIsSuggesting] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
-  const suggestDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isSuggesting, setIsSuggesting] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [scope, setScope] = useState<PlayerSearchScope>('all');
+  const [presence, setPresence] = useState<PlayerPresenceFilter>('all');
+  const [sort, setSort] = useState<PlayerSearchSort>('relevance');
+  const [showAccessRules, setShowAccessRules] = useState(false);
+  const [expandedAccounts, setExpandedAccounts] = useState<Set<string>>(new Set());
+  const [verifyingTableId, setVerifyingTableId] = useState<string | null>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
+  const suggestionAbortRef = useRef<AbortController | null>(null);
+  const suggestionTimerRef = useRef<number | null>(null);
+  const lastCompletedQueryRef = useRef('');
 
-  // Cached search scope — computed once when modal opens
-  const searchScopeRef = useRef<SearchScope | null>(null);
-  const scopeLoadingRef = useRef(false);
-
-  const staggerTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const isMountedRef = useRef(true);
-
-  useEffect(() => {
-    isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
-      staggerTimersRef.current.forEach((t) => clearTimeout(t));
-      if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
-    };
-  }, []);
-
-  // Pre-load search scope when modal opens
-  useEffect(() => {
-    if (!isOpen) {
-      searchScopeRef.current = null;
-      return;
-    }
-
-    let cancelled = false;
-    async function loadScope() {
-      if (scopeLoadingRef.current) return;
-      scopeLoadingRef.current = true;
-      try {
-        const {
-          data: { user: authUser },
-        } = await getAuthUser();
-        if (!authUser?.id || cancelled) return;
-        const scope = await getUserSearchScope(authUser.id);
-        if (cancelled) return;
-        searchScopeRef.current = scope;
-
-        // Set scope label
-        if (scope.role === 'union') {
-          setScopeLabel('Searching union members');
-        } else if (isClubStaff(scope.role)) {
-          setScopeLabel('Searching club members');
-        } else if (scope.role === 'agent') {
-          setScopeLabel('Searching club members');
-        } else {
-          setScopeLabel('Searching friends');
-        }
-      } catch (err) {
-        reportError(err, 'FindPlayerModal.loadScope');
-      } finally {
-        scopeLoadingRef.current = false;
+  const runSearch = useCallback(
+    async (query: string, offset = 0, append = false) => {
+      const normalized = query.trim();
+      if (normalized.length < 2) {
+        setError('Enter at least two characters.');
+        return;
       }
-    }
+      searchAbortRef.current?.abort();
+      const controller = new AbortController();
+      searchAbortRef.current = controller;
+      if (append) setIsLoadingMore(true);
+      else setIsSearching(true);
+      if (!append) {
+        setResults([]);
+        setTotal(0);
+      }
+      setError(null);
+      setShowSuggestions(false);
+      try {
+        const page = await PlayerSearchService.search({
+          query: normalized,
+          limit: PAGE_SIZE,
+          offset,
+          scope,
+          presence,
+          sort,
+          signal: controller.signal,
+        });
+        setResults((current) => (append ? [...current, ...page.items] : page.items));
+        setTotal(page.total);
+        setHasMore(page.hasMore);
+        lastCompletedQueryRef.current = normalized;
+      } catch (searchError) {
+        if (searchError instanceof DOMException && searchError.name === 'AbortError') return;
+        reportError(searchError, 'FindPlayerModal.Search');
+        setError('Could not search right now. Please try again.');
+      } finally {
+        if (searchAbortRef.current === controller) {
+          setIsSearching(false);
+          setIsLoadingMore(false);
+        }
+      }
+    },
+    [presence, scope, sort]
+  );
 
-    loadScope();
+  useEffect(() => {
+    if (!isOpen) return;
+    ClubEntryTrustService.track('find', 'opened', { outcome: 'viewed' });
     return () => {
-      cancelled = true;
+      searchAbortRef.current?.abort();
+      suggestionAbortRef.current?.abort();
+      if (suggestionTimerRef.current) window.clearTimeout(suggestionTimerRef.current);
     };
   }, [isOpen]);
 
-  // Stagger result entrance animations
   useEffect(() => {
-    if (searchResults.length > 0) {
-      staggerTimersRef.current.forEach((t) => clearTimeout(t));
-      staggerTimersRef.current = searchResults.map((_, i) =>
-        setTimeout(() => setVisibleResults((prev) => new Set(prev).add(i)), i * 60)
-      );
-    }
-  }, [searchResults]);
+    if (!isOpen || !lastCompletedQueryRef.current) return;
+    runSearch(lastCompletedQueryRef.current);
+  }, [scope, presence, sort, isOpen, runSearch]);
 
-  // Sort helper
-  const sortResults = useCallback((results: PlayerResult[], field: SortField): PlayerResult[] => {
-    return [...results].sort((a, b) => {
-      const aVal =
-        field === 'display_name'
-          ? (a.display_name || a.username || '').toLowerCase()
-          : (a.username || '').toLowerCase();
-      const bVal =
-        field === 'display_name'
-          ? (b.display_name || b.username || '').toLowerCase()
-          : (b.username || '').toLowerCase();
-      return aVal.localeCompare(bVal);
-    });
-  }, []);
-
-  const handleSortChange = useCallback(
-    (field: SortField) => {
-      setSortField(field);
-      setSearchResults((prev) => sortResults(prev, field));
-      setVisibleResults(new Set());
-      staggerTimersRef.current.forEach((t) => clearTimeout(t));
+  const fetchSuggestions = useCallback(
+    async (query: string) => {
+      suggestionAbortRef.current?.abort();
+      const controller = new AbortController();
+      suggestionAbortRef.current = controller;
+      setIsSuggesting(true);
+      try {
+        const page = await PlayerSearchService.search({
+          query,
+          limit: 6,
+          scope,
+          presence,
+          sort: 'relevance',
+          signal: controller.signal,
+        });
+        setSuggestions(page.items);
+        setShowSuggestions(page.items.length > 0);
+        setHighlightedIndex(-1);
+      } catch (suggestionError) {
+        if (!(suggestionError instanceof DOMException && suggestionError.name === 'AbortError')) {
+          reportError(suggestionError, 'FindPlayerModal.Suggestions');
+        }
+      } finally {
+        if (suggestionAbortRef.current === controller) setIsSuggesting(false);
+      }
     },
-    [sortResults]
+    [presence, scope]
   );
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // AUTO-SUGGEST — fires after 3+ characters with 350ms debounce
-  // ═══════════════════════════════════════════════════════════════════════════
-  const fetchSuggestions = useCallback(async (query: string) => {
-    const scope = searchScopeRef.current;
-    if (!scope || scope.searchableUserIds.length === 0) return;
-
-    const safeQuery = escapeSearchQuery(sanitizeInput(query.trim()));
-    if (!safeQuery || safeQuery.length < 3) {
+  const handleInputChange = (value: string) => {
+    setSearchQuery(value);
+    setError(null);
+    if (suggestionTimerRef.current) window.clearTimeout(suggestionTimerRef.current);
+    suggestionAbortRef.current?.abort();
+    if (value.trim().length < 2) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
+    suggestionTimerRef.current = window.setTimeout(() => fetchSuggestions(value.trim()), 300);
+  };
 
-    setIsSuggesting(true);
-    try {
-      // Search within the first 200 searchable IDs (fast path)
-      const batch = scope.searchableUserIds.slice(0, 200);
-      const { data: players } = await supabase
-        .from('profiles')
-        .select('id, username, display_name, avatar_url:arena_avatar_url')
-        .in('id', batch)
-        .or(`username.ilike.%${safeQuery}%,display_name.ilike.%${safeQuery}%`)
-        .limit(6);
-
-      if (!isMountedRef.current) return;
-
-      if (players && players.length > 0) {
-        setSuggestions(
-          players.map((p: any) => ({
-            id: p.id,
-            username: p.username || '',
-            display_name: p.display_name || null,
-            avatar_url: p.avatar_url || null,
-          }))
-        );
-        setHighlightedIndex(-1);
-        setShowSuggestions(true);
-      } else {
-        setSuggestions([]);
-        setShowSuggestions(false);
-      }
-    } catch (err) {
-      reportError(err, 'FindPlayerModal.fetchSuggestions');
-    } finally {
-      if (isMountedRef.current) setIsSuggesting(false);
-    }
-  }, []);
-
-  const handleInputChange = useCallback(
-    (value: string) => {
-      setSearchQuery(value);
-
-      // Clear previous debounce
-      if (suggestDebounceRef.current) clearTimeout(suggestDebounceRef.current);
-
-      if (value.trim().length >= 3) {
-        suggestDebounceRef.current = setTimeout(() => {
-          fetchSuggestions(value);
-        }, 350);
-      } else {
-        setSuggestions([]);
-        setShowSuggestions(false);
-      }
-    },
-    [fetchSuggestions]
-  );
-
-  const handleSuggestionClick = (player: SuggestedPlayer) => {
+  const chooseSuggestion = (player: PlayerSearchResult) => {
+    const value = player.display_name || player.username;
     haptic.selection();
-    setSearchQuery(player.display_name || player.username);
+    setSearchQuery(value);
     setShowSuggestions(false);
-    setSuggestions([]);
-    // Trigger full search for this specific player
-    performFullSearch(player.id);
+    runSearch(value);
   };
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // FULL SEARCH — fetches table presence for matched players
-  // ═══════════════════════════════════════════════════════════════════════════
-  const performFullSearch = async (specificPlayerId?: string) => {
-    setIsSearching(true);
-    setSearchResults([]);
-    setNotFound(false);
+  const handleTableClick = async (table: PlayerSearchTable) => {
+    if (verifyingTableId) return;
+    setVerifyingTableId(table.table_id);
     setError(null);
-    setVisibleResults(new Set());
-    setShowSuggestions(false);
-
     try {
-      const scope = searchScopeRef.current;
-      if (!scope) {
-        // Scope not loaded yet — try loading
-        const {
-          data: { user: authUser },
-        } = await getAuthUser();
-        if (!authUser?.id) {
-          setError('You must be logged in to search.');
-          return;
-        }
-        const freshScope = await getUserSearchScope(authUser.id);
-        if (!isMountedRef.current) return;
-        searchScopeRef.current = freshScope;
-        // Continue with freshScope below
-      }
-
-      const activeScope = searchScopeRef.current!;
-
-      if (activeScope.searchableUserIds.length === 0) {
-        setNotFound(true);
-        if (activeScope.role === 'player') {
-          setError('Add friends to search for players. Only friends are visible in search.');
-        }
+      const access = await PlayerSearchService.getTableWatchAccess(table.table_id);
+      if (access.can_watch) {
+        haptic.success();
+        ClubEntryTrustService.track('find', 'watch_opened', {
+          outcome: 'succeeded',
+          metadata: { table_id: table.table_id, tournament_id: table.tournament_id || null },
+        });
+        onClose();
+        navigate(`/table/${table.table_id}?observer=1`);
         return;
       }
 
-      let allPlayers: any[] = [];
-
-      if (specificPlayerId) {
-        // Direct lookup for a specific player
-        const { data: player } = await supabase
-          .from('profiles')
-          .select('id, username, display_name, avatar_url:arena_avatar_url')
-          .eq('id', specificPlayerId)
-          .maybeSingle();
-
-        if (!isMountedRef.current) return;
-        if (player) allPlayers = [player];
-      } else {
-        // Search by query
-        const safeQuery = escapeSearchQuery(sanitizeInput(searchQuery.trim()));
-        if (!safeQuery) return;
-
-        const BATCH_SIZE = 100;
-        for (let i = 0; i < activeScope.searchableUserIds.length; i += BATCH_SIZE) {
-          const batch = activeScope.searchableUserIds.slice(i, i + BATCH_SIZE);
-          const { data: players, error: searchError } = await supabase
-            .from('profiles')
-            .select('id, username, display_name, avatar_url:arena_avatar_url')
-            .in('id', batch)
-            .or(`username.ilike.%${safeQuery}%,display_name.ilike.%${safeQuery}%`)
-            .limit(20);
-
-          if (!isMountedRef.current) return;
-          if (searchError) throw searchError;
-          if (players) allPlayers = [...allPlayers, ...players];
-          if (allPlayers.length >= 20) {
-            allPlayers = allPlayers.slice(0, 20);
-            break;
-          }
-        }
-      }
-
-      if (allPlayers.length === 0) {
-        setNotFound(true);
+      if (['join', 'request_join', 'pending'].includes(access.action)) {
+        const identifier =
+          access.club_slug || String(access.club_id || '') || access.club_uuid || table.club_uuid;
+        haptic.selection();
+        ClubEntryTrustService.track('find', 'watch_membership_required', {
+          outcome: 'viewed',
+          metadata: { club_id: access.club_uuid || table.club_uuid, action: access.action },
+        });
+        onClose();
+        onMembershipRequired({ code: identifier, watchTableId: table.table_id });
         return;
       }
 
-      // ── Fetch table presence for matched players (parallel) ──
-      const results: PlayerResult[] = await Promise.all(
-        allPlayers.map(async (player: any) => {
-          const tables: PlayerTable[] = [];
-
-          // Cash Game Presence
-          try {
-            const { data: seatData } = await supabase
-              .from('table_seats')
-              .select(
-                `
-                id,
-                table_id,
-                tables:table_id (
-                  id, name, game_variant, small_blind, big_blind, status, club_id,
-                  clubs:club_id (name)
-                )
-              `
-              )
-              .eq('user_id', player.id)
-              .is('left_at', null)
-              .limit(4);
-
-            if (seatData) {
-              for (const seat of seatData) {
-                const table = (seat as Record<string, unknown>).tables as {
-                  id: string;
-                  name: string;
-                  game_variant: string;
-                  small_blind: number;
-                  big_blind: number;
-                  status: string;
-                  clubs: { name: string } | { name: string }[] | null;
-                } | null;
-                if (table && (table.status === 'active' || table.status === 'running')) {
-                  const clubName = Array.isArray(table.clubs)
-                    ? table.clubs[0]?.name
-                    : table.clubs?.name;
-                  tables.push({
-                    id: table.id,
-                    name: toTitleCase(table.name || 'Cash Game'),
-                    game_variant: toTitleCase(table.game_variant || 'NLH'),
-                    stakes: `$${table.small_blind}/$${table.big_blind}`,
-                    club_name: clubName ? toTitleCase(clubName) : undefined,
-                    is_tournament: false,
-                  });
-                }
-              }
-            }
-          } catch {
-            /* non-critical */
-          }
-
-          // Tournament Presence
-          if (tables.length < 4) {
-            try {
-              const { data: tournamentData } = await supabase
-                .from('tournament_players')
-                .select(
-                  `
-                  id, tournament_id,
-                  tournaments:tournament_id (
-                    id, name, status, buy_in_amount, club_id,
-                    clubs:club_id (name)
-                  )
-                `
-                )
-                .eq('user_id', player.id)
-                .in('status', ['registered', 'playing'])
-                .limit(4 - tables.length);
-
-              if (tournamentData) {
-                for (const reg of tournamentData) {
-                  const tournament = (reg as Record<string, unknown>).tournaments as {
-                    id: string;
-                    name: string;
-                    status: string;
-                    buy_in_amount: number;
-                    clubs: { name: string } | { name: string }[] | null;
-                  } | null;
-                  if (
-                    tournament &&
-                    (tournament.status === 'running' || tournament.status === 'late_reg')
-                  ) {
-                    const clubName = Array.isArray(tournament.clubs)
-                      ? tournament.clubs[0]?.name
-                      : tournament.clubs?.name;
-                    tables.push({
-                      id: tournament.id,
-                      name: toTitleCase(tournament.name || 'Tournament'),
-                      game_variant: 'MTT',
-                      stakes: `$${tournament.buy_in_amount || 0} Buy-In`,
-                      club_name: clubName ? toTitleCase(clubName) : undefined,
-                      is_tournament: true,
-                    });
-                  }
-                }
-              }
-            } catch {
-              /* non-critical */
-            }
-          }
-
-          return {
-            id: player.id,
-            username: toTitleCase(player.username || ''),
-            display_name: player.display_name ? toTitleCase(player.display_name) : null,
-            avatar_url: player.avatar_url,
-            tables,
-          };
-        })
+      setError(
+        access.action === 'observers_restricted'
+          ? 'This table does not allow observers.'
+          : 'This game is not available to watch.'
       );
-
-      if (!isMountedRef.current) return;
-      const sorted = sortResults(results, sortField);
-      setSearchResults(sorted);
-    } catch (err) {
-      if (!isMountedRef.current) return;
-      reportError(err, 'FindPlayerModal.Search_error');
-      setError('Search failed. Please try again.');
+    } catch (accessError) {
+      reportError(accessError, 'FindPlayerModal.WatchAccess');
+      setError('Could not verify table access. Please try again.');
     } finally {
-      if (isMountedRef.current) setIsSearching(false);
-    }
-  };
-
-  const handleSearch = () => {
-    if (!searchQuery.trim()) return;
-    haptic.medium();
-    performFullSearch();
-  };
-
-  const handleTableClick = (table: PlayerTable) => {
-    haptic.success();
-    onClose();
-    if (table.is_tournament) {
-      navigate(`/tournaments/${table.id}`);
-    } else {
-      navigate(`/table/${table.id}`);
+      setVerifyingTableId(null);
     }
   };
 
@@ -614,246 +216,366 @@ export default function FindPlayerModal({ isOpen, onClose }: FindPlayerModalProp
 
   const handleClose = () => {
     haptic.light();
+    searchAbortRef.current?.abort();
+    suggestionAbortRef.current?.abort();
     setSearchQuery('');
-    setSearchResults([]);
+    setResults([]);
     setSuggestions([]);
-    setShowSuggestions(false);
-    setHighlightedIndex(-1);
-    setNotFound(false);
     setError(null);
-    setScopeLabel('');
+    setTotal(0);
+    setHasMore(false);
+    setExpandedAccounts(new Set());
+    lastCompletedQueryRef.current = '';
+    ClubEntryTrustService.track('find', 'closed', { outcome: 'cancelled' });
     onClose();
   };
+
+  useDialogEscape(isOpen, () => (showAccessRules ? setShowAccessRules(false) : handleClose()));
 
   if (!isOpen) return null;
 
   return (
     <div className={styles.overlay} onClick={handleClose}>
-      <div className={styles.modalContainer} onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={trapRef}
+        className={styles.modalContainer}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="find-player-title"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className={styles.modalContent}>
-          <h2 className={styles.title}>Find A Player</h2>
-
-          {/* Search input with auto-suggest */}
-          <div className={styles.searchSection}>
-            <div className={styles.searchInputWrapper}>
-              <input
-                type="text"
-                className={styles.searchInput}
-                placeholder="Search by name or alias..."
-                value={searchQuery}
-                onChange={(e) => handleInputChange(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'ArrowDown' && showSuggestions && suggestions.length > 0) {
-                    e.preventDefault();
-                    setHighlightedIndex((prev) => (prev + 1) % suggestions.length);
-                    return;
-                  }
-                  if (e.key === 'ArrowUp' && showSuggestions && suggestions.length > 0) {
-                    e.preventDefault();
-                    setHighlightedIndex(
-                      (prev) => (prev - 1 + suggestions.length) % suggestions.length
-                    );
-                    return;
-                  }
-                  if (e.key === 'Enter') {
-                    if (
-                      showSuggestions &&
-                      highlightedIndex >= 0 &&
-                      highlightedIndex < suggestions.length
-                    ) {
-                      handleSuggestionClick(suggestions[highlightedIndex]);
-                      return;
-                    }
-                    setShowSuggestions(false);
-                    handleSearch();
-                  }
-                  if (e.key === 'Escape') {
-                    setShowSuggestions(false);
-                    setHighlightedIndex(-1);
-                  }
-                }}
-                onFocus={() => {
-                  if (suggestions.length > 0) setShowSuggestions(true);
-                }}
-                autoFocus
+          <div className={styles.scrollBody}>
+            <header className={styles.machineHeader}>
+              <img
+                src="/hub/club-arena/images/club-arena/vault-iris-emblem-v1-320.webp"
+                alt=""
+                width="320"
+                height="296"
               />
-
-              {/* Auto-suggest dropdown */}
-              {showSuggestions && suggestions.length > 0 && (
-                <div className={styles.suggestDropdown}>
-                  {suggestions.map((s, i) => (
-                    <button
-                      key={s.id}
-                      className={styles.suggestItem}
-                      style={
-                        i === highlightedIndex
-                          ? { background: 'rgba(0, 212, 255, 0.15)' }
-                          : undefined
-                      }
-                      onMouseEnter={() => setHighlightedIndex(i)}
-                      onClick={() => handleSuggestionClick(s)}
-                    >
-                      <div className={styles.suggestAvatar}>
-                        {s.avatar_url ? (
-                          <img
-                            loading="lazy"
-                            decoding="async"
-                            src={s.avatar_url}
-                            alt=""
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = generateDefaultAvatar();
-                            }}
-                          />
-                        ) : (
-                          <span>?</span>
-                        )}
-                      </div>
-                      <div className={styles.suggestInfo}>
-                        <span className={styles.suggestName}>{s.display_name || s.username}</span>
-                        {s.display_name && s.username && (
-                          <span className={styles.suggestAlias}>@{s.username}</span>
-                        )}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Suggest loading indicator */}
-              {isSuggesting && (
-                <div className={styles.suggestLoading}>
-                  <span className={styles.suggestSpinner}>⟳</span>
-                </div>
-              )}
-            </div>
-
-            <button
-              className={styles.searchButton}
-              onClick={handleSearch}
-              disabled={isSearching || !searchQuery.trim()}
-            >
-              {isSearching ? '...' : 'GO'}
-            </button>
-          </div>
-
-          {/* Sort controls — show when we have multiple results */}
-          {searchResults.length > 1 && (
-            <div className={styles.sortControls}>
-              <span className={styles.sortLabel}>Sort By:</span>
-              <button
-                className={`${styles.sortBtn} ${sortField === 'display_name' ? styles.sortBtnActive : ''}`}
-                onClick={() => handleSortChange('display_name')}
-              >
-                Real Name
-              </button>
-              <button
-                className={`${styles.sortBtn} ${sortField === 'username' ? styles.sortBtnActive : ''}`}
-                onClick={() => handleSortChange('username')}
-              >
-                Poker Alias
-              </button>
-            </div>
-          )}
-
-          {/* Scope label */}
-          {scopeLabel && <div className={styles.scopeLabel}>{scopeLabel}</div>}
-
-          {/* Results area */}
-          <div className={styles.resultsArea}>
-            {error && <div className={styles.errorMessage}>{error}</div>}
-
-            {notFound && !error && (
-              <div className={styles.notFoundMessage}>
-                <span className={styles.notFoundIcon}></span>
-                <p>No Matching Players Found In Your Network</p>
+              <div>
+                <span className={styles.eyebrow}>Network Locator / Live Presence</span>
+                <h2 id="find-player-title" className={styles.title}>
+                  Find A Player
+                </h2>
+                <p>Find Any Player, See Who Is Playing, And Open Their Live Game.</p>
               </div>
+              <button
+                className={styles.privacyButton}
+                onClick={() => setShowAccessRules((value) => !value)}
+                aria-expanded={showAccessRules}
+              >
+                Access Rules
+              </button>
+            </header>
+
+            {showAccessRules && (
+              <section className={styles.privacyPanel} aria-label="Player Search Access Rules">
+                <p>
+                  Player Identity And Playing Now Status Are Searchable Across Club Arena. Watching
+                  Requires An Active Membership In The Game&apos;S Club.
+                </p>
+                <p>
+                  Wallets, Balances, Statistics, Notes, And Hierarchy Data Are Returned Only For
+                  Accounts Your Club, Union, Administrator, Or Agent Role Authorizes You To Manage.
+                </p>
+              </section>
             )}
 
-            {searchResults.length > 0 && (
-              <div className={styles.resultsList}>
-                {searchResults.map((player, idx) => (
-                  <div
-                    key={player.id}
-                    className={styles.playerResult}
-                    style={{
-                      opacity: visibleResults.has(idx) ? 1 : 0,
-                      transform: visibleResults.has(idx) ? 'translateY(0)' : 'translateY(8px)',
-                      transition: 'all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                    }}
-                  >
-                    <div
-                      className={styles.playerHeader}
-                      onClick={() => handleProfileClick(player.id)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <div className={styles.playerAvatar}>
-                        {player.avatar_url ? (
-                          <img
-                            loading="lazy"
-                            decoding="async"
-                            src={player.avatar_url}
-                            alt=""
-                            onError={(e) => {
-                              (e.target as HTMLImageElement).src = generateDefaultAvatar();
-                            }}
-                          />
-                        ) : (
-                          <span>?</span>
-                        )}
-                      </div>
-                      <div className={styles.playerInfo}>
-                        <span className={styles.playerName}>
-                          {player.display_name || player.username}
+            <div className={styles.searchSection}>
+              <div className={styles.searchInputWrapper}>
+                <input
+                  type="search"
+                  className={styles.searchInput}
+                  placeholder="Name, Alias, Or Player Number…"
+                  value={searchQuery}
+                  onChange={(event) => handleInputChange(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'ArrowDown' && suggestions.length) {
+                      event.preventDefault();
+                      setHighlightedIndex((value) => (value + 1) % suggestions.length);
+                    } else if (event.key === 'ArrowUp' && suggestions.length) {
+                      event.preventDefault();
+                      setHighlightedIndex(
+                        (value) => (value - 1 + suggestions.length) % suggestions.length
+                      );
+                    } else if (event.key === 'Enter') {
+                      if (showSuggestions && highlightedIndex >= 0)
+                        chooseSuggestion(suggestions[highlightedIndex]);
+                      else runSearch(searchQuery);
+                    } else if (event.key === 'Escape') setShowSuggestions(false);
+                  }}
+                  onFocus={() => suggestions.length && setShowSuggestions(true)}
+                  aria-label="Player Name, Poker Alias, Or Number"
+                  aria-autocomplete="list"
+                  aria-expanded={showSuggestions}
+                  autoFocus
+                />
+                {showSuggestions && (
+                  <div className={styles.suggestDropdown} role="listbox">
+                    {suggestions.map((player, index) => (
+                      <button
+                        key={player.id}
+                        role="option"
+                        aria-selected={index === highlightedIndex}
+                        className={styles.suggestItem}
+                        onPointerMove={() => setHighlightedIndex(index)}
+                        onClick={() => chooseSuggestion(player)}
+                      >
+                        <PlayerAvatar player={player} className={styles.suggestAvatar} />
+                        <span className={styles.suggestInfo}>
+                          <span className={styles.suggestName}>
+                            {player.display_name || player.username}
+                          </span>
+                          {player.display_name && (
+                            <span className={styles.suggestAlias}>@{player.username}</span>
+                          )}
                         </span>
-                        {player.display_name && player.username && (
-                          <span className={styles.playerAlias}>@{player.username}</span>
-                        )}
-                        <span className={styles.playerStatus}>
-                          {player.tables.length > 0
-                            ? `Playing At ${player.tables.length} Table${player.tables.length > 1 ? 's' : ''}`
-                            : 'Not Currently Playing'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {player.tables.length > 0 && (
-                      <div className={styles.tablesList}>
-                        {player.tables.map((table) => (
-                          <button
-                            key={table.id}
-                            className={styles.tableCard}
-                            onClick={() => handleTableClick(table)}
-                          >
-                            <div className={styles.tableInfo}>
-                              <span className={styles.tableName}>{table.name}</span>
-                              <span className={styles.tableDetails}>
-                                {table.game_variant} • {table.stakes}
-                                {table.club_name && ` • ${table.club_name}`}
-                              </span>
-                            </div>
-                            <span className={styles.watchButton}>Watch</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                      </button>
+                    ))}
                   </div>
-                ))}
+                )}
+                {isSuggesting && (
+                  <span className={styles.suggestLoading} aria-label="Loading Suggestions">
+                    <span className={styles.suggestSpinner} aria-hidden="true" />
+                  </span>
+                )}
               </div>
-            )}
+              <button
+                className={styles.searchButton}
+                onClick={() => runSearch(searchQuery)}
+                disabled={isSearching || searchQuery.trim().length < 2}
+              >
+                {isSearching ? 'Scanning…' : 'Search'}
+              </button>
+            </div>
 
-            {!error && !notFound && searchResults.length === 0 && !isSearching && (
-              <div className={styles.hintMessage}>
-                <p>Search For A Player To See Their Active Tables</p>
-              </div>
-            )}
+            <div className={styles.filterControls} aria-label="Player Search Filters">
+              <label>
+                Network
+                <select
+                  value={scope}
+                  onChange={(event) => setScope(event.target.value as PlayerSearchScope)}
+                >
+                  <option value="all">All Players</option>
+                  <option value="friends">Friends</option>
+                  <option value="clubs">My Clubs</option>
+                  <option value="union">My Unions</option>
+                  <option value="managed">My Managed Accounts</option>
+                </select>
+              </label>
+              <label>
+                Status
+                <select
+                  value={presence}
+                  onChange={(event) => setPresence(event.target.value as PlayerPresenceFilter)}
+                >
+                  <option value="all">Any Status</option>
+                  <option value="online">Online</option>
+                  <option value="playing">Playing Now</option>
+                </select>
+              </label>
+              <label>
+                Sort
+                <select
+                  value={sort}
+                  onChange={(event) => setSort(event.target.value as PlayerSearchSort)}
+                >
+                  <option value="relevance">Best Match</option>
+                  <option value="name">Name</option>
+                </select>
+              </label>
+              <span className={styles.scopeLabel}>
+                {total
+                  ? `${total} Eligible Match${total === 1 ? '' : 'Es'}`
+                  : 'Global Player Directory'}
+              </span>
+            </div>
+
+            <div className={styles.resultsArea} aria-live="polite" aria-busy={isSearching}>
+              {error && <div className={styles.errorMessage}>{titleCase(error)}</div>}
+              {!error && !isSearching && lastCompletedQueryRef.current && results.length === 0 && (
+                <div className={styles.notFoundMessage}>
+                  <p>No Matching Players Were Found.</p>
+                </div>
+              )}
+              {results.length > 0 && (
+                <div className={styles.resultsList}>
+                  {results.map((player) => (
+                    <article key={player.id} className={styles.playerResult}>
+                      <button
+                        className={styles.playerHeader}
+                        onClick={() => handleProfileClick(player.id)}
+                      >
+                        <PlayerAvatar player={player} className={styles.playerAvatar} />
+                        <span className={styles.playerInfo}>
+                          <span className={styles.playerName}>
+                            {player.display_name || player.username}
+                          </span>
+                          {player.display_name && (
+                            <span className={styles.playerAlias}>@{player.username}</span>
+                          )}
+                          <span
+                            className={styles.playerStatus}
+                            data-status={player.presence_status}
+                          >
+                            {presenceCopy(player)}
+                          </span>
+                        </span>
+                        <span className={styles.relationshipBadge}>{player.relationship}</span>
+                      </button>
+                      {player.sensitive_accounts.length > 0 && (
+                        <section className={styles.accountAccess}>
+                          <button
+                            className={styles.accountAccessToggle}
+                            aria-expanded={expandedAccounts.has(player.id)}
+                            onClick={() =>
+                              setExpandedAccounts((current) => {
+                                const next = new Set(current);
+                                if (next.has(player.id)) next.delete(player.id);
+                                else next.add(player.id);
+                                return next;
+                              })
+                            }
+                          >
+                            Authorized Account Data ({player.sensitive_accounts.length})
+                          </button>
+                          {expandedAccounts.has(player.id) && (
+                            <div className={styles.accountGrid}>
+                              {player.sensitive_accounts.map((account) => (
+                                <article key={account.club_uuid} className={styles.accountCard}>
+                                  <header>
+                                    <strong>{account.club_name}</strong>
+                                    <span>
+                                      {account.access} / {account.role}
+                                    </span>
+                                  </header>
+                                  <dl>
+                                    <div>
+                                      <dt>Player</dt>
+                                      <dd>{chips(account.wallets.player_wallet)}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>Agent</dt>
+                                      <dd>{chips(account.wallets.agent_wallet)}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>Promo</dt>
+                                      <dd>{chips(account.wallets.promo_wallet)}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>Club Chips</dt>
+                                      <dd>{chips(account.wallets.chip_balance)}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>Direct</dt>
+                                      <dd>{account.downline?.downline_direct ?? 0}</dd>
+                                    </div>
+                                    <div>
+                                      <dt>Downline</dt>
+                                      <dd>{account.downline?.downline_total ?? 0}</dd>
+                                    </div>
+                                  </dl>
+                                </article>
+                              ))}
+                            </div>
+                          )}
+                        </section>
+                      )}
+                      {player.tables.length > 0 && (
+                        <div className={styles.tablesList}>
+                          {player.tables.map((table) => (
+                            <button
+                              key={table.id}
+                              className={styles.tableCard}
+                              onClick={() => void handleTableClick(table)}
+                              disabled={verifyingTableId !== null}
+                            >
+                              <span className={styles.tableInfo}>
+                                <span className={styles.tableName}>{table.name}</span>
+                                <span className={styles.tableDetails}>
+                                  {table.game_variant} • {table.stakes}
+                                  {table.club_name && ` • ${table.club_name}`}
+                                </span>
+                              </span>
+                              <span className={styles.watchButton}>
+                                {verifyingTableId === table.table_id
+                                  ? 'Verifying Access…'
+                                  : watchLabel(table)}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </article>
+                  ))}
+                  {hasMore && (
+                    <button
+                      className={styles.loadMoreButton}
+                      disabled={isLoadingMore}
+                      onClick={() => runSearch(lastCompletedQueryRef.current, results.length, true)}
+                    >
+                      {isLoadingMore ? 'Loading…' : 'Load More Players'}
+                    </button>
+                  )}
+                </div>
+              )}
+              {!error && !isSearching && !lastCompletedQueryRef.current && (
+                <div className={styles.hintMessage}>
+                  <p>Search By Alias, Display Name, Or Player Number.</p>
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Close button */}
-          <button className={styles.closeButton} onClick={handleClose}>
-            Close
-          </button>
+          <footer className={styles.pageFooter}>
+            <button className={styles.closeButton} onClick={handleClose}>
+              Close Locator
+            </button>
+          </footer>
         </div>
       </div>
     </div>
+  );
+}
+
+function presenceCopy(player: PlayerSearchResult): string {
+  if (player.tables.length)
+    return `Playing At ${player.tables.length} Table${player.tables.length === 1 ? '' : 's'}`;
+  if (player.presence_status === 'playing') return 'Playing Now';
+  if (player.presence_status === 'online') return 'Online';
+  return 'Offline';
+}
+
+function watchLabel(table: PlayerSearchTable): string {
+  if (table.can_watch) return table.access_action === 'play' ? 'Return' : 'Watch';
+  if (table.access_action === 'request_join') return 'Request To Join';
+  if (table.access_action === 'join') return 'Join To Watch';
+  if (table.access_action === 'pending') return 'Request Pending';
+  if (table.access_action === 'observers_restricted') return 'Observers Off';
+  return 'Unavailable';
+}
+
+function chips(value: number): string {
+  return Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+function PlayerAvatar({ player, className }: { player: PlayerSearchResult; className: string }) {
+  return (
+    <span className={className}>
+      {player.avatar_url ? (
+        <img
+          loading="lazy"
+          decoding="async"
+          src={sizedStorageUrl(player.avatar_url, 44)}
+          alt=""
+          onError={(event) => {
+            event.currentTarget.src = generateDefaultAvatar();
+          }}
+        />
+      ) : (
+        <span aria-hidden="true">?</span>
+      )}
+    </span>
   );
 }

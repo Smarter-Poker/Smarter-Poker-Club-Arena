@@ -24,7 +24,7 @@ import { join } from 'node:path';
 const leagueSrc = readFileSync(join(__dirname, 'HorseLeague.ts'), 'utf8');
 const tunerSrc = readFileSync(join(__dirname, '..', 'services', 'HorseSelfTuner.ts'), 'utf8');
 
-describe('nightly jobs — a restart must trigger the run, not prevent it', () => {
+describe('nightly jobs - a restart must trigger the run, not prevent it', () => {
   it('the league checks at boot, not only on an interval', () => {
     const start = leagueSrc.slice(leagueSrc.indexOf('export function startHorseLeague'));
     const body = start.slice(0, start.indexOf('\n}\n') + 3);
@@ -52,16 +52,48 @@ describe('nightly jobs — a restart must trigger the run, not prevent it', () =
     expect(tunerSrc).toContain("from('horse_self_tune_log')");
   });
 
-  it('a partial league card is treated as NOT done, so it resumes', () => {
-    expect(leagueSrc).toContain('>= LEAGUE_MATCHUPS.length');
+  it('a partial league card is DONE for the night - the daily rotation covers the rest', () => {
+    // SUPERSEDED 2026-08-27. The old rule ("resume until every matchup has a
+    // row") was written when the card was 6 matchups and finished inside the
+    // budget. At 23 matchups the budget stops after ~4, so "not done" was
+    // permanently true and the same head re-ran every night while the tail
+    // was never measured at all. The card now ROTATES daily: any rows for the
+    // date mean tonight's slice is done, and tomorrow starts further along.
+    // What replaces the old guarantee is fn_audit_league_coverage, which
+    // raises league_card_starved when a matchup goes 7+ days unmeasured.
+    expect(leagueSrc).toContain('(data?.length ?? 0) > 0');
+    expect(leagueSrc).toContain('rotateBy');
   });
 
-  it('a failed guard lookup fails OPEN — a skipped night is worse than a duplicate', () => {
+  it('a failed guard lookup fails OPEN - a skipped night is worse than a duplicate', () => {
     const fn = leagueSrc.slice(leagueSrc.indexOf('async function alreadyRanToday'));
     const body = fn.slice(0, fn.indexOf('\n}\n') + 3);
     expect(body).toContain('return false');
     const tf = tunerSrc.slice(tunerSrc.indexOf('async function alreadyTunedToday'));
     expect(tf.slice(0, tf.indexOf('\n}\n') + 3)).toContain('return false');
+  });
+
+  it('only ONE engine instance may run a night (leader/standby is live)', () => {
+    // Verified on the host: club-arena-engine and club-arena-engine-2 BOTH
+    // boot the full engine path — both hydrate HorseMind, both run GameServer
+    // cleanup — so both reach the nightly check within seconds of each other.
+    // The claim's INSERT is the lock: the primary key on (job, run_date) lets
+    // exactly one win.
+    expect(leagueSrc).toContain('claimNightlyJob');
+    expect(leagueSrc).toContain("from('horse_job_runs')");
+    expect(leagueSrc).toContain("'23505'"); // unique_violation => stand down
+    expect(tunerSrc).toContain("claimNightlyJob('self_tuner'");
+  });
+
+  it('the claim fails CLOSED, while the date guard fails OPEN', () => {
+    // Opposite defaults on purpose. If we cannot tell whether someone else
+    // owns tonight, not running is safe (they probably do). If we cannot tell
+    // whether tonight already ran, running is safe (nobody is holding it, and
+    // both writers upsert).
+    const claim = leagueSrc.slice(leagueSrc.indexOf('export async function claimNightlyJob'));
+    expect(claim.slice(0, claim.indexOf('\n}\n') + 3)).toContain('return false');
+    const guard = leagueSrc.slice(leagueSrc.indexOf('async function alreadyRanToday'));
+    expect(guard.slice(0, guard.indexOf('\n}\n') + 3)).toContain('return false');
   });
 
   it('both jobs accept a catch-up window rather than a single hour', () => {

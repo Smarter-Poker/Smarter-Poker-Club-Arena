@@ -1,10 +1,34 @@
 /**
  * RewardsMarketplace — Spend VIP points on exclusive rewards
  * Categorized rewards with filtering, sorting, and redemption
+ *
+ * ── 2026-08-25, cosmetics purchase/ownership audit ──────────────────────────
+ * This component was a storefront with no shop behind it. `handleRedeem` did:
+ *
+ *     await new Promise((resolve) => setTimeout(resolve, 800));  // fake work
+ *     if (onRedeem) { onRedeem(reward); }                        // NOT awaited
+ *     toast.success(`Successfully redeemed ${reward.name}!`);    // always
+ *
+ * so the member was told the redemption succeeded before the parent's RPC had
+ * even resolved, and again when it had REFUSED - VIPPage's own error toast
+ * ("Not enough VIP points") landed next to a success toast for the same click.
+ *
+ * The original twelve rewards were also hardcoded HERE, while the redemption RPC took
+ * the price FROM THE CLIENT, so a 5,000-point pass could be bought for one
+ * point; and redemption granted nothing at all, so 2,000 points spent on a
+ * table theme bought a ledger line and no theme.
+ *
+ * Now: `vip_reward_catalog` prices every reward server-side and
+ * fn_redeem_vip_points grants themes into the category-specific Table Studio
+ * ledger and avatar art/styles into avatar_unlocks. The list below survives only as the
+ * offline fallback, and the outcome toast belongs to whoever actually performed
+ * the redemption.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '../common/Toast';
+import { supabase } from '../../lib/supabase';
+import { reportError } from '../../utils/errorReporter';
 import './RewardsMarketplace.css';
 
 export interface Reward {
@@ -19,21 +43,18 @@ export interface Reward {
   featured?: boolean;
 }
 
-const REWARDS: Reward[] = [
-  {
-    id: 'tournament-elite',
-    name: 'Elite Tournament Pass',
-    description: 'Entry to premium tournament series with higher payouts',
-    category: 'tournament',
-    pointsCost: 5000,
-    icon: 'T',
-    stock: 25,
-    featured: true,
-  },
+/**
+ * OFFLINE FALLBACK ONLY. `vip_reward_catalog` is the price. These values match
+ * the seed in migration 20260825_vip_reward_catalog, so a failed catalog read
+ * shows the right numbers rather than nothing — but the server re-decides the
+ * charge from the reward id either way, so a stale entry here can misinform a
+ * member and can never mischarge one.
+ */
+const FALLBACK_REWARDS: Reward[] = [
   {
     id: 'avatar-gold-frame',
-    name: 'Gold Frame Badge',
-    description: 'Exclusive gold avatar frame',
+    name: 'Gold Avatar Frame',
+    description: 'Exclusive Gold Avatar Frame',
     category: 'avatar',
     pointsCost: 1500,
     icon: '★',
@@ -42,31 +63,15 @@ const REWARDS: Reward[] = [
   {
     id: 'theme-neon',
     name: 'Neon Table Theme',
-    description: 'Vibrant neon-style table theme',
+    description: 'Vibrant Neon-Style Table Theme',
     category: 'theme',
     pointsCost: 2000,
     icon: '◆',
   },
   {
-    id: 'bonus-50k',
-    name: '50K Bonus Package',
-    description: 'Bonus chips to use in games',
-    category: 'bonus',
-    pointsCost: 3500,
-    icon: '→',
-  },
-  {
-    id: 'tournament-vip',
-    name: 'VIP Tournament Seat',
-    description: 'Reserved seat in exclusive weekly tournament',
-    category: 'tournament',
-    pointsCost: 4000,
-    icon: '◆',
-  },
-  {
     id: 'avatar-royal-crown',
-    name: 'Royal Crown Badge',
-    description: 'Premium royal crown avatar badge',
+    name: 'Hellfire Avatar Frame',
+    description: 'Animated Premium Hellfire Avatar Frame',
     category: 'avatar',
     pointsCost: 2500,
     icon: '♛',
@@ -74,31 +79,15 @@ const REWARDS: Reward[] = [
   {
     id: 'theme-midnight',
     name: 'Midnight Casino Theme',
-    description: 'Dark elegant casino-inspired theme',
+    description: 'Dark Elegant Casino-Inspired Theme',
     category: 'theme',
     pointsCost: 1800,
     icon: '◐',
   },
   {
-    id: 'bonus-25k',
-    name: '25K Bonus Package',
-    description: 'Bonus chips to use in games',
-    category: 'bonus',
-    pointsCost: 1500,
-    icon: '◆',
-  },
-  {
-    id: 'tournament-weekly',
-    name: 'Weekly Tournament Bundle',
-    description: 'Entry to 4 weekly tournaments',
-    category: 'tournament',
-    pointsCost: 2000,
-    icon: '▤',
-  },
-  {
     id: 'avatar-diamond-halo',
-    name: 'Diamond Halo Effect',
-    description: 'Animated diamond halo around avatar',
+    name: 'Diamond Avatar Frame',
+    description: 'Premium Faceted Diamond Avatar Frame',
     category: 'avatar',
     pointsCost: 3000,
     icon: '◆',
@@ -106,19 +95,10 @@ const REWARDS: Reward[] = [
   {
     id: 'theme-cosmic',
     name: 'Cosmic Space Theme',
-    description: 'Futuristic space-themed table',
+    description: 'Futuristic Space-Themed Table',
     category: 'theme',
     pointsCost: 2200,
     icon: '▲',
-  },
-  {
-    id: 'merch-hoodie',
-    name: 'Premium Hoodie',
-    description: 'Limited edition branded hoodie',
-    category: 'merch',
-    pointsCost: 8000,
-    icon: '◆',
-    stock: 50,
   },
 ];
 
@@ -127,7 +107,23 @@ type CategoryFilter = 'all' | 'tournament' | 'avatar' | 'theme' | 'bonus' | 'mer
 
 interface RewardsMarketplaceProps {
   currentPoints: number;
-  onRedeem?: (reward: Reward) => void;
+  /**
+   * Performs the redemption and OWNS THE OUTCOME MESSAGE. It must resolve only
+   * once the server has answered; this component awaits it and says nothing
+   * about success on its own.
+   */
+  onRedeem?: (reward: Reward) => void | Promise<void>;
+}
+
+interface CatalogRow {
+  id: string;
+  name: string;
+  description: string;
+  category: Reward['category'];
+  points_cost: number;
+  stock: number | null;
+  featured: boolean;
+  grant_type: 'theme' | 'avatar' | 'manual';
 }
 
 export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
@@ -138,6 +134,51 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
   const [activeCategory, setActiveCategory] = useState<CategoryFilter>('all');
   const [sortBy, setSortBy] = useState<SortOption>('popular');
   const [redeemingId, setRedeemingId] = useState<string | null>(null);
+  // A ref, not the state flag: state is invisible to a second handler firing in
+  // the same tick, and this one spends points.
+  const inFlightRef = useRef(false);
+  const [rewards, setRewards] = useState<Reward[] | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+
+  const loadCatalog = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('vip_reward_catalog')
+      .select('id, name, description, category, points_cost, stock, featured, grant_type')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true });
+    if (error) {
+      // A failed read is not an empty catalog. Show the bundled list and say
+      // it is the bundled list, rather than "No Rewards In This Category Yet".
+      reportError(error, 'RewardsMarketplace.loadCatalog');
+      setRewards(FALLBACK_REWARDS);
+      setLoadFailed(true);
+      return;
+    }
+    const iconById = new Map(FALLBACK_REWARDS.map((r) => [r.id, r.icon]));
+    setRewards(
+      ((data || []) as CatalogRow[])
+        // Manual rewards had no fulfillment surface. A paid claim that merely
+        // says “someone will handle it” is not a functioning product.
+        .filter((row) => row.grant_type === 'theme' || row.grant_type === 'avatar')
+        .map((row) => ({
+          id: row.id,
+          name: row.name,
+          description: row.description,
+          category: row.category,
+          pointsCost: Number(row.points_cost),
+          icon: iconById.get(row.id) || '◆',
+          stock: row.stock ?? undefined,
+          featured: row.featured,
+        }))
+    );
+    setLoadFailed(false);
+  }, []);
+
+  useEffect(() => {
+    loadCatalog();
+  }, [loadCatalog]);
+
+  const REWARDS = rewards ?? FALLBACK_REWARDS;
 
   const filteredRewards = useMemo(() => {
     let filtered = REWARDS;
@@ -164,7 +205,7 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
     });
 
     return sorted;
-  }, [activeCategory, sortBy]);
+  }, [REWARDS, activeCategory, sortBy]);
 
   const featuredReward = REWARDS.find((r) => r.featured);
   const categories = [
@@ -190,25 +231,37 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
       count: REWARDS.filter((r) => r.category === 'bonus').length,
     },
     { id: 'merch', label: 'Merch', count: REWARDS.filter((r) => r.category === 'merch').length },
-  ];
+  ].filter((category) => category.id === 'all' || category.count > 0);
 
   const handleRedeem = async (reward: Reward) => {
+    if (inFlightRef.current) return;
     if (currentPoints < reward.pointsCost) {
       toast.error(
-        `You need ${reward.pointsCost - currentPoints} more points to redeem this reward.`
+        `You Need ${(reward.pointsCost - currentPoints).toLocaleString()} More Points To Redeem This Reward.`
       );
       return;
     }
+    if (!onRedeem) {
+      // Nothing can perform the redemption, so nothing may claim it happened.
+      toast.error('Redeeming Is Not Available Right Now.');
+      return;
+    }
 
+    inFlightRef.current = true;
     setRedeemingId(reward.id);
     try {
-      // Simulate redemption delay
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      if (onRedeem) {
-        onRedeem(reward);
-      }
-      toast.success(`Successfully redeemed ${reward.name}!`);
+      // AWAITED, and NO SUCCESS TOAST HERE. The handler talks to the server and
+      // reports what the server said; a second, unconditional "Successfully
+      // redeemed" from this component is how a refusal got announced as a sale.
+      await onRedeem(reward);
+      // The server may have decremented stock or granted the cosmetic, so the
+      // catalog this component is showing is now stale.
+      await loadCatalog();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Redemption Failed');
+      reportError(err, 'RewardsMarketplace.handleRedeem');
     } finally {
+      inFlightRef.current = false;
       setRedeemingId(null);
     }
   };
@@ -315,7 +368,9 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
                 <div className="reward-footer">
                   <div className="reward-meta">
                     <span className="points-cost">{reward.pointsCost.toLocaleString()} Pts</span>
-                    {reward.stock && <span className="stock-badge">{reward.stock} Left</span>}
+                    {reward.stock ? (
+                      <span className="stock-badge">{reward.stock.toLocaleString()} Left</span>
+                    ) : null}
                   </div>
 
                   <button
@@ -338,10 +393,19 @@ export const RewardsMarketplace: React.FC<RewardsMarketplaceProps> = ({
               )}
             </div>
           ))
+        ) : rewards === null ? (
+          <div className="no-rewards">
+            <span className="no-rewards-icon">◈</span>
+            <p>Loading Rewards...</p>
+          </div>
         ) : (
           <div className="no-rewards">
             <span className="no-rewards-icon">◈</span>
-            <p>No Rewards In This Category Yet</p>
+            {/* A read that failed is a different statement from a category
+                that is empty, and this told the member the second one. */}
+            <p>
+              {loadFailed ? 'Could Not Load Rewards Right Now' : 'No Rewards In This Category Yet'}
+            </p>
           </div>
         )}
       </div>

@@ -58,23 +58,51 @@ describe('InsuranceEngine.createOffers', () => {
     expect(o.playerId).toBe(LEADER);
     expect(o.equity).toBeCloseTo(84.1, 0);
 
-    // Insured amount = the leader's at-risk chips (capped by pot).
-    expect(o.insuredAmount).toBe(100);
+    // REFERENCE PARITY 2026-08-26: insured amount = the max-insurable slice
+    // of the POT (the winnings), no longer capped at the leader's own stake.
+    // The reference dialog's max insured pot is ~the pot itself.
+    expect(o.insuredAmount).toBe(300);
+    // The leader's committed chips still ride the offer for Break Even.
+    expect(o.atRisk).toBe(100);
 
-    // Premium = insured * lossProbability * 1.20 (the 20% house edge).
+    // POKERBROS PARITY 2026-08-28 (Dan's ruling): the fee is charged only
+    // when the leader WINS; a loss pays the insured amount fee-free. Fair
+    // fee satisfies fee*pWin = insured*pLoss, margin 1.2 on top:
+    // premium = insured * pLoss/pWin * 1.2.
     const lossProb = 1 - o.equity / 100;
-    const expectedPremium = Math.round(100 * lossProb * 1.2 * 100) / 100;
+    const winProb = o.equity / 100;
+    const expectedPremium = Math.round(((300 * lossProb * 1.2) / winProb) * 100) / 100;
     expect(o.premium).toBeCloseTo(expectedPremium, 2);
 
     // Player EV is negative (fair premium would be without the 1.2 margin).
-    const fairPremium = 100 * lossProb;
+    const fairPremium = (300 * lossProb) / winProb;
     expect(o.premium).toBeGreaterThan(fairPremium);
     expect(o.premium / fairPremium).toBeCloseTo(1.2, 2);
   });
 
-  it('caps the insured amount at the leader at-risk, not the pot', () => {
+  it('a premium that rounds to 0.00 is uninsurable - no free contracts (FINAL AUDIT 2026-08-26)', () => {
+    // Dust pot: insured 0.01, premium rounds to 0.00 - without the guard the
+    // union bank would fund a payout it never collected a cent for.
+    const offers = offerLeader(e, 0.01, 0.01);
+    expect(offers).toHaveLength(0);
+  });
+
+  it('acceptPartial keeps hundredths-of-a-percent precision (fee shown = fee charged)', () => {
+    const offers = offerLeader(e, 100, 300);
+    const full = offers[0].fullPremium;
+    expect(e.acceptPartial('t1', LEADER, 77.77)).toBe(true);
+    const accepted = e.getOffers('t1')[0];
+    expect(accepted.coveragePercent).toBe(77.77);
+    expect(accepted.premium).toBe(Math.round(full * 0.7777 * 100) / 100);
+    expect(accepted.insuredAmount).toBe(Math.round(300 * 0.7777 * 100) / 100);
+  });
+
+  it('insures the pot, not the stake - a short leader can still cover the winnings', () => {
+    // REFERENCE PARITY 2026-08-26: was "caps the insured amount at the leader
+    // at-risk" (40). The reference insures what the leader stands to WIN.
     const offers = offerLeader(e, 40, 300); // leader only has 40 at risk
-    expect(offers[0].insuredAmount).toBe(40);
+    expect(offers[0].insuredAmount).toBe(300);
+    expect(offers[0].atRisk).toBe(40);
   });
 
   it('settlement: leader WINS => premium charged, no payout (house keeps premium)', () => {
@@ -90,7 +118,7 @@ describe('InsuranceEngine.createOffers', () => {
     expect(s.premium - s.payout).toBeGreaterThan(0);
   });
 
-  it('settlement: leader LOSES => insured amount paid out', () => {
+  it('settlement: leader LOSES => insured amount paid out, fee WAIVED (parity 2026-08-28)', () => {
     const offers = offerLeader(e);
     const insured = offers[0].insuredAmount;
     expect(e.accept('t1', LEADER)).toBe(true);
@@ -98,6 +126,8 @@ describe('InsuranceEngine.createOffers', () => {
     const s = settlements[0];
     expect(s.won).toBe(true);
     expect(s.payout).toBe(insured);
+    // Dan's ruling: "For Losing: <insured pot>" is literal — no fee on a loss.
+    expect(s.premium).toBe(0);
   });
 
   it('per-street: accepted coverage is preserved (leader not re-offered)', () => {
@@ -122,10 +152,10 @@ describe('InsuranceEngine.createOffers', () => {
 // ═══════════════════════════════════════════════════════════════════════════
 import { insuranceEquity } from './InsuranceEquity.js';
 
-describe('InsuranceEngine pricing — chop-aware (PRICING FIX 2026-08-18)', () => {
+describe('InsuranceEngine pricing - chop-aware (PRICING FIX 2026-08-18)', () => {
   const c = (r: string, s2: string) => ({ rank: r, suit: s2 }) as never;
 
-  it('a guaranteed chop is uninsurable — no offer at all', () => {
+  it('a guaranteed chop is uninsurable - no offer at all', () => {
     const e = new InsuranceEngine();
     e.configure('t1', { enabled: true, houseMargin: 1.2, offerTimeoutSeconds: 15 });
     // Identical rank hole cards on a board neither can beat: every runout chops.
@@ -144,7 +174,7 @@ describe('InsuranceEngine pricing — chop-aware (PRICING FIX 2026-08-18)', () =
     expect(offers).toHaveLength(0);
   });
 
-  it('a chop-dominated spot prices conditional on the hand being live (push refunds)', () => {
+  it('a coinflip-given-live spot is UNINSURABLE - fee would reach the payout (2026-08-28)', () => {
     // AsKs vs AdKd, board 2d 7s 9c: each side has exactly ONE live suit
     // (one board card of it) - runner-runner flush either way, ~91% chop.
     // The contract refunds the premium on every chop, so the price is
@@ -175,13 +205,12 @@ describe('InsuranceEngine pricing — chop-aware (PRICING FIX 2026-08-18)', () =
       200,
       'nlh'
     );
-    expect(offers).toHaveLength(1);
-    const premium = offers[0].fullPremium;
-    const expected = Math.round(100 * (r.strictLossPct / (100 - r.pushPct)) * 1.2 * 100) / 100;
-    expect(premium).toBeCloseTo(expected, 2);
-    // Symmetric live-suit spot: loss-given-not-push is a coinflip -> ~60.
-    expect(premium).toBeGreaterThan(55);
-    expect(premium).toBeLessThan(65);
+    // POKERBROS PARITY 2026-08-28: with the fee collected only on a WIN,
+    // pricing this coinflip-given-live spot gives fee = insured * 0.5/0.5 *
+    // 1.2 = 1.2x the payout. A contract where you pay more than the most you
+    // can ever get back is not a product — the engine refuses to offer it
+    // (uninsurable guard: fee >= insured means no offer).
+    expect(offers).toHaveLength(0);
   });
 
   it('a leader who cannot strictly lose gets no offer (free premium is not a product)', () => {
@@ -221,7 +250,7 @@ describe('InsuranceEngine pricing — chop-aware (PRICING FIX 2026-08-18)', () =
 // DAN'S RULES (2026-08-18): "insurance is only allowed for running it once;
 // if the pot is chopped, insurance is voided." Every chop shape pinned.
 // ═══════════════════════════════════════════════════════════════════════════
-describe('settlement — chop shapes (Dan: chopped pot voids insurance)', () => {
+describe('settlement - chop shapes (Dan: chopped pot voids insurance)', () => {
   let e: InsuranceEngine;
   beforeEach(() => {
     e = mkEngine();
@@ -248,7 +277,40 @@ describe('settlement — chop shapes (Dan: chopped pot voids insurance)', () => 
     const s = settlements[0];
     expect(s.won).toBe(true);
     expect(s.payout).toBe(offers[0].insuredAmount);
-    expect(s.premium).toBeGreaterThan(0);
+    // POKERBROS PARITY 2026-08-28: a loss pays the insured amount fee-free.
+    expect(s.premium).toBe(0);
+  });
+
+  it('a timed-out offer is a FINAL decline (POKERBROS PARITY 2026-08-26)', () => {
+    // Dan: "IF A PLAYER DECLINES, THEY DON'T GET OFFERED AGAIN." A timeout is
+    // a decline, so the expiry callback must mark declinedForHand.
+    const fired: Array<() => void> = [];
+    const capturingScheduler = {
+      start() {},
+      schedule(entry: { callback: () => void }) {
+        fired.push(entry.callback);
+      },
+      cancel() {},
+    } as unknown as DeadlineScheduler;
+    const eng = new InsuranceEngine(undefined, capturingScheduler);
+    eng.configure('t1', { enabled: true, houseMargin: 1.2, maxInsurablePercent: 100 });
+    eng.createOffers(
+      't1',
+      't1:1',
+      LEADER,
+      [
+        { playerId: LEADER, holeCards: leaderCards, atRisk: 100 },
+        { playerId: OPP, holeCards: oppCards, atRisk: 100 },
+      ],
+      board,
+      300,
+      'nlh'
+    );
+    expect(fired).toHaveLength(1);
+    fired[0](); // the offer window expires
+    const offers = eng.getOffers('t1');
+    expect(offers[0].status).toBe('declined');
+    expect(offers[0].declinedForHand).toBe(true);
   });
 
   it('leader among MULTIPLE winners (e.g. side-pot split) => VOID, never double-paid', () => {

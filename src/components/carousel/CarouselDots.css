@@ -31,14 +31,6 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
-.dot:hover {
-  background: linear-gradient(180deg, rgba(232, 236, 240, 0.7) 0%, rgba(160, 167, 174, 0.7) 100%);
-  transform: translateY(-2px);
-  box-shadow:
-    0 2px 8px rgba(196, 203, 210, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.28);
-}
-
 .dot.active {
   width: 24px;
   border-radius: 4px;
@@ -57,10 +49,6 @@
     0 1px 3px rgba(0, 0, 0, 0.45),
     inset 0 1px 0 rgba(255, 255, 255, 0.85),
     inset 0 -1px 0 rgba(0, 0, 0, 0.28);
-}
-
-.dot.active:hover {
-  transform: none; /* the pill is where you already are; it should not bob */
 }
 
 .carousel-counter {
@@ -92,9 +80,5 @@
 @media (prefers-reduced-motion: reduce) {
   .dot {
     transition: none;
-  }
-
-  .dot:hover {
-    transform: none;
   }
 }

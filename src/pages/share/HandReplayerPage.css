@@ -12,7 +12,14 @@
   align-items: center;
   justify-content: center;
   position: relative;
-  overflow: hidden;
+  /* 2026-08-23: was `overflow: hidden` — the page body may clip sideways
+     overflow only; vertical scroll must stay available on phones */
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
   padding: var(--space-4);
 }
 
@@ -227,13 +234,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.player-info-pod:hover {
-  background: rgba(0, 0, 0, 0.7);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 0 10px rgba(255, 215, 0, 0.2);
-}
-
 .player-name {
   display: block;
   font-size: var(--fs-xs);
@@ -335,15 +335,6 @@
   cursor: pointer;
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.ctrl-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: var(--fb-blue);
-  transform: translateY(-2px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 8px 16px rgba(255, 255, 255, 0.15);
 }
 
 .ctrl-btn.play {
@@ -479,11 +470,6 @@
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
 
-.tab-btn:hover {
-  border-color: rgba(6, 182, 212, 0.5);
-  color: var(--fb-blue);
-}
-
 .tab-btn.active {
   background: var(--fb-blue);
   border-color: var(--fb-blue);
@@ -598,10 +584,6 @@
   transition: all 0.2s;
 }
 
-.view-btn:hover {
-  color: white;
-}
-
 .view-btn.active {
   background: var(--fb-blue);
   color: white;
@@ -671,11 +653,34 @@
   cursor: pointer;
 }
 
-.timeline-step:hover {
-  transform: scale(1.5);
-  background: rgba(255, 255, 255, 0.8);
-}
-
 .timeline-step.active {
   background: var(--fb-blue);
+}
+
+/* ─── 2026-08-23 mobile-optimization pass ─── */
+@media (max-width: 768px) {
+  .hand-replayer {
+    /* clear the fixed app bottom nav + notch */
+    padding-bottom: max(70px, env(safe-area-inset-bottom));
+    /* the absolute sound/view controls sit top-right; keep the tab row clear */
+    padding-top: 64px;
+  }
+
+  .tab-btn,
+  .view-btn,
+  .share-btn {
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .sound-toggle,
+  .ctrl-btn,
+  .timeline-step {
+    touch-action: manipulation;
+  }
+
+  /* wide analysis panels must never force the page sideways */
+  .analysis-container {
+    max-width: 100%;
+  }
 }

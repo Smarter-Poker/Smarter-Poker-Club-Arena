@@ -11,11 +11,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
-import {
-  readLocalSession as readLocalSessionShared,
-  getTokenExpiry,
-  AUTH_STORAGE_KEY,
-} from './authUtils';
+import { readLocalSession as readLocalSessionShared, AUTH_STORAGE_KEY } from './authUtils';
 import { reportError } from '../utils/errorReporter';
 
 // Environment validation - follows VITE_ prefix law
@@ -39,20 +35,67 @@ if (!supabaseUrl || !supabaseAnonKey) {
 // enforces from the connection URL. See the note on the value below.
 export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
   auth: {
+    // ════════════════════════════════════════════════════════════════════════
+    // autoRefreshToken IS THE ONE AND ONLY REFRESHER IN THIS APP.
+    // ════════════════════════════════════════════════════════════════════════
+    // Do not add a setInterval refresher, a visibilitychange refresher, or a
+    // hand-rolled POST to /auth/v1/token beside it. Supabase refresh tokens
+    // ROTATE: the old token dies the moment a refresh succeeds, so a second
+    // refresher holding the previous value gets
+    //   "Invalid Refresh Token: Refresh Token Not Found"
+    // and the SDK treats that as a dead session. See the block removed from
+    // the bottom of this file on 2026-09-01.
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
     storageKey: 'smarter-poker-auth', // MUST match Hub for SSO
     flowType: 'implicit', // Avoids PKCE lock contention
-    // CRITICAL: Bypass navigator.locks to prevent getSession() deadlock.
-    // The default lock implementation acquires an exclusive Web Lock that
-    // never releases if the initial getSession() network call is slow,
-    // causing every subsequent auth operation to deadlock permanently.
-    // Runtime: immediately invokes fn() without acquiring any Web Lock.
-    // Cast bypasses LockFunc type incompatibility — the type varies across
-    // @supabase/supabase-js minor versions (generic vs. concrete overloads).
-
-    lock: (async (_name: any, _acquireTimeout: any, fn: any) => fn()) as any,
+    // ════════════════════════════════════════════════════════════════════════
+    // NO `lock` OVERRIDE HERE — THE DEFAULT navigator.locks IMPLEMENTATION IS
+    // LOad-BEARING. (2026-09-01)
+    // ════════════════════════════════════════════════════════════════════════
+    // This slot used to hold
+    //     lock: (async (_name, _acquireTimeout, fn) => fn()) as any,
+    // i.e. "run the critical section immediately, acquire nothing", added to
+    // dodge a suspected getSession() deadlock.
+    //
+    // That override is what let the Hub and Club Arena clobber each other's
+    // rotating refresh token. Both deployments are served from the same origin
+    // and share the storageKey above, so the SDK's Web Lock is the ONLY thing
+    // serialising their refreshes. With the lock stubbed out, two clients could
+    // read the same refresh_token and POST it concurrently: whichever landed
+    // second presented an already-rotated token and got
+    //   "Invalid Refresh Token: Refresh Token Not Found",
+    // and a half-written session in the shared key produced
+    //   "crypto: refresh token length is not valid".
+    // The resulting signOut() removed the shared key, whose `storage` event
+    // then bounced every other open tab to /auth/login?redirect= .
+    //
+    // If a lock-related hang is ever observed again, fix it with a timeout on
+    // the acquisition — never by disabling cross-tab serialisation while two
+    // apps share one storage key.
+  },
+  global: {
+    // 2026-08-31: retry 503s PostgREST emits BEFORE executing the request
+    // (PGRST001/002/003 — connection/schema-cache/pool). During a schema-cache
+    // reload these otherwise fail live seating and dealing. Safe for POSTs:
+    // the statement was never run. The retry loop lives in
+    // src/lib/pgrstRetryFetch.ts and is dynamically imported on the FIRST
+    // retryable 503, so the entry bundle only pays for this shim (Track
+    // Bundle Size sits within ~1kB of its 320kB budget).
+    fetch: async (input, init) => {
+      const resp = await globalThis.fetch(input, init);
+      if (resp.status !== 503) return resp;
+      let code: unknown;
+      try {
+        code = (await resp.clone().json())?.code;
+      } catch {
+        return resp; // non-JSON 503 (gateway/maintenance) — not ours to retry
+      }
+      if (code !== 'PGRST001' && code !== 'PGRST002' && code !== 'PGRST003') return resp;
+      const { retryPgrst503 } = await import('./pgrstRetryFetch');
+      return retryPgrst503(input, init, resp);
+    },
   },
   realtime: {
     params: {
@@ -77,6 +120,23 @@ export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '', {
  * which timed out after 10s every time, making page loads 10+ seconds.
  * Now: getSession() is instant (reads localStorage), so we use that immediately.
  */
+/**
+ * 2026-09-01: the background `supabase.auth.getUser()` "nudge" that used to run
+ * on the fast path below is GONE.
+ *
+ * It had already been throttled to one call a minute (it was firing 13 times
+ * on a single tournament page load, up to 492ms each, every result discarded).
+ * The throttle made it cheap; it did not make it correct. `getUser()` validates
+ * the access token against GoTrue and, when that token is near expiry, drives
+ * the SDK toward a refresh — a refresh the client performs anyway on its own
+ * timer, because `autoRefreshToken: true` is set above.
+ *
+ * With the Web Lock restored, a nudge is not dangerous the way it was. It is
+ * simply another caller poking a rotating refresh token for no benefit, on a
+ * key shared with the Hub. `getSession()` on the line below already returns the
+ * session from storage, and the SDK refreshes it on schedule. Nothing here
+ * needs a network round-trip.
+ */
 export async function getAuthUser(timeoutMs = 5000) {
   // FAST PATH: getSession() reads from localStorage — instant, no network call
   try {
@@ -85,8 +145,7 @@ export async function getAuthUser(timeoutMs = 5000) {
       error: sessionError,
     } = await supabase.auth.getSession();
     if (session?.user) {
-      // Fire getUser() in background to refresh the token if needed — don't await
-      supabase.auth.getUser().catch(() => {});
+      // No background nudge here — autoRefreshToken is the single refresher.
       return { data: { user: session.user }, error: null };
     }
     if (sessionError) {
@@ -105,7 +164,22 @@ export async function getAuthUser(timeoutMs = 5000) {
     return await Promise.race([userPromise, timeoutPromise]);
   } catch (err) {
     console.warn('[getAuthUser] getUser() also failed:', err);
-    return { data: { user: null }, error: err };
+    /**
+     * `failed: true` distinguishes "THE READ BROKE" from "there is no user"
+     * (Dan 2026-08-28 round 2).
+     *
+     * Both outcomes previously arrived as `{ data: { user: null } }`, and
+     * callers cannot tell a signed-out visitor from a five-second timeout by
+     * looking at a null. ClubHomePage acted on that null by navigating to
+     * `/invite/:clubId` — so a slow network, on a client that had a perfectly
+     * good session, threw a SEATED PLAYER off /table/* with no gesture at all,
+     * taking the action bar and every running table's container with it.
+     *
+     * A missing user is a fact. A failed read is not evidence of anything, and
+     * nothing destructive should be built on it. Existing callers reading only
+     * `data` / `error` are unaffected.
+     */
+    return { data: { user: null }, error: err, failed: true as const };
   }
 }
 
@@ -150,98 +224,38 @@ if (typeof window !== 'undefined') {
   // (duplicate calls cause navigator.locks deadlock)
 
   // ══════════════════════════════════════════════════════════════════════════
-  // PROACTIVE TOKEN REFRESH — Prevents session expiration from ever logging out
+  // REMOVED 2026-09-01 — "PROACTIVE TOKEN REFRESH" (setInterval + visibilitychange)
   // ══════════════════════════════════════════════════════════════════════════
-  // Supabase's autoRefreshToken only refreshes when getSession() is called or
-  // on a timer that can miss if the tab is backgrounded. This proactive refresh
-  // checks the JWT expiry every 60 seconds and triggers a refresh 5 minutes
-  // before expiry, ensuring the user NEVER gets logged out due to token expiry.
-  const REFRESH_CHECK_INTERVAL = 60_000; // Check every 60 seconds
-  const REFRESH_BUFFER = 5 * 60_000; // Refresh 5 minutes before expiry
-  let lastRefreshAttempt = 0;
-  const REFRESH_DEBOUNCE = 5_000; // 5s debounce to prevent duplicate refreshes
-
-  // getTokenExpiry is now imported from lib/authUtils — single source of truth
-
-  setInterval(() => {
-    try {
-      const raw = localStorage.getItem(NEW_SHARED_KEY);
-      if (!raw) return;
-      const data = JSON.parse(raw);
-      const token = data?.access_token;
-      if (!token || typeof token !== 'string') return;
-
-      const expiresAt = getTokenExpiry(token);
-      if (!expiresAt) return; // Malformed JWT — skip
-      const timeUntilExpiry = expiresAt - Date.now();
-
-      // Debounce: skip if we refreshed recently
-      if (Date.now() - lastRefreshAttempt < REFRESH_DEBOUNCE) return;
-
-      if (timeUntilExpiry < REFRESH_BUFFER && timeUntilExpiry > 0) {
-        lastRefreshAttempt = Date.now();
-        console.debug(
-          `[Supabase] Proactive token refresh - expires in ${Math.round(timeUntilExpiry / 1000)}s`
-        );
-        supabase.auth.refreshSession().catch((err) => {
-          console.warn('[Supabase] Proactive refresh failed:', err);
-        });
-      } else if (timeUntilExpiry <= 0) {
-        lastRefreshAttempt = Date.now();
-        // Token already expired — try to refresh anyway
-        console.warn('[Supabase] Token expired - attempting emergency refresh');
-        supabase.auth.refreshSession().catch((err) => {
-          reportError(err, 'supabase.Emergency_refresh_failed');
-          // If refresh token is dead, force signOut to prevent zombie session
-          if (
-            String(err).includes('Invalid Refresh Token') ||
-            String(err).includes('invalid_grant')
-          ) {
-            reportError(
-              new Error('[Supabase] Refresh token is dead - forcing sign out'),
-              'supabase.Refresh_token_is_dead__forcing_sign_out'
-            );
-            supabase.auth
-              .signOut()
-              .catch((e) => console.warn('[Supabase] Failed to force sign out:', e));
-          }
-        });
-      }
-    } catch (e) {
-      reportError(e, 'supabase');
-      // Silent — best effort
-    }
-  }, REFRESH_CHECK_INTERVAL);
-
-  // Also refresh when the tab becomes visible (user returns from another tab)
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) {
-      try {
-        // Debounce: skip if interval just refreshed
-        if (Date.now() - lastRefreshAttempt < REFRESH_DEBOUNCE) return;
-
-        const raw = localStorage.getItem(NEW_SHARED_KEY);
-        if (!raw) return;
-        const data = JSON.parse(raw);
-        const token = data?.access_token;
-        if (!token || typeof token !== 'string') return;
-
-        const expiresAt = getTokenExpiry(token);
-        if (!expiresAt) return; // Malformed JWT
-        const timeUntilExpiry = expiresAt - Date.now();
-
-        // If less than 10 minutes until expiry, refresh on tab focus
-        if (timeUntilExpiry < 10 * 60_000) {
-          lastRefreshAttempt = Date.now();
-          console.debug('[Supabase] Tab visible - refreshing session proactively');
-          supabase.auth.refreshSession().catch((e) => {
-            console.warn('[Supabase] Proactive refresh on tab focus failed:', e);
-          });
-        }
-      } catch (e) {
-        reportError(e, 'supabase.addEventListener');
-        // Silent
-      }
-    }
-  });
+  // A module-level `setInterval(..., 60_000)` used to live here. Every minute it
+  // read the shared 'smarter-poker-auth' key, decoded the JWT expiry, and called
+  // `supabase.auth.refreshSession()` when the token was within 5 minutes of
+  // expiring (or already expired). A `visibilitychange` listener did the same on
+  // tab focus, with a 10-minute window. On `invalid_grant` / `Invalid Refresh
+  // Token` the expired branch then called `supabase.auth.signOut()` to "prevent
+  // a zombie session".
+  //
+  // Every part of that was actively harmful:
+  //
+  //   * It duplicated `autoRefreshToken: true`, which is set on this very
+  //     client. Refresh tokens ROTATE — the old value is invalidated the instant
+  //     a refresh succeeds — so two refreshers sharing one token is not
+  //     redundancy, it is a race. The loser presents a rotated token and gets
+  //     "Invalid Refresh Token: Refresh Token Not Found".
+  //
+  //   * It ran at MODULE SCOPE, so it fired once per tab, in a page that shares
+  //     its storageKey with the Hub — every open tab racing the same token.
+  //
+  //   * Its own error handler escalated the race into a logout: signOut()
+  //     removes the shared key, and the resulting cross-tab `storage` event
+  //     bounced EVERY open tab to /auth/login?redirect= . One transient refresh
+  //     failure logged the user out everywhere.
+  //
+  // The stated justification — "autoRefreshToken can miss if the tab is
+  // backgrounded" — is not a reason to add a second refresher. The SDK reconciles
+  // on visibility change itself, and a token that did expire while backgrounded
+  // is refreshed on the next call through the (locked, serialised) SDK path.
+  //
+  // DO NOT REINSTATE. If session expiry is ever suspected again, instrument the
+  // SDK's own TOKEN_REFRESHED / SIGNED_OUT events via onAuthStateChange first —
+  // do not add a competing refresher.
 }

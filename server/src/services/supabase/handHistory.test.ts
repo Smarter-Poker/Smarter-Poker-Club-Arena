@@ -134,8 +134,8 @@ beforeEach(async () => {
   mockReportError.mockReset();
 });
 
-describe('logHandHistory — the hot path', () => {
-  it('writes ONE row — the guaranteed-400 4-tier attempt is gone', async () => {
+describe('logHandHistory - the hot path', () => {
+  it('writes ONE row - the guaranteed-400 4-tier attempt is gone', async () => {
     const res = await logHandHistory(params());
 
     expect(res.handId).toBe('inserted');
@@ -148,9 +148,42 @@ describe('logHandHistory — the hot path', () => {
     expect(row).not.toHaveProperty('player_summaries');
     expect(row).not.toHaveProperty('dispute_review');
     expect(row.hand_number).toBe(GLOBAL_HAND);
+    expect(row.daily_mission_events).toBeNull();
   });
 
-  it('COSTS EXACTLY ONE ROUND TRIP WHEN IT FAILS — it must never stall the table', async () => {
+  it('persists immutable Daily Missions facts on the retryable hand row', async () => {
+    const dailyMissionEvents = [
+      {
+        user_id: 'u1',
+        amounts: { hands_played: 1, hands_won: 1, chips_won: 38 },
+        magnitudes: { big_pots: 38 },
+      },
+    ];
+    await logHandHistory({ ...params(GLOBAL_HAND + 70), dailyMissionEvents });
+    expect(inserts().at(-1)!.row!.daily_mission_events).toEqual(dailyMissionEvents);
+  });
+
+  it('persists RIT boards first-class, and single-run hands write NULL (2026-08-26)', async () => {
+    // Migration 20260826_hand_history_rit_boards: boards 2..N go to their own
+    // column. A single-run hand writes NULL — not [] — so the millions of
+    // historical rows and a normal hand look identical to readers.
+    const single = await logHandHistory(params(GLOBAL_HAND + 71));
+    expect(single.handId).toBe('inserted');
+    expect(inserts().at(-1)!.row!.rit_boards).toBeNull();
+
+    const withBoards = {
+      ...params(GLOBAL_HAND + 72),
+      ritBoards: [
+        ['Ahearts', 'Kdiamonds', 'Qspades', 'Jclubs', '10hearts'],
+        ['2clubs', '3clubs', '4clubs', '5clubs', '6clubs'],
+      ],
+    };
+    const multi = await logHandHistory(withBoards);
+    expect(multi.handId).toBe('inserted');
+    expect(inserts().at(-1)!.row!.rit_boards).toEqual(withBoards.ritBoards);
+  });
+
+  it('COSTS EXACTLY ONE ROUND TRIP WHEN IT FAILS - it must never stall the table', async () => {
     // This is the regression guard for the review finding that mattered most.
     //
     // The first version retried 3x in line with an existence pre-check before
@@ -205,6 +238,23 @@ describe('logHandHistory — the hot path', () => {
     await drainHandHistoryQueue();
 
     expect((inserts()[0].row!.actions as unknown[]).length).toBe(2);
+  });
+
+  it('retains Daily Missions facts when a failed hand insert drains later', async () => {
+    const p = {
+      ...params(GLOBAL_HAND + 73),
+      dailyMissionEvents: [{ user_id: 'u1', amounts: { hands_played: 1 }, magnitudes: {} }],
+    };
+    insertResults = [{ data: null, error: { message: 'timeout' } }];
+    await logHandHistory(p);
+    p.dailyMissionEvents.length = 0;
+
+    calls.length = 0;
+    insertResults = [{ data: { id: 'late-id' }, error: null }];
+    await drainHandHistoryQueue();
+    expect(inserts()[0].row!.daily_mission_events).toEqual([
+      { user_id: 'u1', amounts: { hands_played: 1 }, magnitudes: {} },
+    ]);
   });
 
   it('reports rather than silently dropping a hand number below the global floor', async () => {
@@ -295,7 +345,7 @@ describe('the background drain', () => {
   it('does not lose the rest of the batch when one entry throws', async () => {
     await queueOne(GLOBAL_HAND);
     await queueOne(GLOBAL_HAND + 1);
-    let n = 0;
+    const n = 0;
     insertResults = [];
     // Make the first insert throw outright rather than return an error.
     const original = existingByHandNumber;
@@ -320,9 +370,9 @@ describe('the background drain', () => {
       await drainHandHistoryQueue();
     }
     expect(handHistoryQueueDepth()).toBe(0);
-    expect(
-      mockReportError.mock.calls.some((c) => String(c[1]).includes('retry_exhausted'))
-    ).toBe(true);
+    expect(mockReportError.mock.calls.some((c) => String(c[1]).includes('retry_exhausted'))).toBe(
+      true
+    );
   });
 
   it('a second caller JOINS the in-flight drain instead of getting a no-op', async () => {
@@ -418,7 +468,12 @@ describe('buildHandHistoryTiers (Bible V8 §2.18, derived not stored)', () => {
     community_cards: ['As', 'Kd', '7c'],
     button_seat: 3,
     created_at: '2026-08-20T00:00:00.000Z',
-    hole_cards: { u1: [{ rank: 'A', suit: 'spades' }, { rank: 'K', suit: 'hearts' }] },
+    hole_cards: {
+      u1: [
+        { rank: 'A', suit: 'spades' },
+        { rank: 'K', suit: 'hearts' },
+      ],
+    },
     winners: [{ userId: 'u1', amount: 38, hand: { name: 'Two Pair', ranking: 3 } }],
     // NOTE: stack here is the POST-settlement stack — u1 has already been paid.
     players: [
@@ -452,7 +507,7 @@ describe('buildHandHistoryTiers (Bible V8 §2.18, derived not stored)', () => {
     expect(tiers.dispute_review.revealed_hole_cards).toHaveProperty('u1');
   });
 
-  it('does NOT call the stored stack a starting stack — it is post-settlement', () => {
+  it('does NOT call the stored stack a starting stack - it is post-settlement', () => {
     const [winner] = buildHandHistoryTiers(storedRow).player_summaries;
     // Settlement mutates SeatedPlayer.stack in place before the row is written,
     // so 118 already includes the 38 that was just won.

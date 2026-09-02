@@ -26,12 +26,16 @@ import { realtimeChannelService } from '../services/RealtimeChannelService';
 import { supabase } from '../lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { reportError } from '../utils/errorReporter';
+import { STORAGE_KEYS } from '../lib/storage';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // EVENT TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export type BusEventType =
+  | 'TABLE_CHAT_INSERT'
+  | 'PLAYER_APPEARANCE_CHANGED'
+  | 'CUSTOMIZATION_MUTATION_STATE'
   | 'AUTH_STATE_CHANGED'
   | 'USER_PROFILE_LOADED'
   | 'CLUB_JOINED'
@@ -41,8 +45,16 @@ export type BusEventType =
   // Dan 2026-08-15: the in-table "+" asks MultiTablePage to open a LOBBY tab
   // alongside the running game, instead of navigating the whole app away.
   | 'OPEN_LOBBY_TAB'
+  // Dan 2026-08-25: the tournament lobby's Ranking and Tables tabs ask
+  // MultiTablePage to open a table as an OBSERVER in a new screen, leaving
+  // every screen already open still live. Cap-guarded like every other tab.
+  | 'OPEN_OBSERVE_TABLE'
   | 'TABLE_CAP_BLOCKED'
   | 'BALANCE_UPDATED'
+  // Had a payload in BusPayloadMap but was missing from this union, so five
+  // subscribe sites carried `as any` to compile - which switches OFF payload
+  // checking on a ledger event, the one place a wrong shape is money.
+  | 'TRANSACTION_LOGGED'
   | 'VIP_POINTS_UPDATED'
   | 'WALLET_REFRESHED'
   | 'REALTIME_CONNECTED'
@@ -51,7 +63,8 @@ export type BusEventType =
   | 'HORSE_BUG_REPORT'
   | 'NOTIFICATION_READ'
   | 'WAITLIST_POSITION_CHANGED'
-  | 'WAITLIST_PROMOTED'
+  | 'WAITLIST_CHANGED'
+  | 'WAITLIST_SEAT_OFFERED'
   | 'SESSION_SUMMARY_DISMISSED'
   | 'ACHIEVEMENT_UNLOCKED'
   | 'MISSION_PROGRESS'
@@ -65,8 +78,6 @@ export type BusEventType =
   | 'PREFLOP_WIN'
   | 'FLUSH_WIN'
   | 'PLAY_MINUTES'
-  // Phase 5: Card color customization
-  | 'CARD_COLOR_CHANGED'
   // Phase 8: Diamond economy bus event
   | 'DIAMOND_BALANCE_CHANGED'
   // Social & Messaging events
@@ -88,6 +99,7 @@ export type BusEventType =
   | 'COMMISSION_PAID'
   | 'SETTLEMENT_COMPLETED'
   | 'FINANCIAL_ALERT'
+  | 'BBJ_HIT_GLOBAL'
   // Tournament lifecycle events
   | 'PLAYER_ELIMINATED'
   | 'TABLE_MERGED'
@@ -185,6 +197,8 @@ export type BusEventType =
   // Phase 6: Card Back Store events
   | 'SETTINGS_CHANGED'
   | 'DIAMOND_SPENT'
+  | 'COSMETIC_OWNERSHIP_CHANGED'
+  | 'ENTITLEMENTS_CHANGED'
   // Gamification engagement events (Session Build)
   | 'SETTLEMENT_RECEIPT_COPIED'
   | 'CHALLENGE_PROGRESS_UPDATED'
@@ -282,8 +296,11 @@ export type BusEventType =
   | 'PLAYER_LEFT'
   | 'RAKEBACK_CLAIMED'
   | 'CLUB_SETTINGS_UPDATED'
+  | 'TICKER_SETTINGS_CHANGED'
+  | 'GAME_MANAGEMENT_ACCESS_CHANGED'
   // Phase 4 deep-sweep: Backported overlay + theme events
-  | 'MYSTERY_BOUNTY_REVEALED'
+  // (MYSTERY_BOUNTY_REVEALED removed 2026-08-26: zero subscribers ever; the
+  // celebration listens to the server's t-break channel directly.)
   | 'UI_THEME_CHANGED'
   // Phase 8 Deep Sweep: flash pool game state event
   | 'GAME_STATE_UPDATED'
@@ -332,10 +349,64 @@ export type BusEventType =
   | 'TABLE_UNLOCKED'
   | 'RABBIT_HUNT_AVAILABLE'
   | 'ALL_IN_EQUITY'
-  | 'ONLINE_COUNT';
+  | 'ONLINE_COUNT'
+  // 2026-08-29 hardening pass: shell-freshness telemetry. The SW's bounded
+  // freshness race (sw-bus.js) and useShellUpdateGate's verified reloads are
+  // invisible when they work — these two events are how we KNOW the
+  // open-from-Hub glitch stays dead instead of believing it.
+  | 'SHELL_STALENESS_CHECKED'
+  | 'SHELL_RELOADED';
 
 // #13: Type-safe payload map — compile-time enforcement of correct payloads
 export interface BusPayloadMap {
+  /**
+   * 2026-08-29: a shell staleness verification completed (useShellUpdateGate).
+   * `stale: false` is the win condition — the running bundle matched the
+   * deployed one, so no reload was owed. The RATE of stale results per source
+   * is the KPI for the open-from-Hub glitch fix: it should be near zero on
+   * 'shell-updated'/'controllerchange' (the SW race served the fresh shell)
+   * and small on 'resume-probe' (long-lived PWA sessions catching up).
+   */
+  SHELL_STALENESS_CHECKED: {
+    stale: boolean;
+    source: 'shell-updated' | 'controllerchange' | 'resume-probe';
+    running: string | null;
+    deployed: string | null;
+  };
+  /** 2026-08-29: the gate actually reloaded the page to adopt a new shell. */
+  SHELL_RELOADED: { pageAgeMs: number };
+  TABLE_CHAT_INSERT: { tableId: string; newRow: Record<string, unknown> };
+  /**
+   * A seated player's render-only identity changed. This event deliberately
+   * carries no stack, cards, action or seat data: the game engine remains the
+   * only authority for gameplay state. Pickers emit it optimistically so every
+   * mounted table repaints in the tap frame; the seat-scoped profiles realtime
+   * channel reconciles the durable cross-device value.
+   */
+  PLAYER_APPEARANCE_CHANGED: {
+    userId: string;
+    avatar?: string;
+    frame?: string | null;
+    aura?: string | null;
+    /** Links the optimistic paint or rollback to its ordered durable write. */
+    mutationId?: string;
+    source: 'avatar-picker' | 'cosmetic-picker' | 'rollback';
+  };
+  /** Orders optimistic visual state against asynchronous database echoes. */
+  CUSTOMIZATION_MUTATION_STATE: {
+    kind: 'table-appearance' | 'player-appearance' | 'user-table-setting';
+    scope: string;
+    mutationId: string;
+    /**
+     * `save-failed` (2026-08-29) is a TERMINAL state that is not a rollback:
+     * the write was lost after its retries and the user's value was KEPT on
+     * screen anyway (Dan: "NEVER REGRESS OR AUTO CHANGE BACK"). Subscribers
+     * that clear pending state on any non-`pending` state already handle it
+     * correctly; only one that specifically watches for `rolled-back` needs to
+     * know the difference.
+     */
+    state: 'pending' | 'confirmed' | 'rolling-back' | 'rolled-back' | 'save-failed';
+  };
   AUTH_STATE_CHANGED: AuthStatePayload;
   USER_PROFILE_LOADED: { avatarUrl?: string; displayName?: string; userId?: string };
   CLUB_JOINED: ClubEventPayload;
@@ -344,6 +415,14 @@ export interface BusPayloadMap {
   TABLE_LEFT: TableEventPayload;
   /** Request that MultiTablePage open a lobby tab beside the running game. */
   OPEN_LOBBY_TAB: { requestedBy?: string };
+  /**
+   * Open a table as an observer in a NEW screen without disturbing the screens
+   * already open. `tableName` is cosmetic (the tab label before the engine
+   * reports the real one). Honours the same MAX_TABLES cap as every other tab:
+   * at the cap this is refused with the standard cap notice, never silently
+   * dropped, and never by closing a screen the player is using.
+   */
+  OPEN_OBSERVE_TABLE: { tableId: string; tableName?: string; stakes?: string };
   /** Dan 2026-08-21: a seat could not be opened because the player is at
    *  the 4-table cap. TournamentAutoSeat turns this into the large popup. */
   TABLE_CAP_BLOCKED: { tableId: string };
@@ -357,7 +436,15 @@ export interface BusPayloadMap {
   HORSE_BUG_REPORT: Record<string, unknown>;
   NOTIFICATION_READ: { notifId: string | null; allRead: boolean };
   WAITLIST_POSITION_CHANGED: { tableId: string; position: number; tableName: string };
-  WAITLIST_PROMOTED: { tableId: string; userId: string; tableName: string };
+  /**
+   * An EXCLUSIVE seat hold has just been granted to this player (Dan
+   * 2026-08-30: sixty seconds to get to the seat). `holdExpiresAt` is an ISO
+   * instant, not a duration, so a component that mounts late - or a tab that
+   * was in the background - shows the true remaining time rather than
+   * restarting the clock at sixty.
+   */
+  WAITLIST_SEAT_OFFERED: { tableId: string; tableName: string; holdExpiresAt: string | null };
+  WAITLIST_CHANGED: void;
   SESSION_SUMMARY_DISMISSED: { tableId: string };
   ACHIEVEMENT_UNLOCKED: {
     userId: string;
@@ -392,8 +479,6 @@ export interface BusPayloadMap {
   PREFLOP_WIN: { handId: string; playerId: string };
   FLUSH_WIN: { handId: string; playerId: string };
   PLAY_MINUTES: { minutes: number };
-  // UI customization
-  CARD_COLOR_CHANGED: { preset: string };
   // Phase 8: Diamond economy
   DIAMOND_BALANCE_CHANGED: { newBalance: number; delta: number; source: string };
   // Social & Messaging
@@ -430,6 +515,21 @@ export interface BusPayloadMap {
     message: string;
     context: Record<string, unknown>;
     timestamp: string;
+  };
+  BBJ_HIT_GLOBAL: {
+    tableId: string;
+    tableName: string;
+    gameVariant: string;
+    bigBlind: number;
+    winnerName: string;
+    amount: number;
+    /* 2026-08-26: the hit's own identity and emission time, so the receiver
+       de-duplicates on WHICH hit this is rather than on when it arrived —
+       the fix for the jackpot re-announcing on every page refresh. Optional
+       because a producer without a hand number still de-duplicates by table;
+       see lib/bbjHitOnce. */
+    handNumber?: number;
+    emittedAt?: number;
   };
   // Tournament lifecycle events
   PLAYER_ELIMINATED: {
@@ -514,6 +614,14 @@ export interface BusPayloadMap {
     anteAmount: number;
     doubleBoard: boolean;
     bbMultiplier: number;
+    /** TRIPLE-BOARD 2026-08-27: boards actually dealt (1-3); optional for old emitters. */
+    boardCount?: number;
+    /**
+     * VARIANT OVERRIDE 2026-08-28 (spec §10.1): uppercase variant label
+     * (e.g. 'PLO4'), present ONLY when the bomb hand's variant differs from
+     * the table's own game — the intro badges it.
+     */
+    variantLabel?: string;
   };
   BOMB_POT_COMPLETED: { tableId: string };
   // Disconnect protection events
@@ -544,6 +652,33 @@ export interface BusPayloadMap {
   // Tournament timer & rebuy event payloads
   BLIND_LEVEL_CHANGE: {
     tournamentId: string;
+    /**
+     * THE 1-BASED DISPLAY LEVEL. The first level of an event is `1`.
+     *
+     * This is NOT `tournaments.current_level`, which stores the 0-based index
+     * the engine uses on `blindStructure[]`. TournamentTimerService computes
+     * `const displayLevel = newLevel + 1` and emits THAT here while writing the
+     * raw index to the row — see handleLevelChange.
+     *
+     * The distinction was undocumented until 2026-08-29 and ALL THREE consumers
+     * had guessed wrong, each with a comment asserting the opposite ("the
+     * payload carries an index", "TournamentTimerService writes one variable to
+     * both"):
+     *
+     *   TournamentDetails wrote the payload straight into
+     *   `tournament.current_level`, corrupting the shared object every tab
+     *   reads until the next poll overwrote it;
+     *
+     *   TournamentClock added one to an already-1-based number and displayed a
+     *   level TWO ahead;
+     *
+     *   BlindsTab indexed the structure with it and showed the next level's
+     *   blinds, duration and "Next Level" from the instant the engine advanced.
+     *
+     * All three symptoms only appeared between an advance and the next poll,
+     * which is why they read as flicker rather than as one bug. If you need the
+     * index, subtract one.
+     */
     level: number;
     smallBlind: number;
     bigBlind: number;
@@ -689,6 +824,11 @@ export interface BusPayloadMap {
   FLASH_PLAYER_JOINED: { poolId: string; playerId: string; poolSize: number };
   FLASH_PLAYER_SEATED: { poolId: string; playerId: string; tableId: string; seatCount: number };
   FLASH_TRANSITION: { poolId: string; playerId: string; fromTableId: string; direction: string };
+  /* DECLARED ONLY — no emitter and no subscriber anywhere in src/ (checked
+     2026-08-29). Kept rather than deleted because the two SEAT_* entries beside
+     it are kept for the same reason, and a payload type costs nothing; noted so
+     nobody spends time looking for the code that fires it. Its `poolId` shape
+     suggests it was drafted for the BBJ pool surface and never wired. */
   FLASH_SIT_OUT: { poolId: string; playerId: string };
   FLASH_SIT_BACK: { poolId: string; playerId: string };
   FLASH_PLAYER_LEFT: { poolId: string; playerId: string; cashout: number; handsPlayed: number };
@@ -708,8 +848,50 @@ export interface BusPayloadMap {
     equityPercent: number;
   };
   // Phase 6: Card Back Store payloads
-  SETTINGS_CHANGED: { setting: string; value: string | number | boolean };
+  SETTINGS_CHANGED: {
+    setting: string;
+    value: string | number | boolean;
+    /** Account scope for settings persisted outside localStorage. */
+    userId?: string;
+    /**
+     * Which hook instance emitted this, so a receiver can ignore its OWN echo
+     * without a stateful latch. See useTableSettings: the previous
+     * `localOriginRef` boolean got permanently stuck whenever the bus
+     * suppressed a duplicate emit, and silently swallowed the next real
+     * cross-component update.
+     */
+    origin?: string;
+  };
   DIAMOND_SPENT: { amount: number; item: string; category: string };
+  COSMETIC_OWNERSHIP_CHANGED: {
+    userId: string;
+    category: 'theme_id' | 'table_id' | 'button_id' | 'background_id' | 'cards_id' | 'avatar';
+    assetId?: string;
+    source:
+      | 'diamond-purchase'
+      | 'club-purchase'
+      | 'club-redemption'
+      | 'vip-reward'
+      | 'ownership-reconciled'
+      | 'realtime-entitlement';
+  };
+  /**
+   * A paid entitlement was durably delivered. Unlike the cosmetic-only event,
+   * this also covers consumable balances and VIP membership. It is broadcast
+   * cross-tab so an open table updates in the purchase response frame.
+   */
+  ENTITLEMENTS_CHANGED: {
+    userId: string;
+    category: 'time_bank' | 'throwable' | 'emote_pack' | 'table_skin' | 'avatar' | 'vip';
+    assetId?: string;
+    quantity?: number;
+    source:
+      | 'diamond-purchase'
+      | 'club-purchase'
+      | 'club-redemption'
+      | 'vip-purchase'
+      | 'vip-reward';
+  };
   // Gamification engagement events (Session Build)
   SETTLEMENT_RECEIPT_COPIED: { receiptId: string };
   CHALLENGE_PROGRESS_UPDATED: Record<string, unknown>;
@@ -941,18 +1123,24 @@ export interface BusPayloadMap {
   PLAYER_LEFT: { clubId: string; userId?: string; tableId?: string };
   RAKEBACK_CLAIMED: { clubId: string; amount?: number; userId?: string };
   CLUB_SETTINGS_UPDATED: { clubId?: string; setting?: string; value?: unknown };
-  // Phase 4 deep-sweep: overlay + theme payloads
-  MYSTERY_BOUNTY_REVEALED: {
-    playerName?: string;
-    amount: number;
-    tierLabel?: string;
-    isJackpot?: boolean;
-    avgBounty?: number;
-    tournamentId?: string;
-    eliminatedPlayerId?: string;
-    collectorPlayerId?: string;
+  TICKER_SETTINGS_CHANGED: { scope: 'club' | 'union'; scopeId: string };
+  GAME_MANAGEMENT_ACCESS_CHANGED: {
+    scope?: 'club' | 'union';
+    scopeId?: string;
+    clubId?: string;
+    userId?: string;
   };
-  UI_THEME_CHANGED: { key: string; value?: unknown };
+  // Phase 4 deep-sweep: overlay + theme payloads
+  UI_THEME_CHANGED: {
+    key: string;
+    value?: unknown;
+    /** Prevents a customization from another signed-in tab/account leaking in. */
+    userId?: string;
+    /** Present on optimistic paints and their rollbacks; absent on DB echoes. */
+    mutationId?: string;
+    /** Authoritative row clock used to preserve ALL-vs-variant precedence. */
+    updatedAt?: string;
+  };
   // Phase 8 Deep Sweep: flash pool game state event
   GAME_STATE_UPDATED: {
     tableId?: string;
@@ -979,6 +1167,10 @@ export interface BusPayloadMap {
     tableId: string;
     action:
       | 'SIT_OUT'
+      | 'STAND_UP_BB'
+      | 'AUTO_TOP_UP'
+      | 'TOGGLE_SOUNDS'
+      | 'TOGGLE_VIBRATIONS'
       | 'REBUY'
       | 'ADD_ON'
       | 'SESSION_STATS'
@@ -1114,6 +1306,23 @@ class MasterBusCore {
   // SUPABASE CHANNEL REGISTRY — Prevents duplicate subscriptions
   // ═══════════════════════════════════════════════════════════════════════════
   private channelRegistry: Map<string, RealtimeChannel> = new Map();
+  /**
+   * SHARED-CHANNEL REFCOUNT 2026-08-28.
+   *
+   * `getOrCreateChannel` hands the SAME Supabase channel to every consumer of
+   * a key, and `removeRegisteredChannel` used to tear it down unconditionally
+   * — so the first component to unmount silenced it for everyone still
+   * listening. Live shape: a player with the tournament lobby open beside a
+   * table in the same event closes the lobby, and the table stops receiving
+   * `t-break-<id>` break countdowns, add-on windows and bounty reveals for the
+   * rest of the event, with no error anywhere. Four consumers bind that one
+   * key (useMysteryBounty, MysteryBountyCelebration, TournamentLobbyPage,
+   * TablePage), and only one of them even attempted a guard — "I created it"
+   * is not "nobody else is reading it", which is why the guard could not work.
+   *
+   * The count belongs HERE, with the map it protects, not in each caller.
+   */
+  private channelRefs: Map<string, number> = new Map();
   private debouncedTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
   // #4: Channel health monitor interval
@@ -1138,6 +1347,30 @@ class MasterBusCore {
     'SYSTEM_ERROR',
     'AUTH_STATE_CHANGED',
     'DIAMOND_BALANCE_CHANGED',
+    // Every tap is an ordered visual mutation. Suppressing a repeated choice
+    // can strand a rollback or a second mounted table on the prior artwork.
+    'UI_THEME_CHANGED',
+    'PLAYER_APPEARANCE_CHANGED',
+    'SETTINGS_CHANGED',
+    'USER_PROFILE_LOADED',
+    'CUSTOMIZATION_MUTATION_STATE',
+    // A receipt must unlock every mounted picker, even when two rewards grant
+    // the same bundle inside the fingerprint window.
+    'COSMETIC_OWNERSHIP_CHANGED',
+    // Two distinct purchases may legitimately grant the same quantity inside
+    // 500ms. A ledger delivery event must never be fingerprint-deduplicated.
+    'ENTITLEMENTS_CHANGED',
+    // ANIMATION AUDIT 2026-08-27: gameplay-animation events added. These are
+    // engine-fact relays whose payloads can legitimately repeat within 500ms
+    // (two identical antes, an engine re-emit after reconnect, back-to-back
+    // pots of the same size) — deduping them SKIPPED the second animation
+    // with only a console.debug. Dan's rule: no animation is ever skipped.
+    'BOMB_POT_TRIGGERED',
+    'BOMB_POT_COMPLETED',
+    'SHOWDOWN_CARDS_REVEALED',
+    'RIT_OFFERED',
+    'BBJ_HIT',
+    'POT_DISTRIBUTED',
   ];
 
   // #4b Channel factory registry for auto-recovery
@@ -1389,6 +1622,46 @@ class MasterBusCore {
    * Set up internal handlers for cross-store synchronization
    */
   private setupInternalHandlers(): void {
+    // Light/dark mode is part of the same visual system as felt art. Zustand's
+    // persisted store updates the source tab before emitting; this handler is
+    // what applies a BroadcastChannel or database-originated change in every
+    // other mounted tab without calling setTheme() and echoing it back.
+    this.subscribe('UI_THEME_CHANGED', (event) => {
+      if (event.payload.key !== 'theme') return;
+      const activeUserId = useUserStore.getState().user?.id;
+      if (event.payload.userId && event.payload.userId !== activeUserId) return;
+      const theme = event.payload.value;
+      if (theme !== 'light' && theme !== 'dark') return;
+      if (useSettingsStore.getState().theme !== theme) {
+        useSettingsStore.setState({ theme });
+      }
+      /* Keep the full /settings cache coherent too. A profile realtime event
+         used to repaint the app and update Zustand while leaving this separate
+         cache on the old mode; opening Settings then saved that stale value
+         back over the cross-device choice. The source tab has already mirrored
+         this cache before it emits, so only remote/stale events rebroadcast a
+         SETTINGS_UPDATED notification here. */
+      if (typeof localStorage !== 'undefined') {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+          const parsed = raw ? JSON.parse(raw) : {};
+          const current =
+            parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+          if ((current as Record<string, unknown>).theme !== theme) {
+            const next = { ...(current as Record<string, unknown>), theme };
+            localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(next));
+            this.emit('SETTINGS_UPDATED', { settings: next });
+          }
+        } catch (error) {
+          reportError(error, 'MasterBus.Interface_theme_cache_sync_failed');
+        }
+      }
+      if (typeof document !== 'undefined') {
+        document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.style.colorScheme = theme;
+      }
+    });
+
     // When auth state changes, sync user data across stores
     this.subscribe('AUTH_STATE_CHANGED', (event) => {
       const { userId, isAuthenticated } = event.payload;
@@ -1417,15 +1690,20 @@ class MasterBusCore {
     this.subscribe('DIAMOND_BALANCE_CHANGED', () => {
       const user = useUserStore.getState().user;
       if (user) {
-        useWalletStore.getState().loadDiamonds(user.id);
+        // force: this fires BECAUSE the balance changed. The store's freshness
+        // window is there to make component mounts free, not to suppress an
+        // event that exists to report a change.
+        useWalletStore.getState().loadDiamonds(user.id, { force: true });
       }
     });
 
-    // Phase 7: Reload diamond balance after any diamond spend (CardBackSelector purchases, etc.)
+    // Phase 7: Reload diamond balance after any diamond spend (Table Studio purchases, etc.)
     this.subscribe('DIAMOND_SPENT', () => {
       const user = useUserStore.getState().user;
       if (user) {
-        useWalletStore.getState().loadDiamonds(user.id);
+        // force: the player just spent diamonds - the number on screen is known
+        // to be wrong at this instant.
+        useWalletStore.getState().loadDiamonds(user.id, { force: true });
       }
     });
 
@@ -1494,6 +1772,7 @@ class MasterBusCore {
   reset(): void {
     this.subscribers.clear();
     // Clean up all registered Supabase channels
+    this.channelRefs.clear();
     this.channelRegistry.forEach((channel) => {
       supabase.removeChannel(channel);
     });
@@ -1566,11 +1845,16 @@ class MasterBusCore {
    * Get or create a Supabase channel — guarantees exactly one channel per key.
    * If a channel with the same key already exists, returns it.
    */
-  getOrCreateChannel(key: string): RealtimeChannel {
+  getOrCreateChannel(key: string, options?: { private?: boolean }): RealtimeChannel {
+    // Every handout takes a reference; removeRegisteredChannel gives one back.
+    this.channelRefs.set(key, (this.channelRefs.get(key) ?? 0) + 1);
     const existing = this.channelRegistry.get(key);
     if (existing) return existing;
 
-    const channel = supabase.channel(key);
+    const channel = supabase.channel(
+      key,
+      options?.private ? { config: { private: true } } : undefined
+    );
     this.channelRegistry.set(key, channel);
     // Emit REALTIME_CONNECTED so ConnectionIndicator knows we have live channels
     this.emit('REALTIME_CONNECTED', { channelName: key });
@@ -1578,9 +1862,30 @@ class MasterBusCore {
   }
 
   /**
-   * Remove a registered channel by key
+   * Release one reference to a registered channel. The channel is torn down
+   * only when the LAST consumer lets go — see the channelRefs note above.
    */
   removeRegisteredChannel(key: string): void {
+    const remaining = (this.channelRefs.get(key) ?? 0) - 1;
+    if (remaining > 0) {
+      this.channelRefs.set(key, remaining);
+      return;
+    }
+    this.channelRefs.delete(key);
+    const channel = this.channelRegistry.get(key);
+    if (channel) {
+      supabase.removeChannel(channel);
+      this.channelRegistry.delete(key);
+    }
+  }
+
+  /**
+   * Force a channel down regardless of who still holds it. For teardown paths
+   * that own the whole surface (a full bus reset, sign-out) — never for a
+   * component unmount, which is what the refcounted release above is for.
+   */
+  forceRemoveRegisteredChannel(key: string): void {
+    this.channelRefs.delete(key);
     const channel = this.channelRegistry.get(key);
     if (channel) {
       supabase.removeChannel(channel);

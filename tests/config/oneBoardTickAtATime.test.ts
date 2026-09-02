@@ -55,6 +55,17 @@ describe('a board refills one tick at a time', () => {
     expect(claim).toBeLessThan(read);
   });
 
+  it('wraps the WHOLE pass, not one board read', () => {
+    // Changed 2026-08-23 with per-owner boards. The guard used to live inside
+    // ensureBoardOpen, which is now called once per OWNER in a single pass --
+    // so the second owner in a tick would have found the flag set by the first
+    // and been skipped forever. It belongs around the pass, which is also what
+    // it always meant.
+    expect(code).toMatch(/private async withBoardTick\(/);
+    expect(code).toMatch(/await this\.withBoardTick\('spin', async \(\) => \{/);
+    expect(code).toMatch(/await this\.withBoardTick\('sng', async \(\) => \{/);
+  });
+
   it('releases in a finally, so an early return cannot freeze the board', () => {
     // The read-error path returns early on purpose (fail closed, skip a cycle).
     // Releasing only at the end of the try would strand the flag set forever
@@ -77,5 +88,13 @@ describe('a board refills one tick at a time', () => {
 
   it('keeps the burst cap -- the guard bounds overlap, not batch size', () => {
     expect(code).toMatch(/const\s+BURST\s*=\s*12\s*;/);
+  });
+
+  it('spends that cap ACROSS every board a pass touches, not per board', () => {
+    // Changed 2026-08-23 with per-owner boards: a per-board cap stops being a
+    // cap once one pass can service the house plus every activated owner.
+    expect(code).toMatch(/const budget = \{ left: BURST \}/);
+    expect(code).toMatch(/missing\.slice\(0, budget\.left\)/);
+    expect(code).toMatch(/budget\.left--/);
   });
 });

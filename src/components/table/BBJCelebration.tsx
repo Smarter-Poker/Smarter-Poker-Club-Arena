@@ -37,6 +37,15 @@ export interface BBJCelebrationProps {
   qualifyingLabel?: string;
   /** The viewing player's own share — personalizes the celebration (2026-08-18). */
   heroShare?: number;
+  /**
+   * Audit 2026-08-25 (multi-table): false on a table the player is not looking
+   * at. Up to four TablePages are mounted at once and the inactive ones are
+   * hidden with `display: none`, which stops the overlay painting and does
+   * absolutely nothing to the Web Audio API — so a jackpot three tables away
+   * played a 10-second fanfare and a reveal sting over the table in front of
+   * them. Defaults true so a single-table mount is unchanged.
+   */
+  soundsAllowed?: boolean;
   onComplete?: () => void;
 }
 
@@ -101,6 +110,20 @@ const CONFETTI_COLORS = [
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Money, guarded.
+ *
+ * This overlay is full-screen and celebratory, so anything that throws inside
+ * it takes the whole screen with it at the worst possible moment — and its
+ * inputs come straight off a `bbj_hit` bus event, not from a typed query. A
+ * partial event threw on `loser.username`; a `tableShare / 0` upstream would
+ * have rendered the INFINITY GLYPH into a payout figure.
+ */
+function chips(n: number | null | undefined): string {
+  const v = Number(n);
+  return (Number.isFinite(v) ? v : 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
+}
+
 export function BBJCelebration({
   visible,
   totalPayout,
@@ -111,6 +134,7 @@ export function BBJCelebration({
   tablePlayerCount,
   qualifyingLabel,
   heroShare = 0,
+  soundsAllowed = true,
   onComplete,
 }: BBJCelebrationProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -121,6 +145,13 @@ export function BBJCelebration({
   // FIX: Stabilize onComplete ref to prevent useEffect re-triggering on every parent render
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
+  /* Read through a ref, for the same reason as onComplete: the phase timers are
+     scheduled once, and putting `soundsAllowed` in the effect's deps would
+     restart the whole 10-second sequence (and the rolling counter) the instant
+     the player switched tabs. The ref means a table that goes to the background
+     mid-celebration falls silent for its remaining stings. */
+  const soundsAllowedRef = useRef(soundsAllowed);
+  soundsAllowedRef.current = soundsAllowed;
   const [phase, setPhase] = useState<'explode' | 'reveal' | 'breakdown' | 'fadeout'>('explode');
   const [opacity, setOpacity] = useState(0);
 
@@ -138,13 +169,13 @@ export function BBJCelebration({
     startTimeRef.current = Date.now();
 
     // Epic ascending BBJ fanfare on the explosion
-    soundService.playBadBeatJackpot();
+    if (soundsAllowedRef.current) soundService.playBadBeatJackpot();
 
     // Phase transitions
     const t1 = setTimeout(() => {
       setPhase('reveal');
       // Second-stage reveal sting — stacks on the ongoing fanfare
-      soundService.playSpinResult();
+      if (soundsAllowedRef.current) soundService.playSpinResult();
     }, 1500);
     const t2 = setTimeout(() => setPhase('breakdown'), 3500);
     const t3 = setTimeout(() => setPhase('fadeout'), FADE_START);
@@ -172,8 +203,26 @@ export function BBJCelebration({
       clearTimeout(t4);
       clearInterval(counterInterval);
     };
+    // `soundsAllowed` is deliberately NOT a dependency: it can flip when the
+    // player switches tabs mid-celebration, and re-running this effect would
+    // restart the whole phase sequence and the counter from zero.
   }, [visible, totalPayout]);
   // ↑ onComplete accessed via onCompleteRef to prevent timer reset on parent re-render
+
+  /** Fade out and hand back to the parent, from the button or from Escape. */
+  const dismiss = useCallback(() => {
+    setOpacity(0);
+    setTimeout(() => onCompleteRef.current?.(), 300);
+  }, []);
+
+  useEffect(() => {
+    if (!visible) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') dismiss();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [visible, dismiss]);
 
   // ── Spawn particles ──
   const spawnExplosion = useCallback(
@@ -362,11 +411,10 @@ export function BBJCelebration({
   return (
     <div
       className="bbj-celebration-overlay"
-      style={{ opacity, transition: 'opacity 0.5s ease', cursor: 'pointer' }}
-      onClick={() => {
-        setOpacity(0);
-        setTimeout(() => onCompleteRef.current?.(), 300);
-      }}
+      style={{ opacity, transition: 'opacity 0.5s ease' }}
+      role="dialog"
+      aria-live="assertive"
+      aria-label={`Bad Beat Jackpot Hit. Total Payout ${Math.trunc(totalPayout).toLocaleString('en-US')}.`}
     >
       {/* Canvas layer for particles */}
       <canvas ref={canvasRef} className="bbj-canvas" />
@@ -378,7 +426,20 @@ export function BBJCelebration({
       <div className="bbj-content">
         {/* Title */}
         <div className={`bbj-title ${phase !== 'explode' ? 'bbj-title-visible' : ''}`}>
-          <div className="bbj-title-crown">&#X1F451;</div>
+          {/* HOUSE RULE (CLAUDE.md s.10.5, WH rule 7): no emoji in any
+              user-facing string. These four marks were emoji (crown, money bag,
+              trophy, slot machine), then HTML entities - which dodges the SWC
+              compiler problem the rule was written around but still renders an
+              emoji to the player, and still reads to check-title-case as page
+              copy that is not Title Cased.
+
+              They are DECORATION, so they now live in BBJCelebration.css as
+              `content:` on these elements, and the elements are aria-hidden.
+              That satisfies both rules honestly rather than muting one: the
+              copy checker only sees copy, a screen reader is not read a spade
+              where a heading belongs, and nothing user-facing carries an
+              emoji. */}
+          <div className="bbj-title-crown" aria-hidden="true" />
           <h1 className="bbj-title-text">BAD BEAT JACKPOT!</h1>
           <div className="bbj-title-subtitle">JACKPOT HIT!</div>
           {qualifyingLabel && <div className="bbj-title-qualifier">{qualifyingLabel}</div>}
@@ -391,7 +452,7 @@ export function BBJCelebration({
           <span className="bbj-amount-label">TOTAL PAYOUT</span>
           <span className="bbj-amount-value">
             $
-            {displayAmount.toLocaleString(undefined, {
+            {displayAmount.toLocaleString('en-US', {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2,
             })}
@@ -401,36 +462,30 @@ export function BBJCelebration({
         {/* Payout Breakdown */}
         <div className={`bbj-breakdown ${phase === 'breakdown' ? 'bbj-breakdown-visible' : ''}`}>
           <div className="bbj-breakdown-card bbj-breakdown-loser">
-            <div className="bbj-breakdown-emoji">&#X1F4B0;</div>
+            <div className="bbj-breakdown-emoji" aria-hidden="true" />
             <div className="bbj-breakdown-label">BAD BEAT HOLDER</div>
-            <div className="bbj-breakdown-name">{loser.username}</div>
-            <div className="bbj-breakdown-hand">{loser.handName}</div>
-            <div className="bbj-breakdown-amount">
-              +${loser.share.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </div>
+            <div className="bbj-breakdown-name">{loser?.username || 'Player'}</div>
+            <div className="bbj-breakdown-hand">{loser?.handName || ''}</div>
+            <div className="bbj-breakdown-amount">+${chips(loser?.share)}</div>
             <div className="bbj-breakdown-percent">50%</div>
           </div>
 
           <div className="bbj-breakdown-card bbj-breakdown-winner">
-            <div className="bbj-breakdown-emoji">&#X1F3C6;</div>
+            <div className="bbj-breakdown-emoji" aria-hidden="true" />
             <div className="bbj-breakdown-label">HAND WINNER</div>
-            <div className="bbj-breakdown-name">{winner.username}</div>
-            <div className="bbj-breakdown-hand">{winner.handName}</div>
-            <div className="bbj-breakdown-amount">
-              +${winner.share.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-            </div>
+            <div className="bbj-breakdown-name">{winner?.username || 'Player'}</div>
+            <div className="bbj-breakdown-hand">{winner?.handName || ''}</div>
+            <div className="bbj-breakdown-amount">+${chips(winner?.share)}</div>
             <div className="bbj-breakdown-percent">25%</div>
           </div>
 
           <div className="bbj-breakdown-card bbj-breakdown-table">
-            <div className="bbj-breakdown-emoji">&#X1F3B0;</div>
+            <div className="bbj-breakdown-emoji" aria-hidden="true" />
             <div className="bbj-breakdown-label">TABLE SHARE</div>
             <div className="bbj-breakdown-name">{tablePlayerCount} Players</div>
-            <div className="bbj-breakdown-hand">
-              ${perPlayerShare.toLocaleString(undefined, { minimumFractionDigits: 2 })} Each
-            </div>
+            <div className="bbj-breakdown-hand">${chips(perPlayerShare)} Each</div>
             <div className="bbj-breakdown-amount">
-              +${tableShare.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+              +${tableShare.toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </div>
             <div className="bbj-breakdown-percent">25%</div>
           </div>
@@ -442,7 +497,7 @@ export function BBJCelebration({
             <>
               <span className="bbj-hero-share">
                 YOU WON +$
-                {heroShare.toLocaleString(undefined, {
+                {heroShare.toLocaleString('en-US', {
                   minimumFractionDigits: 2,
                   maximumFractionDigits: 2,
                 })}
@@ -451,9 +506,30 @@ export function BBJCelebration({
               Chips Added Directly To Your Table Balance!
             </>
           ) : (
-            'Chips added directly to the players\u2019 table balances!'
+            'Chips Added Directly To The Players\u2019 Table Balances!'
           )}
         </div>
+
+        {/* \u2500\u2500\u2500 AN ACTUAL WAY OUT (audit 2026-08-25) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+            The overlay carried `onClick` + `cursor: pointer` for early
+            dismissal and `.bbj-celebration-overlay` is `pointer-events: none`,
+            so that click NEVER fired: the celebration was a ten-second
+            unskippable blackout over the felt, and every click during it fell
+            straight through onto the table underneath \u2014 at a multi-table
+            session, onto whichever table needed action.
+
+            The pass-through is right (four tables are mounted; this must not
+            swallow a fold at another one), so the DISMISS is what gets
+            pointer-events back, on a real, focusable button. Escape also
+            closes it \u2014 see the effect below. */}
+        <button
+          type="button"
+          className="bbj-dismiss"
+          onClick={dismiss}
+          aria-label="Dismiss The Jackpot Celebration"
+        >
+          Continue
+        </button>
       </div>
     </div>
   );

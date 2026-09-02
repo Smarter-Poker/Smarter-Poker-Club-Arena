@@ -15,6 +15,21 @@
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   padding: 1rem;
+  width: 100%;
+  max-width: 100vw;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
+  /* Dan 2026-08-25: was max(70px, env(safe-area-inset-bottom)). The bar is
+     74px PLUS the home-indicator inset (additive), and max() picks one or
+     the other - so this reserved 70px on every phone and hid the last row
+     of content under the footer, by 4px on a flat screen and ~38px on a
+     notched one. --bottom-nav-clearance is the token the bar itself is
+     pinned to. */
+  padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
 }
 
 .tournament-header {
@@ -68,11 +83,6 @@
   transition: all 0.2s;
 }
 
-.back-link:hover {
-  color: #00d4ff;
-  text-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
-}
-
 .tournament-header .btn-primary {
   background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
   border: none;
@@ -98,15 +108,6 @@
   height: 100%;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
   transition: left 0.4s ease;
-}
-
-.tournament-header .btn-primary:hover {
-  box-shadow: 0 0 25px rgba(0, 212, 255, 0.6);
-  transform: translateY(-2px);
-}
-
-.tournament-header .btn-primary:hover::before {
-  left: 150%;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -163,21 +164,6 @@
     inset 0 -1px 0 rgba(0, 0, 0, 0.2);
   position: relative;
   overflow: hidden;
-}
-
-.tournament-card:hover {
-  border-color: #00d4ff;
-  background: linear-gradient(
-    145deg,
-    rgba(0, 212, 255, 0.1) 0%,
-    rgba(255, 255, 255, 0.05) 50%,
-    rgba(100, 100, 100, 0.03) 100%
-  );
-  box-shadow:
-    0 0 15px rgba(0, 212, 255, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
-  transform: translateY(-1px);
 }
 
 .tournament-card.selected {
@@ -357,15 +343,6 @@
   transition: all 0.25s;
 }
 
-.detail-stats .stat:hover {
-  border-color: rgba(0, 212, 255, 0.4);
-  box-shadow:
-    0 0 12px rgba(0, 212, 255, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
-  transform: translateY(-2px);
-}
-
 .detail-stats .stat.highlight {
   border-color: #ffd700;
   background: linear-gradient(
@@ -420,6 +397,11 @@
   font-family: 'Rajdhani', 'Rajdhani', sans-serif;
 }
 
+.blind-structure {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .blind-structure table {
   width: 100%;
   border-collapse: collapse;
@@ -443,10 +425,6 @@
   font-size: var(--text-sm);
   font-family: 'Rajdhani', monospace;
   color: #00d4ff;
-}
-
-.blind-structure tr:hover td {
-  background: rgba(0, 212, 255, 0.04);
 }
 
 .more-row td {
@@ -487,11 +465,6 @@
   border: 1px solid #2a3a4a;
   border-radius: 8px;
   transition: all 0.2s;
-}
-
-.payout-item:hover {
-  border-color: rgba(255, 215, 0, 0.3);
-  background: linear-gradient(145deg, rgba(255, 215, 0, 0.05) 0%, rgba(0, 0, 0, 0.1) 100%);
 }
 
 .payout-place {
@@ -566,12 +539,6 @@
   color: #fff;
   box-shadow: 0 0 20px rgba(0, 212, 255, 0.4);
 }
-
-.detail-actions .btn-primary:hover:not(:disabled) {
-  box-shadow: 0 0 30px rgba(0, 212, 255, 0.6);
-  transform: translateY(-2px);
-}
-
 .detail-actions .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -736,11 +703,6 @@
   transition: all 0.2s;
 }
 
-.modal-actions .btn-ghost:hover {
-  border-color: #5a6a7a;
-  color: #aabbcc;
-}
-
 .modal-actions .btn-primary {
   background: linear-gradient(135deg, #00d4ff 0%, #0099cc 100%);
   border: none;
@@ -752,10 +714,6 @@
   transition: all 0.2s;
 }
 
-.modal-actions .btn-primary:hover {
-  box-shadow: 0 0 15px rgba(0, 212, 255, 0.4);
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    RESPONSIVE
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -763,6 +721,8 @@
 @media (max-width: 768px) {
   .tournament-page {
     padding: 0.5rem;
+    /* the shorthand above resets padding-bottom; restate the footer clearance */
+    padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
     gap: var(--space-3);
   }
 
@@ -855,6 +815,20 @@
   .modal {
     width: 95%;
     padding: 1rem;
+  }
+
+  .tourn-filter-chip {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .detail-actions .btn-block,
+  .modal-actions .btn-primary,
+  .modal-actions .btn-ghost,
+  .tournament-header .btn-primary {
+    min-height: 44px;
+    touch-action: manipulation;
   }
 }
 
@@ -956,6 +930,7 @@
 }
 
 .tourn-filter-chip {
+  touch-action: manipulation;
   padding: 6px 14px;
   border-radius: 20px;
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -967,12 +942,6 @@
   transition: all 0.25s ease;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-}
-
-.tourn-filter-chip:hover {
-  border-color: rgba(0, 212, 255, 0.4);
-  color: #00d4ff;
-  background: rgba(0, 212, 255, 0.08);
 }
 
 .tourn-filter-chip.active {

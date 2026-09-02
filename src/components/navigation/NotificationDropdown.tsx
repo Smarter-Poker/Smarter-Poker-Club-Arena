@@ -22,6 +22,12 @@ interface Notification {
   data?: Record<string, any>;
   isRead: boolean;
   createdAt: string;
+  /**
+   * Destination, already resolved by /api/notifications/feed using the one
+   * canonical resolver (World Hub src/lib/notificationRoute.js). Null means
+   * there is genuinely nowhere to go, and the row must not pretend otherwise.
+   */
+  link?: string | null;
 }
 
 interface NotificationDropdownProps {
@@ -64,23 +70,72 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
 
   const loadNotifications = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('id, type, title, message, data, read, created_at')
-      .eq('user_id', user?.id)
-      .order('created_at', { ascending: false })
-      .limit(20);
 
-    if (!error && data) {
-      const mapped = data.map((n: any) => ({
-        id: n.id,
-        type: n.type,
-        title: n.title,
-        message: n.message,
-        data: n.data,
-        isRead: n.read,
-        createdAt: n.created_at,
-      }));
+    /**
+     * Read through /api/notifications/feed, not straight from Supabase.
+     *
+     * This dropdown used to query the table itself and then re-derive a
+     * destination from the `data` column, while the notifications page next
+     * to it derived one from `metadata` — two components, one table, two
+     * disagreeing answers, and most rows dead in both. The feed API now
+     * resolves the destination once, server-side, and also joins the actor
+     * profile that friend_* notifications need in order to route at all.
+     * Consuming it here means this component holds no routing rules.
+     */
+    let mapped: Notification[] | null = null;
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (token) {
+        const res = await fetch('/api/notifications/feed?limit=20', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json?.success && Array.isArray(json.notifications)) {
+            mapped = json.notifications.map((n: any) => ({
+              id: n.id,
+              type: n.type,
+              title: n.title,
+              message: n.message,
+              data: n.data,
+              isRead: !!(n.read || n.is_read),
+              createdAt: n.created_at,
+              link: n.link || null,
+            }));
+          }
+        }
+      }
+    } catch (_) {
+      // Fall through to the direct query below.
+    }
+
+    // Fallback: the API is unreachable (offline, cold start, auth blip).
+    // Show the list rather than an empty dropdown; rows still carry
+    // action_url so the common cases stay clickable.
+    if (!mapped) {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('id, type, title, message, data, read, created_at, action_url, link')
+        .eq('user_id', user?.id)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (!error && data) {
+        mapped = data.map((n: any) => ({
+          id: n.id,
+          type: n.type,
+          title: n.title,
+          message: n.message,
+          data: n.data,
+          isRead: n.read,
+          createdAt: n.created_at,
+          link: n.link || n.action_url || null,
+        }));
+      }
+    }
+
+    if (mapped) {
       setNotifications(mapped);
       setUnreadCount(mapped.filter((n) => !n.isRead).length);
       setVisibleItems(new Set());
@@ -148,9 +203,24 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
   const handleNotificationClick = (notification: Notification) => {
     markAsRead(notification.id);
 
-    // Navigate based on notification type
-    if (notification.data?.path && onNavigate) {
-      onNavigate(notification.data.path);
+    // `link` was resolved server-side by the one canonical resolver. This
+    // component deliberately holds no routing rules of its own — that
+    // duplication is exactly what made notification taps silently fail.
+    const url =
+      notification.link || notification.data?.action_url || notification.data?.path || null;
+
+    if (url) {
+      // Club Arena paths route in-SPA; anything else is a real navigation
+      // out of the SPA and onNavigate (react-router) cannot serve it.
+      if (url.startsWith('/hub/club-arena')) {
+        const inner = url.slice('/hub/club-arena'.length) || '/';
+        if (onNavigate) onNavigate(inner);
+        else window.location.href = url;
+      } else if (url.startsWith('/')) {
+        window.location.href = url;
+      } else if (onNavigate) {
+        onNavigate(url);
+      }
     }
     setIsOpen(false);
   };
@@ -211,7 +281,21 @@ export default function NotificationDropdown({ onNavigate }: NotificationDropdow
                     <span className={styles.title}>{n.title}</span>
                     <span className={styles.message}>{n.message}</span>
                   </div>
-                  <span className={styles.time}>{formatTime(n.createdAt)}</span>
+                  <div className={styles.meta}>
+                    <span className={styles.time}>{formatTime(n.createdAt)}</span>
+                    {!n.isRead && (
+                      <button
+                        className={styles.markReadBtn}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          markAsRead(n.id);
+                        }}
+                        title="Mark As Read"
+                      >
+                        ●
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))
             )}

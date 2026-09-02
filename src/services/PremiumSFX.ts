@@ -26,6 +26,7 @@
 import { STORAGE_KEYS } from '../lib/storage';
 import { reportError } from '../utils/errorReporter';
 import { isSoundAllowed } from '../utils/soundGate';
+import { soundService } from './SoundService';
 
 // Musical note frequencies (Hz) — equal temperament tuning
 const NOTE = {
@@ -68,6 +69,23 @@ function getCtx(): AudioContext | null {
   }
 }
 
+/**
+ * SOUND AUDIT 2026-08-27: the master volume slider had NO effect on any
+ * UI-tier sound — every primitive here connected straight to ctx.destination
+ * at a hardcoded level, so a player who turned the table down (or nearly off)
+ * still got full-strength card flips and toggles. Scale every primitive by
+ * the shared master volume, NORMALISED to its 0.7 default so today's tuned
+ * loudness is unchanged for a player who never touched the slider. Clamped
+ * so a maxed slider cannot push the subtle UI tier into harshness.
+ */
+function uiGainFactor(): number {
+  try {
+    return Math.min(1.5, Math.max(0, soundService.getMasterVolume() / 0.7));
+  } catch {
+    return 1;
+  }
+}
+
 /** Check if sounds are enabled */
 function isEnabled(): boolean {
   try {
@@ -104,7 +122,7 @@ function playTone(
 
   // Smooth envelope: fast attack, natural decay
   gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(volume, now + 0.008); // 8ms attack
+  gain.gain.linearRampToValueAtTime(volume * uiGainFactor(), now + 0.008); // 8ms attack
   gain.gain.exponentialRampToValueAtTime(0.001, now + duration); // smooth decay
 
   osc.connect(gain);
@@ -146,7 +164,7 @@ function playNoise(
   // Envelope
   const gain = ctx.createGain();
   gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(volume, now + 0.005);
+  gain.gain.linearRampToValueAtTime(volume * uiGainFactor(), now + 0.005);
   gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
 
   source.connect(filter);
@@ -177,7 +195,7 @@ function playSweep(
   osc.frequency.exponentialRampToValueAtTime(endFreq, now + duration);
 
   gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(volume, now + 0.005);
+  gain.gain.linearRampToValueAtTime(volume * uiGainFactor(), now + 0.005);
   gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
 
   osc.connect(gain);

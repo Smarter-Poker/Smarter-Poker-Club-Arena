@@ -15,7 +15,6 @@ import { exportToCSV } from '../lib/export';
 import styles from './SettlementPage.module.css';
 import '../components/common/ButtonSpinner.css';
 import { useToast } from '../components/common/Toast';
-import ClubBottomNav from '../components/club/ClubBottomNav';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
 import { formatDateShort as formatDate } from '../utils/format';
 import SecurityBadge from '../components/common/SecurityBadge';
@@ -24,6 +23,7 @@ import SettlementTimeline from '../components/settlement/SettlementTimeline';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { reportError } from '../utils/errorReporter';
+import { ErrorState } from '../components/common/EmptyState';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MONDAY 4AM COUNTDOWN — Live payout timer widget
@@ -111,7 +111,7 @@ function MondayPayoutCountdown() {
               fontFamily: 'monospace',
               color: '#00C853',
               textShadow: '0 0 16px rgba(0,200,83,0.6)',
-              animation: 'payoutPulse 1.5s ease-in-out infinite',
+              animation: 'animationsPayoutPulse 1.5s ease-in-out infinite',
             }}
           >
             PAYOUT IN PROGRESS!
@@ -219,6 +219,7 @@ export default function SettlementPage() {
   useVisibilityRefresh(() => loadSettlementData());
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Real data from SettlementService
   const [periods, setPeriods] = useState<SettlementPeriod[]>([]);
@@ -264,6 +265,7 @@ export default function SettlementPage() {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setIsLoading(true);
+    setLoadError(null);
     try {
       // Get current period
       const currentPeriod = await SettlementService.getCurrentPeriod();
@@ -378,6 +380,9 @@ export default function SettlementPage() {
       }
     } catch (error) {
       reportError(error, 'SettlementPage.Failed_to_load_data');
+      if (isMounted.current) {
+        setLoadError('Settlement records could not be loaded. No settlement was processed.');
+      }
       if (isMounted.current) toast.error('Failed to load settlement data');
     } finally {
       loadingRef.current = false;
@@ -414,15 +419,47 @@ export default function SettlementPage() {
 
   // Real-time settlement period updates
   useEffect(() => {
-    const channelKey = `settlement-live-${unionId || 'global'}`;
-    const channel = masterBus.getOrCreateChannel(channelKey);
-    channel
-      .on(
+    const channelKey = `settlement-live-${unionId || clubId || 'global'}`;
+    let cancelled = false;
+
+    /* DB LOAD PASS 2026-08-24: all three listeners below were unfiltered, so
+       every settlement period, invoice and per-hand agent commission written
+       anywhere on the platform was decoded and delivered to every open
+       settlement page. agent_commissions in particular is a per-hand INSERT
+       stream — the highest-volume table in this group.
+
+       The club route's id may be a slug, so the UUID has to be resolved before
+       a filter can be built; hence the async setup. Scopes applied:
+         settlement_periods   -> union_id, or club_id on the club route
+         settlement_invoices  -> club_id on the club route; on the union route
+                                 the wire runs BOTH ways (club->union and
+                                 union->club), so it takes two equally narrow
+                                 listeners on from_entity_id / to_entity_id
+         agent_commissions    -> club_id on the club route. It has no union
+                                 column, so the union route is left unscoped
+                                 rather than guessed at. */
+    const setupRealtime = async () => {
+      const resolvedClubId = clubId ? await resolveClubUUID(clubId) : null;
+      if (cancelled) return;
+
+      /* Same rule as PromotionsPage: a club route whose slug does not resolve
+         must not silently widen to an unfiltered subscription. Bail instead. */
+      if (!unionId && clubId && !resolvedClubId) return;
+
+      const periodScope = unionId
+        ? { filter: `union_id=eq.${unionId}` }
+        : resolvedClubId
+          ? { filter: `club_id=eq.${resolvedClubId}` }
+          : {};
+
+      const channel = masterBus.getOrCreateChannel(channelKey);
+      channel.on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'settlement_periods',
+          ...periodScope,
         },
         () => {
           // Reload — inline since loadSettlementData is scoped to another useEffect
@@ -446,34 +483,47 @@ export default function SettlementPage() {
               console.warn('[SettlementPage] Failed to get current settlement period:', e)
             );
         }
-      )
-      .on(
-        'postgres_changes',
-        {
-          // SWEEP #3 (2026-07-23): club_settlements never existed — the real
-          // club settlement record is settlement_invoices (union<->club wires).
-          event: '*',
-          schema: 'public',
-          table: 'settlement_invoices',
-        },
-        (payload) => {
-          // Update club wires state directly for faster UI updates
-          if (payload.eventType === 'UPDATE' && payload.new && isMounted.current) {
-            setClubWires((prev) =>
-              prev.map((wire) =>
-                wire.clubId === (payload.new as any).club_id
-                  ? {
-                      ...wire,
-                      status: (payload.new as any).status === 'paid' ? 'processed' : 'pending',
-                      finalWire: (payload.new as any).net_amount || wire.finalWire,
-                    }
-                  : wire
-              )
-            );
-          }
+      );
+
+      // SWEEP #3 (2026-07-23): club_settlements never existed — the real club
+      // settlement record is settlement_invoices (union<->club wires).
+      const onInvoiceChange = (payload: any) => {
+        // Update club wires state directly for faster UI updates
+        if (payload.eventType === 'UPDATE' && payload.new && isMounted.current) {
+          setClubWires((prev) =>
+            prev.map((wire) =>
+              wire.clubId === (payload.new as any).club_id
+                ? {
+                    ...wire,
+                    status: (payload.new as any).status === 'paid' ? 'processed' : 'pending',
+                    finalWire: (payload.new as any).net_amount || wire.finalWire,
+                  }
+                : wire
+            )
+          );
         }
-      )
-      .on(
+      };
+
+      const invoiceScopes: Array<Record<string, string>> = resolvedClubId
+        ? [{ filter: `club_id=eq.${resolvedClubId}` }]
+        : unionId
+          ? [{ filter: `from_entity_id=eq.${unionId}` }, { filter: `to_entity_id=eq.${unionId}` }]
+          : [{}];
+
+      for (const scope of invoiceScopes) {
+        channel.on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'settlement_invoices',
+            ...scope,
+          },
+          onInvoiceChange
+        );
+      }
+
+      channel.on(
         'postgres_changes',
         {
           // SWEEP #3 (2026-07-23): agent_settlements never existed — the live
@@ -483,14 +533,16 @@ export default function SettlementPage() {
           event: 'INSERT',
           schema: 'public',
           table: 'agent_commissions',
+          ...(resolvedClubId ? { filter: `club_id=eq.${resolvedClubId}` } : {}),
         },
         () => {
           if (isMounted.current) {
             masterBus.emit('BALANCE_UPDATED', { source: 'agent_commissions_rt' });
           }
         }
-      )
-      .subscribe((status: string, err?: Error) => {
+      );
+
+      channel.subscribe((status: string, err?: Error) => {
         if (status === 'CHANNEL_ERROR') {
           if (err) reportError(err?.message || err, 'SettlementPage._Realtime_channel_error');
         }
@@ -498,11 +550,15 @@ export default function SettlementPage() {
           console.warn('[SettlementPage] Realtime channel timed out');
         }
       });
+    };
+
+    void setupRealtime();
 
     return () => {
+      cancelled = true;
       masterBus.removeRegisteredChannel(channelKey);
     };
-  }, [unionId]);
+  }, [unionId, clubId]);
 
   // Bus listeners: refresh settlement data when wallet balance changes or settlement cycles complete
   useEffect(() => {
@@ -583,8 +639,33 @@ export default function SettlementPage() {
         return;
       }
 
-      // Execute real payouts via SettlementService
+      /**
+       * ═════════════════════════════════════════════════════════════════════
+       * THIS BUTTON COULD NOT DO ANYTHING, AND SAID NOTHING ABOUT IT.
+       * ═════════════════════════════════════════════════════════════════════
+       *
+       * `executeMondayPayouts` is a RETIRED NO-OP (SettlementService, 2026-07-21):
+       * it read two tables deliberately removed from the schema and always
+       * returns zeroes. The success branch below is gated on
+       * `agentsPaid > 0 || playersWithRakeback > 0`, which can therefore never
+       * be true — so the button spun, moved nothing, and showed NO toast at
+       * all. No success, no error, no explanation, on a money screen.
+       *
+       * The live payout paths are named in that service's note: agent
+       * commissions settle through credit_invoices, and player rakeback
+       * through the engine's RakebackSettlerService daemon. Nothing here can
+       * or should move money. So the button now SAYS that, instead of
+       * pretending, and the branch stays as a tripwire: if a future
+       * implementation ever returns real numbers, the existing success path
+       * still runs.
+       */
       const result = await SettlementService.executeMondayPayouts(period.id);
+
+      if (result.agentsPaid === 0 && result.playersWithRakeback === 0) {
+        toast.info(
+          'Nothing To Pay Out Here. Agent Commissions Settle Through Credit Invoices, And Player Rakeback Through The Engine Settler.'
+        );
+      }
 
       // Only update state if payouts succeeded
       if (result.agentsPaid > 0 || result.playersWithRakeback > 0) {
@@ -688,6 +769,14 @@ export default function SettlementPage() {
     return (
       <div className={styles.page}>
         <PageSkeleton variant="dashboard" />
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className={styles.page}>
+        <ErrorState message={loadError} onRetry={() => void loadSettlementData()} />
       </div>
     );
   }
@@ -1103,9 +1192,6 @@ export default function SettlementPage() {
           />
         </div>
       )}
-
-      {/* Bottom Navigation */}
-      {clubId && <ClubBottomNav clubId={clubId} />}
     </div>
   );
 }

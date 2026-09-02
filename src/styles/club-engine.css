@@ -29,9 +29,14 @@
   --club-card: #22262f;
 
   /* ─────────────── Semantic Colors ─────────────── */
-  --success-green: #00d26a;
-  --success-green-glow: rgba(0, 210, 106, 0.4);
-  --success-green-dim: rgba(0, 210, 106, 0.15);
+  /* HOUSE GREEN. #3fb950 is the smarter.poker scheme green (Dan, #1365).
+     This token, --success in globals.css, and ~130 literals across the table
+     were three different greens, which is why gameplay never matched the
+     club chrome. One green now; tests/gameplay-wears-the-house-colours
+     fails if a fourth appears. */
+  --success-green: #3fb950;
+  --success-green-glow: rgba(63, 185, 80, 0.4);
+  --success-green-dim: rgba(63, 185, 80, 0.15);
 
   --danger-red: #ff4757;
   --danger-red-glow: rgba(255, 71, 87, 0.4);
@@ -138,6 +143,12 @@
   --duration-slow: 500ms;
   --duration-slower: 800ms;
 
+  /* Runtime chrome dimensions. This is the entry stylesheet imported by
+     main.tsx, so shared layout components resolve these values in production. */
+  --bottom-nav-height: clamp(44px, 13.72vw, 132px);
+  --bottom-nav-clearance: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0px));
+  --bottom-nav-stack-base: var(--bottom-nav-clearance);
+
   /* ─────────────── Z-Layers ─────────────── */
   --z-base: 0;
   --z-table: 10;
@@ -177,14 +188,73 @@ body {
   font-weight: 400;
   line-height: 1.6;
   color: var(--text-primary);
-  background: var(--club-black);
+  /* Dan 2026-08-30: "THE WHOLE BACKGROUND SHOULD BE SOLID BLACK AND ALL THE
+     SAME COLOR." --club-black is #050507; five points of grey is invisible on
+     its own and plainly a different black next to the true #000 that
+     .club-home, the shell and the action bar paint. This sheet owns the LIVE
+     body rule - globals.css and design-system.css are not imported by
+     main.tsx, as the note further down this file already records - so this is
+     the declaration that decides the page ground. The token stays defined for
+     the raised surfaces that want it. */
+  background: #000;
   min-height: 100vh;
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
+  /* clip, not hidden — the full reasoning is on the body rule in
+     src/styles/design-system.css. Both sheets style <body>, so leaving this
+     one as `hidden` would re-promote body to a scroll container depending on
+     load order, and the fixed bottom nav would come unstuck again. */
   overflow-x: hidden;
+  overflow-x: clip;
+}
+
+/* Keyboard entry point. This lives in the loaded Club Engine sheet (the former
+   rule was stranded in the legacy, unimported globals.css file). Keep it fully
+   outside the viewport until focused so it never occupies layout space. */
+.skip-link {
+  position: fixed;
+  inset: 8px auto auto 8px;
+  z-index: 10000;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 16px;
+  border: 1px solid rgba(197, 211, 224, 0.72);
+  border-radius: 3px;
+  background: linear-gradient(180deg, #151a20 0%, #07090c 100%);
+  color: #f4f8fb;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 0 0 1px rgba(0, 112, 255, 0.24),
+    0 10px 28px rgba(0, 0, 0, 0.72);
+  font-family: var(--font-primary);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  text-transform: uppercase;
+  transform: translateY(calc(-100% - 16px));
+  transition: transform 140ms ease-out;
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  outline: 2px solid #2388ff;
+  outline-offset: 2px;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skip-link {
+    transition: none;
+  }
 }
 
 #root {
   min-height: 100vh;
+  /**
+   * AppLayout reserves persistent action-bar space inside its own flow, after
+   * the GlobalHeader. Body padding must never move the whole application down.
+   */
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   display: flex;
   flex-direction: column;
@@ -241,10 +311,6 @@ a {
   transition: color var(--duration-fast) var(--ease-out-expo);
 }
 
-a:hover {
-  color: var(--pure-white);
-}
-
 code,
 pre {
   font-family: var(--font-mono);
@@ -282,34 +348,16 @@ pre {
   background: var(--gradient-club);
   color: var(--pure-white);
 }
-
-.btn-primary:hover:not(:disabled) {
-  box-shadow: var(--shadow-glow-blue);
-  transform: translateY(-2px);
-}
-
 /* Success - Green */
 .btn-success {
   background: var(--gradient-success);
   color: var(--pure-white);
 }
-
-.btn-success:hover:not(:disabled) {
-  box-shadow: var(--shadow-glow-green);
-  transform: translateY(-2px);
-}
-
 /* Danger - Red */
 .btn-danger {
   background: var(--gradient-danger);
   color: var(--pure-white);
 }
-
-.btn-danger:hover:not(:disabled) {
-  box-shadow: var(--shadow-glow-red);
-  transform: translateY(-2px);
-}
-
 /* Ghost */
 .btn-ghost {
   background: transparent;
@@ -317,21 +365,10 @@ pre {
   border: 1px solid var(--border-subtle);
 }
 
-.btn-ghost:hover:not(:disabled) {
-  background: var(--club-elevated);
-  color: var(--text-primary);
-  border-color: var(--club-blue);
-}
-
 /* White/Light */
 .btn-white {
   background: var(--pure-white);
   color: var(--club-black);
-}
-
-.btn-white:hover:not(:disabled) {
-  background: var(--off-white);
-  transform: translateY(-2px);
 }
 
 /* Sizes */
@@ -361,11 +398,6 @@ pre {
   border-radius: var(--radius-xl);
   padding: var(--space-6);
   transition: all var(--duration-normal) var(--ease-out-expo);
-}
-
-.card:hover {
-  border-color: var(--border-hover);
-  transform: translateY(-2px);
 }
 
 .card-elevated {
@@ -402,14 +434,6 @@ pre {
   position: relative;
   transition: transform var(--duration-normal) var(--ease-out-expo);
 }
-
-.poker-card:hover {
-  transform: translateY(-8px) rotateZ(2deg);
-  box-shadow:
-    0 8px 16px rgba(0, 0, 0, 0.2),
-    0 16px 32px rgba(0, 0, 0, 0.1);
-}
-
 .poker-card.red {
   color: var(--suit-hearts);
 }
@@ -846,10 +870,6 @@ pre {
   border-radius: var(--radius-full);
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--club-blue);
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════════
    ♿ ACCESSIBILITY — Focus, Reduced Motion, Screen Reader
    ═══════════════════════════════════════════════════════════════════════════════ */
@@ -1002,7 +1022,26 @@ textarea:focus-visible,
    that are already fine and start stealing taps.
 
    `.dw__plus` is the one that also fails horizontally (22x22), so it is the
-   only one that grows both ways. */
+   only one that grows both ways.
+
+   TWO WAYS THIS SILENTLY STOPS WORKING, both found live on 2026-08-25:
+
+   1. THE BAND OVERHANGS INTO A WRAPPED SECOND ROW. A 32px control with a 44px
+      ::after reaches 6px past its own box on each side. Put those controls in
+      a `flex-wrap: wrap` row with a 3px row-gap and every control on the upper
+      row loses its lower half to the ::after of the control BELOW it, which
+      paints later and therefore wins. That is not a metric failure, it is a
+      thumb landing on the wrong filter. `.game-bar__type` did exactly this
+      (24px of reach measured on production, all seven chips). The container
+      needs a row-gap of at least 12px, not the ::after a smaller height —
+      see .game-bar__types in ClubHomePage.css.
+
+   2. A LATER SIBLING QUIETLY BECOMES A STACKING CONTEXT. `position: static` is
+      not a promise: a bare `transform` makes an element a stacking context, so
+      it paints over this ::after, which carries no z-index of its own. That is
+      what cost the settings Reset button 8px of reach; the fix there was
+      `z-index: 1` on the host, applied in SettingsPage.module.css where it was
+      measured rather than blanket-applied here where it was not. */
 @media (pointer: coarse) {
   .pt-range-tab,
   .pl-tab,
@@ -1066,5 +1105,125 @@ textarea:focus-visible,
     min-width: 44px;
     width: 44px;
     transform: translate(-50%, -50%);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * CANONICAL TOGGLE — every switch in Club Arena, one look
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan, 2026-08-25: "EVERY TOGGLE INSIDE THE CLUB ARENA, INSIDE EVERY PAGE AND
+ * SUB PAGE, AND EVERY SINGLE HAMBURGER MENU."
+ *
+ * 48 files draw a toggle and they shared nothing. Measured, the switch visual
+ * came in three separate shapes, in twelve different stylesheets:
+ *
+ *   .toggle-slider                      checkbox + sibling span, thumb via ::after
+ *   .toggle-track  + .toggle-thumb      separate thumb element
+ *   .tsp-toggle__track + __thumb        table settings panel's own naming
+ *
+ * with on-states of gold (#ffd700), cyan and white-alpha depending on where you
+ * happened to be standing. src/components/toggles/Toggle.tsx existed as a
+ * "shared" component and was imported by ZERO files.
+ *
+ * WHY CSS AND NOT 48 EDITS. Dan chose "convert visual only, keep behaviour".
+ * This file is imported by main.tsx, so it loads on every route including every
+ * hamburger menu and modal. Restyling here changes every toggle at once and
+ * touches no JSX, so no handler, no state and no accessibility wiring can break.
+ * 48 mechanical edits could not make that promise.
+ *
+ * Geometry is Apple's switch (51x31 track, 27px thumb, 20px travel) and the
+ * colours match the World Hub's src/components/ui/Switch.jsx so the two apps
+ * finally agree.
+ */
+
+/* ── Track: the three shapes, normalised ─────────────────────────────────── */
+.toggle-slider,
+.toggle-switch,
+.toggle-track,
+.tsp-toggle__track {
+  width: 51px !important;
+  height: 31px !important;
+  border-radius: 999px !important;
+  background: #39393d !important;
+  position: relative !important;
+  flex-shrink: 0 !important;
+  box-sizing: border-box !important;
+  transition: background-color 180ms ease !important;
+  /* iOS paints a grey box on tap without this. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The small variant asked for a smaller pill; keep it proportional. */
+.toggle-slider.small {
+  width: 40px !important;
+  height: 24px !important;
+}
+
+/* ── Thumb: ::after for slider-style, real element for the others ────────── */
+.toggle-slider::after,
+.toggle-switch::after,
+.toggle-track .toggle-thumb,
+.tsp-toggle__track .tsp-toggle__thumb {
+  content: '';
+  position: absolute !important;
+  top: 2px !important;
+  left: 2px !important;
+  width: 27px !important;
+  height: 27px !important;
+  border-radius: 50% !important;
+  background: #ffffff !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.28) !important;
+  transform: translateX(0) !important;
+  transition: transform 180ms cubic-bezier(0.32, 0.72, 0, 1) !important;
+}
+
+.toggle-slider.small::after {
+  width: 20px !important;
+  height: 20px !important;
+}
+
+/* ── On state ────────────────────────────────────────────────────────────── */
+input:checked + .toggle-slider,
+input:checked + .toggle-switch,
+input:checked ~ .toggle-switch,
+input:checked ~ .toggle-track,
+.toggle-track.is-on,
+.toggle-track[data-on='true'],
+.tsp-toggle__track.is-on,
+[aria-checked='true'] .toggle-track,
+[aria-checked='true'] .tsp-toggle__track,
+[aria-checked='true'].toggle-slider {
+  background: #1877f2 !important;
+}
+
+input:checked + .toggle-slider::after,
+input:checked + .toggle-switch::after,
+input:checked ~ .toggle-switch::after,
+input:checked ~ .toggle-track .toggle-thumb,
+.toggle-track.is-on .toggle-thumb,
+.toggle-track[data-on='true'] .toggle-thumb,
+.tsp-toggle__track.is-on .tsp-toggle__thumb,
+[aria-checked='true'] .toggle-track .toggle-thumb,
+[aria-checked='true'] .tsp-toggle__track .tsp-toggle__thumb,
+[aria-checked='true'].toggle-slider::after {
+  transform: translateX(20px) !important;
+}
+
+input:checked + .toggle-slider.small::after {
+  transform: translateX(16px) !important;
+}
+
+/* ── Respect the OS setting ──────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .toggle-slider,
+  .toggle-switch,
+  .toggle-track,
+  .tsp-toggle__track,
+  .toggle-slider::after,
+  .toggle-switch::after,
+  .toggle-track .toggle-thumb,
+  .tsp-toggle__track .tsp-toggle__thumb {
+    transition: none !important;
   }
 }

@@ -53,7 +53,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'hands_100',
     name: 'Getting Started',
-    description: 'Play 100 hands',
+    description: 'Play 100 Hands',
     icon: '',
     category: 'hands',
     rarity: 'common',
@@ -63,7 +63,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'hands_1000',
     name: 'Regular',
-    description: 'Play 1,000 hands',
+    description: 'Play 1,000 Hands',
     icon: '',
     category: 'hands',
     rarity: 'rare',
@@ -73,7 +73,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'hands_10000',
     name: 'Grinder',
-    description: 'Play 10,000 hands',
+    description: 'Play 10,000 Hands',
     icon: '',
     category: 'hands',
     rarity: 'epic',
@@ -83,7 +83,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'hands_100000',
     name: 'Professional',
-    description: 'Play 100,000 hands',
+    description: 'Play 100,000 Hands',
     icon: '',
     category: 'hands',
     rarity: 'legendary',
@@ -95,8 +95,8 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'wins_10',
     name: 'First Blood',
-    description: 'Win 10 hands',
-    icon: '✊',
+    description: 'Win 10 Hands',
+    icon: '☆',
     category: 'wins',
     rarity: 'common',
     requirement: 10,
@@ -105,7 +105,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'wins_100',
     name: 'Winner',
-    description: 'Win 100 hands',
+    description: 'Win 100 Hands',
     icon: '',
     category: 'wins',
     rarity: 'rare',
@@ -115,7 +115,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'wins_1000',
     name: 'Dominator',
-    description: 'Win 1,000 hands',
+    description: 'Win 1,000 Hands',
     icon: '',
     category: 'wins',
     rarity: 'epic',
@@ -127,7 +127,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'friends_5',
     name: 'Social Butterfly',
-    description: 'Add 5 friends',
+    description: 'Add 5 Friends',
     icon: '◆',
     category: 'social',
     rarity: 'common',
@@ -137,7 +137,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'friends_25',
     name: 'Popular',
-    description: 'Add 25 friends',
+    description: 'Add 25 Friends',
     icon: '',
     category: 'social',
     rarity: 'rare',
@@ -147,7 +147,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'clubs_3',
     name: 'Club Hopper',
-    description: 'Join 3 clubs',
+    description: 'Join 3 Clubs',
     icon: '',
     category: 'social',
     rarity: 'common',
@@ -158,8 +158,8 @@ export const ACHIEVEMENTS: Achievement[] = [
   // Financial
   {
     id: 'profit_1000',
-    name: 'In the Green',
-    description: 'Profit 1,000 chips',
+    name: 'In The Green',
+    description: 'Profit 1,000 Chips',
     icon: '',
     category: 'financial',
     rarity: 'rare',
@@ -169,7 +169,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'profit_10000',
     name: 'High Roller',
-    description: 'Profit 10,000 chips',
+    description: 'Profit 10,000 Chips',
     icon: '',
     category: 'financial',
     rarity: 'epic',
@@ -179,7 +179,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'biggest_pot_500',
     name: 'Big Pot',
-    description: 'Win a 500+ chip pot',
+    description: 'Win A 500+ Chip Pot',
     icon: '',
     category: 'financial',
     rarity: 'rare',
@@ -191,7 +191,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'tourney_win_1',
     name: 'Champion',
-    description: 'Win a tournament',
+    description: 'Win A Tournament',
     icon: '',
     category: 'tournament',
     rarity: 'epic',
@@ -201,7 +201,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'tourney_top3_10',
     name: 'Consistent',
-    description: 'Finish top 3 in 10 tournaments',
+    description: 'Finish Top 3 In 10 Tournaments',
     icon: '',
     category: 'tournament',
     rarity: 'rare',
@@ -211,7 +211,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'tourney_played_50',
     name: 'Tournament Regular',
-    description: 'Play 50 tournaments',
+    description: 'Play 50 Tournaments',
     icon: '',
     category: 'tournament',
     rarity: 'rare',
@@ -223,7 +223,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'royal_flush',
     name: 'Royal Flush',
-    description: 'Hit a Royal Flush',
+    description: 'Hit A Royal Flush',
     icon: '',
     category: 'special',
     rarity: 'legendary',
@@ -233,7 +233,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'straight_flush',
     name: 'Straight Flush',
-    description: 'Hit a Straight Flush',
+    description: 'Hit A Straight Flush',
     icon: '',
     category: 'special',
     rarity: 'epic',
@@ -242,7 +242,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   },
   {
     id: 'quads',
-    name: 'Four of a Kind',
+    name: 'Four Of A Kind',
     description: 'Hit Quads',
     icon: '4',
     category: 'special',
@@ -253,7 +253,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'bad_beat',
     name: 'Bad Beat Survivor',
-    description: 'Lose with quads or better',
+    description: 'Lose With Quads Or Better',
     icon: '',
     category: 'special',
     rarity: 'epic',
@@ -266,7 +266,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'streak_7',
     name: 'Weekly Warrior',
-    description: 'Log in 7 days in a row',
+    description: 'Log In 7 Days In A Row',
     icon: '',
     category: 'special',
     rarity: 'common',
@@ -276,7 +276,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'streak_30',
     name: 'Monthly Grinder',
-    description: 'Log in 30 days in a row',
+    description: 'Log In 30 Days In A Row',
     icon: '▤',
     category: 'special',
     rarity: 'rare',
@@ -286,7 +286,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'streak_100',
     name: 'Centurion',
-    description: 'Log in 100 days in a row',
+    description: 'Log In 100 Days In A Row',
     icon: '◆',
     category: 'special',
     rarity: 'legendary',
@@ -371,122 +371,140 @@ class AchievementServiceClass {
   // Update Progress
   // ─────────────────────────────────────────────────────────────────────────────
 
+  /**
+   * Add to an achievement's progress.
+   *
+   * REWRITTEN 2026-08-29. This used to SELECT the row, decide in JavaScript,
+   * then UPDATE or INSERT. `.maybeSingle()` ERRORS when more than one row
+   * matches, only `data` was destructured, so that error was discarded and
+   * `existing` came back undefined — which reads as "no row yet", so it
+   * INSERTed. There was no unique constraint to stop it. One duplicate begets
+   * the next: production held 33,353 rows for 44 real (user, achievement)
+   * pairs, the worst single pair 13,047 rows, still growing one row per page
+   * load. Progress could never accumulate, so an achievement counted this way
+   * could essentially never be earned.
+   *
+   * `fn_achievement_record_progress` does the whole thing in one statement:
+   * progress only rises, the unlock is set once and never cleared, and it
+   * returns true ONLY on the call that flipped it — so `awardRewards`, which
+   * moves real chips through `add_to_promo_wallet`, fires exactly once even
+   * with several tabs open.
+   */
   async incrementProgress(
     userId: string,
     achievementId: string,
     amount: number = 1
   ): Promise<{ unlocked: boolean; achievement?: Achievement }> {
-    // FIX-216: Circuit breaker — skip DB writes after persistent failures
     if (this._dbWriteDisabled) return { unlocked: false };
 
     const achievement = this.getById(achievementId);
     if (!achievement) return { unlocked: false };
 
-    // Get or create progress record
-    const { data: existing } = await supabase
+    // The read is only to know what to add to. It is NOT the write, so a
+    // stale answer here cannot corrupt anything: the RPC clamps with
+    // GREATEST against whatever is really stored.
+    const { data: existing, error: readErr } = await supabase
       .from('training_user_achievements')
-      .select('id, progress, unlocked_at')
+      .select('progress, unlocked_at')
       .eq('user_id', userId)
       .eq('achievement_id', achievementId)
       .maybeSingle();
 
-    // Already unlocked
-    if (existing?.unlocked_at) {
+    // The error is HANDLED now rather than dropped. Dropping it is what
+    // turned "I could not read this row" into "this row does not exist".
+    if (readErr) {
+      reportError(readErr, 'AchievementService.incrementProgress.read', {
+        userId,
+        achievementId,
+      });
       return { unlocked: false };
     }
 
-    const currentProgress = existing?.progress || 0;
-    const newProgress = Math.min(currentProgress + amount, achievement.requirement);
-    const justUnlocked = newProgress >= achievement.requirement;
+    if (existing?.unlocked_at) return { unlocked: false };
 
-    if (existing) {
-      // Update existing
-      const { error: progErr } = await supabase
-        .from('training_user_achievements')
-        .update({
-          progress: newProgress,
-          unlocked_at: justUnlocked ? new Date().toISOString() : null,
-        })
-        .eq('id', existing.id);
-      if (progErr) {
-        this._dbWriteFailures++;
-        if (this._dbWriteFailures >= 3) {
-          this._dbWriteDisabled = true;
-          console.debug(
-            '[AchievementService] DB writes disabled - training_user_achievements table unavailable'
-          );
-        }
-        // Report only first 3 failures — avoids Sentry flood from repeated RLS errors
-        if (this._dbWriteFailures <= 3) {
-          reportError(progErr, 'AchievementService.incrementProgress.update', {
-            userId,
-            achievementId,
-            failureCount: this._dbWriteFailures,
-          });
-        }
-        return { unlocked: false };
-      }
-    } else {
-      // Create new
-      const { error: insErr } = await supabase.from('training_user_achievements').insert({
-        user_id: userId,
-        achievement_id: achievementId,
-        progress: newProgress,
-        unlocked_at: justUnlocked ? new Date().toISOString() : null,
-      });
-      if (insErr) {
-        this._dbWriteFailures++;
-        if (this._dbWriteFailures >= 3) {
-          this._dbWriteDisabled = true;
-          console.debug(
-            '[AchievementService] DB writes disabled - training_user_achievements table unavailable'
-          );
-        }
-        // Report only first 3 failures — avoids Sentry flood from repeated RLS errors
-        if (this._dbWriteFailures <= 3) {
-          reportError(insErr, 'AchievementService.incrementProgress.insert', {
-            userId,
-            achievementId,
-            failureCount: this._dbWriteFailures,
-          });
-        }
-        return { unlocked: false };
-      }
-    }
+    const target = achievement.requirement;
+    const next = Math.min(Number(existing?.progress || 0) + amount, target);
 
-    // Award rewards if just unlocked
-    if (justUnlocked) {
-      await this.awardRewards(userId, achievement);
-    }
-
-    return { unlocked: justUnlocked, achievement: justUnlocked ? achievement : undefined };
+    return this._record(userId, achievement, next);
   }
 
+  /**
+   * The single write path for every achievement in the app.
+   * Returns whether THIS call unlocked it, and pays the reward if so.
+   */
+  private async _record(
+    userId: string,
+    achievement: Achievement,
+    progress: number
+  ): Promise<{ unlocked: boolean; achievement?: Achievement }> {
+    const { data: justUnlocked, error } = await supabase.rpc('fn_achievement_record_progress', {
+      p_user_id: userId,
+      p_achievement_id: achievement.id,
+      p_progress: progress,
+      p_target: achievement.requirement,
+    });
+
+    if (error) {
+      this._dbWriteFailures++;
+      if (this._dbWriteFailures >= 3) {
+        this._dbWriteDisabled = true;
+        console.debug(
+          '[AchievementService] DB writes disabled - training_user_achievements unavailable'
+        );
+      }
+      if (this._dbWriteFailures <= 3) {
+        reportError(error, 'AchievementService.record', {
+          userId,
+          achievementId: achievement.id,
+          failureCount: this._dbWriteFailures,
+        });
+      }
+      return { unlocked: false };
+    }
+
+    if (justUnlocked === true) {
+      await this.awardRewards(userId, achievement);
+      return { unlocked: true, achievement };
+    }
+    return { unlocked: false };
+  }
+
+  /**
+   * Raise an achievement to an absolute figure and report whether THIS call
+   * unlocked it. `setProgress` is the same thing without the answer.
+   *
+   * Login streaks need the answer: the caller pays out and notifies on the
+   * transition, and the transition has to be decided by the write itself,
+   * not guessed at afterwards by re-reading a row another tab may have moved.
+   */
+  async incrementProgressTo(
+    userId: string,
+    achievementId: string,
+    progress: number
+  ): Promise<{ unlocked: boolean; achievement?: Achievement }> {
+    if (this._dbWriteDisabled) return { unlocked: false };
+    const achievement = this.getById(achievementId);
+    if (!achievement) return { unlocked: false };
+    return this._record(userId, achievement, Math.min(progress, achievement.requirement));
+  }
+
+  /**
+   * Set an achievement to an absolute figure (a recount, not an increment).
+   *
+   * Routed through the same atomic RPC as `incrementProgress` since
+   * 2026-08-29. The old body called `.upsert(..., { onConflict:
+   * 'user_id,achievement_id' })` against a table that had NO unique
+   * constraint on those columns, so ON CONFLICT had nothing to match and the
+   * call failed every time it ran. It also wrote `unlocked_at: unlocked ?
+   * now : null`, which meant a smaller recount REVOKED an achievement the
+   * player already held. The RPC cannot do either: progress only rises and
+   * an unlock is never cleared.
+   */
   async setProgress(userId: string, achievementId: string, progress: number): Promise<void> {
     if (this._dbWriteDisabled) return;
     const achievement = this.getById(achievementId);
     if (!achievement) return;
-
-    const clampedProgress = Math.min(progress, achievement.requirement);
-    const unlocked = clampedProgress >= achievement.requirement;
-
-    const { error: upsertErr } = await supabase.from('training_user_achievements').upsert(
-      {
-        user_id: userId,
-        achievement_id: achievementId,
-        progress: clampedProgress,
-        unlocked_at: unlocked ? new Date().toISOString() : null,
-      },
-      { onConflict: 'user_id,achievement_id' }
-    );
-    if (upsertErr) {
-      reportError(upsertErr, 'AchievementService.setProgress', { userId, achievementId });
-      return;
-    }
-
-    if (unlocked) {
-      await this.awardRewards(userId, achievement);
-    }
+    await this._record(userId, achievement, Math.min(progress, achievement.requirement));
   }
 
   // ─────────────────────────────────────────────────────────────────────────────

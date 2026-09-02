@@ -1,104 +1,94 @@
 .action-sheet-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.8);
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
-    z-index: 1200;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 9620; /* was 1200; dialogs sit above the 9400 ticker */
 }
 
 .action-sheet {
-    width: 100%;
-    max-width: 480px;
-    padding: 8px;
-    animation: sheetIn 0.3s;
+  width: 100%;
+  max-width: 480px;
+  padding: 8px;
+  animation: sheetIn 0.3s;
 }
 
 @keyframes sheetIn {
-    from {
-        transform: translateY(100%);
-    }
+  from {
+    transform: translateY(100%);
+  }
 
-    to {
-        transform: translateY(0);
-    }
+  to {
+    transform: translateY(0);
+  }
 }
 
 .sheet-title {
-    text-align: center;
-    padding: 14px;
-    color: rgba(255, 255, 255, 0.5);
-    font-size: 0.85rem;
-    background: rgba(30, 30, 50, 0.95);
-    border-radius: 14px 14px 0 0;
+  text-align: center;
+  padding: 14px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.85rem;
+  background: rgba(30, 30, 50, 0.95);
+  border-radius: 14px 14px 0 0;
 }
 
 .sheet-actions {
-    background: rgba(30, 30, 50, 0.95);
-    border-radius: 14px;
-    overflow: hidden;
-    margin-bottom: 8px;
-    backdrop-filter: blur(12px) saturate(1.2);
-    -webkit-backdrop-filter: blur(12px) saturate(1.2);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background: rgba(30, 30, 50, 0.95);
+  border-radius: 14px;
+  overflow: hidden;
+  margin-bottom: 8px;
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.sheet-title+.sheet-actions {
-    border-radius: 0 0 14px 14px;
+.sheet-title + .sheet-actions {
+  border-radius: 0 0 14px 14px;
 }
 
 .sheet-action {
-    width: 100%;
-    padding: 16px;
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    color: #fff;
-    font-size: 1rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    cursor: pointer;
-    transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
+  width: 100%;
+  padding: 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
 }
-
-.sheet-action:hover {
-    transform: translateY(-2px);
-}
-
 .sheet-action:last-child {
-    border-bottom: none;
+  border-bottom: none;
 }
-
 
 .sheet-action.destructive {
-    color: #f87171;
+  color: #f87171;
 }
 
 .sheet-action.disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .action-icon {
-    font-size: 1.1rem;
+  font-size: 1.1rem;
 }
 
 .sheet-cancel {
-    width: 100%;
-    padding: 16px;
-    background: rgba(30, 30, 50, 0.95);
-    border: none;
-    border-radius: 14px;
-    color: #ffd700;
-    font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
-    margin-bottom: 8px;
-}
-
-.sheet-cancel:hover {
-    background: rgba(50, 50, 70, 0.95);
+  width: 100%;
+  padding: 16px;
+  background: rgba(30, 30, 50, 0.95);
+  border: none;
+  border-radius: 14px;
+  color: #ffd700;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 8px;
 }

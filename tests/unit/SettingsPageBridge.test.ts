@@ -23,6 +23,7 @@ import { resolve } from 'node:path';
 import {
   toTableSettings,
   fromTableSettings,
+  rollbackFailedCardBack,
   CARD_BACKS,
   DEFAULT_SETTINGS,
   type UserSettings,
@@ -38,15 +39,31 @@ const TABLE_CONSUMES = [
   'animationSpeed',
   'showPotOdds',
   'confirmAllIn',
-  'autoMuckWinners',
+  // Dan 2026-08-28: consumed by TournamentStartingTicker (the scrolling
+  // announcement marquee bails out when this is false).
+  'showTicker',
 ] as const;
+
+/* `autoMuckWinners` LEFT THIS LIST 2026-08-29, and its control left the page
+   with it. It was never really "consumed by the table": the prompt it governs
+   sits behind `const ASK_TO_SHOW_ON_UNCONTESTED_WIN = false` in TablePage and
+   has done since 2026-08-23, on Dan's ruling that the prompt should not exist.
+   So it belonged in TABLE_IGNORES all along — this file's own words, "mapping a
+   page control onto one of these would recreate the original bug in a form that
+   looks wired", describe exactly what was happening. Writing it is now pinned
+   as a regression by tests/unit/settingsHaveOneOwner.test.ts. */
 
 /**
  * Keys that exist on the table store but that nothing at the table reads.
  * Mapping a page control onto one of these would recreate the original bug in
  * a form that looks wired.
  */
-const TABLE_IGNORES = ['autoMuck', 'autoPostBlinds', 'showBetSizePresets'] as const;
+const TABLE_IGNORES = [
+  'autoMuck',
+  'autoPostBlinds',
+  'showBetSizePresets',
+  'autoMuckWinners',
+] as const;
 
 const sample: UserSettings = {
   ...DEFAULT_SETTINGS,
@@ -57,7 +74,6 @@ const sample: UserSettings = {
   animationSpeed: 'fast',
   showPotOdds: true,
   confirmAllIn: false,
-  autoMuckWinners: true,
 };
 
 describe('the settings page writes into the store the table reads', () => {
@@ -88,7 +104,6 @@ describe('the settings page writes into the store the table reads', () => {
     expect(m.fourColorDeck).toBe(true);
     expect(m.showPotOdds).toBe(true);
     expect(m.confirmAllIn).toBe(false);
-    expect(m.autoMuckWinners).toBe(true);
   });
 
   it('does not invert animation speed — the CSS value is a duration multiplier', () => {
@@ -113,20 +128,30 @@ describe('the settings page writes into the store the table reads', () => {
     expect(back.animationSpeed).toBe(sample.animationSpeed);
     expect(back.showPotOdds).toBe(sample.showPotOdds);
     expect(back.confirmAllIn).toBe(sample.confirmAllIn);
-    expect(back.autoMuckWinners).toBe(sample.autoMuckWinners);
   });
 
   it('falls back rather than showing a card back the renderer cannot draw', () => {
     const table = { ...toTableSettings(sample), cardBack: 'not_a_real_back' } as TableUserSettings;
     expect(fromTableSettings(table, DEFAULT_SETTINGS).cardBack).toBe(DEFAULT_SETTINGS.cardBack);
   });
+
+  it('restores the durable card back when the cloud appearance write fails', () => {
+    const restored = rollbackFailedCardBack({ ...sample, cardBack: 'gold' }, 'classic_red');
+    expect(restored.cardBack).toBe('classic_red');
+    expect(restored.soundVolume).toBe(sample.soundVolume);
+  });
+
+  it('sends table visuals to the one live Table Studio instead of a duplicate dropdown', () => {
+    const page = readFileSync(resolve(__dirname, '../../src/pages/SettingsPage.tsx'), 'utf-8');
+    expect(page).toContain('<ThemeSettingsModal');
+    expect(page).toContain('Table Studio');
+    expect(page).not.toContain('Card Back Style');
+    expect(page).not.toContain('applyTableAppearance');
+  });
 });
 
 describe('every card back on offer is one the renderer can actually draw', () => {
-  const css = readFileSync(
-    resolve(__dirname, '../../src/components/table/CardImage.css'),
-    'utf-8'
-  );
+  const css = readFileSync(resolve(__dirname, '../../src/components/table/CardImage.css'), 'utf-8');
 
   it('has a .card-back--<id> rule for each option', () => {
     expect(CARD_BACKS.length).toBeGreaterThan(0);

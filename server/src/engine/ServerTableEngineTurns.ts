@@ -9,6 +9,17 @@
  */
 
 import { HandController } from './HandController.js';
+import {
+  bettingStructureFor,
+  isPotLimitVariant,
+  isFixedLimitVariant,
+  fixedLimitBetSize,
+  isFixedLimitCapped,
+  substituteOnCappedStreet,
+  type BettingStructure,
+} from './BettingStructure.js';
+import type { HandStage, ActionType } from '../types.js';
+
 import { HorseLogic, resolveHorseStyle } from './HorseLogic.js';
 import { getTournamentBrainContext } from '../services/TournamentBrainContext.js';
 import { PreciseActionTimer } from './PreciseActionTimer.js';
@@ -24,6 +35,21 @@ import { reportError } from '../services/errorReporter.js';
 import { ServerTableEngineSeating } from './ServerTableEngineSeating.js';
 // Static watchdog thresholds live on the Base class (single source of truth).
 import { ServerTableEngineBase } from './ServerTableEngineBase.js';
+import { noteDecisionMs } from './BrainTelemetry.js';
+
+/**
+ * A monotonic millisecond clock that cannot throw.
+ *
+ * `performance` is global in every Node this runs on, but the measurement must
+ * never be able to break a hand — a horse failing to act because a timer was
+ * unavailable would be an absurd way to lose a table. Date.now() is the
+ * fallback and is accurate enough for a millisecond-scale budget.
+ */
+function perfNow(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+}
 
 export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   /**
@@ -116,6 +142,11 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * class owns — it deliberately leaves the heartbeat and the TimeBankEngine's
    * separate `timebank:<playerId>` deadlines alone.
    */
+  /** V14: how far into an auto-granted time bank a horse may tank. The bank
+   *  grants ~20s per use, so this leaves a wide safety margin against the
+   *  bank expiring and auto-folding the hand. */
+  private static readonly HORSE_MAX_BANK_BURN_MS = 9000;
+
   protected clearTurnTimer(): void {
     this.preciseTimer.clearTable(this.tableId);
     // V13: this function's own doc says "every turn deadline this table owns",
@@ -182,7 +213,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           new Error(
             'Table paused-by-design for ' +
               Math.round(pausedMs / 60000) +
-              'min — hand-for-hand/break coordinator may have lost the resume signal'
+              'min - hand-for-hand/break coordinator may have lost the resume signal'
           ),
           'ServerTableEngine.' + this.tableId + '.paused_too_long',
           { handCount: this.handCount }
@@ -210,7 +241,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             !this.disconnectEngine.isSittingOut(this.tableId, p.user_id)) &&
           !this.waitingForBB.has(p.user_id)
       ).length;
-      if (dealable >= 2 && idleMs > ServerTableEngineBase.WATCHDOG_IDLE_MS) {
+      if (dealable >= this.minPlayersToDeal() && idleMs > ServerTableEngineBase.WATCHDOG_IDLE_MS) {
         /**
          * ── Dan 2026-08-22: "games randomly break, stop running or freeze" ──
          *
@@ -245,7 +276,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               Math.round(idleMs / 1000) +
               's with ' +
               dealable +
-              ' dealable seats — dealing loop ' +
+              ' dealable seats - dealing loop ' +
               (loopWedged ? 'is wedged at ' : 'is cycling without dealing, at ') +
               this.describeLoopPhase()
           ),
@@ -388,7 +419,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         this.markProgress();
       } else {
         reportError(
-          new Error('Watchdog forced action REJECTED at seat ' + seat + ' — escalating to rebuild'),
+          new Error('Watchdog forced action REJECTED at seat ' + seat + ' - escalating to rebuild'),
           'ServerTableEngine.' + this.tableId + '.watchdog_force_rejected'
         );
       }
@@ -509,7 +540,16 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // FIX: Guard against race condition where the player already submitted an action
       // and the FSM advanced to 'processing' or 'complete' before this timer callback fired.
       // Only attempt time bank auto-activation if the turn is still in 'timer_running'.
-      if (!this.timeBankActivatedThisTurn && this.turnFSM.state === 'timer_running') {
+      // timeBankSuppressedThisTurn: the player dropped out of reconnect grace
+      // during THIS turn. Falling through to onPrimaryTimerExpired here would
+      // auto-activate (and, use-it-or-lose-it, fully spend) a bank they cannot
+      // use. Skipping it leaves the ordinary deadline to resolve the seat
+      // exactly as it would have anyway.
+      if (
+        !this.timeBankActivatedThisTurn &&
+        !this.timeBankSuppressedThisTurn &&
+        this.turnFSM.state === 'timer_running'
+      ) {
         const autoActivated = this.timeBankEngine.onPrimaryTimerExpired(
           this.tableId,
           userId,
@@ -536,7 +576,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               this.turnFSM.transition('processing');
             } else {
               console.warn(
-                `[ServerTableEngine:${this.tableId}] Time bank expiry: FSM in '${this.turnFSM.state}' but seat ${seat} is still current — resolving anyway`
+                `[ServerTableEngine:${this.tableId}] Time bank expiry: FSM in '${this.turnFSM.state}' but seat ${seat} is still current - resolving anyway`
               );
             }
 
@@ -552,7 +592,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               this.markProgress();
             } else {
               reportError(
-                new Error('Time bank auto-action rejected at seat ' + seat + ' — re-arming clock'),
+                new Error('Time bank auto-action rejected at seat ' + seat + ' - re-arming clock'),
                 'ServerTableEngine.' + this.tableId + '.timebank_auto_action_rejected'
               );
               this.forceArmTurnTimer(seat, this.tableInfo?.action_time_seconds || 15);
@@ -594,7 +634,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // advanced it to 'processing' between the outer guard and here (tight race window).
           if (this.turnFSM.state !== 'timer_running') {
             console.warn(
-              `[ServerTableEngine:${this.tableId}] Time bank auto-activation skipped — FSM is '${this.turnFSM.state}' (expected timer_running). Turn already resolved.`
+              `[ServerTableEngine:${this.tableId}] Time bank auto-activation skipped - FSM is '${this.turnFSM.state}' (expected timer_running). Turn already resolved.`
             );
             return;
           }
@@ -617,7 +657,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // seconds and then auto-folded at 15. The manual activateTimeBank
           // path already reads currentUseSeconds correctly; this was the outlier.
           const bank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
-          const grantedSeconds = bank?.currentUseSeconds ?? 15;
+          // Bible V8 §6.2: a bank grants 20s. The 15 that used to be the
+          // fallback here is the DECISION clock, a different number.
+          const grantedSeconds = bank?.currentUseSeconds ?? 20;
           const usesAfterActivation = this.timeBankEngine.getUsesRemaining(this.tableId, userId);
           console.log(
             `[ServerTableEngine:${this.tableId}] Auto-activated time bank for ${userId} (${grantedSeconds}s granted, ${usesAfterActivation} uses left)`
@@ -695,7 +737,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         this.markProgress();
       } else {
         reportError(
-          new Error('Timeout auto-action rejected at seat ' + seat + ' — re-arming clock'),
+          new Error('Timeout auto-action rejected at seat ' + seat + ' - re-arming clock'),
           'ServerTableEngine.' + this.tableId + '.auto_action_rejected'
         );
         this.forceArmTurnTimer(seat, this.tableInfo?.action_time_seconds || 15);
@@ -730,54 +772,90 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * Activate Time Bank triggered by the client HTTP POST to `/timebank`
    * Bible V8 §6.2: Manual activate — delegates to TimeBankEngine (single source of truth)
    */
-  public async activateTimeBank(userId: string): Promise<{ success: boolean; error?: string }> {
+  public async activateTimeBank(
+    userId: string
+  ): Promise<{ success: boolean; error?: string; armed?: boolean; message?: string }> {
+    // CLAUDE.md §5.7: every one of these strings reaches the player as a toast,
+    // so they are Title Case with no em dashes.
     if (!this.handController || !this.tableInfo) {
-      return { success: false, error: 'No active hand or table info missing' };
+      return { success: false, error: 'No Active Hand At This Table' };
     }
 
     const state = this.handController.getState();
     const player = state.players.find((p) => p.user_id === userId);
 
+    /* THE DISCARD IS A DECISION, SO IT CAN BUY TIME (2026-08-31).
+       Everything below this line is written against `currentPlayerSeat`, and
+       the Crazy Pineapple discard round has no turn - every seat decides at
+       once - so the press landed on "Not Your Turn", and the one action most
+       likely to make a player hesitate was the only one on the table with no
+       way to think. Missing it folds the hand outright.
+
+       Routed to the round's own per-seat deadline, which applies the same
+       exhaustion rule, the same pool and the same per-street cap as a turn. */
+    if (state.stage === 'pineapple_discard') {
+      return this.extendPineappleDiscard(userId);
+    }
+
     if (!player || state.currentPlayerSeat !== player.seat) {
-      return { success: false, error: 'Not your turn' };
+      return { success: false, error: 'Not Your Turn' };
     }
 
     if (this.timeBankActivatedThisTurn) {
-      return { success: false, error: 'Time bank already activated this turn' };
+      return { success: false, error: 'Your Time Bank Is Already Running' };
     }
 
-    // Bible V8 §6.2: Check via TimeBankEngine (single source of truth for pool + per-hand limits)
+    // Bible V8 §6.2: Check via TimeBankEngine (single source of truth for pool + per-street limits)
     if (!this.timeBankEngine.hasTimeBank(this.tableId, userId)) {
       // VIP time banks 2026-08-17: a diamond top-up purchased mid-session
       // lives only in the DB. Refresh once before rejecting, then re-validate
       // the turn - the await may have raced the action.
       const refreshed = await this.refreshTimeBankFromDb(userId);
       if (!refreshed || !this.timeBankEngine.hasTimeBank(this.tableId, userId)) {
-        return { success: false, error: 'No time bank uses remaining' };
+        return { success: false, error: 'No Time Bank Uses Remaining' };
       }
       const stateAfter = this.handController?.getState();
       if (!stateAfter || stateAfter.currentPlayerSeat !== player.seat) {
-        return { success: false, error: 'Not your turn' };
+        return { success: false, error: 'Not Your Turn' };
       }
       if (this.timeBankActivatedThisTurn) {
-        return { success: false, error: 'Time bank already activated this turn' };
+        return { success: false, error: 'Your Time Bank Is Already Running' };
       }
     }
 
-    // How much ordinary turn clock is still on the board. The bank is granted
-    // ON TOP of this, so the TimeBankEngine countdown has to cover both — else
-    // it fires first and folds a player whose clock is visibly still running.
+    // How much ordinary turn clock is still on the board.
     //
-    // Captured BEFORE activate() so the engine countdown and the turn timer
-    // armed further down are derived from the same instant. Recomputing it
-    // later left the two milliseconds apart; they have to agree exactly.
+    // Dan 2026-08-23, binding: "It should not take a time bank or add more time
+    // until you have truly used your entire 15 seconds." So this is no longer
+    // an amount to stack the bank on top of — it is the EXHAUSTION TEST. While
+    // it is above the epsilon the press costs nothing and grants nothing; it
+    // only records the intent, which onPrimaryTimerExpired redeems the instant
+    // the clock actually runs out.
+    //
+    // Captured BEFORE the engine call so the check and the timer armed further
+    // down are derived from the same instant.
     const remainingBeforeBank = Math.max(
       0,
       this.playerTurnDuration - (Date.now() - this.playerTurnStartTime) / 1000
     );
 
-    // Activate via TimeBankEngine — it handles pool depletion, per-hand limit, and event emission
-    const activated = this.timeBankEngine.activate(
+    if (remainingBeforeBank > TimeBankEngine.CLOCK_EXHAUSTED_EPSILON_SECONDS) {
+      if (!this.timeBankEngine.arm(this.tableId, userId)) {
+        return { success: false, error: 'No Time Bank Uses Remaining' };
+      }
+      console.log(
+        `[ServerTableEngine:${this.tableId}] Player ${userId} armed a time bank with ${Math.round(remainingBeforeBank)}s still on the clock. Nothing spent yet.`
+      );
+      return {
+        success: true,
+        armed: true,
+        message: 'Time Bank Armed. It Starts When Your Clock Runs Out',
+      };
+    }
+
+    // Activate via TimeBankEngine — it handles pool depletion, the per-street
+    // limit, the exhaustion check and event emission.
+    const activation = this.timeBankEngine.tryActivate(
       this.tableId,
       userId,
       () => {
@@ -790,22 +868,23 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         const tbToCall = tbPlayer ? Math.max(0, tbState.currentBet - (tbPlayer.bet ?? 0)) : 0;
         const tbCanCheck = tbToCall === 0;
 
-        if (tbCanCheck) {
-          try {
-            this.handController!.performAction(player.seat, 'check');
-          } catch {
-            try {
-              this.handController!.performAction(player.seat, 'fold');
-            } catch {
-              /* done */
-            }
-          }
+        // performAction returns FALSE on an illegal action - it does not throw
+        // (see the doc block on forceResolveSeat). The previous try/catch here
+        // therefore never reached its fold fallback: a rejected `check` left the
+        // seat with no action, no re-armed clock and no markProgress, hanging
+        // the hand until the stall watchdog. forceResolveSeat is the path the
+        // AUTO time-bank expiry already uses; this was the last site that had
+        // not been migrated to it.
+        if (this.forceResolveSeat(player.seat, tbCanCheck)) {
+          this.markProgress();
         } else {
-          try {
-            this.handController!.performAction(player.seat, 'fold');
-          } catch {
-            /* done */
-          }
+          reportError(
+            new Error(
+              'Manual time bank auto-action rejected at seat ' + player.seat + ' - re-arming clock'
+            ),
+            'ServerTableEngine.' + this.tableId + '.manual_timebank_auto_action_rejected'
+          );
+          this.forceArmTurnTimer(player.seat, this.tableInfo?.action_time_seconds || 15);
         }
 
         // FIX 149: Wire telemetry — manual time bank expiry
@@ -829,21 +908,35 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       remainingBeforeBank
     );
 
-    if (!activated) {
-      return { success: false, error: 'Time bank activation failed (per-hand limit or depleted)' };
+    if (activation !== 'activated') {
+      // Title Case, no em dashes (CLAUDE.md §5.7). Each reason is distinct so
+      // the player is not told "depleted" when they simply used both banks on
+      // this street and still own plenty.
+      const reason =
+        activation === 'street_limit'
+          ? 'You Have Already Used Two Time Banks On This Street'
+          : activation === 'already_active'
+            ? 'Your Time Bank Is Already Running'
+            : activation === 'clock_not_exhausted'
+              ? 'Your Clock Is Still Running'
+              : 'No Time Bank Uses Remaining';
+      return { success: false, error: reason };
     }
 
     this.timeBankActivatedThisTurn = true;
 
     // Get bank info for the broadcast
     const bank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
-    const bankSeconds = bank ? bank.currentUseSeconds : 15;
+    const bankSeconds = bank ? bank.currentUseSeconds : 20;
 
-    // Same remainingBeforeBank the TimeBankEngine countdown was armed with.
-    const newDuration = remainingBeforeBank + bankSeconds;
+    // A bank RESETS the clock; it does not extend it. remainingBeforeBank is
+    // within the exhaustion epsilon by the time we get here, so there is
+    // nothing left to add and the enforcement countdown armed inside
+    // TimeBankEngine is this same number.
+    const newDuration = bankSeconds;
 
     console.log(
-      `[ServerTableEngine:${this.tableId}] Player ${userId} manually activated time bank. Adding ${bankSeconds}s. Total: ${Math.round(newDuration)}s`
+      `[ServerTableEngine:${this.tableId}] Player ${userId} spent a time bank. Clock reset to ${bankSeconds}s.`
     );
 
     this.startTurnTimer(userId, player.seat, newDuration);
@@ -864,8 +957,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             auto_activated: false,
           },
         })
-        .catch(() => {});
-    } catch (e) {}
+        .catch((err) => reportError(err, 'ServerTableEngine.time_bank_broadcast_failed'));
+    } catch (err) {
+      // A cosmetic broadcast must never break the turn it decorates — but it
+      // must not vanish either. This was the one bare `catch (e) {}` left in
+      // the engine: an unused binding, no comment, no report, swallowing every
+      // synchronous throw from the legacy Realtime path.
+      reportError(err, 'ServerTableEngine.time_bank_broadcast_threw');
+    }
 
     // FIX 125 + 2026-04-14 spam fix: warn ONLY at the last 1 remaining (or 0
     // = just used last one). Previous <=5 condition spammed on 4-max tables.
@@ -915,12 +1014,29 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   /**
    * POST /heartbeat — Bible V8 §6.3: Reset disconnect timer for a player
    */
-  public heartbeat(userId: string): {
+  public heartbeat(
+    userId: string,
+    /**
+     * PHASE 2 (2026-08-31): the client reporting that it has actually DRAWN
+     * the action controls for this player. Optional - older clients omit it,
+     * and the silent-client canary falls back to its weaker signal rather
+     * than treating them as suspect.
+     *
+     * It rides the heartbeat instead of getting a route of its own because
+     * the heartbeat already runs on a timer, is already authenticated, and
+     * already resolves the table engine. A second endpoint would be a second
+     * thing to keep alive for the sake of one boolean.
+     */
+    opts?: { turnRendered?: boolean }
+  ): {
     success: boolean;
     connected: boolean;
     gracePeriodRemaining: number;
   } {
     this.disconnectEngine.heartbeat(this.tableId, userId);
+    if (opts?.turnRendered) {
+      this.disconnectEngine.noteTurnRendered(this.tableId, userId);
+    }
     const connected = this.disconnectEngine.isConnected(this.tableId, userId);
     return { success: true, connected, gracePeriodRemaining: 0 };
   }
@@ -933,6 +1049,21 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
    * instead of the table burning a full action clock on a player who is gone.
    * A reconnect (WS onConnect -> heartbeat) cancels it just as fast.
    */
+  /**
+   * POST /away — Dan 2026-08-23: the CLIENT is telling us it is going away
+   * (pagehide, tab close, app frozen by the OS), rather than us inferring it
+   * from silence.
+   *
+   * That distinction is why this skips the transport grace window that
+   * `notifyTransportDisconnect` opens: a socket dying is ambiguous, but "I am
+   * leaving" is not. The player keeps their seat — they are simply AWAY, so
+   * the one-SB-one-BB cap applies and they are stood up and cashed out once
+   * it is spent. Coming back (any heartbeat) clears it at no cost.
+   */
+  public notifyPageLeft(userId: string): void {
+    this.disconnectEngine.markPageLeft(this.tableId, userId);
+  }
+
   public notifyTransportDisconnect(userId: string): void {
     // 2026-08-22: markTransportGone, not markDisconnected. The socket dying is
     // not the player leaving — their HTTP heartbeat is a second transport, and
@@ -943,12 +1074,32 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
   /**
    * POST /preaction — Bible V8 §4.15: Set or clear a pre-action
+   *
+   * ── THE ARM IS ACKNOWLEDGED WITH THE ENGINE'S OWN NUMBER (2026-08-30) ────
+   *
+   * The response now carries `armedToCall`: the price the ENGINE recorded at
+   * set time (`toCallAtSet`), computed from its own authoritative state.
+   *
+   * Why this matters, and why it is not a broadcast. The client suppresses
+   * the ActionPanel while an armed pre-action is one the engine can still
+   * honour (src/lib/preActionPanelGate.ts), and until now it judged that
+   * against a price IT snapshotted in the browser at the moment of the tap.
+   * Two independent snapshots of the same number, taken at two moments, on
+   * two machines — they agree almost always, and the "almost" is a player
+   * seeing the panel flash on a hand where the engine was going to act, or
+   * (worse) not seeing it on a hand where the engine had already invalidated
+   * the arm. Handing back the engine's number collapses that to ONE number.
+   *
+   * It is returned in the reply to the hero's OWN request, so no other seat
+   * learns anything: this is deliberately not the table-wide broadcast that
+   * would hand villains the tell the engine's visible pre-action beat exists
+   * to mask.
    */
   public setPreAction(
     userId: string,
     action: string,
     maxCallAmount?: number
-  ): { success: boolean; error?: string } {
+  ): { success: boolean; error?: string; armedToCall?: number } {
     if (!this.handController) {
       return { success: false, error: 'No active hand' };
     }
@@ -975,7 +1126,22 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       return { success: false, error: `Invalid pre-action: ${action}` };
     }
 
-    this.preActionEngine.setPreAction(this.tableId, userId, action as any, maxCallAmount);
+    /**
+     * Dan 2026-08-28 (CRITICAL): record the price the player is looking at
+     * RIGHT NOW, computed by the engine from its own authoritative state —
+     * never trusted from the client. PreActionEngine invalidates an
+     * `auto_call` whose price has risen past this by the time it fires, so
+     * "Call 15" can never call a raise to more than 15 even when the client
+     * sends no maxCallAmount at all.
+     */
+    const toCallAtSet = Math.max(0, state.currentBet - (player.bet ?? 0));
+    this.preActionEngine.setPreAction(
+      this.tableId,
+      userId,
+      action as any,
+      maxCallAmount,
+      toCallAtSet
+    );
 
     // LIVE E2E FIX 2026-08-15: a pre-action armed AFTER the player's turn had
     // already started used to sit queued until their NEXT turn — the only
@@ -1014,7 +1180,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       }
     }
 
-    return { success: true };
+    /* The engine's own recorded price rides back to the hero (see the note on
+       this method). One number, not two snapshots that can disagree. */
+    return { success: true, armedToCall: toCallAtSet };
   }
 
   // ═══════════════════════════════════════════════════════════════════════════════
@@ -1032,7 +1200,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
     // Bible V8 §1.1.4: Serialize all actions — no parallel processing
     if (this.actionLock) {
-      return { success: false, error: 'Action already being processed — try again' };
+      return { success: false, error: 'Action already being processed - try again' };
     }
     this.actionLock = true;
     try {
@@ -1077,12 +1245,28 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     if (normalizedAction === 'allin' || normalizedAction === 'all-in') normalizedAction = 'all_in';
     if (normalizedAction === 'check' && toCall > 0) normalizedAction = 'call';
     if (normalizedAction === 'call' && toCall === 0) normalizedAction = 'check';
-    if (normalizedAction === 'fold' && toCall === 0) normalizedAction = 'check';
     if (normalizedAction === 'raise' && state.currentBet === 0) normalizedAction = 'bet';
     if (normalizedAction === 'bet' && state.currentBet > 0) normalizedAction = 'raise';
 
-    // Bible V8 §4.14: Pot-limit max raise for PLO variants
-    const isPotLimit = this.tableInfo?.game_variant?.startsWith('plo');
+    // Bible V8 §4.14: PLO variants are pot-limit; flh/flo8 are fixed-limit
+    // (2026-08-23). BettingStructure decides — this used to be an inline
+    // `startsWith('plo')`, which silently made every non-PLO variant no-limit.
+    // VARIANT OVERRIDE FOLLOW-UP 2026-08-28: read the LIVE HAND's variant, not
+    // the table row. `activeHandVariant()` was introduced the same day for
+    // exactly this, and its docblock names "the legal-action clamps in Turns"
+    // as one of the four sites that must use it — getLegalActions (1512) and
+    // the horse snapshot (1887) were converted, THIS clamp and its horse twin
+    // below were missed. On a bomb-pot hand whose override differs from the
+    // table's variant that mismatch is silent and expensive: a PLO table with
+    // an nlh override clamped a player's shove down to the pot, and a
+    // fixed-limit table with an nlh override REWROTE the wager to the table's
+    // limit size — in both cases the player was committed to an amount they
+    // never chose. The reverse (NLH table, PLO bomb) enforced no pot ceiling
+    // here at all and left HandController to reject the action, burning the
+    // player's clock on "Action rejected by engine".
+    const variant = this.activeHandVariant();
+    const isPotLimit = isPotLimitVariant(variant);
+    const isFixedLimit = isFixedLimitVariant(variant);
     let potLimitMaxBet = Infinity;
     if (isPotLimit) {
       // FIX 142: Pot-limit max raise SIZE = pot + toCall (the pot after you call).
@@ -1092,28 +1276,129 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       potLimitMaxBet = state.pot + toCall;
     }
 
+    // Fixed limit has exactly one legal wager size per street, so a client that
+    // sends any other number is SNAPPED to it rather than rejected — a limit
+    // client has no slider to be wrong with, and an old client sending a
+    // no-limit sizing should still make a legal bet. Small bet preflop and
+    // flop, big bet turn and river.
+    const flBetSize = isFixedLimit
+      ? fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, state.stage)
+      : 0;
+
+    /**
+     * ── CAP: A PER-HAND CEILING ON WHAT A PLAYER CAN PUT IN ────────────────
+     *
+     * Dan 2026-08-25, table-creation parity. `cap_enabled` has been a toggle
+     * since February with NO AMOUNT COLUMN ANYWHERE IN THE SCHEMA, so even a
+     * reader could not have enforced it. `cap_bb` was added alongside this.
+     *
+     * A cap is a limit on TOTAL chips committed across the whole hand, not on
+     * one street, so it is measured against `totalInvested` — which the engine
+     * already maintains and broadcasts. `player.bet` is this street only, and
+     * capping on that would let a player commit the cap four times over.
+     *
+     * CLAMPED, NOT REJECTED, exactly like the pot-limit ceiling above it and
+     * for the same reason the fixed-limit snap gives: a client with a stale
+     * cap value should still make a LEGAL bet rather than have its action
+     * bounce. The amount is reduced to whatever is left under the ceiling.
+     *
+     * A player who reaches the cap is NOT all-in — their remaining stack stays
+     * in front of them and plays the next hand. That is the whole point of a
+     * cap game, and it is why the all-in promotions below have to be measured
+     * against the capped figure rather than the raw stack.
+     */
+    const capBB = Number(this.tableInfo?.cap_bb) || 0;
+    const capChips =
+      this.tableInfo?.cap_enabled === true && capBB > 0
+        ? capBB * (Number(this.tableInfo?.big_blind) || 0)
+        : 0;
+    /* What this player may still commit this hand. Infinity when uncapped, so
+       every Math.min below is a no-op on an ordinary table. */
+    const capRemaining =
+      capChips > 0 ? Math.max(0, capChips - (Number(player.totalInvested) || 0)) : Infinity;
+
+    /**
+     * AN "ALL IN" AT A CAPPED TABLE IS NOT ALL OF YOUR CHIPS.
+     *
+     * `all_in` skips the amount clamps below entirely — validateAllIn returns
+     * `sanitizedAmount: context.playerStack` unconditionally — so without this
+     * a player could push their whole stack past a ceiling the host set, and
+     * the cap would hold for every action EXCEPT the largest one.
+     *
+     * Rewritten into an ordinary bet or raise of exactly what the cap leaves,
+     * so it goes through the same validation as any other sized action and
+     * the remainder of the stack stays in front of the player.
+     */
+    if (normalizedAction === 'all_in' && capRemaining !== Infinity) {
+      const stillAllowed = Math.min(player.stack, capRemaining);
+      if (stillAllowed <= 0) {
+        return { success: false, error: "You have committed this table's cap for this hand" };
+      }
+      if (stillAllowed < player.stack) {
+        normalizedAction = state.currentBet > 0 ? 'raise' : 'bet';
+        amount = state.currentBet > 0 ? player.bet + stillAllowed : stillAllowed;
+      }
+    }
+
     // Clamp amounts
+    /**
+     * A CALL IS DELIBERATELY NOT CAPPED, and it does not need to be.
+     *
+     * Clamping a call would produce a SHORT call — an under-call that the pot
+     * logic has to turn into a side pot — which is a genuine pot-integrity
+     * hazard for a feature no live table has switched on. It is also
+     * unnecessary, because the cap is a per-player TOTAL and every wager that
+     * can be called has already been clamped above:
+     *
+     *   a caller's total after calling = the bettor's total for this hand,
+     *   the bettor's total is <= the cap by construction,
+     *   therefore the caller's total is <= the cap.
+     *
+     * A player can never call their way past a ceiling that every bet in front
+     * of them already respects.
+     */
     if (normalizedAction === 'call') amount = toCall;
     if (normalizedAction === 'bet' && amount !== undefined) {
-      amount = Math.max(state.minRaise, amount);
+      amount = isFixedLimit ? flBetSize : Math.max(state.minRaise, amount);
       // Bible V8 §4.14: Cap at pot-limit max for PLO
       if (isPotLimit) {
         amount = Math.min(amount, potLimitMaxBet);
       }
-      if (amount >= player.stack) {
+      // Table cap: never more than this hand has left under the ceiling.
+      amount = Math.min(amount, capRemaining);
+      /* CAP FIX 2026-08-27: this used to promote to all_in whenever the amount
+         reached min(stack, capRemaining) — so a bet CLAMPED BY THE CAP one
+         line above was immediately turned back into an all-in, and
+         HandController.performAction ignores `amount` for all_in and commits
+         the ENTIRE stack (`this.state.pot += player.stack; player.stack = 0`).
+         The rewrite at the top of this method was therefore a no-op round
+         trip and the ceiling was defeated by the largest action it exists to
+         bound. Only the STACK may promote: the player is all-in when they
+         have no chips left, not when the cap says stop. */
+      if (amount >= player.stack && player.stack <= capRemaining) {
         normalizedAction = 'all_in';
         amount = undefined;
       }
     } else if (normalizedAction === 'raise' && amount !== undefined) {
       const minRaiseTo = state.currentBet + state.minRaise;
-      amount = Math.max(minRaiseTo, amount);
+      amount = isFixedLimit ? state.currentBet + flBetSize : Math.max(minRaiseTo, amount);
+
       // Bible V8 §4.14: Cap at pot-limit max for PLO (raise TO = currentBet + potLimitMaxBet)
       if (isPotLimit) {
         const potLimitRaiseTo = state.currentBet + potLimitMaxBet;
         amount = Math.min(amount, potLimitRaiseTo);
       }
-      const maxRaiseTo = player.stack + player.bet;
-      if (amount >= maxRaiseTo) {
+      /* A raise is a TO figure, so the ceiling has to be expressed the same
+         way: this street's bet plus whatever the cap leaves. */
+      const capRaiseTo = capRemaining === Infinity ? Infinity : player.bet + capRemaining;
+      amount = Math.min(amount, capRaiseTo);
+      /* CAP FIX 2026-08-27: same defect on the raise path — a raise clamped to
+         capRaiseTo reached maxRaiseTo and was promoted to a whole-stack shove.
+         The stack must be the binding constraint for an all-in; when the cap
+         is what bounds the wager it stays a sized raise. */
+      const stackRaiseTo = player.stack + player.bet;
+      const maxRaiseTo = Math.min(stackRaiseTo, capRaiseTo);
+      if (amount >= maxRaiseTo && stackRaiseTo <= capRaiseTo) {
         normalizedAction = 'all_in';
         amount = undefined;
       }
@@ -1182,8 +1467,21 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
       this.clearTurnTimer();
       this.preciseTimer.cancelTimer(this.tableId, userId); // Step 4: Cancel precise deadline
-      // Bible V8 §6.2: If time bank was active, notify engine to deduct used time from pool
-      if (this.timeBankActivatedThisTurn) {
+      // Bible V8 §6.2: If time bank was active, notify engine to deduct used time from pool.
+      //
+      // 2026-08-26: this was gated on timeBankActivatedThisTurn ALONE. The
+      // ARM-ONLY branch of activateTimeBank returns early - with the message
+      // "Time Bank Armed. It Starts When Your Clock Runs Out" - and never sets
+      // that flag, because nothing has been spent yet. So a player who pressed
+      // the button early and then acted inside their ordinary clock left
+      // bank.armed = true behind them. On any LATER turn in the same street,
+      // onPrimaryTimerExpired sees that stale intent and spends a use they did
+      // not ask for; only resetStreetActivations cleared it, a whole street
+      // later. playerActed is the thing that clears bank.armed, and
+      // TimeBankEngine.manualcountdown.test.ts already pins that contract
+      // ("player acted in time; the intent dies with it"). The engine was
+      // right; this caller simply never reached it.
+      if (this.timeBankActivatedThisTurn || this.timeBankEngine.isArmed(this.tableId, userId)) {
         this.timeBankEngine.playerActed(this.tableId, userId);
       }
       const actionApplied = this.handController.performAction(
@@ -1201,7 +1499,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // was told the action succeeded). Re-arm this player's turn and surface the rejection.
       if (!actionApplied) {
         console.warn(
-          `[ServerTableEngine:${this.tableId}] Engine REJECTED action ${normalizedAction} from ${userId} — re-arming turn timer`
+          `[ServerTableEngine:${this.tableId}] Engine REJECTED action ${normalizedAction} from ${userId} - re-arming turn timer`
         );
         this.rearmTurnTimerIfCurrent(userId);
         return { success: false, error: 'Action rejected by engine', code: 'INVALID_ACTION' };
@@ -1258,6 +1556,14 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     minRaise: number;
     maxRaise: number;
     pot: number;
+    /**
+     * 2026-08-23: which betting structure the client should render. Without
+     * this the client had to re-derive it from the variant string, which is
+     * how `flh` would have drawn a no-limit slider on a fixed-limit table.
+     */
+    structure?: BettingStructure;
+    /** Fixed limit only: the street's one legal wager size. */
+    betSize?: number;
   } {
     const defaultResult = {
       canAct: false,
@@ -1289,18 +1595,31 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     }
     actions.push('all_in');
 
-    const minRaiseTo = state.currentBet > 0 ? state.currentBet + state.minRaise : state.minRaise;
+    let minRaiseTo = state.currentBet > 0 ? state.currentBet + state.minRaise : state.minRaise;
     let maxRaiseTo = player.stack + player.bet;
 
     // FIX 176: Bible V8 §4.14: Cap maxRaise for pot-limit games (PLO variants)
     // Pot-limit max raise SIZE = pot + toCall (the pot after you call).
     // Raise TO = currentBet + (pot + toCall). The old formula had an extra toCall
     // which allowed raises ~toCall higher than legal pot-limit max.
-    const isPotLimit = this.tableInfo?.game_variant?.startsWith('plo');
-    if (isPotLimit) {
+    // VARIANT OVERRIDE 2026-08-28: the LIVE hand's variant — the pot-limit
+    // clamp must bind on a PLO bomb hand even at an NLH table.
+    const variant = this.activeHandVariant();
+    const structure = bettingStructureFor(variant);
+    let betSize: number | undefined;
+    if (structure === 'pot_limit') {
       const potLimitMaxBet = state.pot + toCall;
       const potLimitRaiseTo = state.currentBet + potLimitMaxBet;
       maxRaiseTo = Math.min(maxRaiseTo, potLimitRaiseTo);
+    } else if (structure === 'fixed_limit') {
+      // 2026-08-23: min and max collapse onto the same number — the client has
+      // no slider to draw, only a "Bet 4" / "Raise to 8" button. Reporting the
+      // stack as maxRaise here is what would have let a limit table render a
+      // no-limit slider and then have every drag rejected.
+      betSize = fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, state.stage);
+      const wagerTo = state.currentBet + betSize;
+      minRaiseTo = Math.min(wagerTo, maxRaiseTo);
+      maxRaiseTo = minRaiseTo;
     }
 
     return {
@@ -1310,12 +1629,84 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       minRaise: minRaiseTo,
       maxRaise: maxRaiseTo,
       pot: state.pot,
+      structure,
+      betSize,
     };
   }
 
   /**
    * Handle horse AI turn — INSTANT decisions, no browser timers needed
    */
+  /**
+   * The player whose turn it is has dropped out of reconnect grace.
+   *
+   * WHAT THIS FIXES, and it is narrower than it first looks. The harm in a
+   * mid-turn drop is not the ordinary action clock — that is the player's own
+   * clock, running the length it always runs. The harm is the TIME BANK.
+   * onPrimaryTimerExpired auto-activates a bank whenever the table is
+   * configured to (or the player armed one before dropping), and TimeBankEngine
+   * is use-it-or-lose-it: playerActed deducts the FULL currentUseSeconds
+   * regardless of how much was consumed. So a player whose socket died at
+   * second 9 silently spends a paid-for bank on a decision they could not make,
+   * every single hand, until their pool is empty.
+   *
+   * So this suppresses the bank for the remainder of this turn and stops.
+   *
+   * WHAT THIS DELIBERATELY DOES NOT DO, because the first cut of this fix
+   * (PR #1009) did all three and each one was a regression:
+   *
+   *   1. It does not re-stamp playerTurnStartTime / playerTurnDuration.
+   *      Those two fields ARE turn_deadline_ms (ServerTableEngine:393). Setting
+   *      them to `Date.now()` + disconnectTimeoutSeconds hands a player 14
+   *      seconds into a 15-second clock a FRESH 30 seconds — so pulling your
+   *      own network cable becomes a repeatable way to buy roughly 39s of stall
+   *      on every decision. ReconnectTimeBank.test.ts exists because that exact
+   *      re-stamp was already caught and closed on the reconnect path; doing it
+   *      on the disconnect path is the same bug wearing the other shoe.
+   *
+   *   2. It does not start a disconnect countdown. onPlayerTurn's countdown is
+   *      disconnectTimeoutSeconds (30) — LONGER than the 15s clock already
+   *      armed — so it cannot make the table resolve sooner, and running it
+   *      alongside the live turn timer means two deadlines racing to act on one
+   *      seat. The existing timer already auto-folds AND records the strike
+   *      (recordConnectedTimeout, line ~588/~728), which is the whole of what
+   *      the disconnect path would have contributed.
+   *
+   *   3. It does not cancel the running bank countdown behind TimeBankEngine's
+   *      back. If a bank is genuinely ACTIVE its deadline is the one in force
+   *      and its expiry handler is what resolves the seat; cancelling the raw
+   *      `timebank:<uid>` PreciseActionTimer key while leaving bank.isActive
+   *      true strands the accounting.
+   *
+   * The governing principle is the one already written into
+   * rearmTurnTimerIfCurrent: losing your connection must not buy you more time,
+   * and must not lose you any either.
+   */
+  protected handlePlayerDisconnectedMidTurn(userId: string): void {
+    if (!this.handController) return;
+    const state = this.handController.getState();
+    const player = state.players.find((p) => p.user_id === userId);
+    if (!player || player.seat !== state.currentPlayerSeat) return;
+    if (player.is_folded || player.is_all_in || player.is_sitting_out) return;
+
+    // A bank that is already counting down is already spent, and its own
+    // expiry handler owns this seat. Leave it strictly alone.
+    const activeBank = this.timeBankEngine.getPlayerBank(this.tableId, userId);
+    if (activeBank?.isActive) return;
+
+    // An armed-but-unredeemed intent dies with the decision it was made for.
+    if (this.timeBankEngine.isArmed(this.tableId, userId)) {
+      this.timeBankEngine.disarm(this.tableId, userId);
+    }
+
+    this.timeBankSuppressedThisTurn = true;
+
+    console.log(
+      `[ServerTableEngine:${this.tableId}] Player ${userId} dropped mid-turn. ` +
+        `Time bank suppressed for this turn; action clock left untouched.`
+    );
+  }
+
   /**
    * AUDIT FIX 2026-07-19: re-arm the action timer when a player reconnects on
    * their own turn (the disconnect countdown was cancelled with no replacement
@@ -1363,10 +1754,18 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     if (activeBank?.isActive) return;
 
     const timeBankAlreadyUsedThisTurn = this.timeBankActivatedThisTurn;
-    this.handleTurnChange(
+    // handleTurnChange is async. Calling it bare left a rejection unhandled and
+    // - worse - left this seat with no clock at all, which is the precise hang
+    // this method was added to prevent. The other call site
+    // (ServerTableEngineHandEvents, "void this.handleTurnChange(...).catch")
+    // has had the guard since it went async; this one never got it.
+    void this.handleTurnChange(
       { type: 'TURN_CHANGE', seat: player.seat, availableActions: [] } as HandEvent,
       this.seatedPlayers
-    );
+    ).catch((err) => {
+      reportError(err, 'ServerTableEngine.' + this.tableId + '.rearm_turn_change_threw');
+      this.forceArmTurnTimer(player.seat, this.tableInfo?.action_time_seconds || 15);
+    });
 
     this.timeBankActivatedThisTurn = timeBankAlreadyUsedThisTurn;
   }
@@ -1402,6 +1801,9 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
     const actionTime = this.tableInfo?.action_time_seconds || 15;
     this.timeBankActivatedThisTurn = false; // Reset anti-spam lock for this NEW turn
+    // A new turn (and a reconnect re-arm, which routes through here) always
+    // restores normal time-bank behaviour.
+    this.timeBankSuppressedThisTurn = false;
 
     // Bible V8 §3.3: Turn FSM — reset to waiting at turn start, then transition to timer_running
     if (this.turnFSM.state !== 'waiting') {
@@ -1436,16 +1838,25 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // The player has already decided, so this is shorter than a horse's think
       // time — but it is never zero. The seat lights up, holds a readable beat,
       // and only then does the action land.
+      // ═══ 2026-08-31: IDENTITY, not null-ness. The null-check below let a
+      // pre-action from hand N land in hand N+1 whenever the hand was
+      // replaced during the beat and the SAME seat happened to be on turn in
+      // the new hand - the same player's next hand opens on the same seat, so
+      // that is the common case, and their turn was consumed by an intent
+      // they formed for a different hand. Same bug class as the stale-runout
+      // race (#2318): a delayed continuation acting on whatever controller
+      // the table holds when it wakes.
+      const controllerAtBeat = this.handController;
       await this.sleep(this.preActionVisibleMs);
       // The hand can be replaced while we hold that beat.
-      if (!this.running || !this.handController) return;
+      if (!this.running || this.handController !== controllerAtBeat || !controllerAtBeat) return;
       {
-        const st = this.handController.getState();
+        const st = controllerAtBeat.getState();
         if (st.currentPlayerSeat !== seat) return;
       }
       let preApplied = false;
       try {
-        preApplied = this.handController!.performAction(
+        preApplied = controllerAtBeat.performAction(
           seat,
           preResult.action as any,
           preResult.amount
@@ -1461,7 +1872,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         return; // Pre-action handled the turn — no timer needed
       }
       console.warn(
-        `[ServerTableEngine:${this.tableId}] Pre-action ${preResult.action} REJECTED at seat ${seat} — falling through to the turn timer`
+        `[ServerTableEngine:${this.tableId}] Pre-action ${preResult.action} REJECTED at seat ${seat} - falling through to the turn timer`
       );
     }
 
@@ -1481,7 +1892,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const effectiveActionTime = reconnectGrace ? actionTime + 5 : actionTime;
     if (reconnectGrace) {
       console.log(
-        `[ServerTableEngine:${this.tableId}] Player ${player.user_id} in reconnect grace — extending timer by 5s (${effectiveActionTime}s total)`
+        `[ServerTableEngine:${this.tableId}] Player ${player.user_id} in reconnect grace - extending timer by 5s (${effectiveActionTime}s total)`
       );
     }
 
@@ -1529,6 +1940,23 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         spotsPaid: tctx.spotsPaid,
         avgStackChips: tctx.avgStackChips,
         bountyFactor: tctx.bountyFactor,
+        // V16 ICM: the payout curve + live stack distribution feed the real
+        // Malmuth-Harville pressure model in HorseLogic.icmRisk.
+        stacks: tctx.stacks,
+        payoutPct: tctx.payoutPct,
+        // V26 PRIZE LANDSCAPE: what a bust is actually worth right now -
+        // how many chests are left, their mean, and whether the big one is
+        // still in the box.
+        mysteryChestsLeft: tctx.mysteryChestsLeft,
+        mysteryMeanCents: tctx.mysteryMeanCents,
+        mysteryTopCents: tctx.mysteryTopCents,
+        mysteryTopLive: tctx.mysteryTopLive,
+        meanBountyCents: tctx.meanBountyCents,
+        // V23 ENDGAME: final-table flag + the blind clock (jam BEFORE the
+        // blinds halve the M, not after).
+        finalTable: tctx.finalTable,
+        nextBlindInMin: tctx.nextBlindInMin,
+        nextBlindMult: tctx.nextBlindMult,
       },
     };
   }
@@ -1560,13 +1988,32 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
     const fullState = this.handController ? this.handController.getState() : null;
     const gameState = {
-      players: state.players,
+      // V28 AUDIT FIX (2026-08-29): is_sitting_out was hardcoded false at the
+      // deal (correctly, for HandController's purposes), which made EVERY
+      // !is_sitting_out filter in the brain inert — oppsLeft, tableSize,
+      // classifyPosition and the postflop opponent count all counted a
+      // blinding-off seat as a live opponent. At a 3-handed final table with
+      // one player disconnected, the heads-up branches never fired: the SB
+      // opened on 0.44 instead of 0.24. The engine has the truth in
+      // DisconnectEngine; stamp it onto the copy the brain reads.
+      players: state.players.map((p) => ({
+        ...p,
+        is_sitting_out:
+          p.is_sitting_out === true || this.disconnectEngine.isSittingOut(this.tableId, p.user_id),
+      })),
       communityCards: state.communityCards,
+      // MULTI-BOARD EQUITY 2026-08-28 (Horses Are Players law): on a
+      // double/triple-board bomb hand the fleet prices EVERY board — the
+      // brain averages per-board equity, exactly what the pot pays on.
+      communityCards2: fullState?.communityCards2 ?? [],
+      communityCards3: fullState?.communityCards3 ?? [],
       pot: state.pot,
       currentBet: state.currentBet,
       minRaise: state.minRaise,
       stage: state.stage,
-      gameVariant: (this.tableInfo?.game_variant || 'nlh') as string,
+      // VARIANT OVERRIDE 2026-08-28: horses evaluate the hand they were DEALT
+      // — PLO equity on a PLO bomb hand, whatever the table's label says.
+      gameVariant: (this.activeHandVariant() || 'nlh') as string,
       bigBlind: this.tableInfo?.big_blind || 2,
       // AUDIT V2: position + action context for the V2 decision engine
       dealerSeat: fullState?.dealerSeat ?? this.currentHandDealerSeat,
@@ -1578,6 +2025,17 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // tiers, and rake-aware pot odds all switch on the real game mode.
       gameMode: this.isTournamentTable() ? ('tournament' as const) : ('cash' as const),
       ante: this.tableInfo?.ante || 0,
+      // Which ante STYLE — the brain's M depends on what an orbit costs, and
+      // a big blind ante costs the table one ante per orbit, not one each.
+      bigBlindAnte: this.tableInfo?.big_blind_ante_enabled === true,
+      // AoF: tell the brain, instead of rewriting its answer afterwards. The
+      // coercion below stays as the legality guarantee.
+      allInOrFold: this.tableInfo?.all_in_or_fold === true,
+      // V18 STRADDLE (2026-08-26): straddle posts are not ActionRecords, so
+      // a straddled pot's preflop currentBet (2xBB) with an empty history
+      // read as an OPEN RAISE and the fleet folded to dead money. Tell the
+      // brain straddles are possible here.
+      straddleActive: this.tableInfo?.straddle_enabled === true,
       // V12: REAL tournament state for the ICM layer — players left, spots
       // paid, average stack, PKO bounty share — plus the table format
       // (mtt/spin/hu_sng). Cached with a 20s TTL; null before the first
@@ -1586,12 +2044,42 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     };
 
     // Get decision — SYNCHRONOUS (budgeted <15ms incl. Monte Carlo equity)
+    // PROOF OF RECEIPT: telemetry is set HERE and only here — this is the
+    // one call site that is a real horse at a real table.
+    //
+    // AND NOW MEASURED (Dan 2026-08-29). That "<15ms" was a comment, not a
+    // fact: nothing in the engine had ever timed a decision. The whole read —
+    // hand strength, board texture, the opponent model, blockers, ICM, the
+    // Monte Carlo equity run, every version layer and the final sizing —
+    // happens inside this one synchronous call, so one clock around it is the
+    // complete answer to how long a horse takes to think.
+    //
+    // The clock is deliberately OUTSIDE HorseLogic: this is the only call site
+    // that is a live horse, and the league and the nightly self-tuner must not
+    // pollute the number with self-play bursts on an idle box.
+    const decideStartedAt = perfNow();
     const decision = HorseLogic.decide(
       enginePlayer as any,
       gameState as any,
       horseStyle,
-      horseMods
+      horseMods,
+      { telemetry: true }
     );
+    // Scoped by variant family, because a 6-card PLO decision runs the most
+    // expensive equity simulation on the platform and averaging it into a
+    // heads-up NLH decision would hide both.
+    //
+    // FOUND IN PRODUCTION 2026-08-29, first hour of the measurement: every one
+    // of the 14,326 samples landed in scope 'nlh' while 58 of 91 running
+    // tables were dealing PLO variants. The horse snapshot built above carries
+    // no `variant` field, so `(gameState as any)?.variant` was undefined on
+    // EVERY decision and the ?? fallback relabelled them all — the exact
+    // averaging-plo6-into-nlh failure this scope exists to prevent, with the
+    // 15ms plo6 budget unverifiable in production as the result. Read
+    // `activeHandVariant()` instead: it is the accessor the 2026-08-28 variant
+    // override work introduced for precisely "read the live hand, not a guess",
+    // and the same one the pot-limit clamp above already uses.
+    noteDecisionMs(this.activeHandVariant() || 'nlh', perfNow() - decideStartedAt);
 
     // Humanlike think time comes from the decision engine itself (style- and
     // situation-aware, 0.7-8s). Clamp inside the table's action timer window.
@@ -1601,17 +2089,13 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     //    out in full. Each turn to check/bet/call/fold, every action needs
     //    time, nothing can EVER be skipped." ──
     //
-    // The old floor was 700ms. A single action has to render its label, slide
-    // its chips onto the felt (cpSlideIn 500ms) and be READ before the turn
-    // moves on — 700ms clips the chip slide and makes a horse-heavy table blur
-    // past. Worse, a fold at 700ms cut cardFoldOut (380ms + 55ms stagger)
-    // right as the next seat's action arrived, so the muck barely registered.
-    //
-    // HORSE_MIN_THINK_MS is the floor for the FASTEST possible horse action.
-    // Instant/snap decisions still read as snap (1.8s is fast at a poker
-    // table) but every animation now completes. HorseLogic's own style- and
-    // situation-aware think times above this floor are unchanged, so varied
-    // pacing is preserved.
+    // HISTORY, kept because it explains what replaced it: this used to impose
+    // a hard think-time floor so that no action could be fast enough to clip
+    // its own animation. The animation concern was real, but the floor was the
+    // wrong instrument — the settle beat in the TURN_CHANGE handler is what
+    // actually guarantees an action gets airtime, and it applies to human
+    // actions too. The floor only flattened the horses' timing, which is what
+    // Dan reported on 2026-08-23.
     // Dan 2026-08-20: "THE GAME SPEED NEEDS TO SLOW DOWN TO FEEL MORE REAL.
     // Focus more on the user experience rather than getting more hands dealt."
     // Raised 1800 -> 2200. A live dealer's table does not fire an action every
@@ -1619,14 +2103,61 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     // thinking rather than a script executing. This is ON TOP of the 650ms
     // settle every action now gets in the TURN_CHANGE handler, so the slowest
     // visible cadence per seat is ~2.85s and the fastest is never instant.
-    const HORSE_MIN_THINK_MS = 2200;
+    // ── V14 TEMPO (Dan 2026-08-23, binding) ────────────────────────────────
+    // "TIMING ON STREETS MUST BE MORE RANDOM... completely random, from
+    //  instant, to full 15 seconds or even using time banks."
+    //
+    // The 2200ms floor above was the single biggest reason the fleet felt
+    // scripted. HorseLogic already produced a spread, and this clamped the
+    // whole fast half of it onto ONE NUMBER — so seat after seat acted at
+    // exactly 2.2 seconds. Removing it is the point of this change; the
+    // 650ms settle in the TURN_CHANGE handler still keeps a snap from being
+    // literally instantaneous.
+    //
+    // This supersedes the 2026-08-20 note above it. That instruction was
+    // "slow the game down so it feels real"; this one is "make the timing
+    // genuinely random", and a uniform slow cadence is just a slower script.
     const actionTimeMs = (this.tableInfo?.action_time_seconds || 15) * 1000;
-    const thinkTimeMs = Math.round(
-      Math.max(
-        HORSE_MIN_THINK_MS,
-        Math.min(decision.thinkTime || 2500, Math.max(2000, actionTimeMs - 3000))
-      )
-    );
+    const requested = decision.thinkTime || 2500;
+    let thinkTimeMs: number;
+    // V28 AUDIT FIX (2026-08-29): the sentinel path scheduled the action PAST
+    // the turn clock with no check that a bank existed to catch it. A horse's
+    // bank is 2 uses per session, never refilled — after both were spent,
+    // primary-timer expiry auto-folded the seat, the real decision fired into
+    // currentPlayerSeat !== seat and was silently discarded. The horse that
+    // decided to CALL a big river bet visibly timed out and folded — the one
+    // behaviour a human at the table cannot fail to notice. Bank mode fires
+    // on 1-6% of decisions, weighted toward exactly those big river spots.
+    // Same shape when time_bank is disabled table-wide, and when the last
+    // bank has fewer seconds left than the planned burn. So: burn the bank
+    // ONLY when a full activation is genuinely available; otherwise the tank
+    // stays inside the ordinary clock.
+    const bank = this.timeBankEngine?.getPlayerBank?.(this.tableId, player.user_id);
+    const bankUsable =
+      this.tableInfo?.time_bank_enabled !== false &&
+      bank != null &&
+      (bank as { usesRemaining?: number }).usesRemaining !== 0 &&
+      ((bank as { remainingSeconds?: number }).remainingSeconds ?? 0) * 1000 >
+        ServerTableEngineTurns.HORSE_MAX_BANK_BURN_MS + 2000;
+    if (requested >= HorseLogic.THINK_TIMEBANK_SENTINEL && bankUsable) {
+      // A deliberate TIME BANK burn. Let the turn clock expire — the engine
+      // auto-activates the bank on primary-timer expiry (Bible V8 6.2) — then
+      // act a few seconds into it. Bounded well inside the granted bank so a
+      // tank can never become an auto-fold.
+      const intoBank = 2000 + (requested - HorseLogic.THINK_TIMEBANK_SENTINEL) * 0.55;
+      thinkTimeMs = Math.round(
+        actionTimeMs + Math.min(intoBank, ServerTableEngineTurns.HORSE_MAX_BANK_BURN_MS)
+      );
+    } else if (requested >= HorseLogic.THINK_TIMEBANK_SENTINEL) {
+      // Bank mode chosen but no bank to burn: the longest legal ordinary tank.
+      thinkTimeMs = Math.round(Math.max(2000, actionTimeMs - 1500));
+    } else {
+      // Everything else must land inside the ordinary clock, with a small
+      // margin so a genuine tank still acts rather than timing out.
+      thinkTimeMs = Math.round(
+        Math.max(250, Math.min(requested, Math.max(2000, actionTimeMs - 1200)))
+      );
+    }
 
     const handControllerRef = this.handController;
 
@@ -1675,19 +2206,75 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       if (action === 'bet' && state.currentBet > 0) action = 'raise';
 
       // Clamp amounts
+      //
+      // 2026-08-23: the horses size their bets no-limit style (HorseLogic reads
+      // only `isPotLimit`). On a fixed-limit table every one of those sizings is
+      // illegal, so without this snap each horse decision would be rejected and
+      // fall through to the check/fold degradation below — a limit table full of
+      // bots that never bet. Snap to the street's legal wager instead, exactly
+      // as the human path does.
+      // Same 2026-08-28 override correction as the human clamp above: the
+      // hand's variant, not the table's.
+      const horseFlBetSize = isFixedLimitVariant(this.activeHandVariant())
+        ? // The horse snapshot types `stage` as a bare string; the values are
+          // the same HandStage literals the controller emits.
+          fixedLimitBetSize(this.tableInfo?.big_blind ?? 2, state.stage as HandStage)
+        : 0;
+      /* CAP FIX 2026-08-27: the horse path is a parallel implementation of the
+         human clamp chain and carried NO cap term at all — `cap_enabled` /
+         `cap_bb` were read only in _handlePlayerActionInner, so a horse at a
+         capped table sized and shoved against its raw stack, straight past the
+         ceiling the host set. Same arithmetic as the human path. */
+      const horseCapBB = Number(this.tableInfo?.cap_bb) || 0;
+      const horseCapChips =
+        this.tableInfo?.cap_enabled === true && horseCapBB > 0
+          ? horseCapBB * (Number(this.tableInfo?.big_blind) || 0)
+          : 0;
+      const horseCapRemaining =
+        horseCapChips > 0
+          ? Math.max(0, horseCapChips - (Number(enginePlayer.totalInvested) || 0))
+          : Infinity;
       if (action === 'bet' && amount !== undefined) {
-        amount = Math.max(state.minRaise, amount);
-        if (amount >= enginePlayer.stack) {
+        amount = horseFlBetSize > 0 ? horseFlBetSize : Math.max(state.minRaise, amount);
+        amount = Math.min(amount, horseCapRemaining);
+        // Only the STACK promotes to all_in; a cap-bounded wager stays sized.
+        if (amount >= enginePlayer.stack && enginePlayer.stack <= horseCapRemaining) {
           action = 'all_in';
           amount = undefined;
         }
       } else if (action === 'raise' && amount !== undefined) {
         const minRaiseTo = state.currentBet + state.minRaise;
-        amount = Math.max(minRaiseTo, amount);
-        const maxRaiseTo = enginePlayer.stack + enginePlayer.bet;
-        if (amount >= maxRaiseTo) {
+        amount =
+          horseFlBetSize > 0 ? state.currentBet + horseFlBetSize : Math.max(minRaiseTo, amount);
+        const horseCapRaiseTo =
+          horseCapRemaining === Infinity ? Infinity : enginePlayer.bet + horseCapRemaining;
+        amount = Math.min(amount, horseCapRaiseTo);
+        const horseStackRaiseTo = enginePlayer.stack + enginePlayer.bet;
+        const maxRaiseTo = Math.min(horseStackRaiseTo, horseCapRaiseTo);
+        if (amount >= maxRaiseTo && horseStackRaiseTo <= horseCapRaiseTo) {
           action = 'all_in';
           amount = undefined;
+        }
+      }
+
+      // 2026-08-24: a capped fixed-limit street takes no further wager, and
+      // validateAction refuses one whatever the amount. The degradation below is
+      // `check() || fold()`, and on a capped street facing a bet `check` is
+      // illegal too — so a horse that wanted to RAISE folded the hand it had
+      // just decided to raise with. Substitute the closest legal intent instead
+      // (call when money is owed, check when none is), which cannot be refused.
+      // The horse snapshot is a reduced shape with no actionHistory, so the cap
+      // is read from the controller's own state — the same list validateAction
+      // will be judged against a few lines below.
+      const liveState = handControllerRef.getState();
+      if (
+        horseFlBetSize > 0 &&
+        isFixedLimitCapped(liveState.actionHistory ?? [], liveState.stage)
+      ) {
+        const substituted = substituteOnCappedStreet(action as ActionType, toCall);
+        if (substituted !== action) {
+          action = substituted as typeof action;
+          amount = substituted === 'call' ? toCall : undefined;
         }
       }
 
@@ -1713,7 +2300,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             action +
             ' rejected at seat ' +
             seat +
-            ' — falling back to check/fold'
+            ' - falling back to check/fold'
         );
         try {
           // Bible V8 §1.7.4 preferCheckOverFold.
@@ -1731,7 +2318,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       } else {
         reportError(
           new Error(
-            'Horse seat ' + seat + ' could not be acted — leaving stall visible to watchdog'
+            'Horse seat ' + seat + ' could not be acted - leaving stall visible to watchdog'
           ),
           'ServerTableEngine.' + this.tableId + '.horse_seat_unactable'
         );

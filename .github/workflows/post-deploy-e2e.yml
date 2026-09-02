@@ -1,0 +1,435 @@
+name: Post-Deploy E2E (production)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# THE TIER THAT DID NOT EXIST (Dan 2026-08-29)
+#
+# An inventory of the e2e suite found SIXTEEN spec files running in no CI job
+# at all. Seven pure-geometry ones joined `css-beats-e2e` on the same day. The
+# rest could not: they need a signed-in session or a deployed URL, and
+# `css-beats-e2e` has neither by design (it renders stylesheets with
+# page.setContent so it can gate a merge in seconds).
+#
+# So they had nowhere to run, and "nowhere to run" is how a guard becomes a
+# comment. mobile-fit-audit.spec.ts has said the answer in its own header
+# since the day it was written:
+#
+#   "STRICT mode (MOBILE_FIT_STRICT=1, or CI where this suite runs against
+#    production AFTER a deploy) fails on any violation. Post-deploy CI is the
+#    right place for strict: a red run names the route and the offending
+#    element without blocking anyone's merge."
+#
+# This is that job. It runs AFTER the World Hub sync publishes, against the
+# real deployed bundle, signed in.
+#
+# WHY IT DOES NOT GATE A MERGE, and why that is not a weakness: by the time it
+# runs, the code is already on main and already published. Blocking is not
+# available. What it provides is the thing this estate keeps discovering it
+# lacks — somebody actually looking at production after a deploy. A red run
+# here is a real defect on the live site, named by route and element.
+#
+# NOT A `schedule:` TRIGGER. `workflow_run` is explicitly not the cron the
+# estate rules restrict (World Hub CLAUDE.md section 11), because it is
+# event-driven off the publish it verifies, and it schedules nothing.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_run:
+    workflows: ['Build for World Hub Sync']
+    types: [completed]
+  workflow_dispatch:
+
+# One at a time, and the NEWEST wins: an older run is measuring a bundle that is
+# no longer serving, so finishing it would report a verdict about the past.
+#
+# 2026-08-29, the first real run of this workflow was CANCELLED here, and that
+# exposed the flaw in its first design. It used to WAIT (up to ten minutes) for
+# production to serve its own commit's sha before testing anything. On a repo
+# where merges land every few minutes, every run spent its life in that wait
+# and was cancelled by the next one before reaching a single spec — a job that
+# always cancels is a job that never runs, which is precisely the "a guard with
+# nowhere to run becomes a comment" failure this workflow was built to end.
+#
+# The fix is to stop pinning to a sha. The question this job answers is "is
+# PRODUCTION healthy right now", not "is commit abc123 healthy" — the specs
+# below check routes, layout and touch targets on the live site, and any deploy
+# that reaches production is a fair subject. So it tests whatever is serving
+# when it starts, names that sha in the summary, and finishes in about three
+# minutes instead of thirteen.
+#
+# GitHub evaluates concurrency BEFORE the job-level `if`. That means a failed
+# or cancelled Build for World Hub Sync still starts this workflow, takes the
+# concurrency lock, cancels a genuine manual/production run, and only THEN
+# skips its own job. Give those no-op invocations a unique group. Successful
+# deploys and manual runs continue sharing the production group. A running
+# authenticated suite is allowed to finish; GitHub keeps only the newest
+# pending run, so deploy bursts still converge without starving the guard or
+# overlapping its stateful two-account checks.
+concurrency:
+  group: >-
+    post-deploy-e2e-${{
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion != 'success' &&
+      format('noop-{0}', github.run_id) ||
+      'production'
+    }}
+  cancel-in-progress: false
+
+jobs:
+  production-e2e:
+    # Only when the publish actually succeeded. A failed sync means production
+    # is still serving the previous bundle, and testing that proves nothing
+    # about this commit.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    name: Specs that need a real deployed page
+    # OFFLOADED 2026-09-02. Measured at ~29 minutes a run and firing on every
+    # publish, this was the single largest remaining GitHub-billed job on the
+    # repo - more than half the residual bill on its own. It tests LIVE
+    # production over the public internet, so where it runs changes nothing
+    # about what it proves. The estate box carries the chromium+webkit system
+    # libraries permanently and caches the browser binaries between runs.
+    #
+    # WHY THIS ONE AND NOT CSS Beat E2E. The first attempt routed both. CSS
+    # Beat E2E is a REQUIRED merge check, and on the 4-core box, under four
+    # concurrent heavy jobs, a browser-flow spec timed out waiting 20s for a
+    # control - the same suite is 3/3 green on hosted runners at ~10.5 minutes.
+    # A cost saving that turns a green merge gate red is not a saving. This job
+    # is not a merge gate, so a load-induced slowdown here costs minutes, never
+    # a merge. CSS Beat E2E follows once the box has the headroom (or a second
+    # box) to run browser flows without contention.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    # Cashier plus six isolated stateful groups and the 138-test responsive
+    # sweep take 20-24 minutes when production is under normal publish load.
+    # The old 20-minute ceiling cancelled the honesty/report steps just as the
+    # sweep completed, discarding a real verdict. This remains bounded while
+    # leaving enough room for first-attempt, zero-retry certification.
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # The step below may need to resolve the sha production is actually
+          # serving, which is usually an ancestor of this run's commit and is
+          # absent from the default shallow clone.
+          fetch-depth: 0
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci --ignore-scripts
+
+      # See the note in ci.yml: apt-get on every run is correct for a throwaway
+      # hosted image and pure waste on a box where the libraries are permanent.
+      - name: Install Chromium and WebKit
+        run: |
+          if [ -n "${{ vars.CI_RUNNER }}" ]; then
+            npx playwright install chromium webkit
+          else
+            npx playwright install chromium webkit --with-deps
+          fi
+
+      # Production must be reachable and serving a bundle before any of this
+      # means anything. This is a readiness check, NOT a sha match: see the
+      # note on `concurrency` above for why waiting for this commit's own sha
+      # made the job cancel itself out of existence.
+      - name: Confirm production is serving, and record what we are testing
+        id: live
+        run: |
+          for i in $(seq 1 10); do
+            LIVE=$(curl -fsS "https://smarter.poker/hub/club-arena/build-info.json?cb=$RANDOM" \
+              | sed -n 's/.*"ca_sha": *"\([a-f0-9]*\)".*/\1/p') || true
+            if [ -n "$LIVE" ]; then
+              echo "sha=$LIVE" >> $GITHUB_OUTPUT
+              echo "ready=true" >> $GITHUB_OUTPUT
+              echo "### Post-deploy E2E" >> $GITHUB_STEP_SUMMARY
+              echo "Testing production as it is serving right now: \`$LIVE\`" >> $GITHUB_STEP_SUMMARY
+              if [ "$LIVE" = "${{ github.event.workflow_run.head_sha || github.sha }}" ]; then
+                echo "(that is this run's own commit)" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "(a newer deploy has overtaken this run's commit - testing what players actually have)" >> $GITHUB_STEP_SUMMARY
+              fi
+              exit 0
+            fi
+            echo "  attempt $i: build-info.json not readable yet"
+            sleep 10
+          done
+          echo "ready=false" >> $GITHUB_OUTPUT
+          echo "::error::production did not serve a readable build-info.json - the site may be down."
+          exit 1
+
+      # ───────────────────────────────────────────────────────────────────
+      # THE SPECS AND THE BUNDLE MUST COME FROM THE SAME COMMIT.
+      #
+      # The step above stopped pinning to this run's sha on purpose, and the
+      # reasoning is sound: the question is "is production healthy right now".
+      # But the CHECKOUT was never brought along. So the run tested whatever
+      # production served using the assertions from a different, newer commit.
+      #
+      # That is not a hypothetical. On 2026-08-31 runs 33394046555 and
+      # 33394398578 failed on `[data-cashier-recovery="true"]` not found. The
+      # element was on `main` (CashierTradePage.tsx:2162, merged in #2165 at
+      # 12:43) and the spec asserting it was in the checkout - but production
+      # was still serving a bundle from before it. Nothing was broken. The run
+      # was asking a new question of an old page, and calling the answer a
+      # defect. Ten minutes later, unchanged, the same spec passed.
+      #
+      # A guard whose reds are routinely false is a guard people learn to
+      # ignore, which is how it becomes a comment again.
+      #
+      # So: when production is serving an ANCESTOR of this checkout, take the
+      # specs from that ancestor too. Test what players have, with the
+      # assertions that belong to it. If the deployed sha is not an ancestor
+      # (a force-push, or production somehow ahead) do NOT guess - keep the
+      # checkout and say so loudly in the summary, so the drift is visible
+      # rather than silently absorbed.
+      # ───────────────────────────────────────────────────────────────────
+      - name: Take the specs from the commit production is actually serving
+        if: steps.live.outputs.ready == 'true'
+        id: align
+        run: |
+          LIVE='${{ steps.live.outputs.sha }}'
+          HERE=$(git rev-parse HEAD)
+          if [ "$LIVE" = "$HERE" ]; then
+            echo "specs=$HERE" >> $GITHUB_OUTPUT
+            echo "The specs and the deployed bundle are the same commit (\`$HERE\`)." >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+          if ! git cat-file -e "$LIVE^{commit}" 2>/dev/null; then
+            git fetch --no-tags origin "$LIVE" --depth=1 2>/dev/null || true
+          fi
+          if git merge-base --is-ancestor "$LIVE" "$HERE" 2>/dev/null; then
+            # ASSERTIONS from the deployed commit; HARNESS from this one.
+            #
+            # Swapping tests/e2e wholesale would also drag global-setup.ts and
+            # its support/ helpers back to $LIVE - and $LIVE predates the
+            # E2E_REQUIRE_AUTH throw added in this very commit. The run would
+            # then silently regain the signed-out fallback it just lost, on
+            # exactly the runs where production is behind. A fix that disables
+            # itself under the condition it was written for is worse than none.
+            git checkout "$LIVE" -- tests/e2e
+            git checkout "$HERE" -- tests/e2e/global-setup.ts tests/e2e/support
+            echo "specs=$LIVE" >> $GITHUB_OUTPUT
+            echo "Production is serving \`$LIVE\`, an ancestor of this run's \`$HERE\`." >> $GITHUB_STEP_SUMMARY
+            echo "Specs taken from \`$LIVE\` so the assertions match the bundle; global-setup and support/ kept at \`$HERE\`." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "specs=$HERE" >> $GITHUB_OUTPUT
+            echo "::warning::deployed sha $LIVE is NOT an ancestor of $HERE - specs left at $HERE and may not match the bundle."
+            echo "**Drift, not reconciled.** Production serves \`$LIVE\`, which is not an ancestor of this run's \`$HERE\`. The specs below are from \`$HERE\` and a failure may mean only that they do not match the deployed bundle." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Certify the live cashier database contract
+        if: steps.live.outputs.ready == 'true'
+        env:
+          PGPASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          psql \
+            "host=aws-0-us-west-2.pooler.supabase.com port=6543 dbname=postgres user=postgres.kuklfnapbkmacvwxktbh sslmode=require connect_timeout=8" \
+            -X -v ON_ERROR_STOP=1 \
+            -f scripts/verification-harness/cashier-release-contract.sql
+          psql \
+            "host=aws-0-us-west-2.pooler.supabase.com port=6543 dbname=postgres user=postgres.kuklfnapbkmacvwxktbh sslmode=require connect_timeout=8" \
+            -X -v ON_ERROR_STOP=1 \
+            -f scripts/verification-harness/cashier-telemetry-rls.sql
+
+      # Keep the release-critical Cashier result independent from the broader
+      # production sweep. A failure on Stats or another route must not obscure
+      # whether the money surface itself passed or failed.
+      - name: Certify the authenticated production Cashier
+        if: steps.live.outputs.ready == 'true'
+        env:
+          BASE_URL: https://smarter.poker/hub/club-arena/
+          ARENA_BASE_URL: https://smarter.poker/hub/club-arena
+          SP_EMAIL: ${{ secrets.SP_EMAIL }}
+          SP_PASS: ${{ secrets.SP_PASS }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          # This job has credentials. A silent signed-out fallback here produces
+          # a green run that verified almost nothing - see global-setup.ts.
+          E2E_REQUIRE_AUTH: '1'
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report/cashier.json
+        run: >-
+          npx playwright test tests/e2e/production-cashier.spec.ts
+          --project=chromium --reporter=line,json --workers=1 --retries=0
+
+      # `always()` is the point. Without it, a failed Cashier step skips this one
+      # entirely - so a single money-surface red hid the whole production sweep,
+      # which is the exact opposite of what the note above this job's Cashier
+      # step promises ("A failure on Stats or another route must not obscure
+      # whether the money surface itself passed or failed"). It promised
+      # independence and delivered it in one direction only. Run 33394046555:
+      # Cashier failed, and thirteen spec files plus tests/e2e/routes never ran.
+      - name: Run the specs that need a deployed page
+        if: always() && steps.live.outputs.ready == 'true'
+        env:
+          BASE_URL: https://smarter.poker/hub/club-arena/
+          ARENA_BASE_URL: https://smarter.poker/hub/club-arena
+          SP_EMAIL: ${{ secrets.SP_EMAIL }}
+          SP_PASS: ${{ secrets.SP_PASS }}
+          # Customization certification never mutates either standing player.
+          # Realtime creates two isolated identities to prove cross-device sync
+          # and cross-player isolation; commerce creates a third for checkout.
+          # Every one is hard-deleted and residue-checked before the run ends.
+          CUSTOMIZATION_COMMERCE_CERTIFICATION: '1'
+          # Daily Missions uses the same reserved hard-delete harness for one
+          # production player, then proves the complete economy/realtime/error
+          # journey and verifies that no account or ledger residue remains.
+          DAILY_MISSIONS_CERTIFICATION: '1'
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: 'sb_publishable__41LpJpzrfrb3hSUpEaYCA_tF53bBJx'
+          # The mode mobile-fit-audit.spec.ts was built for and has never been
+          # run in. Without it the spec logs a report and passes regardless.
+          MOBILE_FIT_STRICT: '1'
+          E2E_REQUIRE_AUTH: '1'
+          LIVE_SHA: ${{ steps.live.outputs.sha }}
+        # Every spec the css-beats gate cannot take, named explicitly for the
+        # same reason that gate names its own: a spec not named in a job runs
+        # in no job. If you add a spec that needs a login or a live URL, add it
+        # here in the same commit.
+        #
+        # tests/e2e/routes/ (nine files) is named as a DIRECTORY on purpose.
+        # The first sweep that wired the orphans missed it entirely by globbing
+        # only tests/e2e/*.spec.ts, so nine route suites stayed invisible one
+        # level down - the same class of miss as the specs this job exists for.
+        # A directory cannot go stale when a tenth file is added beside them.
+        run: |
+          # Do NOT let the first invocation abort the second. Under `set -e` a
+          # red Stats run stopped the sweep before a single route spec loaded,
+          # which is the same "one failure hides the rest" fault that `always()`
+          # above fixes at the step level. Record every verdict, report them all,
+          # and fail at the end if any of them failed.
+          set +e
+          rc=0
+
+          # run_suite <json-name> <spec path...>
+          #
+          # Two jobs, both of which used to be done inline and wrongly.
+          #
+          # 1. A spec added AFTER the deployed commit is absent once the step
+          #    above takes the specs from $LIVE_SHA. Playwright errors on a named
+          #    path that does not exist, before running anything - turning a
+          #    normal deploy lag back into the false red this job just stopped
+          #    producing. So run what is present and warn about what is not.
+          #
+          # 2. If nothing is present, WRITE DOWN WHY. A missing report is read by
+          #    the honesty check below as "it did not run", which is exactly
+          #    right for a silent hole and exactly wrong for a stated absence.
+          #
+          # Each spec path is passed as an argument and therefore appears in this
+          # file exactly once - tests/stats-experience-contract.test.ts requires
+          # that of stats-deep.spec.ts, and it is a good rule: a path repeated
+          # across a guard and its invocation is a path that can be updated in
+          # one place and not the other.
+          run_suite () {
+            json="$1"; shift
+            specs=""
+            flags=""
+            for a in "$@"; do
+              case "$a" in
+                -*) flags="$flags $a" ;;
+                *)
+                  if [ -e "$a" ]; then
+                    specs="$specs $a"
+                  else
+                    echo "::warning::$a is not present at the deployed commit - not run"
+                  fi
+                  ;;
+              esac
+            done
+            mkdir -p e2e-report
+            if [ -z "$specs" ]; then
+              printf '{"notRunReason":"no spec in this group exists at the deployed commit %s"}\n' \
+                "$LIVE_SHA" > "e2e-report/$json"
+              return 0
+            fi
+            echo "running:$specs"
+            output_dir="${json%.json}"
+            PLAYWRIGHT_JSON_OUTPUT_NAME="e2e-report/$json" npx playwright test $specs $flags \
+              --output="test-results/$output_dir"
+          }
+
+          # Certify Stats first among the broader route checks. Cashier has its
+          # own preceding release gate so this suite cannot hide its verdict.
+          run_suite stats.json tests/e2e/stats-deep.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          stats_rc=$?; [ $stats_rc -ne 0 ] && rc=$stats_rc
+
+          # These contracts either mutate the standing authenticated player or
+          # create and destroy isolated production fixtures. Each gets its own
+          # single-worker process so a waitlist/realtime update cannot
+          # invalidate another browser's snapshot. Playwright retries stay off:
+          # a release must not hide a broken first attempt behind a warm retry.
+          run_suite lobby.json tests/e2e/club-lobby.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          lobby_rc=$?; [ $lobby_rc -ne 0 ] && rc=$lobby_rc
+
+          run_suite customization-realtime.json tests/e2e/production-customization-realtime.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          customization_realtime_rc=$?; [ $customization_realtime_rc -ne 0 ] && rc=$customization_realtime_rc
+
+          run_suite customization-commerce.json tests/e2e/production-customization-commerce.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          customization_commerce_rc=$?; [ $customization_commerce_rc -ne 0 ] && rc=$customization_commerce_rc
+
+          run_suite daily-missions.json tests/e2e/production-daily-missions.spec.ts --project=chromium --reporter=line,json --workers=1 --retries=0
+          daily_missions_rc=$?; [ $daily_missions_rc -ne 0 ] && rc=$daily_missions_rc
+
+          # tests/e2e/routes/ (nine files) is named as a DIRECTORY on purpose.
+          # The first sweep that wired the orphans missed it entirely by globbing
+          # only tests/e2e/*.spec.ts, so nine route suites stayed invisible one
+          # level down - the same class of miss as the specs this job exists for.
+          # A directory cannot go stale when a tenth file is added beside them.
+          run_suite sweep.json \
+            tests/e2e/smoke.spec.ts \
+            tests/e2e/club-data-deep.spec.ts \
+            tests/e2e/mobile-fit-audit.spec.ts \
+            tests/e2e/mobile-tap-targets.spec.ts \
+            tests/e2e/mobile-input-zoom.spec.ts \
+            tests/e2e/mobile-chrome-occlusion.spec.ts \
+            tests/e2e/showdown-beats.spec.ts \
+            tests/e2e/tournament-buy-in-dialog.spec.ts \
+            tests/e2e/tournament-watch.spec.ts \
+            tests/e2e/footer-route.spec.ts \
+            tests/e2e/routes \
+            --reporter=line,json --workers=2 --retries=0
+          sweep_rc=$?; [ $sweep_rc -ne 0 ] && rc=$sweep_rc
+
+          echo "stats exit=$stats_rc  lobby exit=$lobby_rc  customization realtime exit=$customization_realtime_rc  customization commerce exit=$customization_commerce_rc  daily missions exit=$daily_missions_rc  sweep exit=$sweep_rc"
+          exit $rc
+
+      # THE RUN MUST NOT PASS BY NOT RUNNING.
+      #
+      # Everything above can succeed while verifying nothing: Playwright exits 0
+      # when every test skips, and dozens of these specs skip themselves when
+      # they land on /auth or find no live fixture. `always()` so this reports
+      # on a red run too - a run can be BOTH failed and dishonest, and the
+      # second fact is the one nobody was being told.
+      - name: Did the suite actually verify production?
+        if: always() && steps.live.outputs.ready == 'true'
+        run: >-
+          node scripts/ci/assert-e2e-actually-ran.mjs
+          e2e-report/cashier.json
+          e2e-report/stats.json
+          e2e-report/lobby.json
+          e2e-report/customization-realtime.json
+          e2e-report/customization-commerce.json
+          e2e-report/daily-missions.json
+          e2e-report/sweep.json
+
+      - name: Upload the report when something is wrong on production
+        # `failure()` is false when GitHub cancels a job at its time limit. The
+        # old condition therefore discarded the only report from exactly the
+        # run that exposed the obsolete timeout. Preserve evidence for both
+        # kinds of non-verdict, while still skipping uploads on a clean run.
+        if: always() && (failure() || cancelled())
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-deploy-playwright-report
+          path: |
+            playwright-report/
+            test-results/
+            e2e-report/
+          retention-days: 3 # 2026-09-01 cost audit: reports are read same-day or never

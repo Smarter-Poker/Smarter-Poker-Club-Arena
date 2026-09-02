@@ -35,6 +35,39 @@ export interface TournamentBrainContext {
   avgStackChips: number;
   /** PKO: share of the prize pool sitting in bounties (0 = not a bounty) */
   bountyFactor: number;
+  /** V16 ICM: live stacks in chips, descending, capped at 200 entries. */
+  stacks: number[];
+  /** V16 ICM: payout percentages by place (1st first), capped at 9 places. */
+  payoutPct: number[];
+  // ═══ V26 THE PRIZE LANDSCAPE (Dan 2026-08-28) ═══════════════════════════
+  // "Horses should be able to see and have access to the prizes, and which
+  //  bounties are left still, if top prizes are gone, or still there - that
+  //  changes play."
+  //
+  // It does, and it is the sharpest read in a mystery bounty. Busting someone
+  // draws a CHEST from a shrinking inventory: while the big ones are still in
+  // there every elimination is a lottery ticket worth far more than its
+  // average, and once they are claimed the same bust pays scraps and the
+  // event collapses back toward a freezeout. A horse that cannot see the
+  // inventory is playing the wrong tournament for half the night.
+  /** mystery bounty: chests still unclaimed ('available') */
+  mysteryChestsLeft: number;
+  /** mystery bounty: MEAN value of an unclaimed chest, in cents — the honest
+   *  EV of one elimination right now */
+  mysteryMeanCents: number;
+  /** mystery bounty: the largest chest still unclaimed, in cents */
+  mysteryTopCents: number;
+  /** mystery bounty: is the tournament's single biggest chest STILL LIVE?
+   *  The difference between a lottery and a grind. */
+  mysteryTopLive: boolean;
+  /** PKO/mystery: mean live bounty per remaining player, in cents (0 = none) */
+  meanBountyCents: number;
+  /** V23: at the final table (MTT, nine or fewer left, in or at the money) */
+  finalTable: boolean;
+  /** V23 BLIND CLOCK: minutes until the next level (null = unknown/last level) */
+  nextBlindInMin: number | null;
+  /** V23 BLIND CLOCK: next level's bb as a multiple of the current bb (1 = flat) */
+  nextBlindMult: number;
 }
 
 interface TournamentRowLite {
@@ -47,6 +80,162 @@ interface TournamentRowLite {
   bounty_pool: number | null;
   is_pko: boolean | null;
   is_bounty: boolean | null;
+  /** V23 blind clock inputs (all optional — absent means clock unknown). */
+  blind_structure?: unknown;
+  current_level?: number | null;
+  level_started_at?: string | null;
+}
+
+/** V23: one level of a blind structure, as stored (two duration spellings). */
+interface BlindLevelRow {
+  level?: number;
+  smallBlind?: number;
+  bigBlind?: number;
+  ante?: number;
+  duration?: number; // seconds in one historical shape
+  durationMinutes?: number; // minutes in the other
+}
+
+/** V23 pure: minutes until the next level and its bb multiple. Exported for
+ *  tests. Returns nulls/1 whenever any input is missing or malformed —
+ *  the blind clock degrades to "unknown", never to a guess. */
+export function deriveBlindClock(
+  structure: unknown,
+  currentLevel: number | null | undefined,
+  levelStartedAt: string | null | undefined,
+  nowMs: number
+): { nextBlindInMin: number | null; nextBlindMult: number } {
+  const none = { nextBlindInMin: null, nextBlindMult: 1 };
+  try {
+    if (!Array.isArray(structure) || structure.length === 0) return none;
+    const lvl = typeof currentLevel === 'number' && currentLevel >= 1 ? currentLevel : null;
+    if (lvl == null || !levelStartedAt) return none;
+    const levels = structure as BlindLevelRow[];
+    const cur = levels.find((l) => l?.level === lvl);
+    const next = levels.find((l) => l?.level === lvl + 1);
+    if (!cur || !next) return none; // last level: the clock stops mattering
+    const curBB = Number(cur.bigBlind) || 0;
+    const nextBB = Number(next.bigBlind) || 0;
+    // duration: `durationMinutes` is minutes; `duration` >= 45 is seconds
+    // (no real level is shorter), below that it is minutes.
+    const rawDur = cur.durationMinutes ?? cur.duration ?? 0;
+    const durMin =
+      cur.durationMinutes != null
+        ? Number(rawDur)
+        : Number(rawDur) >= 45
+          ? Number(rawDur) / 60
+          : Number(rawDur);
+    if (!(durMin > 0)) return none;
+    const startedMs = Date.parse(levelStartedAt);
+    if (!isFinite(startedMs)) return none;
+    const elapsedMin = (nowMs - startedMs) / 60_000;
+    // STALE-CLOCK GUARD (2026-08-28 polish sweep): if the level has been
+    // "about to end" for three whole level-lengths, the writer stopped
+    // advancing current_level (a paused event, or a stalled manager). A
+    // clock that reads zero forever would keep the M-zones on a permanently
+    // shrunken M — unknown is the honest answer.
+    if (elapsedMin > durMin * 3) return none;
+    const left = Math.max(0, durMin - elapsedMin);
+    return {
+      nextBlindInMin: Math.round(left * 10) / 10,
+      nextBlindMult: curBB > 0 && nextBB > 0 ? nextBB / curBB : 1,
+    };
+  } catch {
+    return none;
+  }
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  HOW MANY PLAYERS ARE ACTUALLY AT THE TABLE
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * This used to read `row.table_size ?? row.max_players ?? 9`, and that one
+ * expression made every Heads-Up duel on the platform play MTT strategy.
+ *
+ * `tournaments.table_size` is `NOT NULL DEFAULT 9`, and no creation path wrote
+ * it (fixed for the two that matter on 2026-08-27). `??` falls through on NULL
+ * only — never on a DEFAULTED 9 — so the second operand was UNREACHABLE and
+ * `max_players = 2` could not be seen. 10,315 heads-up rows sit at
+ * `table_size = 9`, every one of them resolving to 'mtt', so HorseLogic applied
+ * ICM pressure and bubble ranges to a two-handed game where one spot pays and
+ * there is no bubble to be on.
+ *
+ * The fix is not to swap the operand order — that would have the same shape of
+ * failure the other way round the moment a real MTT arrives with a bad
+ * max_players. It is to stop treating either column as authoritative and take
+ * the SMALLEST seat count the row actually asserts:
+ *
+ *   - a duel is a duel if EITHER column says two, so a legacy row whose
+ *     table_size was defaulted to 9 is still read correctly from max_players.
+ *     That is what makes this robust rather than merely correct going forward —
+ *     the 10,315 existing rows are read right without a data migration;
+ *   - a 100-player MTT with table_size 9 still yields 9, and 9 is not <= 2;
+ *   - non-positive, NaN and NULL values are DISCARDED rather than winning, so a
+ *     zero or a junk value cannot pull a full field down to a duel.
+ *
+ * Only when the row asserts nothing usable does it fall back to 9.
+ */
+export function seatsAtOneTable(row: {
+  table_size?: number | null;
+  max_players?: number | null;
+}): number {
+  const asserted = [row?.table_size, row?.max_players]
+    .map((n) => Number(n))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  return asserted.length > 0 ? Math.min(...asserted) : 9;
+}
+
+/** V26: one chest row as the inventory query returns it. */
+export interface ChestRow {
+  status?: string | null;
+  amount_cents?: number | null;
+}
+
+/**
+ * V26 pure: what the mystery-bounty inventory looks like RIGHT NOW.
+ * Exported for tests. Everything degrades to zeros when there is no chest
+ * system, which reads as "not a mystery bounty" downstream rather than as a
+ * jackpot that happens to be empty.
+ */
+export function deriveBountyLandscape(chests: ChestRow[] | null | undefined): {
+  mysteryChestsLeft: number;
+  mysteryMeanCents: number;
+  mysteryTopCents: number;
+  mysteryTopLive: boolean;
+} {
+  const none = {
+    mysteryChestsLeft: 0,
+    mysteryMeanCents: 0,
+    mysteryTopCents: 0,
+    mysteryTopLive: false,
+  };
+  if (!Array.isArray(chests) || chests.length === 0) return none;
+  let left = 0;
+  let sum = 0;
+  let top = 0;
+  let topEver = 0;
+  for (const c of chests) {
+    const amt = Number(c?.amount_cents) || 0;
+    if (amt <= 0) continue;
+    // 'void' chests were never in play (the event ended early, or the
+    // inventory was trimmed) - they are not part of any landscape.
+    if (c?.status === 'void') continue;
+    if (amt > topEver) topEver = amt;
+    if (c?.status === 'available') {
+      left++;
+      sum += amt;
+      if (amt > top) top = amt;
+    }
+  }
+  if (left === 0) return { ...none, mysteryTopLive: false };
+  return {
+    mysteryChestsLeft: left,
+    mysteryMeanCents: Math.round(sum / left),
+    mysteryTopCents: top,
+    // The single biggest chest the tournament ever held is still unclaimed.
+    mysteryTopLive: topEver > 0 && top >= topEver,
+  };
 }
 
 /** Pure derivation — unit-tested. */
@@ -54,16 +243,18 @@ export function deriveContext(
   row: TournamentRowLite,
   playersLeft: number,
   entrants: number,
-  chipSum: number
+  chipSum: number,
+  /** V16 ICM: live stack list (any order; stored sorted desc, capped). */
+  liveStacks: number[] = [],
+  /** V26: the mystery-bounty chest inventory, if this event has one. */
+  chests: ChestRow[] = [],
+  /** V26: live per-player bounties in cents (PKO), any order. */
+  liveBounties: number[] = []
 ): TournamentBrainContext {
   const type = (row.tournament_type || '').toUpperCase();
   const variant = (row.variant || '').toLowerCase();
   const format: TournamentFormat =
-    type === 'SPIN' || variant === 'spin'
-      ? 'spin'
-      : (row.table_size ?? row.max_players ?? 9) <= 2
-        ? 'hu_sng'
-        : 'mtt';
+    type === 'SPIN' || variant === 'spin' ? 'spin' : seatsAtOneTable(row) <= 2 ? 'hu_sng' : 'mtt';
 
   // V13: use the CANONICAL parser instead of a local JSON.parse. The old code
   // only understood the array shape [{place, percentage}] and silently scored
@@ -91,6 +282,53 @@ export function deriveContext(
       ? bountyPool / (prizePool + bountyPool)
       : 0;
 
+  // V16 ICM inputs: the payout CURVE and the live stack DISTRIBUTION are
+  // what a real Malmuth-Harville pressure model needs; counts alone were why
+  // the old premium had to be a flat guess.
+  // V29 AUDIT FIX (H3, 2026-08-29): the curve used to be sliced to the top 9
+  // places and the REST OF THE PAID MASS DISCARDED — a 1,200-runner event
+  // paying 150 was modelled as a 9-paid tournament, so the survival premium
+  // in deep fields was derived from a fiction (and telemetry reported the
+  // path as 'real', so it looked healthy). The model still takes at most 9
+  // buckets, but the 9th now CARRIES the sum of every remaining paid place:
+  // total paid mass is preserved, and the tail the model prices reflects the
+  // actual money below the top table.
+  const sortedPlaces = (places ?? [])
+    .slice()
+    .sort((a, b) => a.place - b.place)
+    .map((p) => p.percentage)
+    .filter((p) => p > 0);
+  const payoutPct =
+    sortedPlaces.length <= 9
+      ? sortedPlaces
+      : [...sortedPlaces.slice(0, 8), sortedPlaces.slice(8).reduce((a, b) => a + b, 0)];
+  // Same defect on the stack side: it took the TOP 200 stacks, discarding the
+  // bottom of the field entirely — in any event past 200 players the model saw
+  // only big stacks, hero's chip share was computed against an inflated
+  // average, and a below-median hero was substituted over a real big stack.
+  // The 200-stack cap stays (the model needs bounded work), but the sample is
+  // now a QUANTILE sample of the whole sorted field: every 200th-ile stack
+  // from chip leader to shortest. The distribution's shape, mean and hero's
+  // relative standing all survive; only resolution is lost.
+  const allLive = liveStacks.filter((s) => isFinite(s) && s > 0).sort((a, b) => b - a);
+  let stacks: number[];
+  if (allLive.length <= 200) {
+    stacks = allLive;
+  } else {
+    stacks = [];
+    for (let i = 0; i < 200; i++) {
+      const idx = Math.min(allLive.length - 1, Math.round((i * (allLive.length - 1)) / 199));
+      stacks.push(allLive[idx]);
+    }
+  }
+
+  // V23: the blind clock and the final-table flag ride the same derivation.
+  const clock = deriveBlindClock(
+    row.blind_structure,
+    row.current_level,
+    row.level_started_at,
+    Date.now()
+  );
   return {
     format,
     entrants: Math.max(entrants, playersLeft),
@@ -100,6 +338,16 @@ export function deriveContext(
     nearBubble,
     avgStackChips: playersLeft > 0 ? chipSum / playersLeft : 0,
     bountyFactor: Math.max(0, Math.min(1, bountyFactor)),
+    stacks,
+    payoutPct,
+    ...deriveBountyLandscape(chests),
+    meanBountyCents:
+      liveBounties.length > 0
+        ? Math.round(liveBounties.reduce((a, b) => a + (Number(b) || 0), 0) / liveBounties.length)
+        : 0,
+    finalTable: format === 'mtt' && playersLeft >= 2 && playersLeft <= 9,
+    nextBlindInMin: clock.nextBlindInMin,
+    nextBlindMult: clock.nextBlindMult,
   };
 }
 
@@ -129,7 +377,14 @@ export function getTournamentBrainContext(tournamentId: string): TournamentBrain
   const now = Date.now();
   let e = cache.get(tournamentId);
   if (!e) {
-    if (cache.size > MAX_CACHED) cache.clear();
+    // V29 AUDIT FIX (was LOW in the wire audit): .clear() dropped EVERY live
+    // tournament's context at once — every horse in every event fell back to
+    // the flat premium simultaneously until refreshes landed. Evict the
+    // stalest quarter instead.
+    if (cache.size > MAX_CACHED) {
+      const entries = [...cache.entries()].sort((a, b) => a[1].fetchedAt - b[1].fetchedAt);
+      for (let i = 0; i < Math.ceil(entries.length / 4); i++) cache.delete(entries[i][0]);
+    }
     e = { ctx: null, fetchedAt: 0, inFlight: false };
     cache.set(tournamentId, e);
   }
@@ -163,26 +418,46 @@ async function refresh(tournamentId: string, e: CacheEntry): Promise<void> {
         REFRESH_TIMEOUT_MS
       ).unref?.()
     );
-    const [tRes, pRes] = await Promise.race([
+    const [tRes, pRes, cRes] = await Promise.race([
       deadline,
       Promise.all([
         supabase
           .from('tournaments')
           .select(
-            'tournament_type, variant, max_players, table_size, payout_structure, spin_multiplier, prize_pool, bounty_pool, is_pko, is_bounty'
+            'tournament_type, variant, max_players, table_size, payout_structure, spin_multiplier, prize_pool, bounty_pool, is_pko, is_bounty, is_mystery_bounty, blind_structure, current_level, level_started_at'
           )
           .eq('id', tournamentId)
           .maybeSingle(),
         supabase
           .from('tournament_players')
-          .select('chips, status')
+          .select('chips, status, current_bounty')
           .eq('tournament_id', tournamentId)
           .order('id', { ascending: true })
           .limit(5000),
+        // V26: the mystery-bounty chest inventory. Cheap (a few hundred rows
+        // at most) and only meaningful for mystery events, but asked
+        // unconditionally so a mid-event activation cannot be missed - the
+        // aggregate is empty for every other tournament, which reads as
+        // "no chest system" rather than "an empty jackpot".
+        supabase
+          .from('tournament_bounty_chests')
+          .select('status, amount_cents')
+          .eq('tournament_id', tournamentId)
+          .limit(2000),
       ]),
     ]);
     if (tRes.error) throw new Error(tRes.error.message);
     if (pRes.error) throw new Error(pRes.error.message);
+    // V26: a failed CHEST read must not sink the whole context - the ICM and
+    // blind-clock halves are still good. Treat it as "no inventory known",
+    // which degrades to the pre-V26 flat bounty handling.
+    const chestRows = cRes?.error ? [] : ((cRes?.data ?? []) as ChestRow[]);
+    if (cRes?.error) {
+      reportError(
+        new Error(`chest inventory read failed: ${cRes.error.message}`),
+        'TournamentBrainContext.chests_unavailable'
+      );
+    }
     if (!tRes.data) {
       // V13: maybeSingle() returns null for zero rows, which includes a
       // read-replica blip or an RLS hiccup — not only a genuinely absent
@@ -197,17 +472,35 @@ async function refresh(tournamentId: string, e: CacheEntry): Promise<void> {
         );
       return;
     }
-    const rows = (pRes.data ?? []) as Array<{ chips: number | null; status: string | null }>;
+    const rows = (pRes.data ?? []) as Array<{
+      chips: number | null;
+      status: string | null;
+      current_bounty: number | null;
+    }>;
+    const liveBounties: number[] = [];
     const entrants = rows.length;
     let playersLeft = 0;
     let chipSum = 0;
+    const liveStacks: number[] = [];
     for (const r of rows) {
       const st = (r.status || '').toLowerCase();
       if (st === 'eliminated' || st === 'busted' || st === 'unregistered') continue;
       playersLeft++;
-      chipSum += Number(r.chips) || 0;
+      const chips = Number(r.chips) || 0;
+      chipSum += chips;
+      if (chips > 0) liveStacks.push(chips);
+      const b = Number(r.current_bounty) || 0;
+      if (b > 0) liveBounties.push(b);
     }
-    e.ctx = deriveContext(tRes.data as TournamentRowLite, playersLeft, entrants, chipSum);
+    e.ctx = deriveContext(
+      tRes.data as TournamentRowLite,
+      playersLeft,
+      entrants,
+      chipSum,
+      liveStacks,
+      chestRows,
+      liveBounties
+    );
   } catch (err) {
     reportError(err, 'TournamentBrainContext.refresh');
     // keep the last known ctx — stale beats nothing

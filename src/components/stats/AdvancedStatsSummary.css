@@ -55,12 +55,6 @@
   overflow: hidden;
 }
 
-.advanced-stat-card:hover {
-  border-color: rgba(0, 212, 255, 0.4);
-  transform: translateY(-4px);
-  box-shadow: 0 0 20px rgba(0, 212, 255, 0.15);
-}
-
 .advanced-stat-card.selected {
   background: linear-gradient(145deg, rgba(0, 212, 255, 0.12) 0%, rgba(0, 212, 255, 0.04) 100%);
   border-color: rgba(0, 212, 255, 0.5);
@@ -144,10 +138,6 @@
   transition: opacity 0.2s;
 }
 
-.advanced-stat-card:hover .card-sparkline {
-  opacity: 1;
-}
-
 .card-sparkline svg {
   overflow: visible;
 }
@@ -218,12 +208,6 @@
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   transition: all 0.25s ease-out;
-}
-
-.insight-box:hover {
-  border-color: rgba(0, 212, 255, 0.3);
-  transform: translateY(-2px);
-  box-shadow: 0 0 15px rgba(0, 212, 255, 0.1);
 }
 
 .insight-icon {

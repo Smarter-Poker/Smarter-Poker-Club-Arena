@@ -88,4 +88,19 @@ describe('SeatSlot countdown ring duration', () => {
     const info = renderSeat({ turnStartTimeMs: NOW, turnDeadlineMs: NOW + 10 });
     expect(durationSeconds(info)).toBeGreaterThanOrEqual(1);
   });
+
+  it('absorbs first-paint latency: the ring starts FULL and ends at the deadline (item 10, 2026-08-26)', () => {
+    /* The engine stamps turn_start_time_ms before the broadcast reaches the
+       phone, so the seat's first paint is typically 0.3-2.6s (deal hold) into
+       the turn. The ring used to mount already part-drained and visibly
+       emptied early. Small first-paint elapsed is now anchored out: the ring
+       starts at 100% and spans exactly the REMAINING time, so it reaches
+       empty at the fold / time-bank moment, never before. */
+    const info = renderSeat({ turnStartTimeMs: NOW - 1_200, turnDeadlineMs: NOW + 13_800 });
+    expect(durationSeconds(info)).toBeCloseTo(13.8, 1);
+    const delay = parseFloat(
+      (info?.style.getPropertyValue('--sp-timer-delay') ?? '').replace('s', '')
+    );
+    expect(delay).toBeCloseTo(0, 1);
+  });
 });

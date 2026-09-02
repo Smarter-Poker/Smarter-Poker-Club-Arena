@@ -108,9 +108,20 @@ export default function SharedHandReplayPage() {
   const hero = hand.players.find((p) => p.isHero);
 
   return (
-    <div style={{ maxWidth: 640, margin: '0 auto', padding: 20, color: '#fff' }}>
+    <div
+      style={{
+        width: '100%',
+        maxWidth: 640,
+        margin: '0 auto',
+        padding: 20,
+        paddingBottom: 'max(70px, env(safe-area-inset-bottom))',
+        boxSizing: 'border-box',
+        overflowX: 'hidden',
+        color: '#fff',
+      }}
+    >
       <header style={{ borderBottom: '1px solid rgba(255,255,255,0.14)', paddingBottom: 12 }}>
-        <h1 style={{ margin: 0, fontSize: '1.25rem' }}>{hand.tableName || 'Shared hand'}</h1>
+        <h1 style={{ margin: 0, fontSize: '1.25rem' }}>{hand.tableName || 'Shared Hand'}</h1>
         <div style={{ opacity: 0.7, fontSize: '0.85rem' }}>
           {hand.variant} · {hand.stakes} ·{' '}
           {hand.timestamp ? new Date(hand.timestamp).toLocaleString() : ''}
@@ -151,9 +162,9 @@ export default function SharedHandReplayPage() {
             }}
           >
             <span style={{ minWidth: 58, opacity: 0.65 }}>Seat {p.seat}</span>
-            <span style={{ flex: 1 }}>
+            <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
               {p.name}
-              {p.isHero ? ' (hero)' : ''}
+              {p.isHero ? ' (Hero)' : ''}
               {p.isWinner ? ' ★' : ''}
             </span>
             {!!p.cards?.length && (
@@ -181,7 +192,7 @@ export default function SharedHandReplayPage() {
       />
 
       <footer style={{ marginTop: 28, opacity: 0.6, fontSize: '0.8rem' }}>
-        {hero ? `Shared from ${hero.name}'s hand history · ` : ''}Smarter Poker
+        {hero ? `Shared From ${hero.name}'s Hand History · ` : ''}Smarter Poker
       </footer>
     </div>
   );

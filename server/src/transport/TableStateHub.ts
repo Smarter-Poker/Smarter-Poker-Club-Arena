@@ -17,6 +17,10 @@
  *      client can detect gaps and request a RESYNC.
  *   4. Compute deltas via RFC-6902 JSON Patch against the last snapshot.
  *   5. Offer cheap metrics (subscriber count, last seq, last publish time).
+ *   6. Hold a reveal-class EVENT for the few seconds it stays meaningful, so a
+ *      client subscribing or resyncing inside that window still receives it
+ *      (D3 — see HUB_MAX_EVENT_REPLAY_MS). Bounded and self-expiring; this is
+ *      NOT an event log and nothing survives a restart.
  *
  * Non-goals
  *   - Does not know about WebSockets directly — accepts any object implementing
@@ -59,6 +63,15 @@ export interface DeltaMessage {
 export interface EventMessage {
   type: 'EVENT';
   tableId: string;
+  /**
+   * SHOWDOWN POLISH 2026-08-25: monotonic per-table event sequence. Events
+   * ride the same socket as snapshots but their client-side dispatch is
+   * deliberately deferred a macrotask (see EngineStateClient), so relative
+   * ordering between two EVENTs was observable only by arrival luck. The seq
+   * makes it a fact: a consumer can order, de-duplicate, and detect a gap.
+   * Optional so recorded fixtures and older payloads stay valid.
+   */
+  seq?: number;
   payload: Record<string, unknown>;
 }
 
@@ -79,6 +92,16 @@ export interface HubSubscriber {
    */
   readonly bufferedAmount?: number;
   send(data: string): void;
+  /**
+   * 2026-08-24: optional transport-supplied eviction. When the hub hard-drops
+   * a hopeless subscriber (bufferedAmount past HARD), it used to only remove
+   * it from the room — the SOCKET STAYED OPEN, receiving nothing, and the
+   * client sat blind until its own staleness watchdog fired up to 60s later.
+   * The transport knows how to end its connection cleanly (close the single
+   * socket / unsubscribe the mux table), which routes the client into its
+   * reconnect ladder IMMEDIATELY and gets a fresh snapshot in seconds.
+   */
+  evict?(): void;
 }
 
 /**
@@ -101,6 +124,51 @@ const HUB_SOFT_BACKPRESSURE_BYTES = 256 * 1024;
 const HUB_HARD_BACKPRESSURE_BYTES = 4 * 1024 * 1024;
 
 /**
+ * D3 (2026-08-25) — REVEAL RETENTION. A tiny, self-expiring hold for the
+ * handful of events a client must not silently lose.
+ *
+ * THE DEFECT. `emitEvent` opened with `const room = this.rooms.get(tableId);
+ * if (!room) return;` and nothing anywhere kept the message. An EVENT was
+ * therefore a single un-replayed packet: a client whose socket was down for
+ * the one instant the event was emitted — reconnecting, mid-upgrade, or
+ * soft-dropped by the backpressure rule above — never saw it and never could.
+ * `resync` did not close the hole either, because it re-sends only the
+ * SNAPSHOT, and the snapshot carries no multiplier.
+ *
+ * For a Spin & Go that is not a cosmetic loss. The wheel is emitted ONCE, by
+ * TournamentManagerBase.start(), inside a `catch { reportError }` — miss it
+ * and the player never learns what the table is playing for.
+ *
+ * WHY THIS IS NOT AN EVENT LOG. Only an event that ASKS to be retained is
+ * retained, by carrying a numeric `replay_until` (the instant after which it
+ * is meaningless — for the Spin sequence, the moment the engine is allowed to
+ * deal). Retention is capped three ways: per event by its own deadline, hard-
+ * capped at HUB_MAX_EVENT_REPLAY_MS regardless of what the emitter asks for;
+ * per table at HUB_MAX_RETAINED_EVENTS_PER_TABLE; and globally at
+ * HUB_MAX_RETAINED_TABLES. Expired entries are dropped on every touch. There
+ * is no history, no persistence, and nothing survives a restart.
+ *
+ * WHY NOT PUT IT IN THE SNAPSHOT. Law 1.16: a snapshot must never trigger an
+ * animation. A replay is therefore the SAME discrete named EVENT, re-sent to
+ * one subscriber, tagged `replayed: true` so the client can tell a catch-up
+ * from a live beat and animate against `reveal_at` rather than its own clock.
+ */
+const HUB_MAX_EVENT_REPLAY_MS = 60_000;
+const HUB_MAX_RETAINED_EVENTS_PER_TABLE = 4;
+const HUB_MAX_RETAINED_TABLES = 512;
+
+/**
+ * One retained event. `delivered` is a WeakSet so a subscriber that already
+ * received the event live is never handed it twice by a subsequent resync —
+ * replaying a wheel a client is already animating would restart it.
+ */
+interface RetainedEvent {
+  payload: Record<string, unknown>;
+  replayUntil: number;
+  delivered: WeakSet<HubSubscriber>;
+}
+
+/**
  * Per-tableId bookkeeping stored on the hub.
  */
 interface TableRoom {
@@ -119,6 +187,10 @@ export class TableStateHub {
   private softDropped = 0;
   /** B12: subscribers evicted because a socket blew past the hard limit. */
   private hardDropped = 0;
+  /** D3: reveal-class events still inside their own replay window, per table. */
+  private retained: Map<string, RetainedEvent[]> = new Map();
+  /** D3: how many retained events have been handed to a late/reconnecting sub. */
+  private replayedEvents = 0;
 
   /**
    * Publish a new authoritative state for the table.
@@ -175,6 +247,10 @@ export class TableStateHub {
       };
       this.safeSend(sub, JSON.stringify(snap));
     }
+    // D3: a client that connects DURING the reveal window still gets the
+    // reveal. The snapshot above cannot carry it (Law 1.16 — a snapshot must
+    // never trigger an animation), so it arrives as the same discrete EVENT.
+    this.replayRetained(tableId, sub);
   }
 
   /**
@@ -216,10 +292,26 @@ export class TableStateHub {
     // because an offer nobody is subscribed to still happened.
     captureRitEvent(tableId, payload);
 
+    // D3: retain BEFORE the `if (!room) return` below, for the same reason the
+    // two captures above sit there — the early return fires while a table has
+    // no room at all (nobody has ever subscribed, or every socket is currently
+    // between reconnects), and that is precisely the case this exists for. An
+    // event nobody could receive still happened, and for the reveal window it
+    // is still worth receiving.
+    const retention = this.retainIfReplayable(tableId, payload);
+
     const room = this.rooms.get(tableId);
     if (!room) return;
-    this.broadcast(room, { type: 'EVENT', tableId, payload });
+    // SHOWDOWN POLISH 2026-08-25: stamp the per-table event sequence.
+    const seq = (this.eventSeqs.get(tableId) ?? 0) + 1;
+    this.eventSeqs.set(tableId, seq);
+    // The delivered set records who actually got it live, so a later resync
+    // from the SAME socket does not replay a beat it already animated.
+    this.broadcast(room, { type: 'EVENT', tableId, seq, payload }, retention?.delivered);
   }
+
+  /** SHOWDOWN POLISH 2026-08-25: per-table monotonic EVENT sequence. */
+  private eventSeqs = new Map<string, number>();
 
   /**
    * Re-send the latest snapshot to a single subscriber. Used when the client
@@ -227,15 +319,24 @@ export class TableStateHub {
    */
   resync(tableId: string, sub: HubSubscriber): boolean {
     const room = this.rooms.get(tableId);
-    if (!room || !room.lastSnapshot) return false;
-    const snap: SnapshotMessage = {
-      type: 'SNAPSHOT',
-      tableId,
-      seq: room.lastSeq,
-      state: room.lastSnapshot,
-    };
-    this.safeSend(sub, JSON.stringify(snap));
-    return true;
+    const snapshot = room?.lastSnapshot ?? null;
+    if (snapshot) {
+      const snap: SnapshotMessage = {
+        type: 'SNAPSHOT',
+        tableId,
+        seq: room?.lastSeq ?? 0,
+        state: snapshot,
+      };
+      this.safeSend(sub, JSON.stringify(snap));
+    }
+    // D3: a RESYNC is the recovery path for a client that MISSED messages, and
+    // until now it recovered only state. The snapshot carries no multiplier, so
+    // a client that gapped across the reveal used to come back fully caught up
+    // on the felt and permanently blind to the wheel. Replay runs whether or
+    // not a snapshot existed to send; the return value still means "a snapshot
+    // went out", so callers are unaffected.
+    this.replayRetained(tableId, sub);
+    return !!snapshot;
   }
 
   /**
@@ -264,6 +365,9 @@ export class TableStateHub {
     if (!room) return;
     if (room.subscribers.size === 0) {
       this.rooms.delete(tableId);
+      // Review fix 2026-08-25: the event-seq counter goes with the room, or
+      // long-lived processes accumulate one entry per dead table forever.
+      this.eventSeqs.delete(tableId);
       return;
     }
     room.lastSnapshot = null;
@@ -299,7 +403,87 @@ export class TableStateHub {
     return !!this.rooms.get(tableId)?.lastSnapshot;
   }
 
+  /**
+   * D3 counters. `retainedTables` above zero for longer than a reveal window
+   * means something is asking for retention it does not need; `replayedEvents`
+   * counts reveals that would have been lost outright before this existed.
+   */
+  replayStats(): { retainedTables: number; replayedEvents: number } {
+    this.pruneRetained(Date.now());
+    return { retainedTables: this.retained.size, replayedEvents: this.replayedEvents };
+  }
+
   // ─── Internals ─────────────────────────────────────────────────────────────
+
+  /**
+   * D3: hold an event only if it declares its own expiry, and only for as long
+   * as it declares — never longer than HUB_MAX_EVENT_REPLAY_MS. An emitter that
+   * says nothing gets the old behaviour exactly: fire once, keep nothing.
+   */
+  private retainIfReplayable(
+    tableId: string,
+    payload: Record<string, unknown>
+  ): RetainedEvent | null {
+    const asked = Number(payload?.replay_until);
+    if (!Number.isFinite(asked)) return null;
+
+    const now = Date.now();
+    // The emitter's deadline is a ceiling request, not a grant. A bad or
+    // far-future value must not be able to pin an event in memory.
+    const replayUntil = Math.min(asked, now + HUB_MAX_EVENT_REPLAY_MS);
+    if (replayUntil <= now) return null;
+
+    this.pruneRetained(now);
+
+    let list = this.retained.get(tableId);
+    if (!list) {
+      // Global ceiling. Retention is best-effort theatre insurance; it must
+      // never become a memory commitment the hub cannot bound.
+      if (this.retained.size >= HUB_MAX_RETAINED_TABLES) return null;
+      list = [];
+      this.retained.set(tableId, list);
+    }
+
+    const entry: RetainedEvent = { payload, replayUntil, delivered: new WeakSet() };
+    list.push(entry);
+    if (list.length > HUB_MAX_RETAINED_EVENTS_PER_TABLE) {
+      list.splice(0, list.length - HUB_MAX_RETAINED_EVENTS_PER_TABLE);
+    }
+    return entry;
+  }
+
+  /**
+   * D3: hand one subscriber every still-live retained event for its table, in
+   * emission order, marked `replayed` so the client can distinguish a catch-up
+   * from a live beat. Never sends an event that same subscriber already got.
+   */
+  private replayRetained(tableId: string, sub: HubSubscriber): void {
+    if (this.retained.size === 0) return;
+    this.pruneRetained(Date.now());
+    const list = this.retained.get(tableId);
+    if (!list || list.length === 0) return;
+
+    for (const entry of list) {
+      if (entry.delivered.has(sub)) continue;
+      entry.delivered.add(sub);
+      const message: EventMessage = {
+        type: 'EVENT',
+        tableId,
+        payload: { ...entry.payload, replayed: true },
+      };
+      if (this.safeSend(sub, JSON.stringify(message))) this.replayedEvents++;
+    }
+  }
+
+  /** Drop everything past its own deadline, and any table left with nothing. */
+  private pruneRetained(now: number): void {
+    if (this.retained.size === 0) return;
+    for (const [tableId, list] of this.retained) {
+      const live = list.filter((e) => e.replayUntil > now);
+      if (live.length === 0) this.retained.delete(tableId);
+      else if (live.length !== list.length) this.retained.set(tableId, live);
+    }
+  }
 
   private getOrCreateRoom(tableId: string): TableRoom {
     let room = this.rooms.get(tableId);
@@ -322,7 +506,16 @@ export class TableStateHub {
    * synchronously into broadcastCurrentState's ~16 mostly-unguarded call sites.
    * Delivery is best-effort; the engine is not.
    */
-  private broadcast(room: TableRoom, message: HubMessage): void {
+  private broadcast(
+    room: TableRoom,
+    message: HubMessage,
+    /**
+     * D3: when the message is being retained for replay, record who genuinely
+     * received it. A subscriber that was soft-dropped here (or whose send
+     * threw) is deliberately NOT recorded, so its resync replays the event.
+     */
+    delivered?: WeakSet<HubSubscriber>
+  ): void {
     // C16: serialize ONCE for the whole room. This used to sit inside safeSend,
     // i.e. inside the per-subscriber loop, so a table with a dozen spectators
     // re-stringified the same full-state payload a dozen times per publish. The
@@ -342,25 +535,35 @@ export class TableStateHub {
       }
       const buffered = sub.bufferedAmount ?? 0;
       if (buffered > HUB_HARD_BACKPRESSURE_BYTES) {
-        // Beyond saving — evict rather than keep buffering for it.
+        // Beyond saving — evict rather than keep buffering for it, and TELL
+        // the transport so the client reconnects now instead of sitting on an
+        // open-but-silent socket until its watchdog gives up (2026-08-24).
         this.hardDropped++;
         dead.push(sub);
+        try {
+          sub.evict?.();
+        } catch {
+          /* eviction is best-effort; removal from the room is the point */
+        }
         continue;
       }
       if (droppable && buffered > HUB_SOFT_BACKPRESSURE_BYTES) {
         this.softDropped++;
         continue;
       }
-      this.safeSend(sub, payload);
+      if (this.safeSend(sub, payload)) delivered?.add(sub);
     }
     for (const d of dead) room.subscribers.delete(d);
   }
 
-  private safeSend(sub: HubSubscriber, payload: string): void {
+  /** Returns whether the payload actually reached the socket (D3 uses this). */
+  private safeSend(sub: HubSubscriber, payload: string): boolean {
     try {
       sub.send(payload);
+      return true;
     } catch {
       // Swallow — next publish will evict this sub if still closed.
+      return false;
     }
   }
 

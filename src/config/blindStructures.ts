@@ -1,3 +1,4 @@
+import { SPIN_BLINDS } from './spinSpec';
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
  *  BLIND STRUCTURES — pure data, no runtime dependencies
@@ -171,23 +172,21 @@ export const BLIND_STRUCTURES = {
   ],
 };
 
-export const SPIN_BLIND_STRUCTURE: BlindLevel[] = [
-  { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 2 },
-  { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 2 },
-  { level: 3, smallBlind: 20, bigBlind: 40, ante: 0, durationMinutes: 2 },
-  { level: 4, smallBlind: 30, bigBlind: 60, ante: 0, durationMinutes: 2 },
-  { level: 5, smallBlind: 50, bigBlind: 100, ante: 0, durationMinutes: 2 },
-  { level: 6, smallBlind: 75, bigBlind: 150, ante: 0, durationMinutes: 2 },
-  { level: 7, smallBlind: 100, bigBlind: 200, ante: 0, durationMinutes: 2 },
-  { level: 8, smallBlind: 150, bigBlind: 300, ante: 0, durationMinutes: 2 },
-  { level: 9, smallBlind: 200, bigBlind: 400, ante: 0, durationMinutes: 2 },
-  { level: 10, smallBlind: 300, bigBlind: 600, ante: 0, durationMinutes: 2 },
-  { level: 11, smallBlind: 400, bigBlind: 800, ante: 0, durationMinutes: 2 },
-  { level: 12, smallBlind: 600, bigBlind: 1200, ante: 0, durationMinutes: 2 },
-  { level: 13, smallBlind: 800, bigBlind: 1600, ante: 0, durationMinutes: 2 },
-  { level: 14, smallBlind: 1200, bigBlind: 2400, ante: 0, durationMinutes: 2 },
-  { level: 15, smallBlind: 1600, bigBlind: 3200, ante: 0, durationMinutes: 2 },
-];
+/**
+ * SPIN ladder — DERIVED from the canonical spinSpec (2026-08-30 audit fix).
+ * There used to be a hand-typed 15-level ladder here that diverged from
+ * src/config/spinSpec.ts SPIN_BLINDS at level 5 and claimed 2-minute levels.
+ * The engine rewrites a Spin's blinds from spinSpec at start, so play was
+ * correct — but the pre-start Blinds tab showed a ladder that would never be
+ * played. One source of truth now: SPIN_BLINDS, 3-minute levels per the spec.
+ */
+export const SPIN_BLIND_STRUCTURE: BlindLevel[] = SPIN_BLINDS.map((b, i) => ({
+  level: i + 1,
+  smallBlind: b.small,
+  bigBlind: b.big,
+  ante: 0,
+  durationMinutes: 3,
+}));
 
 /** Static payout shapes by field size. Pure data; see the note at the top. */
 export const PAYOUT_STRUCTURES = {

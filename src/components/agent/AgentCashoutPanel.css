@@ -50,10 +50,6 @@
   transition: background 0.2s;
 }
 
-.refresh-btn:hover {
-  background: var(--surface-hover, #3a3a5a);
-}
-
 .loading-state,
 .empty-state {
   padding: 40px 20px;
@@ -104,11 +100,6 @@
   padding: 20px;
   border-bottom: 1px solid var(--border, #2a2a4a);
   transition: all 0.25s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.cashout-card:hover {
-  background: var(--surface-elevated, #2a2a4a);
-  transform: translateY(-2px);
 }
 
 .cashout-card:last-child {
@@ -204,21 +195,10 @@
   box-shadow: 0 4px 16px rgba(0, 200, 83, 0.25);
 }
 
-.action-btn.approve:hover:not(:disabled) {
-  opacity: 0.9;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 24px rgba(0, 200, 83, 0.35);
-}
-
 .action-btn.reject {
   background: transparent;
   border: 1px solid #ef5350;
   color: #ef5350;
-}
-
-.action-btn.reject:hover:not(:disabled) {
-  background: #ef5350;
-  color: #fff;
 }
 
 .action-btn:disabled {

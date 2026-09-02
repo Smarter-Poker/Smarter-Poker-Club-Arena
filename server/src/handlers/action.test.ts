@@ -74,9 +74,9 @@ describe('handleAction', () => {
     const { res, captured } = mockRes();
     await handleAction(mockReq(), res, { gameServer: mockGameServer(engine, 't1') });
     expect(captured.statusCode).toBe(200);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     expect((engine as any).handlePlayerAction).toHaveBeenCalledWith('u1', 'raise', 50);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     expect((engine as any).recordActionPerformance).toHaveBeenCalled();
   });
 
@@ -92,7 +92,7 @@ describe('handleAction', () => {
     const engine = mockEngine();
     const { res } = mockRes();
     await handleAction(mockReq(), res, { gameServer: mockGameServer(engine, 't1') });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     expect((engine as any).handlePlayerAction).toHaveBeenCalledWith(
       'authenticated_user',
       'fold',

@@ -47,6 +47,8 @@ export interface UseMasterBusChannelOptions {
    * Supabase subscription status.
    */
   onSubscriptionError?: (status: string, err?: Error) => void;
+  /** Receives every channel lifecycle status, including SUBSCRIBED after recovery. */
+  onSubscriptionStatus?: (status: string) => void;
 }
 
 /**
@@ -67,6 +69,22 @@ export interface UseMasterBusChannelOptions {
  * });
  * ```
  */
+/**
+ * Dev-only, once per channel name: a channel asked to subscribe with a null
+ * filter did nothing. See the call site in the effect below.
+ */
+const warnedNullFilter = new Set<string>();
+function warnNullFilterOnce(channelName: string): void {
+  if (warnedNullFilter.has(channelName)) return;
+  warnedNullFilter.add(channelName);
+  console.warn(
+    `[useMasterBusChannel] "${channelName}" was enabled but its filter is null, ` +
+      'so NO subscription was created. If the filter is still loading this is ' +
+      'expected and will resolve; if it is a literal null, this channel is dead ' +
+      'code and the surface has no realtime coverage.'
+  );
+}
+
 export function useMasterBusChannel({
   channelName,
   table,
@@ -75,10 +93,12 @@ export function useMasterBusChannel({
   onPayload,
   enabled = true,
   onSubscriptionError,
+  onSubscriptionStatus,
 }: UseMasterBusChannelOptions) {
   // Store callbacks in refs to avoid re-subscribing on every render
   const callbackRef = useRef(onPayload);
   const errorCallbackRef = useRef(onSubscriptionError);
+  const statusCallbackRef = useRef(onSubscriptionStatus);
 
   // Update refs when callbacks change (but doesn't trigger re-subscription)
   useEffect(() => {
@@ -87,10 +107,26 @@ export function useMasterBusChannel({
   useEffect(() => {
     errorCallbackRef.current = onSubscriptionError;
   }, [onSubscriptionError]);
+  useEffect(() => {
+    statusCallbackRef.current = onSubscriptionStatus;
+  }, [onSubscriptionStatus]);
 
   useEffect(() => {
     // Null-safety: skip if no channel name or filter (common during data loading)
     if (!enabled || !channelName || !filter) {
+      // 2026-08-24: this silent skip was a trap. Two pages
+      // (LeaderboardPage, tournament/TournamentLobbyPage) passed a LITERAL
+      // `filter: null` and therefore never subscribed at all, for their whole
+      // lifetime - while the call site read as working realtime coverage. Both
+      // quietly fell back to polling and nobody knew the channel was inert.
+      //
+      // A transient null during data loading is legitimate and must stay quiet,
+      // so this warns in DEV ONLY and only once per channel name: enough to
+      // catch a permanently-null filter in review, silent for the loading case
+      // in production.
+      if (import.meta.env?.DEV && enabled && channelName && !filter) {
+        warnNullFilterOnce(channelName);
+      }
       return;
     }
 
@@ -100,10 +136,32 @@ export function useMasterBusChannel({
     // removed and left dead for the rest of the session (P2-4). This matters
     // for hole-card channels (`table-cards-secure-*`) where a permanently dead
     // channel silently blinds the hero.
+    /* False the moment this effect is torn down. `supabase.removeChannel()` is
+       asynchronous - it pushes an unsubscribe over the socket - so messages
+       already in flight are still delivered to the binding afterwards, and on
+       the club lobby that callback is a full refetch plus setState on a
+       torn-down tree. The sibling hook (useMasterBusSubscription) already
+       guards this; this one did not. */
+    let alive = true;
+
     const subscribeChannel = () => {
       // getOrCreateChannel returns a fresh channel after the monitor removed
       // the dead one, or the existing one on the initial call.
       const channel = masterBus.getOrCreateChannel(channelName);
+
+      /* A channel that is already joined will NOT send a new binding:
+         RealtimeChannel.subscribe() builds its join payload only while the
+         channel is 'closed'. Adding a second listener to a live shared channel
+         therefore produces a subscription that receives nothing, silently,
+         with no status callback to report it. Say so rather than pretend. */
+      const state = (channel as any)?.state;
+      if (state && state !== 'closed' && state !== 'errored') {
+        reportError(
+          new Error(`Realtime channel ${channelName} was already ${state}; binding skipped`),
+          'useMasterBusChannel.channel_already_joined'
+        );
+        return;
+      }
 
       (channel as any)
         .on(
@@ -116,11 +174,20 @@ export function useMasterBusChannel({
           },
           (payload: any) => {
             // Call the stable callback ref
-            callbackRef.current(payload);
+            if (alive) callbackRef.current(payload);
           }
         )
         .subscribe((status: string, err?: Error) => {
-          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          if (!alive) return;
+          try {
+            statusCallbackRef.current?.(status);
+          } catch (cbErr) {
+            reportError(cbErr, 'useMasterBusChannel.onSubscriptionStatus_threw');
+          }
+          /* CLOSED is what arrives when the socket drops or another owner
+             removes a shared channel, and it was not handled at all - so the
+             consumer went blind with nothing to tell it. */
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
             // P2-3: do NOT silently swallow. Surface via the error reporter so
             // there is a metric/log, and forward to the consumer so it can flip
             // a degraded-connection state and/or force a recovery fetch. The
@@ -148,6 +215,7 @@ export function useMasterBusChannel({
     // Cleanup: unregister the factory (so the monitor won't resurrect a channel
     // this component intentionally tore down) and remove the channel.
     return () => {
+      alive = false;
       masterBus.removeChannelFactory(channelName);
       masterBus.removeRegisteredChannel(channelName);
     };

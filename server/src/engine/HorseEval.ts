@@ -24,6 +24,13 @@
 
 import type { Card } from '../types.js';
 import { SUITS, RANKS, RANK_VALUES } from './PokerEngine.js';
+import {
+  holeCardCount,
+  isOmahaVariant,
+  isHiLoVariant,
+  isShortDeckVariant,
+} from './VariantRules.js';
+import { isPotLimitVariant } from './BettingStructure.js';
 
 const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 
@@ -114,15 +121,34 @@ export type VariantInfo = {
 
 export function variantInfo(gameVariant: string): VariantInfo {
   const v = (gameVariant || 'nlh').toLowerCase();
-  const isOmaha = v.startsWith('plo');
-  const holeCount = v === 'plo5' ? 5 : v === 'plo6' ? 6 : isOmaha ? 4 : v === 'pineapple' ? 3 : 2;
+  // 2026-08-23: every field here was its own substring test, and `flo8` failed
+  // all of them — the horses would have read Fixed Limit Omaha Hi-Lo as a
+  // two-card Hold'em board and priced every decision off the wrong hand.
+  // `isPotLimit` was `isOmaha`, which is now doubly wrong: flo8 is an Omaha
+  // game that is NOT pot-limit, so ask BettingStructure rather than inferring.
+  const isOmaha = isOmahaVariant(v);
+  const holeCount = holeCardCount(v);
   return {
     holeCount,
     isOmaha,
-    isHiLo: v === 'plo8',
-    isShortDeck: v === 'short_deck',
-    isPotLimit: isOmaha,
-    iterations: v === 'plo6' ? 120 : v === 'plo5' ? 170 : v === 'plo8' ? 140 : isOmaha ? 220 : 450,
+    isHiLo: isHiLoVariant(v),
+    isShortDeck: isShortDeckVariant(v),
+    isPotLimit: isPotLimitVariant(v),
+    // V28 AUDIT FIX (2026-08-29): hi-lo tested AFTER the plo5/plo6 literals
+    // (so a future plo5/plo6 hi-lo string takes the right branch), and raised
+    // from 140 to 220 — each hi-lo iteration returns hi*0.5 + lo*0.5 with
+    // quarter/scoop atoms, the WIDEST per-iteration variance in the engine,
+    // and it had the second-smallest sample while scoop/quarter frequencies
+    // were read as discrete strategy triggers at ~4pp standard error.
+    iterations: isHiLoVariant(v)
+      ? 220
+      : v === 'plo6'
+        ? 120
+        : v === 'plo5'
+          ? 170
+          : isOmaha
+            ? 220
+            : 450,
   };
 }
 
@@ -414,7 +440,9 @@ export interface OmahaDrawInfo {
   straightOuts: number;
   /** 9+ straight outs — a true wrap */
   bigWrap: boolean;
-  /** the draw is worth fighting for: nut flush draw or a big wrap */
+  /** V16 plo8: one card from the NUT LOW with A-2 live in hand */
+  nutLowDraw: boolean;
+  /** the draw is worth fighting for: nut flush draw, big wrap, or nut-low draw */
   nutty: boolean;
 }
 
@@ -423,6 +451,7 @@ const NO_DRAW_INFO: OmahaDrawInfo = {
   dominatedFlushDraw: false,
   straightOuts: 0,
   bigWrap: false,
+  nutLowDraw: false,
   nutty: false,
 };
 
@@ -434,7 +463,13 @@ const NO_DRAW_INFO: OmahaDrawInfo = {
  * straight-family hand). Called lazily and only in the semi-bluff decision
  * band, so the enumeration cost never touches value-hand decisions.
  */
-export function omahaDrawQuality(hole: Card[], board: Card[]): OmahaDrawInfo {
+export function omahaDrawQuality(
+  hole: Card[],
+  board: Card[],
+  /** V16 plo8: also grade the NUT-LOW draw — the hi-lo half the old grader
+   *  was blind to. */
+  isHiLo: boolean = false
+): OmahaDrawInfo {
   if (!hole || hole.length < 4 || !board || board.length < 3 || board.length > 4) {
     return NO_DRAW_INFO;
   }
@@ -475,16 +510,314 @@ export function omahaDrawQuality(hole: Card[], board: Card[]): OmahaDrawInfo {
     }
 
     const bigWrap = straightOuts >= 9;
+
+    // V16 plo8: a NUT-LOW draw (A-2 in hand, two distinct low board cards,
+    // one more low card needed) is half the pot with the best possible low —
+    // real semi-bluff equity the high-only grader scored as nothing.
+    let nutLowDraw = false;
+    if (isHiLo) {
+      const lowRank = (r: number): number => (r === 14 ? 1 : r);
+      const boardLows = new Set<number>();
+      for (const c of board) {
+        const lr = lowRank(RANK_VALUES[c.rank]);
+        if (lr <= 8) boardLows.add(lr);
+      }
+      const holeRanks = new Set<number>();
+      for (const c of hole) holeRanks.add(lowRank(RANK_VALUES[c.rank]));
+      // A + 2 live (not counterfeit by the board) with exactly 2 distinct
+      // board lows = one card from the nut low.
+      if (
+        boardLows.size === 2 &&
+        holeRanks.has(1) &&
+        holeRanks.has(2) &&
+        !boardLows.has(1) &&
+        !boardLows.has(2)
+      ) {
+        nutLowDraw = true;
+      }
+    }
+
     return {
       nutFlushDraw,
       dominatedFlushDraw,
       straightOuts,
       bigWrap,
-      nutty: nutFlushDraw || bigWrap,
+      nutLowDraw,
+      nutty: nutFlushDraw || bigWrap || nutLowDraw,
     };
   } catch {
     return NO_DRAW_INFO;
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// V15 OMAHA MADE-HAND NUT STATUS (Dan 2026-08-26)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The made-hand classifier stops at CATEGORY: a 9-high flush and the nut flush
+// are both "6". In Omaha that distinction is most of the game — when a bet gets
+// raised on a three-flush board, the raiser has a flush too, and the only
+// question that matters is WHOSE IS BIGGER. This answers it directly:
+// for a made flush, how many ranks of the flush suit that beat hero's best
+// suited hole card are still live (not on the board, not in hero's hand); for
+// a made straight, whether any two hole cards could make a bigger one on this
+// board. Cheap (no simulation), called lazily only for cat 5/6 Omaha hands.
+
+export interface OmahaNutStatus {
+  /** made category from scoreOmahaHiPartial (0 when unknown) */
+  category: number;
+  /** made flush only: count of LIVE ranks in the flush suit above hero's best
+   *  suited hole card. 0 = nut flush; 1 = second nut; 2+ = dominated. */
+  higherFlushRanks: number;
+  /** made straight only: no two hole cards make a bigger straight here */
+  straightIsNut: boolean;
+}
+
+const NO_NUT_STATUS: OmahaNutStatus = { category: 0, higherFlushRanks: 0, straightIsNut: true };
+
+export function omahaNutStatus(hole: Card[], board: Card[]): OmahaNutStatus {
+  if (!hole || hole.length < 2 || !board || board.length < 3) return NO_NUT_STATUS;
+  try {
+    const score = scoreOmahaHiPartial(hole, board);
+    const cat = Math.floor(score / 0x100000);
+    const out: OmahaNutStatus = { category: cat, higherFlushRanks: 0, straightIsNut: true };
+
+    if (cat === 6) {
+      // The flush suit: >= 3 on the board (Omaha uses exactly 3 board cards)
+      // where hero holds >= 2 (exactly 2 hole cards must play).
+      for (const suit of SUITS) {
+        const onBoard = board.filter((c) => c.suit === suit);
+        if (onBoard.length < 3) continue;
+        const heroSuited = hole.filter((c) => c.suit === suit);
+        if (heroSuited.length < 2) continue;
+        let heroTop = 0;
+        for (const c of heroSuited) heroTop = Math.max(heroTop, RANK_VALUES[c.rank]);
+        const seen = new Set<number>();
+        for (const c of onBoard) seen.add(RANK_VALUES[c.rank]);
+        for (const c of heroSuited) seen.add(RANK_VALUES[c.rank]);
+        let higher = 0;
+        for (let r = heroTop + 1; r <= 14; r++) if (!seen.has(r)) higher++;
+        out.higherFlushRanks = higher;
+        break;
+      }
+    } else if (cat === 5) {
+      // Best straight ANY two hole cards could make: a 5-rank window holding
+      // at least 3 distinct board ranks is fillable (the opponent supplies
+      // the at-most-2 missing ranks from their hole).
+      const boardRankSet = new Set<number>();
+      for (const c of board) boardRankSet.add(RANK_VALUES[c.rank]);
+      const heroTop = score & 0xfffff;
+      let bestTop = 0;
+      for (let top = 14; top >= 5 && bestTop === 0; top--) {
+        let onBoard = 0;
+        for (let k = 0; k < 5; k++) {
+          const r = top - k === 1 ? 14 : top - k; // wheel: the 5-high straight uses the ace
+          if (boardRankSet.has(r)) onBoard++;
+        }
+        if (onBoard >= 3) bestTop = top;
+      }
+      out.straightIsNut = bestTop <= heroTop;
+    }
+    return out;
+  } catch {
+    return NO_NUT_STATUS;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// V21 NLH MADE-HAND NUT STATUS (Dan 2026-08-27, Phase 2)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// The Omaha nut status above answered "whose flush is bigger" and it killed the
+// small-flush stack-offs. NLH had NOTHING equivalent, and the review table
+// showed exactly what that costs: a T7 straight four-bet into a three-club
+// board, a sixes-full re-raising on JJ66x into any jack, trips escalating a
+// river war. Category numbers are blind to "hands that beat mine are ON this
+// board". This answers the three questions that decide NLH river wars:
+// is a flush possible over my straight, is a bigger straight live, and is my
+// full house the BOTTOM boat. Cheap (no simulation), computed lazily.
+
+export interface NlhNutStatus {
+  /** made category of hero's best five (0 = unknown) */
+  cat: number;
+  /** the board carries three or more of one suit — a flush is possible */
+  flushPossible: boolean;
+  /** four or more of one suit on the board — every single card of the suit plays */
+  fourFlushBoard: boolean;
+  /** hero makes a flush: rank of hero's best card of the flush suit (0 = none) */
+  heroFlushHigh: number;
+  /** made flush only: LIVE ranks of the flush suit above hero's best. 0 = nut flush. */
+  higherFlushRanks: number;
+  /** hero's straight top rank (0 = no straight) */
+  heroStraightTop: number;
+  /** highest straight top ANY two opponent cards could complete on this board */
+  maxStraightTop: number;
+  /** hero's full house is dominated by a ONE-CARD boat: a board pair of higher
+   *  rank than hero's trips exists, so any single card of that rank beats hero */
+  underfull: boolean;
+}
+
+const NO_NLH_NUT_STATUS: NlhNutStatus = {
+  cat: 0,
+  flushPossible: false,
+  fourFlushBoard: false,
+  heroFlushHigh: 0,
+  higherFlushRanks: 0,
+  heroStraightTop: 0,
+  maxStraightTop: 0,
+  underfull: false,
+};
+
+export function nlhNutStatus(hole: Card[], board: Card[], shortDeck: boolean): NlhNutStatus {
+  if (!hole || hole.length < 2 || !board || board.length < 3) return NO_NLH_NUT_STATUS;
+  try {
+    const all = hole.concat(board);
+    const score = scoreHoldem(all, all.length, shortDeck);
+    const cat = Math.floor(score / 0x100000);
+    const out: NlhNutStatus = { ...NO_NLH_NUT_STATUS, cat };
+
+    // Flush geography.
+    const suitCount = new Map<string, number>();
+    for (const c of board) suitCount.set(c.suit, (suitCount.get(c.suit) || 0) + 1);
+    let flushSuit: string | null = null;
+    let flushSuitN = 0;
+    for (const [s, n] of suitCount) {
+      if (n >= 3 && n > flushSuitN) {
+        flushSuit = s;
+        flushSuitN = n;
+      }
+    }
+    if (flushSuit) {
+      out.flushPossible = true;
+      out.fourFlushBoard = flushSuitN >= 4;
+      const heroSuited = hole.filter((c) => c.suit === flushSuit);
+      // NLH plays any five: board 3 needs two suited hole cards, board 4+ one.
+      const heroMakesFlush = heroSuited.length >= Math.max(1, 5 - flushSuitN);
+      // V28 AUDIT FIX (2026-08-29): on a MONOTONE FIVE-CARD board a hero with
+      // ZERO cards of the suit plays the board flush — scoreHoldem says cat 6,
+      // but this block skipped him, leaving higherFlushRanks at its default 0,
+      // which every consumer reads as "NUT flush". A hand that can do no
+      // better than chop was classified undominated and left the stack-off
+      // path open. Playing the board means EVERY live rank above the board's
+      // lowest flush card beats hero.
+      if (flushSuitN === 5 && heroSuited.length === 0) {
+        const boardRanks = board
+          .filter((c) => c.suit === flushSuit)
+          .map((c) => RANK_VALUES[c.rank]);
+        const boardLow = Math.min(...boardRanks);
+        const seen = new Set<number>(boardRanks);
+        let higher = 0;
+        const floor = shortDeck ? 6 : 2;
+        for (let r = floor; r <= 14; r++) {
+          if (!seen.has(r) && r > boardLow) higher++;
+        }
+        out.heroFlushHigh = boardLow;
+        out.higherFlushRanks = Math.max(1, higher);
+      } else if (heroMakesFlush && heroSuited.length > 0) {
+        let heroTop = 0;
+        for (const c of heroSuited) heroTop = Math.max(heroTop, RANK_VALUES[c.rank]);
+        out.heroFlushHigh = heroTop;
+        const seen = new Set<number>();
+        for (const c of board) if (c.suit === flushSuit) seen.add(RANK_VALUES[c.rank]);
+        for (const c of heroSuited) seen.add(RANK_VALUES[c.rank]);
+        let higher = 0;
+        for (let r = heroTop + 1; r <= 14; r++) if (!seen.has(r)) higher++;
+        // V28: a dead short-deck "correction" deleted here. It looped
+        // r = heroTop+1 .. min(5,14), but in short deck heroTop >= 6 always,
+        // so the body never executed — and the counting loop above starts at
+        // heroTop+1 walking UP, so ranks 2-5 could never be counted anyway.
+        // A correction that looks live and is not is a trap for the next
+        // editor; the upward walk is already short-deck-safe by construction.
+        out.higherFlushRanks = higher;
+      }
+    }
+
+    // Straight geography: hero's top, and the best top any 2 cards complete.
+    let comboMask = 0;
+    let boardMask = 0;
+    for (const c of board) boardMask |= 1 << RANK_VALUES[c.rank];
+    comboMask = boardMask;
+    for (const c of hole) comboMask |= 1 << RANK_VALUES[c.rank];
+    out.heroStraightTop = straightTop(comboMask, shortDeck);
+    const lowRank = shortDeck ? 6 : 2;
+    for (let top = 14; top >= lowRank + 3; top--) {
+      let onBoard = 0;
+      for (let k = 0; k < 5; k++) {
+        let r = top - k;
+        if (r === lowRank - 1) r = 14; // the wheel uses the ace low
+        if (r < lowRank - 1) break;
+        if ((boardMask & (1 << r)) !== 0) onBoard++;
+      }
+      if (onBoard >= 3) {
+        out.maxStraightTop = top;
+        break;
+      }
+    }
+
+    // Underfull: hero boat whose trips rank sits under a board pair.
+    if (cat === 7 || (shortDeck && cat === 6)) {
+      // hero's boat trips rank = top 4 bits of the tiebreak by construction is
+      // fragile across encodings — recompute from counts instead.
+      const count = new Map<number, number>();
+      for (const c of all) {
+        const r = RANK_VALUES[c.rank];
+        count.set(r, (count.get(r) || 0) + 1);
+      }
+      let tripsRank = 0;
+      for (const [r, n] of count) if (n >= 3 && r > tripsRank) tripsRank = r;
+      if (tripsRank > 0) {
+        const boardCount = new Map<number, number>();
+        for (const c of board) {
+          const r = RANK_VALUES[c.rank];
+          boardCount.set(r, (boardCount.get(r) || 0) + 1);
+        }
+        for (const [r, n] of boardCount) {
+          if (n >= 2 && r > tripsRank) {
+            out.underfull = true;
+            break;
+          }
+        }
+      }
+    }
+    return out;
+  } catch {
+    return NO_NLH_NUT_STATUS;
+  }
+}
+
+/**
+ * V15: cheap Omaha board-contact test for the MC sampler — no hand scoring.
+ * Pair-or-better contact (a hole rank on the board, or a pocket pair), a
+ * two-card flush holding in a two-suited/monotone board suit, or two hole
+ * cards coordinating with the board's straight window.
+ */
+export function omahaConnectsBoard(hole: Card[], board: Card[]): boolean {
+  const boardRanks = new Set<number>();
+  for (const c of board) boardRanks.add(RANK_VALUES[c.rank]);
+  const holeRankCount = new Map<number, number>();
+  for (const c of hole) {
+    const r = RANK_VALUES[c.rank];
+    if (boardRanks.has(r)) return true; // paired the board
+    holeRankCount.set(r, (holeRankCount.get(r) || 0) + 1);
+  }
+  for (const n of holeRankCount.values()) if (n >= 2) return true; // pocket pair
+  // Flush contact: board suit with >= 2 and two suited hole cards.
+  const boardSuit = new Map<string, number>();
+  for (const c of board) boardSuit.set(c.suit, (boardSuit.get(c.suit) || 0) + 1);
+  for (const [suit, n] of boardSuit) {
+    if (n >= 2 && hole.filter((c) => c.suit === suit).length >= 2) return true;
+  }
+  // Straight-ish contact: two distinct hole ranks each within 2 of a board rank.
+  let near = 0;
+  for (const r of holeRankCount.keys()) {
+    for (const b of boardRanks) {
+      if (Math.abs(r - b) <= 2) {
+        near++;
+        break;
+      }
+    }
+  }
+  return near >= 2;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -519,6 +852,9 @@ export interface HiLoSplit {
 export interface OppPostflopRead {
   aggrW: number;
   checked: number;
+  /** V16: fired a big (>= 20bb) bet on the newest street — sampled toward
+   *  two-pair-plus contact, not just any contact. */
+  bigBet?: boolean;
 }
 
 /** Does this NLH-family hand connect with the CURRENT board — a pair or
@@ -542,7 +878,16 @@ export function connectsBoard(hole: Card[], board: Card[], shortDeck: boolean): 
     // still bets sometimes; treat pocket pairs as contact.
     return cat;
   }
-  if (board.length >= 5) return cat; // river: no draws left
+  // V28 AUDIT FIX (2026-08-29): the two fall-throughs below returned `cat` —
+  // the very board-derived value the V13 guard above just REJECTED. 32o on
+  // K-K-7 still "connected" with the board's kings via the terminal return,
+  // so the V12/V16 aggressor conditioning was a no-op on every paired board
+  // (~17% of flops, and every board once it pairs) — the exact pre-V13
+  // behaviour the guard's own comment says it fixed. When the hole cards add
+  // nothing to what the board already makes, the honest contact value is the
+  // high-card floor, not the board's category.
+  const noContact = cat <= boardCat && !isPocketPair ? 1 : cat;
+  if (board.length >= 5) return noContact; // river: no draws left
   // Flush draw: 4 to a flush with at least one hole card of the suit.
   const suitCount = new Map<string, number>();
   for (const c of all) suitCount.set(c.suit, (suitCount.get(c.suit) || 0) + 1);
@@ -563,7 +908,9 @@ export function connectsBoard(hole: Card[], board: Card[], shortDeck: boolean): 
       }
     }
   }
-  return cat;
+  // V28: same fall-through as the river shortcut above — no made improvement,
+  // no draw found. Report no-contact rather than echoing the board's hand.
+  return noContact;
 }
 
 /**
@@ -676,6 +1023,444 @@ function placeBandCombo(
           const tmp = deck[slot];
           deck[slot] = deck[j];
           deck[j] = tmp;
+          break;
+        }
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// V16 OMAHA RESERVOIR BAND SAMPLING (2026-08-26)
+// ═══════════════════════════════════════════════════════════════════════════════
+// The V13 exact-combo fix reached only NLH: an Omaha combo space cannot be
+// enumerated, so Omaha bands kept REJECTION sampling — and its fallback keeps
+// the CLOSEST MISS at full weight. For a tight band nearly every uniform draw
+// scores far BELOW it, so the fallback hand is systematically weaker than the
+// read and hero's equity is overstated in exactly the pots where reads matter
+// most (PLO 3-bet and 4-bet pots) — the same bias family measured at +17
+// equity points in NLH before V13.
+//
+// The space cannot be enumerated, but it does not need to be: a large SORTED
+// EMPIRICAL RESERVOIR of random combos approximates the score distribution to
+// sampling error. A band is then a contiguous slice found by binary search,
+// exactly like the NLH combo table, and the closest-miss fallback becomes the
+// rare case (dealt-card collisions only) instead of the common one. Built
+// lazily per (holeCount, hiLo) with a PRIVATE deterministic RNG so building
+// never disturbs the live fastRandom stream mid-decision.
+
+type OmahaReservoir = { scores: Float64Array; combos: Card[][] };
+const omahaReservoirs = new Map<string, OmahaReservoir>();
+const OMAHA_RESERVOIR_SIZE = 16384;
+
+function buildOmahaReservoir(holeCount: number, isHiLo: boolean): OmahaReservoir {
+  let s = (0x9e3779b9 ^ (holeCount * 2654435761) ^ (isHiLo ? 0x85ebca6b : 0)) >>> 0 || 1;
+  const rnd = (): number => {
+    s ^= s << 13;
+    s ^= s >>> 17;
+    s ^= s << 5;
+    s >>>= 0;
+    return s / 0x100000000;
+  };
+  const deck = FULL_DECK.slice();
+  const entries: Array<{ score: number; cards: Card[] }> = [];
+  for (let i = 0; i < OMAHA_RESERVOIR_SIZE; i++) {
+    for (let j = 0; j < holeCount; j++) {
+      const k = j + Math.floor(rnd() * (deck.length - j));
+      const t = deck[j];
+      deck[j] = deck[k];
+      deck[k] = t;
+    }
+    // References into FULL_DECK, deliberately: simulateEquity's deck is a
+    // filter of FULL_DECK, so identity comparison works for the swap-in.
+    const cards = deck.slice(0, holeCount);
+    entries.push({ score: omahaPreflopScore(cards, isHiLo), cards });
+  }
+  entries.sort((x, y) => x.score - y.score);
+  const scores = new Float64Array(entries.length);
+  const combos: Card[][] = new Array(entries.length);
+  for (let i = 0; i < entries.length; i++) {
+    scores[i] = entries[i].score;
+    combos[i] = entries[i].cards;
+  }
+  return { scores, combos };
+}
+
+/**
+ * Exported for the ground-truth test.
+ *
+ * BAND SEMANTICS — the discovery that made this fix bigger than a sampler
+ * swap: HorseMind's bands are PERCENTILE-INTENT ("this line means a top-15%
+ * hand"), and the NLH combo table delivers that because holdemPreflopScore
+ * is percentile-style. omahaPreflopScore is NOT — its distribution is
+ * compressed (median 0.24, p99 0.59), so matching band VALUES against Omaha
+ * SCORES selects almost nothing: a [0.85, 1.0] "3-bettor" read is beyond
+ * p99.9, the rejection sampler never once found an in-band hand, and every
+ * "read" degraded to closest-miss noise. The reservoir therefore maps bands
+ * through its own empirical CDF: band [0.85, 1.0] = the top 15% of sorted
+ * combos BY INDEX. That is what the read meant all along.
+ */
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * OMAHA PREFLOP PERCENTILE — the same CDF correction, for the DECISION
+ * thresholds (Dan 2026-08-30, after a live PLO spin)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The comment above records that omahaPreflopScore is NOT percentile-style
+ * and that matching percentile-intent BANDS against it selects almost
+ * nothing. The reservoir fixed that for HorseMind's reads. It was never
+ * applied to the place it matters most: the preflop decision itself.
+ *
+ * decidePreflopV7's thresholds are percentile-intent — they are calibrated
+ * against holdemPreflopScore, which IS percentile-style. HorseLogic fed them
+ * the raw Omaha score, whose distribution is compressed:
+ *
+ *     median 0.24, p75 0.32, max observed 0.72   (measured over 300 deals)
+ *
+ * So in PLO every hand read as bottom-quartile trash. Measured against the
+ * live decide() before this fix, 3-max PLO spin, SB unopened:
+ *
+ *     first to act   ->  call 212, fold 88, RAISE 0 of 300
+ *
+ * Zero opens, ever. That is exactly what Dan saw: horses that never raise,
+ * never re-raise, and fold to a pot-sized bet.
+ *
+ * THE FIX: map the score through its own empirical CDF, so the median PLO
+ * hand becomes 0.5 and the existing thresholds mean what they say. Ties take
+ * the MID-rank so a common score does not slam to the bottom of its block.
+ * Same reservoir, same private RNG, cached per (holeCount, isHiLo) — one
+ * binary search per decision, no I/O, and the postflop path is untouched
+ * because it already uses real Monte Carlo equity.
+ */
+/**
+ * The EXACT hold'em score distribution: all 1,326 two-card combos, scored
+ * and sorted once. Used to quantile-match Omaha onto the scale the preflop
+ * thresholds were actually tuned against.
+ *
+ * WHY QUANTILE-MATCHING AND NOT A PLAIN PERCENTILE — measured, because the
+ * obvious answer is wrong. Hold'em's own score is NOT uniform either:
+ *
+ *     holdem    median 0.236   p75 0.410   p99 1.000   max 1.000
+ *     omaha     median 0.240   p75 0.317   p99 0.640   max 0.850
+ *
+ * The medians nearly agree; the TOP END does not. Hold'em's best hands
+ * saturate at 1.0, so a 3-bet bar at t(0.74) is cleared by a real slice of
+ * its range. Omaha never gets there at all — p99 is 0.64 — so the same bar
+ * selects essentially nothing, which is why the fleet 3-bet 0.3% of the
+ * time. Mapping Omaha to a FLAT percentile would fix the sticking but
+ * overshoot the other way: every threshold would suddenly admit far more of
+ * the range than the same threshold admits in hold'em. Matching quantiles
+ * makes a 90th-percentile PLO hand score exactly what a 90th-percentile
+ * hold'em hand scores, so every bar in decidePreflopV7 means the same thing
+ * in both games — which is what "percentile-intent" claimed all along.
+ */
+let holdemScoreCdf: Float64Array | null = null;
+function holdemCdf(): Float64Array {
+  if (holdemScoreCdf) return holdemScoreCdf;
+  const d = FULL_DECK;
+  const out: number[] = [];
+  for (let i = 0; i < d.length; i++) {
+    for (let j = i + 1; j < d.length; j++) {
+      out.push(holdemPreflopScore(d[i], d[j], false));
+    }
+  }
+  out.sort((a, b) => a - b);
+  holdemScoreCdf = new Float64Array(out);
+  return holdemScoreCdf;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * THE SAME CORRECTION FOR SHORT DECK AND PINEAPPLE (Dan 2026-08-30)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The PLO fix exposed the same defect running the OTHER way. Sweeping every
+ * live variant's preflop strength against the identical spot showed:
+ *
+ *     variant      median  p75    | opens | facing a pot raise
+ *     nlh          0.232   0.410  |  22%  | fold 48%
+ *     short_deck   0.420   0.620  |  40%  | fold 23%
+ *     pineapple    0.493   0.713  |  51%  | fold 15%
+ *
+ * Short deck deals from 36 cards and pineapple deals three, so in both games
+ * every hand is genuinely better in ABSOLUTE terms — and both score
+ * functions faithfully say so. But decidePreflopV7's bars are
+ * PERCENTILE-INTENT: "open the top ~20%" is a statement about rank, not
+ * about an absolute number. Feeding an inflated score against a fixed bar
+ * does not express "this game plays looser", it just silently doubles the
+ * opening range and folds a pot-sized raise 15% of the time.
+ *
+ * Variant intent belongs where it is already expressed and visible: the V8
+ * style overlay in HorseLogic (Omaha tightens 1.03 and trims slowplay,
+ * short deck trims bluffs). The SCALE should be neutral so those knobs mean
+ * what they say. So every variant is mapped onto the hold'em scale by
+ * quantile, and any deliberate widening is a separate, reviewable decision
+ * rather than an artifact of a scoring range.
+ *
+ * Both CDFs are EXACT, not sampled — 630 two-card combos from the 36-card
+ * deck, 22,100 three-card combos from 52 — built once and cached.
+ */
+let shortDeckCdf: Float64Array | null = null;
+function shortDeckScoreCdf(): Float64Array {
+  if (shortDeckCdf) return shortDeckCdf;
+  const d = SHORT_DECK_CARDS;
+  const out: number[] = [];
+  for (let i = 0; i < d.length; i++) {
+    for (let j = i + 1; j < d.length; j++) out.push(holdemPreflopScore(d[i], d[j], true));
+  }
+  out.sort((a, b) => a - b);
+  shortDeckCdf = new Float64Array(out);
+  return shortDeckCdf;
+}
+
+let pineappleCdf: Float64Array | null = null;
+function pineappleScoreCdf(shortDeck: boolean): Float64Array {
+  if (!shortDeck && pineappleCdf) return pineappleCdf;
+  const d = shortDeck ? SHORT_DECK_CARDS : FULL_DECK;
+  const out: number[] = [];
+  for (let i = 0; i < d.length; i++) {
+    for (let j = i + 1; j < d.length; j++) {
+      for (let k = j + 1; k < d.length; k++) {
+        out.push(pineapplePreflopScore([d[i], d[j], d[k]], shortDeck));
+      }
+    }
+  }
+  out.sort((a, b) => a - b);
+  const arr = new Float64Array(out);
+  if (!shortDeck) pineappleCdf = arr;
+  return arr;
+}
+
+/** Rank a value inside a sorted array and return the mid-rank percentile. */
+function midRankPercentile(sorted: Float64Array, v: number): number {
+  const n = sorted.length;
+  if (n === 0) return v;
+  let lo = 0;
+  let hi = n;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (sorted[mid] < v) lo = mid + 1;
+    else hi = mid;
+  }
+  const lower = lo;
+  let lo2 = lower;
+  let hi2 = n;
+  while (lo2 < hi2) {
+    const mid = (lo2 + hi2) >> 1;
+    if (sorted[mid] <= v) lo2 = mid + 1;
+    else hi2 = mid;
+  }
+  return clamp01((lower + lo2) / 2 / n);
+}
+
+/** The hold'em score sitting at a given quantile. */
+function holdemAtQuantile(p: number): number {
+  const cdf = holdemCdf();
+  const idx = Math.min(cdf.length - 1, Math.max(0, Math.round(p * (cdf.length - 1))));
+  return cdf[idx];
+}
+
+/**
+ * Short-deck preflop strength ON THE HOLD'EM SCALE. Without this a 6+ horse
+ * opened 40% of hands and folded a pot-sized raise 23% of the time, purely
+ * because a 36-card deck inflates every score.
+ */
+export function shortDeckPreflopStrength(c1: Card, c2: Card): number {
+  return holdemAtQuantile(midRankPercentile(shortDeckScoreCdf(), holdemPreflopScore(c1, c2, true)));
+}
+
+/**
+ * Pineapple preflop strength ON THE HOLD'EM SCALE. Without this a pineapple
+ * horse opened 51% and folded a pot-sized raise 15% of the time.
+ */
+export function pineapplePreflopStrength(cards: Card[], shortDeck: boolean): number {
+  const raw = pineapplePreflopScore(cards, shortDeck);
+  return holdemAtQuantile(midRankPercentile(pineappleScoreCdf(shortDeck), raw));
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * MULTIWAY VALUE BARS — the same scale bug, on the opponent-count axis
+ * (Dan 2026-08-30)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * decidePostflop's VALUE-BET bars are written as absolute equity numbers
+ * (`equity >= 0.8 + mw`, `0.62 + mw`, `0.52 + mw`). They were calibrated
+ * against the HEADS-UP equity distribution. But `equity` is computed against
+ * min(oppCount, 4) opponents, and that distribution collapses as opponents
+ * are added. Measured, 250 random NLH flops per column:
+ *
+ *     opps  median   %>=0.80   mw     effective bar   % clearing it
+ *      1     0.473      9%     0.00       0.80             9%
+ *      2     0.280      2%     0.03       0.83             2%
+ *      4     0.154      0%     0.09       0.89             0%
+ *
+ * So the bar meant "top ~9% of hands" heads-up and "literally nothing" four
+ * ways — and `mw` pushed it UP on a distribution that had already collapsed
+ * DOWN, compounding instead of conserving. Live consequence, measured
+ * through decide() before this fix: a preflop raiser c-bet 71% heads-up,
+ * 24% three-handed and 2% five-handed, in EVERY variant. A fleet that never
+ * bets multiway is both exploitable and visibly robotic.
+ *
+ * THE FIX, mirroring the preflop variant fix: express the bar as the
+ * PERCENTILE it was always meant to be, and look up the equity that sits at
+ * that percentile for the actual opponent count. `mw` then supplies the
+ * intended extra multiway tightening on top of a scale-neutral bar, which is
+ * what it was for.
+ *
+ * ONLY the value-BET bars use this. The calling side compares equity to POT
+ * ODDS — a true probability against a true probability — and must keep raw
+ * equity. Normalising that would misprice every call.
+ *
+ * Deciles measured over 600 random flops per cell (nlh and plo4 averaged;
+ * they agree within a few points, so one table serves every variant — the
+ * dilution is a property of counting opponents, not of the game).
+ */
+const EQ_DECILES: Record<number, number[]> = {
+  1: [0.112, 0.258, 0.323, 0.378, 0.428, 0.483, 0.543, 0.596, 0.668, 0.776, 0.974],
+  2: [0.038, 0.124, 0.163, 0.2, 0.244, 0.291, 0.344, 0.398, 0.479, 0.607, 0.929],
+  3: [0.009, 0.075, 0.101, 0.129, 0.165, 0.202, 0.241, 0.291, 0.37, 0.502, 0.907],
+  4: [0.002, 0.05, 0.073, 0.092, 0.12, 0.152, 0.187, 0.228, 0.296, 0.422, 0.897],
+};
+
+/** Quantile of `v` within a sorted decile table, linearly interpolated. */
+function quantileOf(table: number[], v: number): number {
+  if (v <= table[0]) return 0;
+  if (v >= table[table.length - 1]) return 1;
+  for (let i = 1; i < table.length; i++) {
+    if (v <= table[i]) {
+      const span = table[i] - table[i - 1];
+      const frac = span > 0 ? (v - table[i - 1]) / span : 0;
+      return (i - 1 + frac) / (table.length - 1);
+    }
+  }
+  return 1;
+}
+
+/** The value at quantile `q` in a decile table, linearly interpolated. */
+function valueAtQuantile(table: number[], q: number): number {
+  const x = clamp01(q) * (table.length - 1);
+  const lo = Math.floor(x);
+  const hi = Math.min(table.length - 1, lo + 1);
+  return table[lo] + (table[hi] - table[lo]) * (x - lo);
+}
+
+/**
+ * Translate a value-bet bar written on the HEADS-UP equity scale into the
+ * equivalent bar for `oppCount` opponents, preserving the PERCENTILE of hand
+ * strength the bar was calibrated to mean.
+ *
+ * Heads-up it returns the bar unchanged, so nothing about HU play moves.
+ */
+export function multiwayValueBar(headsUpBar: number, oppCount: number): number {
+  const n = Math.max(1, Math.min(4, Math.floor(oppCount)));
+  if (n === 1) return headsUpBar;
+  const q = quantileOf(EQ_DECILES[1], headsUpBar);
+  return valueAtQuantile(EQ_DECILES[n], q);
+}
+
+/**
+ * Omaha preflop strength ON THE HOLD'EM SCALE — what decidePreflopV7's
+ * thresholds have always assumed they were being handed. Percentile first
+ * (through the Omaha reservoir), then the hold'em score at that same
+ * quantile. See omahaPreflopPercentile and holdemCdf for the measurements.
+ */
+export function omahaPreflopStrength(cards: Card[], isHiLo: boolean): number {
+  if (cards.length < 4) return omahaPreflopScore(cards, isHiLo);
+  const p = omahaPreflopPercentile(cards, isHiLo);
+  const cdf = holdemCdf();
+  const idx = Math.min(cdf.length - 1, Math.max(0, Math.round(p * (cdf.length - 1))));
+  return cdf[idx];
+}
+
+export function omahaPreflopPercentile(cards: Card[], isHiLo: boolean): number {
+  const raw = omahaPreflopScore(cards, isHiLo);
+  const holeCount = cards.length;
+  // Below four cards there is no Omaha hand to rank; the raw score is all
+  // there is, and callers already guard this.
+  if (holeCount < 4) return raw;
+
+  const key = `${holeCount}${isHiLo ? 'h' : ''}`;
+  let rv = omahaReservoirs.get(key);
+  if (!rv) {
+    rv = buildOmahaReservoir(holeCount, isHiLo);
+    omahaReservoirs.set(key, rv);
+  }
+  const s = rv.scores;
+  const n = s.length;
+  if (n === 0) return raw;
+
+  // lower bound: how many reservoir scores are strictly below this hand
+  let lo = 0;
+  let hi = n;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (s[mid] < raw) lo = mid + 1;
+    else hi = mid;
+  }
+  const lower = lo;
+  // upper bound: end of the tie block
+  let lo2 = lower;
+  let hi2 = n;
+  while (lo2 < hi2) {
+    const mid = (lo2 + hi2) >> 1;
+    if (s[mid] <= raw) lo2 = mid + 1;
+    else hi2 = mid;
+  }
+  return clamp01((lower + lo2) / 2 / n);
+}
+
+export function placeOmahaBandCombo(
+  deck: Card[],
+  windowStart: number,
+  n: number,
+  band: [number, number],
+  holeCount: number,
+  isHiLo: boolean
+): boolean {
+  const key = `${holeCount}${isHiLo ? 'h' : ''}`;
+  let rv = omahaReservoirs.get(key);
+  if (!rv) {
+    rv = buildOmahaReservoir(holeCount, isHiLo);
+    omahaReservoirs.set(key, rv);
+  }
+  const size = rv.combos.length;
+  // Percentile (CDF-index) mapping, clamped to a legal slice.
+  const lo = Math.max(0, Math.min(size - 1, Math.floor(clamp01(band[0]) * size)));
+  const hi = Math.max(lo + 1, Math.min(size, Math.ceil(clamp01(band[1]) * size)));
+  if (band[0] > 1 || band[1] < 0 || band[1] <= band[0]) return false;
+  const span = hi - lo;
+
+  cardAvail.fill(0);
+  for (let i = windowStart; i < n; i++) cardAvail[cardId(deck[i])] = 1;
+
+  for (let attempt = 0; attempt < 24; attempt++) {
+    const idx = lo + Math.floor(fastRandom() * span);
+    const combo = rv.combos[idx];
+    let ok = true;
+    for (const c of combo) {
+      if (!cardAvail[cardId(c)]) {
+        ok = false;
+        break;
+      }
+    }
+    if (!ok) continue;
+    // Swap by CARD ID, not object identity — the deck's card objects are not
+    // guaranteed to be the reservoir's references, and an identity mismatch
+    // here would silently leave the uniform window in place while reporting
+    // success (the exact shape of silent failure this codebase hunts).
+    for (let k = 0; k < combo.length; k++) {
+      const wantId = cardId(combo[k]);
+      const slot = windowStart + k;
+      if (cardId(deck[slot]) === wantId) continue;
+      for (let j = slot + 1; j < n; j++) {
+        if (cardId(deck[j]) === wantId) {
+          const t = deck[slot];
+          deck[slot] = deck[j];
+          deck[j] = t;
           break;
         }
       }
@@ -826,6 +1611,14 @@ export function simulateEquity(
           // uniform draw already in the window stands — the same fail-safe
           // the old code had, but now it is the rare case rather than the
           // majority one.
+        } else if (
+          vi.isOmaha &&
+          placeOmahaBandCombo(deck, windowStart, n, band, oppHole, vi.isHiLo)
+        ) {
+          // V16: sampled exactly from the reservoir slice — no rejection, no
+          // closest-miss fallback. Collisions with dealt cards fall through
+          // to the legacy path below.
+          for (let i = 0; i < oppHole; i++) oppCards[i] = deck[windowStart + i];
         } else {
           const narrow = band[1] - band[0] < 0.45;
           const tries = vi.isOmaha ? (narrow ? 6 : 4) : narrow ? 14 : 6;
@@ -887,6 +1680,51 @@ export function simulateEquity(
       // probability scaled by how hard they have been betting; a passive
       // checked line gets its monsters down-sampled (capped stays capped).
       const read = oppReads ? oppReads[o] : null;
+      // ═══ V15 OMAHA BOARD-CONTACT CONDITIONING (Dan 2026-08-26) ═══
+      // The V12 conditioning below was NLH-only, so a PLO opponent RAISING on
+      // a three-flush board was still sampled from his preflop band — mostly
+      // hands with no flush — and a 9-high flush priced itself as a 75-85%
+      // favourite against a range that in reality is full of bigger flushes.
+      // This is the equity overstatement behind every "called off with the
+      // small flush" hand. Omaha aggressors are now pushed toward hands that
+      // CONTACT the board, using a cheap structural test (no scoring) and at
+      // most two redraws so the MC budget is untouched. Tight bands skip it:
+      // the Omaha band redraw cannot re-test the band (the V13 NLH collapse),
+      // so conditioning there would trade one bias for another — the explicit
+      // nut-discipline penalty in HorseLogic covers those pots instead.
+      if (read && vi.isOmaha && boardCards.length >= 3 && read.aggrW > 0) {
+        const bandWidth = band ? band[1] - band[0] : 1;
+        if (bandWidth >= 0.45) {
+          const pConnect = Math.min(0.85, 0.4 + read.aggrW * 2.0);
+          for (let t = 0; t < 2; t++) {
+            if (omahaConnectsBoard(oppCards, boardCards)) break;
+            if (fastRandom() >= pConnect) break; // some of the range IS air
+            // V28 AUDIT FIX (2026-08-29): this redraw drew UNIFORMLY from the
+            // whole remaining deck and never re-tested the band — the exact
+            // V13 collapse the NLH branch below fixed, still live on the
+            // Omaha side. A [0.4, 1] "open" read redrew into the bottom 40%
+            // of the combo space, so a raiser's range acquired the trash the
+            // read excluded. placeOmahaBandCombo is the in-band sampler the
+            // V16 work built for precisely this; use it, falling back to the
+            // uniform swap only when the band sampler cannot place a combo
+            // (degenerate band / exhausted deck).
+            const placed =
+              band != null
+                ? placeOmahaBandCombo(deck, windowStart, n, band, oppHole, vi.isHiLo)
+                : false;
+            if (!placed) {
+              for (let i = 0; i < oppHole; i++) {
+                const slot = windowStart + i;
+                const j = slot + Math.floor(fastRandom() * (n - slot));
+                const tmp = deck[slot];
+                deck[slot] = deck[j];
+                deck[j] = tmp;
+              }
+            }
+            for (let i = 0; i < oppHole; i++) oppCards[i] = deck[windowStart + i];
+          }
+        }
+      }
       if (read && !vi.isOmaha && boardCards.length >= 3) {
         // V13: the redraw must STAY IN THE READ. It used to draw uniformly
         // from the whole remaining deck and never re-test the band, so any
@@ -918,9 +1756,13 @@ export function simulateEquity(
           }
         };
         if (read.aggrW > 0) {
-          const pConnect = Math.min(0.9, 0.4 + read.aggrW * 2.2);
-          for (let t = 0; t < 3; t++) {
-            if (connectsBoard(oppCards, boardCards, vi.isShortDeck) >= 2) break;
+          // V16: a BIG bet is sampled toward REAL strength (two pair+), not
+          // just any contact — an overbettor's range is not middle pair.
+          const wantCat = read.bigBet ? 3 : 2;
+          const pConnect = Math.min(0.9, (read.bigBet ? 0.55 : 0.4) + read.aggrW * 2.2);
+          const tries = read.bigBet ? 4 : 3;
+          for (let t = 0; t < tries; t++) {
+            if (connectsBoard(oppCards, boardCards, vi.isShortDeck) >= wantCat) break;
             if (fastRandom() >= pConnect) break; // some of the range IS air
             redraw();
           }
@@ -1094,7 +1936,20 @@ export function holdemPreflopScore(c1: Card, c2: Card, shortDeck: boolean): numb
       score = suited ? 0.82 : 0.74; // AJ
     else if (lo === 10)
       score = suited ? 0.76 : 0.66; // AT
-    else score = suited ? 0.52 + (lo - 2) * 0.008 : 0.34 + (lo - 2) * 0.01; // Axs / Axo
+    else if (suited)
+      // V28 AUDIT FIX: wheel-ace suits (A2s-A5s) were the lowest-scored
+      // suited aces (0.520-0.544), which put every one of them BELOW the
+      // 0.55 3-bet-bluff floor in HorsePreflop — the canonical ace-blocker
+      // bluffs were unplayable as bluffs, while KTo/QJo (0.56-0.58) bluffed
+      // instead. A5s>A4s>A3s>A2s for the straight, and all four sit above
+      // A6s (the true bottom of the suited-ace ladder, no wheel, no
+      // broadway). The ladder now says so.
+      score =
+        lo <= 5
+          ? 0.556 + (lo - 2) * 0.006 // A2s 0.556 .. A5s 0.574
+          : 0.535 + (lo - 6) * 0.01;
+    // A6s 0.535 .. A9s 0.565
+    else score = 0.34 + (lo - 2) * 0.01; // Axo
   } else if (hi === 13) {
     // King-high
     if (lo === 12)
@@ -1114,8 +1969,15 @@ export function holdemPreflopScore(c1: Card, c2: Card, shortDeck: boolean): numb
     if (lo === 10)
       score = suited ? 0.64 : 0.5; // JT
     else if (lo === 9)
-      score = suited ? 0.55 : 0.38; // J9
-    else score = suited ? 0.3 + (lo - 2) * 0.01 : 0.12 + (lo - 2) * 0.01;
+      // V28 AUDIT FIX: J9 was 0.55s/0.38o — scored ABOVE K9s (0.45) and
+      // Q9s (0.41), both of which dominate it. Connectivity is worth
+      // something; domination is worth more.
+      score = suited ? 0.44 : 0.27; // J9
+    else
+      // V28: Jx low was 0.30+(lo-2)*0.01, which put J8s (0.36) BELOW T8s
+      // (0.40) — a strictly dominated ordering. Lifted so Jx >= the same-gap
+      // Tx hand.
+      score = suited ? 0.33 + (lo - 2) * 0.012 : 0.13 + (lo - 2) * 0.011;
   } else {
     // Connectors / gappers / rags below jack-high
     const connected = gap === 1;
@@ -1126,7 +1988,14 @@ export function holdemPreflopScore(c1: Card, c2: Card, shortDeck: boolean): numb
     } else if (oneGap && lo >= 4) {
       score = suited ? 0.34 + (hi - 6) * 0.015 : 0.15 + (hi - 6) * 0.012;
     } else {
-      score = suited ? 0.14 + hi * 0.012 : 0.02 + hi * 0.01;
+      // V28 AUDIT FIX: this bucket scored on high card ONLY, so 72s (0.224)
+      // outranked 43s (0.188) and 72o outranked four hands that beat it.
+      // Wide-gap rags now pay for their gap: 43s keeps its connectivity
+      // credit above, and 72 sinks to the bottom where it belongs.
+      const gapDrag = Math.max(0, gap - 2) * 0.014;
+      score = suited
+        ? Math.max(0.1, 0.14 + hi * 0.012 - gapDrag)
+        : Math.max(0.02, 0.02 + hi * 0.01 - gapDrag);
     }
   }
 
@@ -1137,6 +2006,11 @@ export function holdemPreflopScore(c1: Card, c2: Card, shortDeck: boolean): numb
     if (!pair && gap <= 1) score += 0.03;
     if (pair && hi <= 9) score -= 0.04;
     if (hi === 14 && lo === 13) score += 0.02;
+    // V28 AUDIT FIX: the A-6-7-8-9 wheel was not modelled at all. In short
+    // deck the ace plays low in that straight, so A6-A9 are connectors —
+    // the code computed gap = 14-lo and gave them nothing. A6s was scored
+    // below A9s exactly as in the full deck, which is the wrong game.
+    if (!pair && hi === 14 && lo >= 6 && lo <= 9) score += 0.035;
   }
 
   return clamp01(score);
@@ -1211,7 +2085,19 @@ export function omahaPreflopScore(cards: Card[], isHiLo: boolean): number {
   }
 
   // Normalize: premium AAKK-ds style hands land around 28-32 points.
-  return clamp01(pts / 30);
+  //
+  // V15 (Dan 2026-08-26): the raw point sum grows with every extra hole card
+  // (more pairs, more suits, more connections exist in 5 and 6 cards), and a
+  // single /30 divisor let that growth masquerade as hand strength. Measured
+  // over 200k random hands per variant: the MEDIAN plo6 hand scored 0.53 and
+  // the median plo5 hand 0.40 against plo4's 0.24 — above the facing-a-raise
+  // call threshold (0.52) on a completely average holding, which is why the
+  // plo5/plo6 fleets played far too many hands far too hard. Subtracting the
+  // measured median shift aligns the distributions almost exactly (p85 within
+  // 0.2 points, p95 within 1.4 points of plo4's curve), so a percentile
+  // threshold now selects the same QUALITY of hand in every Omaha variant.
+  const holeShift = cards.length >= 6 ? 8.8 : cards.length === 5 ? 4.7 : 0;
+  return clamp01((pts - holeShift) / 30);
 }
 
 /** Pineapple (3-card) preflop: best 2-card combo + backup potential. */

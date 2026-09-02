@@ -97,7 +97,7 @@ class MessagingServiceClass {
   /** A QR image URL pointing at a player's public profile. */
   generateProfileQRData(userId: string): string {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const profileUrl = `${origin}/profile/${userId}`;
+    const profileUrl = `${origin}/hub/club-arena/profile/${userId}`;
     return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(profileUrl)}`;
   }
 }

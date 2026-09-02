@@ -160,6 +160,30 @@ describe('normaliseStoredHand — run it twice', () => {
     expect(cards).toHaveLength(5);
     expect(cards[0]).toEqual({ rank: '2', suit: 'c' });
   });
+
+  it('lifts BOTH extra boards of a 3-run hand, in run order (2026-08-26)', () => {
+    // The old parser read only rit_board_2 — a run-it-three-times hand lost
+    // its third board in replay.
+    const board3Action = {
+      seat: null,
+      stage: 'river',
+      action: 'rit_board_3:Ahearts,Kdiamonds,Qspades,Jclubs,10hearts',
+      amount: 0,
+      userId: null,
+    };
+    const { secondBoard, extraBoards, actions } = normaliseStoredHand(
+      REAL_PLAYERS,
+      [...REAL_ACTIONS, board3Action, ritAction],
+      []
+    );
+    expect(extraBoards).toHaveLength(2);
+    expect(extraBoards[0]).toEqual(['2clubs', '2diamonds', '3diamonds', '4diamonds', '6clubs']);
+    expect(extraBoards[1]).toEqual(['Ahearts', 'Kdiamonds', 'Qspades', 'Jclubs', '10hearts']);
+    // secondBoard stays the first extra board for existing consumers.
+    expect(secondBoard).toEqual(extraBoards[0]);
+    // Neither pseudo-action leaks into the player action stream.
+    expect(actions.some((a) => a.verb.startsWith('rit_board_'))).toBe(false);
+  });
 });
 
 describe('cardsVisibleAtStage', () => {
@@ -198,7 +222,7 @@ describe('stored community cards render', () => {
 describe('normaliseStoredHand — degrades instead of throwing', () => {
   it('survives null columns', () => {
     const r = normaliseStoredHand(null, null, null);
-    expect(r).toEqual({ players: [], actions: [], winners: [], secondBoard: [] });
+    expect(r).toEqual({ players: [], actions: [], winners: [], extraBoards: [], secondBoard: [] });
   });
 
   it('falls back to the seat when a player list is missing the actor', () => {

@@ -25,12 +25,8 @@
   backdrop-filter: blur(8px);
 }
 
-.live-tables-bar:hover {
-  background: rgba(0, 212, 255, 0.1);
-}
-
 .live-tables-bar__dot {
-  color: #00e676;
+  color: #3fb950;
   font-size: 0.7rem;
   animation: liveTablesPulse 1.6s ease-in-out infinite;
 }
@@ -66,10 +62,6 @@
 .live-tables-bar--urgent {
   border-color: rgba(251, 191, 36, 0.65);
   box-shadow: 0 4px 24px rgba(251, 191, 36, 0.25);
-}
-
-.live-tables-bar--urgent:hover {
-  background: rgba(251, 191, 36, 0.12);
 }
 
 .live-tables-bar__dot--urgent {

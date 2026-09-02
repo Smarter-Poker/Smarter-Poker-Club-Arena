@@ -78,12 +78,6 @@
   width: fit-content;
 }
 
-.toast-hint-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: rgba(255, 255, 255, 0.3);
-  color: #fff;
-}
-
 .toast-hint-btn:active {
   transform: scale(0.97);
 }
@@ -102,11 +96,20 @@
   align-self: flex-start;
   margin-top: -4px;
   margin-right: -8px;
+  /* The painted box is 24px. This toast lands over the middle of the felt
+     while the player is on a shot clock, and dismissing it is the only way to
+     see the board again, so the TOUCH target must not be 24px. Grown to 44px
+     with a transparent pseudo-element rather than by resizing the button:
+     padding or width would push the message text and change the toast's
+     silhouette, and this changes nothing anyone can see. */
+  position: relative;
 }
 
-.toast-close:hover {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.1);
+.toast-close::after {
+  content: '';
+  position: absolute;
+  /* (44 - 24) / 2 = 10px of invisible margin on every side. */
+  inset: -10px;
 }
 
 @keyframes slide-up-fade {

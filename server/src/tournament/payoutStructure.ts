@@ -114,10 +114,171 @@ export function spinPayoutStructure(multiplier: number | null | undefined): Payo
  * whose structure never wrote), but they must CAP it: see
  * `remainingPoolAfterAwards`.
  */
-export function resolvePayoutStructure(t: PayoutSubject | null | undefined): PayoutPlace[] | null {
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  A STRUCTURE CANNOT PAY A PLACE NOBODY REACHED
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * SHORT-FIELD RESIDUAL 2026-08-27. `computePlacePrize` gives the LAST place in
+ * the structure whatever is left over, so the paid places sum to the pool to
+ * the cent. Nothing trimmed the structure to the size of the field, so when
+ * fewer players entered than the structure pays, the residual sat on a place no
+ * finisher ever held and was never awarded at all.
+ *
+ * Sunday Midway Major: a 9-place structure, 8 entrants, 250.00 of a 10,000.00
+ * pool never left the house. PLO Daily 18155d71: 5 places, 4 entrants, 52.50
+ * stranded. Eight events in thirty days, and every one of them also left
+ * fn_tournament_payout_reconcile holding a `no_finisher_recorded` critical it
+ * refuses, correctly, to resolve on its own.
+ *
+ * Trimming is all that is needed. The residual rule then lands the leftover on
+ * the last place that DOES have a finisher, which is the smallest real prize -
+ * the same "adjustment lands on the smallest prize, never a headline one"
+ * principle the rule already follows. No renormalisation: the dropped place's
+ * share flows into the residual by construction.
+ *
+ * TRIMMING IS THE DANGEROUS DIRECTION, so this is deliberately timid:
+ *
+ *   * an absent, non-finite, non-integer or non-positive fieldSize trims
+ *     nothing, so every existing caller keeps its exact behaviour;
+ *   * a fieldSize at or above the structure trims nothing;
+ *   * a trim that would leave no places returns the structure untouched.
+ *
+ * A fieldSize that is too SMALL would promote an earlier place to residual
+ * holder and overpay it, so callers must pass the count of everyone who ever
+ * entered - never a live seat count, which drains as players bust - and must
+ * not pass one at all until entry is closed and that count can no longer grow.
+ */
+export function trimStructureToField(
+  places: PayoutPlace[] | null,
+  fieldSize?: number | null
+): PayoutPlace[] | null {
+  if (!Array.isArray(places) || places.length === 0) return places;
+  if (fieldSize == null) return places;
+  const field = Number(fieldSize);
+  if (!Number.isInteger(field) || field < 1) return places;
+
+  const kept = places.filter((p) => Number(p.place) <= field);
+  if (kept.length === 0 || kept.length === places.length) return places;
+  return kept;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  PAYOUT DEPTH SCALES WITH THE FIELD (2026-08-31)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Measured over 579 completed MTTs, average places paid by field size:
+ *
+ *     field < 10   (14 events)  ->  5.1 places
+ *     10-29       (393 events)  ->  5.8
+ *     30-59       (113 events)  ->  7.1
+ *     60-99        (31 events)  ->  6.8
+ *     100+ (avg 334, 28 events) ->  8.9      <- 2.7% of the field
+ *
+ * Depth was flat because the preset map tops out at NINE, so a 334-runner event
+ * paid the same nine places as a 30-runner one. The industry norm is 10-15% of
+ * the field, and the gap is not cosmetic: it is the difference between a big
+ * event feeling worth entering and feeling like a lottery with nine tickets.
+ *
+ * TWO RULES KEEP THIS SAFE, and both are about the direction that overpays.
+ *
+ *   1. PERCENTAGES ALWAYS SUM TO EXACTLY 100. The residual from rounding lands
+ *      on the LAST paid place, never the first — the same choice
+ *      computePlacePrize makes, and for the same reason: an error on last place
+ *      is a rounding cent, an error on first place is a headline.
+ *
+ *   2. IT IS ONLY CALLED WHEN THE FIELD CAN NO LONGER GROW. A structure built
+ *      for a field that then grows would pay too few places; one built for a
+ *      field that shrank would promote an earlier place to residual holder and
+ *      overpay it. The single caller sits at prize-pool finalisation, where
+ *      entry is closed by definition and `recalculateEliminatedPrizes` already
+ *      re-prices everyone who busted before the change.
+ *
+ * The shape is a geometric decay: first place takes a fixed share and each
+ * subsequent place takes a constant fraction of the one above, which is what
+ * every published structure approximates.
+ */
+export const PAID_FRACTION_OF_FIELD = 0.15;
+export const MIN_PAID_PLACES = 3;
+
+export function paidPlacesForField(fieldSize: number): number {
+  const field = Number(fieldSize);
+  if (!Number.isFinite(field) || field < 1) return MIN_PAID_PLACES;
+  // Never pay more places than there are players, and never pay every player:
+  // a structure that pays 100% of the field is a refund, not a tournament.
+  const byFraction = Math.round(field * PAID_FRACTION_OF_FIELD);
+  const capped = Math.min(byFraction, Math.floor(field / 2));
+  return Math.max(1, Math.min(Math.max(MIN_PAID_PLACES, capped), Math.floor(field)));
+}
+
+/** Places in the steep top tier. Beyond this the tail flattens. */
+const TOP_TIER_PLACES = 9;
+/** Decay inside the top tier — tuned to the long-standing NINE preset. */
+const TOP_TIER_DECAY = 0.72;
+/** Decay across the flat min-cash tail. */
+const TAIL_DECAY = 0.97;
+
+/**
+ * What share of the pool the top nine places take, as depth grows.
+ *
+ * A REAL PAYOUT STRUCTURE HAS TWO REGIMES, and the first version of this
+ * function did not — it was a single geometric decay, which is right for nine
+ * places and impossible for seventy-five. At 0.72 per place, place 28 of a
+ * 500-runner field rounded to 0.00%: a "paid" place that pays nothing. The law
+ * test caught it, which is what it is for.
+ *
+ * Published structures are steep across the final table and nearly flat across
+ * the min-cash tail, so that is what this models. The top nine keep their
+ * familiar shape at every depth; everyone below shares what is left with a
+ * gentle decline.
+ */
+function topTierShareFor(places: number): number {
+  if (places <= TOP_TIER_PLACES) return 100;
+  return Math.max(50, Math.min(100, 100 - (places - TOP_TIER_PLACES) * 0.7));
+}
+
+export function payoutStructureForField(fieldSize: number): PayoutPlace[] {
+  const places = paidPlacesForField(fieldSize);
+  const topCount = Math.min(places, TOP_TIER_PLACES);
+  const tailCount = places - topCount;
+  const topShare = tailCount > 0 ? topTierShareFor(places) : 100;
+
+  // Raw weights per tier, each normalised inside its own share of the pool.
+  const topWeights: number[] = [];
+  for (let i = 0; i < topCount; i++) topWeights.push(Math.pow(TOP_TIER_DECAY, i));
+  const topWeightTotal = topWeights.reduce((s, w) => s + w, 0);
+
+  const tailWeights: number[] = [];
+  for (let i = 0; i < tailCount; i++) tailWeights.push(Math.pow(TAIL_DECAY, i));
+  const tailWeightTotal = tailWeights.reduce((s, w) => s + w, 0) || 1;
+
+  const raw: number[] = [
+    ...topWeights.map((w) => (w / topWeightTotal) * topShare),
+    ...tailWeights.map((w) => (w / tailWeightTotal) * (100 - topShare)),
+  ];
+
+  const out: PayoutPlace[] = [];
+  let running = 0;
+  for (let i = 0; i < places; i++) {
+    const isLast = i === places - 1;
+    // Two decimals: the column and every downstream reader are money-shaped.
+    // The residual lands on the LAST place, never the first.
+    const pct = isLast ? Math.round((100 - running) * 100) / 100 : Math.round(raw[i] * 100) / 100;
+    running = Math.round((running + pct) * 100) / 100;
+    out.push({ place: i + 1, percentage: pct });
+  }
+  return out;
+}
+
+export function resolvePayoutStructure(
+  t: PayoutSubject | null | undefined,
+  fieldSize?: number | null
+): PayoutPlace[] | null {
   const stored = parsePayoutStructure(t?.payout_structure);
-  if (stored) return stored;
-  if (isSpinTournament(t)) return spinPayoutStructure(t?.spin_multiplier);
+  if (stored) return trimStructureToField(stored, fieldSize);
+  if (isSpinTournament(t))
+    return trimStructureToField(spinPayoutStructure(t?.spin_multiplier), fieldSize);
   return null;
 }
 

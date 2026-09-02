@@ -21,8 +21,8 @@
  * ADDITIONAL RAKE IS ADDED."
  *
  * The frequency table below is arithmetic proof of that pricing. Its
- * expectation is 2.7638, and (3 − 2.7638) / 3 = 7.87% — the advertised 8% at
- * the stakes it applies to. Had the player been charged buy-in PLUS 8% on top,
+ * expectation is 2.7638, and (3 − 2.7638) / 3 = 7.87% — the advertised 8%, at
+ * every stake. Had the player been charged buy-in PLUS 8% on top,
  * the true edge would have been 14.7%, which is not what any room advertises.
  * So the buy-in is the whole charge, and `buy_in_fee` MUST be 0 on a Spin.
  *
@@ -67,31 +67,48 @@
 export const SPIN_SEATS = 3;
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// RAKE — scales down with stake
+// RAKE — ONE RATE, because the multiplier table is what actually charges it
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export interface RakeBand {
-  /** Inclusive lower bound of the buy-in band. */
-  minBuyIn: number;
-  /** Inclusive upper bound. Infinity for the top band. */
-  maxBuyIn: number;
-  /** Fraction of total collected taken by the house. */
-  rate: number;
-}
+/**
+ * ─── THE BANDS ARE GONE (Dan 2026-08-27, ruling) ────────────────────────────
+ *
+ * There used to be four buy-in bands here, booking 8 / 7 / 6 / 5% as the stake
+ * rose. They were fiction, and expensive fiction, for the reason stated at the
+ * top of this file: on a Spin the rake IS the multiplier distribution. There is
+ * exactly ONE `SPIN_TIERS` table, its expectation is 2.7638, and the invariant
+ *
+ *     E[multiplier] = seats × (1 − rake_rate)
+ *
+ * is an EQUALITY. At three seats it is satisfied at 8% and at no other rate.
+ * Lowering the booked rate to 7, 6 or 5% never changed a single frequency, so
+ * the player's expected return stayed 92.13% at every stake while the ledger
+ * recorded a smaller cut. Measured on 2026-08-27, booked against actually
+ * charged: 8.00%/8.74%, 7%/8.50%, 6%/8.04%, 5%/8.03%. A player at a 100 stake
+ * was told 5% and charged 8.03%.
+ *
+ * The gap did not go to the house either — it accumulated in `spin_bonus_pools`
+ * as 36,723.84 chips belonging to nobody, reconciling exactly with the pool
+ * balance minus the operator seed.
+ *
+ * A banded product is still possible, but it costs a multiplier table PER BAND.
+ * One table means one rate, and `assertSpinRakeInvariant` below is what makes
+ * the next attempt to split them fail loudly instead of quietly.
+ *
+ * (The chips already in the pool are a separate remediation decision and were
+ * deliberately NOT touched by the change that deleted the bands.)
+ */
+export const SPIN_RAKE_RATE = 0.08;
 
-export const SPIN_RAKE_BANDS: RakeBand[] = [
-  { minBuyIn: 0, maxBuyIn: 5, rate: 0.08 },
-  { minBuyIn: 5.01, maxBuyIn: 10, rate: 0.07 },
-  { minBuyIn: 10.01, maxBuyIn: 50, rate: 0.06 },
-  { minBuyIn: 50.01, maxBuyIn: Infinity, rate: 0.05 },
-];
-
-/** The house rake rate for a given buy-in. */
-export function spinRakeRate(buyIn: number): number {
-  const band = SPIN_RAKE_BANDS.find((b) => buyIn >= b.minBuyIn && buyIn <= b.maxBuyIn);
-  // Unknown stake defaults to the HIGHEST rake, never the lowest: a
-  // misconfigured buy-in must not silently hand away margin.
-  return band ? band.rate : SPIN_RAKE_BANDS[0].rate;
+/**
+ * The house rake rate for a Spin. Flat at every stake — see above.
+ *
+ * The buy-in parameter is kept so every existing call site still reads as a
+ * question about THIS game, and so a genuine future banding has one function to
+ * change rather than a dozen. It is deliberately unused today.
+ */
+export function spinRakeRate(_buyIn?: number): number {
+  return SPIN_RAKE_RATE;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -104,8 +121,6 @@ export interface SpinTierSpec {
   freq: number;
   /** Prize split by finishing place, summing to 1. */
   payouts: number[];
-  /** Starting stack in chips. */
-  startingStack: number;
   /** Blind level length in minutes. */
   levelMinutes: number;
   /**
@@ -115,9 +130,6 @@ export interface SpinTierSpec {
    */
   reserveThresholdX: number;
 }
-
-/** Denominator for `freq`. */
-export const SPIN_FREQ_DENOMINATOR = 10_000_000;
 
 /**
  * The ladder. Frequencies are Dan's spec verbatim.
@@ -167,7 +179,6 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     // 4_772_497 before the 500x retirement; see the note above the array.
     freq: 4_772_073,
     payouts: [1],
-    startingStack: 300,
     levelMinutes: 3,
     reserveThresholdX: 0,
   },
@@ -176,7 +187,6 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     // 3_968_502 before the 500x retirement.
     freq: 3_968_518,
     payouts: [1],
-    startingStack: 300,
     levelMinutes: 3,
     reserveThresholdX: 0,
   },
@@ -184,7 +194,6 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     multiplier: 4,
     freq: 900_000,
     payouts: [1],
-    startingStack: 400,
     levelMinutes: 3,
     reserveThresholdX: 0,
   },
@@ -192,7 +201,6 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     multiplier: 5,
     freq: 250_000,
     payouts: [1],
-    startingStack: 400,
     levelMinutes: 3,
     reserveThresholdX: 0,
   },
@@ -200,7 +208,6 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     multiplier: 10,
     freq: 100_000,
     payouts: [0.8, 0.2],
-    startingStack: 500,
     levelMinutes: 3,
     reserveThresholdX: 0,
   },
@@ -208,7 +215,6 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     multiplier: 25,
     freq: 7_500,
     payouts: [0.8, 0.12, 0.08],
-    startingStack: 500,
     levelMinutes: 3,
     reserveThresholdX: 0,
   },
@@ -216,7 +222,6 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     multiplier: 50,
     freq: 1_000,
     payouts: [0.8, 0.12, 0.08],
-    startingStack: 500,
     levelMinutes: 3,
     reserveThresholdX: 0,
   },
@@ -226,7 +231,6 @@ export const SPIN_TIERS: SpinTierSpec[] = [
     // plus the extra mass needed to hold the expectation flat.
     freq: 1_008,
     payouts: [0.8, 0.12, 0.08],
-    startingStack: 500,
     levelMinutes: 3,
     // Deliberately still 1.5, not the 2.0 the 500x used. Raising it would lock
     // the top of the ladder out of thin pools far more often than before, now
@@ -236,8 +240,72 @@ export const SPIN_TIERS: SpinTierSpec[] = [
 ];
 
 /**
- * Blind ladder. Identical at every multiplier — only the starting stack
- * changes, which is what turns one structure into eight.
+ * Denominator for `freq` — DERIVED FROM THE LADDER, never written by hand.
+ *
+ * It was the literal `10_000_000` while the tiers below actually sum to
+ * 10,000,099 (this file's own 500x-retirement note says so in as many words:
+ * "total freq 10,000,099 (unchanged)"). Anything dividing a `freq` by the
+ * literal therefore described a distribution totalling 100.00099%, and the
+ * only reason no money moved is that the one real consumer
+ * (TournamentService's SPEC_TOTAL_FREQ) re-totals the array itself and treats
+ * this as a fallback it never reaches.
+ *
+ * A hand-maintained total of a hand-maintained table is a drift waiting to
+ * happen, and this one had already drifted. Summing the ladder makes the two
+ * incapable of disagreeing: retune a tier and the denominator follows.
+ */
+export const SPIN_FREQ_DENOMINATOR: number = SPIN_TIERS.reduce((sum, t) => sum + t.freq, 0);
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE STACK BELONGS TO THE BOARD, NOT TO THE MULTIPLIER (Dan, 2026-09-01)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan, verbatim: "we used to award more chips depending on if its a higher
+ * multiplier... we are no longer doing that, once a player sits down and
+ * 'buys in' they either get 300 chips for a turbo, or 1000 chips for a deep
+ * stack. as soon as they buy in 300 chips should appear in their action box
+ * (not 0)."
+ *
+ * THIS SUPERSEDES THE 2026-08-23 STACK BANDS. That ruling read "STANDARD /
+ * TURBO SHOULD BE 300. DEEP STACK SHOULD BE 1000 CHIPS, ANY MULTIPLIERS OVER
+ * 25X SHOULD BE 5000 CHIPS" and was implemented as `SpinTierSpec.startingStack`
+ * -- 300/300/1000/1000/1000/1000/5000/5000, chosen by the tier the wheel drew.
+ * The 5000 band is retired with it. Do not reintroduce either; a stack that
+ * depends on the draw is the thing this replaces.
+ *
+ * WHY IT MATTERS BEYOND PREFERENCE. A stack that depends on the multiplier
+ * cannot be known until the wheel lands, so the seat could not hold a real
+ * stack when the player paid: `fn_take_seat_and_buy_in` wrote `stack = 0` and
+ * the true number arrived ~14.8 seconds later on the chip-drop beat. The
+ * client papered over the gap with the row's placeholder and showed 0 whenever
+ * that read failed. Deciding the stack at the BOARD makes it known at buy-in,
+ * which is what lets the seat show 300 the moment the money leaves the wallet.
+ *
+ * Two boards, one blind ladder. Dan, 2026-08-23, still standing: "SPEED
+ * SHOULDN'T CHANGE, ONLY THE STARTING STACK. BLIND LEVELS WILL ALWAYS BE THE
+ * SAME." Level length stays 3 minutes everywhere, so the only thing separating
+ * a Turbo from a Deep Stack is how deep it starts:
+ *
+ *   Turbo        300 chips   15bb, over fast
+ *   Deep Stack  1000 chips   50bb, the same prize played out properly
+ */
+export type SpinSpeed = 'turbo' | 'deep';
+
+/** The whole stack table. Two numbers, and neither depends on the draw. */
+export const SPIN_STACKS: Record<SpinSpeed, number> = {
+  turbo: 300,
+  deep: 1000,
+};
+
+/** What a player sees on the board. Title Case, per the house copy rule. */
+export const SPIN_SPEED_LABELS: Record<SpinSpeed, string> = {
+  turbo: 'Turbo',
+  deep: 'Deep Stack',
+};
+
+/**
+ * Blind ladder. Identical on both boards and at every multiplier.
  */
 export const SPIN_BLINDS: Array<{ small: number; big: number }> = [
   { small: 10, big: 20 },
@@ -283,6 +351,89 @@ export function spinTier(multiplier: number): SpinTierSpec | undefined {
   return SPIN_TIERS.find((t) => t.multiplier === multiplier);
 }
 
+/**
+ * The ladder as a player-facing odds table (2026-08-29, spin buy-in sheet).
+ *
+ * DERIVED from SPIN_TIERS and nothing else, so a retuned tier reprices the
+ * display the moment it lands - a hand-written copy of this table is exactly
+ * the drift SPIN_FREQ_DENOMINATOR's own note warns about. `oneIn` is the
+ * everyday phrasing of the frequency ("1 In 9,921"); `payoutLabel` is the
+ * split by place, already formatted ("Winner Takes All" / "80% / 12% / 8%").
+ */
+export interface SpinOddsRow {
+  multiplier: number;
+  oneIn: number;
+  payoutLabel: string;
+}
+
+export function spinOddsTable(tiers: SpinTierSpec[] = SPIN_TIERS): SpinOddsRow[] {
+  const total = tiers.reduce((s, t) => s + t.freq, 0);
+  return tiers
+    .slice()
+    .sort((a, b) => a.multiplier - b.multiplier)
+    .map((t) => ({
+      multiplier: t.multiplier,
+      oneIn: total > 0 && t.freq > 0 ? Math.round(total / t.freq) : 0,
+      payoutLabel:
+        t.payouts.length <= 1
+          ? 'Winner Takes All'
+          : t.payouts.map((p) => `${Math.round(p * 100)}%`).join(' / '),
+    }));
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  HOW LOUDLY DOES THIS DRAW CELEBRATE? (2026-08-29, round 15)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * A 100x lands about once in 9,921 games and a 2x lands about every other
+ * game, and until now they celebrated almost identically: the confetti burst
+ * was a FLAT 24 pieces for 25x, 50x and 100x alike, the banner read the same
+ * "JACKPOT SPIN" for 25x and 50x, and the sound differed only in volume - the
+ * same chord, turned up. The rarest event in the product had no moment of its
+ * own.
+ *
+ * This is the one place that decides intensity, so the wheel and the sound
+ * can never drift apart (the same discipline as spinOddsTable: derive, never
+ * duplicate). Thresholds intentionally match `tierClass`, which already bands
+ * the wheel's colour.
+ *
+ * ANIMATION LAW (CLAUDE.md 10.6): this only ever ADDS. Every band that
+ * celebrated before still celebrates, for at least as long and at least as
+ * loudly; `mid` is new, so a 10x - a 1-in-100 draw that previously got
+ * nothing at all - now gets a modest burst. No band returns zero pieces, and
+ * nothing here can gate an animation off.
+ */
+export type SpinCelebrationBand = 'base' | 'mid' | 'big' | 'mega';
+
+export interface SpinCelebration {
+  band: SpinCelebrationBand;
+  /** Confetti pieces. Scales with rarity; never zero for a celebrating band. */
+  confettiPieces: number;
+  /** Banner text, or null when the draw is an ordinary one. */
+  label: string | null;
+  /** Audio intensity 0..1, consumed by SoundService so the two cannot drift. */
+  soundLevel: number;
+}
+
+export function spinCelebration(multiplier: number): SpinCelebration {
+  const m = Number(multiplier) || 0;
+  if (m >= 100) {
+    return { band: 'mega', confettiPieces: 72, label: 'MEGA JACKPOT', soundLevel: 1 };
+  }
+  if (m >= 50) {
+    return { band: 'big', confettiPieces: 48, label: 'SUPER JACKPOT', soundLevel: 0.95 };
+  }
+  if (m >= 25) {
+    return { band: 'big', confettiPieces: 32, label: 'JACKPOT SPIN', soundLevel: 0.9 };
+  }
+  if (m >= 10) {
+    // New in round 15. A 1-in-100 draw deserves more than silence.
+    return { band: 'mid', confettiPieces: 16, label: 'BIG SPIN', soundLevel: 0.8 };
+  }
+  return { band: 'base', confettiPieces: 0, label: null, soundLevel: 0.72 };
+}
+
 /** Expected multiplier over a set of tiers (default: all of them). */
 export function expectedMultiplier(tiers: SpinTierSpec[] = SPIN_TIERS): number {
   const total = tiers.reduce((s, t) => s + t.freq, 0);
@@ -296,6 +447,78 @@ export function impliedHouseEdge(
   seats: number = SPIN_SEATS
 ): number {
   return (seats - expectedMultiplier(tiers)) / seats;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE INVARIANT, AS AN ASSERTION
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * The rule at the top of this file is an equality:
+ *
+ *     E[multiplier] = seats × (1 − rake_rate)
+ *
+ * For three years of this file's life it was prose. Prose does not fail a
+ * build, so on 2026-08-20 the rake was banded down to 5% at the top of the
+ * ladder without anyone regenerating a frequency — the two halves of the
+ * equality drifted apart in silence and 36,723.84 chips ended up unowned.
+ *
+ * This is that sentence, executable. It compares the two sides TO THE CENT,
+ * which is the finest money numeric(15,2) can store and therefore the finest
+ * difference that can ever reach a ledger row. Anything coarser would have let
+ * the 5% band through (2.85 vs 2.76 is nine cents, but 8.04% vs 7.87% is only
+ * 0.0017 of edge — a tolerance loose enough to be "close" is loose enough to
+ * be wrong).
+ *
+ * It THROWS rather than returning a boolean so it cannot be called and ignored,
+ * and it is deliberately NOT invoked at module load: a config that refuses to
+ * import takes production down, where a red test only stops a deploy. Stopping
+ * the deploy is the outcome we want. tests/config/spinSpec.test.ts calls it.
+ */
+export interface SpinRakeInvariant {
+  /** Σ multiplier × freq / Σ freq over the full ladder. */
+  expected: number;
+  /** seats × (1 − SPIN_RAKE_RATE) — what the booked rate claims to charge. */
+  implied: number;
+  /** expected − implied, in chips per chip of buy-in. */
+  driftPerBuyIn: number;
+  /** The edge the table actually charges, whatever the booked rate says. */
+  actualEdge: number;
+}
+
+export function spinRakeInvariant(
+  tiers: SpinTierSpec[] = SPIN_TIERS,
+  seats: number = SPIN_SEATS,
+  rakeRate: number = SPIN_RAKE_RATE
+): SpinRakeInvariant {
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const expected = expectedMultiplier(tiers);
+  const implied = seats * (1 - rakeRate);
+  return {
+    expected,
+    implied,
+    driftPerBuyIn: round2(expected) - round2(implied),
+    actualEdge: impliedHouseEdge(tiers, seats),
+  };
+}
+
+/** Throws with the arithmetic if the table and the booked rate disagree. */
+export function assertSpinRakeInvariant(
+  tiers: SpinTierSpec[] = SPIN_TIERS,
+  seats: number = SPIN_SEATS,
+  rakeRate: number = SPIN_RAKE_RATE
+): void {
+  const inv = spinRakeInvariant(tiers, seats, rakeRate);
+  if (inv.driftPerBuyIn !== 0) {
+    throw new Error(
+      `SPIN RAKE INVARIANT BROKEN: the multiplier table expects ${inv.expected.toFixed(6)}x ` +
+        `but a ${(rakeRate * 100).toFixed(2)}% rake over ${seats} seats implies ` +
+        `${inv.implied.toFixed(6)}x. The table actually charges ` +
+        `${(inv.actualEdge * 100).toFixed(2)}%. Changing SPIN_RAKE_RATE requires ` +
+        `regenerating SPIN_TIERS so the frequencies pay the new rate - the rate ` +
+        `alone is a booking entry, the table is what the player is charged.`
+    );
+  }
 }
 
 /**
@@ -326,17 +549,23 @@ export function spinEconomics(
   const tier = spinTier(multiplier);
   const splits = tier?.payouts ?? [1];
 
-  // Distribute to the last place first and give first place the remainder, so
-  // rounding can never make the parts sum to more than the pool. A pool that
-  // pays out more than it holds is the one failure mode that costs real money.
+  /* THE SAME RESIDUAL RULE THE LIVE PAYER USES (2026-08-31 audit).
+     This used to hand the rounding remainder to FIRST place while
+     payoutMath.computePlacePrize - the function that actually pays a
+     tournament - gives it to the LAST PAID PLACE. Both guarantee the parts
+     sum to the pool, so no money differed while buy-ins and multipliers are
+     whole numbers and no fractional cent ever arises. But this module
+     presents itself as "the money for one game", and a model that computes
+     the split by a different rule than the payer is a model that will
+     eventually be believed over the payer. Same rule, one source of truth. */
   const payouts: number[] = new Array(splits.length).fill(0);
   let remaining = prizePool;
-  for (let i = splits.length - 1; i >= 1; i--) {
+  for (let i = 0; i < splits.length - 1; i++) {
     const amt = round2(prizePool * splits[i]);
     payouts[i] = amt;
     remaining = round2(remaining - amt);
   }
-  payouts[0] = remaining;
+  payouts[splits.length - 1] = remaining;
 
   return {
     collected,
@@ -452,6 +681,81 @@ export function reserveCeiling(highestStake: number): number {
 export function requiredSeed(highestStake: number): number {
   const top = SPIN_TIERS[SPIN_TIERS.length - 1];
   return Math.round(highestStake * top.multiplier * 2 * 100) / 100;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE SEED REPAYMENT PLAN
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Dan, 2026-08-23: "IMPLEMENT A REPAYMENT PLAN THAT'S STRUCTURED INTO THE
+ * ARCHITECTURE OF THE POOL, THAT PAYS BACK A CERTAIN PERCENTAGE TO THE FUNDING
+ * WALLET EVERY TIME THE WALLET REACHES A CERTAIN THRESHOLD OF FUNDS."
+ *
+ * WHY INSTALMENTS ARE NOT JUST NICER, THEY ARE THE ONLY THING THAT WORKS.
+ *
+ * This pool has ZERO DRIFT by construction. The identity at the top of this
+ * file — E[multiplier] = seats × (1 − rake) — means E[reserve_out] equals
+ * reserve_in exactly. The rake is taken BEFORE the pool and is the revenue;
+ * what is left is a float that random-walks and never grows in expectation.
+ *
+ * The first repayment rule waited for the pool to hold a whole extra seed's
+ * worth before returning anything. On a zero-drift walk that is a wait for a
+ * large excursion which may never arrive — the owner's capital could sit in
+ * the pool forever. Harvesting the UPSWINGS is the only mechanism available,
+ * because upswings are the only thing a zero-drift process reliably produces.
+ *
+ * THE PLAN
+ *
+ *   FLOOR    the pool must always be able to pay its biggest advertised prize.
+ *            That is requiredSeed(): two top-tier jackpots at the largest
+ *            stake offered. Repayment never takes the balance below it, so the
+ *            100x on the wheel is always real money.
+ *
+ *   TRIGGER  nothing is returned until the balance sits 25% clear of the
+ *            floor. Skimming the instant it peeks above would nibble the
+ *            working capital on every ripple and re-lock the top tiers.
+ *
+ *   RATE     half of everything above the floor goes back. Half, not all,
+ *            because the pool needs to keep some of its own upswing: a wheel
+ *            whose top prize flickers in and out of reach as the balance is
+ *            shaved to the floor is a worse product than one that pays the
+ *            operator back a little more slowly.
+ *
+ * Repayment STOPS the moment the seed is square. It is a loan being retired,
+ * not a rake — Dan, on the same day: "IT RETURNS EVERYTHING IT COLLECTS...
+ * ALL PROCEEDS ARE KEPT THERE TO FUND THE MULTIPLIER PAYOUTS." Once the owner
+ * is whole, every chip stays in the pool. This is why the old ceiling sweep is
+ * gone and is not coming back in a new coat.
+ *
+ * Worked, at a 100 stake: floor 20,000, so nothing moves until 25,000. At
+ * 25,000 the surplus is 5,000 and 2,500 goes home, leaving 22,500 — still
+ * clear of the floor. A 20,000 seed retires in eight such visits.
+ */
+export const SEED_REPAY_TRIGGER_X = 1.25;
+export const SEED_REPAY_RATE = 0.5;
+/** Below this an instalment is dust and only makes ledger noise. */
+export const SEED_REPAY_MIN_INSTALMENT = 1;
+
+/** The balance at which the next instalment becomes due. */
+export function seedRepayTriggerAt(highestStake: number): number {
+  return Math.round(requiredSeed(highestStake) * SEED_REPAY_TRIGGER_X * 100) / 100;
+}
+
+/**
+ * What the next instalment would be at this balance, given what is still owed.
+ * Returns 0 when nothing is due. Mirrors fn_spin_seed_instalment in the
+ * database — a test pins the two together, because a disagreement means the
+ * owner menu quotes one number and the wallet moves another.
+ */
+export function seedInstalmentDue(balance: number, outstandingSeed: number, floor: number): number {
+  if (outstandingSeed <= 0 || floor <= 0) return 0;
+  if (balance < floor * SEED_REPAY_TRIGGER_X) return 0;
+  const surplus = balance - floor;
+  if (surplus <= 0) return 0;
+  const instalment = Math.min(outstandingSeed, surplus * SEED_REPAY_RATE);
+  const rounded = Math.round(instalment * 100) / 100;
+  return rounded >= SEED_REPAY_MIN_INSTALMENT ? rounded : 0;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

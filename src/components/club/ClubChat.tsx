@@ -55,6 +55,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
   const [expanded, setExpanded] = useState(false);
   const [sending, setSending] = useState(false);
   const [unread, setUnread] = useState(0);
+  const [isBannedFromChat, setIsBannedFromChat] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const lastSeenRef = useRef(0);
   const expandedRef = useRef(expanded);
@@ -167,7 +168,7 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
   }, [expanded, messages.length]);
 
   const sendMessage = async () => {
-    if (!text.trim() || sending) return;
+    if (!text.trim() || sending || isBannedFromChat) return;
     setSending(true);
     const tempId = `temp-${Date.now()}`;
     try {
@@ -192,6 +193,15 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
       });
       if (error) {
         reportError(error, 'ClubChat.Send_error');
+        /* 2026-08-26: club chat now refuses a member with an unexpired
+           `blacklists` row (fn_club_chat_is_silenced, called from the INSERT
+           policy). A banned member cannot read their own blacklist row -
+           blacklists_select is owner/admin/agent only - so the ONLY way they
+           learn is the refusal itself. 42501 is the RLS code; anything else is
+           a genuine failure and keeps the old wording. */
+        if ((error as { code?: string }).code === '42501') {
+          setIsBannedFromChat(true);
+        }
         // Mark message as failed instead of silently removing
         setMessages((prev) =>
           prev.map((m) => (m.id === tempId ? { ...m, message_type: 'failed' } : m))
@@ -354,10 +364,13 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
               type="text"
               value={text}
               onChange={(e) => setText(e.target.value.slice(0, 500))}
+              disabled={isBannedFromChat}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && text.trim()) sendMessage();
               }}
-              placeholder="Type a message..."
+              placeholder={
+                isBannedFromChat ? 'You Cannot Post In This Club Chat' : 'Type A Message...'
+              }
               maxLength={500}
               style={{
                 flex: 1,
@@ -372,9 +385,9 @@ export default function ClubChat({ clubId, userId, userName }: ClubChatProps) {
             />
             <button
               onClick={sendMessage}
-              disabled={!text.trim() || sending}
+              disabled={!text.trim() || sending || isBannedFromChat}
               style={{
-                background: text.trim() ? FB.primary : FB.border,
+                background: text.trim() && !isBannedFromChat ? FB.primary : FB.border,
                 color: '#fff',
                 border: 'none',
                 borderRadius: 8,

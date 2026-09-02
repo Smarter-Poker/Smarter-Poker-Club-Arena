@@ -8,16 +8,21 @@ import { useToast } from '../../components/common/Toast';
 import { confirmDialog } from '../../components/common/confirmDialog';
 import { supabase } from '../../lib/supabase';
 import { reportError } from '../../utils/errorReporter';
-import { fmtChips, timeAgo } from '../../utils/format';
-import { useState } from 'react';
+import { fmt, timeAgo } from '../../utils/format';
+import { useMemo, useRef, useState } from 'react';
 import { callClubArenaApi } from '../../services/clubArenaApi';
+import { masterBus } from '../../core/MasterBus';
 import styles from '../MarketplacePage.module.css';
+import ItemArt from './ItemArt';
 import {
   isOwnedRow,
   type Entitlements,
   type InventoryRow,
   type ShopPurchase,
 } from './marketplaceShared';
+
+/** 'Diamonds' for post-2026-08-23 purchases, 'Chips' for legacy rows. */
+const unitOf = (currency?: string | null) => (currency === 'chips' ? 'Chips' : 'Diamonds');
 
 interface MyItemsTabProps {
   clubId: string | null;
@@ -43,49 +48,85 @@ export default function MyItemsTab({
   const toast = useToast();
   const [redeeming, setRedeeming] = useState<string | null>(null);
   const [refunding, setRefunding] = useState<string | null>(null);
+  /**
+   * REFS, NOT THE STATE FLAGS. `refunding`/`redeeming` only become visible to a
+   * later event once React has committed, so two handlers firing in the SAME
+   * tick (iOS touch-then-click, Enter landing alongside a click) both read null
+   * and both proceed - two confirm dialogs over one purchase. StoreTab already
+   * carries this fix for Buy; refund moves real diamonds, so it needs it more.
+   * The state flags stay: they are what disables the buttons.
+   */
+  const refundingRef = useRef(false);
+  const redeemingRef = useRef(false);
 
-  const handleRefund = async (purchaseId: string, itemName: string) => {
-    if (refunding || !clubId) return;
+  const handleRefund = async (purchaseId: string, itemName: string, currency?: string | null) => {
+    if (refundingRef.current || !clubId) return;
+    const unit = unitOf(currency);
+    // CLAIM THE FLAG BEFORE THE DIALOG (Dan 2026-08-25). It was set after the
+    // await, so for the whole time the confirm dialog was open `refunding` was
+    // still null and every Refund button was still enabled - two dialogs could
+    // be opened and both confirmed, for two refunds.
+    refundingRef.current = true;
+    setRefunding(purchaseId);
     if (
       !(await confirmDialog({
-        title: 'Refund purchase',
-        message: `Refund "${itemName}"? The chips go back to the buyer and the copy is revoked. Items that have already been redeemed cannot be refunded automatically.`,
+        title: 'Refund Purchase',
+        message: `Refund "${itemName}"? The ${unit} Go Back To The Buyer And The Copy Is Revoked. Items That Have Already Been Redeemed Cannot Be Refunded Automatically.`,
         confirmText: 'Refund',
         variant: 'danger',
       }))
-    )
+    ) {
+      refundingRef.current = false;
+      setRefunding(null);
       return;
-    setRefunding(purchaseId);
+    }
     try {
-      const res = await callClubArenaApi<{ amount: number; alreadyRefunded?: boolean }>(
+      const res = await callClubArenaApi<{
+        amount: number;
+        currency?: string;
+        alreadyRefunded?: boolean;
+      }>(
         'refund-purchase',
-        { clubId, purchaseId }
+        { clubId, purchaseId },
+        // ONE KEY PER REFUND INTENT, derived from the purchase itself. A retry
+        // of the same refund must carry the same key or the server sees two
+        // distinct intents; the default in callClubArenaApi mints a fresh uuid
+        // per CALL, which defends nothing against the retry it exists for.
+        { idempotencyKey: `refund:${clubId}:${purchaseId}` }
       );
       toast.success(
-        res.alreadyRefunded ? 'That purchase was already refunded' : `Refunded ${res.amount} chips`
+        res.alreadyRefunded
+          ? 'That Purchase Was Already Refunded'
+          : `Refunded ${fmt(res.amount)} ${unitOf(res.currency || currency)}`
       );
       onRedeemed();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Refund failed');
     } finally {
+      refundingRef.current = false;
       setRefunding(null);
     }
   };
   const [showHistory, setShowHistory] = useState(false);
 
   const handleRedeem = async (inventoryId: string) => {
-    if (redeeming) return;
+    if (redeemingRef.current) return;
+    // Same shape as handleRefund: claim first, release on cancel.
+    redeemingRef.current = true;
+    setRedeeming(inventoryId);
     if (
       !(await confirmDialog({
-        title: 'Redeem item',
+        title: 'Redeem Item',
         message:
-          'Mark this item as used/redeemed? This cannot be undone. Once redeemed, you can buy the item again from the Store.',
+          'Mark This Item As Used/Redeemed? This Cannot Be Undone. Once Redeemed, You Can Buy The Item Again From The Store.',
         confirmText: 'Redeem',
         variant: 'default',
       }))
-    )
+    ) {
+      redeemingRef.current = false;
+      setRedeeming(null);
       return;
-    setRedeeming(inventoryId);
+    }
     try {
       const { data, error } = await supabase.rpc('fn_redeem_shop_item', {
         p_inventory_id: inventoryId,
@@ -94,41 +135,101 @@ export default function MyItemsTab({
         throw new Error(data?.error || error?.message || 'Redeem failed');
       }
       // fn_redeem_shop_item now grants a real entitlement and reports it back.
-      const g = data?.granted as { type?: string; uses?: number; seconds?: number } | undefined;
+      const g = data?.granted as
+        | {
+            type?: 'time_bank' | 'throwable' | 'emote_pack' | 'table_skin' | 'avatar' | 'none';
+            uses?: number;
+            seconds?: number;
+            theme_id?: string;
+            avatar_id?: string;
+          }
+        | undefined;
       if (g?.type === 'time_bank' && g.seconds) {
-        toast.success(`Redeemed - +${g.seconds}s of table time added`);
+        toast.success(`Redeemed - +${fmt(g.seconds)}s Of Table Time Added`);
       } else if (g?.type === 'throwable' && g.uses) {
-        toast.success(`Redeemed - ${g.uses} free throws added`);
+        toast.success(`Redeemed - ${fmt(g.uses)} Free Throws Added`);
       } else if (g?.type === 'emote_pack') {
-        toast.success('Redeemed - emote pack unlocked');
+        toast.success('Redeemed - Emote Pack Unlocked');
       } else if (g?.type === 'table_skin') {
-        toast.success('Redeemed - table theme unlocked');
+        toast.success('Redeemed - Table Theme Unlocked');
       } else if (g?.type === 'avatar') {
-        toast.success('Redeemed - avatar unlocked');
+        toast.success('Redeemed - Avatar Unlocked');
       } else {
-        toast.success('Redeemed - your club will fulfil this perk');
+        toast.success('Redeemed - Your Club Will Fulfil This Perk');
+      }
+      if (g?.type === 'table_skin' || g?.type === 'avatar') {
+        masterBus.emit('COSMETIC_OWNERSHIP_CHANGED', {
+          // The function only redeems inventory owned by auth.uid(); the user id
+          // is returned by the grant response in the new contract.
+          userId: String(data.user_id || ''),
+          category: g.type === 'avatar' ? 'avatar' : 'theme_id',
+          assetId: g.avatar_id || g.theme_id,
+          source: 'club-redemption',
+        });
+      }
+      if (g?.type && g.type !== 'none') {
+        masterBus.emit('ENTITLEMENTS_CHANGED', {
+          userId: String(data.user_id || ''),
+          category: g.type,
+          assetId: g.avatar_id || g.theme_id,
+          quantity: g.uses,
+          source: 'club-redemption',
+        });
       }
       onRedeemed();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : 'Redeem failed');
       reportError(err, 'MyItemsTab.handleRedeem');
     } finally {
+      redeemingRef.current = false;
       setRedeeming(null);
     }
   };
 
   const ent = entitlements;
+  /**
+   * Counts, not vague claims. "Table Theme" was printed off a retired generic
+   * receipt, so a member who had bought and redeemed four skins was told the
+   * same thing as one who had bought one.
+   * `theme_asset_unlocks` knows which, so say how many.
+   */
+  const themeCount = ent.themes.length || (ent.themeUnlock ? 1 : 0);
   const entitlementChips = ent.loaded
     ? [
-        ent.timeBankSeconds > 0 ? `${ent.timeBankSeconds}s table time` : null,
-        ent.throwables > 0 ? `${ent.throwables} throws` : null,
-        ent.emotePack ? 'Emote pack' : null,
-        ent.themeUnlock ? 'Table theme' : null,
+        ent.timeBankSeconds > 0 ? `${fmt(ent.timeBankSeconds)}s Table Time` : null,
+        ent.throwables > 0 ? `${fmt(ent.throwables)} Throws` : null,
+        ent.emotePack ? 'Emote Pack' : null,
+        themeCount > 0 ? `${fmt(themeCount)} Table Theme${themeCount > 1 ? 's' : ''}` : null,
         ent.avatars.length > 0
-          ? `${ent.avatars.length} avatar${ent.avatars.length > 1 ? 's' : ''}`
+          ? `${fmt(ent.avatars.length)} Avatar${ent.avatars.length > 1 ? 's' : ''}`
+          : null,
+        ent.avatarCosmetics.length > 0
+          ? `${fmt(ent.avatarCosmetics.length)} Avatar Style${ent.avatarCosmetics.length > 1 ? 's' : ''}`
           : null,
       ].filter(Boolean)
     : [];
+
+  // Inventory rows inherit their purchase's currency (legacy rows were chips).
+  const currencyByPurchase = useMemo(() => {
+    const m = new Map<string, string>();
+    // 'diamonds', matching unitOf's default. These two disagreed, so a row with a
+    // null currency showed "500 Chips" in the inventory table and "500 Diamonds"
+    // in the history table - the same purchase, on the same screen. Chips have
+    // not been purchasable since 2026-08-23 either.
+    purchases.forEach((p) => m.set(p.id, p.currency || 'diamonds'));
+    return m;
+  }, [purchases]);
+
+  const deliveredPurchaseIds = useMemo(
+    () =>
+      new Set(
+        inventory
+          .filter((item) => !!item.redeemed_at || item.status === 'redeemed')
+          .map((item) => item.purchase_id)
+          .filter((purchaseId): purchaseId is string => !!purchaseId)
+      ),
+    [inventory]
+  );
 
   const entitlementStrip =
     entitlementChips.length > 0 ? (
@@ -147,7 +248,9 @@ export default function MyItemsTab({
       <>
         {entitlementStrip}
         <div className={styles.emptyState}>
-          <span className={styles.emptyIcon}>◇</span>
+          <div className={styles.emptyArt}>
+            <ItemArt category="Avatars" seed="empty-inventory" />
+          </div>
           <span className={styles.emptyText}>You Have Not Purchased Any Items Yet.</span>
           <button className={styles.emptyButton} onClick={onGoStore}>
             Browse Store
@@ -178,15 +281,47 @@ export default function MyItemsTab({
             <tbody>
               {inventory.map((it) => {
                 const spent = !isOwnedRow(it);
-                const refunded = it.status === 'refunded';
+                const delivered = !!it.redeemed_at;
+                const activated = !spent && delivered;
                 const redeemed = spent;
+                /* SPENT_STATUSES is {redeemed, refunded, revoked, expired}, and
+                   `redeemed = spent` collapsed all four into one badge - so a
+                   revoked or expired row told the member they had USED
+                   something that was actually taken away or had timed out.
+                   Dan 2026-08-25. */
+                const statusLabel =
+                  it.status === 'refunded'
+                    ? 'Refunded'
+                    : it.status === 'revoked'
+                      ? 'Revoked'
+                      : it.status === 'expired'
+                        ? 'Expired'
+                        : activated
+                          ? 'Active'
+                          : it.status === 'redeemed'
+                            ? 'Redeemed'
+                            : spent
+                              ? 'Spent'
+                              : 'Owned';
+                const rowUnit = unitOf(
+                  it.purchase_id ? currencyByPurchase.get(it.purchase_id) : undefined
+                );
                 return (
                   <tr key={it.id}>
-                    <td style={{ fontWeight: 700 }}>{it.item_name || 'Unknown Item'}</td>
+                    <td style={{ fontWeight: 700 }}>
+                      <span className={styles.rowWithArt}>
+                        <span className={styles.rowArt} aria-hidden="true">
+                          <ItemArt category={it.category} seed={it.item_id || it.id} />
+                        </span>
+                        {it.item_name || 'Unknown Item'}
+                      </span>
+                    </td>
                     <td>
                       <span className={styles.categorySmall}>{it.category || '-'}</span>
                     </td>
-                    <td style={{ fontWeight: 800, color: '#f7c52a' }}>{fmtChips(it.price_paid)}</td>
+                    <td style={{ fontWeight: 800, color: '#00d4ff' }}>
+                      {fmt(it.price_paid)} {rowUnit}
+                    </td>
                     <td style={{ fontSize: '12px', color: '#8b8d91' }}>
                       {timeAgo(it.acquired_at)}
                     </td>
@@ -201,11 +336,11 @@ export default function MyItemsTab({
                           background: redeemed ? 'rgba(139,141,145,0.12)' : 'rgba(49,162,76,0.12)',
                         }}
                       >
-                        {refunded ? 'Refunded' : redeemed ? 'Redeemed' : 'Owned'}
+                        {statusLabel}
                       </span>
                     </td>
                     <td>
-                      {!redeemed && (
+                      {!redeemed && !delivered && (
                         <button
                           className={styles.emptyButton}
                           style={{ padding: '4px 12px', fontSize: '12px' }}
@@ -261,8 +396,8 @@ export default function MyItemsTab({
                       <td>
                         <span className={styles.categorySmall}>{p.item_category || '-'}</span>
                       </td>
-                      <td style={{ color: '#f7c52a', fontWeight: 700 }}>
-                        {fmtChips(p.price_paid)}
+                      <td style={{ color: '#00d4ff', fontWeight: 700 }}>
+                        {fmt(p.price_paid)} {unitOf(p.currency)}
                       </td>
                       <td style={{ fontSize: '12px', color: '#8b8d91' }}>
                         {timeAgo(p.created_at)}
@@ -289,12 +424,14 @@ export default function MyItemsTab({
                           {/* A refunded purchase cannot be refunded again — the
                               server answers "already refunded". Say so here
                               instead of offering the action. */}
-                          {p.refunded_at ? (
+                          {p.refunded_at || deliveredPurchaseIds.has(p.id) ? (
                             <span style={{ fontSize: '11px', color: '#8b8d91' }}>-</span>
                           ) : (
                             <button
                               className={styles.btnDeleteSmall}
-                              onClick={() => handleRefund(p.id, p.item_name || 'this item')}
+                              onClick={() =>
+                                handleRefund(p.id, p.item_name || 'This Item', p.currency)
+                              }
                               disabled={refunding !== null}
                             >
                               {refunding === p.id ? '...' : 'Refund'}

@@ -15,7 +15,7 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useIsMounted } from '../../hooks/useIsMounted';
 import { supabase } from '../../lib/supabase';
 import { useAuthUser } from '../../hooks/useAuthUser';
@@ -25,6 +25,7 @@ import { CSV_BOM, toCSV } from '../../utils/clubSettingsRules';
 import { reportError } from '../../utils/errorReporter';
 import './StatsExport.css';
 import { clubGamesOrFilter } from '../../utils/unionScope';
+import { fetchAllRows } from '../../utils/fetchAllRows';
 
 interface StatsExportProps {
   clubId?: string;
@@ -34,6 +35,21 @@ interface StatsExportProps {
 
 type Dataset = 'members' | 'hands';
 
+/**
+ * How many of a club's tables the hand export can scope through in one go.
+ *
+ * NOT a preference and NOT a row cap that should be paged away: every id is
+ * placed in the query string of the FOLLOWING request, and ~1000 uuids makes
+ * a 37 KB URL that servers reject with 414. Busy clubs hold far more tables
+ * than this (36,403 for the largest when this was written), so the scope is
+ * genuinely narrower than "the whole club" and the export now says so rather
+ * than reporting a row count that reads as complete.
+ *
+ * The real answer is a server-side export that never puts ids in a URL. Until
+ * that exists, honesty is the fix.
+ */
+const CLUB_TABLE_SCAN_LIMIT = 200;
+
 export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
   const { user } = useAuthUser();
   const toast = useToast();
@@ -42,6 +58,8 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
   const [dataset, setDataset] = useState<Dataset>(clubId ? 'members' : 'hands');
   const [dateRange, setDateRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d');
   const [exporting, setExporting] = useState(false);
+  /** Set by fetchOwnHands when the club had more tables than one scan covers. */
+  const handScopeWasClipped = useRef(false);
   const isMounted = useIsMounted();
   const [mounted, setMounted] = useState(false);
 
@@ -73,15 +91,23 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
   const fetchMemberStats = async (): Promise<any[]> => {
     if (!clubId) throw new Error('no club id');
     const resolvedId = await resolveClubUUID(clubId);
-    const { data: members, error } = await supabase
-      .from('club_members')
-      .select(
-        'user_id, role, status, joined_at, hands_played, sessions_played, total_rake_paid, chips_won, chips_lost, biggest_pot'
-      )
-      .eq('club_id', resolvedId)
-      .order('hands_played', { ascending: false })
-      .limit(5000);
-    if (error) throw error;
+    /* AN EXPORT MUST NOT BE SILENTLY SHORT (2026-08-27). This stopped at
+       5,000 members, so a club with 5,001 got a file missing one - with
+       nothing on screen or in the file to say so, and an export is precisely
+       the artefact an owner trusts. Pages instead; a failed page throws
+       rather than writing a partial roster to disk. */
+    const members = await fetchAllRows<any>(
+      (from, to) =>
+        supabase
+          .from('club_members')
+          .select(
+            'user_id, role, status, joined_at, hands_played, sessions_played, total_rake_paid, chips_won, chips_lost, biggest_pot'
+          )
+          .eq('club_id', resolvedId)
+          .order('hands_played', { ascending: false })
+          .range(from, to),
+      { label: 'StatsExport.memberStats' }
+    );
 
     const ids = [...new Set((members || []).map((m: any) => m.user_id).filter(Boolean))];
     const nameMap: Record<string, string> = {};
@@ -130,8 +156,17 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
         // P2-1: union-aware — include tables the club's union created
         .or(await clubGamesOrFilter(resolvedId))
         .order('created_at', { ascending: false })
-        .limit(200);
+        .limit(CLUB_TABLE_SCAN_LIMIT);
       if (tablesErr) throw tablesErr;
+      /* SAY SO WHEN THE SCOPE WAS CLIPPED (2026-08-27). The 200 above is a
+         real constraint, not an oversight - the comment explains it: every id
+         rides in the next request's query string and ~1000 uuids is a 37 KB
+         URL that servers answer 414. But a club can hold far more than 200
+         tables (36,403 for the busiest one when this was written), and the
+         export used to report "Exported N rows" with no hint that it had
+         looked at only the newest 200. A number a club owner trusts must not
+         quietly mean something narrower than it says. */
+      handScopeWasClipped.current = (clubTables?.length ?? 0) >= CLUB_TABLE_SCAN_LIMIT;
       // No tables -> no hands in this club. An empty export is the honest
       // answer; silently widening to every club you ever played in is not.
       if (!clubTables || clubTables.length === 0) return [];
@@ -156,6 +191,7 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
 
     setExporting(true);
     try {
+      handScopeWasClipped.current = false;
       const rows = dataset === 'members' ? await fetchMemberStats() : await fetchOwnHands();
       // convertToCSV([]) returns an empty string, so "no data" used to
       // download a 0-byte file and report success. Say so instead.
@@ -185,7 +221,17 @@ export function StatsExport({ clubId, isOpen, onClose }: StatsExportProps) {
         );
       }
 
-      if (isMounted.current) toast.success(`Exported ${rows.length.toLocaleString()} rows`);
+      if (isMounted.current) {
+        toast.success(`Exported ${rows.length.toLocaleString()} rows`);
+        /* The count above is true but narrower than it sounds when the scope
+           was clipped, and a club owner has no other way to learn that. */
+        if (handScopeWasClipped.current) {
+          toast.info(
+            `Scoped To This Club's ${CLUB_TABLE_SCAN_LIMIT} Most Recent Tables. ` +
+              'Older Hands Are Not In This File.'
+          );
+        }
+      }
       onClose();
     } catch (error) {
       reportError(error, 'StatsExport.Failed_to_export');

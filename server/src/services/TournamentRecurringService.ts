@@ -14,8 +14,15 @@
  */
 
 import { supabase } from './supabase.js';
+import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
-import { buyInFor, wholeChips } from '../config/buyIn.js';
+import nodeCrypto from 'node:crypto';
+import { DEFAULT_RAKE_RATE, buyInFor, rakeRateFor, wholeChips } from '../config/buyIn.js';
+import { gameLaneFor, horseHash, isActiveNow } from './HorseBehavior.js';
+import { bankrollPolicyFor, canEnterTournament } from './HorseBankroll.js';
+import { bankrollEvent } from './HorseBankrollTelemetry.js';
+import { buildLadder } from '../tournament/blindLadder.js';
+import { clampSeatsForVariant } from '../config/tableSeating.js';
 
 /**
  * Derive the two buy-in columns from ONE whole-dollar total.
@@ -31,8 +38,32 @@ import { buyInFor, wholeChips } from '../config/buyIn.js';
  * `config.rake` is no longer read by anything — it was the second half of a
  * pair that nothing kept in agreement.
  */
-function buyInColumns(buyIn: number): { buy_in_amount: number; buy_in_fee: number } {
-  const { prize, fee } = buyInFor(buyIn);
+/**
+ * Dan 2026-08-25: "HEADS UP EVENTS ARE ONLY A 5% RAKE, SO A 1 CHIP BUY IN X 2
+ * PLAYERS = 5% OF 2 CHIPS, SO WINNER TAKES ALL = 1.90 PAYOUT."
+ *
+ * A duel is two entries, so a 5% cut of the table is 5% of each seat: 0.95 in,
+ * 0.05 to the house, twice, and the winner takes the 1.90 pool. Exactly the
+ * number Dan wrote.
+ *
+ * ─── NO LONGER THE RULE, ONLY A NAME FOR IT (2026-08-27) ────────────────────
+ *
+ * This constant was declared here and had exactly ONE consumer, four lines of
+ * code away. The other five creation paths — the owner create modal, the legacy
+ * tournament-page form, the table-config path, the client horse orchestrator
+ * and ScheduledTournamentService — all called splitBuyIn at the 10% default on
+ * a two-seat game, because the rule lived in a service they do not import.
+ *
+ * It is DERIVED from rakeRateFor now rather than written down twice, so it
+ * cannot drift from the helper the other five paths were routed through.
+ */
+export const SNG_RAKE_RATE = rakeRateFor({ tournamentType: 'SNG', maxPlayers: 2 });
+
+function buyInColumns(
+  buyIn: number,
+  rakeRate: number = DEFAULT_RAKE_RATE
+): { buy_in_amount: number; buy_in_fee: number } {
+  const { prize, fee } = buyInFor(buyIn, rakeRate);
   return { buy_in_amount: prize, buy_in_fee: fee };
 }
 
@@ -147,53 +178,94 @@ const JAQK_CLUB_ID = 'a0000000-0000-0000-0000-000000000001';
 // Club JAQK. Every scheduled game now names the union explicitly, at creation.
 const MIDWAY_UNION_ID = 'fade0000-0000-0000-0000-000000000001';
 
-const BLIND_STRUCTURES = {
-  TURBO: [
-    { level: 1, smallBlind: 25, bigBlind: 50, ante: 5, durationMinutes: 4 },
-    { level: 2, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 4 },
-    { level: 3, smallBlind: 100, bigBlind: 200, ante: 20, durationMinutes: 3 },
-    { level: 4, smallBlind: 150, bigBlind: 300, ante: 30, durationMinutes: 3 },
-    { level: 5, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 3 },
-    { level: 6, smallBlind: 300, bigBlind: 600, ante: 75, durationMinutes: 2 },
-    { level: 7, smallBlind: 500, bigBlind: 1000, ante: 100, durationMinutes: 2 },
-    { level: 8, smallBlind: 750, bigBlind: 1500, ante: 150, durationMinutes: 2 },
-  ],
-  STANDARD: [
-    { level: 1, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 10 },
-    { level: 2, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 10 },
-    { level: 3, smallBlind: 75, bigBlind: 150, ante: 15, durationMinutes: 10 },
-    { level: 4, smallBlind: 100, bigBlind: 200, ante: 25, durationMinutes: 8 },
-    { level: 5, smallBlind: 150, bigBlind: 300, ante: 30, durationMinutes: 8 },
-    { level: 6, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 8 },
-    { level: 7, smallBlind: 300, bigBlind: 600, ante: 60, durationMinutes: 6 },
-    { level: 8, smallBlind: 400, bigBlind: 800, ante: 80, durationMinutes: 6 },
-    { level: 9, smallBlind: 500, bigBlind: 1000, ante: 100, durationMinutes: 5 },
-    { level: 10, smallBlind: 750, bigBlind: 1500, ante: 150, durationMinutes: 5 },
-  ],
-  HYPER_TURBO: [
-    { level: 1, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 2 },
-    { level: 2, smallBlind: 100, bigBlind: 200, ante: 25, durationMinutes: 2 },
-    { level: 3, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 2 },
-    { level: 4, smallBlind: 400, bigBlind: 800, ante: 100, durationMinutes: 1 },
-    { level: 5, smallBlind: 800, bigBlind: 1600, ante: 200, durationMinutes: 1 },
-  ],
-  SNG_6MAX: [
-    { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 3 },
-    { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 3 },
-    { level: 3, smallBlind: 25, bigBlind: 50, ante: 5, durationMinutes: 3 },
-    { level: 4, smallBlind: 50, bigBlind: 100, ante: 10, durationMinutes: 3 },
-    { level: 5, smallBlind: 75, bigBlind: 150, ante: 15, durationMinutes: 3 },
-    { level: 6, smallBlind: 100, bigBlind: 200, ante: 25, durationMinutes: 2 },
-    { level: 7, smallBlind: 150, bigBlind: 300, ante: 30, durationMinutes: 2 },
-    { level: 8, smallBlind: 200, bigBlind: 400, ante: 50, durationMinutes: 2 },
-  ],
-  SPIN: [
-    { level: 1, smallBlind: 10, bigBlind: 20, ante: 0, durationMinutes: 2 },
-    { level: 2, smallBlind: 15, bigBlind: 30, ante: 0, durationMinutes: 2 },
-    { level: 3, smallBlind: 25, bigBlind: 50, ante: 0, durationMinutes: 2 },
-    { level: 4, smallBlind: 50, bigBlind: 100, ante: 0, durationMinutes: 1 },
-    { level: 5, smallBlind: 100, bigBlind: 200, ante: 0, durationMinutes: 1 },
-  ],
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE LADDERS ARE GENERATED NOW, AND THEY ARE DEEP (2026-08-31)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * These were hand-written arrays of 5-10 levels. Measured across 579 completed
+ * MTTs, the average event REACHED level 14 and the deepest reached 124 — so
+ * 95.7% of tournaments spent their entire late game on blindEscalation's
+ * overflow path, which doubled the blinds every level. 38.1% finished with
+ * every chip in play worth under three big blinds, and 41 events ended with the
+ * big blind pinned at the DECIMAL(10,2) ceiling of 10,000,000.
+ *
+ * buildLadder emits chip-friendly levels to any depth from a mantissa cycle, so
+ * the ladder now covers the tournament that is actually played instead of the
+ * first forty minutes of it. LEVEL 1 OF EACH IS UNCHANGED, so every lobby card,
+ * advertised structure and starting-stack-in-big-blinds figure still reads
+ * exactly as it did.
+ */
+export const BLIND_STRUCTURES = {
+  // A turbo reaches its own conclusion well inside 24 levels; deeper than that
+  // and the ladder's own 1.58x cadence walks past MAX_BLIND_VALUE, which is how
+  // the first draft of this generated a 25,000,000 big blind at level 30.
+  TURBO: buildLadder({
+    startBigBlind: 50,
+    speed: 'TURBO',
+    levels: 24,
+    openingMinutes: 4,
+    floorMinutes: 2,
+    anteFromLevel: 1,
+  }),
+  // 40 levels at ~1.33x — the reference MTT ladder.
+  STANDARD: buildLadder({
+    startBigBlind: 50,
+    speed: 'STANDARD',
+    levels: 40,
+    openingMinutes: 10,
+    floorMinutes: 5,
+    anteFromLevel: 2,
+  }),
+  HYPER_TURBO: buildLadder({
+    startBigBlind: 100,
+    speed: 'HYPER_TURBO',
+    levels: 16,
+    openingMinutes: 2,
+    floorMinutes: 1,
+    anteFromLevel: 1,
+  }),
+  SNG_6MAX: buildLadder({
+    startBigBlind: 20,
+    speed: 'TURBO',
+    levels: 20,
+    openingMinutes: 3,
+    floorMinutes: 2,
+    anteFromLevel: 3,
+  }),
+  /**
+   * HEADS-UP, three minutes a level (Dan 2026-08-25: "IT NEEDS TO DISPLAY THE
+   * BLIND LEVELS (3 MINUTES) AND THE STARTING STACK 300 FOR TURBO AND 1000 FOR
+   * DEEP STACK").
+   *
+   * Heads-Up was running BLIND_STRUCTURES.STANDARD — ten-minute opening levels
+   * built for a full-field MTT — with a 1,500 stack into 25/50. That is 30 big
+   * blinds and a clock that barely moves: a duel that should be over in
+   * minutes was structured like a two-hour tournament, and the lobby card said
+   * so ("10 Min Levels", "1,500").
+   *
+   * The ladder is the Spin ladder, because a Spin and a Heads-Up are the same
+   * shape of game — bought seats, no clock to wait for, a stack measured in
+   * big blinds rather than chips. 300 into 10/20 is 15bb (turbo); 1,000 is
+   * 50bb (deep). Identical level lengths across the whole ladder, which is the
+   * rule spinSpec already settled on: tier identity lives in stack depth, not
+   * in the clock.
+   */
+  /**
+   * THE DUEL'S LADDER IS THE SPEC'S (2026-08-31, Phase 3). This was a second
+   * hand-typed copy of the same twelve rows; the name is kept because the
+   * board and its pinning test both read it, but the numbers now have exactly
+   * one home -- src/config/headsUpSpec.ts, mirrored byte-for-byte here.
+   */
+  HEADS_UP_3MIN: HEADS_UP_BLIND_STRUCTURE,
+  /**
+   * BLIND_STRUCTURES.SPIN IS GONE (2026-08-31, Phase 3). It was a five-level,
+   * two-minute ladder that contradicted spinSpec from level 3 up (25/50 where
+   * the spec says 20/40, then 50/100 and 100/200 against 30/60 and 40/80) and
+   * claimed a two-minute clock the spec sets at three. Nothing should ever
+   * hand-type a Spin ladder again: createSpin builds its twelve rows from
+   * spinBlindsForLevel, and so does the schedule path as of this change.
+   */
 };
 
 const PAYOUT_STRUCTURES = {
@@ -222,8 +294,106 @@ const PAYOUT_STRUCTURES = {
   ],
 };
 
-import { SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
+import {
+  SPIN_TIERS,
+  SPIN_STACKS,
+  SPIN_SPEED_LABELS,
+  spinBlindsForLevel,
+  type SpinSpeed,
+} from '../config/spinSpec.js';
+import {
+  HEADS_UP_BLIND_STRUCTURE,
+  HEADS_UP_BUYINS,
+  HEADS_UP_GAME_TYPES,
+  HEADS_UP_PAYOUTS,
+  HEADS_UP_SEATS,
+  HEADS_UP_STACKS,
+} from '../config/headsUpSpec.js';
 import { secureRandomInt } from '../engine/CryptoRandom.js';
+
+/**
+ * THE ONE MAP FROM A CONFIG'S VARIANT KEY TO THE `tournaments.game_type` VALUE.
+ *
+ * 2026-08-31 audit. There were FOUR hand-kept copies of this map in this file
+ * and three of them were incomplete. The Spin copy had already been fixed, and
+ * its comment stated the rule that the other three then went on to break:
+ *
+ *   "`plo6` was missing from it — so a PLO6 Spin config would have been
+ *    silently created as NLH, giving players a different game from the one on
+ *    the tile. Every member of SPIN_GAME_TYPES must have an entry here."
+ *
+ * The XMTT and MTT copies omitted `plo6`; the SNG copy omitted `plo6` AND
+ * `short_deck`; none of the four knew `flh` or `flo8`, which became creatable
+ * tournament variants on 2026-08-31. Because the fallback is a silent
+ * `|| 'NLH'`, every gap produces the same failure: the tile advertises one
+ * game and the players are dealt another.
+ *
+ * One map, so a variant added to the catalogue cannot be half-adopted. The
+ * fallback stays NLH so an unrecognised config still produces a game rather
+ * than a gap in the schedule, but it is REPORTED now instead of silent.
+ */
+const DB_GAME_TYPE: Record<string, string> = {
+  nlh: 'NLH',
+  plo4: 'PLO4',
+  plo5: 'PLO5',
+  plo6: 'PLO6',
+  plo8: 'PLO8',
+  short_deck: 'SHORT_DECK',
+  flh: 'FLH',
+  flo8: 'FLO8',
+};
+
+/**
+ * A GUARANTEE REFUSAL IS PERMANENT, AND SOMEBODY HAS TO BE TOLD.
+ *
+ * trg_tournaments_guarantee_affordable refuses an event whose guaranteed
+ * prize the funding bank cannot cover, raising "Club X cannot guarantee N
+ * chips ... Add chips to the bank to cover the guarantee." Every hourly config
+ * in this file carries a guarantee, so a short bank means the event silently
+ * never happens: this service retried three times, five seconds apart, logged
+ * to the error reporter and moved on. Nobody who could fix it was told, and
+ * the 2026-08-29 migration records what that looks like at scale — "Midway
+ * Union ... was refused ~570 spawns/hour".
+ *
+ * ScheduledTournamentService already does this half correctly. This is the
+ * same call from the same signature. fn_notify_guarantee_bank_short dedupes
+ * on unread per recipient per bank, so an hourly schedule that keeps failing
+ * produces ONE standing bell notification rather than a storm.
+ *
+ * Retrying is also pointless — the bank does not refill in ten seconds — so
+ * the caller breaks out of its retry loop on a true return.
+ */
+function isGuaranteeRefusal(error: { message?: string } | null | undefined): boolean {
+  return /cannot guarantee/i.test(String(error?.message ?? ''));
+}
+
+async function notifyGuaranteeShort(clubId: string | null | undefined, where: string) {
+  if (!clubId) return;
+  const { error } = await supabase.rpc('fn_notify_guarantee_bank_short', { p_club_id: clubId });
+  if (error) {
+    reportError(
+      new Error(
+        `[RecurringService] ${where}: guarantee refusal could not notify: ${error.message}`
+      ),
+      'TournamentRecurringService.guarantee_notify_failed'
+    );
+  }
+}
+
+/** The `game_type` a config's variant becomes, loudly if we do not know it. */
+function dbGameTypeFor(gameVariant: string | null | undefined, where: string): string {
+  const key = String(gameVariant ?? '').toLowerCase();
+  const mapped = DB_GAME_TYPE[key];
+  if (mapped) return mapped;
+  reportError(
+    new Error(
+      `[RecurringService] ${where}: unmapped game variant "${gameVariant}" - created as NLH. ` +
+        `Add it to DB_GAME_TYPE.`
+    ),
+    'TournamentRecurringService.unmapped_game_variant'
+  );
+  return 'NLH';
+}
 
 // The local SPIN_MULTIPLIERS table that lived here — one of THREE that
 // disagreed (EV 3.00 designed, 2.75 here, 2.24 in the engine fallback), and
@@ -610,6 +780,132 @@ function seatFirstHumanWindowMs(): number {
 function openingHorsesForSeatFirst(seats: number): number {
   return Math.max(0, seats - 1);
 }
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * HELD-EMPTY SEAT-FIRST GAMES (Dan 2026-08-26, binding)
+ * ═══════════════════════════════════════════════════════════════════════════
+ * "LEAVE ... 33% OF ALL SPINS AND 50% OF HEADS UP [EMPTY]."
+ *
+ * A board where every Spin already has two horses in it never offers a player
+ * the experience of STARTING a game. So a deterministic share of seat-first
+ * games opens with ZERO horses and stays empty until a human buys a seat. The
+ * moment one does, topUpWithHorses fills the remaining seats and the game
+ * starts on the normal start-when-full rule.
+ *
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE HOLD ROTATES. IT IS NOT A LIFE SENTENCE. (2026-08-27)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * This originally hashed the tournament id ALONE, so a board that rolled
+ * held-empty was held empty FOREVER. On its own that is only a stalled game;
+ * combined with how the board decides what to open, it killed the entire
+ * seat-first product in under two hours:
+ *
+ *   1. ensureBoardOpen treats ANY joinable REGISTERING instance as covering
+ *      its price point, so it opens no replacement while one exists.
+ *   2. A held-empty instance never fills, so it never starts, so it never
+ *      leaves REGISTERING.
+ *   3. Its price point is therefore covered by a husk, permanently.
+ *   4. A NOT-held instance fills, starts, completes, and is replaced by a
+ *      fresh instance that re-rolls the hold.
+ *
+ * That is an absorbing Markov chain: every price point keeps re-rolling until
+ * it draws "held", and then it is stuck there. With ~300 Spins completing an
+ * hour, all 48 price points absorbed within about two hours of the rule
+ * shipping at 00:56 UTC on 2026-08-27.
+ *
+ * MEASURED ON PRODUCTION 2026-08-27, ~20 hours later. The 49 surviving
+ * REGISTERING boards were 90% under the 33 threshold and 100% under 50 — the
+ * board had become a sieve that retains precisely the held-empty rolls. The
+ * hash itself is fine (2,000 random uuids gave 33%/50%, and the last 1,000
+ * COMPLETED seat-first games gave 30%/47%); it was survivorship, not skew.
+ * Spins fell from ~300 starts/hour to 1, Heads-Up from ~150/hour to ZERO, and
+ * nothing on the platform reported it because every refusal on this path
+ * returns 0 silently.
+ *
+ * So the hold is now bucketed in time, like its sibling cashTableHeldEmpty.
+ * (An earlier version of this comment claimed that sibling "was written
+ * correctly and rotates every 2h" — it was not. It folded the bucket into the
+ * same weak hash this block warns about, so its holds WALKED rather than
+ * re-rolled and a table could stay held ~30 hours. Fixed 2026-08-30 with the
+ * same mix32 avalanche used below; the avalanche now lives in HorseBehavior.) A
+ * board held empty in one bucket is fillable in the next, so a price point
+ * cannot ossify, while at any given INSTANT the requested share of the board
+ * is still genuinely empty and waiting for a human. That is what Dan asked
+ * for; a permanently dead board is not.
+ *
+ * The bucket is SHORTER than the cash room's 2h on purpose. A cash table is
+ * long-lived, so a 2h hold is a fraction of its life. A Spin instance lives
+ * minutes, so a 2h hold outlives many whole games and is what let one roll
+ * ossify a price point for a day.
+ */
+export const SEAT_FIRST_EMPTY_BUCKET_MS = 30 * 60_000;
+
+/**
+ * A REAL AVALANCHE, BECAUSE THE ROTATION DEPENDS ON IT.
+ *
+ * `horseHash` is a weak multiply-add (`h * 31 + c`), and this file and
+ * HorseBehavior both already record that a LOW-BIT modulo of it clusters on
+ * structured ids. Rotation makes that worse, not better: consecutive bucket
+ * numbers are the most structured input there is, so folding the bucket into
+ * the same weak hash leaves neighbouring buckets CORRELATED — and a board
+ * whose buckets correlate stays held for hours at a time, which is the bug
+ * being fixed here wearing a smaller hat. Caught by
+ * seatFirstHoldRotates.test.ts, which found a board held for 8 straight
+ * buckets (four hours) with the naive `${id}:hold-empty:${bucket}` string.
+ *
+ * This is the murmur3 finalizer. It is not cryptography; it is the standard
+ * cheap way to make every output bit depend on every input bit, which is
+ * exactly the property "does this board rotate" needs and the property
+ * `horseHash` does not have.
+ */
+function mix32(x: number): number {
+  let h = x >>> 0;
+  h = (h ^ (h >>> 16)) >>> 0;
+  h = Math.imul(h, 0x85ebca6b) >>> 0;
+  h = (h ^ (h >>> 13)) >>> 0;
+  h = Math.imul(h, 0xc2b2ae35) >>> 0;
+  h = (h ^ (h >>> 16)) >>> 0;
+  return h;
+}
+
+export function seatFirstHeldEmpty(
+  tournamentId: string,
+  seats: number,
+  nowMs: number = Date.now()
+): boolean {
+  const frac = seats <= 2 ? 0.5 : 0.33;
+  const bucket = Math.floor(nowMs / SEAT_FIRST_EMPTY_BUCKET_MS);
+  // Golden-ratio odd constant so the bucket spreads across the whole word
+  // before the finalizer mixes it into the id's hash.
+  const seed = (horseHash(`${tournamentId}:hold-empty`) ^ Math.imul(bucket, 0x9e3779b1)) >>> 0;
+  return mix32(seed) % 100 < frac * 100;
+}
+
+/**
+ * The pure half of pickFreeHorses: given the FULL fleet id list, drop the
+ * busy horses (the 4-game cap, computed by the caller from horseLoadMap) and
+ * apply the lane / activity-window filters. Exported so the unit tests can
+ * prove two properties without a database: a busy horse is never selected,
+ * and selection can reach the whole fleet rather than a stable first page.
+ */
+export function selectHorseCandidates(
+  fleetIds: string[],
+  busy: ReadonlySet<string>,
+  allLanes: boolean,
+  hourUTC: number
+): string[] {
+  return fleetIds.filter((id) => {
+    if (!id || busy.has(id)) return false;
+    // Freeroll override: every horse that is currently PLAYING is eligible,
+    // cash lane included. See topUpWithHorses opts.allLanes.
+    if (allLanes) return isActiveNow(id, hourUTC);
+    // Game lanes (Dan 2026-08-26): cash-only horses never enter events —
+    // tournaments, spins and heads-up draw from the events/both lanes.
+    return gameLaneFor(id) !== 'cash';
+  });
+}
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  SEAT-FIRST GAMES (Dan, 2026-08-21)
@@ -631,8 +927,469 @@ function openingHorsesForSeatFirst(seats: number): number {
  * Larger SNG fields (6-max, 9-max) and MTTs keep the scheduled-registration
  * model: they are events, not tables you walk up to.
  */
+/** The columns joinability is decided from. Kept minimal so the read stays cheap. */
+export interface TournamentTableJoinability {
+  status?: string | null;
+  is_deleted?: boolean | null;
+}
+
+/**
+ * Can a player actually sit at this table row?
+ *
+ * A deleted row is gone and a closed row cannot be seated into -
+ * fn_take_seat_and_buy_in and the engine's own discovery both read
+ * status IN ('waiting','running'). Anything else is joinable; an unknown
+ * status is treated as joinable on purpose, because the failure direction
+ * that matters is calling a live table dead and opening a duplicate board.
+ */
+export function isJoinableTableRow(row: TournamentTableJoinability | null | undefined): boolean {
+  if (!row) return false;
+  if (row.is_deleted === true) return false;
+  return String(row.status ?? '').toLowerCase() !== 'closed';
+}
+
 export function isSeatFirstFormat(variant: string, maxPlayers: number): boolean {
   return String(variant).toLowerCase() === 'spin' || maxPlayers <= 2;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * MTT PRE-START HORSE RAMP — Dan 2026-08-23, BINDING, STANDARD PRACTICE
+ * ───────────────────────────────────────────────────────────────────────────
+ * "HORSES NEED TO BE REGISTERING FOR MTT TOURNAMENTS UP TO AN HOUR BEFORE THE
+ *  TOURNAMENT STARTS. PLAYERS DON'T JUMP IN AND PLAY TOURNAMENTS THAT HAVE NO
+ *  PLAYERS IN THEM."
+ *
+ * WHAT WAS ACTUALLY HAPPENING
+ * Horse seeding ran at exactly two moments: once when the tournament row was
+ * created, and again only AFTER the start time had passed. Neither covers the
+ * hour a human spends looking at the lobby deciding what to play. Measured on
+ * production while writing this: "All-In or Fold Frenzy", a 200-seat event,
+ * had been sitting in the lobby for SEVENTEEN AND A HALF HOURS reading 0/200,
+ * two minutes from its start. Nobody registers for that, so it stayed empty,
+ * and the only thing that ever filled it was the past-start rescue - by which
+ * point every human who looked at it had already gone elsewhere.
+ *
+ * The spawn-time check made this inevitable rather than unlucky: it asked "does
+ * this start within 15 minutes?" ONCE, at creation. An event published a day
+ * ahead answered no, and was never asked again.
+ *
+ * THE CURVE, AND WHY IT IS NOT A STEP
+ * A field that appears all at once reads as fake, and a field that appears at
+ * T-60 and then never moves reads as dead. Real MTT registration is slow early
+ * and piles in near the close, so the target is quadratic in elapsed ramp time:
+ * gentle for the first half hour, steep in the last ten minutes. A player
+ * refreshing the lobby sees a number that keeps going up, which is the actual
+ * product goal here - not the final count.
+ *
+ * THREE SAFETY PROPERTIES, ALL DELIBERATE
+ *  1. It never targets more than `maxPlayers - 1`, so the ramp can NEVER trip
+ *     the `maxReached` start gate in discoverTournaments and begin an event
+ *     ahead of its own clock. There is always a seat for a human.
+ *  2. It is capped at MTT_PRESTART_MAX_HORSES regardless of field size,
+ *     UNLESS the event carries a guarantee - see the guarantee block in the
+ *     function. Every registration is a REAL buy-in through
+ *     fn_register_horse_for_tournament (real wallet debit, real rake, real
+ *     prize-pool contribution), so an uncapped ramp on a 1,000-seat event
+ *     would spend the club's chips on a field nobody asked for. A guarantee
+ *     is the one case where the club has ALREADY promised that money, so
+ *     covering it with entries is strictly better than paying it as overlay.
+ *     Filling the rest is the past-start top-up's job, on the clock.
+ *  3. Seat-first games (Spin, heads-up) return 0 and are left completely
+ *     alone. Their binding rule is that they start when seats are BOUGHT, and
+ *     registrations are not seats.
+ *
+ * Returns the number of registered entrants the field SHOULD have right now.
+ * The caller tops up toward it and never removes anybody.
+ */
+/**
+ * How far ahead of the gun the field starts building.
+ *
+ * WAS ONE HOUR, AND THAT IS WHY THE BOARD WAS DEAD (Dan 2026-08-26: "horses
+ * should be registering and playing the tournaments anyways").
+ *
+ * Measured on production the day this changed: of 37 REGISTERING MTTs, THIRTY
+ * SIX had a field of exactly ZERO, and the nearest one to the gun was 86
+ * minutes out - just outside the window. So the entire tournament board read
+ * "0 entered" at every moment except the final hour of each event. A lobby
+ * full of empty games is not a lobby anybody joins; the one thing that makes a
+ * player enter a tournament is other players already in it.
+ *
+ * 72 hours matches the lobby's own publish window exactly
+ * (tournamentScheduleWindow). The rule is now simply: IF IT IS ON THE BOARD,
+ * IT LOOKS LIKE A REAL EVENT. Nothing is announced that is not also populated.
+ *
+ * WHY THIS IS AFFORDABLE, measured rather than assumed. The old note below
+ * said the pool was finite and "most of them already dealing cash". That was
+ * true when a seated horse was invisible to every tournament; it stopped being
+ * true when horses learned to multi-table. Live at the time of writing:
+ *
+ *   584 horses x 4 games each   = 2,336 slots
+ *   in use (seats + pre-starts) =   664
+ *   FREE                        = 1,672
+ *   this change costs           =   296  (17.7% of what is free)
+ *
+ * and 209 horses are completely idle. The squared curve does the shaping: an
+ * event three days out gets the `Math.max(1, ...)` floor of one entrant, and
+ * the field builds toward MTT_PRESTART_MAX_HORSES as the gun approaches. Far
+ * events look started, near events look busy, which is what a real room looks
+ * like.
+ *
+ * NOTE THIS IS NO LONGER TIED TO HORSE_SEED_WITHIN_MS. Those two were aligned
+ * on 2026-08-23 when both meant "about to start". They now mean different
+ * things: this is the whole build, that is the head start given at SPAWN, and
+ * a spawn-time seed three days early would put chips in a pool for an event
+ * nobody can see yet. See the note on HORSE_SEED_WITHIN_MS.
+ */
+export const MTT_PRESTART_RAMP_MS = 72 * 60 * 60 * 1000;
+export const MTT_PRESTART_MAX_HORSES = 24;
+/**
+ * Most entrants the ramp will add in a single tick.
+ *
+ * registerHorses buys in ONE HORSE PER RPC, sequentially, and the ramp runs
+ * inside discoverTournaments - the same 5-second loop that decides when
+ * tournaments START. A cold engine coming up two minutes before a big event
+ * would compute a target of 23 and fire 23 round trips in one pass, holding
+ * up every other tournament's start check behind it.
+ *
+ * It is also the more honest shape. Twenty-three entrants appearing between
+ * one lobby refresh and the next reads as a script; a few at a time reads as
+ * people arriving. If a burst is ever genuinely needed - an engine restart
+ * right before the gun - the past-start top-up is the backstop and it aims at
+ * a full field anyway.
+ */
+export const MTT_PRESTART_MAX_STEP = 6;
+
+/**
+ * Does this format start on SEATS BOUGHT rather than on registrations?
+ *
+ * Deliberately BROADER than isSeatFirstFormat, and deliberately not merged
+ * with it. isSeatFirstFormat answers "does topUpWithHorses need to seat this
+ * player rather than register them", which is spin-or-heads-up. The START GATE
+ * in discoverTournaments asks a different question and gets a different
+ * answer: it treats `variant === 'sng'` as seat-first at ANY size.
+ *
+ * Those two disagreed for a 6-max SNG, and the ramp used the narrower one. It
+ * would have registered horses into a game whose start gate counts seats, so
+ * the registrations would never become seats and never start anything - while
+ * current_players climbed to 6/6 with zero seats sold. That is precisely the
+ * drift this codebase already fought once, with live spins reading 3/3 on two
+ * bought seats (which then refuses every further sit-down as 'tournament_full')
+ * and 0/3 on three.
+ *
+ * No such tournament exists today - every live sng is heads-up - but the 6-max
+ * shape is generated by the SNG board and is one config flag away. The ramp
+ * therefore uses the STRICTER test on purpose: being stricter can only ever
+ * mean "we declined to ramp something we could have", never "we ramped
+ * something that breaks".
+ */
+/**
+ * Dan 2026-08-23: "each horse can play up to 4 tables".
+ *
+ * The ceiling on how many live games one horse identity may be committed to
+ * at once. Below it a horse is pickable; at it, it is not.
+ */
+export const HORSE_MAX_CONCURRENT_TABLES = 4;
+
+export function horseAtCapacity(load: number): boolean {
+  return (Number(load) || 0) >= HORSE_MAX_CONCURRENT_TABLES;
+}
+
+/**
+ * One entry in a load list: a bare user id, or a user id carried with the
+ * tournament the seat/registration belongs to. The richer shape is what makes
+ * the seat-first dedupe below possible; the bare one is kept because most
+ * callers and every unit test are only exercising the counting.
+ */
+export type LoadRef =
+  | string
+  | null
+  | undefined
+  | { user_id?: string | null; tournament_id?: string | null };
+
+function refUser(ref: LoadRef): string | null {
+  if (!ref) return null;
+  if (typeof ref === 'string') return ref;
+  return ref.user_id || null;
+}
+
+function refTournament(ref: LoadRef): string | null {
+  if (!ref || typeof ref === 'string') return null;
+  return ref.tournament_id || null;
+}
+
+/**
+ * Games-per-horse, from the two things that constitute a commitment: a live
+ * seat, and a registration in a tournament that has not started yet.
+ *
+ * Pure so the double-counting rule is testable without a database, because
+ * that is the part with a real bug in it. A RUNNING tournament's entrants
+ * hold SEATS, so they arrive through the seat list; if the caller also passed
+ * them as registrations every tournament regular would read as 2 and the
+ * effective ceiling would silently halve.
+ *
+ * ── THE HOLE IN THAT REASONING, MEASURED 2026-08-28 ──
+ *
+ * "RUNNING entrants hold seats" was true and was not enough, because a
+ * SEAT-FIRST game sells the chair BEFORE it starts: a spin sits at
+ * REGISTERING with its seats already sold, so the same horse arrives once
+ * through the seat list and once through the pending-registration list and is
+ * counted twice for one game. Excluding RUNNING cannot catch it — the
+ * tournament genuinely has not started.
+ *
+ * The cost is the opposite of the leak this function is famous for: horses
+ * read BUSIER than they are, so the picker declines them and fills starve.
+ * Measured against production on 2026-08-28, over the accounts carrying any
+ * load at all: 20 read as over the four-game cap, and only 3 actually were.
+ * Seventeen horses were being held out of every board by a game they were
+ * only playing once.
+ *
+ * So a registration is dropped when the same horse already holds a live seat
+ * at THAT tournament. This mirrors, deliberately line for line, the NOT EXISTS
+ * clause in `fn_concurrent_game_load` — the database is the enforcement and
+ * this is the picker's copy of the same rule. If one changes, change both.
+ */
+export function buildHorseLoadMap(
+  seatedRefs: LoadRef[],
+  pendingRegistrationRefs: LoadRef[]
+): Map<string, number> {
+  const load = new Map<string, number>();
+  const bump = (id: string | null) => {
+    if (!id) return;
+    load.set(id, (load.get(id) ?? 0) + 1);
+  };
+
+  // `user_id|tournament_id` for every seat we can attribute to a tournament.
+  const seatedInTournament = new Set<string>();
+  for (const ref of seatedRefs) {
+    const id = refUser(ref);
+    if (!id) continue;
+    bump(id);
+    const tid = refTournament(ref);
+    if (tid) seatedInTournament.add(`${id}|${tid}`);
+  }
+
+  for (const ref of pendingRegistrationRefs) {
+    const id = refUser(ref);
+    if (!id) continue;
+    const tid = refTournament(ref);
+    // Only a KNOWN pairing can be deduped. An unattributed registration is
+    // counted, because under-counting hands out a horse that is already full
+    // and the database then refuses the claim — the expensive direction.
+    if (tid && seatedInTournament.has(`${id}|${tid}`)) continue;
+    bump(id);
+  }
+  return load;
+}
+
+export function startsOnBoughtSeats(variant: string, maxPlayers: number): boolean {
+  const v = String(variant ?? '').toLowerCase();
+  return v === 'sng' || v === 'spin' || (Number(maxPlayers) || 0) <= 2;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  THE ROSTER-FULL DEADLOCK — fill a seat-first game FROM ITS OWN ROSTER FIRST
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * A seat-first game holds TWO counts that are allowed to disagree, and exactly
+ * one pair of values wedges it shut forever:
+ *
+ *     tournament_players rows  =  max_players   (the roster is FULL)
+ *     live table_seats rows    <  max_players   (the game is NOT)
+ *
+ * In that state the start gate is waiting on SEATS, and every attempt to add
+ * a seat goes through fn_seat_horse_in_seat_first_game -> (new entrant) ->
+ * fn_register_horse_for_tournament -> INSERT tournament_players, where the
+ * trigger fn_enforce_tournament_capacity RAISES:
+ *
+ *     23514: tournament_full: 10 Chip Spin PLO4 already has 3 of 3 entrants
+ *
+ * Neither side can move. Measured on production 2026-08-25 08:0xZ:
+ *
+ *     33 open seat-first games
+ *      7 with a full roster and short seats  <- permanently deadlocked
+ *      7 of those 7 past their start time
+ *     16 unseated registrants sitting inside those 7 games
+ *   1995 minutes stuck, worst case (33 hours)
+ *
+ * The 16 are the way out. A horse ALREADY on the roster takes the
+ * `v_already` branch of fn_seat_horse_in_seat_first_game: it skips
+ * registration entirely, so it never touches the trigger that is refusing
+ * everybody else. It is also the horse that already PAID for that seat.
+ *
+ * So a seat-first fill draws from home before it draws from the fleet. The
+ * free pool is still used for the remainder — a game whose roster is genuinely
+ * short needs new entrants and there the registration path works fine. Order,
+ * not exclusion.
+ *
+ * Pure so the ordering is pinned without a database, which is the half that
+ * regressed: the old code called pickFreeHorses and nothing else, so a game's
+ * own paid-up registrants were the one group of horses it could never seat.
+ */
+export function seatFirstFillOrder(
+  shortfall: number,
+  ownUnseatedRegistrants: Array<string | null | undefined>,
+  freePoolCandidates: Array<string | null | undefined>
+): string[] {
+  const want = Math.max(0, Math.floor(Number(shortfall) || 0));
+  if (want === 0) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const list of [ownUnseatedRegistrants, freePoolCandidates]) {
+    for (const raw of list ?? []) {
+      if (out.length >= want) return out;
+      const id = typeof raw === 'string' ? raw.trim() : '';
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  return out;
+}
+
+/**
+ * How long a seat-first game may sit REGISTERING with every seat SOLD before
+ * that counts as a stall rather than as the normal gap between the last buy-in
+ * and the start.
+ *
+ * The discovery loop runs every 5s and a healthy game flips within one or two
+ * passes, so three minutes is ~36 chances to start normally. It is short
+ * enough that a player notices a stuck game roughly when the watchdog does,
+ * and long enough that a slow start is never treated as a failure.
+ */
+export const SEAT_FIRST_START_STALL_MS = 3 * 60 * 1000;
+
+/**
+ * "Every seat is bought and the game still has not started."
+ *
+ * The gap the 2026-08-24 audit recorded as P2-7: the played-but-REGISTERING
+ * sweep proves a game dealt by finding an eliminated/winner/finished row, and
+ * a game that NEVER DEALT cannot produce one. An 85-minute fully-paid heads-up
+ * sat invisible to every watchdog on the platform for exactly that reason.
+ *
+ * Pure, and deliberately conservative:
+ *  - short of a full house it is never a stall (that is a game still filling);
+ *  - a game we have not seen full yet (fullSinceMs null) is never a stall, so
+ *    an engine restart re-arms the clock instead of force-starting a board.
+ */
+export function seatFirstStartStalled(opts: {
+  paidSeats: number;
+  maxPlayers: number;
+  /** When this game was FIRST observed with every seat sold, or null. */
+  fullSinceMs: number | null | undefined;
+  now: number;
+  stallMs?: number;
+}): boolean {
+  const seats = Number(opts.maxPlayers) || 0;
+  const paid = Number(opts.paidSeats) || 0;
+  if (seats <= 0 || paid < seats) return false;
+
+  // Number(null) is 0, which is a finite instant in 1970 and would read as
+  // "stalled since forever" on the very first pass. Reject the absent clock
+  // before it is ever coerced.
+  if (opts.fullSinceMs === null || opts.fullSinceMs === undefined) return false;
+  const since = Number(opts.fullSinceMs);
+  if (!Number.isFinite(since)) return false;
+
+  const now = Number(opts.now);
+  if (!Number.isFinite(now)) return false;
+
+  const raw = Number(opts.stallMs);
+  const stallMs = Number.isFinite(raw) && raw >= 0 ? raw : SEAT_FIRST_START_STALL_MS;
+  return now - since >= stallMs;
+}
+
+/**
+ * How many entrants to ask topUpWithHorses for RIGHT NOW, or 0 for nothing to
+ * do. The whole decision lives here so it is testable without a database.
+ */
+export function mttPrestartHorseTarget(opts: {
+  /** Milliseconds until the scheduled start. Negative means already past. */
+  msUntilStart: number;
+  maxPlayers: number;
+  variant: string;
+  /** Entrants already registered. Bounds how far one tick may jump. */
+  currentPlayers?: number;
+  /**
+   * `tournaments.guaranteed_prize`. When set, the field goal is whatever it
+   * takes to COVER it - see the note below.
+   */
+  guaranteedPrize?: number;
+  /** `tournaments.prize_pool` - what the field has actually paid in so far. */
+  prizePool?: number;
+  /**
+   * `tournaments.buy_in_amount` - the PRIZE side of the entry. The fee is rake
+   * and never reaches the pool, so using the total here would under-count the
+   * entries needed and leave the guarantee short.
+   */
+  buyInPrizeShare?: number;
+}): number {
+  const { msUntilStart, maxPlayers, variant } = opts;
+  const current = Math.max(0, Number(opts.currentPlayers) || 0);
+
+  // Past start, or not started ramping yet. Past start belongs to the existing
+  // top-up, which aims at a full field; this function must not fight it.
+  if (!Number.isFinite(msUntilStart)) return 0;
+  if (msUntilStart <= 0 || msUntilStart > MTT_PRESTART_RAMP_MS) return 0;
+
+  // Spins, heads-up and any-size SNGs start on bought seats. Not our business.
+  if (startsOnBoughtSeats(variant, maxPlayers)) return 0;
+
+  const seats = Number(maxPlayers) || 0;
+
+  /* ── THE GUARANTEE DECIDES THE FIELD (Dan 2026-08-26) ──────────────────────
+     "the horses should fill any and all seats to insure that the guarantee is
+     always met."
+
+     MTT_PRESTART_MAX_HORSES is 24. That is the right default for an ordinary
+     event - enough to make a lobby row look like a game without spending the
+     club's chips on a field nobody asked for. It is nowhere near enough for a
+     GUARANTEED one: the Sunday $200 Deep Stack promises 20,000 and pays 180 of
+     every 200 entry into the pool, so covering it takes 112 entries. Ramping
+     to 24 would have left roughly 15,000 of overlay on an event the club had
+     already promised to cover.
+
+     A horse entry is a REAL entry. fn_register_horse_for_tournament debits the
+     horse's wallet through atomic_deduct_wallet_and_log, writes a rake row and
+     adds `v_split.prize` to prize_pool - the same money movement a human makes.
+     So horses filling seats does not paper over the shortfall, it genuinely
+     funds it, and the guarantee stops being an overlay at all.
+
+     THE CAP IS STILL A CAP. `seats - 1` is untouched (safety property 1: the
+     table always leaves a chair for a human), and a guarantee can never ask
+     for more than the event's own field. What changes is only the FLOOR: an
+     event carrying a guarantee ramps to whatever covers it, an event without
+     one keeps the 24 it always had. */
+  const guarantee = Math.max(0, Number(opts.guaranteedPrize) || 0);
+  const pool = Math.max(0, Number(opts.prizePool) || 0);
+  const prizeShare = Math.max(0, Number(opts.buyInPrizeShare) || 0);
+  const shortfall = guarantee - pool;
+  const entriesToCover =
+    guarantee > 0 && shortfall > 0 && prizeShare > 0 ? Math.ceil(shortfall / prizeShare) : 0;
+
+  /* Entries needed ON TOP of the field that is already there. `current`
+     already paid into `pool`, so adding it back would double count them and
+     over-fill the event. */
+  const guaranteeGoal = entriesToCover > 0 ? current + entriesToCover : 0;
+
+  // Always leave a seat: see safety property 1.
+  const fieldGoal = Math.min(seats - 1, Math.max(MTT_PRESTART_MAX_HORSES, guaranteeGoal));
+  if (fieldGoal < 1) return 0;
+
+  const elapsed = 1 - msUntilStart / MTT_PRESTART_RAMP_MS; // 0 at T-60, 1 at T-0
+  const curve = elapsed * elapsed; // slow early, steep near the close
+
+  // At least one entrant the moment the window opens: a lobby row reading 1
+  // is a game somebody is in, and 0 is a game nobody will join.
+  const onCurve = Math.max(1, Math.min(fieldGoal, Math.ceil(fieldGoal * curve)));
+
+  // Already there (or ahead, if humans turned up). Nothing to do.
+  if (onCurve <= current) return 0;
+
+  // Walk toward the curve rather than jumping to it. Still never past the
+  // curve, so the leave-a-seat and pool-cap guarantees above still hold.
+  return Math.min(onCurve, current + MTT_PRESTART_MAX_STEP);
 }
 
 function horsesForSeatHeldGame(maxPlayers: number): { horses: number; isSim: boolean } {
@@ -663,16 +1420,49 @@ function horsesForSeatHeldGame(maxPlayers: number): { horses: number; isSim: boo
  * Heads-Up is seat-first (isSeatFirstFormat): two seats, first come first
  * served, and the game begins the moment both are bought.
  */
-const SNG_BOARD_SHAPES: { seats: number; label: string; turbo: boolean }[] = [
-  { seats: 2, label: 'Heads-Up', turbo: false },
-];
+/**
+ * Dan 2026-08-25: "THE STARTING STACK 300 FOR TURBO AND 1000 FOR DEEP STACK."
+ * The stack is a property of the SHAPE now rather than a ternary on seat count
+ * that could only ever say 1500 — the board has one shape today, and the rule
+ * has to be written where a second one would read it.
+ *
+ * ─── THE TURBO SHAPE, 2026-08-27 ────────────────────────────────────────────
+ *
+ * The comment above described both bands and the array declared ONE. `turbo`
+ * was a compile-time `false`, so the ` Turbo` suffix in the name template below
+ * was unreachable dead code and the 300-chip half of Dan's sentence had never
+ * existed on the platform: 5,283 legacy heads-ups at 1,500 chips, 5,032 at
+ * 1,000, and ZERO at 300.
+ *
+ * Both bands run the SAME blind ladder (HEADS_UP_3MIN) on purpose — Dan
+ * 2026-08-23, on Spins and repeated here: "SPEED SHOULDN'T CHANGE, ONLY THE
+ * STARTING STACK." At 10/20 the turbo starts at 15bb and the deep stack at
+ * 50bb, so the two feel completely different without a second clock to reason
+ * about. The turbo is therefore NOT a faster structure, it is a shallower one,
+ * and that is the whole difference.
+ *
+ * The two shapes produce distinct config NAMES ("NLH Heads-Up 10" and "NLH
+ * Heads-Up 10 Turbo"), which is what ensureBoardOpen keys the board on, so each
+ * band is opened and refilled independently. No uniqueness rule is disturbed:
+ * uq_scheduled_tournament_one_live_per_name covers MTT/XMTT only — SNG and SPIN
+ * are deliberately outside it because they run many same-named instances at
+ * once.
+ */
+/* Every number below now comes from headsUpSpec -- the seats, both stacks, the
+   rungs and the variants. The shapes array is what turns two stacks into two
+   independently-refilled boards; the STACKS themselves are the spec's. */
+const SNG_BOARD_SHAPES: { seats: number; label: string; turbo: boolean; startingStack: number }[] =
+  [
+    { seats: HEADS_UP_SEATS, label: 'Heads-Up', turbo: false, startingStack: HEADS_UP_STACKS.deep },
+    { seats: HEADS_UP_SEATS, label: 'Heads-Up', turbo: true, startingStack: HEADS_UP_STACKS.turbo },
+  ];
 
-const SNG_BOARD_VARIANTS: { key: string; label: string }[] = [
-  { key: 'nlh', label: 'NLH' },
-  { key: 'plo4', label: 'PLO4' },
-];
+const SNG_BOARD_VARIANTS: { key: string; label: string }[] = HEADS_UP_GAME_TYPES.map((key) => ({
+  key,
+  label: key.toUpperCase(),
+}));
 
-const SNG_BOARD_BUYINS = [1, 2, 5, 10, 20, 25, 50, 100];
+const SNG_BOARD_BUYINS = [...HEADS_UP_BUYINS];
 
 const SNG_CONFIGS: SNGConfig[] = SNG_BOARD_SHAPES.flatMap((shape) =>
   SNG_BOARD_VARIANTS.flatMap((v) =>
@@ -684,14 +1474,16 @@ const SNG_CONFIGS: SNGConfig[] = SNG_BOARD_SHAPES.flatMap((shape) =>
       // Derived, never authored - see src/utils/buyIn.ts. The value is unused
       // by createSNG (which calls buyInColumns) but kept for config parity.
       rake: 0,
-      startingStack: shape.seats <= 2 ? 1500 : 2000,
+      startingStack: shape.startingStack,
       maxPlayers: shape.seats,
       minPlayers: shape.seats,
       horsesToRegister: shape.seats - 1,
-      blindStructure: shape.turbo ? BLIND_STRUCTURES.TURBO : BLIND_STRUCTURES.STANDARD,
+      /* Both bands run the same three-minute clock — see HEADS_UP_3MIN. The
+         turbo flag now chooses the STACK, not the level length. */
+      blindStructure: BLIND_STRUCTURES.HEADS_UP_3MIN,
       payoutStructure:
-        shape.seats <= 2
-          ? [{ place: 1, percentage: 100 }]
+        shape.seats <= HEADS_UP_SEATS
+          ? HEADS_UP_PAYOUTS
           : shape.seats <= 6
             ? [
                 { place: 1, percentage: 65 },
@@ -719,6 +1511,16 @@ const SNG_CONFIGS: SNGConfig[] = SNG_BOARD_SHAPES.flatMap((shape) =>
  * must keep reading it from their config.
  */
 export const SPIN_SEATS = 3;
+
+/**
+ * Seats the cash room keeps, per live cash table, before the Spin and
+ * Heads-Up boards may claim another idle horse. See cashRoomReserve.
+ *
+ * Two, not more: the point is that a cash table is never a ghost, not that it
+ * is full. A table showing 2 players is one a human can sit down at; a table
+ * showing 0 is one they scroll past.
+ */
+export const CASH_FLOOR_PER_TABLE = 2;
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -752,28 +1554,67 @@ const SPIN_BOARD_VARIANTS: { key: string; label: string }[] = [
 /** Every price point the spin board is open at. Whole chips, from the ladder. */
 const SPIN_BOARD_BUYINS = [1, 2, 3, 5, 10, 20, 50, 100];
 
-export const SPIN_CONFIGS: SpinConfig[] = SPIN_BOARD_VARIANTS.flatMap((v) =>
-  SPIN_BOARD_BUYINS.map((buyIn) => ({
-    name: `${buyIn} Chip Spin ${v.label}`,
-    type: 'spin' as const,
-    gameVariant: v.key,
-    buyIn,
-    // Spins are rake-free by product rule; the edge lives in the multipliers.
-    rake: 0,
-    startingStack: 500,
-    maxPlayers: SPIN_SEATS,
-    minPlayers: SPIN_SEATS,
-    /* Seat all but ONE chair with horses.
+/**
+ * TWO SPEEDS, ONE LADDER (Dan, 2026-09-01).
+ *
+ * "once a player sits down and 'buys in' they either get 300 chips for a
+ * turbo, or 1000 chips for a deep stack."
+ *
+ * The depth is a board the player chooses, not a consequence of what the wheel
+ * lands on. Blinds and level length are identical on both -- Dan, 2026-08-23:
+ * "SPEED SHOULDN'T CHANGE, ONLY THE STARTING STACK" -- so the only difference
+ * between a Turbo and a Deep Stack at the same stake is how many chips are in
+ * front of you.
+ *
+ * The Turbo boards keep the plain name every existing board already has.
+ * Renaming those would not rename anything: ensureBoardOpen identifies a board
+ * by its config NAME, so a rename opens 32 new boards and leaves 32 orphans
+ * sitting in REGISTERING forever.
+ */
+const SPIN_BOARD_SPEEDS: SpinSpeed[] = ['turbo', 'deep'];
+
+export const SPIN_CONFIGS: SpinConfig[] = SPIN_BOARD_SPEEDS.flatMap((speed) =>
+  SPIN_BOARD_VARIANTS.flatMap((v) =>
+    SPIN_BOARD_BUYINS.map((buyIn) => ({
+      name:
+        speed === 'turbo'
+          ? `${buyIn} Chip Spin ${v.label}`
+          : `${buyIn} Chip ${SPIN_SPEED_LABELS[speed]} Spin ${v.label}`,
+      type: 'spin' as const,
+      gameVariant: v.key,
+      buyIn,
+      // Spins are rake-free by product rule; the edge lives in the multipliers.
+      rake: 0,
+      /* The board's own depth, and the final word on it. This used to be a
+       placeholder that start() overwrote from the drawn tier; the stack no
+       longer depends on the draw, so what is written here is what the player
+       is dealt, and it is known before the wheel turns. */
+      startingStack: SPIN_STACKS[speed],
+      maxPlayers: SPIN_SEATS,
+      minPlayers: SPIN_SEATS,
+      /* Seat all but ONE chair with horses.
        Dan: "the tables just stay open until players sit down." A full horse
        fill (the old value was 3 of 3) starts the spin the instant it is
        created, so the table is never actually available - which is why the
        board kept showing RUNNING games and nothing joinable. Leaving the last
        seat empty means the table sits open indefinitely, and the first human
        to take that seat starts the game, which is the whole point of a spin. */
-    horsesToRegister: SPIN_SEATS - 1,
-    blindStructure: BLIND_STRUCTURES.SPIN,
-    payoutStructure: [{ place: 1, percentage: 100 }],
-  }))
+      horsesToRegister: SPIN_SEATS - 1,
+      /* Built from the spec, exactly as createSpin does below -- the constant
+       this used to name was a five-level ladder that contradicted it. */
+      blindStructure: Array.from({ length: 12 }, (_, i) => {
+        const b = spinBlindsForLevel(i + 1);
+        return {
+          level: i + 1,
+          smallBlind: b.small,
+          bigBlind: b.big,
+          ante: 0,
+          durationMinutes: SPIN_TIERS[0].levelMinutes,
+        };
+      }),
+      payoutStructure: [{ place: 1, percentage: 100 }],
+    }))
+  )
 );
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -884,6 +1725,45 @@ const XMTT_SCHEDULE: { hours: number[]; tournaments: XMTTConfig[] }[] = [
  */
 const BOARD_REFILL_INTERVAL_MS = 30 * 1000;
 
+/**
+ * How many games one tick may create, ACROSS EVERY BOARD IT TOUCHES.
+ *
+ * This used to be a per-board cap. Once a tick can service the house board
+ * plus every club and union that has activated Spins, a per-board cap is not a
+ * cap at all -- twenty activated owners would mean twenty times the work, and
+ * the tick that fills a cold board also has to share a connection with live
+ * hands being dealt. The budget is threaded through every ensureBoardOpen call
+ * in the pass, so the ceiling holds no matter how many owners exist.
+ */
+const BURST = 12;
+
+/**
+ * Whose board is being filled. A Spin is visible to players ENTIRELY through
+ * the club_id / union_id on its row -- ClubHomePage scopes its lobby query by
+ * one or the other and never consults membership -- so these two fields decide
+ * who can see the game, and getting them wrong makes a board invisible to the
+ * very club that paid for it.
+ */
+interface BoardOwner {
+  /** The tournaments.club_id to stamp. */
+  clubId: string;
+  /**
+   * The tournaments.union_id to stamp, or null.
+   *
+   * NOT cosmetic. A club inside a union has its lobby scoped by
+   * `.eq('club_id', id).eq('is_private', true)`, so a PUBLIC club-owned Spin
+   * would be dropped by its own club's page. A standalone club's lobby scopes
+   * by club_id alone and shows it. A union's games are found by union_id
+   * across every club in that union -- which is exactly how the house board
+   * has always reached players.
+   */
+  unionId: string | null;
+  /** The largest buy-in this owner's wallet is seeded to cover. */
+  maxStake: number;
+  /** For logs only. */
+  kind: 'house' | 'club' | 'union';
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // TOURNAMENT RECURRING SERVICE CLASS
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -892,6 +1772,43 @@ export class TournamentRecurringService {
   private tournamentInterval: ReturnType<typeof setInterval> | null = null;
   private sngInterval: ReturnType<typeof setInterval> | null = null;
   private spinInterval: ReturnType<typeof setInterval> | null = null;
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════════
+   *  A BOARD THAT IS NOT FILLING MUST SAY SO (2026-08-27)
+   * ═══════════════════════════════════════════════════════════════════════════
+   *
+   * The held-empty ratchet ran for twenty hours with 49 dead boards, Spins
+   * down from ~300 starts an hour to 1 and Heads-Up to zero, and NOTHING on
+   * the platform said a word. Every refusal on the seat-first fill path
+   * returns 0: the held-empty gate returned 0 silently, and pickFreeHorses
+   * returns [] silently whenever the candidate list is empty. `Filled "..."`
+   * only logs when something was actually added, so a board that adds nobody
+   * forever is exactly as quiet as a board with nothing to do.
+   *
+   * A count of distinct boards skipped, reported once a cycle rather than per
+   * board per pass, turns that silence into one line. It is deliberately a
+   * SET of ids and not a counter: the number that matters is how much of the
+   * board is held at once, and the same board skipped 720 times an hour must
+   * not read as 720 boards.
+   */
+  private seatFirstHeldIds = new Set<string>();
+  private lastHeldReportAt = 0;
+  private static readonly HELD_REPORT_EVERY_MS = 10 * 60_000;
+
+  private noteSeatFirstHeld(tournamentId: string): void {
+    this.seatFirstHeldIds.add(tournamentId);
+    const now = Date.now();
+    if (now - this.lastHeldReportAt < TournamentRecurringService.HELD_REPORT_EVERY_MS) return;
+    this.lastHeldReportAt = now;
+    const n = this.seatFirstHeldIds.size;
+    this.seatFirstHeldIds.clear();
+    console.log(
+      `[TournamentRecurring] held-empty: ${n} seat-first board(s) skipped in the last ` +
+        `${TournamentRecurringService.HELD_REPORT_EVERY_MS / 60000}m - they open for a human and ` +
+        `rotate out on the next ${SEAT_FIRST_EMPTY_BUCKET_MS / 60000}m bucket`
+    );
+  }
   /**
    * One board tick at a time, per board. setInterval does NOT wait for the
    * previous callback to finish, and a tick that has to fill a drained board
@@ -915,6 +1832,20 @@ export class TournamentRecurringService {
   private readonly ownerClubId = MIDWAY_UNION_ID;
   private readonly ownerUnionId = MIDWAY_UNION_ID;
 
+  /**
+   * The board the platform runs itself. It stays exactly as it was: club_id
+   * and union_id both the Midway union id, which is how every club in that
+   * union has always found these games. Activated owners get their own boards
+   * IN ADDITION to this one, so a player who belongs to no activated club
+   * still has somewhere to sit.
+   */
+  private readonly houseOwner: BoardOwner = {
+    clubId: MIDWAY_UNION_ID,
+    unionId: MIDWAY_UNION_ID,
+    maxStake: Number.POSITIVE_INFINITY,
+    kind: 'house',
+  };
+
   start(): void {
     if (this.isRunning) {
       console.log('[TournamentRecurring] Already running');
@@ -923,7 +1854,7 @@ export class TournamentRecurringService {
 
     this.isRunning = true;
     console.log(
-      '[TournamentRecurring] Service started — MTTs every 5 min, SNG + Spin boards every 30 s, XMTTs every 5 min'
+      '[TournamentRecurring] Service started - MTTs every 5 min, SNG + Spin boards every 30 s, XMTTs every 5 min'
     );
 
     // Tournament check: every 5 minutes
@@ -1033,11 +1964,52 @@ export class TournamentRecurringService {
           const msg = String(createErr?.message ?? createErr ?? '');
           if (createErr?.code === '23505' || /duplicate key|unique constraint/i.test(msg)) {
             console.log(
-              `[TournamentRecurring] "${config.name}" was created concurrently — skipping (this is the duplicate guard working)`
+              `[TournamentRecurring] "${config.name}" was created concurrently - skipping (this is the duplicate guard working)`
             );
             continue;
           }
           throw createErr;
+        }
+      }
+
+      /**
+       * ═════════════════════════════════════════════════════════════════════
+       * MTT FLOOR (Dan 2026-08-26, binding): "at least 2 tournaments at once."
+       * ═════════════════════════════════════════════════════════════════════
+       * The hourly blocks carry 1-2 named events and create at most one
+       * instance per name, so a quiet block could leave the board with a
+       * single live MTT (or none, right after one finishes). Count what is
+       * actually live and, while it is short of two, launch the next unlaunched
+       * config from the schedule — same createTournament path, same duplicate
+       * guard, so a race can only ever fail benignly.
+       */
+      const { count: liveMtts, error: mttCountErr } = await supabase
+        .from('tournaments')
+        .select('id', { count: 'exact', head: true })
+        .eq('tournament_type', 'MTT')
+        .in('status', ['ANNOUNCED', 'REGISTERING', 'RUNNING', 'LATE_REG']);
+      if (!mttCountErr && (liveMtts ?? 0) < 2) {
+        let need = 2 - (liveMtts ?? 0);
+        const allConfigs = HOURLY_SCHEDULE.flatMap((b) => b.tournaments);
+        for (const config of allConfigs) {
+          if (need <= 0) break;
+          const existing = await this.getActiveCount(config.type, config.name);
+          if (existing > 0) continue;
+          try {
+            const result = await this.createTournament(config);
+            if (result.tournamentId) {
+              need--;
+              console.log(
+                `[TournamentRecurring] MTT floor: launched "${config.name}" to keep at least 2 tournaments live`
+              );
+            }
+          } catch (createErr: any) {
+            const msg = String(createErr?.message ?? createErr ?? '');
+            if (createErr?.code === '23505' || /duplicate key|unique constraint/i.test(msg)) {
+              continue; // created concurrently — still counts toward the floor
+            }
+            throw createErr;
+          }
         }
       }
     } catch (err: any) {
@@ -1052,8 +2024,171 @@ export class TournamentRecurringService {
   // SNG CHECK
   // ─────────────────────────────────────────────────────────────────────────
 
+  /**
+   * One pass over a board family at a time.
+   *
+   * The guard used to live inside ensureBoardOpen. It cannot stay there now
+   * that a single Spin pass calls ensureBoardOpen once per OWNER: the second
+   * owner in the same tick would find the flag set by the first and be skipped
+   * forever. It belongs around the whole pass, which is also what it always
+   * meant.
+   */
+  private async withBoardTick(variant: 'spin' | 'sng', run: () => Promise<void>): Promise<void> {
+    if (this.boardTickInFlight[variant]) {
+      console.log(`[TournamentRecurring] ${variant} board tick still running - skipping this one`);
+      return;
+    }
+    this.boardTickInFlight[variant] = true;
+    try {
+      await run();
+    } catch (err: any) {
+      reportError(
+        new Error(`[TournamentRecurring] ${variant} board error: ${err?.message}`),
+        'TournamentRecurring.board_error'
+      );
+    } finally {
+      // finally, not the end of try: every path inside returns early on a read
+      // error, and leaving the flag set would freeze the board permanently.
+      this.boardTickInFlight[variant] = false;
+    }
+  }
+
   private async checkAndLaunchSNGs(): Promise<void> {
-    await this.ensureBoardOpen('sng', SNG_CONFIGS, (c) => this.createSNG(c as any));
+    await this.withBoardTick('sng', async () => {
+      await this.repairSeatFirstGames();
+
+      const budget = { left: BURST };
+      await this.ensureBoardOpen(
+        'sng',
+        SNG_CONFIGS,
+        (c, o) => this.createSNG(c as any, o),
+        this.houseOwner,
+        budget
+      );
+
+      /* Dan 2026-09-01 (Deep Stack Society directive): heads-up and SNG
+       * boards for activated club owners, exactly the way the Spin pass
+       * already does it -- the house board first so it is never starved,
+       * then one owner board per activated owner. activatedSpinOwners()
+       * is the platform's one "this owner has switched club games on and
+       * funded them" signal; a standalone club like Deep Stack (11192)
+       * activates via fn_spin_activate and gets its own SNG/heads-up
+       * board on the same tick, same budget, same repair pass.
+       *
+       * maxStake clamps the buy-ins an owner's board offers, mirroring
+       * the Spin rule: never list a price point the owner did not sign
+       * up for. */
+      for (const owner of await this.activatedSpinOwners()) {
+        if (budget.left <= 0) break;
+        const affordable = SNG_CONFIGS.filter((c) => c.buyIn <= owner.maxStake);
+        if (affordable.length === 0) continue;
+        await this.ensureBoardOpen(
+          'sng',
+          affordable,
+          (c, o) => this.createSNG(c as any, o),
+          owner,
+          budget
+        );
+      }
+    });
+  }
+
+  /**
+   * Every owner who has switched Spins on and funded the wallet behind them.
+   *
+   * spin_bonus_pools.club_id is the OWNER id, not necessarily a club: for a
+   * union-owned pool it is the union's id, and owner_kind says which. That
+   * distinction is the whole reason BoardOwner carries unionId separately --
+   * see the comment on it for what happens when it is wrong.
+   *
+   * balance > 0 is deliberate belt-and-braces alongside is_active: a pool that
+   * has been drained cannot pay a multiplier, and opening games it cannot
+   * settle would hand players a prize the wallet has to clamp.
+   */
+  private async activatedSpinOwners(): Promise<BoardOwner[]> {
+    try {
+      const { data, error } = await supabase
+        .from('spin_bonus_pools')
+        .select('club_id, owner_kind, offered_max_stake, balance')
+        .eq('is_active', true)
+        .not('activated_at', 'is', null)
+        .gt('balance', 0)
+        .limit(200);
+
+      if (error) {
+        reportError(
+          new Error(`[TournamentRecurring] activated spin owners read failed: ${error.message}`),
+          'TournamentRecurring.spin_owners_read_failed'
+        );
+        return [];
+      }
+
+      return (
+        (data ?? [])
+          .map((r: any) => ({
+            clubId: String(r.club_id),
+            unionId: r.owner_kind === 'union' ? String(r.club_id) : null,
+            maxStake: Number(r.offered_max_stake) || 0,
+            kind: (r.owner_kind === 'union' ? 'union' : 'club') as 'union' | 'club',
+          }))
+          // The house runs from houseOwner above; listing it twice would have one
+          // pass fill the board and the next see it already full, alternating.
+          .filter((o) => o.clubId !== this.houseOwner.clubId)
+          // An owner who never chose a stake has nothing we can price a board at.
+          .filter((o) => o.maxStake > 0)
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  A SEAT-FIRST GAME WITH NO TABLE IS A LISTING NOBODY CAN EVER JOIN
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * Measured on production 2026-08-23: of 33 REGISTERING Spins, THIRTY had no
+   * table row, and of 17 heads-ups, FOURTEEN. Oldest 15 hours old. A player
+   * clicking one found no seats, because there were none.
+   *
+   * AND IT IS SELF-SUSTAINING, which is what makes it worth a repair pass
+   * rather than a bug fix alone. ensureBoardOpen decides what to open by NAME:
+   * a husk is REGISTERING, so its name is "covered", so its price point is
+   * never reopened - and the husk can never leave REGISTERING, because a
+   * seat-first game starts when every SEAT is sold and it has no seats. One
+   * dead row wedges one price point forever. Exactly two of thirty-two Spin
+   * configs were still cycling.
+   *
+   * fn_repair_seat_first_games gives the husk the table it never got, seats
+   * its opening horses (seats-1) and restarts its human window at a fresh
+   * 60-180 seconds, rather than cancelling it - section 8 of this file is
+   * explicit that tournaments run, they do not cancel.
+   *
+   * Idempotent by construction: it only ever touches a REGISTERING seat-first
+   * game that has no table, so on a healthy board it does nothing and costs
+   * one indexed query.
+   */
+  private async repairSeatFirstGames(): Promise<void> {
+    try {
+      const { data, error } = await supabase.rpc('fn_repair_seat_first_games', {
+        p_limit: 25,
+      });
+      if (error) {
+        reportError(
+          new Error(`[TournamentRecurring] seat-first repair failed: ${error.message}`),
+          'TournamentRecurring.seat_first_repair_failed'
+        );
+        return;
+      }
+      const res = data as { repaired?: number; horses_seated?: number } | null;
+      if (res?.repaired) {
+        console.log(
+          `[TournamentRecurring] repaired ${res.repaired} seat-first game(s) that had no table; seated ${res.horses_seated ?? 0} opening horse(s)`
+        );
+      }
+    } catch (err: any) {
+      reportError(err, 'TournamentRecurring.seat_first_repair_threw');
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1061,7 +2196,41 @@ export class TournamentRecurringService {
   // ─────────────────────────────────────────────────────────────────────────
 
   private async checkAndLaunchSpins(): Promise<void> {
-    await this.ensureBoardOpen('spin', SPIN_CONFIGS, (c) => this.createSpin(c as any));
+    await this.withBoardTick('spin', async () => {
+      // Heal before opening. A husk still counts as "this price point is
+      // covered" below, so skipping this would leave the board wedged.
+      await this.repairSeatFirstGames();
+
+      // ONE budget for the whole pass. See BURST.
+      const budget = { left: BURST };
+
+      // The house board first: it serves every player who is not in a club
+      // that has activated Spins, so it must never be starved by owner boards.
+      await this.ensureBoardOpen(
+        'spin',
+        SPIN_CONFIGS,
+        (c, o) => this.createSpin(c as any, o),
+        this.houseOwner,
+        budget
+      );
+
+      for (const owner of await this.activatedSpinOwners()) {
+        if (budget.left <= 0) break;
+        // Only the price points this owner's seed can actually cover. The
+        // required seed is two top-tier jackpots at their largest stake, so
+        // offering a bigger buy-in than they seeded for would advertise a
+        // multiplier the wallet cannot pay.
+        const affordable = SPIN_CONFIGS.filter((c) => c.buyIn <= owner.maxStake);
+        if (affordable.length === 0) continue;
+        await this.ensureBoardOpen(
+          'spin',
+          affordable,
+          (c, o) => this.createSpin(c as any, o),
+          owner,
+          budget
+        );
+      }
+    });
   }
 
   /**
@@ -1093,22 +2262,38 @@ export class TournamentRecurringService {
   private async ensureBoardOpen<T extends { name: string }>(
     variant: 'spin' | 'sng',
     configs: T[],
-    create: (config: T) => Promise<{ tournamentId: string | null }>
+    create: (config: T, owner: BoardOwner) => Promise<{ tournamentId: string | null }>,
+    owner: BoardOwner,
+    budget: { left: number }
   ): Promise<void> {
-    // See boardTickInFlight: overlapping ticks duplicate the board.
-    if (this.boardTickInFlight[variant]) {
-      console.log(`[TournamentRecurring] ${variant} board tick still running — skipping this one`);
-      return;
-    }
-    this.boardTickInFlight[variant] = true;
+    if (budget.left <= 0) return;
     try {
-      const { data: openRows, error } = await supabase
+      /**
+       * SCOPED TO THIS OWNER. Without the scope, one owner's board would be
+       * read as satisfying another's: the set is keyed on the config NAME, and
+       * "10 Chip Spin PLO4" is the same string on every board. The house would
+       * fill first and every activated club would then look already-full and
+       * never open a single game.
+       *
+       * Scoped the same way the lobby reads it, so what this counts is what a
+       * player of that owner can actually see: by union_id when a union owns
+       * the board, by club_id when a club owns it alone.
+       */
+      const openQuery = supabase
         .from('tournaments')
-        .select('name')
+        // id and max_players as well as the name: a seat-first game only
+        // COVERS its price point if it can actually be joined, and that means
+        // owning a table. See the joinability filter below.
+        .select('id, name, max_players')
         .eq('variant', variant)
         // REGISTERING only. ANNOUNCED is not joinable and RUNNING is too late;
         // counting either is what let a board of live games starve the lobby.
         .eq('status', 'REGISTERING');
+
+      if (owner.unionId) openQuery.eq('union_id', owner.unionId);
+      else openQuery.eq('club_id', owner.clubId).is('union_id', null);
+
+      const { data: openRows, error } = await openQuery;
 
       if (error) {
         // Fail CLOSED, exactly as getActiveCount does: on a transient read
@@ -1121,25 +2306,92 @@ export class TournamentRecurringService {
         return;
       }
 
-      const open = new Set((openRows ?? []).map((r) => String(r.name)));
+      /**
+       * A LISTING ONLY COUNTS IF A PLAYER COULD SIT AT IT.
+       *
+       * This set used to be every REGISTERING name, which is why thirty of
+       * thirty-two Spin price points were dead for fifteen hours: a
+       * seat-first game with no table is REGISTERING forever, so its name
+       * permanently satisfied the board and the config was never reopened.
+       * repairSeatFirstGames above should mean this never has anything to
+       * exclude - but a board that wedges itself when one repair fails is
+       * exactly the shape that produced the outage, so the rule is stated
+       * here too.
+       *
+       * OWNING A TABLE IS NOT THE SAME AS BEING JOINABLE (2026-08-31). The
+       * test used to be "does a table row exist", and that is how the entire
+       * Sit-and-Go board died for ten hours: thirty-two heads-up SNGs sat
+       * REGISTERING, each owning exactly ONE table whose status was 'closed'.
+       * A closed table cannot be sat in, so the past-start top-up could never
+       * fill them, they could never start, and every one of the thirty-two
+       * configs read as covered. missing.length was 0 on every tick and not a
+       * single new SNG was opened. The tables had been closed by the retired
+       * World Hub legacy engine (GameController._cleanupStaleTables, disarmed
+       * the same evening) - but the board must not be able to absorb husks
+       * whatever creates them, so the test is now joinability, not existence.
+       */
+      const rows = (openRows ?? []) as { id: string; name: string; max_players: number }[];
+      const seatFirstIds = rows
+        .filter((r) => isSeatFirstFormat(variant, Number(r.max_players) || 0))
+        .map((r) => r.id);
+
+      let withJoinableTable = new Set<string>();
+      if (seatFirstIds.length > 0) {
+        const { data: tableRows, error: tableErr } = await supabase
+          .from('tables')
+          // status and is_deleted as well as the id: OWNING a table is not the
+          // same as being joinable. See isJoinableTableRow.
+          .select('tournament_id, status, is_deleted')
+          .in('tournament_id', seatFirstIds);
+        if (tableErr) {
+          // Fail CLOSED, as the read above does: assume the board is fine
+          // rather than opening a duplicate of every seat-first config.
+          reportError(
+            new Error(
+              `[TournamentRecurring] ${variant} joinability read failed: ${tableErr.message}`
+            ),
+            'TournamentRecurring.board_joinability_read_failed'
+          );
+          return;
+        }
+        withJoinableTable = new Set(
+          (tableRows ?? [])
+            .filter((r) => isJoinableTableRow(r as TournamentTableJoinability))
+            .map((r) => String((r as { tournament_id: string }).tournament_id))
+        );
+      }
+
+      const open = new Set(
+        rows
+          .filter(
+            (r) =>
+              !isSeatFirstFormat(variant, Number(r.max_players) || 0) || withJoinableTable.has(r.id)
+          )
+          .map((r) => String(r.name))
+      );
       const missing = configs.filter((c) => !open.has(c.name));
       if (missing.length === 0) return;
 
-      /* Cap the per-tick burst. A cold start has all 80 missing, and creating
-         80 tournaments in one tick means 80 inserts plus 80 horse-registration
-         batches against the same connection - enough to stall the engine loop
-         that also has live hands to deal. The board fills over a few ticks
-         instead, newest price points last. */
-      const BURST = 12;
+      /* Cap the per-tick burst. A cold start has every config missing, and
+         creating them all in one tick means one insert plus one
+         horse-registration batch each against the same connection - enough to
+         stall the engine loop that also has live hands to deal. The budget is
+         shared across every owner in this pass (see BURST), so the ceiling
+         holds however many owners have activated. Boards fill over a few
+         ticks instead. */
       let launched = 0;
-      for (const config of missing.slice(0, BURST)) {
-        const result = await create(config);
-        if (result.tournamentId) launched++;
+      for (const config of missing.slice(0, budget.left)) {
+        const result = await create(config, owner);
+        if (result.tournamentId) {
+          launched++;
+          budget.left--;
+        }
+        if (budget.left <= 0) break;
       }
 
       if (launched > 0) {
         console.log(
-          `[TournamentRecurring] Opened ${launched} ${variant}(s); ${missing.length - launched} still to fill`
+          `[TournamentRecurring] Opened ${launched} ${variant}(s) for ${owner.kind} ${owner.clubId.slice(0, 8)}; ${missing.length - launched} still to fill`
         );
       }
     } catch (err: any) {
@@ -1147,10 +2399,6 @@ export class TournamentRecurringService {
         new Error(`[TournamentRecurring] ${variant} board error: ${err.message}`),
         'TournamentRecurring.board_error'
       );
-    } finally {
-      // finally, not the end of try: the read-error path above RETURNS early,
-      // and leaving the flag set there would freeze the board permanently.
-      this.boardTickInFlight[variant] = false;
     }
   }
 
@@ -1222,15 +2470,8 @@ export class TournamentRecurringService {
     hostClubId: string
   ): Promise<{ tournamentId: string | null; registered: number }> {
     try {
-      const startTime = new Date(Date.now() + 5 * 60 * 1000); // 5 min delay for XMTTs (more registration time)
-      const gameTypeMap: Record<string, string> = {
-        nlh: 'NLH',
-        plo4: 'PLO4',
-        plo5: 'PLO5',
-        plo8: 'PLO8',
-        short_deck: 'SHORT_DECK',
-      };
-      const dbGameType = gameTypeMap[config.gameVariant] || 'NLH';
+      const startTime = new Date(Date.now() + 5 * 60 * 1000);
+      const dbGameType = dbGameTypeFor(config.gameVariant, 'createXMTT');
 
       const isBountyType =
         config.type === 'bounty' ||
@@ -1294,6 +2535,25 @@ export class TournamentRecurringService {
             guaranteed_prize: wholeChips(config.guarantee),
             starting_chips: config.startingStack,
             max_players: config.maxPlayers,
+            /**
+             * SEATS AT THE TABLE (2026-08-31 audit). Neither the MTT nor the
+             * XMTT insert wrote this column, and it is `NOT NULL DEFAULT 9` —
+             * the same omission already found and fixed for SNG (10,315 rows)
+             * and Spin (28,731 rows), still open on these two.
+             *
+             * Measured live before the fix: 5,000 PLO6 tournaments sitting at
+             * table_size 9 against a deck that can serve 7. The row was not
+             * merely cosmetic-wrong, it disagreed with what the engine would
+             * actually do — TournamentManagerBase clamps the seat count through
+             * clampSeatsForVariant at deal time and logs "deck cannot serve
+             * more". So the database said 9, the felt said 6, and nothing
+             * reconciled them.
+             *
+             * Written through the SAME function the engine applies, so the row
+             * now states what will actually be dealt. Nine is full ring; the
+             * clamp takes it down per variant (plo6 6, plo5 7, plo4/plo8 8).
+             */
+            table_size: clampSeatsForVariant(config.gameVariant, 9),
             min_players: config.minPlayers || 3,
             current_players: 0,
             status: 'REGISTERING',
@@ -1336,6 +2596,8 @@ export class TournamentRecurringService {
           ),
           'RecurringService.XMTT_creation_attempt_attempt3'
         );
+        // A short funding bank will not refill in five seconds.
+        if (isGuaranteeRefusal(error)) break;
         if (attempt < 3) await new Promise((r) => setTimeout(r, 5000));
       }
       if (!tournament) {
@@ -1345,6 +2607,7 @@ export class TournamentRecurringService {
           ),
           'RecurringService.XMTT_creation_FAILED_after_3_r'
         );
+        if (isGuaranteeRefusal(lastError)) await notifyGuaranteeShort(hostClubId, 'createXMTT');
         return { tournamentId: null, registered: 0 };
       }
 
@@ -1357,15 +2620,17 @@ export class TournamentRecurringService {
         ? config.horsesToRegister
         : Math.max(config.horsesToRegister, config.maxPlayers);
       const registered = await this.registerHorses(tournament.id, horseTarget);
-      // TOURNEY-AUDIT 2026-07-24 [money]: exclude the bounty portion from the
-      // prize pool for bounty formats (same fix as the club-level MTT path).
-      const xmttPerEntry = Math.max(0, config.buyIn - (bountyAmount || 0));
-      const entriesPool = Math.round(xmttPerEntry * registered * 100) / 100;
-      const prizePool = config.guarantee ? Math.max(entriesPool, config.guarantee) : entriesPool;
-
+      // POOL TRUTH 2026-08-27: prize_pool is ACCUMULATED by the register RPCs
+      // (each entry adds its exact prize share - fee and bounty excluded), so
+      // recomputing it here from config.buyIn x registered both overstated it
+      // by the FEE on every entry (config.buyIn is the fee-inclusive total)
+      // and pre-applied the guarantee, which must now be FUNDED at
+      // finalization (fn_apply_prize_guarantee, host club treasury), never
+      // written for free at creation. The lobby already displays
+      // max(prize_pool, guaranteed_prize) client-side.
       const { error: updateErr } = await supabase
         .from('tournaments')
-        .update({ current_players: registered, prize_pool: prizePool, status: 'REGISTERING' })
+        .update({ current_players: registered, status: 'REGISTERING' })
         .eq('id', tournament.id);
       if (updateErr)
         reportError(
@@ -1433,14 +2698,7 @@ export class TournamentRecurringService {
       // MTTs keep their own 60s lead-in. OPEN_TABLE_WAIT_MS is the seat-held
       // wait for spins and SNGs only - an MTT is a scheduled event by nature.
       const startTime = new Date(Date.now() + 60 * 1000);
-      const gameTypeMap: Record<string, string> = {
-        nlh: 'NLH',
-        plo4: 'PLO4',
-        plo5: 'PLO5',
-        plo8: 'PLO8',
-        short_deck: 'SHORT_DECK',
-      };
-      const dbGameType = gameTypeMap[config.gameVariant] || 'NLH';
+      const dbGameType = dbGameTypeFor(config.gameVariant, 'createMTT');
 
       const isBountyType =
         config.type === 'bounty' ||
@@ -1506,6 +2764,25 @@ export class TournamentRecurringService {
             guaranteed_prize: wholeChips(config.guarantee),
             starting_chips: config.startingStack,
             max_players: config.maxPlayers,
+            /**
+             * SEATS AT THE TABLE (2026-08-31 audit). Neither the MTT nor the
+             * XMTT insert wrote this column, and it is `NOT NULL DEFAULT 9` —
+             * the same omission already found and fixed for SNG (10,315 rows)
+             * and Spin (28,731 rows), still open on these two.
+             *
+             * Measured live before the fix: 5,000 PLO6 tournaments sitting at
+             * table_size 9 against a deck that can serve 7. The row was not
+             * merely cosmetic-wrong, it disagreed with what the engine would
+             * actually do — TournamentManagerBase clamps the seat count through
+             * clampSeatsForVariant at deal time and logs "deck cannot serve
+             * more". So the database said 9, the felt said 6, and nothing
+             * reconciled them.
+             *
+             * Written through the SAME function the engine applies, so the row
+             * now states what will actually be dealt. Nine is full ring; the
+             * clamp takes it down per variant (plo6 6, plo5 7, plo4/plo8 8).
+             */
+            table_size: clampSeatsForVariant(config.gameVariant, 9),
             min_players: config.minPlayers || 3,
             current_players: 0,
             status: 'REGISTERING',
@@ -1548,6 +2825,8 @@ export class TournamentRecurringService {
           ),
           'RecurringService.Tournament_creation_attempt_at'
         );
+        // A short funding bank will not refill in five seconds.
+        if (isGuaranteeRefusal(error)) break;
         if (attempt < 3) await new Promise((r) => setTimeout(r, 5000));
       }
       if (!tournament) {
@@ -1557,6 +2836,9 @@ export class TournamentRecurringService {
           ),
           'RecurringService.Tournament_creation_FAILED_aft'
         );
+        if (isGuaranteeRefusal(lastError)) {
+          await notifyGuaranteeShort(this.ownerClubId, 'createTournament');
+        }
         return { tournamentId: null, registered: 0 };
       }
 
@@ -1569,18 +2851,17 @@ export class TournamentRecurringService {
         ? config.horsesToRegister
         : Math.max(config.horsesToRegister, config.maxPlayers);
       const registered = await this.registerHorses(tournament.id, horseTarget);
-      // TOURNEY-AUDIT 2026-07-24 [money]: for bounty formats the bounty
-      // portion of each entry funds the bounty pool, NOT the prize pool —
-      // the old math left the full buy-in in the pool AND paid bounties on
-      // top (double-counting the bounty component).
-      const perEntryToPool = Math.max(0, config.buyIn - (bountyAmount || 0));
-      const entriesPool = Math.round(perEntryToPool * registered * 100) / 100;
-      // Honor guaranteed prize: prize pool = max(entries contribution, guarantee)
-      const prizePool = config.guarantee ? Math.max(entriesPool, config.guarantee) : entriesPool;
-
+      // POOL TRUTH 2026-08-27: prize_pool is ACCUMULATED by the register RPCs
+      // (each entry adds its exact prize share - fee and bounty excluded), so
+      // recomputing it here from config.buyIn x registered both overstated it
+      // by the FEE on every entry (config.buyIn is the fee-inclusive total)
+      // and pre-applied the guarantee, which must now be FUNDED at
+      // finalization (fn_apply_prize_guarantee, host club treasury), never
+      // written for free at creation. The lobby already displays
+      // max(prize_pool, guaranteed_prize) client-side.
       const { error: updateErr } = await supabase
         .from('tournaments')
-        .update({ current_players: registered, prize_pool: prizePool, status: 'REGISTERING' })
+        .update({ current_players: registered, status: 'REGISTERING' })
         .eq('id', tournament.id);
       if (updateErr)
         reportError(
@@ -1601,7 +2882,8 @@ export class TournamentRecurringService {
   }
 
   private async createSNG(
-    config: SNGConfig
+    config: SNGConfig,
+    owner: BoardOwner = this.houseOwner
   ): Promise<{ tournamentId: string | null; registered: number }> {
     try {
       // A heads-up game is seat-first: one horse opens it and the second seat
@@ -1613,28 +2895,46 @@ export class TournamentRecurringService {
             ? seatFirstHumanWindowMs()
             : OPEN_TABLE_WAIT_MS)
       );
-      const gameTypeMap: Record<string, string> = {
-        nlh: 'NLH',
-        plo4: 'PLO4',
-        plo5: 'PLO5',
-        plo8: 'PLO8',
-      };
-      const dbGameType = gameTypeMap[config.gameVariant] || 'NLH';
+      const dbGameType = dbGameTypeFor(config.gameVariant, 'createSNG');
 
       const { data: sng, error } = await supabase
         .from('tournaments')
         .insert({
-          club_id: this.ownerClubId,
-          union_id: this.ownerUnionId,
+          // Whose board this is. See BoardOwner: these two fields are the
+          // ONLY thing that decides which lobby the game appears in.
+          club_id: owner.clubId,
+          union_id: owner.unionId,
           name: config.name,
           game_type: dbGameType,
           variant: 'sng',
           tournament_type: 'SNG',
-          ...buyInColumns(config.buyIn),
+          // ONE source of truth for the rate — see rakeRateFor in
+          // server/src/config/buyIn.ts. Keyed on the SEATS this config actually
+          // has rather than on the word "SNG", so a future field SNG prices
+          // itself correctly without anyone remembering to come back here.
+          ...buyInColumns(
+            config.buyIn,
+            rakeRateFor({ tournamentType: 'SNG', maxPlayers: config.maxPlayers })
+          ),
           guaranteed_prize: 0,
           starting_chips: config.startingStack,
           max_players: config.maxPlayers,
           min_players: config.minPlayers || 3,
+          /**
+           * SEATS AT THE TABLE (2026-08-27). This column was never written and
+           * is `NOT NULL DEFAULT 9`, so every Heads-Up game ever created by this
+           * service claimed a nine-handed table — 10,315 rows sitting at 9.
+           *
+           * That is not cosmetic. TournamentBrainContext resolves the format
+           * from `table_size ?? max_players ?? 9`, and `??` only falls through
+           * on NULL, so a defaulted 9 meant `max_players = 2` could never be
+           * reached and EVERY duel resolved to 'mtt'. The horses then played
+           * two-handed, one-spot-pays poker with ICM and bubble ranges.
+           *
+           * Clamped 2..10 to match every reader of this column
+           * (TournamentManagerBase, TournamentManager, the deal gate).
+           */
+          table_size: Math.min(10, Math.max(2, Number(config.maxPlayers) || 2)),
           current_players: 0,
           status: 'REGISTERING',
           blind_structure: config.blindStructure,
@@ -1674,11 +2974,35 @@ export class TournamentRecurringService {
         const seatPlan = horsesForSeatHeldGame(config.maxPlayers);
         registered = await this.registerHorses(sng.id, seatPlan.horses);
       }
-      const prizePool = config.buyIn * registered;
+
+      /**
+       * Dan 2026-08-23: same trap as createSpin, one branch narrower.
+       *
+       * A seat-first SNG goes down the createOpenSeatTable path above, which
+       * seats its horse without registering anybody, so `registered` is still
+       * 0 here - and writing that zero erased the seat-derived count the
+       * trigger had just set. A field SNG (6-max, 9-max) really does keep the
+       * registration model, and for those the count is correct and must still
+       * be written.
+       */
+      // POOL TRUTH 2026-08-27: prize_pool was written here as
+      // config.buyIn x registered — 0 for a seat-first game, OVERWRITING the
+      // prize share the opening horse's registration had just accumulated.
+      // The 2026-08-23 fix below caught this exact trap for current_players
+      // and left prize_pool in it, so every Heads-Up duel paid its winner ONE
+      // prize share instead of two (95 on a 100 duel priced at 1.90x) —
+      // ~230,561 chips retained over 30 days, repaid by
+      // fn_backpay_hu_winner_shortfalls. The register RPCs are the only
+      // writer of pool contributions now.
+      const seatFirstSng = isSeatFirstFormat('sng', config.maxPlayers);
+      const sngStateUpdate: Record<string, unknown> = {
+        status: 'REGISTERING',
+      };
+      if (!seatFirstSng) sngStateUpdate.current_players = registered;
 
       const { error: sngUpdateErr } = await supabase
         .from('tournaments')
-        .update({ current_players: registered, prize_pool: prizePool, status: 'REGISTERING' })
+        .update(sngStateUpdate)
         .eq('id', sng.id);
       if (sngUpdateErr)
         reportError(
@@ -1758,20 +3082,82 @@ export class TournamentRecurringService {
        * start with - 12 of 24 open Spins were stuck that way, some for a day,
        * and the next human to sit at one became its FOURTH entrant.
        */
-      const opening = openingHorsesForSeatFirst(seats);
-      const candidates = await this.pickFreeHorses(opening);
+      // Dan 2026-08-26: a held-empty game opens with NO horses — its seats
+      // are the invitation. topUpWithHorses fills it the moment a human sits.
+      // A club-owned board belongs to that club's actual membership. The
+      // house fleet may keep the house lobby liquid, but it cannot silently
+      // enroll itself in a player's newly created club merely because that
+      // owner enabled Spins or Heads-Up.
+      const isHouseBoard = tournament.club_id === this.houseOwner.clubId;
+      const opening =
+        isHouseBoard && !seatFirstHeldEmpty(tournament.id, seats)
+          ? openingHorsesForSeatFirst(seats)
+          : 0;
+      const candidates = await this.pickFreeHorses(opening, false, tournament.id);
       let seated = 0;
       for (const horse of candidates) {
-        const { data: res } = await supabase.rpc('fn_seat_horse_in_seat_first_game', {
-          p_tournament_id: tournament.id,
-          p_user_id: horse,
-        });
+        const { data: res, error: seatRpcErr } = await supabase.rpc(
+          'fn_seat_horse_in_seat_first_game',
+          { p_tournament_id: tournament.id, p_user_id: horse }
+        );
+        // The capacity and four-table triggers RAISE rather than returning
+        // {ok:false}, so a discarded `error` here is a silent refusal.
+        if (seatRpcErr) {
+          reportError(
+            new Error(
+              `[TournamentRecurring] opening seat refused for ${tournament.name}: ${seatRpcErr.message}`
+            ),
+            'TournamentRecurring.opening_seat_rpc_failed'
+          );
+          continue;
+        }
         if ((res as { ok?: boolean } | null)?.ok === true) seated++;
       }
       if (seated < opening) {
         console.warn(
           `[TournamentRecurring] ${tournament.name}: seated ${seated}/${opening} opening horse(s) - the pool is thin`
         );
+      }
+
+      /**
+       * Dan 2026-08-23: TELL THE LOBBY THE SEATS ARE SOLD.
+       *
+       * The horses above take REAL seats, and that fixed the game logic. It
+       * did not fix the shop window: `current_players` is a stored column, a
+       * seat row does not touch it, and this was the one seat-first path that
+       * never synced it. Measured live before this fix: 16 open Spins
+       * advertising "0/3" while holding 32 paid seats between them - two of
+       * three sold, ONE SEAT FROM DEALING, and the lobby said empty. Nine SNGs
+       * the same. The fourteen Spins that read correctly all got there through
+       * topUpWithHorses, which does sync.
+       *
+       * That is the same complaint as the MTT ramp, arriving from the opposite
+       * direction: "PLAYERS DON'T JUMP IN AND PLAY TOURNAMENTS THAT HAVE NO
+       * PLAYERS IN THEM." Here the players were already in them. Only the
+       * number was wrong, and the number is the entire thing a player decides
+       * on.
+       *
+       * Derived from the seat rows, never incremented: registrations and seats
+       * disagree constantly for these formats, which is why a counter that
+       * counts registrations had spins reading 3/3 on two bought seats
+       * (refusing every further sit-down as 'tournament_full') and 0/3 on
+       * three (never starting).
+       *
+       * Best-effort by design. A failed sync must not fail table creation -
+       * the seats are real either way, and the next top-up pass syncs again.
+       */
+      if (seated > 0) {
+        const { error: syncErr } = await supabase.rpc('fn_sync_seat_first_player_count', {
+          p_tournament_id: tournament.id,
+        });
+        if (syncErr) {
+          reportError(
+            new Error(
+              `[TournamentRecurring] seat-count sync failed for ${tournament.name}: ${syncErr.message}`
+            ),
+            'TournamentRecurring.seat_first_count_sync_failed'
+          );
+        }
       }
 
       return table.id as string;
@@ -1801,47 +3187,508 @@ export class TournamentRecurringService {
    * pattern registerHorses right below already used - the per-horse version was
    * a regression against a convention this very file had settled on.
    */
-  private async pickFreeHorses(count: number): Promise<string[]> {
+  /**
+   * How many idle horses the cash room still needs before the tournament
+   * boards may claim any more.
+   *
+   * CASH_FLOOR_PER_TABLE is per LIVE cash table, counted from the seats rather
+   * than from tables.current_players -- that column is maintained by a
+   * different path and was measured disagreeing with the seats (69 vs 72) on
+   * the same afternoon a denormalised count was found stale in three other
+   * places. Count the thing itself.
+   *
+   * Fails OPEN, returning 0: if this read errors the boards behave exactly as
+   * they did before the reserve existed. A reserve that turns a database blip
+   * into a frozen lobby would be worse than no reserve.
+   */
+  private async cashRoomReserve(): Promise<number> {
+    try {
+      const { data: cashTables, error: tErr } = await supabase
+        .from('tables')
+        .select('id')
+        .is('tournament_id', null)
+        .eq('is_deleted', false)
+        .in('status', ['waiting', 'running'])
+        .limit(2000);
+      if (tErr || !cashTables || cashTables.length === 0) return 0;
+
+      const ids = cashTables.map((t) => (t as { id: string }).id);
+      const { count: seated, error: sErr } = await supabase
+        .from('table_seats')
+        .select('user_id', { count: 'exact', head: true })
+        .is('left_at', null)
+        .in('table_id', ids);
+      if (sErr || typeof seated !== 'number') return 0;
+
+      const wanted = ids.length * CASH_FLOOR_PER_TABLE;
+      return Math.max(0, wanted - seated);
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   * HORSE CONCURRENCY — Dan 2026-08-23: "each horse can play up to 4 tables"
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * How many live games each horse is currently committed to. Anything at or
+   * above HORSE_MAX_CONCURRENT_TABLES is unavailable; everything below it is
+   * fair game.
+   *
+   * WHAT THIS REPLACES, AND WHY THE OLD RULE WAS TOO BLUNT.
+   * Both callers used to treat a horse as unavailable the moment it held ONE
+   * seat or ONE registration. That is a concurrency limit of 1 on a fleet the
+   * engine has always been able to multi-table. Measured live while writing
+   * this: 584 horses exist and only 37 were pickable, because 554 were seated
+   * at cash tables and every one of them was invisible to every tournament.
+   * Tournament fields and cash tables were competing for the same horse rather
+   * than sharing it.
+   *
+   * WHAT IT DELIBERATELY KEEPS. The prohibition that mattered was never "a
+   * horse plays two games" - it was a horse being booked into the SAME game
+   * twice, and a horse being yanked out of a hand it is mid-way through.
+   * Neither changes here: registerHorses still skips anybody already in the
+   * target tournament, fn_register_horse_for_tournament is still the only way
+   * in, and a seat a horse already holds is never taken away from it. A horse
+   * gains a table; it never loses one.
+   *
+   * COUNTING, WITHOUT DOUBLE COUNTING. A live seat is one game. A registration
+   * is one game only while the tournament has not started - once it is RUNNING
+   * the horse has a seat at its table and the seat side already counts it.
+   * Counting both would put every tournament regular at an instant 2.
+   */
+  /**
+   * Returns null when the load CANNOT BE READ, never an empty map.
+   *
+   * An unreadable read used to fall through `?? []` into a map with nothing in
+   * it, and an empty load map says "every horse in the fleet is idle". Both
+   * callers then hand out horses that are already at four tables, the
+   * four-table trigger refuses each one with 23514, and the pass fills nobody
+   * - while the logs stay silent because the refusal is discarded too. Unknown
+   * is UNKNOWN: the caller declines this pass and tries again in five seconds.
+   */
+  private async horseLoadMap(): Promise<Map<string, number> | null> {
+    // One live seat = one game. Cash and tournament tables alike.
+    /* NO CEILING (Dan 2026-08-27: "there should never be a cap ... anywhere
+       else"). This read carried `.limit(20000)` with a comment explaining
+       that a truncated set understates load and hands out a horse already at
+       four tables - the ceiling was picked to make that implausible, and
+       nothing checked whether it had been hit, so saturation would have
+       passed as a complete answer. It pages instead: no number to outgrow,
+       and an incomplete read is reported as UNKNOWN, which is this
+       function's documented contract. */
+    const PAGE = 1000;
+    const seatRows: LoadRef[] = [];
+    for (let page = 0; ; page++) {
+      if (page > 10_000) {
+        reportError(
+          new Error('[TournamentRecurring] horse seat-load paging did not terminate'),
+          'TournamentRecurring.horse_load_seats_runaway'
+        );
+        return null;
+      }
+      /* The table is joined for two reasons, both of which were over-counting
+         load and therefore holding pickable horses out of every board:
+
+         (a) a seat at a CLOSED table is history, not a game. The hard limit in
+             the database has said so since 2026-08-24 and this read had never
+             agreed with it;
+         (b) the tournament id is what lets buildHorseLoadMap tell a
+             seat-first chair from a separate booking for the same game. */
+      const { data: chunk, error: seatErr } = await supabase
+        .from('table_seats')
+        .select('user_id, table_id, tables!inner(status, tournament_id)')
+        .is('left_at', null)
+        .neq('tables.status', 'closed')
+        /*
+         * THE SORT KEY MUST BE UNIQUE (2026-09-01).
+         *
+         * This paged 1,000 rows at a time ordered by `user_id` alone, and
+         * user_id is the LEAST unique column here: the whole point of this
+         * read is that a horse holds up to four seats. Postgres does not
+         * promise a stable order within ties, so LIMIT/OFFSET over it can
+         * repeat a row on one page and drop another.
+         *
+         * Both directions land on a documented failure of this very
+         * function. A dropped row UNDERSTATES load, so a horse already at
+         * four tables is handed out, the four-table trigger refuses it with
+         * 23514 and the pass fills nobody - which is the "added NONE" line
+         * the overlay guard keeps logging. A repeated row OVERSTATES load, so
+         * a horse with two tables looks maxed out and is held out of every
+         * board.
+         *
+         * NOT currently firing: measured 2026-09-01 there were 244 live seat
+         * rows and 540 registration rows, both inside a single page, so no
+         * boundary is crossed today. It is fixed now because it is invisible
+         * until the fleet grows past a page and then presents as
+         * intermittent, unexplainable starvation - and because this function
+         * already documents that an incomplete read must be reported as
+         * UNKNOWN rather than passed off as an answer.
+         */
+        .order('user_id', { ascending: true })
+        .order('table_id', { ascending: true })
+        .range(page * PAGE, page * PAGE + PAGE - 1);
+      if (seatErr) {
+        reportError(
+          new Error(`[TournamentRecurring] horse seat-load read failed: ${seatErr.message}`),
+          'TournamentRecurring.horse_load_seats_failed'
+        );
+        return null;
+      }
+      if (!chunk) return null;
+      seatRows.push(...chunk);
+      if (chunk.length < PAGE) break;
+    }
+
+    // A registration is a game only until the tournament STARTS. Once it is
+    // RUNNING the horse holds a seat at its table and the seat query above
+    // has already counted it; counting both would put every tournament
+    // regular at an instant 2. That is why RUNNING is absent from this list
+    // and must stay absent.
+    const regRows: LoadRef[] = [];
+    for (let page = 0; ; page++) {
+      if (page > 10_000) {
+        reportError(
+          new Error('[TournamentRecurring] horse registration-load paging did not terminate'),
+          'TournamentRecurring.horse_load_registrations_runaway'
+        );
+        return null;
+      }
+      const { data: chunk, error: regErr } = await supabase
+        .from('tournament_players')
+        .select('user_id, tournament_id, tournaments!inner(status)')
+        .in('status', ['registered', 'playing'])
+        .in('tournaments.status', ['ANNOUNCED', 'REGISTERING'])
+        // Same unstable-pagination hazard as the seat read above: a horse is
+        // registered for several events at once, so user_id alone does not
+        // order these rows deterministically.
+        .order('user_id', { ascending: true })
+        .order('tournament_id', { ascending: true })
+        .range(page * PAGE, page * PAGE + PAGE - 1);
+      if (regErr) {
+        reportError(
+          new Error(`[TournamentRecurring] horse registration-load read failed: ${regErr.message}`),
+          'TournamentRecurring.horse_load_registrations_failed'
+        );
+        return null;
+      }
+      if (!chunk) return null;
+      regRows.push(...chunk);
+      if (chunk.length < PAGE) break;
+    }
+
+    return buildHorseLoadMap(
+      (seatRows ?? []).map((r) => {
+        // PostgREST returns a to-one embed as an object, but the generated
+        // types have been known to widen it to an array; read both shapes
+        // rather than silently losing the id and every dedupe with it.
+        const row = r as {
+          user_id?: string;
+          tables?:
+            | { tournament_id?: string | null }
+            | Array<{ tournament_id?: string | null }>
+            | null;
+        };
+        const embedded = Array.isArray(row.tables) ? row.tables[0] : row.tables;
+        return { user_id: row.user_id, tournament_id: embedded?.tournament_id ?? null };
+      }),
+      (regRows ?? []).map((r) => {
+        const row = r as { user_id?: string; tournament_id?: string };
+        return { user_id: row.user_id, tournament_id: row.tournament_id ?? null };
+      })
+    );
+  }
+
+  /** Horses already at the concurrency ceiling. */
+  private static atCapacity(load: Map<string, number>, id: string): boolean {
+    return horseAtCapacity(load.get(id) ?? 0);
+  }
+
+  /**
+   * The ids that may play in this tournament's club, or null when the answer
+   * is not knowable right now.
+   *
+   * Hoisted out of registerHorses (#2430) because it was only ever applied
+   * THERE. Every seat-first format -- Spins, Heads-Up, SNGs, the past-start
+   * top-up -- fills through pickFreeHorses instead, which read the whole
+   * platform fleet and never looked at the club. #2430 closed the front door
+   * and left that one open.
+   *
+   * NULL IS NOT AN EMPTY CLUB. A failed or partial membership read returns
+   * null and the caller declines to filter, exactly as registerHorses does:
+   * refusing to seat on an unreadable page would starve every board on the
+   * platform, which is a worse failure than the one being fixed.
+   */
+  private async clubMemberIdsForTournament(tournamentId: string): Promise<Set<string> | null> {
+    const hostClub = await supabase
+      .from('tournaments')
+      .select('club_id')
+      .eq('id', tournamentId)
+      .maybeSingle();
+    const hostClubId = (hostClub.data as { club_id?: string } | null)?.club_id;
+    if (!hostClubId) return null;
+    const memberPage = await fetchAllRows<{ user_id: string }>(
+      (cursor, want) => {
+        let q = supabase
+          .from('club_members')
+          .select('user_id')
+          .eq('club_id', hostClubId)
+          .order('user_id', { ascending: true })
+          .limit(want);
+        if (cursor) q = q.gt('user_id', cursor);
+        return q;
+      },
+      { label: 'TournamentRecurring.clubMembers', maxRows: 100_000, idKey: 'user_id' }
+    );
+    if (!memberPage.complete) return null;
+    return new Set(memberPage.rows.map((r) => r.user_id));
+  }
+
+  private async pickFreeHorses(
+    count: number,
+    allLanes = false,
+    tournamentId?: string
+  ): Promise<string[]> {
     if (count <= 0) return [];
     try {
-      const { data: busyRows } = await supabase
-        .from('tournament_players')
-        .select('user_id, tournaments!inner(status)')
-        .in('status', ['registered', 'playing'])
-        .in('tournaments.status', ['ANNOUNCED', 'REGISTERING', 'RUNNING'])
-        .limit(2000);
-      const busy = new Set((busyRows ?? []).map((r: any) => r.user_id));
+      // Dan 2026-08-23: a horse is unavailable at FOUR concurrent games, not
+      // at one. See horseLoadMap for what that replaced and what it keeps.
+      const load = await this.horseLoadMap();
+      // Unknown load, not zero load. horseLoadMap has already reported why.
+      // Picking against an empty map means picking horses that are at four
+      // tables, which the trigger refuses one by one.
+      if (!load) return [];
+      const busy = new Set(
+        [...load.entries()]
+          .filter(([id]) => TournamentRecurringService.atCapacity(load, id))
+          .map(([id]) => id)
+      );
 
-      const { data: seatRows } = await supabase
-        .from('table_seats')
-        .select('user_id')
-        .is('left_at', null)
-        .limit(2000);
-      for (const r of seatRows ?? []) {
-        if ((r as { user_id?: string }).user_id) busy.add((r as { user_id: string }).user_id);
+      /**
+       * TWO BUGS FIXED HERE (2026-08-23).
+       *
+       * 1. `.limit(400)` against a pool that is 584 horses and growing. The
+       *    last 184 could never be picked by this path at all, so the fleet
+       *    read as exhausted while nearly a third of it sat idle. Measured
+       *    live: 24 spins and 12 heads-up games waiting 2-8 hours past their
+       *    start for a seat. registerHorses right below already sizes its
+       *    fetch as `count + busy.size`, which the comment above calls the
+       *    convention this file settled on - this one had drifted from it.
+       *
+       * 2. Every caller drew from the SAME first rows in the SAME order, and
+       *    the busy set is read before the claim rather than atomically with
+       *    it, so two concurrent callers (the recurring service, the
+       *    scheduler, and GameServer's past-start top-up all run this) pick
+       *    the same horses and double-book them. Live count: 41 horses in a
+       *    tournament AND at a cash table, plus 24 seated at two cash tables
+       *    - one AI identity being asked to act in two places at once.
+       *    Shuffling the candidates does not make the claim atomic, but it
+       *    turns a near-certain collision into an unlikely one, which is the
+       *    difference between systematic and occasional.
+       */
+      // V23 (2026-08-30): THE WHOLE FLEET, PAGED — no limit at all. The V22
+      // `count*4 + busy.size + 50` sizing carried headroom for the lane
+      // filter, but the query had no ORDER BY and no busy exclusion, so
+      // Postgres served the SAME stable first page to every caller all day.
+      // Once that page's free horses were drained (busy against a 584-horse
+      // fleet), the filtered candidates shrank to zero and every seat-first
+      // fill starved — the SNG board sat dead for hours while two-thirds of
+      // the fleet idled beyond the page. The fleet is ~600 rows of ids; just
+      // read all of it keyset-paged (fetchAllRows, the same pattern
+      // HorseFleetManager.seedAllTables uses) and filter/shuffle in memory.
+      const fleetPage = await fetchAllRows<{ id: string }>(
+        (cursor, want) => {
+          let q = supabase
+            .from('profiles')
+            .select('id')
+            .eq('is_horse', true)
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
+        { label: 'TournamentRecurring.pickFreeHorses', maxRows: 50_000 }
+      );
+      if (!fleetPage.complete) {
+        // The fleet read failing used to read as "the fleet is empty", which
+        // is indistinguishable in the logs from a genuinely exhausted pool.
+        reportError(
+          new Error('[TournamentRecurring] horse fleet read came back incomplete'),
+          'TournamentRecurring.horse_fleet_read_failed'
+        );
+        return [];
       }
 
-      const { data: horses } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('is_horse', true)
-        .limit(400);
+      // Busy (4-game cap) exclusion and the lane/activity filters, unchanged
+      // in meaning — now applied to the FULL fleet. See selectHorseCandidates.
+      /**
+       * A CLUB'S GAMES ARE FILLED BY THAT CLUB'S MEMBERS (Dan 2026-09-01:
+       * "IT CAN NOT, WANDER... THEY ARE LIMITED TO ONLY THE CLUB THEY ARE
+       * APART OF!").
+       *
+       * The fleet read above is every is_horse profile on the platform. A
+       * standalone club's population was seated into another club's Spins and
+       * heads-up games through this path while #2430 held the registration
+       * path shut.
+       */
+      const fleetIds = fleetPage.rows.map((h) => h.id);
+      const clubIds = tournamentId ? await this.clubMemberIdsForTournament(tournamentId) : null;
+      const inClub = clubIds ? fleetIds.filter((id) => clubIds.has(id)) : fleetIds;
 
-      const free: string[] = [];
-      for (const h of horses ?? []) {
-        const id = (h as { id: string }).id;
-        if (busy.has(id)) continue;
-        free.push(id);
-        if (free.length >= count) break;
+      const candidates = selectHorseCandidates(inClub, busy, allLanes, new Date().getUTCHours());
+
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  THE CASH ROOM GETS A FLOOR BEFORE THE BOARD GETS ITS NEXT SPIN
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * Measured 2026-08-23, an hour after the seat-first board was unwedged
+       * and started opening every price point again:
+       *
+       *     MTT   190 horses      CASH  43 horses across 44 tables
+       *     SPIN  128 horses      -> 72 seats occupied in the whole cash room
+       *     SNG   107 horses
+       *
+       * The board did exactly what it was told and drank the fleet. Nothing
+       * here TAKES a horse off a cash table -- the busy set above forbids that
+       * -- but by claiming every idle horse the instant one stands up, it
+       * starves whatever puts horses back into cash seats, and the room
+       * hollows out one rotation at a time. 44 tables showing 1 or 2 players
+       * is a worse lobby than 30 spins showing 2/3.
+       *
+       * So the tournament side may not draw the pool below what the cash room
+       * still needs. This does not move anybody; it declines to claim the last
+       * horses, which leaves them for the cash seater to find. When the fleet
+       * is comfortable the reserve is zero and this costs one indexed count.
+       *
+       * The floor is deliberately LOW. It is not "fill the cash room", it is
+       * "never let it go empty while a board of spins fills": two horses is a
+       * table that is visibly alive and can take a human as a third.
+       */
+      // nodeCrypto, not Math.random: CryptoRandom.test.ts forbids Math.random
+      // anywhere in the engine services, and it is right to - a weak source
+      // that starts life shuffling a horse list is one refactor away from
+      // deciding a payout.
+      //
+      // V23: shuffle BEFORE the cash-room reserve trim. The trim used to cut
+      // the tail of the (stable, id-ordered) unshuffled list, so the same
+      // physical horses were held back for the cash room every single call.
+      for (let i = candidates.length - 1; i > 0; i--) {
+        const j = nodeCrypto.randomInt(i + 1);
+        [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
       }
-      return free;
+      const reserved = await this.cashRoomReserve();
+      const claimable = Math.max(0, candidates.length - reserved);
+      if (claimable < count) {
+        console.log(
+          `[TournamentRecurring] holding ${reserved} horse(s) back for the cash room; ${claimable} of ${count} claimable`
+        );
+      }
+      candidates.length = Math.min(candidates.length, claimable);
+      return candidates.slice(0, count);
     } catch {
       return [];
     }
   }
 
+  /**
+   * The horses this game already has on its roster who are NOT holding a seat
+   * on its table — the only entrants a roster-full seat-first game can still
+   * admit. See seatFirstFillOrder for the deadlock and the production numbers.
+   *
+   * Every read here fails CLOSED, returning an empty list rather than a
+   * guessed one: the caller then falls back to the free pool exactly as it did
+   * before, which is the old behaviour and never worse than it.
+   *
+   * Horses only. A human on the roster who has not taken their seat is a human
+   * who has not decided yet, and seating them from the engine would spend
+   * their money for them.
+   */
+  private async unseatedRegistrantHorses(
+    tournamentId: string,
+    primaryTableId: string | null
+  ): Promise<string[]> {
+    // No table means there is no seat to give anybody; the RPC would answer
+    // 'no_table' for each one. Repair is fn_repair_seat_first_games' job.
+    if (!primaryTableId) return [];
+    try {
+      const { data: roster, error: rosterErr } = await supabase
+        .from('tournament_players')
+        .select('user_id')
+        .eq('tournament_id', tournamentId)
+        .in('status', ['registered', 'playing'])
+        .limit(1000);
+      if (rosterErr) {
+        reportError(
+          new Error(
+            `[TournamentRecurring] roster read failed for ${tournamentId.slice(0, 8)}: ${rosterErr.message}`
+          ),
+          'TournamentRecurring.seat_first_roster_read_failed'
+        );
+        return [];
+      }
+      const rosterIds = [
+        ...new Set(
+          (roster ?? [])
+            .map((r) => String((r as { user_id?: string }).user_id ?? ''))
+            .filter((id) => id.length > 0)
+        ),
+      ];
+      if (rosterIds.length === 0) return [];
+
+      const { data: seatRows, error: seatErr } = await supabase
+        .from('table_seats')
+        .select('user_id')
+        .eq('table_id', primaryTableId)
+        .is('left_at', null)
+        .limit(1000);
+      if (seatErr) {
+        // Unreadable seats is UNKNOWN, never "nobody is seated" — that reading
+        // would re-seat a player who is already sitting there.
+        reportError(
+          new Error(
+            `[TournamentRecurring] seat read failed for table ${primaryTableId.slice(0, 8)}: ${seatErr.message}`
+          ),
+          'TournamentRecurring.seat_first_table_seat_read_failed'
+        );
+        return [];
+      }
+      const seated = new Set(
+        (seatRows ?? [])
+          .map((s) => String((s as { user_id?: string }).user_id ?? ''))
+          .filter((id) => id.length > 0)
+      );
+
+      const unseated = rosterIds.filter((id) => !seated.has(id));
+      if (unseated.length === 0) return [];
+
+      const { data: horseRows, error: horseErr } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('is_horse', true)
+        .in('id', unseated);
+      if (horseErr) {
+        reportError(
+          new Error(
+            `[TournamentRecurring] roster horse lookup failed for ${tournamentId.slice(0, 8)}: ${horseErr.message}`
+          ),
+          'TournamentRecurring.seat_first_roster_horse_lookup_failed'
+        );
+        return [];
+      }
+      return (horseRows ?? [])
+        .map((h) => String((h as { id?: string }).id ?? ''))
+        .filter((id) => id.length > 0);
+    } catch (err) {
+      reportError(err, 'TournamentRecurring.unseatedRegistrantHorses_threw');
+      return [];
+    }
+  }
+
   private async createSpin(
-    config: SpinConfig
+    config: SpinConfig,
+    owner: BoardOwner = this.houseOwner
   ): Promise<{ tournamentId: string | null; registered: number }> {
     try {
       // A Spin is three-handed by definition. The seat count is forced below
@@ -1883,7 +3730,13 @@ export class TournamentRecurringService {
       // the one floor every draw shares. Start rewrites stack, blinds,
       // payouts and pool from the real tier before any card is dealt.
       const placeholderTier = SPIN_TIERS[0];
-      const spinStack = placeholderTier.startingStack;
+      /* THE BOARD DECIDES THE STACK, NOT THE DRAW (Dan, 2026-09-01). This read
+         SPIN_TIERS[0].startingStack, a placeholder that start() then rewrote
+         from whichever tier the wheel landed on. The tier no longer carries a
+         stack: a Turbo board is 300 and a Deep Stack board is 1000, the config
+         says which, and the number is therefore true from the moment the row
+         exists - which is what lets a paid seat hold its chips. */
+      const spinStack = config.startingStack;
       const spinBlinds = Array.from({ length: 12 }, (_, i) => {
         const b = spinBlindsForLevel(i + 1);
         return {
@@ -1896,24 +3749,15 @@ export class TournamentRecurringService {
       });
       const spinPayouts = [{ place: 1, percentage: 100 }];
 
-      // SPIN_GAME_TYPES advertises NLH, PLO4, PLO5 and PLO6. This map decides
-      // what actually reaches the database, and `plo6` was missing from it —
-      // so a PLO6 Spin config would have been silently created as NLH, giving
-      // players a different game from the one on the tile. Every member of
-      // SPIN_GAME_TYPES must have an entry here.
-      const gameTypeMap: Record<string, string> = {
-        nlh: 'NLH',
-        plo4: 'PLO4',
-        plo5: 'PLO5',
-        plo6: 'PLO6',
-      };
-      const dbGameType = gameTypeMap[config.gameVariant] || 'NLH';
+      const dbGameType = dbGameTypeFor(config.gameVariant, 'createSpin');
 
       const { data: spin, error } = await supabase
         .from('tournaments')
         .insert({
-          club_id: this.ownerClubId,
-          union_id: this.ownerUnionId,
+          // Whose board this is. See BoardOwner: these two fields are the
+          // ONLY thing that decides which lobby the game appears in.
+          club_id: owner.clubId,
+          union_id: owner.unionId,
           // THE NAME MUST NOT CARRY THE MULTIPLIER. It used to read
           // "3 Chip Spin NLH (4x)", and that one string reached the lobby
           // tile, the tournament list, the table masthead and the browser tab
@@ -1953,6 +3797,13 @@ export class TournamentRecurringService {
           // definition. See SPIN_SEATS.
           max_players: SPIN_SEATS,
           min_players: SPIN_SEATS,
+          // Same omission as createSNG carried until 2026-08-27: the column is
+          // NOT NULL DEFAULT 9, so every Spin claimed a nine-handed table
+          // (28,731 rows). The Spin format is resolved from tournament_type
+          // before table_size is ever consulted, so nothing misbehaved here —
+          // but a row that says 9 seats for a three-handed game is a lie
+          // waiting for the next reader.
+          table_size: SPIN_SEATS,
           current_players: 0,
           status: 'REGISTERING',
           blind_structure: spinBlinds,
@@ -1992,10 +3843,28 @@ export class TournamentRecurringService {
       // above — the pool amount IS the multiplier, just divided by the
       // buy-in. Start computes and writes the real pool in the same breath
       // as the draw and the reserve settlement.
+      /**
+       * Dan 2026-08-23: DO NOT WRITE current_players HERE.
+       *
+       * This update used to carry `current_players: registered`, and
+       * `registered` is the hardcoded 0 above - a leftover from when a Spin
+       * pre-registered nobody. createOpenSeatTable has just seated two horses
+       * in REAL SEATS one line earlier, so this wrote a zero straight over the
+       * truth, every single time a Spin was created.
+       *
+       * That is the whole reason 16 open Spins were advertising "0/3" while
+       * holding 32 paid seats between them. It also defeated both attempted
+       * fixes: the sync added inside createOpenSeatTable and the trigger on
+       * table_seats each set the number correctly, and this statement
+       * overwrote it microseconds later.
+       *
+       * A seat-first game's count is derived from its seat rows, by
+       * fn_sync_seat_first_player_count and now by the trigger that calls it.
+       * The application's job here is the status and nothing else.
+       */
       const { error: spinUpdateErr } = await supabase
         .from('tournaments')
         .update({
-          current_players: registered,
           status: 'REGISTERING',
         })
         .eq('id', spin.id);
@@ -2032,18 +3901,22 @@ export class TournamentRecurringService {
    * incremented guess, which drifts if a real player registers in the same
    * window. Returns how many horses were actually added.
    */
-  async topUpWithHorses(tournamentId: string, targetPlayers: number): Promise<number> {
+  /**
+   * @param opts.allLanes  FREEROLLS ONLY (Dan 2026-08-27): "all horses, if
+   *   they are playing, should play the freeroll - all real players would."
+   *   The lane split exists so the fleet does not look like one homogeneous
+   *   crowd across cash and events. A freeroll is the one event where that
+   *   distinction is FALSE TO LIFE: nobody skips free money because they
+   *   consider themselves a cash specialist. With this set, cash-lane horses
+   *   are eligible too, and the pool is filtered by whether the horse is
+   *   INSIDE ITS ACTIVITY WINDOW instead - "if they are playing".
+   */
+  async topUpWithHorses(
+    tournamentId: string,
+    targetPlayers: number,
+    opts: { allLanes?: boolean } = {}
+  ): Promise<number> {
     try {
-      const { count: liveCount, error: countErr } = await supabase
-        .from('tournament_players')
-        .select('id', { count: 'exact', head: true })
-        .eq('tournament_id', tournamentId)
-        .in('status', ['registered', 'playing']);
-      if (countErr) return 0;
-
-      const shortfall = targetPlayers - (liveCount || 0);
-      if (shortfall <= 0) return 0;
-
       /**
        * A seat-first game needs BODIES IN SEATS, not names on a list.
        *
@@ -2053,44 +3926,281 @@ export class TournamentRecurringService {
        * never begin. It also kept advertising three open seats, so the next
        * human to sit became a fourth entrant in a three-handed game.
        */
-      const { data: tRow } = await supabase
+      /**
+       * A MISSING ROW MUST NOT DECIDE THE FORMAT.
+       *
+       * This read discarded its error and then fell through `?? 0` into
+       * isSeatFirstFormat('', 0) - and 0 <= 2, so an unreadable tournament
+       * read as SEAT-FIRST. A 500-seat MTT would then be sent down the
+       * seat-seating path instead of registerHorses, seat nobody (its table
+       * is not a seat-first table), and never be topped up at all. The one
+       * value we cannot guess is the one that chooses between the two halves
+       * of this function.
+       */
+      const { data: tRow, error: tErr } = await supabase
         .from('tournaments')
-        .select('variant, max_players')
+        .select('variant, max_players, club_id')
         .eq('id', tournamentId)
         .maybeSingle();
+      if (tErr || !tRow) {
+        reportError(
+          new Error(
+            `[TournamentRecurring] top-up cannot read tournament ${tournamentId.slice(0, 8)}: ${tErr?.message ?? 'no row'}`
+          ),
+          'TournamentRecurring.topup_tournament_read_failed'
+        );
+        return 0;
+      }
       const seatFirst = isSeatFirstFormat(
         String((tRow as { variant?: string } | null)?.variant ?? ''),
         Number((tRow as { max_players?: number } | null)?.max_players ?? 0)
       );
 
-      let added = 0;
-      if (seatFirst) {
-        const candidates = await this.pickFreeHorses(shortfall);
-        for (const horse of candidates) {
-          const { data: res } = await supabase.rpc('fn_seat_horse_in_seat_first_game', {
+      // Membership is explicit. Automated liquidity is permitted on the
+      // platform house board only; a user-owned club fills its tournaments
+      // with users who joined that club through Join A Club.
+      if (String((tRow as { club_id?: string | null }).club_id ?? '') !== this.houseOwner.clubId) {
+        if (seatFirst) {
+          await supabase.rpc('fn_sync_seat_first_player_count', {
             p_tournament_id: tournamentId,
-            p_user_id: horse,
           });
-          if ((res as { ok?: boolean } | null)?.ok === true) added++;
-          else break;
         }
-      } else {
-        added = await this.registerHorses(tournamentId, shortfall);
+        return 0;
       }
 
-      // Re-read rather than trusting `liveCount + added`: a human may have
-      // registered while we were seating horses.
-      const { count: finalCount } = await supabase
-        .from('tournament_players')
-        .select('id', { count: 'exact', head: true })
-        .eq('tournament_id', tournamentId)
-        .in('status', ['registered', 'playing']);
+      /**
+       * MEASURE THE SHORTFALL IN THE UNIT THE START GATE READS.
+       *
+       * This counted rows in tournament_players for every format. For a
+       * seat-first game that is the wrong unit, and it deadlocks the game
+       * permanently rather than delaying it:
+       *
+       *   registrations 3 of 3  ->  shortfall 0, no horse is ever seated
+       *   live seats    1 of 3  ->  the start gate never opens
+       *
+       * Neither side can move, and nothing else in the system tops a game up.
+       * Five Spins were sitting in exactly that state on 2026-08-24, the
+       * oldest 486 minutes past its start time, each holding three
+       * registrations against one or two live seats.
+       *
+       * Seats for a seat-first game, registrations for an MTT - the same
+       * split the counter itself uses.
+       */
+      let liveCount = 0;
+      let primaryTableId: string | null = null;
+      if (seatFirst) {
+        const { data: primaryId, error: primErr } = await supabase.rpc(
+          'fn_tournament_primary_table',
+          { p_tournament_id: tournamentId }
+        );
+        /* SILENT ZEROES ARE HOW AN OUTAGE LASTS TWENTY HOURS (2026-08-28).
+           Both of these returned 0 with no telemetry, and a 0 from here
+           stops every seat-first fill on the platform. That is the exact
+           shape this file's own post-mortem names as the reason an earlier
+           outage went unnoticed — "nothing on the platform reported it
+           because every refusal on this path returns 0 silently". Every
+           other RPC in this function reports; these did not. */
+        if (primErr) {
+          reportError(
+            new Error(`[TournamentRecurring] primary-table read failed: ${primErr.message}`),
+            'TournamentRecurring.seat_first_primary_table_read_failed'
+          );
+          return 0;
+        }
+        if (primaryId) {
+          primaryTableId = String(primaryId);
+          const { count: seatCount, error: seatErr } = await supabase
+            .from('table_seats')
+            .select('table_id', { count: 'exact', head: true })
+            .eq('table_id', primaryTableId)
+            .is('left_at', null);
+          if (seatErr) {
+            reportError(
+              new Error(`[TournamentRecurring] seat count read failed: ${seatErr.message}`),
+              'TournamentRecurring.seat_first_seat_count_read_failed'
+            );
+            return 0;
+          }
+          liveCount = seatCount || 0;
+        }
+      } else {
+        const { count: regCount, error: countErr } = await supabase
+          .from('tournament_players')
+          .select('id', { count: 'exact', head: true })
+          .eq('tournament_id', tournamentId)
+          .in('status', ['registered', 'playing']);
+        if (countErr) return 0;
+        liveCount = regCount || 0;
+      }
 
-      if (typeof finalCount === 'number') {
-        await supabase
-          .from('tournaments')
-          .update({ current_players: finalCount })
-          .eq('id', tournamentId);
+      /**
+       * HELD-EMPTY GATE (Dan 2026-08-26): a seat-first game flagged held-empty
+       * gets NO horses while no human has bought a seat — 33% of Spins and
+       * 50% of Heads-Up boards stay genuinely open for a human to start.
+       * The instant a human sits, the hold releases and this same function
+       * fills the remaining seats so the game can start.
+       *
+       * EMPTY MEANS EMPTY (2026-08-27). The gate now only applies to a board
+       * that actually HAS no players. It used to apply at any occupancy, which
+       * created a second class of permanently stuck game: a board that opened
+       * NOT held (two horses seated, one seat left) and then had the hold roll
+       * on later was refused its final horse forever, sitting at 2/3 — visibly
+       * alive, impossible to start, and counting as coverage for its price
+       * point the whole time.
+       *
+       * The rule is "leave some boards EMPTY for a human to start", not "strand
+       * boards half-full". Once a seat is sold the board is committed and the
+       * only right move is to finish filling it so it can deal.
+       */
+      if (
+        seatFirst &&
+        liveCount === 0 &&
+        seatFirstHeldEmpty(
+          tournamentId,
+          Number((tRow as { max_players?: number } | null)?.max_players ?? 0)
+        )
+      ) {
+        /**
+         * liveCount === 0 above, so there is nobody seated at all — human or
+         * horse — and the board is genuinely open for a human to start. The
+         * seat-count reconciliation still runs, because a board advertising a
+         * stale count is the other way a seat-first game gets stuck.
+         *
+         * The `humanSeated` probe that used to live here (two queries per
+         * skipped board, every 5 seconds, on every held board) is gone: it was
+         * guarded on `liveCount > 0`, which this branch now excludes, so it
+         * could never once return true. A human who sits makes liveCount 1 and
+         * never reaches this branch at all.
+         */
+        await supabase.rpc('fn_sync_seat_first_player_count', {
+          p_tournament_id: tournamentId,
+        });
+        this.noteSeatFirstHeld(tournamentId);
+        return 0;
+      }
+
+      const shortfall = targetPlayers - liveCount;
+      if (shortfall <= 0) {
+        /**
+         * Nothing to add - but the COUNTER may still be stale, and a stale
+         * counter is precisely what stops the game starting. The old code
+         * returned here, before the reconciliation at the foot of this
+         * function, so a full field whose count had drifted could never
+         * repair itself. That is the loop that held 39 live tournaments.
+         */
+        if (seatFirst) {
+          await supabase.rpc('fn_sync_seat_first_player_count', {
+            p_tournament_id: tournamentId,
+          });
+        }
+        return 0;
+      }
+
+      let added = 0;
+      if (seatFirst) {
+        /**
+         * HOME FIRST, THEN THE FLEET. See seatFirstFillOrder for the measured
+         * deadlock this breaks: a full roster against short seats cannot admit
+         * a single new entrant, because fn_enforce_tournament_capacity RAISES
+         * 23514 on the INSERT, and the game's own paid-up registrants were the
+         * one group the old code could never pick.
+         */
+        const own = await this.unseatedRegistrantHorses(tournamentId, primaryTableId);
+        const poolWanted = Math.max(0, shortfall - own.length);
+        const pool =
+          poolWanted > 0 ? await this.pickFreeHorses(poolWanted, false, tournamentId) : [];
+        const candidates = seatFirstFillOrder(shortfall, own, pool);
+
+        for (const horse of candidates) {
+          const { data: res, error: seatRpcErr } = await supabase.rpc(
+            'fn_seat_horse_in_seat_first_game',
+            { p_tournament_id: tournamentId, p_user_id: horse }
+          );
+          // 2026-08-24 audit: do NOT break on one refusal. A single horse
+          // rejected — the four-table hard limit (23514), a race on the seat,
+          // an already_registered anomaly — used to halt the whole fill even
+          // when free horses remained in the candidate list.
+          //
+          // 2026-08-25: and do not DISCARD the refusal either. The capacity
+          // trigger does not return {ok:false}, it RAISES, so the one signal
+          // that would have named this deadlock arrived in `error` and was
+          // thrown away for a day and a half.
+          if (seatRpcErr) {
+            reportError(
+              new Error(
+                `[TournamentRecurring] seat-first fill refused for ${tournamentId.slice(0, 8)}: ${seatRpcErr.message}`
+              ),
+              'TournamentRecurring.seat_first_seat_rpc_failed'
+            );
+            continue;
+          }
+          if ((res as { ok?: boolean } | null)?.ok === true) added++;
+        }
+
+        if (added === 0 && candidates.length > 0) {
+          console.warn(
+            `[TournamentRecurring] seat-first fill added nobody to ${tournamentId.slice(0, 8)} ` +
+              `from ${own.length} own registrant(s) + ${pool.length} free horse(s) - shortfall ${shortfall}`
+          );
+        }
+      } else {
+        added = await this.registerHorses(tournamentId, shortfall, opts.allLanes === true);
+      }
+
+      /**
+       * Dan 2026-08-23: "spins can never ever start until 3 players have sat
+       * down, and paid for there seat."
+       *
+       * A seat-first game counts SEATS, not rows in tournament_players. Those
+       * two disagree constantly — a registration is never removed when a
+       * player leaves or busts, so writing the registration count back into
+       * current_players re-introduced the drift that had live spins reading
+       * 3/3 with two seats sold (which then refuses every further sit-down
+       * with 'tournament_full') and 0/3 with three sold (which never starts).
+       * Derive it from the seat rows for seat-first, and keep the registration
+       * count for MTTs, where a registration IS the entry.
+       *
+       * ── RESTORED 2026-08-23. This branch was written, reviewed and lost. ──
+       *
+       * The paragraph above still described it exactly, but the code under it
+       * had been flattened to the MTT half alone, so every seat-first game had
+       * its REGISTRATION count written into current_players. Horses seated by
+       * fn_seat_horse_in_seat_first_game hold seats, not registrations, so that
+       * number is zero: 16 open Spins were advertising "0/3" while holding 32
+       * paid seats between them, two of three sold and one seat from dealing.
+       *
+       * The original lives on five branches under five different SHAs and on
+       * none of them is it an ancestor of main - it merged as prose and not as
+       * code, which is the "merge resolved by taking a stale side" failure
+       * .agent/protected-commits.json exists to catch. It is pinned there now.
+       *
+       * 2026-08-23, THIS MERGE: main (#582) and the spins branch had both
+       * arrived at this same fix independently, so git conflicted on the two
+       * write-ups while auto-merging identical code underneath. Both are kept.
+       * The quote is the requirement; the restoration note is why it went
+       * missing twice. Six duplicate PRs (#566, #570, #572, #575, #581, #583)
+       * were opened against a stale base and every one sat DIRTY on this one
+       * comment — nothing else across 27 files conflicted at all.
+       */
+      if (seatFirst) {
+        await supabase.rpc('fn_sync_seat_first_player_count', {
+          p_tournament_id: tournamentId,
+        });
+      } else {
+        // Re-read rather than trusting `liveCount + added`: a human may have
+        // registered while we were seating horses.
+        const { count: finalCount } = await supabase
+          .from('tournament_players')
+          .select('id', { count: 'exact', head: true })
+          .eq('tournament_id', tournamentId)
+          .in('status', ['registered', 'playing']);
+
+        if (typeof finalCount === 'number') {
+          await supabase
+            .from('tournaments')
+            .update({ current_players: finalCount })
+            .eq('id', tournamentId);
+        }
       }
 
       return added;
@@ -2099,51 +4209,312 @@ export class TournamentRecurringService {
     }
   }
 
-  private async registerHorses(tournamentId: string, count: number): Promise<number> {
+  private async registerHorses(
+    tournamentId: string,
+    count: number,
+    allLanes = false
+  ): Promise<number> {
     try {
       // TOURNEY-AUDIT 2026-07-24: exclude horses already registered/playing in
       // another active tournament. The old query only checked horse_status
       // (never flipped by tournament play), so the overlapping MTT/SNG/Spin
       // scheduler intervals double-booked the same horses into several
       // simultaneous events.
-      const { data: busyRows } = await supabase
-        .from('tournament_players')
-        .select('user_id, tournaments!inner(status)')
-        .in('status', ['registered', 'playing'])
-        .in('tournaments.status', ['ANNOUNCED', 'REGISTERING', 'RUNNING'])
-        .limit(2000);
-      const busyIds = new Set((busyRows ?? []).map((r: any) => r.user_id));
+      // Dan 2026-08-23: FOUR concurrent games per horse, not one. The old
+      // rule excluded any horse holding a single seat or registration, which
+      // made 554 of 584 horses invisible to every tournament while they dealt
+      // cash. See horseLoadMap.
+      const load = await this.horseLoadMap();
+      // Unknown load, not zero load — see horseLoadMap. Registering against an
+      // empty map double-books horses that are already at four tables.
+      if (!load) return 0;
+      const busyIds = new Set(
+        [...load.keys()].filter((id) => TournamentRecurringService.atCapacity(load, id))
+      );
 
-      /**
-       * Dan 2026-08-19: ALSO exclude horses currently sitting at an open table.
-       *
-       * The tournament-busy check above was the only guard, and `horse_status`
-       * is never flipped when a horse takes a CASH seat — live proof: 574
-       * horses exist, 329 of them are seated at open tables, and all 574 still
-       * read horse_status='available'. Registering those would yank a horse out
-       * of a hand it is already playing. That was survivable while tournaments
-       * only seeded a dozen horses; now that they fill every seat it would
-       * strip live cash tables, so the seat check is mandatory.
-       */
-      const { data: seatedRows } = await supabase
-        .from('table_seats')
-        .select('user_id, tables!inner(status)')
-        .is('left_at', null)
-        .in('tables.status', ['waiting', 'running'])
-        .limit(5000);
-      for (const r of seatedRows ?? []) {
-        if ((r as any).user_id) busyIds.add((r as any).user_id);
+      // Still never twice into the SAME tournament. This is the booking bug
+      // the concurrency limit was standing in for, and it is the one that
+      // actually matters - it survives the change intact.
+      /* NO CEILING (Dan 2026-08-27). This carried `.limit(20000)`, and a
+         truncated read here is the one failure this block exists to prevent:
+         a missing id is a horse that does not look registered, so it gets
+         registered into the SAME tournament twice - the bug the comment above
+         calls "the one that actually matters". Pages instead, so the guard
+         cannot be defeated by a big enough field. */
+      const ENTRANT_PAGE = 1000;
+      for (let page = 0; ; page++) {
+        if (page > 10_000) {
+          reportError(
+            new Error('[TournamentRecurring] entrant paging did not terminate'),
+            'TournamentRecurring.entrant_paging_runaway'
+          );
+          return 0;
+        }
+        const { data: alreadyIn, error: entrantErr } = await supabase
+          .from('tournament_players')
+          .select('user_id, id')
+          .eq('tournament_id', tournamentId)
+          .in('status', ['registered', 'playing'])
+          // The primary key as the tiebreaker (2026-09-01). Ordering by
+          // user_id alone assumes one row per player per tournament, which
+          // re-entry formats break - and an unstable order under LIMIT/OFFSET
+          // drops rows. The comment directly below says an incomplete entrant
+          // list lets a double-registration through, which is precisely what a
+          // dropped row causes.
+          .order('user_id', { ascending: true })
+          .order('id', { ascending: true })
+          .range(page * ENTRANT_PAGE, page * ENTRANT_PAGE + ENTRANT_PAGE - 1);
+        // An incomplete entrant list would let a double-registration through,
+        // so a failed page declines the pass rather than guessing.
+        if (entrantErr || !alreadyIn) return 0;
+        for (const r of alreadyIn) {
+          const id = (r as { user_id?: string }).user_id;
+          if (id) busyIds.add(id);
+        }
+        if (alreadyIn.length < ENTRANT_PAGE) break;
       }
 
-      const { data: horsePool } = await supabase
-        .from('profiles')
-        .select('id, display_name, username, use_real_name')
-        .eq('is_horse', true)
-        .eq('horse_status', 'available')
-        .limit(count + busyIds.size);
-      const horses = (horsePool ?? []).filter((h) => !busyIds.has(h.id)).slice(0, count);
+      /**
+       * Dan 2026-08-19's cash-seat exclusion lived here and is now folded into
+       * horseLoadMap, which counts a live seat as one of the four games rather
+       * than as a disqualification.
+       *
+       * The reasoning it was written on still holds and is still honoured:
+       * `horse_status` is never flipped when a horse takes a cash seat, so the
+       * seat rows are the only truth about where a horse actually is, and
+       * registering a horse must never YANK IT OUT of a hand it is playing.
+       * It does not: registration adds a future game, it does not vacate a
+       * seat. What has changed is only the ceiling - a horse dealing one cash
+       * table can now also enter a tournament, where before it could not enter
+       * anything at all. At four it is excluded exactly as before.
+       */
 
-      if (!horses || horses.length === 0) return 0;
+      /**
+       * V22 (2026-08-27, Phase 2) — THE PAGE THAT STARVED THE OVERLAY GUARD.
+       *
+       * This read `.limit(count + busyIds.size)` with no ORDER BY, then
+       * filtered by lane and load AFTERWARD. Postgres returns the same
+       * arbitrary rows for the same query, so every 2-minute guard cycle
+       * re-examined the same small page — and when that page happened to be
+       * cash-lane or at-capacity horses, the guard added NONE, forever, while
+       * hundreds of eligible horses sat beyond the limit. Measured cost on
+       * 2026-08-27 alone: $8,832 of overlay across 10 events, plus freerolls
+       * starting 1/100. The fetch still sizes itself from the busy set (the
+       * pickFreeHorsesLimits convention — a constant is a time bomb on a
+       * growing fleet), but now carries 4x headroom for the LANE and activity
+       * filters the old sizing ignored: the lane hash alone excludes a third
+       * of any page, the freeroll activity window up to 60%. Then rotate the
+       * pick window by hour so the same horses are not always first in line.
+       *
+       * V23 (2026-08-30) — the headroom was still a PAGE, and a page with no
+       * ORDER BY is a stable arbitrary page: the same physical rows all day,
+       * drained by every caller, exactly the starvation pickFreeHorses had.
+       * The fleet is ~600 rows; read ALL of it keyset-paged (fetchAllRows,
+       * the HorseFleetManager.seedAllTables pattern) and filter in memory.
+       * The hourly rotation below still spreads who is first in line.
+       */
+      const poolPage = await fetchAllRows<{
+        id: string;
+        display_name: string | null;
+        username: string | null;
+        use_real_name: boolean | null;
+      }>(
+        (cursor, want) => {
+          let q = supabase
+            .from('profiles')
+            .select('id, display_name, username, use_real_name')
+            .eq('is_horse', true)
+            .eq('horse_status', 'available')
+            .order('id', { ascending: true })
+            .limit(want);
+          if (cursor) q = q.gt('id', cursor);
+          return q;
+        },
+        { label: 'TournamentRecurring.registerHorses', maxRows: 50_000 }
+      );
+      // Fail closed: an incomplete fleet read is not an empty fleet, and
+      // registering from half a pool is how the same page gets drained.
+      if (!poolPage.complete) {
+        console.warn('[TournamentRecurring] registerHorses skipped: fleet read incomplete');
+        return 0;
+      }
+      const poolAll = poolPage.rows;
+      let busyDropped = 0;
+      let laneDropped = 0;
+      let clubDropped = 0;
+
+      /**
+       * A CLUB'S TOURNAMENTS DRAW FROM THAT CLUB'S MEMBERS (Dan 2026-09-01:
+       * "THIS CLUB IS NOT SUPPOSED TO BE ATTACHED TO THE UNION, ITS SUPPOSED
+       * TO BE ITS OWN STAND ALONE CLUB").
+       *
+       * This read selected every is_horse profile on the platform and never
+       * looked at the club the tournament belongs to, so ANY horse could be
+       * registered into ANY club's event. Measured when a 416-horse population
+       * was built for a standalone club: within seven hours it had taken 729
+       * seats in another club's tournaments - freerolls and paid events both -
+       * without ever being a member there. A standalone club's population
+       * wandering into a union's schedule is precisely the isolation this
+       * breaks.
+       *
+       * Membership is the rule a human is already held to: you cannot enter a
+       * club's tournament without joining the club. The fleet is now held to
+       * the same one.
+       *
+       * FAILS OPEN on an unreadable membership page, like every other gate in
+       * this file: a partial read is not an empty club, and refusing to
+       * register on a failed read would silently starve every event on the
+       * platform. Verified before shipping that no board is starved by this -
+       * Shark holds 584 horse members, JAQK 580, Midway 323, Deep Stack 416.
+       */
+      const clubMemberIds = await this.clubMemberIdsForTournament(tournamentId);
+
+      const eligible = poolAll.filter((h) => {
+        if (busyIds.has(h.id)) {
+          busyDropped++;
+          return false;
+        }
+        // Not a member of the club hosting this event: not a candidate.
+        if (clubMemberIds && !clubMemberIds.has(h.id)) {
+          clubDropped++;
+          return false;
+        }
+        // Freeroll override (Dan 2026-08-27): free money is not a lane
+        // decision - every horse currently playing enters. Otherwise the
+        // 2026-08-26 rule stands: cash-only horses never register for
+        // events.
+        const ok = allLanes
+          ? isActiveNow(h.id, new Date().getUTCHours())
+          : gameLaneFor(h.id) !== 'cash';
+        if (!ok) laneDropped++;
+        return ok;
+      });
+      /**
+       * BANKROLL (Dan 2026-08-31), and the freeroll is the other half of it.
+       *
+       * `fn_register_horse_for_tournament` refuses on `insufficient_balance`
+       * and nothing else, so a horse with 1,000 chips to its name could enter
+       * a 950 event and be broke on one hand of it. Solvency is not
+       * discipline.
+       *
+       * The bar is much higher than the cash bar and that is deliberate: an
+       * MTT pays nothing to most of the field most of the time, so a roll that
+       * comfortably survives 25 cash buy-ins is busted by an ordinary run of
+       * 25 tournaments. See `tournamentBuyInsToEnter`.
+       *
+       * A FREEROLL IS NEVER GATED, and better than that, a broke horse goes
+       * to the FRONT of the queue for one. That is the whole recovery loop Dan
+       * described - "if they run out of chips, they must play freerolls to
+       * earn their chips back, and wait for their weekly rakeback" - and until
+       * now nothing anywhere preferred a broke horse for free money; the
+       * hourly rotation picked by id, so the horses that most needed a
+       * freeroll were no likelier to get one than anybody else.
+       *
+       * FAILS OPEN, like every other bankroll gate: an unreadable roll, a
+       * missing club or an incomplete page leaves the pool exactly as it was.
+       * Refusing to register on a failed read would silently starve every
+       * event on the platform, which is a far worse failure than one
+       * underrolled entry - and is the shape of the bug that emptied the cash
+       * floor on 2026-08-31.
+       */
+      let pool = eligible;
+      try {
+        const { data: t } = await supabase
+          .from('tournaments')
+          .select('club_id, buy_in_amount, buy_in_fee')
+          .eq('id', tournamentId)
+          .maybeSingle();
+        const cost =
+          (Number((t as any)?.buy_in_amount) || 0) + (Number((t as any)?.buy_in_fee) || 0);
+        const clubId = (t as any)?.club_id as string | undefined;
+
+        if (clubId && eligible.length > 0) {
+          const ids = eligible.map((h) => h.id);
+          const rolls = new Map<string, number>();
+          const rollPage = await fetchAllRows<{ user_id: string; chip_balance: number | null }>(
+            (cursor, want) => {
+              let q = supabase
+                .from('club_members')
+                .select('user_id, chip_balance')
+                .eq('club_id', clubId)
+                .in('user_id', ids)
+                .order('user_id', { ascending: true })
+                .limit(want);
+              if (cursor) q = q.gt('user_id', cursor);
+              return q;
+            },
+            { label: 'TournamentRecurring.bankrolls', maxRows: 50_000, idKey: 'user_id' }
+          );
+          if (rollPage.complete) {
+            for (const r of rollPage.rows) {
+              const v = Number(r.chip_balance);
+              if (Number.isFinite(v)) rolls.set(r.user_id, v);
+            }
+
+            if (cost > 0) {
+              const before = pool.length;
+              pool = pool.filter((h) => {
+                const roll = rolls.get(h.id);
+                if (roll === undefined) return true; // unread -> fail open
+                return canEnterTournament(roll, cost, bankrollPolicyFor(h.id));
+              });
+              if (pool.length < before) {
+                bankrollEvent('tournament_refused_underrolled', before - pool.length);
+              }
+            } else {
+              /* A FREEROLL. Broke horses first - stable within each group, so
+                 the hourly rotation below still spreads who leads the queue.
+
+                 "Broke" is measured against the cheapest PAID event actually
+                 on the board, not a constant: a hard-coded floor goes stale
+                 the day the schedule changes, and the question being asked is
+                 exactly "is there a paid game this horse could be playing
+                 instead?" If that read fails, nobody is marked broke and the
+                 order is simply left alone. */
+              const { data: cheapest } = await supabase
+                .from('tournaments')
+                .select('buy_in_amount, buy_in_fee')
+                .eq('club_id', clubId)
+                .in('status', ['REGISTERING', 'SCHEDULED'])
+                .order('buy_in_amount', { ascending: true })
+                .limit(50);
+              const paid = (cheapest ?? [])
+                .map((r: any) => (Number(r.buy_in_amount) || 0) + (Number(r.buy_in_fee) || 0))
+                .filter((c: number) => c > 0);
+              const floor = paid.length > 0 ? Math.min(...paid) : 0;
+              const broke = (id: string) => {
+                if (!(floor > 0)) return false;
+                const roll = rolls.get(id);
+                return (
+                  roll !== undefined && !canEnterTournament(roll, floor, bankrollPolicyFor(id))
+                );
+              };
+              const needy = pool.filter((h) => broke(h.id));
+              if (needy.length > 0) {
+                bankrollEvent('freeroll_entered_broke', Math.min(needy.length, count));
+                pool = needy.concat(pool.filter((h) => !broke(h.id)));
+              }
+            }
+          }
+        }
+      } catch (err) {
+        reportError(err, 'TournamentRecurring.bankroll_gate');
+      }
+
+      const eligiblePool = pool;
+      const rot =
+        eligiblePool.length > 0 ? (new Date().getUTCHours() * 7919) % eligiblePool.length : 0;
+      const horses = eligiblePool.slice(rot).concat(eligiblePool.slice(0, rot)).slice(0, count);
+
+      if (!horses || horses.length === 0) {
+        // Say WHY the pool came up empty — "added NONE" with no numbers is
+        // how this starved silently for a day.
+        console.warn(
+          `[TournamentRecurring] registerHorses found no candidates: fleet ${poolAll.length}, ` +
+            `at-capacity/entered ${busyDropped}, lane/window-excluded ${laneDropped}`
+        );
+        return 0;
+      }
 
       /**
        * Dan 2026-08-19: horses BUY IN like everyone else — this used to be a
@@ -2187,7 +4558,7 @@ export class TournamentRecurringService {
       if (failures.size > 0) {
         const summary = [...failures.entries()].map(([r, n]) => `${r} x${n}`).join(', ');
         console.warn(
-          `[TournamentRecurring] Horse registration: ${registered} seated, skipped — ${summary}`
+          `[TournamentRecurring] Horse registration: ${registered} seated, skipped - ${summary}`
         );
       }
 

@@ -17,8 +17,14 @@ import { masterBus } from '../core/MasterBus';
 import type { Tournament } from '../types/database.types';
 import { reportError } from '../utils/errorReporter';
 
+/** Sentinel for "this timer has not observed a level yet". It cannot be 0:
+ *  0 is a real, 0-based level index - the opening level. */
+const NO_LEVEL_OBSERVED = -1;
+
 interface TournamentTimerState {
   tournamentId: string;
+  /** 0-based level index, matching `tournaments.current_level`. -1 until the
+   *  first tick resolves one. */
   currentLevel: number;
   intervalId: ReturnType<typeof setInterval>;
   isPaused: boolean;
@@ -65,7 +71,7 @@ class TournamentTimerServiceClass {
 
     this.activeTimers.set(tournamentId, {
       tournamentId,
-      currentLevel: 0,
+      currentLevel: NO_LEVEL_OBSERVED,
       intervalId,
       isPaused: false,
       isTickInProgress: false,
@@ -143,9 +149,42 @@ class TournamentTimerServiceClass {
 
       // Calculate current level based on elapsed time
       const levelState = tournamentService.getCurrentLevelState(tournament);
-      const newLevel = levelState.levelIndex + 1; // 1-indexed for display
+      /**
+       * =======================================================================
+       *  THIS IS THE 0-BASED INDEX, NOT A DISPLAY NUMBER (fixed 2026-08-25)
+       * =======================================================================
+       *
+       * This read:
+       *
+       *     const newLevel = levelState.levelIndex + 1; // 1-indexed for display
+       *
+       * and handleLevelChange writes `newLevel` straight into
+       * `tournaments.current_level`, which is a 0-BASED ARRAY INDEX (see the
+       * evidence block on TournamentService.getCurrentLevelState). So the +1
+       * pushed the column one level ahead of the truth on every write, and
+       * because the reader feeds this method its own previous output, the
+       * error compounded: read N, write N+1, read N+1, write N+2 - once per
+       * tick, i.e. once per second, for as long as the tab stayed open.
+       *
+       * The engine on Hetzner is the authoritative writer and it persists the
+       * plain index (TournamentManagerBase: `.update({ current_level: this.currentLevel })`).
+       *
+       * RESOLVED 2026-08-26 (handoff ITEM B): the design question is answered —
+       * THE CLIENT DOES NOT WRITE `current_level`, ever. The write is gone from
+       * handleLevelChange, `initializeAllTimers` (the only thing that ever
+       * started this loop) has been deleted outright, and nothing in src/
+       * calls startTimer(). A grep of src/ confirms every remaining
+       * `current_level` reference is a read. This service survives only as the
+       * read-side state TournamentClock queries via getTimerState.
+       *
+       * The DISPLAY number is still level + 1, and it is applied at the point
+       * of display (getFullClockState, TournamentHUD, TournamentClock) - never
+       * to the value that reaches the database.
+       */
+      const newLevel = levelState.levelIndex;
 
-      // Check if level changed
+      // Check if level changed. `timer.currentLevel` starts at -1 precisely so
+      // that a genuine level 0 registers as a change on the first tick.
       if (newLevel !== timer.currentLevel) {
         await this.handleLevelChange(tournament, timer.currentLevel, newLevel, levelState);
         timer.currentLevel = newLevel;
@@ -162,7 +201,12 @@ class TournamentTimerServiceClass {
   }
 
   /**
-   * Handle blind level advancement
+   * Handle blind level advancement.
+   *
+   * `newLevel` is a 0-BASED index - the same value `tournaments.current_level`
+   * stores and the same value the engine writes. It goes to the database
+   * unchanged. Everything a human reads adds one (`displayLevel` below), and
+   * so does the break cadence, which counts levels played rather than indices.
    */
   private async handleLevelChange(
     tournament: Tournament,
@@ -171,27 +215,13 @@ class TournamentTimerServiceClass {
     levelState: ReturnType<typeof tournamentService.getCurrentLevelState>
   ): Promise<void> {
     const { currentLevel } = levelState;
+    const displayLevel = newLevel + 1;
 
-    // 1. Update database with new level
-    await supabase
-      .from('tournaments')
-      .update({
-        current_level: newLevel,
-      })
-      .eq('id', tournament.id);
-
-    // 2. Update all tournament tables with new blinds
-    await supabase
-      .from('tables')
-      .update({
-        small_blind: currentLevel.smallBlind,
-        big_blind: currentLevel.bigBlind,
-      })
-      .eq('tournament_id', tournament.id);
+    // Client no longer writes to the database (engine is authoritative).
 
     // 3. Broadcast level change to all clients
     await this.broadcastLevelChange(tournament.id, {
-      level: newLevel,
+      level: displayLevel,
       smallBlind: currentLevel.smallBlind,
       bigBlind: currentLevel.bigBlind,
       ante: currentLevel.ante,
@@ -202,7 +232,7 @@ class TournamentTimerServiceClass {
     // 3.5. Emit specific bus event for TournamentClock and other listeners
     masterBus.emit('BLIND_LEVEL_CHANGE', {
       tournamentId: tournament.id,
-      level: newLevel,
+      level: displayLevel,
       smallBlind: currentLevel.smallBlind,
       bigBlind: currentLevel.bigBlind,
       ante: currentLevel.ante,
@@ -211,12 +241,14 @@ class TournamentTimerServiceClass {
     // 3.6. Also emit general tournament update for page-level refresh
     masterBus.emit('TOURNAMENT_UPDATED', {
       tournamentId: tournament.id,
-      status: `blind_level_${newLevel}`,
+      status: `blind_level_${displayLevel}`,
     });
 
-    // 4. Check for break times (configurable interval, default every 6 levels)
+    // 4. Check for break times (configurable interval, default every 6 levels).
+    //    Counted on the display level: a break falls after 6 levels PLAYED, so
+    //    the modulo must not see index 0 as a multiple and open with a break.
     const breakInterval = this.breakIntervals.get(tournament.id) || 6;
-    if (newLevel % breakInterval === 0 && levelState.nextLevel) {
+    if (displayLevel % breakInterval === 0 && levelState.nextLevel) {
       await this.handleBreak(tournament.id, 5); // 5-minute break
     }
   }
@@ -374,22 +406,6 @@ class TournamentTimerServiceClass {
       });
     } catch (error: unknown) {
       reportError(error, 'TournamentTimerService.Broadcast_error');
-    }
-  }
-
-  /**
-   * Start timers for all running tournaments (called on app init)
-   */
-  async initializeAllTimers(): Promise<void> {
-    const { data: runningTournaments } = await supabase
-      .from('tournaments')
-      .select('id')
-      .eq('status', 'RUNNING');
-
-    if (runningTournaments) {
-      for (const t of runningTournaments) {
-        this.startTimer(t.id);
-      }
     }
   }
 

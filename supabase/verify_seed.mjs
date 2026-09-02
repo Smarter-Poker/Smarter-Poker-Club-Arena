@@ -14,7 +14,9 @@ const TABLES = [
     'notifications', 'club_announcements', 'promotions', 'friendships', 'friend_requests',
     'direct_messages', 'chip_transactions', 'daily_spins', 'player_stats',
     'rake_records', 'settlement_periods', 'club_financial_summary', 'club_transactions',
-    'commission_records', 'training_progress', 'vip_feature_usage', 'wallet_transactions',
+    // agent_commissions replaced commission_records, which phase 7 dropped on
+    // 2026-09-01 after it held zero rows for its whole life while the app read it.
+    'agent_commissions', 'training_progress', 'vip_feature_usage', 'wallet_transactions',
     'user_achievements', 'achievements', 'messages'
 ];
 

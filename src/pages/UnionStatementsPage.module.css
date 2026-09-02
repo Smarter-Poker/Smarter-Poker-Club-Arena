@@ -5,7 +5,15 @@
   min-height: 100dvh; /* the visible viewport on a phone; vh above is the toolbar-hidden one */
   background: linear-gradient(180deg, #0d1226 0%, #0a0d1c 100%);
   color: #fff;
-  padding-bottom: 96px;
+  width: 100%;
+  max-width: 100vw;
+  /* clip, not hidden — see src/styles/design-system.css on body. `hidden` on
+     one axis computes the other to `auto`, which makes this a scroll container,
+     and WebKit then resolves the fixed ClubBottomNav against IT instead of the
+     viewport. The bar leaves the bottom of the screen and rides up the page. */
+  overflow-x: hidden;
+  overflow-x: clip;
+  padding-bottom: max(var(--bottom-nav-clearance, 74px), env(safe-area-inset-bottom));
 }
 
 .header {
@@ -474,4 +482,35 @@
 .payBtn:focus-visible {
   outline: 2px solid #f0b429;
   outline-offset: 2px;
+}
+
+/* Phase 6: cold-ledger styling; statement math and issue actions are unchanged. */
+.page {
+  background:
+    radial-gradient(circle at 82% 5%, rgba(58, 168, 255, 0.08), transparent 28rem),
+    linear-gradient(180deg, #05080c, #020407);
+}
+
+.periodBar,
+.tile,
+.clubRow,
+.historyRow,
+.insuranceCard,
+.state {
+  border-color: #26333d;
+  border-radius: 4px;
+  background: linear-gradient(112deg, #101820, #080d12 72%, #05080c);
+}
+
+.chip,
+.headerBtn,
+.page button {
+  min-height: 44px;
+  border-radius: 3px;
+}
+
+.chip.active,
+.headerBtn:focus-visible {
+  border-color: #3aa8ff;
+  color: #ddf3ff;
 }

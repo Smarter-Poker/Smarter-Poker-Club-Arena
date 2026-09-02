@@ -72,7 +72,6 @@ async function mountTabBar(page: Page) {
       <button class="table-tab-bar__tab table-tab-bar__tab--turn" id="tabTurn">
         <span class="table-tab-bar__tab-label"><span class="table-tab-bar__tab-name">NLH 1/2</span>
         <span class="table-tab-bar__tab-sub">Pot 120</span></span>
-        <span class="table-tab-bar__turn-dot" id="turnDot">12s</span>
       </button>
       <button class="table-tab-bar__tab" id="tabIdle">
         <span class="table-tab-bar__tab-label"><span class="table-tab-bar__tab-name" id="idleCode">PLO5</span>
@@ -109,20 +108,22 @@ test.describe('LIVE E2E — the multi-table tab bar, beat by beat', () => {
     await mountTabBar(page);
   });
 
-  test('a background table calling for action pulses, and its badge ticks', async ({ page }) => {
+  /* The `table-tab-bar__turn-dot` countdown badge was DELETED 2026-08-28 (Dan:
+     "THE ACTION PILL SHOULD ONLY EVER SHOW THE CARDS (CENTERED IN THE PILL) AND
+     THE DISAPPEARING TIMER BAR... THATS IT"). The pill's own pulse and the
+     draining bar are what remain, and both are still pinned below. */
+  test('a background table calling for action pulses', async ({ page }) => {
     const b = await beat(page, `void 0;`);
     expect(b.pulseGlow, 'the turn tab must pulse gold').toBe(800);
-    expect(b.turnDotPulse, 'the countdown badge must breathe').toBe(1000);
   });
 
-  test('urgency goes red: tab pulse, badge, and the timer bar itself', async ({ page }) => {
+  test('urgency goes red: the tab pulse and the timer bar itself', async ({ page }) => {
     const b = await beat(
       page,
       `$('tabTurn').classList.add('table-tab-bar__tab--urgent');
        $('timerBar').classList.add('table-tab-bar__timer-bar--urgent');`
     );
     expect(b.tabUrgentPulse, 'an urgent tab must pulse red').toBe(800);
-    expect(b.turnDotUrgent, 'the badge must switch to the urgent cadence').toBe(500);
     expect(b.timerBarUrgent, 'the depleting bar must pulse in the final seconds').toBe(500);
   });
 
@@ -147,8 +148,15 @@ test.describe('LIVE E2E — the multi-table tab bar, beat by beat', () => {
         face: getComputedStyle(spade).backgroundColor,
       };
     });
-    expect(colors.spade, 'spades must be near-black').toBe('rgb(17, 19, 24)');
-    expect(colors.heart, 'hearts must be red').toBe('rgb(220, 38, 38)');
+    // These two must equal SUIT_COLOR in CardImage.tsx, which paints the real
+    // cards on the felt. They used to be #111318 / #dc2626 - a second shade of
+    // each suit - so the same card was one colour in this mini preview and
+    // another in the hand it previewed. #1e293b is still near-black and
+    // #ef4444 is still red; the intent below is unchanged, the shade now
+    // matches the felt. tests/gameplay-wears-the-house-colours.test.ts pins
+    // both ends so they cannot drift apart again.
+    expect(colors.spade, 'spades must be near-black').toBe('rgb(30, 41, 59)');
+    expect(colors.heart, 'hearts must be red').toBe('rgb(239, 68, 68)');
     expect(colors.face, 'the mini card must have a white face').toBe('rgb(248, 249, 251)');
   });
 
@@ -264,12 +272,101 @@ test.describe('LIVE E2E — the multi-table tab bar, beat by beat', () => {
     expect(styles.foldImage, 'fold must be the red gradient').toContain('185, 28, 28');
     expect(styles.callImage, 'call must be the green gradient').toContain('22, 163, 74');
     expect(styles.clockColor, 'the countdown must read gold').toBe('rgb(250, 204, 21)');
-    expect(styles.stripPosition, 'the strip must overlay its tile').toBe('absolute');
+    /* Variant A (Dan 2026-08-30): the strip moved INTO the reserved in-flow
+       band below the felt — an absolute overlay here is the old bug that
+       covered the hero's hole cards. The mechanism this pin guards moved, so
+       the pin moved with it (in the same commit, per the red-test rule). */
+    expect(styles.stripPosition, 'the strip must be in-flow, never an overlay').toBe('static');
   });
 
-  test('CARD ART: nothing crops the indices and nothing stair-steps the pips', async ({
-    page,
-  }) => {
+  test('Variant A: the tile band reserves space and the cell is a column', async ({ page }) => {
+    // Dan 2026-08-30: "YOU CAN NOT SEE YOUR CARDS WHEN THE ACTION BAR
+    // APPEARS." The fix is structural: the cell is a flex column, the stage
+    // shrinks, and the band is in-flow below it. Pin all three so the overlay
+    // bug cannot come back by CSS drift.
+    const read = await page.evaluate(() => {
+      const cell = document.createElement('div');
+      cell.className = 'multi-table-grid__cell';
+      cell.innerHTML =
+        '<div class="multi-table-grid__stage"></div>' +
+        '<div class="multi-table-grid__band">' +
+        '<div class="multi-table-grid__slider-row">' +
+        '<input type="range" class="multi-table-grid__slider"/>' +
+        '<span class="multi-table-grid__slider-amount">120</span></div>' +
+        '<div class="multi-table-grid__raises"></div>' +
+        '<div class="multi-table-grid__actions"></div></div>';
+      document.body.appendChild(cell);
+      const cellS = getComputedStyle(cell);
+      const stage = getComputedStyle(cell.children[0]);
+      const band = getComputedStyle(cell.children[1]);
+      const amount = getComputedStyle(cell.querySelector('.multi-table-grid__slider-amount')!);
+      return {
+        cellDisplay: cellS.display,
+        cellDirection: cellS.flexDirection,
+        stagePosition: stage.position,
+        stageFlexGrow: stage.flexGrow,
+        bandPosition: band.position,
+        bandZIndex: band.zIndex,
+        amountColor: amount.color,
+      };
+    });
+    expect(read.cellDisplay, 'the cell must be a flex column').toBe('flex');
+    expect(read.cellDirection, 'the cell must stack stage over band').toBe('column');
+    expect(read.stagePosition, 'the stage anchors the scaled felt').toBe('relative');
+    expect(read.stageFlexGrow, 'the stage must take the remaining height').toBe('1');
+    /* The band must RESERVE its height, which is what Variant A is. `static`
+       and `relative` both do; `absolute`/`fixed`/`sticky` take it out of flow
+       and put the chrome back over the hero's cards. Pinned as "not taken out
+       of flow" rather than the literal `static` it shipped as on 2026-08-30 —
+       that spelling forbade `relative`, which the band now needs so its
+       z-index is not inert. */
+    expect(
+      ['absolute', 'fixed', 'sticky'].includes(read.bandPosition),
+      'the band must stay in flow and reserve its height, never overlay the felt'
+    ).toBe(false);
+    /* A declared z-index on a static box is silently ignored, so the band
+       would only LOOK protected. If it carries a z-index, it must be
+       positioned for that z-index to mean anything. */
+    if (read.bandZIndex !== 'auto') {
+      expect(read.bandPosition, 'a band with a z-index must be positioned').not.toBe('static');
+    }
+    expect(read.amountColor, 'the raise amount must read gold').toBe('rgb(250, 204, 21)');
+  });
+
+  test('no dead pseudo-element smudges the tile action keys', async ({ page }) => {
+    /* 2026-08-31: `.multi-table-grid__cell::after` was `content:
+       attr(data-table-name)` for an attribute nothing ever set. content:""
+       still GENERATES a box, and that one had padding, a black background and
+       a blur — an empty smudge pinned bottom-left of the cell, which after
+       Variant A is the Fold button. Deleted. This pin fails if any cell-level
+       pseudo-element comes back with a paintable box. */
+    const read = await page.evaluate(() => {
+      const cell = document.createElement('div');
+      cell.className = 'multi-table-grid__cell';
+      cell.style.cssText = 'height:400px;width:300px';
+      cell.innerHTML =
+        '<div class="multi-table-grid__stage"></div>' +
+        '<div class="multi-table-grid__band"><div class="multi-table-grid__actions">' +
+        '<button class="multi-table-grid__action multi-table-grid__action--fold">Fold</button>' +
+        '</div></div>';
+      document.body.appendChild(cell);
+      const out: Record<string, string> = {};
+      for (const pseudo of ['::before', '::after']) {
+        const cs = getComputedStyle(cell, pseudo);
+        out[pseudo] = `${cs.content}|${cs.backgroundColor}`;
+      }
+      return out;
+    });
+    for (const pseudo of ['::before', '::after']) {
+      const [content] = read[pseudo].split('|');
+      expect(
+        content === 'none' || content === 'normal',
+        `cell ${pseudo} must not generate a box over the action band (got ${read[pseudo]})`
+      ).toBe(true);
+    }
+  });
+
+  test('CARD ART: nothing crops the indices and nothing stair-steps the pips', async ({ page }) => {
     // Dan 2026-08-21: "the cards ... are no longer crisp and clean, they seem
     // distorted with edges cut off." Both halves of that regression are
     // CSS-visible, so they are pinned here.
@@ -314,9 +411,10 @@ test.describe('LIVE E2E — the multi-table tab bar, beat by beat', () => {
     );
     for (const name of ['timerBarUrgent', 'tabResultWon', 'actionChipIn']) {
       if (name in b) {
-        expect(b[name], `${name} must be flattened under prefers-reduced-motion`).toBeLessThanOrEqual(
-          1
-        );
+        expect(
+          b[name],
+          `${name} must be flattened under prefers-reduced-motion`
+        ).toBeLessThanOrEqual(1);
       }
     }
     await ctx.close();

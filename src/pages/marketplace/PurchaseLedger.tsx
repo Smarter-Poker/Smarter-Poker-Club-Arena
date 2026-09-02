@@ -16,7 +16,7 @@ import { callClubArenaApi } from '../../services/clubArenaApi';
 import { supabase } from '../../lib/supabase';
 import { useToast } from '../../components/common/Toast';
 import { confirmDialog } from '../../components/common/confirmDialog';
-import { fmtChips, timeAgo } from '../../utils/format';
+import { fmt, timeAgo } from '../../utils/format';
 import styles from '../MarketplacePage.module.css';
 
 interface LedgerRow {
@@ -26,11 +26,15 @@ interface LedgerRow {
   buyerId: string;
   buyerName: string;
   pricePaid: number;
+  /** 'diamonds' for post-2026-08-23 purchases, 'chips' for legacy rows */
+  currency?: 'chips' | 'diamonds';
   createdAt: string;
   refundedAt: string | null;
   status: 'owned' | 'redeemed' | 'refunded' | 'not_delivered';
   refundable: boolean;
 }
+
+const unitOf = (currency?: string | null) => (currency === 'chips' ? 'Chips' : 'Diamonds');
 
 const PAGE = 25;
 
@@ -81,8 +85,8 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
     if (refunding) return;
     if (
       !(await confirmDialog({
-        title: 'Refund purchase',
-        message: `Refund ${fmtChips(row.pricePaid)} chips to ${row.buyerName} for "${row.itemName}"? Their copy is revoked and any limited stock goes back.`,
+        title: 'Refund Purchase',
+        message: `Refund ${fmt(row.pricePaid)} ${unitOf(row.currency)} To ${row.buyerName} For "${row.itemName}"? Their Copy Is Revoked And Any Limited Stock Goes Back.`,
         confirmText: 'Refund',
         variant: 'danger',
       }))
@@ -90,14 +94,15 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
       return;
     setRefunding(row.id);
     try {
-      const res = await callClubArenaApi<{ amount: number; alreadyRefunded?: boolean }>(
-        'refund-purchase',
-        { clubId, purchaseId: row.id }
-      );
+      const res = await callClubArenaApi<{
+        amount: number;
+        currency?: string;
+        alreadyRefunded?: boolean;
+      }>('refund-purchase', { clubId, purchaseId: row.id });
       toast.success(
         res.alreadyRefunded
-          ? 'That purchase was already refunded'
-          : `Refunded ${fmtChips(res.amount)} chips to ${row.buyerName}`
+          ? 'That Purchase Was Already Refunded'
+          : `Refunded ${fmt(res.amount)} ${unitOf(res.currency || row.currency)} To ${row.buyerName}`
       );
       load();
     } catch (err: unknown) {
@@ -133,8 +138,8 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
             setOffset(0);
             setQuery(e.target.value);
           }}
-          placeholder="Search item or member..."
-          aria-label="Search purchases by item or member"
+          placeholder="Search Item Or Member..."
+          aria-label="Search Purchases By Item Or Member"
           className={styles.formInput}
         />
       </div>
@@ -153,7 +158,7 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
       ) : rows.length === 0 ? (
         <div className={styles.emptyState}>
           <span className={styles.emptyText}>
-            {query.trim() ? 'No purchases match that search.' : 'No purchases yet.'}
+            {query.trim() ? 'No Purchases Match That Search.' : 'No Purchases Yet.'}
           </span>
         </div>
       ) : (
@@ -177,7 +182,9 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
                   <tr key={r.id}>
                     <td style={{ fontWeight: 600 }}>{r.buyerName}</td>
                     <td>{r.itemName}</td>
-                    <td style={{ color: '#f7c52a', fontWeight: 700 }}>{fmtChips(r.pricePaid)}</td>
+                    <td style={{ color: '#00d4ff', fontWeight: 700 }}>
+                      {fmt(r.pricePaid)} {unitOf(r.currency)}
+                    </td>
                     <td style={{ fontSize: '12px', color: '#8b8d91' }}>{timeAgo(r.createdAt)}</td>
                     <td>
                       <span className={styles.categorySmall}>
@@ -186,7 +193,7 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
                           : r.status === 'redeemed'
                             ? 'Redeemed'
                             : r.status === 'not_delivered'
-                              ? 'Not delivered'
+                              ? 'Not Delivered'
                               : 'Owned'}
                       </span>
                     </td>
@@ -204,10 +211,10 @@ export default function PurchaseLedger({ clubId }: { clubId: string }) {
                           className={styles.grantHint}
                           title={
                             r.status === 'redeemed'
-                              ? 'Already used - the granted benefit cannot be taken back automatically'
+                              ? 'Already Used - The Granted Benefit Cannot Be Taken Back Automatically'
                               : r.status === 'refunded'
-                                ? 'Already refunded'
-                                : 'No delivered copy to revoke'
+                                ? 'Already Refunded'
+                                : 'No Delivered Copy To Revoke'
                           }
                         >
                           -

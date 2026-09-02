@@ -3,7 +3,7 @@
  * Allows players to queue actions before it's their turn
  */
 
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import './PreActionBar.css';
 
 // Phase 2 T1-08: spec §5.3 calls for a circular dot ABOVE the label that
@@ -81,6 +81,68 @@ export default function PreActionBar({
     [preAction, visibleOrder, onPreActionChange]
   );
 
+  /**
+   * ═══ AN ARMED PRE-ACTION THE PLAYER CANNOT SEE OR CANCEL ═══════════════════
+   * AUDIT 2026-08-25.
+   *
+   * The middle slot is conditional: Check exists only while `canCheck`, and
+   * Call exists only while a bet is outstanding. Both of those change DURING a
+   * street, and the armed selection did not follow them.
+   *
+   * Arm "Check" in the big blind with no raisers, then somebody raises. The
+   * Check button unmounts. `preAction` is still 'check', so the bar is still in
+   * its armed state and the engine is still holding `auto_check` for this hand
+   * — but there is no lit toggle on screen, and no button left to tap to turn
+   * it off. Dan removed the "AUTO FOLD / Cancel" strip on 2026-08-21 (it read
+   * as a standing instruction across hands), which is right, and it means the
+   * lit toggle is now the ONLY way to disarm. Take the toggle away and the
+   * player is holding a pre-action they can neither see nor cancel.
+   *
+   * Facing a bet with auto_check armed is also not a thing the engine can
+   * honour, so the arm was worthless as well as invisible.
+   *
+   * Clearing it goes through the parent, which is what tells the ENGINE to
+   * clear too — a local-only reset would leave the server still holding it,
+   * which is the same trap with the display fixed.
+   *
+   * The effect runs before the `isMyTurn` early return below on purpose:
+   * hooks cannot be conditional, and this is exactly the case where the bar is
+   * about to stop rendering.
+   */
+  /**
+   * Dan 2026-08-28 (CRITICAL, companion to the engine guard): the moment the
+   * armed 'call' price RISES — a raise arrived — the toggle disarms on
+   * screen, immediately, through the parent (which also tells the engine to
+   * clear). The engine independently refuses to fire an auto_call past the
+   * armed price, so this is the visible half of that guarantee, not the only
+   * half. The price at arm time is snapshotted here because `currentBet` is
+   * a live prop: comparing it to itself would never trip.
+   */
+  const armedCallPriceRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (preAction === 'call') {
+      if (armedCallPriceRef.current === null) armedCallPriceRef.current = currentBet;
+    } else {
+      armedCallPriceRef.current = null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preAction]);
+
+  useEffect(() => {
+    if (preAction && !visibleOrder.includes(preAction)) {
+      onPreActionChange(null);
+    } else if (
+      preAction === 'call' &&
+      armedCallPriceRef.current !== null &&
+      currentBet > armedCallPriceRef.current
+    ) {
+      // The price went up — the button the player pressed no longer exists.
+      onPreActionChange(null);
+    }
+    // visibleOrder is rebuilt every render; depend on what actually decides it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preAction, canCheck, currentBet]);
+
   // Don't render when it's the player's turn (they should use main action buttons)
   if (isMyTurn) {
     return null;
@@ -128,7 +190,7 @@ export default function PreActionBar({
           aria-pressed={preAction === 'fold'}
           onClick={() => handleToggle('fold')}
           title={
-            canCheck ? 'Check if possible, fold if forced to act' : 'Fold when action reaches you'
+            canCheck ? 'Check If Possible, Fold If Forced To Act' : 'Fold When Action Reaches You'
           }
         >
           <ToggleDot active={preAction === 'fold'} />
@@ -142,7 +204,7 @@ export default function PreActionBar({
             className={`pre-action-btn check ${preAction === 'check' ? 'active' : ''}`}
             aria-pressed={preAction === 'check'}
             onClick={() => handleToggle('check')}
-            title="Check when action reaches you"
+            title="Check When Action Reaches You"
           >
             <ToggleDot active={preAction === 'check'} />
             <span className="pre-action-btn__label">Check</span>
@@ -156,12 +218,14 @@ export default function PreActionBar({
             className={`pre-action-btn call ${preAction === 'call' ? 'active' : ''}`}
             aria-pressed={preAction === 'call'}
             onClick={() => handleToggle('call')}
-            title={`Call ${currentBet} when action reaches you`}
+            /* House rule 5: never print a raw number. This tooltip was the one
+               place on the bar that did - a 12,500 call read "Call 12500". */
+            title={`Call ${currentBet.toLocaleString()} When Action Reaches You`}
           >
             <ToggleDot active={preAction === 'call'} />
-            <span className="pre-action-btn__label">
-              Call {currentBet > 0 ? currentBet.toLocaleString() : ''}
-            </span>
+            {/* The branch is already inside `currentBet > 0`; the second test
+                that used to be here could never be false. */}
+            <span className="pre-action-btn__label">Call {currentBet.toLocaleString()}</span>
           </button>
         )}
 
@@ -171,7 +235,7 @@ export default function PreActionBar({
           className={`pre-action-btn call-any ${preAction === 'callAny' ? 'active' : ''}`}
           aria-pressed={preAction === 'callAny'}
           onClick={() => handleToggle('callAny')}
-          title="Call any bet when action reaches you"
+          title="Call Any Bet When Action Reaches You"
         >
           <ToggleDot active={preAction === 'callAny'} />
           <span className="pre-action-btn__label">Call Any</span>

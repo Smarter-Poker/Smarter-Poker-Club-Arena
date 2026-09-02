@@ -22,6 +22,7 @@ import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { uuid } from '../utils/uuid';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -53,14 +54,6 @@ export interface CommissionSpread {
     rakeGenerated: number;
     commissionPaid: number;
   }>;
-}
-
-export interface RakeAttribution {
-  handId: string;
-  playerId: string;
-  rakeAmount: number;
-  agentId?: string;
-  timestamp: string;
 }
 
 export interface CommissionPayout {
@@ -273,55 +266,17 @@ export const CommissionService = {
   },
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // RAKE ATTRIBUTION
-  // ─────────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Attribute rake to players after hand completion
-   * Called after pot drops. (Previously by client RakeService, deleted
-   * 2026-08-15; rake distribution is server-authoritative.)
-   */
-  async attributeRake(handId: string, attributions: RakeAttribution[]): Promise<void> {
-    if (attributions.length === 0) return;
-
-    const records = attributions.map((a) => ({
-      hand_id: handId,
-      player_id: a.playerId,
-      rake_amount: a.rakeAmount,
-      agent_id: a.agentId || null,
-      created_at: new Date().toISOString(),
-    }));
-
-    // Audit M2: this was a bare .insert() with no uniqueness guard, so a
-    // replayed hand-complete wrote a second attribution row per player —
-    // which downstream becomes double rakeback AND double agent commission.
-    // Migration 20260806_uq_rake_attributions_hand_player adds
-    // UNIQUE (hand_id, player_id); upserting against it makes a replay a
-    // no-op rather than a duplicate credit or a thrown 23505.
-    const { error } = await supabase
-      .from('rake_attributions')
-      .upsert(records, { onConflict: 'hand_id,player_id', ignoreDuplicates: true });
-
-    if (error) throw error;
-  },
-
-  /**
-   * Get player's total rake contribution
-   */
-  async getPlayerRakeTotal(playerId: string, periodId?: string): Promise<number> {
-    const { data, error } = await retryAsync(
-      () =>
-        supabase.rpc('get_player_rake_total', {
-          p_player_id: playerId,
-          p_period_id: periodId || null,
-        }),
-      3
-    );
-
-    if (error) throw error;
-    return data;
-  },
-
+  // RAKE ATTRIBUTION — CLIENT PATH DELETED (Dan 2026-08-29, weighted rake law)
+  //
+  // attributeRake() and getPlayerRakeTotal() were removed in the weighted
+  // contributed rake residue sweep. Both were dead (zero callers) and both
+  // belonged to the retired client-side attribution era: rake_attributions is
+  // now the ENGINE's per-player weighted ledger, written exclusively inside
+  // atomic_distribute_rake (RLS: service_role writes, players read only their
+  // own rows), and per-player rake totals come from the authoritative pipeline
+  // (rakeback_periods / player_stats / fn_agent_downline_rake). The frontend
+  // must never write or recompute financial attribution (§30, server
+  // authoritative).
   // ─────────────────────────────────────────────────────────────────────────────
   // CASCADING COMMISSION CALCULATION
   // ─────────────────────────────────────────────────────────────────────────────
@@ -392,48 +347,125 @@ export const CommissionService = {
   },
 
   /**
-   * Execute commission payout (credit to wallet)
+   * CLAIM THIS AGENT'S OWN COMMISSION.
+   *
+   * Replaces executePayout, which called execute_commission_payout - a function
+   * that credited a wallet, debited nothing, and never marked the commission
+   * settled, so the same row could be paid again forever. It is dropped
+   * (migration 20260902000001) and so is this method's old body.
+   *
+   * Dan, 2026-08-31: "AGENTS HANDLE THEIR OWN PAYOUTS." The RPC pays auth.uid()
+   * and takes no payee parameter, so there is nothing to pass but the club.
+   *
+   * WHY THIS LOOPS. The claim settles a bounded batch per call, because the
+   * largest agent has 192,135 unsettled rows and settling them in one statement
+   * measured 64.6 SECONDS against an 8 second statement timeout - and would hold
+   * the club row locked for that whole minute, freezing every other chip
+   * movement in the club. Each call is its own transaction and its own money
+   * conservation, so stopping half way leaves a correct, smaller balance owing.
+   *
+   * A FRESH op_id PER BATCH, and the same one on a retry. op_id identifies one
+   * batch: reusing it after a network wobble replays that batch's answer instead
+   * of paying twice, and using a new one for the next batch is what lets the
+   * loop make progress.
    */
-  async executePayout(payoutId: string): Promise<boolean> {
-    const { error } = await retryAsync(async () => {
-      const result = await supabase.rpc('execute_commission_payout', {
-        p_payout_id: payoutId,
+  async claimCommission(
+    clubId: string,
+    onProgress?: (claimedSoFar: number, batches: number) => void
+  ): Promise<{ claimed: number; batches: number; stoppedEarly: boolean; reason?: string }> {
+    const resolvedId = await resolveClubUUID(clubId);
+    let claimed = 0;
+    let batches = 0;
+
+    // A ceiling, not an expectation. 192,135 rows at 1,000 per batch is 193
+    // calls; this stops a runaway loop without stopping a legitimate drain.
+    const MAX_BATCHES = 400;
+
+    for (;;) {
+      const opId = uuid();
+      const { data, error } = await supabase.rpc('fn_agent_claim_commission', {
+        p_club_id: resolvedId,
+        p_op_id: opId,
       });
-      return result;
-    }, 2);
+      if (error) throw error;
 
-    if (error) throw error;
+      const result = data as {
+        success?: boolean;
+        error?: string;
+        amount?: number;
+        more?: boolean;
+        nothing_owed?: boolean;
+        bank_short?: boolean;
+      } | null;
 
-    // Fetch the commission record for accurate bus event data
-    // (sweep #3: execute_commission_payout operates on agent_commissions rows)
-    const { data: payout } = await supabase
-      .from('agent_commissions')
-      .select('user_id, amount')
-      .eq('id', payoutId)
-      .maybeSingle();
+      if (!result?.success) {
+        // Nothing owed on the FIRST call is the honest answer to "claim my
+        // commission" when there is none. After a batch has already paid, it
+        // means somebody else drained the rest, and what we claimed still counts.
+        if (batches > 0) {
+          return { claimed, batches, stoppedEarly: true, reason: result?.error };
+        }
+        throw new Error(result?.error || 'The Claim Was Refused');
+      }
 
-    // Audit: the payout ITSELF already succeeded above, so this read-back
-    // failing is not fatal — but it must not be silent. The fallback below
-    // emits the payout id in the agentId slot and an amount of 0, which is
-    // wrong data, not missing data. Every current subscriber treats
-    // COMMISSION_PAID as a refresh trigger, so the UI still recovers, but a
-    // future consumer that trusts the payload deserves a trail.
-    if (!payout) {
-      reportError(
-        new Error(
-          'COMMISSION_PAID emitted with degraded payload: payout read-back returned no row'
-        ),
-        'CommissionService.executePayout.readBack',
-        { payoutId }
-      );
+      claimed += Number(result.amount ?? 0) || 0;
+      batches += 1;
+      onProgress?.(claimed, batches);
+
+      if (!result.more) break;
+      if (batches >= MAX_BATCHES) {
+        return { claimed, batches, stoppedEarly: true, reason: 'More Is Still Owed' };
+      }
     }
 
-    // Notify listening pages (ClubFinancialsPage) that a commission was paid
-    masterBus.emit('COMMISSION_PAID', {
-      agentId: payout?.user_id || payoutId,
-      amount: payout?.amount || 0,
+    masterBus.emit('COMMISSION_PAID', { agentId: 'self', amount: claimed });
+    masterBus.emit('CLUB_UPDATED', { clubId: resolvedId });
+    return { claimed, batches, stoppedEarly: false };
+  },
+
+  /**
+   * What this member has earned and not yet claimed, read from the ledger.
+   *
+   * NOT agents.pending_commission. That column is written by no function and no
+   * trigger anywhere in the database; on 2026-08-31 it claimed 26,859.87 owed
+   * across 5 agents while agent_commissions held 394,904.61 across 96.
+   */
+  async unsettledCommission(clubId: string, userId: string): Promise<number> {
+    const resolvedId = await resolveClubUUID(clubId);
+    const { data, error } = await supabase.rpc('fn_agent_unsettled_commission', {
+      p_club_id: resolvedId,
+      p_user_id: userId,
     });
-    return true;
+    if (error) throw error;
+    return Number(data ?? 0) || 0;
+  },
+
+  /**
+   * What each of this agent's downlines is still owed, from the ledger.
+   *
+   * PHASE 7. The Sub-Agents tab printed `agents.pending_commission` for each
+   * downline - the column nothing wrote - so every figure in that column was a
+   * frozen number or a zero. It cannot simply select from agent_commissions
+   * instead: RLS lets an agent read their OWN commission rows and nobody
+   * else's, which is correct, so an upline needs a definer function.
+   *
+   * It answers UNCLAIMED rather than lifetime: it is what the club still owes,
+   * and it is the figure the partial index can produce without reading every
+   * row every downline has ever generated.
+   */
+  async downlineCommission(
+    clubId?: string
+  ): Promise<{ agentId: string; userId: string; unclaimed: number }[]> {
+    const resolvedId = clubId ? await resolveClubUUID(clubId) : null;
+    const { data, error } = await supabase.rpc('fn_agent_downline_commission', {
+      p_club_id: resolvedId,
+    });
+    if (error) throw error;
+    return (Array.isArray(data) ? data : []).map((row: any) => ({
+      agentId: row.agent_id,
+      userId: row.user_id,
+      unclaimed: Number(row.unclaimed ?? 0) || 0,
+    }));
   },
 
   // ─────────────────────────────────────────────────────────────────────────────

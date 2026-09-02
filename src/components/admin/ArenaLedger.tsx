@@ -44,8 +44,8 @@ const ACTION_CONFIG: Record<string, { icon: string; color: string; label: string
   chip_mint: { icon: '◉', color: '#22C55E', label: 'Chip Mint' },
   chip_transfer: { icon: '→', color: '#3B82F6', label: 'Chip Transfer' },
   chip_distribute: { icon: '◈', color: '#8B5CF6', label: 'Distribution' },
-  buyin: { icon: '▦', color: '#F59E0B', label: 'Buy-in' },
-  cashout: { icon: '◆', color: '#10B981', label: 'Cash-out' },
+  buyin: { icon: '▦', color: '#F59E0B', label: 'Buy-In' },
+  cashout: { icon: '◆', color: '#10B981', label: 'Cash-Out' },
   settlement: { icon: '▦', color: '#6366F1', label: 'Settlement' },
   rake: { icon: '▦', color: '#EC4899', label: 'Rake Collected' },
   promo: { icon: '★', color: '#A855F7', label: 'Promo' },
@@ -235,7 +235,7 @@ export default function ArenaLedger({ clubId, maxEntries = 200 }: ArenaLedgerPro
         <input
           className="arena-ledger__search"
           type="text"
-          placeholder="Search ledger..."
+          placeholder="Search Ledger..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />

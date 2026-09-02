@@ -73,11 +73,6 @@
   transition: all 0.2s ease;
 }
 
-.closeBtn:hover {
-  background: rgba(239, 68, 68, 0.2);
-  color: #ef4444;
-}
-
 /* Summary Cards */
 .summary {
   display: grid;
@@ -185,11 +180,6 @@
   -webkit-backdrop-filter: blur(2px);
 }
 
-.filterBtn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-}
-
 .filterBtn.active {
   background: rgba(251, 191, 36, 0.2);
   border-color: #fbbf24;
@@ -217,11 +207,6 @@
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
   transition: all 0.2s var(--ease-spring, cubic-bezier(0.175, 0.885, 0.32, 1.275));
-}
-
-.entryCard:hover {
-  transform: translateY(-1px);
-  background: rgba(255, 255, 255, 0.08);
 }
 
 .entryIcon {

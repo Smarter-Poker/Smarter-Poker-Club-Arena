@@ -28,6 +28,57 @@
 export const DEFAULT_RAKE_RATE = 0.1;
 
 /**
+ * Dan 2026-08-25: "HEADS UP EVENTS ARE ONLY A 5% RAKE, SO A 1 CHIP BUY IN X 2
+ * PLAYERS = 5% OF 2 CHIPS, SO WINNER TAKES ALL = 1.90 PAYOUT."
+ */
+export const HEADS_UP_RAKE_RATE = 0.05;
+
+/**
+ * A Spin charges the buy-in and NOTHING else — its rake is engineered into the
+ * multiplier distribution (server/src/config/spinSpec.ts) and `buy_in_fee` must
+ * be 0. The tournaments_spin_no_extra_rake constraint refuses a fee-bearing Spin.
+ */
+export const SPIN_RAKE_RATE = 0;
+
+/** Mirror of RakeSubject in src/utils/buyIn.ts. */
+export interface RakeSubject {
+  /** tournaments.tournament_type — 'MTT' | 'SNG' | 'SPIN'. Any case. */
+  tournamentType?: string | null;
+  /** tournaments.variant, or a creation form's format string. Any case. */
+  variant?: string | null;
+  /** Seats in the game. tournaments.max_players, or a form's field size. */
+  maxPlayers?: number | null;
+}
+
+/**
+ * THE SINGLE SOURCE OF TRUTH FOR WHICH RATE A FORMAT PAYS. Full reasoning in
+ * src/utils/buyIn.ts; the short version is that `SNG_RAKE_RATE` used to live in
+ * TournamentRecurringService with one consumer while five other creation paths
+ * quoted 10% on a two-seat game — and ScheduledTournamentService, which writes
+ * the money columns directly rather than through fn_create_tournament, CHARGED
+ * it.
+ *
+ * Keyed on SEATS, not on the word "SNG": a two-handed game is a duel whatever
+ * its label says, and the label is the thing that varies between writers.
+ *
+ * MIRROR of src/utils/buyIn.ts — change one, change both.
+ * tests/unit/tournamentRakeMirror.test.ts pins them together.
+ */
+export function rakeRateFor(subject: RakeSubject): number {
+  const type = String(subject?.tournamentType ?? '').toUpperCase();
+  const variant = String(subject?.variant ?? '').toLowerCase();
+  if (type === 'SPIN' || variant === 'spin') return SPIN_RAKE_RATE;
+
+  const seats = Number(subject?.maxPlayers);
+  // `> 0` matters: 0 means "unlimited field" to some callers, and 0 is not a
+  // heads-up game. An unknown seat count falls through to the DEFAULT rate,
+  // never to the cheaper one.
+  if (Number.isFinite(seats) && seats > 0 && seats <= 2) return HEADS_UP_RAKE_RATE;
+
+  return DEFAULT_RAKE_RATE;
+}
+
+/**
  * Generator price points. The fee is whole at every rung (splitBuyIn rounds
  * it), so 1/2/3 carry a 0 fee and 5/15/25/75 round their fee up - see
  * src/utils/buyIn.ts for why that trade was made.
@@ -69,6 +120,40 @@ export function snapToWholeBuyIn(amount: number): number {
   return best;
 }
 
+/** Two decimal places, killing float noise. numeric(15,2) is what the
+    columns are, so cents is the finest money this platform can store. */
+function round2(n: number): number {
+  return Math.round((Number(n) || 0) * 100) / 100;
+}
+
+/**
+ * THE FEE, IN CENTS (Dan 2026-08-25).
+ *
+ * "FRACTIONAL FEE'S NEED TO BE ALLOWED, WE HAVE 1 BUY IN, 5 BUY IN'S ETC THOSE
+ * SHOULD BE .10 RAKE AND .50 RAKE PER BUY IN."
+ *
+ * The fee used to floor to a WHOLE chip, which is why a 1-chip game took
+ * nothing and a 5-chip game took nothing: floor(1 x 0.1) and floor(5 x 0.1)
+ * are both 0. The whole micro end of the ladder — 1, 2, 3, 5 — ran rake-free,
+ * and the comment above this line called that a deliberate trade because "that
+ * rule cannot coexist with a hard 10% cap WHILE FEES STAY WHOLE NUMBERS".
+ *
+ * They do not have to. buy_in_fee is numeric(15,2). Flooring to CENTS instead
+ * of to chips honours the same ceiling exactly — 1 pays 0.10, 5 pays 0.50, 15
+ * pays 1.50, and none of them is a fraction of a percent over 10 — while the
+ * total the player pays stays the whole number it has always been (0.90 + 0.10
+ * = 1.00), which is what every price display and the whole-total rule depend
+ * on.
+ *
+ * Still a FLOOR, never a round: rounding a fee up is rounding the house's cut
+ * up through its own ceiling, which is the exact bug fixed on 2026-08-21.
+ */
+function feeToCents(total: number, rakeRate: number): number {
+  const exact = total * rakeRate;
+  const floored = Math.floor(exact * 100 + 1e-9) / 100;
+  return Math.min(total, Math.max(0, floored));
+}
+
 /** Split a whole total. 0 stays a freeroll: never levy a fee on a free game. */
 export function splitBuyIn(total: number, rakeRate: number = DEFAULT_RAKE_RATE): BuyInSplit {
   const t = Math.max(0, Math.round(Number(total) || 0));
@@ -88,10 +173,11 @@ export function splitBuyIn(total: number, rakeRate: number = DEFAULT_RAKE_RATE):
    *
    * MIRROR of src/utils/buyIn.ts — change one, change both.
    */
-  const fee = Math.min(t, Math.floor(t * rakeRate + 1e-9));
-  // Subtraction, not a second independent rounding — otherwise prize + fee can
-  // miss total, and money that does not reconcile is a real bug.
-  return { total: t, prize: t - fee, fee };
+  const fee = feeToCents(t, rakeRate);
+  // prize is computed by SUBTRACTION, never by its own rounding. Rounding both
+  // ends independently is how prize + fee stops equalling total, and money that
+  // does not reconcile on a money surface is a real bug later.
+  return { total: t, prize: round2(t - fee), fee };
 }
 
 /** Snap, then split. Every generator calls THIS. */
@@ -130,9 +216,12 @@ export function clampRakeToCap(
 ): { prize: number; fee: number } {
   const total = Math.max(0, Math.round(Number(prize || 0) + Number(fee || 0)));
   if (total === 0) return { prize: 0, fee: 0 };
-  const capped = Math.min(
-    Math.max(0, Math.round(Number(fee || 0))),
-    Math.floor(total * rakeRate + 1e-9)
-  );
-  return { prize: total - capped, fee: capped };
+  /* MIRROR FIX 2026-08-26: the client copy (src/utils/buyIn.ts) moved to
+     CENTS on 2026-08-25 with Dan's fractional-fee rule; this copy kept
+     rounding the incoming fee to a whole chip and flooring the cap to whole
+     chips, so every server-side pass through here silently stripped the 0.10
+     fee off a 1-chip game — turning the micro end of the ladder rake-free
+     again through the back door. Byte-for-byte the client's arithmetic now. */
+  const capped = Math.min(Math.max(0, round2(Number(fee || 0))), feeToCents(total, rakeRate));
+  return { prize: round2(total - capped), fee: capped };
 }

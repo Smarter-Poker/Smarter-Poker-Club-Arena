@@ -52,6 +52,7 @@ import {
   intervalSpawnKey,
   TIMED_WINDOW_AHEAD_MS,
   TIMED_WINDOW_PAST_MS,
+  spawnAheadMsFor,
 } from '../../server/src/services/ScheduledTournamentService';
 
 // 2026-01-04 is a Sunday (UTC day 0); 2026-01-05 a Monday (day 1).
@@ -79,11 +80,51 @@ describe('timedSpawnsDue — day/time matching and the spawn window', () => {
     // hour before it started, so with 38 live schedules the lobby still read
     // as empty — two joinable MTTs at any given moment. Publishing the card a
     // day ahead is what makes the board look like a real room's.
-    const twoDaysOut = new Date(SUNDAY(12, 0).getTime() + 48 * 60 * 60 * 1000);
-    expect(timedSpawnsDue(sched([twoDaysOut.getUTCDay()], ['12:45']), SUNDAY(12, 0))).toHaveLength(
+    //
+    // 2026-08-26: widened to 48 hours, then to 72 on Dan's second pass ("USE
+    // 72H/6 DAY FOR $200 BUY IN OR MORE"). The lobby cannot list a row the
+    // spawner never created, so this constant is the ceiling on the whole
+    // board. The out-of-window case moves out with it: FOUR days is now the
+    // first clock that is genuinely too far for an ordinary event.
+    //
+    // Four rather than three deliberately. Three days lands 45 minutes past
+    // the boundary, which passes for the right reason today and would flip on
+    // any future nudge to the window; four days is unambiguous.
+    const fourDaysOut = new Date(SUNDAY(12, 0).getTime() + 96 * 60 * 60 * 1000);
+    expect(timedSpawnsDue(sched([fourDaysOut.getUTCDay()], ['12:45']), SUNDAY(12, 0))).toHaveLength(
       0
     );
-    expect(TIMED_WINDOW_AHEAD_MS).toBe(24 * 60 * 60 * 1000);
+    expect(TIMED_WINDOW_AHEAD_MS).toBe(72 * 60 * 60 * 1000);
+  });
+
+  it('publishes THREE days of a daily schedule, not one (Dan 2026-08-26)', () => {
+    // The 72-hour board, measured on the shape that proves it: an event that
+    // runs every day is due today, tomorrow and the day after inside the
+    // window, and every edition must carry a DIFFERENT spawn key or the
+    // dedupe in tournament_schedule_spawns collapses them back into one.
+    // This is also the case the (type, name, start_time) unique index had to
+    // be widened for - on the old (type, name) key the second and third
+    // editions collided and silently never spawned.
+    const due = timedSpawnsDue(sched([0, 1, 2, 3, 4, 5, 6], ['12:45']), SUNDAY(12, 0));
+    expect(due.length).toBe(3);
+    expect(new Set(due.map((d) => d.spawnKey)).size).toBe(3);
+  });
+
+  it('a 6 day look-ahead is reserved for buy-ins above 200', () => {
+    // "USE 72H/6 DAY FOR $200 BUY IN OR MORE." INCLUSIVE: the first pass read
+    // "more then 200" literally and used `>`, which put a flat 200 event on
+    // the short window - and the Sunday Deep Stack shipped in the same batch
+    // costs exactly 200, so the rule would have excluded the one event it
+    // exists for.
+    expect(spawnAheadMsFor({ buyIn: 200 })).toBe(6 * 24 * 60 * 60 * 1000);
+    expect(spawnAheadMsFor({ buyIn: 199 })).toBe(72 * 60 * 60 * 1000);
+    expect(spawnAheadMsFor({})).toBe(72 * 60 * 60 * 1000);
+    // An explicit per-schedule override still wins over both (the flagship
+    // that opens a week early so its satellites can resolve it).
+    expect(spawnAheadMsFor({ buyIn: 5, spawnAheadMinutes: 10080 })).toBe(10080 * 60_000);
+    // Out-of-range overrides are ignored rather than honoured.
+    expect(spawnAheadMsFor({ buyIn: 5, spawnAheadMinutes: 1 })).toBe(72 * 60 * 60 * 1000);
+    expect(spawnAheadMsFor({ buyIn: 5, spawnAheadMinutes: 99999 })).toBe(72 * 60 * 60 * 1000);
   });
 
   it("tomorrow's daily event is already on the board (the empty-lobby fix)", () => {
@@ -104,8 +145,12 @@ describe('timedSpawnsDue — day/time matching and the spawn window', () => {
   });
 
   it('does not spawn on a day the schedule does not include', () => {
-    // Sunday check against a Monday-only schedule.
-    expect(timedSpawnsDue(sched([1], ['12:15']), SUNDAY(12, 0))).toHaveLength(0);
+    // Sunday check against a THURSDAY-only schedule. This used to say Monday,
+    // which stopped being a valid example on 2026-08-26: at a 72-hour
+    // look-ahead Monday lunchtime is INSIDE the window when it is Sunday
+    // lunchtime, so the assertion was measuring the window rather than the
+    // day filter. Thursday is four days out and cannot be confused for either.
+    expect(timedSpawnsDue(sched([4], ['12:15']), SUNDAY(12, 0))).toHaveLength(0);
   });
 
   it("crosses midnight forward: Sunday 23:50 sees Monday's 00:10", () => {

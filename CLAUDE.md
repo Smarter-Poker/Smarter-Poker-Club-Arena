@@ -1,5 +1,21 @@
 # Club Arena -- Agent Instructions
 
+## ↗ RESUMING THE ENGINE-RESTART PROGRAMME? READ `docs/HANDOFF_CURRENT_STATE.md`
+
+If you are picking up the hourly `:55` maintenance break / platform freeze /
+engine restart work, the current state, every measured baseline, the open
+defects and the exact next actions are in
+[`docs/HANDOFF_CURRENT_STATE.md`](./docs/HANDOFF_CURRENT_STATE.md).
+
+Read it before touching `server/src/maintenance/**`,
+`server/src/engine/ServerTableEngineBase.ts`,
+`.github/workflows/auto-deploy-hetzner.yml` or
+`.github/scripts/engine-watchdog.sh`. It records three separate guards that
+read as armed while being unreachable, and one trap where a metric reaching
+zero means the opposite of success.
+
+---
+
 ## ↗ START HERE: `AGENT-PLAYBOOK.md`
 
 **Before this file, before anything: read [`AGENT-PLAYBOOK.md`](./AGENT-PLAYBOOK.md).**

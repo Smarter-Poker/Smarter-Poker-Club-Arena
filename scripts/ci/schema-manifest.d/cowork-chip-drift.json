@@ -2,6 +2,7 @@
   "_owner": "fix/a-correction-is-not-a-mint",
   "tables": ["ca_ratchet_baselines", "ca_tournament_conservation_samples"],
   "functions": [
+    "fn_backpay_unfinalised_bounty_pools",
     "fn_ca_completed_without_a_champion",
     "fn_ca_prize_overpay_count",
     "fn_ca_prize_overpay_unexplained",

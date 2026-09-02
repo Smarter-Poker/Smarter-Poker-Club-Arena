@@ -162,6 +162,116 @@ entry, and it needs Dan. See §0.6 D-1.
 
 ---
 
+## §0.4a **CORRECTION — D-1 AS ORIGINALLY WRITTEN IS WRONG. DO NOT IMPLEMENT IT.**
+
+_Added 2026-09-02, same agent, after tracing a single spin end to end. §0.4 above is left
+intact because its measurements are correct; its **conclusion** is not. This subsection
+overrides it._
+
+### What §0.4 got wrong
+
+§0.4 concluded that spin entries "debit a fictitious pool instead of the entrant" and
+recommended changing `fn_spin_book_entry` to debit the entrant's wallet.
+
+**The entrants are already debited. Implementing that recommendation would have charged every
+spin player twice.**
+
+The error came from scoping: I looked for the debit _linked to the tournament_ and found none,
+because the wallet-debit rows do not carry `tournament_id`. They exist — they are just not
+joined to the event.
+
+### The trace that settles it
+
+Spin `e3a922f8-9b06-4213-9d9f-957f1946912e` (buy-in 10.00, 3 seats, 3 entrants, booked
+`16:19:32Z`, reserve_in 27.60, rake 2.40):
+
+Rows carrying the tournament id — **one only**:
+
+```
+spin_entry   prize_liability -> spin_reserve   27.60   to_label spin_bonus_pools.balance
+```
+
+Rows for those same three entrants in the surrounding minutes — **the missing debits**:
+
+```
+16:17:18Z  adjustment  player_wallet -> table_stack  10.00  "auto-audited club_members.chip_balance delta -10.00"
+16:17:18Z  adjustment  player_wallet -> table_stack  10.00  "auto-audited club_members.chip_balance delta -10.00"
+16:19:23Z  adjustment  player_wallet -> table_stack  10.00  "auto-audited club_members.chip_balance delta -10.00"
+```
+
+3 x 10.00 = **30.00 collected**, exactly `buy_in x seats`. The players paid.
+
+### The actual defect: a counterparty that defaults instead of being declared
+
+`fn_club_members_ledger_writer` is the trigger on `club_members.chip_balance`. Its counterparty
+comes from `current_setting('app.ledger_counterparty')` and:
+
+```sql
+cp := COALESCE(NULLIF(current_setting('app.ledger_counterparty', true), ''), 'table_stack');
+```
+
+The comment directly above it reads _"THE COUNTERPARTY IS DECLARED, NEVER INFERRED
+(2026-08-31)"_ — but the `COALESCE` default **is** an inference, and it is the one that fires
+whenever a caller forgets to declare. The spin entry-fee debit path does not declare, so every
+spin fee is recorded as chips moving onto a **table stack that never received them**.
+
+Meanwhile `fn_spin_book_entry` _does_ declare (`app.ledger_counterparty = 'prize_liability'`)
+and credits `spin_bonus_pools` +27.60, plus rake 2.40 to treasury/union.
+
+So one spin produces:
+
+| leg            | from (counted?)            | to (counted?)        | effect on measured supply              |
+| -------------- | -------------------------- | -------------------- | -------------------------------------- |
+| fee debit x3   | `player_wallet` (yes)      | `table_stack` (yes)  | 0 — but the felt credit is **phantom** |
+| reserve credit | `prize_liability` (**no**) | `spin_reserve` (yes) | **+27.60**                             |
+| rake           | `prize_liability` (**no**) | treasury/union (yes) | **+2.40**                              |
+
+**Net +30.00 of measured supply per spin, and 30.00 of real chips recorded as sitting on a felt
+where they are not.** Both halves are wrong in the same event, which is why the 3h numbers line
+up: 30,690.00 collected across spins against ~115,529.73 of `player_wallet -> table_stack`
+auto-audited debits (the remainder is legitimate cash-game buy-in).
+
+That, not a missing debit, is the source of the `+1,865/hr` boundary inflow in §0.4.
+
+### The fix (NOT implemented — needs Dan, and probably needs an engine change)
+
+Make the two legs name the same counterparty so the entry nets out:
+
+- **Option 1 (preferred, minimal):** the spin entry-fee debit path declares
+  `app.ledger_counterparty = 'prize_liability'` + the tournament as
+  `app.ledger_counterparty_entity`. The pair then reads
+  `player_wallet -> prize_liability -> spin_reserve`, `prize_liability` nets to zero, no phantom
+  felt, no inflation. **28 rows already look like this**, so some path does it correctly — find
+  that path and copy it.
+- **Option 2:** the fee debit declares `spin_reserve` directly and `fn_spin_book_entry` stops
+  crediting the reserve. More invasive; risks a gap if the two are not transactional.
+
+**Where the change lives is UNKNOWN and the next agent must inspect it.** The debits arrive as
+`db_role=postgres, actor_service='PostgREST 14.5', category='adjustment'` — a client- or
+route-side `UPDATE` on `club_members.chip_balance`, not the SQL functions checked here
+(`fn_register_for_tournament`, `fn_take_seat_and_buy_in` and `fn_spin_sweep_unbooked` all
+test **false** for `chip_balance`). It may be in the Vite client or a World Hub API route.
+
+**Hardening worth doing regardless:** the `COALESCE(..., 'table_stack')` default is a
+silent-mislabel generator for _every_ undeclared caller, not just spins. Consider raising or
+routing to an explicit `unknown_counterparty` bucket so the next one is loud instead of
+invisible. That is a design decision, not a bug fix — Dan's call.
+
+### Why nothing was applied
+
+Per CLAUDE.md §11.5, every query behind this section was **read-only**; no transaction was
+opened and no chips moved. A fix here changes how spin money is recorded on a live floor, the
+change may not even be in this repo, and I had already been wrong once about this exact code
+path. Applying a money migration on that footing would have been the same class of mistake the
+2026-08-27 `is_horse` incident and the 2026-09-02 double-credit were both made of: an agent's
+own inference, shipped as a design decision.
+
+**Recommended first action for the next agent on D-1:** find the PostgREST caller that debits
+`club_members.chip_balance` for a spin entry, confirm against the 28 correctly-labelled rows,
+then probe Option 1 in a rolled-back transaction.
+
+---
+
 ## §0.5 Board state, measured (supersedes "fourteen remain")
 
 `financial_alerts WHERE resolved = false`: **845 total, 403 critical, 429 raised in the last 24h.**

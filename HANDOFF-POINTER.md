@@ -11,8 +11,9 @@ Fastest orientation:
 
 - `§0.1` what was verified, and the three corrections
 - `§0.3` PR #2526 is **draft on purpose** — only Dan marks it ready
-- `§0.4` supply drift root cause: spin entries are funded from `prize_liability`,
-  which is 204,089 chips overdrawn
+- `§0.4` supply drift measurements, then **`§0.4a` which CORRECTS §0.4's conclusion**
+  — the original D-1 recommendation was wrong and would have double-charged every
+  spin player. Read §0.4a before touching spin money.
 - `§0.6` the four decisions that need Dan
 - `§0.7` exact first actions
 - `§0.9` honest limits — what is still unverified

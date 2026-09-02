@@ -164,9 +164,15 @@ jobs:
             echo "::notice::build/config change - running everything"
             exit 0
           fi
+          # supabase/migrations/ counts as touching server AND tests: law
+          # tests in both suites read the migration FILES (the GTO batch-floor
+          # guard, migration-version uniqueness). On 2026-09-02 a migrations-only
+          # backfill PR (#2580) merged with the server suite skipped, turned the
+          # clobber-era floor into the newest clamp declaration, and every
+          # hourly deploy after it was refused by its own test gate.
           echo "src=$(has '^src/')"       >> "$GITHUB_OUTPUT"
-          echo "server=$(has '^server/')" >> "$GITHUB_OUTPUT"
-          echo "tests=$(has '^tests/')"   >> "$GITHUB_OUTPUT"
+          echo "server=$(has '^(server/|supabase/migrations/)')" >> "$GITHUB_OUTPUT"
+          echo "tests=$(has '^(tests/|supabase/migrations/)')"   >> "$GITHUB_OUTPUT"
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 1: TypeScript compilation check (fast — ~40s)

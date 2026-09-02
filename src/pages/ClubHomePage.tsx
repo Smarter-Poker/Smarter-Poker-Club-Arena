@@ -28,7 +28,7 @@ import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
 import haptic from '../services/HapticService';
-import CreateTournamentModal from '../components/club/CreateTournamentModal';
+import GameCreationActions from '../components/club/GameCreationActions';
 import ClubLaunchProgress, { type ClubLaunchTask } from '../components/club/ClubLaunchProgress';
 import ClubOpeningWizard from '../components/club/ClubOpeningWizard';
 import { clubOpeningSetupService } from '../services/ClubOpeningSetupService';
@@ -117,6 +117,7 @@ import { IconShareLink, IconSort } from '../components/icons/LobbyIcons';
 import { CLUB_HOME_CACHE_PREFIX } from '../utils/clearUserCaches';
 import { useTournamentRegistration } from '../hooks/useTournamentRegistration';
 import { preloadRoute } from '../utils/ChunkPreloader';
+import { gameManagementService } from '../services/GameManagementService';
 
 // Shark Club fallback logo — used when DB logo_url is null
 /* Dan 2026-08-20: "replace the old logo image with the new one". v25 was a
@@ -237,7 +238,7 @@ function setClubHomeCache(clubId: string, data: { club: any; tables: any[] }) {
   }
 }
 
-const CLUB_DESCRIPTION_MAX_LENGTH = 72;
+const CLUB_LOBBY_MESSAGE_MAX_LENGTH = 72;
 
 // Types
 interface ClubData {
@@ -369,21 +370,6 @@ const LOBBY_TOURNAMENT_STATUSES = ['REGISTERING', 'RUNNING', 'LATE_REG', 'STARTI
 
 const CASH_TYPES: GameType[] = ['HOLDEM', 'OMAHA', 'LIMIT', 'MIXED'];
 const TOURNAMENT_TYPES: GameType[] = ['MTT', 'SNG', 'SPIN'];
-
-const CASH_CREATION_ROUTE: Partial<Record<GameType, string>> = {
-  HOLDEM: 'nlh',
-  OMAHA: 'plo4',
-  LIMIT: 'flh',
-};
-
-const CREATE_LABEL_FOR: Partial<Record<GameType, string>> = {
-  MTT: 'Create MTT',
-  HOLDEM: 'Create NLH Table',
-  OMAHA: 'Create PLO Table',
-  LIMIT: 'Create Limit Table',
-  SPIN: 'Create Spin',
-  SNG: 'Create Heads Up',
-};
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -658,13 +644,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [tables, setTables] = useState<TableData[]>(bootCache?.tables ?? []);
   const [tournaments, setTournaments] = useState<TournamentData[]>([]);
   const [jackpotAmount, setJackpotAmount] = useState(0);
-  // BBJ-TICKER 2026-08-18: the resolved BBJ scope for the lobby ticker.
-  // (jackpotAmount was live-subscribed but rendered NOWHERE before this —
-  // the realtime feed fed a value no player could see.)
-  const [bbjScope, setBbjScope] = useState<{ clubUuid: string | null; unionId: string | null }>({
-    clubUuid: null,
-    unionId: null,
-  });
   // Tapping the lobby jackpot opens the SAME view as tapping it at a table:
   // last 5 hits, qualifying hands per game, payout % per stakes (Dan 2026-08-18).
   const [bbjPoolId, setBbjPoolId] = useState<string | null>(null);
@@ -756,7 +735,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const [unionIdForCreate, setUnionIdForCreate] = useState<string | undefined>(undefined);
   /** Owning-club names for a union board. Empty for a club that is in no union. */
   const [clubNames, setClubNames] = useState<Record<string, string>>({});
-  const [showCreateTournament, setShowCreateTournament] = useState(false);
   const [showOpeningWizard, setShowOpeningWizard] = useState(false);
   const [openingSetupComplete, setOpeningSetupComplete] = useState(false);
   const [configuredAgentUserId, setConfiguredAgentUserId] = useState<string | null>(null);
@@ -1027,8 +1005,8 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
            blip or a timeout was silently read as "this club is not in a union".
            Everything downstream then diverges from the fetch: the two union
            channels are never subscribed (union tables and tournaments stop
-           arriving live), belongsInTableList admits foreign rows, bbjScope
-           loses its unionId so the BBJ subscription binds to the retired
+           arriving live), belongsInTableList admits foreign rows, and the
+           BBJ subscription binds to the retired
            club-level pool instead of the union pool that actually grows, and
            the table-delete scoping narrows to club_id. Fall back to the same
            cached answer loadClubData uses rather than guessing. */
@@ -1036,7 +1014,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         if (ucCheck?.union_id) {
           unionId = ucCheck.union_id;
         }
-        if (isMounted) setBbjScope({ clubUuid: resolvedId, unionId });
       } catch (e) {
         reportError(e, 'ClubHomePage.setupRealtime');
         // Last known good, written by loadClubData's own union resolution
@@ -1047,7 +1024,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         } catch {
           /* storage disabled */
         }
-        if (isMounted) setBbjScope({ clubUuid: resolvedId, unionId });
       }
 
       if (!isMounted) return;
@@ -3941,19 +3917,23 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
   const canCreateClubGames = noticeEditable && !unionManagedClub;
 
   const saveClubNotice = () => {
-    const newDesc = noticeDraft.replace(/\s+/g, ' ').trim().slice(0, CLUB_DESCRIPTION_MAX_LENGTH);
+    const newDesc = noticeDraft.replace(/\s+/g, ' ').trim().slice(0, CLUB_LOBBY_MESSAGE_MAX_LENGTH);
     const targetId = club.id;
-    setClub((prev) => (prev ? { ...prev, description: newDesc } : prev));
-    setIsEditingNotice(false);
     void (async () => {
-      const { error } = await supabase
-        .from('clubs')
-        .update({ description: newDesc })
-        .eq('id', targetId);
-      if (error) {
-        reportError(error, 'ClubHomePage.Notice_save_failed');
+      const { data, error } = await supabase.rpc('fn_set_club_lobby_message', {
+        p_club_id: targetId,
+        p_message: newDesc,
+      });
+      const result = (data || {}) as { ok?: boolean; lobby_message?: string | null };
+      if (error || !result.ok) {
+        reportError(
+          error || new Error('Club lobby message command was rejected'),
+          'ClubHomePage.Notice_save_failed'
+        );
         toast.error('Could Not Save The Welcome Message');
       } else {
+        setClub((prev) => (prev ? { ...prev, lobby_message: result.lobby_message ?? null } : prev));
+        setIsEditingNotice(false);
         toast.success('Welcome Message Updated');
       }
     })();
@@ -3965,13 +3945,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
       return;
     }
     haptic.selection();
-    selectGameType(target);
-    if (TOURNAMENT_TYPES.includes(target)) {
-      setShowCreateTournament(true);
-      return;
-    }
-    const routeVariant = CASH_CREATION_ROUTE[target];
-    if (routeVariant) navigate(`/clubs/${clubId}/create-table/${routeVariant}`);
+    const create =
+      target === 'MTT' ? 'event' : target === 'SPIN' ? 'spin' : target === 'SNG' ? 'sng' : 'table';
+    navigate(`/clubs/${clubId}/table-management?create=${create}`);
   };
 
   const hasCashCategory = (category: 'HOLDEM' | 'OMAHA' | 'LIMIT') =>
@@ -4111,7 +4087,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         </h1>
       </section>
 
-      {(club.description?.trim() || noticeEditable) && (
+      {(club.lobby_message?.trim() || noticeEditable) && (
         <section
           className={`club-mobile-owner-message ${noticeEditable && !isEditingNotice ? 'club-mobile-owner-message--editable' : ''}`}
           aria-label="Club Owner Message"
@@ -4120,7 +4096,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             <div className="club-mobile-owner-message__editor">
               <input
                 value={noticeDraft}
-                maxLength={CLUB_DESCRIPTION_MAX_LENGTH}
+                maxLength={CLUB_LOBBY_MESSAGE_MAX_LENGTH}
                 onChange={(event) => setNoticeDraft(event.target.value.replace(/[\r\n]+/g, ' '))}
                 placeholder="Add A One-Line Club Message"
                 autoFocus
@@ -4133,7 +4109,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 }}
               />
               <span>
-                {noticeDraft.length}/{CLUB_DESCRIPTION_MAX_LENGTH}
+                {noticeDraft.length}/{CLUB_LOBBY_MESSAGE_MAX_LENGTH}
               </span>
               <button type="button" onClick={() => setIsEditingNotice(false)}>
                 Cancel
@@ -4149,12 +4125,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               disabled={!noticeEditable}
               onClick={() => {
                 if (!noticeEditable) return;
-                setNoticeDraft(club.description || '');
+                setNoticeDraft(club.lobby_message || '');
                 setIsEditingNotice(true);
               }}
-              title={club.description || 'Add A One-Line Club Message'}
+              title={club.lobby_message || 'Add A One-Line Club Message'}
             >
-              {club.description?.trim() || 'Add A One-Line Club Message'}
+              {club.lobby_message?.trim() || 'Add A One-Line Club Message'}
             </button>
           )}
         </section>
@@ -4520,18 +4496,20 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
               className={`lobby-top__notice ${isOwner || isClubStaff(userRole) ? 'lobby-top__notice--editable' : ''}`}
               role={noticeEditable && !isEditingNotice ? 'button' : undefined}
               tabIndex={noticeEditable && !isEditingNotice ? 0 : undefined}
-              aria-label={noticeEditable && !isEditingNotice ? 'Edit Club Description' : undefined}
+              aria-label={
+                noticeEditable && !isEditingNotice ? 'Edit Club Lobby Message' : undefined
+              }
               onKeyDown={(e) => {
                 if (!noticeEditable || isEditingNotice) return;
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
-                  setNoticeDraft(club.description || '');
+                  setNoticeDraft(club.lobby_message || '');
                   setIsEditingNotice(true);
                 }
               }}
               onClick={() => {
                 if (noticeEditable && !isEditingNotice) {
-                  setNoticeDraft(club.description || '');
+                  setNoticeDraft(club.lobby_message || '');
                   setIsEditingNotice(true);
                 }
               }}
@@ -4541,9 +4519,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   <input
                     type="text"
                     value={noticeDraft}
-                    maxLength={CLUB_DESCRIPTION_MAX_LENGTH}
+                    maxLength={CLUB_LOBBY_MESSAGE_MAX_LENGTH}
                     onChange={(e) => setNoticeDraft(e.target.value.replace(/\s+/g, ' '))}
-                    placeholder="Optional Club Description"
+                    placeholder="Optional Club Lobby Message"
                     autoFocus
                     onKeyDown={(e) => {
                       if (e.key === 'Escape') setIsEditingNotice(false);
@@ -4562,9 +4540,9 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 <div className="club-lobby-command-top__welcome-copy">
                   <span className="club-lobby-command-top__welcome-eyebrow">Welcome To The</span>
                   <h2 className="club-lobby-command-top__club-name">{club.name}</h2>
-                  <p className={!club.description?.trim() ? 'is-empty' : undefined}>
-                    {club.description?.trim() ||
-                      (noticeEditable ? 'Add Optional Club Description' : '\u00a0')}
+                  <p className={!club.lobby_message?.trim() ? 'is-empty' : undefined}>
+                    {club.lobby_message?.trim() ||
+                      (noticeEditable ? 'Add Optional Club Lobby Message' : '\u00a0')}
                   </p>
                 </div>
               )}
@@ -4577,13 +4555,22 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   <span className="lobby-controls__eyebrow">Live Club Schedule</span>
                   <strong className="lobby-controls__title">Find Your Game</strong>
                 </div>
-                <span className="lobby-controls__total">
-                  <strong>
-                    {totalGameCount.toLocaleString()}
-                    {countsCapped ? '+' : ''}
-                  </strong>{' '}
-                  Games
-                </span>
+                <div className="lobby-controls__operator-actions">
+                  <span className="lobby-controls__total">
+                    <strong>
+                      {totalGameCount.toLocaleString()}
+                      {countsCapped ? '+' : ''}
+                    </strong>{' '}
+                    Games
+                  </span>
+                  {canCreateClubGames && (
+                    <GameCreationActions
+                      managementPath={`/clubs/${clubId}/table-management`}
+                      compact
+                      onNavigate={(path) => navigate(path)}
+                    />
+                  )}
+                </div>
               </div>
               <div className="game-bar">
                 <div className="game-bar__types" role="tablist" aria-label="Game Type">
@@ -4838,18 +4825,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
           filter or a search is actively hiding games — that one is not a
           statistic, it is the explanation for why the list looks short, and
           it carries the one-tap clear. */}
-        {canCreateClubGames && gameType !== 'ALL' && (
-          <div className="lobby-resultsbar lobby-resultsbar--create-only">
-            <button
-              type="button"
-              className="lobby-createbtn"
-              onClick={() => openCreationFor(gameType)}
-            >
-              <span aria-hidden="true">＋</span> {CREATE_LABEL_FOR[gameType]}
-            </button>
-          </div>
-        )}
-
         {/* ═══════════════════════════════════════════════════════════════════
           LOBBY V2 — dense line-based game table + game lobby panel
           ─────────────────────────────────────────────────────────────────
@@ -5051,7 +5026,7 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             selectedEntry.players === 0 &&
             /* resolvedClubId, not clubId (2026-08-28 audit). On a `/clubs/:slug`
                route `clubId` is the SLUG while `raw.club_id` is a UUID, so this
-               comparison was always false and the owner's Delete Table button
+               comparison was always false and the owner's table-close button
                was silently absent from the panel for every game that carries a
                club_id — which is all of them. The resolved UUID is in scope and
                is what every other comparison in this file uses. */
@@ -5093,50 +5068,25 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         </div>
       )}
 
-      {/* Confirm Modal for Table Deletion */}
+      {/* Confirm Modal for Table Closure */}
       <ConfirmModal
         isOpen={deleteTableConfirm.show}
-        title="Delete Table"
-        message={`Delete table "${deleteTableConfirm.tableName || ''}"? This cannot be undone.`}
+        title="Close Table"
+        message={`Close table "${deleteTableConfirm.tableName || ''}"? It can only close after every player has left.`}
         variant="danger"
-        confirmText="Delete"
+        confirmText="Close Table"
         onConfirm={async () => {
           if (deleteTableConfirm.tableId) {
             const id = deleteTableConfirm.tableId;
             setDeleteTableConfirm({ show: false, tableId: null, tableName: null });
             setDeletingTableId(id);
             try {
-              // Defense-in-depth: scope the delete to tables this club can own.
-              // 2026-08-19: this scoped on club_id ALONE. Union games are owned
-              // BY the union, so club_id is the union's id, not club.id — the
-              // UPDATE matched ZERO rows, returned no error, the card was
-              // optimistically removed and the user was told "Table deleted".
-              // The table stayed live and reappeared on reload. Accept either
-              // the club's own tables or its union's.
-              const resolvedClubId = club?.id;
-              let query = supabase
-                .from('tables')
-                /* PHANTOM COLUMN FIX 2026-08-27: `tables` has no `is_active`
-                   column — this write 400'd and the delete always failed. */
-                .update({ status: 'deleted', is_deleted: true })
-                .eq('id', id);
-              if (resolvedClubId) {
-                query = bbjScope.unionId
-                  ? query.or(`club_id.eq.${resolvedClubId},union_id.eq.${bbjScope.unionId}`)
-                  : query.eq('club_id', resolvedClubId);
-              }
-              // Return the affected rows so a no-op cannot masquerade as success.
-              const { data: deleted, error } = await query.select('id');
-              if (error) throw error;
-              if (!deleted || deleted.length === 0) {
-                toast.error('That table could not be deleted - you may not own it.');
-                return;
-              }
+              await gameManagementService.close('table', id);
               setTables((prev) => prev.filter((t) => t.id !== id));
-              toast.success('Table deleted');
+              toast.success('Table Closed');
             } catch (err) {
-              reportError(err, 'ClubHomePage.Failed_to_delete_table');
-              toast.error('Failed to delete table');
+              reportError(err, 'ClubHomePage.Failed_to_close_table');
+              toast.error(err instanceof Error ? err.message : 'Failed To Close Table');
             } finally {
               setDeletingTableId(null);
             }
@@ -5164,23 +5114,6 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
             );
             setOpeningSetupComplete(true);
             setShowOpeningWizard(false);
-          }}
-        />
-      )}
-
-      {showCreateTournament && canCreateClubGames && (resolvedClubId || club?.id) && (
-        <CreateTournamentModal
-          clubId={resolvedClubId || club!.id}
-          unionId={unionIdForCreate}
-          initialFormat={
-            gameType === 'SPIN' ? 'spin' : gameType === 'SNG' ? 'sng' : 'mtt_freezeout'
-          }
-          onClose={() => setShowCreateTournament(false)}
-          onSuccess={() => {
-            setShowCreateTournament(false);
-            haptic.success();
-            toast.success('Tournament created successfully');
-            // Tables auto-refresh via the visibility hook / focus return
           }}
         />
       )}

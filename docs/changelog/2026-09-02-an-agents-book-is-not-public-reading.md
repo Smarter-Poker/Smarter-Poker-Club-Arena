@@ -142,7 +142,7 @@ touched.
 ## Law
 
 `tests/an-agents-book-is-not-public-reading.law.test.ts`, registered in
-`docs/LAWS.md`. Sixteen pins across five groups: the read is guarded and
+`docs/LAWS.md`. Twenty-four pins across seven groups: the read is guarded and
 refuses rather than zeroing; one definition of who may look, admitting exactly
 four kinds of caller; the role-change report is patched rather than re-emitted,
 keeps its parameter defaults, reads the ledger inline, and its comment does not

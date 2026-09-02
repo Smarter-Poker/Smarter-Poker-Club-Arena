@@ -355,6 +355,19 @@
       "source",
       "dedupe_key"
     ],
+    "ca_dropped_index_ledger": [
+      "index_name",
+      "table_name",
+      "ddl",
+      "size_bytes",
+      "covered_by",
+      "coverer_scans",
+      "reason"
+    ],
+    "ca_engine_deploy_attempts": [
+      "target_sha",
+      "shipped"
+    ],
     "ca_financial_epochs": [
       "name"
     ],
@@ -366,6 +379,11 @@
       "pass",
       "window_hours",
       "result"
+    ],
+    "ca_guard_def_history": [
+      "proname",
+      "def_hash",
+      "def_text"
     ],
     "ca_guard_defs": [
       "proname",
@@ -440,6 +458,11 @@
       "incident_id",
       "kind"
     ],
+    "ca_incident_notify_ledger": [
+      "recipient_id",
+      "finding_key",
+      "state_hash"
+    ],
     "ca_incident_recipients": [
       "user_id"
     ],
@@ -491,6 +514,10 @@
       "rake_cap",
       "bbj_fee_bb"
     ],
+    "ca_ratchet_baselines": [
+      "ratchet",
+      "baseline"
+    ],
     "ca_seat_stack_exits": [
       "table_id",
       "user_id",
@@ -506,6 +533,16 @@
       "metric",
       "sample_size"
     ],
+    "ca_supply_breach_ack": [
+      "snapshot_id",
+      "acknowledged_by",
+      "reason"
+    ],
+    "ca_supply_snapshot_classifications": [
+      "snapshot_id",
+      "original_unexplained",
+      "classification"
+    ],
     "ca_supply_snapshots": [
       "member_wallets",
       "member_promo",
@@ -518,6 +555,12 @@
       "bbj_pools",
       "spin_pools",
       "total"
+    ],
+    "ca_tournament_conservation_samples": [
+      "tournament_id",
+      "drift",
+      "hands_dealt",
+      "players"
     ],
     "ca_treasury_baseline": [
       "club_id",
@@ -1206,21 +1249,12 @@
     "commander_waitlist_groups": [
       "game_type"
     ],
-    "commission_history": [
-      "club_id",
-      "agent_id",
-      "period_start"
-    ],
     "commission_rate_audit": [
       "agent_id",
       "changed_by",
       "old_rate",
       "new_rate",
       "rate_type"
-    ],
-    "commission_records": [
-      "period_id",
-      "agent_id"
     ],
     "content_authors": [
       "name",
@@ -1363,6 +1397,13 @@
       "category",
       "file_url"
     ],
+    "deep_stack_delete_attempts": [
+      "source_table",
+      "allowed",
+      "db_user",
+      "db_role",
+      "old_row"
+    ],
     "deploy_alerts": [
       "alert_key",
       "expires_at"
@@ -1427,6 +1468,14 @@
     ],
     "engine_leader": [
       "instance_id"
+    ],
+    "engine_maintenance_break": [
+      "phase"
+    ],
+    "engine_maintenance_thaws": [
+      "freeze_started_at",
+      "frozen_seconds",
+      "shifted"
     ],
     "engine_recovery_events": [
       "event"
@@ -1521,6 +1570,9 @@
       "bravo_slug",
       "venue_name",
       "game_type"
+    ],
+    "game_management_events": [
+      "event_type"
     ],
     "game_registry": [
       "title",
@@ -2004,6 +2056,31 @@
       "reward_type",
       "amount",
       "weight"
+    ],
+    "managed_game_command_receipts": [
+      "command_id",
+      "actor_id",
+      "game_kind",
+      "game_id",
+      "command_action",
+      "expected_version",
+      "request_hash",
+      "status"
+    ],
+    "managed_game_contract_versions": [
+      "game_kind",
+      "game_id",
+      "club_id",
+      "version",
+      "contract",
+      "contract_hash"
+    ],
+    "managed_game_schedules": [
+      "actor_id",
+      "game_kind",
+      "game_id",
+      "expected_version",
+      "execute_at"
     ],
     "member_fee_lifetime": [
       "user_id"
@@ -3207,6 +3284,14 @@
     "tournament_players": [
       "tournament_id",
       "user_id"
+    ],
+    "tournament_players_position_repair_20260901": [
+      "tournament_id",
+      "user_id",
+      "new_position",
+      "place_worth",
+      "already_paid",
+      "top_up"
     ],
     "tournament_rake_settlements": [
       "tournament_id"

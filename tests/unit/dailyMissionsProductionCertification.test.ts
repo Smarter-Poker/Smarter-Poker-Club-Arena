@@ -43,6 +43,13 @@ describe('Daily Missions production certification', () => {
     expect(spec).toContain('interceptedRealtimeSockets');
     expect(spec).toContain('isDailyMissionRevisionFrame');
     expect(spec).toContain('observedRevisionFrames');
+    expect(spec).toMatch(
+      /expect\(\s*advanced\.length,\s*'the catch-all mission event must advance at least one contract'\s*\)\.toBeGreaterThan\(0\)/
+    );
+    expect(spec).not.toContain('expect(advanced.length).toBeGreaterThanOrEqual(10)');
+    expect(spec.indexOf('expect(completed.every((row) => row.completed)).toBe(true)')).toBeLessThan(
+      spec.indexOf('No Daily Mission revision frame crossed the routed socket')
+    );
     // dashboard_loaded is intentionally sampled at 20%; certification proves
     // the actual receipt and only requires unsampled mutation operations.
     const operationGate = spec.slice(
@@ -161,6 +168,34 @@ describe('Daily Missions production certification', () => {
     );
     expect(auditFix).toContain(
       'REVOKE ALL ON FUNCTION public.cleanup_reserved_certification_account(uuid) FROM authenticated'
+    );
+  });
+
+  it('reads the signed-in account THROUGH the navigation, not into a dead context', () => {
+    /* 2026-09-02. This spec failed on EVERY post-deploy run with
+
+         Error: page.evaluate: Execution context was destroyed, most likely
+         because of a navigation
+           at support/DailyMissionsPage.ts:123
+
+       `signIn` navigates with waitUntil: 'domcontentloaded', which returns
+       while the SPA is still settling its own auth redirect, and then read
+       localStorage - so the context the read was issued against was torn down
+       under it. A harness bug wearing a production failure's clothes, and the
+       one failure common to all three runs that night.
+
+       The read itself must stay: it is the check that the certification is
+       signed in as the RESERVED account, which is the only thing standing
+       between this suite and it mutating a real player. So it retries through
+       the navigation instead of being deleted. */
+    const helper = source('tests/e2e/support/DailyMissionsPage.ts');
+    expect(helper).toContain('async function evaluateThroughNavigation');
+    expect(helper).toMatch(/const authenticatedUserId = await evaluateThroughNavigation\(/);
+
+    // ...and ONLY for that family of errors. A wrong account or bad JSON must
+    // still throw on the first attempt rather than being retried into silence.
+    expect(helper).toMatch(
+      /if \(!NAVIGATION_ATE_THE_CONTEXT\.test\(String\(error\)\)\) throw error;/
     );
   });
 });

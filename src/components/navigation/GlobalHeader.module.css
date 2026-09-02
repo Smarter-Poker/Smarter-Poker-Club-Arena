@@ -17,9 +17,52 @@
   box-sizing: border-box;
   padding-top: env(safe-area-inset-top, 0px);
   overflow: clip;
-  background: #000;
+  /* NO BACKGROUND (Dan, 2026-09-01: "on mobile, the global header needs the
+     background removed on all pages"). The approved artwork is opaque across
+     its entire canvas, so this fill could only ever be seen where the artwork
+     is NOT: the safe-area band this element pads by, the standalone band at the
+     bottom of this file, and the left/right insets. On a phone that is an
+     opaque black block sitting above and around the header instead of the page
+     showing through. Nothing is painted here now but the artwork's own pixels;
+     desktop, which has no insets, is byte-for-byte unchanged. */
+  background: transparent;
   line-height: 0;
   isolation: isolate;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE PADDING ABOVE THE HEADER IS BLACK, AND NOTHING SCROLLS THROUGH IT
+   (Dan 2026-09-02)
+   ---------------------------------------------------------------------------
+   "THE HEADER MUST ALWAYS BE AT THE TOP, AND NOTHING SHOULD EVER APPEAR, OR BE
+   DISPLAYED ABOVE IT IN THE PADDING AREA ABOVE IT. THAT SHOULD BE BLACK AND
+   NEVER SHOW ANYTHING ABOVE IT."
+
+   `.header` is `position: sticky` and pads itself by the safe-area inset, so on
+   a notched phone there is a band between viewport y=0 and the artwork's top
+   edge that belongs to this element and is painted by nothing. Since the
+   element background was removed the day before (#2515), the page scrolling
+   underneath the sticky header showed THROUGH that band - in Dan's screenshot,
+   the lobby's own "FIND YOUR GAME / 280+ GAMES" rows sitting above the header,
+   behind the status bar.
+
+   This paints the padding band, and ONLY the padding band. The artwork's own
+   canvas still has nothing behind it, the left/right insets are still bare,
+   and `.header` still declares no background of its own - so the 2026-09-01
+   removal stands everywhere it was actually about. The band is stated with the
+   same expression as the padding it covers (including the standalone override
+   further down this file) so it can never be taller or shorter than the strip
+   it exists to fill; where the inset is 0 it is a zero-height no-op. */
+.header::before {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: env(safe-area-inset-top, 0px);
+  background: #000;
+  pointer-events: none;
 }
 
 .desktopArtwork {
@@ -106,6 +149,12 @@
   width: 7%;
 }
 
+/* Force the hamburger artwork to be visible, overlaying and hiding whatever
+   is baked into the monolithic background sprite underneath it. */
+.hamburgerBtn > img {
+  opacity: 1;
+}
+
 .backBtn {
   left: 8%;
   width: 12%;
@@ -116,9 +165,13 @@
   width: 12.9%;
 }
 
+/* A transparent hit region over the baked profile ornament, exactly like every
+   other control in this file. It used to paint an opaque black disc: 117.8
+   artwork-units across, against an ornament that measures 94, so the approved
+   chrome ring and its blue glow were painted out and all that survived was a
+   flat black circle with a photo in it. The rule above says it already - the
+   approved artwork IS the icon, and a shape drawn on top of it is a defect. */
 .profileBtn {
-  /* Cover the baked silver/blue profile ornament with the header's black field.
-     Only the live circular portrait and its nearly invisible edge remain. */
   top: 15%;
   left: 66.75%;
   width: 7.15%;
@@ -129,24 +182,36 @@
   overflow: hidden;
   contain: layout paint;
   isolation: isolate;
-  border: 0;
-  border-radius: 50%;
-  background: #000;
 }
 
+/* The live photo fills the ornament's APERTURE - the dark well inside the
+   chrome ring - so the ring and its blue glow frame it instead of being covered
+   by it.
+   MEASURED off images/global-header/global-header-desktop.png (1648x168, the
+   file this header renders): the ornament is a circle centred at
+   (1159.75, 80.5) with a 94-unit outer diameter and a ~6-unit chrome band,
+   leaving an 81-unit aperture. Against this button's own box (plane
+   x 1100.04-1217.87, y 25.2-143.03) that is a circle of 68.7% width centred at
+   50.7% / 46.9%.
+
+   It was 72% centred at 50%/50%, which is 84.8 units sitting 3.6 units low:
+   wider than the aperture and nearly as wide as the ring's OUTER edge, so the
+   photo overlapped the chrome band on three sides and hung past it at the
+   bottom. `aspect-ratio: 1` keeps the slot a true circle at every width because
+   the button is already square in pixels. */
 .profileAvatarSlot {
   position: absolute !important;
-  top: 50% !important;
-  left: 50% !important;
+  top: 46.9% !important;
+  left: 50.7% !important;
   z-index: 1;
   display: block;
-  width: 72%;
+  width: 68.7%;
   height: auto;
   aspect-ratio: 1;
   transform: translate(-50%, -50%) !important;
   overflow: hidden;
   box-sizing: border-box;
-  border: 0.5px solid rgba(0, 0, 0, 0.94);
+  border: 0;
   border-radius: 50%;
   background: transparent;
   pointer-events: none;
@@ -243,14 +308,26 @@
   }
 
   .profileBtn {
-    /* Desktop deliberately compresses the artwork into a 96px chrome band.
-       A width-derived square is taller than that band at common laptop widths
-       and paints black over the lower silver rail. Keep the opaque ornament
-       mask inside the same 74%-high control band while the portrait remains a
-       centered circle with its own 0.5px edge. */
+    /* Desktop deliberately compresses the artwork into a 96px chrome band with
+       `object-fit: fill`, so the baked ornament is a squashed ellipse up here
+       and cannot frame a round portrait. That is why desktop masks it instead:
+       the opaque disc and the 72% slot below are the pre-2026-09-01 treatment,
+       restored verbatim so this change stays the mobile-only one Dan asked for.
+       A width-derived square is taller than the band at common laptop widths
+       and paints black over the lower silver rail, hence the explicit height. */
     top: 13%;
     height: 74%;
     aspect-ratio: auto;
+    border: 0;
+    border-radius: 50%;
+    background: #000;
+  }
+
+  .profileAvatarSlot {
+    top: 50% !important;
+    left: 50% !important;
+    width: 72%;
+    border: 0.5px solid rgba(0, 0, 0, 0.94);
   }
 }
 
@@ -281,6 +358,14 @@
 @media (display-mode: standalone), (display-mode: fullscreen) {
   .header {
     padding-top: max(env(safe-area-inset-top, 0px), 24px);
+  }
+
+  /* The black band tracks the padding it covers. Without this the installed
+     app padded by 24px and blacked out only the inset, leaving a sliver of
+     scrolling page above the artwork on exactly the devices where the header
+     matters most. */
+  .header::before {
+    height: max(env(safe-area-inset-top, 0px), 24px);
   }
 
   .headerControls {

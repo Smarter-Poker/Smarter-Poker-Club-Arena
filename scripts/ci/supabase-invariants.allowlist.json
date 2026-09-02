@@ -8,38 +8,10 @@
     "users": "alias for auth.users after schema switch in some services"
   },
   "unbuiltFeatureTables": {
-    "_comment": "Product features whose UI ships but whose backend table was never built. Each read/write is wrapped in try/catch and degrades to an empty state (verified). Build the table -> the entry auto-clears. Do NOT let this list grow without a matching product decision.",
-    "arena_sessions": "GTO/arena training subsystem \u2014 unbuilt",
-    "clawback_audit_log": "agent clawback audit \u2014 unbuilt (AgentAnalyticsDashboard degrades to empty)",
-    "club_activity": "club activity feed \u2014 unbuilt (ClubActivityFeed degrades to empty)",
-    "club_challenges": "club challenges \u2014 unbuilt",
-    "club_invites": "club invites \u2014 unbuilt",
-    "gto_solutions": "GTO solver storage \u2014 unbuilt (GTOQueryService)",
-    "gto_solve_queue": "GTO solve queue \u2014 unbuilt (GTOQueryService)",
-    "hand_results": "legacy hand-results read \u2014 superseded by hand_history (HorseOrchestrator)",
-    "invites": "generic invites \u2014 unbuilt (MessagingService)",
-    "members": "legacy members alias \u2014 superseded by club_members",
-    "message_read_receipts": "message read receipts \u2014 unbuilt (MessagingService)",
-    "preflop_ranges": "preflop range storage \u2014 unbuilt (GTOQueryService)",
-    "scheduled_messages": "scheduled messages \u2014 unbuilt (MessagingService)"
+    "_comment": "EMPTY, and it should stay that way. Every table formerly listed here either exists in production now or had its only caller removed as dead code on 2026-09-01 (GTOQueryService, HorseOrchestrator.trackHorsePerformance, and the unreachable clawback state in AgentAnalyticsDashboard). An entry here is a .from() that silently returns nothing at runtime; the gate exists to stop new ones. This list may only ever SHRINK."
   },
   "unbuiltFeatureRpcs": {
-    "_comment": "RPCs referenced by shipped UI that were never created in the DB. Callers handle the error and degrade. Build the function -> the entry auto-clears.",
-    "bulk_add_vip_points": "VIP position-stats subsystem \u2014 unbuilt",
-    "bulk_update_position_stats": "player position-stats subsystem \u2014 unbuilt",
-    "claim_lucky_wheel_spin": "lucky wheel \u2014 unbuilt (BonusService)",
-    "get_message_reactions": "message reactions read \u2014 unbuilt (MessagingService)",
-    "increment_bonus_progress": "bonus progress \u2014 unbuilt (BonusService)",
-    "join_flash_pool": "flash pools \u2014 unbuilt (FlashPoolPage)",
-    "record_arena_session": "arena training \u2014 unbuilt (ArenaTrainingController)",
-    "verify_ledger_totals": "optional ledger-verify RPC \u2014 ChipFlowService has a working client-side paginated fallback",
-    "promote_next_waitlisted_player": "intentionally absent \u2014 the engine's notifyWaitlistSeatOpen (server/src, sweep 6) is the AUTHORITATIVE cash-table waitlist promoter on a seat-open event. TableService's client-side best-effort call no-ops when the RPC is missing (error handled); creating the RPC would double-seat/double-notify against the server path.",
-    "fn_respond_friend_challenge": "BUILT 2026-07-29 (friend-challenge accept/decline) \u2014 schema manifest update pending the PAT-rotation deploy fix; remove after manifest regen",
-    "fn_bump_friend_challenge_progress": "BUILT 2026-07-29 (friend-challenge progress) \u2014 manifest update pending; remove after regen",
-    "fn_club_tournament_stats": "leaderboard scalability",
-    "buy_streak_freeze": "daily challenge streak freeze",
-    "fn_promo_wallet_send": "Migration is stealth applied",
-    "execute_commission_payout": "NOT an unbuilt feature: a REMOVED one. Dropped from the database by 20260317_rpc_signature_alignment_batch5 while CommissionService.executePayout still calls it, so every call has failed since March. It was invisible because the previous schema manifest still listed the function, and because that service's test mocks supabase.rpc, which answers happily for a function that does not exist. Surfaced 2026-09-01 by regenerating the manifest truthfully. No player is affected: nothing in the UI calls executePayout (grep -rn executePayout src finds only the definition). Recorded here rather than fixed inside a security PR, because the fix retires executePayout and then leaves COMMISSION_PAID with six subscribers and no publisher across AgentFinancialPortal, DynamicWallet, RateAuditPage, AgentPortalPage, CashierPage and ClubFinancialsPage, which is a product decision and its own change. REMOVE THIS ENTRY when that lands."
+    "_comment": "EMPTY, and it should stay that way. Every RPC formerly listed here either exists in production now or has no caller left in src/ or server/src/. An entry here is a .rpc() call that fails at runtime; the gate exists to stop new ones."
   },
   "phantomColumns": {
     "_comment": "BUILT columns whose columns-manifest entry is pending regeneration (deploy blocked by PAT rotation 2026-07-29). Remove once the manifest is regenerated.",

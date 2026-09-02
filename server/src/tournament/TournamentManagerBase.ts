@@ -79,6 +79,7 @@ import {
   type MysteryBountyStage,
 } from './mysteryBountyActivation.js';
 import { mayTakeSeat } from './seatClaim.js';
+import { applySpinDrawPatch } from './spinDrawSync.js';
 import type { GameServer } from '../GameServer.js';
 import {
   ELIMINATION_SWEEP_STUCK_MS,
@@ -291,6 +292,38 @@ export abstract class TournamentManagerBase {
 
   isRunning(): boolean {
     return this.running;
+  }
+
+  /**
+   * The tables this manager currently owns an engine for.
+   *
+   * Added 2026-09-01 so GameServer can bound `tournamentOwnedTables`, which
+   * had only ever been added to. Pruning that set against GameServer's own
+   * `tableEngines` alone would drop the hub room of a tournament table during
+   * the window where its manager is rebuilding the engine, which is precisely
+   * the case the set was created to protect.
+   */
+  getTableIds(): string[] {
+    return [...this.tableEngines.keys()];
+  }
+
+  /**
+   * Is this tournament on a break of its own right now?
+   *
+   * Added 2026-09-01 for the maintenance break, which resumes EVERY table on
+   * the platform when it ends. Without this it would also resume a tournament
+   * that is still on a break of a different length - an add-on break runs up
+   * to ten minutes (`addon_break_minutes`), so one starting near :55 outlives
+   * the five-minute maintenance break and its tables would be dealt back into
+   * play while the tournament clock still says they are away.
+   *
+   * Read-only, and deliberately the ONLY thing exposed: whoever paused a table
+   * is responsible for resuming it, and this lets a second pause authority ask
+   * "is somebody else still holding this" without being able to answer for
+   * them.
+   */
+  isOnBreak(): boolean {
+    return this.onBreak;
   }
 
   /** Reusable broadcast — single channel per tournament lifecycle */
@@ -1665,7 +1698,18 @@ export abstract class TournamentManagerBase {
                 reveal_lag_ms: this.spinRevealLagMs,
                 prize_pool: prizePool,
                 timestamp: revealAt,
-                replay_until: holdUntil,
+                /* THE REPLAY WINDOW COVERS THE HOLD THE ENGINE WILL ACTUALLY
+                   KEEP, NOT THE ONE PLANNED HERE (fixed 2026-09-02).
+
+                   This read `holdUntil`, but the pass further down extends the
+                   hold to `Math.max(holdUntil, now + spinPostRevealMs())` so
+                   the post-reveal beats always have room. The hub drops a
+                   replay packet once `replay_until` passes, so on exactly the
+                   bad day the extension exists for, a player reconnecting
+                   between the planned hold and the real one got NO reveal at
+                   all while the cards were still legally undealt. Same floor,
+                   computed the same way. */
+                replay_until: Math.max(holdUntil, Date.now() + spinPostRevealMs()),
               });
             } catch (err) {
               /* The reveal is theatre; it must never stop a game starting. */
@@ -1753,10 +1797,16 @@ export abstract class TournamentManagerBase {
           }
         }
 
-        // Structure scales with the drawn tier: 300 chips and 1-minute
-        // levels at 2x, 500 chips and 5-minute levels at 500x. Since the
-        // draw moved to start, creation writes only a smallest-tier
-        // placeholder, so the blinds MUST be rewritten here — before
+        // BLINDS scale with the drawn tier. THE STACK DOES NOT, and has not
+        // since 2026-09-01: it is a property of the BOARD (Turbo 300, Deep
+        // Stack 1000, spinSpec SPIN_STACKS), written at creation and held by
+        // the seat from the moment the buy-in is paid. This comment used to
+        // read "300 chips at 2x, 500 chips at 500x", describing the retired
+        // behaviour where the wheel decided how many chips you played with.
+        // The code below never did that; the sentence did, and spinSpec warns
+        // in as many words not to reintroduce it. Since the draw moved to
+        // start, creation writes only a smallest-tier placeholder, so the
+        // blinds MUST be rewritten here — before
         // createTablesAndSeatPlayers below reads them — or a 500x would run
         // on 1-minute levels.
         const spinBlinds = Array.from({ length: 12 }, (_, i) => {
@@ -1794,7 +1844,15 @@ export abstract class TournamentManagerBase {
           prize_pool: prizePool,
           spin_multiplier: spinMultiplier,
           is_premium_spin: spinMultiplier >= 100,
-          starting_chips: tier?.startingStack ?? tournament.starting_chips,
+          /* THE STACK IS NOT WRITTEN HERE ANY MORE (Dan, 2026-09-01).
+             It used to read `tier?.startingStack ?? tournament.starting_chips`,
+             so the wheel decided how many chips the players had -- 300, 1000 or
+             5000 depending on what it landed on. That is retired: the stack
+             belongs to the board (Turbo 300, Deep Stack 1000, spinSpec
+             SPIN_STACKS), it is written at creation, and the seat holds it from
+             the moment the buy-in is paid. Re-adding it here would put the seat
+             back to guessing until the draw lands. */
+          starting_chips: tournament.starting_chips,
           blind_structure: spinBlinds,
           payout_structure: (tier?.payouts ?? [1]).map((pct, i) => ({
             place: i + 1,
@@ -1849,17 +1907,31 @@ export abstract class TournamentManagerBase {
           this.scheduleSpinRowRepair(spinRowPatch, spinMultiplier);
         }
 
-        tournament.prize_pool = prizePool;
-        tournament.spin_multiplier = spinMultiplier;
-        // The in-memory object drives table creation and the level timer, so
-        // it must agree with what was just written — the DB write alone would
-        // leave this start running on the placeholder structure.
-        tournament.blind_structure = spinBlinds;
-        if (tier?.startingStack) tournament.starting_chips = tier.startingStack;
-        if (this.tournamentCache) {
-          this.tournamentCache.blind_structure = spinBlinds;
-          this.tournamentCache.spin_multiplier = spinMultiplier;
-        }
+        // The stack came from the board and is already on the row; the draw
+        // does not change it (see spinRowPatch above).
+        /* THE WHOLE PATCH, ONTO BOTH COPIES (2026-08-31).
+           The in-memory object drives table creation and the level timer, and
+           tournamentCache is what the elimination and bubble paths read for
+           the rest of the game, so both must agree with what was just written
+           — the DB write alone would leave this start running on the
+           placeholder structure.
+
+           This was a hand-written list of field names and it copied FOUR of
+           the patch's five fields. `payout_structure` was the one it dropped,
+           so a started Spin's cache kept the pre-draw winner-take-all
+           placeholder for the life of the game, and
+           `recalculateEliminatedPrizes` (which reads the cache) topped up
+           eliminated players against a different structure than the one that
+           had paid them. On a 10x that is 80/20 versus 100/0.
+
+           applySpinDrawPatch copies EVERY key of the patch, so the patch is
+           now the only list there is: add a sixth field and it is synced by
+           construction. Never re-introduce a per-field copy here. */
+        applySpinDrawPatch(
+          spinRowPatch as unknown as Record<string, unknown>,
+          tournament as unknown as Record<string, unknown>,
+          this.tournamentCache as unknown as Record<string, unknown> | null
+        );
       }
 
       // Migrate registrations (registered -> playing).
@@ -1892,10 +1964,13 @@ export abstract class TournamentManagerBase {
       /**
        * SEAT-FIRST STACK SYNC — but NOT yet, if a wheel is about to turn.
        *
-       * A player who sat down before the game started holds a RESERVATION at
-       * zero chips: stack depth is a property of the tier, and spin tiers run
-       * 300/400/500, so there is no honest number to seat them with until the
-       * draw lands.
+       * A player who sat down before the game started used to hold a
+       * RESERVATION at zero chips, because stack depth was read off the drawn
+       * tier and there was no honest number to seat them with until the wheel
+       * landed. THAT IS RETIRED. The stack belongs to the board (Turbo 300,
+       * Deep Stack 1000), it is known before anybody sits, and Dan's rule is
+       * that it appears the instant the buy-in is paid: "as soon as they buy
+       * in 300 chips should appear in their action box (not 0)".
        *
        * Dan 2026-08-21: "AFTER THE SPIN COMPLETES, CHIP STACKS GET ADDED,
        * BUTTON RANDOMLY ASSIGNED AND THE SPIN STARTS." Crediting here — which
@@ -2073,7 +2148,15 @@ export abstract class TournamentManagerBase {
                * has, so a client that loads late shortens its own sequence
                * instead of being dealt over.
                */
-              hold_until: holdUntil,
+              /* `effectiveHold`, not `holdUntil` (fixed 2026-09-02). The
+                 comment above says this is "the same number
+                 `holdDealingUntil` was just given, so it is the contract and
+                 not a description of one" - and it was not: the engine was
+                 held to `effectiveHold` while the client was told
+                 `holdUntil`. On the overrun path, the only path where the two
+                 differ, the client clamped against a deadline the engine had
+                 already abandoned. */
+              hold_until: effectiveHold,
               /** How far the broadcast slipped behind the third payment. */
               reveal_lag_ms: this.spinRevealLagMs,
               prize_pool: Number(tournament.prize_pool) || 0,
@@ -2088,7 +2171,7 @@ export abstract class TournamentManagerBase {
                * multiplier. Past `holdUntil` the wheel is meaningless (cards
                * are out), so the hub drops it on its own; there is no log.
                */
-              replay_until: holdUntil,
+              replay_until: effectiveHold,
             });
           } catch (err) {
             // The reveal is theatre; it must never stop a game from starting.
@@ -3143,8 +3226,16 @@ export abstract class TournamentManagerBase {
             timestamp: Date.now(),
             replay_until: replayUntil, // D3
           });
-        } catch {
-          /* theatre */
+        } catch (err) {
+          /* Still never fatal - a lost beat must not stop a game. But it is
+             REPORTED now (2026-09-02). This was a bare `catch { }`, so when
+             beat 1 failed the player's chips simply appeared in the next state
+             diff with no cue and no trace, which is the exact outcome the
+             comment above says this scheduling exists to prevent. An animation
+             that silently does not play is a bug by the animation law (10.6);
+             one that silently does not play AND leaves no evidence cannot even
+             be found. */
+          reportError(err, 'Tournament.' + this.tournamentId.slice(0, 8) + '.spin_chips_emit');
         }
       }
     });
@@ -3379,7 +3470,28 @@ export abstract class TournamentManagerBase {
 
     for (let i = alreadyHave; i < alreadyHave + tablesToCreate; i++) {
       const blindStructure = tournament.blind_structure || [];
-      const firstLevel = blindStructure[0] || { smallBlind: 10, bigBlind: 20 };
+      /**
+       * THE LEVEL THIS TABLE IS BEING BORN INTO, NOT LEVEL ONE (2026-09-01).
+       *
+       * This loop runs whenever a tournament needs MORE tables than it has --
+       * late registration, a rebalance -- which by definition happens after
+       * the clock has started. It stamped `stakes` from blindStructure[0]
+       * regardless, so a table created at level 8 advertised the level 1
+       * blinds for the rest of its life. 197 tables across 60 tournaments in
+       * the last three days were created after their tournament started, and
+       * every one of them carries level 1.
+       *
+       * `stakes` is a display string (the lobby reads it; the engine takes its
+       * blinds from the tournament level, never from this row), and the lobby
+       * shows buy-in rather than stakes on a tournament row -- so this is a
+       * lie that is currently hard to see rather than one anybody has
+       * complained about. It is still a lie, and it is the last place in this
+       * file that reached into the structure by index instead of asking
+       * resolveBlindLevel, which is the closing hazard Phase 2.3 went through
+       * the rest of the file to remove.
+       */
+      const firstLevel = this.resolveBlindLevel(blindStructure, this.currentLevel) ||
+        blindStructure[0] || { smallBlind: 10, bigBlind: 20 };
 
       const { data: table, error } = await supabase
         .from('tables')
@@ -3653,6 +3765,9 @@ export abstract class TournamentManagerBase {
     if (this.onBreak) return;
     this.revivingTables = true;
     try {
+      // A table missing from the map is invisible to every loop below, so it
+      // has to be put back before any of them run. See adoptEnginelessTables.
+      await this.adoptEnginelessTables();
       for (const [tableId, engine] of this.tableEngines) {
         // Belt and braces alongside the onBreak guard above: a table parked on
         // purpose (break OR hand-for-hand) is healthy — but only for as long as
@@ -3695,6 +3810,119 @@ export abstract class TournamentManagerBase {
       reportError(err, 'Tournament.' + this.tournamentId.slice(0, 8) + '.revive_sweep_threw');
     } finally {
       this.revivingTables = false;
+    }
+  }
+
+  /**
+   * ════════════════════════════════════════════════════════════════════════
+   *  A TABLE THIS PROCESS FORGOT IS A TABLE NOBODY DEALS (2026-09-02)
+   * ════════════════════════════════════════════════════════════════════════
+   *
+   * The sweep above was written on 2026-08-15 for precisely the failure its
+   * own comment names: "the reaper deleted it from the map and NOTHING
+   * recreated it". It does not cover that. It iterates `this.tableEngines`,
+   * so the one state it was built for -- the map entry GONE -- is the single
+   * state it cannot see.
+   *
+   * Measured live 2026-09-02, "$100 Freeroll 6:00 AM" (3e8e2afa):
+   *
+   *   table 10   status 'waiting'   6 live seats   63 hands, then silence
+   *   table 22   status 'running'   1 live seat    loopPhase start_wait_for_players
+   *
+   * /health listed table 22 and did not list table 10 at all. Six players and
+   * their stacks sat frozen for three hours and eleven minutes under a RUNNING
+   * tournament while every guard on the platform reported healthy, because
+   * every one of them walks the engine map:
+   *
+   *   reviveDeadTableEngines  iterates tableEngines - no entry, no revive
+   *   checkTableBalance       iterates tableEngines - saw ONE table, so its
+   *                                                   `size <= 1` early return
+   *                                                   fired and the field was
+   *                                                   never consolidated
+   *   absorbOrphanedSeats     skips OPEN tables     - 'waiting' is open, so
+   *                                                   the six were left alone
+   *   reopen sweep            only reopens 'closed' - declined
+   *   stalledTableCount       counts engines        - reported 0
+   *
+   * A table that is open in the database and absent from the map is invisible
+   * to all five, and nothing on the platform can end that state. The repair is
+   * the one the balancer would have made had it been able to see the felt:
+   * give the table its dealer back and let the existing consolidation run on
+   * the next cycle.
+   *
+   * Deliberately narrow, because an engine is not free:
+   *   - only tables of THIS tournament, which this process already leads;
+   *   - only rows that are open and not deleted;
+   *   - only rows that still hold a LIVE SEAT. A forgotten empty row deals to
+   *     nobody, so adopting one buys an engine for no player;
+   *   - at most ADOPT_BUDGET a pass, on the 20-second liveness cadence.
+   *
+   * Every read fails CLOSED: an unreadable board adopts nothing, never
+   * "adopt everything". The map slot is written before `start()` resolves, so
+   * the next pass twenty seconds later cannot build a second dealer for the
+   * same felt -- the duplicate-dealer failure `registerTableEngine` documents.
+   */
+  protected async adoptEnginelessTables(): Promise<void> {
+    const ADOPT_BUDGET = 4;
+
+    const { data: rows, error } = await supabase
+      .from('tables')
+      .select('id, status, is_deleted')
+      .eq('tournament_id', this.tournamentId)
+      .in('status', ['running', 'waiting', 'active']);
+    if (error) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] engineless-table scan failed: ${error.message} - adopting nothing this pass`
+        ),
+        'Tournament.adopt_scan_failed'
+      );
+      return;
+    }
+
+    const candidates = (rows ?? [])
+      .filter((r: any) => r?.is_deleted !== true)
+      .map((r: any) => String(r?.id ?? ''))
+      .filter((id: string) => id.length > 0 && !this.tableEngines.has(id));
+    if (candidates.length === 0) return;
+
+    const { data: seatRows, error: seatErr } = await supabase
+      .from('table_seats')
+      .select('table_id')
+      .in('table_id', candidates)
+      .is('left_at', null);
+    if (seatErr) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] engineless-table seat read failed: ${seatErr.message} - adopting nothing this pass`
+        ),
+        'Tournament.adopt_seat_read_failed'
+      );
+      return;
+    }
+
+    const occupied = new Set((seatRows ?? []).map((s: any) => String(s?.table_id ?? '')));
+    // Sorted so two passes, or two processes, pick the same tables in the same
+    // order rather than each adopting a different slice of the same backlog.
+    const adoptable = candidates.filter((id: string) => occupied.has(id)).sort();
+    if (adoptable.length === 0) return;
+
+    for (const tableId of adoptable.slice(0, ADOPT_BUDGET)) {
+      if (this.tableEngines.has(tableId)) continue;
+      const engine = new ServerTableEngine(tableId);
+      engine.setHub(tableStateHub);
+      this.tableEngines.set(tableId, engine);
+      this.gameServer.registerTableEngine(tableId, engine);
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] adopted engineless table ${tableId.slice(0, 8)} - it held live seats, had no dealer, and no sweep could see it`
+        ),
+        'Tournament.adopted_engineless_table',
+        { tableId }
+      );
+      engine
+        .start()
+        .catch((err) => reportError(err, 'Tournament.adopted_table_start_failed', { tableId }));
     }
   }
 

@@ -202,7 +202,7 @@ const VARIANT_CHIP_LABELS: Record<string, string> = {
   plo6: 'PLO 6c',
   plo8: 'PLO Hi/Lo',
   short_deck: '6+',
-  pineapple: 'Pineapple',
+  pineapple: 'Crazy Pineapple',
   flh: 'FLH',
   flo8: 'FLO8',
 };
@@ -231,7 +231,7 @@ export const FILTER_SPECS: Record<Exclude<FilterGameType, 'ALL'>, GameFilterSpec
       /* Pineapple is a Hold'em-family variant and cashKind routes it here, so
          without a chip of its own every Pineapple table vanished the moment a
          player ticked NLH. Five of them run in production. */
-      { key: 'pineapple', label: 'Pineapple' },
+      { key: 'pineapple', label: 'Crazy Pineapple' },
       // 2026-08-23: the FLH chip used to live here and could never match a
       // single row. ClubHomePage.cashKind() routes every fixed-limit variant to
       // the LIMIT tab, so an FLH table is by construction absent from the

@@ -1904,6 +1904,124 @@ abbr.lt-variant[title] {
       inset 0 -2px 0 #0d1624;
   }
 }
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE SORT BAR — the phone's copy of the column headings (Dan 2026-09-02)
+   ---------------------------------------------------------------------------
+   "THERE IS NOT FILTERS FOR THE GAME CARDS BELOW, LIKE THERE IS ON DESK TOP,
+   YOU NEED TO ADD THAT TO THE BOTTOM, RIGHT BELOW THE DYNAMIC ADD, SO MOBILE
+   USERS CAN FILTER AND DISPLAY THE RESULTS ACCORDINGLY."
+
+   Deliberately drawn as the control the desktop `thead th` is - the same
+   uppercase 11px tracking, the same tertiary grey, the same blue for the
+   active column, the same caret - because it IS that control rendered for a
+   surface that has no table. A player who learns one has learned the other.
+
+   Hidden above 900px, where the heading row does this job and a second sort
+   control on the same screen would only be a second place to look. No
+   `:hover` anywhere: that law is binding, and press feedback lives on
+   `:active`, which fires on touch. */
+.lobby-sortbar {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .lobby-sortbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 6px 6px;
+    border-bottom: 1px solid rgb(65 105 225 / 22%);
+    /* A FLAT ground, where the desktop `thead th` uses a vertical ramp. This
+       sheet is under two solid-colour pins from the live-board redesign -
+       lobbyTournamentBoardDesign and metallicPopupSystem each scan from their
+       own anchor to the END of the file and forbid any ramp past it - and
+       this bar is appended below both. #0d1725 is a ground those pins already
+       name, so the bar reads as part of the board rather than an exception to
+       it. (Both pins match on the CSS function name, so it must not appear in
+       prose here either; that is why this note describes the shape in words.) */
+    background: #0d1725;
+  }
+
+  .lobby-sortbar__eyebrow {
+    flex: 0 0 auto;
+    color: var(--text-tertiary, #8b8f98);
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    user-select: none;
+  }
+
+  /* A horizontal scroller, declared on BOTH axes on purpose. `overflow-x`
+     alone computes `overflow-y` to `auto` and makes this an accidental scroll
+     container - the exact declaration
+     tests/footer-stays-on-the-footer.law.test.ts exists to ban, because on
+     iOS it is how the fixed bottom nav comes unstuck from the bottom of the
+     screen. Six chips do not fit across a 375px phone, and they must not wrap
+     into a second row that pushes the first game card below the fold. */
+  .lobby-sortbar__chips {
+    display: flex;
+    flex: 1 1 auto;
+    gap: 6px;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .lobby-sortbar__chips::-webkit-scrollbar {
+    display: none;
+  }
+
+  .lobby-sortbar__chip {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 4px;
+    /* 32px plus the bar's 8px above and 6px below clears the 44px touch
+       target this row has to meet on a phone. */
+    min-height: 32px;
+    padding: 0 10px;
+    border: 1px solid rgb(65 105 225 / 30%);
+    border-radius: 6px;
+    background: #111722;
+    color: var(--text-tertiary, #8b8f98);
+    font-family: var(--font-primary, 'Inter', sans-serif);
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .lobby-sortbar__chip.is-active {
+    border-color: rgb(91 131 232 / 70%);
+    color: var(--club-blue-light, #5b83e8);
+  }
+
+  .lobby-sortbar__chip:focus-visible {
+    outline: 2px solid #8fd4ff;
+    outline-offset: 2px;
+  }
+
+  .lobby-sortbar__chip:active {
+    background: #121722;
+  }
+
+  .lobby-sortbar__mark {
+    font-size: 0.5625rem;
+    opacity: 0.55;
+  }
+
+  .lobby-sortbar__chip.is-active .lobby-sortbar__mark {
+    opacity: 1;
+  }
+}
+
 .arena-lobby-card-list {
   display: none;
 }
@@ -1925,5 +2043,20 @@ abbr.lt-variant[title] {
 
   .arena-lobby-card-list + .lobby-table-wrap {
     display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .arena-lobby-card-list {
+    width: 100%;
+    gap: 10px;
+    padding: 0 0 24px;
+  }
+
+  .arena-lobby-card-list > div,
+  .arena-lobby-card-list .arena-game-card {
+    width: 100%;
+    max-width: none;
+    margin-inline: 0;
   }
 }

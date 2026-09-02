@@ -113,8 +113,6 @@ export { handHistoryService, HandHistoryService } from './HandHistoryService';
 export type { HandRecord, HandPlayer, HandAction } from './HandHistoryService';
 
 // GTO Query Engine
-export { GTOQueryService } from './GTOQueryService';
-export type { GTOSolution, PreflopRange } from './GTOQueryService';
 
 // Avatar Management
 export { avatarService } from './AvatarService';

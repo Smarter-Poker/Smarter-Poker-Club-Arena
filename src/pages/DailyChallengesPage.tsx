@@ -1,12 +1,12 @@
 /**
  * ═══════════════════════════════════════════════════════════════════════════════
- *  CLUB ENGINE — Daily Challenges Page
+ *  CLUB ENGINE - Daily Challenges Page
  * Dedicated challenges hub: today's rotating challenges, weekly and monthly
  * goals, streak tracking, and reward claiming.
  *
  * Challenges rotate every day at 00:00 UTC via the seeded selection in
- * DailyChallengeService — the same set for every player on a given day.
- * NO HARDCODED DATA — all progress comes from Supabase.
+ * DailyChallengeService - the same set for every player on a given day.
+ * NO HARDCODED DATA - all progress comes from Supabase.
  * ═══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -29,7 +29,7 @@ import {
   type DailyChallengeRewardVault,
 } from '../services/DailyChallengeService';
 import { useIsMounted } from '../hooks/useIsMounted';
-import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
+import { useMasterBusBroadcastChannel } from '../hooks/useMasterBusBroadcastChannel';
 import { useChallengeClockNow } from '../hooks/useChallengeClock';
 import { useFocusTrap } from '../hooks/useFocusTrap';
 import { reportError } from '../utils/errorReporter';
@@ -75,7 +75,7 @@ type TieredChallenge = TieredUserChallenge;
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/** Unicode glyph per challenge type — no emoji (SWC-safe) */
+/** Unicode glyph per challenge type - no emoji (SWC-safe) */
 const TYPE_GLYPHS: Record<ChallengeType, string> = {
   hands_played: '\u2660', // spade
   hands_won: '\u2605', // star
@@ -597,6 +597,7 @@ export default function DailyChallengesPage() {
   const [rerollingIds, setRerollingIds] = useState<Set<string>>(new Set());
   const [confirmingRerollId, setConfirmingRerollId] = useState<string | null>(null);
   const claimGuardRef = useRef(new Set<string>()); // Prevent double-clicks bypassing React state
+  const claimAllGuardRef = useRef(false);
   const rerollGuardRef = useRef(new Set<string>());
   const buyFreezeGuardRef = useRef(false);
 
@@ -828,12 +829,11 @@ export default function DailyChallengesPage() {
     []
   );
 
-  useMasterBusChannel({
+  useMasterBusBroadcastChannel({
     channelName: userId ? `daily-mission-revision:${userId}` : null,
-    table: 'daily_challenge_dashboard_revisions',
-    filter: userId ? `user_id=eq.${userId}` : null,
-    event: '*',
+    event: 'daily_mission_revision_changed',
     enabled: !!userId,
+    private: true,
     onPayload: scheduleRealtimeRefresh,
     onSubscriptionError: () => {
       realtimeStatusRef.current = 'degraded';
@@ -1103,20 +1103,33 @@ export default function DailyChallengesPage() {
   );
 
   const handleClaimAll = useCallback(async () => {
-    if (!userId || claimingAll) return;
-    // The server vault includes completed contracts from expired periods. The
-    // previous client-only filter saw only today's/this week's/this month's
-    // active rows, so an unclaimed reward vanished at rollover.
-    const ready = rewardVault.items;
-    if (ready.length === 0) return;
+    if (!userId || claimAllGuardRef.current) return;
+    claimAllGuardRef.current = true;
 
     setClaimingAll(true);
     const startedAt = performance.now();
-    const readyIds = ready.map((challenge) => challenge.id);
-    readyIds.forEach((id) => claimGuardRef.current.add(id));
-    setClaimingIds((prev) => new Set([...prev, ...readyIds]));
+    let ready: TieredChallenge[] = [];
+    let readyIds: string[] = [];
 
     try {
+      // Reconcile with the authoritative vault at the instant of settlement.
+      // Realtime and the revision watchdog deliberately coalesce bursts, so
+      // the rendered vault can briefly contain only the first completed row.
+      // Claim All must never turn that transient view into a partial payout.
+      const dashboard = await dailyChallengeService.getDashboard(userId);
+      if (!isMountedRef.current) return;
+
+      ready = dashboard.vault.items;
+      if (ready.length === 0) {
+        setRewardVault(dashboard.vault);
+        toast.info('Those rewards were already claimed.');
+        return;
+      }
+
+      readyIds = ready.map((challenge) => challenge.id);
+      readyIds.forEach((id) => claimGuardRef.current.add(id));
+      setClaimingIds((prev) => new Set([...prev, ...readyIds]));
+
       const paid = await dailyChallengeService.claimChallenges(userId, readyIds);
       if (!isMountedRef.current) return;
 
@@ -1180,6 +1193,7 @@ export default function DailyChallengesPage() {
       loadChallenges(userId, 'silent');
     } finally {
       readyIds.forEach((id) => claimGuardRef.current.delete(id));
+      claimAllGuardRef.current = false;
       if (isMountedRef.current) {
         setClaimingAll(false);
         setClaimingIds((prev) => {
@@ -1189,7 +1203,7 @@ export default function DailyChallengesPage() {
         });
       }
     }
-  }, [userId, rewardVault.items, claimingAll, toast, loadChallenges, isMountedRef]);
+  }, [userId, toast, loadChallenges, isMountedRef]);
 
   // ── Derived ──
   const tierCounts = useMemo(() => {

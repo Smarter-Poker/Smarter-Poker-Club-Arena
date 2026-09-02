@@ -265,6 +265,37 @@ export function depthCandidates(stackBB: number): number[] {
   return [primary, fallback];
 }
 
+/**
+ * THE DEEPEST THING THE WAREHOUSE KNOWS (2026-09-01).
+ *
+ * DEPTH_BUCKETS stops at 150, and snapDepthBucket returns 150 for ANY stack
+ * over 110 - a 400bb hero and an 800bb hero are both answered with 150bb
+ * strategy, silently, with no miss recorded and nothing in the telemetry to
+ * say the answer was extrapolated.
+ *
+ * depthCandidates already refuses the equivalent error in the other
+ * direction, and says why: answering a 150bb hero from the 10 cell is "the
+ * one substitution more dangerous than the texture substitution these files
+ * explicitly refuse to make, because a 10bb solver jams and stacks off
+ * exactly where a 150bb player must not." Serving 150bb strategy to a player
+ * eight hundred blinds deep is the same error with the sign flipped, and it
+ * had no guard at all.
+ *
+ * The ceiling is set at twice the deepest bucket. That is not arbitrary: this
+ * file already tolerates a fallback of one bucket, and the buckets are
+ * geometric, so log(300/150) is exactly the distance between 10 and 20 - the
+ * widest substitution the depth fallback already makes. Beyond it the error
+ * is larger than anything the design permits, so the honest answer is no
+ * answer: the consult declines and the heuristic layers, which do scale
+ * continuously with stack depth, play the spot.
+ */
+export const GTO_MAX_DEPTH_BB = 2 * DEPTH_BUCKETS[DEPTH_BUCKETS.length - 1];
+
+/** True when the warehouse cannot honestly speak to this stack depth. */
+export function beyondGtoDepthCeiling(stackBB: number): boolean {
+  return isFinite(stackBB) && stackBB > GTO_MAX_DEPTH_BB;
+}
+
 export function snapDepthBucket(stackBB: number): number {
   if (!(stackBB > 0)) return 40;
   if (stackBB <= 12) return 10;

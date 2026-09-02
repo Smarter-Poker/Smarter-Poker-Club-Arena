@@ -40,6 +40,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { reportError } from './errorReporter.js';
 import { sharesForRakeRecord, sharesForRakeRecordWithLedger } from './rakeAllocation.js';
 
@@ -297,6 +298,10 @@ export class RakebackSettlerService {
       )
     );
     this.intervalHandle = setInterval(() => {
+      // THE FREEZE (Dan 2026-09-01): settlement credits commissions and
+      // rakeback - chip movement by definition. A 30-minute cadence loses
+      // nothing to a 5-minute wait.
+      if (isMaintenanceFrozen()) return;
       this.runSettlement().catch((e: any) =>
         reportError(
           new Error(e?.message || JSON.stringify(e) || String(e)),
@@ -944,12 +949,57 @@ export class RakebackSettlerService {
    * has to EXCEED the window's population or the window is decorative.
    * Measured 2026-08-27: 35,220 COMPLETED events in 30 days, ~1,174/day, so a
    * 2-day window normally holds ~2,350. Five times that, ~1.7s of scan.
+   *
+   * 2026-09-01: RAISED 6,000 -> 20,000, because the window overtook the limit.
+   *
+   * The 2-day window now holds **6,959** events, not ~2,350 -- daily volume has
+   * roughly tripled since the figure above was measured. So the narrow pass was
+   * examining 6,000 of 6,959 and stopping, and by the reasoning in the comment
+   * directly above this one the window had become decorative again.
+   *
+   * This is not a silent miss -- the deep pass (30 days / 40,000, every 24th
+   * cycle) reaches the remainder within about twelve hours, which is why nobody
+   * noticed. It is still twelve hours of an underpaid player waiting on a pass
+   * that had the budget to reach them and did not.
+   *
+   * Measured against production 2026-09-01: the FULL 2-day window, all 6,959
+   * events, reconciles in **5.7 seconds** -- so the headroom costs about a
+   * second. The old comment's worry about PostgREST's single-digit statement
+   * timeout no longer applies either: the RPC sets its own
+   * `statement_timeout = 600s`, which overrides it for the duration of the call.
+   *
+   * 20,000 is ~3x the current population, the same multiple the original 6,000
+   * was chosen at. When the window overtakes this one too, the sweep now says
+   * so out loud (fn_tournament_payout_sweep raises a truncation alert on any
+   * applying pass) rather than leaving it to be rediscovered.
    */
-  private static readonly PAYOUT_SWEEP_RECENT_LIMIT = 6000;
+  private static readonly PAYOUT_SWEEP_RECENT_LIMIT = 20000;
   /** Days back the periodic pass looks — far enough to reach the May backlog. */
   private static readonly PAYOUT_SWEEP_DEEP_DAYS = 30;
-  /** 35,220 events live in a 30-day window; 40,000 covers it with headroom. */
-  private static readonly PAYOUT_SWEEP_DEEP_LIMIT = 40000;
+  /**
+   * 2026-09-01: RAISED 40,000 -> 150,000, for the same reason the narrow limit
+   * was raised hours earlier, and caught by the same alert.
+   *
+   * The comment this replaces read "35,220 events live in a 30-day window;
+   * 40,000 covers it with headroom", measured 2026-08-27. Measured again today
+   * the window holds **48,093**, so the deep pass was scanning the newest
+   * 40,000 and stopping 8,093 short -- and the deep pass is the one thing that
+   * reaches an event after it ages out of the hourly 7-day pg_cron sweep. A
+   * deep pass that truncates is a safety net with a hole in the far corner,
+   * which is exactly where it is meant to catch.
+   *
+   * Nothing was missed in practice: every event is swept hourly by
+   * `ca-payout-sweep-hourly` (7 days / 40,000 against a 30,878 population)
+   * while it is fresh, so the unreached tail had already been reconciled many
+   * times over before it aged past the deep pass. The hole is in the
+   * guarantee, not yet in the money.
+   *
+   * 150,000 is ~3x the current population, the same multiple the other two
+   * limits were chosen at. The full 2-day window (6,959 events) reconciles in
+   * 5.7s, so a full 30-day pass is on the order of 40s against the RPC's own
+   * 600s statement timeout, twice a day.
+   */
+  private static readonly PAYOUT_SWEEP_DEEP_LIMIT = 150000;
   /** Cycles between deep passes. 30-minute cycle, so ~twice a day. */
   private static readonly PAYOUT_SWEEP_DEEP_EVERY = 24;
 

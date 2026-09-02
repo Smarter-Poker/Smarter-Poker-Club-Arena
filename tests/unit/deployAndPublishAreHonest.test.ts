@@ -31,11 +31,12 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { sliceYamlBlock, sliceYamlEntry } from '../helpers/sourceWindow';
+import { sliceBetween } from '../helpers/sourceWindow';
 
 const wf = (n: string) => readFileSync(resolve(__dirname, `../../.github/workflows/${n}`), 'utf8');
 
 const HETZNER = wf('auto-deploy-hetzner.yml');
-const SYNC = wf('build-for-world-hub.yml');
+const SYNC = wf('publish-club-arena.yml');
 
 /** Reads the every-N-minutes cron cadence out of a workflow. */
 function cronEveryMinutes(yaml: string): number | null {
@@ -48,8 +49,14 @@ describe('the engine deploy tells the truth when it skips', () => {
     expect(HETZNER).toMatch(/name: 'DID NOT DEPLOY — this run shipped nothing'/);
     // It must be conditional on the skip paths, or it is just noise on a
     // successful deploy.
+    /* EVERY skip path, named explicitly. 2026-08-31: the restart-window gate
+       shipped without being listed here or in the REASON below it, so a run
+       blocked by the window reported "coalescing - the engine restarted too
+       recently" while the engine had been up 45 minutes. A wrong reason costs
+       more than no reason: it is confidently wrong, and it is the first line
+       anybody reads. */
     expect(HETZNER).toMatch(
-      /if: steps\.dedupe\.outputs\.skip == 'true' \|\| steps\.drain\.outputs\.skip == 'true'/
+      /if: steps\.window\.outputs\.open == 'false' \|\| steps\.dedupe\.outputs\.skip == 'true' \|\| steps\.drain\.outputs\.skip == 'true'/
     );
   });
 
@@ -68,6 +75,29 @@ describe('the engine deploy tells the truth when it skips', () => {
    * catch-up any more and no merge-triggered restart at all: the engine
    * restarts on a schedule, and merged engine code waits for the next window.
    */
+  /**
+   * THE REASON MUST NAME THE GATE THAT ACTUALLY HELD.
+   *
+   * The window gate makes the dedupe step set skip=true, so before this pin
+   * the REASON fell through to the coalescing branch and a run blocked by the
+   * time of day announced a spacing problem that did not exist. Whoever reads
+   * that goes and investigates a gate that is working correctly.
+   */
+  it('reports the restart window as the reason, before coalescing', () => {
+    expect(HETZNER, 'the reason block exists').toContain('REASON="already serving this commit"');
+    /* Bounded by the STRUCTURE - the if/elif chain, from its first assignment
+       to the `fi` that closes it - not by a byte count. One more elif branch
+       would outrun any magic number here, and the pin would then either go red
+       for no reason or, worse, stay green while watching nothing. */
+    const block = sliceBetween(HETZNER, 'REASON="already serving this commit"', '\n          fi');
+    const windowAt = block.indexOf('steps.window.outputs.open');
+    const coalesceAt = block.indexOf('coalescing');
+    expect(windowAt, 'the window is one of the reasons').toBeGreaterThan(-1);
+    expect(coalesceAt, 'coalescing is still a reason').toBeGreaterThan(-1);
+    expect(windowAt, 'and the window is checked FIRST').toBeLessThan(coalesceAt);
+    expect(block).toMatch(/force=true/);
+  });
+
   it('never restarts on a merge — there is no push trigger', () => {
     const triggers = HETZNER.slice(HETZNER.indexOf('\non:'), HETZNER.indexOf('\nconcurrency:'));
     expect(triggers).not.toMatch(/^\s{2}push:/m);
@@ -75,62 +105,113 @@ describe('the engine deploy tells the truth when it skips', () => {
     expect(triggers).toMatch(/^\s{2}workflow_dispatch:/m);
   });
 
-  it('fires only at the hours that can be 6pm, 10pm, 4am, 10am, 2pm in Chicago', () => {
-    // Ten UTC hours for five local windows: CDT and CST put each window an
-    // hour apart, so both must be declared or the window silently disappears
-    // for half the year. The gate keeps whichever five are genuinely 04, 10,
-    // 14, 18 or 22 o'clock in Chicago.
-    expect(HETZNER).toMatch(/cron: '0,20,40 0,3,4,9,10,15,16,19,20,23 \* \* \*'/);
+  it('gets one tick before the :55 break of EVERY hour, and the watchdog covers a dropped one', () => {
+    /**
+     * REPLACED THE FIVE-WINDOW SCHEDULE (Dan 2026-09-01): "program the engine
+     * restart to be every hour on the :55 instead of every 5 hours so nothing
+     * gets lost or orphaned from production improvements."
+     *
+     * The tick sits before :55 so the runner is checked out, tested and built
+     * by the time the engine parks the platform; the break gate then does the
+     * waiting.
+     *
+     * ONE tick, not three (2026-09-02). There were three because a GitHub
+     * scheduled run is best-effort and is sometimes dropped. Measured since:
+     * GitHub delivers about 10% of this repo's scheduled runs, so tripling the
+     * asks was tripling the demand that gets it throttled, and on 2026-09-02
+     * all three were dropped every hour from 14:42. The redundancy moved to
+     * publish-watchdog's schedule-liveness check, which runs on workflow_run
+     * many times an hour and dispatches this workflow the moment it is more
+     * than an hour since it last ran by any trigger. That is pinned in
+     * tests/schedule-liveness.test.ts; what is pinned here is that the one
+     * tick is still hourly and still lands before :55.
+     */
+    expect(HETZNER).toMatch(/cron: '45 \* \* \* \*'/);
     expect(cronEveryMinutes(HETZNER)).toBeNull();
 
-    // Asserted as the PAIRING rather than as a literal, because the literal is
-    // what a future edit gets wrong: dropping one hour leaves a cron that still
-    // looks plausible and a window that stops firing when the clocks change.
-    const utcHours = new Set(
-      HETZNER.match(/cron: '0,20,40 ([0-9,]+) \* \* \*'/)![1]
-        .split(',')
-        .map(Number)
-    );
-    const gate = HETZNER.match(/case "\$HOUR" in\s*\n\s*([0-9|]+)\)/)![1]
-      .split('|')
-      .map(Number);
-    expect(gate.sort((a, b) => a - b)).toEqual([4, 10, 14, 18, 22]);
-    for (const local of gate) {
-      expect(utcHours.has((local + 5) % 24), `CDT hour missing for ${local}:00 local`).toBe(true);
-      expect(utcHours.has((local + 6) % 24), `CST hour missing for ${local}:00 local`).toBe(true);
+    const [, minutes, hours] = HETZNER.match(/cron: '([0-9,]+) ([^ ]+) \* \* \*'/)!;
+    // Every hour, so no hour list to get wrong.
+    expect(hours).toBe('*');
+    // Every tick must leave time to build before :55, and none may land
+    // inside the break itself - a run arriving at :56 would wait 59 minutes
+    // for the next one.
+    for (const m of minutes.split(',').map(Number)) {
+      expect(m, `tick at :${m} is too late to build before the break`).toBeLessThanOrEqual(50);
+      expect(m, `tick at :${m} is needlessly early`).toBeGreaterThanOrEqual(35);
     }
   });
 
-  it('resolves the window from the tz database, not from a baked offset', () => {
-    expect(HETZNER).toMatch(/TZ=America\/Chicago date \+%H/);
-    expect(HETZNER).toMatch(/case "\$HOUR" in\s*\n\s*18\|22\|04\|10\|14\)/);
+  it('has no timezone left to get wrong', () => {
+    // The Chicago window gate was deleted with the five-window schedule. It
+    // existed only to turn ten UTC cron hours into five local ones, which is
+    // a DST bug waiting for the two days a year the clocks move. Every hour
+    // is a window now, so there is nothing to convert.
+    //
+    // Asserted on the RUNNABLE lines, not on the appearance of the strings:
+    // the comment that removed the gate names it in order to explain what
+    // changed, and a test that forbids naming the bug forbids documenting it.
+    // (Same reasoning as drainProtectsEveryHand's humansSeatedTotal check.)
+    const runnable = HETZNER.split('\n')
+      .filter((l) => !/^\s*#/.test(l))
+      .join('\n');
+    expect(runnable).not.toMatch(/HOUR=\$\(TZ=America\/Chicago/);
+    expect(runnable).not.toMatch(/case "\$HOUR" in/);
+    expect(runnable).not.toMatch(/::warning title=OUTSIDE THE RESTART WINDOW::/);
   });
 
-  it('a plain dispatch is subject to the window; only force overrides it', () => {
+  it('force still means "do not wait for the break", and nothing else', () => {
     // publish-watchdog.yml dispatches this workflow when the engine is behind
-    // main. That must keep alarming without being able to bounce production
-    // at three in the morning.
+    // main. It must keep alarming without being able to bounce production
+    // outside an announced break, so a plain dispatch still waits.
     const gate = HETZNER.slice(
-      HETZNER.indexOf('Restart window'),
-      HETZNER.indexOf('Skip if production')
+      HETZNER.indexOf('Wait for the maintenance break'),
+      HETZNER.indexOf('Cut over to the new image')
     );
-    expect(gate).toMatch(/FORCED="\$\{\{ github\.event\.inputs\.force \}\}"/);
-    expect(gate).toMatch(/if \[ "\$FORCED" = "true" \]/);
-    // The refusal is a notice on the run, not a silent no-op.
-    expect(gate).toMatch(/OUTSIDE THE RESTART WINDOW/);
+    expect(gate).toMatch(/github\.event\.inputs\.force/);
+    expect(gate).toMatch(/skipping the break gate/);
   });
 
-  it('inside a window the deploy actually lands rather than polling forever', () => {
-    // The drain poll waits for handsInFlightTotal to hit zero, which a fleet
-    // dealing ~290 hands a minute never reports. Three runs in a row reported
-    // success and shipped nothing the day this was written; with two windows a
-    // day that would mean the engine never updates at all.
-    const drain = HETZNER.slice(
-      HETZNER.indexOf('Drain gate'),
-      HETZNER.indexOf('Pull the exact commit')
+  it('waits for the announced break instead of racing the hands', () => {
+    /**
+     * REPLACED THE DRAIN RACE (Dan 2026-09-01). This test used to pin the
+     * opposite behaviour - "inside a window the deploy proceeds regardless" -
+     * because the old gate polled for a moment when no table was mid-hand and
+     * a fleet dealing ~290 hands a minute never reports one. The only path
+     * that ever actually deployed was a 45-minute staleness cap that restarted
+     * straight through live play.
+     *
+     * The engine now DECLARES a stop rather than the workflow hunting for one:
+     * every table is parked between hands at :55 and `readyForRestart` opens.
+     * That is not a snapshot that can go stale between the read and the
+     * SIGTERM - the platform is held still, on purpose, for five minutes.
+     */
+    const gate = HETZNER.slice(
+      HETZNER.indexOf('Wait for the maintenance break'),
+      HETZNER.indexOf('Cut over to the new image')
     );
-    expect(drain).toMatch(/github\.event_name \}\} " *= *"schedule"|event_name \}\}" = "schedule"/);
-    expect(drain).toMatch(/drains itself at a hand boundary on SIGTERM/);
+    expect(gate).toMatch(/maintenance/);
+    expect(gate).toMatch(/readyForRestart/);
+    // The old "a scheduled window means proceed anyway" escape must be gone,
+    // or the break is decorative and the restart still lands on live tables.
+    expect(gate).not.toMatch(/event_name \}\}" = "schedule"/);
+    // Fails CLOSED: a break that never opens defers the deploy rather than
+    // restarting outside it. A missed window costs six hours of slightly
+    // older code; restarting outside the break costs somebody's hand.
+    expect(gate).toMatch(/BREAK NEVER OPENED/);
+    expect(gate).toMatch(/skip=true/);
+  });
+
+  it('can still ship the commit that introduces the break', () => {
+    // Bootstrap: the engine running in production when this lands predates
+    // the feature and can never open the flag, so waiting for it would mean
+    // the change could never deploy. Exactly one legacy restart is permitted,
+    // on the old SIGTERM drain, and the branch is unreachable afterwards.
+    const gate = HETZNER.slice(
+      HETZNER.indexOf('Wait for the maintenance break'),
+      HETZNER.indexOf('Cut over to the new image')
+    );
+    expect(gate).toMatch(/LEGACY/);
+    expect(gate).toMatch(/drainHands/);
   });
 
   it('still bypasses the spacing gate for a manual dispatch', () => {

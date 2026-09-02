@@ -74,21 +74,49 @@ describe('the engine drains itself before stopping', () => {
 describe('the deploy gate waits on hands, never on humanity', () => {
   const wf = () => read('.github/workflows/auto-deploy-hetzner.yml');
 
-  it('reads handsInFlightTotal, not humansSeatedTotal', () => {
+  it('waits on a declared break, and never on a human count', () => {
+    /**
+     * SUPERSEDED THE HANDS POLL (Dan 2026-09-01). This pinned
+     * `handsInFlightTotal`, which was itself the 2026-08-27 fix for a gate
+     * that had waited on `humansSeatedTotal` and so let a horse's hand be
+     * voided where a human's would not (CLAUDE.md 10.5).
+     *
+     * Counting hands was still the wrong shape: it asked "is anybody mid-hand
+     * at this instant" of a fleet that is always mid-hand, so the gate never
+     * passed and the deploy fell through to a staleness cap that restarted on
+     * live play regardless. The engine now STOPS the platform - every table,
+     * horse and human alike, parked between hands - and says so. The gate
+     * waits for that.
+     *
+     * What this test still protects is the invariant underneath both fixes:
+     * the deploy must never decide on WHO is seated.
+     */
     const src = wf();
-    const gate = src.slice(src.indexOf('Drain gate'), src.indexOf('Pull the exact commit'));
-    // It must READ the hands figure...
-    expect(gate).toMatch(/d\.get\("handsInFlightTotal"\)/);
-    // ...and must not READ a human count. Asserted on the actual field read
-    // rather than the mere appearance of the string, because the comment above
-    // the gate deliberately names the old field to explain what changed — and
-    // a test that forbids naming the bug forbids documenting it.
+    const gate = src.slice(
+      src.indexOf('Wait for the maintenance break'),
+      src.indexOf('Cut over to the new image')
+    );
+    expect(gate).toMatch(/readyForRestart/);
     expect(gate).not.toMatch(/d\.get\("humansSeatedTotal"\)/);
+    expect(gate).not.toMatch(/is_horse|isHorse/);
   });
 
-  it('health publishes the hands figure the gate depends on', () => {
+  it('health publishes the break state the gate depends on', () => {
     // A gate reading a field nobody publishes is a gate that is permanently
     // blind — this pins the two ends together.
-    expect(read('server/src/GameServer.ts')).toMatch(/handsInFlightTotal:/);
+    const gs = read('server/src/GameServer.ts');
+    // Phase 1 (to-do #2563 item 4) widened the block to carry the measured
+    // clock skew alongside the break snapshot, so the pin now requires BOTH:
+    // the snapshot spread and the skew field riding with it.
+    expect(gs).toMatch(/maintenance: \{ \.\.\.this\.maintenanceBreak\.snapshot\(\), dbClockSkewMs/);
+    expect(read('server/src/maintenance/MaintenanceBreak.ts')).toMatch(/readyForRestart\(\)/);
+  });
+
+  it('the break parks every table without asking who is sitting at it', () => {
+    // CLAUDE.md 10.5, asserted at the source rather than inferred: there is no
+    // horse branch in the module that decides which tables stop.
+    const mb = read('server/src/maintenance/MaintenanceBreak.ts');
+    const code = mb.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    expect(code).not.toMatch(/is_horse|isHorse|humansSeated/);
   });
 });

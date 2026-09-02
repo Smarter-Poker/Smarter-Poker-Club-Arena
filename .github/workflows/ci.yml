@@ -3,8 +3,16 @@ name: CI — Build & Type Safety
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
+  # NO push TRIGGER. Removed 2026-09-01 (cost audit).
+  #
+  # The ruleset is squash-only with required checks, so the merge commit's
+  # tree is the PR head tree that every gate already passed. The only job the
+  # push event still ran was Post-Deploy Verification, a 2-4 minute CDN poll
+  # per merge - 2,653 push runs in August (~8,000 billed minutes) duplicating
+  # what post-deploy-e2e.yml (workflow_run on the publisher) and
+  # publish-watchdog.yml already verify against production. Post-Deploy
+  # Verification now runs on the schedules below instead. The daily
+  # "is main actually green" schedule remains the whole-branch safety net.
   schedule:
     # The production E2E used to run on every push to main. Club Arena merges
     # about nineteen times an hour, so it installed Playwright browsers and
@@ -85,7 +93,9 @@ jobs:
   # ───────────────────────────────────────────────────────────────────────────
   changes:
     name: What changed
-    runs-on: ubuntu-latest
+    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
+    # runner when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 3
     if: github.event_name == 'pull_request'
     # The gh call below is a 403 without this. GITHUB_TOKEN defaults to read on
@@ -156,18 +166,61 @@ jobs:
             echo "::notice::build/config change - running everything"
             exit 0
           fi
+          # supabase/migrations/ counts as touching server AND tests: law
+          # tests in both suites read the migration FILES (the GTO batch-floor
+          # guard, migration-version uniqueness). On 2026-09-02 a migrations-only
+          # backfill PR (#2580) merged with the server suite skipped, turned the
+          # clobber-era floor into the newest clamp declaration, and every
+          # hourly deploy after it was refused by its own test gate.
           echo "src=$(has '^src/')"       >> "$GITHUB_OUTPUT"
-          echo "server=$(has '^server/')" >> "$GITHUB_OUTPUT"
-          echo "tests=$(has '^tests/')"   >> "$GITHUB_OUTPUT"
+          echo "server=$(has '^(server/|supabase/migrations/)')" >> "$GITHUB_OUTPUT"
+          echo "tests=$(has '^(tests/|supabase/migrations/)')"   >> "$GITHUB_OUTPUT"
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 1: TypeScript compilation check (fast — ~40s)
   # ─────────────────────────────────────────────────────────────────────────────
 
+  # UNGATED ON PURPOSE, like typecheck and stub_gate above.
+  #
+  # noFixedSizeSourceWindows guards every source pin in the repo against being
+  # bounded by a magic number, because a window that can drift off the code it
+  # watches can also drift off it while staying GREEN. It earned that status on
+  # 2026-09-01: four byte-bounded windows landed on main inside two hours, and
+  # main's own CI never saw any of them, because the unit job is gated behind
+  # the changed files and a docs-only commit goes green in twelve seconds
+  # without running the suite. Main showed an unbroken wall of ticks while
+  # carrying a red test that failed on every branch touching src/ or tests/.
+  #
+  # It reads source and asserts on text. It needs no database, no build and no
+  # network, and it finishes in well under a second, so there is no reason for
+  # it to be behind a gate that can hide it.
+  source_windows:
+    name: Source Windows Are Structural
+    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
+    # runner when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci --prefer-offline --no-audit --no-fund
+
+      - name: Every source pin is bounded by a structure
+        run: npx vitest run tests/unit/noFixedSizeSourceWindows.test.ts
+
   stub_gate:
     if: github.event_name == 'pull_request'
     name: Stub Gate
-    runs-on: ubuntu-latest
+    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
+    # runner when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -194,7 +247,9 @@ jobs:
     # when it takes twenty seconds.
     if: github.event_name == 'pull_request'
     name: TypeScript Check
-    runs-on: ubuntu-latest
+    # 2026-09-01 (cost audit): vars.CI_RUNNER routes to a self-hosted runner
+    # when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
 
     steps:
@@ -211,7 +266,19 @@ jobs:
           node-version: 20
           cache: npm
 
+      # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a
+      # hit. `nm-lite` is deliberately a DIFFERENT key from the full-install
+      # jobs: this install runs --ignore-scripts, and a scripts-less tree must
+      # never be restored into a job that relies on postinstall artifacts.
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-lite-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+
       - name: Install Dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci --ignore-scripts
 
       - name: Record Start Time
@@ -258,6 +325,9 @@ jobs:
         run: node scripts/ci/check-discarded-read-then-write.mjs
 
       # Copy invariant. Dan 2026-08-20: "forbid the use of em bars anywhere."
+      # "em bars" means EM DASHES, the punctuation mark. A COPY rule about the
+      # characters in text -- NOT about artwork or icons, and it does not ban
+      # the hamburger menu. Misread that way twice: #2321 and #2429.
       # A style rule that lives only in someone's head gets re-broken by the
       # next person who writes a label — 444 of them had accumulated by the
       # time it was first run. Comments are exempt (they never reach a player);
@@ -768,7 +838,12 @@ jobs:
        (github.event_name == 'pull_request' &&
         (needs.changes.result != 'success' || needs.changes.outputs.src == 'true' || needs.changes.outputs.tests == 'true')))
     name: Client Unit Tests (vitest)
-    runs-on: ubuntu-latest
+    # 2026-09-01 (cost audit): `vars.CI_RUNNER` routes this job to a
+    # self-hosted runner the moment Dan sets the repository variable (e.g. to
+    # `estate-linux`). Unset, it is exactly `ubuntu-latest` as before. A warm
+    # self-hosted runner turns this 12-minute job into ~2 minutes because
+    # node_modules survives between runs.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
 
     steps:
@@ -781,7 +856,20 @@ jobs:
           node-version: 20
           cache: npm
 
+      # 2026-09-01 (cost audit): caches the INSTALLED node_modules tree, not
+      # just the npm tarballs that `cache: npm` above keeps. Measured on this
+      # job: `npm ci` is 1-2 minutes of the 12; on a cache hit it is skipped
+      # entirely. The key includes the lockfile hash, so any dependency change
+      # misses and installs fresh - identical behaviour, minus the wait.
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-full-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+
       - name: Install Dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Run Test Suite
@@ -824,7 +912,9 @@ jobs:
        (github.event_name == 'pull_request' &&
         (needs.changes.result != 'success' || needs.changes.outputs.server == 'true')))
     name: Server Engine (typecheck + tests)
-    runs-on: ubuntu-latest
+    # 2026-09-01 (cost audit): vars.CI_RUNNER routes to a self-hosted runner
+    # when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
 
     defaults:
@@ -842,7 +932,16 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
 
+      # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a hit.
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: server/node_modules
+          key: nm-server-${{ runner.os }}-node22-${{ hashFiles('server/package-lock.json') }}
+
       - name: Install Dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
       # server/ is a separate package with its own tsconfig; the root typecheck
@@ -887,7 +986,9 @@ jobs:
   # surfaces in the run header without anyone thinking to open the logs.
   verdict:
     name: What this run verified
-    runs-on: ubuntu-latest
+    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
+    # runner when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 2
     if: always()
     needs: [changes, stub_gate, typecheck, unit, server]
@@ -963,7 +1064,9 @@ jobs:
       always() && github.event_name == 'pull_request' &&
       (needs.changes.result != 'success' || needs.changes.outputs.src == 'true')
     name: Production Build
-    runs-on: ubuntu-latest
+    # 2026-09-01 (cost audit): vars.CI_RUNNER routes to a self-hosted runner
+    # when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
 
     steps:
@@ -983,7 +1086,17 @@ jobs:
           key: vite-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
           restore-keys: vite-${{ runner.os }}-
 
+      # 2026-09-01 (cost audit): cache the installed tree, skip npm ci on a
+      # hit. Shares `nm-full` with the unit job - both run a full npm ci.
+      - name: Restore node_modules
+        id: nm-cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: nm-full-${{ runner.os }}-node20-${{ hashFiles('package-lock.json') }}
+
       - name: Install Dependencies
+        if: steps.nm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Record Build Start
@@ -1041,6 +1154,7 @@ jobs:
 
       # ── Bundle Size Tracking ─────────────────────────────────────────────
       - name: Track Bundle Size
+        id: bundle_size
         if: success()
         # Measures INITIAL LOAD (what a user downloads to open the app) and
         # gates on it, then reports whole-app size against a bloat ceiling.
@@ -1050,6 +1164,24 @@ jobs:
         # correct code-splitting score exactly as badly as shipping the code
         # eagerly. See the header of the script for the measurements.
         run: node scripts/ci/bundle-size.mjs
+
+      # ── Who Pays For First Paint ─────────────────────────────────────────
+      - name: Entry Chunk Is A Reviewed List
+        # `always()` rather than `success()` on purpose: the step above gates a
+        # SIZE, this one gates WHO PAYS, and the second answer is most wanted
+        # exactly when the first has just gone red. On 2026-09-01 the size gate
+        # failed on the whole-app ceiling while the real defect - operator-only
+        # code newly landing in the chunk every player downloads before first
+        # paint - sat underneath it, invisible, and passed its own limit at
+        # 309kB against 320kB. It was found by hand, after the fact.
+        #
+        # Runs when the build succeeded, AND specifically when the size gate
+        # above is the thing that went red - which is when "who is paying for
+        # this" is most worth answering. Not always(): if the BUILD failed
+        # there is no dist to measure, and turning one clear failure into two
+        # helps nobody.
+        if: success() || steps.bundle_size.conclusion == 'failure'
+        run: node scripts/ci/entry-chunk-delta.mjs dist
 
       # Real browser performance and responsive budgets. This replaces the old
       # file-count step that was labelled Lighthouse but never opened a page.
@@ -1084,7 +1216,9 @@ jobs:
     # Moved off push:main to the two-hourly schedule above.
     if: github.event_name == 'schedule'
     name: Live Production E2E
-    runs-on: ubuntu-latest
+    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
+    # runner when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 25
 
     steps:
@@ -1102,8 +1236,18 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      # --with-deps needs root to apt-get the browser's system libraries. The
+      # self-hosted box has them baked in by provision-ci-box.sh and the ci user
+      # is not root, so ask for them only on a GitHub-hosted runner. Keyed on
+      # runner.environment, NOT on vars.CI_RUNNER: that variable is set
+      # repo-wide, so it is true even for a job still pinned to ubuntu-latest.
       - name: Install Playwright Browsers
-        run: npx playwright install --with-deps chromium
+        run: |
+          if [ "${{ runner.environment }}" = "self-hosted" ]; then
+            npx playwright install chromium
+          else
+            npx playwright install --with-deps chromium
+          fi
 
       - name: Wait for Production Deploy
         run: |
@@ -1189,7 +1333,7 @@ jobs:
         with:
           name: playwright-report
           path: playwright-report/
-          retention-days: 7
+          retention-days: 3 # 2026-09-01 cost audit: reports are read same-day or never
 
       - name: Report E2E Status
         if: always()
@@ -1234,11 +1378,17 @@ jobs:
   post-deploy-check:
     # It waits for Vercel and curls smarter.poker. It never used the build it
     # declared `needs: build` for - that was ordering, and it cost a full Vite
-    # production build on every merge, on top of the one build-for-world-hub.yml
+    # production build on every merge, on top of the one publish-club-arena.yml
     # already does to publish.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # 2026-09-01: was `push` to main - a CDN poll per merge, ~85 times a day,
+    # third in line behind post-deploy-e2e.yml and publish-watchdog.yml which
+    # both ask production the same question. The schedule keeps the smoke
+    # logic alive at 13 runs a day instead of 85.
+    if: github.event_name == 'schedule'
     name: Post-Deploy Verification
-    runs-on: ubuntu-latest
+    # 2026-09-02 (cost audit phase 3): vars.CI_RUNNER routes to a self-hosted
+    # runner when set; unset it is ubuntu-latest exactly as before.
+    runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
 
     steps:
@@ -1342,8 +1492,16 @@ jobs:
       - name: Install Dependencies
         run: npm ci --ignore-scripts
 
+      # See the note on the Live Production E2E install step. This job is still
+      # pinned to ubuntu-latest (it failed on the 4-core box), so this branch
+      # must resolve from the runner it is actually on, not from vars.CI_RUNNER.
       - name: Install Chromium and WebKit
-        run: npx playwright install chromium webkit --with-deps
+        run: |
+          if [ "${{ runner.environment }}" = "self-hosted" ]; then
+            npx playwright install chromium webkit
+          else
+            npx playwright install chromium webkit --with-deps
+          fi
 
       - name: Build this commit
         env:
@@ -1433,6 +1591,9 @@ jobs:
       # Its dedicated route redirects unless the test-harness flag is enabled.
       - name: Table Studio real-component purchase, sync, and accessibility gate
         run: npm run test:e2e:customization
+
+      - name: Insurance and Rabbit Hunt 375px decision gate
+        run: npm run test:e2e:financial-decisions
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 5: AUTO-REVERT — DISABLED (was causing revert loops during migration)

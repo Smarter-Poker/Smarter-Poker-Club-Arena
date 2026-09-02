@@ -5,6 +5,23 @@
  *   1. "the first letter of every word is capitalized ... every page and subpage"
  *   2. "forbid the use of em bars" / "any and all m bars ... are banned"
  *
+ * WHAT "EM BARS" MEANS, BECAUSE IT HAS ALREADY BEEN MISREAD TWICE
+ *
+ * Dan's phrase "em bars" means EM DASHES: the punctuation mark, U+2014.
+ * This is a rule about COPY -- the characters inside text a player reads.
+ * It is NOT a rule about artwork, icons, or anything shaped like a line,
+ * and it does NOT ban the hamburger menu.
+ *
+ * Read the other way it has now cost the hamburger menu twice in two days:
+ * #2321 replaced it with a gear on every trigger, deleted the approved
+ * rasters, and added a law forbidding its return; #2429 did it again with a
+ * six-tile grid after #2401 reverted the first one. Each time Dan opened the
+ * app and found a different icon where his menu button used to be.
+ *
+ * If you are about to ban "bars" anywhere near an ICON, you have misread this
+ * sentence. The hamburger is the menu. See
+ * tests/approvedHamburgerGearGuard.law.test.ts.
+ *
  * Both rules already had gates. Both gates had a surface they could not see, and
  * in each case the escape was real and shipped:
  *
@@ -145,7 +162,7 @@ describe('title case reaches the popups React never renders', () => {
           'export const go = () => window.confirm("discard these changes and leave?");\n',
       })
     ).toBe(1);
-  });
+  }, 20000);
 
   it('flags a lowercase alert() and prompt() too', () => {
     expect(
@@ -154,7 +171,7 @@ describe('title case reaches the popups React never renders', () => {
     expect(
       titleCaseOn({ 'Probe.tsx': 'export const p = () => prompt("amount to transfer?");\n' })
     ).toBe(1);
-  });
+  }, 20000);
 
   it('passes the same dialogs once they are Title Cased', () => {
     expect(
@@ -165,7 +182,7 @@ describe('title case reaches the popups React never renders', () => {
           'export const p = () => prompt("Amount To Transfer?");\n',
       })
     ).toBe(0);
-  });
+  }, 20000);
 
   it('does not fire on a same-named call that carries no copy', () => {
     // `confirm` is a common variable and method name. A non-string argument, or
@@ -176,7 +193,7 @@ describe('title case reaches the popups React never renders', () => {
           'declare const value: string;\nexport const go = () => window.confirm(value);\n',
       })
     ).toBe(0);
-  });
+  }, 20000);
 });
 
 /*

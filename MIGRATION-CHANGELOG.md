@@ -59,7 +59,6 @@ Nothing about which players get paid, or how much, changes here.
 
 ---
 
-
 ## Cowork session 2026-09-01 - THE SECOND JOB SCANNING hand_history WHOLE
 
 `fn_ca_settlement_correctness_check()` runs every 30 minutes. Its legacy-fallback
@@ -86,10 +85,10 @@ rather than asking the planner to filter a full window.
 
 **Measured on production:**
 
-| | before | after |
-| --- | --- | --- |
-| the `count(*)` alone | >60s (client timeout) | **3,438ms** cold, 19ms for the 1h variant |
-| the whole check | 66s average, 120s worst | **56s - unchanged** |
+|                      | before                  | after                                     |
+| -------------------- | ----------------------- | ----------------------------------------- |
+| the `count(*)` alone | >60s (client timeout)   | **3,438ms** cold, 19ms for the 1h variant |
+| the whole check      | 66s average, 120s worst | **56s - unchanged**                       |
 
 **CORRECTION (same night).** The first version of this entry claimed the whole
 check dropped to 5,383ms. It does not. That number was measured immediately
@@ -115,7 +114,6 @@ someone asking which others do - `hand_history` is the largest table in the
 estate and the only index most predicates can reach is a bare `created_at`.
 
 ---
-
 
 ## Cowork session 2026-09-01 - A HEALER THAT COULD NOT FINISH
 

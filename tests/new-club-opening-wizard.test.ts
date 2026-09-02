@@ -8,6 +8,7 @@ const wizard = read('src/components/club/ClubOpeningWizard.tsx');
 const wizardCss = read('src/components/club/ClubOpeningWizard.css');
 const home = read('src/pages/ClubHomePage.tsx');
 const settings = read('src/pages/ClubSettingsPage.tsx');
+const ownerMessage = read('src/components/club/ClubOwnerMessage.tsx');
 const memberManagement = read('src/pages/MemberManagementPage.tsx');
 const openingSql = read('supabase/migrations/20260901073000_club_opening_setup_wizard.sql');
 const taglineSql = read('supabase/migrations/20260901072500_club_tagline_is_its_own_field.sql');
@@ -46,7 +47,14 @@ describe('new club opening wizard', () => {
   it('keeps a custom tag line separate and never paints the Shark line globally', () => {
     expect(taglineSql).toContain('ADD COLUMN IF NOT EXISTS tagline text');
     expect(home).toContain('Boolean(club.tagline?.trim())');
-    expect(home).toContain('club.tagline?.trim() || `Welcome To ${club.name}`');
+    /* The fallback chain moved out of ClubHomePage on 2026-09-01 when Dan
+       made the lobby strip an owner-authored message: it is
+       `lobby_message -> tagline -> "Welcome To <Club>"` and it lives in
+       clubOwnerMessageLine now. The tag line is still the second link, which is
+       what this spec is really protecting - a club that wrote a tag line and no
+       day's message still sees its own line. */
+    expect(ownerMessage).toContain('tagline?.trim() || `Welcome To ${clubName}`');
+    expect(ownerMessage).toContain('message?.trim() ||');
     expect(settings).toContain('value={settings.tagline}');
     expect(home.toLowerCase()).not.toContain('all fish of all shapes and sizes are welcome');
     expect(wizard.toLowerCase()).toContain('that tag line belongs to shark club');
@@ -74,7 +82,9 @@ describe('new club opening wizard', () => {
   });
 
   it('keeps the checklist visible until every launch task is complete', () => {
-    expect(home).toContain('launchTasks.some((task) => !task.complete)');
+    expect(home).toContain('openingChecklistEligible &&');
+    expect(home).toContain('launchTasks.some((task) => !task.complete && !task.skipped)');
+    expect(home).toContain('{showLaunchChecklist && (');
     expect(home).not.toContain('noticeEditable && totalGameCount === 0');
   });
 

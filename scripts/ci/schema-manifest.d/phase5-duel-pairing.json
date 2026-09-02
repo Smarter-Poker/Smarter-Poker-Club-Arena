@@ -1,0 +1,4 @@
+{
+  "_owner": "phase5/duel-pairing-signal",
+  "functions": ["fn_ca_duel_pairing_scan"]
+}

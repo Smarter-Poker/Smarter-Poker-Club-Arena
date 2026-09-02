@@ -79,7 +79,13 @@ import { gtoOpenJam, gtoBbVsSbJam, handClass as gtoHandClass } from './GtoCharts
 // V29 (Dan 2026-08-29): the flop plays from the solver — class-mean mixes
 // aggregated offline from the 8.8M-solution warehouse, preloaded by
 // GtoPostflopLoader. See engine/GtoPostflop.ts for scope and honesty notes.
-import { gtoStreetAdvice, rollMix, snapDepthBucket } from './GtoPostflop.js';
+import {
+  gtoStreetAdvice,
+  rollMix,
+  snapDepthBucket,
+  beyondGtoDepthCeiling,
+  GTO_MAX_DEPTH_BB,
+} from './GtoPostflop.js';
 import { gtoStreetAdviceV31 } from './GtoPostflopV31.js';
 import { gtoFacingDefense } from './GtoFacingDefenseV32.js';
 // V7 split: evaluators + Monte Carlo equity + preflop scores live in
@@ -417,6 +423,36 @@ const STAGE_ORDER: Record<string, number> = {
  * cell key is `street|family|position|depth|texture`; parsing it here keeps
  * the stores' return shape untouched.
  */
+/**
+ * NAME THE MISS (2026-09-01).
+ *
+ * On 2026-08-31 the solver layers missed far more than they hit: V32 recorded
+ * v32_defend_no_range 9,693 times against 7,202 usable answers (a 57% miss),
+ * and V31 answered 165 consults against gto_miss_no_cell 12,193 - a 1.3% hit
+ * rate. The counters proved there was a hole and could not say WHERE, so the
+ * only available response was to guess at the export or to widen the gate.
+ *
+ * These two axes make the hole addressable. Cardinality is deliberately tiny
+ * - five depth buckets and four streets per layer, not the full
+ * street x family x position x depth product, which would be ~432 rows a day
+ * and unreadable. Depth and street are the two that were actually suspected,
+ * and either can be split further once the coarse answer points somewhere.
+ */
+function missDepthBand(stackBB: number): string {
+  if (!(stackBB > 0) || !isFinite(stackBB)) return 'unknown';
+  if (stackBB <= 20) return 'le20';
+  if (stackBB <= 50) return 'le50';
+  if (stackBB <= 110) return 'le110';
+  if (stackBB <= GTO_MAX_DEPTH_BB) return 'le' + GTO_MAX_DEPTH_BB;
+  return 'gt' + GTO_MAX_DEPTH_BB;
+}
+
+/** Record one miss against both axes. `layer` is 'v31' or 'v32'. */
+function noteGtoMiss(layer: string, street: string, stackBB: number): void {
+  noteFire(layer + '_miss_depth_' + missDepthBand(stackBB));
+  noteFire(layer + '_miss_street_' + street);
+}
+
 function cellDepthIsPrimary(cell: string, stackBB: number): boolean {
   const parts = cell.split('|');
   if (parts.length < 5) return true; // unknown shape: do not invent a miss
@@ -595,8 +631,11 @@ export interface HorseGameStateV2 extends HorseGameState {
     /** V23 BLIND CLOCK: next level's bb over the current bb (1 = flat). */
     nextBlindMult?: number;
   };
-  /** V12: table format. Spins are winner-take-all chip-EV (no ICM), HU SNGs
-   *  play heads-up ranges, MTTs get the full survival model. */
+  /** V12: table format. HU SNGs play heads-up ranges, MTTs get the full
+   *  survival model, and a Spin is decided by `spotsPaid` rather than by the
+   *  word "spin": MOST spins are winner-take-all chip-EV (no ICM), but 10x
+   *  and above pay 80/20 or 80/12/8 and therefore have a real ladder. See
+   *  icmRisk. */
   format?: 'cash' | 'mtt' | 'spin' | 'hu_sng';
   /** V11 (Dan 2026-08-22): EXPLICIT game mode from the table engine
    *  (tournament_id / game_type). Cash and tournaments are different games;
@@ -680,7 +719,16 @@ function icmRisk(
   // icmRisk v2 (V12, 2026-08-22): real bubble model from TournamentBrainContext.
   const explicit = gs.tournament;
   if (!isTournamentMode(gs)) return 0;
-  // Spins are winner-take-all — pure chip EV, zero survival premium.
+  // A SPIN IS NOT AUTOMATICALLY WINNER-TAKE-ALL (corrected 2026-08-31). The
+  // ladder pays one place below 10x, but 10x pays 80/20 and 25x/50x/100x pay
+  // 80/12/8 (SPIN_TIERS) — about 1.1% of games by frequency, and the biggest
+  // prizes on the platform. This branch has always tested `spotsPaid <= 1`
+  // rather than the format, so the CODE was right; only the comment claimed
+  // otherwise, and every comment that repeated the claim is corrected in the
+  // same commit. `spotsPaid` comes from TournamentBrainContext, which resolves
+  // the structure from the drawn tier — so a multi-place spin correctly falls
+  // through to the ICM model below and gets a genuine survival premium.
+  // Pure chip EV, zero survival premium, WHEN ONE PLACE IS PAID:
   // V22 telemetry honesty (2026-08-27): this CORRECT no-ICM answer used to
   // leave lastIcmPath on whatever the previous call set, so 7,000 spins a day
   // were counted as "legacy" fallbacks in the proof-of-receipt numbers. Same
@@ -941,8 +989,11 @@ export interface HorseDecideOpts {
   /** disable the V23 variant polish: short-deck draw/thin-value recalibration
    *  and plo8 low-only draw discipline (default: enabled) */
   v23Variants?: boolean;
-  /** disable the V23 spin overlay: winner-take-all hypers reward aggression —
-   *  bluff volume up, value thresholds down a notch (default: enabled) */
+  /** disable the V23 spin overlay: 3-max hypers reward aggression — bluff
+   *  volume up, value thresholds down a notch (default: enabled). The overlay
+   *  is about the STRUCTURE (three-handed, shallow, 3-minute levels), not the
+   *  payout shape: it stays on at 10x+, where the ladder's survival premium
+   *  arrives separately through icmRisk and already damps bluffScale. */
   v23Spin?: boolean;
   /** disable the V24 bounty layer (Dan 2026-08-28): PKO and mystery-bounty
    *  awareness preflop — pots against a covered raiser are worth more than
@@ -994,6 +1045,15 @@ export interface HorseDecideOpts {
   v31GtoSuitAware?: boolean;
   /** V32: facing-a-bet defence from the solver's own betting range. */
   v32FacingDefense?: boolean;
+  /** V33 (2026-09-01): refuse a solver consult the warehouse cannot honestly
+   *  answer. DEPTH_BUCKETS stops at 150 and snapDepthBucket returns 150 for
+   *  ANY stack over 110, so a 400bb or 800bb hero was served 150bb strategy
+   *  silently, with no miss recorded. Above GTO_MAX_DEPTH_BB (twice the
+   *  deepest bucket - the same log-distance this file already tolerates for a
+   *  one-bucket fallback) the consult declines and the heuristic layers,
+   *  which scale continuously with depth, play the spot. Disable to ablate
+   *  (default: enabled) */
+  v33DepthCeiling?: boolean;
 }
 
 /**
@@ -1239,6 +1299,29 @@ export class HorseLogic {
     let raises = 0;
     let limpers = 0;
     let callers = 0;
+    /**
+     * ═══ THE SQUEEZE COULD NOT BE SEEN (2026-09-01) ═══
+     *
+     * `callers` is reset by every raise, which is right for "how many people
+     * have called THE CURRENT bet". But V18's squeeze test asked
+     * `raises === 2 && callers >= 1`, and a squeeze is by definition
+     * open -> call -> 3-BET: the 3-bet that creates the shape is the very
+     * raise that zeroes the counter. At the moment the opener is asked to
+     * respond, `callers` is always 0, so `squeezed` was UNSATISFIABLE in the
+     * exact spot it was written for.
+     *
+     * It shipped 2026-08-26 and has never fired. The league said so from the
+     * first run and nobody read it: `v18_squeeze_response` returns
+     * 0.00 bb/100 with a stderr of 0.00 over 12,000 hands - not a small
+     * effect, an IDENTICAL one, because the two arms play the same because
+     * the flag never turns on. (The daily audit now flags that shape as
+     * `league_matchup_inert`; this is the first bug it caught.)
+     *
+     * Saving the count before the reset is all that was needed: at the
+     * instant the 3-bet lands, this holds the number of players who had
+     * called the OPEN - which is the squeeze condition, stated correctly.
+     */
+    let callersOfPreviousRaise = 0;
     let lastRaiserSeat = -1;
     for (const a of history) {
       /**
@@ -1269,6 +1352,7 @@ export class HorseLogic {
         (a.action === 'all_in' && a.isFullRaise !== undefined);
       if (isAggr) {
         raises++;
+        callersOfPreviousRaise = callers; // the squeeze shape, before the reset
         callers = 0; // callers-of-THE-raise reset when a new raise lands
         lastRaiserSeat = a.seat;
       } else if (a.action === 'call' || a.action === 'all_in') {
@@ -1563,8 +1647,10 @@ export class HorseLogic {
           ? (gs.tournament?.nextBlindInMin ?? undefined)
           : undefined,
       nextBlindMult: (opts.v23Endgame ?? true) !== false ? gs.tournament?.nextBlindMult : undefined,
-      // V12: table format — spins widen (winner-take-all chip EV), HU SNGs
-      // ride the heads-up ranges.
+      // V12: table format — spins widen (3-max, shallow, high blind
+      // pressure), HU SNGs ride the heads-up ranges. Not "winner-take-all
+      // chip EV": at 10x and above a spin pays two or three places, and that
+      // ladder is priced by icmRisk rather than here.
       // V13: `format` is a V12 field and now answers to the v12 flag.
       format:
         opts.v12 !== false ? (gs.format ?? (isTournamentMode(gs) ? 'mtt' : 'cash')) : undefined,
@@ -1581,7 +1667,9 @@ export class HorseLogic {
       squeezed:
         (opts.v18Squeeze ?? true) !== false &&
         raises === 2 &&
-        callers >= 1 &&
+        // Callers of the OPEN, counted before the 3-bet zeroed them. Reading
+        // `callers` here is what made this branch dead code for six days.
+        callersOfPreviousRaise >= 1 &&
         history.length > 0 &&
         (() => {
           for (const a of history) {
@@ -2365,10 +2453,19 @@ export class HorseLogic {
         /* reads are best-effort */
       }
     }
-    // ═══ V23 SPIN OVERLAY (2026-08-28) ═══ winner-take-all hypers pay
-    // aggression: every chip won is worth every chip lost, stacks are
-    // shallow, and blinds eat the passive. League cannot deal spins, so the
-    // sizes here are small and the flag exists for ablation.
+    // ═══ V23 SPIN OVERLAY (2026-08-28) ═══ 3-max hypers pay aggression:
+    // stacks are shallow, levels are three minutes, and blinds eat the
+    // passive. League cannot deal spins, so the sizes here are small and the
+    // flag exists for ablation.
+    //
+    // CORRECTED 2026-08-31: this used to open "winner-take-all hypers pay
+    // aggression: every chip won is worth every chip lost". That premise is
+    // false above 10x, where the tier pays 80/20 or 80/12/8. The overlay is
+    // kept ON for every spin anyway, and deliberately: what it prices is the
+    // STRUCTURE, which is identical at every tier. The ladder is priced in
+    // one place only — icmRisk — and it already reaches this line, because
+    // `bluffScale` carries `Math.max(0.5, 1 - 2 * risk)` above. Adding a
+    // second tier-aware damper here would count the same ladder twice.
     const spin23 = (opts.v23Spin ?? true) !== false && gs.format === 'spin';
     if (spin23) {
       bluffScale *= 1.12;
@@ -2541,18 +2638,30 @@ export class HorseLogic {
       // bet_big for range purposes even when hero's call is small.
       const bettorWager32 = isFinite(bettor.bet) ? Math.max(0, bettor.bet) : 0;
       const rawPotBefore32 = gs.pot - bettorWager32;
-      const defense = gtoFacingDefense({
-        street,
-        family: family32,
-        bettorPosition: chartPos32,
-        stackBB: stackBB32,
-        board: gs.communityCards,
-        heroCards: player.cards,
-        pot,
-        toCall,
-        rawBetFraction: rawPotBefore32 > 0 ? bettorWager32 / rawPotBefore32 : undefined,
-        rand: fastRandom,
-      });
+      /*
+       * DEPTH CEILING (2026-09-01), same reasoning as the open-node consult:
+       * the facing export is keyed by the same depth buckets, which stop at
+       * 150bb. Above the ceiling the answer would be extrapolated rather than
+       * looked up, so the layer declines and the heuristics play the spot.
+       */
+      const tooDeep32 =
+        (opts.v33DepthCeiling ?? true) !== false && beyondGtoDepthCeiling(stackBB32);
+      if (tooDeep32 && telemetryOn(opts)) noteFire('gto_skip_too_deep');
+
+      const defense = tooDeep32
+        ? null
+        : gtoFacingDefense({
+            street,
+            family: family32,
+            bettorPosition: chartPos32,
+            stackBB: stackBB32,
+            board: gs.communityCards,
+            heroCards: player.cards,
+            pot,
+            toCall,
+            rawBetFraction: rawPotBefore32 > 0 ? bettorWager32 / rawPotBefore32 : undefined,
+            rand: fastRandom,
+          });
       if (defense) {
         if (defense.action === 'pass_strong') {
           if (telemetryOn(opts)) noteFire('v32_defend_pass_strong');
@@ -2564,8 +2673,12 @@ export class HorseLogic {
           if (telemetryOn(opts)) noteFire('v32_defend_fold');
           return { action: 'fold', thinkTime: 0 };
         }
-      } else if (telemetryOn(opts)) {
+      } else if (!tooDeep32 && telemetryOn(opts)) {
+        // A genuine miss - the gate was passed, the warehouse was asked, and
+        // it had no range. A skip for depth is NOT a miss and must not be
+        // counted as one, or the coverage number it feeds becomes fiction.
         noteFire('v32_defend_no_range');
+        noteGtoMiss('v32', street, stackBB32);
       }
     }
 
@@ -2638,8 +2751,21 @@ export class HorseLogic {
         // disabled layer that reports `empty_store` teaches the counters to
         // lie about the table being empty, and those counters are the whole
         // point of the attribution below.
+        /*
+         * DEPTH CEILING (2026-09-01). snapDepthBucket answers ANY stack over
+         * 110bb from the 150 cell, so an 800bb hero was being handed 150bb
+         * strategy with no miss recorded and nothing in the telemetry saying
+         * the answer was extrapolated. See GTO_MAX_DEPTH_BB for why the line
+         * sits at twice the deepest bucket. Beyond it the consult declines
+         * and the heuristic layers - which scale continuously with depth -
+         * play the spot. Flagged so it can be ablated in the league.
+         */
+        const tooDeep29 =
+          (opts.v33DepthCeiling ?? true) !== false && beyondGtoDepthCeiling(stackBB29);
+        if (tooDeep29 && telemetryOn(opts)) noteFire('gto_skip_too_deep');
+
         const v31 =
-          (opts.v31GtoSuitAware ?? true) !== false
+          !tooDeep29 && (opts.v31GtoSuitAware ?? true) !== false
             ? gtoStreetAdviceV31({
                 street,
                 family: family29,
@@ -2686,14 +2812,18 @@ export class HorseLogic {
           }
         }
 
-        const advice29 = gtoStreetAdvice({
-          street,
-          family: family29,
-          position: chartPos29,
-          stackBB: stackBB29,
-          board: gs.communityCards,
-          hand: hand29,
-        });
+        // The open-node consult reads the same warehouse and the same depth
+        // buckets, so the ceiling applies to it identically.
+        const advice29 = tooDeep29
+          ? null
+          : gtoStreetAdvice({
+              street,
+              family: family29,
+              position: chartPos29,
+              stackBB: stackBB29,
+              board: gs.communityCards,
+              hand: hand29,
+            });
         if (!advice29 && telemetryOn(opts) && v31 && !v31.hit) {
           // OBSERVABILITY (2026-08-30): the gate was passed and NEITHER layer
           // answered. Until now that was silent, so "the solver layer fires on
@@ -2711,6 +2841,8 @@ export class HorseLogic {
           else if (v31.miss === 'no_texture') noteFire('gto_miss_no_texture');
           else if (v31.miss === 'no_hand') noteFire('gto_miss_no_hand');
           else noteFire('gto_miss_empty_store');
+          // WHICH cells are missing, not merely how many. See noteGtoMiss.
+          noteGtoMiss('v31', street, stackBB29);
         }
         if (advice29) {
           if (telemetryOn(opts) && !cellDepthIsPrimary(advice29.cell, stackBB29)) {

@@ -872,7 +872,32 @@ export async function writeHandFacts(input: HandFactsInput): Promise<void> {
             : 'UNKNOWN',
         players_dealt: playersDealt,
         opponent_ids: dealtIds.filter((id) => id !== uid),
-        hole_cards: cards,
+        /* ═══ A HAND NOBODY PAID INTO IS NOT RECORDED (Dan 2026-09-01) ══
+           Dan, verbatim: "MUCKED HANDS SHOULDN'T BE RECORDED AND TRACKED,
+           ONLY HANDS WHERE THE HERO PUTS CHIPS IN POT."
+
+           `invested` is the engine's own contributions map, so 0 means no
+           chips of this player's reached the pot at all - not a blind, not an
+           ante. They were dealt in and folded for free. 640 of the 2,265 rows
+           in this table on the day of the ruling, 28%, were exactly that:
+           the exact holding of a hand nobody played, kept forever.
+
+           WHAT IS KEPT, AND WHY IT IS NOT THE SAME THING. `hand_class` stays.
+           It is the 169-bucket label, not a holding: it carries no suit
+           identity and no board, and it is the DENOMINATOR of the only chart
+           that reads this column. `ca_player_hand_grid`'s default view is
+           "how often you played this hand", which is
+           `hands_vpip / hands` per class - drop the folded-for-free rows and
+           every cell reads 100% and the feature is gone rather than improved.
+           The grid never selects hole_cards at all; only the per-cell
+           drill-down does, and its example hands are now hands that were
+           actually played, which is what you would want from it anyway.
+
+           Enforced again at the database in
+           `20260901_no_cards_for_hands_nobody_paid_into.sql`, by a trigger
+           that NULLS rather than rejects - a CHECK would 400 the whole batch
+           upsert and lose every other player's stats row with it. */
+        hole_cards: invested > 0 ? cards : null,
         hand_class: cards ? computeHandClass(cards) : null,
         invested,
         returned,

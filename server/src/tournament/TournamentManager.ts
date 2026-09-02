@@ -11,6 +11,7 @@
 import { ServerTableEngine } from '../engine/ServerTableEngine.js';
 import { supabase } from '../services/supabase.js';
 import { planSatelliteAwards } from './satelliteAwardPlan.js';
+import { settleTournamentObligation } from './settleObligation.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { isSatelliteTargetOpen, satelliteTicketCost } from './satelliteTargetOpen.js';
 import { type BalancerTable, type MoveInstruction } from '../engine/TableBalancer.js';
@@ -23,6 +24,12 @@ import { TournamentManagerEliminations } from './TournamentManagerEliminations.j
 // the same number.
 import { maxSeatsFor as maxSeatsTheDeckAllows } from '../engine/VariantRules.js';
 import { mayTakeSeat } from './seatClaim.js';
+import {
+  planOrphanReseats,
+  describeUnmovableOrphans,
+  type OrphanTableRow,
+  type OrphanSeatRow,
+} from './orphanedSeatRepair.js';
 
 export class TournamentManager extends TournamentManagerEliminations {
   protected async checkTableBalance(): Promise<void> {
@@ -298,6 +305,73 @@ export class TournamentManager extends TournamentManagerEliminations {
    * FIX 154: Execute a set of player move instructions (used by both table break + rebalance).
    * Moves player seats in DB: marks old seat as left, inserts new seat, updates tournament_players.
    */
+  /**
+   * ═══════════════════════════════════════════════════════════════════════
+   *  A PLAYER LEFT ON A CLOSED TABLE IS BROUGHT BACK TO THE FELT
+   * ═══════════════════════════════════════════════════════════════════════
+   *
+   * The evidence and every rule are in `orphanedSeatRepair.ts`. The short
+   * version: `checkTableBalance` iterates `tableEngines`, a closed table has
+   * no engine, so a live seat left behind on one is invisible to the balancer
+   * forever - and the tournament counts that player as still in the game and
+   * waits for an action nobody can take.
+   *
+   * This reads the tournament's own tables and live seats, asks the pure
+   * planner what to do, and hands the answer to `executePlayerMoves`. Every
+   * protection that path has earned - source stack read first, the
+   * `mayTakeSeat` duplicate check, update-first seat reuse, the committed-but-
+   * errored destination check - applies unchanged, because this adds no second
+   * way to move a player.
+   *
+   * Both reads fail CLOSED. An unreadable board is UNKNOWN, never "nobody is
+   * stranded" and never "everybody is".
+   */
+  public async absorbOrphanedSeats(): Promise<number> {
+    const { data: tableRows, error: tableErr } = await supabase
+      .from('tables')
+      .select('id, status, is_deleted, max_players')
+      .eq('tournament_id', this.tournamentId);
+    if (tableErr || !tableRows || tableRows.length === 0) return 0;
+
+    const tableIds = tableRows.map((r) => String((r as { id: string }).id));
+    const { data: seatRows, error: seatErr } = await supabase
+      .from('table_seats')
+      .select('table_id, user_id, seat_number, stack')
+      .in('table_id', tableIds)
+      .is('left_at', null);
+    if (seatErr || !seatRows) return 0;
+
+    const moves = planOrphanReseats(tableRows as OrphanTableRow[], seatRows as OrphanSeatRow[]);
+
+    const { duplicateSeat, noChips } = describeUnmovableOrphans(
+      tableRows as OrphanTableRow[],
+      seatRows as OrphanSeatRow[]
+    );
+    if (duplicateSeat.length > 0) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] ${duplicateSeat.length} player(s) hold a live seat on BOTH a closed table and an open one. Which stack is real is a money decision, so nothing was moved: ${duplicateSeat.map((id) => id.slice(0, 8)).join(', ')}`
+        ),
+        'Tournament.orphan_seat_duplicate_not_moved'
+      );
+    }
+    if (noChips.length > 0) {
+      reportError(
+        new Error(
+          `[Tournament:${this.tournamentId.slice(0, 8)}] ${noChips.length} stranded seat(s) on a closed table hold no chips, so the elimination path owns them rather than this repair: ${noChips.map((id) => id.slice(0, 8)).join(', ')}`
+        ),
+        'Tournament.orphan_seat_no_chips_not_moved'
+      );
+    }
+
+    if (moves.length === 0) return 0;
+
+    console.warn(
+      `[Tournament:${this.tournamentId.slice(0, 8)}] ${moves.length} player(s) stranded on a closed table - moving them to open felt so the tournament can deal again`
+    );
+    return this.executePlayerMoves(moves);
+  }
+
   protected async executePlayerMoves(moves: MoveInstruction[]): Promise<number> {
     let moved = 0;
     for (const move of moves) {
@@ -694,33 +768,36 @@ export class TournamentManager extends TournamentManagerEliminations {
     // A3 FIX (2026-07-28): satellite cash payouts are re-driveable. Errors are
     // swallowed by the caller, which leaves the tournament stuck in COMPLETING;
     // the watchdog (`recoverStuckCompletingTournaments`) then re-pays finishers
-    // under `tourney:{id}:prize:{user}:{position}` - keys this path never wrote.
-    // Every payCash call site now supplies a key, and the position-prize sites
-    // use the watchdog's exact format so the two paths dedupe against each other.
+    // for their places - so the position-cash sites settle the SAME obligation
+    // row the watchdog does, (tournament, 'place', N), and the two paths cannot
+    // pay a place twice.
+    //
+    // ONE SETTLE PATH (2026-09-02): `fn_credit_and_log` under a hand-built
+    // `tourney:` key is gone. The ticket-value fallbacks are 'place'
+    // obligations keyed on the finishing place; the remainder is a
+    // 'satellite_remainder' obligation keyed on the user, in its own
+    // namespace on purpose - `nextFinisher` can be a player who was already
+    // paid a place, and the remainder must not dedupe against that.
     const payCash = async (
       userId: string,
       amount: number,
       desc: string,
-      idempotencyKey: string
+      obligation: { kind: 'place'; place: number } | { kind: 'satellite_remainder' }
     ) => {
       if (amount <= 0) return;
-      // LEDGER-INTEGRITY 2026-08-22: credit and ledger row under one key.
-      // These sites share `tourney:{id}:prize:{user}:{place}` with the
-      // stuck-COMPLETING watchdog deliberately, so the credit deduped — but
-      // the log used to run regardless and wrote a prize row for money that
-      // was never moved.
-      const { error } = await supabase.rpc('fn_credit_and_log', {
-        p_user_id: userId,
-        p_amount: amount,
-        p_idempotency_key: idempotencyKey,
-        p_category: 'prize',
-        p_description: desc,
-        p_related_entity_id: this.tournamentId,
+      const res = await settleTournamentObligation(supabase, {
+        tournamentId: this.tournamentId,
+        kind: obligation.kind,
+        place: obligation.kind === 'place' ? obligation.place : null,
+        userId,
+        amount,
+        source: 'engine.processSatelliteAwards',
+        memo: desc,
       });
-      if (error) {
+      if (!res.ok) {
         reportError(
           new Error(
-            `[Satellite:${this.tournamentId.slice(0, 8)}] cash credit failed: ${error.message}`
+            `[Satellite:${this.tournamentId.slice(0, 8)}] cash credit failed: ${res.refused_reason}${res.transport_error ? ` (${res.transport_error})` : ''}`
           ),
           'Tournament.satellite_cash_failed'
         );
@@ -734,7 +811,7 @@ export class TournamentManager extends TournamentManagerEliminations {
         ranked[0].user_id,
         pool,
         `Satellite payout (no target seats available): ${tournament?.name || 'satellite'}`,
-        `tourney:${this.tournamentId}:prize:place:${ranked[0].position}`
+        { kind: 'place', place: Number(ranked[0].position) }
       );
       await supabase
         .from('tournament_players')
@@ -791,7 +868,7 @@ export class TournamentManager extends TournamentManagerEliminations {
             w.user_id,
             ticketCost,
             `Satellite seat fallback (registration failed): ${target.name || 'target'}`,
-            `tourney:${this.tournamentId}:prize:place:${w.position}`
+            { kind: 'place', place: Number(w.position) }
           );
         } else if (
           seat?.ok === true &&
@@ -820,7 +897,7 @@ export class TournamentManager extends TournamentManagerEliminations {
             w.user_id,
             ticketCost,
             `Satellite seat already held - ticket value paid in cash: ${target.name || 'target'}`,
-            `tourney:${this.tournamentId}:prize:place:${w.position}`
+            { kind: 'place', place: Number(w.position) }
           );
           console.log(
             `[Satellite:${this.tournamentId.slice(0, 8)}] Seat already held elsewhere - ticket cashed: ${w.user_id.slice(0, 8)}`
@@ -870,7 +947,7 @@ export class TournamentManager extends TournamentManagerEliminations {
           w.user_id,
           ticketCost,
           `Satellite ticket cashed (target unavailable): ${tournament?.name || 'satellite'}`,
-          `tourney:${this.tournamentId}:prize:place:${w.position}`
+          { kind: 'place', place: Number(w.position) }
         );
       }
       const { error: prizeStampErr } = await supabase
@@ -899,11 +976,11 @@ export class TournamentManager extends TournamentManagerEliminations {
         nextFinisher.user_id,
         remainder,
         `Satellite remainder payout: ${tournament?.name || 'satellite'}`,
-        // Deliberately a DIFFERENT namespace from the position prize above:
+        // Deliberately a DIFFERENT obligation kind from the place prize above:
         // `nextFinisher` falls back to `ranked[awardCount - 1]`, who may already
-        // have been paid under `prize:{user}:{position}`. Reusing that key would
-        // silently swallow the remainder instead of deduping a double-pay.
-        `tourney:${this.tournamentId}:satremainder:${nextFinisher.user_id}:${nextFinisher.position}`
+        // have been paid their place. Settling the place row again would
+        // silently swallow the remainder instead of paying it.
+        { kind: 'satellite_remainder' }
       );
     }
     if (targetOpen && target && awardCount > 0) {

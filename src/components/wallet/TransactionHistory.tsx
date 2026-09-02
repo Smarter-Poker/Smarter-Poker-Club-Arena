@@ -170,7 +170,7 @@ const CATEGORY_ICONS: Record<string, string> = {
   rebuy: '↺',
   addon: '⊞',
   mint: '◆',
-  settlement: '◇',
+  settlement: '≡',
   commission: '◈',
   INSURANCE: '⊕',
   funding: '→',

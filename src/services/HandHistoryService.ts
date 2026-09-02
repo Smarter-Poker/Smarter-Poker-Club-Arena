@@ -87,6 +87,22 @@ export interface HandAction {
   /** Stored as `stage`. `pineapple_discard` is a real street here. */
   street: 'preflop' | 'flop' | 'turn' | 'river' | 'pineapple_discard';
   timestamp: number;
+  /**
+   * PHASE 4 COMPLETION 2026-09-01 — the card thrown on a `discard` action,
+   * and ONLY ever the viewer's own.
+   *
+   * Phase 4 taught the standalone replay which card you threw and stopped
+   * there, so the hand-history panel that slides out AT THE TABLE - the
+   * surface a player actually reviews the last hand on, mid-session - still
+   * printed the word "discard" and nothing else. Same fetch, same RLS, same
+   * map; it simply never reached this list.
+   *
+   * It carries no privacy decision of its own: `fetchOwnDiscards` reads
+   * `hand_discards` through `hand_discards_read_own`, so the map it fills can
+   * only ever hold the caller's rows. Absent on every other player's discard
+   * and on every non-discard action.
+   */
+  discarded_card?: { rank: string; suit: string };
 }
 
 /** One winner of one pot, as stored. */
@@ -182,7 +198,7 @@ class HandHistoryServiceClass {
     for (const w of (data as any).winners || []) if (w?.userId) userIds.push(w.userId);
     const profileMap = await this.fetchProfileMap(userIds);
 
-    return this.mapHandHistoryRow(data, profileMap);
+    return this.mapHandHistoryRow(data, profileMap, await this.fetchOwnDiscards([data]));
   }
 
   /**
@@ -220,9 +236,13 @@ class HandHistoryServiceClass {
       for (const w of row.winners || []) if (w?.userId) allUserIds.push(w.userId);
     }
     const profileMap = await this.fetchProfileMap(allUserIds);
+    /* One query for the whole page of hands. RLS narrows it to this viewer's
+       own rows, so the size of the result is bounded by how many of THEIR
+       hands are on screen, not by how many players were in them. */
+    const discardsByHand = await this.fetchOwnDiscards(data as any[]);
 
     return data
-      .map((d: any) => this.mapHandHistoryRow(d, profileMap))
+      .map((d: any) => this.mapHandHistoryRow(d, profileMap, discardsByHand))
       .filter((h: HandRecord | null): h is HandRecord => h !== null);
   }
 
@@ -249,9 +269,62 @@ class HandHistoryServiceClass {
      already been shown (see the hole_cards comment below). Reintroducing a
      per-viewer argument here is how that bug comes back: the row already
      encodes what is public, so the mapper must not second-guess it. */
+  /**
+   * PHASE 4 2026-09-01 - the viewer's own discarded cards, for the hands about
+   * to be rendered.
+   *
+   * THERE IS NO USER ID IN THIS QUERY, and that is the design rather than an
+   * omission. `hand_discards` is read through `hand_discards_read_own`
+   * (auth.uid() = user_id), so asking for "every discard in these hands"
+   * returns exactly the caller's own and nothing else. The privacy of the
+   * variant's one private card is enforced by Postgres, not by this method
+   * remembering to filter - which is the difference between a rule and a
+   * habit. A bug here cannot widen it.
+   *
+   * Keyed `<table_id>:<hand_number>` because that is the pair the replay has
+   * in hand; `id` is a hand_history primary key and means nothing to this
+   * table.
+   */
+  private async fetchOwnDiscards(
+    rows: Array<{ table_id?: string | null; hand_number?: number | null }>
+  ): Promise<Map<string, { seat: number; card: { rank: string; suit: string } }>> {
+    const out = new Map<string, { seat: number; card: { rank: string; suit: string } }>();
+    const tableIds = [...new Set(rows.map((r) => r?.table_id).filter(Boolean))] as string[];
+    const handNumbers = [
+      ...new Set(rows.map((r) => Number(r?.hand_number)).filter((n) => Number.isFinite(n))),
+    ];
+    if (tableIds.length === 0 || handNumbers.length === 0) return out;
+    try {
+      const { data, error } = await supabase
+        .from('hand_discards')
+        .select('table_id, hand_number, seat_number, discarded_card')
+        .in('table_id', tableIds)
+        .in('hand_number', handNumbers);
+      if (error) {
+        // A replay without the discard is the pre-2026-09-01 replay, which is
+        // a complete and correct hand. Never fail the history for it.
+        reportError(error, 'HandHistoryService.fetchOwnDiscards');
+        return out;
+      }
+      for (const d of data || []) {
+        const row = d as any;
+        const card = row?.discarded_card;
+        if (!card?.rank || !card?.suit) continue;
+        out.set(`${row.table_id}:${row.hand_number}`, {
+          seat: Number(row.seat_number) || 0,
+          card,
+        });
+      }
+    } catch (e) {
+      reportError(e, 'HandHistoryService.fetchOwnDiscards_threw');
+    }
+    return out;
+  }
+
   private mapHandHistoryRow(
     row: any,
-    profileMap: Map<string, { username: string; avatar_url: string | null }>
+    profileMap: Map<string, { username: string; avatar_url: string | null }>,
+    discardsByHand?: Map<string, { seat: number; card: { rank: string; suit: string } }>
   ): HandRecord | null {
     if (!row?.id) return null;
     const jsonbPlayers: any[] = Array.isArray(row.players) ? row.players : [];
@@ -304,7 +377,24 @@ class HandHistoryServiceClass {
      * action — neither method is exact, but this one is short by the forced
      * money rather than long by every raise.
      */
+    /* The viewer's own discard for THIS hand, if there is one.
+    
+       Resolved through the SEAT the row carries rather than through a viewer
+       id passed down from the caller. That is deliberate: this mapper used to
+       take a `requestingUserId` and the comment above records what it cost -
+       a per-viewer argument here is how a card-visibility gate gets rebuilt in
+       the mapper, wrongly. It needs no such argument. The map holds only the
+       viewer's rows because Postgres allows nothing else, and the seat says
+       which player in this hand they were. */
+    const ownDiscard = discardsByHand?.get(`${row.table_id}:${row.hand_number}`);
+    const discardedCards: Record<string, { rank: string; suit: string }> = {};
+    if (ownDiscard) {
+      const seated = jsonbPlayers.find((p) => Number(p?.seat) === ownDiscard.seat);
+      if (seated?.userId) discardedCards[String(seated.userId)] = ownDiscard.card;
+    }
+
     const replay = buildReplay({
+      discardedCards,
       handNumber: row.hand_number ?? null,
       playedAt: row.started_at ?? row.created_at ?? null,
       gameVariant: row.game_variant ?? null,
@@ -441,6 +531,11 @@ class HandHistoryServiceClass {
           action: (a?.action as HandAction['action']) || 'fold',
           amount: typeof a?.amount === 'number' ? a.amount : undefined,
           street: (a?.stage as HandAction['street']) || 'preflop',
+          /* The thrown card, on the viewer's own discard row. `discardedCards`
+             is keyed by user id and holds nothing but this viewer's rows (see
+             fetchOwnDiscards), so the lookup is the whole gate. */
+          discarded_card:
+            a?.action === 'discard' ? discardedCards[String(a?.userId || '')] : undefined,
           timestamp:
             typeof a?.timestamp === 'number' ? a.timestamp : new Date(row.created_at).getTime(),
         })

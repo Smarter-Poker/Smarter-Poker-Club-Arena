@@ -1,5 +1,21 @@
 # Club Arena -- Agent Instructions
 
+## ↗ RESUMING THE ENGINE-RESTART PROGRAMME? READ `docs/HANDOFF_CURRENT_STATE.md`
+
+If you are picking up the hourly `:55` maintenance break / platform freeze /
+engine restart work, the current state, every measured baseline, the open
+defects and the exact next actions are in
+[`docs/HANDOFF_CURRENT_STATE.md`](./docs/HANDOFF_CURRENT_STATE.md).
+
+Read it before touching `server/src/maintenance/**`,
+`server/src/engine/ServerTableEngineBase.ts`,
+`.github/workflows/auto-deploy-hetzner.yml` or
+`.github/scripts/engine-watchdog.sh`. It records three separate guards that
+read as armed while being unreachable, and one trap where a metric reaching
+zero means the opposite of success.
+
+---
+
 ## ↗ START HERE: `AGENT-PLAYBOOK.md`
 
 **Before this file, before anything: read [`AGENT-PLAYBOOK.md`](./AGENT-PLAYBOOK.md).**
@@ -41,33 +57,57 @@ platform plan wins.
 Club Arena is a Vite + React SPA that lives inside the smarter.poker Next.js app.
 It deploys through the World Hub repo, NOT directly.
 
-### 1.1 The Only Deploy Path (Phase U5.4 — one script, one push)
+### 1.1 How your work reaches production (rewritten 2026-09-02 - read this, it changed)
+
+There is exactly ONE route from a commit to a player, and every step of it is
+automatic. Your job ends at step 2.
+
+1. **Work on a branch in your own worktree.** Any name is fine - `fix/<slug>`
+   is the convention. Never commit on `main`; it is a protected mirror.
+2. **Push the branch** over SSH (`git push origin HEAD:refs/heads/<branch>`).
+   **That is the end of your job.** Do not open the pull request yourself, do
+   not merge, do not watch CI (10.8.3). Report the branch name and stop.
+3. `agent-open-pr.yml` opens the pull request within seconds of the branch
+   appearing - for ANY branch name, not only `agent/*` (that was the gap that
+   stranded three agents' finished work on 2026-09-02).
+4. `agent-autopilot.yml` enables squash auto-merge. The required checks run on
+   the estate's own Hetzner runners (`vars.CI_RUNNER`), and GitHub merges when
+   they are green. Red checks never merge (5.8).
+5. **`publish-club-arena.yml` publishes.** On merge it builds the bundle,
+   runs the four-way sharded test gate, and pushes `dist/` into the World Hub
+   repo's `public/hub/club-arena/` with a GitHub App token. Vercel then deploys
+   the World Hub, which is what serves `smarter.poker/hub/club-arena`. It runs
+   on the Hetzner box too, so the only path to production no longer depends on
+   GitHub's hosted pool.
+6. **Verify** by reading, never by assuming:
+   `curl -s https://smarter.poker/hub/club-arena/build-info.json` - `ca_sha`
+   must equal the squash commit on `main`. Nothing else counts as deployed.
+
+**Three nets catch a publish that fails, all automatic:** the `*/30` catch-up
+cron inside the publisher, `publish-watchdog.yml` (re-dispatches up to three
+times, then raises an in-app notification), and the orphan sweep in
+`agent-autopilot.yml` that opens a pull request for any branch under a day old
+that has none. If production is behind `main` for more than ~25 minutes,
+something is genuinely broken - read the watchdog issue it filed.
+
+**There is no second publisher.** `build-for-world-hub.yml` was deleted on
+2026-09-02; for ninety minutes both existed on separate concurrency groups and
+every merge ran two full publishes. `tests/no-commit-left-behind.law.test.ts`
+now counts publishers and requires exactly one. Club Arena cannot bypass the
+World Hub: `club-arena/vercel.json` has `deploymentEnabled: false` on purpose,
+and the bundle is served from the World Hub's `public/`.
+
+**Local preview only, NOT a deploy path:**
 
 ```bash
 cd ~/Documents/Smarter-Poker-World-Hub
 bash scripts/sync-club-arena.sh "feat(ca): <describe what changed>"
 ```
 
-That script builds CA with NODE_ENV=production, copies the new build to the Hub, and stages it for local preview.
-
-**To actually deploy to production:**
-
-1. Commit your changes in the `club-arena` repository.
-2. `git push` to `main` in `club-arena`.
-3. A GitHub Action (`build-for-world-hub.yml`) will automatically build and sync it to the World Hub repository, which triggers the Vercel deploy.
-
-`SENTRY_AUTH_TOKEN/ORG/PROJECT` are read from `~/Documents/club-arena/.env` if
-not already exported. Bulky static dirs (`cards/`, `images/`, `club-logos/`,
-`videos/`) are preserved — they're not in a fresh build.
-
-**Legacy names** still work but just forward to the canonical script:
-
-- `WH scripts/build-club-arena.sh` → `sync-club-arena.sh`
-- `CA scripts/sync-to-world-hub.sh` → `sync-club-arena.sh`
-
-For post-deploy verification that production is serving your commit, follow up
-with `bash scripts/git-safe-push.sh` in the WH repo — but `sync-club-arena.sh`
-already exits non-zero on build/push failure.
+That builds CA with NODE_ENV=production and stages it into the Hub for local
+preview. It does not push and cannot publish; its "Pushed" line is a vestige.
+`SENTRY_AUTH_TOKEN/ORG/PROJECT` come from `~/Documents/club-arena/.env`.
+Legacy names `build-club-arena.sh` and `sync-to-world-hub.sh` forward to it.
 
 ### 1.1.5 SERVER-SIDE PROTECTION (APPLIED - this section is history)
 
@@ -307,7 +347,7 @@ Do NOT audit 10 items and then ask "what should I fix?" -- fix them as you go.
 ---
 
 8. NEVER PUSH A RED TEST (Dan 2026-08-21, binding). `npx vitest run tests/` in
-   `build-for-world-hub.yml` is what PUBLISHES the bundle. A failing test does
+   `publish-club-arena.yml` is what PUBLISHES the bundle. A failing test does
    not fail a report - it stops the World Hub sync for every agent and every
    deploy, until a human notices. On 2026-08-21 that happened four times in one
    day, and every one was a test pushed alongside the feature it was meant to
@@ -544,7 +584,128 @@ matter what setting, however opt-in, is proposed to gate it. Enforced by
 
 ---
 
-## 11. AGENT NETWORK + DEPLOY PLAYBOOK (added 2026-07-23, binding; corrected same day after live use)
+---
+
+## 10.7 "EM BARS" MEANS EM DASHES (Dan, 2026-09-01, BINDING)
+
+**Dan, 2026-08-20, verbatim: "forbid the use of em bars anywhere."**
+**He means the punctuation mark, U+2014. Nothing else.**
+
+Several files quote that sentence, and `src/utils/titleCase.ts` renders it as
+"inside the entire club arena, and forbid the use of em bars anywhere" with
+nothing nearby to say the subject is punctuation. Read literally, "bars ...
+banned anywhere" looks like a rule about horizontal lines.
+
+**It has now been misread that way twice in two days, and both times it took
+the hamburger menu off every page in the app:**
+
+| PR    | What it did                                                                                                                                                                            | Undone by    |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| #2321 | Gear on all five menu triggers, approved rasters deleted, service-worker tombstones evicting them from players' caches, and `noThreeBarArtwork.law.test.ts` making restoration fail CI | #2401        |
+| #2429 | Same thing again with a six-tile "command grid", tombstones restored, law restored                                                                                                     | #2432 (this) |
+
+The loop is self-sustaining and does not need a human in it: the ban is written
+down _in the repo_, so the next agent to read the repo re-enforces it, reverts
+whoever undid it, and writes the law back. That is why it kept coming back
+within hours.
+
+### The rule, stated so it cannot be misread
+
+- "em bars" = **em dashes** = the character `—`. A **copy** rule about the
+  characters inside text a player reads.
+- It says **nothing** about artwork, icons, SVG geometry, rasters, or anything
+  shaped like a line.
+- **It does not ban the hamburger menu.** The hamburger is the menu, on every
+  trigger, in Club Arena and everywhere else.
+
+### If you are about to ban "bars"
+
+Stop. If the word "bars" in something you are reading has led you toward an
+icon, a raster, an SVG path or a header composite, you have misread this
+sentence. Go read `tests/approvedHamburgerGearGuard.law.test.ts`, which pins
+every menu trigger, the md5 of every hamburger raster, and the banned
+replacement names (`command-center-v1`, `CommandGridIcon`) by name.
+
+Do not "resolve" the conflict by writing a third law. Two laws demanding
+opposite artwork is not a stricter repo, it is a coin flip decided by whichever
+test the next agent notices first.
+
+---
+
+## 10.8 LAWS LIVE IN docs/LAWS.md, AND YOU NEVER WAIT ON CI (added 2026-09-01, binding)
+
+**1. THE LAW REGISTRY.** Every `*.law.test.*` file must have a row in
+`docs/LAWS.md` — `tests/law-registry.law.test.ts` enforces it. Before
+enforcing any law, confirm it exists on **current `origin/main`**, never in
+your local tree: stale worktrees carrying retired laws are how the hamburger
+revert war ran for two days. If two laws (or two CLAUDE.md copies) demand
+opposite things, STOP and ask Dan; never write a third law and never delete
+the other side on your own authority.
+
+**2. INTENTIONAL REVERTS NEED A HUMAN.** The Silent Revert Guard no longer
+accepts `[allow-revert]` or the word "revert" in a commit message on its own —
+on 2026-08-31 an agent amended the token into its own message to get past the
+guard. A detected revert merges only when Dan applies the `revert-approved`
+label to the PR (the check re-runs itself on labeling, and the guard files an
+issue asking for it). If main is broken, prefer a forward fix; it needs no
+label. Do not edit commit messages to route around the guard.
+
+**3. NEVER SET A TIMER TO WATCH CI.** Playbook 7b is binding: push, open the
+PR, report the PR number, END YOUR SESSION. Autopilot merges it, the publisher
+ships it, the watchdogs verify it — all server-side. "I've set another brief
+timer and will be back shortly" is the forbidden `wait_and_merge.sh` written
+in prose; it burns tokens and adds nothing. Checking ONCE at the end to say
+why something is BLOCKED is fine. Sitting in a loop is not.
+
+**4. WORKTREES ARE DISPOSABLE.** `scripts/prune-stale-worktrees.sh` removes
+any worktree that is clean, pushed, and idle for 72 hours. Do not keep state
+you care about only in a worktree: commit and push it, or it will eventually
+be pruned (pushed branches lose nothing — the commits live on origin).
+
+---
+
+## 11. AGENT NETWORK + DEPLOY PLAYBOOK
+
+### 11.0 FIRST: WHICH ENVIRONMENT ARE YOU IN? (added 2026-09-01, binding)
+
+Everything below 11.0 was written for the CLOUD sandbox and is still true
+there. It is WRONG for a Cowork session running on Dan's Mac, and following it
+there costs an hour before you find out. Check first, in this order:
+
+**If you have `mcp__counselors__host_terminal`, you are on the Mac. Use it for
+everything.** Real bash on Dan's machine, where `git@github.com` over SSH works
+and `api.github.com` is reachable. Then:
+
+- **Claim a worktree** (AGENT-PLAYBOOK): `git worktree add -b fix/<slug>
+~/Documents/.agent-trees/club-arena/<name> origin/main`. Takes about 40
+  seconds - launch it with `nohup ... &` and return immediately, because the
+  tool kills the process group when a call times out.
+- **`node` is NOT on the default PATH.** Prefix every command with
+  `export PATH="$HOME/.nvm/versions/node/$(ls ~/.nvm/versions/node | tail -1)/bin:$PATH"`.
+- **The pre-push hook takes about three minutes** (guards, `tsc`, then the tests
+  covering your diff). Launch the push with
+  `nohup git push > /tmp/push.log 2>&1 < /dev/null & disown`, return
+  immediately, and poll the log in later calls. Never `--no-verify`.
+- **`gh` is not installed.** Open pull requests with `curl` against the REST
+  API. The token is `GITHUB_TOKEN` in `~/Documents/club-arena/.env`.
+- **Rebasing your branch onto main is refused by a ref-guard hook.** Use
+  `git merge origin/main` instead. Section 12 still forbids rebasing `main`.
+
+**The GitHub MCP (`mcp__github__*`) returns `Bad credentials` as of
+2026-09-01.** Every call fails, including read-only ones. Do not debug it and
+do not build a plan around it; use the host terminal. If you are reading this
+long after that date, one call will tell you whether it is back.
+
+**Do not hand-edit `scripts/ci/supabase-schema-manifest.json` or
+`supabase-columns-manifest.json`.** They are nightly snapshots and were the
+most-changed files on main - 25 and 14 commits in one day - which made every
+migration-bearing branch conflict with every other one. Declare what you
+created in your own file under `scripts/ci/schema-manifest.d/`. See the README
+there.
+
+---
+
+### 11.1 The cloud sandbox (added 2026-07-23; corrected same day after live use)
 
 Cloud Cowork sessions have a locked-down sandbox. Learn the map ONCE and never
 ask Dan for a manual handoff again:
@@ -750,3 +911,57 @@ is deleted** — the backup branch and the stash are both printed at the end.
 World Hub note: that clone already carries an equivalent hook, but only in
 `.git/hooks/` — untracked, so it dies on any fresh clone. This repo's version is
 committed precisely so it cannot be lost that way.
+
+---
+
+## 13. THE HOURLY MAINTENANCE BREAK AND THE PLATFORM FREEZE (Dan 2026-09-01, BINDING)
+
+**The engine restarts at :55 of EVERY hour, inside an announced five-minute
+break, and the whole platform freezes for it.** If you read anything - in this
+repo, another repo, or a stale worktree - saying the engine restarts at 7am
+and 7pm, or in five Chicago windows, that text is OLD. This section wins.
+(That is exactly how the hamburger revert war ran for two days: a stale copy
+taught the next agent to "fix" the current behaviour back.)
+
+Dan, verbatim: "program the engine restart to be every hour on the :55 ...
+THE ENTIRE PLATFORM NEEDS TO FREEZE FOR THE 5 MINUTES, NO BUY INS, NO CHIP
+MOVEMENTS ... HORSES SHOULD NOT STAND UP OR ROTATE, EVERYTHING JUST FREEZES,
+THEN PICKS BACK UP EXACTLY AS IT WAS."
+
+The timeline: :53 every table is told to finish its hand (`MaintenanceBreak`
+announces, `pauseForMaintenance` parks each engine at the top of its loop).
+:55 every table is parked, the 5:00 countdown starts, `/health` opens
+`maintenance.readyForRestart`, and the deploy workflow - which built the
+image BEFORE the gate, while play continued - cuts over. ~:58 the new engine
+boots, adopts the persisted break row and re-parks its fleet. :00 the thaw
+(`fn_thaw_platform`) gives every in-flight deadline back the frozen minutes,
+then every table resumes together.
+
+Rules that follow from it, all enforced:
+
+1. **The freeze lives in Postgres** (`zz_freeze_guard` BEFORE triggers on the
+   seven money/seat tables + `fn_platform_frozen`), because the engine is
+   dead for ~2 of the 5 minutes and pg_cron does not stop with it. Do not
+   move it into engine memory; that guard is absent exactly when needed.
+2. **Whoever paused a table resumes it.** The maintenance break and
+   hand-for-hand are independent authorities (`maintenancePaused` vs
+   `handForHandPaused`); never let one lift the other's pause.
+3. **Never gate a table on `tables.status = 'paused'`** -
+   `cash_tables_needing_engine` abandons it. The break is the single row in
+   `engine_maintenance_break`.
+4. **Deadlines are thawed, not burned.** If you add a wall-clock deadline a
+   player can lose to (a hold, a window, a prompt), add it to
+   `fn_thaw_platform` in the same PR, or a five-minute break silently eats it.
+5. **Sweeps check `isMaintenanceFrozen()`** before moving money or seats.
+   A new periodic sweep that moves either gets the gate in the same PR.
+6. **Fleet-level alert rules carry the break guard**
+   (`unless max_over_time(poker_maintenance_break_active[6m]) == 1`), or they
+   page hourly about a stop we scheduled.
+7. **The constants are law**: `tests/the-break-clocks-agree.law.test.ts` pins
+   the :55 minute, cron ticks, freeze ceiling and windows across all five
+   surfaces. If you deliberately change one, change them together with the
+   law, in one commit.
+
+Full history and rationale: `docs/changelog/2026-09-01-scheduled-maintenance-break.md`
+and `docs/changelog/2026-09-01-total-platform-freeze.md`. Remaining backlog:
+issue #2563.

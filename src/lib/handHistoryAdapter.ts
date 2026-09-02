@@ -13,7 +13,7 @@
 import type { HandRecord as ServiceHandRecord } from '../services/HandHistoryService';
 import type { HandRecord as PanelHandRecord } from '../components/table/HandHistoryPanel';
 import type { ShareableHand, ShareableCard, ShareableAction } from '../components/table/ShareHand';
-import { toCardCodes } from '../utils/cardCode';
+import { toCardCodes, toCardCode } from '../utils/cardCode';
 
 /**
  * Dan 2026-08-15 — HandRecord adapter (build fix).
@@ -81,6 +81,15 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
             | 'allin'
             | 'discard',
           amount: a.amount,
+          /* PHASE 4 COMPLETION 2026-09-01: the viewer's own thrown card, as a
+             canonical code because that is the only card shape this panel
+             renders. `toCardCode` because the store writes the suit as a WORD
+             (`{rank:'9',suit:'hearts'}`) and taking the last character of that
+             would print the nine of hearts as a spade - the exact bug that
+             produced `UNDEFINE` on the board, see utils/cardCode.ts. Undefined
+             on every other player's discard: the service only ever fills it
+             for rows RLS let this viewer read. */
+          discardedCard: a.discarded_card ? toCardCode(a.discarded_card) : undefined,
         })),
       pot: 0, // not stored per street — only the final pot is persisted
     }))
@@ -197,7 +206,16 @@ export function adaptServiceHandToPanel(h: ServiceHandRecord, heroId: string): P
    invented number to whoever opened the link. `ShareablePlayer.stack` is
    optional so the figure can be omitted; omitted is what an unknown is. */
 
-const SHARE_VARIANTS = ['NLH', 'PLO4', 'PLO5', 'PLO6', 'PLO8', 'Short Deck', 'Pineapple'] as const;
+const SHARE_VARIANTS = [
+  'NLH',
+  'PLO4',
+  'PLO5',
+  'PLO6',
+  'PLO8',
+  'Short Deck',
+  // 2026-09-01: the engine deals CRAZY Pineapple. See handFormat.ts.
+  'Crazy Pineapple',
+] as const;
 
 /** Widen a stored game_type onto the share union without silently mislabelling.
     Order matters: PLO8 must be tested before PLO, and SHORT before anything
@@ -205,7 +223,7 @@ const SHARE_VARIANTS = ['NLH', 'PLO4', 'PLO5', 'PLO6', 'PLO8', 'Short Deck', 'Pi
     records as having happened. */
 export function toShareVariant(gameType: string | undefined): ShareableHand['variant'] {
   const g = (gameType || '').toUpperCase().replace(/[\s_-]/g, '');
-  if (g.includes('PINEAPPLE')) return 'Pineapple';
+  if (g.includes('PINEAPPLE')) return 'Crazy Pineapple';
   if (g.includes('SHORT')) return 'Short Deck';
   if (g.includes('PLO8') || g.includes('OMAHA8') || g.includes('HILO')) return 'PLO8';
   if (g.includes('PLO6')) return 'PLO6';

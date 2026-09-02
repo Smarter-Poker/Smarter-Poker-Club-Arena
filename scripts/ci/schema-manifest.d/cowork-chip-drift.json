@@ -2,6 +2,7 @@
   "_owner": "fix/a-correction-is-not-a-mint",
   "tables": ["ca_ratchet_baselines", "ca_tournament_conservation_samples"],
   "functions": [
+    "atomic_distribute_rake",
     "fn_backpay_unfinalised_bounty_pools",
     "fn_ca_completed_without_a_champion",
     "fn_ca_prize_overpay_count",
@@ -11,6 +12,10 @@
     "fn_ca_ratchet_watch",
     "fn_ca_reconcile_owned_entity_types",
     "fn_ca_reconciler_delete_unscoped",
-    "fn_ca_tournament_conservation_confirm"
+    "fn_ca_tournament_conservation_confirm",
+    "fn_ca_tournament_settlement_mismatch",
+    "fn_ca_tournament_underpaid_count",
+    "fn_emit_managed_game_row_event",
+    "record_rake"
   ]
 }

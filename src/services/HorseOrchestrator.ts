@@ -2418,54 +2418,12 @@ class HorseOrchestrator {
     this.errors.push(`${new Date().toISOString()} - ${msg}`);
   }
 
-  /**
-   * Enhancement #10: Track horse fleet performance.
-   * Queries total wins/losses for horse accounts and logs periodic stats.
-   * Emits data via console for admin observability.
-   */
-  private async trackHorsePerformance(): Promise<void> {
-    try {
-      // Count total active horse seats
-      const { count: seatedCount } = await supabase
-        .from('table_seats')
-        .select('id', { count: 'exact', head: true })
-        .not('horse_id', 'is', null)
-        .eq('status', 'active')
-        .is('left_at', null);
-
-      // Count horse wins in recent hands (last 100 hands across all tables)
-      const { data: recentHands } = await supabase
-        .from('hand_results')
-        .select('winner_id, pot_size')
-        .order('created_at', { ascending: false })
-        .limit(100);
-
-      if (recentHands && recentHands.length > 0) {
-        // Look up which winners are horses
-        const winnerIds = [...new Set(recentHands.map((h) => h.winner_id).filter(Boolean))];
-        const { data: horseProfiles } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('is_horse', true)
-          .in('id', winnerIds);
-
-        const horseIdSet = new Set((horseProfiles || []).map((p) => p.id));
-        const horseWins = recentHands.filter((h) => horseIdSet.has(h.winner_id));
-        const totalPotWon = horseWins.reduce((acc, h) => acc + (h.pot_size || 0), 0);
-        const winRate =
-          recentHands.length > 0 ? Math.round((horseWins.length / recentHands.length) * 100) : 0;
-
-        console.debug(
-          `[Orchestrator] Horse Fleet: ${seatedCount || 0} seated, ` +
-            `${horseWins.length}/${recentHands.length} recent wins (${winRate}%), ` +
-            `$${totalPotWon.toLocaleString()} total pots won`
-        );
-      }
-    } catch (err: any) {
-      // Non-critical; silently fail
-      console.debug(`[Orchestrator] Performance tracking skipped: ${err.message}`);
-    }
-  }
+  /* AUDIT 2026-09-01 - DEAD METHOD REMOVED. `trackHorsePerformance()` had no
+     caller anywhere in src/ or server/src/, and its only effect was a
+     console.debug. It also read `hand_results`, a table that does not exist in
+     production, so `recentHands` was always null and the win-rate block inside
+     it could never run. Nothing observable is lost. Horse fleet telemetry, if
+     wanted, reads hand_history (winners jsonb) and needs a caller. */
 }
 
 // Singleton

@@ -40,9 +40,16 @@ interface TopRecipient {
 
 export default function AgentAnalyticsDashboard({ userId, clubId }: AgentAnalyticsDashboardProps) {
   const [data, setData] = useState<TxnRecord[]>([]);
-  const [clawbackLogs, setClawbackLogs] = useState<
-    { recovered_amount: number; clawed_back_at: string }[]
-  >([]);
+  /* AUDIT 2026-09-01 - DEAD STATE REMOVED. `clawbackLogs` was declared, set from
+     a query against `clawback_audit_log`, and then read by nothing: no JSX ever
+     rendered it. The table does not exist in production either (the similarly
+     named `clawbot_audit_log` is an automation bot's log - task_id, severity,
+     clawbot_version - and is NOT agent clawback data, so pointing this at it
+     would have been worse than leaving it), so every agent dashboard load paid
+     for a round trip that errored and fed a value nobody displayed. Same shape
+     as the dead GTO advisor block removed from TablePage on 2026-08-25. If
+     clawback history is wanted it comes back as a rendered panel over a table
+     that exists. */
   const [loading, setLoading] = useState(true);
   const isMounted = useIsMounted();
 
@@ -63,18 +70,8 @@ export default function AgentAnalyticsDashboard({ userId, clubId }: AgentAnalyti
         .order('created_at', { ascending: false })
         .limit(500);
 
-      // Fetch clawback audit logs
-      const { data: logs } = await supabase
-        .from('clawback_audit_log')
-        .select('recovered_amount, clawed_back_at')
-        .eq('agent_user_id', userId)
-        .eq('club_id', resolvedClub)
-        .order('clawed_back_at', { ascending: false })
-        .limit(100);
-
       if (isMounted.current) {
         setData(txns || []);
-        setClawbackLogs(logs || []);
       }
     } catch (err) {
       reportError(err, 'AgentAnalyticsDashboard.Error');

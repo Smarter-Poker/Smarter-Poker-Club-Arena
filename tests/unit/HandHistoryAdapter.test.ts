@@ -382,6 +382,73 @@ describe('turning a recorded hand into a share link', () => {
     expect(JSON.stringify(s)).not.toContain('discard');
   });
 
+  /**
+   * PHASE 4 COMPLETION 2026-09-01 — the card you threw reaches the panel that
+   * slides out AT THE TABLE, which is the surface a player actually reviews a
+   * hand on mid-session. Phase 4 wired the standalone replay and stopped, so
+   * this one still printed the word "discard" and nothing else.
+   *
+   * The privacy is Postgres's: `hand_discards` is read through
+   * `hand_discards_read_own`, so the service can only ever fill
+   * `discarded_card` for the viewer. These pin the two halves the adapter is
+   * responsible for - carry it when it is there, and never invent it when it
+   * is not.
+   */
+  it('carries the discarded card onto the panel row when the service has it', () => {
+    const hand = adaptServiceHandToPanel(
+      baseHand({
+        actions: [
+          {
+            street: 'pineapple_discard',
+            player_id: HERO,
+            action: 'discard',
+            amount: 0,
+            discarded_card: { rank: '9', suit: 'hearts' },
+          },
+        ],
+      }),
+      HERO
+    );
+    const street = hand.streets.find((st) => st.name === 'pineapple_discard');
+    expect(street?.actions[0].discardedCard).toBe('9h');
+  });
+
+  it('leaves it undefined for a discard the viewer may not see', () => {
+    const hand = adaptServiceHandToPanel(
+      baseHand({
+        actions: [
+          { street: 'pineapple_discard', player_id: VILLAIN, action: 'discard', amount: 0 },
+        ],
+      }),
+      HERO
+    );
+    const street = hand.streets.find((st) => st.name === 'pineapple_discard');
+    expect(street?.actions[0].discardedCard).toBeUndefined();
+  });
+
+  it('never lets the thrown card into a SHARED hand', () => {
+    /* A shared hand is a public link. The discard is dropped from the
+       shareable entirely - this pins that the new field did not sneak in
+       behind it. */
+    const hand = adaptServiceHandToPanel(
+      baseHand({
+        actions: [
+          {
+            street: 'pineapple_discard',
+            player_id: HERO,
+            action: 'discard',
+            amount: 0,
+            discarded_card: { rank: '9', suit: 'hearts' },
+          },
+        ],
+      }),
+      HERO
+    );
+    const s = panelHandToShareable(hand, 'T');
+    expect(JSON.stringify(s)).not.toContain('discardedCard');
+    expect(JSON.stringify(s)).not.toContain('9h');
+  });
+
   it('survives a hand that ended before the flop', () => {
     const hand = adaptServiceHandToPanel(baseHand({ community_cards: [] }), HERO);
     const s = panelHandToShareable(hand, 'T');

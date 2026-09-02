@@ -85,7 +85,24 @@ function changedMigrations(base) {
   return out
     .split('\n')
     .map((l) => l.trim())
-    .filter((l) => l.startsWith(DIR) && l.endsWith('.sql'));
+    .filter((l) => l.startsWith(DIR) && l.endsWith('.sql'))
+    // BACKFILL EXEMPTION (2026-09-01). A file whose first line marks it as a
+    // recovered record of an ALREADY-APPLIED migration is history, not a new
+    // migration awaiting apply. This gate asks "does what this migration
+    // declares exist in the live schema NOW" - the right question for new
+    // work, a false positive for a backfill of an old migration whose object
+    // was since dropped, renamed or superseded (backup tables, a removed
+    // column, a replaced function). Those objects genuinely ran and are
+    // genuinely gone; the byte-exact record is correct and the live schema is
+    // correct. The gate stays strict on every genuinely new migration. Marker
+    // written by scripts/ci/backfill-unrecorded-migrations.mjs.
+    .filter((f) => {
+      try {
+        return !/^--\s*(BACKFILLED|UNRECOVERABLE STUB)\b/.test(readFileSync(join(REPO, f), 'utf8'));
+      } catch {
+        return true; // unreadable: check it rather than skip it
+      }
+    });
 }
 
 /** Objects a migration CREATES or ADDS. Drops and alters of existing objects

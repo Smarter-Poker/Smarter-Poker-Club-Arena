@@ -38,7 +38,7 @@ set -euo pipefail
 [ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
 
 SWAP_GB="${SWAP_GB:-8}"
-VITEST_WORKERS="${VITEST_WORKERS:-2}"
+VITEST_WORKERS="${VITEST_WORKERS:-4}"
 NODE_HEAP_MB="${NODE_HEAP_MB:-3072}"
 PLAYWRIGHT_VERSION="${PLAYWRIGHT_VERSION:-1.58.0}"
 
@@ -128,13 +128,26 @@ say "tools"
 if ! command -v node >/dev/null; then
   curl -fsSL https://deb.nodesource.com/setup_20.x -o /tmp/ns.sh && bash /tmp/ns.sh >/dev/null && apt-get install -y -qq nodejs >/dev/null
 fi
-apt-get install -y -qq jq >/dev/null 2>&1 || true
+# jq for the watchdogs; psql because post-deploy-e2e certifies the cashier
+# database contract with it and a hosted runner ships it preinstalled - the
+# first routed run on this box failed with "psql: command not found" on a step
+# that had never failed on hosted. Everything a routed workflow shells out to
+# must be here, or moving the job is a regression dressed as a saving.
+apt-get install -y -qq jq postgresql-client unzip zip >/dev/null 2>&1 || true
 if ! command -v gh >/dev/null; then
   curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /usr/share/keyrings/githubcli-archive-keyring.gpg
   echo "deb [arch=amd64 signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list
   apt-get update -qq >/dev/null && apt-get install -y -qq gh >/dev/null
 fi
-printf '   node %s | gh %s | jq %s\n' "$(node -v)" "$(gh --version | head -1 | awk '{print $3}')" "$(jq --version)"
+printf '   node %s | gh %s | jq %s | psql %s\n' "$(node -v)" "$(gh --version | head -1 | awk '{print $3}')" "$(jq --version)" "$(psql --version | awk '{print $3}')"
+
+# ── 5b. every binary a routed workflow shells out to must exist here ─────────
+# A hosted runner ships hundreds of tools; this box ships what is installed.
+# Scanning the workflows is the only way to know the set stays complete.
+say "routed-workflow tool audit"
+MISSING=""
+for t in psql gh jq curl git node npm npx python3 ssh; do command -v "$t" >/dev/null || MISSING="$MISSING $t"; done
+[ -z "$MISSING" ] && echo "   every CLI the workflows call is present" || { echo "   MISSING:$MISSING"; exit 1; }
 
 # ── 6. browser system libraries (once; the binaries cache under ~ci) ─────────
 say "playwright system deps (chromium + webkit)"

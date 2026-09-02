@@ -65,4 +65,38 @@ describe('CI box provisioning', () => {
   it('the runner setup script sends you here', () => {
     expect(repo('scripts/ci/setup-selfhosted-runner.sh')).toContain('provision-ci-box.sh');
   });
+
+  it('installs every CLI a routed workflow shells out to', () => {
+    // The first post-deploy-e2e run on the box failed on a step that had never
+    // failed on hosted: "psql: command not found". A hosted image ships
+    // hundreds of tools; this box ships what the provisioner installs, so the
+    // provisioner has to know what the workflows call. Scan them and check.
+    const workflows = [
+      '.github/workflows/ci.yml',
+      '.github/workflows/build-for-world-hub.yml',
+      '.github/workflows/post-deploy-e2e.yml',
+    ]
+      .map(repo)
+      .join('\n');
+    const provision = repo(PROVISION);
+    // Tools that are not on a bare Ubuntu image and that workflows invoke.
+    for (const tool of ['psql', 'gh', 'jq']) {
+      if (new RegExp(`(^|[ |;(\`])${tool}( |$)`, 'm').test(workflows)) {
+        expect(provision, `${tool} is called by a workflow but not installed`).toMatch(
+          new RegExp(
+            `(apt-get install[^\\n]*\\b${tool === 'psql' ? 'postgresql-client' : tool}\\b|install -y -qq ${tool})`
+          )
+        );
+      }
+    }
+    // and the provisioner audits itself at the end
+    expect(provision).toMatch(/routed-workflow tool audit/);
+  });
+
+  it('defaults vitest to 4 workers - measured, not guessed', () => {
+    // cap=2 under load: the lone full suite ran 11m+ (hosted: 12.9m, no gain).
+    // cap=4 on a calm 8-core box: 3.1m. 8 x 4 = 32 threads is 4x oversubscribed
+    // at the absolute worst moment and typical concurrency is 2-4 jobs.
+    expect(repo(PROVISION)).toMatch(/VITEST_WORKERS="\$\{VITEST_WORKERS:-4\}"/);
+  });
 });

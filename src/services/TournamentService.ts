@@ -16,6 +16,7 @@ import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { fetchGameCreationAccess } from './GameAccessService';
+import { gameCreationDeniedMessage } from '../lib/gameCreationAccess';
 import { parseBlindStructure, parsePayoutStructure } from '../utils/parseBlindStructure';
 /* The canonical level-length reader. It is the ONLY one that gets the
    three-spelling precedence right - see getCurrentLevelState. Pure, no React,
@@ -25,6 +26,7 @@ import type { Tournament, TournamentPlayer } from '../types/database.types';
 import type { TournamentGameVariant } from '../config/tournamentVariants';
 import { reportError } from '../utils/errorReporter';
 import { computePlacePrize } from '../lib/payoutMath';
+import { gameManagementService } from './GameManagementService';
 
 // AUDIT M19: fn_unregister_from_tournament returns a `reason` for ordinary
 // refusals rather than raising, so a player is told why - "you are already
@@ -689,20 +691,12 @@ class TournamentService {
    * Create a new tournament
    */
   async createTournament(clubId: string, config: TournamentConfig): Promise<Tournament> {
-    // Union governance (2026-08-19): clubs inside a union cannot create
-    // union-visible tournaments — those are created at the union level.
-    // A union club's own staff MAY still create a PRIVATE club tournament
-    // (is_private = true, visible only inside the club, never in the union
-    // lobby). Union owners/admins keep building union-visible games. The
-    // fn_create_tournament RPC + trg_tournaments_union_ownership trigger
-    // enforce the same rule server-side.
-    if (!config.isXmtt && !config.isPrivate) {
-      const resolvedClubId = await resolveClubUUID(clubId);
-      const access = await fetchGameCreationAccess(resolvedClubId);
-      if (!access.allowed && access.reason === 'union_only') {
-        config.isPrivate = true;
-      }
-    }
+    // Union governance: member-club staff lose every tournament-creation path,
+    // including private tournaments. Union owners/admins remain authorized by
+    // fn_game_creation_access and create against a selected host club.
+    const resolvedClubId = await resolveClubUUID(clubId);
+    const access = await fetchGameCreationAccess(resolvedClubId);
+    if (!access.allowed) throw new Error(gameCreationDeniedMessage(access));
 
     // XMTT validation: require unionId and verify the union has crossClubTournaments enabled
     if (config.isXmtt) {
@@ -1163,101 +1157,16 @@ class TournamentService {
   // ─────────────────────────────────────────────────────────────────────────────
 
   /**
-   * Cancel a tournament and refund ALL registered players' buy-ins.
-   * Tournaments are ONLY cancelled when fewer than 3 players have joined.
-   * This is the sole cancellation condition — tournaments never cancel for other reasons.
+   * Compatibility entry point for an operator cancelling an empty tournament.
+   * The database refuses this command after the first registration. Recovery
+   * refunds remain service-role-only and are not exposed to the browser.
    */
   async cancelTournament(
     tournamentId: string,
-    reason: string = 'Insufficient players (minimum 3 required)'
+    _reason: string = 'Cancelled By Operator'
   ): Promise<{ refunded: number; playersRefunded: number }> {
-    const tournament = await this.getTournament(tournamentId);
-    if (!tournament) throw new Error('Tournament not found');
-
-    if (tournament.status !== 'ANNOUNCED' && tournament.status !== 'REGISTERING') {
-      throw new Error('Can only cancel tournaments that have not started yet');
-    }
-
-    // Verify cancellation reason: only cancel if < 3 players
-    if ((tournament.current_players || 0) >= 3) {
-      throw new Error('Cannot cancel - tournament has 3 or more players registered');
-    }
-
-    // RAKE-AUDIT 2026-07-24: fetch the players BEFORE the atomic cancel — the
-    // RPC deletes tournament_players rows, so the old post-RPC query always
-    // returned empty and no BALANCE_UPDATED events ever fired for refunds.
-    const { data: players, error: playersErr } = await supabase
-      .from('tournament_players')
-      .select('user_id')
-      .eq('tournament_id', tournamentId);
-    // ROUND 8 (2026-08-29): reported, not thrown - the cancel itself refunds
-    // through the atomic RPC regardless. A failed read here only meant the
-    // BALANCE_UPDATED nudges never fired, so refunded players saw stale
-    // balances until their next reload, with nothing recorded anywhere.
-    if (playersErr) {
-      reportError(playersErr, 'TournamentService.cancel_roster_read_failed', { tournamentId });
-    }
-
-    // Execute atomic cancellation and refund (prevents partial refunds on server crash)
-    // RAKE-AUDIT 2026-07-24: the RPC now refunds ONLY real (non-horse) players
-    // and reverses the collected entry fees in the rake ledger.
-    const { data: cancelResult, error: cancelError } = await retryAsync(
-      () =>
-        supabase.rpc('atomic_cancel_tournament', {
-          p_tournament_id: tournamentId,
-          p_admin_id: '00000000-0000-0000-0000-000000000000', // System action
-        }),
-      3
-    );
-
-    if (cancelError) {
-      reportError(cancelError, 'TournamentService.CRITICAL');
-      throw new Error(`Failed to cancel tournament: ${cancelError.message}`);
-    }
-
-    // Process result
-    const refunded = cancelResult?.total_refunded || 0;
-    const playersRefunded = cancelResult?.refunded_count || 0;
-
-    if (players && players.length > 0) {
-      players.forEach((p) => {
-        masterBus.emit('BALANCE_UPDATED', {
-          source: 'tournament_cancel_refund',
-          userId: p.user_id,
-        });
-      });
-    }
-    // Same defect shape as D7: an unchecked `.update()`. If this one is denied
-    // the refunds have already happened but the row still reads REGISTERING, so
-    // the lobby keeps advertising a tournament nobody is in. Surfaced rather
-    // than thrown - the refund is the part that moved money and it succeeded.
-    const { error: cancelStatusError } = await supabase
-      .from('tournaments')
-      .update({
-        status: 'CANCELLED',
-        ended_at: new Date().toISOString(),
-        prize_pool: 0,
-      })
-      .eq('id', tournamentId);
-    if (cancelStatusError) {
-      reportError(cancelStatusError, 'TournamentService.cancelTournament_status_update', {
-        tournamentId,
-      });
-    }
-
-    console.debug(
-      `[TournamentService] Cancelled tournament ${tournament.name}: refunded ${playersRefunded} players, ${refunded} chips`
-    );
-
-    // Emit completion event (cancelled = complete from a lifecycle perspective)
-    masterBus.emit('TOURNAMENT_CANCELLED', {
-      tournamentId,
-      clubId: tournament.club_id,
-      reason,
-    });
-    masterBus.emit('TOURNAMENT_COMPLETE', { tournamentId, clubId: tournament.club_id });
-
-    return { refunded: refunded, playersRefunded };
+    await gameManagementService.close('tournament', tournamentId);
+    return { refunded: 0, playersRefunded: 0 };
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1306,17 +1215,11 @@ class TournamentService {
     }
     if (!players || players.length === 0) throw new Error('No players registered');
 
-    // Auto-cancel if fewer than 3 players — minimum for a valid tournament
+    // A short field waits for the server's sanctioned top-up/start path. The
+    // browser never destroys a registered tournament to satisfy a start click.
     if (players.length < 3) {
-      console.debug(
-        `[TournamentService] Auto-cancelling tournament ${tournament.name}: only ${players.length} players (minimum 3 required)`
-      );
-      await this.cancelTournament(
-        tournamentId,
-        `Only ${players.length} player(s) registered - minimum 3 required`
-      );
       throw new Error(
-        `Tournament cancelled: only ${players.length} player(s) registered (minimum 3 required)`
+        `Tournament Needs At Least 3 Players To Start. ${players.length} Currently Registered.`
       );
     }
 

@@ -26,6 +26,7 @@ import {
   remainingPoolAfterAwards,
   isSpinTournament,
   trimStructureToField,
+  spinStoredStructureIsStale,
 } from './payoutStructure.js';
 import { computePlacePrize } from './payoutMath.js';
 import { SPIN_TIERS } from '../config/spinSpec.js';
@@ -86,11 +87,71 @@ describe('a Spin rebuilds its own split from the spec', () => {
 });
 
 describe('resolvePayoutStructure', () => {
-  it('prefers the stored column when it is usable', () => {
+  it('prefers the stored column when it is usable, for a format that may choose one', () => {
+    const stored = [
+      { place: 1, percentage: 65 },
+      { place: 2, percentage: 35 },
+    ];
+    expect(resolvePayoutStructure({ payout_structure: stored, variant: 'mtt' })).toEqual(stored);
+  });
+
+  /* WAS: the same assertion with `variant: 'spin', spin_multiplier: 25`, i.e.
+     a stored winner-take-all beating the 80/12/8 the 25x tier owes. That is
+     the bug, re-encoded as law. A Spin's structure is a pure function of its
+     multiplier and nobody may author a different one, so a stored structure on
+     a Spin is only ever a COPY of the tier - and one that disagrees is stale,
+     not chosen. 62 completed spins at 10x+ are sitting in `tournaments` with
+     exactly that stale placeholder, having paid 100% to first place. */
+  it('lets the TIER outrank a stale stored column on a Spin', () => {
+    const stale = [{ place: 1, percentage: 100 }];
+    expect(
+      resolvePayoutStructure({ payout_structure: stale, variant: 'spin', spin_multiplier: 25 })
+    ).toEqual([
+      { place: 1, percentage: 80 },
+      { place: 2, percentage: 12 },
+      { place: 3, percentage: 8 },
+    ]);
+    expect(
+      resolvePayoutStructure({ payout_structure: stale, variant: 'spin', spin_multiplier: 10 })
+    ).toEqual([
+      { place: 1, percentage: 80 },
+      { place: 2, percentage: 20 },
+    ]);
+    // And the stale-column detector agrees, so a caller with a reporter can
+    // say the start-time rewrite never landed.
+    expect(
+      spinStoredStructureIsStale({ payout_structure: stale, variant: 'spin', spin_multiplier: 25 })
+    ).toBe(true);
+  });
+
+  it('leaves an honest stored column alone - below 10x the two agree exactly', () => {
+    const wta = [{ place: 1, percentage: 100 }];
+    for (const mult of [2, 3, 4, 5]) {
+      expect(
+        resolvePayoutStructure({ payout_structure: wta, variant: 'spin', spin_multiplier: mult }),
+        `${mult}x`
+      ).toEqual(wta);
+      expect(
+        spinStoredStructureIsStale({
+          payout_structure: wta,
+          variant: 'spin',
+          spin_multiplier: mult,
+        })
+      ).toBe(false);
+    }
+  });
+
+  it('falls back to the stored column when the ladder does not know the multiplier', () => {
+    // Pre-draw (null), and a retired tier such as the old 500x: the spec has
+    // nothing to say, so the column is all there is.
     const stored = [{ place: 1, percentage: 100 }];
     expect(
-      resolvePayoutStructure({ payout_structure: stored, variant: 'spin', spin_multiplier: 25 })
+      resolvePayoutStructure({ payout_structure: stored, variant: 'spin', spin_multiplier: null })
     ).toEqual(stored);
+    expect(
+      resolvePayoutStructure({ payout_structure: stored, variant: 'spin', spin_multiplier: 500 })
+    ).toEqual(stored);
+    expect(spinStoredStructureIsStale({ variant: 'spin', spin_multiplier: 500 })).toBe(false);
   });
 
   it('rebuilds a Spin whose column is missing or corrupt', () => {

@@ -75,6 +75,8 @@ import { tableStateHub } from './transport/TableStateHub.js';
 import { recoverStuckCompletingTournaments } from './tournament/tournamentRecovery.js';
 import { selectCompletingDue } from './tournament/completingDwell.js';
 import { TournamentManager } from './tournament/TournamentManager.js';
+import { isMaintenanceFrozen } from './maintenance/freezeState.js';
+import { raiseEngineAlert, resolveEngineAlert } from './services/engineAlerts.js';
 import { MaintenanceBreak } from './maintenance/MaintenanceBreak.js';
 import { createSupabaseMaintenanceBreakStore } from './maintenance/maintenanceBreakStore.js';
 import { ENGINE_START_BUDGET_MAX, nextEngineStartBudget } from './engineStartBudget.js';
@@ -370,6 +372,15 @@ export class GameServer {
    * itself. This one asks the DATABASE whether the tables it claims should be
    * dealing are actually producing hands.
    */
+  /**
+   * The maintenance-break suppression lives INSIDE the verifier now (see
+   * DealRateVerifier.check), not here. The first attempt fed it an empty
+   * table list during the break, and an empty list IS the below-floor
+   * condition - it primed the critical ClubArenaFleetFloorLost to fire on
+   * the third minute of every break. The verifier skips the whole check and
+   * resets its counters instead, which is the truthful statement: during a
+   * freeze there is nothing to verify, not a fleet of zero.
+   */
   private dealRateVerifier = new DealRateVerifier(() =>
     this.tableLivenessSnapshot()
       .filter((t) => t.dealable >= 2 && !t.paused)
@@ -395,6 +406,18 @@ export class GameServer {
    * needed (Dan 2026-09-01) instead of waiting for one of five daily windows
    * while merged fixes sit unshipped. See maintenance/MaintenanceBreak.ts.
    */
+  /**
+   * Engine-vs-database clock skew, ms, measured by startClockSkewMonitor.
+   * Positive = the engine's clock is ahead of Postgres. Three clocks now
+   * cooperate on the maintenance freeze (engine writes break_ends_at,
+   * fn_platform_frozen compares it to the DB's NOW(), the browser counts
+   * down), and drift between them must be VISIBLE before it is a bug: at
+   * ~15s of skew, players get PLATFORM_FROZEN refusals after play has
+   * visibly resumed, or money moves in the final seconds of the overlay.
+   * null until the first successful measurement.
+   */
+  private lastDbSkewMs: number | null = null;
+
   private readonly maintenanceBreak = new MaintenanceBreak({
     engines: () => this.tableEngines.entries(),
     isRunning: () => this.running,
@@ -416,6 +439,22 @@ export class GameServer {
         }
       }
       return false;
+    },
+    // The thaw: before the first table resumes, every in-flight absolute
+    // deadline (sit-out clocks, seat holds, add-on windows, Spin level
+    // clocks, the cashier claim-back window) is shifted forward by the frozen
+    // duration, so "picks back up exactly as it was" is true of the CLOCKS
+    // and not only of the chips. fn_thaw_platform is idempotent per freeze -
+    // two engines racing at :00 cannot shift the clocks twice.
+    thaw: async (freezeStartedAtMs, frozenSeconds) => {
+      const { data, error } = await supabase.rpc('fn_thaw_platform', {
+        p_freeze_started: new Date(freezeStartedAtMs).toISOString(),
+        p_frozen_seconds: frozenSeconds,
+        p_thawed_by:
+          process.env.GIT_COMMIT_SHA?.substring(0, 8) || process.env.ENGINE_VERSION || 'local',
+      });
+      if (error) throw new Error(error.message);
+      console.log('[MaintenanceBreak] thaw:', JSON.stringify(data));
     },
   });
   /**
@@ -682,6 +721,7 @@ export class GameServer {
       // for a week).
       this.startFeeReconciler();
       this.startLeaseReaper();
+      this.startClockSkewMonitor();
       this.startBombLedgerRepairSweep();
 
       // Step 8b (2026-08-20): drain the hand_history retry queue. hand_history
@@ -1166,7 +1206,7 @@ export class GameServer {
        * break left to finish inside it" - a state the engine DECLARES rather
        * than a race the workflow observes.
        */
-      maintenance: this.maintenanceBreak.snapshot(),
+      maintenance: { ...this.maintenanceBreak.snapshot(), dbClockSkewMs: this.lastDbSkewMs },
       stalledTables: stalledTables.slice(0, 20),
       discoveryStaleMs,
       tableLiveness,
@@ -1251,6 +1291,23 @@ export class GameServer {
       '# HELP poker_paused_tables Tables paused on purpose (hand-for-hand/break) - excluded from stall detection',
       '# TYPE poker_paused_tables gauge',
       `poker_paused_tables ${pausedCount}`,
+      // The maintenance break, as numbers an alert rule can silence itself
+      // with. `active` exists first and foremost so every fleet-level alarm
+      // (deal rate, hands/min, fleet floor) can carry `unless
+      // poker_maintenance_break_active == 1` instead of firing hourly about a
+      // stop we scheduled on purpose.
+      '# HELP poker_maintenance_break_active 1 while the scheduled :55 maintenance break is running',
+      '# TYPE poker_maintenance_break_active gauge',
+      `poker_maintenance_break_active ${this.maintenanceBreak.isActive() ? 1 : 0}`,
+      '# HELP poker_maintenance_break_remaining_ms Milliseconds of break left; 0 outside a break',
+      '# TYPE poker_maintenance_break_remaining_ms gauge',
+      `poker_maintenance_break_remaining_ms ${this.maintenanceBreak.remainingMs()}`,
+      '# HELP poker_maintenance_break_ready_for_restart 1 when every table is parked and the deploy may restart the engine',
+      '# TYPE poker_maintenance_break_ready_for_restart gauge',
+      `poker_maintenance_break_ready_for_restart ${this.maintenanceBreak.readyForRestart() ? 1 : 0}`,
+      '# HELP poker_db_clock_skew_ms Engine clock minus database clock, ms; 0 when unmeasured',
+      '# TYPE poker_db_clock_skew_ms gauge',
+      `poker_db_clock_skew_ms ${this.lastDbSkewMs ?? 0}`,
       '# HELP poker_discovery_stale_ms Milliseconds since the cash-table discovery loop last completed',
       '# TYPE poker_discovery_stale_ms gauge',
       `poker_discovery_stale_ms ${Date.now() - this.lastDiscoveryOkAt}`,
@@ -1488,6 +1545,11 @@ export class GameServer {
 
     const tick = async () => {
       if (!this.running) return;
+      // THE FREEZE (Dan 2026-09-01): re-driving failed fees is chip movement.
+      // Every operation here is idempotent and durable-queued, so a skipped
+      // cycle is picked up whole by the next one, five minutes after the thaw
+      // at the latest.
+      if (isMaintenanceFrozen()) return;
       try {
         const summary = await reconcilePendingFees();
         if (summary.scanned > 0) {
@@ -1604,6 +1666,57 @@ export class GameServer {
   }
 
   /** Hourly reaper. Paired with the boot-time sweep, not a replacement for it. */
+  /**
+   * Measure engine-vs-database clock skew: one fn_db_now round trip, halved
+   * RTT subtracted as the classic NTP-style estimate. Every 30 minutes and at
+   * boot; published on /health (maintenance.dbClockSkewMs) and as
+   * poker_db_clock_skew_ms. Past 5 seconds it raises a warning alert - that
+   * is drift an order of magnitude beyond healthy NTP and one more order
+   * short of breaking the freeze, which is exactly when a human should hear
+   * about it. Failure to measure is not skew: the reading goes stale and
+   * says so, it never guesses.
+   */
+  private startClockSkewMonitor(): void {
+    const measure = async () => {
+      if (!this.running) return;
+      try {
+        const t0 = Date.now();
+        const { data, error } = await supabase.rpc('fn_db_now');
+        const t1 = Date.now();
+        if (error) throw new Error(error.message);
+        const dbMs = Date.parse(data as string);
+        if (!Number.isFinite(dbMs)) throw new Error('unparseable fn_db_now: ' + String(data));
+        // Engine clock at the midpoint of the round trip vs the DB's stamp.
+        this.lastDbSkewMs = Math.round((t0 + t1) / 2 - dbMs);
+        if (Math.abs(this.lastDbSkewMs) > 5000) {
+          void raiseEngineAlert({
+            alertname: 'ClubArenaClockSkew',
+            severity: 'warning',
+            component: 'club-arena-engine',
+            summary: `Engine clock is ${this.lastDbSkewMs}ms from the database clock`,
+            description:
+              'The maintenance freeze compares engine-written deadlines against the ' +
+              'database clock, and the break overlay counts down on a third. Past a few ' +
+              'seconds of drift, players get PLATFORM_FROZEN refusals after play visibly ' +
+              'resumes. Check NTP on the Hetzner host.',
+            labels: { skew_ms: String(this.lastDbSkewMs) },
+          });
+        } else {
+          void resolveEngineAlert(
+            'ClubArenaClockSkew',
+            'club-arena-engine',
+            'Clock skew back within bounds'
+          );
+        }
+      } catch (err) {
+        console.warn('[GameServer] clock skew measurement failed:', (err as Error)?.message);
+      }
+    };
+    void measure();
+    const timer = setInterval(() => void measure(), 30 * 60 * 1000);
+    (timer as { unref?: () => void }).unref?.();
+  }
+
   private startLeaseReaper(): void {
     if (this.leaseReapTimer) return;
     this.leaseReapTimer = setInterval(() => {
@@ -1642,6 +1755,9 @@ export class GameServer {
 
     const tick = async (): Promise<void> => {
       if (!this.running) return;
+      // THE FREEZE (Dan 2026-09-01): the backfill writes award units - chip
+      // accounting. Hourly cadence; the break costs it nothing.
+      if (isMaintenanceFrozen()) return;
       try {
         const { data, error } = await supabase.rpc('fn_backfill_bomb_pot_award_units', {
           p_limit: BOMB_LEDGER_REPAIR_BATCH,
@@ -3690,7 +3806,16 @@ export class GameServer {
           try {
             const { data: sbp, error: sbpErr } = await supabase.rpc(
               'fn_backpay_spin_unpaid_winners',
-              { p_apply: true, p_limit: 200 }
+              // p_since_hours EXPLICIT (2026-08-31). This call had been
+              // failing on EVERY invocation with 57014 statement timeout:
+              // the RPC read the unbounded v_spin_unpaid_settlements three
+              // times, ~2.4s each, against an 8s service_role limit, so the
+              // safety net under "a prize left the bank and landed nowhere"
+              // had not run in production. It now sweeps a window it can
+              // finish. Six hours covers thirty-six passes of this ten-minute
+              // loop; anything older than that is not a repair, it is an
+              // audit, and an audit passes its own window.
+              { p_apply: true, p_limit: 200, p_since_hours: 6 }
             );
             if (sbpErr) {
               reportError(
@@ -4567,6 +4692,15 @@ export class GameServer {
    * the nine broken games on the live board and none of the healthy ones.
    */
   private async finishSeatFirstGamesThatAreOver(): Promise<void> {
+    /**
+     * THE FREEZE (Dan 2026-09-01), and this one is not a courtesy skip.
+     * This sweep decides a spin is OVER partly from "no hand recorded in the
+     * last three minutes" - and during a five-minute freeze that is true of
+     * every healthy spin on the platform. Unguarded, the first sweep after
+     * :58 would force-finish LIVE games whose only crime was obeying the
+     * break, paying them out mid-tournament. Frozen time is not silence.
+     */
+    if (isMaintenanceFrozen()) return;
     /** Old enough that a start, and its reveal hold, cannot be in progress. */
     const STUCK_MIN_AGE_MS = 5 * 60 * 1000;
     /** Silent long enough that the table has genuinely stopped dealing. */

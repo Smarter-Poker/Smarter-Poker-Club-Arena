@@ -14,6 +14,7 @@
  */
 
 import { supabase } from './supabase.js';
+import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
 import nodeCrypto from 'node:crypto';
@@ -294,7 +295,14 @@ const PAYOUT_STRUCTURES = {
   ],
 };
 
-import { SPIN_TIERS, spinBlindsForLevel } from '../config/spinSpec.js';
+import {
+  SPIN_TIERS,
+  SPIN_STACKS,
+  SPIN_SEATS,
+  SPIN_SPEED_LABELS,
+  spinBlindsForLevel,
+  type SpinSpeed,
+} from '../config/spinSpec.js';
 import {
   HEADS_UP_BLIND_STRUCTURE,
   HEADS_UP_BUYINS,
@@ -1504,7 +1512,15 @@ const SNG_CONFIGS: SNGConfig[] = SNG_BOARD_SHAPES.flatMap((shape) =>
  * SNGs are NOT this. They carry their own max_players (6 in production) and
  * must keep reading it from their config.
  */
-export const SPIN_SEATS = 3;
+/* RE-EXPORTED, NOT REDECLARED (2026-09-02).
+   This was `= 3` written out a second time, in a file that already imports
+   SPIN_TIERS / SPIN_STACKS / spinBlindsForLevel from the same spec. Two
+   sources of truth for the seat count is worse here than almost anywhere
+   else: the whole multiplier distribution is built on
+   E[multiplier] = seats x (1 - rake_rate), so a divergence would not look
+   like a bug, it would look like a slightly wrong house edge. Importers of
+   this name keep working. */
+export { SPIN_SEATS };
 
 /**
  * Seats the cash room keeps, per live cash table, before the Spin and
@@ -1548,44 +1564,67 @@ const SPIN_BOARD_VARIANTS: { key: string; label: string }[] = [
 /** Every price point the spin board is open at. Whole chips, from the ladder. */
 const SPIN_BOARD_BUYINS = [1, 2, 3, 5, 10, 20, 50, 100];
 
-export const SPIN_CONFIGS: SpinConfig[] = SPIN_BOARD_VARIANTS.flatMap((v) =>
-  SPIN_BOARD_BUYINS.map((buyIn) => ({
-    name: `${buyIn} Chip Spin ${v.label}`,
-    type: 'spin' as const,
-    gameVariant: v.key,
-    buyIn,
-    // Spins are rake-free by product rule; the edge lives in the multipliers.
-    rake: 0,
-    /* The seed value only. The real stack is set the moment the multiplier is
-       drawn, from SPIN_TIERS (TournamentManagerBase writes tier.startingStack
-       into starting_chips). 300 is the floor of the new band table (Dan
-       2026-08-23), so a table waiting on its draw advertises the shallowest
-       thing it could be rather than a number no tier uses. */
-    startingStack: 300,
-    maxPlayers: SPIN_SEATS,
-    minPlayers: SPIN_SEATS,
-    /* Seat all but ONE chair with horses.
+/**
+ * TWO SPEEDS, ONE LADDER (Dan, 2026-09-01).
+ *
+ * "once a player sits down and 'buys in' they either get 300 chips for a
+ * turbo, or 1000 chips for a deep stack."
+ *
+ * The depth is a board the player chooses, not a consequence of what the wheel
+ * lands on. Blinds and level length are identical on both -- Dan, 2026-08-23:
+ * "SPEED SHOULDN'T CHANGE, ONLY THE STARTING STACK" -- so the only difference
+ * between a Turbo and a Deep Stack at the same stake is how many chips are in
+ * front of you.
+ *
+ * The Turbo boards keep the plain name every existing board already has.
+ * Renaming those would not rename anything: ensureBoardOpen identifies a board
+ * by its config NAME, so a rename opens 32 new boards and leaves 32 orphans
+ * sitting in REGISTERING forever.
+ */
+const SPIN_BOARD_SPEEDS: SpinSpeed[] = ['turbo', 'deep'];
+
+export const SPIN_CONFIGS: SpinConfig[] = SPIN_BOARD_SPEEDS.flatMap((speed) =>
+  SPIN_BOARD_VARIANTS.flatMap((v) =>
+    SPIN_BOARD_BUYINS.map((buyIn) => ({
+      name:
+        speed === 'turbo'
+          ? `${buyIn} Chip Spin ${v.label}`
+          : `${buyIn} Chip ${SPIN_SPEED_LABELS[speed]} Spin ${v.label}`,
+      type: 'spin' as const,
+      gameVariant: v.key,
+      buyIn,
+      // Spins are rake-free by product rule; the edge lives in the multipliers.
+      rake: 0,
+      /* The board's own depth, and the final word on it. This used to be a
+       placeholder that start() overwrote from the drawn tier; the stack no
+       longer depends on the draw, so what is written here is what the player
+       is dealt, and it is known before the wheel turns. */
+      startingStack: SPIN_STACKS[speed],
+      maxPlayers: SPIN_SEATS,
+      minPlayers: SPIN_SEATS,
+      /* Seat all but ONE chair with horses.
        Dan: "the tables just stay open until players sit down." A full horse
        fill (the old value was 3 of 3) starts the spin the instant it is
        created, so the table is never actually available - which is why the
        board kept showing RUNNING games and nothing joinable. Leaving the last
        seat empty means the table sits open indefinitely, and the first human
        to take that seat starts the game, which is the whole point of a spin. */
-    horsesToRegister: SPIN_SEATS - 1,
-    /* Built from the spec, exactly as createSpin does below -- the constant
+      horsesToRegister: SPIN_SEATS - 1,
+      /* Built from the spec, exactly as createSpin does below -- the constant
        this used to name was a five-level ladder that contradicted it. */
-    blindStructure: Array.from({ length: 12 }, (_, i) => {
-      const b = spinBlindsForLevel(i + 1);
-      return {
-        level: i + 1,
-        smallBlind: b.small,
-        bigBlind: b.big,
-        ante: 0,
-        durationMinutes: SPIN_TIERS[0].levelMinutes,
-      };
-    }),
-    payoutStructure: [{ place: 1, percentage: 100 }],
-  }))
+      blindStructure: Array.from({ length: 12 }, (_, i) => {
+        const b = spinBlindsForLevel(i + 1);
+        return {
+          level: i + 1,
+          smallBlind: b.small,
+          bigBlind: b.big,
+          ante: 0,
+          durationMinutes: SPIN_TIERS[0].levelMinutes,
+        };
+      }),
+      payoutStructure: [{ place: 1, percentage: 100 }],
+    }))
+  )
 );
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1829,7 +1868,14 @@ export class TournamentRecurringService {
     );
 
     // Tournament check: every 5 minutes
-    this.tournamentInterval = setInterval(() => this.checkAndLaunchTournaments(), 5 * 60 * 1000);
+    // THE FREEZE (Dan 2026-09-01) gates every launcher below: launching a
+    // game registers and seats horses, which is buy-ins - chip movement. A
+    // board slot that stays empty for five extra minutes refills on the first
+    // tick after the thaw.
+    this.tournamentInterval = setInterval(
+      () => (isMaintenanceFrozen() ? undefined : this.checkAndLaunchTournaments()),
+      5 * 60 * 1000
+    );
 
     /**
      * A BOARD IS REFILLED AS FAST AS IT DRAINS.
@@ -1855,11 +1901,20 @@ export class TournamentRecurringService {
      * overwhelmingly common case, and its BURST cap still bounds a cold start
      * to 12 creations per tick.
      */
-    this.sngInterval = setInterval(() => this.checkAndLaunchSNGs(), BOARD_REFILL_INTERVAL_MS);
-    this.spinInterval = setInterval(() => this.checkAndLaunchSpins(), BOARD_REFILL_INTERVAL_MS);
+    this.sngInterval = setInterval(
+      () => (isMaintenanceFrozen() ? undefined : this.checkAndLaunchSNGs()),
+      BOARD_REFILL_INTERVAL_MS
+    );
+    this.spinInterval = setInterval(
+      () => (isMaintenanceFrozen() ? undefined : this.checkAndLaunchSpins()),
+      BOARD_REFILL_INTERVAL_MS
+    );
 
     // XMTT check: every 5 minutes
-    this.xmttInterval = setInterval(() => this.checkAndLaunchXMTTs(), 5 * 60 * 1000);
+    this.xmttInterval = setInterval(
+      () => (isMaintenanceFrozen() ? undefined : this.checkAndLaunchXMTTs()),
+      5 * 60 * 1000
+    );
 
     // Run checks immediately on start
     this.checkAndLaunchTournaments();
@@ -3701,7 +3756,13 @@ export class TournamentRecurringService {
       // the one floor every draw shares. Start rewrites stack, blinds,
       // payouts and pool from the real tier before any card is dealt.
       const placeholderTier = SPIN_TIERS[0];
-      const spinStack = placeholderTier.startingStack;
+      /* THE BOARD DECIDES THE STACK, NOT THE DRAW (Dan, 2026-09-01). This read
+         SPIN_TIERS[0].startingStack, a placeholder that start() then rewrote
+         from whichever tier the wheel landed on. The tier no longer carries a
+         stack: a Turbo board is 300 and a Deep Stack board is 1000, the config
+         says which, and the number is therefore true from the moment the row
+         exists - which is what lets a paid seat hold its chips. */
+      const spinStack = config.startingStack;
       const spinBlinds = Array.from({ length: 12 }, (_, i) => {
         const b = spinBlindsForLevel(i + 1);
         return {

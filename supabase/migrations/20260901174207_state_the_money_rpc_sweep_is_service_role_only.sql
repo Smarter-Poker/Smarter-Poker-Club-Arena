@@ -1,3 +1,8 @@
+-- BACKFILLED 2026-09-01 from supabase_migrations.schema_migrations.statements.
+-- Applied to production 20260901174207; the .sql file was never committed at the
+-- time (see docs/changelog and issue: unrecorded-migration backfill). Content is
+-- byte-exact to what ran. Do NOT re-apply; it is already live.
+
 -- The pre-push definer gate refused the mirror of
 -- the_money_rpc_sweep_reads_columns_not_just_tables because it re-declares
 -- fn_ca_money_rpc_drift, a SECURITY DEFINER function that writes (it raises

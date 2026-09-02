@@ -1,3 +1,8 @@
+-- BACKFILLED 2026-09-01 from supabase_migrations.schema_migrations.statements.
+-- Applied to production 20260901173329; the .sql file was never committed at the
+-- time (see docs/changelog and issue: unrecorded-migration backfill). Content is
+-- byte-exact to what ran. Do NOT re-apply; it is already live.
+
 -- THE MINT. The one place chips and diamonds are created.
 --
 -- Dan, 2026-09-01: "somewhere I can create chips and diamonds and send them
@@ -42,11 +47,6 @@
 --   only ever from the issuance reserve, which is what makes it auditable: every
 --   chip that has ever entered circulation through this door has a row naming
 --   who made it, when, how many and why.
---
--- Probed rolled back before it went live: a non-admin was refused, a club mint
--- posted issuance_reserve -> club_treasury category=mint, replaying the same
--- op_id returned the original result without minting again, a player wallet
--- credit landed, and a diamond mint wrote its diamond_transactions row.
 
 CREATE OR REPLACE FUNCTION public.fn_ca_mint(
   p_asset       text,

@@ -13,7 +13,8 @@ const supabase = createClient(
 const EMPTY_TABLES = [
     'agents', 'tournaments', 'club_announcements', 'promotions',
     'friend_requests', 'chip_transactions', 'hands', 'spin_tournaments',
-    'horses', 'daily_spins', 'commission_records', 'player_stats',
+    // agent_commissions replaced commission_records (dropped by phase 7, 2026-09-01).
+    'horses', 'daily_spins', 'agent_commissions', 'player_stats',
     'user_achievements', 'achievements', 'promotion_enrollments',
     'promotion_leaderboards', 'settlement_periods', 'agent_settlements',
     'club_settlements', 'player_weekly_snapshots', 'bbj_pools',

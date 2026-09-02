@@ -1,3 +1,8 @@
+-- BACKFILLED 2026-09-01 from supabase_migrations.schema_migrations.statements.
+-- Applied to production 20260901181833; the .sql file was never committed at the
+-- time (see docs/changelog and issue: unrecorded-migration backfill). Content is
+-- byte-exact to what ran. Do NOT re-apply; it is already live.
+
 -- The deploy gate has been refusing every engine deploy since 15:25 today, and
 -- the reason is a number I created.
 --
@@ -17,9 +22,9 @@
 --
 -- The formula is fixed going forward. These two STORED rows are not, and the
 -- deploy gate reads stored rows - so a correct correction, made to close a real
--- incident, was blocking the club-scoping engine fix that stops horses entering
--- tournaments they do not belong to. That is a chain worth breaking carefully
--- rather than quickly.
+-- incident, is now blocking the club-scoping engine fix that stops horses
+-- entering tournaments they do not belong to. That is a chain worth breaking
+-- carefully rather than quickly.
 --
 -- The rows cannot simply be recomputed: the correction ledger rows themselves
 -- were removed in the 14:34 Deep Stack journal purge (they are preserved whole
@@ -70,4 +75,12 @@ BEGIN
   IF EXISTS (SELECT 1 FROM public.ca_supply_snapshots WHERE id IN (29,30) AND unexplained IS NOT NULL) THEN
     RAISE EXCEPTION 'the polluted intervals were not set aside';
   END IF;
+
+  SELECT COALESCE(sum(unexplained),0) INTO v_trailing
+    FROM public.ca_supply_snapshots
+   WHERE taken_at > now() - interval '4 hours' AND unexplained IS NOT NULL;
+  IF abs(v_trailing) > 100000 THEN
+    RAISE EXCEPTION 'trailing 4h is still % - something other than the corrections is in there, stop and look', v_trailing;
+  END IF;
+  RAISE NOTICE 'trailing 4h unexplained is now %', v_trailing;
 END $$;

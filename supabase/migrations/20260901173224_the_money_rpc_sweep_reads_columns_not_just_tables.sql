@@ -1,3 +1,8 @@
+-- BACKFILLED 2026-09-01 from supabase_migrations.schema_migrations.statements.
+-- Applied to production 20260901173224; the .sql file was never committed at the
+-- time (see docs/changelog and issue: unrecorded-migration backfill). Content is
+-- byte-exact to what ran. Do NOT re-apply; it is already live.
+
 -- fn_ca_money_rpc_drift flagged fn_set_club_lobby_message as an unregistered
 -- balance writer. It writes lobby_message. It touches no money at all.
 --
@@ -79,11 +84,3 @@ BEGIN
     RAISE EXCEPTION 'the sweep still calls a lobby-message setter a money path';
   END IF;
 END $$;
-
--- Who may call it, stated rather than left to be looked up. Checked against
--- production first: anon and authenticated already have no execute here and
--- service_role has it, and CREATE OR REPLACE does not touch grants - so this is
--- a no-op that makes the migration say what is true. Also applied on its own as
--- 20260901174433_state_the_money_rpc_sweep_is_service_role_only.
-REVOKE ALL ON FUNCTION public.fn_ca_money_rpc_drift() FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.fn_ca_money_rpc_drift() TO service_role;

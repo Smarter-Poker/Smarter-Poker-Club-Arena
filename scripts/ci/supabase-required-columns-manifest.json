@@ -458,6 +458,11 @@
       "incident_id",
       "kind"
     ],
+    "ca_incident_notify_ledger": [
+      "recipient_id",
+      "finding_key",
+      "state_hash"
+    ],
     "ca_incident_recipients": [
       "user_id"
     ],
@@ -509,6 +514,10 @@
       "rake_cap",
       "bbj_fee_bb"
     ],
+    "ca_ratchet_baselines": [
+      "ratchet",
+      "baseline"
+    ],
     "ca_seat_stack_exits": [
       "table_id",
       "user_id",
@@ -523,6 +532,11 @@
       "cohort",
       "metric",
       "sample_size"
+    ],
+    "ca_supply_breach_ack": [
+      "snapshot_id",
+      "acknowledged_by",
+      "reason"
     ],
     "ca_supply_snapshot_classifications": [
       "snapshot_id",
@@ -541,6 +555,12 @@
       "bbj_pools",
       "spin_pools",
       "total"
+    ],
+    "ca_tournament_conservation_samples": [
+      "tournament_id",
+      "drift",
+      "hands_dealt",
+      "players"
     ],
     "ca_treasury_baseline": [
       "club_id",
@@ -1452,6 +1472,11 @@
     "engine_maintenance_break": [
       "phase"
     ],
+    "engine_maintenance_thaws": [
+      "freeze_started_at",
+      "frozen_seconds",
+      "shifted"
+    ],
     "engine_recovery_events": [
       "event"
     ],
@@ -1545,6 +1570,9 @@
       "bravo_slug",
       "venue_name",
       "game_type"
+    ],
+    "game_management_events": [
+      "event_type"
     ],
     "game_registry": [
       "title",
@@ -2028,6 +2056,31 @@
       "reward_type",
       "amount",
       "weight"
+    ],
+    "managed_game_command_receipts": [
+      "command_id",
+      "actor_id",
+      "game_kind",
+      "game_id",
+      "command_action",
+      "expected_version",
+      "request_hash",
+      "status"
+    ],
+    "managed_game_contract_versions": [
+      "game_kind",
+      "game_id",
+      "club_id",
+      "version",
+      "contract",
+      "contract_hash"
+    ],
+    "managed_game_schedules": [
+      "actor_id",
+      "game_kind",
+      "game_id",
+      "expected_version",
+      "execute_at"
     ],
     "member_fee_lifetime": [
       "user_id"

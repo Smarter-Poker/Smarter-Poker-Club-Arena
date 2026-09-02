@@ -1,6 +1,5 @@
 {
   "_owner": "fix/a-spin-pays-the-ladder-the-wheel-drew",
-  "_why": "Applied to production 2026-09-02 17:32 UTC via apply_migration; declared here so the new-migration gate can see them before the nightly snapshot does.",
   "tables": ["spin_payout_ladder"],
   "functions": ["fn_spin_ladder_is_the_drawn_one", "fn_spin_ladder_drift_check"],
   "columns": {}

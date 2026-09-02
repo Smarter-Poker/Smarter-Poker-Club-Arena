@@ -2401,6 +2401,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
            The group form below is what `.in()` builds for itself. */
         .not('status', 'in', '("closed","deleted")')
         .is('tournament_id', null)
+        /* A LIVE GAME MUST NEVER BE TRUNCATED AWAY (2026-09-02). See the note
+           on TableService.getClubTables: ordering by created_at alone under
+           the 200-row cap hid 41 of Deep Stack Society's 51 running tables,
+           and this page then ran every filter tab client-side over the
+           truncated list, so PLO/NLH/etc each read as an empty club. */
+        .order('current_players', { ascending: false })
         .order('created_at', { ascending: false })
         .limit(QUERY_LIMITS.LIST);
 

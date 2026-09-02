@@ -24,6 +24,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceStatement } from '../../../tests/helpers/sourceWindow.js';
 
 const SRC = readFileSync(join(process.cwd(), 'src/services/TournamentRecurringService.ts'), 'utf8');
 
@@ -180,10 +181,14 @@ describe('seat-first games are filled from their own club', () => {
  */
 describe('the empty-pool warning names every bucket', () => {
   it('prints the club exclusion alongside the others', () => {
-    /* lastIndexOf, because the phrase also appears in the doc comment above
-       the helper - the first match is prose, the last is the code. */
-    const at = SRC.lastIndexOf('registerHorses found no candidates');
-    const WARN = SRC.slice(at, at + 400);
+    /* The console.warn STATEMENT, bounded by its own closing paren rather
+       than by a byte count - see tests/helpers/sourceWindow. A magic window
+       here would drift off the end of the call the first time a line is added
+       to it, which is the outage noFixedSizeSourceWindows exists to prevent.
+       `console.warn(` is anchored on the one that carries the message, found
+       by walking back from the message to the call that contains it. */
+    const msgAt = SRC.lastIndexOf('registerHorses found no candidates');
+    const WARN = sliceStatement(SRC.slice(msgAt), 'registerHorses found no candidates');
     expect(WARN).toContain('at-capacity/entered ${busyDropped}');
     expect(WARN).toContain('not-a-club-member ${clubDropped}');
     expect(WARN).toContain('lane/window-excluded ${laneDropped}');

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { sliceDollarQuoted, sliceMethod } from '../../../tests/helpers/sourceWindow';
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -81,11 +82,16 @@ describe('LAW: the board announces itself the moment the last seat is paid', () 
     // inside fn_take_seat_and_buy_in raised 42703 and would have REFUSED the
     // seat. Notification is never worth a player's buy-in. The send is wrapped
     // so its failure degrades to the poll, which is the old behaviour.
-    const idx = sql.indexOf('realtime.send');
-    const before = sql.slice(Math.max(0, idx - 600), idx);
-    const after = sql.slice(idx, idx + 600);
-    expect(before).toContain('BEGIN');
-    expect(after).toMatch(/EXCEPTION\s+WHEN\s+OTHERS/i);
+    // Bounded by the function body itself, never by a byte count: a window
+    // measured in characters drifts off the code it guards the moment a
+    // comment is added above it (tests/helpers/sourceWindow).
+    const body = sliceDollarQuoted(sql, '$function$');
+    const send = body.indexOf('realtime.send');
+    expect(send).toBeGreaterThan(-1);
+    const opened = body.lastIndexOf('BEGIN', send);
+    const rescued = body.slice(send).search(/EXCEPTION\s+WHEN\s+OTHERS/i);
+    expect(opened).toBeGreaterThan(-1);
+    expect(rescued).toBeGreaterThan(-1);
   });
 
   it('only a genuinely full board announces itself', () => {
@@ -111,10 +117,7 @@ describe('LAW: the board announces itself the moment the last seat is paid', () 
     // Two managers on one tournament would deal two hands to one table. Both
     // paths consult tournamentEngines and claim the id with no await between
     // the check and the set, so one manager per id is structural, not lucky.
-    const fn = gameServer.slice(
-      gameServer.indexOf('private startSeatFirstNow('),
-      gameServer.indexOf('private async discoverSeatFirstStarts(')
-    );
+    const fn = sliceMethod(gameServer, 'private startSeatFirstNow(');
     expect(fn).toContain('this.tournamentEngines.has(id)');
     expect(fn).toContain('this.tournamentEngines.set(id, tm)');
     // The claim must be made before start() is awaited on, or the window

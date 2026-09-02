@@ -1,0 +1,6 @@
+{
+  "_owner": "fix/seat-first-capacity",
+  "tables": [],
+  "functions": ["fn_seat_first_boards_ready"],
+  "columns": {}
+}

@@ -24,8 +24,6 @@
  */
 
 import { supabase } from '../lib/supabase';
-import { WalletService } from './WalletService';
-import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -77,8 +75,6 @@ const _cb = {
     }
   },
 };
-// Separate circuit breaker for the seatHorse table-info query (transient network timeouts)
-const _tableInfoCb = makeCircuitBreaker(3, 5 * 60_000, 'seatHorse table-info circuit');
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -124,7 +120,6 @@ export interface TableLiquidityStatus {
 
 // HorseDecision canonical shape (extracted from engine/HorseLogic.ts in Phase U2 Stage A.4)
 import type { HorseDecision } from '../types/engine/horse';
-import { retryAsync } from '../utils/retryAsync';
 export type { HorseDecision } from '../types/engine/horse';
 
 export interface HandContext {
@@ -448,162 +443,15 @@ export const HydraService = {
   },
 
   /**
-   * Seat a specific horse at a table
+   * CHIP STANDARD C2 (2026-09-02): `seatHorse` is GONE. It INSERTed a
+   * `table_seats` row with a stack chosen in the browser and debited nobody -
+   * a mint wherever it was reachable. Its only caller, seedTable above, has
+   * refused since 2026-08-28, so nothing regrows here; the server fleet
+   * (HorseFleetManager) is the one seat creator for horses, funded through
+   * fn_horse_seat_from_treasury / fn_seat_horse_in_seat_first_game, which the
+   * database's seat guard recognises. A browser that needs a horse seated asks
+   * the engine; it does not write the seat.
    */
-  async seatHorse(
-    horseId: string,
-    tableId: string,
-    bigBlind: number,
-    localClaimedSeats: Set<number> = new Set()
-  ): Promise<HorsePlayer | null> {
-    // Get horse info
-    const { data: horseData, error: horseErr } = await supabase
-      .from('profiles')
-      .select('id, display_name, player_number, avatar_url:arena_avatar_url, horse_profile')
-      .eq('id', horseId)
-      .eq('is_horse', true)
-      .maybeSingle();
-    if (horseErr) reportError(horseErr, 'HydraService.seatHorse_profile_error');
-
-    if (!horseData) return null;
-
-    // GUARD: Prevent duplicate seating — check if horse is already at this table
-    const { data: existingHorseSeat } = await supabase
-      .from('table_seats')
-      .select('id')
-      .eq('table_id', tableId)
-      .eq('user_id', horseId)
-      .is('left_at', null)
-      .maybeSingle();
-    if (existingHorseSeat) {
-      console.debug(`[Hydra] Horse ${horseId} already seated at table ${tableId} - skipping`);
-      return null;
-    }
-
-    // Guard: bigBlind must be at least 1 to prevent zero-stack (violates chip_ledger CHECK amount > 0)
-    const safeBigBlind = Math.max(1, bigBlind);
-    const stack = getStackForProfile(horseData.horse_profile as HorseProfile, safeBigBlind);
-
-    // Clean up departed (left_at NOT NULL) seat rows first — these block INSERTs
-    // due to unique constraint on (table_id, seat_number).
-    const { error: cleanupErr } = await supabase
-      .from('table_seats')
-      .delete()
-      .eq('table_id', tableId)
-      .not('left_at', 'is', null);
-    if (cleanupErr) reportError(cleanupErr, 'HydraService.seatHorse_cleanup_departed');
-
-    // Find an available seat at the table (only count active seats with left_at=null)
-    const { data: existingSeats, error: seatsErr } = await supabase
-      .from('table_seats')
-      .select('seat_number')
-      .eq('table_id', tableId)
-      .is('left_at', null);
-    if (seatsErr) reportError(seatsErr, 'HydraService.seatHorse_seats_error');
-
-    // Merge DB-visible seats with locally tracked seats (to handle RLS-invisible horse seats)
-    const takenSeats = new Set((existingSeats || []).map((s) => s.seat_number));
-    for (const claimed of localClaimedSeats) {
-      takenSeats.add(claimed);
-    }
-
-    // Get table max_players to know seat range
-    const { data: tableData, error: tableErr } = await supabase
-      .from('tables')
-      .select('max_players')
-      .eq('id', tableId)
-      .maybeSingle();
-    // Transient network errors (TypeError: Load failed) should NOT flood Sentry.
-    // Gate behind a circuit breaker — only report when it first trips, then silence for 5 min.
-    if (tableErr) {
-      if (!_tableInfoCb.isOpen()) {
-        _tableInfoCb.trip();
-        reportError(tableErr, 'HydraService.seatHorse_table_error');
-      } else {
-        console.debug('[HydraService] seatHorse_table_error (circuit open):', tableErr.message);
-      }
-    }
-
-    const maxSeats = tableData?.max_players || 9;
-    let availableSeat = 0;
-    for (let s = 1; s <= maxSeats; s++) {
-      if (!takenSeats.has(s)) {
-        availableSeat = s;
-        break;
-      }
-    }
-
-    if (availableSeat === 0) {
-      console.debug('HydraService.seatHorse: No available seats at table', tableId);
-      return null;
-    }
-
-    // Direct table_seats INSERT — atomic_table_buyin RPC silently fails to persist rows.
-    // Direct INSERT is proven to work (201 + readable) and matches HorseOrchestrator pattern.
-    const { data: seatRow, error: seatErr } = await retryAsync(
-      () =>
-        supabase
-          .from('table_seats')
-          .insert({
-            table_id: tableId,
-            user_id: horseId,
-            seat_number: availableSeat,
-            stack,
-            is_sitting_out: false,
-            auto_rebuy: true,
-          })
-          .select('id')
-          .maybeSingle(), // FIX 168
-      3
-    );
-
-    if (seatErr) {
-      console.debug(
-        `[HydraService] table_seats INSERT FAILED for horse ${horseId} at seat ${availableSeat}:`,
-        seatErr.message
-      );
-      return null;
-    }
-
-    console.debug(
-      `[HydraService] Seated horse ${horseId} at seat ${availableSeat} (row ${seatRow?.id})`
-    );
-
-    // Log buy-in transaction via centralized WalletService RPC
-    await WalletService.logTransaction(
-      horseId,
-      'PLAYER',
-      stack,
-      'debit',
-      'buyin',
-      `Horse buy-in ${stack} chips at ${bigBlind}BB table`,
-      tableId
-    );
-    masterBus.emit('BALANCE_UPDATED', { source: 'hydra_seat_horse', userId: horseId });
-
-    // Update horse status to seated
-    const { error: statusErr1 } = await supabase
-      .from('profiles')
-      .update({ horse_status: 'seated' })
-      .eq('id', horseId);
-    if (statusErr1) reportError(statusErr1, 'HydraService.seatHorse_status_update');
-
-    return {
-      id: horseData.id,
-      name: horseData.display_name,
-      playerNumber: horseData.player_number,
-      avatar: horseData.avatar_url,
-      profile: horseData.horse_profile as HorseProfile,
-      stack,
-      seatNumber: availableSeat,
-      status: 'seated',
-      tableId,
-      joinedAt: new Date().toISOString(),
-      leavingAfterOrbit: false,
-      handsPlayed: 0,
-      orbitsPlayed: 0,
-    };
-  },
 
   /**
    * Schedule horse for removal (Organic Recede law)
@@ -630,90 +478,31 @@ export const HydraService = {
   },
 
   /**
-   * Remove a horse from table — cash out remaining stack back to wallet
+   * Remove a horse from table.
+   *
+   * CHIP STANDARD C1 (2026-09-02): REFUSES. This used to read the horse's
+   * seat and call `atomic_table_cashout` from the browser. That call has been
+   * dead twice over - EXECUTE was revoked from authenticated on 2026-08-26,
+   * and the function's own guard refuses a JWT cashing out a different user -
+   * so every yield attempt failed, logged, and returned false, while the
+   * "cash-out" wallet line it wrote next was for money that never moved.
+   *
+   * The engine owns horse seats end to end (HorseFleetManager seats them,
+   * `notifyWaitlistSeatOpen` in server/src/services/supabase/seats.ts hands a
+   * freed seat to the waitlist head, and the fleet rotates horses off for
+   * waiting humans). A browser that wants a horse gone asks the engine; it
+   * does not move the horse's chips. Kept as a method so callers compile and
+   * so any regrowth fails loudly here rather than resurrecting a browser
+   * cash-out.
    */
   async removeHorse(tableId: string, horseId: string): Promise<boolean> {
-    // 1. Get the horse's current stack BEFORE removing the seat
-    //    Check active seats first, then fall back to departed (left_at set) seats
-    let seatData: { stack: number; seat_number: number } | null = null;
-    const { data: activeSeat, error: activeFetchErr } = await supabase
-      .from('table_seats')
-      .select('stack, seat_number')
-      .eq('table_id', tableId)
-      .eq('user_id', horseId)
-      .is('left_at', null)
-      .maybeSingle();
-
-    if (activeSeat) {
-      seatData = activeSeat;
-    } else {
-      // Seat may already have left_at set by HeadlessTableEngine — still need to clean it up
-      const { data: departedSeat } = await supabase
-        .from('table_seats')
-        .select('stack, seat_number')
-        .eq('table_id', tableId)
-        .eq('user_id', horseId)
-        .not('left_at', 'is', null)
-        .maybeSingle();
-      seatData = departedSeat;
-    }
-
-    if (!seatData) {
-      // No seat at all — just reset horse status to available
-      await supabase.from('profiles').update({ horse_status: 'available' }).eq('id', horseId);
-      console.debug(
-        `HydraService.removeHorse: No seat found for horse ${horseId} at table ${tableId} - reset to available`
-      );
-      return true; // Return true so caller can proceed with reseating
-    }
-
-    const remainingStack = seatData.stack || 0;
-
-    // 2. Remove ALL seat rows for this horse at this table (active + departed)
-    // FIX: Using atomic_table_cashout instead of direct delete so chips are returned
-    // to the wallet ledger and the tf_table_seats_audit trigger is satisfied.
-    const { error: cashoutErr } = await retryAsync(
-      () => supabase.rpc('atomic_table_cashout', { p_user_id: horseId, p_table_id: tableId }),
-      3
+    reportError(
+      new Error(
+        `HydraService.removeHorse refused for horse ${horseId} at table ${tableId}: the engine owns horse seats`
+      ),
+      'HydraService.removeHorse_refused_client_cashout'
     );
-
-    if (cashoutErr) {
-      console.debug(
-        `[HydraService] atomic_table_cashout FAILED for horse ${horseId}:`,
-        cashoutErr.message
-      );
-      return false;
-    }
-
-    const returnedChips = remainingStack;
-
-    // Log cash-out transaction via centralized WalletService RPC if there were chips returned
-    if (returnedChips > 0) {
-      console.debug(
-        `[HydraService] Credited ${returnedChips} chips to horse ${horseId} Player Wallet`
-      );
-
-      // Note: This is a no-op client-side, but the RPC already did the actual wallet update!
-      await WalletService.logTransaction(
-        horseId,
-        'PLAYER',
-        returnedChips,
-        'credit',
-        'cashout',
-        `Horse cash-out ${returnedChips} chips from table`,
-        tableId
-      );
-      masterBus.emit('BALANCE_UPDATED', { source: 'hydra_remove_horse', userId: horseId });
-    }
-
-    // 4. Set horse back to available
-    const { error: statusErr2 } = await supabase
-      .from('profiles')
-      .update({ horse_status: 'available' })
-      .eq('id', horseId);
-    if (statusErr2) reportError(statusErr2, 'HydraService.removeHorse_status_update');
-
-    return true;
+    return false;
   },
 
   /**

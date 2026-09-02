@@ -157,7 +157,7 @@ describe('HorseLogic V2 - legality fuzz (all variants, all streets)', () => {
    * failure — the assertion never fired.
    *
    * That distinction matters because of what a red test costs on this repo:
-   * `npx vitest run` in build-for-world-hub.yml is what PUBLISHES the bundle,
+   * `npx vitest run` in publish-club-arena.yml is what PUBLISHES the bundle,
    * so a suite that goes red on machine load stops the World Hub sync for
    * every agent (CLAUDE.md section 5 rule 8). A timeout is the one failure
    * mode that says nothing about the code, so it must not be the one that

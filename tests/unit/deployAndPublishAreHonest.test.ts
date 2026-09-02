@@ -36,7 +36,7 @@ import { sliceBetween } from '../helpers/sourceWindow';
 const wf = (n: string) => readFileSync(resolve(__dirname, `../../.github/workflows/${n}`), 'utf8');
 
 const HETZNER = wf('auto-deploy-hetzner.yml');
-const SYNC = wf('build-for-world-hub.yml');
+const SYNC = wf('publish-club-arena.yml');
 
 /** Reads the every-N-minutes cron cadence out of a workflow. */
 function cronEveryMinutes(yaml: string): number | null {

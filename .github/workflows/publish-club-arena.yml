@@ -24,8 +24,22 @@
 #      pool. Unset CI_RUNNER and it falls back to ubuntu-latest unchanged.
 #
 # Everything else - the tip-of-main convergence, the four-way sharded gate,
-# the retry, the refusal to publish a bundle older than the one deployed - is
-# byte-identical to build-for-world-hub.yml and must stay that way.
+# the retry, the refusal to publish a bundle older than the one deployed - was
+# copied from build-for-world-hub.yml unchanged.
+#
+# THAT FILE IS GONE NOW (2026-09-02, later the same day). For about ninety
+# minutes both files existed and BOTH fired on every push to main, on separate
+# concurrency groups, so nothing serialised them: two full builds of the same
+# commit, two pushes to the World Hub, and the old one still on billed hosted
+# runners. Verified identical before deleting - 320 non-comment lines each,
+# zero difference once name, path, group and runs-on were normalised.
+#
+# THIS IS NOW THE ONLY PUBLISHER. There is no second path to production. The
+# nets that catch it when it fails - publish-watchdog.sh's re-dispatch, the
+# */30 catch-up above, and the laws in tests/ - were all still pointing at the
+# deleted file and were repointed here in the same commit. If you ever add a
+# second publisher again, give it the SAME concurrency group as this one or
+# they will not serialise.
 # ─────────────────────────────────────────────────────────────────────────────
 name: Publish Club Arena
 

@@ -50,7 +50,17 @@ describe('the SNG board opens for activated club owners', () => {
     expect(house).toBeLessThan(ownerLoop);
   });
 
-  it('the owner loop respects the shared budget, like the Spin pass', () => {
-    expect(sngPassSource()).toMatch(/if \(budget\.left <= 0\) break;/);
+  it('every owner gets its OWN creation budget, like the Spin pass', () => {
+    /* 2026-09-02: this used to pin `if (budget.left <= 0) break;` - one BURST
+       shared by the house and every owner. Measured on production, the house
+       board consumed all 12 every tick ("44 still to fill") and the loop
+       broke before Deep Stack Society was reached, so its board sat at zero
+       for an hour. The pin now guards the fix: no shared budget, no break,
+       a fresh { left: BURST } for the house and for each owner
+       (boardBudgetPerOwner.test.ts pins the same shape for both passes). */
+    const src = sngPassSource();
+    expect(src).not.toMatch(/if \(budget\.left <= 0\) break;/);
+    expect(src).not.toMatch(/const budget = \{ left: BURST \};/);
+    expect((src.match(/\{ left: BURST \}/g) || []).length).toBeGreaterThanOrEqual(2);
   });
 });

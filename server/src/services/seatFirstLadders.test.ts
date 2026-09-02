@@ -43,12 +43,18 @@ describe('the heads-up board is the locked 144-queue grid', () => {
 });
 
 describe('the spin board is the locked price ladder', () => {
-  it('eight buy-ins across five variants', () => {
+  it('eight buy-ins across five variants, at two speeds', () => {
     const buyIns = [...new Set(SPIN_CONFIGS.map((c) => c.buyIn))].sort((a, b) => a - b);
     expect(buyIns).toEqual([1, 2, 5, 10, 25, 50, 100, 250]);
     const variants = [...new Set(SPIN_CONFIGS.map((c) => c.gameVariant))].sort();
     expect(variants).toEqual(['nlh', 'plo4', 'plo5', 'plo6', 'short_deck']);
-    expect(SPIN_CONFIGS).toHaveLength(8 * 5);
+    /* TWO SPEEDS, ONE LADDER (Dan 2026-09-01): every price point at every
+       variant is on the board as a Turbo (300) and a Deep Stack (1000), so the
+       locked ladder is 8 x 5 x 2. Each speed carries the full ladder. */
+    expect(SPIN_CONFIGS).toHaveLength(8 * 5 * 2);
+    const deep = SPIN_CONFIGS.filter((c) => c.name.includes('Deep Stack'));
+    expect(deep).toHaveLength(8 * 5);
+    expect(SPIN_CONFIGS.length - deep.length).toBe(8 * 5);
   });
 
   it('every spin is three-handed with the last seat held for a human', () => {

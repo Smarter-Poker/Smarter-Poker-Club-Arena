@@ -1,0 +1,4 @@
+{
+  "_owner": "fix/club-boards-fill-from-their-own-members",
+  "functions": ["fn_guard_rake_belongs_to_club", "fn_rake_club_isolation_violations"]
+}

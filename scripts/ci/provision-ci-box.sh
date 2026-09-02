@@ -17,9 +17,11 @@
 #                    run; a persistent one does not, so without this the box
 #                    fills and every CI job on the estate fails at once.
 #   3. fair share  - a systemd drop-in on EVERY runner unit capping vitest at
-#                    2 workers and node at a 3 GB heap. Uncapped, eight
-#                    concurrent vitest runs forked a worker per core (64 on 8
-#                    cores, load 69-75 measured) and every job was starved.
+#                    a DERIVED worker cap and node at a 3 GB heap. Uncapped,
+#                    eight concurrent vitest runs forked a worker per core (64
+#                    on 8 cores, load 69-75 measured) and every job starved.
+#                    A fixed cap of 4 starved them again at load 44 (see the
+#                    note above the derivation); the cap now follows the box.
 #   4. sweeper     - applies a changed drop-in to busy runners as they go idle,
 #                    never killing a job; removes itself when done.
 #   5. browsers    - chromium + webkit system libraries, installed once, so
@@ -38,7 +40,9 @@ set -euo pipefail
 [ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
 
 SWAP_GB="${SWAP_GB:-8}"
-VITEST_WORKERS="${VITEST_WORKERS:-4}"
+# VITEST_WORKERS is DERIVED below, once the runner count is known. Setting it
+# here would be the bug this replaced: a constant tuned for one job on an
+# idle box, applied to ten runners at once. Export it to override.
 NODE_HEAP_MB="${NODE_HEAP_MB:-3072}"
 PLAYWRIGHT_VERSION="${PLAYWRIGHT_VERSION:-1.58.0}"
 
@@ -104,8 +108,30 @@ cron_set ci-gc.sh "17 4 * * * /usr/local/bin/ci-gc.sh"
 echo "   cron: $(crontab -l | grep -c ci-gc.sh) entry (verified)"
 
 # ── 3. fair-share drop-in on every runner unit ───────────────────────────────
-say "fair-share drop-ins (VITEST_MAX_WORKERS=${VITEST_WORKERS}, heap ${NODE_HEAP_MB} MB)"
+#
+# THE CAP IS DERIVED FROM THE BOX, NOT TYPED IN. This was `${VITEST_WORKERS:-4}`
+# and the 4 was measured honestly - one job, idle box, 12.9 min down to 3.1.
+# It was never measured against the case that actually happens: on 2026-09-02
+# NINE jobs ran at once, each entitled to 4 workers, and 26 vitest processes
+# fought over 8 cores at load 44. Jobs did not merely slow down, they FAILED -
+# a 150-hand simulation that takes 967 ms on a laptop measured 12342 ms and
+# blew a 10 s ceiling, turning main red and stopping the publisher. A queued
+# job waits harmlessly; a starved job times out. Fewer workers is therefore
+# not just cheaper, it is more correct.
+#
+# So: total workers across every runner is held near 2x cores, and the
+# per-runner share falls out of that. A resize fixes the cap by itself.
+# Floor 2, because 1 makes a lone job pointlessly serial. Ceiling 4, because
+# that is the measured knee - past it a single job stops getting faster.
 UNITS=$(systemctl list-units 'actions.runner.*' --all --no-legend | awk '{print $1}')
+UNIT_N=$(printf '%s\n' "$UNITS" | grep -c . || true)
+[ "${UNIT_N:-0}" -gt 0 ] || UNIT_N=1
+DERIVED=$(( $(nproc) * 2 / UNIT_N ))
+[ "$DERIVED" -lt 2 ] && DERIVED=2
+[ "$DERIVED" -gt 4 ] && DERIVED=4
+VITEST_WORKERS="${VITEST_WORKERS:-$DERIVED}"
+say "fair-share drop-ins (VITEST_MAX_WORKERS=${VITEST_WORKERS}, heap ${NODE_HEAP_MB} MB)"
+echo "   $(nproc) cores / $UNIT_N runners -> $VITEST_WORKERS workers each, $(( UNIT_N * VITEST_WORKERS )) peak"
 n=0
 for svc in $UNITS; do
   mkdir -p "/etc/systemd/system/$svc.d"
@@ -128,7 +154,36 @@ cat > /usr/local/bin/ci-restart-idle-runners.sh <<'EOF'
 # A runner is mid-job iff a Runner.Worker lives under its directory. Restart
 # only the others, so a changed unit takes effect with zero jobs lost. Removes
 # itself from cron once every runner has restarted since the stamp.
+# ONE SWEEPER AT A TIME. The provisioner runs this directly AND installs it on
+# a */5 cron, so two copies raced on 2026-09-02 and the log shows the same
+# runner "restarted idle" twice in the same second.
+exec 9>/var/lock/ci-restart-idle.lock
+flock -n 9 || exit 0
+
 MARK=/var/lib/ci-runner-env.stamp; [ -f $MARK ] || touch $MARK
+
+# IS THIS RUNNER SAFE TO RESTART?
+#
+# The old test was `pgrep -f "$d/bin/Runner.Worker"` alone, and it had a race
+# that cost real jobs on 2026-09-02: between the Listener ACCEPTING a job and
+# the Worker process appearing there is a window in which the runner is
+# committed to work but shows no Worker. The sweeper looked in exactly that
+# window, called the runner idle and restarted it. Two CI jobs died with "The
+# runner has received a shutdown signal", which reads like an infrastructure
+# blip and is actually this script. A sweeper whose whole promise is "never
+# kills a job" must not have a window.
+#
+# The second test closes it: a runner that has ACCEPTED a job has already
+# written into its own _work tree, before any Worker exists. So anything
+# touched there in the last two minutes means hands off, Worker or not.
+# Cheap, no token, and it fails toward leaving the runner alone.
+runner_busy() {
+  local d="$1"
+  pgrep -f "$d/bin/Runner.Worker" >/dev/null && return 0
+  [ -n "$(find "$d/_work" -maxdepth 3 -newermt '-120 seconds' -print -quit 2>/dev/null)" ] && return 0
+  return 1
+}
+
 left=0
 for d in /home/ci/actions-runner-*; do
   name=$(basename "$d" | sed 's/actions-runner-//')
@@ -136,7 +191,12 @@ for d in /home/ci/actions-runner-*; do
   [ -n "$svc" ] || continue
   since=$(systemctl show -p ActiveEnterTimestamp --value "$svc" | xargs -I{} date -d {} +%s 2>/dev/null || echo 0)
   [ "$since" -gt "$(stat -c %Y $MARK)" ] && continue
-  if pgrep -f "$d/bin/Runner.Worker" >/dev/null; then left=$((left+1)); continue; fi
+  if runner_busy "$d"; then left=$((left+1)); continue; fi
+  # Look twice, a few seconds apart. A job accepted between the check and the
+  # restart is the only remaining way to lose one, and this shrinks that to
+  # the width of a single systemctl call.
+  sleep 3
+  if runner_busy "$d"; then left=$((left+1)); continue; fi
   systemctl restart "$svc" && echo "$(date -u +%FT%TZ) restarted idle $name" >> /var/log/ci-runner-env.log
 done
 [ $left -eq 0 ] && { ( crontab -l 2>/dev/null | grep -v ci-restart-idle-runners || true ) | sed "/^$/d" | crontab -; echo "$(date -u +%FT%TZ) all runners on new env; sweeper removed" >> /var/log/ci-runner-env.log; }
@@ -175,7 +235,33 @@ for t in psql gh jq curl git node npm npx python3 ssh; do command -v "$t" >/dev/
 
 # ── 6. browser system libraries (once; the binaries cache under ~ci) ─────────
 say "playwright system deps (chromium + webkit)"
-npx --yes "playwright@${PLAYWRIGHT_VERSION}" install-deps chromium webkit >/tmp/pwdeps.log 2>&1 && echo "   ok" || { echo "   FAILED - see /tmp/pwdeps.log"; tail -3 /tmp/pwdeps.log; }
+# DO NOT TRUST THE EXIT CODE HERE. `playwright install-deps` shells out to
+# apt-get, which returns non-zero on a perfectly healthy box - held packages,
+# "8 not upgraded", a warning on a repo it does not need. On 2026-09-02 this
+# printed "FAILED - see /tmp/pwdeps.log" while the log said, in full,
+# "0 upgraded, 0 newly installed, 0 to remove": every library was already
+# present and both browsers ran fine. An operator chasing that non-problem is
+# exactly the cost a false alarm has, and a provisioner that cries wolf is one
+# people stop reading.
+#
+# So the install still runs, and then the RESULT is verified: every browser
+# binary Playwright has unpacked must resolve all of its shared libraries.
+# That is the thing we actually care about, it is what breaks a routed job,
+# and it is true or false regardless of what apt felt about it.
+npx --yes "playwright@${PLAYWRIGHT_VERSION}" install-deps chromium webkit >/tmp/pwdeps.log 2>&1 || true
+PW_CACHE="${PW_CACHE:-/home/ci/.cache/ms-playwright}"
+missing=$(
+  find "$PW_CACHE" -type f \( -name chrome -o -name headless_shell -o -name MiniBrowser \) 2>/dev/null |
+  while read -r bin; do ldd "$bin" 2>/dev/null | grep -F "not found" | sed "s|^|$(basename "$(dirname "$bin")")/$(basename "$bin"): |"; done
+)
+bins=$(find "$PW_CACHE" -type f \( -name chrome -o -name headless_shell -o -name MiniBrowser \) 2>/dev/null | wc -l)
+if [ -z "$missing" ] && [ "$bins" -gt 0 ]; then
+  echo "   ok - $bins browser binary(ies), every shared library resolves"
+elif [ "$bins" -eq 0 ]; then
+  echo "   no browsers unpacked yet under $PW_CACHE - a Playwright job will install them on first run"
+else
+  echo "   FAILED - browser binaries are missing shared libraries:"; printf '%s\n' "$missing" | sed 's/^/     /' | head -20
+fi
 
 say "done"
 echo "   cores $(nproc) | mem $(free -g | awk '/Mem:/{print $2}')G | swap $(free -g | awk '/Swap:/{print $2}')G | disk $(df -h / | awk 'NR==2{print $4}') free"

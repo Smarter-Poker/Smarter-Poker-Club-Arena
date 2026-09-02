@@ -53,6 +53,27 @@ describe('CI box provisioning', () => {
     expect(sh).toMatch(/pgrep -f "\$d\/bin\/Runner\.Worker"/);
   });
 
+  it('the idle sweeper cannot restart a runner that has just accepted a job', () => {
+    // 2026-09-02: two CI jobs died with "The runner has received a shutdown
+    // signal", which reads like an infrastructure blip and was this script.
+    // The sweeper decided "idle" from `pgrep Runner.Worker` alone, and between
+    // the Listener ACCEPTING a job and the Worker appearing there is a window
+    // where a committed runner shows no Worker. The sweeper looked in exactly
+    // that window and restarted it. A sweeper whose entire promise is "never
+    // kills a job" must not have a window.
+    const sh = repo(PROVISION);
+    // A runner that accepted a job has already written into its own _work
+    // tree, before any Worker exists. That is the signal that closes it.
+    expect(sh).toMatch(/_work.*-newermt/);
+    // The Worker check stays - it is the fast path, not the only path.
+    expect(sh).toMatch(/pgrep -f "\$d\/bin\/Runner\.Worker"/);
+    // Checked twice, so a job accepted mid-decision is still caught.
+    expect(sh).toMatch(/runner_busy "\$d"[\s\S]{0,400}?sleep[\s\S]{0,200}?runner_busy "\$d"/);
+    // And only one sweeper may run: the provisioner invokes it directly AND
+    // installs it on cron, and the two raced.
+    expect(sh).toMatch(/flock -n 9/);
+  });
+
   it('can never wipe the crontab - every cron edit goes through cron_set and is read back', () => {
     // Second run of this script on the box emptied root's crontab: under
     // `set -e -o pipefail`, `( crontab -l | grep -v KEY; echo LINE ) | crontab -`
@@ -118,10 +139,33 @@ describe('CI box provisioning', () => {
     expect(provision).toMatch(/routed-workflow tool audit/);
   });
 
-  it('defaults vitest to 4 workers - measured, not guessed', () => {
-    // cap=2 under load: the lone full suite ran 11m+ (hosted: 12.9m, no gain).
-    // cap=4 on a calm 8-core box: 3.1m. 8 x 4 = 32 threads is 4x oversubscribed
-    // at the absolute worst moment and typical concurrency is 2-4 jobs.
-    expect(repo(PROVISION)).toMatch(/VITEST_WORKERS="\$\{VITEST_WORKERS:-4\}"/);
+  it('derives the vitest cap from the box instead of hardcoding it', () => {
+    // THIS PIN MOVED, 2026-09-02, and the constant it used to guard is the
+    // reason. It read `VITEST_WORKERS:-4`, measured honestly - one job, idle
+    // box, 12.9 min down to 3.1 - and its own comment reasoned that "8 x 4 =
+    // 32 threads is 4x oversubscribed at the absolute worst moment and
+    // typical concurrency is 2-4 jobs". The worst moment arrived: nine
+    // concurrent jobs, 26 vitest processes, load 44 on 8 cores. A 150-hand
+    // simulation that runs in 967 ms measured 12342 ms, blew its ceiling and
+    // turned main red, which stopped the publisher for the whole estate.
+    //
+    // A queued job waits harmlessly. A STARVED job times out. So the cap is
+    // no longer a number someone measured once on an idle box - it follows
+    // the hardware and the runner count, and a resize corrects it with no
+    // edit here.
+    const sh = repo(PROVISION);
+    expect(sh, 'no bare constant may come back').not.toMatch(
+      /VITEST_WORKERS="\$\{VITEST_WORKERS:-[0-9]+\}"/
+    );
+    // Total concurrency is bounded against the cores actually present.
+    expect(sh).toMatch(/DERIVED=\$\(\(\s*\$\(nproc\)\s*\*\s*2\s*\/\s*UNIT_N\s*\)\)/);
+    // Floor 2 (1 makes a lone job pointlessly serial), ceiling 4 (the knee).
+    expect(sh).toMatch(/DERIVED"?\s*-lt 2 \] && DERIVED=2/);
+    expect(sh).toMatch(/DERIVED"?\s*-gt 4 \] && DERIVED=4/);
+    // An operator override must still win, or the box cannot be tuned by hand.
+    expect(sh).toMatch(/VITEST_WORKERS="\$\{VITEST_WORKERS:-\$DERIVED\}"/);
+    // And the run must SAY what it chose - the previous cap was wrong for
+    // months partly because nothing ever printed the peak it implied.
+    expect(sh).toMatch(/peak/);
   });
 });

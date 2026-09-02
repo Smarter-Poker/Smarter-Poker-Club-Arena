@@ -10,11 +10,11 @@ Companion document: `docs/ENGINE-RESTART-PROGRAMME.md` (on main) - the 9-phase
 plan with per-phase acceptance criteria. This handoff is the live state; that
 doc is the map.
 
-===============================================================================
+---
 
 ## 1. EXECUTIVE CONTINUATION BRIEF
 
-===============================================================================
+---
 
 WHAT IS BEING BUILT. Club Arena (repo Smarter-Poker/Smarter-Poker-Club-Arena)
 is an online poker club platform (unions, clubs, agents, cash games,
@@ -65,11 +65,11 @@ was dispatched for the 23:55 window; after 00:00 read the scorecard for the
 and confirm hands_in_window dropped toward ~0 and recovery_seconds <= ~90.
 Then start Phase 4 (thaw installments + fn_stamp_sit_out_at fix).
 
-===============================================================================
+---
 
 ## 2. USER REQUIREMENTS AND WORKING PREFERENCES (NON-NEGOTIABLE)
 
-===============================================================================
+---
 
 Locked, from Dan, treat as binding:
 
@@ -110,11 +110,11 @@ guard refuses them (and Vercel refuses to build an unresolved author); push via
 the perl setsid pattern because the pre-push hook takes minutes; NEVER rebase,
 always `git merge origin/main` (CLAUDE.md 12).
 
-===============================================================================
+---
 
 ## 3. PROJECT AND REPOSITORY IDENTITY
 
-===============================================================================
+---
 
 Project Name: Club Arena (Smarter Poker) CONFIRMED
 Repository (GitHub): Smarter-Poker/Smarter-Poker-Club-Arena CONFIRMED
@@ -141,11 +141,11 @@ CI: GitHub Actions, 8 self-hosted runners on one 4-vCPU
 box; plus ubuntu-latest for the deploy workflow. CONFIRMED (prior)
 Deploy pipeline: .github/workflows/auto-deploy-hetzner.yml CONFIRMED
 
-===============================================================================
+---
 
 ## 4. REPOSITORY MAP (paths relevant to this programme)
 
-===============================================================================
+---
 
 server/src/maintenance/MaintenanceBreak.ts
 The break state machine (announce at :53, countdown at :55, park, thaw,
@@ -226,11 +226,11 @@ Engine (typecheck + tests)" job.
 
 supabase/migrations/\*.sql
 All DB changes. This session's migrations (all APPLIED live, see section 18):
-20260902194500 the_thaw_stops_reading_every_tournament_ever_played (#2703, thaw indexes)
+20260902194600 the_thaw_stops_reading_every_tournament_ever_played (#2703, thaw indexes)
 20260902203100 engine_restart_phase1_scorecard_freezeproof_dispatcher
 20260902204600 engine_restart_phase1_deploy_start_marker
 20260902211500 engine_restart_phase1_review_fixes
-20260902213000 engine_restart_phase2_the_gate_counts_a_live_hand
+20260902213100 engine_restart_phase2_the_gate_counts_a_live_hand
 
 docs/ENGINE-RESTART-PROGRAMME.md The 9-phase plan (on main). READ IT.
 docs/HANDOFF_CURRENT_STATE.md This file.
@@ -241,11 +241,11 @@ CLAUDE.md (967 lines), AGENT-PLAYBOOK.md (560 lines),
 .agents/rules/00-agent-playbook.md (147 lines) - binding instructions.
 ~/Documents/club-arena/.env - secrets (names only in section 17).
 
-===============================================================================
+---
 
 ## 5. APPLICABLE INSTRUCTIONS AND CONSTRAINTS
 
-===============================================================================
+---
 
 Reread these before editing:
 
@@ -283,11 +283,11 @@ handoff. Migration version stamps of the form YYYYMMDDHHMMSS collide easily
 when two agents ship in the same minute - Phase 1's first stamps collided with
 a concurrent #2702 merge and had to be renamed (see section 7 and 15).
 
-===============================================================================
+---
 
 ## 6. COMPLETE DISCOVERY RECORD
 
-===============================================================================
+---
 
 THE ONE ROOT CAUSE behind almost every symptom: the Supabase database (2
 cores) is SATURATED, and everything that runs at :00 hits it at once. Measured
@@ -345,7 +345,7 @@ table_seats.stack as postgres). A 55006 WAS witnessed inside the 19:57 window
 this way.
 
 THE THAW (fn_thaw_platform, migration 20260902091000 + the index fix
-20260902194500): shifts every in-flight absolute deadline forward by the
+20260902194600): shifts every in-flight absolute deadline forward by the
 frozen duration (sit_out_at, waitlist holds, tournament addon/level clocks,
 chip_transactions.reversible_until, bounty reveal, rebuy prompts, bomb-pot due)
 so "picks back up exactly as it was" is true of the CLOCKS. It is idempotent
@@ -389,11 +389,11 @@ was scoped. #2695 (park fix), #2703 (thaw indexes), #2704 (horse seeder speed +
 union-wallet sizing), #2711 (DB load), #2713 (horse reap deleted) are all part
 of the same effort and are now on main.
 
-===============================================================================
+---
 
 ## 7. WORK COMPLETED DURING THIS CHAT (grouped by workstream)
 
-===============================================================================
+---
 
 WORKSTREAM A - THE THAW FINALLY SUCCEEDS (#2703, MERGE STATE: PR OPEN).
 
@@ -402,7 +402,7 @@ WORKSTREAM A - THE THAW FINALLY SUCCEEDS (#2703, MERGE STATE: PR OPEN).
 - Fix: three partial indexes (idx_tournaments_addon_period_open,
   idx_tables_bomb_pot_due, idx_chip_transactions_reversible_open). Created LIVE
   with CREATE INDEX CONCURRENTLY at 19:47 UTC (blocked no writer); all three
-  indisvalid=true. Recorded as migration 20260902194500. Also proved (pg_temp
+  indisvalid=true. Recorded as migration 20260902194600. Also proved (pg_temp
   fn + pg_sleep) that a function-level SET statement_timeout does NOT extend a
   running RPC - the comments in RakebackSettlerService (600s) and index.ts
   (30s) are WRONG about that.
@@ -476,7 +476,7 @@ WORKSTREAM C - PHASE 2: THE GATE COUNTS A LIVE HAND (in PR #2715, OPEN).
 - The break measures itself: new recordOutcome dep hands out
   {unparkedAtCountdown, peakUnparked, readyForRestartAtMs, tablesResumed,
   thawOk}; GameServer writes engine_maintenance_break_log; the scorecard reads
-  it (the 4 new columns). Migration 20260902213000 (the table + the 4 columns +
+  it (the 4 new columns). Migration 20260902213100 (the table + the 4 columns +
   the updated scorecard fn). APPLIED live.
 - Pins: 6 restart-gate tests FAIL on origin/main's MaintenanceBreak.ts, 34/34
   PASS here. MaintenanceBreak.test.ts added to the required Server Engine
@@ -524,11 +524,11 @@ buy-in; #2711 the engine stops hammering a saturated database (get_club_home
 RPC, seat-first backoff, parallel WS gates); #2713 horses keep their seats
 across a restart (boot cash-out reap DELETED).
 
-===============================================================================
+---
 
 ## 8. VISUAL AND PRODUCT DECISIONS
 
-===============================================================================
+---
 
 NOT APPLICABLE to this programme. No visual/design/asset work was done. The
 break has a client-side overlay/banner/countdown that has NEVER been verified
@@ -537,11 +537,11 @@ Phase 9 client-side break test). No images, mockups, or design references are
 part of this work. If the next agent is asked for UI work, that is a separate
 track from this programme.
 
-===============================================================================
+---
 
 ## 9. FUNCTIONAL AND ARCHITECTURAL DECISIONS (locked / status)
 
-===============================================================================
+---
 
 - HOURLY :55 BREAK + TOTAL FREEZE: IMPLEMENTED and armed. The freeze triggers
   are live and enforcing (55006 witnessed). The break announces, parks, thaws,
@@ -577,11 +577,11 @@ hierarchy): governed by the separate zero-drift programme and CLAUDE.md;
 UNCHANGED by this work and out of scope here. See /areas memory files
 club-arena-zero-drift and -round2 for that state.
 
-===============================================================================
+---
 
 ## 10. EXACT CURRENT STATE
 
-===============================================================================
+---
 
 - Handoff-writing branch: docs/handoff-2026-09-02-programme-phase-3 (off
   origin/main 361734436). This file is the only change on it.
@@ -599,7 +599,7 @@ club-arena-zero-drift and -round2 for that state.
   phase idle, freeze-build true. THIS BUILD LACKS the Phase 2 dealing-loop fix
   and #2713 - it still deals ~3000 hands/break and still reaps horses at boot.
   It will be replaced at the 23:55 window by the escalation.
-- Migrations applied live (all): 20260902194500, 203100, 204600, 211500, 213000. engine_maintenance_break_log has 0 rows (its writer deploys with
+- Migrations applied live (all): 20260902194600, 203100, 204600, 211500, 213000. engine_maintenance_break_log has 0 rows (its writer deploys with
   #2715). engine_maintenance_thaws has 2 rows today (thaw now works).
 - Crons live: ca-break-scorecard @ :12, ca-deploy-dispatch @ :41 (disarmed),
   ca-deploy-run-marker-prune @ 04:23, ca-freeze-mark-post @ :00,
@@ -613,11 +613,11 @@ club-arena-zero-drift and -round2 for that state.
   (session_01Mcyo7VW3Wdw5oC6qzm4C5y) and fires 23:40 UTC - SEE SECTION 19, the
   next agent in a NEW chat will NOT receive it.
 
-===============================================================================
+---
 
 ## 11. CHANGED-FILE LEDGER
 
-===============================================================================
+---
 
 Legend: Status = Merged(main) / In-PR / Applied(DB). Committed = yes/no.
 
@@ -632,7 +632,7 @@ PHASE 1 (PR #2710, MERGED to main; DB objects applied):
 | docs/ENGINE-RESTART-PROGRAMME.md | Merged | the 9-phase plan | yes |
 
 THAW INDEXES (PR #2703, OPEN; indexes applied live):
-| supabase/migrations/20260902194500_the_thaw_stops_reading_every_tournament_ever_played.sql | In-PR+Applied | 3 partial indexes so the thaw fits in 8s | yes |
+| supabase/migrations/20260902194600_the_thaw_stops_reading_every_tournament_ever_played.sql | In-PR+Applied | 3 partial indexes so the thaw fits in 8s | yes |
 
 PHASES 2+3 (PR #2715, OPEN; migration applied live):
 | server/src/maintenance/MaintenanceBreak.ts | In-PR | gate=live hand; recordOutcome; staggered resume | yes |
@@ -640,7 +640,7 @@ PHASES 2+3 (PR #2715, OPEN; migration applied live):
 | server/src/engine/ServerTableEngineDealing.ts | In-PR | both dealing park gates consult maintenancePaused | yes |
 | server/src/GameServer.ts | In-PR | recordOutcome writes engine_maintenance_break_log | yes |
 | .github/workflows/ci.yml | In-PR | MaintenanceBreak.test.ts in the required regression step | yes |
-| supabase/migrations/20260902213000_engine_restart_phase2_the_gate_counts_a_live_hand.sql | In-PR+Applied | engine_maintenance_break_log + 4 scorecard cols + updated fn | yes |
+| supabase/migrations/20260902213100_engine_restart_phase2_the_gate_counts_a_live_hand.sql | In-PR+Applied | engine_maintenance_break_log + 4 scorecard cols + updated fn | yes |
 | scripts/ci/schema-manifest.d/cowork-restart-phase2.json | In-PR | schema fragment (declares fn_ca_record_break_scorecard) | yes |
 | docs/changelog/2026-09-02-phase2-the-gate-counts-a-live-hand.md | In-PR | changelog | yes |
 | docs/changelog/2026-09-02-phase3-the-resume-is-staggered.md | In-PR | changelog | yes |
@@ -656,20 +656,20 @@ next agent finds uncommitted changes in ANY worktree under
 ~/Documents/.agent-trees/, they belong to another agent session - do NOT
 overwrite them. `git worktree list` from the canonical repo shows all of them.
 
-===============================================================================
+---
 
 ## 12. ASSET LEDGER
 
-===============================================================================
+---
 
 NOT APPLICABLE. No visual assets, images, icons, or reference files are part
 of this programme.
 
-===============================================================================
+---
 
 ## 13. COMMANDS AND TOOLS USED (the working playbook - reuse these)
 
-===============================================================================
+---
 
 All run from Dan's Mac via the host terminal (the agent had no local repo in
 the cloud container; the Mac is reached via the remote-devices bridge). `gh` is
@@ -732,11 +732,11 @@ GOTCHAS learned: host-terminal tool calls die past ~60s (poll in <=55s steps);
 returns exit 1 (not a failure); `cd` inside a compound command changes cwd for
 later parts of THAT call only (each call is a fresh shell).
 
-===============================================================================
+---
 
 ## 14. VERIFICATION AND TEST RESULTS
 
-===============================================================================
+---
 
 | Verification | Method | Result | Phase | Follow-up |
 | tsc (server) | npx tsc --noEmit | PASS (0) | 1,2,3 | - |
@@ -768,11 +768,11 @@ NOT TESTED / NEVER RUN (be honest):
 - Auto-rollback / kill switch / staging / load test / two-engine: not built.
 - No E2E, visual, accessibility, or responsive testing of anything here.
 
-===============================================================================
+---
 
 ## 15. SETBACKS, FAILED APPROACHES, AND LESSONS
 
-===============================================================================
+---
 
 - #2695 was NECESSARY BUT NOT SUFFICIENT. It parked quiet tables and taught the
   watchdog, but the DEALING loop still dealt through the break. Only measuring
@@ -805,11 +805,11 @@ NOT TESTED / NEVER RUN (be honest):
   Reconnect via ToolSearch for mcp**remote-devices**\* ; committed+pushed work
   is safe; re-verify the tree after each reconnect.
 
-===============================================================================
+---
 
 ## 16. KNOWN DEFECTS AND ARCHITECTURAL HOLES (prioritized)
 
-===============================================================================
+---
 
 | P | Defect / hole | Evidence | Impact | Fix | Status |
 | P0 | Live engine still deals through the break | 22:00 scorecard 3110 hands | The announced break is a lie until #2715 deploys | Phase 2 addendum, in #2715, ships 23:55 | Fix ready, NOT LIVE |
@@ -825,11 +825,11 @@ NOT TESTED / NEVER RUN (be honest):
 | P3 | Client break UI never verified | never exercised | overlay/countdown may not match server | Phase 9 client test | Not started |
 | P3 | Second pause path (tournament tables) may exist | not audited | a tournament table might deal through a break | audit in Phase 2 follow-up / Phase 6 | UNKNOWN, INSPECT |
 
-===============================================================================
+---
 
 ## 17. SECURITY, SECRETS, AND CREDENTIALS (names only)
 
-===============================================================================
+---
 
 All in ~/Documents/club-arena/.env on Dan's Mac (source it; never print values):
 GITHUB_TOKEN - classic PAT; all GitHub API work (gh is absent).
@@ -855,11 +855,11 @@ workflow_dispatch-capable token there). No secret was exposed this session.
 DO NOT touch Supabase project ydsaqnnuwyvtyxgvrnys. Production is
 kuklfnapbkmacvwxktbh only.
 
-===============================================================================
+---
 
 ## 18. DATABASE, MIGRATION, AND SEED STATUS
 
-===============================================================================
+---
 
 Provider: Supabase Postgres, project kuklfnapbkmacvwxktbh. pg_cron 1.6.4 and
 pg_net 0.19.5 are installed (the dispatcher uses pg_net). supabase_vault is
@@ -890,7 +890,7 @@ New scorecard columns (Phase 2): unparked_at_countdown, peak_unparked,
 ready_for_restart_at, gate_opened.
 
 Migrations APPLIED to production (verified in supabase*migrations.schema*
-migrations): 20260902194500, 20260902203100, 20260902204600, 20260902211500, 20260902213000. Every migration is self-contained (carries its own REVOKEs).
+migrations): 20260902194600, 20260902203100, 20260902204600, 20260902211500, 20260902213100. Every migration is self-contained (carries its own REVOKEs).
 Applied via psql as postgres. ROLLBACK of the DDL was NOT separately tested,
 but every function/table is idempotent (CREATE OR REPLACE / IF NOT EXISTS) and
 every logic change was proven in a rolled-back transaction BEFORE applying.
@@ -906,11 +906,11 @@ rolled-back.
 Local vs remote: there is no local database; all work was against production
 (carefully, read-mostly + rolled-back probes + idempotent applies).
 
-===============================================================================
+---
 
 ## 19. CURRENT BLOCKERS AND DECISION POINTS
 
-===============================================================================
+---
 
 DECISION 1 (Dan's authority) - ARM THE DB-SIDE DEPLOY DISPATCHER? It is built
 and disarmed. Arming means storing a GitHub token that can dispatch the deploy
@@ -941,11 +941,11 @@ scheduled task in the NEW session (create_trigger / send_later) to do it. The
 work does not block on this - the escalation ships #2715 regardless - but the
 MEASUREMENT (the acceptance evidence) needs someone to read it.
 
-===============================================================================
+---
 
 ## 20. REMAINING WORK
 
-===============================================================================
+---
 
 CRITICAL:
 
@@ -980,11 +980,11 @@ OPTIONAL:
 - Prune the ~1000 empty DSS tables (part of the load; Dan's call, flagged in
   #2711's changelog and prior handoffs).
 
-===============================================================================
+---
 
 ## 21. PRIORITIZED NEXT-PHASE EXECUTION PLAN
 
-===============================================================================
+---
 
 PHASE 0 - RECOVER AND VERIFY (do first, no edits). Run section 22. Confirm main
 tip, #2715/#2703 merge state, /health version, and the latest scorecards. Do
@@ -1054,11 +1054,11 @@ programme branch if unmerged), fail-on-revert pins, tsc + full server suite,
 apply DB rolled-back-first, push via setsid, open a non-draft PR (autopilot
 merges on green), and MEASURE on the next live break before claiming done.
 
-===============================================================================
+---
 
 ## 22. EXACT FIRST ACTIONS FOR THE NEXT AGENT
 
-===============================================================================
+---
 
 1. Reconnect the Mac bridge if needed: ToolSearch "mcp**remote-devices**
    counselors\_\_host_terminal". All shell work runs there.
@@ -1090,11 +1090,11 @@ merges on green), and MEASURE on the next live break before claiming done.
    measurement confirms phases 2+3, OR fix-forward if the measurement shows
    hands still dealt in the break.
 
-===============================================================================
+---
 
 ## 23. ACCEPTANCE CRITERIA
 
-===============================================================================
+---
 
 The PROGRAMME is done when ALL are observably true on live breaks:
 
@@ -1121,11 +1121,11 @@ The PROGRAMME is done when ALL are observably true on live breaks:
 
 Per-phase acceptance is in docs/ENGINE-RESTART-PROGRAMME.md.
 
-===============================================================================
+---
 
 ## 24. RECOMMENDED COMMIT STRATEGY (remaining work)
 
-===============================================================================
+---
 
 - Phase 4 thaw: TWO commits - (1) fix(db): fn_stamp_sit_out_at stops eating the
   thaw's sit-out shift (migration + rolled-back probe proof); (2) fix(db): the
@@ -1138,11 +1138,11 @@ Per-phase acceptance is in docs/ENGINE-RESTART-PROGRAMME.md.
   in one PR unless stacked deliberately. Every PR non-draft (autopilot merges
   on green) unless you intend to hold it (then draft).
 
-===============================================================================
+---
 
 ## 25. FINAL CONTINUATION SUMMARY
 
-===============================================================================
+---
 
 STOPPING POINT: Phases 1, 2, 3 built and tested. Phase 1 MERGED to main and
 applied to the production DB. Phases 2+3 in PR #2715 (open, mergeable, CI

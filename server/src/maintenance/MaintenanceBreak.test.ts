@@ -777,45 +777,76 @@ describe('the real engine treats a maintenance pause as paused', () => {
   // 10s test budget, so the first case in this block timed out while the four
   // behind it (module already cached) passed. Pay the load once, in setup,
   // with a budget that is about loading and not about the pause predicate.
+  // The FIRST construction is expensive too: the constructor pulls in the
+  // Supabase client and the rest of the engine's lazily-initialised services,
+  // and on the shared 4-vCPU runner box that alone has exceeded the 10s budget
+  // (2026-09-02 22:33 UTC, run 33689794287: the import was already hoisted and
+  // the first case still timed out). Pay it here, once, so every case below
+  // measures the pause predicate and nothing else.
   let ServerTableEngine: any;
   beforeAll(async () => {
     ({ ServerTableEngine } = await import('../engine/ServerTableEngine.js'));
+    new ServerTableEngine(TBL);
   }, 120_000);
 
-  it('is not paused before anything asks it to be', async () => {
-    const e = new ServerTableEngine(TBL) as any;
-    expect(e.isPausedByDesign()).toBe(false);
-  });
+  // A generous per-case budget for the same reason: none of these cases does
+  // any real work, but a saturated runner can stall any of them for seconds.
+  const SLOW_RUNNER_MS = 60_000;
 
-  it('is paused by design while the maintenance break holds it', async () => {
-    const e = new ServerTableEngine(TBL) as any;
-    e.pauseForMaintenance(300_000);
-    expect(
-      e.isPausedByDesign(),
-      'the turn loop and the table watchdog both read this. False here means the ' +
-        'break deals hands through itself and the watchdog rebuilds every parked table.'
-    ).toBe(true);
-  });
+  it(
+    'is not paused before anything asks it to be',
+    async () => {
+      const e = new ServerTableEngine(TBL) as any;
+      expect(e.isPausedByDesign()).toBe(false);
+    },
+    SLOW_RUNNER_MS
+  );
 
-  it('stops being paused when the break lifts', async () => {
-    const e = new ServerTableEngine(TBL) as any;
-    e.pauseForMaintenance(300_000);
-    e.resumeFromMaintenance();
-    expect(e.isPausedByDesign()).toBe(false);
-  });
+  it(
+    'is paused by design while the maintenance break holds it',
+    async () => {
+      const e = new ServerTableEngine(TBL) as any;
+      e.pauseForMaintenance(300_000);
+      expect(
+        e.isPausedByDesign(),
+        'the turn loop and the table watchdog both read this. False here means the ' +
+          'break deals hands through itself and the watchdog rebuilds every parked table.'
+      ).toBe(true);
+    },
+    SLOW_RUNNER_MS
+  );
 
-  it('still reports the hand-for-hand pause it always did', async () => {
-    // The maintenance authority is additive; it must not shadow the original.
-    const e = new ServerTableEngine(TBL) as any;
-    e.pauseAfterHand(120_000);
-    expect(e.isPausedByDesign()).toBe(true);
-  });
+  it(
+    'stops being paused when the break lifts',
+    async () => {
+      const e = new ServerTableEngine(TBL) as any;
+      e.pauseForMaintenance(300_000);
+      e.resumeFromMaintenance();
+      expect(e.isPausedByDesign()).toBe(false);
+    },
+    SLOW_RUNNER_MS
+  );
 
-  it('a hand-for-hand resume cannot unpause a table the break is holding', async () => {
-    // The reason the break got its own authority in the first place.
-    const e = new ServerTableEngine(TBL) as any;
-    e.pauseForMaintenance(300_000);
-    e.resumeDealing();
-    expect(e.isPausedByDesign()).toBe(true);
-  });
+  it(
+    'still reports the hand-for-hand pause it always did',
+    async () => {
+      // The maintenance authority is additive; it must not shadow the original.
+      const e = new ServerTableEngine(TBL) as any;
+      e.pauseAfterHand(120_000);
+      expect(e.isPausedByDesign()).toBe(true);
+    },
+    SLOW_RUNNER_MS
+  );
+
+  it(
+    'a hand-for-hand resume cannot unpause a table the break is holding',
+    async () => {
+      // The reason the break got its own authority in the first place.
+      const e = new ServerTableEngine(TBL) as any;
+      e.pauseForMaintenance(300_000);
+      e.resumeDealing();
+      expect(e.isPausedByDesign()).toBe(true);
+    },
+    SLOW_RUNNER_MS
+  );
 });

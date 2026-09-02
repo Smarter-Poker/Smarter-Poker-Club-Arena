@@ -40,7 +40,7 @@ before.
   in the air, never calling `park()`. **6 pins FAIL on origin/main's
   MaintenanceBreak.ts, 34/34 PASS on this branch.**
 - `tsc --noEmit` clean. Full server suite run before push.
-- DB half (`20260902213000`) applied live and proven in a rolled-back probe:
+- DB half (`20260902213100`) applied live and proven in a rolled-back probe:
   service_role insert into the log, scorecard fills the gate columns, a break
   with no engine row reads NULL not zero.
 - `MaintenanceBreak.test.ts` added to the named regression step of the

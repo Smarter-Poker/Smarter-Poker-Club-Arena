@@ -570,6 +570,12 @@ jobs:
           READY=no
           LEGACY=no
           BREAK_RUNNING=no
+          STRAGGLER_NOW=no
+          # The cutover has to FIT in what is left of the break, or escalating
+          # inside it buys nothing. docker stop -t 45 plus image start plus the
+          # liveness verify is comfortably under two minutes; below that floor
+          # we let the poll run out and take the old post-loop path instead.
+          MIN_BREAK_LEFT_S=120
           for i in $(seq 1 56); do
             BODY=$(curl -sf --max-time 10 "$ENGINE_URL/health" 2>/dev/null || echo "")
             # Three outcomes, deliberately distinguished: ready / not ready /
@@ -587,12 +593,46 @@ jobs:
                 # slow" and "the break never fired at all", and the escalation
                 # below is only safe in the first case.
                 case "$STATE" in *"phase=counting_down"*) BREAK_RUNNING=yes ;; esac
+                #
+                # ESCALATE WHILE THE BREAK IS STILL RUNNING (2026-09-02).
+                # The escalation used to be evaluated only after all 56 attempts,
+                # i.e. 14 minutes after the gate opened. Measured on run
+                # 33662583560: the gate opened at 17:47:24, the break ran
+                # 17:55-18:00, the loop finished at 18:01:24 and the engine
+                # restarted at 18:02:24 - two and a half minutes AFTER the break
+                # it had been waiting for. Players got exactly the unannounced
+                # restart this whole feature exists to remove, and the warning
+                # the step prints ("Restarting inside the break") was not true.
+                #
+                # So take the same decision at the first poll that can act on it,
+                # while the window is still open and the players are still parked.
+                # The conditions are identical to the post-loop check - a break
+                # genuinely running, production genuinely stale - plus the break
+                # having enough time left for the cutover to land inside it.
+                # Nothing here can restart outside a break: it only fires on
+                # phase=counting_down with remaining >= MIN_BREAK_LEFT_S.
+                if [ "$BREAK_RUNNING" = "yes" ] && [ "$BEHIND_MIN" -ge "$STALE_MIN" ]; then
+                  REMAIN_S=$(printf '%s' "$STATE" | sed -n 's/.*remaining=\([0-9][0-9]*\)s.*/\1/p')
+                  if [ -n "$REMAIN_S" ] && [ "$REMAIN_S" -ge "$MIN_BREAK_LEFT_S" ]; then
+                    STRAGGLER_NOW=yes
+                    echo "attempt $i/56: break is running with ${REMAIN_S}s left and production is ${BEHIND_MIN}m behind — escalating NOW, inside the break, rather than after the poll outlives it"
+                    break
+                  fi
+                fi
                 echo "attempt $i/56: waiting for the break — $STATE" ;;
             esac
             sleep 15
           done
 
           if [ "$READY" = "yes" ]; then exit 0; fi
+
+          # Escalated from inside the break. Same decision, same protections
+          # (drainHands still parks the straggler at a hand boundary on
+          # SIGTERM) - the only difference is that the window is still open.
+          if [ "$STRAGGLER_NOW" = "yes" ]; then
+            echo "::warning title=RESTARTING ON A STRAGGLER::A maintenance break is running RIGHT NOW but at least one table never parked, and production has been ${BEHIND_MIN}m behind main (>= ${STALE_MIN}m). Restarting inside the break rather than stranding every engine fix behind one table. drainHands still parks the straggler at a hand boundary on SIGTERM."
+            exit 0
+          fi
 
           # ── ESCALATION: A BREAK WITH A STRAGGLER STILL BEATS NEVER ────────
           #

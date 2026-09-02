@@ -126,8 +126,74 @@ fn_uncollected_entry_check                a0100e602a1042d2cded3d9f184b956b   811
 The migration proves all seven columns refuse with `0A000` on the way in, and
 refuses to land if any one of them does not. 8 new pins in
 `MultiDayIsRefusedUntilItIsBuilt.law.test.ts`, registered in `docs/LAWS.md`
-(registry now 75 assertions). A negative control confirms the law discriminates:
-narrowing the trigger back to its original two columns makes it fail.
+(registry 76 assertions after merging main). A negative control confirms the law
+discriminates: narrowing the trigger back to its original two columns makes it
+fail.
+
+**The guard was proved against everything the platform actually writes**, not
+just against the columns it refuses. Cloning a real tournament row — first
+through the exact `RESTART_COPY_COLUMNS` set the restart path uses, then through
+_every stored column_ of the table — inserts cleanly through the widened
+trigger, inside a rolled-back transaction. That is a stronger answer than
+waiting for the hourly scheduled job to fire, and it is the answer to the real
+risk: a `BEFORE INSERT` trigger on a table the platform writes 330 times an
+hour. The creation rate either side of the change is 330, 329, 391, 315 per
+hour, and the 05:00 bucket contains the change.
+
+## And one of these pins was vacuous, caught by its own negative control
+
+`tests every one of the seven columns` originally asserted that each column
+_name_ appeared in the guard body. Deleting the `day_number` branch failed it
+correctly — but deleting `is_multi_day` or `total_days` did **not**, because
+those two names also appear in the error message and the comments beside them.
+The pin reported success for a guard that had stopped testing the two columns it
+was written for.
+
+It matches the assignment now — `v_field := 'is_multi_day';` — and a negative
+control confirms all seven branches are load-bearing: removing any one of them
+fails the pin.
+
+## And that sweep found the bigger one: the Phase 2 pins had gone stale
+
+Sweeping every positive assertion in both law files for strings that match only
+comment text flagged 9 of 35. Repairing the worst of them — the exemption
+labels, which now have to sit on the clause they name rather than merely exist —
+made a second failure surface immediately:
+
+**`ASeatNobodyPaidFor.law.test.ts` was still reading `20260902050552`.** Phase 3
+changed `fn_uncollected_entry_check` again and moved the pointer in the _Phase 3_
+law file while leaving the Phase 2 one aimed at the superseded body. Every
+assertion in it had gone on passing against a body production had stopped
+running — which is precisely the failure that file's own header warns about, in
+a note I wrote hours earlier and then did not follow.
+
+The note was the problem. A comment asking a human to remember is not a guard,
+so there is one now: a pin scans the migrations directory for every file
+defining the function, takes the newest, and fails if it is not the one the pins
+read. Verified to discriminate — pointed at either older migration, it fails.
+
+Moving the pointer to the live body then surfaced a third staleness: the day-2
+pin still matched `s.day_number > 1 OR s.parent_tournament_id`, the inline shape
+from before Phase 3 hoisted it into a named `later_day` flag. Corrected to
+follow the code.
+
+Five prose-only pins remain and are deliberate: they hold immutable migration
+text to its recorded form, which is the same byte-for-byte discipline used on
+the function bodies.
+
+## Proved in production, not at apply time
+
+The real risk of this phase was a `BEFORE INSERT` trigger on a table the
+platform writes constantly. At apply time I could only show a clone passing and
+one creation 23 seconds later. Nine and a half hours on:
+
+```
+3,845 tournaments created through the widened trigger
+    3 of them through the hourly scheduled path (newest 14:06)
+   58 created and 144 registered in the last ten minutes
+  564 hands dealt in the last two
+    0 half-built flights, 0 unfunded entries
+```
 
 ## A mistake I made twice in one session
 

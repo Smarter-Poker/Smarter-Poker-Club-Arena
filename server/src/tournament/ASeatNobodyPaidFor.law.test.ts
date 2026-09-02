@@ -27,7 +27,7 @@
  * gets back in. Fix your change; never weaken a pin.
  */
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { sliceBlockAfter, sliceSqlStatement } from '../testHelpers/sourceWindow.js';
 
@@ -55,21 +55,101 @@ const MIGRATION = MIG('20260902041336_a_seat_nobody_paid_for.sql');
  * pin, because it still reports success.
  */
 const FIX = sliceSqlStatement(
-  MIG('20260902050552_the_awards_lookback_was_a_month_and_needed_six_hours.sql'),
+  MIG('20260902052604_is_xmtt_means_union_event_not_multi_day.sql'),
   'CREATE OR REPLACE FUNCTION public.fn_uncollected_entry_check'
 );
 
+/**
+ * AND THE POINTER ABOVE WENT STALE ONCE ALREADY, WITHIN HOURS OF THE WARNING
+ * BEING WRITTEN. Phase 3 corrected this same function again (20260902052604,
+ * dropping the union flag from the day-2 test) and moved the pointer in the
+ * Phase 3 law file while leaving this one aimed at 20260902050552. Every
+ * assertion here went on passing against a body production had stopped
+ * running.
+ *
+ * Nothing caught it for one reason: the pins that would have noticed were
+ * written loosely enough to match both bodies. The adjacency pin below - added
+ * in the same sweep that found this - is what finally failed.
+ *
+ * If you change fn_uncollected_entry_check, `grep -rn "fn_uncollected_entry_check"
+ * server/src/**\/*.law.test.ts` and move EVERY pointer, in the commit that
+ * changes it.
+ */
+const LIVE_BODY_MIGRATION = '20260902052604';
+
 const GAME_SERVER = readFileSync(join(__dirname, '../GameServer.ts'), 'utf8');
 
+describe('the pins read the body production is running', () => {
+  it('FIX points at the NEWEST migration that redefines the function', () => {
+    // MOVING THE POINTER BY HAND IS NOT A FIX, IT IS THE SAME BUG DEFERRED.
+    // This file's header already warned "point FIX at the newest migration in
+    // the same commit", and the very next change to the function left it aimed
+    // at the previous one anyway. A note asking a human to remember is not a
+    // guard; this is.
+    const dir = join(__dirname, '../../../supabase/migrations');
+    const defining = readdirSync(dir)
+      .filter((f) => f.endsWith('.sql'))
+      .filter((f) =>
+        readFileSync(join(dir, f), 'utf8').includes(
+          'CREATE OR REPLACE FUNCTION public.fn_uncollected_entry_check'
+        )
+      )
+      .sort();
+
+    expect(defining.length, 'no migration defines fn_uncollected_entry_check').toBeGreaterThan(0);
+
+    const newest = defining[defining.length - 1];
+    expect(
+      newest.startsWith(LIVE_BODY_MIGRATION),
+      `the newest migration defining this function is ${newest}, but the pins ` +
+        `read ${LIVE_BODY_MIGRATION}. Point FIX at the newest one and update ` +
+        `LIVE_BODY_MIGRATION, in the commit that changed the function.`
+    ).toBe(true);
+  });
+});
+
 describe('the legitimate ways to hold a seat are enumerated, never inferred', () => {
-  it('names all four exemptions in the code that applies them', () => {
+  it('each exemption label sits on the clause that implements it', () => {
     // A check that decides for itself what "looks legitimate" will eventually
-    // excuse the next leak too. Each of these is a comment sitting on the
-    // clause that implements it, so deleting the clause deletes the label.
-    expect(FIX).toContain('EXEMPTION 1');
-    expect(FIX).toContain('EXEMPTION 2');
-    expect(FIX).toContain('EXEMPTION 3');
-    expect(FIX).toContain('EXEMPTION 4');
+    // excuse the next leak too, so each exemption is LABELLED where it is
+    // applied.
+    //
+    // THIS PIN USED TO ASSERT ONLY THAT THE FOUR LABELS EXISTED, while its
+    // comment claimed "deleting the clause deletes the label" - which is
+    // exactly what it did not enforce. Deleting the `funded` CTE and leaving
+    // its comment behind would have kept it green. Found by sweeping every
+    // positive assertion in this file for strings that match only comment text:
+    // 9 of 35 did.
+    //
+    // The segment for each label runs to the NEXT label, derived from where the
+    // labels actually are rather than from a byte count - the fixed-size window
+    // this repo already outlawed. Each segment must contain the code that
+    // exemption is about.
+    const IMPLEMENTED_BY: Record<string, string> = {
+      'EXEMPTION 1': "w.category = 'tournament_buyin'",
+      'EXEMPTION 2': "r.source = 'fn_award_satellite_seat'",
+      'EXEMPTION 3': 'AND NOT s.later_day',
+      'EXEMPTION 4': 'COALESCE(t.buy_in_fee, 0) > 0',
+    };
+
+    // Each label exactly once, or the segmentation below is meaningless.
+    for (const label of Object.keys(IMPLEMENTED_BY)) {
+      const count = FIX.split(label).length - 1;
+      expect(count, `${label} appears ${count} times, expected exactly once`).toBe(1);
+    }
+
+    const ordered = Object.keys(IMPLEMENTED_BY)
+      .map((label) => ({ label, at: FIX.indexOf(label) }))
+      .sort((a, b) => a.at - b.at);
+
+    ordered.forEach(({ label, at }, i) => {
+      const end = i + 1 < ordered.length ? ordered[i + 1].at : FIX.length;
+      const segment = FIX.slice(at, end);
+      expect(
+        segment,
+        `${label} is labelled but its clause (${IMPLEMENTED_BY[label]}) is not beneath it`
+      ).toContain(IMPLEMENTED_BY[label]);
+    });
   });
 
   it('the ordinary door is a wallet_transactions tournament_buyin debit', () => {
@@ -88,7 +168,13 @@ describe('the legitimate ways to hold a seat are enumerated, never inferred', ()
   });
 
   it('a day past the first is bought by surviving day one', () => {
-    expect(FIX).toMatch(/s\.day_number > 1 OR s\.parent_tournament_id IS NOT NULL/);
+    // Written against the shape this had before Phase 3, where the test lived
+    // inline in the `bad` CTE as `s.day_number > 1 OR s.parent_tournament_id`.
+    // It is computed once in `seats` now, off the tournaments alias, and
+    // consumed as a named flag - so the assertion follows the code rather than
+    // the code being held to an assertion that stopped describing it.
+    expect(FIX).toMatch(/COALESCE\(t\.day_number, 1\) > 1 OR t\.parent_tournament_id IS NOT NULL/);
+    expect(FIX).toContain('AND NOT s.later_day');
   });
 
   it('a freeroll owes no entry', () => {

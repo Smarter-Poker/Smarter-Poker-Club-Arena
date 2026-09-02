@@ -69,8 +69,25 @@ const STRUCTURE_COLUMNS = [
 
 describe('the guard refuses the structure, not just the badge', () => {
   it('tests every one of the seven columns in the function body', () => {
+    // MATCHED ON THE ASSIGNMENT, NOT THE BARE NAME, and this pin was VACUOUS
+    // for two of the seven until a negative control caught it.
+    //
+    // The first version asserted `GUARD.toContain(columnName)`. Deleting the
+    // `day_number` branch failed it correctly - but deleting the
+    // `is_multi_day` or `total_days` branch did NOT, because those two names
+    // also appear in the error message and the comments around them. The pin
+    // reported success for a guard that had stopped testing the two columns it
+    // was originally written for.
+    //
+    // That is the THIRD time in this session that matching a bare word instead
+    // of its code form produced a false result - twice in migration assertions
+    // that refused themselves on their own explanatory prose, and once here,
+    // where it silently passed instead. The rule: when asserting that a name is
+    // present as CODE, match the syntax around it.
     for (const c of [...BADGE_COLUMNS, ...STRUCTURE_COLUMNS]) {
-      expect(GUARD, `${c} is not tested by the guard`).toContain(c);
+      expect(GUARD, `${c} is not assigned to v_field, so the guard does not test it`).toContain(
+        `v_field := '${c}';`
+      );
     }
   });
 

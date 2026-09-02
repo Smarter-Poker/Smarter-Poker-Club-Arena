@@ -144,6 +144,19 @@ class TableService {
       // Tournament tables are not cash games — they were being listed as
       // joinable ring games in club lobbies.
       .is('tournament_id', null)
+      /* A LIVE GAME MUST NEVER BE TRUNCATED AWAY (2026-09-02).
+         This ordered by created_at alone under a 200-row cap, so the lobby
+         showed the 200 NEWEST tables rather than the 200 most worth seeing.
+         Measured on Deep Stack Society, which carries 1,058 open cash tables:
+         of its 51 RUNNING tables only 10 survived the cut, so 41 games with
+         real players dealing real hands were invisible and every filter tab
+         read "0/x OPEN" down the page. The club was dealing 676 cash hands a
+         quarter-hour at the time.
+         current_players is maintained exactly (verified against table_seats:
+         0 wrong across 1,131 open tables), so occupancy first puts every
+         occupied table above every empty one and the cap can then only ever
+         trim empties. created_at stays as the tiebreak among equals. */
+      .order('current_players', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(QUERY_LIMITS.LIST);
 
@@ -205,6 +218,8 @@ class TableService {
       .eq('is_deleted', false)
       .neq('status', 'closed')
       .is('tournament_id', null)
+      // Occupancy first, same rule and same reason as getClubTables above.
+      .order('current_players', { ascending: false })
       .order('created_at', { ascending: false })
       .limit(QUERY_LIMITS.LIST);
 

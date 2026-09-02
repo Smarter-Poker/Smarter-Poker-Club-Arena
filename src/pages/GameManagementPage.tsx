@@ -59,10 +59,21 @@ interface ManagedGame {
   contract: ManagedGameContractSummary | null;
   lastCommand: ManagedGameCommandReceipt | null;
   pendingSchedule: { scheduleId: string; executeAt: string; status: string } | null;
+  /**
+   * 0 live, 1 scheduled, 2 closed - decided by fn_list_managed_games and never
+   * re-derived here. The board used to compute "scheduled" a second time in
+   * this file, as "a tournament that is neither active nor closed", and got
+   * the same wrong answer the SQL did: every tournament is REGISTERING, which
+   * both lists counted as active, so the Scheduled tab could never match a
+   * single row. One definition, on the server, is why that cannot recur.
+   */
+  bucket: number;
 }
 
-const ACTIVE_STATUSES = new Set(['running', 'active', 'waiting', 'registering', 'late_reg']);
-const CLOSED_STATUSES = new Set(['closed', 'completed', 'cancelled', 'canceled', 'deleted']);
+/** Mirrors fn_list_managed_games. Read the bucket; never recompute it. */
+const BUCKET_LIVE = 0;
+const BUCKET_SCHEDULED = 1;
+const BUCKET_CLOSED = 2;
 const CREATE_TARGETS = new Set<GameCreationTarget>(['table', 'event', 'spin', 'sng']);
 const GAME_REFRESH_EVENTS = [
   'TABLE_CREATED',
@@ -683,6 +694,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           ...tableRows.map((row: any) => ({
             id: row.id,
             kind: 'table' as const,
+            bucket: Number(row.bucket ?? 0),
             name: row.name,
             status: row.status,
             clubId: row.club_id,
@@ -709,6 +721,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           ...tournamentRows.map((row: any) => ({
             id: row.id,
             kind: 'tournament' as const,
+            bucket: Number(row.bucket ?? 0),
             name: row.name,
             status: row.status,
             clubId: row.club_id,
@@ -825,6 +838,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       const rows: ManagedGame[] = page.items.map((row: any) => ({
         id: row.id,
         kind: row.kind,
+        bucket: Number(row.bucket ?? 0),
         name: row.name,
         status: row.status,
         clubId: row.club_id,
@@ -932,15 +946,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const filteredGames = useMemo(
     () =>
       games.filter((game) => {
-        const status = game.status.toLowerCase();
-        if (view === 'running') return ACTIVE_STATUSES.has(status);
-        if (view === 'closed') return CLOSED_STATUSES.has(status);
-        if (view === 'scheduled')
-          return (
-            game.kind === 'tournament' &&
-            !ACTIVE_STATUSES.has(status) &&
-            !CLOSED_STATUSES.has(status)
-          );
+        if (view === 'running') return game.bucket === BUCKET_LIVE;
+        if (view === 'closed') return game.bucket === BUCKET_CLOSED;
+        if (view === 'scheduled') return game.bucket === BUCKET_SCHEDULED;
         return true;
       }),
     [games, view]
@@ -1189,11 +1197,11 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         ) : (
           <section className={styles.gameList} aria-label="Managed Games">
             {filteredGames.map((game) => {
-              const closed = CLOSED_STATUSES.has(game.status.toLowerCase());
+              const closed = game.bucket === BUCKET_CLOSED;
               return (
                 <article key={`${game.kind}-${game.id}`} className={styles.gameRow}>
                   <span
-                    className={`${styles.statusRail} ${ACTIVE_STATUSES.has(game.status.toLowerCase()) ? styles.live : closed ? styles.closed : styles.scheduled}`}
+                    className={`${styles.statusRail} ${game.bucket === BUCKET_LIVE ? styles.live : closed ? styles.closed : styles.scheduled}`}
                     aria-hidden="true"
                   />
                   <div className={styles.gameIdentity}>

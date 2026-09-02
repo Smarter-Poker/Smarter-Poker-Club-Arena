@@ -199,6 +199,10 @@ export interface TournamentConfig {
 
   // Guaranteed Prize
   guaranteedPrize?: number;
+  /** Share of the FIELD that finishes in the money: 10, 15 or 20 percent.
+   *  The payout TABLE is derived server-side at lock from this and the
+   *  field that actually entered, so places always match entrants. */
+  payoutPercent?: 10 | 15 | 20;
 
   // Bounty Configuration
   bountyConfig?: BountyConfig;
@@ -613,6 +617,7 @@ class TournamentService {
       blindStructure: config.blindStructure,
       payoutStructure: config.payoutStructure,
       guaranteedPrize: config.guaranteedPrize || 0,
+      payoutPercent: config.payoutPercent ?? 10,
       lateRegistrationLevels: config.lateRegistrationLevels || 0,
       startTime: config.startTime?.toISOString() ?? null,
       isRebuy: config.isRebuy || false,

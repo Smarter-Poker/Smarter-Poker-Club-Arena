@@ -149,6 +149,11 @@ export default function CreateTournamentModal({
      the builder itself, so it is never empty when it is used. */
   const [customBlinds, setCustomBlinds] = useState<BlindLevel[]>([]);
   const [guaranteedPrize, setGuaranteedPrize] = useState('0');
+  /* What share of the FIELD finishes in the money. Dan 2026-09-02: only the
+     top 10-15% of a field gets paid, and it is chosen per tournament. The
+     database derives the actual payout table from this and the field that
+     turns up, so the places always match the entrants. */
+  const [payoutPercent, setPayoutPercent] = useState<10 | 15 | 20>(10);
 
   // ── Satellite target (the tournament winners earn a seat into) ──
   const [satelliteTargetId, setSatelliteTargetId] = useState('');
@@ -578,6 +583,7 @@ export default function CreateTournamentModal({
       const wholeFields: Array<[string, string, boolean]> = [
         ['Buy-in', buyIn, true],
         ['Guaranteed prize', guaranteedPrize, false],
+        ['Field paid', `Top ${payoutPercent}%`, false],
         ...((isRebuy || isReentry) && rebuyCost.trim()
           ? ([[isRebuy ? 'Rebuy cost' : 'Re-entry cost', rebuyCost, true]] as Array<
               [string, string, boolean]
@@ -729,6 +735,7 @@ export default function CreateTournamentModal({
         // only for compatibility with older database rows.
         addOnLevels: addOnAvailable ? 1 : undefined,
         guaranteedPrize: Math.max(0, Math.round(Number(guaranteedPrize)) || 0),
+        payoutPercent,
         satelliteTarget:
           isSatellite && satelliteTargetId
             ? {
@@ -1242,6 +1249,21 @@ export default function CreateTournamentModal({
                   inputMode="numeric"
                 />
                 <span className={styles.helperText}>0 = No Guarantee</span>
+              </div>
+            </div>
+            <div className={styles.col}>
+              <div className={styles.formGroup}>
+                <label>Field Paid</label>
+                <select
+                  className={styles.input}
+                  value={payoutPercent}
+                  onChange={(e) => setPayoutPercent(Number(e.target.value) as 10 | 15 | 20)}
+                >
+                  <option value={10}>Top 10% Of The Field</option>
+                  <option value={15}>Top 15% Of The Field</option>
+                  <option value={20}>Top 20% Of The Field</option>
+                </select>
+                <span className={styles.helperText}>Places Pay Out Of The Field That Enters</span>
               </div>
             </div>
           </div>

@@ -7,6 +7,7 @@
     "fn_ca_completed_without_a_champion",
     "fn_ca_fund_overlay_on_lock",
     "fn_ca_overlay_shortfall",
+    "fn_ca_payout_structure",
     "fn_ca_prize_overpay_count",
     "fn_ca_prize_overpay_unexplained",
     "fn_ca_rake_distribution_mismatch",
@@ -19,5 +20,8 @@
     "fn_ca_tournament_underpaid_count",
     "fn_emit_managed_game_row_event",
     "record_rake"
-  ]
+  ],
+  "columns": {
+    "tournaments": ["payout_percent"]
+  }
 }

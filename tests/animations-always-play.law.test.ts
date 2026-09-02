@@ -941,6 +941,37 @@ describe('LAW: a Crazy Pineapple discard is seen and heard', () => {
     expect(read('src/lib/holeCardCount.ts')).toMatch(/\bpineapple: 3\b/);
   });
 
+  it('the card you threw reaches the panel at the table, not only the replay', () => {
+    /* PHASE 4 COMPLETION 2026-09-01. Phase 4 taught the STANDALONE replay
+       which card you threw and stopped there. The hand-history panel that
+       slides out at the table - the surface a player reviews the last hand on
+       mid-session, without leaving the felt - still printed the word
+       "discard" and nothing else, and so did the Hand Detail modal it opens.
+       Same fetch, same policy, same map; it simply never reached that list.
+
+       The pin is on the SHAPE of the gate, because that is the part that can
+       be got wrong later: the service attaches the card by looking the
+       ACTION'S OWN user id up in a map that only ever holds the viewer's rows
+       (RLS: hand_discards_read_own). Any other key - a hero id, a seat, a
+       "current user" - would be a filter that can drift, which is exactly what
+       fetchOwnDiscards was written to avoid. */
+    const svc = read('src/services/HandHistoryService.ts');
+    expect(svc).toMatch(/discarded_card:\s*\n?\s*a\?\.action === 'discard'/);
+    expect(svc).toContain("discardedCards[String(a?.userId || '')]");
+
+    // The adapter carries it across to the panel's own view model, as a
+    // canonical code - the suit is stored as a WORD, and slicing the last
+    // character of "hearts" prints a spade (see utils/cardCode.ts).
+    const adapter = read('src/lib/handHistoryAdapter.ts');
+    expect(adapter).toContain('discardedCard: a.discarded_card ? toCardCode(a.discarded_card)');
+
+    // Both in-table surfaces draw it.
+    expect(read('src/components/table/HandHistoryPanel.tsx')).toContain(
+      '<CardChip code={a.discardedCard} />'
+    );
+    expect(read('src/components/table/HandDetailModal.tsx')).toContain('a.discardedCard');
+  });
+
   it('nothing about the discard can be switched off', () => {
     // §10.6: no new toggle may disable an animation or its cue. The only
     // control is --animation-speed, asserted above.

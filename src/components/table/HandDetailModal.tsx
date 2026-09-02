@@ -687,7 +687,17 @@ export function HandDetailModal({
                               {a.action === 'allin' ? 'All In' : a.action}
                             </span>
                             <span className="hdm-amount">
-                              {a.amount && a.amount > 0 ? fmt(a.amount) : ''}
+                              {/* PHASE 4 COMPLETION 2026-09-01: the card you
+                                  threw, in the amount slot because a discard
+                                  never has one. Present only on the viewer's
+                                  own discard - the service fills it from
+                                  `hand_discards`, which RLS scopes to the
+                                  caller, so an opponent's stays undefined. */}
+                              {a.discardedCard
+                                ? a.discardedCard
+                                : a.amount && a.amount > 0
+                                  ? fmt(a.amount)
+                                  : ''}
                             </span>
                             <span className="hdm-pot">{fmt(rowPot)}</span>
                           </div>

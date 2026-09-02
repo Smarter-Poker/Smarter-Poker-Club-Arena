@@ -9,6 +9,7 @@ const repairMigration = read(
   'supabase/migrations/20260901075500_repair_pre_trigger_opening_bank.sql'
 );
 const lobby = read('src/pages/ClubHomePage.tsx');
+const creationActions = read('src/components/club/GameCreationActions.tsx');
 const progress = read('src/components/club/ClubLaunchProgress.tsx');
 const progressCss = read('src/components/club/ClubLaunchProgress.css');
 const machineCss = read('src/components/lobby/ClubLobbyCommandTop.css');
@@ -40,20 +41,11 @@ describe('new club opening bank', () => {
 
 describe('owner launch controls', () => {
   it('provides one real create action for every requested category', () => {
-    for (const label of [
-      'Create MTT',
-      'Create NLH Table',
-      'Create PLO Table',
-      'Create Limit Table',
-      'Create Spin',
-      'Create Heads Up',
-    ]) {
-      expect(lobby).toContain(label);
+    for (const label of ['Add Table', 'Event', 'Spins', 'Sit N Go']) {
+      expect(creationActions).toContain(label);
     }
-    expect(lobby).toContain("HOLDEM: 'nlh'");
-    expect(lobby).toContain("OMAHA: 'plo4'");
-    expect(lobby).toContain("LIMIT: 'flh'");
-    expect(lobby).toContain('onClick={() => openCreationFor(gameType)}');
+    expect(lobby).toContain('<GameCreationActions');
+    expect(creationActions).toContain('`${managementPath}?create=${action.target}`');
     expect(lobby).not.toContain(
       'club?.is_union === true && (\n          <div className="lobby-resultsbar'
     );

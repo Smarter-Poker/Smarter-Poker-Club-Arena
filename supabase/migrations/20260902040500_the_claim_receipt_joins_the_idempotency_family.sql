@@ -1,0 +1,48 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- THE CLAIM RECEIPT JOINS THE IDEMPOTENCY FAMILY
+-- ═══════════════════════════════════════════════════════════════════════════
+--
+-- Every other money path on `chip_transactions` carries a partial UNIQUE index
+-- on (club_id, metadata->>'op_id'), and the phase 6 commission claim - the
+-- newest of them - was the one that did not:
+--
+--   chip_transactions_agent_wallet_op_id_uidx   agent_wallet_send,
+--                                               agent_wallet_claim_back,
+--                                               cashout_request_escrow,
+--                                               cashout_approved / denied /
+--                                               cancelled
+--   chip_transactions_club_bank_op_id_uidx      club_bank_send,
+--                                               club_bank_reversal
+--   chip_transactions_staff_ops_op_id_uidx      admin_removal, mint,
+--                                               cashout_expired_refund
+--   chip_transactions_wallet_ops_op_id_uidx     club_bank_claim,
+--                                               promo_wallet_send
+--   (nothing)                                   commission_claim
+--
+-- `fn_agent_claim_commission`'s replay guard is a SELECT on that receipt before
+-- the INSERT. Without a unique index that is CHECK-THEN-ACT: two requests
+-- carrying the same op_id can both find no prior row and both proceed. Row-lock
+-- ordering makes an identical double-payment unlikely rather than impossible,
+-- and "unlikely" is not the guarantee the other five paths give. The index is
+-- what makes the guard true under concurrency instead of probable.
+--
+-- IT COST NOTHING TO ADD NOW, AND THAT IS THE POINT OF DOING IT NOW: production
+-- holds ZERO `commission_claim` rows, so there is no backfill, no duplicate to
+-- resolve and no chance of the build failing on existing data. After the first
+-- real claim, the same index is a migration with a data problem attached.
+--
+-- Built with CREATE INDEX CONCURRENTLY, outside a transaction, because a plain
+-- CREATE INDEX takes an ACCESS EXCLUSIVE lock and this table is on every money
+-- path on the platform. That is why this is its own migration rather than part
+-- of 20260902035517: CONCURRENTLY cannot run inside one, and CLAUDE.md's
+-- Production DDL policy asks for one transaction per change, so the change that
+-- cannot be transactional is kept on its own.
+--
+-- ROLLBACK
+-- ═══════════════════════════════════════════════════════════════════════════
+--   DROP INDEX CONCURRENTLY IF EXISTS public.chip_transactions_commission_claim_op_id_uidx;
+-- ═══════════════════════════════════════════════════════════════════════════
+
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS chip_transactions_commission_claim_op_id_uidx
+  ON public.chip_transactions (club_id, ((metadata ->> 'op_id')))
+  WHERE transaction_type = 'commission_claim' AND metadata ? 'op_id';

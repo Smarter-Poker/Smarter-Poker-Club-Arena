@@ -96,8 +96,20 @@ describe('it fails in the safe direction', () => {
     expect(SH).toContain('GRACE_MIN="${GRACE_MIN:-45}"');
     expect(SH).toContain('RESTART_MINUTE="${RESTART_MINUTE:-55}"');
     expect(SH).toContain('DEPLOY_MIN="${DEPLOY_MIN:-25}"');
-    expect(SH).toContain('WINDOW_EPOCH=$(window_at_or_after "$REQ_EPOCH")');
-    expect(SH).toContain('GRACE_DEADLINE=$(( REQ_EPOCH + GRACE_MIN * 60 ))');
+    // 2026-09-02: the epoch feeding this moved from REQ_EPOCH (the NEWEST
+    // engine commit) to BEHIND_SINCE_EPOCH (the oldest one production does not
+    // have). The SHAPE this test pins - next restart boundary plus deploy
+    // time, floored by the grace - is unchanged; what changed is that the
+    // clock no longer restarts every time somebody merges. Anchored to the
+    // newest commit, this watchdog was silent through fourteen hours of
+    // stranded code, which is the same incident the comment above describes,
+    // one level deeper than the RESTART_MINUTE desync that was fixed then.
+    expect(SH).toContain('WINDOW_EPOCH=$(window_at_or_after "$BEHIND_SINCE_EPOCH")');
+    // Same 2026-09-02 move as WINDOW_EPOCH above: the grace is still
+    // GRACE_MIN long and still floors the deadline, but it now starts when
+    // production fell behind instead of at the newest merge, so it is spent
+    // once rather than renewed by every commit.
+    expect(SH).toContain('GRACE_DEADLINE=$(( BEHIND_SINCE_EPOCH + GRACE_MIN * 60 ))');
     expect(SH).toContain('[ "$GRACE_DEADLINE" -gt "$DEADLINE" ] && DEADLINE=$GRACE_DEADLINE');
     expect(SH).toContain('Engine watchdog: waiting for the restart window');
     // ...and inside that deadline the script says its piece and STOPS, before
@@ -235,5 +247,45 @@ describe('the watchdog agrees with the deploy schedule', () => {
     expect(fn).toContain('RESTART_MINUTE');
     // The hour-walking loop is what produced the five-hour deadline.
     expect(fn).not.toContain('seq 0 47');
+  });
+});
+
+describe('the grace is spent once, not renewed by every merge', () => {
+  /**
+   * 2026-09-02: this watchdog stayed quiet through FOURTEEN HOURS of stranded
+   * engine code, printing "Behind by design" on every run while production sat
+   * on 93d167b5 and the deploy fail-closed at every window.
+   *
+   * Both deadlines were anchored to REQ_EPOCH - the NEWEST engine commit on
+   * main - so every new engine merge pushed the deadline forward another
+   * GRACE_MIN. This fleet merges engine changes far more often than every 45
+   * minutes, so NOW was permanently below DEADLINE and the alarm/dispatch
+   * branch was unreachable. The busier the repo got, the quieter its own
+   * staleness alarm became.
+   */
+  it('anchors the deadline to when production fell behind, not to the newest merge', () => {
+    expect(
+      /BEHIND_SINCE_EPOCH/.test(SH_CODE),
+      'the deadline is anchored to the newest engine commit, so every merge renews the ' +
+        'grace and this watchdog can never reach its own alarm on a busy repo.'
+    ).toBe(true);
+
+    // The grace and the window must BOTH hang off that anchor. Leaving either
+    // on REQ_EPOCH re-opens the bug through the other deadline.
+    expect(SH_CODE).toMatch(/GRACE_DEADLINE=\$\(\(\s*BEHIND_SINCE_EPOCH/);
+    expect(SH_CODE).toMatch(/window_at_or_after "\$BEHIND_SINCE_EPOCH"/);
+  });
+
+  it('finds that anchor as the oldest engine commit production does not have', () => {
+    // Oldest, not newest: the instant it fell behind does not move when
+    // somebody merges again.
+    expect(SH_CODE).toMatch(/git log --reverse[\s\S]{0,120}SERVED\}\.\.origin\/main/);
+  });
+
+  it('falls back to the old anchor when it cannot tell what production serves', () => {
+    // Unknown must stay quiet, never louder. An unresolvable or missing sha
+    // keeps the previous behaviour rather than guessing "behind".
+    expect(SH_CODE).toMatch(/BEHIND_SINCE_EPOCH=\$REQ_EPOCH/);
+    expect(SH_CODE).toMatch(/git cat-file -e "\$\{SERVED\}\^\{commit\}"/);
   });
 });

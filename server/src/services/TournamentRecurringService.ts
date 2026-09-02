@@ -3539,20 +3539,82 @@ export class TournamentRecurringService {
    * refusing to seat on an unreadable page would starve every board on the
    * platform, which is a worse failure than the one being fixed.
    */
+  /**
+   * Who may be registered into this tournament's field.
+   *
+   * A CLUB'S EVENT DRAWS FROM ITS CLUB. A UNION'S EVENT DRAWS FROM ITS UNION
+   * (2026-09-02). The membership rule added on 2026-09-01 - correctly, to stop
+   * Deep Stack Society's standalone population wandering into the union's
+   * schedule - resolved every tournament to the single `club_id` row it hangs
+   * off. That is right for a standalone club and WRONG for a union event,
+   * because a union event hangs off the union's OWN club row while the horses
+   * live in the union's MEMBER clubs.
+   *
+   * Measured on Midway Union the day this was written:
+   *
+   *   Midway Union club row          323 horses
+   *   Club JAQK + SHARK CLUB         584 horses  (392 tournament-lane)
+   *
+   *   candidates for a union event, host-club rule ......  28
+   *   candidates for a union event, union-wide rule ..... 203
+   *
+   * Twenty-eight. That is the pool the entire union schedule was drawing from,
+   * and it is why `registerHorses found no candidates` was the engine's most
+   * frequent tournament log line while 392 tournament-lane horses sat idle -
+   * and, alongside the publication-lead bug, why guaranteed events were closing
+   * registration under-funded and paying overlay out of treasury.
+   *
+   * The isolation the 2026-09-01 rule exists to enforce is UNCHANGED: a
+   * standalone club (`union_id IS NULL`, which is what Deep Stack Society is
+   * and is meant to be) still resolves to exactly its own membership, because
+   * the union branch below is only taken when the tournament carries a union.
+   *
+   * FAILS OPEN on an unreadable page, like every other gate in this file: a
+   * partial read is not an empty club, and refusing to register on a failed
+   * read starves every event on the platform.
+   */
   private async clubMemberIdsForTournament(tournamentId: string): Promise<Set<string> | null> {
     const hostClub = await supabase
       .from('tournaments')
-      .select('club_id')
+      .select('club_id, union_id')
       .eq('id', tournamentId)
       .maybeSingle();
     const hostClubId = (hostClub.data as { club_id?: string } | null)?.club_id;
+    const unionId = (hostClub.data as { union_id?: string } | null)?.union_id;
     if (!hostClubId) return null;
+
+    /* The clubs whose members may enter. For a standalone club that is the one
+       host club and nothing else. For a union event it is every club in the
+       union, plus the union's own club row (which holds members of its own and
+       is the row the event itself hangs off). */
+    let clubIds: string[] = [hostClubId];
+    if (unionId) {
+      const [owned, joined] = await Promise.all([
+        supabase.from('clubs').select('id').eq('union_id', unionId),
+        supabase.from('union_clubs').select('club_id').eq('union_id', unionId),
+      ]);
+      // An unreadable union map must not silently narrow the pool back to the
+      // host club - that is the bug being fixed. Decline the pass instead and
+      // let the caller fail open.
+      if (owned.error || joined.error) return null;
+      const ids = new Set<string>([hostClubId]);
+      for (const r of owned.data ?? []) {
+        const id = (r as { id?: string }).id;
+        if (id) ids.add(id);
+      }
+      for (const r of joined.data ?? []) {
+        const id = (r as { club_id?: string }).club_id;
+        if (id) ids.add(id);
+      }
+      clubIds = [...ids];
+    }
+
     const memberPage = await fetchAllRows<{ user_id: string }>(
       (cursor, want) => {
         let q = supabase
           .from('club_members')
           .select('user_id')
-          .eq('club_id', hostClubId)
+          .in('club_id', clubIds)
           .order('user_id', { ascending: true })
           .limit(want);
         if (cursor) q = q.gt('user_id', cursor);
@@ -4628,9 +4690,15 @@ export class TournamentRecurringService {
       if (!horses || horses.length === 0) {
         // Say WHY the pool came up empty — "added NONE" with no numbers is
         // how this starved silently for a day.
+        /* clubDropped was counted here and never printed, so the single
+           largest exclusion was invisible: the line read "fleet 1000,
+           at-capacity 215, lane 108" and left the reader to conclude the other
+           677 simply did not exist. Print every bucket - the numbers only help
+           if they add up. */
         console.warn(
           `[TournamentRecurring] registerHorses found no candidates: fleet ${poolAll.length}, ` +
-            `at-capacity/entered ${busyDropped}, lane/window-excluded ${laneDropped}`
+            `at-capacity/entered ${busyDropped}, not-a-club-member ${clubDropped}, ` +
+            `lane/window-excluded ${laneDropped}`
         );
         return 0;
       }

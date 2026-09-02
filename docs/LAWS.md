@@ -137,3 +137,4 @@ whichever test the next agent notices first.
 | tests/unit/realtimeFirehoseIsDebounced.law.test.ts              | A realtime subscription on a per-hand table must debounce, never reload once per row                                                      |
 | tests/unit/snapshotNeverDropsASeat.law.test.ts                  | State snapshots keep every seat                                                                                                           |
 | tests/unit/snapshotNeverDropsASeat.law.test.ts                  | State snapshots keep every seat                                                                                                           |
+| server/src/engine/RakeSpecParity.law.test.ts                    | One rake spec (R7): calculateRake == fn_effective_rake over 500 cases, BBJ drop == fn_effective_bbj_drop, checksum pinned to production   |

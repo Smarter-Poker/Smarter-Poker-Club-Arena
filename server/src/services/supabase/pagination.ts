@@ -148,7 +148,10 @@ export async function fetchAllRows<T extends Record<string, unknown>>(
       ({ data, error } = await makeQuery(cursor, want));
       if (!error) break;
       if (attempt < attempts) {
-        await sleep(PAGE_RETRY_BACKOFF_MS[attempt - 1] ?? PAGE_RETRY_BACKOFF_MS[PAGE_RETRY_BACKOFF_MS.length - 1]);
+        await sleep(
+          PAGE_RETRY_BACKOFF_MS[attempt - 1] ??
+            PAGE_RETRY_BACKOFF_MS[PAGE_RETRY_BACKOFF_MS.length - 1]
+        );
       }
     }
 

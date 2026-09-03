@@ -151,11 +151,26 @@ export default function AnalyticsDashboard() {
     }
   }, [timeRange]);
 
+  /** One row of `fn_admin_platform_aggregates` (migration 20260902). */
+  interface PlatformAggregateRow {
+    total_hands: number | string | null;
+    active_players: number | string | null;
+    total_rake: number | string | null;
+    vip_diamonds: number | string | null;
+    live_players: number | string | null;
+  }
+
   const loadVipLedger = useCallback(async () => {
     try {
+      /* Same wrong table as the aggregate below: `diamond_ledger` has 0 rows
+         and no writer, so this operator-facing feed was permanently empty and
+         said so as though it were a fact about the platform. `type` is
+         selected beside `transaction_type` because the latter is NULL on ~774
+         of ~1,540 rows (reconciliation and signup_bonus rows carry their kind
+         in the older column) — the same trap DiamondWalletModal documents. */
       let query = supabase
-        .from('diamond_ledger')
-        .select('id, user_id, amount:delta, transaction_type:type, created_at')
+        .from('diamond_transactions')
+        .select('id, user_id, amount, type, transaction_type, created_at')
         .order('created_at', { ascending: false })
         .limit(20);
 
@@ -166,8 +181,19 @@ export default function AnalyticsDashboard() {
 
       const { data, error } = await query;
 
-      if (!error && data && mountedRef.current) {
-        setVipLedger(data);
+      /* supabase-js RESOLVES with `{ data: null, error }` rather than
+         throwing, so `if (!error && data)` swallowed every failure into a
+         silent empty feed. Rethrow into the catch below, which reports and
+         tells the operator. */
+      if (error) throw error;
+
+      if (data && mountedRef.current) {
+        setVipLedger(
+          data.map((row) => ({
+            ...row,
+            transaction_type: row.transaction_type || row.type || '',
+          }))
+        );
       }
     } catch (err) {
       reportError(err, 'AnalyticsDashboard.Error_loading_VIP_ledger');
@@ -175,54 +201,60 @@ export default function AnalyticsDashboard() {
     }
   }, [timeRange]);
 
+  /**
+   * ── THESE FOUR NUMBERS WERE NOT MEASUREMENTS ───────────────────────────
+   *
+   * What this used to do, and why each part was wrong:
+   *
+   *   totalHands / activePlayers — reduced in the browser over
+   *     `.limit(5000)` with NO `.order()`, against a `player_position_stats`
+   *     table holding 5,919 rows. So they summed an arbitrary subset and could
+   *     differ between two refreshes a second apart. True hands: 23,031,984.
+   *
+   *   totalRake — `0.05 * hands_played`. Not rake. A constant times the same
+   *     truncated hand count, rounded to two decimals so it looked measured.
+   *     `rake_records` (1,681,381 rows, 4,792,230.11 chips) was never read.
+   *
+   *   totalVipPointsIssued — summed `diamond_ledger`, a table with **0 rows**
+   *     and no writer. The live ledger is `diamond_transactions`.
+   *
+   *   livePlayersNow — filtered `.is('horse_id', null)`. That is an exclusion
+   *     of horses, which CLAUDE.md 10.5 forbids ("COUNTS everywhere a human
+   *     counts") — and it excluded nothing anyway, because `table_seats
+   *     .horse_id` is populated on zero rows; horses are identified through
+   *     `profiles.is_horse`. A filter that reads as a rule and acts as a
+   *     no-op is the worst of both: it would have started under-reporting the
+   *     floor the day anything backfilled that column.
+   *
+   * Raising the limit could not fix this — the honest query is an aggregate
+   * over 1.68M rake rows, which belongs in the database. `fn_admin_platform_
+   * aggregates` (migration 20260902) does all five in one admin-gated round
+   * trip, counting horses deliberately.
+   */
   const loadAggregates = useCallback(async () => {
     try {
-      let handQuery = supabase.from('player_position_stats').select('hands_played').limit(5000);
-      let vipQuery = supabase
-        .from('diamond_ledger')
-        .select('amount:delta')
-        .gt('delta', 0)
-        .limit(5000);
-      let playerQuery = supabase.from('player_position_stats').select('user_id').limit(5000);
-
       const cutoff = getTimeRangeCutoff(timeRange);
-      if (cutoff) {
-        handQuery = handQuery.gte('updated_at', cutoff);
-        vipQuery = vipQuery.gte('created_at', cutoff);
-        playerQuery = playerQuery.gte('updated_at', cutoff);
-      }
+      /* The generated Supabase types are a nightly snapshot and do not yet
+         carry this function's row shape, so the result arrives as `{}`. The
+         shape is fixed by the migration's RETURNS TABLE clause
+         (20260902_admin_platform_aggregates.sql) and every field is passed
+         through Number() below, so a drift shows up as 0 rather than as a
+         crash. Re-narrow this once the manifest refreshes. */
+      const { data, error } = await supabase
+        .rpc('fn_admin_platform_aggregates', { p_since: cutoff ?? null })
+        .maybeSingle<PlatformAggregateRow>();
 
-      const { data: handData } = await handQuery;
-      const totalHands = (handData || []).reduce((acc, r) => acc + (r.hands_played || 0), 0);
+      /* An admin dashboard that renders zeros on a failed read is worse than
+         one that renders an error: zero is a claim about the business. */
+      if (error) throw error;
 
-      const { data: vipData } = await vipQuery;
-      const totalVip = (vipData || []).reduce((acc, r) => acc + (r.amount || 0), 0);
-
-      const { data: playerData } = await playerQuery;
-      const uniquePlayers = new Set((playerData || []).map((r) => r.user_id));
-
-      const totalRake = Math.abs(
-        (handData || []).reduce(
-          (acc, r) => acc + Math.min(0, r.hands_played ? -0.05 * r.hands_played : 0),
-          0
-        )
-      );
-
-      // Enhancement #9: Live active player count from table_seats
-      const { count: liveCount } = await supabase
-        .from('table_seats')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'active')
-        .is('left_at', null)
-        .is('horse_id', null);
-
-      if (mountedRef.current) {
+      if (mountedRef.current && data) {
         setAggregate({
-          totalHands,
-          totalRake: Math.round(totalRake * 100) / 100,
-          activePlayers: uniquePlayers.size,
-          totalVipPointsIssued: totalVip,
-          livePlayersNow: liveCount || 0,
+          totalHands: Number(data.total_hands ?? 0),
+          totalRake: Math.round(Number(data.total_rake ?? 0) * 100) / 100,
+          activePlayers: Number(data.active_players ?? 0),
+          totalVipPointsIssued: Number(data.vip_diamonds ?? 0),
+          livePlayersNow: Number(data.live_players ?? 0),
         });
       }
     } catch (err) {

@@ -27,6 +27,7 @@ import { ThemeSettingsModal } from '../table/ThemeSettingsModal';
 import { getClubLevel, ClubLevelInfo } from '../../utils/clubLevels';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { reportError } from '../../utils/errorReporter';
+import { isPlatformStaffRole } from '../../utils/platformRoles';
 import { fetchGameCreationAccess } from '../../services/GameAccessService';
 import { soundService } from '../../services/SoundService';
 import { isSoundAllowed } from '../../utils/soundGate';
@@ -515,7 +516,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             /* `profiles.show_stack_bb` is NOT read here any more — see the note
                where the second query used to be. */
             setIsVIP(data.is_vip || data.tier === 'vip' || false);
-            setIsPlatformStaff(data.role === 'admin' || data.role === 'super_admin');
+            setIsPlatformStaff(isPlatformStaffRole(data.role));
           }
         });
 

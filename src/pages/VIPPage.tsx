@@ -13,6 +13,7 @@ import {
   FEATURE_PRICING,
   type VIPFeature,
 } from '../services/VIPService';
+import { reportError } from '../utils/errorReporter';
 import { VIPCardsModal } from '../components/vip/VIPCardsModal';
 import { VIPPerksGrid } from '../components/vip/VIPPerksGrid';
 import { DiamondTopUpModal } from '../components/vip/DiamondTopUpModal';
@@ -156,30 +157,54 @@ export default function VIPPage() {
         setDaysSinceReview(daysSinceJoined % 30);
       }
 
-      // BUG 024 FIX (2026-04-16): diamond_ledger columns are (id, user_id, delta, type, balance_after, created_at).
-      // Previously queried non-existent columns (amount, description, transaction_type) → always got empty or failed.
-      // Map delta → amount and type → description. balance_after is now read from DB (authoritative) so we don't
-      // reconstruct the running balance via subtraction (which drifted when rows were missed).
-      const { data: ledgerData } = await supabase
-        .from('diamond_ledger')
-        .select('id, delta, type, balance_after, created_at')
+      /* ── RECENT ACTIVITY READ A TABLE THAT HAS NEVER HELD A ROW ───────────
+         This queried `diamond_ledger`. In production that table has **0 rows**
+         and always has; the live diamond ledger is `diamond_transactions`
+         (1,432 rows, written today). So this list was unconditionally empty
+         for every player on the platform, and the emptiness was invisible
+         because the query itself succeeded — the 2026-04-16 note above fixed
+         the COLUMN names on the wrong TABLE and reported success.
+
+         `DiamondWalletModal` already resolved this ("Diamonds live in
+         `diamond_transactions`. One source, one currency."), so this mirrors
+         that component rather than inventing a second dialect of the same
+         read — including its two hard-won details:
+
+         1. `type` is selected ALONGSIDE `transaction_type`, because
+            `transaction_type` is NULL on 774 of ~1,540 rows (reconciliation
+            and signup_bonus rows carry their kind in the older `type`
+            column). Reading only `transaction_type` renders a player's
+            Welcome Bonus — the first diamond movement on every account — as
+            a blank adjustment.
+         2. The error is no longer discarded. supabase-js RESOLVES with
+            `{ data: null, error }`, so an RLS denial or a dropped connection
+            previously produced an empty list and told the player "nothing
+            happened" — a false statement about their own money, with nothing
+            in Sentry. */
+      const { data: ledgerData, error: ledgerError } = await supabase
+        .from('diamond_transactions')
+        .select('id, type, transaction_type, amount, description, balance_after, created_at')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(10);
 
       if (getIsMounted && !getIsMounted()) return;
-      if (ledgerData) {
+      if (ledgerError) {
+        reportError(ledgerError, 'VIPPage.Diamond_activity_load_failed', { userId: user.id });
+      } else if (ledgerData) {
         const mapped = ledgerData.map((entry) => {
-          const delta = Number(entry.delta ?? 0);
+          const amount = Number(entry.amount ?? 0);
+          const kind = entry.transaction_type || entry.type || '';
           return {
             id: entry.id,
             date: new Date(entry.created_at),
-            action: delta > 0 ? 'earned' : 'spent',
-            description: entry.type || (delta > 0 ? 'Diamonds Earned' : 'Diamonds Spent'),
-            points: Math.abs(delta),
+            action: amount > 0 ? 'earned' : 'spent',
+            description:
+              entry.description || kind || (amount > 0 ? 'Diamonds Earned' : 'Diamonds Spent'),
+            points: Math.abs(amount),
             balanceAfter: Number(entry.balance_after ?? 0),
             // Unicode triangles (allowed per CLAUDE.md §8) instead of the previous emojis
-            icon: delta > 0 ? '▲' : '▼',
+            icon: amount > 0 ? '▲' : '▼',
           } as VIPActivity;
         });
         setRecentActivities(mapped);

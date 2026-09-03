@@ -151,6 +151,27 @@ vi.mock('../../src/hooks/useMasterBusSubscription', () => ({
   },
 }));
 
+/**
+ * The rake snapshot panel is stubbed here, and the reason is worth writing down
+ * because the failure was confusing.
+ *
+ * This file's bus mock keeps ONE handler:  realtimeState.busHandler = handler.
+ * The panel subscribes to the same events as the page, so the moment it gained
+ * a subscription the panel's handler replaced the page's, and firing
+ * busHandler exercised the panel while asserting on the page. Two tests began
+ * failing with "expected 1 to be 2" - the page had simply never been told.
+ *
+ * Nothing was wrong in production: the real bus fans out to every subscriber
+ * and both components refresh. The single-handler double could not represent a
+ * second subscriber, and this file is about the LEDGER, not the panel, which
+ * has its own tests. Stubbing it keeps the subject of these assertions the
+ * thing they are named after - and removes the panel's unmocked RPC from the
+ * stderr of every test in the file.
+ */
+vi.mock('../../src/components/club/RakeSnapshotPanel', () => ({
+  default: () => null,
+}));
+
 import ClubDataPage from '../../src/pages/club/ClubDataPage';
 import {
   CLUB_DATA_CACHE_PREFIX,

@@ -23,7 +23,15 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import GameCreationActions from '../../src/components/club/GameCreationActions';
+import {
+  CLUB_NAME_MAX_CQW,
+  CLUB_NAME_MIN_CQW,
+  ClubIdentityCard,
+  clubNameSizeCqw,
+  fittedNameSizeCqw,
+} from '../../src/components/club-buttons/ClubIdentityCard';
 import { NUMERIC_ZONES, zoneText } from '../../src/components/lobby/game-cards/arenaGameCardTypes';
+import { playerDisplayName } from '../../src/utils/playerDisplayName';
 
 const ROOT = resolve(__dirname, '../..');
 const read = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
@@ -204,6 +212,154 @@ describe('the create-game row', () => {
   it('is wired to the lobby with both the tab and the desktop-only flag', () => {
     expect(PAGE).toMatch(/only=\{CREATE_TARGET_FOR_TAB\[gameType\]\}/);
     expect(PAGE).toMatch(/<GameCreationActions[\s\S]{0,320}desktopOnly/);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE CLUB IDENTITY CARD STACK (Dan 2026-09-02)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe('the club identity card', () => {
+  const renderCard = (clubName = 'Deep Stack Society') =>
+    render(
+      <ClubIdentityCard
+        clubName={clubName}
+        pokerAlias="Dan Bekavac"
+        clubId={11192}
+        playerId={1}
+        level={26}
+        playersPlaying={174}
+        shareIcon={<svg />}
+      />
+    );
+
+  it('shows the poker alias and never the real name', () => {
+    /*
+     * Dan 2026-09-02: "THE REAL NAME SHOULD NEVER BE DISPLAYED, IT SHOULD
+     * ALWAYS BE USING THE POKER ALIAS - KingFish instead of the real name."
+     *
+     * His own production row is the case, and it is not unusual: `display_name`
+     * equals `full_name` on 264 of 1,308 profiles, so the old
+     * `display_name || username` chain printed a legal name on the club card
+     * for hundreds of accounts - none of whom had `use_real_name` set, because
+     * nobody has.
+     *
+     * Rendered rather than grepped, because the thing being guarded is what a
+     * player SEES.
+     */
+    const dan = {
+      alias: 'KingFish',
+      username: 'kingfish',
+      display_name: 'Dan Bekavac',
+      full_name: 'Dan Bekavac',
+      use_real_name: false,
+    };
+
+    const { container } = render(
+      <ClubIdentityCard
+        clubName="Deep Stack Society"
+        pokerAlias={playerDisplayName(dan, 'arena')}
+        clubId={11192}
+        playerId={1}
+        playersPlaying={174}
+        shareIcon={<svg />}
+      />
+    );
+
+    expect(container.querySelector('.club-identity__alias')?.textContent).toBe('KingFish');
+    expect(container.textContent).not.toContain('Dan Bekavac');
+    expect(container.textContent).not.toContain('Bekavac');
+  });
+
+  it('puts the club name in its own band, above everything else', () => {
+    // "the club name should be across the very top of the card, all the way
+    // left to right, with the logo under it."
+    const { container } = renderCard();
+    const name = container.querySelector('.club-identity__name');
+    expect(name).not.toBeNull();
+    expect(name?.tagName).toBe('H2');
+    expect(name?.textContent).toBe('Deep Stack Society');
+    // It is a sibling of the rest of the card, not a row inside a grid that
+    // something else can push around - which is what made a long name wrap
+    // down onto the alias.
+    expect(container.querySelector('.club-identity__details')).toBeNull();
+    expect(name?.parentElement?.classList.contains('club-identity')).toBe(true);
+  });
+
+  it('renders the stack in the order Dan gave', () => {
+    // name, then Dan Bekavac, then club ID, then player ID, then the count and
+    // the copy link.
+    const { container } = renderCard();
+    const order = [
+      '.club-identity__name',
+      '.club-identity__alias',
+      '.club-identity__ids',
+      '.club-identity__footer',
+    ].map((selector) => {
+      const el = container.querySelector(selector);
+      expect(el, `missing ${selector}`).not.toBeNull();
+      return [...container.querySelectorAll('*')].indexOf(el!);
+    });
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+
+    const ids = container.querySelectorAll('.club-identity__ids .club-identity__line');
+    expect(ids).toHaveLength(2);
+    expect(ids[0].textContent).toContain('11192'); // club ID first
+    expect(ids[1].textContent).toContain('1'); // then player ID
+  });
+
+  it('estimates a first-paint size from the name, then measures the exact fit', () => {
+    /*
+     * Two of Dan's rules meet on this string: it may not wrap, and it may not
+     * be cut off. CSS alone cannot satisfy both - `clamp()` sizes from the
+     * CARD's width, never from how much text there is.
+     *
+     * A character count alone cannot either, and that was the first attempt.
+     * Measured in Chromium at weight 850, "DEEP STACK SOCIETY" averages 0.62em
+     * per character, "ACES" 0.70, and a name of all Ws 0.95: no single
+     * coefficient is both safe for the widest name and generous to the ordinary
+     * one. So the count is the FIRST PAINT and the measurement is the answer.
+     */
+    const { container } = renderCard();
+    const style = container.querySelector('.club-identity__name')?.getAttribute('style') || '';
+    expect(style).toContain('--club-name-size');
+    // The measurable span is what the fit pass reads; without it there is
+    // nothing whose width can be compared to the band's.
+    expect(container.querySelector('.club-identity__name > span')?.textContent).toBe(
+      'Deep Stack Society'
+    );
+
+    // Estimate: shorter name, bigger type. Monotonic, so no length is rewarded
+    // with a size that overflows the one before it.
+    expect(clubNameSizeCqw('ACES')).toBeGreaterThanOrEqual(clubNameSizeCqw('DEEP STACK SOCIETY'));
+    expect(clubNameSizeCqw('DEEP STACK SOCIETY')).toBeGreaterThan(
+      clubNameSizeCqw('THE VERY LONG CLUB NAME THAT KEEPS ON GOING FOREVER')
+    );
+    expect(clubNameSizeCqw('A')).toBe(CLUB_NAME_MAX_CQW);
+    // Whitespace is not a character worth shrinking for.
+    expect(clubNameSizeCqw('  ACES  ')).toBe(clubNameSizeCqw('ACES'));
+
+    // The measured pass: text width is linear in font size, so scaling by
+    // available/needed lands on the exact fit in one step.
+    expect(fittedNameSizeCqw(100, 200, 7)).toBe(3.5); // twice too wide -> half
+    expect(fittedNameSizeCqw(200, 100, 7)).toBe(CLUB_NAME_MAX_CQW); // never past the ceiling
+    expect(fittedNameSizeCqw(100, 100, 7)).toBe(7); // already exact
+    expect(fittedNameSizeCqw(1, 1000, 7)).toBe(CLUB_NAME_MIN_CQW); // never below the floor
+
+    /* No layout, no change. happy-dom reports every width as 0, and so does any
+       server render; the estimate has to survive that rather than collapsing
+       the name to nothing. */
+    expect(fittedNameSizeCqw(0, 0, 4.2)).toBe(4.2);
+    expect(fittedNameSizeCqw(0, 120, 4.2)).toBe(4.2);
+    expect(fittedNameSizeCqw(120, 0, 4.2)).toBe(4.2);
+  });
+
+  it('puts the count and the copy link on the same line', () => {
+    // "LAST LIKE 192 PLAYING AND THE COPY LINK."
+    const { container } = renderCard();
+    const footer = container.querySelector('.club-identity__footer');
+    expect(footer?.querySelector('.club-identity__playing')?.textContent).toContain('174');
+    expect(footer?.querySelector('.club-identity__share')).not.toBeNull();
   });
 });
 

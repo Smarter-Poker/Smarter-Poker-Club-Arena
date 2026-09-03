@@ -21,6 +21,7 @@
 import { supabase } from '../lib/supabase';
 import { WalletService } from './WalletService';
 import { SettlementService } from './SettlementService';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
 import { resolveClubUUID } from '../utils/clubIdResolver';
@@ -161,10 +162,10 @@ export const CreditService = {
       if (agent.user_id) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('display_name')
+          .select(PLAYER_NAME_COLUMNS)
           .eq('id', agent.user_id)
           .maybeSingle();
-        agentName = profile?.display_name || 'Unknown';
+        agentName = playerDisplayName(profile);
       }
     } catch (e) {
       reportError(e, 'CreditService.getCreditAccount');
@@ -476,10 +477,10 @@ export const CreditService = {
       if (agentData?.user_id) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('display_name')
+          .select(PLAYER_NAME_COLUMNS)
           .eq('id', agentData.user_id)
           .maybeSingle();
-        agentName = profile?.display_name || 'Unknown';
+        agentName = playerDisplayName(profile);
       }
     } catch (e) {
       /* non-critical — agent name lookup is a nice-to-have */

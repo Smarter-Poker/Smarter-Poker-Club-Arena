@@ -28,6 +28,7 @@ import { clubGamesOrFilter } from '../utils/unionScope';
 import { confirmDialog } from '../components/common/confirmDialog';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 // ── Helpers ─────────────────────────────────────────────────
 const formatDate = (ts: string | null | undefined) => {
   if (!ts) return '';
@@ -925,11 +926,11 @@ function AuditLogTab({ clubId }: { clubId: string }) {
         if (allIds.length > 0) {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, username, display_name')
+            .select(`id, ${PLAYER_NAME_COLUMNS}`)
             .in('id', allIds);
           if (profiles) {
             profiles.forEach((p: ProfileRow) => {
-              profileMap[p.id] = p.display_name || p.username || 'Unknown';
+              profileMap[p.id] = playerDisplayName(p);
             });
           }
         }
@@ -1526,7 +1527,7 @@ function HierarchyTab({ clubId }: { clubId: string }) {
         const treeUserIds = treeData.map((m: HierarchyNode) => m.user_id);
         const { data: treeProfiles } = await supabase
           .from('profiles')
-          .select('id, display_name, username')
+          .select(`id, ${PLAYER_NAME_COLUMNS}`)
           .in('id', treeUserIds);
         const treeProfileMap: Record<string, any> = {};
         if (treeProfiles) {
@@ -1570,7 +1571,7 @@ function HierarchyTab({ clubId }: { clubId: string }) {
   const subAgents = tree.filter((m: HierarchyMember) => m.role === 'sub_agent');
 
   const getName = (m: HierarchyMember) =>
-    m.profiles?.display_name || m.profiles?.username || m.user_id?.substring(0, 8);
+    m.profiles ? playerDisplayName(m.profiles) : m.user_id?.substring(0, 8);
 
   return (
     <div className="admin-tab-content">

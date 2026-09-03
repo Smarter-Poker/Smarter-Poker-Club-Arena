@@ -193,6 +193,17 @@ export abstract class ServerTableEngineBase {
       } catch {
         /* A failed read must never SHORTEN the pause — fall through and wait. */
       }
+      if (pending.size === 0) return;
+      /* CHIP STANDARD C3 (2026-09-02): a rebuy no longer raises the seat's
+         stack in the RPC - it lands as an unresolved `table_pending_addons`
+         row (kind 'rebuy') that only the engine's sweep delivers, so the stack
+         read above would never see a human's answer. A row for a busted seat
+         IS the answer: the wallet is debited and the chips are owed to this
+         seat. Count it as answered and (inside the helper) request the sweep
+         that puts the chips on the felt before the next deal. An unreadable
+         ledger (null) leaves the pause exactly as long as it was. */
+      const inFlight = await this.usersWithPendingLedgerChips(Array.from(pending));
+      if (inFlight) for (const id of inFlight) pending.delete(id);
     };
 
     try {
@@ -474,6 +485,59 @@ export abstract class ServerTableEngineBase {
    * hand while making it impossible for an open row to be forgotten.
    */
   protected pendingAddOnSweepNeeded = true;
+  /**
+   * CHIP STANDARD C3 (2026-09-02): a sweep request counter beside the flag.
+   *
+   * The flag alone had a losing race once rows could arrive from OUTSIDE the
+   * engine. `atomic_table_rebuy` no longer touches `table_seats.stack`; the
+   * browser's bust rebuy lands as a `table_pending_addons` row (kind 'rebuy')
+   * that only `processPendingAddOns` delivers. Settlement step 8e and the
+   * rebuy pause run concurrently: if 8e read the ledger BEFORE the row
+   * committed and the pause read it after, the pause set the flag true and
+   * 8e's late continuation set it false again - the row was forgotten until
+   * the next engine start, and standUpBustedCashPlayers released the seat
+   * meanwhile (resolve_pending_addon then refunds the wallet, so the player
+   * paid, was stood up, and got a refund instead of a seat).
+   *
+   * A sweep now captures this counter when it starts and clears the flag only
+   * if nobody asked for another sweep while it was running.
+   */
+  protected pendingAddOnSweepGen = 0;
+
+  /** Ask for a ledger sweep before the next deal. Safe from any concurrent path. */
+  protected requestPendingAddOnSweep(): void {
+    this.pendingAddOnSweepNeeded = true;
+    this.pendingAddOnSweepGen++;
+  }
+
+  /**
+   * Which of `userIds` have money in flight on the durable ledger for this
+   * table - an unresolved `table_pending_addons` row of ANY kind (a mid-hand
+   * add-on or a bust rebuy). A hit also requests a sweep so the chips are on
+   * the felt before the next deal. Returns null when the ledger could not be
+   * read, so callers decide their own fail-open direction (the rebuy pause
+   * must not shorten on an unreadable ledger; the stand-up must not release a
+   * seat on one).
+   */
+  protected async usersWithPendingLedgerChips(userIds: string[]): Promise<Set<string> | null> {
+    const ids = userIds.filter(Boolean);
+    if (ids.length === 0) return new Set();
+    try {
+      const { data, error } = await supabase
+        .from('table_pending_addons')
+        .select('user_id')
+        .eq('table_id', this.tableId)
+        .in('user_id', ids)
+        .is('resolved_at', null);
+      if (error) return null;
+      const hit = new Set<string>();
+      for (const row of (data ?? []) as Array<{ user_id: string }>) hit.add(String(row.user_id));
+      if (hit.size > 0) this.requestPendingAddOnSweep();
+      return hit;
+    } catch {
+      return null;
+    }
+  }
   /** C15: minimum gap between persisted hand snapshots, per table. */
   protected static readonly SNAPSHOT_MIN_INTERVAL_MS = 1000;
   protected lastSnapshotAtMs = 0;

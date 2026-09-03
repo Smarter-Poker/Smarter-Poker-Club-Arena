@@ -66,16 +66,39 @@ The deprecated repo `Smarter-Poker/Club-Arena-Design` is archived (read-only). D
 | Protocol             | WebSocket: `wss://engine.smarter.poker/ws/table/:tableId`, Bearer JWT auth                                       |
 | Bible governance     | V8 Bible Law 1.16 — discrete named events only, no snapshot-diffs, no polling. Latency budget < 100ms broadcast. |
 
-### Tier 2: Vite frontend → Vercel
+### Tier 2: Vite frontend → Club Arena's own origin (rewritten 2026-09-03)
 
-| Source               | Where in repo                                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------------------------------- |
-| Build root           | repo root (`vite.config.ts`, `package.json`, `src/`)                                                          |
-| Output               | `dist/` (per `vercel.json`)                                                                                   |
-| Vercel project       | `club-arena` (id `prj_oaCq8RYhExLRUYizLG93li0uX468`)                                                          |
-| Auto-deploy on push? | **No** — `vercel.json` has `git.deploymentEnabled: false`                                                     |
-| How to deploy        | Manual: `vercel --prod` from repo root, or trigger from Vercel dashboard                                      |
-| Visible at           | `smarter.poker/hub/club-arena/*` (served as static assets via World Hub) and `club.smarter.poker/` (redirect) |
+| Source               | Where                                                                                                      |
+| -------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Build root           | repo root (`vite.config.ts`, `package.json`, `src/`)                                                       |
+| Output               | `dist/`                                                                                                    |
+| Published to         | `ca-static.smarter.poker` — Caddy on the Hetzner box `estate-ci-1`, `/srv/club-arena/`                     |
+| Auto-deploy on push? | **YES, on merge to `main`** — `publish-club-arena.yml`, job `publish-to-origin`                            |
+| How to deploy        | Push a branch. Nothing else. The pull request opens, autopilot merges it, the publisher publishes.         |
+| Visible at           | `smarter.poker/hub/club-arena/*`, via ONE rewrite in the World Hub's `next.config.js`                      |
+| Vercel project       | none. `vercel.json` still has `git.deploymentEnabled: false`; the bundle is not a Vercel deployment at all |
+
+**The layout on the origin** (written by the publisher, never by hand):
+
+```
+/srv/club-arena/releases/<ca_sha>/   one directory per published bundle (10 kept)
+/srv/club-arena/current -> releases/<ca_sha>    swapped atomically after rsync
+/srv/club-arena/pool/{assets,fonts}/            ADDITIVE, pruned by age (30d)
+```
+
+The pool is the reason a player mid-hand does not 404: their tab may still
+hold the previous `index.html` and ask for the previous hashed chunks. Never
+`--delete` the pool, and never prune it by "not in the current bundle".
+
+**Rollback** is one command on the box: point `current` at an older release.
+
+**Until 2026-09-03 this tier went through the World Hub repo**: the publisher
+committed `dist/` into `Smarter-Poker-World-Hub/public/hub/club-arena/`, which
+meant a `chore(club-arena): sync build` commit in that repo and a 4-5 minute
+rebuild of the entire World Hub for every Club Arena merge, about twenty times
+a day. That path is gone — the directory, the sync scripts, the `check-ca-*`
+gates and `sync-club-arena.sh` with it. If you find a document telling you to
+run a sync script, that document is stale; this table is the current truth.
 
 ### Tier 3: Operations REST API → Vercel (different repo!)
 
@@ -89,7 +112,12 @@ The deprecated repo `Smarter-Poker/Club-Arena-Design` is archived (read-only). D
 | Auth                 | Server-side Supabase JWT validation per route                                      |
 | Caveats              | Each route is its own Pages Router file; not a shared Hono router                  |
 
-**These three deploy paths can desync.** A `git push` to `main` of THIS repo only updates source — neither auto-deploys. A push to World Hub's `main` deploys Tier 3 immediately. If a fix touches more than one tier, all relevant deploys must be triggered.
+**The desync warning is smaller than it was (2026-09-03).** Tier 2 now deploys
+itself on merge, and Tier 1 deploys itself on merge as well
+(`auto-deploy-hetzner.yml`, hourly `:45` cutover). Only Tier 3 still rides the
+World Hub's own Vercel build, which happens on a push to that repo's `main`. A
+fix touching Tier 3 therefore needs a World Hub pull request; a fix touching
+Tier 1 or 2 needs nothing but a merged branch in this repo.
 
 ---
 

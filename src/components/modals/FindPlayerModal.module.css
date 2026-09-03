@@ -526,12 +526,158 @@
   font: 600 10px/1 var(--font-mono, monospace);
   text-overflow: ellipsis;
 }
+/* --- Club and union affiliations --- */
+.affiliations {
+  display: grid;
+  gap: 8px;
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(139, 170, 188, 0.13);
+}
+.affiliationGroup {
+  display: grid;
+  grid-template-columns: 58px 1fr;
+  align-items: start;
+  gap: 8px;
+}
+.affiliationLabel {
+  padding-top: 4px;
+  color: #5c6d78;
+  font: 600 8px/1 var(--font-mono, monospace);
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+.affiliationList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.affiliationChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
+  border: 1px solid #24343d;
+  border-radius: 999px;
+  background: #070d12;
+  color: #b3c5cf;
+  font: 500 10px/1.2 var(--font-sans, sans-serif);
+  text-align: left;
+}
+button.affiliationChip {
+  cursor: pointer;
+}
+.affiliationName {
+  overflow: hidden;
+  max-width: 22ch;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.affiliationAction {
+  color: #5f7684;
+  font: 600 8px/1 var(--font-mono, monospace);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+/* Membership state is carried by colour AND by the action word, never colour alone. */
+.affiliationChip[data-action='member'] {
+  border-color: #1f6b4a;
+  background: #061410;
+}
+.affiliationChip[data-action='member'] .affiliationAction {
+  color: #58c795;
+}
+.affiliationChip[data-action='pending'] {
+  border-color: #6d5620;
+  background: #120e05;
+}
+.affiliationChip[data-action='pending'] .affiliationAction {
+  color: #d3aa54;
+}
+.affiliationChip[data-action='join'],
+.affiliationChip[data-action='request_join'] {
+  border-color: #1c6a94;
+  background: #05131b;
+}
+.affiliationChip[data-action='join'] .affiliationAction,
+.affiliationChip[data-action='request_join'] .affiliationAction {
+  color: #6cc9f5;
+}
+.affiliationChip[data-action='union'] {
+  border-color: #4a3a6d;
+  background: #0b0812;
+}
+.affiliationChip[data-action='union'] .affiliationAction {
+  color: #a08ed2;
+}
+.affiliationChip[data-action='unavailable'] {
+  border-color: #3d2529;
+  color: #7c6165;
+}
+button.affiliationChip:active {
+  border-color: #2fa4dc;
+}
+button.affiliationChip:focus-visible {
+  outline: 2px solid #55c8ff;
+  outline-offset: 2px;
+}
+.affiliationHidden {
+  margin: 0;
+  color: #5c6d78;
+  font: 500 9px/1.3 var(--font-mono, monospace);
+}
+
 .tablesList {
   display: grid;
   gap: 6px;
   margin-top: 12px;
   padding-top: 11px;
   border-top: 1px solid rgba(139, 170, 188, 0.13);
+}
+.tablesHeading {
+  color: #5faed5;
+  font: 600 8px/1 var(--font-mono, monospace);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+.tableKind {
+  color: #6f8794;
+  font: 700 8px/1 var(--font-mono, monospace);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+.tableKind[data-kind='tournament'] {
+  color: #d9ae5c;
+}
+.tableKind[data-kind='cash'] {
+  color: #5ec392;
+}
+/* A locked game still shows what it is and how to get in — it is never hidden. */
+.tableCard[data-locked] {
+  border-style: dashed;
+  border-color: rgba(119, 153, 173, 0.34);
+  background: #06090d;
+}
+.tableGateNote {
+  max-width: 52ch;
+  color: #93a7b3;
+  font: 500 9px/1.45 var(--font-sans, sans-serif);
+  white-space: normal;
+}
+.watchButton[data-action='join'],
+.watchButton[data-action='request_join'] {
+  color: #f0c169;
+}
+.watchButton[data-action='pending'] {
+  color: #9d8a5f;
+}
+.watchButton[data-action='observers_restricted'],
+.watchButton[data-action='unavailable'] {
+  color: #7d8a92;
 }
 .tableCard {
   width: 100%;
@@ -591,19 +737,30 @@
   opacity: 0.5;
   cursor: wait;
 }
+/*
+ * The locator has no corner X and an inert backdrop, so this is the only pointer
+ * route out. It is deliberately quiet - borderless, low-contrast, small - but it
+ * still spans the footer, clears the 44px touch target, and lifts to readable
+ * contrast on press and keyboard focus, so anyone who goes looking for it finds it.
+ * No :hover rule: Club Arena forbids hover styling outright.
+ */
 .closeButton {
   width: 100%;
   min-height: 44px;
-  border: 1px solid rgba(139, 169, 187, 0.24);
+  border: 0;
   border-radius: 3px;
-  background: #090e13;
-  color: #81939f;
+  background: transparent;
+  color: #4a5862;
   cursor: pointer;
   font:
-    600 11px/1 'Rajdhani',
+    600 10px/1 'Rajdhani',
     sans-serif;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
+  transition: color 160ms ease;
+}
+.closeButton:active {
+  color: #b6c8d3;
 }
 .searchButton:focus-visible,
 .sortBtn:focus-visible,

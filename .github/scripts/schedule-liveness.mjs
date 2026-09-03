@@ -507,11 +507,20 @@ async function isBusy(workflowIdOrFile) {
   // The API accepts either the numeric id or the workflow file name here.
   const ref = encodeURIComponent(String(workflowIdOrFile));
   for (const status of ['in_progress', 'queued']) {
-    const res = await api(`/actions/workflows/${ref}/runs?status=${status}&per_page=1`);
+    const res = await api(`/actions/workflows/${ref}/runs?status=${status}&per_page=30`);
     if (!res.ok) return true;
     const body = await res.json().catch(() => null);
     if (!body) return true;
-    if ((body.total_count || 0) > 0) return true;
+    // A per-item run in flight is not the scheduled work in flight. On
+    // 2026-09-03 at 01:49 the first watchdog run after the listener was
+    // repaired saw agent-autopilot.yml as overdue - correctly, for the first
+    // time - and then declined to dispatch it because a `pull_request` run
+    // was in progress. With twenty pull-request events an hour there always
+    // is one, so the sweep would never have been dispatched. Its concurrency
+    // group is per pull request (or per ref for a dispatch), so a dispatch
+    // cannot collide with those runs. Only a run that does the scheduled work
+    // counts as busy; the fail-closed reads above are unchanged.
+    if ((body.workflow_runs ?? []).some((r) => !PER_ITEM_EVENTS.has(r.event))) return true;
   }
   return false;
 }

@@ -152,7 +152,15 @@ export function createRouter(
 
   return async (req, res) => {
     const method = req.method || 'GET';
-    const url = req.url || '/';
+    // PATH ONLY (2026-09-03). Every route below is matched on the whole
+    // request target, so `/health?cb=1788402501855` fell through to the 404
+    // at the bottom while `/health` answered 200. Every caller that follows
+    // the estate's own advice to cache-bust the health endpoint - spin-sweep
+    // (`lease_diagnostics_missing` on all 96 runs a day), the publish and
+    // engine watchdogs, an agent's curl - had been reading a 404 and
+    // concluding the engine was unreachable. The insurance-preview handler
+    // parses req.url itself, so the query is not lost to it.
+    const url = (req.url || '/').split('?')[0] || '/';
 
     // Handle CORS preflight
     if (method === 'OPTIONS') {

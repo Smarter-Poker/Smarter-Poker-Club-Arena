@@ -1,0 +1,40 @@
+# 2026-09-03 - Diamond economy: orchestrator changelog (phases 0 to 4)
+
+Session: Cowork on Dan's Mac, 2026-09-02 22:30 to 2026-09-03 01:30 UTC. Everything below was observed by query, command or file read; intentions are in the standard and the roadmap, not here.
+
+## Phase 0 - measure (four read-only lanes, ~23:00 to 00:15 UTC)
+
+- Environment: worktree `audit/diamond-economy` from `3b2b37391`; the four lanes ran as subagents (two first attempts died on a tool-call parse error and were re-run; all four completed). Reports in `docs/audits/2026-09-02-diamond-economy/`.
+- Measured: `profiles.diamonds` 1,030,092 across 1,308 profiles (horses 456,781 / 1,000; one human 493,960); four mirrors, one partial (416 rows); `ca_diamond_snapshots` double-counting 619,879 since 17:29 UTC; `ca_mint_ledger` 0 rows; `diamond_transactions` 570 rows / 30 days, 2 / 24h; 2,860 journal rows deleted in two days through the maintenance bypass; 416 horses seeded with 500 since 09-01 with no row anywhere (208,000); 77 deletions on 09-02 carrying 198,525 with no burn; 11,692 completed-unclaimed challenges worth 897,095; 3 lifetime Stripe purchases (300 diamonds, 3.00 USD, one `cs_test_`), 0 journaled; `fn_purchase_time_banks` raising 42703 on every call since 08-24; union diamond grant a 100,000-per-call mint with no debit; Diamond Arena = an iframe to a 404 plus a dead April repo; chip machinery 10 of 16 components hard-wired, all through three seams.
+
+## Phase 1 - the standard (00:15 to 00:35 UTC)
+
+- `docs/DIAMOND-ACCOUNTING-STANDARD.md` (D1-D22 with sources, identity, what we built, chart of accounts, lifecycle, DR1-DR16, layers, gap list, lanes A-H, 16 decisions) and `docs/SWARM-BRIEF-DIAMOND.md`. Pushed as PR #2735 (Autopilot opened it).
+- Foundation migration `20260903000735_diamond_std_foundation` applied at 00:07 UTC: `ca_diamond_house`, `diamond_reward_budgets`, `ca_diamond_incidents`, `diamond_transactions.counterparty` / `issuance_class`, `fn_ca_diamond_incident`. Post-apply: house 0, budgets 0, incidents 0, two new columns, helper service_role only.
+
+## Phase 2 - six fix lanes as a swarm (00:15 to 00:45 UTC), all run on opus
+
+| Lane                 | PR                                 | Migrations (registered version)                                 | Log-only rules                                                     | Not built (why)                                                                                     |
+| -------------------- | ---------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| A identity and doors | #2750 (closed, in #2756)           | 003036, 004002                                                  | DR2 union grant, DR3 promo vault, DR10 mirror mismatch             | CHECK >= 0 (needed Lane D's debts first)                                                            |
+| B the Mint           | #2748 (closed, in #2756)           | 002248, 002333                                                  | DR2 balance born at INSERT                                         | refusal of INSERT with balance; backfill of the 416 horses (no money by migration)                  |
+| C the journal        | #2744 (merged 00:42)               | 002317 (file 20260903031500\_...)                               | DR4 credit without reference, DR5 deletion and maintenance deletes | CASCADE to RESTRICT (would refuse live deletions); NOT NULL on class                                |
+| D purchase clearing  | #2751 (closed, in #2756); WH #1257 | 003327, 003403 (split after a 40P01 on the single-file attempt) | DR7 test-mode session, DR8 price mismatch, DR9 lot write failure   | FIFO consumption (Lane C's function); provider reconciliation; FKs on lots                          |
+| E earn budgets       | #2745 (closed, in #2756)           | 002841                                                          | DR7 over budget / over daily cap (never raises)                    | horse auto-claim, expiry, referral caps, refusal (Dan)                                              |
+| G controls           | #2752 (closed, in #2756)           | 003128, 003714                                                  | DR11 trial balance, DR12 suspense, DR6 gated on writer             | automatic freeze opener (law forbids), deferred audit trigger, DROP of dead stores (seven-day gate) |
+
+- Every lane: rolled-back probes with transcripts in its changelog and PR body; law test with negative control; `docs/LAWS.md` row; `scripts/ci/schema-manifest.d/diamond-<lane>.json`; vitest green; tsc clean; pushed without `--no-verify`.
+- Observed while the lanes ran: Lane B recreated `fn_ca_mint` with a seventh argument while Lane A's revoke used a hardcoded six-argument signature; A's first apply failed cleanly (42883) and A switched to a by-name loop. D's single-file apply deadlocked (40P01) against a live session and was split. Nothing partial survived either failure (verified by the lanes and by the phase 3 audit).
+
+## Phase 3 - conflict audit and the one live conflict (00:45 to 01:10 UTC)
+
+- Read-only audit (`phase3-conflicts.md`): all 16 shared function bodies match their lane's post-apply `length(prosrc)`; both concurrent edits to `fn_ca_mint` are live; trigger order on `profiles` clean (19 triggers, G replaced the audit trigger under its own name so chip UPDATE paths pay no extra trigger); E's earn trigger fires on B's signup rows and charges the `signup` line (no double count); no consumer misreads a `circulation` holder; chip side untouched (`fn_settle_tournament_obligation` reads `scope = 'tournament_payouts'` only; chip trial balance unchanged; the registry can only suppress warnings).
+- CONFLICT 1 (live): Lane B booked the 1,030,092 baseline to holder `house`; Lane G's trial balance read a house break and filed `DR11:trial_balance_break` at 00:38. Fixed by migration `20260903010547_diamond_p3_the_baseline_is_circulation_not_the_house` (01:05): holder CHECK widened to `circulation`, reversal burn from house, re-post to circulation, asserted supply = players and house net = 0. Incident row 30 marked resolved at 01:14 with the resolution in `detail`.
+- CONFLICT 2 (repo): `docs/LAWS.md` dirty on all five open lane PRs after C merged. Consolidated in `fix/diamond-p2-lanes` (each branch merged, LAWS resolved by union: six diamond rows), 185 tests green across 7 law files, tsc clean, pushed as PR #2756; the five lane PRs closed with a superseded comment.
+- INCIDENT (chip side, caused by the swarm's DDL burst): `ca_ledger_write_failures` 704, 00:31:49 UTC, 40P01 in `fn_ca_fund_overlay_on_lock`, tournament `1068cd04` (Late Night PKO PLO4, RUNNING, 54 entries, prize_pool 450 = guarantee, no overlay row, 18.00 chips unfunded). Not moved; recorded for the guarantee-shortfall sweep and, failing that, a four-eyes adjustment. Rule added to the roadmap: at most two lanes applying DDL in any twenty-minute window.
+
+## Phase 4 - scorecard, roadmap, handoff (01:10 to 01:30 UTC)
+
+- First snapshot on the new identity, 01:10 UTC: total 1,030,092 = profile 1,030,092 = wallet 1,030,092, unexplained 0, delta 0. The deploy gate did not re-arm.
+- `docs/DIAMOND-ACCOUNTING-ROADMAP.md`: 15-row scorecard (MEETS 6, PARTIAL 7, DOES NOT MEET 2), six phases, twenty decisions for Dan, the delete list with its seven-day gate. `docs/handoffs/2026-09-03-diamond-economy.md` written for an agent that can see nothing of this conversation; includes the memory-shaped summary because the memory tool was unavailable in this session.
+- Final production state at 01:14 UTC: supply unchanged at 1,030,092 all night; mint supply equals it; trial balance difference 0 on every account; 0 journal rows and 0 audit rows since 00:07 (idle platform; no rewritten writer has carried live traffic yet); open incidents 0 (the 00:38 summary row is info).

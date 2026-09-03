@@ -42,7 +42,13 @@ export interface EnginePublicPlayer {
   equipped_frame?: string;
   /** Equipped avatar aura token, e.g. `aura-fire`. '' or absent means none. */
   equipped_aura?: string;
-  is_horse?: boolean;
+  /* `is_horse?: boolean` was declared here as part of the engine's public
+     per-seat snapshot. Removed 2026-09-02 (Dan: "HUMAN USERS CAN NEVER KNOW
+     THAT THIS IS A 'HORSE' AND NOT A 'HUMAN'"). Nothing in the client ever
+     mapped it into a rendered value, but declaring it told every future
+     author that a per-seat horse flag is a legitimate thing to receive and
+     read. If the engine still emits the field, that is a SERVER fix — this
+     type no longer invites anyone to consume it. */
   hand_name?: string;
   /**
    * SHOWDOWN SYSTEM 2026-08-25: the engine ruled this hand muckable at

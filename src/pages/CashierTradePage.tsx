@@ -2645,8 +2645,13 @@ export default function CashierTradePage() {
                     <span className={styles.rowSub}>
                       {r.playerNumber ? `ID: ${r.playerNumber} · ` : ''}
                       <span style={{ textTransform: 'capitalize' }}>
+                        {/* ` (Horse)` was appended here. Removed 2026-09-02:
+                            Dan — "HUMAN USERS CAN NEVER KNOW THAT THIS IS A
+                            'HORSE' AND NOT A 'HUMAN'." This roster renders for
+                            every agent, sub-agent and super-agent, all of whom
+                            are ordinary human users, as plain English beside a
+                            player's name. No tooling required, no ambiguity. */}
                         {roleLabel(r.role as ClubRole)}
-                        {r.isHorse ? ' (Horse)' : ''}
                       </span>
                       {r.username ? ` · @${r.username}` : ''}
                     </span>

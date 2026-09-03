@@ -101,8 +101,15 @@ describe('LAW: horses count where players count (CLAUDE.md 10.5)', () => {
     expect(code(FRIEND_SUGGESTIONS)).not.toContain("eq('profiles.is_horse', false)");
   });
 
-  it('still SELECTS is_horse, because identification stays legal', () => {
-    // 10.5 permits the flag as DATA (a badge, a column). Only exclusion is banned.
-    expect(code(FRIEND_SUGGESTIONS)).toContain('is_horse');
+  it('does not carry is_horse into the browser either', () => {
+    /* SUPERSEDED IN THE SAME BRANCH. This asserted the opposite — that
+       `is_horse` STAYS in the select, because 10.5 permits the flag as
+       identification data. That reading is right for STAFF surfaces and wrong
+       here: Dan, 2026-09-02, "HUMAN USERS CAN NEVER KNOW THAT THIS IS A
+       'HORSE' AND NOT A 'HUMAN'." Friend suggestions are player-facing, so
+       the column would label every suggestion in the response body even with
+       the filter gone. The full boundary is pinned in
+       tests/a-horse-is-indistinguishable-from-a-human.law.test.ts. */
+    expect(code(FRIEND_SUGGESTIONS)).not.toContain('is_horse');
   });
 });

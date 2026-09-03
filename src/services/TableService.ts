@@ -863,10 +863,17 @@ class TableService {
        request with 42501/403, and supabase-js RESOLVES on that with
        { data: null }. The felt then rebuilt every seat as "Player" with the
        monogram avatar until the engine snapshot arrived: exactly the "generic
-       block letters" Dan reported. horse_id off table_seats is the flag the
-       felt actually needs (it drives styling), and the engine snapshot - built
-       server-side with service_role, which CAN read is_horse - remains the
-       authority for the resolved name. */
+       block letters" Dan reported. The engine snapshot - built server-side
+       with service_role, which CAN read is_horse - remains the authority for
+       the resolved name.
+
+       horse_id is NOT selected either (2026-09-07). The 09-03 note here said
+       it was "the flag the felt actually needs (it drives styling)". It drove
+       nothing: no component branches on it. It was, once the 09-05 backfill
+       populated the column, a seat-to-horse map for the whole table handed to
+       every player in this one request - the single loudest read on the
+       platform. It is withheld from the browser at the database now, and a
+       select naming it fails the same way is_horse does. */
     const { data, error } = await supabase
       .from('table_seats')
       .select(
@@ -875,7 +882,6 @@ class TableService {
                 seat_number,
                 stack,
                 joined_at,
-                horse_id,
                 profiles(
                     ${PLAYER_NAME_COLUMNS},
                     avatar_url:arena_avatar_url

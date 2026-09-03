@@ -51,6 +51,15 @@ function topUpBody(): string {
   return SRC.slice(start, next > -1 ? next : SRC.length);
 }
 
+/** The seat-first seating loop alone, which several pins below read. */
+function seatingLoopBody(): string {
+  const body = topUpBody();
+  const start = body.indexOf('for (const horse of candidates)');
+  expect(start, 'the seating loop must still exist').toBeGreaterThan(-1);
+  const end = body.indexOf('} else {', start);
+  return body.slice(start, end > -1 ? end : body.length);
+}
+
 describe('seatFirstFillOrder - home before the fleet', () => {
   it('offers the game its own unseated registrants first', () => {
     // The seven stuck spins in the numbers above: the free pool cannot help
@@ -120,12 +129,58 @@ describe('topUpWithHorses - the seat-first fill wiring', () => {
 
   it('keeps filling after a single refusal', () => {
     // 2026-08-24 P2-4. One rejected horse must not halt the whole game.
-    const seatingLoop = topUpBody();
-    const loopStart = seatingLoop.indexOf('for (const horse of candidates)');
-    expect(loopStart).toBeGreaterThan(-1);
-    const loop = seatingLoop.slice(loopStart, seatingLoop.indexOf('} else {', loopStart));
-    // A statement, not the word in the comment explaining why it is gone.
-    expect(loop, 'a break here stops the fill for the whole game').not.toMatch(/\bbreak\s*;/);
+    //
+    // 2026-09-03: this used to forbid the WORD `break` anywhere in the loop,
+    // which was a fine proxy while the candidate list was exactly the
+    // shortfall - every exit was an exit on a refusal. The list now carries
+    // spares (seatFirstCandidateCount), so the loop needs one exit that is not
+    // a refusal at all: the seats are full, and a 3-handed spin must not take a
+    // fourth. Pin the RULE instead of the keyword - the only break may be the
+    // one guarded by the shortfall, and a refusal must still be a `continue`.
+    const loop = seatingLoopBody();
+    const breaks = loop.match(/\bbreak\s*;/g) ?? [];
+    expect(breaks.length, 'the loop needs at most the one full-seats exit').toBeLessThanOrEqual(1);
+    if (breaks.length === 1) {
+      expect(loop, 'the only break must be the seats-are-full guard, never a refusal').toMatch(
+        /if\s*\(added\s*>=\s*shortfall\)\s*break\s*;/
+      );
+    }
+    // The refusal branch itself: still a continue, on both halves.
+    const refusal = loop.slice(loop.indexOf('if (seatRpcErr)'));
+    expect(refusal, 'a refused horse yields to the next candidate').toMatch(
+      /if\s*\(seatRpcErr\)[\s\S]*?continue;/
+    );
+  });
+
+  it('stops once the seats are covered - the spares are for refusals only', () => {
+    // seatFirstCandidateCount hands the loop more candidates than seats. Without
+    // this guard a lucky pass would seat a fourth player into a 3-handed spin.
+    expect(seatingLoopBody()).toMatch(/if\s*\(added\s*>=\s*shortfall\)\s*break\s*;/);
+  });
+
+  it('asks for more candidates than there are seats', () => {
+    // One candidate per seat is a bet that no other caller is picking the same
+    // horse. Production 2026-09-03: 247 boards an hour lost that bet.
+    const body = topUpBody();
+    expect(body).toContain('seatFirstCandidateCount(shortfall)');
+    expect(body).toMatch(/seatFirstFillOrder\(\s*wantCandidates/);
+    expect(body, 'the pool must be sized from the padded count, not the shortfall').toMatch(
+      /poolWanted\s*=\s*Math\.max\(0,\s*wantCandidates\s*-\s*own\.length\)/
+    );
+  });
+
+  it('an ordinary cap refusal is not reported, and everything else still is', () => {
+    // 89 of 98 reports in an hour were FOUR TABLE LIMIT - the rule working -
+    // and they buried the refusals that needed reading.
+    const loop = seatingLoopBody();
+    expect(loop).toContain('isExpectedSeatRefusal(seatRpcErr.message)');
+    expect(loop, 'the report must survive for every other refusal').toContain(
+      'TournamentRecurring.seat_first_seat_rpc_failed'
+    );
+    expect(
+      loop.indexOf('isExpectedSeatRefusal'),
+      'the filter guards the report; it must not replace it'
+    ).toBeLessThan(loop.indexOf('TournamentRecurring.seat_first_seat_rpc_failed'));
   });
 });
 

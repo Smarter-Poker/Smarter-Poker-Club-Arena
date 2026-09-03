@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import FindPlayerModal from '../../src/components/modals/FindPlayerModal';
 import {
@@ -49,7 +49,7 @@ const locatedPlayer: PlayerSearchResult = {
       },
     ],
     unions: [{ union_id: 'union-1', union_name: 'Midway Union', union_code: '900' }],
-    hidden_count: 2,
+    has_hidden: true,
   },
   // `id` mirrors `table_id` because the RPC builds the object with
   // 'id', live.table_id -- the fixture must not drift from the server shape.
@@ -90,12 +90,19 @@ function page(items: PlayerSearchResult[]): PlayerSearchPage {
   return { items, total: items.length, hasMore: false, offset: 0, limit: 20, fuzzy: true };
 }
 
+/** Exposes the router's current location so navigation can be asserted. */
+function LocationProbe() {
+  const location = useLocation();
+  return <output aria-label="current route">{`${location.pathname}${location.search}`}</output>;
+}
+
 function renderLocator() {
   const onClose = vi.fn();
   const onMembershipRequired = vi.fn();
   const view = render(
     <MemoryRouter>
       <FindPlayerModal isOpen onClose={onClose} onMembershipRequired={onMembershipRequired} />
+      <LocationProbe />
     </MemoryRouter>
   );
   return { ...view, onClose, onMembershipRequired };
@@ -166,28 +173,28 @@ describe('Find A Player locator', () => {
       expect(affiliations().getByText('Midway Union')).toBeInTheDocument();
     });
 
-    it('counts private clubs without naming them', async () => {
+    it('admits private clubs are withheld without saying how many', async () => {
       const user = userEvent.setup();
       renderLocator();
       await search(user);
 
-      expect(screen.getByText('2 Private Clubs Not Shown.')).toBeInTheDocument();
+      const note = screen.getByText(/Private Clubs Not Shown/);
+      expect(note).toBeInTheDocument();
+      // A count is a membership-existence oracle: two viewers can subtract.
+      expect(note.textContent).not.toMatch(/\d/);
     });
 
-    it('says Club, not Clubs, when exactly one is withheld', async () => {
+    it('says nothing about private clubs when none were withheld', async () => {
       const user = userEvent.setup();
       vi.mocked(PlayerSearchService.search).mockResolvedValue(
         page([
-          {
-            ...locatedPlayer,
-            affiliations: { ...locatedPlayer.affiliations, hidden_count: 1 },
-          },
+          { ...locatedPlayer, affiliations: { ...locatedPlayer.affiliations, has_hidden: false } },
         ])
       );
       renderLocator();
       await search(user);
 
-      expect(screen.getByText('1 Private Club Not Shown.')).toBeInTheDocument();
+      expect(screen.queryByText(/Private Clubs Not Shown/)).not.toBeInTheDocument();
     });
 
     it('renders a player who has affiliations but no live games', async () => {
@@ -259,6 +266,71 @@ describe('Find A Player locator', () => {
           'Members Only - Ivory Room Is Gated. Apply To Join And Wait For Approval Before You Can Observe.'
         )
       ).toBeInTheDocument();
+    });
+
+    it('returns you to your own seat instead of seating you as a spectator', async () => {
+      const user = userEvent.setup();
+      // can_watch is true for a table you are SITTING at, and every can_watch
+      // used to route through observer=1 -- so opening your own live game put
+      // you on your own hand as a spectator.
+      vi.spyOn(PlayerSearchService, 'getTableWatchAccess').mockResolvedValue({
+        found: true,
+        table_id: 'live-table-1',
+        club_uuid: 'club-uuid-1',
+        club_id: 48291,
+        club_slug: 'midnight-club',
+        can_watch: true,
+        action: 'play',
+      });
+      renderLocator();
+      await search(user);
+
+      await user.click(screen.getByRole('button', { name: /Midnight Cash/ }));
+
+      await waitFor(() =>
+        expect(screen.getByLabelText('current route')).toHaveTextContent('/table/live-table-1')
+      );
+      expect(screen.getByLabelText('current route').textContent).not.toContain('observer');
+    });
+
+    it('still opens a watchable table in observer mode', async () => {
+      const user = userEvent.setup();
+      vi.spyOn(PlayerSearchService, 'getTableWatchAccess').mockResolvedValue({
+        found: true,
+        table_id: 'live-table-1',
+        club_uuid: 'club-uuid-1',
+        club_id: 48291,
+        club_slug: 'midnight-club',
+        can_watch: true,
+        action: 'watch',
+      });
+      renderLocator();
+      await search(user);
+
+      await user.click(screen.getByRole('button', { name: /Midnight Cash/ }));
+
+      await waitFor(() =>
+        expect(screen.getByLabelText('current route')).toHaveTextContent(
+          '/table/live-table-1?observer=1'
+        )
+      );
+    });
+
+    it('labels a seat you occupy as a return, not an observation', async () => {
+      const user = userEvent.setup();
+      vi.mocked(PlayerSearchService.search).mockResolvedValue(
+        page([
+          {
+            ...locatedPlayer,
+            tables: [{ ...locatedPlayer.tables[0], can_watch: true, access_action: 'play' }],
+          },
+        ])
+      );
+      renderLocator();
+      await search(user);
+
+      expect(screen.getByText('Return To Seat')).toBeInTheDocument();
+      expect(screen.queryByText('Observe Table')).not.toBeInTheDocument();
     });
 
     it('revalidates access at click time and hands a non-member to the join flow', async () => {

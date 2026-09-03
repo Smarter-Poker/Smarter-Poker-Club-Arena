@@ -290,6 +290,28 @@
   color: #63899e;
   font: 500 10px/1.2 var(--font-mono, monospace);
 }
+/* Live marker in the type-ahead. Carried by the word as well as the colour. */
+.suggestPresence {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border: 1px solid #24343d;
+  border-radius: 999px;
+  color: #6f8794;
+  font: 600 8px/1 var(--font-mono, monospace);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.suggestPresence[data-status='playing'] {
+  border-color: #1f6b4a;
+  background: #061410;
+  color: #58c795;
+}
+.suggestPresence[data-status='online'] {
+  border-color: #1c6a94;
+  background: #05131b;
+  color: #6cc9f5;
+}
 .suggestLoading {
   position: absolute;
   top: 50%;

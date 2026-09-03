@@ -74,15 +74,20 @@ export interface PlayerUnionAffiliation {
 export interface PlayerAffiliations {
   clubs: PlayerClubAffiliation[];
   unions: PlayerUnionAffiliation[];
-  /** Gated clubs the viewer is not entitled to see named. Counted, never listed. */
-  hidden_count: number;
+  /**
+   * True when gated clubs were withheld. Deliberately a boolean and not a count:
+   * a count is differential across viewers, so two accounts can compare and
+   * subtract to identify which specific private clubs a stranger belongs to.
+   * The panel only needs to admit the list is incomplete.
+   */
+  has_hidden: boolean;
 }
 
 /** Frozen: it is shared by every result that arrives without an affiliations payload. */
 export const EMPTY_AFFILIATIONS: PlayerAffiliations = Object.freeze({
   clubs: Object.freeze([]) as unknown as PlayerClubAffiliation[],
   unions: Object.freeze([]) as unknown as PlayerUnionAffiliation[],
-  hidden_count: 0,
+  has_hidden: false,
 }) as PlayerAffiliations;
 
 /** Minimum characters before the server widens matching from substring to trigram-similar. */
@@ -117,12 +122,14 @@ export interface PlayerSearchPage {
  * keeps the modal from having to null-check three levels deep on every render.
  */
 export function normalizeAffiliations(value: unknown): PlayerAffiliations {
-  if (!value || typeof value !== 'object') return { clubs: [], unions: [], hidden_count: 0 };
+  if (!value || typeof value !== 'object') return { clubs: [], unions: [], has_hidden: false };
   const raw = value as Record<string, unknown>;
   return {
     clubs: Array.isArray(raw.clubs) ? (raw.clubs as PlayerClubAffiliation[]) : [],
     unions: Array.isArray(raw.unions) ? (raw.unions as PlayerUnionAffiliation[]) : [],
-    hidden_count: Number(raw.hidden_count) || 0,
+    // Tolerates the interim payload that shipped a count, so a cached bundle
+    // talking to the new RPC (or the reverse) still renders the right thing.
+    has_hidden: raw.has_hidden === true || Number(raw.hidden_count) > 0,
   };
 }
 

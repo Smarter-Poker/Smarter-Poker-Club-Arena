@@ -206,13 +206,18 @@ export default function FindPlayerModal({
     try {
       const access = await PlayerSearchService.getTableWatchAccess(table.table_id);
       if (access.can_watch) {
+        // 'play' means the viewer is SITTING at this table. Sending them in with
+        // observer=1 would seat them as a spectator on their own live hand, which
+        // is what happened before this branch existed: can_watch is true for your
+        // own seat, and every can_watch went to the observer route.
+        const ownSeat = access.action === 'play';
         haptic.success();
-        ClubEntryTrustService.track('find', 'watch_opened', {
+        ClubEntryTrustService.track('find', ownSeat ? 'seat_resumed' : 'watch_opened', {
           outcome: 'succeeded',
           metadata: { table_id: table.table_id, tournament_id: table.tournament_id || null },
         });
         onClose();
-        navigate(`/table/${table.table_id}?observer=1`);
+        navigate(ownSeat ? `/table/${table.table_id}` : `/table/${table.table_id}?observer=1`);
         return;
       }
 
@@ -334,11 +339,20 @@ export default function FindPlayerModal({
               <section className={styles.privacyPanel} aria-label="Player Search Access Rules">
                 <p>
                   Player Identity And Playing Now Status Are Searchable Across Club Arena. Watching
-                  Requires An Active Membership In The Game&apos;S Club.
+                  A Game Requires An Active Membership In The Club Hosting It.
+                </p>
+                <p>
+                  Club And Union Membership Is Shown For Open Clubs. A Club That Is Private Or
+                  Requires Approval Is Named Only To Someone Already In That Club Or Its Union.
+                  Everything Else Is Withheld Without Being Counted.
                 </p>
                 <p>
                   Wallets, Balances, Statistics, Notes, And Hierarchy Data Are Returned Only For
                   Accounts Your Club, Union, Administrator, Or Agent Role Authorizes You To Manage.
+                </p>
+                <p>
+                  You Can Turn Off Discovery, Presence, And Current Table In Your Own Search Privacy
+                  Settings. Staff And Agents Who Administer Your Account Still See You.
                 </p>
               </section>
             )}
@@ -410,6 +424,17 @@ export default function FindPlayerModal({
                             <span className={styles.suggestAlias}>@{player.username}</span>
                           )}
                         </span>
+                        {/* The header promises "see who is playing", so the
+                            type-ahead should answer it before you commit to a
+                            search. The payload already carries presence. */}
+                        {player.presence_status !== 'offline' && (
+                          <span
+                            className={styles.suggestPresence}
+                            data-status={player.presence_status}
+                          >
+                            {player.presence_status === 'playing' ? 'Playing' : 'Online'}
+                          </span>
+                        )}
                       </button>
                     ))}
                   </div>
@@ -716,8 +741,8 @@ function PlayerAffiliations({
   // A player row can arrive without affiliations from an older cached bundle or a
   // half-rolled-out RPC. Falling back keeps the whole result list rendering instead
   // of blanking the modal on a destructure.
-  const { clubs, unions, hidden_count: hiddenCount } = player.affiliations || EMPTY_AFFILIATIONS;
-  if (!clubs.length && !unions.length && !hiddenCount) return null;
+  const { clubs, unions, has_hidden: hasHidden } = player.affiliations || EMPTY_AFFILIATIONS;
+  if (!clubs.length && !unions.length && !hasHidden) return null;
 
   return (
     <section
@@ -783,9 +808,9 @@ function PlayerAffiliations({
         </div>
       )}
 
-      {hiddenCount > 0 && (
+      {hasHidden && (
         <p className={styles.affiliationHidden}>
-          {hiddenCount} Private Club{hiddenCount === 1 ? '' : 's'} Not Shown.
+          Private Clubs Not Shown. You Only See Clubs You Share Or Clubs That Are Open.
         </p>
       )}
     </section>

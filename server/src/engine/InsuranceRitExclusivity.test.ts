@@ -22,6 +22,26 @@ const TABLE = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * DE-FLAKE 2026-09-03 (CI run 33807616017, PR #2888) — wait for the CONDITION,
+ * not for the clock. Same lesson, same shape, as the 2026-08-22 de-flake in
+ * RunItTwice.multiway.test.ts.
+ *
+ * Every wait in this file used to be a flat `sleep(n)`, which is a bet on how
+ * fast the machine is. Both offers in play carry a WALL-CLOCK deadline on the
+ * shared DeadlineScheduler, so the bet is not merely slow when it loses - the
+ * deadline auto-declines the offer and the assertion reads the wrong status.
+ * That is exactly what went red: "insurance only (no RIT)" spent 30,675ms on
+ * its `sleep(400)` inside a 348-file run, the 15s insurance window closed, and
+ * `expected 'declined' to be 'offered'` on a branch that had touched nothing
+ * near insurance. Reproduced deterministically by shrinking the window to
+ * 0.15s; green again at every window once the waits became conditional.
+ */
+async function waitFor(ready: () => boolean, timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!ready() && Date.now() < deadline) await sleep(25);
+}
+
 function mkPlayers(stacks: number[]): SeatPlayer[] {
   return stacks.map(
     (stack, i) =>
@@ -91,63 +111,80 @@ function runoutHarness(opts: { insurance: boolean; rit: boolean }) {
     stack: p.stack,
     is_horse: false, // humans: nothing auto-responds, offers stay pending
   }));
+  /* The second half of the same de-flake. NO test in this file exercises a
+     timeout - the windows exist only so the machinery does not hang - and at
+     10s/15s they are close enough to the waits below to race them on a loaded
+     runner. Ten minutes is longer than any stall a CI worker survives, so the
+     ordering these tests pin is the only thing they can measure. Timeout
+     behaviour is pinned where it belongs: RunItTwice.offerpath.test.ts drives
+     it on fake timers, InsuranceEngine.test.ts asserts the declined status. */
   engine.runItTwiceEngine.configure(TABLE, {
     enabled: opts.rit,
-    autoDeclineTimeout: 10,
+    autoDeclineTimeout: 600,
     maxRuns: 3,
   });
   engine.insuranceEngine.configure(TABLE, {
     enabled: opts.insurance,
     houseMargin: 1.2,
-    offerTimeoutSeconds: 15,
+    offerTimeoutSeconds: 600,
   });
 
   engine.handleAllInRunout(ev, engine.seatedPlayers);
-  return { engine };
+  return { engine, events };
 }
 
 describe('insurance x run-it-twice - the RIT question first, insurance on a single run', () => {
+  const handOver = (events: HandEvent[]) => !!events.find((e) => e.type === 'HAND_COMPLETE');
+
   it('both enabled: the RIT offer fires FIRST and no insurance offer exists yet', async () => {
     const { engine } = runoutHarness({ insurance: true, rit: true });
-    await sleep(300);
+    // The RIT offer appearing IS the ordering claim. Read insurance the moment
+    // it appears, instead of betting 300ms that it has.
+    await waitFor(() => engine.runItTwiceEngine.hasPendingOffer(TABLE));
     expect(engine.runItTwiceEngine.hasPendingOffer(TABLE)).toBe(true);
     expect(engine.insuranceEngine.getOffers(TABLE)).toHaveLength(0);
   });
 
   it('both enabled: chooser runs it ONCE -> insurance flow engages', async () => {
-    const { engine } = runoutHarness({ insurance: true, rit: true });
-    await sleep(150);
+    const { engine, events } = runoutHarness({ insurance: true, rit: true });
+    await waitFor(() => !!engine.runItTwiceEngine.getState(TABLE)?.chooserPlayerId);
     const chooserId = engine.runItTwiceEngine.getState(TABLE)?.chooserPlayerId as string;
     expect(chooserId).toBeTruthy();
     const resp = engine.respondToRIT(chooserId, undefined, 1);
     expect(resp.success).toBe(true);
     // waitForRITResponse polls, then the single-run continuation enters the
     // per-street insurance flow, which offers on the standing board.
-    await sleep(900);
+    await waitFor(() => !engine.runItTwiceEngine.isActive(TABLE));
     expect(engine.runItTwiceEngine.isActive(TABLE)).toBe(false);
+    // Random hole cards can tie (no offer on a tied board) - when the spot is
+    // insurable, the offer must exist and be pending for the leader. Either
+    // outcome ends the wait: the offer lands and holds the runout, or there is
+    // nothing to insure and the hand runs out.
+    await waitFor(() => engine.insuranceEngine.getOffers(TABLE).length > 0 || handOver(events));
     const offers = engine.insuranceEngine.getOffers(TABLE);
-    // Random hole cards can tie (no offer on a tied board) — when the spot is
-    // insurable, the offer must exist and be pending for the leader.
     if (offers.length > 0) {
       expect(offers[0].status).toBe('offered');
     }
   });
 
   it('both enabled: RIT ACCEPTED (2 boards) -> NO insurance offer ever appears', async () => {
-    const { engine } = runoutHarness({ insurance: true, rit: true });
-    await sleep(150);
+    const { engine, events } = runoutHarness({ insurance: true, rit: true });
+    await waitFor(() => !!engine.runItTwiceEngine.getState(TABLE)?.chooserPlayerId);
     const chooserId = engine.runItTwiceEngine.getState(TABLE)?.chooserPlayerId as string;
     const otherId = chooserId === 'u1' ? 'u2' : 'u1';
     expect(engine.respondToRIT(chooserId, undefined, 2).success).toBe(true);
     expect(engine.respondToRIT(otherId, 'accept').success).toBe(true);
-    await sleep(900);
-    // Multi-board hand: per-hand exclusivity — no insurance contract.
+    // "NEVER carries an insurance contract" is a claim about the WHOLE hand,
+    // so wait for the hand to end rather than for 900ms of it.
+    await waitFor(() => handOver(events));
+    expect(handOver(events)).toBe(true);
+    // Multi-board hand: per-hand exclusivity - no insurance contract.
     expect(engine.insuranceEngine.getOffers(TABLE)).toHaveLength(0);
   });
 
   it('insurance only (no RIT): straight to the insurance path, no RIT offer', async () => {
-    const { engine } = runoutHarness({ insurance: true, rit: false });
-    await sleep(400);
+    const { engine, events } = runoutHarness({ insurance: true, rit: false });
+    await waitFor(() => engine.insuranceEngine.getOffers(TABLE).length > 0 || handOver(events));
     expect(engine.runItTwiceEngine.hasPendingOffer(TABLE)).toBe(false);
     const offers = engine.insuranceEngine.getOffers(TABLE);
     if (offers.length > 0) {
@@ -156,9 +193,12 @@ describe('insurance x run-it-twice - the RIT question first, insurance on a sing
   });
 
   it('RIT only (no insurance): RIT offer exists and NO insurance offer ever appears', async () => {
-    const { engine } = runoutHarness({ insurance: false, rit: true });
+    const { engine, events } = runoutHarness({ insurance: false, rit: true });
     expect(engine.runItTwiceEngine.hasPendingOffer(TABLE)).toBe(true);
-    await sleep(200);
+    // Insurance is switched off, so nothing can ever create an offer here; the
+    // wait only has to outlive the point where one WOULD have been created,
+    // which is the RIT offer standing open.
+    await waitFor(() => engine.runItTwiceEngine.hasPendingOffer(TABLE));
     expect(engine.insuranceEngine.getOffers(TABLE)).toHaveLength(0);
   });
 });

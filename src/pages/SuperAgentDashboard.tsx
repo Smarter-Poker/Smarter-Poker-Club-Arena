@@ -13,6 +13,16 @@ import { CommissionService } from '../services/CommissionService';
 import type { CommissionSpread } from '../services/CommissionService';
 import { useAuthUser } from '../hooks/useAuthUser';
 import { useToast } from '../components/common/Toast';
+import { fmt } from '../utils/format';
+
+/* The three agent roles, spelled the way an operator reads them. This list
+   used to print the raw enum - a person saw "super_agent" where every other
+   surface in the app says "Super Agent". */
+const AGENT_ROLE_LABELS: Record<string, string> = {
+  super_agent: 'Super Agent',
+  agent: 'Agent',
+  sub_agent: 'Sub-Agent',
+};
 import CreditRequestWidget from '../components/agent/CreditRequestWidget';
 import PageSkeleton from '../components/common/PageSkeleton';
 import { useVisibilityRefresh } from '../hooks/useVisibilityRefresh';
@@ -217,7 +227,13 @@ export default function SuperAgentDashboard() {
       if (myAgent) {
         setAgent(myAgent);
         setSubAgents(agents.filter((a) => a.parentAgentId === myAgent.id));
-        const myPlayers = await AgentService.getAgentPlayers(myAgent.id);
+        const myPlayers =
+          await /* Scoped to the club being viewed. Without it this list, the player count
+             beside it and the transfer picker below all showed the agent's
+             players from every club they hold an agents row in - while the
+             transfer itself is scoped to THIS club, so an operator could send
+             to a name that does not belong here. */
+          AgentService.getAgentPlayers(myAgent.id, clubId!);
         if (!isMounted.current) return;
         setPlayers(myPlayers);
         const commSpread = await CommissionService.calculateSpread(myAgent.id);
@@ -292,7 +308,7 @@ export default function SuperAgentDashboard() {
         >
           <span className="stat-icon">●</span>
           <div className="stat-info">
-            <span className="stat-value">{agent.totalPlayers}</span>
+            <span className="stat-value">{fmt(agent.totalPlayers)}</span>
             <span className="stat-label">Total Players</span>
           </div>
         </div>
@@ -306,7 +322,7 @@ export default function SuperAgentDashboard() {
         >
           <span className="stat-icon">▶</span>
           <div className="stat-info">
-            <span className="stat-value">{agent.activePlayerCount}</span>
+            <span className="stat-value">{fmt(agent.activePlayerCount)}</span>
             <span className="stat-label">Active Now</span>
           </div>
         </div>
@@ -320,7 +336,7 @@ export default function SuperAgentDashboard() {
         >
           <span className="stat-icon">■</span>
           <div className="stat-info">
-            <span className="stat-value">{agent.subAgentCount}</span>
+            <span className="stat-value">{fmt(agent.subAgentCount)}</span>
             <span className="stat-label">Sub-Agents</span>
           </div>
         </div>
@@ -430,10 +446,10 @@ export default function SuperAgentDashboard() {
                   >
                     <div className="agent-info">
                       <span className="agent-name">{sub.displayName || 'Agent'}</span>
-                      <span className="agent-role">{sub.role}</span>
+                      <span className="agent-role">{AGENT_ROLE_LABELS[sub.role] || sub.role}</span>
                     </div>
                     <div className="agent-stats">
-                      <span>{sub.totalPlayers} Players</span>
+                      <span>{fmt(sub.totalPlayers)} Players</span>
                       <span className="rake">{sub.weeklyRakeGenerated.toLocaleString()}</span>
                     </div>
                   </div>

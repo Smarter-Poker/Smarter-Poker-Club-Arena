@@ -1,6 +1,16 @@
+import { useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { getClubOperationGroups } from '../../config/clubOperationsNavigation';
+import {
+  getClubOperationBadge,
+  getClubOperationGroups,
+  type ClubOperationGroupId,
+} from '../../config/clubOperationsNavigation';
 import { useClubWorkspace } from '../../contexts/ClubWorkspaceContext';
+import {
+  useClubOperationsOverview,
+  type ClubOperationsAlert,
+} from '../../hooks/useClubOperationsOverview';
+import { formatChips, formatInt } from '../../utils/clubDashboard';
 import { mediaUrl } from '../../utils/mediaBase';
 import styles from './ArenaWorkspacePages.module.css';
 
@@ -11,34 +21,94 @@ interface WorkspaceLink {
   signal?: string;
 }
 
+interface WorkspaceReading {
+  label: string;
+  value: string;
+}
+
+interface WorkspaceAlert extends ClubOperationsAlert {
+  path: string | null;
+}
+
 function WorkspacePage({
   eyebrow,
   title,
   description,
   art,
   links,
+  readings,
+  alerts,
+  liveLine = 'Live Systems Remain Authoritative',
 }: {
   eyebrow: string;
   title: string;
   description: string;
   art: string;
   links: WorkspaceLink[];
+  readings?: WorkspaceReading[];
+  alerts?: WorkspaceAlert[];
+  liveLine?: string;
 }) {
+  /* A <section>, not a <main>. AppLayout already renders <main
+     id="main-content"> around the router outlet, so every one of these pages
+     was shipping two main landmarks and an ambiguous skip link. */
   return (
-    <main className={styles.page}>
+    <section className={styles.page}>
       <header className={styles.hero}>
         <div className={styles.heroCopy}>
           <span className={styles.eyebrow}>{eyebrow}</span>
           <h1>{title}</h1>
           <p>{description}</p>
           <span className={styles.liveLine}>
-            <span aria-hidden="true" /> Live Systems Remain Authoritative
+            <span aria-hidden="true" /> {liveLine}
           </span>
         </div>
         <div className={styles.artFrame} aria-hidden="true">
           <img src={mediaUrl(art)} alt="" />
         </div>
       </header>
+
+      {readings && readings.length > 0 && (
+        <section className={styles.readings} aria-label={`${title} Readings`}>
+          {readings.map((reading) => (
+            <p className={styles.reading} key={reading.label}>
+              <span>{reading.label}</span>
+              <strong>{reading.value}</strong>
+            </p>
+          ))}
+        </section>
+      )}
+
+      {alerts && alerts.length > 0 && (
+        <section className={styles.alerts} aria-label={`${title} Work Waiting`} aria-live="polite">
+          <p className={styles.alertsTitle}>Waiting For You</p>
+          <ul className={styles.alertList}>
+            {alerts.map((alert) => {
+              const body = (
+                <>
+                  <span
+                    className={`${styles.alertPip} ${styles[alert.severity]}`}
+                    aria-hidden="true"
+                  />
+                  <span className={styles.alertTitle}>{alert.title}</span>
+                  {alert.count > 0 && <span className={styles.alertCount}>{alert.count}</span>}
+                </>
+              );
+              return (
+                <li key={alert.id}>
+                  {alert.path ? (
+                    <Link className={styles.alertRow} to={alert.path}>
+                      {body}
+                    </Link>
+                  ) : (
+                    <span className={styles.alertRow}>{body}</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       <section className={styles.grid} aria-label={`${title} Tools`}>
         {links.map((item, index) => (
@@ -55,8 +125,65 @@ function WorkspacePage({
           </Link>
         ))}
       </section>
-    </main>
+    </section>
   );
+}
+
+/**
+ * The club sub-workspaces used to be pure link grids under a line that read
+ * "Live Systems Remain Authoritative" - true of the tools, and not true of
+ * anything on the page. They now carry the same live reading as
+ * /operations: every queue that is waiting for a person, on the tile that
+ * owns it, plus the group's own headline numbers.
+ */
+function useClubWorkspaceGroup(group: ClubOperationGroupId) {
+  const { clubId = '' } = useParams();
+  const access = useClubWorkspace();
+  const { overview } = useClubOperationsOverview(
+    access.isClubStaff &&
+      !access.loading &&
+      !access.error &&
+      (access.routeClubId === clubId || access.clubUUID === clubId)
+      ? access.clubUUID
+      : null
+  );
+  const items = useMemo(
+    () => getClubOperationGroups(clubId, access).find((entry) => entry.id === group)?.items || [],
+    [access, clubId, group]
+  );
+  const counts = overview?.counts || null;
+
+  const links = useMemo<WorkspaceLink[]>(
+    () =>
+      items
+        .filter((item) => item.id !== `${group}-overview`)
+        .map((item) => {
+          const badge = getClubOperationBadge(item, counts);
+          return {
+            label: item.label,
+            description: item.description,
+            path: item.path,
+            signal: badge > 0 ? `${formatInt(badge)} Waiting` : undefined,
+          };
+        }),
+    [counts, group, items]
+  );
+
+  /* Only the alerts this group's own tools own. An operator on /finance is
+     not helped by a membership queue, and sending them to a tool that is not
+     on the page they are looking at is how a link grid earns its reputation. */
+  const alerts = useMemo<WorkspaceAlert[]>(
+    () =>
+      (overview?.alerts || [])
+        .filter((alert) => items.some((item) => item.id === alert.tool))
+        .map((alert) => ({
+          ...alert,
+          path: items.find((item) => item.id === alert.tool)?.path || null,
+        })),
+    [items, overview]
+  );
+
+  return { links, alerts, overview };
 }
 
 export function RewardsWorkspacePage() {
@@ -221,43 +348,73 @@ export function LegalWorkspacePage() {
 }
 
 export function ClubFinanceWorkspacePage() {
-  const { clubId = '' } = useParams();
-  const access = useClubWorkspace();
-  const finance = getClubOperationGroups(clubId, access).find((group) => group.id === 'finance');
+  const { links, alerts, overview } = useClubWorkspaceGroup('finance');
+  const kpis = overview?.kpis;
+  const counts = overview?.counts;
+  const readings: WorkspaceReading[] = [];
+  if (kpis) {
+    if (typeof kpis.club_bank === 'number') {
+      readings.push({ label: 'Club Bank', value: formatChips(kpis.club_bank) });
+    }
+    if (typeof kpis.member_chips === 'number') {
+      readings.push({ label: 'Member Wallets', value: formatChips(kpis.member_chips) });
+    }
+    if (typeof kpis.rake_today === 'number') {
+      readings.push({ label: 'Fees Today', value: formatChips(kpis.rake_today) });
+    }
+    readings.push({ label: 'Hands Today', value: formatInt(kpis.hands_today) });
+  }
+  if (counts) {
+    readings.push({
+      label: 'Tickets Outstanding',
+      value: formatInt(counts.tickets_outstanding),
+    });
+  }
   return (
     <WorkspacePage
       eyebrow="Ledger Circuit"
       title="Finance & Risk"
       description="Live Club Economics, Cashier Operations, Settlement, And Exposure Without Duplicate Dashboards."
       art="assets/club-buttons/wallets/desktop/wallet-club-bank-v1.webp"
-      links={(finance?.items || [])
-        .filter((item) => item.id !== 'finance-overview')
-        .map((item) => ({
-          label: item.label,
-          description: item.description,
-          path: item.path,
-        }))}
+      liveLine={
+        readings.length > 0 ? 'Read Live From This Club' : 'Live Systems Remain Authoritative'
+      }
+      readings={readings}
+      alerts={alerts}
+      links={links}
     />
   );
 }
 
 export function ClubControlWorkspacePage() {
-  const { clubId = '' } = useParams();
-  const access = useClubWorkspace();
-  const control = getClubOperationGroups(clubId, access).find((group) => group.id === 'control');
+  const { links, alerts, overview } = useClubWorkspaceGroup('control');
+  const kpis = overview?.kpis;
+  const counts = overview?.counts;
+  const readings: WorkspaceReading[] = [];
+  if (kpis) {
+    readings.push({ label: 'Members', value: formatInt(kpis.members) });
+    readings.push({ label: 'Live Tables', value: formatInt(kpis.live_tables) });
+    readings.push({
+      label: 'Tournaments',
+      value: formatInt(kpis.tournaments_registering + kpis.tournaments_running),
+    });
+  }
+  if (counts) {
+    readings.push({ label: 'Membership Requests', value: formatInt(counts.members_pending) });
+    readings.push({ label: 'Excluded Players', value: formatInt(counts.blacklist_active) });
+  }
   return (
     <WorkspacePage
       eyebrow="House Circuit"
       title="Club Control"
       description="Policy, Communications, Campaigns, Identity, And Permissions In One Governed Workspace."
       art="assets/club-buttons/lobby/lobby-command-chassis-v2.png"
-      links={(control?.items || [])
-        .filter((item) => item.id !== 'control-overview')
-        .map((item) => ({
-          label: item.label,
-          description: item.description,
-          path: item.path,
-        }))}
+      liveLine={
+        readings.length > 0 ? 'Read Live From This Club' : 'Live Systems Remain Authoritative'
+      }
+      readings={readings}
+      alerts={alerts}
+      links={links}
     />
   );
 }

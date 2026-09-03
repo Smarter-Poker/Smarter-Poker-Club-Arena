@@ -3,7 +3,13 @@
 Owner: Dan (directive 2026-09-03 - "verify, audit and upgrade every single
 page" of `/hub/club-arena/clubs/:club/operations` and every sub page).
 Author of this plan: Cowork/Claude session `feat/club-operations-full-upgrade`.
-Status: **Phases 1, 2 and 3 of 8 built, tested and pushed. Phases 4 to 8 specified below.**
+Status: **Phases 1, 2 and 3 of 8 built, tested, merged (`c22a3bb00`) and published. Phases 4 to 8 specified below.**
+
+**This document is the map. The live state is
+[`docs/HANDOFF-2026-09-03-club-operations-upgrade.md`](../HANDOFF-2026-09-03-club-operations-upgrade.md)** -
+what is merged, what is published, what is blocked, every defect with its
+evidence, and the exact first actions for whoever picks this up next. Read that
+first, then come back here for the per-phase detail.
 
 Every finding in this document was produced by reading the page source end to
 end and, where it concerns data, by querying production

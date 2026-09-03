@@ -19,6 +19,18 @@ zero means the opposite of success.
 
 ---
 
+## ↗ RESUMING THE CLUB OPERATIONS UPGRADE? READ `docs/HANDOFF-2026-09-03-club-operations-upgrade.md`
+
+A DIFFERENT programme from the one above, and a different handoff file. If you
+are picking up Dan's 8-phase upgrade of the club operator workspace
+(`/hub/club-arena/clubs/:club/operations` and its 26 sub pages), the current
+state, every live measurement, the defect register and the exact next actions
+are in
+[`docs/HANDOFF-2026-09-03-club-operations-upgrade.md`](./docs/HANDOFF-2026-09-03-club-operations-upgrade.md).
+Phases 1-3 of 8 are merged (squash `c22a3bb00`) and live; phase 4 is the club
+dashboard, and it starts on a fresh branch off `main`. The plan is
+[`docs/club-operations/OPERATIONS-UPGRADE-PLAN.md`](./docs/club-operations/OPERATIONS-UPGRADE-PLAN.md).
+
 ## ↗ START HERE: `AGENT-PLAYBOOK.md`
 
 **Before this file, before anything: read [`AGENT-PLAYBOOK.md`](./AGENT-PLAYBOOK.md).**

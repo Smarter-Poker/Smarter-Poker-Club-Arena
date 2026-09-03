@@ -1,8 +1,11 @@
 # Diamond Accounting Standard, Lane A: the supply identity, the mirrors and the doors
 
-Branch `fix/diamond-a-identity`. Migration `20260903003036_diamond_a_identity_and_doors`
-(one file, one transaction, applied once at 2026-09-03 00:30:36 UTC, all seven
-post-apply assertion groups green).
+Branch `fix/diamond-a-identity`. Two migrations:
+
+- `20260903003036_diamond_a_identity_and_doors` (one transaction, applied once at
+  2026-09-03 00:30:36 UTC, all seven post-apply assertion groups green) - the work.
+- `20260903004002_diamond_a_the_snapshot_is_not_a_browser_rpc` (applied 00:40:02 UTC) -
+  a companion the pre-push guard asked for, and was right to ask for. Section 7.3.
 
 Everything below is what was OBSERVED against production, not what was intended.
 
@@ -262,6 +265,34 @@ characters, and `fn_ca_mint` still carried its old ACL. Nothing partial survived
    (`p_class text DEFAULT 'admin'`) at 00:22 UTC, about forty minutes after I read the six-argument
    signature. Fixed by revoking in a loop over `pg_proc` by name, which does not care what the
    argument list is today. The law test pins the loop so it cannot regress to a literal signature.
+
+3. **A migration that assumed its access posture instead of declaring it.** The pre-push
+   `check-definer-authorization` guard BLOCKED the push on `fn_ca_diamond_snapshot`: SECURITY
+   DEFINER, it writes, and it never calls `auth.uid()`, `auth.role()` or `auth.jwt()`, so it
+   cannot know who is asking. The guard reads a branch's migrations statically and starts every
+   function from the Postgres default of EXECUTE to PUBLIC, and the migration said nothing about
+   grants.
+
+   Checked against production before responding: the door was **already shut**. The live ACL is
+   `postgres=X/postgres | service_role=X/postgres` and `has_function_privilege` is false for both
+   `authenticated` and `anon`; `CREATE OR REPLACE` preserves the existing ACL, so replacing the
+   body widened nothing. The guard was reasoning from the file, not from a real exposure.
+
+   It is still a real requirement and the fix is not a suppression. Swarm brief rule 8 asks for an
+   in-file REVOKE/GRANT stating who may call, and an assumption that happens to be true today is
+   not a declaration. The companion migration states it explicitly, naming PUBLIC as well as the
+   two roles (a REVOKE that names one role while PUBLIC still holds the privilege reads as a fix
+   and does nothing). It is a no-op against the current grants and fires no PostgREST reload,
+   because GRANT and REVOKE are not in `pgrst_ddl_watch`'s statement list.
+
+   The reason it matters beyond tidiness: every call to the snapshot appends a row to
+   `ca_diamond_snapshots`, and that table's trailing four hours ARE the engine deploy money gate.
+   A caller who could invoke it at will could move the gate.
+
+   Noted and NOT changed, because it is inert and out of this lane's scope:
+   `fn_diamond_side_tables_follow_profiles` is granted to `authenticated`. It is a trigger
+   function, so Postgres refuses to call it as an RPC and the grant cannot be used; the guard does
+   not flag it for that reason. It is noise in the ACL, not a door.
 
 Because Lane B and Lane C both landed mid-flight, the five bodies this lane replaces were
 re-read immediately before the successful apply and confirmed unchanged (2,567 / 3,038 / 1,420 /

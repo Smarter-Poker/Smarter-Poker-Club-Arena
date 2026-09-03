@@ -40,6 +40,12 @@ import path from 'path';
 const MIGRATION = 'supabase/migrations/20260903003036_diamond_a_identity_and_doors.sql';
 const text = fs.readFileSync(path.join(process.cwd(), MIGRATION), 'utf8');
 
+// The companion migration the pre-push definer guard asked for. A branch's migrations
+// are applied as a unit, so the access declaration for the snapshot lives here.
+const DOOR_MIGRATION =
+  'supabase/migrations/20260903004002_diamond_a_the_snapshot_is_not_a_browser_rpc.sql';
+const doorText = fs.readFileSync(path.join(process.cwd(), DOOR_MIGRATION), 'utf8');
+
 /** The body of one CREATE OR REPLACE FUNCTION ... $fn$ ... $fn$; block. */
 function functionBody(source: string, name: string): string {
   const start = source.indexOf(`CREATE OR REPLACE FUNCTION public.${name}(`);
@@ -238,6 +244,38 @@ describe('the Mint doors are shut to the browser', () => {
     ]) {
       expect(text, `${name} is registered`).toContain(`('${name}',`);
     }
+  });
+});
+
+describe('the supply snapshot is not a browser RPC', () => {
+  it('revokes from PUBLIC as well as both browser roles', () => {
+    // Naming only one role while PUBLIC still holds the privilege reads as a fix and
+    // does nothing. That exact shape is why check-definer-authorization models revokes
+    // per role, so the pin insists on all three names.
+    expect(doorText).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_ca_diamond_snapshot\(\) FROM PUBLIC, anon, authenticated;/
+    );
+    expect(doorText).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.fn_ca_diamond_snapshot\(\) TO service_role;/
+    );
+  });
+
+  it('asserts the door is shut and the cron can still get through', () => {
+    expect(doorText).toMatch(
+      /RAISE EXCEPTION 'a browser role can still execute fn_ca_diamond_snapshot'/
+    );
+    expect(doorText).toMatch(
+      /RAISE EXCEPTION 'service_role lost EXECUTE on fn_ca_diamond_snapshot/
+    );
+    // negative control: a revoke that names only PUBLIC is the no-op shape
+    const counterfeit = 'REVOKE ALL ON FUNCTION public.fn_ca_diamond_snapshot() FROM PUBLIC;';
+    expect(counterfeit).not.toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_ca_diamond_snapshot\(\) FROM PUBLIC, anon, authenticated;/
+    );
+  });
+
+  it('moves no money and needs no reload', () => {
+    expect(doorText).not.toMatch(/UPDATE|INSERT INTO|DELETE FROM/);
   });
 });
 

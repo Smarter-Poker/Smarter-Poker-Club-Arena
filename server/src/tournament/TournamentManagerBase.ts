@@ -25,6 +25,7 @@ import {
   spinBlindsForLevel,
 } from '../config/spinSpec.js';
 import { reportError } from '../services/errorReporter.js';
+import { selectInChunks } from '../services/supabase/chunkedIn.js';
 /**
  * THE TOURNAMENT CEILING IS THE DECK, NOT THE CASH SEAT LAW (2026-08-31).
  *
@@ -4778,12 +4779,22 @@ export abstract class TournamentManagerBase {
       const candidates = withoutAddOn.filter((id) => seated.has(id));
       if (candidates.length === 0) return;
 
-      const { data: horseRows } = await supabase
-        .from('profiles')
-        .select('id')
-        .in('id', candidates)
-        .eq('is_horse', true);
-      if (!horseRows || horseRows.length === 0) return;
+      /* CHUNKED, AND AN UNREADABLE FIELD IS NOT AN EMPTY ONE (2026-09-03).
+         At the add-on break of a 500-to-1,000 entrant MTT `candidates` is most
+         of the field, past the ~675-id ceiling PostgREST accepts in a URL. The
+         error was discarded and an empty result returned early - which is what
+         "no horses qualify" looks like, so fleet add-ons silently stopped
+         happening in exactly the big fields where they matter. This method has
+         a deploy-gate pin precisely because it has silently died three times
+         before. */
+      const horseRead = await selectInChunks<{ id: string }>(
+        candidates,
+        (batch) => supabase.from('profiles').select('id').in('id', batch).eq('is_horse', true),
+        `Tournament.addOnHorses(${this.tournamentId.slice(0, 8)})`
+      );
+      if (!horseRead.complete) return;
+      const horseRows = horseRead.rows;
+      if (horseRows.length === 0) return;
 
       let taken = 0;
       const declined = new Map<string, number>();

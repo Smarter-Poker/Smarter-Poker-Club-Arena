@@ -586,9 +586,26 @@ export class HorseFleetManager {
         const { data: matches, error: lookupError } = await supabase
           .from('tables')
           .select(
-            'id, status, union_id, game_variant, small_blind, big_blind, straddle_enabled, min_buy_in, max_buy_in'
+            'id, status, union_id, game_variant, small_blind, big_blind, straddle_enabled, min_buy_in, max_buy_in, settings'
           )
           .eq('name', config.name)
+          /* THE FLEET'S TABLES ARE THE UNION'S TABLES (2026-09-03).
+             This matched on NAME ALONE, platform-wide, and then reopened
+             whatever it found and stamped MIDWAY_UNION_ID onto it - leaving
+             club_id pointing at the original owner, so rake would route to one
+             club and discovery to another. It also undoes a closure: a club
+             that retires a stake is fought by this every boot.
+
+             Nothing had gone wrong only because no user club happens to name a
+             table the way DEFAULT_TABLES does (checked across production the
+             day this was written: every one of the thirteen config names
+             resolves to a Midway row, and Deep Stack Society uses a different
+             convention entirely). That is a coincidence of naming, not a rule.
+             One club creating "NLH 1.00/2.00" would have had its table annexed.
+
+             The fleet only ever creates union tables (see the insert below), so
+             it may only ever adopt one. */
+          .eq('union_id', MIDWAY_UNION_ID)
           .is('tournament_id', null)
           .not('is_deleted', 'is', true)
           .order('created_at', { ascending: true })
@@ -604,7 +621,13 @@ export class HorseFleetManager {
         if (existing) {
           // Table exists — ensure it's active and at Union level
           const updates: Record<string, any> = {};
-          if (existing.status === 'closed') updates.status = 'waiting';
+          /* A RETIRED TABLE STAYS RETIRED. Reopening a closed table is right
+             for a table the fleet closed as surplus and now wants back; it is
+             wrong for one a club deliberately retired (2026-09-03, "close any
+             tables over 2/5"), which would otherwise be reopened on the next
+             boot and re-seeded. */
+          if (existing.status === 'closed' && !isRetiringTable(existing as { settings?: unknown }))
+            updates.status = 'waiting';
           if (existing.union_id !== MIDWAY_UNION_ID) updates.union_id = MIDWAY_UNION_ID;
           // V3: legacy rows can drift from the config (e.g. an old
           // 'ofc_pineapple' row under the crazy-pineapple table name). The
@@ -1349,7 +1372,8 @@ export class HorseFleetManager {
       /* A seat call is still a NEW seating, so it obeys the switch and the
          budget with everything else. The offer itself is left untouched: the
          hold belongs to fn_offer_open_seat's own sweep, which expires it and
-         passes the seat to the next player in line. */
+         passes the seat to the next player in line. A draining table is still
+         never answered, whatever the policy says. */
       const claimed = cycleWithheld
         ? 0
         : await this.claimOfferedSeats(
@@ -1359,6 +1383,7 @@ export class HorseFleetManager {
             bankrollsLoaded,
             horseIdSet,
             membership,
+            surplusTableIds,
             seatBudget
           );
       seatBudget -= claimed;
@@ -2022,7 +2047,16 @@ export class HorseFleetManager {
            business. `.not(...)` rather than a filter on the JS side because
            this is the query that does the closing - a check anywhere else
            could be raced past. */
-        .not('auto_extension', 'is', true)
+        /* ...EXCEPT A TABLE MARKED FOR RETIREMENT (2026-09-03). auto_extension
+           is a host saying "do not close my table just because it went
+           quiet". A retirement is the club saying this stake is not offered
+           any more, and that outranks it - otherwise the table is drained to
+           empty by the rotator, refused a re-seat forever by surplusTableIds,
+           and then skipped here: permanently empty, permanently open, and
+           invisible to every sweep. The 2026-09-03 batch all carry
+           auto_extension = false, so this is the trap closing before anyone
+           falls into it. */
+        .or('auto_extension.is.null,auto_extension.eq.false,settings->>retire_when_empty.eq.true')
         .in('status', ['waiting', 'running']);
       if (error) {
         reportError(error, 'HorseFleet.retireSurplusTables_failed');
@@ -2177,6 +2211,8 @@ export class HorseFleetManager {
     bankrollsLoaded: boolean,
     horseIdSet: Set<string>,
     membership: SeatClubContext,
+    /** Tables being wound down: an offer at one of these is never answered. */
+    surplusTableIds: Set<string>,
     /* How many seats the fleet-wide policy cap leaves this cycle. Infinity
        when there is no cap, which is today's behaviour. */
     budget: number = Number.POSITIVE_INFINITY
@@ -2210,6 +2246,15 @@ export class HorseFleetManager {
         if (claimed >= budget) break;
         const table = tableById.get(offer.table_id);
         if (!table || table.tournament_id) continue;
+        /* A DRAINING TABLE TAKES NOBODY BACK (2026-09-03). This path seats a
+           horse from a waitlist offer and never consulted surplusTableIds, so
+           a horse holding a `notified` row for a retiring table would be
+           seated straight back into it, undoing the drain one offer at a
+           time. Nothing had gone wrong yet only because pruneHorseWaitlist
+           runs earlier in the same cycle and clears every horse row - an
+           ordering coincidence between two independent methods, not a rule.
+           This is the rule. */
+        if (surplusTableIds.has(String(offer.table_id))) continue;
 
         const expiresAt = offer.hold_expires_at
           ? Date.parse(offer.hold_expires_at)

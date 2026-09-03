@@ -520,6 +520,15 @@
       "amount",
       "played_at"
     ],
+    "ca_horse_fleet_policy": [
+      "scope"
+    ],
+    "ca_horse_fleet_register": [
+      "horse_id"
+    ],
+    "ca_horse_fleet_state": [
+      "horse_id"
+    ],
     "ca_incident_events": [
       "incident_id",
       "kind"

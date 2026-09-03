@@ -32,7 +32,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import HouseAdCard from '../ads/HouseAdCard';
+import HouseAdRotator from '../ads/HouseAdRotator';
+import { useUserStore } from '../../stores/useUserStore';
 import {
   clearSessionSummary,
   peekSessionSummary,
@@ -131,6 +132,7 @@ export function SessionSummaryHost() {
   /* This host is mounted outside <Routes> but inside <BrowserRouter>, so it can
      route. It needs to: a house ad in this card carries its own destination. */
   const navigate = useNavigate();
+  const currentClubId = useUserStore((s) => s.currentClubId);
 
   useEffect(() => subscribeSessionSummary(setPayload), []);
 
@@ -434,15 +436,17 @@ export function SessionSummaryHost() {
           ))}
         </div>
 
-        {/* HOUSE ADS, `session_summary` (2026-08-28). Declared in Phase 1 and
-            wired to nothing until now. It sits under the numbers and above the
-            actions, so it never comes between a player and Done.
+        {/* HOUSE ADS, `session_summary` (2026-08-28; pictures 2026-09-03).
+            Three rotating 3:1 creatives under the numbers and above the
+            actions, so they never come between a player and Done.
 
-            No club is passed: this host lives at the app root and survives the
-            navigate() off the table, so it has no club in hand. The resolver
-            drops any destination carrying an unresolved {clubId} rather than
-            serving a link it knows is broken, so this surface simply gets the
-            campaigns whose placement names its own destination. */}
+            The club comes from useUserStore.currentClubId: this host lives at
+            the app root and survives the navigate() off the table, so it has
+            no route club in hand, but the store remembers the last one the
+            player was in. That is what lets Spins and the jackpot, whose
+            destinations carry {clubId}, be placed here at all. When the store
+            has nothing the resolver drops those rows rather than serving a
+            link it knows is broken. */}
         {/* close() BEFORE navigate(), and it is not tidiness. This host is a
             createPortal overlay that nothing but clearSessionSummary() takes
             down: the backdrop closes it, but the card stops propagation, and
@@ -450,8 +454,9 @@ export function SessionSummaryHost() {
             page underneath a Session Complete panel still covering it, with
             the click already logged - so the panel read it as a campaign that
             worked while the player was looking at a dead end. */}
-        <HouseAdCard
+        <HouseAdRotator
           slot="session_summary"
+          clubId={currentClubId}
           onNavigate={(path) => {
             close();
             navigate(path);

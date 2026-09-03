@@ -13,8 +13,10 @@ import { resolve } from 'path';
 const read = (p: string) => readFileSync(resolve(__dirname, '../../', p), 'utf8');
 
 const SERVICE = read('src/services/AdService.ts');
-const STRIP = read('src/components/lobby/LobbyAdStrip.tsx');
+const ROTATOR = read('src/components/ads/HouseAdRotator.tsx');
+const ROTATOR_CSS = read('src/components/ads/HouseAdRotator.css');
 const ADMIN = read('src/pages/admin/HouseAdsPage.tsx');
+const PICTURE_MIGRATION = read('supabase/migrations/20260903200000_an_advert_is_a_picture_now.sql');
 const CAP_MIGRATION = read('supabase/migrations/20260828032000_ad_cap_is_per_surface.sql');
 const SUPPRESSION_MIGRATION = read(
   'supabase/migrations/20260828055000_suppression_countable_by_an_operator.sql'
@@ -37,23 +39,100 @@ describe('VIP members see house ads (Dan 2026-08-27)', () => {
   });
 });
 
-describe('house ads never outrank a club speaking to its own players', () => {
-  it('sorts HOUSE last in the merged strip', () => {
-    const merged = STRIP.slice(
-      STRIP.indexOf('const merged = ['),
-      STRIP.indexOf('.slice(0, MAX_ADS)')
-    );
-    const club = merged.indexOf('clubAds.filter((a) => a.pinned)');
-    const union = merged.indexOf('...unionAds');
-    const house = merged.indexOf('...houseLobbyAds');
-    expect(club).toBeGreaterThan(-1);
-    expect(house).toBeGreaterThan(union);
-    expect(union).toBeGreaterThan(club);
+describe('an advert is a picture now (Dan 2026-09-03)', () => {
+  /* "add the lobby strip, post session modal. i want to have it as 3 rotating
+     images for now." And: "IF A PAGE SHRINKS, THE IMAGE SHOULD SHRINK AS WELL,
+     IT SHOULD NEVER BE CUT OFF, OR DISTORTED BY PAGES CHANGING SIZE." */
+  const LOBBY = read('src/pages/ClubHomePage.tsx');
+  const SESSION = read('src/components/session/SessionSummaryHost.tsx');
+
+  it('the text strip is gone and nothing imports it', () => {
+    expect(() => read('src/components/lobby/LobbyAdStrip.tsx')).toThrow();
+    expect(LOBBY).not.toMatch(/LobbyAdStrip/);
   });
 
-  it('keeps the three sources labelled rather than merged anonymously', () => {
-    expect(STRIP).toMatch(/'CLUB' \| 'UNION' \| 'HOUSE'/);
-    expect(STRIP).toMatch(/lobby-ads__tag/);
+  it('BOTH surfaces mount the rotator - the mount, not just the file', () => {
+    /* The house bug shape, and this time it actually happened: #1759 rebuilt
+       the lobby top and dropped the strip's mount. The component, its CSS, its
+       placements and 85 pins on its internals all survived, so nothing went
+       red, and the busiest ad surface served nobody for five days. */
+    expect(LOBBY).toMatch(/import HouseAdRotator from '\.\.\/components\/ads\/HouseAdRotator'/);
+    expect(LOBBY).toMatch(/<HouseAdRotator[\s\n]+slot="lobby_strip"/);
+    expect(SESSION).toMatch(/import HouseAdRotator from '\.\.\/ads\/HouseAdRotator'/);
+    expect(SESSION).toMatch(/<HouseAdRotator[\s\n]+slot="session_summary"/);
+  });
+
+  it('the session summary hands the rotator the club the store remembers', () => {
+    // Spins and the jackpot carry {clubId}; without a club the resolver drops them.
+    expect(SESSION).toMatch(/useUserStore\(\(s\) => s\.currentClubId\)/);
+    expect(SESSION).toMatch(/clubId=\{currentClubId\}/);
+  });
+
+  it('shows only creatives that have a picture, and nothing at all otherwise', () => {
+    expect(ROTATOR).toMatch(/rows\.filter\(\(a\) => isSafeAdImage\(a\.imageUrl\)\)/);
+    expect(ROTATOR).toMatch(/if \(!ad\) return null;/);
+    // No headline / body / glyph fallback rendered as text in a picture slot.
+    expect(ROTATOR).not.toMatch(/house-ad__glyph|house-ad__headline/);
+  });
+
+  it('rotates three, and never faster than three seconds', () => {
+    expect(ROTATOR).toMatch(/limit = 3/);
+    expect(ROTATOR).toMatch(/const MIN_INTERVAL_MS = 3000;/);
+    expect(ROTATOR).toMatch(/Math\.max\(MIN_INTERVAL_MS, intervalMs\)/);
+  });
+
+  it('scales with the page and is never cut off or distorted', () => {
+    // A responsive image with a fixed aspect ratio: the box owns the shape,
+    // the picture is contained inside it.
+    expect(ROTATOR).toMatch(/style=\{\{ aspectRatio: ratio \}\}/);
+    expect(ROTATOR).toMatch(/lobby_strip: '6 \/ 1'/);
+    expect(ROTATOR).toMatch(/session_summary: '3 \/ 1'/);
+    const img = ROTATOR_CSS.slice(ROTATOR_CSS.indexOf('.ad-rotator__image {'));
+    expect(img).toMatch(/object-fit: contain;/);
+    expect(ROTATOR_CSS).toMatch(/\.ad-rotator \{[\s\S]*?width: 100%;/);
+    expect(ROTATOR_CSS).not.toMatch(/object-fit: cover/);
+  });
+
+  it('the creative lives on the placement, per surface, and stays same-origin', () => {
+    expect(PICTURE_MIGRATION).toMatch(
+      /alter table public\.ad_placement\s+add column if not exists image_url text;/
+    );
+    expect(PICTURE_MIGRATION).toMatch(/ad_placement_image_is_same_origin/);
+    expect(PICTURE_MIGRATION).toMatch(/COALESCE\(pl\.image_url, c\.image_url\) AS image_url/);
+    // Exactly three active placements on each picture surface, asserted in the migration itself.
+    expect(PICTURE_MIGRATION).toMatch(/expected 3/);
+  });
+
+  it('the fade honours Animation Speed and reduced motion collapses motion, not meaning', () => {
+    expect(ROTATOR_CSS).toMatch(/calc\(320ms \* var\(--animation-speed, 1\)\)/);
+    // Reduced motion drops the fade; the rotation still advances so every
+    // creative is still reachable (CLAUDE.md 10.6).
+    expect(ROTATOR).toMatch(/prefers-reduced-motion: reduce/);
+    expect(ROTATOR).not.toMatch(/if \(reduced\) return;/);
+  });
+
+  it('a seen ad is a different event from a rendered one', () => {
+    expect(SERVICE).toMatch(/'impression' \| 'viewable' \| 'click' \| 'dismiss'/);
+    expect(SERVICE).toMatch(/logViewable\(/);
+    expect(PICTURE_MIGRATION).toMatch(
+      /check \(event_type in \('impression', 'viewable', 'click', 'dismiss'\)\)/
+    );
+    // MRC / IAB: half the pixels, one continuous second, measured by observer.
+    expect(ROTATOR).toMatch(/const VIEWABLE_RATIO = 0\.5;/);
+    expect(ROTATOR).toMatch(/const VIEWABLE_MS = 1000;/);
+    expect(ROTATOR).toMatch(/new IntersectionObserver\(/);
+    expect(ROTATOR).toMatch(/AdService\.logViewable\(\{ adId \}, slot, clubId\)/);
+    // Paused while the tab is hidden: nobody is looking.
+    expect(ROTATOR).toMatch(/document\.visibilityState !== 'visible'/);
+  });
+
+  it('a club or sponsor creative is labelled; the house is not', () => {
+    expect(SERVICE).toMatch(/advertiserKind: 'house' \| 'club' \| 'sponsor'/);
+    // An unknown kind off the wire is never treated as the house.
+    expect(SERVICE).toMatch(/return v === 'house' \|\| v === 'club' \? v : 'sponsor';/);
+    expect(ROTATOR).toMatch(
+      /ad\.advertiserKind === 'club' \? 'Club' : ad\.advertiserKind === 'sponsor' \? 'Sponsored' : null/
+    );
   });
 });
 
@@ -66,14 +145,15 @@ describe('impressions are counted honestly', () => {
     expect(SERVICE).toMatch(/logImpression/);
   });
 
-  it('only tracks HOUSE ads, not a club or union announcement', () => {
-    expect(STRIP).toMatch(/visibleAd\?\.source === 'HOUSE'/);
+  it('the rotator logs the impression for the creative on screen, once per load', () => {
+    expect(ROTATOR).toMatch(/AdService\.logImpression\(\{ adId \}, slot, clubId\)/);
+    expect(SERVICE).toMatch(/const key = `\$\{ad\.adId\}:\$\{slot\}:viewable`;/);
   });
 
   it('logs the click BEFORE navigating away', () => {
-    const activate = STRIP.slice(
-      STRIP.indexOf('const handleActivate'),
-      STRIP.indexOf('const stripClass')
+    const activate = ROTATOR.slice(
+      ROTATOR.indexOf('const activate = () => {'),
+      ROTATOR.indexOf('const ratio =')
     );
     expect(activate.indexOf('logClick')).toBeGreaterThan(-1);
     expect(activate.indexOf('logClick')).toBeLessThan(activate.indexOf('onNavigate'));
@@ -224,12 +304,12 @@ describe('the last two Club Arena slots are wired, and only where they earn it',
     'supabase/migrations/20260828040000_house_ads_empty_state_and_session_summary.sql'
   );
 
-  it('both surfaces actually render the card', () => {
+  it('the empty state still renders the card; the session summary moved to pictures', () => {
     // The house bug shape: a component that exists and nothing imports.
     expect(LOBBY_PAGE).toMatch(/import HouseAdCard from '\.\.\/components\/ads\/HouseAdCard'/);
     expect(LOBBY_PAGE).toMatch(/<HouseAdCard\s+slot="empty_state"/);
-    expect(SESSION).toMatch(/import HouseAdCard from '\.\.\/ads\/HouseAdCard'/);
-    expect(SESSION).toMatch(/<HouseAdCard[\s\n]+slot="session_summary"/);
+    expect(SESSION).not.toMatch(/HouseAdCard/);
+    expect(SESSION).toMatch(/<HouseAdRotator[\s\n]+slot="session_summary"/);
   });
 
   it('empty_state appears only where the player has nothing to tap', () => {
@@ -902,27 +982,30 @@ describe('a click is only counted when it went somewhere (2026-08-29)', () => {
      click-through rate an operator uses to choose what to run next. */
   const SUMMARY = read('src/components/session/SessionSummaryHost.tsx');
 
-  it('the strip resolves and validates the destination before anything else uses it', () => {
-    expect(STRIP).toMatch(/const houseTarget = \(\(\) => \{/);
-    expect(STRIP).toMatch(/return isSafeAdTarget\(url\) \? url : null;/);
+  it('the rotator substitutes, then validates, the destination before anything else uses it', () => {
+    expect(ROTATOR).toMatch(/const target = \(\(\) => \{/);
+    expect(ROTATOR).toMatch(/const url = substituteClub\(ad\.targetUrl, clubId\);/);
+    expect(ROTATOR).toMatch(/return isSafeAdTarget\(url\) \? url : null;/);
   });
 
   it('logClick sits inside the branch that has a safe destination', () => {
-    const activate = STRIP.slice(
-      STRIP.indexOf('const handleActivate = () => {'),
-      STRIP.indexOf('const text = ad.title')
+    const activate = ROTATOR.slice(
+      ROTATOR.indexOf('const activate = () => {'),
+      ROTATOR.indexOf('const ratio =')
     );
-    const guard = activate.indexOf('if (houseTarget && ad.adId)');
+    const guard = activate.indexOf('if (!target || !activatable) return;');
     const log = activate.indexOf('AdService.logClick');
     expect(guard).toBeGreaterThan(-1);
     expect(log).toBeGreaterThan(guard);
     // And the raw column is never what the router is handed.
     expect(activate).not.toMatch(/onNavigate\?\.\(ad\.targetUrl/);
+    expect(activate).toMatch(/onNavigate\?\.\(target\)/);
   });
 
-  it('a house ad with no safe destination is not rendered as a button', () => {
-    expect(STRIP).toMatch(/const isActivatable = Boolean\(onOpen\) \|\| Boolean\(houseTarget\);/);
-    expect(STRIP).not.toMatch(/isActivatable =[^;]*Boolean\(ad\.targetUrl\)/);
+  it('a creative with no safe destination is not rendered as a button', () => {
+    expect(ROTATOR).toMatch(/const activatable = Boolean\(target\) && Boolean\(onNavigate\);/);
+    expect(ROTATOR).toMatch(/ad-rotator__frame--static/);
+    expect(ROTATOR).not.toMatch(/activatable =[^;]*Boolean\(ad\.targetUrl\)/);
   });
 
   it('the card was already right, and stays right', () => {

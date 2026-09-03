@@ -100,6 +100,7 @@ import { useUserStore } from '../stores/useUserStore';
 import ClubLobbyCommandTop from '../components/lobby/ClubLobbyCommandTop';
 import MaintenanceBreakBanner from '../components/common/MaintenanceBreakBanner';
 import HouseAdCard from '../components/ads/HouseAdCard';
+import HouseAdRotator from '../components/ads/HouseAdRotator';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
 import { playerDisplayName } from '../utils/playerDisplayName';
@@ -4978,8 +4979,22 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
         )}
 
         {/* ═══════════════════════════════════════════════════════════════════
-          CLUB / UNION AD STRIP — directly under the action bar
+          AD STRIP - directly under the action bar. THREE ROTATING PICTURES.
+          (Dan 2026-09-03.) The text strip that lived here was dropped by the
+          lobby rebuild in #1759 and nothing noticed for five days: this mount
+          is now pinned by tests/unit/houseAds.test.ts. The rotator renders
+          nothing at all when no creative has a picture, so it never takes
+          space it cannot fill.
       ═══════════════════════════════════════════════════════════════════ */}
+        <HouseAdRotator
+          slot="lobby_strip"
+          clubId={resolvedClubId || club.id}
+          onNavigate={(path) => {
+            haptic.selection();
+            navigate(path);
+          }}
+        />
+
         {/* `club.id` is the fallback, not a second source of truth: this markup
           only renders past the `if (!club) return` guard, so it is always
           present, while resolvedClubId stays null forever if the slug lookup

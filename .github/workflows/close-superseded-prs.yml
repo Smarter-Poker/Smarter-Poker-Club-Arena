@@ -52,7 +52,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v4
         with:
           # Full history is required: the script asks git for the merge base of
           # every candidate against the default branch, and a depth-1 clone has
@@ -64,7 +64,7 @@ jobs:
       - name: Mint a GitHub App installation token
         id: app-token
         if: vars.AUTOPILOT_APP_ID != ''
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@v1
         with:
           app-id: ${{ vars.AUTOPILOT_APP_ID }}
           private-key: ${{ secrets.AUTOPILOT_APP_PRIVATE_KEY }}

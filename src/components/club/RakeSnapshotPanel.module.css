@@ -777,3 +777,39 @@
     flex: 1 1 100%;
   }
 }
+
+/* ----------------------------------------------------------------- cost --- */
+
+/* The agent rows gained a sixth column. The club list keeps its four, so this
+   override sits after the shared rule and applies only where a Cost column
+   actually exists. */
+.breakdown li {
+  grid-template-columns: minmax(0, 1.2fr) 96px minmax(50px, 0.7fr) 96px 88px 96px;
+}
+
+.legend {
+  grid-template-columns: 1fr 96px 88px 96px;
+}
+
+/* Money the club owes, not money it took. Gold rather than the energy blue the
+   rake columns use, so an operator scanning the table is never one glance away
+   from reading a cost as a takings. */
+.rowCost {
+  color: var(--gold);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+@media (max-width: 860px) {
+  .breakdown li {
+    grid-template-columns: minmax(0, 1fr) 88px 88px;
+  }
+
+  /* Direct rake and cost survive the narrow layout; network is the one that
+     can be inferred from the rows beneath it. */
+  .rowNetwork {
+    display: none;
+  }
+}

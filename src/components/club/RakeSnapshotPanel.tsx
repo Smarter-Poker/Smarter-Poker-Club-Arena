@@ -530,6 +530,9 @@ export default function RakeSnapshotPanel({
             'sub_agents',
             'network_players',
             'network_rake',
+            'commission_earned',
+            'commission_outstanding',
+            'commission_settled',
           ].join(',')
         );
         for (const r of rows as RakeAgentRow[]) {
@@ -546,6 +549,9 @@ export default function RakeSnapshotPanel({
               r.sub_agents,
               r.network_players,
               r.network_rake,
+              r.commission_earned,
+              r.commission_outstanding,
+              r.commission_settled,
             ]
               .map(csvEscape)
               .join(',')
@@ -851,13 +857,17 @@ export default function RakeSnapshotPanel({
           <div className={styles.legend} aria-hidden="true">
             <span>Direct</span>
             <span>Network</span>
+            <span>Cost</span>
           </div>
           <ul>
             {(rows as RakeAgentRow[]).map((r) => {
               const pct = share(r.direct_rake, total);
               return (
                 <li
-                  key={r.agent_user_id ?? 'unassigned'}
+                  // Unassigned and Unlisted Recipients BOTH have a null agent
+                  // id, so keying on it alone collides and React reuses one
+                  // row's DOM for the other.
+                  key={r.agent_user_id ?? r.name}
                   className={r.is_unassigned ? styles.rowMuted : undefined}
                 >
                   <span className={styles.rowName} title={r.name}>
@@ -882,6 +892,18 @@ export default function RakeSnapshotPanel({
                   >
                     {r.sub_agents > 0 ? money(r.network_rake) : NO_VALUE}
                   </span>
+                  <span
+                    className={styles.rowCost}
+                    title={
+                      r.commission_earned === null
+                        ? undefined
+                        : 'What This Agent Earns, Including From Everyone Beneath Them. Not The Rake Column Times The Rate.'
+                    }
+                  >
+                    {/* null is NOT DISCLOSED and renders as a dash. A zero here
+                        would say the agent costs nothing. */}
+                    {money(r.commission_earned)}
+                  </span>
                 </li>
               );
             })}
@@ -889,6 +911,13 @@ export default function RakeSnapshotPanel({
           <p className={styles.rowNote}>
             Direct Is The Rake Of Players Assigned To That Agent, And Sums To {money(total)}.
             Network Adds Everyone Beneath Them, So It Overlaps And Does Not Sum.
+            {snapshot?.commission_total !== null && snapshot?.commission_total !== undefined ? (
+              <>
+                {' '}
+                Cost Is What Each Agent Earns, Cascade Included - It Is Not The Direct Column Times
+                A Rate - And It Sums To {money(snapshot.commission_total)}.
+              </>
+            ) : null}
           </p>
         </div>
       )}

@@ -1957,6 +1957,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         finalTable: tctx.finalTable,
         nextBlindInMin: tctx.nextBlindInMin,
         nextBlindMult: tctx.nextBlindMult,
+        // V37 SATELLITES: identical tickets to the top N. The brain plays
+        // survival, not a ladder — see HorseLogic.satelliteRead.
+        satellite: tctx.satellite,
+        satelliteSeats: tctx.satelliteSeats,
+        // V37 BOUNTIES: whose head is worth what, this hand.
+        bountyByUser: tctx.bountyByUser,
       },
     };
   }

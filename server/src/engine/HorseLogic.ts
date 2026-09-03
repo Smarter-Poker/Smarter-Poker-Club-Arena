@@ -636,6 +636,11 @@ export interface HorseGameStateV2 extends HorseGameState {
     nextBlindInMin?: number | null;
     /** V23 BLIND CLOCK: next level's bb over the current bb (1 = flat). */
     nextBlindMult?: number;
+    /** V37: this event pays identical tickets to the top `satelliteSeats`. */
+    satellite?: boolean;
+    satelliteSeats?: number;
+    /** V37: live bounty per user id (cents) — the head, not the mean. */
+    bountyByUser?: Record<string, number>;
   };
   /** V12: table format. HU SNGs play heads-up ranges, MTTs get the full
    *  survival model, and a Spin is decided by `spotsPaid` rather than by the
@@ -720,6 +725,195 @@ export function endgameAdjust(
     }
   }
   return risk;
+}
+
+/**
+ * ═══ V37 SATELLITE READ (Dan 2026-09-02) ═══════════════════════════════════
+ * "THE PLAY DIFFERENCE BETWEEN A SATELLITE WHERE ALL WINNERS GET THE SAME
+ *  PRIZE AND A MTT WITH PRIZES PROGRESSIVELY PAYING MORE."
+ *
+ * In an MTT every chip is worth something all the way to first. In a
+ * satellite the K-th seat pays exactly what the first does, so the only
+ * question a stack ever asks is "will I be here when P - K players have
+ * gone?" That splits the table into three players:
+ *
+ *   LOCKED   Ranked inside the seats with enough chips to post blinds until
+ *            the required busts have happened. Every chip risked is a chip
+ *            risked for nothing: this stack folds ACES to a covering all-in,
+ *            never calls a raise, never plays a big pot postflop. The only
+ *            aggression it keeps is the free kind — an open-jam into a table
+ *            it covers, because nobody who wants a seat can call it.
+ *   URGENT   Below the seat line with the blinds coming: this stack has to
+ *            accumulate, so its jam ranges widen and its reshoves widen, and
+ *            it targets the mid stacks who cannot call.
+ *   NEITHER  Ordinary tournament play with the flat-curve ICM premium from
+ *            IcmModel's survival model.
+ *
+ * Pure read: stacks and counts in, three booleans out. Exported for tests.
+ */
+export interface SatelliteRead {
+  active: boolean;
+  locked: boolean;
+  urgent: boolean;
+  /** hero covers every live opponent at the table by a clear margin */
+  coversAll: boolean;
+  /** hero's rank in the live field (1 = chip leader), 0 when unknown */
+  rank: number;
+}
+
+const NO_SATELLITE: SatelliteRead = {
+  active: false,
+  locked: false,
+  urgent: false,
+  coversAll: false,
+  rank: 0,
+};
+
+export function satelliteRead(
+  gs: HorseGameStateV2,
+  player: SeatPlayer,
+  stackBB: number,
+  on: boolean = true
+): SatelliteRead {
+  const t = gs.tournament;
+  if (!on || !t || t.satellite !== true) return NO_SATELLITE;
+  const seats = t.satelliteSeats ?? t.spotsPaid ?? 0;
+  const left = t.playersLeft ?? 0;
+  if (seats <= 0 || left <= seats) return NO_SATELLITE;
+  const bb = gs.bigBlind > 0 ? gs.bigBlind : 1;
+  const heroChips = stackBB * bb;
+  const stacks = Array.isArray(t.stacks) ? t.stacks : [];
+  // rank: substitute hero's live stack for its closest field entry
+  let rank = 0;
+  if (stacks.length >= 2 && heroChips > 0) {
+    let closest = 0;
+    for (let i = 1; i < stacks.length; i++) {
+      if (Math.abs(stacks[i] - heroChips) < Math.abs(stacks[closest] - heroChips)) closest = i;
+    }
+    let above = 0;
+    for (let i = 0; i < stacks.length; i++) if (i !== closest && stacks[i] > heroChips) above++;
+    rank = 1 + above;
+  }
+  const bustsNeeded = left - seats;
+  const orbitBB =
+    1.5 +
+    Math.max(
+      0,
+      anteOrbitCostBB(
+        gs.ante ?? 0,
+        gs.players.filter((p) => !p.is_sitting_out).length,
+        bb,
+        gs.bigBlindAnte === true
+      )
+    );
+  // Blinds hero can post while the busts happen: two orbits per bust is a
+  // conservative read of how fast a satellite bubble clears.
+  const blindRunwayBB = orbitBB * (2 * bustsNeeded + 2);
+  const bubbleRatio = left / seats;
+  const near = bubbleRatio <= 1.6 || bustsNeeded <= 3;
+  const locked = near && rank > 0 && rank <= seats && stackBB >= blindRunwayBB;
+  // Below the seat line, waiting cannot produce a seat: the stack has to
+  // grow, however many blinds it holds.
+  const urgent = near && (rank === 0 || rank > seats);
+  let coversAll = false;
+  if (locked) {
+    coversAll = true;
+    for (const o of gs.players) {
+      if (o.seat === player.seat || o.is_folded || o.is_sitting_out) continue;
+      const os = (isFinite(o.stack) ? o.stack : 0) + (isFinite(o.bet) ? o.bet : 0);
+      if (os * 1.25 > heroChips) {
+        coversAll = false;
+        break;
+      }
+    }
+  }
+  return { active: true, locked, urgent, coversAll, rank };
+}
+
+/**
+ * ═══ V37 BOUNTY PRICING, IN ONE PLACE (Dan 2026-09-02) ═══════════════════
+ * "DON'T FORGET ABOUT BOUNTY, PKO AND MYSTERY BOUNTIES. THIS PLAYS DIFFERENT
+ *  WHEN A PLAYER HAS A LARGE BOUNTY ON THEIR HEAD. OR IF THE TOP PRIZES IN A
+ *  MYSTERY BOUNTY ARE AVAILABLE, OR HAVE ALREADY BEEN PULLED."
+ *
+ * Two multipliers on the pool-ratio bountyFactor, both read live:
+ *
+ *  prizeLandscapeScale — the V26 inventory read (was inline in the preflop
+ *    glue, and NOT applied postflop): the top chest still in the box makes
+ *    every bust a lottery ticket (x1.35); a top chest far above the mean is a
+ *    fat tail (x1.15); three or fewer chests left is a freezeout wearing a
+ *    badge (x0.6); an exhausted inventory is over (x0.35).
+ *  headBountyScale — THIS opponent's bounty against the field mean. A head
+ *    worth three times the mean is worth three times the pull; a head worth
+ *    a third of it is worth a third. Clamped to [0.4, 3]. 1 when the
+ *    per-player map is absent (older context), so nothing regresses.
+ */
+export function prizeLandscapeScale(gs: HorseGameStateV2, on: boolean = true): number {
+  const t = gs.tournament;
+  if (!on || !t) return 1;
+  const meanCents = Math.max(0, t.mysteryMeanCents ?? t.meanBountyCents ?? 0);
+  const chestsLeft = Math.max(0, t.mysteryChestsLeft ?? 0);
+  let scale = 1;
+  if (meanCents > 0) {
+    if (t.mysteryTopLive === true) scale *= 1.35;
+    if (chestsLeft > 0 && chestsLeft <= 3) scale *= 0.6;
+    const top = Math.max(0, t.mysteryTopCents ?? 0);
+    if (top > meanCents * 3) scale *= 1.15;
+  } else if (chestsLeft === 0 && (t.mysteryTopCents ?? 0) > 0) {
+    scale = 0.35;
+  }
+  return scale;
+}
+
+export function headBountyScale(gs: HorseGameStateV2, userId: string | undefined): number {
+  const t = gs.tournament;
+  if (!t || !userId || !t.bountyByUser) return 1;
+  const head = Number(t.bountyByUser[userId]) || 0;
+  const mean = Math.max(0, t.meanBountyCents ?? 0);
+  if (head <= 0 || mean <= 0) return 1;
+  return Math.max(0.4, Math.min(3, head / mean));
+}
+
+/**
+ * ═══ V37 BUBBLE PRESSURE (exploit, Dan 2026-09-02) ═══════════════════════
+ * "EXPLOITATIVE PLAY THAT'S AVAILABLE FOR THEM AT ALL STAGES."
+ *
+ * The bubble is the one stage where the correct exploit is written into the
+ * payout table: every covered stack near the money is folding hands it would
+ * play anywhere else, and the stack that covers them is the only one at the
+ * table with nothing to lose by attacking. The V12 model already HALVED the
+ * captain's own premium; it never told the captain to attack. This is that:
+ * 0 outside the window, 1 when hero covers every live opponent by a margin
+ * near the bubble, 0.6 when hero covers only the current raiser. Preflop it
+ * widens the opens and the 3-bet bluffs against covered players; postflop it
+ * lifts bluff volume a notch. Satellites carry their own, stronger version
+ * (satelliteRead.coversAll) and are excluded here.
+ */
+export function bubblePressure(
+  gs: HorseGameStateV2,
+  player: SeatPlayer,
+  raiserSeat: number,
+  on: boolean = true
+): number {
+  const t = gs.tournament;
+  if (!on || !t || !isTournamentMode(gs) || gs.format === 'spin') return 0;
+  if (t.satellite === true) return 0;
+  const pl = t.playersLeft ?? 0;
+  const paid = t.spotsPaid ?? 0;
+  if (pl <= 0 || paid <= 0) return 0;
+  const inMoney = t.inMoney ?? pl <= paid;
+  if (inMoney || pl / paid > 1.4) return 0;
+  const heroChips = player.stack + (isFinite(player.bet) ? player.bet : 0);
+  let coversAll = true;
+  let coversRaiser = false;
+  for (const o of gs.players) {
+    if (o.seat === player.seat || o.is_folded || o.is_sitting_out) continue;
+    const os = (isFinite(o.stack) ? o.stack : 0) + (isFinite(o.bet) ? o.bet : 0);
+    const covered = os * 1.3 <= heroChips;
+    if (!covered) coversAll = false;
+    if (o.seat === raiserSeat && covered) coversRaiser = true;
+  }
+  return coversAll ? 1 : coversRaiser ? 0.6 : 0;
 }
 
 function icmRisk(
@@ -1067,6 +1261,11 @@ export interface HorseDecideOpts {
    *  which scale continuously with depth, play the spot. Disable to ablate
    *  (default: enabled) */
   v33DepthCeiling?: boolean;
+  /** V37 (2026-09-02): satellite play — flat prizes are survival, not a
+   *  ladder. A locked seat folds everything, a stack below the line jams
+   *  wider, a table captain open-jams into stacks that cannot call. Disable
+   *  to ablate (default: enabled). */
+  v37Satellite?: boolean;
 }
 
 /**
@@ -1647,24 +1846,16 @@ export class HorseLogic {
         // RELATIVE to the average remaining bounty: a chest worth well above
         // the mean is worth chasing, one below it is not. Expressed as a
         // multiplier on the existing pull rather than a new currency.
+        // V37: the two reads live in prizeLandscapeScale / headBountyScale so
+        // the postflop call-off prices the same bust the preflop pull does.
         const meanCents = Math.max(0, t26?.mysteryMeanCents ?? t26?.meanBountyCents ?? 0);
-        const chestsLeft = Math.max(0, t26?.mysteryChestsLeft ?? 0);
-        let bountyScale = 1;
-        if (useV26 && meanCents > 0) {
-          // The top chest still in the box makes every bust a lottery
-          // ticket: the mean understates it, because the tail is the prize.
-          if (t26?.mysteryTopLive === true) bountyScale *= 1.35;
-          // A nearly-empty inventory is a freezeout wearing a bounty badge.
-          if (chestsLeft > 0 && chestsLeft <= 3) bountyScale *= 0.6;
-          // A top chest far above the mean is a fat tail worth chasing.
-          const top = Math.max(0, t26?.mysteryTopCents ?? 0);
-          if (top > meanCents * 3) bountyScale *= 1.15;
-        } else if (useV26 && chestsLeft === 0 && (t26?.mysteryTopCents ?? 0) > 0) {
-          // Inventory known and EXHAUSTED: the bounty half of this event is
-          // over, whatever the pool ratio still says.
-          bountyScale = 0.35;
-        }
+        let bountyScale = prizeLandscapeScale(gs, useV26);
         if (telemetryOn(opts) && useV26 && meanCents > 0) noteFire('v26_prize_read');
+        // The head on THIS raiser: a bounty three times the field mean pulls
+        // three times as hard; a small one barely at all.
+        const head = headBountyScale(gs, raiser.user_id);
+        if (head !== 1 && telemetryOn(opts)) noteFire('v37_head_bounty');
+        bountyScale *= head;
         return {
           bountyFactor: Math.min(1, bf * bountyScale),
           coversRaiser: covers,
@@ -1724,6 +1915,32 @@ export class HorseLogic {
       // V35: the game's own preflop width (PLO wider opens, narrower 3-bets;
       // 6+ wider still; fixed limit widest). Rides the v8 variant flag.
       variantShift: opts.v8 !== false ? variantPreflopShift(gs.gameVariant) : undefined,
+      // V37: preflop blockers — an ace or king in the hand.
+      holdsAce: player.cards.some((hc) => hc.rank === 'A'),
+      holdsKing: player.cards.some((hc) => hc.rank === 'K'),
+      // V37: hero's own head — a big bounty gets called wider.
+      ownHeadBounty:
+        (opts.v24Bounty ?? true) !== false ? headBountyScale(gs, player.user_id) : undefined,
+      // V37: the bubble is an exploit written into the payout table.
+      bubblePressure: (() => {
+        const bp = bubblePressure(
+          gs,
+          player,
+          lastRaiserSeat,
+          (opts.v37Satellite ?? true) !== false
+        );
+        if (bp > 0 && telemetryOn(opts)) noteFire('v37_bubble_pressure');
+        return bp;
+      })(),
+      // V37: satellite survival / urgency / pressure (see satelliteRead).
+      satellite: (() => {
+        const sr = satelliteRead(gs, player, stackBB, (opts.v37Satellite ?? true) !== false);
+        if (!sr.active) return undefined;
+        if (telemetryOn(opts)) {
+          noteFire(sr.locked ? 'v37_sat_locked' : sr.urgent ? 'v37_sat_urgent' : 'v37_sat_field');
+        }
+        return { locked: sr.locked, urgent: sr.urgent, coversAll: sr.coversAll };
+      })(),
       rand: fastRandom,
     });
     // V20 proof-of-receipt: the M-zone wiring reached the preflop engine.
@@ -2260,6 +2477,17 @@ export class HorseLogic {
       difficultyHint = Math.max(0, Math.min(1, 1 - dNear / 0.1));
     }
 
+    // ═══ V37 SATELLITE, POSTFLOP ═══ a locked seat does not play big pots.
+    // Cheap calls with a real edge are fine; anything that puts a meaningful
+    // share of the stack in needs a near-lock; value is bet only when the
+    // hand is nearly unbeatable, and never bluffed. A stack below the line
+    // plays on with the urgency expressed through the premium below.
+    const sat37 = satelliteRead(
+      gs,
+      player,
+      gs.bigBlind > 0 ? stack / gs.bigBlind : 100,
+      (opts.v37Satellite ?? true) !== false
+    );
     // Multiway tightening: each extra opponent raises the bar.
     // V7 ICM: tournament survival premium tightens calls and trims bluffs.
     // V8: Omaha equities cluster much closer than NLH equities, so each extra
@@ -2550,6 +2778,23 @@ export class HorseLogic {
     let bluffScale =
       exploit.bluffMod * blockerMod * posMod * Math.max(0.5, 1 - 2 * risk) * (quartered ? 0.6 : 1);
     if (huOn) bluffScale *= 1.12;
+    // V37: the covering stack near the bubble bluffs a notch more — the
+    // covered field is folding hands it would call with anywhere else.
+    if (!sat37.active) {
+      const bp37 = bubblePressure(gs, player, -1, (opts.v37Satellite ?? true) !== false);
+      if (bp37 > 0) {
+        bluffScale *= 1 + 0.2 * bp37;
+        if (tele15) noteFire('v37_bubble_pressure_postflop');
+      }
+    }
+    // V37: a big bounty on hero's own head gets called down wider.
+    if ((opts.v24Bounty ?? true) !== false && isTournamentMode(gs)) {
+      const own37 = headBountyScale(gs, player.user_id);
+      if (own37 > 1.5) {
+        bluffScale *= Math.max(0.7, 1 - (own37 - 1.5) * 0.2);
+        if (tele15) noteFire('v37_own_head_bounty');
+      }
+    }
     // V36: a bluff has to fold out EVERY board. Random ranges, N boards:
     // somebody has a piece of one of them on almost every deal.
     if (multiBoard36) {
@@ -2687,6 +2932,28 @@ export class HorseLogic {
         : equity >= 0.33
           ? 'callOnce'
           : 'foldToRaise';
+
+    // ═══ V37 SATELLITE, POSTFLOP (action) ═══ placed after the raise-plan
+    // assignment above so a chip-in here can never consume another table's
+    // plan (HorseRaisePlanIsPerDecision). The read itself is taken above.
+    if (sat37.locked) {
+      if (tele15) noteFire('v37_sat_locked_postflop');
+      if (facingBet) {
+        const odds37 = toCall / Math.max(1e-9, pot + toCall);
+        const cheap = toCall <= stack * 0.08;
+        if (equity >= 0.9) return { action: 'call', amount: toCall, thinkTime: 0 };
+        if (cheap && equity >= odds37 + 0.1)
+          return { action: 'call', amount: toCall, thinkTime: 0 };
+        return { action: 'fold', thinkTime: 0 };
+      }
+      if (equity >= 0.9 && !isRiver) {
+        return this.betSize(pot, 0.5 + fastRandom() * 0.2, player, gs, vi, params, useSizing);
+      }
+      if (equity >= 0.85 && isRiver) {
+        return this.betSize(pot, 0.4 + fastRandom() * 0.2, player, gs, vi, params, useSizing);
+      }
+      return { action: 'check', thinkTime: 0 };
+    }
 
     const useV11 = opts.v11 !== false;
     // V10 RAKE: below the cap the pot we stand to win is taxed ~10%, so price
@@ -3717,12 +3984,22 @@ export class HorseLogic {
         seriousAllIns20 >= 1
       ) {
         let biggestAllIn = 0;
+        let allInId: string | undefined;
         for (const o of opponents) {
-          if (o.is_all_in && isFinite(o.bet) && o.bet > biggestAllIn) biggestAllIn = o.bet;
+          if (o.is_all_in && isFinite(o.bet) && o.bet > biggestAllIn) {
+            biggestAllIn = o.bet;
+            allInId = o.user_id;
+          }
         }
         if (biggestAllIn > 0 && stack + player.bet >= biggestAllIn) {
-          bounty23 = Math.min(0.04, (gs.tournament?.bountyFactor ?? 0) * 0.12);
+          // V37: the same bust the preflop pull prices — the live inventory
+          // (top chest still in, or pulled) and THIS player's head.
+          const scale37 =
+            prizeLandscapeScale(gs, (opts.v26Prizes ?? true) !== false) *
+            headBountyScale(gs, allInId);
+          bounty23 = Math.min(0.08, (gs.tournament?.bountyFactor ?? 0) * 0.12 * scale37);
           if (tele15) noteFire('v23_bounty_call');
+          if (tele15 && scale37 !== 1) noteFire('v37_bounty_call_scaled');
         }
       }
       const required = potOdds + 0.02 + dominationPenalty * 0.5 + commit20 + scare21 - bounty23;

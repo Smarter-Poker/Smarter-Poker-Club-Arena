@@ -168,6 +168,31 @@ export interface PreflopCtx {
     coldCall: number;
     bbDefend: number;
   };
+  /**
+   * V37 (2026-09-02): satellite state from HorseLogic.satelliteRead.
+   * locked = can fold to a seat; urgent = below the seat line with the
+   * blinds coming; coversAll = every live opponent is covered by a margin.
+   * Undefined = not a satellite (or the layer is ablated).
+   */
+  satellite?: { locked: boolean; urgent: boolean; coversAll: boolean };
+  /** V37: 0..1 — hero covers the field (1) or the raiser (0.6) near an MTT
+   *  bubble. Opens widen, 3-bet bluffs against covered raisers multiply. */
+  bubblePressure?: number;
+  /** V37: hero's OWN head bounty against the field mean (1 = average). A big
+   *  head gets called wider — its fold equity is lower, so its bluffs are. */
+  ownHeadBounty?: number;
+  /**
+   * V37 PREFLOP BLOCKERS (Dan 2026-09-02): "BLOCKER LOGIC IN CASH GAMES AND
+   * TOURNAMENT PLAY, THAT WASN'T IMPLEMENTED ANYWHERE." Postflop the brain
+   * has had nut-flush and top-straight blockers since V3; preflop it chose
+   * its 3-bet and 4-bet bluffs by strength alone. An ace in the hand removes
+   * half of AA and a quarter of AK from the raiser's continuing range — the
+   * exact hands a bluff runs into — so ace-blocker hands are the preferred
+   * bluff 3-bets and 4-bets; a king blocks KK/AK a little. In Omaha an ace
+   * blocks the AAxx that anchors every PLO 3-bet range.
+   */
+  holdsAce?: boolean;
+  holdsKing?: boolean;
 }
 
 const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
@@ -375,7 +400,15 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
   // V35: the game's own width. Zero for hold'em and for every ablation.
   const vs35 = ctx.variantShift ?? { open: 0, threeBet: 0, fourBet: 0, coldCall: 0, bbDefend: 0 };
   const strength = raw;
-  const bluffBudget = ctx.bluffFreq * ctx.aggression * Math.max(0.4, 1 - 4 * ctx.riskAdd);
+  // V37: a big bounty on hero's own head gets called wider, so every bluff
+  // (3-bet, squeeze, 4-bet) buys less fold equity — trim the budget.
+  const ownHead = Math.max(0, Math.min(3, ctx.ownHeadBounty ?? 1));
+  const headTrim = ownHead > 1.5 ? Math.max(0.7, 1 - (ownHead - 1.5) * 0.2) : 1;
+  const bluffBudget =
+    ctx.bluffFreq * ctx.aggression * Math.max(0.4, 1 - 4 * ctx.riskAdd) * headTrim;
+  // V37 blockers: an ace blocks the top of every continuing range; a king a
+  // little. Applied to every bluff raise below (3-bet, squeeze, 4-bet).
+  const blockerMult = ctx.holdsAce === true ? 1.3 : ctx.holdsKing === true ? 1.12 : 1;
 
   // ── V11 GAME MODE (Dan 2026-08-22) ──────────────────────────────────────
   const isTourney = ctx.mode === 'tournament';
@@ -582,6 +615,27 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     return { a: 'fold' };
   }
 
+  // ═══ V37 SATELLITE (Dan 2026-09-02) ═══════════════════════════════════
+  // A LOCKED seat: the ticket is the same whether hero finishes first or
+  // K-th, so no pot is worth a meaningful share of the stack — aces included,
+  // against a covering all-in. The one aggression that survives is the free
+  // kind: an open-jam into a table hero covers by a margin, where the players
+  // who want a seat cannot call. Everything else checks or folds.
+  if (ctx.satellite?.locked) {
+    const share = stack > 0 ? Math.min(toCall, stack) / stack : 1;
+    if (toCall > 0 && share >= 0.12) return { a: 'fold' };
+    if (unopened) {
+      if (ctx.satellite.coversAll && strength >= t(0.45 - anteWiden)) return { a: 'jam' };
+      if (toCall === 0) return { a: 'check' };
+      return { a: 'fold' };
+    }
+    if (toCall === 0) return { a: 'check' };
+    return { a: 'fold' };
+  }
+  // Below the seat line with the blinds coming: chips are the ticket, and the
+  // stacks that are locked cannot call. Every jam and reshove bar widens.
+  const satUrgent = ctx.satellite?.urgent === true ? 0.08 : 0;
+
   // ── Short stacks: push/fold and reshove stacks ──
   // V20: the gate is M-based in tournaments (red zone M<5 and most of
   // orange enter jam-or-fold even when stackBB reads above 12), and Omaha
@@ -662,7 +716,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       let jamThresh = position === 'late' || position === 'sb' ? 0.5 : 0.6;
       if (ctx.isOmaha) jamThresh += 0.08;
       if (isTourney) {
-        jamThresh -= anteWiden + (stackBB <= 7 ? 0.08 : 0.03);
+        jamThresh -= anteWiden + (stackBB <= 7 ? 0.08 : 0.03) + satUrgent;
         if (mzOn && effM < 5) jamThresh -= effM < 3 ? 0.1 : 0.05;
       }
       if (strength >= t(jamThresh)) return { a: 'jam' };
@@ -704,7 +758,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     raises === 1 &&
     callers === 0 &&
     raiserPosition === 'late' &&
-    strength >= t(0.62 - anteWiden)
+    strength >= t(0.62 - anteWiden - satUrgent)
   ) {
     // V7 RESHOVE: 13-20bb over a late-position open — jam, don't flat.
     // V11: antes widen the reshove (dead money + first-in fold equity).
@@ -762,6 +816,8 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     const fullRingEarly = position === 'early' && (ctx.tableSize ?? 6) >= 8 ? 0.06 : 0;
     let openThresh = t(baseOpen + fullRingEarly) + Math.min(limpers, 3) * 0.03;
     openThresh += depthTighten - depthLoosen - anteWiden + vs35.open;
+    // V37: the captain steals wider near the bubble — the field cannot call.
+    openThresh -= 0.06 * Math.max(0, Math.min(1, ctx.bubblePressure ?? 0));
     // V10 LIMP ISOLATION: weak limpers are the softest spot in cash poker.
     // Rather than only tightening (and sizing up) against them, ATTACK in
     // position — widen the raise floor so more hands isolate the limp(s). The
@@ -791,6 +847,9 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       // instead. NLH only, capped at 22bb so a big-ante 30bb stack does not
       // start jamming its whole opening range.
       if (mzOn && effM < 10 && stackBB <= 22 && !ctx.isOmaha) return { a: 'jam' };
+      // V37: below the seat line, an open at any depth that jam-or-fold does
+      // not already own is a jam too — a raise-fold is a seat given away.
+      if (satUrgent > 0 && stackBB <= 30 && !ctx.isOmaha) return { a: 'jam' };
       // Trap mix with true premiums (cheap to see a flop disguised).
       //
       // `limpers >= 1` added 2026-08-30: an open-limp with aces is still an
@@ -933,7 +992,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       strength >= t(0.55) &&
       strength < threeBetThresh &&
       !ctx.isOmaha &&
-      rand() < bluffBudget * 0.3
+      rand() < bluffBudget * 0.3 * blockerMult
     ) {
       // V28 AUDIT FIX: the bluff squeeze was sized 4.0-5.5x with no IP/OOP
       // split while the VALUE squeeze was 3.0-4.2x — the bluff was strictly
@@ -954,7 +1013,12 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
     const f3bRead = ctx.raiserFoldTo3Bet;
     const f3bScale = typeof f3bRead === 'number' ? Math.max(0.7, Math.min(1.45, 0.6 + f3bRead)) : 1;
     const bluffFreqHere =
-      (blindVsSteal ? 0.5 : vs === 'late' ? 0.45 : 0.3) * bluffBudget * f3bScale;
+      (blindVsSteal ? 0.5 : vs === 'late' ? 0.45 : 0.3) *
+      bluffBudget *
+      f3bScale *
+      blockerMult *
+      // V37: a covered raiser near the bubble folds to the 3-bet far more.
+      (1 + 0.5 * Math.max(0, Math.min(1, ctx.bubblePressure ?? 0)));
     if (
       callers === 0 &&
       strength >= t(bluffFloor) &&
@@ -1106,7 +1170,7 @@ function decidePreflopV7Core(ctx: PreflopCtx): PreflopIntent {
       strength >= t(0.72) &&
       strength < fourBetThresh &&
       currentBet * 2.3 < stack * 0.35 &&
-      rand() < bluffBudget * 0.22
+      rand() < bluffBudget * 0.22 * blockerMult
     ) {
       const mult = 2.2 + rand() * 0.2;
       return { a: 'raiseTo', to: currentBet * mult * ctx.sizingMultiplier };

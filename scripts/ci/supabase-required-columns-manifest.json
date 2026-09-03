@@ -574,6 +574,9 @@
     "ca_money_rpc_registry": [
       "proname"
     ],
+    "ca_noop_update_stats": [
+      "tbl"
+    ],
     "ca_op_claims": [
       "op_id",
       "fn_name"
@@ -687,6 +690,12 @@
       "opening_balance",
       "ledger_at_baseline",
       "unledgered_gap"
+    ],
+    "ca_union_rake_attribution": [
+      "rake_record_id",
+      "user_id",
+      "union_id",
+      "played_at"
     ],
     "cashier_operations": [
       "user_id",

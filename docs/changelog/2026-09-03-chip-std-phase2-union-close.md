@@ -95,7 +95,7 @@ SIT N GO'S."
   803k cash rake could still be attributed from seats; captured hourly while
   the seat is fresh, the 24-hour seed attributed 128,125 of 128,125
   contributions (100%).
-- `20260903212512_the_weekly_union_close_shares_the_rake_a_clubs_players_generated`:
+- `20260903212129_the_weekly_union_close_shares_the_rake_a_clubs_players_generated`:
   the close's basis per member club = its players' cash attribution + its
   entrants' share of every tournament / SNG / spin credit (split by entries:
   1 + rebuys + add-on, from tournament_players.club_id). payout =

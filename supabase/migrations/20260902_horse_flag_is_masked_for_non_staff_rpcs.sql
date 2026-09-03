@@ -213,3 +213,56 @@ BEGIN
     RAISE EXCEPTION 'POST-APPLY: only % of 3 flag-returning RPCs consult the mask.', v_masked;
   END IF;
 END $$;
+
+-- ── AUDIENCE, STATED EXPLICITLY ───────────────────────────────────────────
+-- The estate's `check-definer-authorization` guard blocked this migration on
+-- first push, correctly. Its point was not that these are reachable by `anon`
+-- in PRODUCTION today - probed, all three already answer "permission denied
+-- for function" to a logged-out caller. Its point is that THIS FILE never
+-- said so.
+--
+-- `CREATE OR REPLACE FUNCTION` does not reset privileges on an existing
+-- function, so the good grants already in place survived. Applied to a FRESH
+-- database, the same file would create three SECURITY DEFINER functions
+-- carrying PostgreSQL's default `EXECUTE TO PUBLIC` - and a club roster, with
+-- chip balances, would be readable by anybody with no account. A migration
+-- that is only correct because of state it did not create is a trap for
+-- whoever rebuilds this schema.
+--
+-- PUBLIC is named as well as `anon`, because `anon` inherits whatever PUBLIC
+-- holds and revoking `anon` alone reads as a fix while doing nothing.
+
+REVOKE ALL ON FUNCTION public.ca_club_members(uuid, text, timestamptz, integer, integer, text, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.ca_club_members(uuid, text, timestamptz, integer, integer, text, text) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.ca_club_top_players(uuid, timestamptz, integer) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.ca_club_top_players(uuid, timestamptz, integer) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.fn_club_cashier_members_v2(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_club_cashier_members_v2(uuid) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.fn_can_see_horse_flag(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.fn_can_see_horse_flag(uuid) TO authenticated;
+
+DO $$
+DECLARE v_bad text;
+BEGIN
+  SELECT string_agg(p.proname, ', ') INTO v_bad
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname='public'
+    AND p.proname IN ('ca_club_members','ca_club_top_players','fn_club_cashier_members_v2','fn_can_see_horse_flag')
+    AND (has_function_privilege('anon', p.oid, 'EXECUTE')
+         OR has_function_privilege('public', p.oid, 'EXECUTE'));
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'POST-APPLY: still reachable without an account: %', v_bad;
+  END IF;
+
+  SELECT string_agg(p.proname, ', ') INTO v_bad
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname='public'
+    AND p.proname IN ('ca_club_members','ca_club_top_players','fn_club_cashier_members_v2','fn_can_see_horse_flag')
+    AND NOT has_function_privilege('authenticated', p.oid, 'EXECUTE');
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'POST-APPLY: a signed-in player can no longer call: %', v_bad;
+  END IF;
+END $$;

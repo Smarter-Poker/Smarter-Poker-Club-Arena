@@ -1973,6 +1973,7 @@ export default function ClubDataPage() {
       {clubUuid && (
         <RakeSnapshotPanel
           clubId={clubUuid}
+          userId={user?.id ?? null}
           scopes={rakeScopes}
           refreshToken={lastVerifiedAt ?? 0}
         />

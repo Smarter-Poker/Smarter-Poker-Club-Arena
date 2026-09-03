@@ -119,6 +119,14 @@ export interface RakeSnapshot {
   breakdown: RakeBreakdownRow[];
   breakdown_kind: 'club' | 'agent' | 'downline' | 'none';
   /**
+   * How many rows exist BEHIND the page, not how many are in it. A union with
+   * fifty-one clubs used to show fifty and say nothing, which made the
+   * fifty-first indistinguishable from a club that produced no rake.
+   */
+  breakdown_count: number;
+  /** The offset this page was read from. */
+  breakdown_offset: number;
+  /**
    * The sum of the breakdown's own non-overlapping column. Shares are computed
    * against this, never against the headline: the headline includes tournament
    * fee and today, and the per-player rollup includes neither, so a share
@@ -244,6 +252,7 @@ export const ClubRakeSnapshotService = {
     end: string;
     agentUserId?: string | null;
     limit?: number;
+    offset?: number;
     signal?: AbortSignal;
   }): Promise<RakeSnapshot> {
     let query = supabase.rpc('ca_rake_snapshot', {
@@ -254,6 +263,7 @@ export const ClubRakeSnapshotService = {
       p_end: opts.end,
       p_agent_user_id: opts.agentUserId ?? null,
       p_limit: opts.limit ?? 50,
+      p_offset: opts.offset ?? 0,
     });
     if (opts.signal) query = query.abortSignal(opts.signal);
     const { data, error } = await query;
@@ -266,6 +276,17 @@ export const ClubRakeSnapshotService = {
       ...raw,
       series: Array.isArray(raw.series) ? raw.series : [],
       breakdown: Array.isArray(raw.breakdown) ? raw.breakdown : [],
+      // A payload from before paging existed carries neither field. Falling
+      // back to the page length keeps "showing X of Y" honest rather than
+      // rendering "of undefined" or claiming zero rows exist.
+      breakdown_count: Number.isFinite(Number(raw.breakdown_count))
+        ? Number(raw.breakdown_count)
+        : Array.isArray(raw.breakdown)
+          ? raw.breakdown.length
+          : 0,
+      breakdown_offset: Number.isFinite(Number(raw.breakdown_offset))
+        ? Number(raw.breakdown_offset)
+        : 0,
     } as RakeSnapshot;
   },
 };

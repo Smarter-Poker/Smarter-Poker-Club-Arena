@@ -141,10 +141,13 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
   # know it was an accident and not a revert — nobody writes a changelog for
   # work they meant to drop.
   #
-  # WHY A HOOK AND NOT BRANCH PROTECTION: branch protection is unavailable on
-  # a private repo without GitHub Pro (see the note under check 0). Server
-  # side there is nothing left to refuse a force-push, so the last place it
-  # can be caught is here, on the machine doing it.
+  # WHY A HOOK AS WELL AS BRANCH PROTECTION: when this was written (2026-08-21)
+  # the repo was private without GitHub Pro and nothing server-side refused a
+  # force-push. CORRECTED 2026-09-03: ruleset `main protection` (21163380) is
+  # ACTIVE with `non_fast_forward` and `deletion` rules, so GitHub now refuses
+  # a rewind too. This check stays because it fails in 100ms on the machine
+  # doing it, with the list of commits that would vanish, instead of a bare
+  # "protected branch hook declined" from the server.
   #
   # This is deliberately not a lint. Every other check in this file is about
   # the CONTENT of a push; this one is about whether the push DESTROYS

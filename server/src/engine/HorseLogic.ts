@@ -115,8 +115,16 @@ import {
   scoreOmahaHiPartial,
   scoreOmahaLow,
   straightTop,
+  nextCardOutlook,
 } from './HorseEval.js';
 import { anteOrbitCostBB } from './AnteMath.js';
+// V35 (2026-09-02): the games are different games — per-variant preflop width
+// and postflop temperament, one row per game. See HorseVariantProfile.ts.
+import { variantPostflopProfile, variantPreflopShift } from './HorseVariantProfile.js';
+// V38 (2026-09-03): the EV engine — the arithmetic behind every choice, the
+// arbiter for the games with no solver export and for every river fold/call
+// the hold'em solver range did not answer. See HorseEvEngine.ts.
+import { evaluateSpot, riverCallVerdict, type EvOpponentModel } from './HorseEvEngine.js';
 
 // BUG 020 FIX (2026-04-15) — round chip amounts to whole cents so horse decisions
 // don't pollute hand_history.actions with 15-digit floats. Bible V8 §2.6.
@@ -192,6 +200,9 @@ interface StyleParams {
   thinkRange: [number, number];
   /** V18: stable per-horse sizing-family bias (0..1; 0.5 = neutral). */
   familyBias?: number;
+  /** V35: variant call-down adjustment added to `respect` (fixed limit calls
+   *  lighter — the pot always lays the price). 0 = none. */
+  callRespect?: number;
 }
 
 const STYLE_PARAMS: Record<HorseStyle, StyleParams> = {
@@ -630,6 +641,11 @@ export interface HorseGameStateV2 extends HorseGameState {
     nextBlindInMin?: number | null;
     /** V23 BLIND CLOCK: next level's bb over the current bb (1 = flat). */
     nextBlindMult?: number;
+    /** V37: this event pays identical tickets to the top `satelliteSeats`. */
+    satellite?: boolean;
+    satelliteSeats?: number;
+    /** V37: live bounty per user id (cents) — the head, not the mean. */
+    bountyByUser?: Record<string, number>;
   };
   /** V12: table format. HU SNGs play heads-up ranges, MTTs get the full
    *  survival model, and a Spin is decided by `spotsPaid` rather than by the
@@ -653,6 +669,13 @@ export interface HorseGameStateV2 extends HorseGameState {
    *  ActionRecords, so the brain needs this to read a straddled pot as
    *  UNOPENED dead money rather than an open raise. */
   straddleActive?: boolean;
+  /** V36 (2026-09-02): this hand is a BOMB POT — every player anted, there
+   *  was no preflop street, every range is random, and with boardCount >= 2
+   *  every pot layer splits equally across the boards. See the bomb-pot
+   *  block in decidePostflop for what that changes. */
+  bombPot?: boolean;
+  /** V36: boards dealt this hand (1, 2 or 3). */
+  boardCount?: number;
 }
 
 /**
@@ -707,6 +730,197 @@ export function endgameAdjust(
     }
   }
   return risk;
+}
+
+/**
+ * ═══ V37 SATELLITE READ (Dan 2026-09-02) ═══════════════════════════════════
+ * "THE PLAY DIFFERENCE BETWEEN A SATELLITE WHERE ALL WINNERS GET THE SAME
+ *  PRIZE AND A MTT WITH PRIZES PROGRESSIVELY PAYING MORE."
+ *
+ * In an MTT every chip is worth something all the way to first. In a
+ * satellite the K-th seat pays exactly what the first does, so the only
+ * question a stack ever asks is "will I be here when P - K players have
+ * gone?" That splits the table into three players:
+ *
+ *   LOCKED   Ranked inside the seats with enough chips to post blinds until
+ *            the required busts have happened. Every chip risked is a chip
+ *            risked for nothing: this stack folds ACES to a covering all-in,
+ *            never calls a raise, never plays a big pot postflop. The only
+ *            aggression it keeps is the free kind — an open-jam into a table
+ *            it covers, because nobody who wants a seat can call it.
+ *   URGENT   Below the seat line with the blinds coming: this stack has to
+ *            accumulate, so its jam ranges widen and its reshoves widen, and
+ *            it targets the mid stacks who cannot call.
+ *   NEITHER  Ordinary tournament play with the flat-curve ICM premium from
+ *            IcmModel's survival model.
+ *
+ * Pure read: stacks and counts in, three booleans out. Exported for tests.
+ */
+export interface SatelliteRead {
+  active: boolean;
+  locked: boolean;
+  urgent: boolean;
+  /** hero covers every live opponent at the table by a clear margin */
+  coversAll: boolean;
+  /** hero's rank in the live field (1 = chip leader), 0 when unknown */
+  rank: number;
+}
+
+const NO_SATELLITE: SatelliteRead = {
+  active: false,
+  locked: false,
+  urgent: false,
+  coversAll: false,
+  rank: 0,
+};
+
+export function satelliteRead(
+  gs: HorseGameStateV2,
+  player: SeatPlayer,
+  stackBB: number,
+  on: boolean = true
+): SatelliteRead {
+  const t = gs.tournament;
+  if (!on || !t || t.satellite !== true) return NO_SATELLITE;
+  const seats = t.satelliteSeats ?? t.spotsPaid ?? 0;
+  const left = t.playersLeft ?? 0;
+  if (seats <= 0 || left <= seats) return NO_SATELLITE;
+  const bb = gs.bigBlind > 0 ? gs.bigBlind : 1;
+  const heroChips = stackBB * bb;
+  const stacks = Array.isArray(t.stacks) ? t.stacks : [];
+  // rank: substitute hero's live stack for its closest field entry
+  let rank = 0;
+  if (stacks.length >= 2 && heroChips > 0) {
+    let closest = 0;
+    for (let i = 1; i < stacks.length; i++) {
+      if (Math.abs(stacks[i] - heroChips) < Math.abs(stacks[closest] - heroChips)) closest = i;
+    }
+    let above = 0;
+    for (let i = 0; i < stacks.length; i++) if (i !== closest && stacks[i] > heroChips) above++;
+    rank = 1 + above;
+  }
+  const bustsNeeded = left - seats;
+  const orbitBB =
+    1.5 +
+    Math.max(
+      0,
+      anteOrbitCostBB(
+        gs.ante ?? 0,
+        gs.players.filter((p) => !p.is_sitting_out).length,
+        bb,
+        gs.bigBlindAnte === true
+      )
+    );
+  // Blinds hero can post while the busts happen: two orbits per bust is a
+  // conservative read of how fast a satellite bubble clears.
+  const blindRunwayBB = orbitBB * (2 * bustsNeeded + 2);
+  const bubbleRatio = left / seats;
+  const near = bubbleRatio <= 1.6 || bustsNeeded <= 3;
+  const locked = near && rank > 0 && rank <= seats && stackBB >= blindRunwayBB;
+  // Below the seat line, waiting cannot produce a seat: the stack has to
+  // grow, however many blinds it holds.
+  // (rank 0 = the stack list has not arrived: neither locked nor urgent, the
+  // flat-curve ICM premium alone carries the spot until it does.)
+  const urgent = near && rank > seats;
+  let coversAll = false;
+  if (locked) {
+    coversAll = true;
+    for (const o of gs.players) {
+      if (o.seat === player.seat || o.is_folded || o.is_sitting_out) continue;
+      const os = (isFinite(o.stack) ? o.stack : 0) + (isFinite(o.bet) ? o.bet : 0);
+      if (os * 1.25 > heroChips) {
+        coversAll = false;
+        break;
+      }
+    }
+  }
+  return { active: true, locked, urgent, coversAll, rank };
+}
+
+/**
+ * ═══ V37 BOUNTY PRICING, IN ONE PLACE (Dan 2026-09-02) ═══════════════════
+ * "DON'T FORGET ABOUT BOUNTY, PKO AND MYSTERY BOUNTIES. THIS PLAYS DIFFERENT
+ *  WHEN A PLAYER HAS A LARGE BOUNTY ON THEIR HEAD. OR IF THE TOP PRIZES IN A
+ *  MYSTERY BOUNTY ARE AVAILABLE, OR HAVE ALREADY BEEN PULLED."
+ *
+ * Two multipliers on the pool-ratio bountyFactor, both read live:
+ *
+ *  prizeLandscapeScale — the V26 inventory read (was inline in the preflop
+ *    glue, and NOT applied postflop): the top chest still in the box makes
+ *    every bust a lottery ticket (x1.35); a top chest far above the mean is a
+ *    fat tail (x1.15); three or fewer chests left is a freezeout wearing a
+ *    badge (x0.6); an exhausted inventory is over (x0.35).
+ *  headBountyScale — THIS opponent's bounty against the field mean. A head
+ *    worth three times the mean is worth three times the pull; a head worth
+ *    a third of it is worth a third. Clamped to [0.4, 3]. 1 when the
+ *    per-player map is absent (older context), so nothing regresses.
+ */
+export function prizeLandscapeScale(gs: HorseGameStateV2, on: boolean = true): number {
+  const t = gs.tournament;
+  if (!on || !t) return 1;
+  const meanCents = Math.max(0, t.mysteryMeanCents ?? t.meanBountyCents ?? 0);
+  const chestsLeft = Math.max(0, t.mysteryChestsLeft ?? 0);
+  let scale = 1;
+  if (meanCents > 0) {
+    if (t.mysteryTopLive === true) scale *= 1.35;
+    if (chestsLeft > 0 && chestsLeft <= 3) scale *= 0.6;
+    const top = Math.max(0, t.mysteryTopCents ?? 0);
+    if (top > meanCents * 3) scale *= 1.15;
+  } else if (chestsLeft === 0 && (t.mysteryTopCents ?? 0) > 0) {
+    scale = 0.35;
+  }
+  return scale;
+}
+
+export function headBountyScale(gs: HorseGameStateV2, userId: string | undefined): number {
+  const t = gs.tournament;
+  if (!t || !userId || !t.bountyByUser) return 1;
+  const head = Number(t.bountyByUser[userId]) || 0;
+  const mean = Math.max(0, t.meanBountyCents ?? 0);
+  if (head <= 0 || mean <= 0) return 1;
+  return Math.max(0.4, Math.min(3, head / mean));
+}
+
+/**
+ * ═══ V37 BUBBLE PRESSURE (exploit, Dan 2026-09-02) ═══════════════════════
+ * "EXPLOITATIVE PLAY THAT'S AVAILABLE FOR THEM AT ALL STAGES."
+ *
+ * The bubble is the one stage where the correct exploit is written into the
+ * payout table: every covered stack near the money is folding hands it would
+ * play anywhere else, and the stack that covers them is the only one at the
+ * table with nothing to lose by attacking. The V12 model already HALVED the
+ * captain's own premium; it never told the captain to attack. This is that:
+ * 0 outside the window, 1 when hero covers every live opponent by a margin
+ * near the bubble, 0.6 when hero covers only the current raiser. Preflop it
+ * widens the opens and the 3-bet bluffs against covered players; postflop it
+ * lifts bluff volume a notch. Satellites carry their own, stronger version
+ * (satelliteRead.coversAll) and are excluded here.
+ */
+export function bubblePressure(
+  gs: HorseGameStateV2,
+  player: SeatPlayer,
+  raiserSeat: number,
+  on: boolean = true
+): number {
+  const t = gs.tournament;
+  if (!on || !t || !isTournamentMode(gs) || gs.format === 'spin') return 0;
+  if (t.satellite === true) return 0;
+  const pl = t.playersLeft ?? 0;
+  const paid = t.spotsPaid ?? 0;
+  if (pl <= 0 || paid <= 0) return 0;
+  const inMoney = t.inMoney ?? pl <= paid;
+  if (inMoney || pl / paid > 1.4) return 0;
+  const heroChips = player.stack + (isFinite(player.bet) ? player.bet : 0);
+  let coversAll = true;
+  let coversRaiser = false;
+  for (const o of gs.players) {
+    if (o.seat === player.seat || o.is_folded || o.is_sitting_out) continue;
+    const os = (isFinite(o.stack) ? o.stack : 0) + (isFinite(o.bet) ? o.bet : 0);
+    const covered = os * 1.3 <= heroChips;
+    if (!covered) coversAll = false;
+    if (o.seat === raiserSeat && covered) coversRaiser = true;
+  }
+  return coversAll ? 1 : coversRaiser ? 0.6 : 0;
 }
 
 function icmRisk(
@@ -1054,6 +1268,15 @@ export interface HorseDecideOpts {
    *  which scale continuously with depth, play the spot. Disable to ablate
    *  (default: enabled) */
   v33DepthCeiling?: boolean;
+  /** V37 (2026-09-02): satellite play — flat prizes are survival, not a
+   *  ladder. A locked seat folds everything, a stack below the line jams
+   *  wider, a table captain open-jams into stacks that cannot call. Disable
+   *  to ablate (default: enabled). */
+  v37Satellite?: boolean;
+  /** V38 (2026-09-03): the EV engine arbiter for solverless games (Omaha,
+   *  short deck, pineapple, fixed limit) and the MDF river line for every
+   *  game. Disable to ablate (default: enabled). */
+  v38Ev?: boolean;
 }
 
 /**
@@ -1187,19 +1410,26 @@ export class HorseLogic {
     const toCall = Math.max(0, gs.currentBet - player.bet);
 
     // V8: per-variant style overlays. The five styles were tuned on NLH;
-    // Omaha punishes slowplay (equities swing too hard street to street) and
-    // rewards preflop discipline, so PLO variants trim bluff/slowplay volume
-    // and tighten a notch. Short deck trims bluffs slightly (equities run
-    // closer). The 'balanced' style also caps its slowplay — live telemetry
-    // showed it giving away free cards at the worst rate in the fleet.
+    // Omaha punishes slowplay (equities swing too hard street to street), so
+    // PLO variants trim bluff/slowplay volume. Short deck trims bluffs
+    // slightly (equities run closer). The 'balanced' style also caps its
+    // slowplay — live telemetry showed it giving away free cards at the worst
+    // rate in the fleet.
+    //
+    // V35 (2026-09-02): the numbers come from HorseVariantProfile, one row per
+    // game, so PLO4/5/6 no longer share one bluff trim (six cards connect with
+    // every board; the bluff volume drops with each card), fixed limit gets
+    // the overlay it never had (bluffs do not work at one-bet-into-six), and
+    // the Omaha "tighten 1.03" is GONE: PLO plays MORE hands than hold'em, not
+    // fewer, and the preflop width now lives in the same profile as a bar
+    // shift instead of a multiplier fighting the quantile map.
+    const vpost = variantPostflopProfile(gs.gameVariant);
     if (opts.v8 !== false) {
-      if (vi.isOmaha) {
-        params.bluffFreq *= 0.8;
-        params.slowplayFreq *= 0.8;
-        params.tightness *= 1.03;
-      } else if (vi.isShortDeck) {
-        params.bluffFreq *= 0.9;
-      }
+      params.bluffFreq *= vpost.bluffMul;
+      params.slowplayFreq *= vpost.slowplayMul;
+      params.checkRaiseFreq *= vpost.checkRaiseMul;
+      params.tightness *= vpost.tightnessMul;
+      params.callRespect = vpost.callRespect;
       if (styleName === 'balanced') {
         params.slowplayFreq = Math.min(params.slowplayFreq, 0.14);
       }
@@ -1417,10 +1647,17 @@ export class HorseLogic {
       player.cards.length === 2 &&
       !vi.isOmaha &&
       !vi.isShortDeck &&
+      // V35: the charts are NO-LIMIT push/fold — a fixed-limit game has no
+      // jam to consult them for.
+      !vi.isFixedLimit &&
       gs.straddleActive !== true
     ) {
       const hand = gtoHandClass(player.cards[0], player.cards[1]);
-      const tourney = isTournamentMode(gs);
+      // CASH ANTES (Dan 2026-09-02): a cash table with an ante has dead money
+      // in every pot exactly as a tournament does, and the push/fold charts
+      // that model dead money are the Tournament ones. A cash chart at an
+      // ante table would jam too tight for the pot it is jamming into.
+      const tourney = isTournamentMode(gs) || (gs.ante ?? 0) > 0;
 
       // Chart positions are UTG/MP/CO/BTN/SB. classifyPosition collapses the
       // last two non-blind seats into 'late'; the dealer seat tells BTN from
@@ -1501,6 +1738,97 @@ export class HorseLogic {
             }
             return { action: 'fold', thinkTime: 0 };
           }
+        }
+      }
+    }
+
+    // ═══ V38 THE ALL-IN CALL IS ARITHMETIC (solverless games, preflop) ═══
+    // The push/fold charts answer hold'em; Omaha, short deck and pineapple
+    // faced a preflop jam with a strength bar. The bar is a percentile, the
+    // jam is a price: the call is right exactly when equity against the
+    // JAMMER'S range clears the pot odds plus the survival premium charged on
+    // the share of stack at risk. The range is the mind's read of the jammer
+    // (position, tendencies), sampled by the same Monte Carlo the postflop
+    // decision uses, on an empty board. Only for a wager that commits a
+    // real share of the stack (>= 40%) or comes from a player who is all-in;
+    // smaller raises keep the calibrated range play below.
+    if (
+      (opts.v38Ev ?? true) !== false &&
+      toCall > 0 &&
+      (vi.isOmaha || vi.isShortDeck || vi.holeCount !== 2 || vi.isFixedLimit) &&
+      lastRaiserSeat >= 0 &&
+      gs.allInOrFold !== true
+    ) {
+      const raiser38 = gs.players.find((p) => p.seat === lastRaiserSeat);
+      const raiserAllIn38 = raiser38?.is_all_in === true;
+      const effCall38 = Math.min(toCall, player.stack);
+      if (raiser38 && (raiserAllIn38 || effCall38 >= player.stack * 0.4)) {
+        try {
+          const bands38 =
+            opts.mind !== false
+              ? HorseMind.bandsForOpponents(
+                  player.seat,
+                  gs.players,
+                  gs.actionHistory,
+                  bb,
+                  true,
+                  null
+                )
+              : undefined;
+          const live38 = gs.players.filter(
+            (p) => !p.is_folded && !p.is_sitting_out && p.seat !== player.seat
+          ).length;
+          // The money hero is up against: the jammer and whoever has already
+          // matched the price (or is all-in). Players still to act behind are
+          // not in the pot yet — pricing against them would fold a call that
+          // is right against the one stack actually shoving.
+          const inPot38 = gs.players.filter(
+            (p) =>
+              !p.is_folded &&
+              !p.is_sitting_out &&
+              p.seat !== player.seat &&
+              (p.is_all_in || (isFinite(p.bet) && p.bet >= gs.currentBet * 0.99))
+          ).length;
+          const eq38 = simulateEquity(
+            player.cards,
+            [],
+            Math.max(1, Math.min(inPot38, 3)),
+            vi,
+            Math.max(160, Math.floor(vi.iterations * 0.8)),
+            bands38,
+            false
+          );
+          const uncallable38 = Math.max(0, toCall - effCall38);
+          const pot38 = Math.max(0.01, gs.pot - uncallable38);
+          const riskAdd38 = icmRisk(gs, stackBB, opts.v16Icm !== false, opts.v23Endgame !== false);
+          const share38 = Math.min(1, effCall38 / Math.max(1, player.stack));
+          const rake38 =
+            (opts.v10Rake ?? opts.v10) !== false && !isTournamentMode(gs) ? rakeDrag(pot38, bb) : 0;
+          // Omaha's range read narrows by score percentile, which cannot see
+          // domination (four napkins keep 44% against the sampled "3-bet
+          // range" in PLO6; against the real one it is nearer 35%). The price
+          // carries a margin for that, growing with the hole count.
+          const dominationMargin38 = vi.isOmaha ? 0.04 + 0.02 * Math.max(0, vi.holeCount - 4) : 0;
+          const required38 = Math.min(
+            0.99,
+            effCall38 / ((pot38 + effCall38) * (1 - rake38)) +
+              riskAdd38 * Math.sqrt(share38) +
+              dominationMargin38
+          );
+          if (telemetryOn(opts)) noteFire('v38_preflop_allin_price');
+          const gap38 = eq38 - required38;
+          const callIt = Math.abs(gap38) <= 0.015 ? fastRandom() < 0.5 + gap38 / 0.03 : gap38 > 0;
+          if (callIt) {
+            // Clearly ahead of the price with chips behind and others still
+            // to act: put them in, so nobody gets a cheap look.
+            if (gap38 >= 0.12 && player.stack > effCall38 * 1.5 && live38 > 1) {
+              return { action: 'all_in', thinkTime: 0 };
+            }
+            return { action: 'call', amount: Math.min(toCall, player.stack), thinkTime: 0 };
+          }
+          return { action: 'fold', thinkTime: 0 };
+        } catch {
+          /* the price read is best-effort; the range play below decides */
         }
       }
     }
@@ -1620,24 +1948,16 @@ export class HorseLogic {
         // RELATIVE to the average remaining bounty: a chest worth well above
         // the mean is worth chasing, one below it is not. Expressed as a
         // multiplier on the existing pull rather than a new currency.
+        // V37: the two reads live in prizeLandscapeScale / headBountyScale so
+        // the postflop call-off prices the same bust the preflop pull does.
         const meanCents = Math.max(0, t26?.mysteryMeanCents ?? t26?.meanBountyCents ?? 0);
-        const chestsLeft = Math.max(0, t26?.mysteryChestsLeft ?? 0);
-        let bountyScale = 1;
-        if (useV26 && meanCents > 0) {
-          // The top chest still in the box makes every bust a lottery
-          // ticket: the mean understates it, because the tail is the prize.
-          if (t26?.mysteryTopLive === true) bountyScale *= 1.35;
-          // A nearly-empty inventory is a freezeout wearing a bounty badge.
-          if (chestsLeft > 0 && chestsLeft <= 3) bountyScale *= 0.6;
-          // A top chest far above the mean is a fat tail worth chasing.
-          const top = Math.max(0, t26?.mysteryTopCents ?? 0);
-          if (top > meanCents * 3) bountyScale *= 1.15;
-        } else if (useV26 && chestsLeft === 0 && (t26?.mysteryTopCents ?? 0) > 0) {
-          // Inventory known and EXHAUSTED: the bounty half of this event is
-          // over, whatever the pool ratio still says.
-          bountyScale = 0.35;
-        }
+        let bountyScale = prizeLandscapeScale(gs, useV26);
         if (telemetryOn(opts) && useV26 && meanCents > 0) noteFire('v26_prize_read');
+        // The head on THIS raiser: a bounty three times the field mean pulls
+        // three times as hard; a small one barely at all.
+        const head = headBountyScale(gs, raiser.user_id);
+        if (head !== 1 && telemetryOn(opts)) noteFire('v37_head_bounty');
+        bountyScale *= head;
         return {
           bountyFactor: Math.min(1, bf * bountyScale),
           coversRaiser: covers,
@@ -1694,6 +2014,35 @@ export class HorseLogic {
       // V34: the button is not a second cutoff. classifyPosition merges the
       // two into 'late'; the dealer seat tells them apart exactly.
       isButton: gs.dealerSeat !== undefined && player.seat === gs.dealerSeat,
+      // V35: the game's own preflop width (PLO wider opens, narrower 3-bets;
+      // 6+ wider still; fixed limit widest). Rides the v8 variant flag.
+      variantShift: opts.v8 !== false ? variantPreflopShift(gs.gameVariant) : undefined,
+      // V37: preflop blockers — an ace or king in the hand.
+      holdsAce: player.cards.some((hc) => hc.rank === 'A'),
+      holdsKing: player.cards.some((hc) => hc.rank === 'K'),
+      // V37: hero's own head — a big bounty gets called wider.
+      ownHeadBounty:
+        (opts.v24Bounty ?? true) !== false ? headBountyScale(gs, player.user_id) : undefined,
+      // V37: the bubble is an exploit written into the payout table.
+      bubblePressure: (() => {
+        const bp = bubblePressure(
+          gs,
+          player,
+          lastRaiserSeat,
+          (opts.v37Satellite ?? true) !== false
+        );
+        if (bp > 0 && telemetryOn(opts)) noteFire('v37_bubble_pressure');
+        return bp;
+      })(),
+      // V37: satellite survival / urgency / pressure (see satelliteRead).
+      satellite: (() => {
+        const sr = satelliteRead(gs, player, stackBB, (opts.v37Satellite ?? true) !== false);
+        if (!sr.active) return undefined;
+        if (telemetryOn(opts)) {
+          noteFire(sr.locked ? 'v37_sat_locked' : sr.urgent ? 'v37_sat_urgent' : 'v37_sat_field');
+        }
+        return { locked: sr.locked, urgent: sr.urgent, coversAll: sr.coversAll };
+      })(),
       rand: fastRandom,
     });
     // V20 proof-of-receipt: the M-zone wiring reached the preflop engine.
@@ -2089,11 +2438,52 @@ export class HorseLogic {
       extraBoards.push(gs.communityCards3);
     }
     let equity: number;
+    /**
+     * ═══ V36 BOMB POTS (Dan 2026-09-02) ═══════════════════════════════════
+     * "THERE IS PROBABLY ZERO SOLVER, OR LOGIC OR MATH BEHIND ANY OF IT,
+     *  ESPECIALLY THE DOUBLE AND TRIPLE BOARD BOMB POTS."
+     *
+     * There was one thing: the per-board equity average above, which is the
+     * exact expected pot share (each board pays 1/N of every layer). Every
+     * OTHER read in this function - made-hand category, scare cards, nut
+     * status, texture, blockers, the domination penalties - read BOARD ONE
+     * and only board one, so on a double board a horse with the nut flush on
+     * board two and nothing on board one was "a high card on a two-tone
+     * board", and a horse with a lock on board one and air on board two
+     * was a 55% medium hand that check-called.
+     *
+     * Two facts change the strategy, and both are pure arithmetic:
+     *
+     *  1. A LOCK ON ONE BOARD IS A FREEROLL. With N boards, a hand that
+     *     cannot lose board b is guaranteed 1/N of every chip that goes in.
+     *     Facing a bet B into a pot P0 with one board of two locked, calling
+     *     returns at least (P0 + 2B)/2 = P0/2 + B >= B: folding can never be
+     *     right, and raising costs nothing that does not come back. The hand
+     *     RAISES for the chance to scoop or to fold out whatever was beating
+     *     it on the other board; it never check-calls.
+     *  2. A BLUFF MUST FOLD OUT EVERY BOARD. With random ranges and N boards
+     *     somebody has connected somewhere on nearly every deal; bluff
+     *     volume drops by half on two boards and by two-thirds on three.
+     *
+     * And the READS follow the money: the style board (category, scare, nut
+     * status, texture, blockers, domination) is the board hero is STRONGEST
+     * on, not board one by accident of dealing order.
+     *
+     * Bomb pots are also MULTIWAY by construction (everyone was dealt in), so
+     * the Monte Carlo prices up to six live opponents instead of four - a
+     * seven-way flop against four sampled hands overstates every equity.
+     */
+    const bomb36 = gs.bombPot === true;
+    // (five for the 5/6-card Omaha games: their per-iteration evaluation is
+    // the most expensive on the platform and a triple-board PLO6 bomb pot
+    // runs three of them per decision.)
+    const mcOpps = Math.min(oppCount, bomb36 ? (vi.holeCount >= 5 ? 5 : 6) : 4);
+    const boardEq36: number[] = [];
     if (extraBoards.length === 0) {
       equity = simulateEquity(
         player.cards,
         gs.communityCards,
-        Math.min(oppCount, 4),
+        mcOpps,
         vi,
         vi.iterations,
         bands,
@@ -2101,6 +2491,7 @@ export class HorseLogic {
         hiLoSplit,
         oppReads
       );
+      boardEq36.push(equity);
     } else {
       const boards = [gs.communityCards, ...extraBoards];
       const perBoardIters = Math.max(150, Math.ceil(vi.iterations / boards.length));
@@ -2115,10 +2506,10 @@ export class HorseLogic {
         const perBoardSplit: HiLoSplit | undefined = hiLoSplit
           ? { hi: 0, lo: 0, scoop: 0, quarter: 0 }
           : undefined;
-        sum += simulateEquity(
+        const eb = simulateEquity(
           player.cards,
           b,
-          Math.min(oppCount, 4),
+          mcOpps,
           vi,
           perBoardIters,
           bands,
@@ -2126,6 +2517,8 @@ export class HorseLogic {
           perBoardSplit,
           oppReads
         );
+        boardEq36.push(eb);
+        sum += eb;
         if (loAcc && perBoardSplit) {
           loAcc.hi += perBoardSplit.hi;
           loAcc.lo += perBoardSplit.lo;
@@ -2142,6 +2535,41 @@ export class HorseLogic {
       }
     }
 
+    // V36: multi-board facts. nBoards36 boards pay equally; a board hero
+    // cannot lose (MC >= LOCK_EQ) is a locked share; the style board is the
+    // one hero is strongest on.
+    const allBoards36: Card[][] = [gs.communityCards, ...extraBoards];
+    const nBoards36 = allBoards36.length;
+    const multiBoard36 = nBoards36 >= 2;
+    const LOCK_EQ36 = 0.93;
+    let lockedBoards36 = 0;
+    let unlockedSum36 = 0;
+    let unlockedN36 = 0;
+    let styleIdx36 = 0;
+    for (let b = 0; b < boardEq36.length; b++) {
+      if (boardEq36[b] >= LOCK_EQ36) lockedBoards36++;
+      else {
+        unlockedSum36 += boardEq36[b];
+        unlockedN36++;
+      }
+      if (boardEq36[b] > boardEq36[styleIdx36]) styleIdx36 = b;
+    }
+    const lockShare36 = multiBoard36 ? lockedBoards36 / nBoards36 : 0;
+    /** mean equity on the boards hero has NOT locked (1 when all are locked) */
+    const unlockedEq36 = unlockedN36 > 0 ? unlockedSum36 / unlockedN36 : 1;
+    /** the board every style read below is taken from */
+    const board = allBoards36[styleIdx36] ?? gs.communityCards;
+    if (useMind && multiBoard36 && styleIdx36 !== 0) {
+      try {
+        wetness = HorseMind.texture(board).wetness;
+        blocker = HorseMind.hasBlocker(player.cards, board);
+      } catch {
+        /* style reads are best-effort */
+      }
+    }
+    if (tele15 && bomb36) noteFire(multiBoard36 ? 'v36_bomb_multiboard' : 'v36_bomb_single');
+    if (tele15 && lockShare36 > 0) noteFire('v36_board_lock');
+
     // V9 TIMING: how CLOSE is this decision? Distance of the MC equity from
     // the nearest strategy threshold. Razor-thin spots read as difficulty ~1
     // (the horse will tank); clear spots read ~0 (it acts in tempo).
@@ -2154,6 +2582,17 @@ export class HorseLogic {
       difficultyHint = Math.max(0, Math.min(1, 1 - dNear / 0.1));
     }
 
+    // ═══ V37 SATELLITE, POSTFLOP ═══ a locked seat does not play big pots.
+    // Cheap calls with a real edge are fine; anything that puts a meaningful
+    // share of the stack in needs a near-lock; value is bet only when the
+    // hand is nearly unbeatable, and never bluffed. A stack below the line
+    // plays on with the urgency expressed through the premium below.
+    const sat37 = satelliteRead(
+      gs,
+      player,
+      gs.bigBlind > 0 ? stack / gs.bigBlind : 100,
+      (opts.v37Satellite ?? true) !== false
+    );
     // Multiway tightening: each extra opponent raises the bar.
     // V7 ICM: tournament survival premium tightens calls and trims bluffs.
     // V8: Omaha equities cluster much closer than NLH equities, so each extra
@@ -2240,8 +2679,8 @@ export class HorseLogic {
         // semi-bluff gates (cat <= 2), the monster gates (cat >= 6) and the
         // one-pair domination penalty all at once. Score the best TWO of the
         // three, which is what the player will actually be left holding.
-        cat = bestTwoCardCategory(player.cards, gs.communityCards, vi);
-        scare = scareShift(gs.communityCards);
+        cat = bestTwoCardCategory(player.cards, board, vi);
+        scare = scareShift(board);
         const streetsLeft = isRiver ? 1 : street === 'turn' ? 2 : 3;
         // Effective stack behind vs the deepest live opponent, capped by hero.
         let effOpp = 0;
@@ -2278,7 +2717,7 @@ export class HorseLogic {
     let nuts15: OmahaNutStatus | null = null;
     if (useV15 && vi.isOmaha && (cat === 5 || cat === 6)) {
       try {
-        nuts15 = omahaNutStatus(player.cards, gs.communityCards);
+        nuts15 = omahaNutStatus(player.cards, board);
         if (tele15 && nuts15) noteFire('v15_nut_status');
       } catch {
         nuts15 = null;
@@ -2295,7 +2734,7 @@ export class HorseLogic {
     if (useV15 && vi.isOmaha && nuts15 != null) {
       const suitN = new Map<string, number>();
       const rankN = new Map<string, number>();
-      for (const bc of gs.communityCards) {
+      for (const bc of board) {
         suitN.set(bc.suit, (suitN.get(bc.suit) || 0) + 1);
         rankN.set(bc.rank, (rankN.get(bc.rank) || 0) + 1);
       }
@@ -2316,7 +2755,7 @@ export class HorseLogic {
     let ns21: NlhNutStatus | null = null;
     if (useV21 && !vi.isOmaha && cat >= 4 && cat <= 7) {
       try {
-        ns21 = nlhNutStatus(player.cards, gs.communityCards, vi.isShortDeck);
+        ns21 = nlhNutStatus(player.cards, board, vi.isShortDeck);
         if (tele15) noteFire('v21_nut_status');
       } catch {
         ns21 = null;
@@ -2426,7 +2865,7 @@ export class HorseLogic {
     // small size. Low/connected/paired boards are closer to even and the branch
     // that uses this is already dry-gated, so V10 only adds the range-c-bet
     // upgrade — never c-bets a board it would not have.
-    const boardRanks = gs.communityCards.map((cc) => cc.rank);
+    const boardRanks = board.map((cc) => cc.rank);
     const boardHasHigh = boardRanks.some((r) => r === 'A' || r === 'K' || r === 'Q');
     const rankCounts: Record<string, number> = {};
     for (const r of boardRanks) rankCounts[r] = (rankCounts[r] || 0) + 1;
@@ -2444,6 +2883,29 @@ export class HorseLogic {
     let bluffScale =
       exploit.bluffMod * blockerMod * posMod * Math.max(0.5, 1 - 2 * risk) * (quartered ? 0.6 : 1);
     if (huOn) bluffScale *= 1.12;
+    // V37: the covering stack near the bubble bluffs a notch more — the
+    // covered field is folding hands it would call with anywhere else.
+    if (!sat37.active) {
+      const bp37 = bubblePressure(gs, player, -1, (opts.v37Satellite ?? true) !== false);
+      if (bp37 > 0) {
+        bluffScale *= 1 + 0.2 * bp37;
+        if (tele15) noteFire('v37_bubble_pressure_postflop');
+      }
+    }
+    // V37: a big bounty on hero's own head gets called down wider.
+    if ((opts.v24Bounty ?? true) !== false && isTournamentMode(gs)) {
+      const own37 = headBountyScale(gs, player.user_id);
+      if (own37 > 1.5) {
+        bluffScale *= Math.max(0.7, 1 - (own37 - 1.5) * 0.2);
+        if (tele15) noteFire('v37_own_head_bounty');
+      }
+    }
+    // V36: a bluff has to fold out EVERY board. Random ranges, N boards:
+    // somebody has a piece of one of them on almost every deal.
+    if (multiBoard36) {
+      bluffScale *= nBoards36 >= 3 ? 0.35 : 0.5;
+      if (tele15) noteFire('v36_multiboard_bluff_trim');
+    }
     // ═══ V23 RIVER READS (2026-08-28) ═══ heads-up on the river, the one
     // number that prices a bluff is whether THIS player folds rivers. Scale
     // bluff volume by their observed fold-to-river-bet; push thin value the
@@ -2538,8 +3000,7 @@ export class HorseLogic {
     let drawInfoCache: OmahaDrawInfo | null = null;
     const omahaDrawMod = (): number => {
       if (!useDraws || !drawsLive) return 1;
-      if (!drawInfoCache)
-        drawInfoCache = omahaDrawQuality(player.cards, gs.communityCards, vi.isHiLo);
+      if (!drawInfoCache) drawInfoCache = omahaDrawQuality(player.cards, board, vi.isHiLo);
       const d = drawInfoCache;
       if (d.nutty) return 1.15;
       if (d.dominatedFlushDraw && d.straightOuts < 6) return 0.35;
@@ -2552,6 +3013,27 @@ export class HorseLogic {
     // planned barrels continue on safe cards; unplanned stabs give up.
     const handKey = useBarrels ? HorseMind.handKeyOf(gs.actionHistory) : null;
     const barrelPlan = useBarrels ? HorseMind.getPlan(handKey, player.user_id) : undefined;
+    /**
+     * ═══ V39 THE NEXT CARD, READ AGAINST WHAT THE BET EXPECTED (2026-09-03) ═══
+     * The bet on the previous street recorded which cards were good for hero
+     * and which were scary (nextCardOutlook). The card that arrived is read
+     * against that record: a GOOD card turns the planned barrel into a
+     * value-leaning bet (more of them); a SCARE card hero does not block is
+     * the give-up; a scare card hero DOES block is the best bluff card in the
+     * deck. A blank keeps the plan as written.
+     */
+    const prevStreet39 = street === 'turn' ? 'flop' : street === 'river' ? 'turn' : null;
+    const newCard39 = board.length >= 4 ? board[board.length - 1] : null;
+    const outlook39 =
+      useBarrels && prevStreet39 && newCard39
+        ? HorseMind.outlookOf(
+            handKey,
+            player.user_id,
+            prevStreet39,
+            `${newCard39.rank}${newCard39.suit[0]}`
+          )
+        : undefined;
+    if (tele15 && outlook39) noteFire(`v39_outlook_${outlook39}`);
     const planBarrel = (equityNow: number): void => {
       if (!useBarrels || isRiver) return;
       // Only bluffs/semi-bluffs need a plan — value hands bet themselves.
@@ -2560,6 +3042,14 @@ export class HorseLogic {
       // without torching chips on over-frequent second barrels.
       if (equityNow < 0.55) {
         HorseMind.notePlan(handKey, player.user_id, fastRandom() < 0.35);
+        // V39: and what the next card would mean, decided now.
+        try {
+          const o = nextCardOutlook(player.cards, board, vi);
+          HorseMind.noteOutlook(handKey, player.user_id, street, o.good, o.scare);
+          if (tele15) noteFire('v39_outlook_recorded');
+        } catch {
+          /* the outlook is best-effort */
+        }
       }
     };
 
@@ -2576,6 +3066,28 @@ export class HorseLogic {
         : equity >= 0.33
           ? 'callOnce'
           : 'foldToRaise';
+
+    // ═══ V37 SATELLITE, POSTFLOP (action) ═══ placed after the raise-plan
+    // assignment above so a chip-in here can never consume another table's
+    // plan (HorseRaisePlanIsPerDecision). The read itself is taken above.
+    if (sat37.locked) {
+      if (tele15) noteFire('v37_sat_locked_postflop');
+      if (facingBet) {
+        const odds37 = toCall / Math.max(1e-9, pot + toCall);
+        const cheap = toCall <= stack * 0.08;
+        if (equity >= 0.9) return { action: 'call', amount: toCall, thinkTime: 0 };
+        if (cheap && equity >= odds37 + 0.1)
+          return { action: 'call', amount: toCall, thinkTime: 0 };
+        return { action: 'fold', thinkTime: 0 };
+      }
+      if (equity >= 0.9 && !isRiver) {
+        return this.betSize(pot, 0.5 + fastRandom() * 0.2, player, gs, vi, params, useSizing);
+      }
+      if (equity >= 0.85 && isRiver) {
+        return this.betSize(pot, 0.4 + fastRandom() * 0.2, player, gs, vi, params, useSizing);
+      }
+      return { action: 'check', thinkTime: 0 };
+    }
 
     const useV11 = opts.v11 !== false;
     // V10 RAKE: below the cap the pot we stand to win is taxed ~10%, so price
@@ -2608,6 +3120,13 @@ export class HorseLogic {
       initiative !== 'hero' &&
       (street === 'flop' || street === 'turn' || street === 'river') &&
       player.cards.length === 2 &&
+      // V35: the cells are HOLD'EM cells — two dealt cards, no-limit. After
+      // the pineapple discard a hand holds two cards too, but every range at
+      // the table was the best two of three, and fixed limit has no bet size
+      // to read; both used to pass this gate and were answered from the
+      // wrong game.
+      vi.holeCount === 2 &&
+      !vi.isFixedLimit &&
       !vi.isOmaha &&
       !vi.isShortDeck &&
       // NOT oppCount: `Math.max(1, opponents.length)` reads 1 even when the
@@ -2618,6 +3137,9 @@ export class HorseLogic {
       // from a raise node the warehouse does not hold — pricing it with the
       // open-bet cell would be the donk mistake with the seats swapped.
       player.bet === 0 &&
+      // V36: no solver range describes a bomb pot — every hand at the table
+      // is random, and the cells were solved for single-raised-pot ranges.
+      gs.bombPot !== true &&
       !(gs.communityCards2 && gs.communityCards2.length > 0)
     ) {
       const bettor = opponents[0];
@@ -2732,6 +3254,23 @@ export class HorseLogic {
 
     // ═══ Not facing a bet ═══
     if (!facingBet) {
+      // ═══ V36 FREEROLL BET ═══ a locked board and an unlocked one: every
+      // chip that goes in comes back at least 1/N, and a bet folds out the
+      // hands that were beating hero on the other board(s). Bet, and bet
+      // big — there is no raise that can hurt this hand. (All boards locked
+      // is a plain monster and takes the monster line below.)
+      if (multiBoard36 && lockShare36 >= 1 / nBoards36 && lockShare36 < 1 && fastRandom() < 0.9) {
+        if (tele15) noteFire('v36_freeroll_bet');
+        return this.betSize(
+          pot,
+          Math.max(0.75, geomFrac > 0 ? geomFrac : 0.75) + fastRandom() * 0.15,
+          player,
+          gs,
+          vi,
+          params,
+          useSizing
+        );
+      }
       // ═══ V29/V30 GTO OPEN NODES (Dan 2026-08-29): the betting mix comes
       // from the solver ═══ Heads-up hold'em with the betting lead: the
       // check / bet_small / bet_big mix is the class-mean of the PioSolver
@@ -2748,10 +3287,14 @@ export class HorseLogic {
           : (opts.v30GtoTurnRiver ?? true) !== false) &&
         (street === 'flop' || street === 'turn' || street === 'river') &&
         player.cards.length === 2 &&
+        // V35: hold'em cells for hold'em hands only (see the V32 gate).
+        vi.holeCount === 2 &&
+        !vi.isFixedLimit &&
         !vi.isOmaha &&
         !vi.isShortDeck &&
         oppCount === 1 &&
         initiative === 'hero' &&
+        gs.bombPot !== true &&
         !(gs.communityCards2 && gs.communityCards2.length > 0)
       ) {
         const hand29 = gtoHandClass(player.cards[0], player.cards[1]);
@@ -3088,11 +3631,17 @@ export class HorseLogic {
         street !== 'flop' &&
         equity < 0.62
       ) {
+        // V39: the card that came, against what the bet expected. A good
+        // card fires the barrel more (the story became true); a blocked
+        // scare card fires it as the bluff it was born for; an unblocked
+        // scare card is the give-up the `!dangered` gate already enforces.
+        const outlookMul39 =
+          outlook39 === 'good' ? 1.4 : outlook39 === 'scare' ? (blocker ? 1.2 : 0.5) : 1;
         if (barrelPlan && !dangered && oppCount <= 2 && (equity >= 0.15 || blocker)) {
           // TUNED (duplicate-deal ablation): continuation frequencies cut
           // (turn 0.75->0.60, river 0.55->0.42) and total-air no-blocker
           // barrels abandoned — the original volume measurably lost.
-          if (fastRandom() < (isRiver ? 0.35 : 0.52) * Math.min(1.25, bluffScale)) {
+          if (fastRandom() < (isRiver ? 0.35 : 0.52) * Math.min(1.25, bluffScale) * outlookMul39) {
             return this.betSize(
               pot,
               sizeBase + 0.15 + fastRandom() * 0.1,
@@ -3106,6 +3655,70 @@ export class HorseLogic {
         } else if (!barrelPlan && equity < 0.52 && fastRandom() < 0.8) {
           return { action: 'check', thinkTime: 0 }; // one-and-done — give up
         }
+      }
+      // ═══ V38 THE BET IS ARITHMETIC TOO (solverless games) ═══════════════
+      // Below the value bars, hold'em plays the calibrated c-bet / probe /
+      // semi-bluff / bluff ladder below (A/B-measured, and the solver layers
+      // own the heads-up spots). Omaha, short deck, pineapple and fixed limit
+      // have no solver and no such measurement, so from here down they play
+      // the EV engine: every candidate size against MDF fold equity for THIS
+      // table (each opponent's fold read), the continuing range's equity,
+      // realization for the street and seat, rake and the survival premium.
+      // The best action by EV, mixed near indifference. A bet from here is a
+      // bluff or a semi-bluff, so it registers a barrel plan like every
+      // heuristic bluff does.
+      if (
+        (opts.v38Ev ?? true) !== false &&
+        (vi.isOmaha || vi.isShortDeck || vi.holeCount !== 2 || vi.isFixedLimit) &&
+        !isRiver
+      ) {
+        let effOpp38 = 0;
+        const models38: EvOpponentModel[] = [];
+        for (const o of opponents) {
+          const os = (isFinite(o.stack) ? o.stack : 0) + (isFinite(o.bet) ? o.bet : 0);
+          if (os > effOpp38) effOpp38 = os;
+          let foldMul = 1;
+          if (useMind) {
+            try {
+              foldMul = HorseMind.exploit(o.user_id, useCounterAdapt).bluffMod;
+            } catch {
+              /* reads are best-effort */
+            }
+          }
+          models38.push({ foldMul });
+        }
+        const drawy38 = cat <= 1 && drawsLive && equity >= (street === 'flop' ? 0.3 : 0.2);
+        const verdict38 = evaluateSpot({
+          equity,
+          pot,
+          toCall: 0,
+          stack,
+          effectiveStack: Math.min(stack, effOpp38 > 0 ? effOpp38 : stack),
+          street: street === 'turn' ? 'turn' : 'flop',
+          inPosition: ip,
+          opponents: oppCount,
+          models: models38,
+          realization: realizationFactor({
+            street: street === 'turn' ? 'turn' : 'flop',
+            inPosition: ip,
+            drawy: drawy38,
+          }),
+          rakeMarg: useRake10 && !isTournamentMode(gs) ? rakeDrag(pot, gs.bigBlind) : 0,
+          riskPremium: risk,
+          minBet: Math.max(gs.minRaise || 0, 0.01),
+          maxBet: vi.isPotLimit ? pot : stack,
+          initiative: initiative === 'hero' || prevChecked,
+          // fixed limit has one size; pot limit tops out at the pot
+          sizes: vi.isFixedLimit ? [1] : vi.isPotLimit ? [0.33, 0.5, 0.75, 1.0] : undefined,
+          rand: fastRandom,
+        });
+        if (verdict38.pick.kind === 'bet') {
+          if (tele15) noteFire('v38_ev_bet');
+          planBarrel(equity);
+          return this.betSize(pot, verdict38.pick.sizeFrac, player, gs, vi, params, useSizing);
+        }
+        if (tele15) noteFire('v38_ev_check');
+        return { action: 'check', thinkTime: 0 };
       }
       // V4 CONTINUATION BET: the preflop/prior-street aggressor keeps the
       // pressure on favorable boards even without made equity. Small sizing,
@@ -3201,9 +3814,9 @@ export class HorseLogic {
       // the mathematically best bluff candidate. Modest boost, graded on top
       // of the existing nut-blocker logic.
       let unblock16 = 1.0;
-      if ((opts.v16Blockers ?? true) !== false && isRiver && gs.communityCards.length >= 5) {
+      if ((opts.v16Blockers ?? true) !== false && isRiver && board.length >= 5) {
         const suitN16 = new Map<string, number>();
-        for (const bc of gs.communityCards) suitN16.set(bc.suit, (suitN16.get(bc.suit) || 0) + 1);
+        for (const bc of board) suitN16.set(bc.suit, (suitN16.get(bc.suit) || 0) + 1);
         for (const [suit16, n16] of suitN16) {
           if (n16 === 2 && !player.cards.some((hc) => hc.suit === suit16)) {
             unblock16 = 1.15;
@@ -3254,6 +3867,32 @@ export class HorseLogic {
 
     // ═══ Facing a bet ═══
     // (V10 rake drag `rakeMarg` is computed above the V32 consult — V34.)
+
+    // ═══ V36 FREEROLL RAISE ═══ hero cannot lose a board, so hero cannot
+    // lose money by continuing: with one of N boards locked, calling B into
+    // P0 returns at least (P0 + 2B)/N — on two boards that is P0/2 + B >= B
+    // for ANY bet; on three boards it is >= B for every bet up to the pot.
+    // Inside that range fold is never on the menu; RAISE when the unlocked
+    // boards carry a real chance to scoop (or to fold out whatever is beating
+    // hero there), sized to put the money in — nothing can come back at it.
+    // (A three-board overbet with a single lock falls through to the
+    // equity-priced call below, which already carries the locked third.)
+    const potFrac36 = toCall > 0 ? toCall / Math.max(1e-9, pot - toCall) : 0;
+    if (
+      multiBoard36 &&
+      lockShare36 >= 1 / nBoards36 &&
+      (nBoards36 === 2 || lockShare36 >= 2 / 3 || potFrac36 <= 1)
+    ) {
+      const raiseFreeroll =
+        lockShare36 < 1 ? unlockedEq36 >= 0.2 && fastRandom() < 0.85 : fastRandom() < 0.9;
+      if (raiseFreeroll) {
+        if (tele15) noteFire('v36_freeroll_raise');
+        const raiseToAmt = currentBet + (pot + toCall) * (0.9 + fastRandom() * 0.2);
+        return this.raiseTo(raiseToAmt * params.sizingMultiplier, player, gs, vi);
+      }
+      if (tele15) noteFire('v36_freeroll_call');
+      return { action: 'call', amount: toCall, thinkTime: 0 };
+    }
 
     // ═══ V29 GTO FLOP DEFENSE — REMOVED 2026-08-29, the same day it
     // shipped. ═══ The consult assumed the warehouse held facing-a-bet
@@ -3307,7 +3946,7 @@ export class HorseLogic {
     // with bet size. Top pair (zero overcards above it) pays nothing.
     let dominationPenalty = 0;
     if (useV11 && useIQ && cat === 2 && !vi.isOmaha && betRatio >= 0.45) {
-      const pr = onePairRank(player.cards, gs.communityCards);
+      const pr = onePairRank(player.cards, board);
       if (pr > 0) {
         let over = 0;
         for (const r of Object.keys(rankCounts) as Array<keyof typeof RANK_VALUES>) {
@@ -3549,12 +4188,22 @@ export class HorseLogic {
         seriousAllIns20 >= 1
       ) {
         let biggestAllIn = 0;
+        let allInId: string | undefined;
         for (const o of opponents) {
-          if (o.is_all_in && isFinite(o.bet) && o.bet > biggestAllIn) biggestAllIn = o.bet;
+          if (o.is_all_in && isFinite(o.bet) && o.bet > biggestAllIn) {
+            biggestAllIn = o.bet;
+            allInId = o.user_id;
+          }
         }
         if (biggestAllIn > 0 && stack + player.bet >= biggestAllIn) {
-          bounty23 = Math.min(0.04, (gs.tournament?.bountyFactor ?? 0) * 0.12);
+          // V37: the same bust the preflop pull prices — the live inventory
+          // (top chest still in, or pulled) and THIS player's head.
+          const scale37 =
+            prizeLandscapeScale(gs, (opts.v26Prizes ?? true) !== false) *
+            headBountyScale(gs, allInId);
+          bounty23 = Math.min(0.08, (gs.tournament?.bountyFactor ?? 0) * 0.12 * scale37);
           if (tele15) noteFire('v23_bounty_call');
+          if (tele15 && scale37 !== 1) noteFire('v37_bounty_call_scaled');
         }
       }
       const required = potOdds + 0.02 + dominationPenalty * 0.5 + commit20 + scare21 - bounty23;
@@ -3761,7 +4410,8 @@ export class HorseLogic {
       drawsLive && equity >= 0.25 && dominationPenalty === 0 && !loOnly23
         ? 0.04 + (useV23Var && vi.isShortDeck ? 0.02 : 0)
         : 0;
-    let respect = 2 - exploit.callDownMod; // maniac 0.8, neutral 1, passive 1.15
+    // V35: fixed limit calls lighter — the pot always lays the price.
+    let respect = 2 - exploit.callDownMod + (params.callRespect ?? 0); // maniac 0.8, neutral 1, passive 1.15
     if (dangered) respect += 0.15;
     // V12 ANTI-EXPLOIT: when the CURRENT street's bettor has been hunting
     // this horse specifically, their bets carry less real strength than the
@@ -3812,14 +4462,9 @@ export class HorseLogic {
     // front-door flush draw MISSED, a hero holding two-plus cards of that
     // suit holds the bluffs himself — the bettor's range just lost most of
     // its air. Fold more. (The mirror of the V16 unblocker bluff.)
-    if (
-      (opts.v17CatchBlock ?? true) !== false &&
-      isRiver &&
-      potFrac >= 0.75 &&
-      gs.communityCards.length >= 5
-    ) {
+    if ((opts.v17CatchBlock ?? true) !== false && isRiver && potFrac >= 0.75 && board.length >= 5) {
       const suitN17 = new Map<string, number>();
-      for (const bc of gs.communityCards) suitN17.set(bc.suit, (suitN17.get(bc.suit) || 0) + 1);
+      for (const bc of board) suitN17.set(bc.suit, (suitN17.get(bc.suit) || 0) + 1);
       for (const [suit17, n17] of suitN17) {
         if (n17 === 2 && player.cards.filter((hc) => hc.suit === suit17).length >= 2) {
           respect += 0.08;
@@ -3845,6 +4490,90 @@ export class HorseLogic {
     const posEdge = useIQ ? (ip ? -0.012 : 0.008 * (useNlhX ? 1 + 0.3 * (oppCount - 1) : 1)) : 0;
     const sizingPenalty =
       (Math.min(0.06, betRatio * 0.04) + mw * 0.5) * respect + (loOnly23 ? 0.03 : 0);
+    /**
+     * ═══ V38 THE CALL IS ARITHMETIC, NOT A FLAT LINE (Dan 2026-09-03) ═══
+     *
+     * "The heuristic river call line folds ~67% to a 75% bet heads-up (a
+     *  solver ~50-55%) ... THIS NEEDS TO BE SOLVER BASED, IT SHOULDN'T BE A
+     *  FLAT LINE VARIABLE."
+     *
+     * The line below this comment was `potOdds + 0.03 x respect + a sizing
+     * penalty + a position edge + the domination penalty`: four constants
+     * stacked on the pot odds. On the river none of them belongs there. A
+     * river call closes the hand, so realization is exactly 1 and the only
+     * question is whether equity against the range that bet clears the
+     * raked pot odds (plus the survival premium in a tournament). Everything
+     * the constants were standing in for - the villain's line, their sizing,
+     * their tendencies, hero's domination on the board - already reached
+     * this decision through the equity: the range read narrowed the sample,
+     * the V15/V20/V21 caps cut it where the line says the range is stronger,
+     * and `respect` carries the exploit reads. So on the river those reads
+     * are applied to the EQUITY (respect above 1 is "their bets are stronger
+     * than the read", a few points off), and the call is the MDF call:
+     * equity >= required, mixed inside 1.5 points of indifference.
+     *
+     * For the games with no solver export the same engine decides EVERY
+     * postflop fold/call: realized equity (street, position, draws) against
+     * the raked pot odds, the survival premium charged by the share of stack
+     * at risk. Hold'em before the river keeps the calibrated heuristic line -
+     * V32 owns the heads-up spots it can read, and the line is A/B-measured
+     * where it cannot.
+     */
+    const useEv38 = (opts.v38Ev ?? true) !== false;
+    const solverless38 = vi.isOmaha || vi.isShortDeck || vi.holeCount !== 2 || vi.isFixedLimit;
+    if (useEv38 && (isRiver || solverless38) && !solverCall32) {
+      // the exploit reads, as an equity shift instead of a margin
+      const readShift38 = -(respect - 1) * 0.08;
+      const eqRead38 = clamp01(
+        eq15 + impliedBonus + readShift38 - dominationPenalty - (loOnly23 ? 0.03 : 0)
+      );
+      const risk38 = risk > 0 && stack > 0 ? risk : 0;
+      if (isRiver) {
+        const v = riverCallVerdict({
+          equity: eqRead38,
+          pot,
+          toCall,
+          stack,
+          rakeMarg,
+          riskPremium: risk38,
+          rand: fastRandom,
+        });
+        if (tele15) noteFire(v.call ? 'v38_river_call' : 'v38_river_fold');
+        if (v.call) return { action: 'call', amount: toCall, thinkTime: 0 };
+        return { action: 'fold', thinkTime: 0 };
+      }
+      // Flop / turn in a solverless game: realized equity vs the raked price.
+      const drawy38 = cat <= 1 && drawsLive && equity >= (street === 'flop' ? 0.3 : 0.2);
+      const realization38 = realizationFactor({
+        street: street === 'turn' ? 'turn' : 'flop',
+        inPosition: ip,
+        drawy: drawy38,
+      });
+      const verdict38 = evaluateSpot({
+        equity: eqRead38,
+        pot,
+        toCall,
+        stack,
+        effectiveStack: stack,
+        street: street === 'turn' ? 'turn' : 'flop',
+        inPosition: ip,
+        opponents: oppCount,
+        realization: realization38,
+        rakeMarg,
+        riskPremium: risk38,
+        minBet: Math.max(gs.minRaise || 0, 0.01),
+        maxBet: 0, // fold/call only here: the raise gates above already rolled
+        sizes: [],
+        rand: fastRandom,
+      });
+      const callEv = verdict38.candidates.find((a) => a.kind === 'call');
+      if (callEv && callEv.ev >= 0) {
+        if (tele15) noteFire('v38_ev_call');
+        return { action: 'call', amount: toCall, thinkTime: 0 };
+      }
+      if (tele15) noteFire('v38_ev_fold');
+      return { action: 'fold', thinkTime: 0 };
+    }
     if (
       eq15 + impliedBonus >=
       potOdds + 0.03 * respect + sizingPenalty + posEdge + dominationPenalty

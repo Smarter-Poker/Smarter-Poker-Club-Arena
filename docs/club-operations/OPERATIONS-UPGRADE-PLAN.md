@@ -3,7 +3,7 @@
 Owner: Dan (directive 2026-09-03 - "verify, audit and upgrade every single
 page" of `/hub/club-arena/clubs/:club/operations` and every sub page).
 Author of this plan: Cowork/Claude session `feat/club-operations-full-upgrade`.
-Status: **Phases 1 and 2 of 8 built, tested and pushed. Phases 3 to 8 specified below.**
+Status: **Phases 1, 2 and 3 of 8 built, tested and pushed. Phases 4 to 8 specified below.**
 
 Every finding in this document was produced by reading the page source end to
 end and, where it concerns data, by querying production
@@ -253,7 +253,45 @@ server-side read gate to match what the registry advertises.
 
 ---
 
-## 5. Phase 3 - The agent network
+## 5. Phase 3 - The agent network. **DONE**
+
+Shipped 2026-09-03 (migrations `20260903200000_an_agent_payout_is_a_record` and
+`20260903210000_the_payables_read_is_index_only`). Four controls could not do
+what their labels said, each for a different reason: Ban Player was a success
+toast and no write at all; Clawback was dead three times over (a list filtered
+on three transaction types with zero rows estate-wide, a claim step UPDATEing a
+table with no UPDATE policy, and an RPC that is SECURITY INVOKER with no
+EXECUTE for `authenticated`); Add Prepaid Balance sent `fn_admin_update_agent`
+the one pair it refuses, so no positive amount could ever succeed; and Revoke
+Credit called an ungranted invoker function that, had it run, would have moved
+player-wallet chips and left the credit line untouched.
+
+"Upcoming Agent Payouts" was `weekly_rake_generated * commission_rate` with a
+hardcoded "Pending" and no ledger read anywhere - 36,657 printed against 65,790
+genuinely owed across 259,135 unsettled commission rows. `fn_ca_agent_payables`
+reads the ledger behind a new `fn_ca_can_manage_agents` gate (owner, co-owner,
+admin), because `agent_commissions` grants `authenticated` only their own rows.
+`fn_ca_ban_club_player` writes the exclusion that `atomic_table_buyin`,
+`atomic_table_rebuy` and `atomic_tournament_register` all read, and
+deliberately does NOT delete the membership row: it carries the player's chips,
+and the first member the probe picked was holding 10,067.64 of them.
+
+The clawback panel was pointed at `fn_agent_wallet_reversible` and
+`fn_agent_wallet_claim_back`, which the wallet cashier has been using correctly
+all along - the dead parallel copy was deleted and no new money code written.
+Also fixed: the hierarchy Transfer sent the agents primary key where a user id
+was needed; Credit Limits labelled every super agent "Sub-Agent"; the agent
+dashboard read `invited_by` as the downline while every write path uses
+`agent_id` (1,575 memberships against 417); `getAgentPlayers` had no club
+filter; `fn_create_agent` got an unresolved club param; the notes both forms
+collected were discarded; a Cancel button had no content.
+
+The payables aggregate went from 5,198ms cold to 1,731ms by carrying `amount`
+and `created_at` into the partial index, making the scan index-only.
+
+Detail: `docs/changelog/2026-09-03-club-operations-phase-3-the-agent-network.md`.
+
+Everything below is what the phase found, kept as the record.
 
 - **CONFIRMED - the Ban Player action is a lie.** `AgentManagementPage.tsx:505`:
   `else if (type === 'ban') { toast.success('Player banned'); }`. No write of

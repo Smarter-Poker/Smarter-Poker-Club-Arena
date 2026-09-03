@@ -22,6 +22,7 @@
  * remove somebody from a table.
  */
 
+import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { reportError } from '../utils/errorReporter';
 
@@ -82,6 +83,26 @@ export async function adminRemovePlayerFromTable(
  * success is reported as partial success: an operator who removed a player from
  * three of four tables must not be told the job is done.
  */
+/**
+ * The tables in this club where a player is currently sitting.
+ *
+ * Lifted out of AntiCheatPage in phase 3, when the agent console needed the
+ * same three lines to remove an excluded player. A seat is live while
+ * `left_at` is null; this only reads, and the removal itself is still the
+ * engine's, because closing a seat from the browser destroys the stack in it
+ * (CLAUDE.md 11.5).
+ */
+export async function liveSeatTableIds(clubUUID: string, userId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('table_seats')
+    .select('table_id, tables!inner(club_id)')
+    .eq('user_id', userId)
+    .is('left_at', null)
+    .eq('tables.club_id', clubUUID);
+  if (error) throw error;
+  return [...new Set(((data || []) as Array<{ table_id: string }>).map((r) => r.table_id))];
+}
+
 export async function adminRemovePlayerFromClubTables(
   tableIds: string[],
   userId: string,

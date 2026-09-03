@@ -286,7 +286,7 @@ export default function BonusPage() {
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / Bonuses"
         title="Bonus Vault"
-        description="Claim the server-authorized daily reward ladder and inspect active special bonuses from one secure reward surface."
+        description="Claim The Server-Authorized Daily Reward Ladder And Inspect Active Special Bonuses From One Secure Reward Surface."
         art="diamonds"
         status="BONUS SCHEDULE // LIVE"
         metrics={[

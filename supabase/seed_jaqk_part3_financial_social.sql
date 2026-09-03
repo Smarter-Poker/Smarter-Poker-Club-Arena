@@ -204,21 +204,29 @@ INSERT INTO player_reports (id, reporter_id, reported_player_id, reason, descrip
 ON CONFLICT (id) DO NOTHING;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- 12. COMMISSION RECORDS (agent earnings)
+-- 12. AGENT COMMISSIONS (agent earnings)
 -- ═══════════════════════════════════════════════════════════════════════════════
+--
+-- These rows used to be written to `commission_records`, dropped by phase 7 on
+-- 2026-09-01 after holding zero rows for its entire life while the app read it.
+-- The ledger every commission surface reads is `agent_commissions`, keyed by
+-- (club_id, user_id) rather than agents.id. `settled_at IS NULL` is what the
+-- Records tab renders as Unclaimed and what fn_agent_claim_commission pays out.
+-- The agent ids these rows used map to users: d0..01 -> ..103 (Jake),
+-- d0..02 -> ..104 (Sophia), d0..03 -> ..105 (Liam), all in club a0..01.
 
-INSERT INTO commission_records (id, agent_id, player_id, player_name, table_name, rake_amount, commission_rate, amount, created_at) VALUES
+INSERT INTO agent_commissions (id, club_id, user_id, amount, commission_rate, source_type, notes, settled_at, created_at) VALUES
 -- Agent Jake's commissions
-('b9000000-0000-0000-0000-000000000001', 'd0000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111106', 'SuitedAce',   'JAQK Low',  250, 0.12, 30,  NOW() - INTERVAL '1 day'),
-('b9000000-0000-0000-0000-000000000002', 'd0000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111107', 'StackAttack', 'JAQK Mid',  580, 0.12, 70,  NOW() - INTERVAL '1 day'),
-('b9000000-0000-0000-0000-000000000003', 'd0000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111109', 'Aggro_ETH',   'JAQK High', 1200, 0.12, 144, NOW() - INTERVAL '1 day'),
-('b9000000-0000-0000-0000-000000000004', 'd0000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111108', 'PotControl',  'JAQK Low',  320, 0.12, 38,  NOW() - INTERVAL '3 days'),
+('b9000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111103', 30,  0.12, 'rake_settlement', 'SuitedAce at JAQK Low',    NULL, NOW() - INTERVAL '1 day'),
+('b9000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111103', 70,  0.12, 'rake_settlement', 'StackAttack at JAQK Mid',  NULL, NOW() - INTERVAL '1 day'),
+('b9000000-0000-0000-0000-000000000003', 'a0000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111103', 144, 0.12, 'rake_settlement', 'Aggro_ETH at JAQK High',   NULL, NOW() - INTERVAL '1 day'),
+('b9000000-0000-0000-0000-000000000004', 'a0000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111103', 38,  0.12, 'rake_settlement', 'PotControl at JAQK Low',   NULL, NOW() - INTERVAL '3 days'),
 -- Agent Sophia's commissions
-('b9000000-0000-0000-0000-000000000005', 'd0000000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111110', 'MicroGrind',  'JAQK Micro', 45, 0.10, 5,   NOW() - INTERVAL '2 days'),
-('b9000000-0000-0000-0000-000000000006', 'd0000000-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111113', '3BetMason',   'JAQK Mid',  420, 0.10, 42,  NOW() - INTERVAL '2 days'),
+('b9000000-0000-0000-0000-000000000005', 'a0000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111104', 5,   0.10, 'rake_settlement', 'MicroGrind at JAQK Micro', NULL, NOW() - INTERVAL '2 days'),
+('b9000000-0000-0000-0000-000000000006', 'a0000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111104', 42,  0.10, 'rake_settlement', '3BetMason at JAQK Mid',    NULL, NOW() - INTERVAL '2 days'),
 -- Agent Liam's commissions
-('b9000000-0000-0000-0000-000000000007', 'd0000000-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111114', 'PLOQueen',    'PLO Action', 380, 0.08, 30, NOW() - INTERVAL '1 day'),
-('b9000000-0000-0000-0000-000000000008', 'd0000000-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111117', 'BombPotBen',  'PLO Action', 210, 0.08, 17, NOW() - INTERVAL '2 days')
+('b9000000-0000-0000-0000-000000000007', 'a0000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111105', 30,  0.08, 'rake_settlement', 'PLOQueen at PLO Action',   NULL, NOW() - INTERVAL '1 day'),
+('b9000000-0000-0000-0000-000000000008', 'a0000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111105', 17,  0.08, 'rake_settlement', 'BombPotBen at PLO Action', NULL, NOW() - INTERVAL '2 days')
 ON CONFLICT (id) DO NOTHING;
 
 -- ═══════════════════════════════════════════════════════════════════════════════

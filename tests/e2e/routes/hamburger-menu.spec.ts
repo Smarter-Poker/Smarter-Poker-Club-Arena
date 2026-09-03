@@ -39,9 +39,26 @@ async function openHamburgerMenu(page: any) {
   } catch {
     return false;
   }
-  await btn.click({ timeout: 8000 });
-  await page.waitForTimeout(400);
-  return true;
+  const drawer = page.getByRole('dialog', { name: 'Club Arena' });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    // Resolve the opener again on retry. Session/profile hydration can replace
+    // the header immediately after the first click; a successful click on that
+    // retiring node does not prove the newly mounted drawer is open.
+    await page.locator('button[aria-label="Open Menu"]').first().click({ timeout: 8000 });
+    if (
+      await drawer
+        .waitFor({ state: 'visible', timeout: 5000 })
+        .then(() => true)
+        .catch(() => false)
+    ) {
+      return true;
+    }
+  }
+  throw new Error('The hamburger opener was clickable, but its Club Arena drawer never opened.');
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /* Open the menu, or account honestly for why we could not.
@@ -158,8 +175,14 @@ test.describe('Hamburger Menu — Navigation Links', () => {
 
       if (!(await openMenuOrSkip(page))) return;
 
-      // Find the menu item by text
-      const menuItem = page.locator(`span:text-is("${link.label}")`).first();
+      // Use the interactive control's accessible name. The button also owns a
+      // short description, so its name begins with the destination label.
+      const menuItem = page
+        .getByRole('dialog', { name: 'Club Arena' })
+        .getByRole('button', {
+          name: new RegExp(`^${escapeRegExp(link.label)}(?:\\s|$)`),
+        })
+        .first();
       await expect(menuItem).toBeVisible({ timeout: 3000 });
       await menuItem.click();
 

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type {
   LobbyEntry,
@@ -16,6 +18,13 @@ import {
   validateArenaGameCardRegistry,
 } from '../src/components/lobby/game-cards/arenaGameCardRegistry';
 import type { LobbyRowContext } from '../src/components/lobby/lobbyCardContext';
+
+const ROOT = resolve(__dirname, '..');
+const CARD_CSS = readFileSync(
+  resolve(ROOT, 'src/components/lobby/game-cards/ArenaGameCard.css'),
+  'utf8'
+);
+const TABLE_CSS = readFileSync(resolve(ROOT, 'src/components/lobby/LobbyTable.css'), 'utf8');
 
 const rule = (key: string, label = key): RuleMedallion => ({ key, label, tip: label });
 
@@ -158,24 +167,67 @@ describe('Arena game-card creation', () => {
     ]);
     expect(validateArenaGameCardRegistry()).toEqual([]);
     const approvedDefaults = {
-      mtt: 'shark-mtt-v2',
-      nlh: 'shark-nlh-v2',
-      plo: 'shark-plo-v2',
-      spins: 'shark-spins-v2',
-      'heads-up': 'shark-headsup-v2',
+      mtt: {
+        id: 'shark-mtt-v2',
+        version: 2,
+        mobileAsset: /mtt\/shell-mobile-v4-reference-clean\.png$/,
+      },
+      nlh: {
+        id: 'spade-nlh-premium-v1',
+        version: 1,
+        mobileAsset: /nlh\/spade-nlh-premium-v1\/chassis\.png$/,
+      },
+      plo: {
+        id: 'shark-plo-v2',
+        version: 2,
+        mobileAsset: /plo\/shell-mobile-v4-reference-clean\.png$/,
+      },
+      spins: {
+        id: 'shark-spins-v2',
+        version: 2,
+        mobileAsset: /spins\/shell-mobile-v4-reference-clean\.png$/,
+      },
+      'heads-up': {
+        id: 'shark-headsup-v2',
+        version: 2,
+        mobileAsset: /heads-up\/shell-mobile-v4-reference-clean\.png$/,
+      },
     } as const;
 
     for (const family of Object.keys(ARENA_GAME_CARD_TEMPLATE_REGISTRY) as Array<
       keyof typeof ARENA_GAME_CARD_TEMPLATE_REGISTRY
     >) {
       const resolved = resolveArenaGameCardTemplate({ family, presentation: 'mobile' });
-      expect(resolved.skinId).toBe(approvedDefaults[family]);
+      const approved = approvedDefaults[family];
+      expect(resolved.skinId).toBe(approved.id);
       expect(resolved.skin.lifecycle).toBe('approved');
-      expect(resolved.skin.version).toBe(2);
+      expect(resolved.skin.version).toBe(approved.version);
       expect(resolved.skin.desktop.asset).toMatch(/shell-desktop-v2\.webp$/);
-      expect(resolved.skin.mobile.asset).toMatch(/shell-mobile-v2\.webp$/);
+      expect(resolved.skin.mobile.asset).toMatch(approved.mobileAsset);
       expect(Object.keys(resolved.template.zones).length).toBeGreaterThanOrEqual(5);
     }
+  });
+
+  it('centers every family on one visible-hardware rail and keeps live fills inside the chrome', () => {
+    expect(TABLE_CSS).toMatch(/\.arena-lobby-card-list\s*\{[^}]*justify-items:\s*center/s);
+    expect(TABLE_CSS).toMatch(/\.arena-lobby-card-list > div\s*\{[^}]*justify-items:\s*center/s);
+
+    for (const family of ['mtt', 'nlh', 'plo', 'spins', 'heads-up']) {
+      expect(CARD_CSS).toContain(`.arena-game-card--${family}[data-skin`);
+      expect(CARD_CSS).toMatch(
+        new RegExp(
+          `\\.arena-game-card--${family}\\[data-skin[^}]+--agc-mobile-canvas-width:\\s*[0-9.]+%`,
+          's'
+        )
+      );
+    }
+
+    expect(CARD_CSS).toMatch(
+      /\[data-skin\$='-v2'\] \.agc-action\s*\{[^}]*background:\s*transparent[^}]*box-shadow:\s*none/s
+    );
+    expect(CARD_CSS).toMatch(
+      /\[data-skin\$='-v2'\] \.agc-action::before\s*\{[^}]*inset:\s*var\(--agc-action-fill-inset,/s
+    );
   });
 
   it('maps live MTT player state to blue, red, gold, and disabled actions', () => {

@@ -491,6 +491,156 @@
   letter-spacing: 0;
 }
 
+/* ── Reconciliation and recovery console ─────────────────────────────── */
+
+.recoveryConsole {
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid #344657;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(54, 169, 255, 0.055), transparent 42%), #080d13;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.035);
+}
+
+.recoveryConsoleAttention {
+  border-color: rgba(197, 154, 74, 0.66);
+  box-shadow:
+    inset 3px 0 #c59a4a,
+    inset 0 1px rgba(255, 255, 255, 0.035);
+}
+
+.recoveryHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 15px 18px 13px;
+  border-bottom: 1px solid rgba(142, 159, 176, 0.13);
+}
+
+.recoveryTitle {
+  margin: 5px 0 0;
+  color: #e8f0f5;
+  font:
+    600 1.08rem/1 Rajdhani,
+    Inter,
+    sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.reconcileBtn,
+.recoveryAlert button {
+  min-height: 44px;
+  padding: 0 15px;
+  border: 1px solid #52b9ff;
+  border-radius: 4px;
+  color: #eef9ff;
+  background: linear-gradient(180deg, #176da5, #0b426a);
+  font:
+    700 0.68rem/1 Rajdhani,
+    Inter,
+    sans-serif;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.reconcileBtn:disabled,
+.recoveryAlert button:disabled,
+.plusBtn:disabled,
+.classicLink:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+.recoveryGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.recoveryMetric {
+  min-width: 0;
+  padding: 12px 18px 14px;
+  border-right: 1px solid rgba(142, 159, 176, 0.12);
+}
+
+.recoveryMetric:last-child {
+  border-right: 0;
+}
+
+.recoveryMetric span,
+.receiptFacts dt,
+.receiptAmount span,
+.receiptAmount small {
+  display: block;
+  margin-bottom: 6px;
+  color: #758596;
+  font:
+    700 0.62rem/1 Rajdhani,
+    Inter,
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.recoveryMetric strong {
+  display: block;
+  overflow: hidden;
+  color: #dce6ed;
+  font:
+    700 0.82rem/1 Rajdhani,
+    Inter,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.integrityGood {
+  color: #6cd693 !important;
+}
+
+.integrityBad {
+  color: #ff9b77 !important;
+}
+
+.recoveryAlert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 12px 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 123, 139, 0.43);
+  border-radius: 4px;
+  background: rgba(117, 22, 36, 0.17);
+}
+
+.recoveryAlert > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.recoveryAlert strong {
+  color: #ffabb4;
+  font:
+    700 0.78rem/1 Rajdhani,
+    sans-serif;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.recoveryAlert span {
+  color: #9aa8b5;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
 /* ── Shared machined content shell ────────────────────────────────────── */
 
 .sectionShell {
@@ -716,6 +866,27 @@
 .rowSelected {
   background: linear-gradient(90deg, rgba(54, 169, 255, 0.14), rgba(54, 169, 255, 0.025));
   box-shadow: inset 2px 0 var(--cashier-blue);
+}
+
+.receiptRow {
+  width: 100%;
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.receiptCue {
+  flex: 0 0 auto;
+  color: var(--cashier-blue-hot);
+  font:
+    700 0.62rem/1 Rajdhani,
+    Inter,
+    sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .avatar,
@@ -1047,7 +1218,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px))
+    max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
   background: rgba(0, 0, 0, 0.78);
   backdrop-filter: blur(5px);
   -webkit-backdrop-filter: blur(5px);
@@ -1059,7 +1231,13 @@
   flex-direction: column;
   gap: 13px;
   width: min(470px, 94vw);
-  max-height: min(720px, 90vh);
+  max-height: min(
+    720px,
+    calc(
+      100dvh - max(12px, env(safe-area-inset-top, 0px)) -
+        max(12px, env(safe-area-inset-bottom, 0px))
+    )
+  );
   padding: 22px;
   overflow-y: auto;
   border: 1px solid #69798a;
@@ -1089,6 +1267,73 @@
     sans-serif;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.receiptHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.receiptAmount {
+  padding: 19px 16px;
+  border: 1px solid rgba(95, 185, 246, 0.29);
+  border-radius: 4px;
+  background: radial-gradient(circle at 50% 0, rgba(54, 169, 255, 0.1), transparent 70%), #060a0f;
+  text-align: center;
+}
+
+.receiptAmount strong {
+  display: block;
+  font:
+    600 2.45rem/1 Rajdhani,
+    Inter,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.035em;
+}
+
+.receiptAmount small {
+  margin: 6px 0 0;
+}
+
+.receiptFacts {
+  margin: 0;
+  border: 1px solid #303d49;
+  border-radius: 4px;
+  background: #06090d;
+}
+
+.receiptFacts > div {
+  display: grid;
+  grid-template-columns: minmax(92px, 0.35fr) 1fr;
+  gap: 14px;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+}
+
+.receiptFacts > div:last-child {
+  border-bottom: 0;
+}
+
+.receiptFacts dt {
+  margin: 2px 0 0;
+}
+
+.receiptFacts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #c8d3db;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.receiptReference dd {
+  color: #91a5b5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.67rem;
 }
 
 .modalHint {
@@ -1375,6 +1620,49 @@
     margin-top: 9px;
   }
 
+  .recoveryConsole {
+    margin-top: 9px;
+  }
+
+  .recoveryHeading {
+    align-items: flex-start;
+    padding: 13px;
+  }
+
+  .reconcileBtn {
+    padding: 0 10px;
+    font-size: 0.61rem;
+  }
+
+  .recoveryGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .recoveryMetric {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 13px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(142, 159, 176, 0.1);
+  }
+
+  .recoveryMetric span {
+    margin: 0;
+  }
+
+  .recoveryAlert {
+    align-items: stretch;
+    flex-direction: column;
+    margin: 10px;
+  }
+
+  .receiptCue {
+    width: 100%;
+    padding-left: 47px;
+  }
+
   .sectionHeading {
     align-items: flex-start;
     padding: 16px 14px 13px;
@@ -1475,7 +1763,27 @@
   }
 
   .modal {
+    width: 100%;
+    max-height: calc(
+      100dvh - max(8px, env(safe-area-inset-top, 0px)) - max(8px, env(safe-area-inset-bottom, 0px))
+    );
     padding: 18px;
+  }
+
+  .modalOverlay {
+    align-items: flex-end;
+    padding: max(8px, env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px))
+      max(8px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px));
+  }
+
+  .modalActions {
+    position: sticky;
+    bottom: -18px;
+    z-index: 2;
+    margin: 0 -18px -18px;
+    padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid rgba(105, 121, 138, 0.45);
+    background: rgba(7, 10, 14, 0.98);
   }
 
   .claimRow {

@@ -15,7 +15,9 @@
  */
 
 import { PreciseActionTimer } from './PreciseActionTimer.js';
+import { sitOutAutoActionDelayMs } from './sitOutBeat.js';
 import { reportError } from '../services/errorReporter.js';
+import * as EngineMetrics from '../observability/engineInstruments.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -66,6 +68,44 @@ export interface PlayerConnectionState {
    * inferring it from silence. Cleared on the next heartbeat.
    */
   pageLeftAt?: number | null;
+  /* ═══ THE SILENT-CLIENT CANARY (Dan 2026-08-31, phase 2) ══════════════════
+     Three counters that together separate "a player wandered off" from "a
+     player's client is broken" — which the auto-sit-out ladder cannot tell
+     apart, and therefore punishes identically.
+
+     On 2026-08-31 a player sat in seat 7 of a 9-max table and his own client
+     erased him from his screen. From in here it was indistinguishable from
+     AFK: the heartbeat kept landing, the turn timer kept expiring, three
+     strikes forced a sit-out and the five-minute clock took the seat. He was
+     at his desk the whole time, looking at a table that would not show him
+     his cards.
+
+     The tell is the COMBINATION, and a genuine AFK human almost never
+     produces it: heartbeat healthy, turns offered, and NOT ONE voluntary
+     action, ever, at this table. Somebody who plays and then walks away has
+     acted at least once. Somebody whose client cannot show them the action
+     never does.
+
+     NO HORSE BRANCH, DELIBERATELY. A horse acts through the same
+     `performAction` path as anybody else (HorseLogic -> scheduleHorseAction
+     -> performAction -> recordPlayerActed), so it sets `everActed` on its
+     first decision and can never trip this. The signal is BEHAVIOURAL rather
+     than an identity test, which is why the HORSES ARE PLAYERS law needs no
+     exemption here: a horse is measured by exactly the same yardstick as a
+     human, and passes it for exactly the same reason. */
+
+  /** True once this player has taken any voluntary action at this table. */
+  everActed?: boolean;
+  /** How many times the action has legitimately reached this player here. */
+  turnsOffered?: number;
+  /**
+   * Epoch ms the CLIENT last confirmed it rendered a turn to the human
+   * (optional; only newer clients send it). Present means the action bar
+   * genuinely reached a screen, which sharpens the canary from "never acted"
+   * to "never even saw it" — the difference between an absent player and a
+   * broken one. Absent on older clients, so it is never required.
+   */
+  lastTurnRenderedAt?: number | null;
   /** Timestamp when disconnect was detected */
   disconnectedAt?: number;
   /** Timestamp when player reconnected (for grace period tracking — Bible V8 §6.3) */
@@ -239,6 +279,11 @@ export class DisconnectEngine {
       awayBlindSbCharged: false,
       awayBlindBbCharged: false,
       pageLeftAt: null,
+      // Phase 2 canary. Seeded here so "never acted" is a fact about THIS
+      // seat at THIS table, reset when the seat is released and re-taken.
+      everActed: false,
+      turnsOffered: 0,
+      lastTurnRenderedAt: null,
     });
   }
 
@@ -405,11 +450,29 @@ export class DisconnectEngine {
 
     if (!state) return true; // Untracked player — let them act
 
-    // Player is sitting out — auto-fold immediately
+    // Player is sitting out - auto-act, on the same beat as every other seat.
+    //
+    // 2026-09-01: this used to call executeAutoAction() straight from here, at
+    // zero milliseconds, while a horse floors at 350/1250 ms and a pre-action
+    // waits 900. Heads-up against a disconnected opponent that resolved every
+    // hand at machine speed. See engine/sitOutBeat.ts for why the rhythm is
+    // part of the treatment and not a detail.
+    //
+    // The caller already reads `false` as "DisconnectEngine will handle the
+    // auto-action via callback", so deferring changes nothing for it, and the
+    // timer is keyed `disconnect:<playerId>` like the timeout countdown - so
+    // cancelTimeout and cancelAllCountdowns already reach it, and a beat can
+    // never leak past the hand boundary.
     if (state.isSittingOut) {
-      this.executeAutoAction(tableId, playerId, canCheck, 'sitting_out');
+      this.scheduleSitOutAutoAction(tableId, playerId, canCheck);
       return false;
     }
+
+    /* Phase 2 canary: the action genuinely reached this player. Counted AFTER
+       the sit-out branch above, because a sat-out seat is auto-folded rather
+       than offered anything — counting it there would make a sat-out player
+       look like somebody being ignored by their own client. */
+    state.turnsOffered = (state.turnsOffered ?? 0) + 1;
 
     // Player is connected — they can act normally
     if (state.isConnected) {
@@ -459,6 +522,10 @@ export class DisconnectEngine {
     const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
     state.consecutiveTimeouts++;
     if (state.consecutiveTimeouts >= config.maxConsecutiveTimeouts) {
+      /* PHASE 2 CANARY — fired BEFORE the sit-out, while the evidence is
+         still assembled. This is the exact moment the 2026-08-31 seat-7
+         player was condemned, and the exact moment nobody was told. */
+      this.reportSuspectedSilentClient(tableId, playerId, state);
       this.sitOut(tableId, playerId, 'forced');
     }
   }
@@ -473,6 +540,101 @@ export class DisconnectEngine {
     state.awayBlindSbCharged = false;
     state.awayBlindBbCharged = false;
     state.pageLeftAt = null;
+    /* Phase 2 canary: one action, ever, is enough to prove the client can
+       show this player the game. It is never unset while the seat is held —
+       a player who plays and THEN goes AFK is an ordinary AFK, and the canary
+       must not accuse their client of being broken. */
+    state.everActed = true;
+  }
+
+  /**
+   * IS THIS A PLAYER WHO LEFT, OR A PLAYER WHOSE CLIENT IS BROKEN?
+   * (Dan 2026-08-31, phase 2 — the silent-client canary)
+   *
+   * Called at the instant the consecutive-timeout ladder decides to force a
+   * sit-out, which is the last moment anybody could still tell the difference.
+   * Returns the verdict rather than only logging it, so tests can assert on it
+   * and callers can act on it later without re-deriving the rule.
+   *
+   * The fingerprint of a BROKEN CLIENT, all three at once:
+   *   - the heartbeat is landing, so the app is open and the network is fine;
+   *   - the action reached this seat at least as many times as the strike cap,
+   *     so they were genuinely given the chance;
+   *   - and they have never once acted here. Not "not lately" — NEVER.
+   *
+   * A real AFK human breaks the third condition almost every time: they sat
+   * down, played, and then wandered off. The player who has literally never
+   * acted while connected is the one being shown nothing.
+   *
+   * `lastTurnRenderedAt` sharpens it when a newer client supplies it: a client
+   * that positively confirmed it drew the action bar is an ordinary AFK, and
+   * saying otherwise would cry wolf. Absent, we fall back to the weaker (but
+   * still rare) signal, which is why old clients are not a blind spot.
+   *
+   * DIAGNOSIS ONLY. It changes nothing about what happens to the player: the
+   * sit-out still fires, the eviction clock still runs. Making this alter the
+   * outcome would let a broken client hold a seat forever, which is a worse
+   * bug than the one it reports.
+   */
+  reportSuspectedSilentClient(
+    tableId: string,
+    playerId: string,
+    state: PlayerConnectionState
+  ): { suspected: boolean; reason: string } {
+    if (!state.isConnected) {
+      return { suspected: false, reason: 'disconnected - ordinary timeout ladder' };
+    }
+    if (state.everActed) {
+      return { suspected: false, reason: 'has acted here before - ordinary AFK' };
+    }
+    const config = this.tableConfigs.get(tableId) || this.DEFAULT_CONFIG;
+    if ((state.turnsOffered ?? 0) < config.maxConsecutiveTimeouts) {
+      return { suspected: false, reason: 'not enough turns offered to judge' };
+    }
+    if (state.lastTurnRenderedAt) {
+      return { suspected: false, reason: 'client confirmed it rendered the turn - AFK' };
+    }
+
+    const detail =
+      `connected player never acted at this table: ` +
+      `${state.turnsOffered} turn(s) offered, ${state.consecutiveTimeouts} timeout(s), ` +
+      `heartbeat ${Math.round((Date.now() - state.lastHeartbeat) / 1000)}s ago, ` +
+      `no client turn-render ack`;
+
+    reportError(new Error(`[silent-client] ${detail}`), 'DisconnectEngine.SuspectedSilentClient', {
+      tableId,
+      playerId,
+    });
+    try {
+      EngineMetrics.metricsRegistry
+        .counter(
+          'poker_suspected_silent_client_total',
+          'Forced sit-outs where the player was connected but had never acted'
+        )
+        .inc(1, { table_id: tableId });
+    } catch {
+      /* metrics must never break the ladder */
+    }
+    return { suspected: true, reason: detail };
+  }
+
+  /**
+   * THE CLIENT SAYS IT PUT THE ACTION IN FRONT OF A HUMAN (phase 2).
+   *
+   * Optional, and deliberately so: only newer clients send it, and the canary
+   * is designed to work without it. What it adds is the distinction between
+   * the two ways of never acting — a player who was SHOWN the action and
+   * ignored it (ordinary AFK) versus one whose client never rendered it at
+   * all (the seat-7 failure). Without this, both look the same from here.
+   *
+   * Never used to punish: it can only make the engine quieter about a player,
+   * never harsher. A client that lies about rendering merely suppresses a
+   * diagnostic about itself.
+   */
+  noteTurnRendered(tableId: string, playerId: string): void {
+    const state = this.playerStates.get(`${tableId}:${playerId}`);
+    if (!state) return;
+    state.lastTurnRenderedAt = Date.now();
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -874,6 +1036,23 @@ export class DisconnectEngine {
   // PRIVATE
   // ═══════════════════════════════════════════════════════════════════════════
 
+  /**
+   * The beat a sitting-out seat waits before the engine acts for it.
+   *
+   * Re-checked at the deadline rather than trusted from the top of the beat:
+   * a player who sits back in during those few hundred milliseconds gets their
+   * turn, which is the whole point of not folding them instantly. If they are
+   * still out, the auto-action runs exactly as it always did.
+   */
+  private scheduleSitOutAutoAction(tableId: string, playerId: string, canCheck: boolean): void {
+    const delayMs = sitOutAutoActionDelayMs(canCheck);
+    this.preciseTimer.startTimer(tableId, `disconnect:${playerId}`, delayMs, () => {
+      const state = this.playerStates.get(`${tableId}:${playerId}`);
+      if (!state || !state.isSittingOut) return; // they came back - the turn is theirs
+      this.executeAutoAction(tableId, playerId, canCheck, 'sitting_out');
+    });
+  }
+
   private startTimeoutCountdown(
     tableId: string,
     playerId: string,
@@ -918,6 +1097,20 @@ export class DisconnectEngine {
 
       // Auto sit-out after too many consecutive timeouts
       if (state.consecutiveTimeouts >= config.maxConsecutiveTimeouts) {
+        /* THE SECOND DOOR (phase 2 audit, 2026-08-31). The canary was wired
+           into `recordConnectedTimeout` and stopped there — but a player can
+           also be condemned HERE, from the disconnect countdown. Usually that
+           is a genuinely disconnected player and the canary declines to
+           accuse anybody, because it checks `isConnected` for itself.
+
+           The case that makes wiring it worthwhile is narrower and real: a
+           player whose countdown was armed while the socket was down and who
+           has since RECONNECTED, so the timer fires against somebody now back
+           at the table. Leaving one of the two sentencing paths unwatched is
+           how a diagnostic quietly ends up covering half of what it claims
+           to. The function decides suspicion itself, so calling it here can
+           only add evidence, never a false accusation. */
+        this.reportSuspectedSilentClient(tableId, playerId, state);
         this.sitOut(tableId, playerId, 'forced');
       }
     }

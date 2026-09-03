@@ -27,9 +27,14 @@
  * ─── THE FIX ────────────────────────────────────────────────────────────────
  *
  * A Spin does not need a fallback at all. Its structure is a pure function of
- * its multiplier — `spinTier(m).payouts` — so when the stored column is
- * missing or malformed the canonical spec reconstructs it exactly. Nothing is
- * guessed and nothing is over-paid.
+ * its multiplier — `spinTier(m).payouts` — so the canonical spec reconstructs
+ * it exactly. Nothing is guessed and nothing is over-paid.
+ *
+ * 2026-08-31: and the spec does not merely fill a GAP, it OUTRANKS the stored
+ * column on a Spin. See the rule above `resolvePayoutStructure`: a Spin's
+ * stored structure is only ever a copy of the tier, so one that disagrees is
+ * stale rather than chosen, and 62 completed spins were being paid by exactly
+ * such a stale copy.
  *
  * This lives in its own module for the same reason `payoutMath` does: the
  * import graph around the tournament managers is already circular-adjacent
@@ -163,15 +168,188 @@ export function trimStructureToField(
   return kept;
 }
 
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  PAYOUT DEPTH SCALES WITH THE FIELD (2026-08-31)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * Measured over 579 completed MTTs, average places paid by field size:
+ *
+ *     field < 10   (14 events)  ->  5.1 places
+ *     10-29       (393 events)  ->  5.8
+ *     30-59       (113 events)  ->  7.1
+ *     60-99        (31 events)  ->  6.8
+ *     100+ (avg 334, 28 events) ->  8.9      <- 2.7% of the field
+ *
+ * Depth was flat because the preset map tops out at NINE, so a 334-runner event
+ * paid the same nine places as a 30-runner one. The industry norm is 10-15% of
+ * the field, and the gap is not cosmetic: it is the difference between a big
+ * event feeling worth entering and feeling like a lottery with nine tickets.
+ *
+ * TWO RULES KEEP THIS SAFE, and both are about the direction that overpays.
+ *
+ *   1. PERCENTAGES ALWAYS SUM TO EXACTLY 100. The residual from rounding lands
+ *      on the LAST paid place, never the first — the same choice
+ *      computePlacePrize makes, and for the same reason: an error on last place
+ *      is a rounding cent, an error on first place is a headline.
+ *
+ *   2. IT IS ONLY CALLED WHEN THE FIELD CAN NO LONGER GROW. A structure built
+ *      for a field that then grows would pay too few places; one built for a
+ *      field that shrank would promote an earlier place to residual holder and
+ *      overpay it. The single caller sits at prize-pool finalisation, where
+ *      entry is closed by definition and `recalculateEliminatedPrizes` already
+ *      re-prices everyone who busted before the change.
+ *
+ * The shape is a geometric decay: first place takes a fixed share and each
+ * subsequent place takes a constant fraction of the one above, which is what
+ * every published structure approximates.
+ */
+export const PAID_FRACTION_OF_FIELD = 0.15;
+export const MIN_PAID_PLACES = 3;
+
+export function paidPlacesForField(fieldSize: number): number {
+  const field = Number(fieldSize);
+  if (!Number.isFinite(field) || field < 1) return MIN_PAID_PLACES;
+  // Never pay more places than there are players, and never pay every player:
+  // a structure that pays 100% of the field is a refund, not a tournament.
+  const byFraction = Math.round(field * PAID_FRACTION_OF_FIELD);
+  const capped = Math.min(byFraction, Math.floor(field / 2));
+  return Math.max(1, Math.min(Math.max(MIN_PAID_PLACES, capped), Math.floor(field)));
+}
+
+/** Places in the steep top tier. Beyond this the tail flattens. */
+const TOP_TIER_PLACES = 9;
+/** Decay inside the top tier — tuned to the long-standing NINE preset. */
+const TOP_TIER_DECAY = 0.72;
+/** Decay across the flat min-cash tail. */
+const TAIL_DECAY = 0.97;
+
+/**
+ * What share of the pool the top nine places take, as depth grows.
+ *
+ * A REAL PAYOUT STRUCTURE HAS TWO REGIMES, and the first version of this
+ * function did not — it was a single geometric decay, which is right for nine
+ * places and impossible for seventy-five. At 0.72 per place, place 28 of a
+ * 500-runner field rounded to 0.00%: a "paid" place that pays nothing. The law
+ * test caught it, which is what it is for.
+ *
+ * Published structures are steep across the final table and nearly flat across
+ * the min-cash tail, so that is what this models. The top nine keep their
+ * familiar shape at every depth; everyone below shares what is left with a
+ * gentle decline.
+ */
+function topTierShareFor(places: number): number {
+  if (places <= TOP_TIER_PLACES) return 100;
+  return Math.max(50, Math.min(100, 100 - (places - TOP_TIER_PLACES) * 0.7));
+}
+
+export function payoutStructureForField(fieldSize: number): PayoutPlace[] {
+  const places = paidPlacesForField(fieldSize);
+  const topCount = Math.min(places, TOP_TIER_PLACES);
+  const tailCount = places - topCount;
+  const topShare = tailCount > 0 ? topTierShareFor(places) : 100;
+
+  // Raw weights per tier, each normalised inside its own share of the pool.
+  const topWeights: number[] = [];
+  for (let i = 0; i < topCount; i++) topWeights.push(Math.pow(TOP_TIER_DECAY, i));
+  const topWeightTotal = topWeights.reduce((s, w) => s + w, 0);
+
+  const tailWeights: number[] = [];
+  for (let i = 0; i < tailCount; i++) tailWeights.push(Math.pow(TAIL_DECAY, i));
+  const tailWeightTotal = tailWeights.reduce((s, w) => s + w, 0) || 1;
+
+  const raw: number[] = [
+    ...topWeights.map((w) => (w / topWeightTotal) * topShare),
+    ...tailWeights.map((w) => (w / tailWeightTotal) * (100 - topShare)),
+  ];
+
+  const out: PayoutPlace[] = [];
+  let running = 0;
+  for (let i = 0; i < places; i++) {
+    const isLast = i === places - 1;
+    // Two decimals: the column and every downstream reader are money-shaped.
+    // The residual lands on the LAST place, never the first.
+    const pct = isLast ? Math.round((100 - running) * 100) / 100 : Math.round(raw[i] * 100) / 100;
+    running = Math.round((running + pct) * 100) / 100;
+    out.push({ place: i + 1, percentage: pct });
+  }
+  return out;
+}
+
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ *  ON A SPIN, THE TIER OUTRANKS THE COLUMN (2026-08-31)
+ * ═══════════════════════════════════════════════════════════════════════════
+ *
+ * This used to prefer the stored column over the tier for EVERY format, and
+ * fall back to the spec only when the column was missing or corrupt. For an
+ * MTT that is right and stays right: the ladder is the operator's to choose,
+ * and a stored structure is a decision, not a cache.
+ *
+ * A SPIN HAS NO SUCH DECISION TO STORE. Its split is a pure function of the
+ * multiplier — `spinTier(m).payouts` — and nobody, operator included, may
+ * author a different one. So a stored structure on a Spin is only ever a COPY
+ * of the tier, and a copy that disagrees with its source is not a preference
+ * being expressed, it is a stale value. Preferring it is preferring the lie.
+ *
+ * It is not hypothetical. A Spin is created carrying a winner-take-all
+ * PLACEHOLDER, because the tier is drawn at start and writing the true ladder
+ * at creation would leak the multiplier to the lobby. TournamentManagerBase
+ * rewrites the column from the drawn tier at start — and where that write
+ * fails (dea62e98, a374cdd3, 78181713 are the three known), or where an
+ * in-memory copy of the row was taken before it, the placeholder is what the
+ * old rule paid by. Measured live on 2026-08-31: 62 COMPLETED spins at 10x or
+ * above still carry `[{place:1,percentage:100}]`, and every one of them paid
+ * 100% of the pool to first place when the tier owed second (and sometimes
+ * third) a share.
+ *
+ * ─── THE RULE ───────────────────────────────────────────────────────────────
+ *
+ *   1. Spin WITH a multiplier the ladder knows  ->  the tier, always.
+ *   2. Spin whose multiplier is unknown to the ladder (not yet drawn, or a
+ *      retired tier such as the old 500x)       ->  the stored column, which
+ *      is the only thing left to go on.
+ *   3. Anything else                            ->  the stored column, then
+ *      null. Unchanged, and deliberately so: an operator's MTT ladder still
+ *      wins over anything derived.
+ *
+ * Rule 1 is safe in the only direction that matters. For every sub-10x tier
+ * the derived structure and an honest stored one are the SAME value
+ * ([{1,100}]), so nothing moves on ~98.9% of spins; where they differ, the
+ * tier is the one the reserve pool actually settled against.
+ */
 export function resolvePayoutStructure(
   t: PayoutSubject | null | undefined,
   fieldSize?: number | null
 ): PayoutPlace[] | null {
+  if (isSpinTournament(t)) {
+    const tier = spinPayoutStructure(t?.spin_multiplier);
+    if (tier) return trimStructureToField(tier, fieldSize);
+  }
   const stored = parsePayoutStructure(t?.payout_structure);
   if (stored) return trimStructureToField(stored, fieldSize);
-  if (isSpinTournament(t))
-    return trimStructureToField(spinPayoutStructure(t?.spin_multiplier), fieldSize);
   return null;
+}
+
+/**
+ * Does a Spin's stored column disagree with the tier that outranks it?
+ *
+ * Exported for diagnostics rather than used by the resolver: this module
+ * deliberately has no imports beyond `spinSpec`, so it cannot report an error
+ * itself. A caller that has a reporter can ask this and say so out loud —
+ * a disagreement means the start-time rewrite did not land, which is a bug
+ * upstream of the payout even though the payout is now protected from it.
+ */
+export function spinStoredStructureIsStale(t: PayoutSubject | null | undefined): boolean {
+  if (!isSpinTournament(t)) return false;
+  const tier = spinPayoutStructure(t?.spin_multiplier);
+  if (!tier) return false;
+  const stored = parsePayoutStructure(t?.payout_structure);
+  if (!stored) return false;
+  if (stored.length !== tier.length) return true;
+  return tier.some(
+    (p, i) => stored[i]?.place !== p.place || stored[i]?.percentage !== p.percentage
+  );
 }
 
 /**

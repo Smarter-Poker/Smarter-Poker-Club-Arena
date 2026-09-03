@@ -33,7 +33,8 @@ describe('the cashier is a rendered Club Arena room, not a generic dark dashboar
 describe('cashier navigation and ledger controls stay operational', () => {
   it('implements a keyboard-operable tablist', () => {
     expect(PAGE).toContain('role="tablist"');
-    expect(PAGE).toContain('aria-label="Cashier actions"');
+    expect(PAGE).toContain('aria-label="Cashier Actions"');
+    expect(PAGE).toContain('aria-busy={!roleResolved}');
     expect(PAGE).toContain("['ArrowRight', 'ArrowLeft', 'Home', 'End']");
     expect(PAGE).toContain('aria-selected={tab === key}');
   });
@@ -47,6 +48,6 @@ describe('cashier navigation and ledger controls stay operational', () => {
   it('provides local search and direction filters without widening the money path', () => {
     expect(PAGE).toContain("useState<'all' | 'in' | 'out'>('all')");
     expect(PAGE).toContain('row.counterparty.toLowerCase().includes(q)');
-    expect(PAGE).toContain("supabase.rpc('fn_agent_wallet_send'");
+    expect(PAGE).toContain("supabase.rpc('fn_cashier_batch_transfer'");
   });
 });

@@ -28,6 +28,18 @@ export default function FinancialAlertsPage() {
   const [bulkResolving, setBulkResolving] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [filter, setFilter] = useState<'all' | 'critical' | 'warning' | 'info'>('all');
+  /**
+   * The TRUE unresolved counts, not the counts of what happened to load.
+   * The tabs used to count the rows in `alerts`, which is a capped page, so
+   * this screen reported "All (100)" while 472 were open. See
+   * FinancialAlertService.getUnresolved for the incident.
+   */
+  const [counts, setCounts] = useState<{
+    total: number;
+    critical: number;
+    warning: number;
+    info: number;
+  } | null>(null);
 
   const loadingRef = useRef(false);
 
@@ -36,9 +48,13 @@ export default function FinancialAlertsPage() {
     loadingRef.current = true;
     setLoading(true);
     try {
-      const data = await FinancialAlertService.getUnresolved(100);
+      const [data, totals] = await Promise.all([
+        FinancialAlertService.getUnresolved(100),
+        FinancialAlertService.getUnresolvedCounts(),
+      ]);
       if (getIsMounted && !getIsMounted()) return;
       setAlerts(data);
+      setCounts(totals);
     } catch (err) {
       if (getIsMounted && !getIsMounted()) return;
       reportError(err, 'FinancialAlertsPage.Failed_to_load_alerts');
@@ -168,9 +184,14 @@ export default function FinancialAlertsPage() {
 
   const filteredAlerts = filter === 'all' ? alerts : alerts.filter((a) => a.severity === filter);
 
-  const criticalCount = alerts.filter((a) => a.severity === 'critical').length;
-  const warningCount = alerts.filter((a) => a.severity === 'warning').length;
-  const infoCount = alerts.filter((a) => a.severity === 'info').length;
+  // Every critical is loaded, so its count is exact either way; warning and
+  // info are the ones the page budget can cut, which is why they read from the
+  // database totals whenever those have arrived.
+  const totalCount = counts?.total ?? alerts.length;
+  const criticalCount = counts?.critical ?? alerts.filter((a) => a.severity === 'critical').length;
+  const warningCount = counts?.warning ?? alerts.filter((a) => a.severity === 'warning').length;
+  const infoCount = counts?.info ?? alerts.filter((a) => a.severity === 'info').length;
+  const notShown = Math.max(totalCount - alerts.length, 0);
 
   if (loading && alerts.length === 0) {
     return (
@@ -236,7 +257,7 @@ export default function FinancialAlertsPage() {
           className={`filter-tab ${filter === 'all' ? 'active' : ''}`}
           onClick={() => setFilter('all')}
         >
-          All ({alerts.length})
+          All ({totalCount})
         </button>
         <button
           className={`filter-tab critical ${filter === 'critical' ? 'active' : ''}`}
@@ -283,11 +304,23 @@ export default function FinancialAlertsPage() {
         </div>
       )}
 
+      {/*
+        Say plainly when the page is not showing everything. Every CRITICAL is
+        always loaded (see FinancialAlertService.getUnresolved); it is warnings
+        and info that get cut, and an operator who is not told that will read
+        an empty-looking list as "nothing left to do".
+      */}
+      {notShown > 0 && (
+        <div className="alerts-truncated-note" style={{ fontSize: '0.78rem', opacity: 0.75 }}>
+          Showing {alerts.length} Of {totalCount} Unresolved. Every Critical Is Shown.
+        </div>
+      )}
+
       {/* Alert List */}
       {filteredAlerts.length === 0 ? (
         <div className="empty-state">
           <span className="empty-icon">◉</span>
-          <p>{filter === 'all' ? 'No unresolved alerts' : `No ${filter} alerts`}</p>
+          <p>{filter === 'all' ? 'No Unresolved Alerts' : `No ${filter} Alerts`}</p>
         </div>
       ) : (
         <div className="alert-list">

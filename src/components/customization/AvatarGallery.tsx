@@ -613,7 +613,7 @@ export function AvatarGallery({
             <img
               decoding="async"
               src={currentAvatarUrl}
-              alt="Current avatar"
+              alt="Current Avatar"
               className="ag-preview__img ag-preview__img--current"
               onError={(e) => {
                 (e.target as HTMLImageElement).src = generateDefaultAvatar();
@@ -633,7 +633,7 @@ export function AvatarGallery({
             <img
               decoding="async"
               src={selectedAvatar}
-              alt="Selected avatar"
+              alt="Selected Avatar"
               className="ag-preview__img ag-preview__img--selected"
               onError={(e) => {
                 (e.target as HTMLImageElement).src = generateDefaultAvatar();
@@ -644,7 +644,7 @@ export function AvatarGallery({
           </div>
           <div className="ag-preview__status" aria-live="polite">
             <span className={saving || savingCosmetic ? 'is-saving' : ''} />
-            {saving || savingCosmetic ? 'Saving live change' : 'Changes apply instantly'}
+            {saving || savingCosmetic ? 'Saving Live Change' : 'Changes Apply Instantly'}
           </div>
         </div>
 
@@ -685,7 +685,7 @@ export function AvatarGallery({
         )}
 
         {/* Tabs */}
-        <div className="ag-tabs" role="tablist" aria-label="Avatar gallery categories">
+        <div className="ag-tabs" role="tablist" aria-label="Avatar Gallery Categories">
           <button
             id="avatar-tab-free"
             className={`ag-tab ${activeTab === 'free' ? 'ag-tab--active' : ''}`}
@@ -743,7 +743,7 @@ export function AvatarGallery({
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search this collection"
+              placeholder="Search This Collection"
             />
             <span aria-hidden="true">⌕</span>
           </label>
@@ -887,8 +887,8 @@ export function AvatarGallery({
             <div className="ag-empty ag-empty--error" role="alert">
               <p className="ag-empty__msg">
                 {activeTab === 'custom'
-                  ? 'Your avatars could not be loaded.'
-                  : 'The avatar library could not be loaded.'}
+                  ? 'Your Avatars Could Not Be Loaded.'
+                  : 'The Avatar Library Could Not Be Loaded.'}
               </p>
               <button
                 className="ag-retry"
@@ -903,10 +903,10 @@ export function AvatarGallery({
           ) : filteredAvatars.length === 0 ? (
             <div className="ag-empty">
               {activeTab === 'custom'
-                ? 'You have not created any avatars yet. Use Quick Avatar above.'
+                ? 'You Have Not Created Any Avatars Yet. Use Quick Avatar Above.'
                 : activeTab === 'vip'
-                  ? 'No VIP avatars available.'
-                  : 'No preset avatars available.'}
+                  ? 'No VIP Avatars Available.'
+                  : 'No Preset Avatars Available.'}
             </div>
           ) : (
             <div className="ag-grid">
@@ -932,7 +932,7 @@ export function AvatarGallery({
                       .join(' ')}
                     onClick={() => handleSelect(avatar)}
                     aria-pressed={isSelected}
-                    aria-label={`${avatar.name}${isLocked ? ', VIP required' : isUnlockedByPurchase ? ', owned' : ''}`}
+                    aria-label={`${avatar.name}${isLocked ? ', VIP Required' : isUnlockedByPurchase ? ', Owned' : ''}`}
                     title={isLocked ? `${avatar.name} (VIP)` : avatar.name}
                   >
                     <img

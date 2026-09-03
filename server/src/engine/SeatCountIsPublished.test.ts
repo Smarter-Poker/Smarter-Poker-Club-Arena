@@ -45,7 +45,7 @@ function sliceMethod(src: string, signature: string): string {
   return src.slice(start);
 }
 
-describe('LAW — the seat count is published, not guessed (2026-08-31)', () => {
+describe('LAW - the seat count is published, not guessed (2026-08-31)', () => {
   it('the live broadcast payload carries max_seats', () => {
     expect(ENGINE).toMatch(/max_seats:\s*Number\(this\.tableInfo\?\.max_players\)\s*\|\|\s*0/);
   });
@@ -58,12 +58,28 @@ describe('LAW — the seat count is published, not guessed (2026-08-31)', () => 
     expect(idle).toMatch(/max_seats:/);
   });
 
+  it('the RESYNC payload carries it - the one a confused client asks for', () => {
+    /* `getTableState()` answers `GET /state/:id`, which the client fetches on a
+       websocket SEQUENCE GAP and dispatches as GAME_START: the full-state
+       resync. The first cut of this law covered the two hub payloads and
+       missed this one, so a client that had just lost frames — exactly the
+       client whose local view may be wrong — resynced from the only payload
+       that could not tell it how wide the table is, and fell back to inferring
+       the width from the response's players. The hand roster omits anybody not
+       dealt in (a player waiting for the big blind), so that inference can
+       land BELOW the truth. It is the original bug's starting position,
+       reached through the recovery path. */
+    const resync = sliceMethod(ENGINE, 'public getTableState(');
+    expect(resync).toMatch(/max_seats:/);
+  });
+
   it('it is sourced from the table row, never from the seated roster', () => {
     // Deriving it from who is currently sitting would reintroduce the original
     // defect from the other side: an empty high seat is still a seat, and a
     // table nobody has sat down at yet still has its full capacity.
     const occurrences = ENGINE.match(/max_seats:[^,\n]*/g) ?? [];
-    expect(occurrences.length).toBeGreaterThanOrEqual(2);
+    // Three payloads a client can receive: live broadcast, idle, resync.
+    expect(occurrences.length).toBeGreaterThanOrEqual(3);
     for (const line of occurrences) {
       expect(line).toMatch(/tableInfo/);
       expect(line).not.toMatch(/seatedPlayers|players\.length|roster/);

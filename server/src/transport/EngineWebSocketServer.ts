@@ -34,6 +34,7 @@ import type { IncomingMessage } from 'http';
 import type { Server as HttpServer } from 'http';
 import { randomUUID } from 'crypto';
 import { supabase } from '../services/supabase.js';
+import { authorizeTableViewer, type TableViewerAccess } from '../services/TableViewerAccess.js';
 import type { TableStateHub, HubSubscriber } from './TableStateHub.js';
 // Round 70: blacklist gate + Round 67/190: connection audit log both use
 // the supabase client imported above. No additional import needed.
@@ -109,12 +110,21 @@ const IP_RESTRICTION_TTL_MS = 60_000;
  * ServerTableEngine / GameServer classes.
  */
 export type TableExistsCheck = (tableId: string) => boolean;
+export type EnsureTableCheck = (tableId: string) => Promise<boolean>;
 
 export interface EngineWebSocketServerOptions {
   hub: TableStateHub;
   tableExists: TableExistsCheck;
+  /**
+   * Starts a valid cash-table engine on demand when the table exists in the
+   * database but has not reached the occupied-table discovery feed yet.
+   * Optional for isolated transport tests; production always wires it.
+   */
+  ensureTable?: EnsureTableCheck;
   /** Optional override for auth, used by tests to inject fake tokens. */
   verifyToken?: (token: string) => Promise<{ userId: string } | null>;
+  /** Optional override for the authoritative club-membership gate in tests. */
+  authorizeViewer?: (tableId: string, userId: string) => Promise<TableViewerAccess>;
   /**
    * FIX 2 (2026-07-24): invoked on (re)connect and on RESYNC so the engine can
    * re-deliver the requesting player's hole cards for the current hand. Public
@@ -216,7 +226,9 @@ export class EngineWebSocketServer {
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private readonly hub: TableStateHub;
   private readonly tableExists: TableExistsCheck;
+  private readonly ensureTable?: EnsureTableCheck;
   private readonly verifyToken: (token: string) => Promise<{ userId: string } | null>;
+  private readonly authorizeViewer: (tableId: string, userId: string) => Promise<TableViewerAccess>;
   private readonly onResync?: (tableId: string, userId: string) => void;
   private readonly onConnect?: (tableId: string, userId: string) => void;
   private readonly onDisconnect?: (tableId: string, userId: string) => void;
@@ -233,7 +245,9 @@ export class EngineWebSocketServer {
   constructor(opts: EngineWebSocketServerOptions) {
     this.hub = opts.hub;
     this.tableExists = opts.tableExists;
+    this.ensureTable = opts.ensureTable;
     this.verifyToken = opts.verifyToken ?? defaultVerifyToken;
+    this.authorizeViewer = opts.authorizeViewer ?? authorizeTableViewer;
     this.onResync = opts.onResync;
     this.onConnect = opts.onConnect;
     this.onDisconnect = opts.onDisconnect;
@@ -322,7 +336,55 @@ export class EngineWebSocketServer {
             socket.destroy();
             return;
           }
-          if (!this.tableExists(tableId)) {
+          /* THE FOUR GATES RUN TOGETHER (2026-09-02). They were awaited one
+             after another - viewer access, then the blacklist, then restrict
+             observers, then the IP rule - each its own round trip to the
+             database, five or six in a row. Measured from a browser against
+             production while the database was saturated: 7.4 s, 10.7 s and
+             10.7 s from `new WebSocket` to `open`, against a client handshake
+             timeout of 15 s, so a slow afternoon turned every table into
+             "Connecting To The Table" and some into a reconnect loop. None
+             of the four depends on another's answer - each is a pure
+             function of (table, user, ip) - so they are asked at once and
+             judged in the original order, with the same outcome for every
+             combination of answers. Only ensureTable, which can START an
+             engine, still waits for the verdicts. */
+          const [viewerAccess, banned, observerRestricted, ipConflict] = await Promise.all([
+            this.authorizeViewer(tableId, auth.userId),
+            // Belt-and-suspenders: never reject a legit connection on a
+            // blacklist-check error.
+            this.isBannedFromTable(tableId, auth.userId).catch(() => false),
+            this.isRestrictedObserver(tableId, auth.userId),
+            // Same rule as the blacklist gate: a failure to CHECK must never
+            // become a refusal.
+            this.isIpConflict(tableId, auth.userId, clientIp).catch(() => false),
+          ]);
+          if (!viewerAccess.allowed) {
+            const status =
+              viewerAccess.reason === 'table_not_found'
+                ? '404 Not Found'
+                : viewerAccess.reason === 'check_failed'
+                  ? '503 Service Unavailable'
+                  : '403 Forbidden';
+            socket.write(`HTTP/1.1 ${status}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`);
+            socket.destroy();
+            return;
+          }
+
+          /*
+           * A brand-new empty table is deliberately absent from the normal
+           * occupied-table discovery RPC. Before this gate, Create And Start
+           * navigated to the felt immediately, this synchronous check returned
+           * false, and the client received an endless 404/reconnect cycle until
+           * a seat somehow existed on a table nobody could open. An authorized
+           * viewer now wakes that one table on demand. The GameServer method
+           * validates cash/status/deletion state and takes the same single-owner
+           * lease as background discovery before it installs the engine.
+           */
+          if (
+            !this.tableExists(tableId) &&
+            !(this.ensureTable && (await this.ensureTable(tableId)))
+          ) {
             socket.write(
               'HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
             );
@@ -334,22 +396,16 @@ export class EngineWebSocketServer {
           // even open a connection to the table, so they can't see other
           // players' actions / chat / etc. Belt-and-suspenders relative to
           // the buyin gate at /api/club-arena/buyin.
-          try {
-            const banned = await this.isBannedFromTable(tableId, auth.userId);
-            if (banned) {
-              socket.write(
-                'HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
-              );
-              socket.destroy();
-              return;
-            }
-          } catch {
-            // Belt-and-suspenders: never reject legit connections on a
-            // blacklist-check error. Log and proceed.
+          if (banned) {
+            socket.write(
+              'HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+            );
+            socket.destroy();
+            return;
           }
 
           // Restrict Observers: a table may be seats-only (Dan 2026-08-25).
-          if (await this.isRestrictedObserver(tableId, auth.userId)) {
+          if (observerRestricted) {
             socket.write(
               'HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
             );
@@ -369,17 +425,12 @@ export class EngineWebSocketServer {
           //     counts, or a proxy misconfiguration would lock out the room;
           //   • whoever is already connected keeps their seat. This refuses
           //     the arriving connection, it never drops a seated player.
-          try {
-            if (await this.isIpConflict(tableId, auth.userId, clientIp)) {
-              socket.write(
-                'HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
-              );
-              socket.destroy();
-              return;
-            }
-          } catch {
-            // Same rule as the blacklist gate: a failure to CHECK must never
-            // become a refusal.
+          if (ipConflict) {
+            socket.write(
+              'HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+            );
+            socket.destroy();
+            return;
           }
 
           // Round 67/190: log connection IP to action_audit_logs so the
@@ -815,7 +866,33 @@ export class EngineWebSocketServer {
     }
     conn.subs.set(tableId, 'pending');
     try {
-      if (!this.tableExists(tableId)) {
+      const viewerAccess = await this.authorizeViewer(tableId, conn.userId);
+      if (!viewerAccess.allowed) {
+        conn.subs.delete(tableId);
+        this.sendMuxError(
+          conn,
+          tableId,
+          viewerAccess.reason === 'table_not_found'
+            ? 'TABLE_NOT_FOUND'
+            : viewerAccess.reason === 'check_failed'
+              ? 'ACCESS_CHECK_FAILED'
+              : viewerAccess.reason === 'observers_restricted'
+                ? 'OBSERVERS_RESTRICTED'
+                : 'CLUB_MEMBERSHIP_REQUIRED',
+          viewerAccess.reason === 'table_not_found'
+            ? 'Table not found'
+            : viewerAccess.reason === 'check_failed'
+              ? 'Unable to verify table access'
+              : viewerAccess.reason === 'observers_restricted'
+                ? 'This Table Is Open To Seated Players Only'
+                : 'Join this club before watching its live games'
+        );
+        return;
+      }
+      // The multiplexed path must wake new empty tables exactly like the
+      // single-table WebSocket path, or multi-table users still get the old
+      // permanent TABLE_NOT_FOUND loop.
+      if (!this.tableExists(tableId) && !(this.ensureTable && (await this.ensureTable(tableId)))) {
         conn.subs.delete(tableId);
         this.sendMuxError(conn, tableId, 'TABLE_NOT_FOUND', 'Table not found in engine');
         return;

@@ -59,3 +59,28 @@ is part of this phase.
 Real-time law: roster presence is triggered by the existing discrete
 `club_members` Postgres realtime event; recovery reads reconcile state and do
 not drive game animation or sound.
+
+## Release Certification Addendum — 2026-08-31
+
+The final production-readiness audit closed six additional edge cases before
+Phase 1 certification:
+
+- Transient manual, structural, and realtime recovery reads now preserve the
+  last-known-good session cache until an authoritative replacement succeeds.
+- An authoritative access-revoked response purges that cache and resets the
+  summary, capabilities, cursor, pagination state, and filtered count.
+- An online read failure remains visibly retryable instead of being labelled
+  live, including the first-load case where no saved roster exists.
+- The connection message live region contains only status text; the interactive
+  retry control is a sibling, so assistive technology does not treat a button as
+  changing status prose.
+- A still-pending membership warm-up is deduplicated for its entire lifetime;
+  the five-second reuse window begins only after a successful settlement.
+- Regressions for every case above are pinned in the roster resilience and
+  membership warm-start suites.
+
+Final merged-tree verification: 23 focused tests, 9,888 complete client tests
+across 689 files, 3,002 complete server tests across 265 files, client and
+server TypeScript builds, changed-file lint, and the production bundle all
+passed. The production build generated a 21.14 kB Player Command route chunk
+(7.52 kB gzip) and completed media optimization with zero failures.

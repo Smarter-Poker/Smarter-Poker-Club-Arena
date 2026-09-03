@@ -68,9 +68,32 @@ export interface TournamentBrainContext {
   nextBlindInMin: number | null;
   /** V23 BLIND CLOCK: next level's bb as a multiple of the current bb (1 = flat) */
   nextBlindMult: number;
+  // ═══ V37 SATELLITES (Dan 2026-09-02) ══════════════════════════════════════
+  // "THE PLAY DIFFERENCE BETWEEN A SATELLITE WHERE ALL WINNERS GET THE SAME
+  //  PRIZE AND A MTT WITH PRIZES PROGRESSIVELY PAYING MORE."
+  //
+  // A satellite's stored payout_structure is the ordinary MTT curve (40/25/
+  // 18/10/7) — settlement ignores it and hands out `seats` identical tickets
+  // (satelliteAwardPlan). So the brain was reading every satellite as an MTT
+  // with a top-heavy ladder, and an MTT ladder says "chips up top are worth
+  // more": the exact opposite of a satellite, where the K-th seat is worth
+  // the first and every chip past a locked seat is worth NOTHING. payoutPct
+  // below is REBUILT flat for a satellite; these fields say so.
+  /** V37 BOUNTIES: live bounty per player, in cents, keyed by user id.
+   *  "THIS PLAYS DIFFERENT WHEN A PLAYER HAS A LARGE BOUNTY ON THEIR HEAD."
+   *  The mean alone cannot say whose head is worth the pot. */
+  bountyByUser: Record<string, number>;
+  /** this event awards identical tickets to the top `satelliteSeats` */
+  satellite: boolean;
+  /** seats (tickets) awarded — the real number of equal prizes */
+  satelliteSeats: number;
 }
 
 interface TournamentRowLite {
+  /** V37: satellite columns (either target column may carry the link). */
+  satellite_seats?: number | null;
+  satellite_target_id?: string | null;
+  satellite_target?: string | null;
   tournament_type: string | null;
   variant: string | null;
   max_players: number | null;
@@ -249,7 +272,11 @@ export function deriveContext(
   /** V26: the mystery-bounty chest inventory, if this event has one. */
   chests: ChestRow[] = [],
   /** V26: live per-player bounties in cents (PKO), any order. */
-  liveBounties: number[] = []
+  liveBounties: number[] = [],
+  /** V37: what one target seat costs (buy-in + fee), 0 when unknown/none. */
+  satelliteTicketCost: number = 0,
+  /** V37: live bounty per user id, cents. */
+  bountyByUser: Record<string, number> = {}
 ): TournamentBrainContext {
   const type = (row.tournament_type || '').toUpperCase();
   const variant = (row.variant || '').toLowerCase();
@@ -266,8 +293,45 @@ export function deriveContext(
   // negative percentage, or percentages summing to zero, and for a Spin with a
   // missing structure resolvePayoutStructure rebuilds it from the multiplier
   // rather than assuming winner-take-all.
-  const places = resolvePayoutStructure(row as PayoutSubject);
-  const spotsPaid = places && places.length > 0 ? places.length : format === 'spin' ? 1 : 0;
+  let places = resolvePayoutStructure(row as PayoutSubject);
+
+  // ═══ V37 SATELLITE: the prize curve is FLAT, whatever the row says ═══
+  // seats = max(guaranteed, floor(pool / ticket)) — planSatelliteAwards'
+  // rule — and every one of them pays the same. A cash remainder (pool minus
+  // the tickets) goes to the next finisher and is carried as one small extra
+  // place so the model does not pretend the bubble pays nothing at all.
+  const configuredSeats = Math.max(0, Math.floor(Number(row.satellite_seats) || 0));
+  const hasTarget = !!(row.satellite_target_id || row.satellite_target);
+  const isSatellite = format !== 'spin' && (configuredSeats > 0 || hasTarget);
+  let satelliteSeats = 0;
+  if (isSatellite) {
+    const pool = Math.max(0, Number(row.prize_pool) || 0);
+    const affordable = satelliteTicketCost > 0 ? Math.floor(pool / satelliteTicketCost) : 0;
+    satelliteSeats = Math.max(configuredSeats, affordable);
+    if (satelliteSeats > 0) {
+      const ticketTotal = satelliteSeats * (satelliteTicketCost > 0 ? satelliteTicketCost : 0);
+      const remainder = satelliteTicketCost > 0 ? Math.max(0, pool - ticketTotal) : 0;
+      const flat: Array<{ place: number; percentage: number }> = [];
+      const seatPct =
+        remainder > 0 && pool > 0
+          ? (100 * (pool - remainder)) / pool / satelliteSeats
+          : 100 / satelliteSeats;
+      for (let i = 1; i <= satelliteSeats; i++) flat.push({ place: i, percentage: seatPct });
+      if (remainder > 0 && pool > 0) {
+        flat.push({ place: satelliteSeats + 1, percentage: (100 * remainder) / pool });
+      }
+      places = flat;
+    }
+  }
+
+  const spotsPaid =
+    isSatellite && satelliteSeats > 0
+      ? satelliteSeats
+      : places && places.length > 0
+        ? places.length
+        : format === 'spin'
+          ? 1
+          : 0;
 
   const inMoney = spotsPaid > 0 && playersLeft > 0 && playersLeft <= spotsPaid;
   const nearBubble =
@@ -298,10 +362,15 @@ export function deriveContext(
     .sort((a, b) => a.place - b.place)
     .map((p) => p.percentage)
     .filter((p) => p > 0);
+  // V37: a satellite keeps its whole flat curve (up to 200 seats) — the
+  // flat-payout survival model in IcmModel needs the real seat count, and the
+  // 9-bucket collapse would turn "40 equal seats" into "8 seats and a lump".
   const payoutPct =
-    sortedPlaces.length <= 9
-      ? sortedPlaces
-      : [...sortedPlaces.slice(0, 8), sortedPlaces.slice(8).reduce((a, b) => a + b, 0)];
+    isSatellite && satelliteSeats > 0
+      ? sortedPlaces.slice(0, 200)
+      : sortedPlaces.length <= 9
+        ? sortedPlaces
+        : [...sortedPlaces.slice(0, 8), sortedPlaces.slice(8).reduce((a, b) => a + b, 0)];
   // Same defect on the stack side: it took the TOP 200 stacks, discarding the
   // bottom of the field entirely — in any event past 200 players the model saw
   // only big stacks, hero's chip share was computed against an inflated
@@ -348,6 +417,9 @@ export function deriveContext(
     finalTable: format === 'mtt' && playersLeft >= 2 && playersLeft <= 9,
     nextBlindInMin: clock.nextBlindInMin,
     nextBlindMult: clock.nextBlindMult,
+    satellite: isSatellite && satelliteSeats > 0,
+    satelliteSeats,
+    bountyByUser,
   };
 }
 
@@ -424,13 +496,13 @@ async function refresh(tournamentId: string, e: CacheEntry): Promise<void> {
         supabase
           .from('tournaments')
           .select(
-            'tournament_type, variant, max_players, table_size, payout_structure, spin_multiplier, prize_pool, bounty_pool, is_pko, is_bounty, is_mystery_bounty, blind_structure, current_level, level_started_at'
+            'tournament_type, variant, max_players, table_size, payout_structure, spin_multiplier, prize_pool, bounty_pool, is_pko, is_bounty, is_mystery_bounty, blind_structure, current_level, level_started_at, satellite_seats, satellite_target_id, satellite_target'
           )
           .eq('id', tournamentId)
           .maybeSingle(),
         supabase
           .from('tournament_players')
-          .select('chips, status, current_bounty')
+          .select('user_id, chips, status, current_bounty')
           .eq('tournament_id', tournamentId)
           .order('id', { ascending: true })
           .limit(5000),
@@ -473,11 +545,13 @@ async function refresh(tournamentId: string, e: CacheEntry): Promise<void> {
       return;
     }
     const rows = (pRes.data ?? []) as Array<{
+      user_id?: string | null;
       chips: number | null;
       status: string | null;
       current_bounty: number | null;
     }>;
     const liveBounties: number[] = [];
+    const bountyByUser: Record<string, number> = {};
     const entrants = rows.length;
     let playersLeft = 0;
     let chipSum = 0;
@@ -490,16 +564,45 @@ async function refresh(tournamentId: string, e: CacheEntry): Promise<void> {
       chipSum += chips;
       if (chips > 0) liveStacks.push(chips);
       const b = Number(r.current_bounty) || 0;
-      if (b > 0) liveBounties.push(b);
+      if (b > 0) {
+        liveBounties.push(b);
+        if (typeof r.user_id === 'string' && r.user_id) bountyByUser[r.user_id] = b;
+      }
+    }
+    // V37: a satellite's ticket is the target's buy-in + fee. One extra
+    // small read, only for satellites, and only a hint: without it the
+    // guaranteed seat count still builds the flat curve.
+    let ticketCost = 0;
+    const tRow = tRes.data as TournamentRowLite;
+    const targetId = tRow.satellite_target_id || tRow.satellite_target;
+    if (targetId) {
+      try {
+        const { data: target } = await supabase
+          .from('tournaments')
+          .select('buy_in_amount, buy_in_fee')
+          .eq('id', targetId)
+          .maybeSingle();
+        if (target) {
+          ticketCost = Math.max(
+            0,
+            Number((target as { buy_in_amount?: number }).buy_in_amount || 0) +
+              Number((target as { buy_in_fee?: number }).buy_in_fee || 0)
+          );
+        }
+      } catch {
+        /* the seat count still comes from satellite_seats */
+      }
     }
     e.ctx = deriveContext(
-      tRes.data as TournamentRowLite,
+      tRow,
       playersLeft,
       entrants,
       chipSum,
       liveStacks,
       chestRows,
-      liveBounties
+      liveBounties,
+      ticketCost,
+      bountyByUser
     );
   } catch (err) {
     reportError(err, 'TournamentBrainContext.refresh');

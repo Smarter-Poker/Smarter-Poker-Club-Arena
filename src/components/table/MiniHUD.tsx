@@ -130,7 +130,7 @@ const MiniHUD = memo(
     return (
       <div
         className={`mini-hud ${compact ? 'mini-hud--compact' : ''} mini-hud--heat-${computed.heat} mini-hud--glass`}
-        title={`${computed.type} - VPIP: Voluntarily Put In Pot (hands you play) | PFR: Pre-Flop Raise (aggressive plays)`}
+        title={`${computed.type} - VPIP: Voluntarily Put In Pot (Hands You Play) | PFR: Pre-Flop Raise (Aggressive Plays)`}
       >
         {/* Player Type Label */}
         <span className="mini-hud__type" style={{ color: typeColor }}>
@@ -138,10 +138,10 @@ const MiniHUD = memo(
         </span>
 
         {/* VPIP / PFR with micro progress bars & color-coding */}
-        <div className="mini-hud__stats" title="Player statistics">
+        <div className="mini-hud__stats" title="Player Statistics">
           <div
             className="mini-hud__stat-row"
-            title="Voluntarily Put In Pot - how often player enters pot"
+            title="Voluntarily Put In Pot - How Often Player Enters Pot"
           >
             <span className="mini-hud__label">V</span>
             <div className="mini-hud__bar">
@@ -156,7 +156,7 @@ const MiniHUD = memo(
           </div>
           <div
             className="mini-hud__stat-row"
-            title="Pre-Flop Raise - how often player raises pre-flop"
+            title="Pre-Flop Raise - How Often Player Raises Pre-Flop"
           >
             <span className="mini-hud__label">P</span>
             <div className="mini-hud__bar">
@@ -176,7 +176,7 @@ const MiniHUD = memo(
         />
 
         {!compact && (
-          <span className="mini-hud__hands" title="Hands observed">
+          <span className="mini-hud__hands" title="Hands Observed">
             {computed.hands < 100 ? computed.hands : '99+'}
           </span>
         )}

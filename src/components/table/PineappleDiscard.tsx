@@ -24,6 +24,7 @@ import { useState, useEffect, useCallback } from 'react';
 // renders and what mapEngineSnapshot normalises hero's hole cards into.
 import CardImage, { type Card, type DeckStyle } from './CardImage';
 import { haptic } from '../../services/SoundService';
+import { serverNow } from '../../utils/serverClock';
 import './PineappleDiscard.css';
 
 export interface PineappleDiscardProps {
@@ -36,9 +37,30 @@ export interface PineappleDiscardProps {
    * The index is into `cards`, which must be the engine's own ordering.
    */
   onDiscard: (cardIndex: number) => Promise<boolean>;
-  /** Epoch ms when the engine auto-discards for you. Drives the countdown. */
+  /**
+   * Epoch ms when the engine FOLDS you for missing the round. Absolute and
+   * server-authored - see the discard-clock block in TablePage. Read against
+   * serverNow() so a skewed device clock cannot make this panel disagree with
+   * the deadline actually being enforced.
+   */
   deadline?: number | null;
   deckStyle?: DeckStyle;
+  /**
+   * How long the round runs, ms, as the ENGINE reports it. Drives when the
+   * countdown turns urgent. Without it the threshold was a hard-coded 5s,
+   * which is most of a 6-second round and a blink of a 30-second one - and
+   * action_time_seconds is a per-table setting, so both exist.
+   */
+  durationMs?: number;
+  /** Time bank uses the player has left. 0 hides the button entirely. */
+  timeBanksRemaining?: number;
+  /**
+   * Spend one. The engine extends THIS seat's deadline and nobody else's.
+   * Resolves `{ armed: true }` when the ordinary clock was not yet exhausted:
+   * nothing has been spent, the bank redeems itself at expiry, and the panel
+   * says so in place rather than through a toast (Dan 2026-08-24).
+   */
+  onTimeBank?: () => void | Promise<{ armed?: boolean } | void>;
 }
 
 export function PineappleDiscard({
@@ -47,11 +69,17 @@ export function PineappleDiscard({
   onDiscard,
   deadline,
   deckStyle,
+  durationMs = 0,
+  timeBanksRemaining = 0,
+  onTimeBank,
 }: PineappleDiscardProps) {
   const [selected, setSelected] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  /* Armed = pressed with clock still to run. Nothing spent, nothing to count
+     down yet, so the button becomes the notice instead of firing a popup. */
+  const [bankArmed, setBankArmed] = useState(false);
 
   // Reset whenever a new discard phase opens.
   useEffect(() => {
@@ -59,6 +87,7 @@ export function PineappleDiscard({
       setSelected(null);
       setBusy(false);
       setError(null);
+      setBankArmed(false);
     }
   }, [isOpen]);
 
@@ -67,7 +96,12 @@ export function PineappleDiscard({
       setSecondsLeft(null);
       return;
     }
-    const tick = () => setSecondsLeft(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
+    /* serverNow(), not Date.now(). The engine stamps its own clock on every
+       snapshot and the shared helper tracks the offset, so a device running a
+       few seconds fast cannot drain this ring early - which, on a round where
+       running out FOLDS you, is the difference between a decision and a
+       confiscation. */
+    const tick = () => setSecondsLeft(Math.max(0, Math.ceil((deadline - serverNow()) / 1000)));
     tick();
     const id = setInterval(tick, 250);
     return () => clearInterval(id);
@@ -92,7 +126,11 @@ export function PineappleDiscard({
 
   if (!isOpen || cards.length !== 3) return null;
 
-  const urgent = secondsLeft !== null && secondsLeft <= 5;
+  /* The last third of whatever the table actually allows, clamped so a very
+     long round does not spend ten seconds shouting and a very short one still
+     warns at all. */
+  const urgentAt = durationMs > 0 ? Math.min(8, Math.max(3, Math.round(durationMs / 3000))) : 5;
+  const urgent = secondsLeft !== null && secondsLeft <= urgentAt;
 
   return (
     <div className="pineapple-discard" role="dialog" aria-labelledby="pd-title">
@@ -147,6 +185,24 @@ export function PineappleDiscard({
           </div>
         )}
 
+        {onTimeBank && timeBanksRemaining > 0 && (
+          <button
+            type="button"
+            className="pineapple-discard__timebank"
+            disabled={busy || bankArmed}
+            onClick={() => {
+              haptic.light();
+              void Promise.resolve(onTimeBank()).then((r) => {
+                if (r && r.armed) setBankArmed(true);
+              });
+            }}
+          >
+            {bankArmed
+              ? 'Time Bank Armed. It Starts When Your Clock Runs Out'
+              : `Use Time Bank (${timeBanksRemaining})`}
+          </button>
+        )}
+
         <button
           type="button"
           className="pineapple-discard__confirm"
@@ -156,7 +212,7 @@ export function PineappleDiscard({
           {busy
             ? 'Discarding…'
             : selected === null
-              ? 'Select a card'
+              ? 'Select A Card'
               : `Discard ${cards[selected].rank}${cards[selected].suit}`}
         </button>
       </div>

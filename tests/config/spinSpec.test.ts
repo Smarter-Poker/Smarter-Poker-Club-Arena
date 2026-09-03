@@ -18,6 +18,8 @@ import { resolve } from 'node:path';
 import {
   SPIN_SEATS,
   SPIN_TIERS,
+  SPIN_STACKS,
+  SPIN_SPEED_LABELS,
   SPIN_BLINDS,
   SPIN_FREQ_DENOMINATOR,
   SPIN_GAME_TYPES,
@@ -221,35 +223,48 @@ describe('per-game economics', () => {
   });
 });
 
-describe('structure scales with the multiplier', () => {
-  it('matches the published stack and level table', () => {
-    // Dan 2026-08-20, from a seat at a live table: "change spins to 3 min
-    // levels" — FLAT across the ladder. Tier identity lives in stack depth
-    // and payout shape; the level clock is one number everywhere.
-    // Dan 2026-08-23, verbatim: "STANDARD / TURBO SHOULD BE 300. DEEP STACK
-    // SHOULD BE 1000 CHIPS, ANY MULTIPLIERS OVER 25X SHOULD BE 5000 CHIPS."
-    // Three bands. 25x is deep stack; only 50x and 100x are "over 25x".
-    const expected: Array<[number, number, number]> = [
-      [2, 300, 3],
-      [3, 300, 3],
-      [4, 1000, 3],
-      [5, 1000, 3],
-      [10, 1000, 3],
-      [25, 1000, 3],
-      [50, 5000, 3],
-      [100, 5000, 3],
-    ];
-    for (const [mult, stack, mins] of expected) {
-      const t = spinTier(mult)!;
-      expect(t.startingStack, `${mult}x stack`).toBe(stack);
-      expect(t.levelMinutes, `${mult}x level length`).toBe(mins);
+describe('the stack belongs to the board, not to the multiplier', () => {
+  /**
+   * REPLACES "matches the published stack and level table" and "gives bigger
+   * prizes more poker, never less", both of which pinned the 2026-08-23 stack
+   * bands (300 / 1000 / 5000, chosen by the drawn tier).
+   *
+   * Dan, 2026-09-01, verbatim: "we used to award more chips depending on if
+   * its a higher multiplier... we are no longer doing that, once a player sits
+   * down and 'buys in' they either get 300 chips for a turbo, or 1000 chips
+   * for a deep stack. as soon as they buy in 300 chips should appear in their
+   * action box (not 0)."
+   *
+   * The second sentence is why this is not cosmetic. A stack that depends on
+   * the draw cannot be known when the money leaves the wallet, so the seat was
+   * written at zero and the real number arrived 14.8 seconds later on the
+   * chip-drop beat.
+   */
+  it('no tier carries a stack at all', () => {
+    for (const tier of SPIN_TIERS) {
+      expect(
+        (tier as unknown as Record<string, unknown>).startingStack,
+        `${tier.multiplier}x must not decide a stack`
+      ).toBeUndefined();
     }
   });
 
-  it('gives bigger prizes more poker, never less', () => {
-    for (let i = 1; i < SPIN_TIERS.length; i++) {
-      expect(SPIN_TIERS[i].startingStack).toBeGreaterThanOrEqual(SPIN_TIERS[i - 1].startingStack);
-      expect(SPIN_TIERS[i].levelMinutes).toBeGreaterThanOrEqual(SPIN_TIERS[i - 1].levelMinutes);
+  it('offers exactly two depths, and they are the two Dan named', () => {
+    expect(SPIN_STACKS).toEqual({ turbo: 300, deep: 1000 });
+    // The 5000 band is retired with the tier stacks. Nothing may reintroduce it.
+    expect(Object.values(SPIN_STACKS)).not.toContain(5000);
+  });
+
+  it('names both depths in Title Case, because a player reads them', () => {
+    expect(SPIN_SPEED_LABELS.turbo).toBe('Turbo');
+    expect(SPIN_SPEED_LABELS.deep).toBe('Deep Stack');
+  });
+
+  it('keeps the level clock flat, which is the half of 2026-08-23 that stands', () => {
+    // Dan 2026-08-20: "change spins to 3 min levels" - FLAT across the ladder.
+    // Dan 2026-08-23: "SPEED SHOULDN'T CHANGE, ONLY THE STARTING STACK."
+    for (const tier of SPIN_TIERS) {
+      expect(tier.levelMinutes, `${tier.multiplier}x level length`).toBe(3);
     }
   });
 

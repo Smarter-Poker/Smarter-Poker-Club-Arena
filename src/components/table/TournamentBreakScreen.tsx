@@ -218,7 +218,7 @@ export function TournamentBreakScreen({
         <button
           className="break-screen__close"
           onClick={() => setMinimized(true)}
-          aria-label="Close break screen"
+          aria-label="Close Break Screen"
         >
           X
         </button>

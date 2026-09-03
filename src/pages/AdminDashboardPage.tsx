@@ -28,6 +28,7 @@ import { clubGamesOrFilter } from '../utils/unionScope';
 import { confirmDialog } from '../components/common/confirmDialog';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 // ── Helpers ─────────────────────────────────────────────────
 const formatDate = (ts: string | null | undefined) => {
   if (!ts) return '';
@@ -386,7 +387,6 @@ function DashboardTab({ clubId }: { clubId: string }) {
       // User-initiated: fast response (500ms)
       masterBus.subscribeDebounced('TABLE_CREATED', load, 500),
       masterBus.subscribeDebounced('TABLE_UPDATED', load, 500),
-      masterBus.subscribeDebounced('TABLE_DELETED', load, 500),
       masterBus.subscribeDebounced('TABLE_CLOSED', load, 500),
       masterBus.subscribeDebounced('ADMIN_ACTION', load, 500),
       masterBus.subscribeDebounced('ANNOUNCEMENT_CHANGED', load, 500),
@@ -509,7 +509,7 @@ function DashboardTab({ clubId }: { clubId: string }) {
     return (
       <div className="admin-error-state">
         <div className="admin-error-icon">⚠</div>
-        <div className="admin-error-msg">{loadError || 'Failed to load health metrics'}</div>
+        <div className="admin-error-msg">{loadError || 'Failed To Load Health Metrics'}</div>
         <button onClick={load} className="admin-btn admin-btn-primary">
           ↻ Retry
         </button>
@@ -838,7 +838,7 @@ function SettlementsTab({ clubId }: { clubId: string }) {
               {(data.pendingCommissions || []).map((c) => (
                 <tr key={c.id}>
                   <td className="admin-mono">{c.user_id?.substring(0, 8)}...</td>
-                  <td style={{ textAlign: 'right' }}>{c.source_type || 'rake'}</td>
+                  <td style={{ textAlign: 'right' }}>{c.source_type || 'Rake'}</td>
                   <td style={{ textAlign: 'center' }}>
                     {((c.commission_rate || 0) * 100).toFixed(1)}%
                   </td>
@@ -926,11 +926,11 @@ function AuditLogTab({ clubId }: { clubId: string }) {
         if (allIds.length > 0) {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, username, display_name')
+            .select(`id, ${PLAYER_NAME_COLUMNS}`)
             .in('id', allIds);
           if (profiles) {
             profiles.forEach((p: ProfileRow) => {
-              profileMap[p.id] = p.display_name || p.username || 'Unknown';
+              profileMap[p.id] = playerDisplayName(p);
             });
           }
         }
@@ -1063,7 +1063,7 @@ function AuditLogTab({ clubId }: { clubId: string }) {
               }
             }}
             className="admin-btn admin-btn-ghost admin-btn-sm"
-            title="Export audit log as CSV"
+            title="Export Audit Log As CSV"
           >
             Export
           </button>
@@ -1218,7 +1218,7 @@ function AnnouncementsTab({ clubId }: { clubId: string }) {
   const handleDelete = async (id: string) => {
     if (
       !(await confirmDialog({
-        title: 'Delete announcement',
+        title: 'Delete Announcement',
         message: 'Delete this announcement?',
         confirmText: 'Delete',
         variant: 'danger',
@@ -1450,8 +1450,8 @@ function SettingsTab({ clubId }: { clubId: string }) {
   const TOGGLES = [
     { key: 'allow_observer', label: 'Allow Observers' },
     { key: 'show_hand_history', label: 'Show Hand History' },
-    { key: 'auto_cashout', label: 'Auto Cashout on Leave' },
-    { key: 'require_kyc', label: 'Require KYC for Cashouts' },
+    { key: 'auto_cashout', label: 'Auto Cashout On Leave' },
+    { key: 'require_kyc', label: 'Require KYC For Cashouts' },
     { key: 'gps_verification', label: 'GPS Verification' },
     { key: 'ip_restriction', label: 'IP Restriction' },
     { key: 'emulator_detection', label: 'Emulator Detection' },
@@ -1527,7 +1527,7 @@ function HierarchyTab({ clubId }: { clubId: string }) {
         const treeUserIds = treeData.map((m: HierarchyNode) => m.user_id);
         const { data: treeProfiles } = await supabase
           .from('profiles')
-          .select('id, display_name, username')
+          .select(`id, ${PLAYER_NAME_COLUMNS}`)
           .in('id', treeUserIds);
         const treeProfileMap: Record<string, any> = {};
         if (treeProfiles) {
@@ -1571,7 +1571,7 @@ function HierarchyTab({ clubId }: { clubId: string }) {
   const subAgents = tree.filter((m: HierarchyMember) => m.role === 'sub_agent');
 
   const getName = (m: HierarchyMember) =>
-    m.profiles?.display_name || m.profiles?.username || m.user_id?.substring(0, 8);
+    m.profiles ? playerDisplayName(m.profiles) : m.user_id?.substring(0, 8);
 
   return (
     <div className="admin-tab-content">
@@ -1803,7 +1803,7 @@ function BrandingTab({ clubId }: { clubId: string }) {
             <input
               value={theme.bannerUrl || ''}
               onChange={(e) => setTheme((prev) => ({ ...prev, bannerUrl: e.target.value }))}
-              placeholder="Https://example.com/banner.png"
+              placeholder="https://example.com/banner.png"
               className="admin-input"
             />
           </div>
@@ -2178,7 +2178,7 @@ function TemplatesTab({ clubId }: { clubId: string }) {
                     onClick={async () => {
                       if (
                         !(await confirmDialog({
-                          title: 'Delete template',
+                          title: 'Delete Template',
                           message: `Delete template "${tmpl.name}"?`,
                           confirmText: 'Delete',
                           variant: 'danger',
@@ -2423,7 +2423,7 @@ function MintChipsTab({ clubId }: { clubId: string }) {
               }
             }}
           >
-            {processing ? 'Minting...' : `Mint ${amount ? fmtChips(Number(amount)) : '0'} chips`}
+            {processing ? 'Minting...' : `Mint ${amount ? fmtChips(Number(amount)) : '0'} Chips`}
           </button>
         </div>
       </div>

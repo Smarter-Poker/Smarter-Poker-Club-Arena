@@ -12,7 +12,13 @@
  * Club Arena has six that render clickable destinations from a registry:
  *
  *   HamburgerMenu · ArenaSectionRail · ClubOperationsRail
- *   QuickActionsBar · ClubBottomNav · Breadcrumbs
+ *   QuickActionsBar · ClubBottomNav
+ *
+ * (A sixth, Breadcrumbs, was listed here until 2026-08-31. It took its labels
+ * from callers, so the source gate could not reach it - and it turned out to
+ * have had NO callers in its entire history, along with SideNav and NavItem
+ * and the barrel that exported all three. The hole was closed by deleting the
+ * dead cluster rather than by casing code nobody runs.)
  *
  * Every one of them renders its copy through an expression (`{item.label}`),
  * and check-title-case.mjs states in its own header that it does not inspect

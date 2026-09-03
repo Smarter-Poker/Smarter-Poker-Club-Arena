@@ -47,12 +47,30 @@
  *   node scripts/ci/report-source-grep-tests.mjs --json
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..');
-const TESTS = join(ROOT, 'tests');
+/**
+ * Where this script lives on disk, or null when that question has no answer.
+ *
+ * Under Vitest, `import.meta.url` is NOT a file: URL - the transform rewrites
+ * it - so `fileURLToPath` throws ERR_INVALID_URL_SCHEME at module load. That
+ * killed the whole spec file before a single test ran: the tool could not be
+ * imported by the test written to prove it works. Resolving defensively means
+ * importing is always safe, and the CLI (a real node entry point, where the
+ * URL is a genuine file:) is unaffected.
+ */
+const SELF = (() => {
+  try {
+    return fileURLToPath(import.meta.url);
+  } catch {
+    return null;
+  }
+})();
+
+const ROOT = SELF ? join(dirname(SELF), '..', '..') : '';
+const TESTS = ROOT ? join(ROOT, 'tests') : '';
 
 /** Every *.test.ts / *.test.tsx under tests/, recursively. */
 function testFiles(dir, out = []) {
@@ -73,12 +91,37 @@ function testFiles(dir, out = []) {
  *
  *   render( / renderHook(        React behaviour
  *   from '../../src/...'         a real import of the thing under test
- *   await import(                a dynamic one
+ *   from '@/utils/...'           the SAME import through the path alias
+ *   await import( / import('@/   a dynamic one
  *   new Something(               a class under test
+ *
+ * THE ALIAS ARM IS A BUG FIX, not thoroughness (found 2026-08-31, before it
+ * ever fired). This repo aliases `@/` to `src/` in vitest.config.ts, and tests
+ * genuinely use it - `from '@/utils/mapEngineSnapshot'` appears three times
+ * today. Without that arm, a test that imports its unit PROPERLY through the
+ * alias and also happens to readFileSync something would be filed as
+ * text-only. If it read a `src/utils/*` path it would count as a violation,
+ * push the ratchet past its baseline, and fail CI on a test that is doing
+ * exactly the right thing - a false accusation from the tool whose whole
+ * purpose is telling real coverage from fake. None of today's five use the
+ * alias, so nothing was miscounted; this closes it before one does.
  */
 const EXERCISES =
-  /(\brender(Hook)?\s*\(|from\s+['"][./]*\.\.\/(\.\.\/)?src\/|await\s+import\s*\(|\bnew\s+[A-Z]\w*\s*\()/;
+  /(\brender(Hook)?\s*\(|from\s+['"](?:[./]*\.\.\/(?:\.\.\/)?src\/|[@~]\/)|await\s+import\s*\(|\bimport\s*\(\s*['"][@~]\/|\bnew\s+[A-Z]\w*\s*\()/;
 const READS_SOURCE = /readFileSync\s*\(/;
+
+/**
+ * Is this file body a text-only pin, and what does it pin?
+ *
+ * EXPORTED so it can be tested by running it, which is the entire thesis of
+ * this script. A tool that enforces "assert what it DOES" and is itself pinned
+ * by a regex over its own source would be a joke with a straight face.
+ * tests/unit/sourceGrepReporter.test.ts feeds it real file bodies.
+ */
+export function classify(body) {
+  const textOnly = READS_SOURCE.test(body) && !EXERCISES.test(body);
+  return { textOnly, pins: textOnly ? pinnedPaths(body) : [] };
+}
 
 /** Which source file(s) a text-only test is pinning, for the report. */
 function pinnedPaths(body) {
@@ -91,13 +134,49 @@ function pinnedPaths(body) {
   return [...hits];
 }
 
-const files = testFiles(TESTS);
+/**
+ * IMPORTED, NOT RUN, when something else loads this module.
+ *
+ * Everything below used to execute at import time, which meant a test that
+ * imported `classify` would also scan the whole suite, print a report, and -
+ * on a repo that happened to be over the ratchet - call process.exit(1) in the
+ * middle of somebody's test run. Guarded so the CLI only runs when this file
+ * IS the entry point.
+ */
+/**
+ * Resolve symlinks before comparing, or the gate disables ITSELF in silence.
+ *
+ * `import.meta.url` is always the REAL path; `process.argv[1]` is whatever the
+ * caller typed. Invoke this through a symlinked absolute path - which is how
+ * every scratch worktree on this machine is reached, /tmp being a symlink to
+ * /private/tmp on macOS - and the two strings differ, RUN_AS_CLI is false, and
+ * the script prints nothing and exits 0. A required check that passes by doing
+ * nothing is the precise failure this whole file exists to catch, so it must
+ * not be the way this file fails.
+ *
+ * Verified before the fix: `node /tmp/ca-symlink/scripts/ci/...mjs --ratchet`
+ * produced no output and exit 0. GitHub runners use real paths, and the CI log
+ * for #2082 shows the inventory printing, so it was never inert in practice -
+ * it was one workflow edit away from being so.
+ */
+const realOrSelf = (p) => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+};
+const RUN_AS_CLI = !!(
+  SELF &&
+  process.argv[1] &&
+  realOrSelf(SELF) === realOrSelf(process.argv[1])
+);
+
+const files = RUN_AS_CLI ? testFiles(TESTS) : [];
 const textOnly = [];
 for (const f of files) {
-  const body = readFileSync(f, 'utf8');
-  if (!READS_SOURCE.test(body)) continue;
-  if (EXERCISES.test(body)) continue;
-  textOnly.push({ file: relative(ROOT, f), pins: pinnedPaths(body) });
+  const { textOnly: isTextOnly, pins } = classify(readFileSync(f, 'utf8'));
+  if (isTextOnly) textOnly.push({ file: relative(ROOT, f), pins });
 }
 
 /** The strict rule: a text-only pin on a pure src/utils module. */
@@ -113,11 +192,31 @@ const utilViolations = textOnly.filter((t) => t.pins.some((p) => p.startsWith('s
  */
 const BASELINE_UTIL_VIOLATIONS = 5;
 
-const json = process.argv.includes('--json');
-const strict = process.argv.includes('--strict');
-const ratchet = process.argv.includes('--ratchet');
+const json = RUN_AS_CLI && process.argv.includes('--json');
+const strict = RUN_AS_CLI && process.argv.includes('--strict');
+const ratchet = RUN_AS_CLI && process.argv.includes('--ratchet');
 
-if (json) {
+/**
+ * AN EMPTY SCAN IS A BROKEN SCAN, NOT A CLEAN ONE.
+ *
+ * If `testFiles` ever returns nothing - a moved directory, a renamed suffix, a
+ * ROOT that resolved somewhere unexpected - then `utilViolations` is 0, 0 is
+ * under the baseline, and the gate reports "ratchet OK" while having inspected
+ * not one file. Zero findings from zero inputs is the oldest silent pass there
+ * is. A missing `tests/` already throws ENOENT out of readdirSync; this covers
+ * the case where the directory exists and yields nothing.
+ */
+if ((ratchet || strict) && files.length === 0) {
+  console.error(
+    '[source-grep-tests] FAILED: scanned 0 test files. That is a broken scan, not a clean repo.'
+  );
+  console.error(`                    Looked in: ${TESTS || '(unresolved)'}`);
+  process.exit(1);
+}
+
+if (!RUN_AS_CLI) {
+  // Imported for `classify`. Say nothing, exit nothing.
+} else if (json) {
   console.log(
     JSON.stringify(
       { total: files.length, textOnly: textOnly.length, utilViolations, files: textOnly },
@@ -126,7 +225,9 @@ if (json) {
     )
   );
 } else {
-  const pct = ((textOnly.length / files.length) * 100).toFixed(0);
+  // `files.length` is 0 only on the inventory run (the gating modes bail out
+  // above), and 0/0 prints "NaN%" rather than saying what happened.
+  const pct = files.length > 0 ? ((textOnly.length / files.length) * 100).toFixed(0) : '0';
   console.log(
     `[source-grep-tests] ${textOnly.length} of ${files.length} test files (${pct}%) assert on source TEXT and never import or render the unit.`
   );

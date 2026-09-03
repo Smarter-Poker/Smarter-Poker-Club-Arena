@@ -24,7 +24,7 @@ function pickFreeHorsesBody(): string {
   return SRC.slice(start, next > -1 ? next : SRC.length);
 }
 
-describe('pickFreeHorses — the fleet must not read as exhausted while idle', () => {
+describe('pickFreeHorses - the fleet must not read as exhausted while idle', () => {
   it('never caps the horse fetch at a fixed number below the fleet size', () => {
     const body = pickFreeHorsesBody();
     // Only the PROFILES fetch is the fleet read. The busy-set reads carry a
@@ -34,7 +34,7 @@ describe('pickFreeHorses — the fleet must not read as exhausted while idle', (
     expect(
       bareLimit,
       `the fleet read must size itself from the busy set, not a constant ` +
-        `(found .limit(${bareLimit?.[1]}) — the fleet is already larger than that)`
+        `(found .limit(${bareLimit?.[1]}) - the fleet is already larger than that)`
     ).toBeNull();
   });
 

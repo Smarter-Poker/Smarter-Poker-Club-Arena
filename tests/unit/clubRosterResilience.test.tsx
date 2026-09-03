@@ -15,6 +15,8 @@ const PAGE = readFileSync(resolve(__dirname, '../../src/pages/ClubMembersPage.ts
 const SERVICE = readFileSync(resolve(__dirname, '../../src/services/ClubRosterService.ts'), 'utf8');
 const CHANNEL = readFileSync(resolve(__dirname, '../../src/hooks/useMasterBusChannel.ts'), 'utf8');
 const CACHE = readFileSync(resolve(__dirname, '../../src/lib/rosterCache.ts'), 'utf8');
+const CSS = readFileSync(resolve(__dirname, '../../src/pages/ClubMembersPage.css'), 'utf8');
+const POLICY = readFileSync(resolve(__dirname, '../../src/lib/rosterLoadPolicy.ts'), 'utf8');
 
 describe('Player Command resilient reads', () => {
   beforeEach(() => vi.useFakeTimers());
@@ -112,11 +114,20 @@ describe('Player Command connection truth', () => {
     );
 
     const status = screen.getByRole('status');
+    const retryButton = screen.getByRole('button', { name: /Retry Live Sync/i });
     expect(status).toHaveAttribute('data-connection-state', 'stale');
     expect(status).toHaveTextContent(/Showing The Last Verified Roster/i);
     expect(status).toHaveTextContent(/Last Live Sync/i);
-    fireEvent.click(screen.getByRole('button', { name: /Retry Live Sync/i }));
+    expect(status).not.toContainElement(retryButton);
+    fireEvent.click(retryButton);
     expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not claim a saved roster exists when the first live read failed', () => {
+    render(<RosterConnectionStatus state="stale" hasData={false} onRetry={() => undefined} />);
+
+    expect(screen.getByRole('status')).toHaveTextContent(/Could Not Be Loaded/i);
+    expect(screen.getByRole('status')).not.toHaveTextContent(/Showing The Last Verified Roster/i);
   });
 
   it('distinguishes offline and realtime-reconnecting states', () => {
@@ -196,5 +207,70 @@ describe('Player Command resilience wiring', () => {
     expect(PAGE).toContain("setDataFreshness(membersRef.current.length > 0 ? 'stale' : 'failed')");
     expect(PAGE).not.toContain("toast.error('Failed To Load Members')");
     expect(PAGE).toContain('<RosterConnectionStatus');
+  });
+
+  it('keeps the last-known-good cache through transient refreshes', () => {
+    expect(PAGE.match(/purgeRosterCache/g)?.length).toBe(2);
+    expect(PAGE).toMatch(/if \(!nextSummary\) {[\s\S]*purgeRosterCache/);
+    expect(PAGE).not.toMatch(/const refresh = useCallback\([\s\S]*purgeRosterCache/);
+  });
+
+  it('revokes every previously loaded capability and cursor when access disappears', () => {
+    expect(PAGE).toMatch(
+      /if \(!nextSummary\) {[\s\S]*setSummary\(DEFAULT_SUMMARY\)[\s\S]*setCursor\(null\)[\s\S]*setHasMore\(false\)[\s\S]*setFilteredTotal\(0\)/
+    );
+  });
+
+  it('maps a failed online read to a retryable connection state', () => {
+    expect(PAGE).toContain("dataFreshness === 'failed'");
+  });
+
+  it('recovers a cold first-page timeout without making the player retry manually', () => {
+    expect(PAGE).toContain('const recoveryScheduled = scheduleConnectionRecovery(2)');
+    expect(PAGE).toContain('setLoadError(!recoveryScheduled && !hasSavedRows)');
+    expect(PAGE).toContain("recoveryScheduled ? 'loading' : 'failed'");
+    expect(PAGE).toMatch(/recoveryAttemptRef\.current >= maxAttempts/);
+  });
+
+  it('gives every new query and explicit retry a fresh bounded recovery budget', () => {
+    expect(PAGE).toContain("const recoveryRequestKeyRef = useRef('')");
+    expect(PAGE).toContain('recoveryRequestKeyRef.current !== recoveryRequestKey');
+    expect(PAGE).toMatch(
+      /options\.resetRecovery === true[\s\S]*recoveryAttemptRef\.current = 0[\s\S]*recoveryRequestKeyRef\.current = recoveryRequestKey/
+    );
+    expect(PAGE).toContain('{ forceSummary: true, resetRecovery: true }');
+  });
+
+  it('does not export a previous query while the visible search is still settling', () => {
+    expect(PAGE).toContain('searchQuery.trim() !== debouncedSearch.trim()');
+    expect(PAGE).toContain('isExporting || searchIsSettling');
+  });
+
+  it('exposes virtualized roster positions as one accessible list', () => {
+    expect(PAGE).toContain('role="list"');
+    expect(PAGE).toContain('role="listitem"');
+    expect(PAGE).toContain('aria-posinset={position}');
+    expect(PAGE).toContain('aria-setsize={total}');
+  });
+
+  it('settles summary and directory reads independently', () => {
+    expect(PAGE).toContain('settleRosterReadsIndependently');
+    expect(POLICY).toContain('Promise.allSettled');
+    expect(PAGE).toContain('RosterSummaryCoordinator');
+    expect(PAGE).toContain("reportError(error, 'ClubMembersPage.loadSummary')");
+    expect(PAGE).toMatch(/onPage: \(page\) => {[\s\S]*setMembers\(page\.items\)/);
+  });
+
+  it('announces a summary label before its value and exposes independent freshness', () => {
+    expect(PAGE).toMatch(
+      /<dt className="stat-label">\{label\}<\/dt>[\s\S]*<dd className="stat-value">\{value\}<\/dd>/
+    );
+    expect(PAGE).toContain('members-summary__status');
+    expect(PAGE).toContain("summaryFreshness === 'failed'");
+  });
+
+  it('compresses the cinematic command deck on short desktop viewports', () => {
+    expect(CSS).toContain('@media (min-width: 721px) and (max-height: 820px)');
+    expect(CSS).toMatch(/max-height:\s*820px[\s\S]*\.members-hero[\s\S]*min-height:\s*222px/);
   });
 });

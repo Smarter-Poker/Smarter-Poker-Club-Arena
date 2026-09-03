@@ -112,6 +112,21 @@ export function parseCards(v: unknown): Card[] | null {
 }
 
 /**
+ * How many aggressive actions the horse took on the river. Two or more is a
+ * raise war it kept escalating. Shared so the winning and losing sides of that
+ * line are counted by the SAME rule - a mirror measured differently is not a
+ * denominator.
+ */
+function riverAggressiveActions(row: {
+  heroActions: Array<{ action: string; stage: string }>;
+}): number {
+  return row.heroActions.filter(
+    (a) =>
+      a.stage === 'river' && (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
+  ).length;
+}
+
+/**
  * Leak detectors. Each looks at ONE flagged (usually losing) hand and answers
  * "is this one of the known bad shapes?". Tags are counted per horse per day
  * in horse_review_rollup, so a horse that keeps producing the same tag is
@@ -132,14 +147,59 @@ export function detectLeaks(row: {
   const vi = variantInfo(row.variant);
   const investedBB = row.invested / (row.bigBlind || 1);
 
-  if (row.netBB > 0) return tags; // wins carry no leak tags (they are still stored)
-
   const folded = row.heroActions.some((a) => a.action === 'fold');
   const raisedOrBet = (stage: string) =>
     row.heroActions.some(
       (a) =>
         a.stage === stage && (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
     );
+
+  /*
+   * ═══ THE WIN SIDE OF RIVER AGGRESSION (2026-09-01) ═══
+   *
+   * Every tag below this point is a LEAK, and a leak is only a leak when the
+   * hand lost - hence the early return. That is right for the leak tags and
+   * it made one number unreadable.
+   *
+   * MEASURED on 2026-08-31: `river_aggr_lost` carried 1,545 hands and
+   * -97,229bb, roughly five times the entire day's horse net of -19,984bb,
+   * and it dominated the tag mix of nine of the ten bleeding horses. It is
+   * the largest single line in the audit - and it cannot be acted on, because
+   * the tag exists only on losses. There is no denominator. A horse that bets
+   * every river and a horse that value-bets perfectly produce the same
+   * evidence here, since a winning river bet is stored (5,277 wins were) and
+   * simply carries no tag at all.
+   *
+   * Tuning a river cap on that number would be tuning against a sample
+   * selected for being negative. So the mirror is recorded: the same line,
+   * the same showdown, the winning outcome. `river_aggr_won` plus
+   * `river_aggr_lost` is river aggression's actual EV.
+   *
+   * It is NOT a leak tag and must never be treated as one. It is named for
+   * the outcome so no gate can mistake it, and the self-tuner reads tags by
+   * exact name (nonnut_flush_stackoff, big_bet_fold, preflop_stackoff), so
+   * nothing downstream picks it up by accident.
+   */
+  if (row.netBB > 0) {
+    if (row.wentToShowdown && raisedOrBet('river')) {
+      tags.push('river_aggr_won');
+      /*
+       * ── 2026-09-02: river_raise_war had the SAME missing denominator ──
+       * The block above fixed river_aggr_lost by recording its win side. The
+       * war tag, added under it, was left one-sided and reproduced the bug in
+       * miniature: measured over 2026-08-28..09-01, river_raise_war carried
+       * 1,696 hands and NOT ONE win, because a won war carries no tag at all.
+       * On 2026-09-01 it was the worst average line in the whole audit at
+       * -87.7bb over 226 hands and it could not be acted on for the reason
+       * already written down here - the sample is selected for being
+       * negative. Same fix, same naming rule, same exclusion from the tuner.
+       */
+      if (riverAggressiveActions(row) >= 2) {
+        tags.push('river_raise_war_won');
+      }
+    }
+    return tags; // wins carry no LEAK tags (they are still stored)
+  }
 
   // Big loss with a fold at the end: chips went in and then the hand was
   // surrendered — a blown-off bluff or a bet-fold line that cost a stack.
@@ -218,10 +278,7 @@ export function detectLeaks(row: {
     // into the top of the range together with RAISE WARS — and the wars are
     // where the -500bb pots live. Two or more aggressive river actions from
     // the horse in one hand is a war it kept escalating.
-    const riverAggrCount = row.heroActions.filter(
-      (a) =>
-        a.stage === 'river' && (a.action === 'bet' || a.action === 'raise' || a.action === 'all_in')
-    ).length;
+    const riverAggrCount = riverAggressiveActions(row);
     if (riverAggrCount >= 2) {
       tags.push('river_raise_war');
     }

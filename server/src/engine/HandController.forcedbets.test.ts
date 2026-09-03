@@ -85,7 +85,7 @@ function start(config: HandConfig, players: SeatPlayer[], dealerSeat: number) {
   return { hc, events, forced, state };
 }
 
-describe('FORCED_BETS_POSTED — the blinds', () => {
+describe('FORCED_BETS_POSTED - the blinds', () => {
   const { forced, state } = start(mkConfig(), mkPlayers([1000, 1000, 1000]), 1);
 
   it('records the small blind and the big blind', () => {
@@ -111,7 +111,7 @@ describe('FORCED_BETS_POSTED — the blinds', () => {
   });
 });
 
-describe('FORCED_BETS_POSTED — antes are recorded AND flagged dead', () => {
+describe('FORCED_BETS_POSTED - antes are recorded AND flagged dead', () => {
   const { forced, state } = start(mkConfig({ ante: 2 }), mkPlayers([1000, 1000, 1000]), 1);
 
   it('records one ante per player', () => {
@@ -140,7 +140,7 @@ describe('FORCED_BETS_POSTED — antes are recorded AND flagged dead', () => {
   });
 });
 
-describe('FORCED_BETS_POSTED — the big blind ante is dead money too', () => {
+describe('FORCED_BETS_POSTED - the big blind ante is dead money too', () => {
   // Bible V8 4.3: the BB fronts the whole table's ante. It is dead in the pot,
   // and the 2026-07-21 refund bug happened precisely because something treated
   // it as a live bet.
@@ -163,7 +163,7 @@ describe('FORCED_BETS_POSTED — the big blind ante is dead money too', () => {
   });
 });
 
-describe('FORCED_BETS_POSTED — a straddle is live and raises the bet level', () => {
+describe('FORCED_BETS_POSTED - a straddle is live and raises the bet level', () => {
   const players = mkPlayers([1000, 1000, 1000]);
   const { forced, state } = start(
     mkConfig({ straddles: [{ seat: 3, amount: 20 }] } as Partial<HandConfig>),
@@ -177,7 +177,7 @@ describe('FORCED_BETS_POSTED — a straddle is live and raises the bet level', (
     expect(s.seat).toBe(3);
   });
 
-  it('marks it LIVE — it is a blind that raises, not dead money', () => {
+  it('marks it LIVE - it is a blind that raises, not dead money', () => {
     expect(forced.find((p) => p.kind === 'straddle')!.dead).toBe(false);
   });
 
@@ -188,7 +188,7 @@ describe('FORCED_BETS_POSTED — a straddle is live and raises the bet level', (
   });
 });
 
-describe('FORCED_BETS_POSTED — every posting path at once', () => {
+describe('FORCED_BETS_POSTED - every posting path at once', () => {
   // Blinds + antes + a straddle on the same hand. This is the shape that used
   // to be unreconstructible: the log showed one raise and nothing else.
   const { forced, state } = start(

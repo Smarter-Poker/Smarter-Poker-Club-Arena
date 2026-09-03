@@ -15,6 +15,7 @@
  * dealt on top of the number telling the player what they had won.
  */
 import { describe, it, expect } from 'vitest';
+import { HEADS_UP_SEATS } from '../../src/config/headsUpSpec';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import {
@@ -218,7 +219,15 @@ describe('heads-up is the only sit-n-go we run', () => {
       REC.indexOf('const SNG_BOARD_SHAPES'),
       REC.indexOf('const SNG_BOARD_VARIANTS')
     );
-    expect(shapes).toMatch(/seats: 2/);
+    /**
+     * 2026-08-31 (Phase 3): the seat count moved into
+     * src/config/headsUpSpec.ts, so the shapes array names HEADS_UP_SEATS
+     * rather than a literal. The guarantee is unchanged -- both bands are
+     * two-handed and no 6-max or 9-max shape exists -- and it is now asserted
+     * against the spec as well as the source, so neither can move alone.
+     */
+    expect(HEADS_UP_SEATS).toBe(2);
+    expect(shapes).toMatch(/seats: (?:2|HEADS_UP_SEATS)\b/);
     expect(shapes).not.toMatch(/seats: 6/);
     expect(shapes).not.toMatch(/seats: 9/);
   });

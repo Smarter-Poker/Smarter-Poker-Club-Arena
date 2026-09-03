@@ -17,7 +17,8 @@
  * guarded was the wrong one. CLAUDE.md §8: when you deliberately replace
  * behaviour a test pins, you update that test in the SAME commit.
  *
- * The trade grid now calls the functions the Club Bank Cashier already used:
+ * The trade grid now calls one bounded fn_cashier_batch_transfer chunk. Its
+ * server body delegates every item to the functions the Club Bank Cashier uses:
  *   fn_agent_wallet_send        debits the caller's agent wallet, credits the
  *                               recipient, one ledger row, keyed on p_op_id,
  *                               reversible_until = now() + 10 minutes
@@ -67,20 +68,20 @@ function callArgs(src: string, rpc: string): string {
 describe('the trade grid spends the AGENT WALLET', () => {
   it('finds the function it is asserting about', () => {
     expect(RUN_TRANSFERS.length).toBeGreaterThan(500);
-    expect(RUN_TRANSFERS).toContain('fn_agent_wallet_send');
-    expect(RUN_TRANSFERS).toContain('fn_issue_tournament_ticket');
+    expect(RUN_TRANSFERS).toContain('fn_cashier_batch_transfer');
   });
 
   it('sends through fn_agent_wallet_send, which debits agents.agent_wallet_balance', () => {
     // The server half is pinned in tests/config/roleScopedCashier.test.ts: that
     // function debits the caller's agent wallet, refuses a recipient outside the
     // downline BEFORE any money moves, and writes a chip_transactions row.
-    const call = callArgs(RUN_TRANSFERS, 'fn_agent_wallet_send');
+    const call = callArgs(RUN_TRANSFERS, 'fn_cashier_batch_transfer');
     expect(call).toContain('p_club_id: clubUuid');
-    expect(call).toContain('p_to_user_id: t.userId');
-    expect(call).toContain('p_amount: value');
-    expect(call).toContain('p_destination');
-    expect(call).toContain('p_op_id');
+    expect(call).toContain('p_items: items');
+    expect(call).toContain('p_batch_id: submissionId');
+    expect(RUN_TRANSFERS).toContain('user_id: target.userId');
+    expect(RUN_TRANSFERS).toContain('amount: value');
+    expect(RUN_TRANSFERS).toContain('op_id: opIdFor(target.userId)');
   });
 
   it('never calls the old club-ledger money path again', () => {
@@ -96,10 +97,9 @@ describe('the trade grid spends the AGENT WALLET', () => {
     // Chips to a player land in the balance they buy in with; chips to a sub
     // agent land in the float they distribute from. fn_agent_wallet_send refuses
     // 'agent_wallet' for any role that cannot hold one, so this has to agree.
-    const call = callArgs(RUN_TRANSFERS, 'fn_agent_wallet_send');
-    expect(call).toMatch(/p_destination:\s*canHoldAgentWallet\(t\.role\)/);
-    expect(call).toContain("'agent_wallet'");
-    expect(call).toContain("'player_wallet'");
+    expect(RUN_TRANSFERS).toMatch(/destination:\s*canHoldAgentWallet\(target\.role\)/);
+    expect(RUN_TRANSFERS).toContain("'agent_wallet'");
+    expect(RUN_TRANSFERS).toContain("'player_wallet'");
   });
 
   it('checks the pot the send actually spends, not the club bank or the player balance', () => {
@@ -117,7 +117,7 @@ describe('one op id per target, held across a failure', () => {
     expect(PAGE).toMatch(/const opIdFor = \(userId: string\)/);
     expect(PAGE).toMatch(/opIdsRef\.current\.get\(userId\)/);
     expect(PAGE).toMatch(/opIdsRef\.current\.set\(userId, fresh\)/);
-    expect(callArgs(RUN_TRANSFERS, 'fn_agent_wallet_send')).toContain('p_op_id: opIdFor(t.userId)');
+    expect(RUN_TRANSFERS).toContain('op_id: opIdFor(target.userId)');
   });
 
   it('the fallback op id is a UUID, because p_op_id is a uuid column', () => {
@@ -133,31 +133,33 @@ describe('one op id per target, held across a failure', () => {
     // A changed amount or selection is a NEW intent and must not replay the old
     // one. Retained across a failure, cleared on a change: both, or neither
     // protection works.
-    expect(PAGE).toMatch(
-      /useEffect\(\(\) => \{\s*submissionIdRef\.current = null;\s*opIdsRef\.current = new Map\(\);\s*\},\s*\[amount, selected, clubUuid\]\)/
+    expect(PAGE).toContain('const recoveryScope = transferRecoveryScopeRef.current');
+    expect(PAGE).toContain(
+      'clearCashierTransferRecovery(recoveryScope.userId, recoveryScope.clubId)'
     );
+    expect(PAGE).toMatch(/setTransferRecovery\(null\);\s*\}, \[amount, selected\]\);/);
   });
 
   it('is retained across a failure, which is what makes a retry safe', () => {
-    expect(RUN_TRANSFERS).toMatch(
-      /if \(ok === targets\.length\) \{\s*submissionIdRef\.current = null;\s*opIdsRef\.current = new Map\(\);/
-    );
+    expect(RUN_TRANSFERS).toContain('if (ok === targets.length) {');
+    expect(RUN_TRANSFERS).toContain('clearCashierTransferRecovery(user.id, clubUuid)');
+    expect(RUN_TRANSFERS).toContain('writeCashierTransferRecovery(recovery)');
+    expect(RUN_TRANSFERS).toContain('opIds: Object.fromEntries(opIdsRef.current)');
   });
 
   it('the ticket path keeps its own composed key, because it is a different RPC', () => {
-    const call = callArgs(RUN_TRANSFERS, 'fn_issue_tournament_ticket');
-    expect(call).toContain('p_idempotency_key');
-    expect(call).toMatch(/\$\{clubUuid\}/);
-    expect(call).toMatch(/\$\{submissionId\}/);
-    expect(call).toMatch(/\$\{t\.userId\}/);
-    expect(call).toMatch(/\$\{value\}/);
+    expect(RUN_TRANSFERS).toContain('idempotency_key');
+    expect(RUN_TRANSFERS).toMatch(/\$\{clubUuid\}/);
+    expect(RUN_TRANSFERS).toMatch(/\$\{submissionId\}/);
+    expect(RUN_TRANSFERS).toMatch(/\$\{target\.userId\}/);
+    expect(RUN_TRANSFERS).toMatch(/\$\{value\}/);
   });
 });
 
 // ───────────────────────────────────────────────────────────────────────────
 describe('the recipient list is the one the server will accept', () => {
   it('comes from fn_club_cashier_members, not a hand-scoped club_members page', () => {
-    expect(PAGE).toMatch(/supabase\s*\.rpc\(\s*'fn_club_cashier_members_v2'/);
+    expect(PAGE).toMatch(/supabase\.rpc\(\s*'fn_club_cashier_members_page_v3'/);
     // The old path paged club_members and scoped it three different ways, one of
     // which handed a super agent every UNASSIGNED member of the club - people
     // fn_agent_wallet_send would then refuse.

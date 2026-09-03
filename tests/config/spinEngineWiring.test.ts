@@ -208,18 +208,41 @@ describe('every game is booked', () => {
   });
 });
 
-describe('structure scales with the DRAWN tier, applied at start', () => {
-  it('start rewrites stack, blinds, payouts and pool from the tier', () => {
-    expect(engine).toMatch(/starting_chips:\s*tier\?\.startingStack/);
+describe('the draw sets the prize and the payout shape - never the stack', () => {
+  /**
+   * This used to require `starting_chips: tier?.startingStack`, which was the
+   * wheel choosing how many chips the players had. Dan retired that on
+   * 2026-09-01: the stack belongs to the board (Turbo 300, Deep Stack 1000),
+   * so it is known at buy-in and the seat can hold it immediately. The other
+   * three writes are unchanged - the prize, the blinds and the payout shape do
+   * still come from the drawn tier.
+   */
+  it('start rewrites blinds, payouts and pool from the tier', () => {
     expect(engine).toMatch(/blind_structure:\s*spinBlinds/);
     expect(engine).toMatch(/payout_structure:/);
     expect(engine).toMatch(/prize_pool:\s*prizePool/);
   });
 
+  it('and does NOT rewrite the stack from the tier', () => {
+    expect(engine).not.toMatch(/starting_chips:\s*tier\?\.startingStack/);
+    expect(engine).not.toMatch(/tournament\.starting_chips\s*=\s*tier\.startingStack/);
+    // What it does write is the board's own number, unchanged.
+    expect(engine).toMatch(/starting_chips:\s*tournament\.starting_chips/);
+  });
+
   it('start updates the IN-MEMORY structure too, not just the row', () => {
     // The level timer and table creation read the in-memory object; a
     // DB-only write would leave this start running placeholder blinds.
-    expect(engine).toMatch(/tournament\.blind_structure\s*=\s*spinBlinds/);
+    //
+    // 2026-09-02: the direct `tournament.blind_structure = spinBlinds` assignment
+    // was refactored into `applySpinDrawPatch(spinRowPatch, tournament, cache)`,
+    // which generically copies EVERY key of spinRowPatch (including blind_structure)
+    // onto both in-memory targets. `blind_structure: spinBlinds` is still in the
+    // patch object (pinned by the test above), and SpinDrawIntegrity.guard.test.ts
+    // pins that applySpinDrawPatch copies every key. Together they are the same
+    // guarantee — this test now verifies the new wiring pattern.
+    expect(engine).toMatch(/applySpinDrawPatch\s*\(/);
+    expect(engine).toMatch(/applySpinDrawPatch\([^)]*spinRowPatch/);
   });
 
   it('creation writes an honest placeholder, not a fake tier', () => {

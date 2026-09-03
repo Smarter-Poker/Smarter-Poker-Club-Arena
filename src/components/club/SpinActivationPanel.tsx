@@ -124,8 +124,13 @@ export default function SpinActivationPanel({ clubId }: Props) {
   const deactivate = async () => {
     setBusy(true);
     try {
-      await spinActivationApi.deactivate(clubId);
-      toast.success('Spins Deactivated. No Money Was Moved.');
+      const response = await spinActivationApi.deactivate(clubId);
+      const returned = Number(response.result.seed_returned ?? 0);
+      toast.success(
+        returned > 0
+          ? `Spins Deactivated. ${chips(returned)} Seed Chips Returned To ${walletLabel(state?.owner_kind, state?.seed_source_wallet)}.`
+          : 'Spins Deactivated. The Reserve Remains Locked Until Every Live Spin Is Settled.'
+      );
       await load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Could Not Deactivate Spins');
@@ -263,8 +268,8 @@ export default function SpinActivationPanel({ clubId }: Props) {
         <>
           <small className="form-hint" style={{ display: 'block', marginBottom: 10 }}>
             Seed The Wallet To Open Spins. The Seed Is A Loan, Not A Fee. It Comes Back Once Play
-            Has Collected As Much On Its Own, And Every Chip Collected After That Stays Here To Pay
-            Multipliers.
+            Has Collected As Much On Its Own. Turning Spins Off Also Returns Any Outstanding Seed As
+            Soon As Every Live Spin Is Settled. Net Spin Proceeds Stay Here To Pay Multipliers.
           </small>
 
           <div className="form-row">

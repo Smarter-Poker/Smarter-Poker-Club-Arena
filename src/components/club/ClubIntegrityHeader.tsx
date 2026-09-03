@@ -56,7 +56,7 @@ export default function ClubIntegrityHeader({
           <div className={styles.scanLine} />
         </div>
 
-        <dl className={styles.metrics} aria-label="Current case metrics">
+        <dl className={styles.metrics} aria-label="Current Case Metrics">
           {metrics.map((metric) => (
             <div key={metric.label} data-tone={metric.tone || 'neutral'}>
               <dt>{metric.label}</dt>
@@ -69,7 +69,7 @@ export default function ClubIntegrityHeader({
       </div>
 
       {navigation.length > 0 && (
-        <nav className={styles.caseRail} aria-label="Integrity and casework">
+        <nav className={styles.caseRail} aria-label="Integrity And Casework">
           <ol>
             {navigation.map((item, index) => (
               <li key={item.id}>

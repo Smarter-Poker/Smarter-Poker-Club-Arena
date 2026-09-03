@@ -3,8 +3,12 @@ import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadSharp } from './lib/sharp-loader.mjs';
+import { shouldGenerateCustomizationThumbnail } from './lib/customization-thumbnail-policy.mjs';
 
-const ROOT = process.argv[2] || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const args = process.argv.slice(2);
+const force = args.includes('--force');
+const rootArg = args.find((arg) => !arg.startsWith('--'));
+const ROOT = rootArg || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const targets = [
   {
     source: 'src/assets/backgrounds',
@@ -40,7 +44,18 @@ for (const target of targets) {
   for (const file of readdirSync(sourceDir).filter((name) => target.extensions.test(name))) {
     const source = path.join(sourceDir, file);
     const output = path.join(outputDir, file.replace(/\.(jpg|jpeg|png)$/i, '.webp'));
-    if (existsSync(output) && statSync(output).mtimeMs >= statSync(source).mtimeMs) {
+    /*
+     * Build-time generation is intentionally append-only. Git checkouts do
+     * not preserve source mtimes, so comparing the source and committed WebP
+     * timestamps made a clean CI checkout rewrite a non-deterministic subset
+     * of tracked thumbnails. The bundle was then stamped `dirty: true` even
+     * though it came from protected main.
+     *
+     * Missing derivatives are still generated automatically. Updating an
+     * existing derivative is an explicit authoring action (`--force`) so the
+     * reviewed bytes are committed before the production build starts.
+     */
+    if (!shouldGenerateCustomizationThumbnail({ outputExists: existsSync(output), force })) {
       skipped++;
       continue;
     }

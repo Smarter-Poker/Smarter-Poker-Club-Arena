@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabase';
 import './OnlineFriendsPill.css';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { reportError } from '../../utils/errorReporter';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 
 interface OnlineFriend {
   id: string;
@@ -60,7 +61,7 @@ export default function OnlineFriendsPill({ userId, onFriendClick }: OnlineFrien
       // Get profiles for friends
       const { data: profiles } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url, last_seen')
+        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url, last_seen`)
         .in('id', friendIds);
 
       if (!profiles) return;
@@ -71,7 +72,7 @@ export default function OnlineFriendsPill({ userId, onFriendClick }: OnlineFrien
         .filter((p) => p.last_seen && p.last_seen > fiveMinAgo)
         .map((p) => ({
           id: p.id,
-          displayName: p.display_name || 'Player',
+          displayName: playerDisplayName(p),
           avatarUrl: p.avatar_url,
         }));
 

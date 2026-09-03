@@ -117,6 +117,15 @@ export interface EnginePublishedState {
   /** Engine wall clock at broadcast time. Lets the client correct for device
    *  clock drift when working out how much of a turn has elapsed. */
   server_time_ms?: number;
+  /* PINEAPPLE DISCARD CLOCK (2026-08-31). Absolute epoch ms, server-authored.
+     `discard_deadlines` is keyed by user_id - a seat that bought time with a
+     time bank has its own, later, deadline. `discard_deadline_ms` is the round's
+     unextended deadline and is what a seat that has already discarded sees.
+     Both null outside the discard round, which is what stops a dead countdown
+     lingering on the felt between hands. */
+  discard_deadline_ms?: number | null;
+  discard_deadlines?: Record<string, number>;
+  discard_duration_ms?: number;
   /** Phase 1.2 PR-F: per-user disconnect FSM map for client UI. */
   disconnect_states?: Record<string, DisconnectFsmEntry>;
   // NOTE: `eligible` holds USER IDs (strings) as emitted by the engine's
@@ -197,6 +206,10 @@ export interface MappedTableStatePatch {
 
   /** For action timer. */
   actionTimerDeadline?: number;
+  /** Hero's OWN pineapple discard deadline, absolute epoch ms. Null off-round. */
+  discardDeadline?: number | null;
+  /** How long the discard round runs, ms - the ring's full sweep. */
+  discardDurationMs?: number;
   /** Server-authoritative turn start wall-clock (for CSS ring animation). */
   actionTimerStartTime?: number;
   actionTimerPlayerId?: string;
@@ -456,6 +469,23 @@ export function mapEngineSnapshot(
     actionTimerDeadline = s.turn_start_time_ms + s.turn_duration_ms;
   }
 
+  /* THE DISCARD CLOCK IS THE SERVER'S, NOT A GUESS (2026-08-31).
+     The client used to start a 15-second countdown from the moment it first
+     SAW the stage, using its own copy of action_time_seconds. A reconnect
+     mid-round restarted it from full while the server clock was half spent; a
+     table configured with a different action time showed a number that was
+     simply wrong. This is the deadline that actually folds you.
+
+     Hero's own entry wins over the round default, because a time bank extends
+     one seat without touching the rest. */
+  let discardDeadline: number | null = null;
+  const ownDiscard = s.discard_deadlines?.[heroUserId];
+  if (typeof ownDiscard === 'number' && ownDiscard > 0) {
+    discardDeadline = ownDiscard;
+  } else if (typeof s.discard_deadline_ms === 'number' && s.discard_deadline_ms > 0) {
+    discardDeadline = s.discard_deadline_ms;
+  }
+
   return {
     // See LIVE E2E FIX above: with a settlement partition present, the main
     // pot is pots[0]; otherwise the running total s.pot is the main pot.
@@ -492,6 +522,8 @@ export function mapEngineSnapshot(
 
     lastRaise: s.last_raise ?? 0,
     actionTimerDeadline,
+    discardDeadline,
+    discardDurationMs: typeof s.discard_duration_ms === 'number' ? s.discard_duration_ms : 0,
     actionTimerStartTime: s.turn_start_time_ms,
     actionTimerPlayerId: s.current_player ?? undefined,
     isTimeBankActive: s.time_bank_active ?? false,

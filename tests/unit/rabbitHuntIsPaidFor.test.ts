@@ -82,6 +82,18 @@ describe('the cards are sold, not given', () => {
     expect(answer).toBeGreaterThan(charge);
   });
 
+  it('the production reveal ledger records metadata only, never unseen cards', () => {
+    const body = sliceMethod(SETTLEMENT, 'public async revealRabbitHunt(');
+    expect(body).toMatch(/from\('rabbit_hunt_reveals'\)/);
+    expect(body).not.toMatch(/from\('rabbit_hunt_offers'\)/);
+    const insertWindow = sliceEnclosingBlock(body, "from('rabbit_hunt_reveals')");
+    expect(insertWindow).toMatch(/user_id/);
+    expect(insertWindow).toMatch(/table_id/);
+    expect(insertWindow).toMatch(/hand_number/);
+    expect(insertWindow).toMatch(/charged/);
+    expect(insertWindow).not.toMatch(/cards/);
+  });
+
   it('a failed charge reveals nothing', () => {
     const at = SETTLEMENT.indexOf('revealRabbitHunt');
     const body = sliceMethod(SETTLEMENT, 'public async revealRabbitHunt(');
@@ -189,8 +201,7 @@ describe('who is offered a hunt, and for how many cards', () => {
     // A bare catch here meant no offer, no event, and a rabbit hunt that had
     // quietly stopped working on that table with nothing to say why — the exact
     // blind spot that would have hidden the RIT bug above.
-    const at = SETTLEMENT.indexOf('rabbitHuntOffers.set');
-    const block = sliceMethod(SETTLEMENT, 'protected async handleHandCompleteEvent(');
+    const block = sliceMethod(SETTLEMENT, 'private async settleCompletedHand(');
     expect(block).toMatch(/reportError\(err, 'ServerTableEngine\.rabbit_hunt_capture_error'\)/);
   });
 

@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/cowork-audit/record-incident-law (2026-09-01). fn_ca_resolution_needs_a_cause was applied to production in migration 20260901175759 (recovered byte-exact into this PR from supabase_migrations.schema_migrations.statements) and redefined by 20260901180325, which also revokes browser execute on fn_ca_auto_reconcile_tick. Both verified live by a rolled-back probe: a shrug resolve is refused, a real root_cause + correction_ref is accepted.",
+  "functions": ["fn_ca_resolution_needs_a_cause"]
+}

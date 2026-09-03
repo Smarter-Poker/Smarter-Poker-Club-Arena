@@ -126,6 +126,11 @@ import { cashBuyInRange, cashBuyInRefusalText } from '../lib/cashBuyIn';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { parseBlindStructure } from '../utils/parseBlindStructure';
+import {
+  playerDisplayName,
+  PLAYER_NAME_COLUMNS,
+  type NameableProfile,
+} from '../utils/playerDisplayName';
 // Phase 1.1 PR-3: authoritative engine WS state. Mounted always; becomes the
 // source of truth for game-state fields when VITE_USE_ENGINE_WS=1. The old
 // Supabase Realtime game-state path stays wired in parallel until PR-5 deletes
@@ -189,6 +194,9 @@ import {
 import { type HandRecord } from '../components/table/HandHistoryPanel';
 // [MIGRATION] timeBankEngine removed — server-authoritative (Step 5). Time bank via GameServerAPI + DB.
 import { usePlayerStats } from '../hooks/usePlayerStats';
+import { useMaintenanceBreak } from '../hooks/useMaintenanceBreak';
+import { platformFrozenMessage } from '../utils/platformFrozen';
+import { MaintenanceBreakScreen } from '../components/table/MaintenanceBreakScreen';
 import { useTableSettings } from '../hooks/useTableSettings';
 import { useTableTimer } from '../hooks/useTableTimer';
 import { useTableChat } from '../hooks/useTableChat';
@@ -307,7 +315,7 @@ import { retryAsync } from '../utils/retryAsync';
 import { safeErrorMessage, shouldSurfaceError } from '../utils/safeErrorMessage';
 import { serverNow } from '../utils/serverClock';
 // Dan 2026-08-21, item 15: hero's live hand strength under their seat box.
-import { bestFive, cardKey } from '../utils/handEvaluator';
+import { bestFive, cardKey, isPineappleVariant } from '../utils/handEvaluator';
 // Dan 2026-08-21, items 11 + 16: the client's post-hand hold comes from the
 // same animation spec the engine derives its own hold from, so the table can
 // never clear the winner before the pot has finished travelling to them.
@@ -591,6 +599,10 @@ interface TableState {
   postBBDeferredUserIds?: string[];
   // Phase 8: Action timer state
   actionTimerDeadline?: number;
+  /** Hero's own pineapple discard deadline, absolute epoch ms, from the engine. */
+  discardDeadline?: number | null;
+  /** How long the discard round runs, ms, as the engine reports it. */
+  discardDurationMs?: number;
   /** Wall-clock turn start (server-authoritative). Drives the CSS ring
    * animation via SeatSlot turnStartTimeMs/turnDeadlineMs props. */
   actionTimerStartTime?: number;
@@ -670,7 +682,13 @@ import { generateAvatarSvg } from '../utils/avatarGenerator';
 // 2026-08-19: pure card + seat helpers now live in their own modules. They used
 // to sit inline in this file; the seat rings in particular carry measured rail
 // positions that must not be casually rewritten. See those files for why.
-import { ENGINE_SUIT_MAP, sortCardsByRank, getGameVariantLabel } from '../lib/tableCardDisplay';
+import {
+  ENGINE_SUIT_MAP,
+  sortCardsByRank,
+  getGameVariantLabel,
+  heroCardsCollideWithBoard,
+  heroHoleCardsAreForThisHand,
+} from '../lib/tableCardDisplay';
 import {
   seatLayoutFor,
   createEmptySeats,
@@ -1703,7 +1721,7 @@ export default function TablePage({
       try {
         const { data: profile, error: profileErr } = await supabase
           .from('profiles')
-          .select('display_name, username, avatar_url:arena_avatar_url')
+          .select(`${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
           .eq('id', user.id)
           .maybeSingle();
         /* ROUND 9 (2026-08-29): a FAILED read used to fall through as an
@@ -1716,7 +1734,7 @@ export default function TablePage({
           return;
         }
         if (isMounted.current) {
-          const resolvedName = profile?.display_name || profile?.username || 'Player';
+          const resolvedName = playerDisplayName(profile);
           setUsername(resolvedName);
           setHeroAvatarUrl(profile?.avatar_url || '');
           // Refresh the first-paint cache with what the database just said,
@@ -1999,7 +2017,7 @@ export default function TablePage({
           if (idx >= 0 && idx < p.length) {
             p[idx] = {
               id: seat.user_id,
-              name: seat.profiles?.display_name || seat.profiles?.username || 'Player',
+              name: playerDisplayName(seat.profiles),
               stack: seat.stack || 0,
               avatar: seat.profiles?.avatar_url || undefined,
               isHero: seat.user_id === userId,
@@ -2123,7 +2141,28 @@ export default function TablePage({
             prevHero &&
             prevHero.isHero &&
             prevHero.holeCards &&
-            prevHero.holeCards.length > 0
+            prevHero.holeCards.length > 0 &&
+            /* ═══ A CARD CANNOT BE IN TWO PLACES ════════════════════════════
+               Dan 2026-08-31: hero holding J9h with Kd 9h Qd on the flop.
+               `cardHoldSameHand` is fail-OPEN by design — an unknown hand
+               number reads as "cannot tell", which the `<= 0` arms treat as
+               "keep the cards", because the hero seeing NOTHING is the worse
+               bug. The cost of failing open is exactly this: a frame that
+               cannot identify its hand carries the PREVIOUS hand's cards into
+               the new one, and the new board then contradicts them.
+
+               So the hold keeps its benefit of the doubt everywhere except
+               where the board has already disproved it. A held hand that
+               collides with the incoming board is expired, full stop — drop
+               it, and the recovery poll (which runs precisely while the hero
+               is blind) re-reads the real one. Showing a hand the player does
+               not hold is worse than briefly showing none: they act on it. */
+            !heroCardsCollideWithBoard(
+              prevHero.holeCards,
+              mapped.communityCards,
+              mapped.communityCards2,
+              mapped.communityCards3
+            )
           ) {
             return { ...sp, holeCards: prevHero.holeCards };
           }
@@ -2289,6 +2328,8 @@ export default function TablePage({
             .filter((n): n is string => typeof n === 'string'),
         })) as SidePot[],
         actionTimerDeadline: mapped.actionTimerDeadline,
+        discardDeadline: mapped.discardDeadline ?? null,
+        discardDurationMs: mapped.discardDurationMs ?? 0,
         actionTimerStartTime: mapped.actionTimerStartTime,
         actionTimerPlayerId: mapped.actionTimerPlayerId,
         isTimeBankActive: mapped.isTimeBankActive,
@@ -2322,6 +2363,25 @@ export default function TablePage({
    *  one, never into what the felt shows. Written in handleHoleCardPayload. */
   const heroEngineCardOrderRef = useRef<string[] | null>(null);
   const heroPineappleCards = useMemo(() => {
+    /* ═══ A BACKGROUND TABLE MAY NOT PUT A PICKER ON YOUR SCREEN ═══════════
+       MultiTablePage mounts up to four TablePages at once and only the active
+       slot is `--active`; the others stay rendered (they keep their engine
+       sockets alive) with `pointer-events: none`. This panel is
+       `position: fixed`, so it escapes its slot and paints over the middle of
+       whatever table you ARE playing — and it arrives INERT, because
+       pointer-events is inherited, so it is a picker you can see and cannot
+       click. The old full-screen version of this blacked out your live table
+       outright.
+
+       Dan 2026-08-28, binding: "YOU CAN NEVER EVER AUTO CHANGE TABLES FOR A
+       USER, THEY MUST CHANGE IT BY THEM SELF." So a background table asks for
+       attention rather than taking it: setDecisionDeadline below already feeds
+       the tab strip's countdown and alarm on a `discard` decision, exactly like
+       a turn. Switch to that table and the picker is there.
+
+       Gated at the RENDER, not here: this value also drives pineappleDeadline,
+       which is what feeds that alarm. Blanking it on a background table would
+       have silenced the very notice that replaces the picker. */
     if (tableState.engineStage !== 'pineapple_discard') return null;
     const hero = tableState.players[tableState.heroSeat - 1];
     if (!hero || hero.status === 'folded') return null;
@@ -2329,20 +2389,38 @@ export default function TablePage({
     return cards.length === 3 ? (cards as NonNullable<(typeof cards)[number]>[]) : null;
   }, [tableState.engineStage, tableState.players, tableState.heroSeat]);
 
-  // The engine starts its auto-discard timer the moment the stage opens, so the
-  // countdown is anchored to when we first see the stage rather than to a
-  // separate broadcast.
-  // `actionTimeSeconds` is declared further down this component, so naming it in
-  // the dep array would be a temporal-dead-zone error rather than a lint gripe.
-  // Same ref pattern the all-in hotkey uses.
+  /* ═══ THE DISCARD CLOCK IS THE SERVER'S (2026-08-31) ═══════════════════
+     This used to be `Date.now() + actionTimeSecondsRef.current * 1000`,
+     anchored with `prev ?? ...` to the first frame the client saw the stage in.
+     Three ways that lied to the player, and all three end the same way - folded
+     on a clock that still read time:
+
+       - the client's 15 was its OWN default, so a table configured with a
+         different action_time_seconds showed a number the engine did not use;
+       - `prev ??` anchors to FIRST SIGHT, so a reconnect mid-round started a
+         fresh 15 seconds over a server deadline that was half spent;
+       - switching to the table from another tab re-anchored it again.
+
+     The engine now publishes `discard_deadlines` (per seat, absolute epoch ms)
+     and the mapper hands the hero its own entry. serverNow() subtracts the
+     device's clock skew from the same sample the turn ring already uses, so
+     what the panel counts down is what folds you.
+
+     The local guess survives ONLY as a fallback for an engine build that does
+     not publish the field yet, and it is deliberately the last resort. */
   const actionTimeSecondsRef = useRef(15);
   useEffect(() => {
-    if (heroPineappleCards) {
-      setPineappleDeadline((prev) => prev ?? Date.now() + actionTimeSecondsRef.current * 1000);
-    } else {
+    if (!heroPineappleCards) {
       setPineappleDeadline(null);
+      return;
     }
-  }, [heroPineappleCards]);
+    const authoritative = tableState.discardDeadline;
+    if (typeof authoritative === 'number' && authoritative > 0) {
+      setPineappleDeadline((prev) => (prev === authoritative ? prev : authoritative));
+      return;
+    }
+    setPineappleDeadline((prev) => prev ?? Date.now() + actionTimeSecondsRef.current * 1000);
+  }, [heroPineappleCards, tableState.discardDeadline]);
 
   // Mirror the discard clock into the shared decision channel so the tab strip
   // can show and alarm it on a table the player is not looking at.
@@ -2353,6 +2431,46 @@ export default function TablePage({
       setDecisionDeadline((prev) => (prev?.kind === 'discard' ? null : prev));
     }
   }, [pineappleDeadline]);
+
+  /* ── CRAZY PINEAPPLE PHASE 3 2026-08-31: MAKE THE DISCARD VISIBLE ─────────
+     Until today a discard rendered NOTHING. No card left a seat, no villain's
+     hand got smaller, no cue fired - the engine emitted PLAYER_ACTION with
+     action 'discard' and the client's handler had no arm for it. Horses
+     discard on a deliberate 1.2s-5.2s humanlike delay (ServerTableEngineRunout
+     .handlePineappleDiscard), so the felt simply PAUSED and then jumped: the
+     pause was there and the thing it was hiding was not. CLAUDE.md 10.5 says
+     timing is part of the treatment and the tell is the rhythm.
+
+     Two pieces of state:
+
+       heroDiscardFlight  the card hero threw, so their own seat can fly a
+                          ghost of it after the row has already shrunk.
+       discardedSeats     every seat that has discarded this hand, so a
+                          villain's face-down fan drops from three backs to
+                          two. Nothing else on the client knew a villain's
+                          hand had changed size - holeCardCount is the
+                          variant's number and the variant never changes.
+
+     AUDIT 2026-08-31: both are STAMPED with the hand they belong to and read
+     back only for that hand. HAND_STARTED still clears them and is the normal
+     route, but it is a single WS event, and a dropped one used to mean a seat
+     played the NEXT hand visibly one card short, or hero's ghost flew carrying
+     the previous hand's card. A stamp cannot be dropped. */
+  const [heroDiscardFlight, setHeroDiscardFlight] = useState<{
+    card: Card;
+    hand: number;
+  } | null>(null);
+  const [discardedSeats, setDiscardedSeats] = useState<{
+    hand: number;
+    seats: readonly number[];
+  }>({ hand: 0, seats: [] });
+
+  /** Has this seat already thrown its card in the hand being played right now? */
+  const seatHasDiscarded = useCallback(
+    (seat: number): boolean =>
+      discardedSeats.hand === (tableState.handNumber ?? 0) && discardedSeats.seats.includes(seat),
+    [discardedSeats, tableState.handNumber]
+  );
 
   const handlePineappleDiscard = useCallback(
     async (displayIndex: number): Promise<boolean> => {
@@ -2392,6 +2510,14 @@ export default function TablePage({
       if (engineOrder) {
         heroEngineCardOrderRef.current = engineOrder.filter((_, i) => i !== engineIndex);
       }
+      /* PHASE 3 2026-08-31: the card the hero just threw is gone from the row
+         above, so the seat has nothing left to animate. Hand it the identity
+         here and SeatSlot flies a ghost of it to the muck. Hero only, and it
+         never leaves this client: an opponent's discarded card is not revealed
+         in Crazy Pineapple, and hole cards do not ride the public broadcast at
+         all (table_hole_cards, RLS - migration 20260312_secure_hole_cards_fix).
+         A villain's ghost is a card BACK, from the same event everyone sees. */
+      setHeroDiscardFlight({ card: chosen, hand: tableStateRef.current.handNumber ?? 0 });
       setTableState((prev) => {
         const players = [...prev.players];
         const heroIdx = players.findIndex((pl) => pl && pl.id === userId);
@@ -2403,10 +2529,20 @@ export default function TablePage({
           ...hero,
           holeCards: hero.holeCards.filter((_, i) => i !== at),
         };
-        return { ...prev, players };
+        /* The seat animates off `lastAction`, exactly like a fold. Setting it
+           HERE rather than waiting for the engine's echo is what keeps the
+           hero's toss and the hero's sound in the same beat - the echo is a
+           round trip and the sound below is immediate. The echo re-asserts the
+           same value, and SeatSlot's prevAction guard makes that a no-op. */
+        const nextActions = [...prev.lastActions];
+        if (heroIdx >= 0) nextActions[heroIdx] = 'discard';
+        return { ...prev, players, lastActions: nextActions };
       });
 
-      soundService.playFold();
+      /* Was playFold(). Wrong action's cue - and a two-card brush for a
+         one-card decision, in the one variant where throwing a card is how you
+         STAY IN. CLAUDE.md 10.6: a discard is owed its own cue. */
+      soundService.playDiscard();
       return true;
     },
     [tableId, userId, heroPineappleCards]
@@ -2904,6 +3040,22 @@ export default function TablePage({
   // recovery toast was lost.
   const heartbeatToastRef = useRef(toast);
   heartbeatToastRef.current = toast;
+
+  /**
+   * PHASE 2 (2026-08-31): has this client actually drawn the action controls
+   * for the hero on the turn it is currently claiming?
+   *
+   * Written by the ActionPanel render arm itself (the only place that knows
+   * for certain) and cleared the moment the turn ends, so it can never carry
+   * a stale "yes" into a later hand. Read by the heartbeat, which sends it to
+   * the engine so the silent-client canary can tell a player who ignored the
+   * action from one who was never shown it.
+   *
+   * A REF, not state, on purpose: this must not trigger a render - it is
+   * written DURING one - and the heartbeat only needs the latest value at the
+   * moment it fires.
+   */
+  const heroActionRenderedRef = useRef(false);
   /* One removal, one notice. Two paths detect a forced removal — the `seat_left`
      websocket event (instant, but missable) and the ten-second seat read (slow,
      but authoritative) — and without this the player who caught both would be
@@ -2951,7 +3103,25 @@ export default function TablePage({
     let consecutiveMisses = 0;
     let warned = false;
     const beat = async () => {
-      const res = await sendHeartbeat(tableId);
+      /* PHASE 2 (2026-08-31): tell the engine whether this client has actually
+         PUT THE ACTION IN FRONT OF THE PLAYER, not merely that it is online.
+
+         A heartbeat proves the app is running. It proved exactly that on
+         2026-08-31 while a player's own seat had been erased from his screen:
+         the beats landed every five seconds, the engine offered him turns
+         nobody could see, timed each one out, force-sat him out and took the
+         seat. From the server there was nothing to distinguish him from
+         somebody who had walked away.
+
+         The flag is read from a ref the FELT writes as it renders, not
+         re-derived from state here. A second copy of the rule could drift
+         from the first and start claiming the bar is up when it is not - and
+         a false "the player can see this" is worse than silence, because it
+         tells the canary to relax about precisely the player it exists to
+         notice. */
+      const res = await sendHeartbeat(tableId, {
+        turnRendered: heroActionRenderedRef.current,
+      });
       if (res?.success) {
         // Silent recovery (Dan 2026-08-23). A "Reconnected" toast is only
         // reassuring if the player was told something broke - and they no
@@ -3065,6 +3235,21 @@ export default function TablePage({
   // tell the player once instead.
   const notFoundCountRef = useRef(0);
   const tableClosedToastShownRef = useRef(false);
+  /**
+   * The scheduled maintenance break (Dan 2026-09-01). Driven by the engine
+   * while a socket exists, by the local clock while it does not, and by the
+   * database for a browser that loaded during the outage. See
+   * hooks/useMaintenanceBreak.ts.
+   */
+  const {
+    maintenanceBreak,
+    ingestMaintenanceEvent,
+    refreshFromDb: refreshMaintenanceBreak,
+  } = useMaintenanceBreak();
+  // Read inside the 4404 effect without making it re-run on every countdown
+  // tick, which would reset the consecutive-close counter every second.
+  const maintenanceBreakRef = useRef(maintenanceBreak);
+  maintenanceBreakRef.current = maintenanceBreak;
   useEffect(() => {
     if (!engineLastError) return;
     if (engineLastError.code === 4404) {
@@ -3073,15 +3258,39 @@ export default function TablePage({
          table, and absolutely not the moment to tell a player mid-buy-in
          "This Table Is No Longer Running" (Dan 2026-08-28). */
       if (seatFirstOpenRef.current) return;
+      /* A 4404 DURING A MAINTENANCE BREAK IS THE BREAK, NOT A CLOSED TABLE
+         (Dan 2026-09-01). The engine restarts inside an announced five-minute
+         break and answers 4404 for the ~2 minutes its tables take to
+         rehydrate. Telling a player "This Table Is No Longer Running" in the
+         middle of a break we just promised them their seat would survive is
+         the single most alarming thing this page could say, and it is false.
+         The overlay is already up and counting; say nothing.
+
+         Also asks the database, because a browser that loaded DURING the
+         outage never received the announcement over a socket. */
+      if (maintenanceBreakRef.current.active) return;
       notFoundCountRef.current += 1;
       if (notFoundCountRef.current >= 3 && !tableClosedToastShownRef.current) {
+        // Claim the slot BEFORE the await so three more 4404s arriving during
+        // the round trip cannot queue three more of these.
         tableClosedToastShownRef.current = true;
-        heartbeatToastRef.current?.info?.('This Table Is No Longer Running');
+        void (async () => {
+          await refreshMaintenanceBreak();
+          if (maintenanceBreakRef.current.active) {
+            // It was a break after all. Release the slot so a genuine closure
+            // later in this session can still be announced.
+            tableClosedToastShownRef.current = false;
+            return;
+          }
+          heartbeatToastRef.current?.info?.('This Table Is No Longer Running');
+        })();
       }
     } else if (engineLastError.code !== undefined) {
       notFoundCountRef.current = 0;
     }
-  }, [engineLastError]);
+    // refreshMaintenanceBreak is a stable useCallback, so this still runs once
+    // per error rather than on every break countdown tick.
+  }, [engineLastError, refreshMaintenanceBreak]);
   useEffect(() => {
     if (engineWsStatus === 'connected') {
       notFoundCountRef.current = 0;
@@ -5236,7 +5445,6 @@ export default function TablePage({
   // coverageAmount param accepted for InsuranceModal compatibility but ignored — server is authoritative
   // FIX 89: Insurance accept with server-authoritative coverage percentage
   const handleInsuranceAccept = async (coverageAmount?: number) => {
-    setShowInsurance(false);
     if (tableId) {
       // coverageAmount from slider maps to coveragePercent on server
       // If not provided, defaults to 100% (full insurance)
@@ -5257,8 +5465,14 @@ export default function TablePage({
       const result = await respondToInsurance(tableId, 'accept', coveragePct);
       if (!result.success) {
         reportError(result.error, 'TablePage.Accept_failed');
+        toast?.error?.(result.error || 'Insurance Could Not Be Purchased');
+        return false;
       }
+      setShowInsurance(false);
+      return true;
     }
+    toast?.error?.('Table Is Not Ready');
+    return false;
   };
 
   // FIX 89: "Decline Now" — may be re-offered on later streets if equity shifts
@@ -5274,13 +5488,18 @@ export default function TablePage({
   // the engine and the engine recomputes it on accept; the client sends only
   // the decision.
   const handleInsuranceEvCashout = async () => {
-    setShowInsurance(false);
     if (tableId) {
       const result = await respondToInsurance(tableId, 'cashout');
       if (!result.success) {
         reportError(result.error, 'TablePage.Ev_cashout_failed');
+        toast?.error?.(result.error || 'Cash Out Could Not Be Completed');
+        return false;
       }
+      setShowInsurance(false);
+      return true;
     }
+    toast?.error?.('Table Is Not Ready');
+    return false;
   };
 
   // A decline is final: never re-offered on later streets. Per-street pacing
@@ -5527,6 +5746,37 @@ export default function TablePage({
   // fetch fn is exposed so HAND_STARTED can re-arm it (recovering a dropped
   // realtime insert) after clearing stale cards.
   const heroHandRef = useRef<number>(0);
+  /* ═══ AND IT MUST NOT WAIT FOR AN EVENT THAT MAY NEVER ARRIVE ═══════════
+     Dan 2026-09-01, finishing the J9h work.
+
+     `heroHandRef` was written in exactly ONE place: the HAND_STARTED handler.
+     Every client that never receives that event - a mid-hand join, a reload,
+     a dropped frame, the websocket sequence gap that fires GAME_START - sat on
+     0 for the rest of the hand. Two comments in this file already work around
+     the symptom rather than the cause (`autoShowFiredHandRef` is initialised to
+     -1 precisely because 0 read as "already fired").
+
+     What made it worth fixing today is that BOTH stale-hand guards are gated on
+     it being non-zero:
+
+       door 1, the realtime push  currentHandNumber: heroHandRef.current
+       door 2, the recovery poll  heroHandRef.current > 0 && ...
+
+     So the very clients most likely to be handed a stale row - the ones that
+     just reloaded or joined mid-hand - were the ones running with the hand
+     check disabled, leaving only the board check. Preflop, with no board, there
+     is nothing left to catch it. That is the reported bug with the flop removed.
+
+     `tableState.handNumber` is server truth and is already trusted everywhere
+     else; it is maintained from every engine snapshot, not from one event. So
+     seed from it, and FORWARD ONLY - a late or replayed snapshot must never be
+     able to lower the mark and re-admit a row this client has already moved
+     past. Achievements and the auto-show guard read the same ref and stop
+     missing a mid-hand-join hand as a side effect. */
+  useEffect(() => {
+    const hn = tableState.handNumber ?? 0;
+    if (hn > heroHandRef.current) heroHandRef.current = hn;
+  }, [tableState.handNumber]);
   const heroCardFetchRef = useRef<(() => void) | null>(null);
   // Achievement/challenge wiring: accumulate the hero's outcome across a hand's
   // server events (dealt-in at card populate, showdown, per-pot win) and fire
@@ -5916,7 +6166,7 @@ export default function TablePage({
               'The Connection Dropped Before The Table Answered. Your Chips May Have Been Added. Check Your Stack Before Trying Again.'
             );
           } else {
-            toast.error(res.error || 'Unable to add chips \u2014 your wallet was not charged.');
+            toast.error(res.error || 'Unable To Add Chips - Your Wallet Was Not Charged.');
           }
         }
         return false;
@@ -6917,11 +7167,14 @@ export default function TablePage({
      showGtoAdvisor, and no JSX ever read any of the three — so the advisor
      could not be opened, and the state re-rendered the whole table for
      nobody. `sessionRake` sat beside it, never set and never read.
-     src/services/GTOQueryService.ts itself is untouched and still exported
-     from the services barrel; only this page's import of it is gone, which
-     also takes it out of the table's bundle. If the advisor is wanted, it
-     comes back as a rendered panel with a trigger, not as four unreachable
-     identifiers. */
+     UPDATE 2026-09-01: src/services/GTOQueryService.ts is now DELETED. That
+     audit left the service exported from the barrel with no consumer, and it
+     queried three tables - gto_solutions, preflop_ranges, gto_solve_queue -
+     that do not exist in production, so it could not have worked had anything
+     called it. The live GTO data is elsewhere (gto_postflop_compact,
+     gto_scenarios, solved_spots_gold), so no capability is lost. If the advisor
+     is wanted, it comes back as a rendered panel with a trigger, over tables
+     that exist. */
 
   // [MIGRATION] handleHandComplete REMOVED — FIX 181
   // Rake calculation and waterfall execution are server-authoritative (Bible V8 Law 1.4).
@@ -7370,12 +7623,25 @@ export default function TablePage({
     releaseBustHold,
   ]);
 
+  /* CHIP STANDARD C3 (2026-09-02): ONE idempotency key per bust event and
+     amount, reused across retries. This minted `crypto.randomUUID()` on every
+     attempt, so the exact window the key exists for - the RPC committed, the
+     response was lost, the player tapped Rebuy again - debited the wallet a
+     second time. The key is held here until a rebuy SUCCEEDS (a later bust is
+     a new event and gets a new key); a retry with a different amount is a
+     different purchase and gets its own key, because the RPC answers a
+     replayed key with the balance and moves nothing. */
+  const bustRebuyKeyRef = useRef<{ amount: number; key: string } | null>(null);
+
   const confirmBustRebuy = useCallback(
     async (amount: number) => {
       if (!tableId || !userId) return;
       setBustRebuyProcessing(true);
       try {
-        const idempotencyKey = crypto.randomUUID();
+        if (!bustRebuyKeyRef.current || bustRebuyKeyRef.current.amount !== amount) {
+          bustRebuyKeyRef.current = { amount, key: crypto.randomUUID() };
+        }
+        const idempotencyKey = bustRebuyKeyRef.current.key;
         const payload = {
           p_user_id: userId,
           p_table_id: tableId,
@@ -7401,6 +7667,8 @@ export default function TablePage({
           setBustRebuyProcessing(false);
           return;
         }
+        // The purchase landed; the next bust is a new event with a new key.
+        bustRebuyKeyRef.current = null;
         toast?.success(`Rebought for ${amount.toLocaleString()}`);
         setBustRebuyOpen(false);
         // Guard so a zero-stack state immediately after the RPC succeeds
@@ -7807,6 +8075,36 @@ export default function TablePage({
   const handleForceLeaveTable = async () => {
     if (!tableId || !userId) return;
     try {
+      /**
+       * ═══════════════════════════════════════════════════════════════════
+       *  THE TAB X IS STILL LEAVING A CASH GAME (Dan 2026-08-31, binding)
+       * ═══════════════════════════════════════════════════════════════════
+       *
+       * Dan: "ANY TIME YOU LEAVE A CASH GAME, YOU SHOULD GET A RESULTS CARD
+       * JUST LIKE YOU DO WITH TOURNAMENTS, TELLING YOU HOW YOU DID ON THE
+       * TABLE."
+       *
+       * ANY TIME means this door too. `handleLeaveTable` (the menu's Leave
+       * Table and the felt's leave button) has published a summary since
+       * 2026-08-18, but this handler — the tab strip's X, which is how a
+       * multi-tabling player actually exits — deliberately published nothing.
+       * That was correct while the summary was a modal rendered ON the table:
+       * it would have blocked the very tab close being requested. It has not
+       * been true since the card moved to the app-root host, which renders
+       * over whatever the player lands on and survives this unmount. All the
+       * old behaviour still did was silently swallow the result of a session
+       * that had just ended.
+       *
+       * Captured BEFORE the leave for the same reason the sibling handler
+       * captures them: `leaveTable` zeroes the seat, so reading the stack
+       * afterwards reads nothing and books the entire buy-in as a loss.
+       */
+      const forceHeroSeat = tableState.heroSeat;
+      const forceStackAtLeave = tableState.players[forceHeroSeat - 1]?.stack || 0;
+      /* A SPECTATOR GETS NO CARD. Closing a tab with heroSeat 0 never sat
+         down, so there is no session to report — and a card reading "0 hands,
+         0 profit" is a claim, not a blank (house rule 5). */
+      const forceHadSession = forceHeroSeat > 0;
       // (The old "already viewing summary" early-return is gone with the dead
       // in-table SessionSummary modal — the summary now renders in the lobby,
       // after this table is already torn down.)
@@ -7837,7 +8135,56 @@ export default function TablePage({
       // The old guard showed "your chips are still in your seat" to people
       // with no seat and made the table impossible to close while watching.
       heroSeatRef.current = 0; // FIX 132: Clear on force leave
-      masterBus.emit('TABLE_LEFT', { tableId, seat: tableState.heroSeat });
+
+      /* The results card. Same payload, same host and the same deferred-cashout
+         reconciliation as `handleLeaveTable` — one card, two doors, so the tab
+         X can never report a session differently from the menu. Published
+         BEFORE the TABLE_LEFT emit below, because that emit is what tears this
+         tab down. */
+      if (forceHadSession) {
+        /* The P/L rule from the sibling handler, restated because it is the
+           one number nobody may guess: a mid-hand leave defers the cash-out
+           and reports chipsReturned 0, which would render the whole buy-in as
+           a loss. When the service says deferred, estimate with the live stack
+           captured above — that is what settlement will return, give or take
+           the hand in flight — and mark it pending so the estimate is never
+           read as settled. */
+        const forceDeferred = !!forced?.deferred;
+        const forcePL =
+          (forceDeferred ? forceStackAtLeave : forced?.chipsReturned || 0) - totalBuyInRef.current;
+        sessionPLRef.current = forcePL;
+
+        /* Tournaments are never denominated in chips (Dan 2026-08-20): fetch
+           the finish and the prize so the host renders the ranking card rather
+           than a grid of meaningless zeroes. Cash tables pass undefined and
+           get the cash card. */
+        const forceTournamentResult = tableState.tournamentId
+          ? await fetchTournamentResult(tableState.tournamentId, userId)
+          : undefined;
+
+        publishSessionSummary({
+          duration: Math.floor((Date.now() - sessionStartRef.current) / 1000),
+          handsPlayed: handsPlayedRef.current,
+          handsWon: handsWonRef.current,
+          totalRebuys: totalRebuysRef.current,
+          profitLoss: forcePL,
+          biggestPot: biggestPotRef.current,
+          peakStack: peakStackRef.current,
+          tableName: tableState.tableName,
+          tournament: forceTournamentResult,
+          vpipPercent:
+            handsPlayedRef.current > 0
+              ? Math.round((vpipCountRef.current / handsPlayedRef.current) * 100)
+              : 0,
+          totalBuyIn: totalBuyInRef.current,
+          sessionStart: sessionStartRef.current,
+          sessionEnd: Date.now(),
+          plPending: forceDeferred,
+          pendingCashout: forceDeferred ? { tableId, userId, sinceMs: Date.now() } : undefined,
+        });
+      }
+
+      masterBus.emit('TABLE_LEFT', { tableId, seat: forceHeroSeat });
       masterBus.emit('SESSION_ENDED', { tableId, userId });
       playerStatusService.clearPlayingAt(userId);
     } catch (e) {
@@ -7909,8 +8256,68 @@ export default function TablePage({
   // Callback for handling new hole cards
   const handleHoleCardPayload = useCallback(
     (payload: any) => {
+      /* DELETE carries no `new`, so it falls through here and is IGNORED, and
+         that is deliberate. `insert_hole_cards` prunes rows with
+         `hand_number < p_hand_number` on every deal, so the deletes this
+         channel sees are the previous hand being tidied away. Clearing the
+         hero's holding on one would blank a live hand at the exact moment the
+         next one is dealt. Do not "fix" this into a clear. */
       const row = payload.new;
       if (row && row.user_id === userId && row.cards) {
+        /* ═══ THE DOOR THAT HAD NO LOCK (Dan 2026-09-01) ═══════════════════
+           Dan, on the screenshot: "I NEED YOU TO TELL ME HOW IT WAS EVEN
+           POSSIBLE FOR TWO 9 OF HEARTS TO APPEAR AT THE SAME TIME."
+
+           This is how. Of the four ways cards reach the hero, this was the
+           only one with NO hand check and NO board check, and it is the only
+           one that OVERWRITES cards already on screen. It fires on '*', so an
+           UPDATE or a re-push carrying hand N lands after hand N+1 has begun
+           and repaints hand N's holding onto hand N+1's felt. The guard added
+           to the snapshot hold on 2026-08-31 could not save it: the hold would
+           drop the stale hand, and the very next payload through here would
+           put it straight back.
+
+           It asks the same question every other door asks now, and the answer
+           lives in one tested function rather than in four call sites. A
+           rejection is REPORTED, never swallowed - if this ever fires in
+           production it is telling us something upstream is wrong, and the
+           bounded recovery poll is already running to fetch the real hand. */
+        const boardNow = tableStateRef.current;
+        let probeCards: unknown = row.cards;
+        if (typeof probeCards === 'string') {
+          try {
+            probeCards = JSON.parse(probeCards);
+          } catch {
+            probeCards = null;
+          }
+        }
+        const verdict = heroHoleCardsAreForThisHand({
+          rowTableId: row.table_id,
+          tableId,
+          rowHandNumber: typeof row.hand_number === 'number' ? row.hand_number : undefined,
+          currentHandNumber: heroHandRef.current,
+          cards: Array.isArray(probeCards)
+            ? (probeCards as Array<{ rank?: unknown; suit?: unknown }>)
+            : null,
+          boards: [boardNow.communityCards, boardNow.communityCards2, boardNow.communityCards3],
+        });
+        if (!verdict.ok) {
+          reportError(
+            new Error(`hole-card push refused: ${verdict.reason}`),
+            'TablePage.hole_card_push_refused',
+            {
+              tableId,
+              reason: verdict.reason,
+              rowHand: row.hand_number ?? null,
+              liveHand: heroHandRef.current,
+            }
+          );
+          /* A refusal means this client does not have the right hand in front
+             of it. Re-arm the recovery read rather than sitting on nothing. */
+          heroCardsRecoveredRef.current = false;
+          heroCardFetchRef.current?.();
+          return;
+        }
         // Play deal sound if enabled (#175 gated for multi-table)
         if (soundService.isEnabled() && ambientSoundsAllowed) soundService.playDeal();
 
@@ -7961,7 +8368,7 @@ export default function TablePage({
         });
       }
     },
-    [userId]
+    [userId, tableId, ambientSoundsAllowed]
   );
 
   /* ═══ 'INSERT' MISSED EVERY PINEAPPLE DISCARD (2026-08-31) ═════════════
@@ -7980,6 +8387,26 @@ export default function TablePage({
     filter: tableId ? `table_id=eq.${tableId}` : null,
     event: '*',
     onPayload: handleHoleCardPayload,
+    /* ═══ A DEAD CHANNEL MUST NOT BE A SILENT ONE (2026-08-31) ════════════
+       This subscription had no error handler, so when `table_hole_cards` was
+       dropped from the supabase_realtime publication at 19:02 UTC the channel
+       failed with nothing said - no toast, no telemetry, no fallback - and
+       every player at every table quietly lost their hole-card push for four
+       hours. `useMasterBusChannel` has surfaced CHANNEL_ERROR / TIMED_OUT /
+       CLOSED this whole time; nobody was listening.
+
+       Listening now, and answering: force the recovery fetch immediately
+       rather than waiting out the poll interval. Had this been wired, the
+       incident would have self-reported on the first table load and
+       self-recovered on the first hand. */
+    onSubscriptionError: (status, err) => {
+      reportError(
+        err ?? new Error(`hole-card channel ${status}`),
+        'TablePage.hole_card_channel_failed',
+        { tableId, status }
+      );
+      heroCardFetchRef.current?.();
+    },
     enabled: !!tableId && !!userId,
   });
 
@@ -8026,6 +8453,43 @@ export default function TablePage({
         return;
       }
 
+      /* ═══ AND THE SAME ROW REJECTED WHEN THE BOARD DISPROVES IT ══════════
+         The guard above cannot fire when `heroHandRef.current` is 0, which is
+         the state of every client that has not yet seen a HAND_STARTED — a
+         mid-hand join, a reload, a dropped event. In that window the newest
+         row for this table is applied unconditionally, and if the engine has
+         not written THIS hand's row yet, the newest row is the PREVIOUS
+         hand's. That is the second way Dan's J9h landed on a 9h board.
+
+         `insert_hole_cards` deletes rows from earlier hands, so this row is
+         normally current; when it is not, the board says so. Rejecting rather
+         than applying costs one 5s poll cycle, and the poll keeps running for
+         exactly as long as the hero is blind. */
+      if (
+        data &&
+        (data as { cards?: unknown }).cards &&
+        (() => {
+          let probe: unknown = (data as { cards?: unknown }).cards;
+          if (typeof probe === 'string') {
+            try {
+              probe = JSON.parse(probe);
+            } catch {
+              return false;
+            }
+          }
+          if (!Array.isArray(probe)) return false;
+          const board = tableStateRef.current;
+          return heroCardsCollideWithBoard(
+            probe as Array<{ rank?: unknown; suit?: unknown }>,
+            board.communityCards,
+            board.communityCards2,
+            board.communityCards3
+          );
+        })()
+      ) {
+        return;
+      }
+
       if (data && data.cards) {
         let cardsApplied = false;
         setTableState((prev) => {
@@ -8048,6 +8512,16 @@ export default function TablePage({
               rank: c.rank,
               suit: ENGINE_SUIT_MAP[c.suit] || (c.suit as any),
             }));
+            /* The same record the realtime path keeps, for the same reason: a
+               Crazy Pineapple discard is an INDEX into the engine's order, and
+               cards_pre_sort is about to reorder this array. Without it, a hero
+               who recovered their cards by polling — a mid-hand reload, a
+               missed INSERT — fell back to the DISPLAY index and discarded the
+               wrong card, which is exactly the bug the realtime path was fixed
+               for on 2026-08-31. Two ways in, one rule. */
+            heroEngineCardOrderRef.current = parsedCards.map(
+              (c: { rank: string; suit: string }) => `${c.rank}${c.suit}`
+            );
             if (cardsPreSortRef.current) parsedCards = sortCardsByRank(parsedCards);
             updatedPlayers[heroIdx] = {
               ...updatedPlayers[heroIdx]!,
@@ -8070,6 +8544,7 @@ export default function TablePage({
         if (heroCardsRecoveredRef.current) {
           if (retryTimer) clearTimeout(retryTimer);
           if (pollTimer) clearInterval(pollTimer);
+          clearEarlyTimers();
         }
       }
     };
@@ -8081,11 +8556,32 @@ export default function TablePage({
     // bounded cycle, so a player who gets dealt in is always covered.
     const MAX_POLL_ATTEMPTS = 24;
     let pollAttempts = 0;
+    /* Cleared alongside retryTimer everywhere it is cleared, so a re-arm or an
+       unmount cannot leave a fetch firing against a dead closure. */
+    let earlyTimers: ReturnType<typeof setTimeout>[] = [];
+    const clearEarlyTimers = () => {
+      earlyTimers.forEach(clearTimeout);
+      earlyTimers = [];
+    };
     const startPolling = () => {
       if (retryTimer) clearTimeout(retryTimer);
       if (pollTimer) clearInterval(pollTimer);
+      clearEarlyTimers();
       pollAttempts = 0;
       fetchExistingHand();
+      /* ═══ THE FIRST SECOND IS THE ONE THAT MATTERS (2026-08-31) ══════════
+         The action clock is 15s. The old ladder was 0s, 2s, then every 5s -
+         and the 0s attempt is always too early (the engine writes the row
+         after HAND_STARTED, behind the deal animation's button beat), so a
+         row that lands at t=2.1s was not read until t=5s. A third of the
+         clock, spent staring at an empty seat.
+
+         These extra early attempts cost two reads on a hand where the push
+         works, and they are the difference between a blink and a blind
+         decision on one where it does not. `heroCardsRecoveredRef` short-
+         circuits the work as soon as the cards are actually on screen. */
+      earlyTimers.push(setTimeout(fetchExistingHand, 600));
+      earlyTimers.push(setTimeout(fetchExistingHand, 1200));
       retryTimer = setTimeout(fetchExistingHand, 2000);
       pollTimer = setInterval(() => {
         /* ── THE WATCH DOES NOT STAND DOWN WHILE THE HERO IS BLIND ──────────
@@ -8111,7 +8607,19 @@ export default function TablePage({
           !(heroNow.holeCards && heroNow.holeCards.length > 0);
         if (heroIsBlind) heroCardsRecoveredRef.current = false;
 
-        if ((heroCardsRecoveredRef.current && !heroIsBlind) || ++pollAttempts > MAX_POLL_ATTEMPTS) {
+        /* Dan 2026-08-31: "a user can never not get their cards dealt and
+           exposed to them visually. That can never EVER EVER happen."
+
+           The attempt ceiling exists so an OBSERVER or a sat-out player does
+           not poll forever - `heroIsBlind` is already false for both of them,
+           and for anyone holding cards. So the ceiling has no business ending
+           the watch on a seated player in a live hand who is holding NOTHING:
+           that is the one case the poll exists for, and retiring at ~120s left
+           them blind for the rest of the session with nothing left looking. */
+        if (
+          (heroCardsRecoveredRef.current && !heroIsBlind) ||
+          (++pollAttempts > MAX_POLL_ATTEMPTS && !heroIsBlind)
+        ) {
           if (pollTimer) clearInterval(pollTimer);
           pollTimer = null;
           return;
@@ -8133,8 +8641,84 @@ export default function TablePage({
       heroCardFetchRef.current = null;
       if (retryTimer) clearTimeout(retryTimer);
       if (pollTimer) clearInterval(pollTimer);
+      clearEarlyTimers();
     };
   }, [tableId, userId]);
+
+  /* ═══ THE NET UNDER ALL FOUR DOORS (Dan 2026-09-01) ═══════════════════════
+     "PREVENT IT FROM NEVER BEING POSSIBLE TO HAPPEN EVER AGAIN UNDER ANY
+     CIRCUMSTANCES EVER."
+
+     The four guarded doors above are what PREVENTS it. This is what catches
+     it if a fifth door is ever added, or if one of the four is edited badly:
+     `holeCards` is written from ~80 `setTableState` call sites in this file,
+     and no reviewer can hold all of them in their head.
+
+     So the invariant is also checked on the finished state, once per commit,
+     independent of which code path produced it. A hero card that is also on
+     the board is physically impossible, so the holding is expired: drop it,
+     say so loudly, and re-arm the read that fetches the real one. The signature
+     ref keeps this to one correction per bad state rather than a loop, and it
+     is cleared as soon as a clean state arrives so the next hand is watched
+     just as closely.
+
+     This runs after paint, so on its own it would still allow a single wrong
+     frame. It is not on its own. */
+  const heroCardInvariantSigRef = useRef<string>('');
+  /* The correction, as one named thing rather than a lambda buried in an
+     effect: it is what the law test slices, and it is what a reader looks for
+     when a `hero_card_board_collision` shows up in telemetry. */
+  const dropExpiredHeroHolding = useCallback(
+    (handNumber: number) => {
+      reportError(
+        new Error('hero hole card is also on the board'),
+        'TablePage.hero_card_board_collision',
+        { tableId, handNumber }
+      );
+      setTableState((prev) => {
+        const players = [...prev.players];
+        const idx = players.findIndex((pl) => pl?.isHero);
+        if (idx < 0 || !players[idx]) return prev;
+        players[idx] = { ...players[idx]!, holeCards: [] };
+        return { ...prev, players };
+      });
+      heroCardsRecoveredRef.current = false;
+      heroCardFetchRef.current?.();
+    },
+    [tableId]
+  );
+  useEffect(() => {
+    const hero = tableState.players.find((p) => p?.isHero);
+    const cards = hero?.holeCards;
+    if (!cards || cards.length === 0) {
+      heroCardInvariantSigRef.current = '';
+      return;
+    }
+    if (
+      !heroCardsCollideWithBoard(
+        cards,
+        tableState.communityCards,
+        tableState.communityCards2,
+        tableState.communityCards3
+      )
+    ) {
+      heroCardInvariantSigRef.current = '';
+      return;
+    }
+    const sig = `${tableState.handNumber ?? 0}:${cards
+      .map((c) => (c ? `${c.rank}${c.suit}` : '-'))
+      .join(',')}`;
+    if (heroCardInvariantSigRef.current === sig) return;
+    heroCardInvariantSigRef.current = sig;
+    dropExpiredHeroHolding(tableState.handNumber ?? 0);
+  }, [
+    tableState.players,
+    tableState.communityCards,
+    tableState.communityCards2,
+    tableState.communityCards3,
+    tableState.handNumber,
+    dropExpiredHeroHolding,
+  ]);
 
   // Phase 1.1 PR-5 (NO-GO-2): Migrated from subscribeToHandState (deleted)
   // to the engine WebSocket EVENT channel. Regular hand-state updates now
@@ -9074,9 +9658,7 @@ export default function TablePage({
   const [useRealName, setUseRealName] = useState(() => {
     return localStorage.getItem(STORAGE_KEYS.USE_REAL_NAME) === 'true';
   });
-  const [heroProfile, setHeroProfile] = useState<{ username: string; display_name: string } | null>(
-    null
-  );
+  const [heroProfile, setHeroProfile] = useState<NameableProfile | null>(null);
 
   // Sync settings when changed from other components (like TableMenu)
   useMasterBusSubscription('TABLE_MENU_ACTION', (event: any) => {
@@ -9133,16 +9715,11 @@ export default function TablePage({
     if (userId && userId !== 'guest') {
       supabase
         .from('profiles')
-        .select('username, display_name')
+        .select(PLAYER_NAME_COLUMNS)
         .eq('id', userId)
         .maybeSingle()
         .then(({ data }) => {
-          if (data) {
-            setHeroProfile({
-              username: data.username || '',
-              display_name: data.display_name || '',
-            });
-          }
+          if (data) setHeroProfile(data);
         });
     }
   }, [userId]);
@@ -11022,7 +11599,7 @@ export default function TablePage({
           const { data: profiles, error: seatProfilesErr } = await supabase
             .from('profiles')
             .select(
-              'id, username, display_name, avatar_url:arena_avatar_url, is_horse, horse_profile'
+              `id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, is_horse, horse_profile`
             )
             .in('id', userIds);
 
@@ -11124,7 +11701,7 @@ export default function TablePage({
 
               updatedPlayers[seatIdx] = {
                 id: seat.user_id,
-                name: profile?.display_name || profile?.username || `Player ${seat.seat_number}`,
+                name: playerDisplayName(profile),
                 avatar: profile?.avatar_url || '',
                 stack: seat.stack || 0,
                 status:
@@ -11651,6 +12228,16 @@ export default function TablePage({
       tableState.currentPlayerSeat > 0 &&
       tableState.currentPlayerSeat === tableState.heroSeat &&
       tableState.isHandInProgress;
+    /* PHASE 2 (2026-08-31): the turn is over, so the claim that we are showing
+       this player their options expires with it. Without this the flag would
+       stay true from the last turn the client DID render, and the engine would
+       keep hearing "they can see it" through a hand where they cannot - the
+       canary silenced by its own stale evidence. Cleared here rather than in
+       the render, because the render arm only runs while the panel is UP; the
+       moment it stops running there is nothing to switch the flag back off. */
+    if (!isHeroTurn) {
+      heroActionRenderedRef.current = false;
+    }
     if (!isHeroTurn && timeBankActive) {
       // Hero acted or hand ended — cancel time bank state
       setTimeBankActive(false);
@@ -12242,6 +12829,34 @@ export default function TablePage({
         setTableState((prev) => {
           const updatedPlayers = [...prev.players];
           const serverPlayers = syncData.players || [];
+          /* ═══ THE FOURTH DOOR (Dan 2026-09-01) ══════════════════════════
+             This merge carries `existing?.holeCards` forward when the
+             snapshot has none, which is correct and necessary - the engine
+             scrubs the hero's cards from every non-showdown snapshot on
+             purpose. But GAME_START is dispatched by `requestResync()` on a
+             WEBSOCKET SEQUENCE GAP, which is exactly the case where
+             HAND_STARTED was the event that got dropped. So this is the one
+             path that can walk a previous hand's holding across a hand
+             boundary without anything noticing.
+
+             The board that arrives in this same payload is the evidence: if
+             what we are about to carry forward is sitting on the felt, the
+             hand it belonged to is over. */
+          const syncBoard: Array<{ rank?: unknown; suit?: unknown } | null | undefined> =
+            Array.isArray(syncData.community_cards)
+              ? syncData.community_cards
+              : Array.isArray(syncData.communityCards)
+                ? syncData.communityCards
+                : [];
+          const heroHoldIsExpired = (cards: unknown): boolean =>
+            Array.isArray(cards) &&
+            cards.length > 0 &&
+            heroCardsCollideWithBoard(
+              cards as Array<{ rank?: unknown; suit?: unknown }>,
+              syncBoard,
+              prev.communityCards2,
+              prev.communityCards3
+            );
           // BUGFIX 2026-07-24: this recovery snapshot rebuilt `players` with isHero
           // but never updated `heroSeat`. When heroSeat had drifted (snapshot race,
           // reconnect), players[heroSeat-1] became null → the footer showed
@@ -12298,7 +12913,9 @@ export default function TablePage({
                   sp.user_id === userId
                     ? sp.cards?.length
                       ? sp.cards
-                      : existing?.holeCards || []
+                      : heroHoldIsExpired(existing?.holeCards)
+                        ? []
+                        : existing?.holeCards || []
                     : sp.cards?.length && !sp.is_folded
                       ? sp.cards
                       : [],
@@ -12505,6 +13122,33 @@ export default function TablePage({
             soundService.playChips();
           else if (action === 'check') soundService.playCheck();
           else if (action === 'fold') soundService.playFold();
+          /* PHASE 3 2026-08-31: there was no arm here at all, so a discard was
+             SILENT for every opponent - human and horse alike. The hero half
+             of the split fires in handlePineappleDiscard the instant they
+             click; this is the other half, and the isHeroEcho guard above is
+             what keeps the hero from hearing their own discard twice. */ else if (
+            action === 'discard'
+          )
+            soundService.playDiscard();
+        }
+
+        /* PHASE 3 2026-08-31: this seat is now holding one card fewer, and
+           this event is the only place the client is ever told. Recorded for
+           every seat identically - hero, villain, human, horse (CLAUDE.md
+           10.5) - and NOTHING about which card it was, because this is the
+           public broadcast. Cleared on HAND_STARTED below. */
+        if (action === 'discard' && actionSeat > 0) {
+          const actionHand =
+            Number((data as { hand_number?: number }).hand_number) ||
+            tableStateRef.current.handNumber ||
+            0;
+          setDiscardedSeats((prev) =>
+            prev.hand === actionHand
+              ? prev.seats.includes(actionSeat)
+                ? prev
+                : { hand: actionHand, seats: [...prev.seats, actionSeat] }
+              : { hand: actionHand, seats: [actionSeat] }
+          );
         }
         // Bible V8 §5.2: All-in dramatic mode activates on ANY player all-in.
         //
@@ -12552,6 +13196,11 @@ export default function TablePage({
         // (emitted after HAND_STARTED in the engine's dealing path) re-arms it.
         // Items 11 + 16: a fresh hand has not reached showdown yet.
         handShowdownRef.current = { wentToShowdown: false, hands: 2 };
+        /* PHASE 3 2026-08-31: the discard belongs to the hand it was made in.
+           Both of these shrink a card row, so carrying either into the next
+           hand would deal a seat a hand that is visibly one card short. */
+        setDiscardedSeats((prev) => (prev.seats.length === 0 ? prev : { hand: 0, seats: [] }));
+        setHeroDiscardFlight(null);
         setBombPotActive(false);
         setBombPotHoldFlop(false);
         if (bombPotHoldTimerRef.current) {
@@ -14691,6 +15340,20 @@ export default function TablePage({
         } as any);
         break;
       }
+      /**
+       * THE SCHEDULED MAINTENANCE BREAK (Dan 2026-09-01).
+       *
+       * Handed straight to the hook, which owns the countdown. Note there is
+       * no `return`/`break`-and-forget subtlety here: the payload carries an
+       * ABSOLUTE end instant, so once this fires the overlay keeps correct
+       * time on its own through the ~2 minutes when the engine that sent it
+       * no longer exists.
+       */
+      case 'MAINTENANCE_BREAK':
+      case 'MAINTENANCE_BREAK_ENDED': {
+        ingestMaintenanceEvent(evt.type, (evt.data ?? {}) as Record<string, unknown>);
+        break;
+      }
       case 'TABLE_BALANCE_EXECUTED': {
         const d = (evt.data ?? {}) as Record<string, unknown>;
         masterBus.emit('TABLE_BALANCE_EXECUTED', {
@@ -14822,7 +15485,9 @@ export default function TablePage({
         break;
       }
     }
-  }, [engineLastEvent]);
+    // ingestMaintenanceEvent is a stable useCallback; listed so the exhaustive
+    // deps rule does not have to be suppressed for it.
+  }, [engineLastEvent, ingestMaintenanceEvent]);
 
   // Supabase Realtime fallback: process lastEvent if engine WS is not connected.
   // When engine WS IS connected, it handles all events above; this block is
@@ -15321,9 +15986,16 @@ export default function TablePage({
         }
       }
       if (best) {
-        if (best.n >= 4) strength = 'Four of a Kind';
-        else if (best.n === 3) strength = 'Three of a Kind';
-        else if (best.n === 2) strength = 'Pair';
+        /* PINEAPPLE 2026-09-01: three in the hand, two of them survive the
+           discard, so trips preflop is a hand that cannot be played and must
+           not be named. Capped rather than special-cased so the rest of this
+           branch - the high-card wording below included - is untouched. See
+           isPineappleVariant in handEvaluator.ts for the same rule on the
+           flop. */
+        const holdable = isPineappleVariant(heroHandVariant) ? Math.min(best.n, 2) : best.n;
+        if (holdable >= 4) strength = 'Four of a Kind';
+        else if (holdable === 3) strength = 'Three of a Kind';
+        else if (holdable === 2) strength = 'Pair';
         else {
           const high = ranks.reduce((a, b) => (RANK_ORDER(b) > RANK_ORDER(a) ? b : a));
           strength = `${RANK_WORD(high)} High`;
@@ -15559,6 +16231,17 @@ export default function TablePage({
         if (error || !res.ok) {
           const reason = error?.message || res.reason || '';
           setSeatFirstConfirm(null);
+
+          /* THE FREEZE REFUSAL IS NOT AN ERROR (Dan 2026-09-01). During the
+             :55 maintenance break every seat and chip write is refused in
+             Postgres by the freeze guard. Showing a player the raw refusal
+             would read as something broken; the truth is a break they were
+             told about, and a seat they can take in a few minutes. */
+          const frozenMsg = platformFrozenMessage(error);
+          if (frozenMsg) {
+            toast?.info?.(frozenMsg);
+            return;
+          }
 
           /* D8 (2026-08-25): `game_already_started` is not a stale table, it
              is THIS table, running. It was in the stale set, so a viewer who
@@ -16042,7 +16725,7 @@ export default function TablePage({
       if (userIds.length > 0) {
         const { data: profiles, error: profErr } = await supabase
           .from('profiles')
-          .select('id, username, display_name, avatar_url:arena_avatar_url, is_horse')
+          .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, is_horse`)
           .in('id', userIds);
         if (profErr) {
           reportError(profErr, 'TablePage.seat_first_roster_profiles', { tableId });
@@ -16078,7 +16761,7 @@ export default function TablePage({
           const isHero = seat.user_id === userId;
           rebuilt[idx] = {
             id: seat.user_id,
-            name: profile?.display_name || profile?.username || `Player ${seat.seat_number}`,
+            name: playerDisplayName(profile),
             avatar: profile?.avatar_url || '',
             /**
              * ── SHOW WHAT THEY WILL BE PLAYING WITH (Dan 2026-08-30, r17) ──
@@ -16998,6 +17681,27 @@ export default function TablePage({
       toast?.error?.(result?.error || 'Could Not Start Your Time Bank');
       return;
     }
+
+    /* A DISCARD BANK IS NOT A TURN BANK (2026-08-31).
+
+       Everything below this point is the TURN presentation. `timeBankActive`
+       drives the hero seat's ring and the multi-table tab's "1:<deadline>"
+       string, and the effect that owns it cancels the moment
+       `currentPlayerSeat !== heroSeat`. The Crazy Pineapple discard round has
+       no current player at all, so setting it here would paint a ring for one
+       frame, publish a bogus deadline to the tab strip, and then cancel itself.
+
+       Nothing needs painting: the engine has already moved THIS seat's discard
+       deadline and re-broadcast it, so the picker's own countdown is the
+       feedback. And no toast on the armed case either - Dan 2026-08-24 on the
+       turn path, "it gives you this generic pop up, instead of resetting the
+       countdown clock on the hero's box". The same reasoning holds here, so the
+       armed state is returned and the picker renders it in place.
+       Pinned by tests/unit/timeBankSeatFeedbackAndCards.test.ts. */
+    if (heroPineappleCards) {
+      soundService.playTimeBankActivated();
+      return { armed: !!(result as { armed?: boolean }).armed };
+    }
     /* Dan 2026-08-23: "it should not take a time bank or add more time until you
        have truly used your entire 15 seconds." The engine now ARMS a bank
        pressed while ordinary clock remains and redeems it at expiry, so a press
@@ -17024,7 +17728,7 @@ export default function TablePage({
     // ANIMATION/SOUND AUDIT 2026-08-19: was playChips (a wager sound) — the
     // dedicated time-bank cue existed and was only wired to the REMOTE event.
     soundService.playTimeBankActivated();
-  }, [tableId, userId, timeBanksRemaining, toast]);
+  }, [tableId, userId, timeBanksRemaining, toast, heroPineappleCards]);
 
   /* An arm belongs to ONE turn. Hero acts, folds, times out or the hand moves
      on, and a leftover `true` would keep the pending indicator lit on a seat
@@ -17821,7 +18525,7 @@ export default function TablePage({
       if (ids.length > 0) {
         const { data: profiles, error: wlProfilesErr } = await supabase
           .from('profiles')
-          .select('id, username, display_name, avatar_url:arena_avatar_url, is_horse')
+          .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, is_horse`)
           .in('id', ids);
         // ROUND 9 (2026-08-29): the 2026-08-20 fix promised names would
         // resolve like the felt's; a resolved error quietly regressed the
@@ -17842,7 +18546,7 @@ export default function TablePage({
             // lowercase; display_name holds the properly-cased name. Same rule
             // the seat roster uses. Falls back to the position only when the
             // profile genuinely could not be read.
-            playerName: pr?.display_name || pr?.username || `Player ${e.position}`,
+            playerName: playerDisplayName(pr),
             avatar: pr?.avatar_url || undefined,
             position: e.position,
             joinedAt: new Date(e.joinedAt),
@@ -18161,7 +18865,7 @@ export default function TablePage({
                 .board-transition { animation: boardSlideIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1); }
             `}</style>
       {tableState.isFinalTable && (
-        <div className="final-table-broadcast-hud" aria-label="Final Table broadcast status">
+        <div className="final-table-broadcast-hud" aria-label="Final Table Broadcast Status">
           <span>SMARTER POKER CHAMPIONSHIP</span>
           <strong>FINAL TABLE</strong>
           <b>{tableState.players.filter(Boolean).length} PLAYERS</b>
@@ -18549,8 +19253,8 @@ export default function TablePage({
                   soundService.playButtonClick();
                   masterBus.emit('OPEN_LOBBY_TAB', { requestedBy: userId });
                 }}
-                title="Open the lobby in a new tab"
-                aria-label="Open the lobby in a new tab"
+                title="Open The Lobby In A New Tab"
+                aria-label="Open The Lobby In A New Tab"
               >
                 <img
                   src={addScreenIcon}
@@ -18689,6 +19393,7 @@ export default function TablePage({
                 isAvailable={isRabbitAvailable}
                 cardsAvailable={rabbitCardsAvailable}
                 rabbitDiamondCost={rabbitDiamondCost}
+                userId={userId === 'guest' ? null : userId}
                 onReveal={handleRabbitReveal}
               />
             )}
@@ -19330,7 +20035,7 @@ export default function TablePage({
           {/* COMPETITOR-PARITY 2026-08-19: table-level ALL IN banner — fires
               once when the runout locks in (first equity broadcast). */}
           {showAllInBanner && (
-            <div className="allin-banner" role="status" aria-label="All in">
+            <div className="allin-banner" role="status" aria-label="All In">
               <span className="allin-banner__text">ALL IN</span>
             </div>
           )}
@@ -19357,7 +20062,7 @@ export default function TablePage({
               felt when the insurance phase opens — every seat and observer
               sees it, exactly like the ALL IN slam above. */}
           {showInsuranceBanner && (
-            <div className="insurance-banner" role="status" aria-label="Insurance offered">
+            <div className="insurance-banner" role="status" aria-label="Insurance Offered">
               <span className="insurance-banner__shield">{'⛨'}</span>
               <span className="insurance-banner__text">INSURANCE</span>
             </div>
@@ -19404,7 +20109,7 @@ export default function TablePage({
               <div
                 className="insurance-premium-chip"
                 role="status"
-                aria-label={`Insurance fee held: ${insurancePremiumHeld}`}
+                aria-label={`Insurance Fee Held: ${insurancePremiumHeld}`}
               >
                 <span className="insurance-premium-chip__icon">{'⛨'}</span>
                 <span className="insurance-premium-chip__amount">
@@ -19496,20 +20201,20 @@ export default function TablePage({
             let derivedHeroName = player?.name;
             if (player?.isHero) {
               if (v8Settings.use_alias && v8Settings.table_alias) {
-                // User explicitly set an alias — always use it
+                // User explicitly set a table alias — always use it
                 derivedHeroName = v8Settings.table_alias;
-              } else if (useRealName && heroProfile?.display_name) {
-                derivedHeroName = heroProfile.display_name;
-              } else if (heroProfile?.username) {
-                derivedHeroName = heroProfile.username;
-              } else if (heroProfile?.display_name) {
-                // Fallback: use display_name even if useRealName is off
-                derivedHeroName = heroProfile.display_name;
+              } else if (heroProfile) {
+                /* Dan 2026-09-02: "THE CLUB ARENA SHOULD ALWAYS 100% OF THE
+                   TIME USE THE POKER ALIAS AND NOT THE REAL NAME." This used
+                   to branch on `useRealName` and, failing that, fall through
+                   to display_name anyway — which is an exact copy of full_name
+                   on 264 of 1,308 production rows, so the "off" path leaked
+                   too. One resolver, no branch. */
+                derivedHeroName = playerDisplayName(heroProfile);
               }
               // If still "Player X" pattern and we have ANY profile info, use it
               if (derivedHeroName?.startsWith('Player ') && heroProfile) {
-                derivedHeroName =
-                  heroProfile.display_name || heroProfile.username || derivedHeroName;
+                derivedHeroName = playerDisplayName(heroProfile);
               }
             }
             let displayPlayer = player
@@ -19856,7 +20561,24 @@ export default function TablePage({
                      The seat cannot work this out for itself - a hidden hand's
                      holeCards array is empty, so there is nothing there to
                      count. Only the table knows the variant. */
-                  holeCardCount={seatHoleCardCount}
+                  /* PHASE 3 2026-08-31 (Crazy Pineapple): minus the card this
+                     seat has already thrown. seatHoleCardCount is the VARIANT's
+                     hand size, so without this a villain kept three backs on
+                     the felt for the whole hand after discarding one - the
+                     table never showed that anybody's hand had got smaller.
+                     Floored at one by SeatSlot's own sane-band clamp. */
+                  holeCardCount={seatHoleCardCount - (seatHasDiscarded(seatNumber) ? 1 : 0)}
+                  /* Hero's own discarded card, for the ghost that flies to the
+                     muck after the row has already shrunk. Never set for a
+                     villain: their discard is not revealed in this variant, so
+                     their ghost is a card back. */
+                  discardFlightCard={
+                    player?.isHero &&
+                    heroDiscardFlight &&
+                    heroDiscardFlight.hand === (tableState.handNumber ?? 0)
+                      ? heroDiscardFlight.card
+                      : null
+                  }
                   /* Dan 2026-08-28: a Spin waiting on its third seat drew the
                      two seated players holding face-down hands. A villain's
                      fan belongs to a HAND — see SeatSlot's `handInPlay`. The
@@ -20560,6 +21282,17 @@ export default function TablePage({
                engine does not act inside the grace window. */
             !suppressPanelForPreAction
               ? (() => {
+                  /* PHASE 2 (2026-08-31): THE ONE PLACE THAT KNOWS.
+                     Everything above this line is the real, complete gate for
+                     the action controls - every clause of it, including the
+                     deal-animation hold and the pre-action suppression. Being
+                     inside this arm is the only honest proof the player is
+                     being shown their options, which is why the heartbeat's
+                     `turnRendered` flag is written HERE rather than re-derived
+                     next to the heartbeat. A second copy of this condition
+                     would drift, and a false "they can see it" silences the
+                     canary for exactly the player it exists to catch. */
+                  heroActionRenderedRef.current = true;
                   // Bible V8 §1.4: Use SERVER-AUTHORITATIVE values, not local calculations
                   const heroPlayer = getPlayerAtSeat(tableState.heroSeat);
                   const heroStack = heroPlayer?.stack || 0;
@@ -21248,8 +21981,8 @@ export default function TablePage({
             isChatBanned
               ? 'Chat Is Off At This Table'
               : canChatAsObserver
-                ? 'Say something...'
-                : 'Observers cannot chat'
+                ? 'Say Something...'
+                : 'Observers Cannot Chat'
           }
           isMuted={isChatMuted}
           isDisabled={isChatBanned || !canChatAsObserver}
@@ -21277,10 +22010,19 @@ export default function TablePage({
           Leaderboard, Session Summary, Tournament Screens — all modals/overlays.
           Extracted to TableModalsLayer to keep TablePage under control. */}
       <PineappleDiscard
-        isOpen={!!heroPineappleCards}
+        /* `isActive` is the gate: see heroPineappleCards. A background table
+           alarms through the tab strip instead of painting a dead, unclickable
+           panel across the table you are actually playing. */
+        isOpen={isActive && !!heroPineappleCards}
+        /* The discard is a decision, so it can buy time like any other. The
+           same endpoint and the same bank; the engine routes a press made
+           during the round to this seat's own deadline. */
+        timeBanksRemaining={timeBanksRemaining ?? 0}
+        onTimeBank={handleActivateTimeBank}
         cards={heroPineappleCards ?? []}
         onDiscard={handlePineappleDiscard}
         deadline={pineappleDeadline}
+        durationMs={tableState.discardDurationMs}
         deckStyle={userSettings.fourColorDeck ? '4color' : '2color'}
       />
 
@@ -21323,6 +22065,22 @@ export default function TablePage({
             toast?.error?.('Could Not Build A Share Link For That Hand');
           }
         }}
+      />
+      {/* The maintenance break overlay (Dan 2026-09-01). Rendered here rather
+          than inside TableModalsLayer because it must survive the states that
+          layer is gated behind: it is up precisely when the engine socket is
+          gone and the table state is stale, which is the one moment the player
+          most needs to be told their seat is safe. */}
+      {/* One overlay, not four. MultiTablePage mounts up to four TablePages
+          at once and this layer is position:fixed, so without the isActive
+          gate a break would stack four identical full-screen dialogs on top
+          of each other. The break is platform-wide, so the foreground tile
+          speaks for all of them. */}
+      <MaintenanceBreakScreen
+        isVisible={maintenanceBreak.active && (!isMultiTable || isActive)}
+        phase={maintenanceBreak.phase}
+        breakEndsAtMs={maintenanceBreak.breakEndsAtMs}
+        reason={maintenanceBreak.reason}
       />
       <TableModalsLayer
         tableId={tableId}

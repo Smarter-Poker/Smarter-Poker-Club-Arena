@@ -41,7 +41,7 @@ describe('it is a real dialog', () => {
     render(<HeroHubPanel {...base} />);
     const dlg = screen.getByRole('dialog');
     expect(dlg.getAttribute('aria-modal')).toBe('true');
-    expect(dlg.getAttribute('aria-label')).toBe('Player hub');
+    expect(dlg.getAttribute('aria-label')).toBe('Player Hub');
   });
 
   it('Escape closes it', () => {
@@ -105,22 +105,44 @@ describe('the tablist follows the WAI-ARIA tab pattern', () => {
   });
 });
 
-describe('A MENU MUST NEVER TIME OUT A HAND', () => {
-  it('closes itself when the turn arrives while it is open', () => {
+/*
+ * REPLACES 'A MENU MUST NEVER TIME OUT A HAND' (Dan 2026-08-31, binding).
+ *
+ * That block pinned the opposite rule: the hub called onClose() as soon as the
+ * turn arrived, so it could not cover the action buttons. Dan: "IT SHOULD
+ * NEVER AUTO CLOSE." The hazard it guarded against (a covered Fold button) is
+ * now answered in CSS - the overlay yields instead of closing - so the
+ * assertion moved to the new mechanism rather than being deleted.
+ */
+describe('NOTHING THE PLAYER OPENED EVER CLOSES ITSELF', () => {
+  it('stays open when the turn arrives, and yields the felt instead', () => {
+    const onClose = vi.fn();
+    const view = render(<HeroHubPanel {...base} onClose={onClose} isHeroTurn={false} />);
+    const overlay = () => view.baseElement.querySelector('.hero-hub__overlay');
+
+    expect(overlay()).toBeTruthy();
+    expect(overlay()?.className).not.toContain('hero-hub__overlay--yield');
+
+    view.rerender(<HeroHubPanel {...base} onClose={onClose} isHeroTurn={true} />);
+
+    expect(
+      onClose,
+      'the hub closed itself when the turn arrived - it must never auto close'
+    ).not.toHaveBeenCalled();
+    expect(overlay(), 'the hub unmounted when the turn arrived').toBeTruthy();
+    expect(
+      overlay()?.className,
+      'the hub stayed open but did not yield, so it still covers the action bar'
+    ).toContain('hero-hub__overlay--yield');
+  });
+
+  it('does not yield or close while the turn is not the hero seat', () => {
     const onClose = vi.fn();
     const view = render(<HeroHubPanel {...base} onClose={onClose} isHeroTurn={false} />);
     expect(onClose).not.toHaveBeenCalled();
-    view.rerender(<HeroHubPanel {...base} onClose={onClose} isHeroTurn={true} />);
-    expect(
-      onClose,
-      'the hub stayed open over the action buttons while the clock ran'
-    ).toHaveBeenCalled();
-  });
-
-  it('does not close for a turn that is not the hero seat', () => {
-    const onClose = vi.fn();
-    render(<HeroHubPanel {...base} onClose={onClose} isHeroTurn={false} />);
-    expect(onClose).not.toHaveBeenCalled();
+    expect(view.baseElement.querySelector('.hero-hub__overlay')?.className).not.toContain(
+      'hero-hub__overlay--yield'
+    );
   });
 });
 

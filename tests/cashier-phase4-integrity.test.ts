@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { resolvePreloadRouteKey } from '../src/utils/ChunkPreloader';
 
 const root = resolve(import.meta.dirname, '..');
 const page = readFileSync(resolve(root, 'src/pages/CashierTradePage.tsx'), 'utf8');
 const home = readFileSync(resolve(root, 'src/pages/HomePage.tsx'), 'utf8');
 const union = readFileSync(resolve(root, 'src/pages/UnionDashboardPage.tsx'), 'utf8');
+const quickLinkTile = readFileSync(
+  resolve(root, 'src/components/home/ClubQuickLinkTile.tsx'),
+  'utf8'
+);
+const cashierStyles = readFileSync(resolve(root, 'src/pages/CashierTradePage.module.css'), 'utf8');
 const modal = readFileSync(resolve(root, 'src/components/wallet/WalletCashierModal.tsx'), 'utf8');
 const sql = readFileSync(
   resolve(root, 'supabase/migrations/20260830010000_cashier_integrity_and_wallet_launcher.sql'),
@@ -32,6 +38,30 @@ describe('cashier integrity and wallet launcher', () => {
     expect(home).toMatch(
       /case '4':[\s\S]+resolveCashierWallet\(eligibleCashierWallets\(userClubs\)/
     );
+  });
+
+  it('preloads the exact Trade cashier chunk used by the lobby destination', () => {
+    expect(home).toContain(
+      "preloadPath={tile.alt === 'Cashier' ? '/cashier/trade' : '/marketplace'}"
+    );
+    expect(resolvePreloadRouteKey('/cashier/trade')).toBe('/cashier/trade');
+    expect(resolvePreloadRouteKey('/cashier')).toBe('/cashier');
+  });
+
+  it('versions union dashboard loads so an old route cannot paint under a new URL', () => {
+    expect(union).toContain('const dashLoadVersion = useRef(0)');
+    expect(union).toContain('const requestVersion = ++dashLoadVersion.current');
+    expect(union).toContain('dashLoadVersion.current === requestVersion');
+    expect(union).toContain('loadUnionData(id, requestVersion)');
+  });
+
+  it('exposes recoverable balance reads and safe mobile cashier sheets', () => {
+    expect(quickLinkTile).toContain('Wallet Balances Unavailable.');
+    expect(quickLinkTile).toContain('clearClubChipBalanceCache();');
+    expect(quickLinkTile).toContain("aria-keyshortcuts={hasSwitch ? 'ArrowDown Shift+F10'");
+    expect(cashierStyles).toContain('100dvh');
+    expect(cashierStyles).toContain('env(safe-area-inset-bottom, 0px)');
+    expect(cashierStyles).toMatch(/\.modalActions\s*\{[\s\S]*position:\s*sticky/);
   });
 
   it('keeps retry ids for claim and reverse operations', () => {
@@ -92,11 +122,12 @@ describe('cashier integrity and wallet launcher', () => {
   });
 
   it('loads roster horse flags in the scoped RPC response', () => {
-    expect(page).toMatch(/supabase\s*\.rpc\(\s*'fn_club_cashier_members_v2'/);
+    expect(page).toMatch(/supabase\.rpc\(\s*'fn_club_cashier_members_page_v3'/);
     expect(page).not.toContain(".select('id, is_horse')");
     expect(sql).toContain('coalesce(p.is_horse, false)');
     expect(sql).toContain('order by m.role_rank desc, m.user_id');
-    expect(page).toContain('.range(offset, offset + rosterPageSize - 1)');
+    expect(page).toContain('p_after_role_rank: afterRoleRank');
+    expect(page).toContain('setDownline(mapCashierRoster(dl, user.id))');
   });
 
   it('blocks money submissions while role and roster authority are refreshing', () => {

@@ -29,6 +29,8 @@
  * a 20,000-line component.
  */
 
+import { MAX_SUPPORTED_SEATS } from './tableSeatGeometry';
+
 /** The slice of table state this reconciliation reads. */
 export interface HeroSeatReconcileInput {
   /** Per-seat rows, index = seat - 1. A null is an empty seat. */
@@ -51,12 +53,17 @@ export interface HeroSeatReconcilePatch {
  *
  * The seat number arrives over the network. Without a bound, one corrupt or
  * hostile payload (`seat: 1e9`) would have the client allocate a billion rows
- * and hang the tab — turning a rendering disagreement into a denial of
- * service. Nine is the largest table the product has ever offered and
- * SEAT_LAYOUTS defines nothing beyond it; ten leaves a seat of headroom so a
- * future 10-max table is a config change rather than a hunt through this file.
+ * and hang the tab — turning a rendering disagreement into a denial of service.
+ *
+ * RE-EXPORTED FROM THE LAYOUTS, NOT REDECLARED (2026-08-31 audit). The first
+ * version of this file wrote `= 10` as its own literal, "for headroom", while
+ * SEAT_LAYOUTS stops at 9 — so a ten-seat table would have grown ten rows of
+ * state against nine drawable positions, and seat 10 would have existed and
+ * rendered nowhere. That is precisely the defect this module was written to
+ * prevent, reintroduced one layer up by a number copied out of its source.
+ * The bound now IS the number of rings that exist.
  */
-export const MAX_SUPPORTED_SEATS = 10;
+export { MAX_SUPPORTED_SEATS } from './tableSeatGeometry';
 
 /**
  * Decide what — if anything — must change so the client renders the seat the

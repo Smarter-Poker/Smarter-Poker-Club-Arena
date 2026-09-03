@@ -424,12 +424,11 @@ export default function FriendsPage() {
 
   const acceptRequest = async (friendshipId: string) => {
     try {
-      const { error } = await supabase
-        .from('friendships')
-        .update({ status: 'accepted' })
-        .eq('id', friendshipId)
-        .eq('friend_id', user?.id);
+      const { data, error } = await supabase.rpc('accept_friendship', {
+        p_friendship_id: friendshipId,
+      });
       if (error) throw error;
+      if (data?.success !== true) throw new Error(data?.error || 'Friend request was not accepted');
       masterBus.emit('FRIEND_REQUEST_ACCEPTED', { friendshipId });
       await loadFriends();
       toast.success('Friend request accepted!');
@@ -514,7 +513,7 @@ export default function FriendsPage() {
       <CommunitySurfaceHeader
         eyebrow="Community / Connections"
         title="Your Poker Circle"
-        description="Manage relationships, respond to players, track shared activity, and launch friendly competitions without losing the game."
+        description="Manage Relationships, Respond To Players, Track Shared Activity, And Launch Friendly Competitions Without Losing The Game."
         metrics={[
           { label: 'Friends', value: friends.length },
           { label: 'Online', value: onlineCount, tone: 'live' },
@@ -557,7 +556,7 @@ export default function FriendsPage() {
           )}
         </div>
 
-        <div className="friends-tab-rail" role="tablist" aria-label="Connection views">
+        <div className="friends-tab-rail" role="tablist" aria-label="Connection Views">
           {FRIEND_TABS.map((tab) => {
             const count =
               tab.id === 'friends'
@@ -598,7 +597,7 @@ export default function FriendsPage() {
                   type="search"
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Search by player name"
+                  placeholder="Search By Player Name"
                 />
                 {filteredFriends.length > 0 && (
                   <button type="button" onClick={exportFriends}>
@@ -622,7 +621,7 @@ export default function FriendsPage() {
             )}
 
             {loading ? (
-              <div className="friends-skeleton-list" role="status" aria-label="Loading friends">
+              <div className="friends-skeleton-list" role="status" aria-label="Loading Friends">
                 {Array.from({ length: 5 }).map((_, index) => (
                   <div className="friends-skeleton-row" key={index}>
                     <span />
@@ -636,11 +635,11 @@ export default function FriendsPage() {
             ) : filteredFriends.length === 0 ? (
               <div className="friends-empty">
                 <span aria-hidden="true">◇</span>
-                <h3>{searchQuery ? 'No friends match that name' : 'Build your poker circle'}</h3>
+                <h3>{searchQuery ? 'No Friends Match That Name' : 'Build Your Poker Circle'}</h3>
                 <p>
                   {searchQuery
-                    ? 'Clear the filter or search the wider community.'
-                    : 'Find players you trust, then message, challenge, and follow their activity here.'}
+                    ? 'Clear The Filter Or Search The Wider Community.'
+                    : 'Find Players You Trust, Then Message, Challenge, And Follow Their Activity Here.'}
                 </p>
                 <button type="button" onClick={() => navigate('/search?type=players')}>
                   Find Players
@@ -650,7 +649,7 @@ export default function FriendsPage() {
               <div className="friends-groups">
                 {visibleOnlineFriends.length > 0 && (
                   <FriendGroup
-                    label="Online now"
+                    label="Online Now"
                     friends={visibleOnlineFriends}
                     totalCount={onlineFriends.length}
                     navigate={navigate}
@@ -855,16 +854,16 @@ function FriendGroup({
                 <strong>{friend.username}</strong>
                 <small>
                   {!friend.profile_available
-                    ? 'Connection record only'
+                    ? 'Connection Record Only'
                     : friend.is_online
-                      ? 'Online now'
+                      ? 'Online Now'
                       : formatSocialLastSeen(friend.last_seen)}
                 </small>
               </span>
             </button>
             <div
               className={`friend-actions ${friend.profile_available ? '' : 'is-unavailable'}`}
-              aria-label={`Actions for ${friend.username}`}
+              aria-label={`Actions For ${friend.username}`}
             >
               {friend.profile_available && (
                 <>

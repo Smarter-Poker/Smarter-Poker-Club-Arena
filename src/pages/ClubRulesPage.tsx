@@ -281,7 +281,7 @@ export default function ClubRulesPage() {
             <textarea
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
-              placeholder="Enter Your Club Rules And Guidelines Here...&#10;&#10;Example:&#10;1. Be Respectful To All Players&#10;2. No Slow-rolling&#10;3. Minimum Buy-in Is 50 BB&#10;4. Seat Changes Allowed Between Hands&#10;5. No External Software Allowed"
+              placeholder="Enter Your Club Rules And Guidelines Here...&#10;&#10;Example:&#10;1. Be Respectful To All Players&#10;2. No Slow-Rolling&#10;3. Minimum Buy-In Is 50 BB&#10;4. Seat Changes Allowed Between Hands&#10;5. No External Software Allowed"
               rows={18}
               className="rules-textarea"
             />
@@ -314,8 +314,8 @@ export default function ClubRulesPage() {
                 <h3>No Rules Set</h3>
                 <p>
                   {isAdmin
-                    ? 'Add rules and guidelines for your club members.'
-                    : "The club owner hasn't set any rules yet."}
+                    ? 'Add Rules And Guidelines For Your Club Members.'
+                    : "The Club Owner Hasn't Set Any Rules Yet."}
                 </p>
               </div>
             )}

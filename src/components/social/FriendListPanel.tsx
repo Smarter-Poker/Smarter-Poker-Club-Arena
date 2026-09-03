@@ -15,6 +15,7 @@ import { haptic } from '../../services/HapticService';
 import type { VipTier, PresenceStatus } from '../avatars/PlayerAvatar';
 import styles from './FriendListPanel.module.css';
 import { reportError } from '../../utils/errorReporter';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 
 interface Friend {
   id: string;
@@ -121,7 +122,7 @@ function FriendListPanelInner({
         try {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, username, display_name, avatar_url, level, tier')
+            .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url, level, tier`)
             .in('id', allFriendIds);
           if (profiles) {
             for (const p of profiles) profileMap[p.id] = p;
@@ -138,7 +139,7 @@ function FriendListPanelInner({
         return {
           id: f.id,
           friendId: f.friend_id,
-          displayName: p?.display_name || p?.username || 'Unknown',
+          displayName: playerDisplayName(p),
           username: p?.username || '',
           avatarUrl: p?.avatar_url,
           isOnline: false,
@@ -155,7 +156,7 @@ function FriendListPanelInner({
         return {
           id: f.id,
           friendId: f.user_id,
-          displayName: p?.display_name || p?.username || 'Unknown',
+          displayName: playerDisplayName(p),
           username: p?.username || '',
           avatarUrl: p?.avatar_url,
           isOnline: false,
@@ -270,7 +271,7 @@ function FriendListPanelInner({
         user_id: targetUser.id,
         type: 'friend_request',
         title: 'Friend Request',
-        message: `${user?.display_name || 'Someone'} wants to be your friend!`,
+        message: `${playerDisplayName(user)} wants to be your friend!`,
         data: { from_user_id: user.id },
       });
       if (notifyError) console.warn('[Friends] notification insert failed:', notifyError.message);
@@ -367,7 +368,7 @@ function FriendListPanelInner({
           <div className={styles.loading}>Loading...</div>
         ) : filteredFriends.length === 0 ? (
           <div className={styles.empty}>
-            {searchQuery ? 'No friends match your search' : 'No friends yet'}
+            {searchQuery ? 'No Friends Match Your Search' : 'No Friends Yet'}
           </div>
         ) : (
           filteredFriends.map((friend, idx) => (
@@ -421,8 +422,8 @@ function FriendListPanelInner({
                       haptic.light();
                       onInviteClick(friend.friendId);
                     }}
-                    title="Invite to table"
-                    aria-label="Invite to table"
+                    title="Invite To Table"
+                    aria-label="Invite To Table"
                   ></button>
                 )}
               </div>

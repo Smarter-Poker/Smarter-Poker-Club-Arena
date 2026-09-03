@@ -108,14 +108,25 @@ export interface HeroHubPanelProps {
   /**
    * True while the hero is the seat on the clock.
    *
-   * A MODAL MUST NEVER COST A PLAYER THEIR HAND (2026-08-29). Observed live:
-   * the hub opens over the action buttons, and the turn timer does not care
-   * that you are reading your own VPIP. When the turn ARRIVES while the hub is
-   * open, the hub closes itself and hands the felt back. This is not a
-   * preference being changed behind the player's back — it is the one moment
-   * where staying open has a cost measured in chips. (It is also not the
-   * `no-auto-table-switch` law: nothing switches tables, and `activeIndex` is
-   * never touched.)
+   * NOTHING THE PLAYER OPENED EVER CLOSES ITSELF (Dan 2026-08-31, BINDING):
+   * "you cant click on the stats, or hit anything inside the avatar selection
+   * and keep it up, it auto closes when action is on you and that shouldn't
+   * happen... it should NEVER auto close."
+   *
+   * The code this replaces called `onClose()` from an effect the instant the
+   * turn arrived, reasoning that a modal must never cost a player their hand.
+   * The hazard was real; the remedy was not. The hazard is that the hub COVERS
+   * the action buttons — so the fix is to stop covering them, not to stop
+   * showing the hub.
+   *
+   * When this is true the overlay YIELDS instead of closing: the backdrop goes
+   * transparent and stops taking pointer events, and the panel lifts clear of
+   * `--sp-action-reserve` (the height the action bar owns). The hub stays
+   * exactly where the player put it, the buttons underneath are visible and
+   * clickable, and no turn is ever spent because a menu took itself away.
+   *
+   * Do not reintroduce a close here, under any flag, for any duration. Pinned
+   * by tests/unit/heroHubDialogBehaviour.test.tsx.
    */
   isHeroTurn?: boolean;
   /**
@@ -250,13 +261,15 @@ export function HeroHubPanel({
     };
   }, [isOpen, onClose]);
 
-  /**
-   * The turn arrived while the hub was open — hand the felt back. See the
-   * `isHeroTurn` prop note: a menu must never be the reason a hand times out.
+  /*
+   * THERE IS DELIBERATELY NO AUTO-CLOSE EFFECT HERE.
+   *
+   * `useEffect(() => { if (isOpen && isHeroTurn) onClose(); })` used to live on
+   * this line. Dan 2026-08-31: "IT SHOULD NEVER AUTO CLOSE." The turn is
+   * handled by yielding the felt (see the `isHeroTurn` prop note and the
+   * `--yield` modifier below), not by taking the panel away from the player who
+   * opened it. Anything you are tempted to add here belongs in CSS.
    */
-  useEffect(() => {
-    if (isOpen && isHeroTurn) onClose();
-  }, [isOpen, isHeroTurn, onClose]);
 
   if (!isOpen) return null;
 
@@ -292,12 +305,20 @@ export function HeroHubPanel({
   };
 
   return (
-    <div className="hero-hub__overlay" onClick={onClose} role="presentation">
+    <div
+      /* --yield: the hero is on the clock. The backdrop stops painting and
+         stops taking clicks so the action bar underneath is both visible and
+         pressable; the panel itself keeps its own pointer-events and simply
+         sits above the bar. See the isHeroTurn prop note. */
+      className={`hero-hub__overlay${isHeroTurn ? ' hero-hub__overlay--yield' : ''}`}
+      onClick={onClose}
+      role="presentation"
+    >
       <div
         className="hero-hub"
         role="dialog"
         aria-modal="true"
-        aria-label="Player hub"
+        aria-label="Player Hub"
         ref={panelRef}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
@@ -321,7 +342,7 @@ export function HeroHubPanel({
         <div
           className="hero-hub__tabs"
           role="tablist"
-          aria-label="Player hub sections"
+          aria-label="Player Hub Sections"
           ref={tablistRef}
           onKeyDown={onTablistKeyDown}
         >

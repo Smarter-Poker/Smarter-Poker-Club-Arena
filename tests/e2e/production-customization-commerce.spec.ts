@@ -10,6 +10,7 @@ import {
 import { ensurePlayableProfile } from './support/ensurePlayableProfile';
 import {
   cleanupTemporaryCustomizationAccount,
+  cleanupStaleTemporaryCustomizationAccounts,
   createTemporaryCustomizationAccount,
   expectedUnlockForFeature,
   listTableStudioStorefrontSkus,
@@ -121,7 +122,7 @@ async function activateCategory(studio: Locator, name: string) {
 async function openPurchase(studio: Locator, category: string, assetName: string) {
   await activateCategory(studio, category);
   const asset = studio.getByRole('button', {
-    name: `${assetName}, purchase or VIP required`,
+    name: `${assetName}, Purchase Or VIP Required`,
     exact: true,
   });
   await expect(asset).toBeEnabled({ timeout: 30_000 });
@@ -163,7 +164,7 @@ async function expectNoLockedAssets(studio: Locator) {
       .poll(
         () =>
           studio
-            .locator('.theme-modal__grid .theme-asset[aria-label*="purchase or VIP required"]')
+            .locator('.theme-modal__grid .theme-asset[aria-label*="Purchase Or VIP Required"]')
             .count(),
         {
           timeout: RESPONSE_TIMEOUT,
@@ -180,7 +181,7 @@ async function expectNoLockedAssets(studio: Locator) {
       .poll(
         () =>
           studio
-            .locator('.theme-modal__grid .theme-asset[aria-label*="purchase or VIP required"]')
+            .locator('.theme-modal__grid .theme-asset[aria-label*="Purchase Or VIP Required"]')
             .count(),
         { timeout: RESPONSE_TIMEOUT, message: `${group} still contained a locked purchased item.` }
       )
@@ -217,6 +218,10 @@ test.describe('production Table Studio commerce certification', () => {
     if (!baseURL) throw new Error('A deployed BASE_URL is required.');
 
     const environment = requireCustomizationCertificationEnvironment();
+    const staleAccountsRemoved = await cleanupStaleTemporaryCustomizationAccounts(environment);
+    console.log(
+      `[customization-certification] removed ${staleAccountsRemoved} stale reserved account(s)`
+    );
     const skus = await listTableStudioStorefrontSkus(environment);
     expect(skus.length).toBeGreaterThanOrEqual(60);
     const totalCost = skus.reduce((sum, sku) => sum + sku.diamond_cost, 0);

@@ -28,6 +28,7 @@ import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 import { supabaseServerHeaders } from './supabase-auth-headers.mjs';
+import { loadColumnsManifest } from './schema-manifest.mjs';
 
 const REPO = process.cwd();
 const MANIFEST = join(REPO, 'scripts/ci/supabase-columns-manifest.json');
@@ -43,7 +44,15 @@ function loadJson(p, label) {
   return JSON.parse(readFileSync(p, 'utf8'));
 }
 
-const cols = loadJson(MANIFEST, 'columns manifest').columns || {};
+/* Base snapshot UNION scripts/ci/schema-manifest.d/*.json - see
+   scripts/ci/schema-manifest.mjs for why the base is read-only to agents. */
+let cols;
+try {
+  cols = loadColumnsManifest(REPO).columns;
+} catch (err) {
+  console.error(`ERROR: ${err.message}`);
+  process.exit(2);
+}
 const allow = loadJson(ALLOWLIST, 'invariants allowlist');
 // A table→Set(columns) lookup. PostgREST also always allows these virtual cols.
 const VIRTUAL = new Set(['count']);

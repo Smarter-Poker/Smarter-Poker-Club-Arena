@@ -12,6 +12,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { reconcileHeroSeatFromEngine, MAX_SUPPORTED_SEATS } from '@/lib/heroSeatReconcile';
+import { SEAT_LAYOUTS, seatLayoutFor } from '@/lib/tableSeatGeometry';
 
 const HERO = 'hero-user-id';
 
@@ -108,5 +109,21 @@ describe('reconcileHeroSeatFromEngine — it must settle', () => {
   it('refuses to act without a user id', () => {
     const state = { players: [] as ({ id?: string } | null)[], maxPlayers: 6, heroSeat: 0 };
     expect(reconcileHeroSeatFromEngine(state, 5, '')).toBeNull();
+  });
+
+  it('never grows past a seat the client can actually DRAW', () => {
+    /* The bound and the seat rings must be the same number. The first cut of
+       this module declared `MAX_SUPPORTED_SEATS = 10` as its own literal for
+       "headroom" while SEAT_LAYOUTS stops at 9 — which would have grown ten
+       rows of state against nine drawable positions, so seat 10 would exist
+       and render nowhere. That is the very bug this module prevents, planted
+       one layer up by a copied number. It is derived now; this pins that. */
+    const drawable = Object.keys(SEAT_LAYOUTS).reduce((m, k) => Math.max(m, Number(k)), 0);
+    expect(MAX_SUPPORTED_SEATS).toBe(drawable);
+
+    // And the largest seat it WILL accept has a ring to be drawn on.
+    const state = { players: [] as ({ id?: string } | null)[], maxPlayers: 2, heroSeat: 0 };
+    expect(reconcileHeroSeatFromEngine(state, MAX_SUPPORTED_SEATS, HERO)).not.toBeNull();
+    expect(seatLayoutFor(MAX_SUPPORTED_SEATS).length).toBeGreaterThanOrEqual(MAX_SUPPORTED_SEATS);
   });
 });

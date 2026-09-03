@@ -15,7 +15,12 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { masterBus } from '../core/MasterBus';
 
-import type { LeaderboardSettings, LeaderboardPayout } from '../services/LeaderboardService';
+import type {
+  LeaderboardSettings,
+  LeaderboardPayout,
+  LeaderboardRewardContext,
+  LeaderboardRewardPlan,
+} from '../services/LeaderboardService';
 import { LeaderboardService } from '../services/LeaderboardService';
 import type {
   LeaderboardEntry,
@@ -142,49 +147,49 @@ const METRIC_OPTIONS: {
     value: 'profit',
     label: 'Profit',
     icon: '◆',
-    description: 'Net chips won (winnings minus invested)',
+    description: 'Net Chips Won (Winnings Minus Invested)',
     globalSupported: true,
   },
   {
     value: 'bb100',
-    label: 'bb/100',
+    label: 'BB/100',
     icon: '◈',
-    description: 'Big blinds won per 100 hands - comparable across stakes',
+    description: 'Big Blinds Won Per 100 Hands - Comparable Across Stakes',
     globalSupported: true,
   },
   {
     value: 'hands_played',
     label: 'Hands Played',
     icon: '♠',
-    description: 'Total hands dealt in',
+    description: 'Total Hands Dealt In',
     globalSupported: true,
   },
   {
     value: 'tournaments_won',
     label: 'Tournaments Won',
     icon: '★',
-    description: 'Tournament victories',
+    description: 'Tournament Victories',
     globalSupported: true,
   },
   {
     value: 'vpip',
     label: 'VPIP',
     icon: '▦',
-    description: 'Voluntarily put chips in pot %',
+    description: 'Voluntarily Put Chips In Pot %',
     globalSupported: false,
   },
   {
     value: 'pfr',
     label: 'PFR',
     icon: '▤',
-    description: 'Preflop raise %',
+    description: 'Preflop Raise %',
     globalSupported: false,
   },
   {
     value: 'roi',
     label: 'ROI',
     icon: '▲',
-    description: 'Return on invested chips %',
+    description: 'Return On Invested Chips %',
     globalSupported: true,
   },
 ];
@@ -228,10 +233,17 @@ export default function LeaderboardPage() {
 
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState<LeaderboardSettings | null>(null);
+  const [editingSettings, setEditingSettings] = useState<LeaderboardSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsReloadKey, setSettingsReloadKey] = useState(0);
+  const [ownerToolsError, setOwnerToolsError] = useState<string | null>(null);
   const [payouts, setPayouts] = useState<LeaderboardPayout[]>([]);
+  const [rewardPlan, setRewardPlan] = useState<LeaderboardRewardPlan | null>(null);
+  const [rewardPlanError, setRewardPlanError] = useState<string | null>(null);
   const settingsRequestRef = useRef(0);
   const openedSetupLinkRef = useRef<string | null>(null);
+  const previousUserIdRef = useRef<string | null>(null);
 
   const [userClubs, setUserClubs] = useState<UserClub[]>([]);
   const [selectedClubId, setSelectedClubId] = useState<string | null>(null);
@@ -276,12 +288,18 @@ export default function LeaderboardPage() {
   // Load user's clubs on mount or when user auth changes
   useEffect(() => {
     let isMounted = true;
+    const previousUserId = previousUserIdRef.current;
+    if (user === null || (previousUserId && user?.id && previousUserId !== user.id)) {
+      setShowSettings(false);
+      setEditingSettings(null);
+    }
+    if (user?.id) previousUserIdRef.current = user.id;
+    else if (user === null) previousUserIdRef.current = null;
     setUserClubs([]);
     setSelectedClubId(null);
     setUserRank(null);
     setPayouts([]);
     setSettings(null);
-    setShowSettings(false);
     if (user?.id) {
       loadUserClubs(() => isMounted);
     } else if (user === null) {
@@ -373,8 +391,8 @@ export default function LeaderboardPage() {
 
   useEffect(() => {
     const requestId = ++settingsRequestRef.current;
-    setShowSettings(false);
-    setSettings(null);
+    setSettings((current) => (current?.club_id === selectedClubId ? current : null));
+    setSettingsError(null);
     if (!selectedClubId) {
       setSettingsLoading(false);
       return;
@@ -387,17 +405,22 @@ export default function LeaderboardPage() {
         setSettings(data);
       })
       .catch(() => {
-        if (requestId === settingsRequestRef.current) setSettings(null);
+        if (requestId === settingsRequestRef.current) {
+          setSettingsError('Prize Setup Could Not Be Loaded.');
+        }
       })
       .finally(() => {
         if (requestId === settingsRequestRef.current) setSettingsLoading(false);
       });
-  }, [selectedClubId, userClubs]);
+  }, [selectedClubId, userClubs, settingsReloadKey]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const requestedClubId = params.get('club');
-    if (params.get('setup') !== 'prizes' || !requestedClubId) return;
+    if (params.get('setup') !== 'prizes' || !requestedClubId) {
+      openedSetupLinkRef.current = null;
+      return;
+    }
 
     if (
       userClubs.some((club) => club.id === requestedClubId) &&
@@ -416,9 +439,12 @@ export default function LeaderboardPage() {
       openedSetupLinkRef.current !== requestKey
     ) {
       openedSetupLinkRef.current = requestKey;
+      setEditingSettings(settings);
       setShowSettings(true);
+      params.delete('setup');
+      navigate({ search: params.toString() }, { replace: true });
     }
-  }, [location.search, selectedClubId, settings, userClubs]);
+  }, [location.search, navigate, selectedClubId, settings, userClubs]);
 
   // 2026-08-24: a useMasterBusChannel({ table: 'tournament_players',
   // filter: null }) used to sit here. It NEVER SUBSCRIBED - the hook
@@ -490,10 +516,14 @@ export default function LeaderboardPage() {
   const loadUserClubs = async (getIsMounted?: () => boolean) => {
     setClubsLoading(true);
     try {
-      const [memberships, rewardContexts] = await Promise.all([
-        getUserMemberships(user),
-        LeaderboardService.getManageableRewardContexts(),
-      ]);
+      const memberships = await getUserMemberships(user);
+      let rewardContexts: LeaderboardRewardContext[] = [];
+      try {
+        rewardContexts = await LeaderboardService.getManageableRewardContexts(true);
+        setOwnerToolsError(null);
+      } catch {
+        setOwnerToolsError('Owner Prize Tools Could Not Be Loaded.');
+      }
       const memberClubs = memberships
         .map((m) => ({
           id: (m.club?.id || m.club_id) as string,
@@ -559,6 +589,8 @@ export default function LeaderboardPage() {
     if (!silent) {
       setLoadError(null);
       setPayouts([]);
+      setRewardPlan(null);
+      setRewardPlanError(null);
       setUserRank(null);
       const cached = getCachedEntries(cacheKey);
       if (cached && cached.entries.length > 0) {
@@ -614,22 +646,34 @@ export default function LeaderboardPage() {
 
       // Secondary metadata is independent and can arrive in parallel. This
       // removes two serial round-trips from the visible page-load path.
-      const payoutPromise =
+      const periodMetadataPromise =
         !isGlobal && selectedClubId
-          ? (() => {
-              return LeaderboardService.getPeriodWindow(period, periodOffset).then((window) =>
+          ? LeaderboardService.getPeriodWindow(period, periodOffset).then(async (window) => {
+              const [payoutResult, planResult] = await Promise.allSettled([
                 LeaderboardService.getPayoutsForPeriod(
                   selectedClubId,
                   period,
                   metric,
                   window.start_date
-                ).then((periodPayouts) => {
-                  if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
-                    setPayouts(periodPayouts);
-                  }
-                })
-              );
-            })()
+                ),
+                period === 'weekly' || period === 'monthly'
+                  ? LeaderboardService.getLeaderboardRewardPlan(
+                      selectedClubId,
+                      period,
+                      window.start_date
+                    )
+                  : Promise.resolve(null),
+              ]);
+              if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
+                if (payoutResult.status === 'fulfilled') setPayouts(payoutResult.value);
+                if (planResult.status === 'fulfilled') {
+                  setRewardPlan(planResult.value);
+                  setRewardPlanError(null);
+                } else {
+                  setRewardPlanError('Period Prize Rules Could Not Be Verified.');
+                }
+              }
+            })
           : Promise.resolve();
 
       const rankPromise = user?.id
@@ -649,7 +693,7 @@ export default function LeaderboardPage() {
           })
         : Promise.resolve();
 
-      await Promise.allSettled([payoutPromise, rankPromise]);
+      await Promise.allSettled([periodMetadataPromise, rankPromise]);
     } catch (error) {
       reportError(error, 'LeaderboardPage.Failed_to_load_leaderboard');
       if (myReq === reqSeqRef.current && (!getIsMounted || getIsMounted())) {
@@ -778,17 +822,15 @@ export default function LeaderboardPage() {
     [payouts]
   );
   const plannedPrizesByRank = useMemo(() => {
-    if (scope !== 'my-clubs' || !settings?.rewards_enabled || settings.payout_metric !== metric) {
+    if (
+      scope !== 'my-clubs' ||
+      !rewardPlan?.rewards_enabled ||
+      rewardPlan.payout_metric !== metric
+    ) {
       return new Map<number, number>();
     }
-    const plan =
-      period === 'weekly'
-        ? settings.weekly_prizes
-        : period === 'monthly'
-          ? settings.monthly_prizes
-          : [];
-    return new Map(plan.map((prize) => [prize.rank, prize.amount]));
-  }, [metric, period, scope, settings]);
+    return new Map(rewardPlan.prizes.map((prize) => [prize.rank, prize.amount]));
+  }, [metric, rewardPlan, scope]);
 
   const top3 = entries.slice(0, 3);
   const rest = entries.slice(3);
@@ -875,7 +917,7 @@ export default function LeaderboardPage() {
         />
         {entry.isVIP && <span className="vip-badge">VIP</span>}
         {(entry.change || 0) >= 3 && (
-          <span className="hot-streak-badge" title="Hot streak: climbing fast">
+          <span className="hot-streak-badge" title="Hot Streak: Climbing Fast">
             {'↑'}
           </span>
         )}
@@ -986,13 +1028,13 @@ export default function LeaderboardPage() {
                   : `Updated ${lastUpdated.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`}
             </span>
             {activeTab === 'rankings' && windowLabel && (
-              <span className="lb-window-label" title="The snapshot this period is measured from">
+              <span className="lb-window-label" title="The Snapshot This Period Is Measured From">
                 {windowLabel}
               </span>
             )}
           </div>
         </div>
-        <div className="lb-hero-telemetry" aria-label="Current leaderboard summary">
+        <div className="lb-hero-telemetry" aria-label="Current Leaderboard Summary">
           <div>
             <span className="lb-telemetry-label">Field</span>
             <strong>{totalRanked != null ? totalRanked.toLocaleString('en-US') : '-'}</strong>
@@ -1013,9 +1055,9 @@ export default function LeaderboardPage() {
         </div>
       </section>
 
-      <section className="lb-control-deck" aria-label="Leaderboard controls">
+      <section className="lb-control-deck" aria-label="Leaderboard Controls">
         <div className="lb-control-header">
-          <div className="leaderboard-tabs" role="tablist" aria-label="Leaderboard views">
+          <div className="leaderboard-tabs" role="tablist" aria-label="Leaderboard Views">
             <button
               id="leaderboard-rankings-tab"
               className={`tab-btn ${activeTab === 'rankings' ? 'active' : ''}`}
@@ -1044,10 +1086,32 @@ export default function LeaderboardPage() {
             )}
           </div>
           <div className="lb-control-actions">
+            {ownerToolsError && (
+              <button
+                className="lb-action-btn"
+                onClick={() => void loadUserClubs(() => isMountedRef.current)}
+                title={ownerToolsError}
+              >
+                Retry Owner Tools
+              </button>
+            )}
+            {settingsError && scope !== 'global' && activeTab === 'rankings' && (
+              <button
+                className="lb-action-btn lb-action-prize"
+                onClick={() => setSettingsReloadKey((value) => value + 1)}
+                title={settingsError}
+              >
+                Retry Prize Setup
+              </button>
+            )}
             {canManagePrizes && scope !== 'global' && activeTab === 'rankings' && (
               <button
                 className="lb-action-btn lb-action-prize"
-                onClick={() => setShowSettings(true)}
+                onClick={() => {
+                  if (!settings) return;
+                  setEditingSettings(settings);
+                  setShowSettings(true);
+                }}
                 title="Set Up Leaderboard Prizes"
                 disabled={settingsLoading || !settings}
               >
@@ -1183,39 +1247,56 @@ export default function LeaderboardPage() {
       </section>
 
       {scope === 'my-clubs' && settings?.setup_complete && (
-        <section className="lb-prize-program" aria-label="Leaderboard prize program">
+        <section className="lb-prize-program" aria-label="Leaderboard Prize Program">
           <div className="lb-prize-program-mark" aria-hidden="true">
             ◆
           </div>
           <div className="lb-prize-program-copy">
             <span className="lb-prize-program-kicker">Owner Prize Circuit</span>
             <h2>
-              {settings.rewards_enabled
-                ? 'Leaderboard Prizes Are On'
-                : 'Leaderboard Prizes Are Off'}
+              {settings.rewards_enabled ? 'Prize Program Published' : 'Prize Program Disabled'}
             </h2>
             <p>
               {settings.rewards_enabled
-                ? `${settings.funding_label} Backs A ${prizePlanLabel(settings.suggestion_key)} Plan Ranked By ${METRIC_OPTIONS.find((option) => option.value === settings.payout_metric)?.label || 'Profit'}.`
+                ? `${settings.program_funding_label || settings.funding_label} Published A ${prizePlanLabel(settings.suggestion_key)} Plan Ranked By ${METRIC_OPTIONS.find((option) => option.value === settings.payout_metric)?.label || 'Profit'}.`
                 : `A Prize Plan Is Saved For ${settings.club_name}, But Rewards Are Not Published.`}
             </p>
           </div>
           <dl className="lb-prize-program-totals">
             <div>
+              <dt>Program Version</dt>
+              <dd>V{settings.program_version}</dd>
+            </div>
+            <div>
               <dt>Weekly</dt>
               <dd>{totalPrizePlan(settings.weekly_prizes).toLocaleString('en-US')} Chips</dd>
+              {settings.weekly_effective_from && (
+                <small>From {settings.weekly_effective_from}</small>
+              )}
             </div>
             <div>
               <dt>Monthly</dt>
               <dd>{totalPrizePlan(settings.monthly_prizes).toLocaleString('en-US')} Chips</dd>
+              {settings.monthly_effective_from && (
+                <small>From {settings.monthly_effective_from}</small>
+              )}
             </div>
           </dl>
           {canManagePrizes && (
-            <button type="button" onClick={() => setShowSettings(true)}>
+            <button
+              type="button"
+              onClick={() => {
+                setEditingSettings(settings);
+                setShowSettings(true);
+              }}
+            >
               Review Setup
             </button>
           )}
-          <span className="lb-prize-program-safety">Prize Planning Does Not Move Promo Chips.</span>
+          <span className="lb-prize-program-safety" role={rewardPlanError ? 'status' : undefined}>
+            {rewardPlanError ||
+              'Published Rules Activate At The Dates Shown. Publication Does Not Move Chips.'}
+          </span>
         </section>
       )}
 
@@ -1406,7 +1487,7 @@ export default function LeaderboardPage() {
                       {entry.username}
                       {entry.isVIP && <span className="entry-vip-tag">VIP</span>}
                       {(entry.change || 0) >= 3 && (
-                        <span className="hot-streak-badge" title="Hot streak: climbing fast">
+                        <span className="hot-streak-badge" title="Hot Streak: Climbing Fast">
                           {'↑'}
                         </span>
                       )}
@@ -1427,11 +1508,11 @@ export default function LeaderboardPage() {
                 className="lb-load-more"
                 onClick={loadMore}
                 disabled={loadingMore}
-                aria-label={`Load more, showing ${entries.length} of ${totalRanked}`}
+                aria-label={`Load More, Showing ${entries.length} Of ${totalRanked}`}
               >
                 {loadingMore
                   ? 'Loading...'
-                  : `Show more (${entries.length.toLocaleString('en-US')} of ${totalRanked.toLocaleString('en-US')})`}
+                  : `Show More (${entries.length.toLocaleString('en-US')} Of ${totalRanked.toLocaleString('en-US')})`}
               </button>
             )}
 
@@ -1448,7 +1529,7 @@ export default function LeaderboardPage() {
                   onKeyDown={user?.id ? rowKeyActivate(user.id) : undefined}
                   role="button"
                   tabIndex={0}
-                  aria-label={`Your position, ${getRankLabel(userRank.rank)}, ${formatValue(userRank.value, metric)}`}
+                  aria-label={`Your Position, ${getRankLabel(userRank.rank)}, ${formatValue(userRank.value, metric)}`}
                   style={{ cursor: 'pointer' }}
                 >
                   <span className="entry-rank">{getRankLabel(userRank.rank)}</span>
@@ -1494,7 +1575,7 @@ export default function LeaderboardPage() {
                   onKeyDown={rowKeyActivate(stat.userId)}
                   role="button"
                   tabIndex={0}
-                  aria-label={`Rank ${index + 1}, ${stat.username}, ${stat.totalPrizes.toLocaleString()} total prizes`}
+                  aria-label={`Rank ${index + 1}, ${stat.username}, ${stat.totalPrizes.toLocaleString()} Total Prizes`}
                   style={{ cursor: 'pointer' }}
                 >
                   <div className="stats-cell player-cell">
@@ -1528,15 +1609,19 @@ export default function LeaderboardPage() {
         ) : null}
       </div>
 
-      {showSettings && settings?.can_manage && (
+      {showSettings && editingSettings?.can_manage && (
         <LeaderboardPrizeWizard
           isOpen={showSettings}
-          setup={settings}
-          onClose={() => setShowSettings(false)}
+          setup={editingSettings}
+          onClose={() => {
+            setShowSettings(false);
+            setEditingSettings(null);
+          }}
           onSaved={(savedSetup) => {
             setSettings(savedSetup);
             setShowSettings(false);
-            toast.success('Prize Setup Saved.');
+            setEditingSettings(null);
+            toast.success(`Prize Program V${savedSetup.program_version} Published.`);
           }}
         />
       )}

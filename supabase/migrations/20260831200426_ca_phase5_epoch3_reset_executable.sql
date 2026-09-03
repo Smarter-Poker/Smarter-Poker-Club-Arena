@@ -1,0 +1,3 @@
+-- ca_phase5_epoch3_reset_executable (prod 20260831200426). Canonical body lives in prod schema_migrations -
+-- replace this marker byte-exact via scripts/dev/export-applied-migrations.sh.
+-- Phase 5: fn_ca_epoch3_preflight + fn_ca_execute_epoch3_reset (dry-run default; execute needs literal confirm + passing preflight; retires horse mint + frozen wallets pool, opens epoch 3).

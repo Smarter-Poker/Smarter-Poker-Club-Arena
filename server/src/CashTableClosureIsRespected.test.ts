@@ -25,7 +25,7 @@ const SRC = readFileSync(join(process.cwd(), 'src/GameServer.ts'), 'utf8');
 /** The normal-mode branch of cleanupStaleData, code only. */
 function normalModeBranch(): string {
   const m = /Normal mode: reset to waiting[\s\S]*?console\.log\([\s\S]*?\);/.exec(SRC);
-  if (!m) throw new Error('normal-mode reset branch not found — this test is measuring nothing');
+  if (!m) throw new Error('normal-mode reset branch not found - this test is measuring nothing');
   return m[0]
     .split('\n')
     .filter((l) => {
@@ -53,11 +53,11 @@ describe('cleanupStaleData normal-mode reset', () => {
     expect(branch).toContain("is('tournament_id', null)"); // cash only, never tournaments
   });
 
-  it('the E2E and fleet-disabled branches are untouched — they still close on purpose', () => {
+  it('the E2E and fleet-disabled branches are untouched - they still close on purpose', () => {
     // Both of those deliberately WRITE 'closed'; only the resurrecting read
     // filter was wrong. If these disappear, the test above would pass for the
     // wrong reason.
-    expect(SRC).toContain("E2E mode: closed all cash tables except");
+    expect(SRC).toContain('E2E mode: closed all cash tables except');
     expect(SRC).toContain('Closed all running cash tables (horse fleet disabled)');
   });
 

@@ -445,7 +445,7 @@ export const TournamentClock: React.FC<TournamentClockProps> = ({
           <button
             className="tc-fullscreen-btn"
             onClick={() => setIsFullscreen(!isFullscreen)}
-            title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
           >
             {isFullscreen ? '⊟' : '⊞'}
           </button>

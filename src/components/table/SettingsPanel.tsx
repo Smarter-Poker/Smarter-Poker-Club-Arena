@@ -234,7 +234,28 @@ export function SettingsPanel({
   if (!isOpen) return null;
 
   return (
-    <div className="settings-overlay" onClick={onClose}>
+    <div
+      className="settings-overlay"
+      /**
+       * ONLY THE BACKDROP ITSELF DISMISSES (Dan 2026-08-31).
+       *
+       * This was `onClick={onClose}`. AvatarGallery and ThemeSettingsModal are
+       * rendered as children of this div (below the footer) but each portals to
+       * document.body — and a React portal still bubbles its events up the
+       * REACT tree, not the DOM tree. So the first click on an avatar tile
+       * reached this handler and closed the whole settings panel, taking the
+       * picker with it: "you cant hit anything inside the avatar selection and
+       * keep it up, it auto closes."
+       *
+       * Comparing target to currentTarget means only a click that landed on the
+       * scrim itself closes. The panel's own stopPropagation on the line below
+       * stays — it stops clicks on the panel body, which is a different path
+       * from the portaled children.
+       */
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="settings-panel__header">
@@ -399,7 +420,7 @@ export function SettingsPanel({
                 value={settings.soundVolume}
                 onChange={(e) => handleSlider('soundVolume', parseInt(e.target.value))}
                 disabled={!settings.soundEnabled}
-                aria-label="Sound volume percent"
+                aria-label="Sound Volume Percent"
               />
             </div>
 

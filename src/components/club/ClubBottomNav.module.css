@@ -77,12 +77,17 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* NO BOXES OVER FOOTER ICONS (Dan, 2026-09-01, binding). Same law as the
+   global header: the icon art is the control, and an outline or inset ring
+   drawn on top of it is a defect. Focus stays visible as a soft glow. */
+.navItem:focus,
 .navItem:focus-visible {
-  outline: 3px solid rgba(255, 247, 222, 0.98);
-  outline-offset: -8px;
-  box-shadow:
-    inset 0 0 0 2px rgba(165, 124, 62, 0.88),
-    inset 0 0 22px rgba(255, 239, 196, 0.2);
+  outline: none;
+  box-shadow: none;
+}
+
+.navItem:focus-visible {
+  background: radial-gradient(closest-side, rgba(255, 239, 196, 0.22), rgba(255, 239, 196, 0) 78%);
 }
 
 .visuallyHidden {

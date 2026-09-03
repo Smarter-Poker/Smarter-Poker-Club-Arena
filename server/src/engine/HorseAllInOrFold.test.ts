@@ -90,7 +90,7 @@ function shoveWidth(extra: Record<string, unknown> = {}) {
   return jams / n;
 }
 
-describe('the shoving range tightens with depth — the whole point', () => {
+describe('the shoving range tightens with depth - the whole point', () => {
   it('100bb shoves a far narrower range than 12bb', () => {
     const short = shoveWidth({ stackBB: 12, stack: 1200 });
     const deep = shoveWidth({ stackBB: 100, stack: 10000 });
@@ -125,7 +125,7 @@ describe('the shoving range tightens with depth — the whole point', () => {
     expect(aof).toBeCloseTo(pf / n, 2);
   });
 
-  it('still shoves SOMETHING deep — it is not just a fold button', () => {
+  it('still shoves SOMETHING deep - it is not just a fold button', () => {
     expect(shoveWidth({ stackBB: 100, stack: 10000 })).toBeGreaterThan(0.02);
   });
 });

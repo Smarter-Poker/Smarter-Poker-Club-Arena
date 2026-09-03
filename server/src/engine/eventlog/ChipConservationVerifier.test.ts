@@ -4,7 +4,7 @@ import { replay } from './HandReducer.js';
 import type { HandEvent, PotAwarded } from './events.js';
 import { buildExampleHand } from './testFixtures.js';
 
-describe('ChipConservationVerifier — holds across a valid hand', () => {
+describe('ChipConservationVerifier - holds across a valid hand', () => {
   it('reports ok with zero violations for the example hand', () => {
     const report = verifyStream(buildExampleHand());
     expect(report.ok).toBe(true);
@@ -26,7 +26,7 @@ describe('ChipConservationVerifier — holds across a valid hand', () => {
   });
 });
 
-describe('ChipConservationVerifier — catches corruption', () => {
+describe('ChipConservationVerifier - catches corruption', () => {
   it('catches chips created by an overpaid PotAwarded and names the event', () => {
     const events = buildExampleHand();
     // Corrupt the payout: pay 900 instead of 340 (chips conjured from nothing).

@@ -20,7 +20,7 @@ export const Truncate: React.FC<TruncateProps> = ({ children, lines = 2, expanda
       </p>
       {expandable && (
         <button className="truncate-toggle" onClick={() => setExpanded(!expanded)}>
-          {expanded ? 'Show less' : 'Show more'}
+          {expanded ? 'Show Less' : 'Show More'}
         </button>
       )}
     </div>

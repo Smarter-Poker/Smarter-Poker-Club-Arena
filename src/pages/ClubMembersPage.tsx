@@ -32,6 +32,11 @@ import {
   rosterSearchKey,
   writeRosterCache,
 } from '../lib/rosterCache';
+import {
+  RosterSummaryCoordinator,
+  settleRosterReadsIndependently,
+  shouldTouchFeeRollup,
+} from '../lib/rosterLoadPolicy';
 import './ClubMembersPage.css';
 
 const ROSTER_OPERATIONS_ART = `${import.meta.env.BASE_URL}images/club-members/roster-ledger-desk-v2.webp`;
@@ -61,6 +66,8 @@ const SORT_LABEL: Record<RosterSort, string> = {
 };
 
 type OptionalColumn = 'downlines' | 'wallets' | 'fees' | 'activity';
+type SummaryFreshness = 'loading' | 'fresh' | 'stale' | 'failed';
+type RosterLoadOptions = { forceSummary?: boolean; resetRecovery?: boolean };
 
 const DEFAULT_SUMMARY: RosterSummary = {
   viewer_role: 'player',
@@ -105,6 +112,8 @@ export default function ClubMembersPage() {
 
   const [resolvedClubId, setResolvedClubId] = useState<string | null>(null);
   const [summary, setSummary] = useState<RosterSummary>(DEFAULT_SUMMARY);
+  const [summaryAvailable, setSummaryAvailable] = useState(false);
+  const [summaryFreshness, setSummaryFreshness] = useState<SummaryFreshness>('loading');
   const [members, setMembers] = useState<RosterMember[]>([]);
   const [cursor, setCursor] = useState<RosterCursor | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -142,10 +151,16 @@ export default function ClubMembersPage() {
   const moreAbortRef = useRef<AbortController | null>(null);
   const moreRef = useRef(false);
   const membersRef = useRef<RosterMember[]>([]);
+  const summaryAvailableRef = useRef(false);
+  const summaryCoordinatorRef = useRef(new RosterSummaryCoordinator<RosterSummary | null>());
+  const feeRollupTouchedAtRef = useRef<number | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recoveryAttemptRef = useRef(0);
+  const recoveryRequestKeyRef = useRef('');
   const realtimeConnectionRef = useRef<'connecting' | 'live' | 'degraded'>('connecting');
-  const latestLoadRef = useRef<() => Promise<void>>(async () => undefined);
+  const latestLoadRef = useRef<(options?: RosterLoadOptions) => Promise<void>>(
+    async () => undefined
+  );
 
   useEffect(() => {
     const next = new URLSearchParams(searchParams);
@@ -162,11 +177,20 @@ export default function ClubMembersPage() {
     setLoading(true);
     abortRef.current?.abort();
     moreAbortRef.current?.abort();
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = null;
+    recoveryAttemptRef.current = 0;
+    recoveryRequestKeyRef.current = '';
     requestEpochRef.current += 1;
     setResolvedClubId(null);
     membersRef.current = [];
     setMembers([]);
+    summaryCoordinatorRef.current.reset();
+    summaryAvailableRef.current = false;
+    feeRollupTouchedAtRef.current = null;
     setSummary(DEFAULT_SUMMARY);
+    setSummaryAvailable(false);
+    setSummaryFreshness('loading');
     setSelected(new Set());
     setCursor(null);
     setHasMore(false);
@@ -203,7 +227,10 @@ export default function ClubMembersPage() {
               if (cached) {
                 membersRef.current = cached.rows;
                 setMembers(cached.rows);
+                summaryAvailableRef.current = true;
                 setSummary(cached.summary);
+                setSummaryAvailable(true);
+                setSummaryFreshness('stale');
                 setFilteredTotal(cached.summary.counts.total);
                 setLastSuccessfulSyncAt(cached.cachedAt);
                 setDataFreshness('stale');
@@ -242,70 +269,154 @@ export default function ClubMembersPage() {
     }
   }, [resolvedClubId, searchQuery, user?.id]);
 
-  const loadFirstPage = useCallback(async () => {
-    if (!resolvedClubId) return;
-    const epoch = ++requestEpochRef.current;
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    moreAbortRef.current?.abort();
-    setLoading(true);
-    setLoadError(false);
-    setLoadSlow(false);
-    setSelected(new Set());
-    setDataFreshness('loading');
+  const scheduleConnectionRecovery = useCallback(
+    (maxAttempts: number = Number.POSITIVE_INFINITY): boolean => {
+      if (
+        !resolvedClubId ||
+        refreshTimerRef.current ||
+        !browserOnline ||
+        recoveryAttemptRef.current >= maxAttempts
+      ) {
+        return false;
+      }
+      const delay = computeRosterRetryDelay(recoveryAttemptRef.current, 1_200, 30_000);
+      recoveryAttemptRef.current += 1;
+      refreshTimerRef.current = setTimeout(() => {
+        refreshTimerRef.current = null;
+        void latestLoadRef.current({ forceSummary: true });
+      }, delay);
+      return true;
+    },
+    [browserOnline, resolvedClubId]
+  );
 
-    try {
-      const [nextSummary, page] = await Promise.all([
-        ClubRosterService.getSummary(resolvedClubId, controller.signal),
-        ClubRosterService.getRosterPage(resolvedClubId, {
-          search: debouncedSearch,
-          filter,
-          sort: sortKey,
-          limit: PAGE_SIZE,
-          signal: controller.signal,
-        }),
-      ]);
-      if (controller.signal.aborted || epoch !== requestEpochRef.current) return;
-      if (!nextSummary) {
-        setAccessDenied(true);
-        membersRef.current = [];
-        setMembers([]);
-        setDataFreshness('fresh');
-        setLastSuccessfulSyncAt(Date.now());
-        return;
+  const loadFirstPage = useCallback(
+    async (options: RosterLoadOptions = {}) => {
+      if (!resolvedClubId) return;
+      const recoveryRequestKey = `${resolvedClubId}:${debouncedSearch}:${filter}:${sortKey}`;
+      if (options.resetRecovery === true || recoveryRequestKeyRef.current !== recoveryRequestKey) {
+        if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+        recoveryAttemptRef.current = 0;
+        recoveryRequestKeyRef.current = recoveryRequestKey;
       }
-      setNotFound(false);
-      setAccessDenied(false);
-      setSummary(nextSummary);
-      membersRef.current = page.items;
-      setMembers(page.items);
-      setCursor(page.next_cursor);
-      setHasMore(page.has_more);
-      setFilteredTotal(page.filtered_total);
+      const epoch = ++requestEpochRef.current;
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      moreAbortRef.current?.abort();
+      setLoading(true);
       setLoadError(false);
-      setDataFreshness('fresh');
-      setLastSuccessfulSyncAt(Date.now());
-      recoveryAttemptRef.current = 0;
-      if (user?.id && !debouncedSearch && filter === 'all' && sortKey === 'hierarchy') {
-        writeRosterCache(user.id, resolvedClubId, page.items, nextSummary);
+      setLoadSlow(false);
+      setSelected(new Set());
+      setDataFreshness('loading');
+      if (!summaryAvailableRef.current) setSummaryFreshness('loading');
+
+      const isCurrent = () => !controller.signal.aborted && epoch === requestEpochRef.current;
+      const summaryKey = `${user?.id ?? 'anonymous'}:${resolvedClubId}`;
+      const summaryRequest = summaryCoordinatorRef.current.read(
+        summaryKey,
+        () => ClubRosterService.getSummary(resolvedClubId),
+        { force: options.forceSummary === true }
+      );
+      const pageRequest = ClubRosterService.getRosterPage(resolvedClubId, {
+        search: debouncedSearch,
+        filter,
+        sort: sortKey,
+        limit: PAGE_SIZE,
+        signal: controller.signal,
+      }).finally(() => {
+        if (isCurrent()) {
+          setLoading(false);
+          setIsRefreshing(false);
+          setLoadSlow(false);
+        }
+      });
+
+      const [summaryResult, pageResult] = await settleRosterReadsIndependently({
+        summary: summaryRequest,
+        page: pageRequest,
+        onSummary: (nextSummary) => {
+          if (!isCurrent()) return;
+          if (!nextSummary) {
+            controller.abort();
+            requestEpochRef.current += 1;
+            setAccessDenied(true);
+            if (user?.id) purgeRosterCache(user.id, resolvedClubId);
+            summaryAvailableRef.current = false;
+            setSummary(DEFAULT_SUMMARY);
+            setSummaryAvailable(false);
+            setSummaryFreshness('fresh');
+            membersRef.current = [];
+            setMembers([]);
+            setCursor(null);
+            setHasMore(false);
+            setFilteredTotal(0);
+            setLoadError(false);
+            setLoading(false);
+            setIsRefreshing(false);
+            setLoadSlow(false);
+            setDataFreshness('fresh');
+            setLastSuccessfulSyncAt(Date.now());
+            return;
+          }
+          summaryAvailableRef.current = true;
+          setSummary(nextSummary);
+          setSummaryAvailable(true);
+          setSummaryFreshness('fresh');
+          setNotFound(false);
+          setAccessDenied(false);
+        },
+        onPage: (page) => {
+          if (!isCurrent()) return;
+          membersRef.current = page.items;
+          setMembers(page.items);
+          setCursor(page.next_cursor);
+          setHasMore(page.has_more);
+          setFilteredTotal(page.filtered_total);
+          setLoadError(false);
+          setNotFound(false);
+          setAccessDenied(false);
+          setDataFreshness('fresh');
+          setLastSuccessfulSyncAt(Date.now());
+          recoveryAttemptRef.current = 0;
+          const now = Date.now();
+          if (shouldTouchFeeRollup(feeRollupTouchedAtRef.current, now)) {
+            feeRollupTouchedAtRef.current = now;
+            ClubRosterService.touchFeeRollup();
+          }
+        },
+        onSummaryError: (error) => {
+          if (!isCurrent()) return;
+          reportError(error, 'ClubMembersPage.loadSummary');
+          setSummaryFreshness(summaryAvailableRef.current ? 'stale' : 'failed');
+        },
+        onPageError: (error) => {
+          if (!isCurrent() || abortLike(error)) return;
+          const hasSavedRows = membersRef.current.length > 0;
+          const recoveryScheduled = scheduleConnectionRecovery(2);
+          if (!recoveryScheduled) reportError(error, 'ClubMembersPage.loadFirstPage');
+          setLoadError(!recoveryScheduled && !hasSavedRows);
+          setLoading(recoveryScheduled && !hasSavedRows);
+          setDataFreshness(hasSavedRows ? 'stale' : recoveryScheduled ? 'loading' : 'failed');
+        },
+      });
+
+      if (
+        isCurrent() &&
+        summaryResult.status === 'fulfilled' &&
+        summaryResult.value &&
+        pageResult.status === 'fulfilled' &&
+        user?.id &&
+        !debouncedSearch &&
+        filter === 'all' &&
+        sortKey === 'hierarchy'
+      ) {
+        writeRosterCache(user.id, resolvedClubId, pageResult.value.items, summaryResult.value);
       }
-      ClubRosterService.touchFeeRollup();
-    } catch (error) {
-      controller.abort();
-      if (!abortLike(error) && epoch === requestEpochRef.current) {
-        reportError(error, 'ClubMembersPage.loadFirstPage');
-        setLoadError(true);
-        setDataFreshness(membersRef.current.length > 0 ? 'stale' : 'failed');
-      }
-    } finally {
-      if (epoch === requestEpochRef.current) {
-        setLoading(false);
-        setIsRefreshing(false);
-        setLoadSlow(false);
-      }
-    }
-  }, [debouncedSearch, filter, resolvedClubId, sortKey, user?.id]);
+    },
+    [debouncedSearch, filter, resolvedClubId, scheduleConnectionRecovery, sortKey, user?.id]
+  );
 
   useEffect(() => {
     latestLoadRef.current = loadFirstPage;
@@ -351,10 +462,9 @@ export default function ClubMembersPage() {
 
   const refresh = useCallback(async () => {
     if (!resolvedClubId) return;
-    if (user?.id) purgeRosterCache(user.id, resolvedClubId);
     setIsRefreshing(true);
-    await latestLoadRef.current();
-  }, [resolvedClubId, user?.id]);
+    await latestLoadRef.current({ forceSummary: true, resetRecovery: true });
+  }, [resolvedClubId]);
 
   const retryLiveSync = useCallback(() => {
     if (resolvedClubId) {
@@ -369,23 +479,11 @@ export default function ClubMembersPage() {
 
   const scheduleStructuralRefresh = useCallback(() => {
     if (!resolvedClubId || refreshTimerRef.current) return;
-    if (user?.id) purgeRosterCache(user.id, resolvedClubId);
     refreshTimerRef.current = setTimeout(() => {
       refreshTimerRef.current = null;
-      void latestLoadRef.current();
+      void latestLoadRef.current({ forceSummary: true, resetRecovery: true });
     }, 1200);
-  }, [resolvedClubId, user?.id]);
-
-  const scheduleConnectionRecovery = useCallback(() => {
-    if (!resolvedClubId || refreshTimerRef.current || !browserOnline) return;
-    if (user?.id) purgeRosterCache(user.id, resolvedClubId);
-    const delay = computeRosterRetryDelay(recoveryAttemptRef.current, 1_200, 30_000);
-    recoveryAttemptRef.current += 1;
-    refreshTimerRef.current = setTimeout(() => {
-      refreshTimerRef.current = null;
-      void latestLoadRef.current();
-    }, delay);
-  }, [browserOnline, resolvedClubId, user?.id]);
+  }, [resolvedClubId]);
 
   useEffect(
     () => () => {
@@ -527,7 +625,13 @@ export default function ClubMembersPage() {
   );
 
   const handleExport = useCallback(async () => {
-    if (!resolvedClubId || !summary.capabilities.can_export || isExporting) return;
+    if (
+      !resolvedClubId ||
+      !summary.capabilities.can_export ||
+      isExporting ||
+      searchQuery.trim() !== debouncedSearch.trim()
+    )
+      return;
     setIsExporting(true);
     try {
       const result = await ClubRosterService.exportRoster(
@@ -551,6 +655,7 @@ export default function ClubMembersPage() {
     filter,
     isExporting,
     resolvedClubId,
+    searchQuery,
     selected,
     sortKey,
     summary.capabilities.can_export,
@@ -558,10 +663,22 @@ export default function ClubMembersPage() {
   ]);
 
   const hasPaintedRoster = members.length > 0;
-  const stat = (value: number) => (loading && !hasPaintedRoster ? '...' : value.toLocaleString());
+  const searchIsSettling = searchQuery.trim() !== debouncedSearch.trim();
+  const stat = (value: number) => {
+    if (!summaryAvailable) return summaryFreshness === 'loading' ? '...' : 'N/A';
+    return value.toLocaleString();
+  };
+  const summaryStatusMessage =
+    summaryFreshness === 'loading'
+      ? 'Live Player Totals Connecting.'
+      : summaryFreshness === 'stale'
+        ? 'Showing The Last Verified Player Totals While Live Counts Reconnect.'
+        : summaryFreshness === 'failed'
+          ? 'Live Player Totals Are Unavailable. The Directory Remains Available.'
+          : null;
   const connectionState: RosterConnectionState = !browserOnline
     ? 'offline'
-    : dataFreshness === 'stale'
+    : dataFreshness === 'stale' || (dataFreshness === 'failed' && !notFound && !accessDenied)
       ? 'stale'
       : realtimeConnection === 'degraded'
         ? 'reconnecting'
@@ -591,12 +708,31 @@ export default function ClubMembersPage() {
               Find Any Member, Read Their Live Club Status, And Open The Controls Behind Their Seat.
             </p>
           </div>
-          <dl className="members-summary" aria-label="Roster Summary">
-            <SummaryStat value={stat(summary.counts.total)} label="Total Members" />
-            <SummaryStat value={stat(summary.counts.online)} label="Online Now" modifier="online" />
-            <SummaryStat value={stat(summary.counts.seated)} label="At Tables" modifier="seated" />
-            <SummaryStat value={stat(summary.counts.agents)} label="Agents" modifier="agents" />
-          </dl>
+          <div className="members-summary-shell">
+            <dl
+              className="members-summary"
+              aria-label="Roster Summary"
+              aria-busy={summaryFreshness === 'loading'}
+            >
+              <SummaryStat value={stat(summary.counts.total)} label="Total Members" />
+              <SummaryStat
+                value={stat(summary.counts.online)}
+                label="Online Now"
+                modifier="online"
+              />
+              <SummaryStat
+                value={stat(summary.counts.seated)}
+                label="At Tables"
+                modifier="seated"
+              />
+              <SummaryStat value={stat(summary.counts.agents)} label="Agents" modifier="agents" />
+            </dl>
+            {summaryStatusMessage && (
+              <span className="members-summary__status" role="status" aria-live="polite">
+                {summaryStatusMessage}
+              </span>
+            )}
+          </div>
         </div>
       </section>
 
@@ -618,6 +754,7 @@ export default function ClubMembersPage() {
             placeholder={titleCase('search name, number, club, or upline')}
             aria-label="Search Club Members"
             value={searchQuery}
+            maxLength={120}
             autoComplete="off"
             spellCheck={false}
             onChange={(event) => setSearchQuery(event.target.value)}
@@ -675,6 +812,23 @@ export default function ClubMembersPage() {
             </details>
           )}
 
+          {summary.capabilities.can_export && members.length > 0 && (
+            <button
+              type="button"
+              className="members-select-loaded"
+              aria-pressed={selected.size === members.length}
+              onClick={() =>
+                setSelected(
+                  selected.size === members.length
+                    ? new Set()
+                    : new Set(members.map((row) => row.user_id))
+                )
+              }
+            >
+              {selected.size === members.length ? 'Clear Selection' : 'Select Loaded'}
+            </button>
+          )}
+
           <button
             type="button"
             className="members-refresh"
@@ -689,7 +843,7 @@ export default function ClubMembersPage() {
               type="button"
               className="members-export"
               onClick={() => void handleExport()}
-              disabled={loading || isRefreshing || isExporting}
+              disabled={loading || isRefreshing || isExporting || searchIsSettling}
             >
               {isExporting
                 ? 'Preparing...'
@@ -722,13 +876,22 @@ export default function ClubMembersPage() {
           <button type="button" onClick={() => setSelected(new Set())}>
             Clear
           </button>
-          <button type="button" onClick={() => void handleExport()} disabled={isExporting}>
+          <button
+            type="button"
+            onClick={() => void handleExport()}
+            disabled={loading || isRefreshing || isExporting || searchIsSettling}
+          >
             Export Selected
           </button>
         </div>
       )}
 
-      <div className="members-list" aria-label="Club Member Directory">
+      <div
+        className="members-list"
+        role="list"
+        aria-label="Club Member Directory"
+        aria-busy={loading || isLoadingMore}
+      >
         {loading && members.length === 0 ? (
           <>
             <PageSkeleton variant="list" />
@@ -754,10 +917,12 @@ export default function ClubMembersPage() {
         ) : (
           <div ref={virtual.containerRef} className="members-viewport" style={{ height: 696 }}>
             <div aria-hidden="true" style={{ height: virtual.paddingTop }} />
-            {virtual.visibleItems.map((member) => (
+            {virtual.visibleItems.map((member, index) => (
               <MemberRow
                 key={member.user_id}
                 member={member}
+                position={virtual.startIndex + index + 1}
+                total={filteredTotal}
                 query={debouncedSearch}
                 onOpen={openMember}
                 selectable={summary.capabilities.can_export}
@@ -793,8 +958,8 @@ function SummaryStat({
 }) {
   return (
     <div className={`summary-stat${modifier ? ` summary-stat--${modifier}` : ''}`}>
-      <dd className="stat-value">{value}</dd>
       <dt className="stat-label">{label}</dt>
+      <dd className="stat-value">{value}</dd>
     </div>
   );
 }
@@ -825,6 +990,8 @@ function dormancy(iso: string): string {
 
 function MemberRow({
   member,
+  position,
+  total,
   query,
   onOpen,
   selectable,
@@ -833,6 +1000,8 @@ function MemberRow({
   columns,
 }: {
   member: RosterMember;
+  position: number;
+  total: number;
   query: string;
   onOpen: (id: string) => void;
   selectable: boolean;
@@ -845,6 +1014,9 @@ function MemberRow({
   return (
     <article
       className={`member-row${member.is_seated ? ' member-row--seated' : member.is_online ? ' member-row--online' : ''}`}
+      role="listitem"
+      aria-posinset={position}
+      aria-setsize={total}
     >
       {selectable && (
         <label className="member-select" aria-label={`Select ${member.alias}`}>

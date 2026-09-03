@@ -214,10 +214,10 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
             role="img"
             aria-label={
               METRICS.some((m) => visible[m.key])
-                ? `Radar chart of ${METRICS.filter((m) => visible[m.key])
+                ? `Radar Chart Of ${METRICS.filter((m) => visible[m.key])
                     .map((m) => m.label)
-                    .join(', ')} across ${total} positions`
-                : `Radar chart across ${total} positions, no metrics currently shown`
+                    .join(', ')} Across ${total} Positions`
+                : `Radar Chart Across ${total} Positions, No Metrics Currently Shown`
             }
           >
             <defs>

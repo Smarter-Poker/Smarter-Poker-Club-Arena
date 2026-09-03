@@ -250,12 +250,41 @@ export default function GlobalWaitlistListener() {
                notifications-page row are the out-of-app copies of the same
                offer. */
             type WaitlistPayload = {
-              new?: { status?: string; table_id?: string | number };
+              new?: {
+                status?: string;
+                table_id?: string | number;
+                notified_at?: string | null;
+                hold_expires_at?: string | null;
+              };
               old?: { status?: string };
               eventType?: string;
             };
             const newRow = (payload as WaitlistPayload).new;
             const oldRow = (payload as WaitlistPayload).old;
+            /* ── THE THAW MOVES THE DEADLINE, AND THE BANNER MUST FOLLOW
+               (Dan 2026-09-01, to-do #2563 item 5). When the maintenance
+               break ends, fn_thaw_platform shifts hold_expires_at forward by
+               the frozen duration - an UPDATE on this player's own row, which
+               lands right here. The status is already 'notified' on both
+               sides, so the offer branch below skips it, and the on-screen
+               countdown kept counting a deadline that no longer exists:
+               the banner showed "expired" on a hold that was alive. Re-emit
+               with the fresh deadline so the countdown re-seeds. Harmless on
+               any other same-status touch: the banner just re-reads the same
+               instant. */
+            if (
+              (payload as WaitlistPayload).eventType === 'UPDATE' &&
+              newRow?.status === 'notified' &&
+              oldRow?.status === 'notified' &&
+              newRow?.table_id &&
+              newRow?.hold_expires_at
+            ) {
+              masterBus.emit('WAITLIST_SEAT_OFFERED', {
+                tableId: String(newRow.table_id),
+                tableName: '',
+                holdExpiresAt: newRow.hold_expires_at,
+              });
+            }
             if (
               (payload as WaitlistPayload).eventType === 'UPDATE' &&
               newRow?.status === 'notified' &&
@@ -263,6 +292,41 @@ export default function GlobalWaitlistListener() {
               newRow?.table_id
             ) {
               const offeredTableId = String(newRow.table_id);
+              /* The banner needs the DEADLINE, not a duration: a tab that was
+                 backgrounded, or a component that mounts late, must show the
+                 true remaining time instead of restarting the clock at sixty.
+                 Falls back to notified_at + 60s for a row written before
+                 hold_expires_at existed. */
+              const holdExpiresAt =
+                newRow.hold_expires_at ??
+                (newRow.notified_at
+                  ? new Date(new Date(newRow.notified_at).getTime() + 60_000).toISOString()
+                  : null);
+              /* Name the table. The banner card is otherwise anonymous - "Seat
+                 Held 0:47" with no indication of WHERE - and a player queued
+                 on more than one table cannot tell which seat is being held.
+                 One small read, only when an offer actually arrives, and the
+                 card still renders immediately if it fails: the emit happens
+                 first with no name, and the name follows if it resolves. */
+              masterBus.emit('WAITLIST_SEAT_OFFERED', {
+                tableId: offeredTableId,
+                tableName: '',
+                holdExpiresAt,
+              });
+              void supabase
+                .from('tables')
+                .select('name')
+                .eq('id', offeredTableId)
+                .maybeSingle()
+                .then(({ data }) => {
+                  if (data?.name) {
+                    masterBus.emit('WAITLIST_SEAT_OFFERED', {
+                      tableId: offeredTableId,
+                      tableName: String(data.name),
+                      holdExpiresAt,
+                    });
+                  }
+                });
               /* 60 SECONDS, NOT 15 (Dan 2026-08-30): the seat is now HELD for
                  this player for 60s (fn_offer_open_seat + atomic_table_buyin
                  SEAT_RESERVED guard), so the popup lives exactly as long as

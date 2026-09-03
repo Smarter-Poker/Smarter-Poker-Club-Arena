@@ -44,6 +44,7 @@ export default function GlobalHeader() {
 
   const {
     avatarUrl,
+    isVipActive,
     notificationCount,
     unreadMessages,
     loadOnce,
@@ -252,6 +253,7 @@ export default function GlobalHeader() {
         className={styles.header}
         style={headerStyle}
         data-artwork="approved-global-header"
+        aria-label="Smarter.Poker Global Header"
       >
         {/* Desktop and landscape use the supplied artwork itself. This is a
             lossless crop: no redrawing, substitutions, filters, or resampling
@@ -280,7 +282,7 @@ export default function GlobalHeader() {
             <button
               onClick={handleBackClick}
               className={`${styles.artButton} ${styles.backBtn}`}
-              aria-label="Go back"
+              aria-label="Go Back"
               title="Back"
             >
               <img src={`${APPROVED_HEADER_ASSET}back.png`} alt="Back" />
@@ -288,7 +290,7 @@ export default function GlobalHeader() {
             <button
               onClick={handleHubClick}
               className={`${styles.artButton} ${styles.hubBtn}`}
-              aria-label="Go to the Hub"
+              aria-label="Go To The Hub"
               title="Hub"
             >
               <img src={`${APPROVED_HEADER_ASSET}hub.png`} alt="Hub" />
@@ -314,16 +316,6 @@ export default function GlobalHeader() {
                   }}
                 />
               </span>
-              {/* The complete header raster supplies the frame's base pixels.
-                  Re-layer the exact approved crop above the live avatar, with
-                  its stock blue person masked out in CSS, so the user's image
-                  can never paint over the chrome rim. */}
-              <img
-                src={`${APPROVED_HEADER_ASSET}profile.png`}
-                alt=""
-                className={styles.profileFrameOverlay}
-                aria-hidden="true"
-              />
             </button>
 
             <button
@@ -336,10 +328,11 @@ export default function GlobalHeader() {
             </button>
 
             <button
-              className={`${styles.artButton} ${styles.vipBtn}`}
+              className={`${styles.artButton} ${styles.vipBtn} ${isVipActive ? styles.vipActive : ''}`}
               onClick={() => navigateToHub('/hub/vip-membership')}
-              aria-label="VIP Member"
-              title="VIP Member"
+              aria-label={isVipActive ? 'VIP Membership Active' : 'VIP Membership'}
+              title={isVipActive ? 'VIP Membership Active' : 'VIP Membership'}
+              data-vip-active={isVipActive ? 'true' : 'false'}
             >
               <img src={`${APPROVED_HEADER_ASSET}vip.png`} alt="VIP Member" />
             </button>
@@ -356,7 +349,7 @@ export default function GlobalHeader() {
               {unreadMessages > 0 && (
                 <span
                   className={`${styles.badge} ${styles.messageBadge}`}
-                  aria-label={`${unreadMessages} unread messages`}
+                  aria-label={`${unreadMessages} Unread Messages`}
                   aria-live="polite"
                 >
                   {unreadMessages > 99 ? '99+' : unreadMessages}
@@ -378,25 +371,13 @@ export default function GlobalHeader() {
               {notificationCount > 0 && (
                 <span
                   className={`${styles.badge} ${styles.notificationBadge}`}
-                  aria-label={`${notificationCount} unread notifications`}
+                  aria-label={`${notificationCount} Unread Notifications`}
                   aria-live="polite"
                 >
                   {notificationCount > 99 ? '99+' : notificationCount}
                 </span>
               )}
             </Link>
-          </div>
-
-          {/* Accessible fallback for the brand embedded in the complete
-              approved raster. It is never laid out as a separate mobile row. */}
-          <div className={styles.headerCenter}>
-            <img
-              src={`${APPROVED_HEADER_ASSET}brand.png`}
-              alt="Smarter.Poker"
-              width={430}
-              height={88}
-              className={styles.brandArtwork}
-            />
           </div>
         </div>
       </header>

@@ -77,11 +77,19 @@ const HOME = read('src/pages/HomePage.tsx');
 const SETTINGS = read('src/pages/ClubSettingsPage.tsx');
 const INVITE = read('src/pages/InvitePage.tsx');
 const CLUBS_SERVICE = read('src/services/ClubsService.ts');
+const ATOMIC_CREATE_MIGRATION = read(
+  'supabase/migrations/20260831150100_club_creation_atomic_workflow.sql'
+);
 const CREATE_MODAL = read('src/components/modals/CreateClubModal.tsx');
 const JOIN_MODAL = read('src/components/modals/JoinClubModal.tsx');
+const CLUB_JOIN_SERVICE = read('src/services/ClubJoinService.ts');
 const APP = read('src/App.tsx');
 const HAMBURGER = read('src/components/navigation/HamburgerMenu.tsx');
 const FIND = read('src/components/modals/FindPlayerModal.tsx');
+const PLAYER_LOCATOR_SERVICE = read('src/services/PlayerSearchService.ts');
+const PLAYER_LOCATOR_MIGRATION = read(
+  'supabase/migrations/20260831150200_player_search_authoritative.sql'
+);
 const PLAYER_SEARCH = read('src/components/admin/PlayerSearch.tsx');
 
 const codeOnly = (src: string) =>
@@ -129,7 +137,7 @@ describe('a club code means the same thing on every screen', () => {
     // carried a hand-rolled third spelling (parseInt + range check) — exactly
     // the drift this util exists to prevent.
     expect(CLUBS_PAGE).toMatch(/from '\.\.\/utils\/clubCode'/);
-    expect(JOIN_MODAL).toMatch(/from '\.\.\/\.\.\/utils\/clubCode'/);
+    expect(CLUB_JOIN_SERVICE).toMatch(/from '\.\.\/utils\/clubCode'/);
     expect(codeOnly(JOIN_MODAL)).not.toMatch(/parseInt\(/);
     // The exact-six gate is gone.
     expect(codeOnly(CLUBS_PAGE)).not.toMatch(/joinClubId\.length !== 6/);
@@ -148,28 +156,30 @@ describe('the join modal', () => {
     // onChange-only regex can never match a full link. onPaste gets the
     // clipboard whole.
     expect(JOIN_MODAL).toMatch(/onPaste=/);
-    expect(JOIN_MODAL).toMatch(/e\.clipboardData\.getData\('text'\)/);
+    expect(JOIN_MODAL).toMatch(/event\.clipboardData\.getData\('text'\)/);
   });
 
   it('does not report a lookup failure as a wrong code', () => {
-    expect(JOIN_MODAL).toMatch(/Could not look up that code right now/);
+    expect(JOIN_MODAL).toMatch(/JoinClubModal\.Preview/);
+    expect(JOIN_MODAL).toMatch(/error instanceof Error \? error\.message/);
   });
 });
 
 describe('creating a club (service path — the modal and ClubsPage both delegate here)', () => {
   it('fails closed on the 4-club limit', () => {
-    // fn_join_club re-checks the limit for joins but its owner branch does
-    // not, so this client check is the only limit on the create path. A count
-    // error must refuse, not shrug — this guard was dropped in the modal
-    // redesign and is pinned here so it cannot be dropped twice.
-    expect(CLUBS_SERVICE).toMatch(/Could not verify your club memberships/);
+    // Creation now crosses one server-authoritative boundary. The client can
+    // preview allowance, but the serialized transaction owns the decision.
+    expect(ATOMIC_CREATE_MIGRATION).toMatch(/v_memberships >= 4/);
+    expect(CLUBS_SERVICE).toMatch(/fn_create_club_atomic/);
   });
 
-  it('cleans up the orphan club when the owner join fails', () => {
-    // Without this, a failed owner membership leaves a members-less club row
-    // squatting on the name forever. The old CreateClubModal had the guard;
-    // the refactor into ClubsService must keep it.
-    expect(CLUBS_SERVICE).toMatch(/Failed to set up club ownership/);
+  it('cannot commit a club without its owner membership', () => {
+    // Both rows are inserted inside the same PostgreSQL transaction, removing
+    // the orphan state instead of compensating for it in browser code.
+    expect(ATOMIC_CREATE_MIGRATION).toMatch(
+      /INSERT INTO public\.clubs[\s\S]*INSERT INTO public\.club_members/
+    );
+    expect(ATOMIC_CREATE_MIGRATION).toMatch(/club_creation_requests/);
     expect(CREATE_MODAL).toMatch(/ClubsService\.create\(/);
   });
 });
@@ -223,28 +233,28 @@ describe('the invite page', () => {
 
 describe('finding a player', () => {
   it('compares tournament status the way the column is actually stored', () => {
-    expect(codeOnly(FIND)).not.toMatch(/tournament\.status === 'running'/);
-    expect(codeOnly(FIND)).not.toMatch(/'late_reg'/);
-    expect(FIND).toMatch(/tourneyStatus === 'RUNNING' \|\| tourneyStatus === 'REGISTERING'/);
+    expect(PLAYER_LOCATOR_MIGRATION).toMatch(/IN \('RUNNING','REGISTERING'\)/);
+    expect(PLAYER_LOCATOR_MIGRATION).not.toMatch(/late_reg/);
   });
 
   it('compares table status case-insensitively too', () => {
-    expect(FIND).toMatch(/tableStatus === 'running' \|\| tableStatus === 'waiting'/);
+    expect(PLAYER_LOCATOR_MIGRATION).toMatch(/IN \('running','waiting'\)/);
   });
 
-  it('searches the whole roster, not the first 200 of it', () => {
+  it('searches the whole permitted roster on the server, not browser ID batches', () => {
     expect(codeOnly(FIND)).not.toMatch(/searchableUserIds\.slice\(0, 200\)/);
-    expect(FIND).toMatch(/for \(let i = 0; i < scope\.searchableUserIds\.length/);
+    expect(PLAYER_LOCATOR_SERVICE).toMatch(/fn_search_players/);
+    expect(PLAYER_LOCATOR_MIGRATION).toMatch(/WITH caller_memberships AS/);
   });
 
   it('reports a failing typeahead instead of showing an empty dropdown', () => {
-    expect(FIND).toMatch(/reportError\(pageError, 'FindPlayerModal\.fetchSuggestions'\)/);
+    expect(FIND).toMatch(/FindPlayerModal\.Suggestions/);
   });
 
   it('knows co_owner is a role', () => {
     // It is in club_members_role_check and an owner can grant it. Without this
     // a co-owner was silently demoted to searching their friends list.
-    expect(FIND).toMatch(/r === 'admin' \|\| r === 'co_owner'/);
+    expect(PLAYER_LOCATOR_MIGRATION).toMatch(/'owner','co_owner','admin'/);
   });
 });
 

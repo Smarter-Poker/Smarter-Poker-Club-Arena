@@ -57,6 +57,7 @@ import styles from './CashierPage.module.css';
 import { useIsMounted } from '../hooks/useIsMounted';
 import { retryFetch } from '../utils/retryFetch';
 import { reportError } from '../utils/errorReporter';
+import { formatPopupText } from '../utils/popupStyle';
 
 type CashierAction = 'send' | 'distribute' | 'buyin' | 'cashout' | 'mint' | 'history';
 
@@ -180,6 +181,7 @@ const CATEGORY_ICONS: Record<string, string> = {
 import { useRealtimeFinancials } from '../hooks/useRealtimeFinancials';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 export default function CashierPage() {
   useRealtimeFinancials();
   useEffect(() => {
@@ -786,7 +788,7 @@ export default function CashierPage() {
             () =>
               supabase
                 .from('profiles')
-                .select('id, display_name, username')
+                .select(`id, ${PLAYER_NAME_COLUMNS}`)
                 .in('id', chunk)
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: isMounted }
@@ -832,7 +834,7 @@ export default function CashierPage() {
       for (const { data: profiles } of nameResults) {
         if (profiles) {
           for (const p of profiles) {
-            profileMap[p.id] = p.display_name || p.username || 'Player';
+            profileMap[p.id] = playerDisplayName(p);
           }
         }
       }
@@ -1943,7 +1945,7 @@ export default function CashierPage() {
       <nav
         className={styles.tabNav}
         role="tablist"
-        aria-label="Cashier actions"
+        aria-label="Cashier Actions"
         onKeyDown={handleTabKeyDown}
       >
         {tabs.map((act) => (
@@ -2188,7 +2190,7 @@ export default function CashierPage() {
 
             <button
               className={styles.btnPrimary}
-              aria-label={`Send ${amount || '0'} chips to selected recipient`}
+              aria-label={`Send ${amount || '0'} Chips To Selected Recipient`}
               onClick={() => {
                 const value = parseFloat(amount);
                 if (!isNaN(value) && value >= 10000 && selectedRecipientData) {
@@ -2755,7 +2757,7 @@ export default function CashierPage() {
                             {CATEGORY_LABELS[tx.category] ||
                               (tx.category || tx.type || '').replace(/_/g, ' ').toUpperCase()}
                           </span>
-                          <span className={styles.txDesc}>{tx.description}</span>
+                          <span className={styles.txDesc}>{formatPopupText(tx.description)}</span>
                         </div>
                         <div className={styles.txAmounts}>
                           <span
@@ -2784,7 +2786,7 @@ export default function CashierPage() {
                   <button
                     className={styles.loadMoreBtn}
                     onClick={() => setTxPage((p) => p + 1)}
-                    aria-label="Load more transactions"
+                    aria-label="Load More Transactions"
                   >
                     Load More ({filteredTransactions.length - txPage * TX_PAGE_SIZE} Remaining)
                   </button>

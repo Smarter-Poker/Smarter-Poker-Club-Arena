@@ -1303,7 +1303,7 @@ export default function DynamicWallet({
       // Named for what it IS to an owner: the wallet the Spin multipliers are
       // paid out of. NOT the union dashboard's "Spin Reserve" tile, which is
       // undeployed capital waiting to be seeded -- see useSpinsWallet.
-      label: 'Spins Wallet',
+      label: 'Spins Treasury',
       icon: 'treasury',
       value: animSpins,
       known: spins.state !== null,
@@ -1340,7 +1340,7 @@ export default function DynamicWallet({
       icon: 'bank',
       value: animUnionBank,
       known: unionFiguresKnown,
-      hint: unionFiguresKnown ? 'Send or Pull Chips From Clubs & Members' : 'Union Admins Only',
+      hint: unionFiguresKnown ? 'Send Or Pull Chips From Clubs & Members' : 'Union Admins Only',
       onOpen: () => onOpenUnionBank?.(data.unionBank || 0),
     },
     {
@@ -1410,12 +1410,15 @@ export default function DynamicWallet({
           ? showAllLobbyWallets
             ? clubWalletRows(rowRole, {
                 standalone: !isClubInUnion,
-                spinsActive: spins.active,
+                // A funded/configured reserve is a wallet even while Spins is
+                // temporarily inactive. Hiding it made real club money vanish
+                // from the owner's wallet panel.
+                spinsActive: spins.state !== null,
               })
             : clubLobbyWalletRows(rowRole)
           : clubWalletRows(rowRole, {
               standalone: !isClubInUnion,
-              spinsActive: spins.active,
+              spinsActive: spins.state !== null,
             })
         ).map((k) => CLUB_ROW_BY_KEY[k]);
 
@@ -1484,7 +1487,7 @@ export default function DynamicWallet({
         className={`dw dw--loading${compactLobby ? ' dw--lobby-board' : ''}`}
         role="region"
         aria-busy="true"
-        aria-label="Loading wallet"
+        aria-label="Loading Wallet"
       >
         {showBBJ && <div className="dw__shimmer dw__shimmer--bbj" />}
         <div className={`dw__rows${compactLobby ? ' dw__rows--count-3' : ''}`}>
@@ -1500,7 +1503,7 @@ export default function DynamicWallet({
     <div
       className={`dw dw--${effectiveVariant}${compactLobby ? ' dw--lobby-board' : ''}`}
       role="region"
-      aria-label="Wallet balances"
+      aria-label="Wallet Balances"
     >
       {/* ── Error indicator — subtle, non-blocking ──────────────────────── */}
       {fetchError && (
@@ -1510,8 +1513,8 @@ export default function DynamicWallet({
             setFetchError(false);
             fetchData();
           }}
-          aria-label="Retry loading wallet data"
-          title="Failed to load - tap to retry"
+          aria-label="Retry Loading Wallet Data"
+          title="Failed To Load - Tap To Retry"
         >
           Balances Unavailable · Retry
         </button>
@@ -1532,7 +1535,7 @@ export default function DynamicWallet({
           /* The SETTLED pool, not the animating one. A jackpot counting up
              from zero reads "no pool" on its first frame and then flips, so
              the label announced something that was never true. */
-          aria-label={`Bad Beat Jackpot: ${data.bbjPool === 0 ? 'no pool' : formatBalance(data.bbjPool)}`}
+          aria-label={`Bad Beat Jackpot: ${data.bbjPool === 0 ? 'No Pool' : formatBalance(data.bbjPool)}`}
         >
           <ClubBBJShell />
           <span className="dw__bbj-label">BAD BEAT JACKPOT</span>

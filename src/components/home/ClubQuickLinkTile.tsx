@@ -64,6 +64,8 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const [balances, setBalances] = useState<Map<string, number> | null>(null);
+  const [balancesLoading, setBalancesLoading] = useState(false);
+  const [balancesError, setBalancesError] = useState(false);
   const [balanceNonce, setBalanceNonce] = useState(0);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -75,6 +77,7 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
   // it available for one eligible wallet too so every permitted role can use
   // the exact right-click / hold interaction the Cashier tile advertises.
   const hasSwitch = clubs.length > 0;
+  const hasClubWallet = clubs.some((club) => !isUnionEntity(club));
 
   // Warm the destination chunk the first time the user shows intent
   const handlePreload = useCallback(() => {
@@ -87,14 +90,34 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
   // when a chip movement invalidates the memo while the popover is open
   useEffect(() => {
     if (!menuOpen || !user?.id) return;
+    // An owner may legitimately have a union-only directory. Union treasury
+    // balances are rendered by the union wallet itself, so do not issue an
+    // unrelated club_members read (or show a false balance failure) here.
+    if (!hasClubWallet) {
+      setBalances(new Map());
+      setBalancesLoading(false);
+      setBalancesError(false);
+      return;
+    }
     let live = true;
-    fetchClubChipBalances(user.id).then((b) => {
-      if (live) setBalances(b);
-    });
+    setBalancesLoading(true);
+    setBalancesError(false);
+    void fetchClubChipBalances(user.id)
+      .then((b) => {
+        if (!live) return;
+        setBalances(b);
+        setBalancesError(b === null);
+      })
+      .catch(() => {
+        if (live) setBalancesError(true);
+      })
+      .finally(() => {
+        if (live) setBalancesLoading(false);
+      });
     return () => {
       live = false;
     };
-  }, [menuOpen, user?.id, balanceNonce]);
+  }, [menuOpen, user?.id, balanceNonce, hasClubWallet]);
 
   // Any chip movement invalidates the 30s memo so the next open is accurate
   useMasterBusSubscriptions([...CHIP_BALANCE_EVENTS], () => {
@@ -117,6 +140,11 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
     setActiveIndex(selected >= 0 ? selected : 0);
     setMenuOpen(true);
   }, [clubs, targetClub]);
+
+  const retryBalances = useCallback(() => {
+    clearClubChipBalanceCache();
+    setBalanceNonce((nonce) => nonce + 1);
+  }, []);
 
   const closeMenu = useCallback(
     (returnFocus: boolean) => {
@@ -227,10 +255,11 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
         }}
         aria-haspopup={hasSwitch ? 'menu' : undefined}
         aria-expanded={hasSwitch ? menuOpen : undefined}
+        aria-keyshortcuts={hasSwitch ? 'ArrowDown Shift+F10' : undefined}
         aria-label={
           clubName
-            ? `${tile.alt} for ${clubName} (press ${tile.shortcutKey}${hasSwitch ? ', hold to choose a wallet' : ''})`
-            : `${tile.alt} (press ${tile.shortcutKey})`
+            ? `${tile.alt} For ${clubName} (Press ${tile.shortcutKey}${hasSwitch ? ', Hold To Choose A Wallet' : ''})`
+            : `${tile.alt} (Press ${tile.shortcutKey})`
         }
         title={clubName ? `${tile.alt} - ${clubName}` : tile.alt}
       >
@@ -250,57 +279,70 @@ export default function ClubQuickLinkTile<T extends QuickLinkClub>({
       {menuOpen && (
         <>
           <div className={styles.cashierSwitchOverlay} onClick={() => closeMenu(true)} />
-          <div
-            className={styles.cashierSwitchMenu}
-            role="menu"
-            aria-label={menuTitle}
-            onKeyDown={handleMenuKeyDown}
-          >
+          <div className={styles.cashierSwitchMenu} onKeyDown={handleMenuKeyDown}>
             <div className={styles.cashierSwitchTitle}>{menuTitle}</div>
-            {clubs.map((club, idx) => (
-              <button
-                key={club.id}
-                ref={(el) => {
-                  itemRefs.current[idx] = el;
-                }}
-                role="menuitem"
-                tabIndex={idx === activeIndex ? 0 : -1}
-                className={`${styles.cashierSwitchItem} ${
-                  club.id === targetClub?.id ? styles.cashierSwitchItemActive : ''
-                }`}
-                title={club.name || undefined}
-                onClick={() => {
-                  closeMenu(false);
-                  onSelect(club);
-                }}
-              >
-                {club.logo_url ? (
-                  <img
-                    src={club.logo_url}
-                    alt=""
-                    className={styles.cashierSwitchLogo}
-                    loading="lazy"
-                  />
-                ) : (
-                  <span className={styles.cashierSwitchLogoFallback} aria-hidden="true">
-                    {(club.name || '?').charAt(0).toUpperCase()}
-                  </span>
-                )}
-                <span className={styles.cashierSwitchItemText}>
-                  <span className={styles.cashierSwitchItemName}>
-                    {club.name || 'Unnamed Club'}
-                  </span>
-                  {isUnionEntity(club) && (
-                    <span className={styles.cashierSwitchItemBalance}>Union Wallet</span>
-                  )}
-                  {!isUnionEntity(club) && balances?.has(club.id) && (
-                    <span className={styles.cashierSwitchItemBalance}>
-                      {(balances.get(club.id) as number).toLocaleString()} Chips
+            {balancesLoading && (
+              <div className={styles.cashierSwitchStatus} role="status" aria-live="polite">
+                Reading Wallet Balances...
+              </div>
+            )}
+            {!balancesLoading && balancesError && (
+              <div className={styles.cashierSwitchStatus} role="alert">
+                Wallet Balances Unavailable.
+                <button type="button" onClick={retryBalances}>
+                  Retry
+                </button>
+              </div>
+            )}
+            <div className={styles.cashierSwitchItems} role="menu" aria-label={menuTitle}>
+              {clubs.map((club, idx) => (
+                <button
+                  key={club.id}
+                  ref={(el) => {
+                    itemRefs.current[idx] = el;
+                  }}
+                  role="menuitem"
+                  tabIndex={idx === activeIndex ? 0 : -1}
+                  className={`${styles.cashierSwitchItem} ${
+                    club.id === targetClub?.id ? styles.cashierSwitchItemActive : ''
+                  }`}
+                  title={club.name || undefined}
+                  onClick={() => {
+                    closeMenu(false);
+                    onSelect(club);
+                  }}
+                >
+                  {club.logo_url ? (
+                    <img
+                      src={club.logo_url}
+                      alt=""
+                      className={styles.cashierSwitchLogo}
+                      loading="lazy"
+                    />
+                  ) : (
+                    <span className={styles.cashierSwitchLogoFallback} aria-hidden="true">
+                      {(club.name || '?').charAt(0).toUpperCase()}
                     </span>
                   )}
-                </span>
-              </button>
-            ))}
+                  <span className={styles.cashierSwitchItemText}>
+                    <span className={styles.cashierSwitchItemName}>
+                      {club.name || 'Unnamed Club'}
+                    </span>
+                    {isUnionEntity(club) && (
+                      <span className={styles.cashierSwitchItemBalance}>Union Wallet</span>
+                    )}
+                    {!isUnionEntity(club) && balances?.has(club.id) && (
+                      <span className={styles.cashierSwitchItemBalance}>
+                        {(balances.get(club.id) as number).toLocaleString()} Chips
+                      </span>
+                    )}
+                    {!isUnionEntity(club) && !balancesLoading && balancesError && (
+                      <span className={styles.cashierSwitchItemBalance}>Balance Unavailable</span>
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
           </div>
         </>
       )}

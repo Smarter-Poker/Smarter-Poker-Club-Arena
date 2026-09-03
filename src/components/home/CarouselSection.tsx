@@ -7,10 +7,10 @@
  * live stats. Single-click navigates to the club's lobby.
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
+import { useState, useEffect, useCallback, useMemo, Suspense } from 'react';
 import { MEDIA_BASE } from '../../utils/mediaBase';
 import haptic from '../../services/HapticService';
-import PremiumSFX from '../../services/PremiumSFX';
+import { playPremiumSfx } from '../../utils/playPremiumSfx';
 import { STORAGE_KEYS } from '../../lib/storage';
 import { SHARK_CLUB_ID } from '../../lib/constants';
 import styles from '../../pages/HomePage.module.css';
@@ -42,9 +42,9 @@ export interface UserClub {
 }
 
 export interface ClubStats {
-  totalMembers: number;
-  clubLevel: number;
-  activePlayers: number;
+  totalMembers: number | null;
+  clubLevel: number | null;
+  activePlayers: number | null;
 }
 
 export interface CarouselSectionProps {
@@ -165,7 +165,7 @@ export default function CarouselSection({
 
   const handleIndexChange = useCallback(() => {
     haptic.light();
-    PremiumSFX.scrollSnap();
+    playPremiumSfx('scrollSnap');
     /* Warm the club lobby while the player is still deciding. It is the
        heaviest screen in the app and it is where every tap on this carousel
        goes, so fetching it at the moment a card settles turns the tap from
@@ -204,7 +204,7 @@ export default function CarouselSection({
   const handleClubCardClick = useCallback(
     (club: UserClub) => {
       haptic.success();
-      PremiumSFX.navigate();
+      playPremiumSfx('navigate');
       try {
         localStorage.setItem(STORAGE_KEYS.LAST_VISITED, club.id);
         localStorage.setItem(STORAGE_KEYS.LAST_CLUB, club.id);
@@ -249,7 +249,7 @@ export default function CarouselSection({
              the feeder was left running, so this was pure cost - a reflow per
              pointer move, per card - buying a value no stylesheet consumes. */
           role="button"
-          aria-label={`${club.name || 'Club'} - Click to enter lobby`}
+          aria-label={`${club.name || 'Club'} - Click To Enter Lobby`}
           tabIndex={0}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -270,9 +270,9 @@ export default function CarouselSection({
             <PageErrorBoundary pageName={club.name || 'Club Card'}>
               <ClubCardPanel
                 clubName={club.name?.toUpperCase() || 'MY CLUB'}
-                totalMembers={stats?.totalMembers ?? club.member_count ?? 0}
-                clubLevel={stats?.clubLevel ?? 1}
-                activePlayers={stats?.activePlayers ?? 0}
+                totalMembers={stats?.totalMembers ?? null}
+                clubLevel={stats?.clubLevel ?? null}
+                activePlayers={stats?.activePlayers ?? null}
                 clubId={club.club_id}
                 cardImageUrl={
                   Number(club.club_id) === SHARK_CLUB_ID
@@ -304,19 +304,19 @@ export default function CarouselSection({
           className={styles.ctaCard}
           onClick={() => {
             haptic.light();
-            PremiumSFX.ctaClick();
+            playPremiumSfx('ctaClick');
             onOpenJoinModal();
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               haptic.light();
-              PremiumSFX.ctaClick();
+              playPremiumSfx('ctaClick');
               onOpenJoinModal();
             }
           }}
           role="button"
-          aria-label="Join a Club"
+          aria-label="Join A Club"
           tabIndex={0}
         >
           <div className={styles.ctaCardIcon}>+</div>
@@ -394,19 +394,19 @@ export default function CarouselSection({
           className={styles.ctaCard}
           onClick={() => {
             haptic.light();
-            PremiumSFX.ctaClick();
+            playPremiumSfx('ctaClick');
             onOpenCreateModal();
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               haptic.light();
-              PremiumSFX.ctaClick();
+              playPremiumSfx('ctaClick');
               onOpenCreateModal();
             }
           }}
           role="button"
-          aria-label="Create a Club"
+          aria-label="Create A Club"
           tabIndex={0}
         >
           <div className={styles.ctaCardIcon}>+</div>

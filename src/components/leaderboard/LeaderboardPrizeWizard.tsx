@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   LeaderboardPrize,
   LeaderboardPrizePlanKey,
@@ -7,9 +8,12 @@ import type {
 import { LeaderboardService } from '../../services/LeaderboardService';
 import { useFocusTrap } from '../../hooks/useFocusTrap';
 import {
+  MAX_PRIZE_PLAN_BUDGET,
+  clampPrizeBudget,
   distributePrizeBudget,
   normalizeCustomPrizes,
   prizePlanLabel,
+  scaleCustomPrizesToBudget,
   suggestedPrizeBudgets,
   totalPrizePlan,
 } from '../../utils/leaderboardPrizePlans';
@@ -49,6 +53,7 @@ export function LeaderboardPrizeWizard({
   onSaved,
 }: LeaderboardPrizeWizardProps) {
   const dialogRef = useFocusTrap(isOpen);
+  const stepHeadingRef = useRef<HTMLHeadingElement>(null);
   const [step, setStep] = useState(0);
   const [enabled, setEnabled] = useState(setup.rewards_enabled);
   const [metric, setMetric] = useState(setup.payout_metric);
@@ -91,6 +96,21 @@ export function LeaderboardPrizeWizard({
     return () => document.removeEventListener('keydown', close);
   }, [isOpen, onClose, saving]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const frame = requestAnimationFrame(() => stepHeadingRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [isOpen, step]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isOpen]);
+
   const selectedPlan = planKey === 'custom' ? null : planKey;
   const weeklyTotal = totalPrizePlan(weeklyPrizes);
   const monthlyTotal = totalPrizePlan(monthlyPrizes);
@@ -120,18 +140,26 @@ export function LeaderboardPrizeWizard({
   };
 
   const updateBudget = (period: 'weekly' | 'monthly', rawValue: string) => {
-    const budget = Math.max(0, Math.round((Number(rawValue) || 0) * 100) / 100);
+    const budget = clampPrizeBudget(Number(rawValue));
     if (period === 'weekly') {
       setWeeklyBudget(budget);
-      if (selectedPlan) setWeeklyPrizes(distributePrizeBudget(budget, selectedPlan));
+      setWeeklyPrizes((current) =>
+        selectedPlan
+          ? distributePrizeBudget(budget, selectedPlan)
+          : scaleCustomPrizesToBudget(current, budget)
+      );
     } else {
       setMonthlyBudget(budget);
-      if (selectedPlan) setMonthlyPrizes(distributePrizeBudget(budget, selectedPlan));
+      setMonthlyPrizes((current) =>
+        selectedPlan
+          ? distributePrizeBudget(budget, selectedPlan)
+          : scaleCustomPrizesToBudget(current, budget)
+      );
     }
   };
 
   const updateCustomPrize = (period: 'weekly' | 'monthly', rank: number, rawValue: string) => {
-    const amount = Math.max(0, Math.round((Number(rawValue) || 0) * 100) / 100);
+    const amount = clampPrizeBudget(Number(rawValue));
     setPlanKey('custom');
     const setRows = period === 'weekly' ? setWeeklyPrizes : setMonthlyPrizes;
     const current = period === 'weekly' ? weeklyPrizes : monthlyPrizes;
@@ -153,6 +181,7 @@ export function LeaderboardPrizeWizard({
         weekly_prizes: normalizeCustomPrizes(weeklyPrizes),
         monthly_prizes: normalizeCustomPrizes(monthlyPrizes),
         suggestion_key: planKey,
+        program_version: setup.program_version,
       });
       onSaved(saved);
     } catch (saveError) {
@@ -168,7 +197,7 @@ export function LeaderboardPrizeWizard({
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
       className="lb-prize-wizard-backdrop"
       onMouseDown={(event) => {
@@ -195,7 +224,11 @@ export function LeaderboardPrizeWizard({
 
         <ol className="lb-prize-progress" aria-label="Setup Progress">
           {steps.map((label, index) => (
-            <li key={label} className={index === step ? 'active' : index < step ? 'complete' : ''}>
+            <li
+              key={label}
+              className={index === step ? 'active' : index < step ? 'complete' : ''}
+              aria-current={index === step ? 'step' : undefined}
+            >
               <span>{index + 1}</span>
               <strong>{label}</strong>
             </li>
@@ -206,7 +239,9 @@ export function LeaderboardPrizeWizard({
           {step === 0 && (
             <div className="lb-prize-step">
               <span className="lb-prize-step-number">Step One</span>
-              <h3>Do You Want To Reward Leaderboard Prizes?</h3>
+              <h3 ref={stepHeadingRef} tabIndex={-1}>
+                Do You Want To Reward Leaderboard Prizes?
+              </h3>
               <p>
                 The Plan Appears On The Live Board. Saving This Setup Never Moves Chips Or Pays A
                 Player.
@@ -237,7 +272,9 @@ export function LeaderboardPrizeWizard({
           {step === 1 && (
             <div className="lb-prize-step">
               <span className="lb-prize-step-number">Step Two</span>
-              <h3>Funding Source Confirmed</h3>
+              <h3 ref={stepHeadingRef} tabIndex={-1}>
+                Funding Source Confirmed
+              </h3>
               <div className="lb-prize-source-card">
                 <span className="lb-prize-source-mark" aria-hidden="true">
                   ◆
@@ -272,7 +309,9 @@ export function LeaderboardPrizeWizard({
           {step === 2 && (
             <div className="lb-prize-step">
               <span className="lb-prize-step-number">Step Three</span>
-              <h3>Build The Prize Board</h3>
+              <h3 ref={stepHeadingRef} tabIndex={-1}>
+                Build The Prize Board
+              </h3>
               <label className="lb-prize-field">
                 <span>Ranking Signal</span>
                 <select
@@ -331,6 +370,7 @@ export function LeaderboardPrizeWizard({
                         <input
                           type="number"
                           min="0"
+                          max={MAX_PRIZE_PLAN_BUDGET}
                           step="0.01"
                           inputMode="decimal"
                           value={budget || ''}
@@ -344,13 +384,14 @@ export function LeaderboardPrizeWizard({
                             <input
                               type="number"
                               min="0"
+                              max={MAX_PRIZE_PLAN_BUDGET}
                               step="0.01"
                               inputMode="decimal"
                               value={row.amount || ''}
                               onChange={(event) =>
                                 updateCustomPrize(rewardPeriod, row.rank, event.target.value)
                               }
-                              aria-label={`${rewardPeriod} prize for rank ${row.rank}`}
+                              aria-label={`${rewardPeriod} Prize For Rank ${row.rank}`}
                             />
                           </label>
                         ))}
@@ -380,7 +421,9 @@ export function LeaderboardPrizeWizard({
           {step === 3 && (
             <div className="lb-prize-step">
               <span className="lb-prize-step-number">Step Four</span>
-              <h3>Review The Published Plan</h3>
+              <h3 ref={stepHeadingRef} tabIndex={-1}>
+                Review The Published Plan
+              </h3>
               <dl className="lb-prize-review">
                 <div>
                   <dt>Status</dt>
@@ -408,11 +451,17 @@ export function LeaderboardPrizeWizard({
                 </div>
               </dl>
               <div className="lb-prize-safety-note" role="note">
-                <strong>Planning And Display Only.</strong>
+                <strong>Starts Next Period</strong>
                 <span>
-                  This Setup Does Not Debit The Promo Wallet. Automated Payouts Remain Protected
-                  Until The Platform Has A Canonical Batch Transfer With Full Idempotency And Ledger
-                  Coverage.
+                  Current Standings Keep Their Published Rules. This Becomes Program Version{' '}
+                  {setup.program_version + 1} At The Next Weekly And Monthly UTC Boundaries.
+                </span>
+              </div>
+              <div className="lb-prize-safety-note" role="note">
+                <strong>Publication Does Not Move Chips.</strong>
+                <span>
+                  The Funding Owner And Prize Rules Become Auditable And Immutable. Automated
+                  Settlement Remains Protected Until Its Separate Conservation Gate Is Complete.
                 </span>
               </div>
               {error && (
@@ -427,7 +476,7 @@ export function LeaderboardPrizeWizard({
         <footer className="lb-prize-wizard-footer">
           <button
             type="button"
-            onClick={step === 0 ? onClose : () => setStep((value) => value - 1)}
+            onClick={step === 0 ? onClose : () => setStep(step === 3 && !enabled ? 0 : step - 1)}
             disabled={saving}
           >
             {step === 0 ? 'Cancel' : 'Back'}
@@ -448,12 +497,13 @@ export function LeaderboardPrizeWizard({
               onClick={save}
               disabled={saving || (enabled && !hasPrizes)}
             >
-              {saving ? 'Saving Prize Setup' : 'Save Prize Setup'}
+              {saving ? 'Publishing Prize Program' : 'Publish Prize Program'}
             </button>
           )}
         </footer>
       </section>
-    </div>
+    </div>,
+    document.body
   );
 }
 

@@ -13,7 +13,9 @@ import { reportError } from '../services/errorReporter.js';
 
 export interface HeartbeatDeps {
   gameServer: {
-    getTableEngine(tableId: string): { heartbeat(userId: string): unknown } | null | undefined;
+    getTableEngine(
+      tableId: string
+    ): { heartbeat(userId: string, opts?: { turnRendered?: boolean }): unknown } | null | undefined;
   };
 }
 
@@ -29,7 +31,12 @@ export async function handleHeartbeat(
     }
 
     const body = JSON.parse(await readBody(req));
-    const { tableId } = body;
+    /* `turnRendered` (phase 2, 2026-08-31): the client confirming it actually
+       DREW the action controls for this player, not merely that it is online.
+       Optional — older clients omit it, and the silent-client canary is built
+       to work without it. Coerced rather than trusted as a shape: it arrives
+       from a browser, and only its truthiness is ever read. */
+    const { tableId, turnRendered } = body;
     const userId = auth.userId;
 
     if (!tableId) {
@@ -41,7 +48,7 @@ export async function handleHeartbeat(
       return sendJSON(res, 404, { success: false, error: 'Table engine not found' });
     }
 
-    const result = engine.heartbeat(userId);
+    const result = engine.heartbeat(userId, { turnRendered: turnRendered === true });
     return sendJSON(res, 200, result);
   } catch (err: unknown) {
     reportError(err, 'HTTP.heartbeat_error');

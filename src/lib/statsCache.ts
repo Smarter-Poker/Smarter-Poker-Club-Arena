@@ -31,7 +31,7 @@
  */
 
 /** localStorage key prefix for the SWR payload. Purged by clearUserCaches. */
-export const STATS_CACHE_PREFIX = 'ps_stats_v3_';
+export const STATS_CACHE_PREFIX = 'ps_stats_v4_contract2_';
 
 /** How long a memoised per-range payload may be served without a refetch. */
 export const RANGE_MEMO_TTL_MS = 60_000;

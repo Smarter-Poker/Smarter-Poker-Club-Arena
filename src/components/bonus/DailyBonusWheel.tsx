@@ -183,7 +183,7 @@ export default function DailyBonusWheel({
 
       {/* Spin Button */}
       <button className={styles.spinButton} onClick={handleSpin} disabled={spinning || disabled}>
-        {disabled ? 'Come back tomorrow!' : spinning ? 'Spinning...' : ` Spin the Wheel`}
+        {disabled ? 'Come Back Tomorrow!' : spinning ? 'Spinning...' : ` Spin The Wheel`}
       </button>
 
       {/* Spin Count */}

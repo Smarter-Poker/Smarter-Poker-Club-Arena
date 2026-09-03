@@ -78,6 +78,13 @@ test.describe('Club lobby', () => {
   });
 
   test('switching game type re-filters the list and the count stays honest', async ({ page }) => {
+    /* lobbySettled deliberately allows a cold production read up to 45s. The
+       inherited 30s test ceiling used to kill the test before that contract
+       could finish, then the warm-cache retry passed and hid the mismatch as
+       "flaky". Give the complete route + four real tab interactions room to
+       exercise the UI once, without relying on a retry. */
+    test.setTimeout(75_000);
+
     const ok = await expectRoute(page, LOBBY);
     if (!ok) return;
     await lobbySettled(page);

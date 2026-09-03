@@ -957,13 +957,488 @@
 
 @media (min-width: 768px) {
   .arena-game-card:not([data-presentation='mobile']) {
-    width: min(100%, 520px);
+    width: min(var(--agc-desktop-canvas-width, 100%), var(--agc-desktop-canvas-max-width, 520px));
     aspect-ratio: var(--agc-desktop-ratio);
+    margin-inline: auto;
   }
 
   .arena-game-card:not([data-presentation='mobile']) .arena-game-card__art {
     background-image: var(--agc-art-desktop);
   }
+}
+
+/* Keep the mobile reference lock last so legacy V2 desktop tuning cannot
+   shrink or displace the supplied mobile chassis. */
+.arena-game-card[data-presentation='mobile'][data-skin$='-v2'] {
+  --agc-mobile-canvas-width: 100%;
+}
+
+.arena-game-card--heads-up[data-presentation='mobile'][data-skin='shark-headsup-v2'] {
+  --agc-header-top: 9%;
+  --agc-header-left: 8.7%;
+  --agc-header-right: 8.7%;
+  --agc-heading-width: 58%;
+  --agc-title-size: clamp(17px, 5.9cqw, 31px);
+  --agc-status-top: 2%;
+  --agc-status-height: 40%;
+}
+
+.arena-game-card--nlh[data-presentation='mobile'][data-skin='shark-nlh-tall-v2'] {
+  --agc-mobile-canvas-width: 100%;
+  --agc-header-top: 7.4%;
+  --agc-header-left: 9%;
+  --agc-header-right: 9%;
+  --agc-header-height: 17%;
+  --agc-heading-width: 64%;
+  --agc-title-size: clamp(18px, 6cqw, 31px);
+  --agc-status-top: 6%;
+  --agc-status-width: 26%;
+  --agc-status-height: 35%;
+  --agc-game-type-top: 29.2%;
+  --agc-game-type-left: 13.4%;
+  --agc-game-type-width: 23.6%;
+  --agc-game-type-height: 17%;
+  --agc-stakes-top: 29.2%;
+  --agc-stakes-left: 43.7%;
+  --agc-stakes-width: 42.7%;
+  --agc-stakes-height: 17%;
+  --agc-players-top: 48.2%;
+  --agc-players-left: 13.4%;
+  --agc-players-width: 23.6%;
+  --agc-players-height: 15.5%;
+  --agc-buy-in-top: 48.2%;
+  --agc-buy-in-left: 43.7%;
+  --agc-buy-in-width: 42.7%;
+  --agc-buy-in-height: 15.5%;
+  --agc-actions-top: 70.4%;
+  --agc-actions-left: 7.4%;
+  --agc-actions-right: 7.4%;
+  --agc-actions-height: 14.8%;
+  --agc-action-columns: repeat(2, minmax(0, 1fr));
+  --agc-action-rows: 1fr;
+  --agc-action-gap: 3.2%;
+}
+
+.arena-game-card--nlh[data-presentation='mobile'][data-skin='shark-nlh-tall-v2']
+  .agc-premium-rules {
+  display: none;
+}
+
+.arena-game-card--nlh[data-presentation='mobile'][data-skin='shark-nlh-tall-v2']
+  .arena-game-card__art {
+  clip-path: polygon(7% 2%, 93% 2%, 97% 6%, 97% 94%, 93% 98%, 7% 98%, 3% 94%, 3% 6%);
+}
+
+/* Reference-locked mobile V4 ------------------------------------------------
+   These are the final optical corrections for the September 1 supplied
+   machines. The raster remains layer one; all live copy remains layer two. */
+.arena-game-card[data-presentation='mobile'][data-skin$='-v2'] {
+  --agc-mobile-canvas-width: 100%;
+  background: transparent;
+}
+
+.arena-game-card--nlh[data-presentation='mobile'][data-skin='shark-nlh-v2'] .arena-game-card__art {
+  clip-path: polygon(5% 3.6%, 95% 3.6%, 99% 8%, 99% 92%, 95% 96.5%, 5% 96.5%, 1% 92%, 1% 8%);
+}
+
+.arena-game-card--plo[data-presentation='mobile'][data-skin='shark-plo-v2'] .arena-game-card__art {
+  clip-path: polygon(6% 2.5%, 94% 2.5%, 97% 6%, 97% 94%, 93% 98%, 7% 98%, 3% 94%, 3% 6%);
+}
+
+.arena-game-card--spins[data-presentation='mobile'][data-skin='shark-spins-v2']
+  .arena-game-card__art {
+  clip-path: polygon(5% 1.8%, 95% 1.8%, 99% 5%, 99% 95%, 95% 98.5%, 5% 98.5%, 1% 95%, 1% 5%);
+}
+
+.arena-game-card--heads-up[data-presentation='mobile'][data-skin='shark-headsup-v2']
+  .arena-game-card__art {
+  clip-path: polygon(6% 1.8%, 94% 1.8%, 98% 6%, 98% 94%, 94% 98%, 6% 98%, 2% 94%, 2% 6%);
+}
+
+.arena-game-card--mtt[data-presentation='mobile'][data-skin='shark-mtt-v2'] .arena-game-card__art {
+  clip-path: polygon(7% 1%, 93% 1%, 97% 4%, 97% 95%, 93% 99%, 7% 99%, 3% 95%, 3% 4%);
+}
+
+.arena-game-card--heads-up[data-presentation='mobile'][data-skin='shark-headsup-v2'] {
+  --agc-header-top: 5.8%;
+  --agc-header-left: 8.7%;
+  --agc-header-right: 8.7%;
+  --agc-heading-width: 58%;
+  --agc-title-size: clamp(17px, 5.9cqw, 31px);
+  --agc-status-top: 22%;
+  --agc-status-height: 40%;
+}
+
+.arena-game-card--heads-up[data-presentation='mobile'][data-skin='shark-headsup-v2']
+  .agc-premium-heading
+  h3 {
+  white-space: nowrap;
+  -webkit-line-clamp: 1;
+}
+
+.arena-game-card--mtt[data-presentation='mobile'][data-skin='shark-mtt-v2'] .agc-mtt-meta i {
+  width: 1px;
+  height: 0.9em;
+  background: rgb(209 220 230 / 62%);
+  box-shadow: 0 1px 2px #000;
+}
+
+.arena-game-card--mtt[data-presentation='mobile'][data-skin='shark-mtt-v2'] .agc-mtt-meta strong {
+  font-size: 1em;
+  text-transform: uppercase;
+}
+
+/* Premium mobile reference rebuild -----------------------------------------
+   The V3 rasters are clean manufactured shells derived from the supplied
+   family references. They contain no live values. These mobile-only maps put
+   semantic DOM content into the exact wells and deliberately leave desktop's
+   approved V2 layouts untouched. */
+.arena-game-card[data-presentation='mobile'][data-skin$='-v2'] {
+  --agc-mobile-canvas-width: 100%;
+  width: 100%;
+  max-width: none;
+}
+
+.arena-game-card[data-presentation='mobile'][data-skin$='-v2'] .agc-premium-value::before,
+.arena-game-card[data-presentation='mobile'][data-skin$='-v2'] .agc-mtt-value::before {
+  position: absolute;
+  top: 5%;
+  left: 4%;
+  right: 4%;
+  color: #8bbde2;
+  font-family: 'Roboto Condensed', Inter, sans-serif;
+  font-size: clamp(7px, 2.45cqw, 13px);
+  font-weight: 750;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-align: center;
+  text-transform: uppercase;
+  text-shadow: 0 2px 3px #000;
+}
+
+.arena-game-card[data-presentation='mobile'][data-skin$='-v2']
+  .agc-premium-value--game-type::before {
+  content: 'Game Type';
+}
+.arena-game-card[data-presentation='mobile'][data-skin$='-v2'] .agc-premium-value--stakes::before {
+  content: 'Stakes';
+}
+.arena-game-card[data-presentation='mobile'][data-skin$='-v2'] .agc-premium-value--players::before {
+  content: 'Players';
+}
+.arena-game-card[data-presentation='mobile'][data-skin$='-v2'] .agc-premium-value--buy-in::before {
+  content: 'Buy-In';
+}
+.arena-game-card[data-presentation='mobile'][data-skin$='-v2']
+  .agc-premium-value--registered::before {
+  content: 'Registered';
+}
+.arena-game-card[data-presentation='mobile'][data-skin$='-v2']
+  .agc-premium-value--starting-stack::before {
+  content: 'Starting Stack';
+}
+.arena-game-card[data-presentation='mobile'][data-skin$='-v2']
+  .agc-premium-value--blind-levels::before {
+  content: 'Blind Levels';
+}
+.arena-game-card[data-presentation='mobile'][data-skin$='-v2'] .agc-premium-value--format::before {
+  content: 'Format';
+}
+
+.arena-game-card[data-presentation='mobile'][data-skin$='-v2'] .agc-premium-value > strong {
+  transform: translateY(16%);
+}
+
+/* NLH cash: reference is a compact near-square console with four equal facts
+   and two side-by-side actions. */
+.arena-game-card--nlh[data-skin='shark-nlh-v2'][data-presentation='mobile'] {
+  --agc-header-top: 9.2%;
+  --agc-header-left: 8.7%;
+  --agc-header-right: 8.7%;
+  --agc-header-height: 21.5%;
+  --agc-heading-width: 66%;
+  --agc-title-size: clamp(18px, 6.2cqw, 33px);
+  --agc-status-top: 30%;
+  --agc-status-width: 25%;
+  --agc-status-height: 38%;
+  --agc-rules-top: 29%;
+  --agc-rules-left: 10%;
+  --agc-rules-right: 55%;
+  --agc-rules-height: 4%;
+  --agc-game-type-top: 38.5%;
+  --agc-game-type-left: 8.7%;
+  --agc-game-type-width: 20.5%;
+  --agc-game-type-height: 23%;
+  --agc-stakes-top: 38.5%;
+  --agc-stakes-left: 30.5%;
+  --agc-stakes-width: 20%;
+  --agc-stakes-height: 23%;
+  --agc-players-top: 38.5%;
+  --agc-players-left: 51.5%;
+  --agc-players-width: 20%;
+  --agc-players-height: 23%;
+  --agc-buy-in-top: 38.5%;
+  --agc-buy-in-left: 72.5%;
+  --agc-buy-in-width: 19%;
+  --agc-buy-in-height: 23%;
+  --agc-actions-top: 70.1%;
+  --agc-actions-left: 8.3%;
+  --agc-actions-right: 8.3%;
+  --agc-actions-height: 16.3%;
+  --agc-action-columns: repeat(2, minmax(0, 1fr));
+  --agc-action-rows: 1fr;
+  --agc-action-gap: 3.7%;
+}
+
+.arena-game-card--nlh[data-skin='shark-nlh-v2'][data-presentation='mobile'] .agc-premium-rules {
+  display: none;
+}
+
+.arena-game-card--nlh[data-skin='shark-nlh-v2'][data-presentation='mobile'] .agc-premium-heading p {
+  margin-top: 1.8cqw;
+  font-size: clamp(9px, 3cqw, 15px);
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.arena-game-card--nlh[data-skin='shark-nlh-v2'][data-presentation='mobile']
+  .agc-premium-value--game-type
+  strong,
+.arena-game-card--nlh[data-skin='shark-nlh-v2'][data-presentation='mobile']
+  .agc-premium-value--stakes
+  strong,
+.arena-game-card--nlh[data-skin='shark-nlh-v2'][data-presentation='mobile']
+  .agc-premium-value--players
+  strong {
+  font-size: clamp(18px, 6.2cqw, 33px);
+}
+
+/* PLO cash: tall scan-line card with four edge-to-edge fact rows and two
+   full-width actions. */
+.arena-game-card--plo[data-skin='shark-plo-v2'][data-presentation='mobile'] {
+  --agc-header-top: 6%;
+  --agc-header-left: 10%;
+  --agc-header-right: 10%;
+  --agc-header-height: 18%;
+  --agc-heading-width: 67%;
+  --agc-title-size: clamp(18px, 6.8cqw, 36px);
+  --agc-status-top: 7%;
+  --agc-status-width: 24%;
+  --agc-status-height: 35%;
+  --agc-game-type-top: 27.4%;
+  --agc-game-type-left: 12.7%;
+  --agc-game-type-width: 19%;
+  --agc-game-type-height: 7.5%;
+  --agc-stakes-top: 37.5%;
+  --agc-stakes-left: 34.5%;
+  --agc-stakes-width: 53%;
+  --agc-stakes-height: 8.5%;
+  --agc-players-top: 47.8%;
+  --agc-players-left: 34.5%;
+  --agc-players-width: 53%;
+  --agc-players-height: 8.5%;
+  --agc-buy-in-top: 58.2%;
+  --agc-buy-in-left: 34.5%;
+  --agc-buy-in-width: 53%;
+  --agc-buy-in-height: 8.5%;
+  --agc-actions-top: 70.8%;
+  --agc-actions-left: 11%;
+  --agc-actions-right: 11%;
+  --agc-actions-height: 20%;
+  --agc-action-columns: 1fr;
+  --agc-action-rows: repeat(2, minmax(0, 1fr));
+  --agc-action-gap: 8%;
+}
+
+.arena-game-card--plo[data-skin='shark-plo-v2'][data-presentation='mobile'] .agc-premium-rules {
+  display: none;
+}
+
+.arena-game-card--plo[data-skin='shark-plo-v2'][data-presentation='mobile']
+  .agc-premium-value--game-type::before {
+  content: none;
+}
+
+.arena-game-card--plo[data-skin='shark-plo-v2'][data-presentation='mobile']
+  .agc-premium-value--game-type
+  strong {
+  color: #72c7ff;
+  font-size: clamp(17px, 6.2cqw, 33px);
+  transform: none;
+}
+
+.arena-game-card--plo[data-skin='shark-plo-v2'][data-presentation='mobile'] .agc-value-medallion {
+  top: 50%;
+  left: -31%;
+  width: clamp(24px, 8.5cqw, 44px);
+  transform: translate(-50%, -50%);
+}
+
+/* Spin: exact four-tower + gold payout chamber reference. */
+.arena-game-card--spins[data-skin='shark-spins-v2'][data-presentation='mobile'] {
+  --agc-header-top: 6.8%;
+  --agc-header-left: 10%;
+  --agc-header-right: 8%;
+  --agc-header-height: 11%;
+  --agc-status-top: 40%;
+  --agc-status-width: 24%;
+  --agc-status-height: 47%;
+  --agc-rules-top: 20.2%;
+  --agc-rules-left: 8%;
+  --agc-rules-right: 8%;
+  --agc-rules-height: 4%;
+  --agc-game-type-top: 34.5%;
+  --agc-game-type-left: 6.2%;
+  --agc-game-type-width: 14%;
+  --agc-game-type-height: 12%;
+  --agc-buy-in-top: 34.5%;
+  --agc-buy-in-left: 20.3%;
+  --agc-buy-in-width: 14%;
+  --agc-buy-in-height: 12%;
+  --agc-registered-top: 34.5%;
+  --agc-registered-left: 66.8%;
+  --agc-registered-width: 14%;
+  --agc-registered-height: 12%;
+  --agc-starting-stack-top: 34.5%;
+  --agc-starting-stack-left: 80.9%;
+  --agc-starting-stack-width: 14%;
+  --agc-starting-stack-height: 12%;
+  --agc-blind-levels-top: 66.1%;
+  --agc-blind-levels-left: 8%;
+  --agc-blind-levels-width: 34.5%;
+  --agc-blind-levels-height: 9.5%;
+  --agc-format-top: 66.1%;
+  --agc-format-left: 57.5%;
+  --agc-format-width: 34.5%;
+  --agc-format-height: 9.5%;
+  --agc-actions-top: 83.4%;
+  --agc-actions-left: 8%;
+  --agc-actions-right: 8%;
+  --agc-actions-height: 8.5%;
+}
+
+.arena-game-card--spins[data-skin='shark-spins-v2'][data-presentation='mobile']
+  .agc-premium-promotion {
+  top: 17.5%;
+  left: 36%;
+  width: 28%;
+  height: 4.5%;
+}
+
+.arena-game-card--spins[data-skin='shark-spins-v2'][data-presentation='mobile']
+  .agc-premium-payout {
+  top: 34%;
+  left: 34%;
+  width: 32%;
+  height: 28%;
+}
+
+.arena-game-card--spins[data-skin='shark-spins-v2'][data-presentation='mobile']
+  .agc-premium-value--registered::before,
+.arena-game-card--spins[data-skin='shark-spins-v2'][data-presentation='mobile']
+  .agc-premium-value--starting-stack::before {
+  right: 0;
+  left: 0;
+  font-size: clamp(6px, 1.75cqw, 9px);
+  letter-spacing: 0.02em;
+}
+
+.arena-game-card--spins[data-skin='shark-spins-v2'][data-presentation='mobile'] .agc-action {
+  min-height: 0;
+  height: 100%;
+}
+
+/* Heads-up: symmetric fact matrix rather than the rejected scan-line layout. */
+.arena-game-card--heads-up[data-skin='shark-headsup-v2'][data-presentation='mobile'] {
+  --agc-header-top: 5.3%;
+  --agc-header-left: 9%;
+  --agc-header-right: 9%;
+  --agc-header-height: 15%;
+  --agc-heading-width: 67%;
+  --agc-title-size: clamp(18px, 6.7cqw, 35px);
+  --agc-status-top: 25%;
+  --agc-status-width: 24%;
+  --agc-status-height: 40%;
+  --agc-game-type-top: 27.1%;
+  --agc-game-type-left: 11.3%;
+  --agc-game-type-width: 22.5%;
+  --agc-game-type-height: 11.7%;
+  --agc-buy-in-top: 27.1%;
+  --agc-buy-in-left: 38.3%;
+  --agc-buy-in-width: 25.5%;
+  --agc-buy-in-height: 11.7%;
+  --agc-registered-top: 27.1%;
+  --agc-registered-left: 65.2%;
+  --agc-registered-width: 24%;
+  --agc-registered-height: 11.7%;
+  --agc-starting-stack-top: 43.4%;
+  --agc-starting-stack-left: 11.3%;
+  --agc-starting-stack-width: 38%;
+  --agc-starting-stack-height: 11.4%;
+  --agc-blind-levels-top: 43.4%;
+  --agc-blind-levels-left: 51%;
+  --agc-blind-levels-width: 38%;
+  --agc-blind-levels-height: 11.4%;
+  --agc-format-top: 61.2%;
+  --agc-format-left: 11.3%;
+  --agc-format-width: 77.7%;
+  --agc-format-height: 11.5%;
+  --agc-actions-top: 82.1%;
+  --agc-actions-left: 9%;
+  --agc-actions-right: 9%;
+  --agc-actions-height: 9.4%;
+}
+
+.arena-game-card--heads-up[data-skin='shark-headsup-v2'][data-presentation='mobile']
+  .agc-premium-rules {
+  display: none;
+}
+
+/* MTT V3 retains the approved grid but the new shell is deliberately textless. */
+.arena-game-card--mtt[data-skin='shark-mtt-v2'][data-presentation='mobile'] {
+  --agc-mobile-canvas-width: 100%;
+}
+
+.arena-game-card--mtt[data-skin='shark-mtt-v2'][data-presentation='mobile'] .agc-mtt-header h3 {
+  font-size: clamp(16px, 5.15cqw, 28px);
+  line-height: 0.98;
+}
+
+.arena-game-card--mtt[data-skin='shark-mtt-v2'][data-presentation='mobile'] .agc-mtt-meta {
+  inset-block-start: 45%;
+}
+
+.arena-game-card--mtt[data-skin='shark-mtt-v2'][data-presentation='mobile'] .agc-mtt-badge-rail {
+  inset-block-start: 68%;
+}
+
+.arena-game-card--mtt[data-skin='shark-mtt-v2'][data-presentation='mobile']
+  .agc-mtt-value--starting-time::before {
+  content: 'Starting Time';
+}
+.arena-game-card--mtt[data-skin='shark-mtt-v2'][data-presentation='mobile']
+  .agc-mtt-value--buy-in::before {
+  content: 'Buy-In';
+}
+.arena-game-card--mtt[data-skin='shark-mtt-v2'][data-presentation='mobile']
+  .agc-mtt-value--guarantee::before {
+  content: 'Guarantee';
+}
+.arena-game-card--mtt[data-skin='shark-mtt-v2'][data-presentation='mobile']
+  .agc-mtt-value--registered::before {
+  content: 'Registered';
+}
+.arena-game-card--mtt[data-skin='shark-mtt-v2'][data-presentation='mobile']
+  .agc-mtt-value--starting-stack::before {
+  content: 'Starting Stack';
+}
+.arena-game-card--mtt[data-skin='shark-mtt-v2'][data-presentation='mobile']
+  .agc-mtt-value--current-level::before {
+  content: 'Current Level';
+}
+
+.arena-game-card--mtt[data-skin='shark-mtt-v2'][data-presentation='mobile'] .agc-mtt-value strong {
+  transform: translateY(16%);
 }
 
 @media (max-width: 340px) {
@@ -975,8 +1450,9 @@
 }
 
 .arena-game-card[data-presentation='desktop'] {
-  width: min(100%, 520px);
+  width: min(var(--agc-desktop-canvas-width, 100%), var(--agc-desktop-canvas-max-width, 520px));
   aspect-ratio: var(--agc-desktop-ratio);
+  margin-inline: auto;
 }
 
 .arena-game-card[data-presentation='desktop'] .arena-game-card__art {
@@ -984,9 +1460,10 @@
 }
 
 .arena-game-card[data-presentation='mobile'] {
-  width: 100%;
+  width: var(--agc-mobile-canvas-width, 100%);
   max-width: none;
   aspect-ratio: var(--agc-mobile-ratio);
+  margin-inline: auto;
 }
 
 @container (max-width: 350px) {
@@ -1395,6 +1872,10 @@
 }
 
 .arena-game-card[data-skin$='-v2'] .agc-action {
+  --agc-action-fill: linear-gradient(180deg, rgb(26 34 41 / 68%), rgb(2 6 10 / 82%));
+  --agc-action-fill-shadow: inset 0 0 0 1px rgb(146 176 200 / 28%), inset 0 0 18px #000;
+  position: relative;
+  isolation: isolate;
   min-width: 0;
   min-height: 44px;
   padding: 0 4%;
@@ -1405,11 +1886,9 @@
   border: 0;
   border-radius: 0;
   color: #f2f4f6;
-  background: linear-gradient(180deg, rgb(26 34 41 / 68%), rgb(2 6 10 / 82%));
-  clip-path: polygon(6% 0, 94% 0, 100% 14%, 100% 86%, 94% 100%, 6% 100%, 0 86%, 0 14%);
-  box-shadow:
-    inset 0 0 0 1px rgb(146 176 200 / 28%),
-    inset 0 0 18px #000;
+  background: transparent;
+  clip-path: none;
+  box-shadow: none;
   font-family: 'Roboto Condensed', 'Oswald', Impact, sans-serif;
   font-size: clamp(11px, 4.35cqw, 23px);
   letter-spacing: 0.025em;
@@ -1418,58 +1897,60 @@
     0 4px 7px #000;
 }
 
+.arena-game-card[data-skin$='-v2'] .agc-action::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: var(--agc-action-fill-inset, 7% 4.5%);
+  border-radius: 1px;
+  background: var(--agc-action-fill);
+  clip-path: polygon(6% 0, 94% 0, 100% 14%, 100% 86%, 94% 100%, 6% 100%, 0 86%, 0 14%);
+  box-shadow: var(--agc-action-fill-shadow);
+  pointer-events: none;
+}
+
 .arena-game-card[data-skin$='-v2'] .agc-action--blue,
 .arena-game-card[data-skin$='-v2']
   .agc-action--primary:not(.agc-action--green):not(.agc-action--gold):not(.agc-action--red):not(
     .agc-action--neutral
   ) {
-  background:
+  --agc-action-fill:
     radial-gradient(circle at 50% 32%, rgb(62 168 255 / 48%), transparent 67%),
     linear-gradient(180deg, rgb(13 115 213 / 88%), rgb(3 41 91 / 96%));
-  box-shadow:
-    inset 0 0 0 1px #63baff,
-    inset 0 0 20px #031329,
-    0 0 11px rgb(35 147 255 / 34%);
+  --agc-action-fill-shadow:
+    inset 0 0 0 1px #63baff, inset 0 0 20px #031329, 0 0 11px rgb(35 147 255 / 34%);
 }
 
 .arena-game-card[data-skin$='-v2'] .agc-action--green {
-  background:
+  --agc-action-fill:
     radial-gradient(circle at 50% 30%, rgb(59 190 89 / 34%), transparent 65%),
     linear-gradient(180deg, rgb(22 115 44 / 91%), rgb(3 42 16 / 96%));
-  box-shadow:
-    inset 0 0 0 1px #55d878,
-    inset 0 0 20px #041a0a,
-    0 0 11px rgb(45 183 75 / 30%);
+  --agc-action-fill-shadow:
+    inset 0 0 0 1px #55d878, inset 0 0 20px #041a0a, 0 0 11px rgb(45 183 75 / 30%);
 }
 
 .arena-game-card[data-skin$='-v2'] .agc-action--gold {
   color: #fff2b8;
-  background:
+  --agc-action-fill:
     radial-gradient(circle at 50% 30%, rgb(255 202 66 / 34%), transparent 65%),
     linear-gradient(180deg, rgb(145 98 12 / 94%), rgb(55 32 2 / 98%));
-  box-shadow:
-    inset 0 0 0 1px #f3c54e,
-    inset 0 0 20px #241500,
-    0 0 11px rgb(230 172 38 / 28%);
+  --agc-action-fill-shadow:
+    inset 0 0 0 1px #f3c54e, inset 0 0 20px #241500, 0 0 11px rgb(230 172 38 / 28%);
 }
 
 .arena-game-card[data-skin$='-v2'] .agc-action--red {
   color: #ffe6e6;
-  background:
+  --agc-action-fill:
     radial-gradient(circle at 50% 30%, rgb(255 83 83 / 33%), transparent 65%),
     linear-gradient(180deg, rgb(139 27 32 / 94%), rgb(54 5 10 / 98%));
-  box-shadow:
-    inset 0 0 0 1px #e65b61,
-    inset 0 0 20px #260307,
-    0 0 11px rgb(210 45 53 / 28%);
+  --agc-action-fill-shadow:
+    inset 0 0 0 1px #e65b61, inset 0 0 20px #260307, 0 0 11px rgb(210 45 53 / 28%);
 }
 
 .arena-game-card[data-skin$='-v2'] .agc-action--neutral {
   color: #a2abb4;
-  background: linear-gradient(180deg, rgb(31 38 44 / 90%), rgb(7 10 13 / 98%));
-  box-shadow:
-    inset 0 0 0 1px #58636d,
-    inset 0 0 20px #000;
+  --agc-action-fill: linear-gradient(180deg, rgb(31 38 44 / 90%), rgb(7 10 13 / 98%));
+  --agc-action-fill-shadow: inset 0 0 0 1px #58636d, inset 0 0 20px #000;
 }
 
 .arena-game-card[data-skin$='-v2'] .agc-action__icon {
@@ -1477,8 +1958,16 @@
   height: clamp(17px, 5.2cqw, 28px);
 }
 
+/* Each approved bitmap has a different amount of black export canvas around
+   its physical chassis. These family widths normalize the VISIBLE chrome to
+   one centered rail without distorting or cropping the manufactured art. */
+
 /* NLH: compact casino table module. */
 .arena-game-card--nlh[data-skin='shark-nlh-v2'] {
+  --agc-mobile-canvas-width: 92.1%;
+  --agc-desktop-canvas-width: 96%;
+  --agc-desktop-canvas-max-width: 500px;
+  --agc-action-fill-inset: 7% 5.5%;
   --agc-header-top: 8.5%;
   --agc-header-left: 11.5%;
   --agc-header-right: 9.5%;
@@ -1524,6 +2013,10 @@
 
 /* PLO: Omaha/card-fan module with a state-focused waitlist rail. */
 .arena-game-card--plo[data-skin='shark-plo-v2'] {
+  --agc-mobile-canvas-width: 90.7%;
+  --agc-desktop-canvas-width: 100%;
+  --agc-desktop-canvas-max-width: 520px;
+  --agc-action-fill-inset: 7% 5.5%;
   --agc-header-top: 8.5%;
   --agc-header-left: 13.5%;
   --agc-header-right: 13.5%;
@@ -1572,6 +2065,10 @@
 
 /* Spins: prize-machine cartridge; the payout chamber is the single hero. */
 .arena-game-card--spins[data-skin='shark-spins-v2'] {
+  --agc-mobile-canvas-width: 87.3%;
+  --agc-desktop-canvas-width: 95.5%;
+  --agc-desktop-canvas-max-width: 497px;
+  --agc-action-fill-inset: 8% 5%;
   --agc-header-top: 7.4%;
   --agc-header-left: 12%;
   --agc-header-right: 10%;
@@ -1698,6 +2195,10 @@
 
 /* Heads-Up: symmetrical duel machine on desktop, scan-line roster on mobile. */
 .arena-game-card--heads-up[data-skin='shark-headsup-v2'] {
+  --agc-mobile-canvas-width: 100%;
+  --agc-desktop-canvas-width: 91.9%;
+  --agc-desktop-canvas-max-width: 478px;
+  --agc-action-fill-inset: 8% 5%;
   --agc-header-top: 5.4%;
   --agc-header-left: 9.5%;
   --agc-header-right: 9.5%;
@@ -2087,6 +2588,13 @@
   gap: 3.5%;
 }
 
+.arena-game-card--mtt[data-skin='shark-mtt-v2'] {
+  --agc-mobile-canvas-width: 92.7%;
+  --agc-desktop-canvas-width: 96.4%;
+  --agc-desktop-canvas-max-width: 502px;
+  --agc-action-fill-inset: 7% 4.5%;
+}
+
 /* Final optical alignment pass against the approved rendered shells. */
 .arena-game-card--nlh[data-skin='shark-nlh-v2'] {
   --agc-status-top: 25%;
@@ -2187,4 +2695,52 @@
     --agc-blind-levels-top: 49.7%;
     --agc-format-top: 68.7%;
   }
+}
+
+/* Final mobile V4 cascade guard. */
+.arena-game-card[data-presentation='mobile'][data-skin$='-v2'] {
+  --agc-mobile-canvas-width: 100%;
+}
+
+.arena-game-card--heads-up[data-presentation='mobile'][data-skin='shark-headsup-v2'] {
+  --agc-header-top: 9%;
+  --agc-header-left: 8.7%;
+  --agc-header-right: 8.7%;
+  --agc-heading-width: 58%;
+  --agc-title-size: clamp(17px, 5.9cqw, 31px);
+  --agc-status-top: 2%;
+  --agc-status-height: 40%;
+}
+
+.arena-game-card--nlh[data-presentation='mobile'][data-skin='shark-nlh-tall-v2'] {
+  --agc-status-top: 32%;
+}
+
+.arena-game-card--nlh[data-presentation='mobile'][data-skin='shark-nlh-tall-v2']
+  .agc-value-medallion {
+  display: none;
+}
+
+/* Pixel-calibrated layered NLH calibration skin. The bitmap layers own all
+   visible hardware; semantic controls remain transparent hit targets. */
+.arena-game-card--nlh[data-skin='spade-nlh-premium-v1'] {
+  width: min(100%, 430px);
+  aspect-ratio: 729 / 945;
+  overflow: hidden;
+  background: #000;
+}
+
+.arena-game-card--nlh[data-skin='spade-nlh-premium-v1'] .arena-game-card__art {
+  display: none;
+}
+
+.arena-game-card--nlh[data-skin='spade-nlh-premium-v1'] .arena-game-card__glass {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  clip-path: none;
 }

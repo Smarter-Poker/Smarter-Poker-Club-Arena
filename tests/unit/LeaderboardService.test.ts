@@ -28,7 +28,14 @@ vi.mock('../../src/lib/supabase', () => {
 });
 
 vi.mock('../../src/utils/retryAsync', () => ({
-  retryAsync: <T>(fn: () => Promise<T>) => fn(),
+  retryAsync: async <T>(fn: () => Promise<T>) => {
+    try {
+      return await fn();
+    } catch (error) {
+      if (error instanceof Error && /network|timeout/i.test(error.message)) return fn();
+      throw error;
+    }
+  },
 }));
 
 import { LeaderboardService } from '../../src/services/LeaderboardService';
@@ -126,11 +133,21 @@ describe('LeaderboardService', () => {
       expect(contexts[0].funding_source).toBe('union_promo_wallet');
     });
 
+    it('can surface owner-context transport failures instead of misreporting no authority', async () => {
+      const { supabase } = await import('../../src/lib/supabase');
+      const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+      rpc.mockResolvedValueOnce({ data: null, error: { message: 'identity read unavailable' } });
+
+      await expect(LeaderboardService.getManageableRewardContexts(true)).rejects.toMatchObject({
+        message: 'identity read unavailable',
+      });
+    });
+
     it('saves plans without accepting a client-selected funding source', async () => {
       const { supabase } = await import('../../src/lib/supabase');
       const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
       rpc.mockResolvedValueOnce({
-        data: { club_id: 'club-1', setup_complete: true },
+        data: { club_id: 'club-1', setup_complete: true, program_version: 1 },
         error: null,
       });
 
@@ -140,6 +157,7 @@ describe('LeaderboardService', () => {
         weekly_prizes: [{ rank: 1, amount: 50 }],
         monthly_prizes: [{ rank: 1, amount: 200 }],
         suggestion_key: 'balanced',
+        program_version: 0,
       });
 
       expect(rpc).toHaveBeenCalledWith('fn_save_leaderboard_reward_setup', {
@@ -149,8 +167,68 @@ describe('LeaderboardService', () => {
         p_weekly_prizes: [{ rank: 1, amount: 50 }],
         p_monthly_prizes: [{ rank: 1, amount: 200 }],
         p_suggestion_key: 'balanced',
+        p_expected_version: 0,
+        p_operation_id: expect.any(String),
       });
       expect(rpc.mock.calls.at(-1)?.[1]).not.toHaveProperty('p_funding_source');
+    });
+
+    it('loads the immutable program bound to the selected canonical period', async () => {
+      const { supabase } = await import('../../src/lib/supabase');
+      const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+      rpc.mockResolvedValueOnce({
+        data: {
+          program_id: 'program-2',
+          program_version: 2,
+          program_hash: 'a'.repeat(32),
+          status: 'published',
+          rewards_enabled: true,
+          period: 'weekly',
+          period_start: '2026-08-30',
+          payout_metric: 'profit',
+          prizes: [{ rank: 1, amount: 50 }],
+          funding_owner_type: 'union',
+          funding_union_id: 'union-1',
+          published_at: '2026-08-29T12:00:00Z',
+        },
+        error: null,
+      });
+
+      const plan = await LeaderboardService.getLeaderboardRewardPlan(
+        'club-1',
+        'weekly',
+        '2026-08-30'
+      );
+
+      expect(rpc).toHaveBeenCalledWith('fn_get_leaderboard_reward_plan', {
+        p_club_id: 'club-1',
+        p_period: 'weekly',
+        p_period_start: '2026-08-30',
+      });
+      expect(plan?.program_version).toBe(2);
+    });
+
+    it('reuses one publication key across a transient lost-response retry', async () => {
+      const { supabase } = await import('../../src/lib/supabase');
+      const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+      rpc
+        .mockResolvedValueOnce({ data: null, error: { message: 'network timeout' } })
+        .mockResolvedValueOnce({
+          data: { club_id: 'club-1', setup_complete: true, program_version: 1 },
+          error: null,
+        });
+
+      await LeaderboardService.saveLeaderboardRewardSetup('club-1', {
+        rewards_enabled: true,
+        payout_metric: 'profit',
+        weekly_prizes: [{ rank: 1, amount: 50 }],
+        monthly_prizes: [],
+        suggestion_key: 'custom',
+        program_version: 0,
+      });
+
+      expect(rpc).toHaveBeenCalledTimes(2);
+      expect(rpc.mock.calls[0][1].p_operation_id).toBe(rpc.mock.calls[1][1].p_operation_id);
     });
   });
 

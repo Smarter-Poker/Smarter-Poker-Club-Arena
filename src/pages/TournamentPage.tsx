@@ -1234,7 +1234,7 @@ export default function TournamentPage() {
                         PLO8: 'PLO8',
                         PLO_HILO: 'PLO Hi-Lo',
                         SHORT_DECK: 'Short Deck',
-                        PINEAPPLE: 'Pineapple',
+                        PINEAPPLE: 'Crazy Pineapple',
                         MIXED: 'Mixed',
                         CRAZY_PINEAPPLE: 'Crazy Pine',
                         DOUBLE_BOARD: 'Double Board',
@@ -1609,7 +1609,7 @@ export default function TournamentPage() {
                         now: `handleJoinTable` already falls back to the
                         tournament's own tables when the viewer holds no seat. */}
                     <button className="btn btn-primary btn-block" onClick={handleJoinTable}>
-                      {isRegistered ? 'Go to Table' : 'Watch'}
+                      {isRegistered ? 'Go To Table' : 'Watch'}
                     </button>
 
                     {/* Rebuy Button */}

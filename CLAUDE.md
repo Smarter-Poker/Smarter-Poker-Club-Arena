@@ -1,5 +1,24 @@
 # Club Arena -- Agent Instructions
 
+## ↗ RESUMING THE ENGINE-RESTART PROGRAMME? READ `docs/HANDOFF_CURRENT_STATE.md`
+
+If you are picking up the hourly `:55` maintenance break / platform freeze /
+engine restart work, the current state, every measured baseline, the open
+defects and the exact next actions are in
+[`docs/HANDOFF_CURRENT_STATE.md`](./docs/HANDOFF_CURRENT_STATE.md) - a 9-phase
+programme; phases 1-3 built (phase 1 merged + live, phases 2+3 in PR #2715),
+next is phase 4 (thaw installments). The plan is
+[`docs/ENGINE-RESTART-PROGRAMME.md`](./docs/ENGINE-RESTART-PROGRAMME.md).
+
+Read it before touching `server/src/maintenance/**`,
+`server/src/engine/ServerTableEngineBase.ts`,
+`.github/workflows/auto-deploy-hetzner.yml` or
+`.github/scripts/engine-watchdog.sh`. It records three separate guards that
+read as armed while being unreachable, and one trap where a metric reaching
+zero means the opposite of success.
+
+---
+
 ## ↗ START HERE: `AGENT-PLAYBOOK.md`
 
 **Before this file, before anything: read [`AGENT-PLAYBOOK.md`](./AGENT-PLAYBOOK.md).**
@@ -41,33 +60,73 @@ platform plan wins.
 Club Arena is a Vite + React SPA that lives inside the smarter.poker Next.js app.
 It deploys through the World Hub repo, NOT directly.
 
-### 1.1 The Only Deploy Path (Phase U5.4 — one script, one push)
+### 1.1 How your work reaches production (rewritten 2026-09-03 - the World Hub is no longer in the path)
+
+There is exactly ONE route from a commit to a player, and every step of it is
+automatic. Your job ends at step 2.
+
+1. **Work on a branch in your own worktree.** Any name is fine - `fix/<slug>`
+   is the convention. Never commit on `main`; it is a protected mirror.
+2. **Push the branch** over SSH (`git push origin HEAD:refs/heads/<branch>`).
+   **That is the end of your job.** Do not open the pull request yourself, do
+   not merge, do not watch CI (10.8.3). Report the branch name and stop.
+3. `agent-open-pr.yml` opens the pull request within seconds of the push - on
+   `create` AND on `push`, for any branch name.
+4. `agent-autopilot.yml` enables squash auto-merge. The required checks run on
+   the estate's own Hetzner runners (`vars.CI_RUNNER`), and GitHub merges when
+   they are green. Red checks never merge (5.8).
+5. **`publish-club-arena.yml` publishes - to Club Arena's own origin.** On
+   merge it builds the bundle, runs the four-way sharded test gate, and
+   rsyncs `dist/` to the static origin (Caddy on `estate-ci-1`,
+   `ca-static.smarter.poker`) as `/srv/club-arena/releases/<ca_sha>/`, then
+   swaps the `current` symlink atomically. The World Hub carries ONE rewrite,
+   `/hub/club-arena/*` -> that origin, so the player is still on
+   `smarter.poker` and the shared session (`smarter-poker-auth`) still works.
+   A publish takes seconds. Nothing is committed to the World Hub repo any
+   more, and Vercel does not rebuild the World Hub for a Club Arena merge.
+   Rollback is re-pointing the symlink; ten releases are kept.
+6. **Verify** by reading, never by assuming:
+   `curl -s https://smarter.poker/hub/club-arena/build-info.json` - `ca_sha`
+   must equal the squash commit on `main`. Nothing else counts as deployed.
+
+**Why it used to go through the World Hub, and why it stopped (2026-09-03).**
+`smarter.poker/hub/club-arena` is a path on the World Hub's Vercel deployment,
+and until today the only way a file got there was to commit it into that
+repo's `public/` tree: every Club Arena merge produced a
+`chore(club-arena): sync build` commit in the World Hub and a 4-5 minute
+rebuild of the entire World Hub, twenty times a day. The origin removes both.
+The browser never sees the origin's hostname - Vercel proxies the rewrite -
+so section 7's "everything from smarter.poker" still holds for the player;
+what changed is where Vercel fetches the bytes from.
+
+**The origin keeps old assets.** A player whose tab still holds the previous
+`index.html` asks for the previous hashed chunks mid-hand. `/assets/*` and
+`/fonts/*` are served from an ADDITIVE pool the publisher never `--delete`s,
+pruned by age (30 days) only. Do not "clean up" the pool by removing what is
+not in the current bundle - that is the 404 the old sync's retention logic
+existed to prevent.
+
+**Three nets catch a publish that fails, all automatic:** the `*/30` catch-up
+cron inside the publisher, `publish-watchdog.yml` (re-dispatches up to three
+times, then raises an in-app notification), and the orphan sweep in
+`agent-autopilot.yml`. If production is behind `main` for more than ~25
+minutes, something is genuinely broken - read the watchdog issue it filed.
+
+**There is no second publisher.** `tests/no-commit-left-behind.law.test.ts`
+counts publishers and requires exactly one. Club Arena's own `vercel.json`
+still has `deploymentEnabled: false`; the bundle is served through the World
+Hub's rewrite, never from a Vercel project of its own.
+
+**Local preview:**
 
 ```bash
-cd ~/Documents/Smarter-Poker-World-Hub
-bash scripts/sync-club-arena.sh "feat(ca): <describe what changed>"
+cd ~/Documents/club-arena && npm run dev
 ```
 
-That script builds CA with NODE_ENV=production, copies the new build to the Hub, and stages it for local preview.
-
-**To actually deploy to production:**
-
-1. Commit your changes in the `club-arena` repository.
-2. `git push` to `main` in `club-arena`.
-3. A GitHub Action (`build-for-world-hub.yml`) will automatically build and sync it to the World Hub repository, which triggers the Vercel deploy.
-
-`SENTRY_AUTH_TOKEN/ORG/PROJECT` are read from `~/Documents/club-arena/.env` if
-not already exported. Bulky static dirs (`cards/`, `images/`, `club-logos/`,
-`videos/`) are preserved — they're not in a fresh build.
-
-**Legacy names** still work but just forward to the canonical script:
-
-- `WH scripts/build-club-arena.sh` → `sync-club-arena.sh`
-- `CA scripts/sync-to-world-hub.sh` → `sync-club-arena.sh`
-
-For post-deploy verification that production is serving your commit, follow up
-with `bash scripts/git-safe-push.sh` in the WH repo — but `sync-club-arena.sh`
-already exits non-zero on build/push failure.
+The Vite dev server is the local preview. `sync-club-arena.sh` in the World
+Hub repo (which copied a build into `public/hub/club-arena/` for a local
+Next.js preview) is retired with the sync; the World Hub's dev server proxies
+the rewrite to the live origin instead.
 
 ### 1.1.5 SERVER-SIDE PROTECTION (APPLIED - this section is history)
 
@@ -184,7 +243,11 @@ with main, and a timeout leaves the PR open for you to merge by hand.
 - Never call any deploy hook URL
 - Never add iframe code (`window.parent`, `postMessage`, `ClubArenaEmbed`)
 - Never add `VITE_` prefixed secret keys (use server-side API routes)
-- Never edit `public/hub/club-arena/` in the World Hub directly (always rebuild from source)
+- Never re-create `public/hub/club-arena/` in the World Hub. It was DELETED on
+  2026-09-02 when Club Arena moved to its own origin, and Next.js serves
+  `public/` BEFORE the rewrite, so a file there silently shadows the live
+  bundle. `tests/club-arena-is-a-rewrite.test.mjs` in the World Hub fails CI if
+  it comes back.
 
 ### 1.4 Claiming Success
 
@@ -215,6 +278,39 @@ Never say "should be live in a few minutes" or "deploy triggered."
 - Realtime: WebSocket broadcasts to connected clients
 - RLS: Protects hole cards (users can only read own cards)
 - Schema changes MUST be SQL migration files in `supabase/migrations/`
+
+### Production DDL policy (added 2026-08-31 after the PGRST002 503 outage — BINDING)
+
+Every DDL statement (CREATE/ALTER of tables, views, functions, types, triggers,
+COMMENT) fires Supabase's `pgrst_ddl_watch` event trigger, which makes PostgREST
+reload its entire schema cache. On this database (~970 relations, ~2,700
+functions) one reload takes **~28 seconds**. On 2026-08-31 the `authenticator`
+role's default 8s statement_timeout killed that reload query every time, and the
+resulting PGRST002 retry loop 503'd up to 28% of live traffic (seating and
+dealing included). Fixed by the `fix_pgrst002_schema_cache_timeout` migration:
+`authenticator` statement_timeout is now 5min (service_role pinned to its
+previous effective 8s). Do not revert either setting in any "hardening" pass.
+
+Rules for every agent working this project:
+
+1. Wrap ALL DDL for one change in a SINGLE transaction (one migration = one
+   BEGIN/COMMIT). Postgres coalesces the reload NOTIFYs inside one transaction;
+   ten separate statements outside a transaction = up to ten 28-second reloads.
+2. Do not apply migrations in a retry loop. If a migration fails, read the
+   error; re-running the whole batch every minute multiplies reloads.
+3. No DDL probes against production (CREATE TEMP TABLE is fine — pg_temp is
+   filtered — but CREATE/DROP INDEX cycles, scratch tables, or CREATE OR
+   REPLACE FUNCTION as a "test" are not).
+4. Batch related migrations. During US daytime peak, prefer one consolidated
+   apply over many small ones.
+5. GRANT/REVOKE do NOT trigger reloads (not in pgrst_ddl_watch's list) — runtime
+   grant churn is a non-issue for this outage class.
+6. Client resilience for the residual window lives in
+   `src/lib/pgrstRetryFetch.ts` (web) and the `global.fetch` wrapper in
+   `server/src/services/supabase/client.ts` (engine): both retry only
+   pre-execution 503s (PGRST001/002/003). Do not remove them, and do not
+   "extend" them to retry other 5xx — replaying an executed write is a
+   money-integrity hazard.
 
 ---
 
@@ -274,7 +370,7 @@ Do NOT audit 10 items and then ask "what should I fix?" -- fix them as you go.
 ---
 
 8. NEVER PUSH A RED TEST (Dan 2026-08-21, binding). `npx vitest run tests/` in
-   `build-for-world-hub.yml` is what PUBLISHES the bundle. A failing test does
+   `publish-club-arena.yml` is what PUBLISHES the bundle. A failing test does
    not fail a report - it stops the World Hub sync for every agent and every
    deploy, until a human notices. On 2026-08-21 that happened four times in one
    day, and every one was a test pushed alongside the feature it was meant to
@@ -314,7 +410,9 @@ server/src/index.ts      Game engine server (Hetzner)
 ```
 
 Production URL: `https://smarter.poker/hub/club-arena/`
-Built files: `Smarter-Poker-World-Hub/public/hub/club-arena/`
+Built files: published to `https://ca-static.smarter.poker` (`/srv/club-arena`
+on the Hetzner origin: `releases/<ca_sha>/` + an atomically swapped `current`
+symlink + an additive `pool/`). NOT the World Hub repo - that path is gone.
 API routes: `Smarter-Poker-World-Hub/pages/api/club-arena/`
 
 ---
@@ -324,7 +422,10 @@ API routes: `Smarter-Poker-World-Hub/pages/api/club-arena/`
 Club Arena is a Vite + React SPA inside the smarter.poker Next.js app:
 
 - Production: `smarter.poker/hub/club-arena/*` served from World Hub's `public/` directory
-- Build: Vite produces `dist/`, copied to World Hub's `public/hub/club-arena/`
+- Build: Vite produces `dist/`, which `publish-club-arena.yml` rsyncs to the
+  origin. The World Hub carries ONE rewrite, `/hub/club-arena/:path*` ->
+  `https://ca-static.smarter.poker/:path*`, so the browser never sees the
+  origin hostname and the shared `smarter-poker-auth` session is untouched.
 - Routing: SPA fallback rewrites unmatched routes to `index.html`
 - Auth: Same-origin Supabase session via `smarter-poker-auth` localStorage key
 
@@ -511,7 +612,203 @@ matter what setting, however opt-in, is proposed to gate it. Enforced by
 
 ---
 
-## 11. AGENT NETWORK + DEPLOY PLAYBOOK (added 2026-07-23, binding; corrected same day after live use)
+---
+
+## 10.7 "EM BARS" MEANS EM DASHES (Dan, 2026-09-01, BINDING)
+
+**Dan, 2026-08-20, verbatim: "forbid the use of em bars anywhere."**
+**He means the punctuation mark, U+2014. Nothing else.**
+
+Several files quote that sentence, and `src/utils/titleCase.ts` renders it as
+"inside the entire club arena, and forbid the use of em bars anywhere" with
+nothing nearby to say the subject is punctuation. Read literally, "bars ...
+banned anywhere" looks like a rule about horizontal lines.
+
+**It has now been misread that way twice in two days, and both times it took
+the hamburger menu off every page in the app:**
+
+| PR    | What it did                                                                                                                                                                            | Undone by    |
+| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| #2321 | Gear on all five menu triggers, approved rasters deleted, service-worker tombstones evicting them from players' caches, and `noThreeBarArtwork.law.test.ts` making restoration fail CI | #2401        |
+| #2429 | Same thing again with a six-tile "command grid", tombstones restored, law restored                                                                                                     | #2432 (this) |
+
+The loop is self-sustaining and does not need a human in it: the ban is written
+down _in the repo_, so the next agent to read the repo re-enforces it, reverts
+whoever undid it, and writes the law back. That is why it kept coming back
+within hours.
+
+### The rule, stated so it cannot be misread
+
+- "em bars" = **em dashes** = the character `—`. A **copy** rule about the
+  characters inside text a player reads.
+- It says **nothing** about artwork, icons, SVG geometry, rasters, or anything
+  shaped like a line.
+- **It does not ban the hamburger menu.** The hamburger is the menu, on every
+  trigger, in Club Arena and everywhere else.
+
+### If you are about to ban "bars"
+
+Stop. If the word "bars" in something you are reading has led you toward an
+icon, a raster, an SVG path or a header composite, you have misread this
+sentence. Go read `tests/approvedHamburgerGearGuard.law.test.ts`, which pins
+every menu trigger, the md5 of every hamburger raster, and the banned
+replacement names (`command-center-v1`, `CommandGridIcon`) by name.
+
+Do not "resolve" the conflict by writing a third law. Two laws demanding
+opposite artwork is not a stricter repo, it is a coin flip decided by whichever
+test the next agent notices first.
+
+---
+
+## 10.8 LAWS LIVE IN docs/LAWS.md, AND YOU NEVER WAIT ON CI (added 2026-09-01, binding)
+
+**1. THE LAW REGISTRY.** Every `*.law.test.*` file must have a row in
+`docs/LAWS.md` — `tests/law-registry.law.test.ts` enforces it. Before
+enforcing any law, confirm it exists on **current `origin/main`**, never in
+your local tree: stale worktrees carrying retired laws are how the hamburger
+revert war ran for two days. If two laws (or two CLAUDE.md copies) demand
+opposite things, STOP and ask Dan; never write a third law and never delete
+the other side on your own authority.
+
+**2. INTENTIONAL REVERTS NEED A HUMAN.** The Silent Revert Guard no longer
+accepts `[allow-revert]` or the word "revert" in a commit message on its own —
+on 2026-08-31 an agent amended the token into its own message to get past the
+guard. A detected revert merges only when Dan applies the `revert-approved`
+label to the PR (the check re-runs itself on labeling, and the guard files an
+issue asking for it). If main is broken, prefer a forward fix; it needs no
+label. Do not edit commit messages to route around the guard.
+
+**3. NEVER SET A TIMER TO WATCH CI.** Playbook 7b is binding: push, open the
+PR, report the PR number, END YOUR SESSION. Autopilot merges it, the publisher
+ships it, the watchdogs verify it — all server-side. "I've set another brief
+timer and will be back shortly" is the forbidden `wait_and_merge.sh` written
+in prose; it burns tokens and adds nothing. Checking ONCE at the end to say
+why something is BLOCKED is fine. Sitting in a loop is not.
+
+**4. WORKTREES ARE DISPOSABLE.** `scripts/prune-stale-worktrees.sh` removes
+any worktree that is clean, pushed, and idle for 72 hours. Do not keep state
+you care about only in a worktree: commit and push it, or it will eventually
+be pruned (pushed branches lose nothing — the commits live on origin).
+
+---
+
+## 10.9 YOU DECIDE THE MONEY (Dan, 2026-09-02, BINDING)
+
+**Dan, verbatim: "YOU HAVE FULL CONTROL TO MAKE ANY AND ALL DECISIONS ON WHAT
+SHOULD BE DONE WITH REAL MONEY AND REAL CHIP SCENARIOS. ALL CLAUDE AGENTS CAN
+CHOOSE THE BEST OPTION THATS RECOMMENDED AND MAKE ALL CHANGES WITHOUT ASKING
+ME, IF THEY HAVE A CLEAR PATH OF CORRECTION AND RECONCILIATION."**
+
+This ends the holding pattern where an agent finds a broken payout, writes a
+careful paragraph explaining it, files it "for Dan", and leaves the money
+frozen. That pattern has a cost and the cost is paid by players: on 2026-09-02
+three tournaments sat frozen at once and the oldest had been unpaid for fifteen
+hours, entirely because the last agent to look at it decided the money was
+somebody else's call. It was not. It is yours.
+
+### What the grant covers
+
+Unpaid prizes, wrong finishing positions, refunds owed, shortfall back-pay,
+stranded stacks, a tournament that cannot end itself, a ledger that does not
+balance because of a platform defect. Find it, decide it, ship it, and say
+plainly what you did. You do not open with a question.
+
+### A path is CLEAR only when all five of these hold
+
+1. **The outcome is READ, not assumed.** You can state what actually happened
+   from rows in this database. "Probably" is not evidence. The invented
+   `is_horse` filter in section 10.5 is what an assumption dressed as a
+   decision looks like, and it cost 39 events their entire rake attribution.
+2. **Nobody is paid twice.** The credit goes through the platform's own
+   idempotent path (`fn_tournament_payout_reconcile`, `fn_credit_and_log`, and
+   the per-user prize keys). Never hand-write a wallet row.
+3. **Nothing is taken back from a player for our mistake.** Overpay that our
+   defect caused is absorbed by the house, reported, and left alone. The
+   reconciler already refuses to claw back; do not out-clever it.
+4. **You proved it in a transaction you rolled back first.** Section 11.5 is
+   not softened by this grant, it is what makes the grant safe. The numbers you
+   commit are the numbers the probe returned, and the migration asserts them so
+   it aborts if the board moved underneath you.
+5. **You can write the paragraph.** One paragraph naming every affected player
+   and why they got what they got. If you cannot write it, you do not
+   understand the case well enough to settle it.
+
+If any of the five fails you do not have a clear path. THEN it goes to Dan, and
+it goes as options with their costs and your recommendation, never as a
+question.
+
+### When the evidence disagrees with itself, prefer the witness that was there
+
+Settling the 12:00 AM freeroll, re-deriving all 215 finishing places from
+`eliminated_at` moved players by up to three places and would have paid 168.51
+in top-ups on a pool that already had 282.06 out the door. The live engine had
+watched each of those players bust and recorded the order as it happened; the
+timestamps had not. The recorded order was kept and ONE player was inserted into
+it. A reconstruction that disagrees with the witness is a reconstruction that is
+wrong.
+
+### The record is part of the fix, not paperwork after it
+
+A settlement is finished when all four exist: the migration (with its reasoning
+in the header, not just its SQL), the changelog under `docs/changelog/`, the
+`financial_alerts` row resolved with a `resolution` note saying what was
+accepted and why, and the engine fix that stops it happening again. A payment
+with no explanation attached is the next agent's mystery.
+
+### Still Dan's, and only Dan's
+
+- **Anything that sets what players are owed in FUTURE events**: prices, rake,
+  guarantees, payout structures, retention policy. Fixing what a past event
+  owes is yours. Deciding what the next one owes is his.
+- **Money leaving the platform**: withdrawals, payment providers, anything a
+  bank sees.
+- **Rewriting or deleting a settled record to make a number look tidy.** Correct
+  it forward, with a row that says what changed. Never edit history quiet.
+
+---
+
+## 11. AGENT NETWORK + DEPLOY PLAYBOOK
+
+### 11.0 FIRST: WHICH ENVIRONMENT ARE YOU IN? (added 2026-09-01, binding)
+
+Everything below 11.0 was written for the CLOUD sandbox and is still true
+there. It is WRONG for a Cowork session running on Dan's Mac, and following it
+there costs an hour before you find out. Check first, in this order:
+
+**If you have `mcp__counselors__host_terminal`, you are on the Mac. Use it for
+everything.** Real bash on Dan's machine, where `git@github.com` over SSH works
+and `api.github.com` is reachable. Then:
+
+- **Claim a worktree** (AGENT-PLAYBOOK): `git worktree add -b fix/<slug>
+~/Documents/.agent-trees/club-arena/<name> origin/main`. Takes about 40
+  seconds - launch it with `nohup ... &` and return immediately, because the
+  tool kills the process group when a call times out.
+- **`node` is NOT on the default PATH.** Prefix every command with
+  `export PATH="$HOME/.nvm/versions/node/$(ls ~/.nvm/versions/node | tail -1)/bin:$PATH"`.
+- **The pre-push hook takes about three minutes** (guards, `tsc`, then the tests
+  covering your diff). Launch the push with
+  `nohup git push > /tmp/push.log 2>&1 < /dev/null & disown`, return
+  immediately, and poll the log in later calls. Never `--no-verify`.
+- **`gh` is not installed.** Open pull requests with `curl` against the REST
+  API. The token is `GITHUB_TOKEN` in `~/Documents/club-arena/.env`.
+- **Rebasing your branch onto main is refused by a ref-guard hook.** Use
+  `git merge origin/main` instead. Section 12 still forbids rebasing `main`.
+
+**The GitHub MCP (`mcp__github__*`) returns `Bad credentials` as of
+2026-09-01.** Every call fails, including read-only ones. Do not debug it and
+do not build a plan around it; use the host terminal. If you are reading this
+long after that date, one call will tell you whether it is back.
+
+**Do not hand-edit `scripts/ci/supabase-schema-manifest.json` or
+`supabase-columns-manifest.json`.** They are nightly snapshots and were the
+most-changed files on main - 25 and 14 commits in one day - which made every
+migration-bearing branch conflict with every other one. Declare what you
+created in your own file under `scripts/ci/schema-manifest.d/`. See the README
+there.
+
+---
+
+### 11.1 The cloud sandbox (added 2026-07-23; corrected same day after live use)
 
 Cloud Cowork sessions have a locked-down sandbox. Learn the map ONCE and never
 ask Dan for a manual handoff again:
@@ -717,3 +1014,57 @@ is deleted** — the backup branch and the stash are both printed at the end.
 World Hub note: that clone already carries an equivalent hook, but only in
 `.git/hooks/` — untracked, so it dies on any fresh clone. This repo's version is
 committed precisely so it cannot be lost that way.
+
+---
+
+## 13. THE HOURLY MAINTENANCE BREAK AND THE PLATFORM FREEZE (Dan 2026-09-01, BINDING)
+
+**The engine restarts at :55 of EVERY hour, inside an announced five-minute
+break, and the whole platform freezes for it.** If you read anything - in this
+repo, another repo, or a stale worktree - saying the engine restarts at 7am
+and 7pm, or in five Chicago windows, that text is OLD. This section wins.
+(That is exactly how the hamburger revert war ran for two days: a stale copy
+taught the next agent to "fix" the current behaviour back.)
+
+Dan, verbatim: "program the engine restart to be every hour on the :55 ...
+THE ENTIRE PLATFORM NEEDS TO FREEZE FOR THE 5 MINUTES, NO BUY INS, NO CHIP
+MOVEMENTS ... HORSES SHOULD NOT STAND UP OR ROTATE, EVERYTHING JUST FREEZES,
+THEN PICKS BACK UP EXACTLY AS IT WAS."
+
+The timeline: :53 every table is told to finish its hand (`MaintenanceBreak`
+announces, `pauseForMaintenance` parks each engine at the top of its loop).
+:55 every table is parked, the 5:00 countdown starts, `/health` opens
+`maintenance.readyForRestart`, and the deploy workflow - which built the
+image BEFORE the gate, while play continued - cuts over. ~:58 the new engine
+boots, adopts the persisted break row and re-parks its fleet. :00 the thaw
+(`fn_thaw_platform`) gives every in-flight deadline back the frozen minutes,
+then every table resumes together.
+
+Rules that follow from it, all enforced:
+
+1. **The freeze lives in Postgres** (`zz_freeze_guard` BEFORE triggers on the
+   seven money/seat tables + `fn_platform_frozen`), because the engine is
+   dead for ~2 of the 5 minutes and pg_cron does not stop with it. Do not
+   move it into engine memory; that guard is absent exactly when needed.
+2. **Whoever paused a table resumes it.** The maintenance break and
+   hand-for-hand are independent authorities (`maintenancePaused` vs
+   `handForHandPaused`); never let one lift the other's pause.
+3. **Never gate a table on `tables.status = 'paused'`** -
+   `cash_tables_needing_engine` abandons it. The break is the single row in
+   `engine_maintenance_break`.
+4. **Deadlines are thawed, not burned.** If you add a wall-clock deadline a
+   player can lose to (a hold, a window, a prompt), add it to
+   `fn_thaw_platform` in the same PR, or a five-minute break silently eats it.
+5. **Sweeps check `isMaintenanceFrozen()`** before moving money or seats.
+   A new periodic sweep that moves either gets the gate in the same PR.
+6. **Fleet-level alert rules carry the break guard**
+   (`unless max_over_time(poker_maintenance_break_active[6m]) == 1`), or they
+   page hourly about a stop we scheduled.
+7. **The constants are law**: `tests/the-break-clocks-agree.law.test.ts` pins
+   the :55 minute, cron ticks, freeze ceiling and windows across all five
+   surfaces. If you deliberately change one, change them together with the
+   law, in one commit.
+
+Full history and rationale: `docs/changelog/2026-09-01-scheduled-maintenance-break.md`
+and `docs/changelog/2026-09-01-total-platform-freeze.md`. Remaining backlog:
+issue #2563.

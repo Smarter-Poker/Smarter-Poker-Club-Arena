@@ -127,6 +127,9 @@ describe('authenticated production account preflight', () => {
     expect(helper).toContain("getByRole('button', { name: 'Join Club', exact: true })");
     expect(helper).toContain("locator('.club-home')");
     expect(helper).toContain("locator('.invite-pending')");
+    expect(helper).toContain("getByRole('button', { name: 'Try Again' })");
+    expect(helper).toContain('CLUB_ROUTE_ATTEMPTS');
+    expect(helper).toContain('Visible copy:');
   });
 
   it('keeps production lobby and mobile audits aligned with the shipped surfaces', () => {
@@ -135,11 +138,23 @@ describe('authenticated production account preflight', () => {
     expect(lobby).toContain("locator('.arena-game-card')");
     expect(lobby).toContain('.lt-row[data-kind="cash"]');
     expect(lobby).toContain("locator('.agc-action--primary')");
+    expect(lobby).toContain('test.setTimeout(75_000)');
 
     const mobile = source('tests/e2e/mobile-chrome-occlusion.spec.ts');
     expect(mobile).toContain("const CLUB_ARENA_PATH = '/hub/club-arena'");
+    expect(mobile).toContain('evaluateAcrossDocumentReplacement');
+    expect(mobile).toContain('execution context was destroyed');
+    expect(mobile).toContain('stableBottomSamples >= 2');
+    expect(mobile).toContain('document height did not settle at its reachable bottom');
     expect(mobile).toContain('routes outside Club Arena');
     expect(mobile).toContain('el.closest(\'[aria-hidden="true"]\')');
     expect(mobile).toContain("el.getAttribute('alt')");
+    expect(mobile).toContain('TRANSIENT_DOCUMENT_ERROR');
+    expect(mobile).toContain('attempt <= 3');
+    expect(mobile).toContain('document did not stabilize after navigation');
+    expect(mobile).toContain("scrollingStyle.scrollBehavior = 'auto'");
+    expect(mobile).toContain('did not reach its scroll boundary');
+    expect(mobile).toContain('clippedBottom <= clippedTop');
+    expect(mobile).toContain('DOMRect.fromRect');
   });
 });

@@ -63,8 +63,8 @@ export function PreviousHandCard({ handNumber, onTap }: PreviousHandCardProps) {
         }}
         role="button"
         tabIndex={0}
-        aria-label={`Previous hand #${handNumber} - open hand history`}
-        title="Open hand history"
+        aria-label={`Previous Hand #${handNumber} - Open Hand History`}
+        title="Open Hand History"
       >
         <div className="prev-hand-card__icon">
           {/* Custom playing-cards icon image */}

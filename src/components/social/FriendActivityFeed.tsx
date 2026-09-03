@@ -183,7 +183,7 @@ export default function FriendActivityFeed({ friends }: { friends: FeedFriend[] 
     return (
       <section className="friend-activity-feed" aria-labelledby="friend-activity-title">
         <ActivityHeader />
-        <div className="activity-skeleton-list" role="status" aria-label="Loading friend activity">
+        <div className="activity-skeleton-list" role="status" aria-label="Loading Friend Activity">
           {Array.from({ length: 3 }).map((_, index) => (
             <div className="activity-skeleton" key={index}>
               <span />
@@ -233,7 +233,7 @@ export default function FriendActivityFeed({ friends }: { friends: FeedFriend[] 
             <Link
               className="activity-avatar"
               to={`/profile/${item.userId}`}
-              aria-label={`Open ${item.username}'s profile`}
+              aria-label={`Open ${item.username}'s Profile`}
             >
               {item.avatar ? (
                 <img loading="lazy" decoding="async" src={item.avatar} alt="" />

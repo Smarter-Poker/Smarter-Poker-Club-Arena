@@ -50,6 +50,8 @@ services:
       - ./alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
       - ./engine-freeze-rules.yml:/etc/prometheus/engine-freeze-rules.yml:ro
       - ./supervisor-rules.yml:/etc/prometheus/supervisor-rules.yml:ro
+      - ./tournament-rules.yml:/etc/prometheus/tournament-rules.yml:ro
+      - ./spin-rules.yml:/etc/prometheus/spin-rules.yml:ro
       - ./slo-rules.yml:/etc/prometheus/slo-rules.yml:ro
       - ./slo-alerts.yml:/etc/prometheus/slo-alerts.yml:ro
       - prometheus-data:/prometheus

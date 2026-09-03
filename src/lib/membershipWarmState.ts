@@ -2,7 +2,7 @@ const MEMBERSHIPS_WARM_TTL_MS = 5_000;
 
 let membershipsInflight: {
   key: string;
-  at: number;
+  settledAt: number | null;
   promise: Promise<unknown>;
 } | null = null;
 
@@ -13,14 +13,23 @@ export function clearMembershipsWarmCache(): void {
 
 export function getWarmMemberships<T>(key: string): Promise<T> | null {
   const warm = membershipsInflight;
-  if (!warm || warm.key !== key || Date.now() - warm.at >= MEMBERSHIPS_WARM_TTL_MS) return null;
+  if (!warm || warm.key !== key) return null;
+  if (warm.settledAt !== null && Date.now() - warm.settledAt >= MEMBERSHIPS_WARM_TTL_MS) {
+    return null;
+  }
   return warm.promise as Promise<T>;
 }
 
 export function rememberWarmMemberships<T>(key: string, promise: Promise<T>): Promise<T> {
-  membershipsInflight = { key, at: Date.now(), promise };
-  promise.catch(() => {
-    if (membershipsInflight?.promise === promise) membershipsInflight = null;
-  });
+  const entry = { key, settledAt: null as number | null, promise };
+  membershipsInflight = entry;
+  void promise.then(
+    () => {
+      if (membershipsInflight === entry) entry.settledAt = Date.now();
+    },
+    () => {
+      if (membershipsInflight === entry) membershipsInflight = null;
+    }
+  );
   return promise;
 }

@@ -17,6 +17,12 @@ import PageSkeleton from '../components/common/PageSkeleton';
 import { formatDateTime as formatDate } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
+import { formatPopupText } from '../utils/popupStyle';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
+import {
+  describeChipTransaction,
+  WALLET_MOVE_TYPES,
+} from '../components/wallet/describeChipTransaction';
 
 interface Transaction {
   id: string;
@@ -193,6 +199,9 @@ export default function TransactionHistoryPage() {
                     notes,
                     created_at,
                     club_id,
+                    from_user_id,
+                    to_user_id,
+                    metadata,
                     clubs (name)
                 `
         )
@@ -204,7 +213,15 @@ export default function TransactionHistoryPage() {
       else if (filter === 'withdrawals')
         query = query.in('transaction_type', ['cash_out', 'withdrawal']);
       else if (filter === 'transfers')
-        query = query.in('transaction_type', ['transfer_in', 'transfer_out', 'agent_transfer']);
+        // The Transfers filter used to list three legacy labels and none of
+        // the types the cashier actually writes, so every agent wallet send,
+        // club bank send and claim back fell out of it (Dan 2026-09-02).
+        query = query.in('transaction_type', [
+          'transfer_in',
+          'transfer_out',
+          'agent_transfer',
+          ...WALLET_MOVE_TYPES,
+        ]);
       else if (filter === 'rake') query = query.in('transaction_type', ['rake', 'rakeback']);
 
       if (dateFrom) query = query.gte('created_at', new Date(dateFrom).toISOString());
@@ -221,12 +238,37 @@ export default function TransactionHistoryPage() {
 
       if (getIsMounted && !getIsMounted()) return;
       if (!error && data) {
+        /* THE LINE NAMES BOTH WALLETS (Dan 2026-09-02): "KINGFISH TRANSFERRED
+           XXX FROM HIS AGENT WALLET TO PLAYER WALLET". A wallet move is
+           described from the row's own structure - actor, amount, source and
+           destination wallet - by describeChipTransaction; the names it needs
+           are read once per page. Everything that is not a wallet move keeps
+           its notes exactly as before. A name outage degrades to "A Member",
+           never to a hidden row. */
+        const ids = new Set<string>();
+        for (const t of data as any[]) {
+          if (t.from_user_id) ids.add(t.from_user_id);
+          if (t.to_user_id) ids.add(t.to_user_id);
+        }
+        const names = new Map<string, string>();
+        if (ids.size > 0) {
+          const { data: profs, error: profErr } = await supabase
+            .from('profiles')
+            .select(`id, ${PLAYER_NAME_COLUMNS}`)
+            .in('id', Array.from(ids));
+          if (profErr) reportError(profErr, 'TransactionHistoryPage.names_read_failed');
+          for (const p of profs ?? []) {
+            const label = playerDisplayName(p as any);
+            if (label) names.set((p as any).id, String(label));
+          }
+        }
+        if (getIsMounted && !getIsMounted()) return;
         const mapped = data.map((t: any) => ({
           id: t.id,
           type: t.transaction_type,
           amount: t.amount,
           currency: 'chips' as const,
-          description: t.notes || '',
+          description: describeChipTransaction(t, names, user?.id) ?? (t.notes || ''),
           created_at: t.created_at,
           club_id: t.club_id,
           club_name: t.clubs?.name,
@@ -349,7 +391,7 @@ export default function TransactionHistoryPage() {
       <RewardsSurfaceHeader
         eyebrow="Rewards Circuit / Ledger"
         title="Transaction Ledger"
-        description="Audit deposits, withdrawals, transfers, rake, and settlements from one filterable record. Exported results preserve the active date and transaction filters."
+        description="Audit Deposits, Withdrawals, Transfers, Rake, And Settlements From One Filterable Record. Exported Results Preserve The Active Date And Transaction Filters."
         art="vault"
         status="TRANSACTION INDEX // LIVE"
         metrics={[
@@ -493,12 +535,12 @@ export default function TransactionHistoryPage() {
             </p>
             <p style={{ color: 'var(--soft-white, #B0B3B8)', fontSize: '0.85rem', margin: 0 }}>
               {searchQuery
-                ? `No results matching "${searchQuery}".`
+                ? `No Results Matching "${searchQuery}".`
                 : dateFrom || dateTo
-                  ? 'No transactions found in the selected date range.'
+                  ? 'No Transactions Found In The Selected Date Range.'
                   : filter !== 'all'
-                    ? `No ${filter} have been recorded yet.`
-                    : 'No transaction history yet. Your activity will appear here.'}
+                    ? `No ${filter} Have Been Recorded Yet.`
+                    : 'No Transaction History Yet. Your Activity Will Appear Here.'}
             </p>
           </div>
         ) : (
@@ -534,7 +576,9 @@ export default function TransactionHistoryPage() {
                     {icon.symbol}
                   </span>
                   <div className="tx-info">
-                    <span className="tx-desc">{tx.description || tx.type.replace('_', ' ')}</span>
+                    <span className="tx-desc">
+                      {formatPopupText(tx.description || tx.type.replace('_', ' '))}
+                    </span>
                     <span className="tx-meta">
                       {tx.club_name && <span className="tx-club">{tx.club_name}</span>}
                       {formatDate(tx.created_at)}

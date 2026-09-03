@@ -97,7 +97,7 @@ const STRONG = 'AhKhQsJs9d8c'; // engine-scored 0.753 — a top-25% PLO6 holding
 const JUNK = '2c3d5h7s9cJd';
 
 describe("Dan's three hands", () => {
-  it('#1 committed: raised 12 with 35 behind, faces 48 — takes the price', () => {
+  it('#1 committed: raised 12 with 35 behind, faces 48 - takes the price', () => {
     const t = answer({ hole: STRONG, heroBet: 12, heroBehind: 35, villBet: 48 });
     expect(t.fold ?? 0).toBe(0);
   });
@@ -117,13 +117,24 @@ describe("Dan's three hands", () => {
 describe('and it did NOT become a calling station', () => {
   it('junk still folds every time at the same prices', () => {
     for (const spot of [
-      { heroBet: 12, heroBehind: 35, villBet: 48 },
       { heroBet: 6, heroBehind: 26, villBet: 12 },
       { heroBet: 4, heroBehind: 60, villBet: 16 },
     ]) {
       const t = answer({ hole: JUNK, ...spot });
       expect(t.fold ?? 0, JSON.stringify(spot)).toBe(40);
     }
+  });
+
+  /**
+   * V38 (2026-09-03): the ALL-IN call is priced, not ranked. Raised 12 with
+   * 35 behind, facing 48: 35 to win 95 needs 27%, plus the PLO6 domination
+   * margin (8 points) — six napkins hold ~44% against the sampled 3-bet range
+   * here, so the chip-EV answer is a call. The two cheaper spots above are
+   * not all-in prices and still fold on range.
+   */
+  it('junk facing the all-in price calls when its equity clears it', () => {
+    const t = answer({ hole: JUNK, heroBet: 12, heroBehind: 35, villBet: 48 });
+    expect(t.fold ?? 0).toBeLessThan(40);
   });
 
   /**
@@ -149,7 +160,7 @@ describe('and it did NOT become a calling station', () => {
     expect(t.call ?? 0).toBe(40);
   });
 
-  it('NLH is moved far less than PLO — its equities are genuinely wider', () => {
+  it('NLH is moved far less than PLO - its equities are genuinely wider', () => {
     // Same shape, hold'em: the relief multiplier is 0.9 vs Omaha's 1.6 and
     // the floor is higher, so a weak holding still folds.
     const t = answer({ variant: 'nlh', hole: '7h2c', heroBet: 6, heroBehind: 26, villBet: 12 });

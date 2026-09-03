@@ -7,7 +7,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { useAuthUser } from '../hooks/useAuthUser';
-import { ClubsService } from '../services/ClubsService';
+import { ClubJoinService } from '../services/ClubJoinService';
 import { useToast } from '../components/common/Toast';
 import { masterBus } from '../core/MasterBus';
 import './InvitePage.css';
@@ -151,11 +151,6 @@ export default function InvitePage() {
           is_public: clubData.is_public,
         });
 
-        // Park the code from the URL BEFORE the membership check below, which
-        // may need to redeem it. The effect further down also stores it, but it
-        // runs after this function has already finished.
-        if (refCode) ClubsService.rememberInviteCode(clubData.id, refCode);
-
         if (user?.id) {
           const { data: membership } = await supabase
             .from('club_members')
@@ -175,15 +170,15 @@ export default function InvitePage() {
             // not, or because they closed the tab mid-flight — came back to
             // "Pending Approval" and a Browse Clubs button, with no way to
             // spend the code that was sitting in their own localStorage.
-            const redeemed = await ClubsService.redeemStoredInviteCode(
-              membership as never,
-              clubData.id,
-              clubId || clubData.id,
-              user.id
-            );
+            const redeemed = refCode
+              ? await ClubJoinService.join({
+                  identifier: clubData.slug || String(clubData.club_id || clubData.id),
+                  referralCode: refCode,
+                })
+              : null;
             if (getIsMounted && !getIsMounted()) return;
 
-            if (redeemed?.status && redeemed.status !== 'pending') {
+            if (redeemed?.success && redeemed.status && redeemed.status !== 'pending') {
               setPendingApproval(false);
               toast.success(`Welcome to ${clubData.name}!`);
               enterClub(clubData.slug || clubData.id);
@@ -254,14 +249,6 @@ export default function InvitePage() {
     };
   }, [loadClubInfo]);
 
-  // Store referral code if present. loadClubInfo already parks it before it
-  // needs it; this is the safety net for a code that arrives afterwards.
-  useEffect(() => {
-    if (club?.id && refCode) {
-      ClubsService.rememberInviteCode(club.id, refCode);
-    }
-  }, [club?.id, refCode]);
-
   /* ── THE SHARE PANEL LIVED HERE, AND IT IS GONE ──────────────────────────
      It rendered only inside the `alreadyMember` branch, and since 2026-08-28 a
      member is redirected into the club before this page paints — so the panel,
@@ -293,20 +280,24 @@ export default function InvitePage() {
     setJoining(true);
     setError(null);
     try {
-      // Route the join through fn_join_club (via ClubsService). The RPC decides
+      // Route lookup, membership, application, and invitation redemption
       // status from clubs.requires_approval: an approval-gated club yields a
       // 'pending' request, a public club yields an active membership. It also
       // emits CLUB_JOINED. We must NOT fake "Welcome!"/navigate-in/count-bump
       // for a pending request — the user is not a member until approved.
       //
-      // ClubsService.join then redeems any invite code parked for this club and
-      // returns the membership AS IT STANDS AFTERWARDS, so a player who arrived
+      // ClubJoinService redeems the invite in the same transaction and returns
+      // the membership AS IT STANDS AFTERWARDS, so a player who arrived
       // on someone's link reaches the branch below already 'active'. Reading
       // the pre-redemption row here is precisely the bug that made invite links
       // dead ends.
-      const membership = await ClubsService.join(club.id, 'member', club.name);
+      const joinResult = await ClubJoinService.join({
+        identifier: club.slug || String(club.club_id || club.id),
+        referralCode: refCode,
+      });
+      if (!joinResult.success) throw new Error(joinResult.error || 'Failed to join club');
 
-      if (membership?.status === 'pending') {
+      if (joinResult.status === 'pending') {
         setPendingApproval(true);
         toast.success('Request submitted - pending owner approval.');
         setJoining(false);
@@ -364,7 +355,7 @@ export default function InvitePage() {
               <br />
               Did Not Work
             </h2>
-            <p>{error || 'That invitation link is invalid or has expired.'}</p>
+            <p>{error || 'That Invitation Link Is Invalid Or Has Expired.'}</p>
             <button
               className="invite-btn invite-btn--primary"
               onClick={() => navigate('/clubs-list')}
@@ -427,8 +418,8 @@ export default function InvitePage() {
           </p>
           <p className="invite-sub">
             {pendingApproval
-              ? 'Your request is with the club owner.'
-              : 'Join to play at this club’s tables, tournaments and promotions.'}
+              ? 'Your Request Is With The Club Owner.'
+              : 'Join To Play At This Club’s Tables, Tournaments And Promotions.'}
           </p>
 
           {pendingApproval ? (

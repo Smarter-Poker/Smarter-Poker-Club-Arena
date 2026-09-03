@@ -7,7 +7,6 @@
 
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
-import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -42,14 +41,6 @@ export interface UserProfile {
   // Timestamps
   createdAt: string;
   updatedAt: string;
-}
-
-export interface ProfileStats {
-  totalHands: number;
-  winRate: number;
-  avgProfit: number;
-  biggestWin: number;
-  favoriteVariant: string;
 }
 
 // VIP thresholds
@@ -121,8 +112,6 @@ class ProfileServiceClass {
           `
           id, username, display_name, avatar_url, bio,
           level, tier,
-          login_streak, streak_days,
-          total_hands_played, diamonds,
           created_at, updated_at
         `
         )
@@ -252,78 +241,6 @@ class ProfileServiceClass {
     }
 
     return { currentStreak, isNewDay };
-  }
-
-  /**
-   * Get player stats
-   */
-  async getStats(userId: string): Promise<ProfileStats | null> {
-    // 2026-08-19: this read `hand_players`, which has ZERO rows — writes to it
-    // stopped long ago (it is documented elsewhere in this repo as empty in
-    // production). It also joined a `hands` table that this codebase does not
-    // populate. So every player's profile showed 0 hands / 0% win rate /
-    // 0 biggest win, regardless of how much they had actually played.
-    //
-    // ca_player_stats_full is the canonical server-side stats RPC (the same one
-    // the rebuilt player-stats page uses). It derives real hands_won,
-    // total_profit and biggest_pot_won from hand history, so every figure below
-    // is measured rather than inferred from an empty table.
-    const { data, error } = await supabase.rpc('ca_player_stats_full', { p_user: userId });
-
-    if (error) {
-      reportError(error, 'ProfileService.getStats');
-      return null;
-    }
-
-    // No error + no data = a player with no recorded hands. That's a normal
-    // state (brand-new account) and must render as zeros, not as a null
-    // "stats unavailable" error. Null is reserved for real failures above.
-    const overall = (data as any)?.overall || {};
-    const totalHands = Number(overall.total_hands) || 0;
-
-    if (totalHands === 0) {
-      return {
-        totalHands: 0,
-        winRate: 0,
-        avgProfit: 0,
-        biggestWin: 0,
-        favoriteVariant: "No Limit Hold'em",
-      };
-    }
-
-    const handsWon = Number(overall.hands_won) || 0;
-    const totalProfit = Number(overall.total_profit) || 0;
-    const winRate = (handsWon / totalHands) * 100;
-    const avgProfit = totalProfit / totalHands;
-    const biggestWin = Number(overall.biggest_pot_won) || 0;
-
-    // Favourite variant = most hands played, straight from the RPC's own
-    // per-variant breakdown.
-    const variants: any[] = Array.isArray((data as any).variants) ? (data as any).variants : [];
-    const topVariant = variants
-      .slice()
-      .sort((a, b) => (Number(b?.hands) || 0) - (Number(a?.hands) || 0))[0];
-    const VARIANT_LABELS: Record<string, string> = {
-      nlh: "No Limit Hold'em",
-      plo4: 'Pot Limit Omaha',
-      plo5: 'PLO 5-Card',
-      plo6: 'PLO 6-Card',
-      plo8: 'PLO Hi-Lo',
-      short_deck: 'Short Deck',
-      pineapple: 'Pineapple',
-      mixed: 'Mixed Game',
-    };
-    const favoriteVariant = topVariant?.variant
-      ? VARIANT_LABELS[String(topVariant.variant)] || String(topVariant.variant).toUpperCase()
-      : "No Limit Hold'em";
-
-    return {
-      totalHands,
-      winRate: Math.trunc(winRate * 10) / 10,
-      avgProfit: Math.trunc(avgProfit * 100) / 100,
-      biggestWin,
-      favoriteVariant,
-    };
   }
 
   /**

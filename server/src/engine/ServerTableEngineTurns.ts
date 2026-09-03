@@ -213,7 +213,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           new Error(
             'Table paused-by-design for ' +
               Math.round(pausedMs / 60000) +
-              'min — hand-for-hand/break coordinator may have lost the resume signal'
+              'min - hand-for-hand/break coordinator may have lost the resume signal'
           ),
           'ServerTableEngine.' + this.tableId + '.paused_too_long',
           { handCount: this.handCount }
@@ -276,7 +276,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               Math.round(idleMs / 1000) +
               's with ' +
               dealable +
-              ' dealable seats — dealing loop ' +
+              ' dealable seats - dealing loop ' +
               (loopWedged ? 'is wedged at ' : 'is cycling without dealing, at ') +
               this.describeLoopPhase()
           ),
@@ -419,7 +419,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         this.markProgress();
       } else {
         reportError(
-          new Error('Watchdog forced action REJECTED at seat ' + seat + ' — escalating to rebuild'),
+          new Error('Watchdog forced action REJECTED at seat ' + seat + ' - escalating to rebuild'),
           'ServerTableEngine.' + this.tableId + '.watchdog_force_rejected'
         );
       }
@@ -576,7 +576,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               this.turnFSM.transition('processing');
             } else {
               console.warn(
-                `[ServerTableEngine:${this.tableId}] Time bank expiry: FSM in '${this.turnFSM.state}' but seat ${seat} is still current — resolving anyway`
+                `[ServerTableEngine:${this.tableId}] Time bank expiry: FSM in '${this.turnFSM.state}' but seat ${seat} is still current - resolving anyway`
               );
             }
 
@@ -592,7 +592,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
               this.markProgress();
             } else {
               reportError(
-                new Error('Time bank auto-action rejected at seat ' + seat + ' — re-arming clock'),
+                new Error('Time bank auto-action rejected at seat ' + seat + ' - re-arming clock'),
                 'ServerTableEngine.' + this.tableId + '.timebank_auto_action_rejected'
               );
               this.forceArmTurnTimer(seat, this.tableInfo?.action_time_seconds || 15);
@@ -634,7 +634,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
           // advanced it to 'processing' between the outer guard and here (tight race window).
           if (this.turnFSM.state !== 'timer_running') {
             console.warn(
-              `[ServerTableEngine:${this.tableId}] Time bank auto-activation skipped — FSM is '${this.turnFSM.state}' (expected timer_running). Turn already resolved.`
+              `[ServerTableEngine:${this.tableId}] Time bank auto-activation skipped - FSM is '${this.turnFSM.state}' (expected timer_running). Turn already resolved.`
             );
             return;
           }
@@ -737,7 +737,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         this.markProgress();
       } else {
         reportError(
-          new Error('Timeout auto-action rejected at seat ' + seat + ' — re-arming clock'),
+          new Error('Timeout auto-action rejected at seat ' + seat + ' - re-arming clock'),
           'ServerTableEngine.' + this.tableId + '.auto_action_rejected'
         );
         this.forceArmTurnTimer(seat, this.tableInfo?.action_time_seconds || 15);
@@ -783,6 +783,19 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
 
     const state = this.handController.getState();
     const player = state.players.find((p) => p.user_id === userId);
+
+    /* THE DISCARD IS A DECISION, SO IT CAN BUY TIME (2026-08-31).
+       Everything below this line is written against `currentPlayerSeat`, and
+       the Crazy Pineapple discard round has no turn - every seat decides at
+       once - so the press landed on "Not Your Turn", and the one action most
+       likely to make a player hesitate was the only one on the table with no
+       way to think. Missing it folds the hand outright.
+
+       Routed to the round's own per-seat deadline, which applies the same
+       exhaustion rule, the same pool and the same per-street cap as a turn. */
+    if (state.stage === 'pineapple_discard') {
+      return this.extendPineappleDiscard(userId);
+    }
 
     if (!player || state.currentPlayerSeat !== player.seat) {
       return { success: false, error: 'Not Your Turn' };
@@ -867,7 +880,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         } else {
           reportError(
             new Error(
-              'Manual time bank auto-action rejected at seat ' + player.seat + ' — re-arming clock'
+              'Manual time bank auto-action rejected at seat ' + player.seat + ' - re-arming clock'
             ),
             'ServerTableEngine.' + this.tableId + '.manual_timebank_auto_action_rejected'
           );
@@ -1001,12 +1014,29 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   /**
    * POST /heartbeat — Bible V8 §6.3: Reset disconnect timer for a player
    */
-  public heartbeat(userId: string): {
+  public heartbeat(
+    userId: string,
+    /**
+     * PHASE 2 (2026-08-31): the client reporting that it has actually DRAWN
+     * the action controls for this player. Optional - older clients omit it,
+     * and the silent-client canary falls back to its weaker signal rather
+     * than treating them as suspect.
+     *
+     * It rides the heartbeat instead of getting a route of its own because
+     * the heartbeat already runs on a timer, is already authenticated, and
+     * already resolves the table engine. A second endpoint would be a second
+     * thing to keep alive for the sake of one boolean.
+     */
+    opts?: { turnRendered?: boolean }
+  ): {
     success: boolean;
     connected: boolean;
     gracePeriodRemaining: number;
   } {
     this.disconnectEngine.heartbeat(this.tableId, userId);
+    if (opts?.turnRendered) {
+      this.disconnectEngine.noteTurnRendered(this.tableId, userId);
+    }
     const connected = this.disconnectEngine.isConnected(this.tableId, userId);
     return { success: true, connected, gracePeriodRemaining: 0 };
   }
@@ -1170,7 +1200,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
   ): { success: boolean; error?: string; code?: string; hint?: Record<string, unknown> } {
     // Bible V8 §1.1.4: Serialize all actions — no parallel processing
     if (this.actionLock) {
-      return { success: false, error: 'Action already being processed — try again' };
+      return { success: false, error: 'Action already being processed - try again' };
     }
     this.actionLock = true;
     try {
@@ -1469,7 +1499,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // was told the action succeeded). Re-arm this player's turn and surface the rejection.
       if (!actionApplied) {
         console.warn(
-          `[ServerTableEngine:${this.tableId}] Engine REJECTED action ${normalizedAction} from ${userId} — re-arming turn timer`
+          `[ServerTableEngine:${this.tableId}] Engine REJECTED action ${normalizedAction} from ${userId} - re-arming turn timer`
         );
         this.rearmTurnTimerIfCurrent(userId);
         return { success: false, error: 'Action rejected by engine', code: 'INVALID_ACTION' };
@@ -1808,16 +1838,25 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // The player has already decided, so this is shorter than a horse's think
       // time — but it is never zero. The seat lights up, holds a readable beat,
       // and only then does the action land.
+      // ═══ 2026-08-31: IDENTITY, not null-ness. The null-check below let a
+      // pre-action from hand N land in hand N+1 whenever the hand was
+      // replaced during the beat and the SAME seat happened to be on turn in
+      // the new hand - the same player's next hand opens on the same seat, so
+      // that is the common case, and their turn was consumed by an intent
+      // they formed for a different hand. Same bug class as the stale-runout
+      // race (#2318): a delayed continuation acting on whatever controller
+      // the table holds when it wakes.
+      const controllerAtBeat = this.handController;
       await this.sleep(this.preActionVisibleMs);
       // The hand can be replaced while we hold that beat.
-      if (!this.running || !this.handController) return;
+      if (!this.running || this.handController !== controllerAtBeat || !controllerAtBeat) return;
       {
-        const st = this.handController.getState();
+        const st = controllerAtBeat.getState();
         if (st.currentPlayerSeat !== seat) return;
       }
       let preApplied = false;
       try {
-        preApplied = this.handController!.performAction(
+        preApplied = controllerAtBeat.performAction(
           seat,
           preResult.action as any,
           preResult.amount
@@ -1833,7 +1872,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         return; // Pre-action handled the turn — no timer needed
       }
       console.warn(
-        `[ServerTableEngine:${this.tableId}] Pre-action ${preResult.action} REJECTED at seat ${seat} — falling through to the turn timer`
+        `[ServerTableEngine:${this.tableId}] Pre-action ${preResult.action} REJECTED at seat ${seat} - falling through to the turn timer`
       );
     }
 
@@ -1853,7 +1892,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
     const effectiveActionTime = reconnectGrace ? actionTime + 5 : actionTime;
     if (reconnectGrace) {
       console.log(
-        `[ServerTableEngine:${this.tableId}] Player ${player.user_id} in reconnect grace — extending timer by 5s (${effectiveActionTime}s total)`
+        `[ServerTableEngine:${this.tableId}] Player ${player.user_id} in reconnect grace - extending timer by 5s (${effectiveActionTime}s total)`
       );
     }
 
@@ -1918,6 +1957,12 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
         finalTable: tctx.finalTable,
         nextBlindInMin: tctx.nextBlindInMin,
         nextBlindMult: tctx.nextBlindMult,
+        // V37 SATELLITES: identical tickets to the top N. The brain plays
+        // survival, not a ladder — see HorseLogic.satelliteRead.
+        satellite: tctx.satellite,
+        satelliteSeats: tctx.satelliteSeats,
+        // V37 BOUNTIES: whose head is worth what, this hand.
+        bountyByUser: tctx.bountyByUser,
       },
     };
   }
@@ -1968,6 +2013,19 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       // brain averages per-board equity, exactly what the pot pays on.
       communityCards2: fullState?.communityCards2 ?? [],
       communityCards3: fullState?.communityCards3 ?? [],
+      // BOMB POTS 2026-09-02 (V36): tell the brain this hand is a bomb pot.
+      // Every range at the table is RANDOM (there was no preflop street to
+      // narrow it), the pot is antes, and on a multi-board hand every pot
+      // layer splits per board. The brain used to infer "multi-board" from
+      // communityCards2 and could not see a single-board bomb pot at all -
+      // so it consulted hold'em solver cells built for single-raised-pot
+      // ranges, and read a first-to-act bettor as the preflop aggressor.
+      bombPot: this.currentHandBombPot != null,
+      boardCount:
+        this.currentHandBombPot?.board_count ??
+        1 +
+          ((fullState?.communityCards2?.length ?? 0) > 0 ? 1 : 0) +
+          ((fullState?.communityCards3?.length ?? 0) > 0 ? 1 : 0),
       pot: state.pot,
       currentBet: state.currentBet,
       minRaise: state.minRaise,
@@ -2261,7 +2319,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
             action +
             ' rejected at seat ' +
             seat +
-            ' — falling back to check/fold'
+            ' - falling back to check/fold'
         );
         try {
           // Bible V8 §1.7.4 preferCheckOverFold.
@@ -2279,7 +2337,7 @@ export abstract class ServerTableEngineTurns extends ServerTableEngineSeating {
       } else {
         reportError(
           new Error(
-            'Horse seat ' + seat + ' could not be acted — leaving stall visible to watchdog'
+            'Horse seat ' + seat + ' could not be acted - leaving stall visible to watchdog'
           ),
           'ServerTableEngine.' + this.tableId + '.horse_seat_unactable'
         );

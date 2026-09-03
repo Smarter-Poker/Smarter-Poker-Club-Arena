@@ -164,6 +164,34 @@ export async function loadSeatedPlayers(tableId: string) {
 /**
  * Sync player stacks back to database after a hand
  */
+/**
+ * The PostgREST `or=` filter that matches a seat row ONLY when at least one
+ * time-bank column differs from the value we are about to write.
+ *
+ * Exported so the shape can be pinned by a test: the failure mode that costs
+ * something here is a filter that matches NOTHING when a value HAS changed,
+ * which would silently drop a real write.
+ */
+export function timeBankChangedFilter(next: {
+  time_bank_remaining?: number;
+  time_bank_uses_remaining?: number;
+}): string {
+  const clauses: string[] = [];
+  if (next.time_bank_remaining !== undefined) {
+    clauses.push(
+      `time_bank_remaining.neq.${next.time_bank_remaining}`,
+      'time_bank_remaining.is.null'
+    );
+  }
+  if (next.time_bank_uses_remaining !== undefined) {
+    clauses.push(
+      `time_bank_uses_remaining.neq.${next.time_bank_uses_remaining}`,
+      'time_bank_uses_remaining.is.null'
+    );
+  }
+  return clauses.join(',');
+}
+
 export async function syncStacks(
   tableId: string,
   players: {
@@ -171,8 +199,104 @@ export async function syncStacks(
     stack: number;
     time_bank_uses_remaining?: number;
     time_bank_remaining?: number;
-  }[]
+  }[],
+  handNumber?: number
 ): Promise<void> {
+  /* ZERO-DRIFT phase 5 (2026-08-31): when the caller identifies the hand,
+     the stack write goes through fn_ca_settle_hand_stacks_absolute - ONE
+     transaction that locks every named seat and writes all stacks or none,
+     idempotent on (table, hand): a crash-and-resend replays the stored
+     result instead of double-writing, and a partial hand write can no
+     longer persist (remaining risk #1 in the zero-drift audit, doc 05).
+     Rake/BBJ conservation checking arrives when those figures are wired
+     through (the RPC runs lenient with rake=null). Any RPC failure falls
+     back to the legacy per-seat loop below - the write path never narrows.
+     Time banks are not money and keep their own writes either way. */
+  if (handNumber !== undefined && handNumber !== null && players.length > 0) {
+    try {
+      const { data, error } = await supabase.rpc('fn_ca_settle_hand_stacks_absolute', {
+        p_table_id: tableId,
+        p_hand_number: handNumber,
+        p_stacks: players.map((p) => ({
+          user_id: p.user_id,
+          stack: Math.round(p.stack * 100) / 100,
+        })),
+        p_rake: null,
+        p_bbj: null,
+      });
+      const ok =
+        !error && (data as { success?: boolean; replay?: boolean } | null)?.success === true;
+      if (ok) {
+        // Stacks are settled atomically; persist the non-money seat fields.
+        await Promise.all(
+          players
+            .filter(
+              (p) => p.time_bank_uses_remaining !== undefined || p.time_bank_remaining !== undefined
+            )
+            .map(async (p) => {
+              const payload: Record<string, unknown> = {};
+              if (p.time_bank_uses_remaining !== undefined)
+                payload.time_bank_uses_remaining = p.time_bank_uses_remaining;
+              if (p.time_bank_remaining !== undefined)
+                payload.time_bank_remaining = p.time_bank_remaining;
+              await supabase
+                .from('table_seats')
+                .update(payload)
+                .eq('table_id', tableId)
+                .eq('user_id', p.user_id)
+                .is('left_at', null)
+                // WRITE ONLY WHAT CHANGED (2026-09-02, performance).
+                //
+                // This ran for EVERY seated player after EVERY hand, and a
+                // time bank almost never moves - it only changes on the hands
+                // where somebody actually burns it. So the overwhelming
+                // majority of these were an UPDATE that set a column to the
+                // value it already held.
+                //
+                // Postgres does not care much; Realtime does. `table_seats` is
+                // in the `supabase_realtime` publication, so every one of these
+                // no-op writes produced a WAL record that `realtime.apply_rls`
+                // then decoded and RLS-filtered for every subscriber on the
+                // table. Measured 2026-09-02: 408,121 of these calls, 98.7% of
+                // all table_seats writes, on a table that is 36% of everything
+                // Realtime decodes - and `realtime.list_changes` was the single
+                // largest consumer of the whole database at 17.5% of total time
+                // with a 460 ms mean, which is felt at the table as lag.
+                //
+                // The guard is a FILTER, not a diff we track in memory: if
+                // neither column differs from what is stored, zero rows match,
+                // Postgres writes nothing, and no WAL record is produced. There
+                // is no cache to go stale, it is correct across an engine
+                // restart and against any concurrent writer, and a genuine
+                // change still writes exactly as before.
+                //
+                // `is.null` is in the OR deliberately. PostgREST `neq` uses SQL
+                // three-valued logic, so a NULL column would NOT match `neq`
+                // and the row would be filtered out - silently skipping a write
+                // that IS needed. Both columns are NOT NULL with defaults today
+                // (`20260313_time_bank_*`, pinned by RestartFidelity), and this
+                // clause is what keeps the guard correct if that ever changes.
+                .or(
+                  timeBankChangedFilter({
+                    time_bank_remaining: p.time_bank_remaining,
+                    time_bank_uses_remaining: p.time_bank_uses_remaining,
+                  })
+                );
+            })
+        );
+        return;
+      }
+      reportError(
+        new Error(
+          `[DB] atomic hand-stack settle declined for table ${tableId} hand ${handNumber} ` +
+            `(${error ? error.message : JSON.stringify(data)}) - falling back to per-seat writes`
+        ),
+        'DB.settle_hand_stacks_fallback'
+      );
+    } catch (err) {
+      reportError(err, 'DB.settle_hand_stacks_transport_fallback');
+    }
+  }
   // Dan 2026-08-25, BINDING: "ALL CHIPS ON ALL TABLES MUST STAY EXACTLY THE
   // SAME" across an engine restart. This function is the ONLY place a hand's
   // result reaches durable storage, and it had two ways to lose chips silently.
@@ -232,7 +356,7 @@ export async function syncStacks(
     reportError(
       new Error(
         `[DB] ${failures.length}/${players.length} stack syncs failed for table ${tableId} ` +
-          `after 3 attempts each — ${failures.join('; ')}`
+          `after 3 attempts each - ${failures.join('; ')}`
       ),
       'DB.sync_stacks_failed'
     );

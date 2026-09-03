@@ -9,6 +9,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Club, ClubWithDistance, ClubMember, ClubLocation } from '@/types/club.types';
 import type { CreateClubData } from '@/services/ClubsService';
+import { ClubJoinService } from '@/services/ClubJoinService';
 import { reportError } from '../utils/errorReporter';
 
 const getClubsService = async () => (await import('@/services/ClubsService')).ClubsService;
@@ -155,8 +156,8 @@ export const useClubStore = create<ClubState>()(
 
       joinClub: async (clubId) => {
         try {
-          const service = await getClubsService();
-          await service.join(clubId);
+          const result = await ClubJoinService.join({ identifier: clubId });
+          if (!result.success) throw new Error(result.error || 'Failed to join club');
           // Refresh memberships
           await get().loadMemberships();
         } catch (error) {

@@ -132,7 +132,10 @@ export default function NemesisPanel({ userId, days = null }: Props) {
     return [...(data.worst ?? []), ...(data.best ?? [])].sort((a, b) => a.net_chips - b.net_chips);
   }, [data]);
 
-  const openProfile = (id: string) => navigate(`/stats/${id}`);
+  // Cross-player Stats are private until a club-scoped authorization contract
+  // exists. Rival actions therefore open the real public profile rather than a
+  // guaranteed private-state dead end.
+  const openProfile = (id: string) => navigate(`/profile/${id}`);
 
   if (loading) {
     return (
@@ -198,7 +201,7 @@ export default function NemesisPanel({ userId, days = null }: Props) {
                     key={r.opponent_id}
                     tabIndex={0}
                     role="link"
-                    aria-label={`View ${r.username ?? 'this player'}'s stats`}
+                    aria-label={`View ${r.username ?? 'This Player'}'s Profile`}
                     onClick={() => openProfile(r.opponent_id)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {

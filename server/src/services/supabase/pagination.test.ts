@@ -14,7 +14,7 @@ vi.mock('../errorReporter.js', () => ({
   reportError: (...args: unknown[]) => mockReportError(...args),
 }));
 
-import { fetchAllRows, POSTGREST_PAGE } from './pagination.js';
+import { fetchAllRows, POSTGREST_PAGE, PAGE_ATTEMPTS } from './pagination.js';
 
 interface Row extends Record<string, unknown> {
   id: string;
@@ -150,14 +150,21 @@ describe('fetchAllRows', () => {
     expect(String(mockReportError.mock.calls[0][1])).toContain('row_ceiling');
   });
 
-  it('flags incomplete on a page error instead of passing off a partial result', async () => {
+  it('flags incomplete on a PERSISTENT page error instead of passing off a partial result', async () => {
     // The first version returned a bare T[] here — a short array
     // indistinguishable from a complete one, behind a Sentry event nobody
     // blocks on. That re-armed the exact failure it was written to fix.
+    //
+    // WAS: failed on call 2 only. Since 2026-09-02 a page is retried
+    // (PAGE_ATTEMPTS) because a page read is idempotent and one transient
+    // timeout should not cost a caller its whole cycle - so a single-call
+    // failure now RECOVERS, and pinning fail-closed needs a page that stays
+    // down. The property under test is unchanged: when the database will not
+    // answer, the result is partial AND flagged, never partial and silent.
     let call = 0;
     const query = (cursor: string | null, want: number) => {
       call++;
-      if (call === 2) return Promise.resolve({ data: null, error: { message: 'fetch failed' } });
+      if (call >= 2) return Promise.resolve({ data: null, error: { message: 'fetch failed' } });
       return Promise.resolve({
         data: Array.from({ length: want }, (_, i) => ({ id: mkId(i) })),
         error: null,
@@ -200,11 +207,120 @@ describe('fetchAllRows', () => {
     // Paging cannot advance without it, and silently looping the first page
     // forever would be far worse than stopping.
     const { rows, complete } = await fetchAllRows(
-      (_c, want) => Promise.resolve({ data: Array.from({ length: want }, () => ({})), error: null }),
+      (_c, want) =>
+        Promise.resolve({ data: Array.from({ length: want }, () => ({})), error: null }),
       { label: 'test' }
     );
     expect(complete).toBe(false);
     expect(rows).toHaveLength(POSTGREST_PAGE);
     expect(String(mockReportError.mock.calls[0][1])).toContain('missing_cursor_key');
+  });
+});
+
+/**
+ * A TRANSIENT TIMEOUT IS NOT AN ANSWER (2026-09-02).
+ *
+ * Every caller fails CLOSED on `complete: false`, which is right - acting on
+ * half a read is the truncation bug this module exists to eliminate. But it
+ * made one dropped packet cost a whole cycle. Measured on the live engine:
+ *
+ *   [TournamentRecurring.registerHorses.page_failed] Error: supabase_timeout
+ *   [TournamentRecurring] registerHorses skipped: fleet read incomplete
+ *
+ * A page read is idempotent, so it is retried. Fail closed only when the
+ * database genuinely will not answer.
+ */
+describe('fetchAllRows retries a failed page', () => {
+  beforeEach(() => mockReportError.mockClear());
+
+  /** Fails the first `failures` calls outright, then serves normally. */
+  function flakyTable(total: number, failures: number) {
+    let calls = 0;
+    let failed = 0;
+    const rows: Row[] = Array.from({ length: total }, (_, i) => ({ id: mkId(i) }));
+    const query = (cursor: string | null, want: number) => {
+      calls++;
+      if (failed < failures) {
+        failed++;
+        return Promise.resolve({ data: null, error: new Error('supabase_timeout') });
+      }
+      const start = cursor === null ? 0 : rows.findIndex((r) => r.id > cursor);
+      const from = start < 0 ? rows.length : start;
+      return Promise.resolve({ data: rows.slice(from, from + want), error: null });
+    };
+    return { query, calls: () => calls };
+  }
+
+  it('survives a single transient timeout and returns a COMPLETE read', async () => {
+    const t = flakyTable(50, 1);
+    const res = await fetchAllRows<Row>((c, w) => t.query(c, w), { label: 'test' });
+    expect(res.complete).toBe(true);
+    expect(res.rows).toHaveLength(50);
+    // Nothing alarmed: the read succeeded, so there is no incident to report.
+    expect(mockReportError).not.toHaveBeenCalled();
+  });
+
+  it('survives two, because a flap is rarely a single packet', async () => {
+    const t = flakyTable(10, 2);
+    const res = await fetchAllRows<Row>((c, w) => t.query(c, w), { label: 'test' });
+    expect(res.complete).toBe(true);
+    expect(res.rows).toHaveLength(10);
+  });
+
+  it('STILL fails closed when the database will not answer at all', async () => {
+    /* The property that must not regress. A caller acting on a partial fleet
+       is the bug; retrying is only allowed to rescue a flap. */
+    const t = flakyTable(50, 99);
+    const res = await fetchAllRows<Row>((c, w) => t.query(c, w), { label: 'test' });
+    expect(res.complete).toBe(false);
+    expect(res.rows).toHaveLength(0);
+  });
+
+  it('alarms ONCE on a doomed page, not once per attempt', async () => {
+    const t = flakyTable(50, 99);
+    await fetchAllRows<Row>((c, w) => t.query(c, w), { label: 'test' });
+    expect(mockReportError).toHaveBeenCalledTimes(1);
+    expect(mockReportError.mock.calls[0][1]).toBe('test.page_failed');
+  });
+
+  it('gives up after PAGE_ATTEMPTS tries, so a dead database cannot stall the tick', async () => {
+    const t = flakyTable(50, 99);
+    await fetchAllRows<Row>((c, w) => t.query(c, w), { label: 'test' });
+    expect(t.calls()).toBe(PAGE_ATTEMPTS);
+  });
+
+  it('honours pageAttempts: 1 for a caller that wants no retry', async () => {
+    const t = flakyTable(50, 99);
+    const res = await fetchAllRows<Row>((c, w) => t.query(c, w), {
+      label: 'test',
+      pageAttempts: 1,
+    });
+    expect(res.complete).toBe(false);
+    expect(t.calls()).toBe(1);
+  });
+
+  it('retries the SAME cursor, so a rescued page cannot skip rows', async () => {
+    /* The hazard a naive retry would introduce: re-asking with an advanced
+       cursor would silently drop the page that failed. */
+    const seen: (string | null)[] = [];
+    let failed = false;
+    const rows: Row[] = Array.from({ length: 30 }, (_, i) => ({ id: mkId(i) }));
+    const res = await fetchAllRows<Row>(
+      (cursor, want) => {
+        seen.push(cursor);
+        if (!failed) {
+          failed = true;
+          return Promise.resolve({ data: null, error: new Error('supabase_timeout') });
+        }
+        const start = cursor === null ? 0 : rows.findIndex((r) => r.id > cursor);
+        const from = start < 0 ? rows.length : start;
+        return Promise.resolve({ data: rows.slice(from, from + want), error: null });
+      },
+      { label: 'test' }
+    );
+    expect(res.complete).toBe(true);
+    expect(res.rows).toHaveLength(30);
+    expect(seen[0]).toBeNull();
+    expect(seen[1]).toBeNull(); // the retry, not an advanced cursor
   });
 });

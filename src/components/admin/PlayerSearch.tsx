@@ -239,7 +239,7 @@ export const PlayerSearch: React.FC<PlayerSearchProps> = ({
         <div className="search-input">
           <input
             type="text"
-            placeholder={`Search by ${searchType}...`}
+            placeholder={`Search By ${searchType}...`}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}

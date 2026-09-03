@@ -1,12 +1,37 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthUser } from '../../hooks/useAuthUser';
-import { fetchQuickLinkClubs, readLastClubId, resolveTargetClub } from '../../utils/clubQuickLink';
+import {
+  fetchQuickLinkClubs,
+  readCachedQuickLinkClubs,
+  readLastClubId,
+  resolveTargetClub,
+} from '../../utils/clubQuickLink';
 import { EmptyState, ErrorState, LoadingState } from '../common/EmptyState';
 
 interface LegacyClubToolRedirectProps {
-  destination: 'agents' | 'data' | 'invite' | 'members';
+  destination: 'agents' | 'anti-cheat' | 'data' | 'invite' | 'members';
   toolName: string;
+}
+
+const CLUB_RESOLUTION_TIMEOUT_MS = 8_000;
+
+function withResolutionTimeout<T>(promise: Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      reject(new Error('Club resolution timed out.'));
+    }, CLUB_RESOLUTION_TIMEOUT_MS);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timeout);
+        resolve(value);
+      },
+      (error) => {
+        window.clearTimeout(timeout);
+        reject(error);
+      }
+    );
+  });
 }
 
 /**
@@ -23,12 +48,30 @@ export default function LegacyClubToolRedirect({
   const navigate = useNavigate();
   const { user, isHydrating } = useAuthUser();
   const [state, setState] = useState<'loading' | 'empty' | 'error'>('loading');
+  const resolutionAttemptRef = useRef(0);
 
   const resolveDestination = useCallback(async () => {
     if (!user?.id) return;
+    const attempt = resolutionAttemptRef.current + 1;
+    resolutionAttemptRef.current = attempt;
     setState('loading');
+
+    // The lobby has already verified and cached these memberships. Reusing
+    // that answer makes a legacy Players door immediate and avoids another
+    // production round trip on the most common path.
+    const cachedTarget = resolveTargetClub(readCachedQuickLinkClubs(), readLastClubId());
+    if (cachedTarget) {
+      const cachedPath =
+        destination === 'invite'
+          ? `/invite/${cachedTarget.id}`
+          : `/clubs/${cachedTarget.id}/${destination}`;
+      navigate(cachedPath, { replace: true });
+      return;
+    }
+
     try {
-      const clubs = await fetchQuickLinkClubs(user.id);
+      const clubs = await withResolutionTimeout(fetchQuickLinkClubs(user.id));
+      if (resolutionAttemptRef.current !== attempt) return;
       const target = resolveTargetClub(clubs, readLastClubId());
       if (!target) {
         setState('empty');
@@ -38,12 +81,16 @@ export default function LegacyClubToolRedirect({
         destination === 'invite' ? `/invite/${target.id}` : `/clubs/${target.id}/${destination}`;
       navigate(targetPath, { replace: true });
     } catch {
+      if (resolutionAttemptRef.current !== attempt) return;
       setState('error');
     }
   }, [destination, navigate, user?.id]);
 
   useEffect(() => {
     if (!isHydrating && user?.id) void resolveDestination();
+    return () => {
+      resolutionAttemptRef.current += 1;
+    };
   }, [isHydrating, resolveDestination, user?.id]);
 
   if (isHydrating || state === 'loading') {
@@ -67,8 +114,8 @@ export default function LegacyClubToolRedirect({
       title={`Choose A Club Before Opening ${toolName}`}
       description={
         destination === 'invite'
-          ? 'Join or create a club first so Club Arena can build an invitation for the right community.'
-          : 'This tool changes club-owned data. Join or create a club first so Club Arena can open the correct workspace and permissions.'
+          ? 'Join Or Create A Club First So Club Arena Can Build An Invitation For The Right Community.'
+          : 'This Tool Changes Club-Owned Data. Join Or Create A Club First So Club Arena Can Open The Correct Workspace And Permissions.'
       }
       action={{ label: 'Find Clubs', onClick: () => navigate('/search') }}
       secondaryAction={{ label: 'Return To Arena', onClick: () => navigate('/') }}

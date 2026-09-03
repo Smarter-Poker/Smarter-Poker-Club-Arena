@@ -504,6 +504,21 @@ export interface ActionRecord {
 export type HandEvent =
   | { type: 'HAND_START'; handNumber: number; players: SeatPlayer[] }
   | { type: 'CARDS_DEALT'; seat: number; cards: Card[] }
+  /**
+   * PHASE 4 2026-09-01 - the card a seat threw, for that seat's own replay.
+   *
+   * A SEPARATE event from PLAYER_ACTION on purpose, and it is the whole
+   * security design in one line. `player_action` is the PUBLIC broadcast:
+   * it carries a seat and the word 'discard' and nothing card-shaped, because
+   * a Crazy Pineapple discard is never revealed to opponents. This event never
+   * reaches the hub at all - the engine consumes it and writes the card to the
+   * RLS-protected `hand_discards` table, exactly as CARDS_DEALT is consumed
+   * and written to `table_hole_cards`.
+   *
+   * If you ever find yourself forwarding this to the hub, you are re-opening
+   * the god-mode hole that created table_hole_cards.
+   */
+  | { type: 'PINEAPPLE_DISCARDED'; seat: number; card: Card }
   | {
       type: 'COMMUNITY_CARDS';
       stage: HandStage;
@@ -513,7 +528,19 @@ export type HandEvent =
       /** TRIPLE-BOARD BOMB POT 2026-08-27: the third board's new cards for this street. */
       cards3?: Card[];
     }
-  | { type: 'PLAYER_ACTION'; seat: number; action: ActionType; amount: number }
+  /* 2026-09-01: `stage` is carried ON the event, not looked up from live
+   * state when the event is handled. See the note in
+   * ServerTableEngineHandEvents' PLAYER_ACTION case - reading the mutable
+   * controller state at handler time stamped whole hands with whatever stage
+   * the hand had ENDED on. Optional so no emitter is silently wrong; the
+   * consumer falls back to the old read. */
+  | {
+      type: 'PLAYER_ACTION';
+      seat: number;
+      action: ActionType;
+      amount: number;
+      stage?: HandStage;
+    }
   | { type: 'POT_UPDATE'; pot: number; pots: Pot[] }
   | { type: 'TURN_CHANGE'; seat: number; availableActions: ActionType[] }
   | {

@@ -264,39 +264,11 @@
   color: #ff9a9a;
 }
 
-.public-profile-page .profile-stats-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.5rem;
-  margin-top: 0.75rem;
-}
-
-.public-profile-page .stat-card {
-  display: flex;
-  min-height: 86px;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-end;
-  gap: 0.25rem;
-  padding: 0.8rem;
-  border: 1px solid var(--public-line);
-  border-radius: 3px;
-  background: linear-gradient(145deg, var(--public-raised), var(--public-panel));
-}
-
-.public-profile-page .stat-value {
-  color: #f4f8fb;
-  font:
-    800 1.35rem/1 'Rajdhani',
-    sans-serif;
-}
-
-.public-profile-page .stat-label {
-  color: #8496a2;
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+/* Report sits beside Block but reads as the milder of the two: reporting asks
+   a human to look, blocking is the player acting alone. Amber, not red. */
+.public-profile-page .report-btn {
+  border-color: rgba(245, 166, 35, 0.48);
+  color: #f5a623;
 }
 
 .public-profile-page .mutual-friends-section,
@@ -421,8 +393,7 @@
     clip-path: none;
   }
 
-  .public-profile-page .profile-actions,
-  .public-profile-page .profile-stats-grid {
+  .public-profile-page .profile-actions {
     margin-right: 0.75rem;
     margin-left: 0.75rem;
   }
@@ -431,10 +402,6 @@
 @media (max-width: 480px) {
   .public-profile-page .public-profile-header {
     min-height: 410px;
-  }
-
-  .public-profile-page .profile-stats-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .public-profile-page .profile-actions {

@@ -19,7 +19,7 @@ describe('league PM window', () => {
     expect(leagueSrc).toContain("claimNightlyJob('league_pm', today)");
   });
 
-  it('the PM window does not consult alreadyRanToday — the claim is the dedup', () => {
+  it('the PM window does not consult alreadyRanToday - the claim is the dedup', () => {
     // The night run's rows exist by design when the PM window opens; gating
     // on them would make the PM window a no-op forever.
     const pm = leagueSrc.slice(leagueSrc.indexOf('V23 PM WINDOW'));

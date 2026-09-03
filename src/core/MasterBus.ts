@@ -27,6 +27,7 @@ import { supabase } from '../lib/supabase';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { reportError } from '../utils/errorReporter';
 import { STORAGE_KEYS } from '../lib/storage';
+import { playerDisplayName } from '../utils/playerDisplayName';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // EVENT TYPES
@@ -64,6 +65,7 @@ export type BusEventType =
   | 'NOTIFICATION_READ'
   | 'WAITLIST_POSITION_CHANGED'
   | 'WAITLIST_CHANGED'
+  | 'WAITLIST_SEAT_OFFERED'
   | 'SESSION_SUMMARY_DISMISSED'
   | 'ACHIEVEMENT_UNLOCKED'
   | 'MISSION_PROGRESS'
@@ -295,6 +297,8 @@ export type BusEventType =
   | 'PLAYER_LEFT'
   | 'RAKEBACK_CLAIMED'
   | 'CLUB_SETTINGS_UPDATED'
+  | 'TICKER_SETTINGS_CHANGED'
+  | 'GAME_MANAGEMENT_ACCESS_CHANGED'
   // Phase 4 deep-sweep: Backported overlay + theme events
   // (MYSTERY_BOUNTY_REVEALED removed 2026-08-26: zero subscribers ever; the
   // celebration listens to the server's t-break channel directly.)
@@ -433,6 +437,14 @@ export interface BusPayloadMap {
   HORSE_BUG_REPORT: Record<string, unknown>;
   NOTIFICATION_READ: { notifId: string | null; allRead: boolean };
   WAITLIST_POSITION_CHANGED: { tableId: string; position: number; tableName: string };
+  /**
+   * An EXCLUSIVE seat hold has just been granted to this player (Dan
+   * 2026-08-30: sixty seconds to get to the seat). `holdExpiresAt` is an ISO
+   * instant, not a duration, so a component that mounts late - or a tab that
+   * was in the background - shows the true remaining time rather than
+   * restarting the clock at sixty.
+   */
+  WAITLIST_SEAT_OFFERED: { tableId: string; tableName: string; holdExpiresAt: string | null };
   WAITLIST_CHANGED: void;
   SESSION_SUMMARY_DISMISSED: { tableId: string };
   ACHIEVEMENT_UNLOCKED: {
@@ -1112,6 +1124,13 @@ export interface BusPayloadMap {
   PLAYER_LEFT: { clubId: string; userId?: string; tableId?: string };
   RAKEBACK_CLAIMED: { clubId: string; amount?: number; userId?: string };
   CLUB_SETTINGS_UPDATED: { clubId?: string; setting?: string; value?: unknown };
+  TICKER_SETTINGS_CHANGED: { scope: 'club' | 'union'; scopeId: string };
+  GAME_MANAGEMENT_ACCESS_CHANGED: {
+    scope?: 'club' | 'union';
+    scopeId?: string;
+    clubId?: string;
+    userId?: string;
+  };
   // Phase 4 deep-sweep: overlay + theme payloads
   UI_THEME_CHANGED: {
     key: string;
@@ -1700,7 +1719,7 @@ class MasterBusCore {
           user.id,
           {
             id: user.id,
-            displayName: user.display_name || user.username,
+            displayName: playerDisplayName(user),
             playerNumber: 0,
             avatarUrl: user.avatar_url || '',
             status: 'online',
@@ -1827,13 +1846,16 @@ class MasterBusCore {
    * Get or create a Supabase channel — guarantees exactly one channel per key.
    * If a channel with the same key already exists, returns it.
    */
-  getOrCreateChannel(key: string): RealtimeChannel {
+  getOrCreateChannel(key: string, options?: { private?: boolean }): RealtimeChannel {
     // Every handout takes a reference; removeRegisteredChannel gives one back.
     this.channelRefs.set(key, (this.channelRefs.get(key) ?? 0) + 1);
     const existing = this.channelRegistry.get(key);
     if (existing) return existing;
 
-    const channel = supabase.channel(key);
+    const channel = supabase.channel(
+      key,
+      options?.private ? { config: { private: true } } : undefined
+    );
     this.channelRegistry.set(key, channel);
     // Emit REALTIME_CONNECTED so ConnectionIndicator knows we have live channels
     this.emit('REALTIME_CONNECTED', { channelName: key });

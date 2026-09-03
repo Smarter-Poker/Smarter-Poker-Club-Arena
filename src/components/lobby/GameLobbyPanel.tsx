@@ -575,7 +575,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
         className={`glp${isCash ? ' glp--cash' : ''}`}
         role="dialog"
         aria-modal="true"
-        aria-label={`${entry.name} lobby`}
+        aria-label={`${entry.name} Lobby`}
         onClick={(e) => e.stopPropagation()}
       >
         <header className="glp__head">
@@ -586,7 +586,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
           <button
             type="button"
             className="glp__close"
-            aria-label="Close game lobby"
+            aria-label="Close Game Lobby"
             onClick={onClose}
           >
             &#10005;
@@ -749,7 +749,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
           {!isCash && (
             <>
               {entry.kind === 'mtt' && (
-                <nav className="glp__tabs" role="tablist" aria-label="Tournament details">
+                <nav className="glp__tabs" role="tablist" aria-label="Tournament Details">
                   {(['overview', 'structure', 'payouts'] as TournTab[]).map((t, i, all) => (
                     <button
                       key={t}
@@ -1044,7 +1044,7 @@ export default function GameLobbyPanel(props: GameLobbyPanelProps) {
                 className="glp__deletebtn"
                 onClick={() => onDeleteTable(entry.id)}
               >
-                Delete Table
+                Close Table
               </button>
             )}
             {/**

@@ -119,16 +119,24 @@ class ClubMessagingPermissionsClass {
         return null;
       }
 
-      // Map role
+      // Map the seven club roles onto the messaging vocabulary.
+      //
+      // This switch knew three of them, so co_owner, super_agent and sub_agent
+      // all fell through `default` and were treated as players - a co-owner
+      // could not message their own club, and a sub agent could not message the
+      // players who report to them.
       let role: ClubRole;
       switch (clubMember.role) {
         case 'owner':
+        case 'co_owner':
           role = 'club_owner';
           break;
         case 'admin':
           role = 'club_admin';
           break;
+        case 'super_agent':
         case 'agent':
+        case 'sub_agent':
           role = 'agent';
           break;
         default:

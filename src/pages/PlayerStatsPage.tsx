@@ -2,15 +2,14 @@
  *  PLAYER STATS PAGE — Premium Glassmorphism Design
  *
  * 2026-08-19 rebuild:
- *  - Stats now come from the ca_player_stats_full RPC which computes lifetime
+ *  - Stats now come from the owner-only ca_player_stats_overview_v2 RPC, which computes lifetime
  *    cash + tournament statistics directly from hand_history (the old
  *    player_stats query used .maybeSingle() and ERRORED whenever a user had
  *    rows in more than one club — that is why the page showed "No Stats Yet").
  *  - Adds a Tournaments tab (entries, ITM, wins, ROI, recent results).
- *  - Adds "Send to Personal Assistant" (runs leak detection server-side).
  *  - Full CSV export of sessions and overview stats.
- *  - Legacy player_stats fallback if the RPC is unavailable (aggregates the
- *    per-club rows instead of .maybeSingle()).
+ *  - Contract v2 reports source quality and coverage instead of silently
+ *    substituting an incompatible legacy payload when the RPC is unavailable.
  */
 
 import {
@@ -77,8 +76,13 @@ import './PlayerStatsPage.css';
 import { reportError } from '../utils/errorReporter';
 import { AgentRakeService, type AgentRoleRow } from '../services/AgentRakeService';
 import { StatsFactsService, type PlayerRakeStats } from '../services/StatsFactsService';
+import {
+  normalizeStatsContractMetadata,
+  type StatsContractMetadata,
+} from '../services/statsContract';
 import { buildStatsIntelligenceBrief } from '../components/stats/statsIntelligenceBrief';
 import { capture } from '../lib/analytics';
+import { playerDisplayName } from '../utils/playerDisplayName';
 
 // ── SWR Cache helpers (localStorage for cross-session persistence) ──
 const STATS_CACHE_KEY = STATS_CACHE_PREFIX;
@@ -121,7 +125,7 @@ function setCachedFull(userId: string, full: FullStats) {
   }
 }
 
-// ── Types matching the ca_player_stats_full RPC payload ──
+// ── Types matching the ca_player_stats_overview_v2 RPC payload ──
 interface OverallStats {
   total_hands: number;
   cash_hands: number;
@@ -272,6 +276,7 @@ interface RecentTournament {
 }
 
 interface FullStats {
+  contract: StatsContractMetadata;
   overall: OverallStats;
   lifetime: LifetimeStats;
   window_days: number | null;
@@ -366,6 +371,7 @@ const EMPTY_LIFETIME: LifetimeStats = {
 };
 
 const EMPTY_FULL: FullStats = {
+  contract: normalizeStatsContractMetadata(null),
   overall: EMPTY_OVERALL,
   lifetime: EMPTY_LIFETIME,
   window_days: null,
@@ -443,6 +449,7 @@ function normalizeFull(data: any): FullStats {
   const lt = data?.lifetime ?? {};
 
   return {
+    contract: normalizeStatsContractMetadata(data),
     window_days: typeof data?.window_days === 'number' ? data.window_days : null,
     lifetime: {
       hands: num(lt.hands),
@@ -626,56 +633,21 @@ function HandsWonGauge({ handsWonPct }: { handsWonPct: number }) {
   );
 }
 
-// ── Legacy fallback: aggregate per-club player_stats rows ──
-// (values may be stored as fractions or percentages depending on writer;
-//  normalize anything > 1 as a percentage)
-function normFraction(v: number): number {
-  return v > 1 ? v / 100 : v;
-}
-
-async function loadLegacyStats(userId: string): Promise<FullStats | null> {
-  const { data, error } = await supabase
-    .from('player_stats')
-    .select('hands_played, total_winnings, total_losses, vpip, pfr')
-    .eq('user_id', userId);
-  if (error || !data || data.length === 0) return null;
-  const hands = data.reduce((s, r) => s + (r.hands_played || 0), 0);
-  const winnings = data.reduce((s, r) => s + (r.total_winnings || 0), 0);
-  const losses = data.reduce((s, r) => s + (r.total_losses || 0), 0);
-  const wVpip =
-    hands > 0
-      ? data.reduce((s, r) => s + normFraction(r.vpip || 0) * (r.hands_played || 0), 0) / hands
-      : 0;
-  const wPfr =
-    hands > 0
-      ? data.reduce((s, r) => s + normFraction(r.pfr || 0) * (r.hands_played || 0), 0) / hands
-      : 0;
-  return {
-    ...EMPTY_FULL,
-    overall: {
-      ...EMPTY_OVERALL,
-      total_hands: hands,
-      cash_hands: hands,
-      vpip: wVpip,
-      pfr: wPfr,
-      total_profit: winnings - losses,
-      total_winnings: winnings,
-    },
-  };
-}
-
 export default function PlayerStatsPage() {
   const { userId } = useParams();
   const { user } = useAuthUser();
   const navigate = useNavigate();
 
   const targetUserId = userId || user?.id;
+  const isOwnProfile = !userId || userId === user?.id;
   const [full, setFull] = useState<FullStats | null>(null);
+  // Keep the payload scope explicit. A failed range request must never leave
+  // old numbers on screen under the newly selected range label.
+  const loadedRangeKeyRef = useRef<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [servingCache, setServingCache] = useState(false);
-  const [exporting, setExporting] = useState(false);
   const [rangeKey, setRangeKey] = useState<string>('all');
   const [lastUpdatedAt, setLastUpdatedAt] = useState<number | null>(null);
   const [statsDataSource, setStatsDataSource] = useState<'live' | 'memory cache' | 'saved cache'>(
@@ -851,7 +823,6 @@ export default function PlayerStatsPage() {
   // the tab from appearing. It is also hidden when looking at someone else's
   // stats page — an agent's book is theirs, not a public profile field.
   const [agentRoles, setAgentRoles] = useState<AgentRoleRow[] | null>(null);
-  const isOwnProfile = !userId || userId === user?.id;
 
   useEffect(() => {
     if (!isOwnProfile || !user?.id) {
@@ -871,9 +842,11 @@ export default function PlayerStatsPage() {
   // from the same allocator the money pipeline uses. Own profile only — the
   // RPC derives identity from auth.uid() and would refuse anyone else anyway.
   const [rakeStats, setRakeStats] = useState<PlayerRakeStats | null>(null);
+  const [rakeLoading, setRakeLoading] = useState(false);
   useEffect(() => {
     if (!isOwnProfile || !user?.id) {
       setRakeStats(null);
+      setRakeLoading(false);
       return;
     }
     let cancelled = false;
@@ -883,20 +856,26 @@ export default function PlayerStatsPage() {
     const load = StatsFactsService?.getRakeStats;
     if (typeof load !== 'function') {
       setRakeStats(null);
+      setRakeLoading(false);
       return;
     }
+    setRakeLoading(true);
+    setRakeStats(null);
     void load
-      .call(StatsFactsService, null)
+      .call(StatsFactsService, windowDays)
       .then((r) => {
         if (!cancelled) setRakeStats(r);
       })
       .catch(() => {
         if (!cancelled) setRakeStats(null);
+      })
+      .finally(() => {
+        if (!cancelled) setRakeLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [isOwnProfile, user?.id]);
+  }, [isOwnProfile, user?.id, windowDays]);
 
   const canSeeRake = (agentRoles?.length ?? 0) > 0;
   const TABS = useMemo<StatCategory[]>(() => {
@@ -943,12 +922,26 @@ export default function PlayerStatsPage() {
   // instead of dropped: the bus events are debounced, not queued, so a discarded
   // HAND_COMPLETED used to leave the page stale until some later event.
   const pendingRefreshRef = useRef(false);
+  const activeRangeKeyRef = useRef(rangeKey);
+  const changeRange = useCallback((nextRangeKey: string) => {
+    if (nextRangeKey === activeRangeKeyRef.current) return;
+    // Clear the prior scope before changing the label. A matching per-range
+    // memo may hydrate immediately; otherwise the page shows its loader/error
+    // state instead of relabelling stale figures.
+    setFull(null);
+    loadedRangeKeyRef.current = null;
+    hasStatsRef.current = false;
+    setServingCache(false);
+    setLoadError(false);
+    setLoading(true);
+    activeRangeKeyRef.current = nextRangeKey;
+    setRangeKey(nextRangeKey);
+  }, []);
   /**
    * The CURRENT loader. Both the shared debouncer and the in-flight replay
    * below read it, so neither can fire a copy captured under an older range.
    */
   const loadRef = useRef<((opts?: { fresh?: boolean }) => Promise<void>) | null>(null);
-  const activeRangeKeyRef = useRef(rangeKey);
   const openHandEvidence = useCallback(
     (filters: { variant?: string; position?: string; bigBlind?: number } = {}) => {
       const params = new URLSearchParams({ source: 'stats' });
@@ -972,7 +965,7 @@ export default function PlayerStatsPage() {
   // ── Single RPC pulls everything from hand_history server-side ──
   const loadAllData = useCallback(
     async (opts?: { fresh?: boolean }): Promise<void> => {
-      if (!targetUserId) return;
+      if (!targetUserId || !isOwnProfile) return;
       const loadStartedAt = performance.now();
       if (statsLoadingRef.current) {
         pendingRefreshRef.current = true;
@@ -987,7 +980,10 @@ export default function PlayerStatsPage() {
         const memo = readStatsRangeMemo(targetUserId, rangeKey) as FullStats | null;
         if (memo) {
           setFull(memo);
-          setLastUpdatedAt(Date.now());
+          loadedRangeKeyRef.current = rangeKey;
+          setLastUpdatedAt(
+            memo.contract?.generated_at ? Date.parse(memo.contract.generated_at) : Date.now()
+          );
           setStatsDataSource('memory cache');
           hasStatsRef.current = true;
           setLoadError(false);
@@ -1007,7 +1003,10 @@ export default function PlayerStatsPage() {
         const { data, error } = await retryFetch(
           () =>
             supabase
-              .rpc('ca_player_stats_full', { p_user: targetUserId, p_days: windowDays })
+              .rpc('ca_player_stats_overview_v2', {
+                p_user: targetUserId,
+                p_days: windowDays,
+              })
               .then((r: any) => r),
           { maxRetries: 2, isMountedRef: isMounted }
         );
@@ -1022,10 +1021,14 @@ export default function PlayerStatsPage() {
           return;
         }
 
-        if (!error && data && data.overall) {
+        const contract = normalizeStatsContractMetadata(data);
+        if (!error && data && data.overall && contract.valid) {
           const resolved = normalizeFull(data);
-          const loadedAt = Date.now();
+          const loadedAt = resolved.contract.generated_at
+            ? Date.parse(resolved.contract.generated_at)
+            : Date.now();
           setFull(resolved);
+          loadedRangeKeyRef.current = rangeKey;
           setLastUpdatedAt(loadedAt);
           setStatsDataSource('live');
           hasStatsRef.current = true;
@@ -1073,30 +1076,24 @@ export default function PlayerStatsPage() {
           // So this call was redundant as well as harmful, and the index it
           // maintains stays just as fresh without it.
         } else {
-          // Legacy fallback (aggregates per-club rows; never .maybeSingle())
-          const legacy = await loadLegacyStats(targetUserId);
-          if (!isMounted.current) return;
-          if (legacy) {
-            setFull(legacy);
-            setLastUpdatedAt(Date.now());
-            setStatsDataSource('live');
-            hasStatsRef.current = true;
-            setLoadError(false);
-          } else if (hasStatsRef.current) {
+          if (hasStatsRef.current && loadedRangeKeyRef.current === rangeKey) {
             // Something is already on screen (cache or an earlier load). Keep it,
             // but say it is stale rather than pretending it is current.
             setServingCache(true);
           } else {
             setFull(null);
+            loadedRangeKeyRef.current = null;
+            hasStatsRef.current = false;
             setLoadError(true);
           }
-          if (error) reportError(error, 'PlayerStatsPage.rpc_ca_player_stats_full');
+          if (error) reportError(error, 'PlayerStatsPage.rpc_ca_player_stats_overview_v2');
           capture('stats_rpc_load', {
             duration_ms: Math.round(performance.now() - loadStartedAt),
             payload_bytes: 0,
             range: rangeKey,
-            cache_source: hasStatsRef.current ? 'cache' : 'none',
-            outcome: legacy ? 'legacy_fallback' : 'error',
+            cache_source:
+              hasStatsRef.current && loadedRangeKeyRef.current === rangeKey ? 'cache' : 'none',
+            outcome: 'error',
           });
         }
       } catch (err: any) {
@@ -1113,10 +1110,12 @@ export default function PlayerStatsPage() {
           });
           reportError(err, 'PlayerStatsPage.Failed_to_load_stats');
           if (isMounted.current) {
-            if (hasStatsRef.current) {
+            if (hasStatsRef.current && loadedRangeKeyRef.current === rangeKey) {
               setServingCache(true);
             } else {
               setFull(null);
+              loadedRangeKeyRef.current = null;
+              hasStatsRef.current = false;
               setLoadError(true);
               toast.error('Failed to load player stats');
             }
@@ -1137,52 +1136,58 @@ export default function PlayerStatsPage() {
       }
       // toast comes from context and isMounted is a ref wrapper: both stable.
     },
-    [targetUserId, rangeKey]
+    [targetUserId, isOwnProfile, rangeKey, windowDays, toast, isMounted]
   );
 
   // Notable hands. Loaded only when the Analysis tab is actually open — the
   // 'biggest' modes score the whole analysis window, so this is not free.
   useEffect(() => {
-    if (!targetUserId || category !== 'analysis') return;
+    if (!targetUserId || !isOwnProfile || category !== 'analysis') return;
     let alive = true;
     setHandsLoading(true);
     setHandsError(false);
-    supabase.rpc('ca_player_hands', { p_user: targetUserId, p_mode: handMode, p_limit: 10 }).then(
-      ({ data, error }: any) => {
-        if (!alive || !isMounted.current) return;
-        if (error) {
-          // An empty list and a failed read are different statements. This
-          // used to render both as "No Hands In This Range Yet." - the same
-          // lie about a player's history that this page was rebuilt to stop
-          // telling, reintroduced one section further down.
-          reportError(error, 'PlayerStatsPage.rpc_ca_player_hands');
+    supabase
+      .rpc('ca_player_hands_v2', {
+        p_user: targetUserId,
+        p_mode: handMode,
+        p_limit: 10,
+      })
+      .then(
+        ({ data, error }: any) => {
+          if (!alive || !isMounted.current) return;
+          if (error) {
+            // An empty list and a failed read are different statements. This
+            // used to render both as "No Hands In This Range Yet." - the same
+            // lie about a player's history that this page was rebuilt to stop
+            // telling, reintroduced one section further down.
+            reportError(error, 'PlayerStatsPage.rpc_ca_player_hands_v2');
+            setHandsError(true);
+            setHands([]);
+          } else {
+            // The only place on this page that formats numbers straight off the
+            // wire. `as HandRow[]` is a compile-time claim, not a runtime one,
+            // so harden here the way normalizeFull hardens the main payload.
+            setHands(normalizeHands(data));
+          }
+          setHandsLoading(false);
+        },
+        (err: unknown) => {
+          if (!alive || !isMounted.current) return;
+          reportError(err, 'PlayerStatsPage.rpc_ca_player_hands_v2');
           setHandsError(true);
           setHands([]);
-        } else {
-          // The only place on this page that formats numbers straight off the
-          // wire. `as HandRow[]` is a compile-time claim, not a runtime one,
-          // so harden here the way normalizeFull hardens the main payload.
-          setHands(normalizeHands(data));
+          setHandsLoading(false);
         }
-        setHandsLoading(false);
-      },
-      (err: unknown) => {
-        if (!alive || !isMounted.current) return;
-        reportError(err, 'PlayerStatsPage.rpc_ca_player_hands');
-        setHandsError(true);
-        setHands([]);
-        setHandsLoading(false);
-      }
-    );
+      );
     return () => {
       alive = false;
     };
-    // rangeKey is deliberately NOT a dependency: ca_player_hands is declared
+    // rangeKey is deliberately NOT a dependency: ca_player_hands_v2 is declared
     // (uuid, text, int) and takes no window argument, so re-running it on a
     // range change fired an identical, expensive query whose result could not
     // differ. The list is all-time and the empty state now says so.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetUserId, category, handMode, handsReload]);
+  }, [targetUserId, isOwnProfile, category, handMode, handsReload]);
 
   /**
    * Keep the selected pill visible. The strip scrolls now (see the CSS), and
@@ -1232,16 +1237,21 @@ export default function PlayerStatsPage() {
 
   // SWR: show cached stats instantly on mount
   useEffect(() => {
-    if (!targetUserId) return;
+    if (!targetUserId || !isOwnProfile) return;
     const cached = getCachedFull(targetUserId);
     if (cached) {
       setFull(cached.full);
-      setLastUpdatedAt(cached.cachedAt);
+      loadedRangeKeyRef.current = 'all';
+      setLastUpdatedAt(
+        cached.full.contract.generated_at
+          ? Date.parse(cached.full.contract.generated_at)
+          : cached.cachedAt
+      );
       setStatsDataSource('saved cache');
       hasStatsRef.current = true;
       setLoading(false);
     }
-  }, [targetUserId]);
+  }, [targetUserId, isOwnProfile]);
 
   // Safety net so a hung auth/Supabase call cannot pin the skeleton forever.
   // 20s, not 10s: retryFetch does up to 3 attempts with 1s + 2s backoff and a
@@ -1258,13 +1268,13 @@ export default function PlayerStatsPage() {
   }, [targetUserId]);
 
   useEffect(() => {
-    if (targetUserId) void loadAllData();
-  }, [targetUserId, loadAllData]);
+    if (targetUserId && isOwnProfile) void loadAllData();
+  }, [targetUserId, isOwnProfile, loadAllData]);
 
   /**
    * ── Bus listeners: ONE debounce window, not five ────────────────────────
    *
-   * MEASURED 2026-08-25. ca_player_stats_full costs 2.6s warm and 15s COLD for
+   * MEASURED 2026-08-25. The underlying overview rollup costs 2.6s warm and 15s COLD for
    * a heavy account, against an 8s statement_timeout on the `authenticated`
    * role. This used to be five INDEPENDENT `subscribeDebounced` calls, each
    * with its own 2000ms window - and a single completed hand emits
@@ -1310,6 +1320,7 @@ export default function PlayerStatsPage() {
   const overall = full?.overall ?? EMPTY_OVERALL;
   const lifetime = full?.lifetime ?? EMPTY_LIFETIME;
   const tourn = full?.tournaments ?? EMPTY_FULL.tournaments;
+  const statsContract = full?.contract ?? EMPTY_FULL.contract;
 
   /**
    * ONE source of truth, as a NUMBER (Dan 2026-08-25).
@@ -1414,56 +1425,6 @@ export default function PlayerStatsPage() {
   // render made both children re-run their effects on every tab click.
   const sessionRows = useMemo(() => full?.sessions ?? [], [full]);
 
-  // ── Send stats to the Personal Assistant (server-side leak detection) ──
-  const sendToAssistant = async () => {
-    if (exporting) return;
-    setExporting(true);
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-      const ENGINE_URL = import.meta.env?.VITE_ENGINE_URL ?? 'https://engine.smarter.poker';
-      const res = await fetch(`${ENGINE_URL}/assistant/leaks/detect`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        credentials: 'include',
-        body: JSON.stringify({}),
-      });
-      // The detector needs a minimum sample and says so in the body. Reporting
-      // "exported" and navigating regardless would claim work that did not
-      // happen — the player would land on an assistant with nothing new.
-      const body = await res.json().catch(() => null);
-      if (!res.ok) {
-        toast.error('Assistant export failed. Try again in a moment.');
-      } else if (body && typeof body.leaksDetected === 'number' && body.leaksDetected === 0) {
-        const analysed = typeof body.handsAnalyzed === 'number' ? body.handsAnalyzed : null;
-        toast.info(
-          body.message ||
-            (analysed !== null
-              ? `Analysed ${analysed.toLocaleString()} hands - nothing to flag yet.`
-              : 'Nothing to flag yet.')
-        );
-      } else {
-        const n = typeof body?.leaksDetected === 'number' ? body.leaksDetected : null;
-        toast.success(
-          n !== null
-            ? `${n} pattern${n === 1 ? '' : 's'} sent to your Personal Assistant...`
-            : 'Stats exported. Opening your Personal Assistant...'
-        );
-        setTimeout(() => {
-          window.location.href = '/hub/personal-assistant';
-        }, 900);
-      }
-    } catch (e) {
-      reportError(e, 'PlayerStatsPage.sendToAssistant');
-      toast.error('Assistant export failed. Try again in a moment.');
-    } finally {
-      if (isMounted.current) setExporting(false);
-    }
-  };
-
   const exportSessionsCSV = () => {
     try {
       // buy_in, cash_out and ended are on every SessionRow and were dropped.
@@ -1487,7 +1448,7 @@ export default function PlayerStatsPage() {
         [
           { key: 'date', label: 'Started' },
           { key: 'ended', label: 'Ended' },
-          { key: 'duration_minutes', label: 'Duration (min)' },
+          { key: 'duration_minutes', label: 'Duration (Min)' },
           { key: 'hands', label: 'Hands' },
           { key: 'buy_in', label: 'Buy In' },
           { key: 'cash_out', label: 'Cash Out' },
@@ -1548,6 +1509,31 @@ export default function PlayerStatsPage() {
       reportError(e, 'PlayerStatsPage.exportOverviewCSV');
     }
   };
+
+  // Phase 1 security boundary. The legacy route accepted any player UUID and
+  // the SECURITY DEFINER RPC returned that player's all-club financial data.
+  // Shared-club views return in phase 3 only after the database can enforce a
+  // club scope; until then the honest and safe result is an explicit private
+  // state, with no request and no target-bound cache hydration.
+  if (!isOwnProfile) {
+    return (
+      <div className="stats-page">
+        <div className="stats-empty-state" role="status">
+          <span className="empty-icon" aria-hidden="true">
+            {'!'}
+          </span>
+          <span className="empty-title">Player Stats Are Private</span>
+          <span className="empty-description">
+            Cross-Player Statistics Require An Authorized Shared-Club View. No All-Club Financial
+            Data Is Exposed From This Profile.
+          </span>
+          <button className="empty-cta" onClick={() => navigate('/')}>
+            Back To Club Arena
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -1649,7 +1635,13 @@ export default function PlayerStatsPage() {
                 className={`stats-range-status ${refreshing ? 'is-refreshing' : ''}`}
                 role="status"
               >
-                {refreshing ? 'Updating' : 'Live'}
+                {refreshing
+                  ? 'Updating'
+                  : !statsContract.valid
+                    ? 'Unavailable'
+                    : statsContract.quality.live_tail_included
+                      ? 'Live'
+                      : 'Snapshot'}
               </span>
             </span>
             <div className="stats-range-row" role="group" aria-label="Analysis Range">
@@ -1658,7 +1650,7 @@ export default function PlayerStatsPage() {
                   key={r.key}
                   className={rangeKey === r.key ? 'active' : ''}
                   aria-pressed={rangeKey === r.key}
-                  onClick={() => setRangeKey(r.key)}
+                  onClick={() => changeRange(r.key)}
                 >
                   {r.label}
                 </button>
@@ -1677,7 +1669,7 @@ export default function PlayerStatsPage() {
           </div>
         </div>
 
-        <div className="stats-hero" role="group" aria-label="Headline performance">
+        <div className="stats-hero" role="group" aria-label="Headline Performance">
           <HandsWonGauge handsWonPct={handsWonPct} />
           <div className="hero-stats">
             <div className="hero-stat">
@@ -1720,13 +1712,13 @@ export default function PlayerStatsPage() {
         {hasData && overall.hands_capped && (
           <div className="stats-notice">
             Based On Your Most Recent {overall.hand_cap.toLocaleString()} Hands
-            {rangeKey !== 'all' ? ' in this range' : ''}.
+            {rangeKey !== 'all' ? ' In This Range' : ''}.
           </div>
         )}
         {hasData && !overall.hands_capped && rangeKey !== 'all' && (
           <div className="stats-notice">
             {overall.total_hands.toLocaleString()} Hands In The Last{' '}
-            {RANGES.find((r) => r.key === rangeKey)?.label.toLowerCase()}.
+            {RANGES.find((r) => r.key === rangeKey)?.label}.
           </div>
         )}
         {/* Small samples: bb/100 swings wildly over a few hundred hands, and a
@@ -1746,6 +1738,32 @@ export default function PlayerStatsPage() {
             Meaningful.
           </div>
         )}
+        {hasData && !statsContract.quality.cash_money_exact && (
+          <div className="stats-notice stats-notice-warn">
+            Cash Result And BB/100 Use Reconstructed Hand Actions For This Coverage. Exact
+            Settlement Coverage Is Not Yet Complete.
+          </div>
+        )}
+        {hasData && !statsContract.quality.historical_club_breakdown_available && (
+          <div className="stats-notice">
+            This Readout Is An Owner-Only All-Clubs Total. Club-Level Breakdown Is Not Available In
+            This Contract.
+          </div>
+        )}
+        {hasData &&
+          !statsContract.quality.live_tail_included &&
+          statsContract.coverage.rollup_covered_through && (
+            <div className="stats-notice">
+              Snapshot Includes Recorded Hands Through{' '}
+              {new Date(statsContract.coverage.rollup_covered_through).toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+              })}
+              . Newer Hands Appear After The Next Stats Rollup.
+            </div>
+          )}
         {servingCache && (
           <div className="stats-notice stats-notice-warn">
             Showing Your Last Loaded Stats - The Refresh Did Not Go Through.
@@ -1757,10 +1775,12 @@ export default function PlayerStatsPage() {
         <section className="stats-intelligence-brief" aria-labelledby="stats-brief-title">
           <div className="stats-brief-head">
             <div>
-              <span className="stats-section-kicker">Range Dossier // Verified Readout</span>
+              <span className="stats-section-kicker">Range Dossier // Scoped Readout</span>
               <h2 id="stats-brief-title">Evidence At A Glance</h2>
             </div>
-            <p>Sample-Aware Facts From This Window. Coaching Stays In Your Personal Assistant.</p>
+            <p>
+              Sample-Aware Facts From This Window. Coaching Requires A Persisted Assistant Report.
+            </p>
           </div>
 
           <div className="stats-brief-grid">
@@ -1774,7 +1794,7 @@ export default function PlayerStatsPage() {
             ))}
           </div>
 
-          <div className="stats-brief-actions" aria-label="Dossier shortcuts">
+          <div className="stats-brief-actions" aria-label="Dossier Shortcuts">
             <button type="button" onClick={() => selectSection('analysis', true)}>
               Open Deep Analysis
             </button>
@@ -1870,6 +1890,28 @@ export default function PlayerStatsPage() {
             Rake opts out: an agent who has played no hands themselves still has
             a downline generating rake, and that is the whole point of the tab. */}
             {!hasData && category !== 'rake' && emptyState}
+
+            {showTab('rake') && rakeLoading && (
+              <div className="stats-section-loading" role="status">
+                Loading Rake For This Analysis Window...
+              </div>
+            )}
+
+            {showTab('rake') &&
+              !rakeLoading &&
+              agentRoles !== null &&
+              (!rakeStats || rakeStats.hands === 0) &&
+              agentRoles.length === 0 && (
+                <div className="stats-empty-state" role="status">
+                  <span className="empty-icon" aria-hidden="true">
+                    $
+                  </span>
+                  <span className="empty-title">No Rake In This Window</span>
+                  <span className="empty-description">
+                    Player-Attributed Rake Will Appear Here After A Raked Cash Hand Is Recorded.
+                  </span>
+                </div>
+              )}
 
             {/* ── RAKE TAB — live downline earnings, agents only ── */}
             {showTab('rake') && isOwnProfile && rakeStats && rakeStats.hands > 0 && (
@@ -1975,7 +2017,7 @@ export default function PlayerStatsPage() {
                 <div className="stats-ledger-grid">
                   {/* Per-variant breakdown */}
                   {(full?.variants?.length ?? 0) > 0 && (
-                    <div className="variant-table" role="region" aria-label="Performance by game">
+                    <div className="variant-table" role="region" aria-label="Performance By Game">
                       <h3 className="variant-title">Game Mix</h3>
                       <div className="variant-row variant-head">
                         <span>Game</span>
@@ -1990,7 +2032,7 @@ export default function PlayerStatsPage() {
                           className="variant-row stats-evidence-row"
                           key={v.variant}
                           onClick={() => openHandEvidence({ variant: v.variant })}
-                          aria-label={`Review ${String(v.variant).toUpperCase()} hands`}
+                          aria-label={`Review ${String(v.variant).toUpperCase()} Hands`}
                         >
                           <span className="variant-name">{String(v.variant).toUpperCase()}</span>
                           <span>{v.hands.toLocaleString()}</span>
@@ -2010,7 +2052,7 @@ export default function PlayerStatsPage() {
                   {/* Per-stake breakdown: which game size is actually carrying (or
                   bleeding) the results, instead of one blended number. */}
                   {(full?.stakes?.length ?? 0) > 1 && (
-                    <div className="variant-table" role="region" aria-label="Performance by stake">
+                    <div className="variant-table" role="region" aria-label="Performance By Stake">
                       <h3 className="variant-title">Stake Ledger</h3>
                       <div className="variant-row variant-head">
                         <span>Stake</span>
@@ -2025,7 +2067,7 @@ export default function PlayerStatsPage() {
                           className="variant-row stats-evidence-row"
                           key={`stake-${st.big_blind}`}
                           onClick={() => openHandEvidence({ bigBlind: st.big_blind })}
-                          aria-label={`Review hands at ${st.big_blind} big blind`}
+                          aria-label={`Review Hands At ${st.big_blind} Big Blind`}
                         >
                           <span className="variant-name">{st.big_blind} BB</span>
                           <span>{st.hands.toLocaleString()}</span>
@@ -2043,13 +2085,9 @@ export default function PlayerStatsPage() {
                   )}
                 </div>
 
-                {/* Leak analysis deliberately does NOT live here. Dan, 2026-08-21:
-                it belongs in the Personal Assistant, which already owns
-                coaching and has the leak detector endpoint. This page reports
-                what the numbers ARE; the assistant says what to do about them.
-                findLeaks() and LeakPanel remain in components/stats/ for the
-                assistant to use - see the "Send To Personal Assistant" button
-                below. */}
+                {/* Coaching is intentionally absent until the persisted Personal
+                Assistant workflow is real. Phase 1 removed the demo solver path
+                rather than presenting fabricated analysis as player evidence. */}
 
                 {/* Rivals: the most socially engaging stat on the page, so it sits
                 where a player looks first. Owner only — head-to-head chip flow
@@ -2088,7 +2126,7 @@ export default function PlayerStatsPage() {
                 {isOwnProfile && (
                   <PanelBoundary name="Share Card">
                     <StatsShareCard
-                      displayName={user?.display_name || user?.username || 'Player'}
+                      displayName={playerDisplayName(user)}
                       styleLabel={shareStyle?.label ?? null}
                       styleColor={shareStyle?.color ?? null}
                       stats={{
@@ -2109,13 +2147,6 @@ export default function PlayerStatsPage() {
                   </button>
                   <button className="view-hands-btn" onClick={printDossier} disabled={printing}>
                     {printing ? 'Preparing Dossier...' : 'Print Or Save Dossier'}
-                  </button>
-                  <button
-                    className="assistant-export-btn"
-                    onClick={sendToAssistant}
-                    disabled={exporting}
-                  >
-                    {exporting ? 'Exporting...' : 'Send to Personal Assistant'}
                   </button>
                 </div>
               </>
@@ -2158,7 +2189,7 @@ export default function PlayerStatsPage() {
                       color="#f59e0b"
                     />
                     <StatRow
-                      label="Fold to 3-Bet"
+                      label="Fold To 3-Bet"
                       value={`${(overall.fold_to_three_bet * 100).toFixed(1)}%`}
                       color="#ef4444"
                     />
@@ -2239,7 +2270,7 @@ export default function PlayerStatsPage() {
             {/* ── POSITIONS TAB ── */}
             {showTab('positions') && hasData && (
               <div>
-                <div className="stats-position-evidence" aria-label="Review hands by position">
+                <div className="stats-position-evidence" aria-label="Review Hands By Position">
                   {(full?.positions || []).map((position) => (
                     <button
                       type="button"
@@ -2307,7 +2338,7 @@ export default function PlayerStatsPage() {
                       color="#8b5cf6"
                     />
                     <StatRow
-                      label="Total Buy-ins"
+                      label="Total Buy-Ins"
                       value={tourn.total_buyins.toLocaleString()}
                       color="#06b6d4"
                     />
@@ -2418,7 +2449,7 @@ export default function PlayerStatsPage() {
                     <h3 style={{ color: '#f59e0b' }}>Advanced Stats</h3>
                   </div>
                   <PanelBoundary name="Advanced Stats">
-                    <AdvancedStatsSummary userId={targetUserId} initialData={advancedInitialData} />
+                    <AdvancedStatsSummary initialData={advancedInitialData} />
                   </PanelBoundary>
                 </div>
 
@@ -2448,10 +2479,8 @@ export default function PlayerStatsPage() {
                       // printDossier claiming otherwise.
                       still={printing}
                       sessionRows={sessionRows}
-                      exporting={exporting}
                       onExportSessions={exportSessionsCSV}
                       onExportOverview={exportOverviewCSV}
-                      onSendToAssistant={sendToAssistant}
                     />
                   </Suspense>
                 </PanelBoundary>
@@ -2506,7 +2535,7 @@ export default function PlayerStatsPage() {
                                 {String(h.variant || '').toUpperCase()}
                                 {h.position ? ` · ${h.position}` : ''}
                                 {h.is_tournament ? ' · MTT' : ` · ${h.big_blind} BB`}
-                                {` · ${h.players} players`}
+                                {` · ${h.players} Players`}
                               </span>
                               {Array.isArray(h.board) && h.board.length > 0 && (
                                 <span className="hand-row-board">

@@ -32,6 +32,11 @@ interface Props {
   };
   styleLabel?: string | null;
   styleColor?: string | null;
+  /**
+   * The analysis window the numbers cover, drawn ON the card. Without it a
+   * 7-day slice left the browser as an unlabelled lifetime claim.
+   */
+  rangeLabel?: string;
 }
 
 const W = 1200;
@@ -56,7 +61,13 @@ function roundRect(
   ctx.closePath();
 }
 
-export default function StatsShareCard({ displayName, stats, styleLabel, styleColor }: Props) {
+export default function StatsShareCard({
+  displayName,
+  stats,
+  styleLabel,
+  styleColor,
+  rangeLabel,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -124,13 +135,14 @@ export default function StatsShareCard({ displayName, stats, styleLabel, styleCo
     }
 
     // Headline stat: win rate
-    const bbColor = stats.bb100 >= 0 ? '#22c55e' : '#ef4444';
+    const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+    const bbColor = n(stats.bb100) >= 0 ? '#22c55e' : '#ef4444';
     ctx.fillStyle = 'rgba(200,224,245,0.55)';
     ctx.font = `600 22px ${FONT}`;
     ctx.fillText('WIN RATE', 64, 232);
     ctx.fillStyle = bbColor;
     ctx.font = `800 96px ${FONT}`;
-    const bbText = `${stats.bb100 >= 0 ? '+' : ''}${stats.bb100.toFixed(1)}`;
+    const bbText = `${n(stats.bb100) >= 0 ? '+' : ''}${n(stats.bb100).toFixed(1)}`;
     ctx.fillText(bbText, 64, 262);
     const bbW = ctx.measureText(bbText).width;
     ctx.fillStyle = 'rgba(200,224,245,0.6)';
@@ -138,24 +150,24 @@ export default function StatsShareCard({ displayName, stats, styleLabel, styleCo
     ctx.fillText('bb/100', 64 + bbW + 16, 322);
 
     // Profit, beside the win rate. This is the number people screenshot.
-    const profitColor = stats.profit >= 0 ? '#22c55e' : '#ef4444';
+    const profitColor = n(stats.profit) >= 0 ? '#22c55e' : '#ef4444';
     ctx.fillStyle = 'rgba(200,224,245,0.55)';
     ctx.font = `600 22px ${FONT}`;
     ctx.fillText('PROFIT', 470, 232);
     ctx.fillStyle = profitColor;
     ctx.font = `800 64px ${FONT}`;
     ctx.fillText(
-      `${stats.profit >= 0 ? '+' : '-'}${Math.round(Math.abs(stats.profit)).toLocaleString()}`,
+      `${n(stats.profit) >= 0 ? '+' : '-'}${Math.round(Math.abs(n(stats.profit))).toLocaleString()}`,
       470,
       278
     );
 
     // Stat tiles
     const tiles: Array<[string, string]> = [
-      ['HANDS', stats.hands.toLocaleString()],
-      ['HOURS', stats.hoursPlayed.toFixed(1)],
-      ['VPIP', `${stats.vpip.toFixed(1)}%`],
-      ['PFR', `${stats.pfr.toFixed(1)}%`],
+      ['HANDS', n(stats.hands).toLocaleString()],
+      ['HOURS', n(stats.hoursPlayed).toFixed(1)],
+      ['VPIP', `${n(stats.vpip).toFixed(1)}%`],
+      ['PFR', `${n(stats.pfr).toFixed(1)}%`],
     ];
     const tileW = 244;
     const tileH = 118;
@@ -184,8 +196,13 @@ export default function StatsShareCard({ displayName, stats, styleLabel, styleCo
     ctx.font = `700 26px ${FONT}`;
     ctx.textAlign = 'right';
     ctx.fillText('smarter.poker', W - 64, 74);
+    // The window caption sits under the footer so every number above it is
+    // read for what it is.
+    ctx.fillStyle = 'rgba(200,224,245,0.55)';
+    ctx.font = `600 20px ${FONT}`;
+    ctx.fillText(rangeLabel ? `${rangeLabel} · Cash Games` : 'Cash Games', W - 64, 104);
     ctx.textAlign = 'left';
-  }, [displayName, stats, styleLabel, styleColor]);
+  }, [displayName, stats, styleLabel, styleColor, rangeLabel]);
 
   useEffect(() => {
     draw();

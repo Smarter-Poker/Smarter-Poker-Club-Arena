@@ -1365,19 +1365,33 @@ export default function ClubDataPage() {
   useEffect(() => {
     resetGameVirtual();
   }, [startDate, endDate, game, stakes, search, gameSort, resetGameVirtual]);
+  // hideHorses belongs in here with the sort and the dates: it changes the
+  // LENGTH of the list, and the virtual window keeps its scroll position across
+  // a re-render. Filtering 577 rows down to one while the window is scrolled
+  // past row 400 leaves the operator looking at nothing, with no indication
+  // that anything is wrong.
   useEffect(() => {
     resetPlayerVirtual();
-  }, [startDate, endDate, playerSort, resetPlayerVirtual]);
+  }, [startDate, endDate, playerSort, hideHorses, resetPlayerVirtual]);
   useEffect(() => {
     if (tab === 'games' && gamesHasMore && gameVirtual.endIndex >= gameRows.length - 8) {
       void loadMoreGames();
     }
   }, [tab, gamesHasMore, gameVirtual.endIndex, gameRows.length, loadMoreGames]);
+  // THE TRIGGER READS THE UNFILTERED LENGTH, and it has to.
+  //
+  // Whether more rows exist on the SERVER is a fact about what has been
+  // fetched, not about what is currently displayed. Keying this on the
+  // filtered list turns the filter into a fetch loop: hide horses on a club
+  // that is 577 horses and one person and sortedPlayers.length becomes 1, so
+  // endIndex >= 1 - 8 is true before the operator has scrolled anywhere, every
+  // page that arrives is filtered straight back out, the length never grows,
+  // and the condition never stops being true.
   useEffect(() => {
-    if (tab === 'players' && playersHasMore && playerVirtual.endIndex >= sortedPlayers.length - 8) {
+    if (tab === 'players' && playersHasMore && playerVirtual.endIndex >= allPlayers.length - 8) {
       void loadMorePlayers();
     }
-  }, [tab, playersHasMore, playerVirtual.endIndex, sortedPlayers.length, loadMorePlayers]);
+  }, [tab, playersHasMore, playerVirtual.endIndex, allPlayers.length, loadMorePlayers]);
 
   // near-real-time: re-poll on an interval and whenever the tab regains focus
   useEffect(() => {

@@ -131,7 +131,21 @@ ceiling; the blacklist form picks a person out of the roster, names them in the
 ledger, warns when an excluded player is still seated, and offers a broom for
 the expired rows nothing sweeps. `anti-cheat` moved from `staff` to `control`.
 
-Detail: `docs/changelog/2026-09-03-club-operations-phase-1-the-shell.md`.
+Corrected the same day, in the phase 2 verification pass (migration
+`20260903180000_a_cleared_pair_stays_cleared`): `fn_ca_dismiss_collusion_pair`
+wrote `status = 'dismissed'`, a value `collusion_tracking_status_check` forbids,
+so the Clear button could only ever have thrown at the operator. Fixing the word
+exposed the larger fault - 169,519 of the table's 169,530 rows were auto-cleared
+on 2026-08-18 when the horse-versus-horse detector bug was fixed at the source,
+and the old `status <> 'dismissed'` filter (true for every row, since no row can
+hold that value) let all of them back in. The screen now reads the rows the
+detector left **open**, reports `closed_pairs` beside them so an empty queue
+reads as "the screen ran and closed itself", labels the non-dump group
+`screening` with each row naming its own pattern, and counts the window off
+`club_hand_daily`. The call went from ~1,400ms to 397ms.
+
+Detail: `docs/changelog/2026-09-03-club-operations-phase-1-the-shell.md` and
+`docs/changelog/2026-09-03-club-operations-phase-2-an-integrity-decision-is-written-down.md`.
 
 Everything below is what the phase found, kept as the record.
 

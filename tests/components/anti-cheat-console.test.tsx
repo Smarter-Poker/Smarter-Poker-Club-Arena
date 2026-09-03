@@ -14,7 +14,7 @@
  *
  * There was no test that mounted it. This is that test.
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const CLUB_SLUG = 'deep-stack-society-11192';
@@ -65,6 +65,10 @@ vi.mock('../../src/core/MasterBus', () => ({
   },
 }));
 vi.mock('../../src/utils/errorReporter', () => ({ reportError: vi.fn() }));
+const confirmMock = vi.hoisted(() => vi.fn(async () => true));
+vi.mock('../../src/components/common/confirmDialog', () => ({
+  confirmDialog: (...args: unknown[]) => confirmMock(...args),
+}));
 vi.mock('../../src/services/IntegrityActionService', () => ({
   adminRemovePlayerFromClubTables: vi.fn(async () => ({ removed: 1, failed: 0, firstError: null })),
 }));
@@ -166,5 +170,136 @@ describe('the evidence a detector recorded is the evidence that is shown', () =>
     // so COALESCE made every row read 0.00.
     expect(evidenceSummary({ evidence: {} })).toBe('No Evidence Recorded');
     expect(evidenceSummary({ evidence: null })).toBe('No Evidence Recorded');
+  });
+});
+
+/**
+ * The shape `detect_collusion_pairs` returns after the same-day correction.
+ * Two things changed and both are load-bearing: the second group is `screening`
+ * rather than `win_rate`, because it carries every pattern that is not a chip
+ * dump and three of the seven rows open on the estate are TIMING_CORRELATION;
+ * and `closed_pairs` is reported, so an empty queue reads as "the screen ran
+ * and closed itself" instead of "nothing was screened".
+ */
+const COLLUSION = {
+  analyzed_hands: 273794,
+  club_players: 41,
+  window_days: 30,
+  threshold: 0.75,
+  cap: 50,
+  closed_pairs: 5591,
+  chip_dump: {
+    total: 1,
+    pairs: [
+      {
+        dumper_id: 'player-a',
+        receiver_id: 'player-b',
+        pattern_type: 'CHIP_DUMP',
+        hands_together: 22,
+        score: 91,
+        chip_flow_ratio: 0.91,
+        severity: 'high',
+        evidence: { hands: 22, loser_loss_ratio: 0.88 },
+      },
+    ],
+  },
+  screening: {
+    total: 2,
+    pairs: [
+      {
+        dumper_id: 'player-c',
+        receiver_id: 'player-d',
+        pattern_type: 'TIMING_CORRELATION',
+        hands_together: 40,
+        score: 80,
+        chip_flow_ratio: 0.8,
+        severity: 'medium',
+        evidence: { bb_per_100: 245.5 },
+      },
+    ],
+  },
+};
+
+describe('the collusion screen shows the open queue and says what it closed', () => {
+  async function openCollusionTab() {
+    render(<AntiCheatPage />);
+    // The tab strip paints immediately, but the overview load is still in
+    // flight. Settle it before clicking, or its resolution lands outside act.
+    await waitFor(() => expect(screen.getByText('Open Flags')).toBeTruthy());
+    await act(async () => {
+      fireEvent.click(screen.getByText('Collusion'));
+    });
+  }
+
+  beforeEach(() => {
+    confirmMock.mockClear();
+    confirmMock.mockResolvedValue(true);
+    toastState.success.mockClear();
+    toastState.error.mockClear();
+    rpcMock.mockImplementation((name: string) => {
+      if (name === 'get_anti_cheat_stats') return Promise.resolve({ data: STATS, error: null });
+      if (name === 'detect_collusion_pairs')
+        return Promise.resolve({ data: COLLUSION, error: null });
+      if (name === 'fn_ca_dismiss_collusion_pair')
+        return Promise.resolve({ data: { ok: true, updated: 3 }, error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+  });
+
+  it('paints both groups and the count the detector already closed', async () => {
+    await openCollusionTab();
+    await waitFor(() => expect(screen.getByText('Chip Dump Pairs')).toBeTruthy());
+    expect(screen.getByText('Chip Dump Pairs').parentElement?.textContent).toContain('1');
+    expect(screen.getByText('Other Signals Open').parentElement?.textContent).toContain('2');
+    expect(screen.getByText('Already Closed').parentElement?.textContent).toContain('5,591');
+    expect(screen.getByText('Hands Analyzed').parentElement?.textContent).toContain('273,794');
+  });
+
+  it("names each row's own pattern instead of calling it a win rate outlier", async () => {
+    await openCollusionTab();
+    await waitFor(() => expect(screen.getByText('TIMING CORRELATION')).toBeTruthy());
+    expect(screen.queryByText(/Win Rate Anomal/i)).toBeNull();
+  });
+
+  it('clears a pair through the RPC and reports how many rows moved', async () => {
+    await openCollusionTab();
+    await waitFor(() => expect(screen.getAllByText('Clear').length).toBeGreaterThan(0));
+    await act(async () => {
+      fireEvent.click(screen.getAllByText('Clear')[0]);
+    });
+    await waitFor(() =>
+      expect(rpcMock.mock.calls.some((call) => call[0] === 'fn_ca_dismiss_collusion_pair')).toBe(
+        true
+      )
+    );
+    const call = rpcMock.mock.calls.find((c) => c[0] === 'fn_ca_dismiss_collusion_pair');
+    expect((call?.[1] as { p_club_id?: string })?.p_club_id).toBe(CLUB_UUID);
+    await waitFor(() =>
+      expect(toastState.success).toHaveBeenCalledWith('Cleared 3 Screening Rows.')
+    );
+  });
+
+  it('does not tell the operator a pair was cleared when nothing moved', async () => {
+    // The RPC answers { ok: false } when the pair never played here, and a
+    // status the check constraint forbids used to throw a raw violation. Either
+    // way the console must not paint a success.
+    rpcMock.mockImplementation((name: string) => {
+      if (name === 'get_anti_cheat_stats') return Promise.resolve({ data: STATS, error: null });
+      if (name === 'detect_collusion_pairs')
+        return Promise.resolve({ data: COLLUSION, error: null });
+      if (name === 'fn_ca_dismiss_collusion_pair')
+        return Promise.resolve({
+          data: { ok: false, reason: 'pair_did_not_play_here', updated: 0 },
+          error: null,
+        });
+      return Promise.resolve({ data: null, error: null });
+    });
+    await openCollusionTab();
+    await waitFor(() => expect(screen.getAllByText('Clear').length).toBeGreaterThan(0));
+    await act(async () => {
+      fireEvent.click(screen.getAllByText('Clear')[0]);
+    });
+    await waitFor(() => expect(toastState.error).toHaveBeenCalled());
+    expect(toastState.success).not.toHaveBeenCalled();
   });
 });

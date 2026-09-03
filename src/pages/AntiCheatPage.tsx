@@ -45,17 +45,29 @@ function SeverityBadge({ severity }: { severity: string }) {
 }
 
 // ── Types ───────────────────────────────────────────────────
+/**
+ * The columns `anti_cheat_flags` actually has.
+ *
+ * This interface used to declare `details: Record<string, unknown> | null`,
+ * and the review dialog rendered it as the evidence block. That column does
+ * not exist on the table - the evidence a flag carries is `reason` - so the
+ * block has been `undefined && ...` since it shipped, and no reviewer has ever
+ * seen why a flag was raised while deciding what to do about it.
+ */
 interface AntiCheatFlag {
   id: string;
   player_id: string;
-  club_id: string;
+  club_id: string | null;
+  table_id: string | null;
   flag_type: string;
+  reason: string | null;
   severity: string;
   status: string;
-  details: Record<string, unknown> | null;
   flagged_at: string;
-  reviewed_by?: string;
-  review_notes?: string;
+  created_at?: string;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  review_notes?: string | null;
   player?: { display_name?: string };
 }
 
@@ -95,8 +107,16 @@ interface CollusionReading {
   window_days: number;
   threshold: number;
   cap: number;
+  /** Pairs the detector already closed out in this window. Shown so an empty
+   *  queue reads as "the screen ran and closed itself" rather than "nothing
+   *  was screened". 169,519 of them were auto-cleared on 2026-08-18 when the
+   *  detector was fixed at write time to stop raising horse-versus-horse. */
+  closed_pairs: number;
   chip_dump: CollusionGroup;
-  win_rate: CollusionGroup;
+  /** Every pattern that is not CHIP_DUMP. There are seven pattern types and
+   *  each row carries its own, so this is not "win rate" - three of the seven
+   *  rows currently open on the estate are TIMING_CORRELATION. */
+  screening: CollusionGroup;
 }
 
 interface Anomaly {
@@ -188,7 +208,6 @@ export default function AntiCheatPage() {
   // Collusion
   const [collusion, setCollusion] = useState<CollusionReading | null>(null);
   const [collusionLoaded, setCollusionLoaded] = useState(false);
-  const [analyzedHands, setAnalyzedHands] = useState(0);
 
   // Anomalies
   const [anomalies, setAnomalies] = useState<Anomaly[]>([]);
@@ -387,9 +406,7 @@ export default function AntiCheatPage() {
       );
       if (error) throw error;
       if (mountedRef.current) {
-        const reading = (data || null) as CollusionReading | null;
-        setCollusion(reading);
-        setAnalyzedHands(reading?.analyzed_hands || 0);
+        setCollusion((data || null) as CollusionReading | null);
         setCollusionLoaded(true);
       }
     } catch (err: unknown) {
@@ -795,9 +812,11 @@ export default function AntiCheatPage() {
                   exportToCSV(flags, 'anti_cheat_flags.csv', [
                     { key: 'severity', label: 'Severity' },
                     { key: 'flag_type', label: 'Type' },
+                    { key: 'reason', label: 'Reason' },
                     { key: 'status', label: 'Status' },
                     { key: 'player_id', label: 'Player ID' },
                     { key: 'flagged_at', label: 'Flagged At' },
+                    { key: 'review_notes', label: 'Review Notes' },
                   ]);
                 } else if (tab === 'events' && events.length > 0) {
                   exportToCSV(events, 'anti_cheat_events.csv', [
@@ -808,12 +827,12 @@ export default function AntiCheatPage() {
                 } else if (
                   tab === 'collusion' &&
                   collusion &&
-                  collusion.chip_dump.pairs.length + collusion.win_rate.pairs.length > 0
+                  collusion.chip_dump.pairs.length + collusion.screening.pairs.length > 0
                 ) {
                   /* The old export carried a Net Chips column that no detector
                      has ever written, so every row said 0.00. */
                   exportToCSV(
-                    [...collusion.chip_dump.pairs, ...collusion.win_rate.pairs].map((pair) => ({
+                    [...collusion.chip_dump.pairs, ...collusion.screening.pairs].map((pair) => ({
                       ...pair,
                       evidence_summary: evidenceSummary(pair),
                     })),
@@ -866,11 +885,9 @@ export default function AntiCheatPage() {
                   reviewTarget.player_id?.substring(0, 8) ||
                   '-'}
               </p>
-              {reviewTarget.details && (
-                <pre className={styles.detailsBlock}>
-                  {JSON.stringify(reviewTarget.details, null, 2)}
-                </pre>
-              )}
+              <pre className={styles.detailsBlock}>
+                {reviewTarget.reason || 'This Flag Was Raised Without A Stated Reason'}
+              </pre>
             </div>
             <div className={styles.formGroup}>
               <label className={styles.formLabel}>Action</label>
@@ -1054,6 +1071,7 @@ export default function AntiCheatPage() {
                     <th>Severity</th>
                     <th>Type</th>
                     <th>Player</th>
+                    <th>Reason</th>
                     <th>Time</th>
                     <th>Status</th>
                     <th>Actions</th>
@@ -1067,6 +1085,7 @@ export default function AntiCheatPage() {
                       </td>
                       <td style={{ fontWeight: 600 }}>{f.flag_type}</td>
                       <td>{f.player?.display_name || f.player_id?.substring(0, 8) || '-'}</td>
+                      <td className={styles.detailsCell}>{f.reason || 'No Reason Recorded'}</td>
                       <td className={styles.timeCell}>{timeAgo(f.flagged_at)}</td>
                       <td>
                         <span
@@ -1186,12 +1205,16 @@ export default function AntiCheatPage() {
                   <div className={styles.statLabel}>Chip Dump Pairs</div>
                 </div>
                 <div className={styles.statCard}>
-                  <div className={styles.statValueGold}>{fmt(collusion.win_rate.total)}</div>
-                  <div className={styles.statLabel}>Win Rate Outliers</div>
+                  <div className={styles.statValueGold}>{fmt(collusion.screening.total)}</div>
+                  <div className={styles.statLabel}>Other Signals Open</div>
                 </div>
                 <div className={styles.statCard}>
                   <div className={styles.statValue}>{fmt(collusion.club_players)}</div>
                   <div className={styles.statLabel}>Players Screened</div>
+                </div>
+                <div className={styles.statCard}>
+                  <div className={styles.statValue}>{fmt(collusion.closed_pairs)}</div>
+                  <div className={styles.statLabel}>Already Closed</div>
                 </div>
               </div>
 
@@ -1213,7 +1236,7 @@ export default function AntiCheatPage() {
               {collusion.chip_dump.pairs.length === 0 ? (
                 <div className={styles.emptyState}>
                   <span className={styles.emptyText}>
-                    No Chip Dumping Detected Across {fmt(collusion.analyzed_hands)} Hands
+                    No Chip Dumping Is Awaiting Review Across {fmt(collusion.analyzed_hands)} Hands
                   </span>
                 </div>
               ) : (
@@ -1281,18 +1304,21 @@ export default function AntiCheatPage() {
                 </div>
               )}
 
-              <h3 className={styles.subsectionTitle}>Win Rate Outliers</h3>
+              <h3 className={styles.subsectionTitle}>Other Screening Signals</h3>
               <p className={styles.subsectionDesc}>
-                A Screening Signal, Not A Finding: Pairs Whose Results Against Each Other Sit Far
-                From The Field. {fmt(collusion.win_rate.total)} In The Window
-                {collusion.win_rate.total > collusion.win_rate.pairs.length
-                  ? `, Showing The Top ${fmt(collusion.win_rate.pairs.length)}`
+                Screening Signals, Not Findings: Win Rate Outliers, Timing Correlation, Soft Play
+                And The Rest, Each Row Naming Its Own Pattern. {fmt(collusion.screening.total)}{' '}
+                Awaiting Review
+                {collusion.screening.total > collusion.screening.pairs.length
+                  ? `, Showing The Top ${fmt(collusion.screening.pairs.length)}`
                   : ''}
                 .
               </p>
-              {collusion.win_rate.pairs.length === 0 ? (
+              {collusion.screening.pairs.length === 0 ? (
                 <div className={styles.emptyState}>
-                  <span className={styles.emptyText}>No Win Rate Outliers In This Window</span>
+                  <span className={styles.emptyText}>
+                    No Screening Signal Is Awaiting Review In This Window
+                  </span>
                 </div>
               ) : (
                 <div className={styles.tableScroll}>
@@ -1300,6 +1326,7 @@ export default function AntiCheatPage() {
                     <thead>
                       <tr>
                         <th>Severity</th>
+                        <th>Pattern</th>
                         <th>Pair</th>
                         <th>Hands Together</th>
                         <th>Score</th>
@@ -1308,10 +1335,13 @@ export default function AntiCheatPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {collusion.win_rate.pairs.map((pair) => (
-                        <tr key={`${pair.dumper_id}-${pair.receiver_id}`}>
+                      {collusion.screening.pairs.map((pair) => (
+                        <tr key={`${pair.dumper_id}-${pair.receiver_id}-${pair.pattern_type}`}>
                           <td>
                             <SeverityBadge severity={pair.severity} />
+                          </td>
+                          <td style={{ fontWeight: 600 }}>
+                            {String(pair.pattern_type).replace(/_/g, ' ')}
                           </td>
                           <td>
                             <span className={styles.collusionFlow}>

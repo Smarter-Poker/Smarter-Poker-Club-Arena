@@ -25,6 +25,19 @@ const MIGRATION = readFileSync(
   'supabase/migrations/20260903170000_an_integrity_decision_is_written_down.sql',
   'utf8'
 );
+
+/**
+ * The same-day correction. Probing the phase 2 write paths inside a rolled-back
+ * transaction found that `fn_ca_dismiss_collusion_pair` wrote a status the
+ * table's own check constraint forbids, and that the collusion screen was
+ * counting 169,519 rows a detector fix had already closed. An applied migration
+ * is never edited, so the fixes ship as their own file and this constant pins
+ * them.
+ */
+const CORRECTION = readFileSync(
+  'supabase/migrations/20260903180000_a_cleared_pair_stays_cleared.sql',
+  'utf8'
+);
 const ANTI_CHEAT = readFileSync('src/pages/AntiCheatPage.tsx', 'utf8');
 const DISPUTES = readFileSync('src/services/DisputeService.ts', 'utf8');
 const REPORTS = readFileSync('src/pages/ReportReviewPage.tsx', 'utf8');
@@ -160,5 +173,89 @@ describe('the surfaces around them stopped promising what they cannot do', () =>
   it('offers a broom for the expired rows nothing sweeps', () => {
     expect(BLACKLIST).toContain('clearExpired');
     expect(BLACKLIST).toContain('expiredEntries');
+  });
+});
+
+describe('a cleared pair stays cleared', () => {
+  const CORRECTED = ['detect_collusion_pairs', 'fn_ca_dismiss_collusion_pair'];
+
+  it.each(CORRECTED)('%s is still definer and search-path pinned after the fix', (fn) => {
+    const body = sliceSqlStatement(CORRECTION, `FUNCTION public.${fn}(`);
+    expect(body).toContain('SECURITY DEFINER');
+    expect(body).toContain("SET search_path TO 'public'");
+    expect(body).toContain('fn_ca_can_review_integrity(p_club_id)');
+  });
+
+  it.each(CORRECTED)('%s keeps its grants, because CREATE OR REPLACE does not', (fn) => {
+    expect(CORRECTION).toMatch(
+      new RegExp(`REVOKE ALL ON FUNCTION public\\.${fn}\\([^)]*\\) FROM anon`)
+    );
+    expect(CORRECTION).toMatch(
+      new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${fn}\\([^)]*\\) TO authenticated`)
+    );
+  });
+
+  it('writes a status the check constraint actually allows', () => {
+    // collusion_tracking_status_check: open | reviewed | cleared | actioned.
+    // The phase 2 function wrote 'dismissed', which is in none of them, so the
+    // Clear button could only ever have thrown a raw constraint violation.
+    const fn = sliceSqlStatement(CORRECTION, 'FUNCTION public.fn_ca_dismiss_collusion_pair(');
+    expect(fn).toContain("SET status = 'cleared'");
+    // The word survives in the comment that explains why it is gone; what must
+    // never come back is the write.
+    expect(fn).not.toContain("status = 'dismissed'");
+    expect(fn).toContain('GET DIAGNOSTICS v_updated = ROW_COUNT');
+  });
+
+  it('clears only the rows that are still open', () => {
+    const fn = sliceSqlStatement(CORRECTION, 'FUNCTION public.fn_ca_dismiss_collusion_pair(');
+    expect(fn).toContain("coalesce(ct.status, 'open') = 'open'");
+    expect(fn).toContain("'pair_did_not_play_here'");
+  });
+
+  it('screens the open queue rather than every row the detector ever wrote', () => {
+    // 169,523 of 169,530 rows are cleared, 169,519 of those auto-cleared on
+    // 2026-08-18 when the horse-versus-horse detector bug was fixed at the
+    // source. Filtering `status <> 'dismissed'` excluded none of them.
+    const fn = sliceSqlStatement(CORRECTION, 'FUNCTION public.detect_collusion_pairs(');
+    expect(fn).toContain("WHERE s.status = 'open'");
+    expect(fn).not.toContain("status <> 'dismissed'");
+  });
+
+  it('counts what was already closed instead of hiding that the screen ran', () => {
+    const fn = sliceSqlStatement(CORRECTION, 'FUNCTION public.detect_collusion_pairs(');
+    expect(fn).toContain("'closed_pairs'");
+    expect(fn).toContain("WHERE status <> 'open'");
+  });
+
+  it('counts the window off the maintained rollup, not the hand table', () => {
+    // club_hand_daily answers in 75ms what hand_history answered in 448ms.
+    const fn = sliceSqlStatement(CORRECTION, 'FUNCTION public.detect_collusion_pairs(');
+    expect(fn).toContain('FROM club_hand_daily');
+  });
+
+  it('stops calling every non-dump pattern a win rate outlier', () => {
+    // Seven pattern types exist and three of the seven rows open on the estate
+    // are TIMING_CORRELATION, which that label called a win-rate outlier.
+    const fn = sliceSqlStatement(CORRECTION, 'FUNCTION public.detect_collusion_pairs(');
+    expect(fn).toContain("'screening', jsonb_build_object(");
+    expect(fn).not.toContain("'win_rate', jsonb_build_object(");
+    expect(fn).toContain("'pattern_type', p.pattern_type");
+  });
+
+  it('leaves the client reading the corrected shape', () => {
+    expect(ANTI_CHEAT).toContain('closed_pairs: number;');
+    expect(ANTI_CHEAT).toContain('screening: CollusionGroup;');
+    expect(ANTI_CHEAT).not.toContain('win_rate');
+    expect(ANTI_CHEAT).toContain("supabase.rpc('fn_ca_dismiss_collusion_pair'");
+  });
+
+  it('does not re-open what the detector owners closed', () => {
+    // CLAUDE.md 10.5 keeps horses in every count. The horse-versus-horse
+    // ruling was made at write time by the team that owns the detector and is
+    // recorded in the row; this page has no standing to overturn it, and the
+    // migration says so where the next reader will find it.
+    expect(CORRECTION).toContain('HORSE LAW');
+    expect(CORRECTION).not.toMatch(/is_horse/);
   });
 });

@@ -151,8 +151,61 @@ export function indexFrom(files) {
   return { versions, names };
 }
 
-function repoIndex() {
-  return indexFrom(readdirSync(DIR));
+/**
+ * THE LEDGER HAS TWO REPOS (2026-09-03). One production database, and two
+ * repositories that write migrations to it: this one and Smarter-Poker-World-Hub.
+ * Indexing only this checkout meant every World Hub migration - dozens on
+ * 2026-09-02/03 alone - was reported here as "applied with no file", which is
+ * an alarm about files that exist. So the other repo's supabase/migrations
+ * listing is fetched from the GitHub API and merged into the index. If the
+ * API is unreachable the check says so and carries on with this repo alone,
+ * because a migration missing from BOTH is still worth reporting.
+ */
+const SIBLING_REPOS = (process.env.MIGRATION_SIBLING_REPOS || 'Smarter-Poker/Smarter-Poker-World-Hub')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+export async function siblingMigrationFiles(repos = SIBLING_REPOS) {
+  const token = process.env.GH_TOKEN || process.env.GITHUB_TOKEN;
+  const out = [];
+  for (const repo of repos) {
+    try {
+      // NOT the Contents API: it caps a directory listing at 1,000 entries and
+      // World Hub's supabase/migrations is past that, so the NEWEST files - the
+      // ones this check exists to find - fell off the end (verified 2026-09-03:
+      // 1000 entries returned, tonight's files absent). The Git Trees API lists
+      // the whole directory: resolve the subtree, then read it.
+      const headers = token
+        ? { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }
+        : { Accept: 'application/vnd.github+json' };
+      const parent = await fetch(`https://api.github.com/repos/${repo}/contents/supabase?ref=main`, { headers });
+      if (!parent.ok) {
+        console.warn(`[applied-migrations-recorded] could not read ${repo}/supabase (${parent.status}); indexing this repo only.`);
+        continue;
+      }
+      const dir = (await parent.json()).find((e) => e && e.type === 'dir' && e.name === 'migrations');
+      if (!dir) {
+        console.warn(`[applied-migrations-recorded] ${repo} has no supabase/migrations; indexing this repo only.`);
+        continue;
+      }
+      const tree = await fetch(`https://api.github.com/repos/${repo}/git/trees/${dir.sha}`, { headers });
+      if (!tree.ok) {
+        console.warn(`[applied-migrations-recorded] could not list ${repo}/supabase/migrations tree (${tree.status}); indexing this repo only.`);
+        continue;
+      }
+      const body = await tree.json();
+      if (body.truncated) console.warn(`[applied-migrations-recorded] ${repo} migrations tree was truncated by the API; the index may be short.`);
+      for (const e of body.tree || []) if (e && e.type === 'blob') out.push(e.path);
+    } catch (err) {
+      console.warn(`[applied-migrations-recorded] could not reach ${repo}: ${err?.message || err}; indexing this repo only.`);
+    }
+  }
+  return out;
+}
+
+async function repoIndex() {
+  return indexFrom([...readdirSync(DIR), ...(await siblingMigrationFiles())]);
 }
 
 export function recordedBy(index, migration) {
@@ -164,33 +217,49 @@ export function recordedBy(index, migration) {
   return bare.length > 0 && index.names.has(bare);
 }
 
+/**
+ * PAGED (2026-09-03). PostgREST caps a response at 1,000 rows, and the RPC
+ * orders oldest-first, so with 1,080 migrations applied since the window's
+ * floor this check was silently blind to the NEWEST eighty - the ones most
+ * likely to be unrecorded, including everything applied on the day it ran.
+ * "5 of 1000" was read as a healthy report for days. Walk `limit`/`offset`
+ * (a Range header is ignored on this RPC - verified live) until a page comes
+ * back short.
+ */
 async function appliedMigrations() {
-  const res = await fetch(`${URL_BASE}/rest/v1/rpc/fn_ca_applied_migrations`, {
-    method: 'POST',
-    headers: supabaseServerHeaders(KEY, { 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ p_since: SINCE }),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(
-      `fn_ca_applied_migrations returned ${res.status}. ` +
-        `If it is missing, apply 20260831191832_the_repo_can_ask_what_the_database_has_applied. ${body.slice(0, 300)}`
-    );
+  const PAGE = 1000;
+  const all = [];
+  for (let from = 0; ; from += PAGE) {
+    const res = await fetch(`${URL_BASE}/rest/v1/rpc/fn_ca_applied_migrations?limit=${PAGE}&offset=${from}`, {
+      method: 'POST',
+      headers: supabaseServerHeaders(KEY, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ p_since: SINCE }),
+    });
+    if (!res.ok && res.status !== 206) {
+      const body = await res.text().catch(() => '');
+      throw new Error(
+        `fn_ca_applied_migrations returned ${res.status}. ` +
+          `If it is missing, apply 20260831191832_the_repo_can_ask_what_the_database_has_applied. ${body.slice(0, 300)}`
+      );
+    }
+    const page = await res.json();
+    all.push(...page);
+    if (page.length < PAGE) break;
   }
-  return res.json();
+  return all;
 }
 
 async function main() {
   requireEnvironment();
   const applied = await appliedMigrations();
-  const index = repoIndex();
+  const index = await repoIndex();
   const missing = applied.filter((m) => !recordedBy(index, m));
 
   if (AS_JSON) {
     console.log(JSON.stringify({ since: SINCE, applied: applied.length, missing }, null, 1));
   } else if (missing.length === 0) {
     console.log(
-      `[applied-migrations-recorded] OK — all ${applied.length} migration(s) applied since ${SINCE} have a file in ${DIR}.`
+      `[applied-migrations-recorded] OK — all ${applied.length} migration(s) applied since ${SINCE} have a file in ${DIR} or a sibling repo.`
     );
   } else {
     console.log('');

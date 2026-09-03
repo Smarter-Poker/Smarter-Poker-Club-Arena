@@ -317,7 +317,17 @@ import { notificationService } from '../services/NotificationService';
 import SpectatorBadge from '../components/table/SpectatorBadge';
 // FIX 194: HandStrengthIndicator REMOVED — not allowed for live online gameplay
 // import HandStrengthIndicator from '../components/table/HandStrengthIndicator';
-import { horseBugReporter } from '../services/HorseBugReporter';
+/* `horseBugReporter` was imported here and started on EVERY client. Removed
+   2026-09-02: it monkey-patched console.error globally and POSTed to
+   `horse_bug_reports` with `horse_name` / `horse_id` keys from a player's own
+   browser, so the table name, the column names and the whole vocabulary were
+   visible in the Network tab of anyone who opened DevTools — even though the
+   values it sent were only 'Console'/'GLOBAL' and never named a real horse.
+
+   Nothing in `src/` reads that table; it is a SERVER diagnostic (15,937 rows,
+   written by the engine) and the server keeps writing to it untouched. Client
+   errors already reach Sentry through `reportError`, so this removed a leak
+   and no coverage. */
 import { useUserTableSettings, TABLE_SETTINGS_META } from '../hooks/useUserTableSettings';
 import { useUserThemeSettings } from '../hooks/useUserThemeSettings';
 import PineappleDiscard from '../components/table/PineappleDiscard';
@@ -1991,10 +2001,6 @@ export default function TablePage({
       }
     }
     void initUser();
-
-    // Start Horse Mini-Agent bug reporting system
-    horseBugReporter.startCapturing();
-    return () => horseBugReporter.stopCapturing();
   }, []);
 
   /* Dan 2026-08-28 (settings must apply live): heroAvatarUrl was written

@@ -2198,7 +2198,8 @@
       "type",
       "is_active",
       "created_by",
-      "management_revision"
+      "management_revision",
+      "updated_at"
     ],
     "club_arena_audit_logs": [
       "id",
@@ -2493,6 +2494,12 @@
       "tier",
       "trust_score",
       "sessions_played"
+    ],
+    "club_message_dismissals": [
+      "user_id",
+      "club_id",
+      "dismissed_revision",
+      "dismissed_at"
     ],
     "club_opening_setup_funding": [
       "id",

@@ -161,8 +161,8 @@
      text 9.8-26.6%, caps roughly 13-23%. The painted top rail's inner edge is
      at 10.30% (measured off the shell, x=800), so the caps clear it by about
      three points at the largest size the ceiling allows. */
-  top: 9.2%;
-  height: 18%;
+  top: 11.5%;
+  height: 17%;
   display: grid;
   align-items: center;
   margin: 0;
@@ -199,12 +199,15 @@
 .club-identity__logo {
   position: absolute;
   z-index: 1;
-  left: 17.05%;
-  /* Was 52%, from when the name sat beside the logo. The name is a band across
-     the whole card now, so the logo rises to sit directly under it, and the
-     level box below follows it up by the same amount. */
-  top: 45%;
-  width: 21.7%;
+  /* Centred in the column left of the info stack: the left chrome's inner edge
+     is 8.35% and the stack starts at 43.6%, so that column's midpoint is 26%
+     and an 18%-wide square centres on it at left 17%. `top` here is the
+     CENTRE, because of the translateY below. 51.6% puts the logo and the level
+     box beneath it centred on the same midline as the four info rows, so the
+     two halves of the card balance instead of the left one riding high. */
+  left: 17%;
+  top: 51.6%;
+  width: 18%;
   aspect-ratio: 1 / 1;
   display: grid;
   place-items: center;
@@ -236,33 +239,45 @@
   position: absolute;
   z-index: 1;
   left: 43.6%;
-  right: 11.5%;
-  /* Was 31%. Dan 2026-09-03: "DAN BEKAVAC NEEDS TO BE UP HIGHER". It rises 5
-     points, into the room the club name freed by moving up itself. Nothing
-     below it moves: the two ID lines are pinned to icons painted into the
-     shell at 52.37% and 63.36%, so they cannot follow. The gap this leaves
-     between the alias and the club ID line is deliberate - those two lines
-     belong to different things, and the artwork decides where the second pair
-     sits. */
-  top: 26%;
+  right: 8.5%;
+  /* ── ONE LADDER, EVENLY SPACED (Dan 2026-09-03: "NORMAL SPACING, AND
+     CENTERING, WITH NO OVERLAP") ──────────────────────────────────────────
+
+     The alias used to sit at 26% while the rows below it were pinned to the
+     artwork at 51.47%, 63.20% and 74.34%. That left a 15-point hole under the
+     alias and crammed the other three into the bottom third - the top right of
+     the card empty, the bottom right crowded.
+
+     The painted anchors are already almost evenly spaced: 51.47 to 63.20 is
+     11.73, 63.20 to 74.34 is 11.14. So the alias becomes the FOURTH RUNG of
+     that same ladder rather than something floating above it: centre 40%, one
+     gap of 11.47 below it. Four rows at 40.00 / 51.47 / 63.20 / 74.34, gaps of
+     11.5, 11.7, 11.1 - even to within half a point, and even to the eye. */
+  top: 34.5%;
   height: 11%;
   display: grid;
   align-items: center;
-  padding-left: 7.2cqw;
+  /* 6cqw, matching the two ID lines exactly: 43.6% + 6% starts every line in
+     this column at 49.6%, clear of the painted icons which end at 47.67%. One
+     left edge for all four rows - the alias used to carry 7.2 and the count
+     none at all, so the four lines started at three different x positions. */
+  padding-left: 6cqw;
   min-width: 0;
 }
 
 /* The two copy-an-id buttons, pinned to the artwork icons that label them.
-   Top 47.06% + two 10.73% rows puts the lines' centres on 52.42% and 63.15%,
-   which are the icon centres listed in ARTWORK ANCHORS. 10.73% is the icons'
-   own spacing, so both lines are level with a single uniform artwork offset. */
+   Top 45.6% + two 11.73% rows puts the lines' centres on 51.47% and 63.20%,
+   which are the icon centres listed in ARTWORK ANCHORS - re-measured on the v5
+   shell at luminance > 120, where the old 52.42/63.15 pair came from a window
+   that clipped one icon and caught the other's glow. 11.73% is the icons' own
+   spacing, so both lines sit level under a single uniform offset. */
 .club-identity__ids {
   position: absolute;
   z-index: 1;
   left: 43.6%;
-  right: 11.5%;
-  top: 47.06%;
-  height: 21.46%;
+  right: 8.5%;
+  top: 45.6%;
+  height: 23.46%;
   display: grid;
   grid-template-rows: 1fr 1fr;
   align-items: center;
@@ -295,7 +310,7 @@
   width: fit-content;
   max-width: 100%;
   margin: 0;
-  padding: 0 0 0 7.2cqw;
+  padding: 0 0 0 6cqw;
   border: 0;
   background: transparent;
   color: #e5e8ec;
@@ -342,13 +357,14 @@ button.club-identity__line {
      day one. */
   position: absolute;
   z-index: 2;
-  left: 17.05%;
-  /* Was 72.8%. It follows the logo up by the same 7% the logo rose when the
-     club name became a band of its own, so it still sits directly beneath the
-     logo square rather than drifting away from it. */
-  top: 65.5%;
-  width: 21.7%;
-  height: 9%;
+  /* Directly beneath the logo, same column, same width. An 18%-wide square on
+     a 2.4/1 card is 43.2% of its HEIGHT, so a logo centred on 51.6% ends at
+     73.2%; this starts 2.5 points below that and ends at 85.7%, clear of the
+     painted bottom rail whose inner edge is 90.64%. */
+  left: 17%;
+  top: 75.7%;
+  width: 18%;
+  height: 10%;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -394,49 +410,32 @@ button.club-identity__line {
    percentage of its container box for true centering at every card size. */
 .club-identity__playing {
   position: absolute;
-  /* ONE LINE WITH THE COPY LINK (Dan 2026-09-02): "LAST LIKE 192 PLAYING AND
-     THE COPY LINK." It was anchored `bottom: 15%`, which put it well below the
-     share button - the two were the last two things on the card but they were
-     not on the same line. It now occupies the share's exact band (top 65.19%,
-     height 15.88%) and centres inside it, so both sit on the painted copy
-     frame's centre line at 73.13%.
+  /* THE FOURTH RUNG OF THE LADDER, ON THE SAME LEFT EDGE AS THE OTHER THREE.
 
-     NO 7.2cqw GUTTER HERE, unlike the alias and the two ID lines. It was
-     tried, for a straight left edge down the whole column, and it cut the
-     copy off: this line carries the longest string on the card ("1,204
-     PLAYING NOW") in the narrowest bay, between 43.6% and the share button at
-     75.92%, and the gutter took a quarter of that width. Dan has already
-     reported this exact symptom once - "NEVER CUTTING OFF THE 446 PLAYING NOW
-     FONT" (2026-09-02) - and a tidier left edge is not worth re-shipping it.
-     The two lines that DO carry the gutter are the ones whose icons are
-     painted beside them.
+     Dan 2026-09-03: "NORMAL SPACING, AND CENTERING, WITH NO OVERLAP".
 
-     AND THE BAY IS WIDER THAN IT WAS. Measured in a rendered card at three
-     widths rather than guessed: at left 43.6% / right 25% the string "1,204
-     PLAYING NOW" overflowed its box by a consistent 1.3% of its own width -
-     1px at 375, 3px at 768, 4px at 1024. Proportional, so it was a real
-     shortfall and not rounding.
+     This line used to be deliberately further left than the rest - 40.8% while
+     the alias and both ID lines started at 50.8% - to buy width for the longest
+     string on the card. It bought width and cost alignment: four lines on three
+     different left edges, with the count jutting out of an otherwise straight
+     column. It also sat in a 15.88%-tall band while the rows above it were
+     11%, so the spacing read wrong even where nothing touched.
 
-     The extra 2.8 points all come off the LEFT. The right edge cannot move:
-     24.4% puts this box's edge at 75.6% and the share button starts at 75.92%,
-     so any further and the count would run under the copy icon - which is the
-     other half of the complaint this is fixing. The left has room, because the
-     level box below the logo ends at 38.75%, and the two painted icons this
-     passes under sit ten points higher up.
+     Now: left 49.6% with the rest, centre 74.34% on the painted copy frame,
+     height 11% like its neighbours. Its right edge is 77%, 1.6 points clear of
+     that frame at 78.58%.
 
-     AND IT IS MEASURED NOW, NOT GUESSED (Dan 2026-09-03: "THE W IN PLAYING NOW
-     IS CUT OFF"). Widening the bay is what was tried the last two times this
-     was reported, and it is no longer available: the right edge stops at the
-     painted copy frame, which starts at 78.58%. A fixed `cqw` cannot fit a
-     string that changes - a wider count, or a slightly wider font than the one
-     the number was picked against, clips it again. `--playing-size` is set by
-     the component from the text it actually laid out; see
-     fittedPlayingSizeCqw. The literal below is only the first paint and the
-     fallback for a card rendered without layout. */
-  left: 40.8%;
-  right: 24.4%;
-  top: 65.19%;
-  height: 15.88%;
+     The narrower bay is affordable ONLY because the size is measured rather
+     than fixed. `--playing-size` is set by the component from the text the
+     browser actually laid out - see fittedPlayingSizeCqw - so a longer count
+     shrinks instead of clipping, which is what Dan reported twice before ("THE
+     W IN PLAYING NOW IS CUT OFF"). At the real 180px lobby card the bay is 49px
+     and "489 PLAYING NOW" needs 45px at full size. The literal below is only
+     the first paint and the fallback for a card rendered without layout. */
+  left: 49.6%;
+  right: 23%;
+  top: 68.84%;
+  height: 11%;
   display: flex;
   align-items: center;
   min-width: 0;

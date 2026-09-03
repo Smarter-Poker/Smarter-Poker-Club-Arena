@@ -122,7 +122,17 @@ export function fittedNameSizeCqw(available: number, needed: number, from: numbe
  * fits).
  */
 export const PLAYING_MAX_CQW = 3.15;
-export const PLAYING_MIN_CQW = 2.05;
+/* 1.8, lowered from 2.05 when the bay narrowed on 2026-09-03 to put this line
+   on the same left edge as the three above it. The floor is not a taste
+   decision, it is the point past which the fit can no longer do its job: at the
+   smallest real card (183px) the bay is about 50px, and the longest string this
+   line can carry, "1,204,567 PLAYING NOW", needs about 78px at the ceiling - a
+   ratio of 0.64, which is 2.02cqw. A floor of 2.05 sat just above that and
+   clipped the W, which is the exact symptom Dan has now reported three times.
+   Nothing realistic goes near it: a four-digit count on that same card settles
+   around 2.5cqw. The floor exists so an absurd number degrades to small text
+   rather than to CUT text. */
+export const PLAYING_MIN_CQW = 1.8;
 
 export function fittedPlayingSizeCqw(available: number, needed: number, from: number): number {
   if (!available || !needed || needed <= 0) return from;

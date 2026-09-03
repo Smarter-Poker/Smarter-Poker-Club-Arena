@@ -97,9 +97,29 @@ describe('Club Arena Tournament Board lobby design', () => {
        band, grid centring fell back to start alignment, and the name hung
        below the box it was supposedly centred in. Nudging `top` was moving an
        overflow, which is why it kept reading low. */
-    expect(identityCardCss).toContain('top: 9.2%');
-    expect(identityCardCss).toContain('height: 18%');
-    expect(identityCardCss).toContain('top: 26%');
+    /* ── ONE LADDER, ONE LEFT EDGE (Dan 2026-09-03: "NORMAL SPACING, AND
+       CENTERING, WITH NO OVERLAP") ────────────────────────────────────────
+
+       The previous pins - name `top: 9.2%` / `height: 18%` and alias
+       `top: 26%` - recorded a card where the alias floated 15 points above the
+       row beneath it while the other three rows were crammed into the bottom
+       third, and where the four info rows began at THREE different x
+       positions. Those are the numbers Dan photographed.
+
+       The two ID rows are pinned to icons painted into the shell, so their
+       centres are not ours to choose. The alias becomes the fourth rung of
+       that same ladder and the count line the last one, and all four share a
+       single left edge. Row centres now land at 40.00 / 51.47 / 63.20 / 74.34
+       - gaps of 11.5, 11.7 and 11.1, even to within half a point. */
+    expect(identityCardCss).toContain('top: 11.5%');
+    expect(identityCardCss).toContain('height: 17%');
+    expect(identityCardCss).toContain('top: 34.5%');
+    // Every row in the info column starts at the same x: 43.6% plus a 6cqw gutter.
+    expect(identityCardCss).toContain('padding-left: 6cqw');
+    expect(identityCardCss).toContain('padding: 0 0 0 6cqw');
+    expect(identityCardCss).toMatch(
+      /\.club-identity__playing\s*\{[^}]*left:\s*49\.6%[^}]*top:\s*68\.84%[^}]*height:\s*11%/s
+    );
 
     expect(identityCard).toContain('Copy Referral Link');
     expect(identityCardCss).toContain('aspect-ratio: 1650 / 953');
@@ -159,22 +179,28 @@ describe('Club Arena Tournament Board lobby design', () => {
        anchored `bottom: 15%` and the share to the painted frame at 65.19%, so
        they were never actually on the same line. */
     expect(identityDeclarations).toMatch(
-      /\.club-identity__playing\s*\{[^}]*top:\s*65\.19%[^}]*height:\s*15\.88%/s
+      /\.club-identity__playing\s*\{[^}]*top:\s*68\.84%[^}]*height:\s*11%/s
     );
     expect(identityDeclarations).not.toMatch(/\.club-identity__playing\s*\{[^}]*bottom:\s*15%/s);
 
-    /* The alias carries the same 7.2cqw gutter as the two ID lines below it,
-       so those three read as one column past the painted icons.
+    /* ALL FOUR ROWS SHARE ONE LEFT EDGE (Dan 2026-09-03).
 
-       The playing line deliberately does NOT. It was given the gutter for a
-       straight edge and the copy was cut off - it holds the longest string on
-       the card ("1,204 PLAYING NOW") in the narrowest bay, and Dan has already
-       reported that symptom once: "NEVER CUTTING OFF THE 446 PLAYING NOW
-       FONT". A tidier left edge is not worth re-shipping it. */
-    expect(identityDeclarations).toMatch(
-      /\.club-identity__alias\s*\{[^}]*padding-left:\s*7\.2cqw/s
-    );
-    expect(identityDeclarations).not.toMatch(/\.club-identity__playing\s*\{[^}]*padding-left/s);
+       This used to assert the opposite for the count line - "deliberately does
+       NOT" carry the gutter - on the grounds that it holds the longest string
+       on the card and needed the extra width. That reasoning was sound about
+       width and wrong about the result: it put the alias at 50.8%, the two ID
+       lines at 50.8% and the count at 40.8%, so the count jutted out of a
+       column that was otherwise straight, which is a large part of what Dan
+       was looking at when he asked for this to be laid out "like a normal
+       person".
+
+       The width it was buying is no longer needed, because the size is
+       MEASURED (fittedPlayingSizeCqw) rather than fixed - a longer count now
+       shrinks instead of clipping. So the count joins the column, and the
+       no-clipping rule it was protecting is guarded by the fit and its floor
+       instead of by a ragged edge. */
+    expect(identityDeclarations).toMatch(/\.club-identity__alias\s*\{[^}]*padding-left:\s*6cqw/s);
+    expect(identityDeclarations).toMatch(/\.club-identity__playing\s*\{[^}]*left:\s*49\.6%/s);
 
     /* ── THE CARD ONLY SHRINKS (Dan, 2026-09-01) ───────────────────────────
        These four pins replace `translateY(1.65cqw)`, `margin-top: 1.4cqw`,
@@ -191,7 +217,12 @@ describe('Club Arena Tournament Board lobby design', () => {
        percentages, and the 44px thumb target is an invisible `::after` band
        that paints nothing and so cannot move anything. */
     expect(identityCardCss).toMatch(
-      /\.club-identity__ids\s*\{[^}]*top:\s*47\.06%[^}]*height:\s*21\.46%/s
+      /* 45.6% + two 11.73% rows puts the ID lines' centres on 51.47% and
+         63.20%, which are the painted icon centres re-measured on the v5 shell
+         at luminance > 120. The old 47.06/21.46 pair came from a window that
+         clipped one icon and caught the other's glow, and was about a point
+         out - visible as the icons sitting slightly high of their own labels. */
+      /\.club-identity__ids\s*\{[^}]*top:\s*45\.6%[^}]*height:\s*23\.46%/s
     );
     /* The share box moved on 2026-09-03, and this pin moves with it rather
        than being weakened. 75.92/65.19/9.68/15.88 was the frame PLUS its blue

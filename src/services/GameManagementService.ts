@@ -423,17 +423,34 @@ export const gameManagementService = {
     if (reason) throw new Error(reason);
   },
 
+  /**
+   * Health is read twice before it is allowed to fail.
+   *
+   * Both RPCs are plain reads with identical grants, so a transport-level
+   * refusal here is transient by construction - a token being refreshed under
+   * the request, a dropped connection. The board's own read succeeds in the
+   * same wave, which is what makes a lone health failure look like a glitch
+   * rather than a permissions problem.
+   *
+   * One retry costs one round trip on a path that already failed, and turns
+   * the common case back into numbers instead of a visible alarm. It does NOT
+   * retry a refusal the DATABASE returned (`ok: false`): that is an answer, and
+   * asking the same question twice will get the same answer.
+   */
   async getHealth(scope: 'club' | 'union', scopeId: string): Promise<GameManagementHealth> {
-    const [{ data, error }, { data: scaleData, error: scaleError }] = await Promise.all([
-      supabase.rpc('fn_get_game_management_health', {
-        p_scope: scope,
-        p_scope_id: scopeId,
-      }),
-      supabase.rpc('fn_get_game_management_scale_health', {
-        p_scope: scope,
-        p_scope_id: scopeId,
-      }),
-    ]);
+    const readBoth = () =>
+      Promise.all([
+        supabase.rpc('fn_get_game_management_health', { p_scope: scope, p_scope_id: scopeId }),
+        supabase.rpc('fn_get_game_management_scale_health', {
+          p_scope: scope,
+          p_scope_id: scopeId,
+        }),
+      ]);
+
+    let [{ data, error }, { data: scaleData, error: scaleError }] = await readBoth();
+    if (error || scaleError) {
+      [{ data, error }, { data: scaleData, error: scaleError }] = await readBoth();
+    }
     if (error || scaleError)
       throw new Error(error?.message || scaleError?.message || 'Could not load management health.');
     const result = data as Record<string, unknown> | null;

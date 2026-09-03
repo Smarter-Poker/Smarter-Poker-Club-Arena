@@ -38,7 +38,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { mapEngineSnapshot } from '../src/utils/mapEngineSnapshot';
 
@@ -160,6 +160,53 @@ describe('LAW: the felt does not run fleet management', () => {
     expect(table).not.toContain('checkWaitlistAndYield');
     expect(table).not.toContain('onRealPlayerJoined');
   });
+});
+
+describe('LAW: the horse machinery is not in the bundle a player downloads', () => {
+  /* Dan, 2026-09-02: "NOBODY SHOULD EVER EVER EVER BE ABLE TO LOOK AT OUR CODE
+     OR USE A DEVELOPER TOOL AND FIND THIS OUT."
+     Not asking the question is not enough if the ANSWER MACHINERY ships. One
+     import of `ensureMidwayUnionSetup` pulled the whole 2,400-line orchestrator
+     — every is_horse query, the fleet vocabulary, and a
+     `window.ensureMidwayUnionSetup` global — into a player's union page, for a
+     dead auto-create branch. `horseBugReporter` monkey-patched console.error on
+     every client and POSTed to `horse_bug_reports`, putting the table and
+     column names in the Network tab. */
+  const HORSE_MODULES = ['HorseOrchestrator', 'HydraService', 'HorseBugReporter', 'HorseLogic'];
+
+  function importers(moduleName: string): string[] {
+    const roots = ['src/pages', 'src/components'];
+    const found: string[] = [];
+    const walk = (dir: string) => {
+      const abs = join(root, dir);
+      let entries: string[];
+      try {
+        entries = readdirSync(abs);
+      } catch {
+        return;
+      }
+      for (const name of entries) {
+        const rel = `${dir}/${name}`;
+        if (statSync(join(root, rel)).isDirectory()) walk(rel);
+        else if (/\.tsx?$/.test(name)) {
+          // A real import statement, not a mention inside a comment.
+          const source = code(rel);
+          if (source.includes(`services/${moduleName}'`)) found.push(rel);
+        }
+      }
+    };
+    roots.forEach(walk);
+    return found;
+  }
+
+  for (const moduleName of HORSE_MODULES) {
+    it(`no page or component imports ${moduleName}`, () => {
+      expect(
+        importers(moduleName),
+        `${moduleName} would be bundled into a player's download`
+      ).toEqual([]);
+    });
+  }
 });
 
 describe('LAW: staff surfaces keep what 10.5 permits', () => {

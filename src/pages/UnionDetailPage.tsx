@@ -27,7 +27,18 @@ import { useToast } from '../components/common/Toast';
 import ConfirmModal from '../components/common/ConfirmModal';
 import CreateTournamentModal from '../components/club/CreateTournamentModal';
 import GameCreationActions from '../components/club/GameCreationActions';
-import { ensureMidwayUnionSetup } from '../services/HorseOrchestrator';
+/* `ensureMidwayUnionSetup` from '../services/HorseOrchestrator' was imported
+   here. Removed 2026-09-02 (Dan: "NOBODY SHOULD EVER EVER EVER BE ABLE TO LOOK
+   AT OUR CODE ... AND FIND THIS OUT").
+
+   This single import pulled the entire 2,400-line horse orchestrator — every
+   `is_horse` query, the fleet vocabulary, and a `window.ensureMidwayUnionSetup`
+   global — into the bundle a PLAYER downloads for a union page. It existed for
+   one dead branch: self-healing an auto-create of the hardcoded Midway Union
+   `fade0000-…-0001` if it were missing. It is not missing (verified in
+   production), and a player's browser has no business provisioning a union
+   regardless. The branch and the import are gone; a genuinely absent union now
+   renders the same not-found state as any other. */
 import { getUnionLevel, getClubLevel } from '../utils/clubLevels';
 import { reportError } from '../utils/errorReporter';
 import CasinoSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
@@ -242,16 +253,12 @@ export default function UnionDetailPage() {
         setLoadError(null);
       }
       try {
-        let unionData = await unionService.getUnion(unionId);
+        const unionData = await unionService.getUnion(unionId);
 
-        // Self-healing: if Midway Union is missing, auto-create it
-        if (!unionData && unionId === 'fade0000-0000-0000-0000-000000000001') {
-          console.warn('[UnionDetailPage] Midway Union missing - auto-creating...');
-          const ok = await ensureMidwayUnionSetup();
-          if (ok) {
-            unionData = await unionService.getUnion(unionId);
-          }
-        }
+        /* The "self-healing" auto-create of Midway Union lived here. See the
+           note at the import site: it was the only reason this player-facing
+           page bundled the horse orchestrator, and the union it healed has
+           existed all along. */
 
         const clubsData = await unionService.getUnionClubs(unionId);
         const tablesData = await tableService.getUnionTables(unionId);

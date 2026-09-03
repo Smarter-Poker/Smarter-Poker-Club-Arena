@@ -178,6 +178,32 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: bash .github/scripts/orphan-work-watchdog.sh
 
+      # The other half of the same idea. The watchdog above finds work nobody
+      # will publish; this retires branches nobody will ever publish AGAIN, so
+      # that the watchdog's list stays readable. On 2026-09-03 this repo held
+      # ~570 branches, 176 of them already merged and simply never deleted -
+      # at that size a genuinely stranded branch is invisible inside the noise
+      # and the watchdog above walks 570 refs to find it.
+      #
+      # It never destroys anything: each branch is copied to
+      # refs/archive/<name>@<date> and deleted in the SAME atomic push, so a
+      # mistake restores with one command and no commit is ever unreachable.
+      # It also fails closed - if the open-PR list cannot be read it archives
+      # nothing, because a branch with an open PR is live work whatever its
+      # age. 40 per run, so a bad rule is caught after 40 and not after 400.
+      #
+      # `contents: write` is needed to write refs/archive/* and delete a
+      # branch; the App token carries it, GITHUB_TOKEN here does not.
+      - name: Retire branches nothing will publish again
+        if: always() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          # Start in report-only. Flip to 0 once a week of dry runs shows the
+          # windows pick only what a human would have picked anyway.
+          DRY_RUN: '1'
+        run: bash .github/scripts/archive-stale-branches.sh
+
   # ── Are the schedules themselves firing? ─────────────────────────────────
   #
   # 2026-09-01: auto-deploy-hetzner moved to an hourly cron at 13:00 UTC and

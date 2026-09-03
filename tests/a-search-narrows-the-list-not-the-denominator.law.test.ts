@@ -110,7 +110,8 @@ describe('a search narrows the list, not the denominator', () => {
     // an operator asked to see, on a criterion they did not type and cannot
     // see, while the count beside it agrees with the shortened list. The list
     // is narrowed by what was typed, or it is not narrowed.
-    const term = /ILIKE\s*'%'\s*\|\|\s*(?:btrim\(p_search\)|v_q)\s*\|\|\s*'%'/g;
+    const term =
+      /ILIKE\s*'%'\s*\|\|\s*public\.fn_like_escape\(\s*(?:btrim\(p_search\)|v_q)\s*\)\s*\|\|\s*'%'\s*ESCAPE/g;
     expect(
       (filtered.match(term) ?? []).length,
       'a condition in the filter is not built from the search term'
@@ -187,5 +188,62 @@ describe('a search narrows the list, not the denominator', () => {
     expect(all).toMatch(
       /DROP FUNCTION IF EXISTS public\.ca_rake_snapshot\(text, uuid, uuid, date, date, uuid, integer, integer\)/
     );
+  });
+});
+
+describe('a search term is text, not a pattern', () => {
+  /**
+   * The first cut of the search pasted what the operator typed straight
+   * between two percent signs, and LIKE read it as a PATTERN. Typing one
+   * percent sign returned all 34 agents; an underscore matched any single
+   * character, and fourteen usernames on this estate carry one - bigtony_chi
+   * among them - so searching that name also matched bigtonyXchi and there was
+   * no way to ask for the literal.
+   *
+   * Not an injection: the term is a bound parameter and never reaches the
+   * planner as SQL. A correctness bug, and the underscore makes it one an
+   * operator meets by accident rather than by trying.
+   *
+   * Measured after the fix: "%" returns 0 where it returned 34, "_" returns 0
+   * where it returned 34, a lone backslash and "%_\\%" return 0 without
+   * erroring, and an ordinary search still finds its row against an unchanged
+   * denominator.
+   */
+  it('there is an escaper, and it replaces the backslash first', () => {
+    const sql = body('fn_like_escape');
+    expect(sql, 'no escaper').not.toBe('');
+
+    const BS = String.fromCharCode(92);
+    expect(sql, "the term is not run through three replaces").toMatch(
+      /replace\(\s*replace\(\s*replace\(/
+    );
+    // The INNERMOST replace is the one applied first, and it must be the
+    // backslash. Escaping it last would escape the backslashes the other two
+    // had just introduced, turning every search containing a percent sign
+    // into a search for a literal backslash.
+    const innermost = sql.slice(sql.lastIndexOf('replace('));
+    expect(innermost.startsWith(`replace(p_term, '${BS}'`),
+      'the innermost replace is not the backslash one').toBe(true);
+    // And all three characters are handled.
+    for (const c of [BS, '%', '_']) {
+      expect(sql.includes(`'${BS}${c}'`),
+        `${c} is never escaped`).toBe(true);
+    }
+  });
+
+  it.each(HELPERS)('%s puts the search term through the escaper', (fn) => {
+    const filtered = cte(body(fn), 'filtered');
+    const ilikes = (filtered.match(/ILIKE/g) ?? []).length;
+    const escaped = (filtered.match(/fn_like_escape/g) ?? []).length;
+    expect(ilikes, 'nothing to escape').toBeGreaterThan(0);
+    expect(escaped, 'a comparison takes the raw term, so % and _ are operators').toBe(ilikes);
+  });
+
+  it.each(HELPERS)('%s says which character escapes', (fn) => {
+    // ESCAPE '\\' is the default, and is written out so a reader does not have
+    // to know the default to see the escaping is wired up.
+    const filtered = cte(body(fn), 'filtered');
+    const ilikes = (filtered.match(/ILIKE/g) ?? []).length;
+    expect((filtered.match(/ESCAPE/g) ?? []).length).toBe(ilikes);
   });
 });

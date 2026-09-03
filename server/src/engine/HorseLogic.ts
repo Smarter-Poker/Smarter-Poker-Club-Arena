@@ -64,7 +64,13 @@ import { bestPineappleDiscard } from './pineappleDiscardChoice.js';
 import { HorseMind } from './HorseMind.js';
 // V7 (2026-07-24): position-pair preflop mastery — 3-bet/4-bet bluffs, blind
 // vs blind, squeezes, stack depth, reshoves, ICM. See HorsePreflop.ts.
-import { decidePreflopV7, type PreflopPosition } from './HorsePreflop.js';
+import {
+  decidePreflopV7,
+  ploRaiseTo,
+  PLO_MIN_OPEN_BB,
+  type PreflopPosition,
+} from './HorsePreflop.js';
+import { potLimitRaiseTo } from './BettingStructure.js';
 import { reportError } from '../services/errorReporter.js';
 // V16 ICM: real Malmuth-Harville pressure from the live stack distribution.
 import { bubbleFactor, premiumFromBubbleFactor } from './IcmModel.js';
@@ -2052,6 +2058,16 @@ export class HorseLogic {
       noteFire('v20_mzone_wired');
     }
 
+    // ═══ PROOF OF RECEIPT for the pot-limit preflop sizer ═══
+    // A layer that ships and never fires is the house failure mode here
+    // (BrainTelemetry header). Every preflop raise in a pot-limit game is now
+    // sized off the pot-limit ceiling, so this counter appearing in
+    // horse_brain_telemetry is the receipt that the new path is the one the
+    // fleet is actually running.
+    if (intent.a === 'raiseTo' && vi.isPotLimit && telemetryOn(opts)) {
+      noteFire('plo_pot_preflop_size');
+    }
+
     switch (intent.a) {
       case 'jam':
         return { action: 'all_in', thinkTime: 0 };
@@ -2159,6 +2175,20 @@ export class HorseLogic {
           if (toCall === 0) return { action: 'check', thinkTime: 0 };
           return { action: 'call', amount: toCall, thinkTime: 0 };
         }
+        // ═══ POT LIMIT OPENS POT (Dan 2026-09-03) ═══ The V7 preflop layer
+        // owns this decision live; this legacy path is the v7Preflop:false
+        // fallback and ablation route, and it carried the SAME no-limit
+        // ladder. Fixing one and not the other would leave a second path
+        // producing 2x PLO opens, which is exactly the shape of bug that
+        // makes a shipped fix look like it never landed.
+        if (vi.isPotLimit) {
+          return this.raiseTo(
+            this.ploPreflopRaiseTo(gs, player, params, PLO_MIN_OPEN_BB * bb),
+            player,
+            gs,
+            vi
+          );
+        }
         const sizeBB = (2.2 + fastRandom() * 0.8 + limpers * 1.0) * params.sizingMultiplier;
         return this.raiseTo(sizeBB * bb, player, gs, vi);
       }
@@ -2229,6 +2259,9 @@ export class HorseLogic {
         if (strength > 0.95 && fastRandom() < params.slowplayFreq * 0.5 && callers === 0) {
           return { action: 'call', amount: toCall, thinkTime: 0 }; // trap
         }
+        if (vi.isPotLimit) {
+          return this.raiseTo(this.ploPreflopRaiseTo(gs, player, params), player, gs, vi);
+        }
         const ip = position === 'late';
         const mult = (ip ? 3.0 : 3.8) + callers * 1.0 + fastRandom() * 0.4;
         return this.raiseTo(currentBet * mult * params.sizingMultiplier, player, gs, vi);
@@ -2240,6 +2273,9 @@ export class HorseLogic {
         callers === 0 &&
         fastRandom() < params.bluffFreq * params.aggression * 0.35
       ) {
+        if (vi.isPotLimit) {
+          return this.raiseTo(this.ploPreflopRaiseTo(gs, player, params), player, gs, vi);
+        }
         const ip = position === 'late';
         const mult = (ip ? 3.0 : 3.8) + fastRandom() * 0.4;
         return this.raiseTo(currentBet * mult * params.sizingMultiplier, player, gs, vi);
@@ -2261,6 +2297,9 @@ export class HorseLogic {
       if (strength >= fourBetThresh) {
         if (raises >= 3 || currentBet * 2.3 >= stack * 0.4) {
           return { action: 'all_in', thinkTime: 0 };
+        }
+        if (vi.isPotLimit) {
+          return this.raiseTo(this.ploPreflopRaiseTo(gs, player, params), player, gs, vi);
         }
         const mult = 2.2 + fastRandom() * 0.4;
         return this.raiseTo(currentBet * mult * params.sizingMultiplier, player, gs, vi);
@@ -4654,6 +4693,23 @@ export class HorseLogic {
       gs,
       vi
     );
+  }
+
+  /**
+   * The pot-limit preflop raise-TO for this decision, shaded by the persona's
+   * own sizing dial and floored at `floorTo`. Shares `ploRaiseTo` with the V7
+   * preflop layer so the two paths cannot drift into sizing PLO differently.
+   */
+  private static ploPreflopRaiseTo(
+    gs: HorseGameStateV2,
+    player: SeatPlayer,
+    params: StyleParams,
+    floorTo = 0
+  ): number {
+    const currentBet = isFinite(gs.currentBet) ? Math.max(0, gs.currentBet) : 0;
+    const toCall = Math.max(0, currentBet - (isFinite(player.bet) ? player.bet : 0));
+    const potTo = potLimitRaiseTo(gs.pot, currentBet, toCall);
+    return ploRaiseTo(params.sizingMultiplier, potTo, fastRandom, floorTo);
   }
 
   /** Build a raise decision to an absolute amount, clamped to legal bounds. */

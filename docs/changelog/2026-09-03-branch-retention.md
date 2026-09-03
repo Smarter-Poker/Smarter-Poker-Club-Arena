@@ -75,6 +75,12 @@ work. So the guarantee is structural rather than careful:
   so both are refused. This matters because CI takes the `gh pr list --limit`
   path while a workstation takes the paginated REST path - only one of the two
   was exercised by hand, and the guard covers the other.
+- **`REPO` and the git `origin` remote must name the same repository.** The
+  open-PR exemption is read for `$REPO` while the candidates and their tips
+  come from `origin`. If those ever disagree - one stray `REPO=` in a workflow
+  is enough - every branch looks like it has no open pull request and the rule
+  deletes live work _while reporting that it checked_. It refuses instead of
+  guessing.
 - **Only armed classes are ever deleted.** The rule may judge any stale
   branch; it may only delete a machine-generated one.
 

@@ -36,6 +36,24 @@
 set -euo pipefail
 
 REPO="${REPO:-Smarter-Poker/Smarter-Poker-Club-Arena}"
+
+# REPO AND `origin` MUST BE THE SAME REPOSITORY.
+# The open-PR exemption is computed for $REPO, while the candidate branches and
+# their tips come from the local `origin` remote. If those two ever name
+# different repositories - one stray REPO= in a workflow is enough - then every
+# branch here looks like it has no open pull request, and the rule deletes live
+# work while reporting that it checked. Refuse rather than guess.
+ORIGIN_URL="$(git config --get remote.origin.url 2>/dev/null || echo '')"
+if [ -n "$ORIGIN_URL" ]; then
+  ORIGIN_SLUG="$(printf '%s' "$ORIGIN_URL" \
+    | sed -e 's#^git@[^:]*:##' -e 's#^https\{0,1\}://[^/]*/##' -e 's#\.git$##')"
+  if [ -n "$ORIGIN_SLUG" ] && [ "$ORIGIN_SLUG" != "$REPO" ]; then
+    echo "::error::REPO is '$REPO' but the origin remote is '$ORIGIN_SLUG'."
+    echo "The open-PR exemption would be read from one repository and the"
+    echo "branches deleted from another. Refusing to touch anything."
+    exit 1
+  fi
+fi
 DRY_RUN="${DRY_RUN:-0}"
 MAX_PER_RUN="${MAX_PER_RUN:-40}"     # a bad rule is caught after 40, not 400
 STALE_DAYS="${STALE_DAYS:-60}"

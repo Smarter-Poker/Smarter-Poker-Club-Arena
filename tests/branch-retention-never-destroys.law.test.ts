@@ -87,6 +87,18 @@ describe('branch retention never destroys work', () => {
     expect(s).toMatch(/is_protected "\$BR" && continue/);
   });
 
+  it('refuses when REPO and the origin remote name different repositories', () => {
+    // The open-PR exemption is read for $REPO; candidates and their tips come
+    // from the local `origin`. If those disagree, every branch looks like it
+    // has no open PR and the rule deletes live work while reporting that it
+    // checked. One stray REPO= in a workflow is enough.
+    const s = script();
+    expect(s).toContain('remote.origin.url');
+    expect(s).toMatch(/if \[ -n "\$ORIGIN_SLUG" \] && \[ "\$ORIGIN_SLUG" != "\$REPO" \]; then/);
+    const i = s.indexOf('!= "$REPO" ]; then');
+    expect(s.slice(i, i + 400)).toMatch(/exit 1/);
+  });
+
   it('only armed classes are ever deleted; everything else is reported', () => {
     // The rule may JUDGE any stale branch, but it may only DELETE the
     // machine-generated classes. A `fix/...` branch that went quiet might be

@@ -605,6 +605,9 @@ export class HorseFleetManager {
   // ─────────────────────────────────────────────────────────────────────
 
   private async seedAllTables(): Promise<void> {
+    // THE FREEZE IS TOTAL (Dan 2026-09-03): seeding is a seat INSERT and a buy-in.
+    // start() runs this once immediately; a boot inside the break must not.
+    if (isMaintenanceFrozen()) return;
     if (this.seeding) return; // Prevent concurrent seeding
     this.seeding = true;
     const cycleStartedAt = Date.now();
@@ -1902,6 +1905,9 @@ export class HorseFleetManager {
     tableName: string,
     clubId: string | null
   ): Promise<boolean> {
+    // THE FREEZE IS TOTAL (Dan 2026-09-03): a cycle that began before :53 stops at
+    // the first seat after it (a cycle has run for 47 minutes before).
+    if (isMaintenanceFrozen()) return false;
     try {
       // ROUND 34 FIX: Direct UPDATE on public.wallets is rejected by the
       // Phase 4.1.6a wallet guard ("Direct balance mutation on public.wallets

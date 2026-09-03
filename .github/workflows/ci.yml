@@ -172,9 +172,18 @@ jobs:
           # backfill PR (#2580) merged with the server suite skipped, turned the
           # clobber-era floor into the newest clamp declaration, and every
           # hourly deploy after it was refused by its own test gate.
+          # server/ ALSO counts as touching the client suite. 96 files under
+          # tests/ readFileSync server/src/** to pin engine behaviour, and
+          # `vitest related` cannot see a readFileSync. On 2026-09-02 #2695 -
+          # a correct engine fix that added `maintenancePaused` to
+          # isPausedByDesign() - merged with "Client Unit Tests" SKIPPED as a
+          # server-only diff, turned tournamentRakeAndBreaks.test.ts red on
+          # main, and the ONE publisher's shard 1/4 failed on every merge after
+          # it. Production froze at 19:10 while main kept moving. Same lesson
+          # as the migrations line above, one directory over.
           echo "src=$(has '^src/')"       >> "$GITHUB_OUTPUT"
           echo "server=$(has '^(server/|supabase/migrations/)')" >> "$GITHUB_OUTPUT"
-          echo "tests=$(has '^(tests/|supabase/migrations/)')"   >> "$GITHUB_OUTPUT"
+          echo "tests=$(has '^(tests/|supabase/migrations/|server/)')"   >> "$GITHUB_OUTPUT"
 
   # ─────────────────────────────────────────────────────────────────────────────
   # STEP 1: TypeScript compilation check (fast — ~40s)
@@ -951,8 +960,11 @@ jobs:
 
       # BLOCKING. Named explicitly so it is obvious in the job log which
       # regressions are being defended, and so deleting them is a visible diff.
-      - name: Freeze + watchdog regression suite
-        run: npx vitest run src/engine/FreezeRegression.test.ts src/engine/TableWatchdog.test.ts --reporter=verbose
+      # PHASE 2 (2026-09-02): the restart gate's pins ride the named regression
+      # step, not only the full suite, so a #2537-class regression that outdates
+      # them is a named red line on a required check.
+      - name: Freeze + watchdog + restart-gate regression suite
+        run: npx vitest run src/engine/FreezeRegression.test.ts src/engine/TableWatchdog.test.ts src/maintenance/MaintenanceBreak.test.ts src/maintenance/thawInstallments.test.ts --reporter=verbose
 
       - name: Full server test suite
         run: npm test
@@ -1298,6 +1310,27 @@ jobs:
           # this step must not go red on a repo that has never set them.
           SP_EMAIL: ${{ secrets.SP_EMAIL }}
           SP_PASS: ${{ secrets.SP_PASS }}
+          # CUSTOMIZATION COMMERCE CERTIFICATION (2026-09-02).
+          #
+          # tests/e2e/support/temporaryCustomizationAccount.ts THROWS when these
+          # three are absent, and they were never passed here - so four
+          # customization specs failed on every scheduled run for a reason that
+          # had nothing to do with the product. This job has failed 14 times in
+          # a row and "is main green?" is the only question it exists to answer,
+          # so a self-inflicted red is expensive: it hides the five real
+          # failures underneath it.
+          #
+          # SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY already exist as repo
+          # secrets and just were not wired in. VITE_SUPABASE_ANON_KEY does NOT
+          # exist yet; it is the PUBLISHABLE key that already ships inside the
+          # browser bundle, so it is a repo variable rather than a secret, and
+          # it is read here with a secret fallback so either home works. Until
+          # one of them is set GitHub substitutes an empty string and this step
+          # behaves exactly as it does today - the change cannot make anything
+          # worse than the current red.
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_ANON_KEY }}
         continue-on-error: false
 
       # ── MOBILE FIT + AVATAR WATCHDOG (2026-08-24) ─────────────────────────

@@ -1,0 +1,4 @@
+{
+  "_owner": "agent/cowork-horsebrain/fix/horse-brain-audit (2026-09-02). Applied to production as migration 20260902232420_horse_mind_persist_postflop_af_and_river_reads: four additive columns on horse_mind_stats and upsert_horse_mind_stats re-created to merge post_aggr/post_passive (never merged since 08-31) plus the new counters.",
+  "columns": { "horse_mind_stats": ["river_bet_opps", "river_bet_folds", "checks", "r_checks"] }
+}

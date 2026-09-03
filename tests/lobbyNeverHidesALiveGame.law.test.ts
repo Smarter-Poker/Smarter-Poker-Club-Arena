@@ -49,7 +49,7 @@ describe('every cash-lobby read puts occupied tables first', () => {
   }
 
   it('the club lobby page does the same - it filters client-side over what it fetched', () => {
-    const at = page.indexOf("const tableQuery = supabase");
+    const at = page.indexOf('const tableQuery = supabase');
     expect(at).toBeGreaterThan(-1);
     const block = page.slice(at, page.indexOf('.limit(QUERY_LIMITS.LIST);', at));
     const byPlayers = block.indexOf("order('current_players', { ascending: false })");

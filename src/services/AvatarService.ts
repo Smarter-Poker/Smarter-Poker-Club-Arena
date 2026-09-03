@@ -16,6 +16,7 @@
 import { supabase } from '../lib/supabase';
 import { reportError, reportWarning } from '../utils/errorReporter';
 import { generateDefaultAvatar, getAvatarWithFallback } from '../utils/avatarGenerator';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import {
   ALL_COSMETICS,
   isCosmeticOwned,
@@ -431,12 +432,14 @@ class AvatarServiceClass {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('avatar_url:arena_avatar_url, display_name')
+        .select(`avatar_url:arena_avatar_url, ${PLAYER_NAME_COLUMNS}`)
         .eq('id', userId)
         .maybeSingle();
 
       if (error || !data?.avatar_url) {
-        return getAvatarWithFallback(null, userId, data?.display_name || 'Player');
+        /* The initials on a generated avatar are a name too - "DB" over a seat
+           is the same disclosure as "Dan Bekavac" beside it. */
+        return getAvatarWithFallback(null, userId, playerDisplayName(data));
       }
 
       return data.avatar_url;
@@ -458,7 +461,7 @@ class AvatarServiceClass {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, avatar_url:arena_avatar_url, display_name')
+        .select(`id, avatar_url:arena_avatar_url, ${PLAYER_NAME_COLUMNS}`)
         .in('id', userIds);
 
       if (!error && data) {
@@ -466,7 +469,7 @@ class AvatarServiceClass {
           avatarMap.set(
             profile.id,
             profile.avatar_url ||
-              getAvatarWithFallback(null, profile.id, profile.display_name || 'Player')
+              getAvatarWithFallback(null, profile.id, playerDisplayName(profile))
           );
         }
       }

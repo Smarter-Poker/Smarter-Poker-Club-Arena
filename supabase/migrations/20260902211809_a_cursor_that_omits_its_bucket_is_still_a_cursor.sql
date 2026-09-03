@@ -1,3 +1,8 @@
+-- BACKFILLED 2026-09-02 from supabase_migrations.schema_migrations.statements.
+-- Applied to production 20260902211809; the .sql file was never committed at the
+-- time (Table Management: the keyset cursor gained a bucket, see this file).
+-- Content is byte-exact to what ran. Do NOT re-apply; it is already live.
+
 -- A cursor that omits its bucket is still a cursor.
 --
 -- the_board_opens_on_the_live_floor made the priority bucket the first key of

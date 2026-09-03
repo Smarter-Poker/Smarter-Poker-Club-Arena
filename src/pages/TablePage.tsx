@@ -126,6 +126,11 @@ import { cashBuyInRange, cashBuyInRefusalText } from '../lib/cashBuyIn';
 import { useTableWebSocket } from '../services/TableWebSocket';
 import { supabase, getAuthUser } from '../lib/supabase';
 import { parseBlindStructure } from '../utils/parseBlindStructure';
+import {
+  playerDisplayName,
+  PLAYER_NAME_COLUMNS,
+  type NameableProfile,
+} from '../utils/playerDisplayName';
 // Phase 1.1 PR-3: authoritative engine WS state. Mounted always; becomes the
 // source of truth for game-state fields when VITE_USE_ENGINE_WS=1. The old
 // Supabase Realtime game-state path stays wired in parallel until PR-5 deletes
@@ -1716,7 +1721,7 @@ export default function TablePage({
       try {
         const { data: profile, error: profileErr } = await supabase
           .from('profiles')
-          .select('display_name, username, avatar_url:arena_avatar_url')
+          .select(`${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
           .eq('id', user.id)
           .maybeSingle();
         /* ROUND 9 (2026-08-29): a FAILED read used to fall through as an
@@ -1729,7 +1734,7 @@ export default function TablePage({
           return;
         }
         if (isMounted.current) {
-          const resolvedName = profile?.display_name || profile?.username || 'Player';
+          const resolvedName = playerDisplayName(profile);
           setUsername(resolvedName);
           setHeroAvatarUrl(profile?.avatar_url || '');
           // Refresh the first-paint cache with what the database just said,
@@ -2012,7 +2017,7 @@ export default function TablePage({
           if (idx >= 0 && idx < p.length) {
             p[idx] = {
               id: seat.user_id,
-              name: seat.profiles?.display_name || seat.profiles?.username || 'Player',
+              name: playerDisplayName(seat.profiles),
               stack: seat.stack || 0,
               avatar: seat.profiles?.avatar_url || undefined,
               isHero: seat.user_id === userId,
@@ -7618,12 +7623,25 @@ export default function TablePage({
     releaseBustHold,
   ]);
 
+  /* CHIP STANDARD C3 (2026-09-02): ONE idempotency key per bust event and
+     amount, reused across retries. This minted `crypto.randomUUID()` on every
+     attempt, so the exact window the key exists for - the RPC committed, the
+     response was lost, the player tapped Rebuy again - debited the wallet a
+     second time. The key is held here until a rebuy SUCCEEDS (a later bust is
+     a new event and gets a new key); a retry with a different amount is a
+     different purchase and gets its own key, because the RPC answers a
+     replayed key with the balance and moves nothing. */
+  const bustRebuyKeyRef = useRef<{ amount: number; key: string } | null>(null);
+
   const confirmBustRebuy = useCallback(
     async (amount: number) => {
       if (!tableId || !userId) return;
       setBustRebuyProcessing(true);
       try {
-        const idempotencyKey = crypto.randomUUID();
+        if (!bustRebuyKeyRef.current || bustRebuyKeyRef.current.amount !== amount) {
+          bustRebuyKeyRef.current = { amount, key: crypto.randomUUID() };
+        }
+        const idempotencyKey = bustRebuyKeyRef.current.key;
         const payload = {
           p_user_id: userId,
           p_table_id: tableId,
@@ -7649,6 +7667,8 @@ export default function TablePage({
           setBustRebuyProcessing(false);
           return;
         }
+        // The purchase landed; the next bust is a new event with a new key.
+        bustRebuyKeyRef.current = null;
         toast?.success(`Rebought for ${amount.toLocaleString()}`);
         setBustRebuyOpen(false);
         // Guard so a zero-stack state immediately after the RPC succeeds
@@ -9638,9 +9658,7 @@ export default function TablePage({
   const [useRealName, setUseRealName] = useState(() => {
     return localStorage.getItem(STORAGE_KEYS.USE_REAL_NAME) === 'true';
   });
-  const [heroProfile, setHeroProfile] = useState<{ username: string; display_name: string } | null>(
-    null
-  );
+  const [heroProfile, setHeroProfile] = useState<NameableProfile | null>(null);
 
   // Sync settings when changed from other components (like TableMenu)
   useMasterBusSubscription('TABLE_MENU_ACTION', (event: any) => {
@@ -9697,16 +9715,11 @@ export default function TablePage({
     if (userId && userId !== 'guest') {
       supabase
         .from('profiles')
-        .select('username, display_name')
+        .select(PLAYER_NAME_COLUMNS)
         .eq('id', userId)
         .maybeSingle()
         .then(({ data }) => {
-          if (data) {
-            setHeroProfile({
-              username: data.username || '',
-              display_name: data.display_name || '',
-            });
-          }
+          if (data) setHeroProfile(data);
         });
     }
   }, [userId]);
@@ -11586,7 +11599,7 @@ export default function TablePage({
           const { data: profiles, error: seatProfilesErr } = await supabase
             .from('profiles')
             .select(
-              'id, username, display_name, avatar_url:arena_avatar_url, is_horse, horse_profile'
+              `id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, is_horse, horse_profile`
             )
             .in('id', userIds);
 
@@ -11688,7 +11701,7 @@ export default function TablePage({
 
               updatedPlayers[seatIdx] = {
                 id: seat.user_id,
-                name: profile?.display_name || profile?.username || `Player ${seat.seat_number}`,
+                name: playerDisplayName(profile),
                 avatar: profile?.avatar_url || '',
                 stack: seat.stack || 0,
                 status:
@@ -16712,7 +16725,7 @@ export default function TablePage({
       if (userIds.length > 0) {
         const { data: profiles, error: profErr } = await supabase
           .from('profiles')
-          .select('id, username, display_name, avatar_url:arena_avatar_url, is_horse')
+          .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, is_horse`)
           .in('id', userIds);
         if (profErr) {
           reportError(profErr, 'TablePage.seat_first_roster_profiles', { tableId });
@@ -16748,7 +16761,7 @@ export default function TablePage({
           const isHero = seat.user_id === userId;
           rebuilt[idx] = {
             id: seat.user_id,
-            name: profile?.display_name || profile?.username || `Player ${seat.seat_number}`,
+            name: playerDisplayName(profile),
             avatar: profile?.avatar_url || '',
             /**
              * ── SHOW WHAT THEY WILL BE PLAYING WITH (Dan 2026-08-30, r17) ──
@@ -18512,7 +18525,7 @@ export default function TablePage({
       if (ids.length > 0) {
         const { data: profiles, error: wlProfilesErr } = await supabase
           .from('profiles')
-          .select('id, username, display_name, avatar_url:arena_avatar_url, is_horse')
+          .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, is_horse`)
           .in('id', ids);
         // ROUND 9 (2026-08-29): the 2026-08-20 fix promised names would
         // resolve like the felt's; a resolved error quietly regressed the
@@ -18533,7 +18546,7 @@ export default function TablePage({
             // lowercase; display_name holds the properly-cased name. Same rule
             // the seat roster uses. Falls back to the position only when the
             // profile genuinely could not be read.
-            playerName: pr?.display_name || pr?.username || `Player ${e.position}`,
+            playerName: playerDisplayName(pr),
             avatar: pr?.avatar_url || undefined,
             position: e.position,
             joinedAt: new Date(e.joinedAt),
@@ -20188,20 +20201,20 @@ export default function TablePage({
             let derivedHeroName = player?.name;
             if (player?.isHero) {
               if (v8Settings.use_alias && v8Settings.table_alias) {
-                // User explicitly set an alias — always use it
+                // User explicitly set a table alias — always use it
                 derivedHeroName = v8Settings.table_alias;
-              } else if (useRealName && heroProfile?.display_name) {
-                derivedHeroName = heroProfile.display_name;
-              } else if (heroProfile?.username) {
-                derivedHeroName = heroProfile.username;
-              } else if (heroProfile?.display_name) {
-                // Fallback: use display_name even if useRealName is off
-                derivedHeroName = heroProfile.display_name;
+              } else if (heroProfile) {
+                /* Dan 2026-09-02: "THE CLUB ARENA SHOULD ALWAYS 100% OF THE
+                   TIME USE THE POKER ALIAS AND NOT THE REAL NAME." This used
+                   to branch on `useRealName` and, failing that, fall through
+                   to display_name anyway — which is an exact copy of full_name
+                   on 264 of 1,308 production rows, so the "off" path leaked
+                   too. One resolver, no branch. */
+                derivedHeroName = playerDisplayName(heroProfile);
               }
               // If still "Player X" pattern and we have ANY profile info, use it
               if (derivedHeroName?.startsWith('Player ') && heroProfile) {
-                derivedHeroName =
-                  heroProfile.display_name || heroProfile.username || derivedHeroName;
+                derivedHeroName = playerDisplayName(heroProfile);
               }
             }
             let displayPlayer = player

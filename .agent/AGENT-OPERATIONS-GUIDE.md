@@ -39,7 +39,7 @@ Full mechanics in `.agent/SELF-PUBLISH-PROTOCOL.md`. Summary:
 git merge --no-edit main; ln -sfn ~/Documents/club-arena/node_modules node_modules;
 ./node_modules/.bin/tsc --noEmit -p tsconfig.app.json; git push origin HEAD:main;`
   then remove the worktree. Pushing CA main triggers: CI, Silent Revert Guard,
-  Build for World Hub Sync (publishes arena assets), Auto-Deploy Hetzner Engine
+  Publish Club Arena (publishes the bundle to ca-static.smarter.poker), Auto-Deploy Hetzner Engine
   (server/ changes go LIVE on the game engine). Verify ALL of them:
   `gh run list --repo Smarter-Poker/Smarter-Poker-Club-Arena --limit 5`.
   A red run = not published. Fix forward the same session.
@@ -132,8 +132,14 @@ origin/main..HEAD` first (untracked files survive resets).
   they have caught real regressions: WH `scripts/*-check.js` +
   `engine-correctness-harness.js`; CA `scripts/multi-table-check.js` +
   `server/src/*.test.ts`. Never loosen an assertion to make it pass.
-- Protected zone: `public/hub/club-arena/` in WH is build output -- never
-  hand-edit; commit messages touching it must contain "club-arena".
+- `public/hub/club-arena/` in WH was build output. It is **DELETED** (2026-09-02)
+  and must never come back: Club Arena publishes to its own origin
+  (`ca-static.smarter.poker`) and the World Hub reaches it with a single
+  rewrite. Next serves `public/` BEFORE that rewrite, so a file re-vendored
+  there does not duplicate the bundle, it SHADOWS it - production would keep
+  serving whatever was last committed while the origin published into the void.
+  `tests/club-arena-is-a-rewrite.test.mjs` in the World Hub fails CI if it
+  returns.
 
 ## 8. REAL-BROWSER E2E — run before claiming UI work done
 
@@ -174,24 +180,48 @@ Tell the two apart before you debug your own code:
                                    # ones like Silent Revert Guard => infra
 
 When it is infra, your commits are pushed but NOT published. Publish the Club
-Arena bundle yourself — the local path is now as safe as CI:
+Arena bundle yourself, straight to its origin (rewritten 2026-09-03 — there is
+no World Hub in this path any more):
 
-    cd ~/Documents/club-arena && git worktree add --detach /tmp/ca-pub origin/main
+    cd ~/Documents/club-arena
+    git worktree add --detach /tmp/ca-pub origin/main
     ln -s ~/Documents/club-arena/node_modules /tmp/ca-pub/node_modules
-    cd ~/Documents/Smarter-Poker-World-Hub
-    git worktree add --detach /tmp/wh-pub origin/main
-    WH_OVERRIDE=/tmp/wh-pub CA_SRC_OVERRIDE=/tmp/ca-pub \
-      bash scripts/sync-club-arena.sh "chore(club-arena): sync build <sha>"
+    cd /tmp/ca-pub && npm run build
 
-Both overrides exist so you never have to own the shared checkouts, which are
-routinely mid-rebase or holding another agent's staged work.
+    SHA=$(git -C /tmp/ca-pub rev-parse HEAD)
+    # build-info.json must name the sha you are publishing, or the watchdog
+    # will read production as behind main forever.
+    python3 - "$SHA" <<'JSON'
+    import json,sys,datetime
+    json.dump({"ca_sha":sys.argv[1],"built_at":datetime.datetime.utcnow().isoformat()+"Z","built_by":"manual"},
+              open('/tmp/ca-pub/dist/build-info.json','w'), indent=2)
+    JSON
 
-The script now REFUSES to publish a bundle that cannot boot: it resolves the
-entry chunk out of index.html and confirms the Supabase URL and anon key are
-actually baked into it. That check exists because the old one ("index.html
-exists") passed a config-less build straight to production on 2026-08-20 and
-every visitor got a blank page (`Uncaught Error: supabaseUrl is required`).
-Never weaken it.
+    ORIGIN=$(security find-generic-password -a smarter-poker -s estate-ci-ip -w)
+    rsync -az --delete -e "ssh -i ~/.ssh/hetzner_deploy" \
+      /tmp/ca-pub/dist/ "ci@$ORIGIN:/srv/club-arena/releases/$SHA/"
+    # additive, never --delete: a player mid-hand still asks for the previous
+    # hashed chunks (see deploy-paths.md, Tier 2).
+    rsync -az -e "ssh -i ~/.ssh/hetzner_deploy" /tmp/ca-pub/dist/assets/ "ci@$ORIGIN:/srv/club-arena/pool/assets/"
+    rsync -az -e "ssh -i ~/.ssh/hetzner_deploy" /tmp/ca-pub/dist/fonts/  "ci@$ORIGIN:/srv/club-arena/pool/fonts/"
+    ssh -i ~/.ssh/hetzner_deploy "ci@$ORIGIN" \
+      "cd /srv/club-arena && ln -sfn /srv/club-arena/releases/$SHA current.tmp && mv -Tf current.tmp current"
+
+    curl -s "https://smarter.poker/hub/club-arena/build-info.json?cb=$RANDOM" | grep "$SHA"
+
+The last line is the only proof that counts. A rollback is the same symlink
+swap against an older directory under `releases/`.
+
+CHECK WHAT YOU PUBLISH. The retired sync script refused a bundle that could
+not boot: it resolved the entry chunk out of index.html and confirmed the
+Supabase URL and anon key were baked into it. That check existed because the
+old one ("index.html exists") passed a config-less build to production on
+2026-08-20 and every visitor got a blank page (`Uncaught Error: supabaseUrl is
+required`). Doing this by hand, you are that check:
+
+    ENTRY=$(grep -oE '/assets/index-[^"]+\.js' /tmp/ca-pub/dist/index.html | head -1)
+    grep -q "supabase.co" "/tmp/ca-pub/dist${ENTRY}" && echo "config baked in: OK" || \
+      echo "REFUSE TO PUBLISH: no Supabase config in the entry chunk"
 
 Vercel deploys on git push and does NOT depend on GitHub Actions, so a WH push
 still ships. Verify content-level, never by SHA alone:

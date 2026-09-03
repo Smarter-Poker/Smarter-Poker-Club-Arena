@@ -1,3 +1,8 @@
+-- BACKFILLED 2026-09-02 from supabase_migrations.schema_migrations.statements.
+-- Applied to production 20260902212622; the .sql file was never committed at the
+-- time (Table Management: fn_update_managed_game, see this file).
+-- Content is byte-exact to what ran. Do NOT re-apply; it is already live.
+
 -- An omitted field means "unchanged", never NULL.
 --
 -- fn_update_managed_game's table branch validated the patch like this:

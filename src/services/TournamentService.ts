@@ -14,6 +14,7 @@ import { SPIN_TIERS, SPIN_FREQ_DENOMINATOR } from '../config/spinSpec';
 import { supabase } from '../lib/supabase';
 import { masterBus } from '../core/MasterBus';
 import { retryAsync } from '../utils/retryAsync';
+import { freeBuyConfig, isFreeBuyEvent } from '../utils/freeBuy';
 import { resolveClubUUID } from '../utils/clubIdResolver';
 import { fetchGameCreationAccess } from './GameAccessService';
 import { gameCreationDeniedMessage } from '../lib/gameCreationAccess';
@@ -625,6 +626,25 @@ class TournamentService {
       addOnCost: config.addOnCost || 0,
       addOnChips: config.addOnChips || 0,
       addOnLevels: config.addOnLevels || 1,
+      /**
+       * FREEROLLS ARE FREE BUY (Dan 2026-09-02): 0 to enter, rebuys and
+       * add-ons on at 1 chip each. Every creation surface funnels through this
+       * builder - the create form, the table-config page and the schedule
+       * editors - so the rule is applied here, LAST, where it wins over
+       * whatever the form held. Empty for a paid event, a Spin or an SNG.
+       * fn_create_tournament writes these keys through verbatim; the
+       * zz_freerolls_are_free_buy trigger is the backstop, not the mechanism.
+       */
+      ...freeBuyConfig({
+        buyIn: config.buyIn,
+        type: config.type,
+        startingStack: config.startingStack,
+        rebuyChips: config.rebuyChips,
+        addOnChips: config.addOnChips,
+        rebuyLevels: config.rebuyLevels,
+        addOnLevels: config.addOnLevels,
+        maxRebuys: config.maxRebuys,
+      }),
       bountyAmount: config.bountyConfig?.baseBounty || 0,
       spinType: config.type === 'spin' ? config.spinType || 'standard' : null,
       satelliteTargetId: config.satelliteTarget?.tournamentId || null,
@@ -664,8 +684,16 @@ class TournamentService {
       p.restartEveryMinutes = clampInt(config.restartEveryMinutes, 5, 1440);
     }
     if (config.synchronizedBreaks !== undefined) p.synchronizedBreaks = config.synchronizedBreaks;
-    if (config.maxRebuys !== undefined) p.maxRebuys = config.maxRebuys;
-    if (config.maxReentries !== undefined) p.maxReentries = config.maxReentries;
+    // A freeroll never sends a 0 cap: process_tournament_rebuy reads a NOT
+    // NULL max_rebuys of 0 as "Rebuy limit reached (0 of 0)", which would deny
+    // the 1-chip rebuys the Free Buy rule just switched on.
+    const freeBuy = isFreeBuyEvent({ buyIn: config.buyIn, type: config.type });
+    if (config.maxRebuys !== undefined && !(freeBuy && !(config.maxRebuys > 0))) {
+      p.maxRebuys = config.maxRebuys;
+    }
+    if (config.maxReentries !== undefined && !(freeBuy && !(config.maxReentries > 0))) {
+      p.maxReentries = config.maxReentries;
+    }
     if (config.isMultiDay !== undefined) p.isMultiDay = config.isMultiDay;
     if (config.isMultiDay && config.totalDays !== undefined) p.totalDays = config.totalDays;
     if (config.type === 'mystery_bounty') {

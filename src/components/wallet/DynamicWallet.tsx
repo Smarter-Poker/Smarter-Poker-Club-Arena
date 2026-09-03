@@ -65,7 +65,12 @@ import {
 } from '../../lib/walletCache';
 import { useVisibilityRefresh } from '../../hooks/useVisibilityRefresh';
 import { normaliseRole, type ClubRole } from '../../types/clubRoles';
-import { clubLobbyWalletRows, clubWalletRows, type WalletRowKey } from './walletRows';
+import {
+  canSeeClubBank,
+  clubLobbyWalletRows,
+  clubWalletRows,
+  type WalletRowKey,
+} from './walletRows';
 import { useSpinsWallet } from '../../hooks/useSpinsWallet';
 import './DynamicWallet.css';
 import { reportError } from '../../utils/errorReporter';
@@ -212,6 +217,23 @@ interface WalletData {
    * not readable", and renders as "-" rather than as 0.00.
    */
   clubRakeTreasury: number | null;
+  /**
+   * THE CLUB'S OWN PROMO WALLET (fn_club_money_panel -> club_promo_wallet).
+   *
+   * Dan, 2026-09-02: "NONE OF THE CHIPS FROM THE BBJ RAKE ARE GOING INTO THE
+   * PROMO WALLET." They were, and are. Every hand's bad-beat drop splits
+   * 50/25/25 main/backup/promo, and fn_sweep_bbj_promo banks the promo slice in
+   * clubs.promo_balance for a standalone club (Deep Stack Society held 1,220.19
+   * of it, correctly, on the day he asked). What no surface could do was READ
+   * it: the panel never returned the column, so the club's Promo Wallet row
+   * fell back to `promoBalance` - the VIEWER'S OWN agent float, 0.00 for an
+   * owner who is not an agent.
+   *
+   * A club inside a union banks its promo slice in the UNION wallet, so this is
+   * honestly 0 there and `unionPromo` carries the union's figure on the union
+   * surface. Club-scoped either way, per the wallet separation law.
+   */
+  clubPromoWallet: number;
   /**
    * UNION SPIN TREASURY (Dan 2026-08-24: "the wallet is still missing the
    * spins treasury"). The capital every Spin multiplier is paid out of.
@@ -394,6 +416,7 @@ const INITIAL_WALLET_DATA: WalletData = {
   unionRake: 0,
   unionPromo: 0,
   clubRakeTreasury: null,
+  clubPromoWallet: 0,
   unionSpinTreasury: 0,
   unionSpinIdle: 0,
   unionSpinDeployed: 0,
@@ -667,6 +690,13 @@ export default function DynamicWallet({
   // by the viewer's role in walletRows.ts — that is not a scope promotion.)
   const effectiveVariant: WalletVariant = variant;
   const viewerRole: ClubRole = normaliseRole(role);
+  /* WHOSE PROMO WALLET IS THIS ROW? The people who can see the Club Bank are
+     looking at the CLUB's money, and the club's promo pot is the account the
+     BBJ promo slice is swept into. An agent or sub-agent is looking at their
+     own float, which is the wallet they distribute promo chips from. Same row,
+     same label, decided by exactly the rule that decides the Club Bank row -
+     see walletRows.ts, which is the pinned law for both. */
+  const clubPromoIsClubMoney = canSeeClubBank(viewerRole);
 
   // The pool row the jackpot on screen came from. Read by the realtime effect
   // below so the subscription binds to that exact row rather than re-deriving
@@ -683,9 +713,18 @@ export default function DynamicWallet({
     effectiveVariant === 'union' ? data.clubsWallet : data.agentBalance
   );
   const animPromo = useAnimatedCounter(
-    // Union promo is the swept 25% BBJ slice in union_wallets, not the
-    // club-agent promo wallet.
-    effectiveVariant === 'union' ? data.unionPromo : data.promoBalance
+    // Three different accounts wear the name "Promo Wallet", and which one the
+    // row means is decided by the surface and the viewer's role:
+    //   union surface           -> union_wallets.promo_wallet (the swept slice)
+    //   club surface, club bank -> clubs.promo_balance (this club's slice)
+    //   club surface, an agent  -> agents.promo_wallet_balance (their own float)
+    // Reading the third one for a club owner is what made Dan's Promo Wallet
+    // read 0.00 while 1,220.19 of BBJ promo sat in the club's account.
+    effectiveVariant === 'union'
+      ? data.unionPromo
+      : clubPromoIsClubMoney
+        ? data.clubPromoWallet
+        : data.promoBalance
   );
   const animBackupBBJ = useAnimatedCounter(data.backupBBJ);
   const animUnionSpins = useAnimatedCounter(data.unionSpinTreasury);
@@ -838,6 +877,9 @@ export default function DynamicWallet({
           panel.club_rake_treasury === undefined || panel.club_rake_treasury === null
             ? null
             : num(panel.club_rake_treasury),
+        // The club's own promo pot, funded by the BBJ promo slice. Club money,
+        // read on a club surface; never mixed with the union's.
+        clubPromoWallet: num(panel.club_promo_wallet),
         unionBank: unionScoped ? num(panel.union_bank) : 0,
         unionRake: unionScoped ? num(panel.rake_treasury) : 0,
         unionPromo: unionScoped ? num(panel.union_promo) : 0,
@@ -1288,6 +1330,11 @@ export default function DynamicWallet({
       label: 'Promo Wallet',
       icon: 'promo',
       value: animPromo,
+      // The BBJ promo slice accrues inside the pool and is swept across every
+      // few minutes, so a club's promo balance steps rather than streams.
+      // Saying so stops it reading as "not being funded" - which is exactly
+      // how it read while the row was showing the wrong account entirely.
+      hint: clubPromoIsClubMoney ? '25% BBJ Slice · Swept Every 5 Min' : undefined,
       onOpen: onOpenPromoWallet,
     },
     club_bank: {
@@ -1444,7 +1491,7 @@ export default function DynamicWallet({
       case 'club_bank':
         return data.clubBank;
       case 'promo_wallet':
-        return data.promoBalance;
+        return clubPromoIsClubMoney ? data.clubPromoWallet : data.promoBalance;
       case 'spins_wallet':
         return spins.balance;
       case 'rake_treasury':

@@ -34,6 +34,8 @@ export interface PositionalRadarRow {
   vpip_count: number;
   pfr_count: number;
   three_bet_count: number;
+  /** Chances to re-raise. Present since the 2026-09-03 stats migration. */
+  three_bet_opps?: number;
   hands_won?: number;
   total_profit?: number;
   bb100?: number;
@@ -66,17 +68,44 @@ interface MetricDef {
    *  so the normalisation never has to be explained to anyone. */
   ceiling: number;
   count: (r: PositionalRadarRow) => number;
+  /** The denominator the rate is over. VPIP and PFR are per hand dealt. */
+  denom: (r: PositionalRadarRow) => number;
 }
 
 const METRICS: MetricDef[] = [
-  { key: 'vpip', label: 'VPIP', color: '#3b82f6', ceiling: 60, count: (r) => r.vpip_count },
-  { key: 'pfr', label: 'PFR', color: '#22c55e', ceiling: 40, count: (r) => r.pfr_count },
   {
+    key: 'vpip',
+    label: 'VPIP',
+    color: '#3b82f6',
+    ceiling: 60,
+    count: (r) => r.vpip_count,
+    denom: (r) => r.hands_played,
+  },
+  {
+    key: 'pfr',
+    label: 'PFR',
+    color: '#22c55e',
+    ceiling: 40,
+    count: (r) => r.pfr_count,
+    denom: (r) => r.hands_played,
+  },
+  {
+    /**
+     * 3-bet is per OPPORTUNITY, the same convention as the reference values
+     * and the 15% ceiling below. It was per hand dealt, so a healthy 7% 3-bet
+     * plotted at roughly 1.5% against a dashed reference drawn at 7% - the
+     * denominator collision statBenchmarks.ts exists to prevent. Payloads
+     * without three_bet_opps fall back to per hand dealt and say so.
+     */
     key: 'three_bet',
     label: '3-Bet',
     color: '#f59e0b',
     ceiling: 15,
     count: (r) => r.three_bet_count,
+    denom: (r) =>
+      typeof r.three_bet_opps === 'number' && r.three_bet_opps > 0
+        ? r.three_bet_opps
+        : r.hands_played,
   },
 ];
 
@@ -152,7 +181,7 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
   const series = useMemo(() => {
     const out: Record<MetricKey, number[]> = { vpip: [], pfr: [], three_bet: [] };
     for (const m of METRICS) {
-      out[m.key] = rows.map((r) => pct(m.count(r), r.hands_played) / m.ceiling);
+      out[m.key] = rows.map((r) => pct(m.count(r), m.denom(r)) / m.ceiling);
     }
     return out;
   }, [rows]);
@@ -321,6 +350,12 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
                   onFocus={() => setFocused(i)}
                   onBlur={() => setFocused(null)}
                   onClick={() => setFocused((cur) => (cur === i ? null : i))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setFocused((cur) => (cur === i ? null : i));
+                    }
+                  }}
                 >
                   {r.position}
                 </text>
@@ -383,12 +418,18 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
                   onFocus={() => setFocused(i)}
                   onBlur={() => setFocused(null)}
                   onClick={() => setFocused((cur) => (cur === i ? null : i))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setFocused((cur) => (cur === i ? null : i));
+                    }
+                  }}
                 >
                   <th scope="row">{r.position}</th>
                   <td>{r.hands_played.toLocaleString()}</td>
                   {METRICS.filter((m) => visible[m.key]).map((m) => (
                     <td key={m.key} style={{ color: m.color }}>
-                      {pct(m.count(r), r.hands_played).toFixed(1)}%
+                      {pct(m.count(r), m.denom(r)).toFixed(1)}%
                     </td>
                   ))}
                 </tr>
@@ -415,8 +456,8 @@ export default function PositionalRadar({ positions, minHands = 30 }: Props) {
       )}
       {showReference && referenceComplete && (
         <p className="pos-radar-note">
-          The Dashed Shape Is A General Reference For Solid Positional Play, Not A Target. Your Own
-          Winning Strategy May Sit Outside It.
+          The Dashed Shape Is A Conventional Opening-Frequency Reference Written Into This Chart,
+          Not A Measurement Of Any Field. It Is A Comparison Point, Not A Target.
         </p>
       )}
     </div>

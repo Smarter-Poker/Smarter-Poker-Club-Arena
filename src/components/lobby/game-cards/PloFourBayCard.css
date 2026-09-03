@@ -1,0 +1,25 @@
+/* PLO four-bay console (shark-plo-four-bay-v1). Positions come from
+   PloFourBayCard.tsx's coordinate map; only typography lives here. */
+
+.agc-plo-four-bay__title {
+  align-items: center;
+}
+
+.agc-plo-four-bay__title .agc-layered__text--title {
+  --size: 7.3cqw;
+  transform: scaleX(1.03);
+  transform-origin: left center;
+}
+
+.agc-plo-four-bay__value {
+  place-items: center;
+}
+
+.agc-plo-four-bay__value .agc-layered__text--value {
+  --size: 6.9cqw;
+}
+
+.agc-plo-four-bay .agc-layered__action-text {
+  --size: 5cqw;
+  letter-spacing: 0.04em;
+}

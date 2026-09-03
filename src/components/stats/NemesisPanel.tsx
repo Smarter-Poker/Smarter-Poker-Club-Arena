@@ -93,8 +93,10 @@ function FlowCard({
       {/* Sign and colour come from the VALUE, never from which card this is:
           the two must agree with the expanded table below, which derives both
           from net_chips. */}
-      <span className={`nemesis-amount ${flow.net_chips >= 0 ? 'is-up' : 'is-down'}`}>
-        {flow.net_chips >= 0 ? '+' : '-'}
+      <span
+        className={`nemesis-amount ${flow.net_chips > 0 ? 'is-up' : flow.net_chips < 0 ? 'is-down' : ''}`}
+      >
+        {flow.net_chips > 0 ? '+' : flow.net_chips < 0 ? '-' : ''}
         {chips(flow.net_chips)}
       </span>
       <span className="nemesis-meta">{flow.hands_together.toLocaleString()} Hands Together</span>
@@ -106,6 +108,8 @@ export default function NemesisPanel({ userId, days = null }: Props) {
   const navigate = useNavigate();
   const [data, setData] = useState<NemesisPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     if (!userId) {
@@ -116,7 +120,9 @@ export default function NemesisPanel({ userId, days = null }: Props) {
     setLoading(true);
     StatsFactsService.getNemesis(userId, { days })
       .then((payload) => {
-        if (!cancelled) setData(payload);
+        if (cancelled) return;
+        setData(payload);
+        setReadError(payload.error ?? null);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -124,12 +130,21 @@ export default function NemesisPanel({ userId, days = null }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [userId, days]);
+  }, [userId, days, attempt]);
 
   const rows = useMemo(() => {
     if (!data) return [];
-    // Worst first: the player wants to know who is beating them.
-    return [...(data.worst ?? []), ...(data.best ?? [])].sort((a, b) => a.net_chips - b.net_chips);
+    // Worst first: the player wants to know who is beating them. An opponent
+    // the RPC lists in both halves is one row, not two (duplicate React keys
+    // rendered them twice).
+    const seen = new Set<string>();
+    return [...(data.worst ?? []), ...(data.best ?? [])]
+      .filter((r) => {
+        if (!r?.opponent_id || seen.has(r.opponent_id)) return false;
+        seen.add(r.opponent_id);
+        return true;
+      })
+      .sort((a, b) => a.net_chips - b.net_chips);
   }, [data]);
 
   // Cross-player Stats are private until a club-scoped authorization contract
@@ -146,6 +161,20 @@ export default function NemesisPanel({ userId, days = null }: Props) {
   }
 
   const hasAny = !!(data?.nemesis || data?.target);
+
+  if (readError) {
+    return (
+      <div className="nemesis-panel nemesis-empty" role="alert">
+        <h3 className="nemesis-title">Rivals</h3>
+        <p className="nemesis-empty-text">
+          Your Rivals Could Not Be Loaded Right Now.{' '}
+          <button type="button" className="hand-retry" onClick={() => setAttempt((n) => n + 1)}>
+            Try Again
+          </button>
+        </p>
+      </div>
+    );
+  }
 
   if (!hasAny) {
     return (
@@ -183,7 +212,7 @@ export default function NemesisPanel({ userId, days = null }: Props) {
             aria-expanded={expanded}
             onClick={() => setExpanded((e) => !e)}
           >
-            {expanded ? 'Hide Full List' : `Show Top ${rows.length} Rivals`}
+            {expanded ? 'Hide Full List' : `Show All ${rows.length} Rivals`}
           </button>
 
           {expanded && (
@@ -215,8 +244,8 @@ export default function NemesisPanel({ userId, days = null }: Props) {
                       <span className="nemesis-row-name">{r.username ?? 'Unknown Player'}</span>
                     </th>
                     <td>{r.hands_together.toLocaleString()}</td>
-                    <td className={r.net_chips >= 0 ? 'is-up' : 'is-down'}>
-                      {r.net_chips >= 0 ? '+' : '-'}
+                    <td className={r.net_chips > 0 ? 'is-up' : r.net_chips < 0 ? 'is-down' : ''}>
+                      {r.net_chips > 0 ? '+' : r.net_chips < 0 ? '-' : ''}
                       {chips(r.net_chips)}
                     </td>
                   </tr>

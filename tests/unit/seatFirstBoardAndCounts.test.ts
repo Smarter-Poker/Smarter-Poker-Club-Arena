@@ -75,7 +75,7 @@ describe('a listing only counts if a player could sit at it', () => {
     // Repairing after would be useless: the husk still covers its name.
     const spinTick = service.indexOf("withBoardTick('spin'");
     const repair = service.indexOf('this.repairSeatFirstGames()', spinTick);
-    const budget = service.indexOf('const budget = { left: BURST }', spinTick);
+    const budget = service.indexOf('const share = boardBudgetShares(', spinTick);
     expect(repair).toBeGreaterThan(spinTick);
     expect(repair).toBeLessThan(budget);
   });

@@ -806,3 +806,49 @@
   cursor: pointer;
   transition: filter 0.15s ease;
 }
+
+/* FREE BUY (Dan 2026-09-02): a 0 buy-in MTT. The badge sits under the buy-in
+   control; the rebuy/add-on controls render locked so the owner can read
+   what the rule set. Mobile-first: one column, wraps at 375px. */
+.config-free-buy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.6rem 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.config-free-buy__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(24, 119, 242, 0.18);
+  border: 1px solid rgba(24, 119, 242, 0.55);
+  color: #8fc1ff;
+  font: 700 0.72rem/1.2 var(--font-body, sans-serif);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.config-free-buy__text {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.8rem;
+  line-height: 1.4;
+  flex: 1 1 12rem;
+}
+
+.config-free-buy-lock .config-free-buy__text {
+  padding: 0.35rem 0.5rem 0.6rem;
+}
+
+.config-toggle.is-locked {
+  opacity: 0.75;
+}
+
+.config-toggle.is-locked input:disabled {
+  cursor: not-allowed;
+}

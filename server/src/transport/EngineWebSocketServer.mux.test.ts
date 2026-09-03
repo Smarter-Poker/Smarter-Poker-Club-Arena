@@ -202,6 +202,91 @@ describe('EngineWebSocketServer /ws/multi', () => {
     expect(errs.some((m) => m.type === 'ERROR' && m.code === 'BANNED')).toBe(true);
   });
 
+  /**
+   * THE MUX GATES RUN TOGETHER (2026-09-03). #2711 made the single-table
+   * upgrade path ask its four gates at once and left this path - the one
+   * every browser uses - sequential, so "Connecting To The Table" appeared
+   * on every table opened from the lobby. Each gate is held on a promise the
+   * test controls: with the gates in flight together, ALL FOUR must have
+   * been asked before ANY has answered. The sequential code asks the second
+   * only after the first answers, so this fails on it.
+   */
+  it('asks viewer access, blacklist, restrict-observers and the IP rule at once', async () => {
+    const asked: string[] = [];
+    const holds: Array<() => void> = [];
+    const hold = <T>(name: string, value: T) =>
+      vi.fn(
+        () =>
+          new Promise<T>((resolve) => {
+            asked.push(name);
+            holds.push(() => resolve(value));
+          })
+      );
+    const authorizeViewer = hold('viewer', {
+      allowed: true,
+      reason: 'club_member',
+      clubId: 'club-1',
+    });
+    ({ server, hub } = makeServer({ authorizeViewer }));
+    const s = server as unknown as Record<string, unknown>;
+    s.isBannedFromTable = hold('ban', false);
+    s.isRestrictedObserver = hold('observer', false);
+    s.isIpConflict = hold('ip', false);
+    ws = makeFakeWs();
+    (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(ws, 'user-1', '1.2.3.4');
+
+    ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+    expect(asked.sort()).toEqual(['ban', 'ip', 'observer', 'viewer']);
+    expect(hub.subscribe).not.toHaveBeenCalled();
+
+    for (const release of holds) release();
+    await flush();
+    expect(hub.subscribe).toHaveBeenCalledTimes(1);
+    expect(ws.sent.map((m) => JSON.parse(m)).some((m) => m.type === 'SUBSCRIBED')).toBe(true);
+  });
+
+  it('a viewer who fails access is refused with the access reason even when also banned', async () => {
+    ({ server, hub } = makeServer({
+      authorizeViewer: async () => ({ allowed: false, reason: 'membership_required', clubId: 'c' }),
+    }));
+    (server as unknown as { isBannedFromTable: unknown }).isBannedFromTable = vi
+      .fn()
+      .mockResolvedValue(true);
+    ws = makeFakeWs();
+    (server as unknown as { onUpgradedMux: Handler }).onUpgradedMux(ws, 'user-1', '1.2.3.4');
+    ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+    const errs = ws.sent.map((m) => JSON.parse(m)).filter((m) => m.type === 'ERROR');
+    expect(errs).toHaveLength(1);
+    expect(errs[0].code).toBe('CLUB_MEMBERSHIP_REQUIRED');
+    expect(hub.subscribe).not.toHaveBeenCalled();
+  });
+
+  it('a gate that THROWS never refuses: restrict-observers and the IP rule fail open', async () => {
+    (server as unknown as { isRestrictedObserver: unknown }).isRestrictedObserver = vi
+      .fn()
+      .mockRejectedValue(new Error('db down'));
+    (server as unknown as { isIpConflict: unknown }).isIpConflict = vi
+      .fn()
+      .mockRejectedValue(new Error('db down'));
+    ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+    expect(hub.subscribe).toHaveBeenCalledTimes(1);
+    expect(ws.sent.map((m) => JSON.parse(m)).some((m) => m.type === 'ERROR')).toBe(false);
+  });
+
+  it('an observer-restricted table refuses a non-seated viewer with OBSERVERS_RESTRICTED', async () => {
+    (server as unknown as { isRestrictedObserver: unknown }).isRestrictedObserver = vi
+      .fn()
+      .mockResolvedValue(true);
+    ws.emitMessage({ type: 'SUBSCRIBE', tableId: T1 });
+    await flush();
+    const errs = ws.sent.map((m) => JSON.parse(m)).filter((m) => m.type === 'ERROR');
+    expect(errs.map((e) => e.code)).toEqual(['OBSERVERS_RESTRICTED']);
+    expect(hub.subscribe).not.toHaveBeenCalled();
+  });
+
   it('caps subscriptions at 4 with SUB_LIMIT', async () => {
     const ids = [
       T1,

@@ -521,14 +521,31 @@ button.club-identity__line {
    card. It replaces the old `@media (pointer: coarse)` rule that resized the
    BUTTON to 44x44px — on a 72px-tall card that was 61% of the card's height,
    and it is what pushed the copy icon out of its frame. */
+/* THE BAND REACHES UPWARD, BECAUSE DOWNWARD IS OUTSIDE THE CARD (2026-09-03).
+
+   It used to be centred on the button. Measured in the real fixture at a 375px
+   viewport: the card is 180.5 x 75.2 and the copy frame's centre is 74.34% down
+   it, so there are 19.3px of card beneath that centre - and the card is
+   `overflow: hidden`. A 44px band centred there hangs 22px below the centre,
+   and the bottom of it was being CLIPPED AWAY. The thumb target was never
+   really 44px; the spec that checks it probes centre+20px and was passing by
+   0.2px, which is not a passing test, it is a coin landing on its edge. Moving
+   the button onto the painted frame's true centre, 1.2 points lower, tipped
+   that coin and turned the spec red. That is how this was found.
+
+   Anchoring the band to the button's BOTTOM spends all 44px where there is card
+   to spend it: 16.4px to 60.4px in that fixture, entirely inside, rather than an
+   intended 33.9-77.9 of which the last 2.7px never existed. The reachable
+   target gets bigger, not smaller. Horizontally it stays centred, because there
+   is room on both sides. */
 .club-identity__share::after {
   content: '';
   position: absolute;
   left: 50%;
-  top: 50%;
+  bottom: 0;
   width: max(100%, 44px);
   height: max(100%, 44px);
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
 }
 
 .club-identity__share:active {

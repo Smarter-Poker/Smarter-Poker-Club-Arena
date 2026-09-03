@@ -53,6 +53,7 @@
  * in 20260820_whole_dollar_tournament_buyins.sql is the backstop that fails
  * loudly if a third writer ever appears and disagrees with both.
  */
+import { FREE_BUY_LABEL } from './freeBuy';
 
 /** House cut, as a fraction of the total the player pays. */
 export const DEFAULT_RAKE_RATE = 0.1;
@@ -373,7 +374,9 @@ export function formatBuyIn(prize: number, fee: number | null | undefined): stri
   const p = Number(prize) || 0;
   const f = Number(fee) || 0;
   const total = totalBuyIn(p, f);
-  if (total <= 0) return 'FREE';
+  // FREEROLLS ARE FREE BUY (Dan 2026-09-02): the cell says what the event
+  // IS - free to enter, 1-chip rebuys and add-ons - not just "free".
+  if (total <= 0) return FREE_BUY_LABEL;
   if (f <= 0) return money(total);
   // Round the FEE and take the prize as the remainder, rather than rounding
   // both ends. Rounding each independently is how a legacy 13.5 + 1.5 row
@@ -385,5 +388,5 @@ export function formatBuyIn(prize: number, fee: number | null | undefined): stri
 /** Compact form for a narrow lobby card: just the total. */
 export function formatBuyInShort(prize: number, fee: number | null | undefined): string {
   const total = totalBuyIn(Number(prize) || 0, fee);
-  return total <= 0 ? 'FREE' : money(total);
+  return total <= 0 ? FREE_BUY_LABEL : money(total);
 }

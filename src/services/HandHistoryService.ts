@@ -9,6 +9,7 @@
 import { supabase } from '../lib/supabase';
 import type { Card } from '../types/database.types';
 import { derivePositions } from '../utils/pokerPositions';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { buildReplay } from '../utils/handReplay';
 import { reportError } from '../utils/errorReporter';
 
@@ -600,11 +601,11 @@ class HandHistoryServiceClass {
       const unique = [...new Set(userIds)];
       const { data } = await supabase
         .from('profiles')
-        .select('id, username, avatar_url:arena_avatar_url')
+        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
         .in('id', unique);
 
       for (const p of data || []) {
-        map.set(p.id, { username: p.username, avatar_url: p.avatar_url });
+        map.set(p.id, { username: playerDisplayName(p), avatar_url: p.avatar_url });
       }
     } catch (err: unknown) {
       reportError(err, 'HandHistoryService.fetchProfileMap');

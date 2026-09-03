@@ -50,6 +50,15 @@ SHARED_FILES=(
   .github/scripts/check-token.sh
   .github/scripts/queue-pr.sh
   .github/workflows/agent-autopilot.yml
+  # agent-open-pr.yml joins 2026-09-03. It was already identical in all seven
+  # repos by convention; now the check holds it there. The day it drifted it
+  # would be one repo quietly force-pushing a `ci-marker/*` branch again, and
+  # every push to that branch was a failed Vercel deployment.
+  .github/workflows/agent-open-pr.yml
+  # orphan-work-watchdog.sh joins 2026-09-03 with the same reasoning: it is
+  # the only thing that reports stranded work, and five repos were running a
+  # copy that could not see a conflicted pull request.
+  .github/scripts/orphan-work-watchdog.sh
   scripts/guard-shared-clone.sh
   scripts/guard-commit-identity.sh
   scripts/check-unpushed-work.sh

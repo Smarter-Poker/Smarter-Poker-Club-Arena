@@ -21,6 +21,7 @@ import { generateDefaultAvatar } from '../../utils/avatarGenerator';
 import { sizedStorageUrl } from '../../utils/avatarGenerator';
 import { reportError } from '../../utils/errorReporter';
 import { useToast } from '../common/Toast';
+import { playerDisplayName } from '../../utils/playerDisplayName';
 
 interface TableInfo {
   id: string;
@@ -672,7 +673,7 @@ export default function TableOperationsPanel({ clubId }: Props) {
                 ) : (
                   players.map((player, pIdx) => {
                     const profile = player.profiles;
-                    const name = profile?.display_name || profile?.username || 'Unknown';
+                    const name = playerDisplayName(profile);
                     const playerVisible = visiblePlayers[expandedTable]?.[pIdx];
 
                     return (

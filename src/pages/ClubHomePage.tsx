@@ -27,6 +27,7 @@ import { supabase, getAuthUser } from '../lib/supabase';
 import { sizedStorageUrl } from '../utils/avatarGenerator';
 import { masterBus } from '../core/MasterBus';
 import { useMasterBusChannel } from '../hooks/useMasterBusChannel';
+import { useCoalescedRefresh } from '../hooks/useCoalescedRefresh';
 import haptic from '../services/HapticService';
 import GameCreationActions, {
   type GameCreationTarget,
@@ -101,6 +102,7 @@ import MaintenanceBreakBanner from '../components/common/MaintenanceBreakBanner'
 import HouseAdCard from '../components/ads/HouseAdCard';
 import { ClubBBJShell } from '../components/wallet/ClubWalletArtwork';
 import { ClubIdentityCard } from '../components/club-buttons';
+import { playerDisplayName } from '../utils/playerDisplayName';
 import ClubOwnerMessage from '../components/club/ClubOwnerMessage';
 import AdvancedFilters, {
   loadFilters,
@@ -1712,10 +1714,44 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
     [updateViewPrefs]
   );
 
-  const handleMemberUpdate = useCallback(() => {
-    setAgentSetupRevision((revision) => revision + 1);
-    loadClubDataRef.current();
-  }, []);
+  /* A CHIP TICK IS NOT A REASON TO RELOAD THE CLUB (Dan 2026-09-02): "CLUBS
+     SHOULD NOT BE 'RANDOMLY REFRESHING' ON THERE OWN, IT FEELS LIKE A BUG OR
+     GLITCH THAT SHOULDN'T HAPPEN ... FIX IT FOR EVERY PAGE AND SUB PAGE OF THE
+     CLUB ARENA."
+
+     Every row in club_members carries that member's chip_balance, and that
+     column moves on every buy-in and every cash-out at every table in the club.
+     This handler ran a FULL loadClubData on each payload - the whole lobby
+     payload, get_club_home included - so on a live floor the club rebuilt
+     itself every few seconds under the player's cursor. It is also a large part
+     of why get_club_home sat near the top of the database's cost table.
+
+     Postgres cannot tell us which column moved: club_members uses the default
+     replica identity, so an UPDATE payload carries the new row and no previous
+     row to diff it against, and REPLICA IDENTITY FULL would multiply the WAL
+     volume that is already the realtime pipeline's bottleneck. So the roster is
+     re-read on a floor rather than on an event - at most once every 30 seconds,
+     never while the tab is hidden, once on return. A join or a departure is
+     rare and structural, so those still refresh promptly.
+
+     The agent-setup revision still bumps on every payload: it is a counter, it
+     costs nothing, and the agent panel reads its own data off it. */
+  const memberRefresh = useCoalescedRefresh(() => loadClubDataRef.current(), {
+    minIntervalMs: 30_000,
+  });
+
+  const handleMemberUpdate = useCallback(
+    (payload: { eventType?: string } | undefined) => {
+      setAgentSetupRevision((revision) => revision + 1);
+      const eventType = payload?.eventType ?? 'UPDATE';
+      if (eventType === 'INSERT' || eventType === 'DELETE') {
+        memberRefresh.refreshNow();
+        return;
+      }
+      memberRefresh.request();
+    },
+    [memberRefresh]
+  );
 
   useMasterBusChannel({
     channelName: clubId ? `club-members-${clubId}` : null,
@@ -4317,7 +4353,21 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                   : null
             }
             logoFallback={<span>&#9824;</span>}
-            pokerAlias={currentUser?.display_name || currentUser?.username || 'Player'}
+            /* THE CARD SHOWS THE POKER ALIAS, NEVER THE REAL NAME (Dan
+               2026-09-02): "THE REAL NAME SHOULD NEVER BE DISPLAYED, IT SHOULD
+               ALWAYS BE USING THE POKER ALIAS - KingFish instead of the real
+               name here."
+
+               This read `display_name || username`, and `display_name` holds
+               the legal name on 264 of 1,308 production rows - Dan's own among
+               them, which is why his card said "Dan Bekavac" while the alias
+               "KingFish" sat unread one column away.
+
+               `playerDisplayName(_, 'arena')` is the house resolver, and it
+               already encodes this same instruction from 2026-08-23: "IM DAN
+               BEKAVAC ON SOCIAL AND KINGFISH IN THE CLUB ARENA." The prop is
+               called pokerAlias; it now actually carries one. */
+            pokerAlias={playerDisplayName(currentUser, 'arena')}
             clubId={club.club_id}
             playerId={currentUser?.player_number}
             level={clubLevel?.level}
@@ -4368,7 +4418,12 @@ function ClubHomePageContent({ clubIdOverride }: { clubIdOverride?: string } = {
                 reportError(err, 'ClubHomePage.share_ref_lookup_failed');
               }
               const shareUrl = `${window.location.origin}/hub/club-arena/invite/${club.id}${refQuery}`;
-              const inviterName = currentUser?.display_name || currentUser?.username || 'A player';
+              /* The same leak as the card, and further out: this string is
+                 handed to the OS share sheet, so `display_name` was carrying a
+                 player's legal name into WhatsApp, SMS and anywhere else the
+                 invite was forwarded. An invite to a poker club is signed with
+                 the handle. */
+              const inviterName = playerDisplayName(currentUser, 'arena');
               const playerNumText = profRefNum ? `\nYour Referral Number: ${profRefNum}` : '';
               const shareText = `${inviterName} invited you to join ${club.name}!\n\nClub ID: ${club.club_id}${playerNumText}`;
 

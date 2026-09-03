@@ -42,6 +42,28 @@ Order is by money at risk, then by what unblocks the next phase. Every item ship
 1.5 **Repo hygiene**: merge #2709 #2684 #2688 #2692 #2693; mirror the 14-plus other-agent money migrations that exist only on unmerged branches; the rake guard and spin conservation tests do not run on main until the branches land.
 1.6 **The 3.80 class**: DDL during play caused one winner credit failure tonight; the standard's DDL policy (batch, off-peak) is the mitigation, and the payout sweep repaired it in 31 minutes. No code change; a rule for agents.
 
+### Phase 1 status - 2026-09-03 08:30 UTC (measured, not intended)
+
+- 1.1 DONE. PR #2721 merged 23:04 UTC. Eight DB payers (bounty, bounty residual, mystery bounty, four refund paths) settle through `fn_settle_tournament_obligation`. `ca_money_path_violations` has received ZERO rows since 22:04:27 UTC on 09-02 (the last legacy bounty credit); the 24-hour clean window for the R3 flip (1.4, Dan's call) ends 22:05 UTC 09-03.
+- 1.2 and 1.3 DONE in production, PR #2727 open. Four migrations (22:05 to 22:43 UTC): registration debits journal `tournament_buyin -> prize_liability` (1,864 legs in the last hour), the spin prize leg journals `spin_reserve -> prize_liability` (332 legs in the last hour), the horse door and the BBJ promo sweeps name both sides. `settlement_suspense` received 315 rows / 17,365 chips in the 21:00 hour and ZERO rows from 23:00 UTC through 08:05 UTC.
+- 1.5 DONE. PRs #2709, #2693, #2716, #2721, #2722 (110 mirrored migrations), #2726 merged; #2688, #2692, #2684 were refused by the Silent Revert Guard on a pause-pin commit and are superseded by #2848, #2846, #2847 (same net change squashed onto current main; guard clean, lane tests and tsc green locally); #2727 carries the 1.2 / 1.3 mirrors. All four wait on the CI queue and auto-merge on green.
+- 1.6 stands as a rule.
+- Result: 5,779 tournaments completed between 23:00 and 08:14 UTC with 0 over-pool and 0 under-pool; 7,764 obligations, 0 engine refusals.
+
+Two findings from the night, for Phase 1.7 and for the restart programme:
+
+- 1.7 **Reconciler cent noise.** At 23:57 UTC `fn_tournament_payout_reconcile` asked the settle function for 0.09, 0.11 and 0.12 on three places of two events the engine had already paid to the pool exactly; the cap refused each (`escrow_short`) and filed three critical alerts. The reconciler's ladder rounds differently from the engine's largest-remainder allocation (standard 2.2 item 4). Fix: the reconciler computes expected prizes with the engine's allocation, and a total under the pool's rounding remainder is clean, not a shortfall. Until then these alerts are noise and the refusal is the function doing its job.
+- **The total freeze blocks the journal but not the balance.** During the 05:00 and 06:00 UTC maintenance breaks `fn_ca_autoledger` was refused 92 `chip_ledger` inserts with `PLATFORM_FROZEN` (55006) for `bbj_pools.backup_balance` while the balance itself moved: 8.85 chips of BBJ backup are unjournaled and `fn_ca_trial_balance` shows exactly that break. One overlay ledger row (18.00, `fn_ca_fund_overlay_on_lock`) was also lost to a deadlock at 00:xx. Both are `ledger_write_failure` incidents with the existing repair arm (`fn_ca_repair_write_failure`); the structural fix belongs to the restart programme: a freeze that refuses the journal must refuse the balance write in the same statement, or exempt the journal.
+
+### Phase 1 verification - 2026-09-03 16:00 UTC (Dan's gate before Phase 2)
+
+- Repo: main 567043a40, root and server tsc 0 errors, 16,779 tests green, all seven CI gates pass. Engine serves 567043a4; client published at the same sha.
+- Parity: every chip-std migration since the 09-02 cutoff is in the repo and normalised-equal to production; the twelve functions the standard depends on match their last repo definition; all three triggers attached and enabled. Fourteen 08-31 placeholder files (the epoch-3 reset among them) carried no body - exported byte-exact (#2856).
+- Wiring: settleObligation (8 call sites), rakeSpecGuard (boot), tournamentChipConservation, seatStackCredit, config/buyIn free-buy helpers all imported and called; no legacy payer RPC left in server/src; no TODO/stub in any touched file.
+- Production since cutover: 12,963 structure payouts, 0 paid twice, 0 over pool, 0 over guarantee, suspense 0.00, money-path violations 0 since 22:04:27 UTC 09-02, player wallets balance to the ledger to the cent since 00:00 UTC.
+- One defect found and fixed: the overlay journal row for Late Night PKO (PLO4) lost a deadlock at 00:31:49 (18.00, union bank; balances right, row missing). Restored (correction:lwf:704); migration 20260903155801 retries 40P01 and names the bank in its failure message (#2856).
+- Left for their owners: 92 frozen BBJ auto-ledger rows (8.85, restart programme), a 400-chip table_stack drift in the 12:05 restart hour (not tournament money), the "seat missing or left" hand-write refusals (pre-existing, self-healing), post-deploy-e2e red since 09-01 (E2E account, lobby waitlist). Details: docs/changelog/2026-09-03-chip-std-pre-phase2-verification.md.
+
 ### Phase 2 - the hierarchy ledger (before 2026-09-14)
 
 2.1 **Weekly union rakeback close (F1, CRITICAL)**: the live `fn_union_weekly_rakeback_close` debits the union bank by the payout AND the rake treasury by the period total, credits the retained share nowhere, and its guard demands the bank cover a treasury payout. Rewrite the money section for separate pots with a conservation assert (in = out to the cent), rolled-back sim on the real period before the freeze lifts. Last run 08-20; the settlement freeze holds until 09-07.

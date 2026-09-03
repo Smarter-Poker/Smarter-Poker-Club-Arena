@@ -447,9 +447,15 @@
   border-radius: 2px;
 }
 
+/* THE COLUMN COUNT BELONGS TO THE LIST, NOT TO .breakdown li.
+   Three lists share this element and they render four cells, six cells and
+   five. Three unconditional grid-template-columns rules had accumulated here,
+   one per phase, each overriding the last - so whichever shipped most recently
+   governed all three, and the club list had been laid into the agent list's
+   grid ever since the agent breakdown was added. Empty trailing columns
+   squeeze the real ones and nothing errors, which is why it survived. */
 .breakdown li {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(70px, 1fr) 100px 58px;
   align-items: center;
   gap: 0.6rem;
   min-height: 42px;
@@ -530,7 +536,7 @@
     flex: 1 1 100%;
   }
 
-  .breakdown li {
+  .listClub li {
     grid-template-columns: minmax(0, 1fr) 92px 52px;
   }
 
@@ -562,13 +568,19 @@
 
 /* Four columns became six once agent and downline rows arrived: name, count,
    bar, direct figure, network figure. The club list keeps the original four. */
-.breakdown li {
+/* Union scope: name, bar, fee, share. */
+.listClub li {
+  grid-template-columns: minmax(0, 1.4fr) minmax(70px, 1fr) 100px 58px;
+}
+
+/* Downline: name, count, bar, rake, their own downline. */
+.listDownline li {
   grid-template-columns: minmax(0, 1.3fr) 108px minmax(60px, 0.8fr) 100px 92px;
 }
 
 .legend {
   display: grid;
-  grid-template-columns: 1fr 100px 92px;
+  grid-template-columns: 1fr 96px 88px 96px;
   gap: 0.6rem;
   padding: 0 0.7rem 0.3rem;
   color: #66737f;
@@ -698,7 +710,7 @@
 }
 
 @media (max-width: 860px) {
-  .breakdown li {
+  .listDownline li {
     grid-template-columns: minmax(0, 1fr) 92px 84px;
   }
 
@@ -774,6 +786,154 @@
   }
 
   .pagerBtn {
+    flex: 1 1 100%;
+  }
+}
+
+/* ----------------------------------------------------------------- cost --- */
+
+/* The agent rows gained a sixth column. The club list keeps its four, so this
+   override sits after the shared rule and applies only where a Cost column
+   actually exists. */
+/* Agents: name, players, bar, direct, network, cost. */
+.listAgent li {
+  grid-template-columns: minmax(0, 1.2fr) 96px minmax(50px, 0.7fr) 96px 88px 96px;
+}
+
+/* Money the club owes, not money it took. Gold rather than the energy blue the
+   rake columns use, so an operator scanning the table is never one glance away
+   from reading a cost as a takings. */
+.rowCost {
+  color: var(--gold);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+@media (max-width: 860px) {
+  .listAgent li {
+    grid-template-columns: minmax(0, 1fr) 88px 88px;
+  }
+
+  /* Direct rake and cost survive the narrow layout; network is the one that
+     can be inferred from the rows beneath it. */
+  .rowNetwork {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------- list search and sort ---
+   One control row above whichever breakdown is showing. It sits outside the
+   .breakdown blocks deliberately: all three lists take the same two controls,
+   and three copies of a control row is three chances for them to drift. */
+.listTools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.9rem 0 0.35rem;
+}
+.toolSearch {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+.toolSearch input {
+  width: 100%;
+  min-height: 34px;
+  padding: 0 0.55rem;
+  color: #e7f4fe;
+  background: #0b1117;
+  border: 1px solid rgba(174, 189, 203, 0.18);
+  border-radius: 2px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+}
+.toolSearch input::placeholder {
+  color: rgba(174, 189, 203, 0.55);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.7rem;
+}
+.toolSort select {
+  min-height: 34px;
+  padding: 0 0.45rem;
+  color: #e7f4fe;
+  background: #0b1117;
+  border: 1px solid rgba(174, 189, 203, 0.18);
+  border-radius: 2px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.toolClear {
+  min-height: 34px;
+  padding: 0 0.6rem;
+  color: #7fc8ff;
+  background: #0b1117;
+  border: 1px solid rgba(174, 189, 203, 0.18);
+  border-radius: 2px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.toolCount {
+  flex: 1 1 100%;
+  margin: 0;
+  color: rgba(174, 189, 203, 0.8);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.noMatches {
+  margin: 0.2rem 0 0.9rem;
+  color: rgba(174, 189, 203, 0.8);
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.75rem;
+  letter-spacing: 0.03em;
+}
+
+/* NO HOVER EFFECTS (Dan 2026-08-29, binding): :active fires on touch, which
+   iOS then leaves stuck on the element until something else is tapped. */
+.toolClear:active {
+  background: #101922;
+}
+.toolSearch input:focus-visible,
+.toolSort select:focus-visible,
+.toolClear:focus-visible,
+.drillIn:focus-visible {
+  outline: 2px solid var(--energy);
+  outline-offset: -2px;
+}
+
+/* An agent name in the club list that opens into that agent's downline. Only
+   rendered as a button when the server says the row will actually open, so the
+   underline is a promise rather than an invitation to be refused. */
+.drillIn {
+  padding: 0;
+  color: #7fc8ff;
+  background: none;
+  border: 0;
+  border-bottom: 1px dotted rgba(127, 200, 255, 0.45);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.drillIn:active {
+  color: #cfe9ff;
+}
+
+@media (max-width: 860px) {
+  .toolSearch {
     flex: 1 1 100%;
   }
 }

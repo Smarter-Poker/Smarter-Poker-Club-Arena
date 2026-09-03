@@ -15,12 +15,16 @@
  * bucket: 0 live, 1 scheduled, 2 closed. These tests pin that the page reads
  * it rather than re-deriving it, because re-deriving it is the bug.
  */
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { act } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ page: null as any }));
+const mocks = vi.hoisted(() => ({
+  page: null as any,
+  buckets: [] as (number | null)[],
+  extraCalls: [] as string[],
+}));
 
 vi.mock('../../src/hooks/useAuthUser', () => ({
   useAuthUser: () => ({ user: { id: 'operator-1' } }),
@@ -60,9 +64,35 @@ vi.mock('../../src/components/common/Toast', () => ({
 }));
 vi.mock('../../src/services/GameManagementService', () => ({
   gameManagementService: {
-    list: async () => mocks.page,
-    getContracts: async () => [],
-    getCommandReceipts: async () => [],
+    /*
+       Models the server, which is where the filtering now lives: the tab is a
+       QUERY. A mock that ignored the bucket and returned everything would let
+       a client-side filter pass this suite while the real board showed the
+       wrong tab's games.
+    */
+    list: async (
+      _scope: string,
+      _scopeId: string,
+      _cursor: unknown = null,
+      bucket: number | null = null
+    ) => {
+      mocks.buckets.push(bucket);
+      return {
+        ...mocks.page,
+        items:
+          bucket === null
+            ? mocks.page.items
+            : mocks.page.items.filter((row: any) => row.bucket === bucket),
+      };
+    },
+    getContracts: async () => {
+      mocks.extraCalls.push('getContracts');
+      return [];
+    },
+    getCommandReceipts: async () => {
+      mocks.extraCalls.push('getCommandReceipts');
+      return [];
+    },
     getHealth: async () => ({
       latestEventSequence: 0,
       lastEventAt: null,
@@ -157,6 +187,47 @@ const clickTab = async (label: string) => {
 describe('the board classifies games by the server bucket', () => {
   beforeEach(() => {
     mocks.page = PAGE;
+    mocks.buckets = [];
+    mocks.extraCalls = [];
+  });
+
+  /**
+   * Drawing the board used to take five sequential round trips, about eleven
+   * seconds against production. Four of them were this wave: contracts and
+   * command receipts, twice each, and every one of them could only start after
+   * the list came back because it needed the ids.
+   *
+   * fn_list_managed_games returns each row's contract and latest receipt inline
+   * now, so the wave is gone. Pinned as an ABSENCE because that is the property
+   * - re-adding a dependent per-row fetch is exactly the regression, and it
+   * would not show up in any assertion about what the board renders.
+   */
+  it('draws the board without a second round trip per game', async () => {
+    await renderBoard();
+    expect(mocks.extraCalls, 'the board row must arrive whole').toEqual([]);
+    expect(screen.getByText('Friday Deep Stack')).toBeInTheDocument();
+  });
+
+  /**
+   * The mechanism, pinned separately from its effects.
+   *
+   * The tabs used to filter `games` in the page. That is invisible to a test
+   * whose fixture happens to contain a row of every bucket - which is exactly
+   * why the real regression shipped. Asserting that the SERVER is asked for the
+   * tab's bucket is the thing that cannot pass while the filtering is local.
+   */
+  it('asks the server for the tab, rather than filtering what it already has', async () => {
+    await renderBoard();
+    expect(mocks.buckets, 'the All tab must not restrict the bucket').toEqual([null]);
+
+    await clickTab('scheduled');
+    expect(mocks.buckets.at(-1), 'the Scheduled tab must query bucket 1').toBe(1);
+
+    await clickTab('closed');
+    expect(mocks.buckets.at(-1), 'the Closed tab must query bucket 2').toBe(2);
+
+    await clickTab('running');
+    expect(mocks.buckets.at(-1), 'the Running tab must query bucket 0').toBe(0);
   });
 
   it('counts a tournament that has not started as scheduled, not live', async () => {
@@ -194,5 +265,30 @@ describe('the board classifies games by the server bucket', () => {
     await clickTab('closed');
     expect(screen.getByText('Tuesday Deepstack')).toBeInTheDocument();
     expect(screen.queryByText('Friday Deep Stack')).not.toBeInTheDocument();
+  });
+
+  /**
+   * Open, Pause, Schedule and Close were all gated on the game being unfinished
+   * and Edit was not, so a closed game could be renamed and re-limited from the
+   * board. Nothing downstream refused it either: fn_update_managed_game never
+   * looks at a table's status. A closed game is history and is read-only here.
+   */
+  it('does not offer Edit on a finished game', async () => {
+    await renderBoard();
+    await clickTab('closed');
+
+    // Climb from the game's name to the ancestor that actually carries its
+    // action row, rather than guessing a tag name for the card.
+    let card: HTMLElement | null = screen.getByText('Tuesday Deepstack');
+    while (card && card.querySelectorAll('button').length === 0) {
+      card = card.parentElement;
+    }
+    expect(card, 'no action row found for the closed game').toBeTruthy();
+    const labels = within(card as HTMLElement)
+      .queryAllByRole('button')
+      .map((b) => b.textContent?.trim().toLowerCase());
+    expect(labels).not.toContain('edit');
+    // Contract is history and stays reachable, so this is not "no buttons".
+    expect(labels).toContain('contract');
   });
 });

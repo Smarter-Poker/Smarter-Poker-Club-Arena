@@ -61,6 +61,10 @@ permissions:
   contents: read
   issues: write
   actions: write # to re-dispatch the publisher for its one automatic retry
+  # pull-requests: read (2026-09-03) is what lets orphan-work-watchdog.sh tell
+  # a proposed branch from a stranded one. Without it `gh pr list` is refused,
+  # and the sweep reported every branch with a pull request as having none.
+  pull-requests: read
 
 concurrency:
   group: publish-watchdog
@@ -177,6 +181,21 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: bash .github/scripts/orphan-work-watchdog.sh
+
+      # The origin's Caddyfile lives in infra/ca-origin/ but NOTHING deploys
+      # it: writing /etc/caddy and reloading Caddy needs root, and there is
+      # deliberately no root key in CI. So the box and the repo can drift the
+      # moment either is edited, and until 2026-09-03 nothing would have
+      # noticed - the 404-cached-for-a-year bug lived there unseen.
+      #
+      # Comparing the file byte-for-byte would need that same root access and
+      # would fail on a comment while passing a config that serves the wrong
+      # thing. This asserts the four things the config EXISTS to produce, from
+      # outside, over the path a player actually takes. Every check is a bug
+      # that was real.
+      - name: The origin still behaves the way its config says
+        if: always()
+        run: bash .github/scripts/origin-contract.sh
 
   # ── Are the schedules themselves firing? ─────────────────────────────────
   #

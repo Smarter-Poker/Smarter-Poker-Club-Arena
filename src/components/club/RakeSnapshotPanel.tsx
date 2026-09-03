@@ -27,6 +27,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ClubRakeSnapshotService,
   RAKE_PERIODS,
+  RAKE_SORTS,
   describeRakeSnapshotError,
   periodToRange,
   type PeriodKey,
@@ -36,6 +37,7 @@ import {
   type RakeDownlineRow,
   type RakeScope,
   type RakeSnapshot,
+  type RakeSortKey,
 } from '../../services/ClubRakeSnapshotService';
 import { reportError } from '../../utils/errorReporter';
 import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription';
@@ -67,6 +69,12 @@ const RAKE_BUS_EVENTS: BusEventType[] = [
 ];
 /** Deeper than any real agent chain, and a hard stop if one ever loops. */
 const MAX_DRILL = 8;
+/**
+ * Long enough that a name is typed rather than transmitted a letter at a time,
+ * short enough that the list feels answerable. Each keystroke would otherwise
+ * be a round trip through a definer function that walks an agent tree.
+ */
+const SEARCH_DEBOUNCE_MS = 300;
 
 const SCOPE_COPY: Record<RakeScope, { label: string; note: string }> = {
   union: { label: 'Union', note: 'Every Club Beneath The Union' },
@@ -144,7 +152,17 @@ interface Crumb {
 }
 
 export interface RakeSnapshotPanelProps {
+  /**
+   * The club this panel reports on, or null on the union page - a union owner
+   * has a union and need not have a club at all.
+   */
   clubId: string | null;
+  /**
+   * The union this panel reports on. Given without a clubId, the union scope
+   * asks the database for the union DIRECTLY rather than deriving it from
+   * whichever member club the operator happened to walk in through.
+   */
+  unionId?: string | null;
   /** Cache is keyed per viewer; without it one operator could paint another's. */
   userId?: string | null;
   /** Scopes the viewer holds, in the order they should be offered. */
@@ -157,6 +175,7 @@ export interface RakeSnapshotPanelProps {
 
 export default function RakeSnapshotPanel({
   clubId,
+  unionId = null,
   userId = null,
   scopes,
   agentUserId = null,
@@ -181,6 +200,22 @@ export default function RakeSnapshotPanel({
   const [error, setError] = useState<string | null>(null);
   /** The chain walked into, deepest last. Empty means "my own book". */
   const [crumbs, setCrumbs] = useState<Crumb[]>([]);
+  /**
+   * Where a drill STARTED, when it started somewhere other than the downline
+   * scope. Without it, backing out of an agent opened from the Club list drops
+   * the operator into "My Downline" - a book a club owner may not even have,
+   * and never the one they were reading.
+   */
+  const [drillOrigin, setDrillOrigin] = useState<RakeScope | null>(null);
+  /**
+   * The member club opened FROM the union list, if any. The union page has no
+   * club of its own, so the club scope has to be told which one to read.
+   */
+  const [clubCrumb, setClubCrumb] = useState<{ clubId: string; name: string } | null>(null);
+  /** What is typed, and what has actually been asked for. */
+  const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<RakeSortKey>('rake');
 
   const version = useRef(0);
   const cancelled = useRef(false);
@@ -204,16 +239,39 @@ export default function RakeSnapshotPanel({
     };
   }, []);
 
+  useEffect(() => {
+    const t = setTimeout(() => setQuery(search.trim()), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [search]);
+
   // If the viewer's roles resolve after first paint, the selected chip may no
   // longer be one they hold. Fall back rather than keep asking for a refusal.
   useEffect(() => {
+    // A club owner holds no downline of their own, so 'agent' is not among the
+    // scopes they are offered - but opening an agent FROM the club list puts
+    // them in it legitimately. Without this the fallback fires on the next
+    // render and bounces them straight back out of the row they just opened.
+    if (scope === 'agent' && crumbs.length > 0) return;
+    // Same reasoning for a club opened from the union list: a union lead who
+    // holds no club role is not offered the Club chip, but opening a member
+    // club from their own union list is legitimate.
+    if (scope === 'club' && clubCrumb) return;
     if (!available.includes(scope)) setScope(available[0]);
-  }, [available, scope]);
+  }, [available, scope, crumbs.length, clubCrumb]);
 
   // Leaving the downline scope must drop the trail with it, or coming back
   // lands you inside somebody else's book with no visible reason why.
   useEffect(() => {
+    // The drill is a CHAIN - union, then a club inside it, then an agent
+    // inside that - so the club being read has to survive descending PAST it
+    // into an agent. Clearing it on any scope but 'club' lost which club the
+    // agent belonged to the moment you opened one, and backing out then asked
+    // for club scope with no club, which the database rejects outright.
     if (scope !== 'agent') setCrumbs([]);
+    if (scope === 'union') {
+      setClubCrumb(null);
+      setDrillOrigin(null);
+    }
   }, [scope]);
 
   const range = useMemo(
@@ -222,6 +280,13 @@ export default function RakeSnapshotPanel({
   );
 
   const focusUserId = crumbs.length ? crumbs[crumbs.length - 1].userId : agentUserId;
+  const focusClubId = clubCrumb?.clubId ?? clubId;
+  /**
+   * Something to hang a cache and a bus filter on. The union page has no club,
+   * so without this every union read would be uncacheable and every club event
+   * would be discarded as belonging to somebody else.
+   */
+  const contextId = focusClubId ?? unionId;
 
   /**
    * One key per distinct question. Scope, period and the agent being drilled
@@ -236,8 +301,17 @@ export default function RakeSnapshotPanel({
         start: range.start,
         end: range.end,
         agent: scope === 'agent' ? (focusUserId ?? 'me') : null,
+        // A union read and a club read are different questions even at the
+        // same moment, and drilling changes which club is being asked about.
+        club: focusClubId,
+        union: unionId ?? null,
+        // A different sort is a different page of the same question, so it has
+        // to be in the key or Load More would append rows ordered by something
+        // else. The SEARCH is in it for the same reason.
+        sort,
+        q: query || null,
       }),
-    [scope, range.start, range.end, focusUserId]
+    [scope, range.start, range.end, focusUserId, focusClubId, unionId, sort, query]
   );
 
   // A new question is a new list. Anything carried over from the last one -
@@ -249,19 +323,24 @@ export default function RakeSnapshotPanel({
 
   /** Paint the last verified answer immediately, then read live over it. */
   useEffect(() => {
-    if (!userId || !clubId) return;
-    const cached = readClubDataCache<RakeSnapshot>(userId, clubId, cacheKey);
+    if (!userId || !contextId) return;
+    // A search is a transient question. Caching one would fill the store with
+    // an entry per prefix an operator ever typed, to be served back later as
+    // though it were the list.
+    if (query) return;
+    const cached = readClubDataCache<RakeSnapshot>(userId, contextId, cacheKey);
     if (!cached) return;
     const cachedRows = Array.isArray(cached.breakdown) ? cached.breakdown : [];
     setSnapshot(cached);
     setRows(cachedRows);
     cursor.current = cachedRows.length;
     setLoading(false);
-  }, [userId, clubId, cacheKey]);
+  }, [userId, contextId, cacheKey, query]);
 
   const load = useCallback(
     async (quiet = false) => {
-      if (!clubId) return;
+      // A union page has no club, and that is not a reason not to read.
+      if (!clubId && !unionId) return;
       const mine = ++version.current;
       if (!quiet) setLoading(true);
       setError(null);
@@ -269,12 +348,15 @@ export default function RakeSnapshotPanel({
       try {
         const next = await ClubRakeSnapshotService.get({
           scope,
-          clubId,
+          clubId: focusClubId,
+          unionId: unionId ?? null,
           start: range.start,
           end: range.end,
           agentUserId: scope === 'agent' ? focusUserId : null,
           limit: PAGE_SIZE,
           offset: 0,
+          search: query || null,
+          sort,
         });
         if (cancelled.current || mine !== version.current) return;
         setSnapshot(next);
@@ -292,7 +374,8 @@ export default function RakeSnapshotPanel({
           setRows(next.breakdown);
           cursor.current = next.breakdown.length;
         }
-        if (userId) writeClubDataCache<RakeSnapshot>(userId, clubId, cacheKey, next);
+        if (userId && contextId && !query)
+          writeClubDataCache<RakeSnapshot>(userId, contextId, cacheKey, next);
       } catch (e) {
         if (cancelled.current || mine !== version.current) return;
         // The previous snapshot stays on screen. A refusal for one scope must not
@@ -303,7 +386,20 @@ export default function RakeSnapshotPanel({
         if (!cancelled.current && mine === version.current) setLoading(false);
       }
     },
-    [clubId, scope, range.start, range.end, focusUserId, userId, cacheKey]
+    [
+      clubId,
+      unionId,
+      focusClubId,
+      contextId,
+      scope,
+      range.start,
+      range.end,
+      focusUserId,
+      userId,
+      cacheKey,
+      query,
+      sort,
+    ]
   );
 
   /**
@@ -312,19 +408,22 @@ export default function RakeSnapshotPanel({
    * would do.
    */
   const loadMore = useCallback(async () => {
-    if (!clubId || loadingMore) return;
+    if ((!clubId && !unionId) || loadingMore) return;
     const mine = version.current;
     setLoadingMore(true);
     setPageError(null);
     try {
       const next = await ClubRakeSnapshotService.get({
         scope,
-        clubId,
+        clubId: focusClubId,
+        unionId: unionId ?? null,
         start: range.start,
         end: range.end,
         agentUserId: scope === 'agent' ? focusUserId : null,
         limit: PAGE_SIZE,
         offset: cursor.current,
+        search: query || null,
+        sort,
       });
       if (cancelled.current || mine !== version.current) return;
       // Advance by what the SERVER returned, before any deduping. This is the
@@ -351,7 +450,18 @@ export default function RakeSnapshotPanel({
     } finally {
       if (!cancelled.current) setLoadingMore(false);
     }
-  }, [clubId, scope, range.start, range.end, focusUserId, loadingMore]);
+  }, [
+    clubId,
+    unionId,
+    focusClubId,
+    scope,
+    range.start,
+    range.end,
+    focusUserId,
+    loadingMore,
+    query,
+    sort,
+  ]);
 
   useEffect(() => {
     void load();
@@ -377,11 +487,28 @@ export default function RakeSnapshotPanel({
         payload && typeof payload === 'object' && 'clubId' in payload
           ? String((payload as { clubId?: unknown }).clubId || '')
           : '';
-      if (eventClubId && eventClubId !== clubId) return;
+      // On the union page there is no club to compare against, and a union
+      // moves when ANY of its clubs does - so the filter only applies when
+      // this panel is actually pinned to one club.
+      if (focusClubId && eventClubId && eventClubId !== focusClubId) return;
       void load(true);
     },
     { debounce: 750 }
   );
+
+  /**
+   * Sorting by Cost and then switching to the downline list would ask for a
+   * column that list does not have. The server falls back to rake and says so,
+   * but the control would still be reading "Cost" - so it is reset here rather
+   * than left describing something that is not happening.
+   */
+  const sortOptions = useMemo(
+    () => RAKE_SORTS[(snapshot?.breakdown_kind ?? 'club') as 'club' | 'agent' | 'downline'] ?? [],
+    [snapshot?.breakdown_kind]
+  );
+  useEffect(() => {
+    if (sortOptions.length && !sortOptions.some((o) => o.key === sort)) setSort('rake');
+  }, [sortOptions, sort]);
 
   const summary = snapshot?.summary ?? null;
   const delta = snapshot?.delta ?? null;
@@ -429,6 +556,74 @@ export default function RakeSnapshotPanel({
     setCrumbs((c) => (c.length >= MAX_DRILL ? c : [...c, { userId, name }]));
   }, []);
 
+  /**
+   * Open an agent from the CLUB list. The club breakdown gives a network total
+   * and no way to ask who inside it produced it; this is that way.
+   *
+   * A search is dropped on the way in. It was matching agent names in the club
+   * list and would arrive filtering player names in the downline, silently
+   * hiding most of the book the operator just asked to see.
+   */
+  const openAgent = useCallback(
+    (agentUserId: string, name: string) => {
+      setDrillOrigin(scope);
+      setSearch('');
+      setQuery('');
+      setCrumbs([{ userId: agentUserId, name }]);
+      setScope('agent');
+    },
+    [scope]
+  );
+
+  /**
+   * Open a member club from the UNION list. The union breakdown says SHARK
+   * CLUB produced 3,023,403.87 and, until now, gave no way to ask which agents
+   * produced it.
+   *
+   * The search is dropped on the way in for the same reason it is dropped
+   * entering a downline: it was matching CLUB names and would arrive filtering
+   * AGENT names, hiding most of the list the operator just asked to see.
+   */
+  const openClub = useCallback(
+    (id: string, name: string) => {
+      setDrillOrigin(scope);
+      setSearch('');
+      setQuery('');
+      setClubCrumb({ clubId: id, name });
+      setScope('club');
+    },
+    [scope]
+  );
+
+  /** Back out of a drill, to wherever it started. */
+  /**
+   * Step back ONE level of the chain, not all of it.
+   *
+   * An agent opened from a club that was itself opened from a union has two
+   * levels above it. Collapsing straight to the top was wrong in both
+   * directions: it threw away a club the operator was still reading, and it
+   * left the club scope with no club to read.
+   */
+  const leaveDrill = useCallback(() => {
+    if (scope === 'agent') {
+      // Back to wherever this agent was opened FROM - the club it belongs to,
+      // when that club was itself opened from a union. drillOrigin already
+      // records that; an extra branch on clubCrumb was a second way of saying
+      // the same thing, and a mutation deleting it changed nothing.
+      setCrumbs([]);
+      if (drillOrigin && drillOrigin !== 'agent') {
+        setScope(drillOrigin);
+        setDrillOrigin(null);
+      }
+      return;
+    }
+    if (scope === 'club' && clubCrumb) {
+      setClubCrumb(null);
+      setScope('union');
+      setDrillOrigin(null);
+    }
+  }, [scope, clubCrumb, drillOrigin]);
+
   const deltaNote = (pct: number | null | undefined, abs: number | null | undefined) => {
     const hasPct = pct !== null && pct !== undefined && Number.isFinite(Number(pct));
     const hasAbs = abs !== null && abs !== undefined && Number.isFinite(Number(abs));
@@ -469,6 +664,11 @@ export default function RakeSnapshotPanel({
         'hands',
         'total_winnings',
         'mtt_winnings',
+        // The summary above is the WHOLE club; the rows below are only the
+        // matches. Without this column the file reads as though the club
+        // produced the summary from those few rows.
+        'row_filter',
+        'row_sort',
       ].join(',')
     );
     lines.push(
@@ -485,6 +685,8 @@ export default function RakeSnapshotPanel({
         snapshot.summary.hands,
         snapshot.summary.total_winnings,
         snapshot.summary.mtt_winnings,
+        snapshot.applied_search ?? '',
+        snapshot.applied_sort ?? 'rake',
       ]
         .map(csvEscape)
         .join(',')
@@ -530,6 +732,9 @@ export default function RakeSnapshotPanel({
             'sub_agents',
             'network_players',
             'network_rake',
+            'commission_earned',
+            'commission_outstanding',
+            'commission_settled',
           ].join(',')
         );
         for (const r of rows as RakeAgentRow[]) {
@@ -546,6 +751,9 @@ export default function RakeSnapshotPanel({
               r.sub_agents,
               r.network_players,
               r.network_rake,
+              r.commission_earned,
+              r.commission_outstanding,
+              r.commission_settled,
             ]
               .map(csvEscape)
               .join(',')
@@ -819,17 +1027,81 @@ export default function RakeSnapshotPanel({
         </figure>
       )}
 
+      {/*
+        Search and sort run on the SERVER. Filtering the fifty rows that happen
+        to be loaded, out of two hundred, would find only what was already
+        fetched - which is the kind of search that looks like it works.
+      */}
+      {kind !== 'none' && (rows.length > 0 || !!query) && (
+        <div className={styles.listTools}>
+          <label className={styles.toolSearch}>
+            <span className={styles.srOnly}>Search This List</span>
+            <input
+              type="search"
+              value={search}
+              placeholder="Search By Name"
+              autoComplete="off"
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </label>
+          {search ? (
+            <button type="button" className={styles.toolClear} onClick={() => setSearch('')}>
+              Clear
+            </button>
+          ) : null}
+          <label className={styles.toolSort}>
+            <span className={styles.srOnly}>Sort This List</span>
+            <select value={sort} onChange={(e) => setSort(e.target.value as RakeSortKey)}>
+              {sortOptions.map((o) => (
+                <option key={o.key} value={o.key}>
+                  Sort By {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {query ? (
+            <p className={styles.toolCount} aria-live="polite">
+              {/* The count is of MATCHES. The shares beside each row stay
+                  against the whole club, so they mean the same thing whether
+                  or not anything is typed. */}
+              {count(breakdownCount)} Matching {breakdownCount === 1 ? 'Row' : 'Rows'} For "
+              {snapshot?.applied_search ?? query}"
+            </p>
+          ) : null}
+        </div>
+      )}
+
+      {kind !== 'none' && !!query && rows.length === 0 && !loading && (
+        <p className={styles.noMatches}>
+          Nothing In This List Matches "{query}". Clear The Search To See Everything Again.
+        </p>
+      )}
+
       {/* ------------------------------------------------------ by club --- */}
       {kind === 'club' && rows.length > 0 && (
         <div className={styles.breakdown}>
           <h3>Rake By Club</h3>
-          <ul>
+          <ul className={styles.listClub}>
             {(rows as RakeClubRow[]).map((r) => {
               const pct = share(r.fee, total ?? summary?.fee);
               return (
                 <li key={r.club_id}>
                   <span className={styles.rowName} title={r.name}>
-                    {r.name}
+                    {/* Only rows the server says will open are offered as
+                        buttons - can_drill is the same gate the club scope
+                        enforces, so this is not a guess. */}
+                    {r.can_drill && r.club_id ? (
+                      <button
+                        type="button"
+                        className={styles.drillIn}
+                        onClick={() => openClub(r.club_id, r.name)}
+                        title={`Open ${r.name}`}
+                      >
+                        {r.name}
+                      </button>
+                    ) : (
+                      r.name
+                    )}
                     {r.code ? <em>#{r.code}</em> : null}
                   </span>
                   <span className={styles.rowBar} aria-hidden="true">
@@ -847,21 +1119,49 @@ export default function RakeSnapshotPanel({
       {/* ----------------------------------------------------- by agent --- */}
       {kind === 'agent' && rows.length > 0 && (
         <div className={styles.breakdown}>
-          <h3>Rake By Agent</h3>
+          <h3>{clubCrumb ? `${clubCrumb.name} - Rake By Agent` : 'Rake By Agent'}</h3>
+          {clubCrumb && (
+            <nav className={styles.crumbs} aria-label="Union Trail">
+              <button type="button" onClick={leaveDrill}>
+                Back To {SCOPE_COPY.union.label}
+              </button>
+              <button type="button" aria-current="true" disabled>
+                {clubCrumb.name}
+              </button>
+            </nav>
+          )}
           <div className={styles.legend} aria-hidden="true">
             <span>Direct</span>
             <span>Network</span>
+            <span>Cost</span>
           </div>
-          <ul>
+          <ul className={styles.listAgent}>
             {(rows as RakeAgentRow[]).map((r) => {
               const pct = share(r.direct_rake, total);
               return (
                 <li
-                  key={r.agent_user_id ?? 'unassigned'}
+                  // Unassigned and Unlisted Recipients BOTH have a null agent
+                  // id, so keying on it alone collides and React reuses one
+                  // row's DOM for the other.
+                  key={r.agent_user_id ?? r.name}
                   className={r.is_unassigned ? styles.rowMuted : undefined}
                 >
                   <span className={styles.rowName} title={r.name}>
-                    {r.name}
+                    {/* Only rows the server says will open are offered as
+                        buttons. can_drill is computed from the same conditions
+                        the downline gate enforces, so this is not a guess. */}
+                    {r.can_drill && r.agent_user_id ? (
+                      <button
+                        type="button"
+                        className={styles.drillIn}
+                        onClick={() => openAgent(r.agent_user_id as string, r.name)}
+                        title={`Open ${r.name}'s Downline`}
+                      >
+                        {r.name}
+                      </button>
+                    ) : (
+                      r.name
+                    )}
                     <em>{roleLabel(r.role)}</em>
                   </span>
                   <span className={styles.rowCount}>
@@ -882,6 +1182,18 @@ export default function RakeSnapshotPanel({
                   >
                     {r.sub_agents > 0 ? money(r.network_rake) : NO_VALUE}
                   </span>
+                  <span
+                    className={styles.rowCost}
+                    title={
+                      r.commission_earned === null
+                        ? undefined
+                        : 'What This Agent Earns, Including From Everyone Beneath Them. Not The Rake Column Times The Rate.'
+                    }
+                  >
+                    {/* null is NOT DISCLOSED and renders as a dash. A zero here
+                        would say the agent costs nothing. */}
+                    {money(r.commission_earned)}
+                  </span>
                 </li>
               );
             })}
@@ -889,6 +1201,13 @@ export default function RakeSnapshotPanel({
           <p className={styles.rowNote}>
             Direct Is The Rake Of Players Assigned To That Agent, And Sums To {money(total)}.
             Network Adds Everyone Beneath Them, So It Overlaps And Does Not Sum.
+            {snapshot?.commission_total !== null && snapshot?.commission_total !== undefined ? (
+              <>
+                {' '}
+                Cost Is What Each Agent Earns, Cascade Included - It Is Not The Direct Column Times
+                A Rate - And It Sums To {money(snapshot.commission_total)}.
+              </>
+            ) : null}
           </p>
         </div>
       )}
@@ -900,8 +1219,16 @@ export default function RakeSnapshotPanel({
 
           {crumbs.length > 0 && (
             <nav className={styles.crumbs} aria-label="Downline Trail">
-              <button type="button" onClick={() => setCrumbs([])}>
-                My Downline
+              {/* Named for where backing out actually LANDS. A club owner
+                  who opened an agent from the club list has no downline of
+                  their own, so "My Downline" would be both wrong and a dead
+                  end. */}
+              <button type="button" onClick={leaveDrill}>
+                {clubCrumb
+                  ? `Back To ${clubCrumb.name}`
+                  : drillOrigin && drillOrigin !== 'agent'
+                    ? `Back To ${SCOPE_COPY[drillOrigin].label}`
+                    : 'My Downline'}
               </button>
               {crumbs.map((c, i) => (
                 <button
@@ -922,7 +1249,7 @@ export default function RakeSnapshotPanel({
               {loading ? 'Reading The Chain' : 'Nobody Beneath You Has Played In This Period.'}
             </p>
           ) : (
-            <ul>
+            <ul className={styles.listDownline}>
               {(rows as RakeDownlineRow[]).map((r) => {
                 const pct = share(r.rake, total);
                 const opens = r.downline_players > 0 && crumbs.length < MAX_DRILL;

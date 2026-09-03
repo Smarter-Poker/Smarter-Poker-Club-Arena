@@ -18,6 +18,7 @@ import { formatDateTime as formatDate } from '../utils/format';
 import { reportError } from '../utils/errorReporter';
 import RewardsSurfaceHeader from '../components/rewards/RewardsSurfaceHeader';
 import { formatPopupText } from '../utils/popupStyle';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import {
   describeChipTransaction,
   WALLET_MOVE_TYPES,
@@ -253,11 +254,11 @@ export default function TransactionHistoryPage() {
         if (ids.size > 0) {
           const { data: profs, error: profErr } = await supabase
             .from('profiles')
-            .select('id, display_name, username')
+            .select(`id, ${PLAYER_NAME_COLUMNS}`)
             .in('id', Array.from(ids));
           if (profErr) reportError(profErr, 'TransactionHistoryPage.names_read_failed');
           for (const p of profs ?? []) {
-            const label = (p as any).display_name || (p as any).username;
+            const label = playerDisplayName(p as any);
             if (label) names.set((p as any).id, String(label));
           }
         }

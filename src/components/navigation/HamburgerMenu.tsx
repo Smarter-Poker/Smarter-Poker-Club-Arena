@@ -12,6 +12,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { identityDNA } from '../../core/IdentityDNA';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { unionService } from '../../services/UnionService';
 import { useToast } from '../common/Toast';
 import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
@@ -47,6 +48,7 @@ import {
   tableStudioCheckoutResult,
 } from '../../lib/tableStudioCheckoutResume';
 import { formatPopupText } from '../../utils/popupStyle';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 import styles from './HamburgerMenu.module.css';
 
 /* Dan 2026-08-30: "THE FIRST LETTER OF EVERY WORD INSIDE THE HAMBURGER MENU
@@ -166,6 +168,18 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const [rewardContexts, setRewardContexts] = useState<LeaderboardRewardContext[]>([]);
   const [rewardContextClubId, setRewardContextClubId] = useState<string>('');
   const [canManageGames, setCanManageGames] = useState(false);
+  /**
+   * The union this club is operated from, when the signed-in user is one of its
+   * operators - its owner OR one of its union_admins.
+   *
+   * A member club's games are run from the union console, which is why
+   * canManageGames goes false as soon as access.unionId is set. That correctly
+   * hid the CLUB entry and then offered nothing in its place, so a union
+   * operator had no Table Management door anywhere in the navigation. Owners
+   * could still reach it through the union page; admins are bounced off that
+   * page entirely, so for them the feature was unreachable from their account.
+   */
+  const [unionManageId, setUnionManageId] = useState<string | null>(null);
   const [gameAccessRevision, setGameAccessRevision] = useState(0);
 
   // Stripe returns to the route where the player opened Table Studio. The
@@ -259,16 +273,26 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   useEffect(() => {
     if (!isOpen || !workspace.clubUUID) {
       setCanManageGames(false);
+      setUnionManageId(null);
       return;
     }
     let cancelled = false;
-    void fetchGameCreationAccess(workspace.clubUUID).then((access) => {
-      if (!cancelled) setCanManageGames(access.allowed && !access.unionId);
+    void fetchGameCreationAccess(workspace.clubUUID).then(async (access) => {
+      if (cancelled) return;
+      setCanManageGames(access.allowed && !access.unionId);
+      if (!access.unionId || !user?.id) {
+        setUnionManageId(null);
+        return;
+      }
+      // Owner or union_admin - the same test the union board itself applies,
+      // so the menu never offers a door the page would refuse.
+      const operator = await unionService.isUnionAdmin(access.unionId, user.id);
+      if (!cancelled) setUnionManageId(operator ? access.unionId : null);
     });
     return () => {
       cancelled = true;
     };
-  }, [gameAccessRevision, isOpen, workspace.clubUUID]);
+  }, [gameAccessRevision, isOpen, user?.id, workspace.clubUUID]);
 
   useMasterBusSubscription('GAME_MANAGEMENT_ACCESS_CHANGED', (payload) => {
     if (!payload.clubId || payload.clubId === workspace.clubUUID) {
@@ -467,7 +491,7 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       supabase
         .from('profiles')
         .select(
-          'avatar_url:arena_avatar_url, username, display_name, sounds_enabled, vibrations_enabled, is_vip, tier, role'
+          `avatar_url:arena_avatar_url, ${PLAYER_NAME_COLUMNS}, sounds_enabled, vibrations_enabled, is_vip, tier, role`
         )
         .eq('id', user.id)
         .maybeSingle()
@@ -481,17 +505,17 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
           }
           if (data) {
             // Avatar is consumed from useHeaderDataStore — no need to set locally
-            const prefUseRealName = localStorage.getItem(STORAGE_KEYS.USE_REAL_NAME) === 'true';
-            setUserName(
-              prefUseRealName
-                ? data.display_name || data.username || 'Player'
-                : data.username || data.display_name || 'Player'
-            );
+            /* Dan 2026-09-02: "THE CLUB ARENA SHOULD ALWAYS 100% OF THE TIME
+               USE THE POKER ALIAS AND NOT THE REAL NAME." The header is an
+               arena surface, so it no longer consults USE_REAL_NAME - that
+               preference now governs social/World Hub display only, and the
+               toggle below says so. */
+            setUserName(playerDisplayName(data));
             // First-paint identity cache (2026-08-28 flash sweep): what the
             // database just said is what the header and hero seat should wear
             // on the NEXT cold open, before any round trip.
             persistIdentity(user.id, {
-              displayName: data.display_name || data.username || null,
+              displayName: playerDisplayName(data),
               avatarUrl: data.avatar_url || null,
             });
             /* ── `profiles.sounds_enabled` / `vibrations_enabled` ARE NO LONGER
@@ -739,16 +763,15 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
     if (user?.id) {
       supabase
         .from('profiles')
-        .select('username, display_name')
+        .select(PLAYER_NAME_COLUMNS)
         .eq('id', user.id)
         .maybeSingle()
         .then(({ data }) => {
           if (data) {
-            setUserName(
-              newValue
-                ? data.display_name || data.username || 'Player'
-                : data.username || data.display_name || 'Player'
-            );
+            /* The preference changed, but the arena name did not depend on it
+               and still does not. Re-read so the header reflects any other
+               edit, and resolve it the one way. */
+            setUserName(playerDisplayName(data));
           }
         });
     }
@@ -1027,6 +1050,14 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
             >
               Table Management
             </button>
+          ) : unionManageId ? (
+            <button
+              type="button"
+              className={styles.quickAction}
+              onClick={() => handleNavigate(`/unions/${unionManageId}/table-management`)}
+            >
+              Table Management
+            </button>
           ) : (
             <button
               type="button"
@@ -1232,11 +1263,11 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
           {/* Use Real Name Toggle */}
           <div className={styles.settingRow}>
-            <span className={styles.settingLabel}>Use Real Name (Vs Alias)</span>
+            <span className={styles.settingLabel}>Show Real Name On Social</span>
             <button
               type="button"
               onClick={handleUseRealNameToggle}
-              aria-label="Use Real Name Instead Of Poker Alias"
+              aria-label="Show Real Name On Social Surfaces"
               aria-checked={useRealName}
               role="switch"
               className={styles.toggleButton}

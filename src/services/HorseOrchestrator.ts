@@ -28,7 +28,9 @@ import { supabase } from '../lib/supabase';
 import { HydraService } from './HydraService';
 import { masterBus } from '../core/MasterBus';
 import { buyInFor, rakeRateFor } from '../utils/buyIn';
+import { freeBuyColumns } from '../utils/freeBuy';
 import { clampSeatsForVariant } from '../config/tableSeating';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 
 /**
  * Derive the two buy-in columns from ONE whole-dollar total.
@@ -1490,6 +1492,14 @@ class HorseOrchestrator {
           start_time: startTime.toISOString(),
           late_reg_levels: 8,
           late_reg_mins: 8,
+          // FREEROLLS ARE FREE BUY (Dan 2026-09-02): the four FREEROLL configs
+          // above enter at 0 with rebuys and add-ons on at 1 chip each. Spread
+          // LAST so it wins; empty for every paid event.
+          ...freeBuyColumns({
+            buyIn: config.buyIn,
+            type: config.type,
+            startingStack: config.startingStack,
+          }),
         })
         .select()
         .maybeSingle();
@@ -2357,7 +2367,7 @@ class HorseOrchestrator {
       // Load available player profiles
       const { data: availableHorses } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url:arena_avatar_url')
+        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
         .eq('is_horse', true)
         .eq('horse_status', 'available')
         .limit(staleHorses.length);
@@ -2395,7 +2405,7 @@ class HorseOrchestrator {
           masterBus.emit('HORSE_SEATED', {
             tableId: stale.table_id,
             horseId: fresh.id,
-            horseName: fresh.display_name || 'Horse',
+            horseName: playerDisplayName(fresh),
           });
         } catch (err) {
           console.error('[HorseOrchestrator] Error:', err);

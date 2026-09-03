@@ -1,0 +1,17 @@
+{
+  "_owner": "fix/diamond-e-earn",
+  "_note": "Diamond Accounting Standard Lane E: earn budgets, per-user per-day cap ledger, catalog history, the house ledger. Migration 20260903002841.",
+  "tables": [
+    "diamond_engine_daily_caps",
+    "diamond_user_daily_awards",
+    "ca_diamond_house_ledger",
+    "diamond_reward_catalog_history",
+    "daily_challenge_catalog_history",
+    "trivia_diamond_award_limits_history"
+  ],
+  "functions": [
+    "fn_ca_diamond_engine_of",
+    "fn_ca_diamond_earn_ledger",
+    "fn_ca_diamond_catalog_history"
+  ]
+}

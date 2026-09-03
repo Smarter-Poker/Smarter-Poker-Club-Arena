@@ -4,6 +4,15 @@ import { describe, expect, it } from 'vitest';
 
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), 'utf8');
 
+/**
+ * Source with its comments stripped.
+ *
+ * This codebase explains its fixes IN the file, so a NEGATIVE pin that greps
+ * raw text matches the note describing the thing that was removed and reports
+ * it as still present. That has cost four red runs in two days now.
+ */
+const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+
 const page = read('src/pages/ClubHomePage.tsx');
 const pageCss = read('src/pages/ClubHomePage.css');
 const identityCard = read('src/components/club-buttons/ClubIdentityCard.tsx');
@@ -22,7 +31,19 @@ describe('Club Arena Tournament Board lobby design', () => {
     expect(page).toContain('<ClubIdentityCard');
     expect(page).toContain('className="lobby-top__identity"');
     expect(page).toContain('club.logo_url || club.avatar_url');
-    expect(page).toContain("currentUser?.display_name || currentUser?.username || 'Player'");
+    /* WAS a pin on `currentUser?.display_name || currentUser?.username ||
+       'Player'` - which recorded the DEFECT. `display_name` is exactly
+       `full_name` on 264 of 1,308 production rows, so that chain printed the
+       player's legal name on the club card; Dan's own row is one of them, which
+       is why his card read "Dan Bekavac" while his alias "KingFish" sat unread
+       one column away.
+
+       Dan 2026-09-02: "THE REAL NAME SHOULD NEVER BE DISPLAYED, IT SHOULD
+       ALWAYS BE USING THE POKER ALIAS." The pin now guards the rule instead of
+       the string: the card resolves through the house resolver, and never
+       reaches for display_name itself. */
+    expect(page).toContain("pokerAlias={playerDisplayName(currentUser, 'arena')}");
+    expect(code(page)).not.toMatch(/currentUser\?\.display_name/);
     expect(page).toContain('playerId={currentUser?.player_number}');
     expect(page).toContain('playersPlaying={playersPlaying}');
     expect(identityCard).toContain('club-identity-template-no-level-v3.png');

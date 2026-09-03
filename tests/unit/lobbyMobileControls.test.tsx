@@ -31,6 +31,7 @@ import {
   fittedNameSizeCqw,
 } from '../../src/components/club-buttons/ClubIdentityCard';
 import { NUMERIC_ZONES, zoneText } from '../../src/components/lobby/game-cards/arenaGameCardTypes';
+import { playerDisplayName } from '../../src/utils/playerDisplayName';
 
 const ROOT = resolve(__dirname, '../..');
 const read = (p: string) => readFileSync(resolve(ROOT, p), 'utf8');
@@ -231,6 +232,44 @@ describe('the club identity card', () => {
         shareIcon={<svg />}
       />
     );
+
+  it('shows the poker alias and never the real name', () => {
+    /*
+     * Dan 2026-09-02: "THE REAL NAME SHOULD NEVER BE DISPLAYED, IT SHOULD
+     * ALWAYS BE USING THE POKER ALIAS - KingFish instead of the real name."
+     *
+     * His own production row is the case, and it is not unusual: `display_name`
+     * equals `full_name` on 264 of 1,308 profiles, so the old
+     * `display_name || username` chain printed a legal name on the club card
+     * for hundreds of accounts - none of whom had `use_real_name` set, because
+     * nobody has.
+     *
+     * Rendered rather than grepped, because the thing being guarded is what a
+     * player SEES.
+     */
+    const dan = {
+      alias: 'KingFish',
+      username: 'kingfish',
+      display_name: 'Dan Bekavac',
+      full_name: 'Dan Bekavac',
+      use_real_name: false,
+    };
+
+    const { container } = render(
+      <ClubIdentityCard
+        clubName="Deep Stack Society"
+        pokerAlias={playerDisplayName(dan, 'arena')}
+        clubId={11192}
+        playerId={1}
+        playersPlaying={174}
+        shareIcon={<svg />}
+      />
+    );
+
+    expect(container.querySelector('.club-identity__alias')?.textContent).toBe('KingFish');
+    expect(container.textContent).not.toContain('Dan Bekavac');
+    expect(container.textContent).not.toContain('Bekavac');
+  });
 
   it('puts the club name in its own band, above everything else', () => {
     // "the club name should be across the very top of the card, all the way

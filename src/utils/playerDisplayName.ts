@@ -95,6 +95,24 @@ export function handleName(p: NameableProfile | null | undefined): string | null
   return clean(p.alias) || clean(p.username) || null;
 }
 
+/**
+ * `display_name`, but only when it is not the player's legal name.
+ *
+ * The column has no clear owner - it has held seed data, a horse's name, a
+ * chosen nickname, and (for 264 of 1,308 production rows) an exact copy of
+ * `full_name`. On an arena surface the first three are fine and the fourth is
+ * a privacy leak, so the value is compared against the real name before it is
+ * allowed through. Case-insensitive: "Dan Bekavac" and "dan bekavac" are the
+ * same disclosure.
+ */
+function pseudonymousDisplayName(p: NameableProfile): string | null {
+  const legacy = clean(p.display_name);
+  if (!legacy) return null;
+  const real = realName(p);
+  if (real && legacy.toLowerCase() === real.toLowerCase()) return null;
+  return legacy;
+}
+
 /** True when the player has asked to be shown by their real name on social. */
 function wantsRealName(p: NameableProfile): boolean {
   const pref = clean(p.display_name_preference);
@@ -117,8 +135,23 @@ export function playerDisplayName(
   if (context === 'arena') {
     /* Handle only. Deliberately ignores display_name_preference: a player who
        set "full name" for their social profile has not thereby asked for their
-       legal name to appear at a poker table. */
-    return handleName(p) || clean(p.display_name) || FALLBACK;
+       legal name to appear at a poker table.
+
+       THE display_name LAST RESORT MAY NOT BE A REAL NAME (Dan 2026-09-02):
+       "THE REAL NAME SHOULD NEVER BE DISPLAYED, IT SHOULD ALWAYS BE USING THE
+       POKER ALIAS."
+
+       This branch already claimed, in the header above, that a real name is
+       NEVER shown here - and then fell through to `display_name`, which in
+       production holds exactly `full_name` for 264 of 1,308 profiles. The
+       claim and the code disagreed, and the code is what players saw.
+
+       The legacy fallback itself STAYS: it is deliberate, it is pinned in
+       playerDisplayName.test.ts, and on a row with nothing else it is the only
+       name there is. It is skipped only when it turns out to BE the real name,
+       which is the one case that fallback was never meant to cover. Both
+       pinned cases carry no real name, so both are unaffected. */
+    return handleName(p) || pseudonymousDisplayName(p) || FALLBACK;
   }
 
   if (wantsRealName(p)) {

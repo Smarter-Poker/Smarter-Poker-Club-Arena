@@ -37,3 +37,16 @@ You are one lane of a swarm auditing and then fixing the DIAMOND economy of Smar
 ## Definition of done for a fix lane
 
 Migration applied (confirm in `supabase_migrations.schema_migrations`) with post-apply assertions green; rolled-back probe transcript for every money path touched; touched-area vitest green, tsc clean, law test with negative control and a `docs/LAWS.md` row; changelog from observation; PR titled `fix(diamond): <lane> - <one line>`; final message: PR number, migration names, what is log-only, what you did not build and why, decisions that are Dan's.
+
+## The shared interface (live in production since 2026-09-03 00:07 UTC, migration `20260903000735_diamond_std_foundation`)
+
+```
+ca_diamond_house(id = 1, balance numeric(20,0) CHECK >= 0, updated_at)        the house account (DR14)
+diamond_reward_budgets(period 'YYYY-MM', engine, budget_diamonds, spent_diamonds, PK (period, engine))   one line per earn engine (DR7)
+ca_diamond_incidents(id, occurred_at, rule, severity info|warning|critical, user_id, amount, writer, db_role, app_name, detail jsonb, resolved_at)
+fn_ca_diamond_incident(p_rule, p_severity, p_user_id, p_amount, p_writer, p_detail jsonb) RETURNS void   never raises; service_role only
+diamond_transactions.counterparty text NULL, diamond_transactions.issuance_class text NULL
+  issuance_class IN (purchased, promotional, earned, transferred, seeded, refund, spend, bridge, deletion, admin, arena, house, unknown)
+```
+
+Every log-only rule records the refusal it did not make with `fn_ca_diamond_incident('DR<n>:<slug>', 'warning', user, amount, '<function>', detail)`. Every new journal row a lane writes sets `counterparty` and `issuance_class`. Nothing in the foundation moves a balance. Declare your own schema in `scripts/ci/schema-manifest.d/diamond-<lane>.json`; the foundation is declared in `diamond-foundation.json`.

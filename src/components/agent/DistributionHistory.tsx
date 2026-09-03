@@ -16,6 +16,7 @@ import { masterBus } from '../../core/MasterBus';
 import { resolveClubUUID } from '../../utils/clubIdResolver';
 import './DistributionHistory.css';
 import { reportError } from '../../utils/errorReporter';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 
 interface DistributionHistoryProps {
   userId: string;
@@ -72,12 +73,10 @@ export default function DistributionHistory({ userId, clubId }: DistributionHist
       const toIds = [...new Set((data || []).map((r) => r.to_user_id))];
       const { data: profiles } =
         toIds.length > 0
-          ? await supabase.from('profiles').select('id, display_name, username').in('id', toIds)
+          ? await supabase.from('profiles').select(`id, ${PLAYER_NAME_COLUMNS}`).in('id', toIds)
           : { data: [] };
 
-      const nameMap = new Map(
-        (profiles || []).map((p) => [p.id, p.display_name || p.username || 'Unknown'])
-      );
+      const nameMap = new Map((profiles || []).map((p) => [p.id, playerDisplayName(p)]));
 
       const enriched = (data || []).map((r) => ({
         ...r,

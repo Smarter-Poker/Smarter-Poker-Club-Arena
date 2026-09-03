@@ -24,6 +24,7 @@ import { reportError } from '../utils/errorReporter';
 import { EmptyState } from '../components/common/EmptyState';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 interface PlayerSession {
   userId: string;
   displayName: string;
@@ -218,7 +219,7 @@ export default function PlayerSessionsPage() {
             () =>
               supabase
                 .from('profiles')
-                .select('id, username, display_name, avatar_url:arena_avatar_url, last_seen')
+                .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, last_seen`)
                 .in('id', userIds)
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: mountedRef }
@@ -256,8 +257,7 @@ export default function PlayerSessionsPage() {
 
           return {
             userId: m.user_id,
-            displayName:
-              profile.display_name || profile.username || m.user_id?.substring(0, 8) || 'Unknown',
+            displayName: playerDisplayName(profile),
             avatarUrl: profile.avatar_url,
             status,
             role: m.role || 'player',
@@ -347,7 +347,7 @@ export default function PlayerSessionsPage() {
             () =>
               supabase
                 .from('profiles')
-                .select('id, display_name, username, last_seen')
+                .select(`id, ${PLAYER_NAME_COLUMNS}, last_seen`)
                 .in('id', userIds)
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: mountedRef }
@@ -372,7 +372,7 @@ export default function PlayerSessionsPage() {
 
           const playerInfo = {
             userId: m.user_id,
-            name: profile.display_name || profile.username || m.user_id?.substring(0, 8),
+            name: playerDisplayName(profile),
             chipBalance: m.chip_balance || 0,
             daysSinceActive: daysSince,
           };

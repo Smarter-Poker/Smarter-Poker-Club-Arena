@@ -25,6 +25,7 @@
 
 import { supabase } from '../lib/supabase';
 import { reportError } from '../utils/errorReporter';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MODULE-LEVEL CIRCUIT BREAKERS — prevent Sentry flood on persistent DB errors
@@ -246,7 +247,7 @@ export const HydraService = {
     let query = supabase
       .from('profiles')
       .select(
-        'id, display_name, username, player_number, avatar_url:arena_avatar_url, horse_profile, horse_status'
+        `id, ${PLAYER_NAME_COLUMNS}, player_number, avatar_url:arena_avatar_url, horse_profile, horse_status`
       )
       .eq('is_horse', true)
       .eq('horse_status', 'available')
@@ -265,7 +266,7 @@ export const HydraService = {
 
     return (data || []).map((h: any) => ({
       id: h.id,
-      name: h.display_name || h.username || `Player ${h.player_number || ''}`,
+      name: playerDisplayName(h),
       playerNumber: h.player_number,
       avatar: h.avatar_url,
       profile: h.horse_profile as HorseProfile,
@@ -306,7 +307,7 @@ export const HydraService = {
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
       .select(
-        'id, display_name, username, player_number, avatar_url:arena_avatar_url, is_horse, horse_profile, horse_status'
+        `id, ${PLAYER_NAME_COLUMNS}, player_number, avatar_url:arena_avatar_url, is_horse, horse_profile, horse_status`
       )
       .in('id', userIds)
       .eq('is_horse', true);
@@ -327,7 +328,7 @@ export const HydraService = {
         const profile = profileMap.get(seat.user_id)!;
         return {
           id: profile.id,
-          name: profile.display_name || profile.username || `Player ${seat.seat_number}`,
+          name: playerDisplayName(profile),
           playerNumber: profile.player_number,
           avatar: profile.avatar_url || '',
           profile: (profile.horse_profile || 'reg') as HorseProfile,

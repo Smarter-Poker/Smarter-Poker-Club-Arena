@@ -814,7 +814,9 @@ export function satelliteRead(
   const locked = near && rank > 0 && rank <= seats && stackBB >= blindRunwayBB;
   // Below the seat line, waiting cannot produce a seat: the stack has to
   // grow, however many blinds it holds.
-  const urgent = near && (rank === 0 || rank > seats);
+  // (rank 0 = the stack list has not arrived: neither locked nor urgent, the
+  // flat-curve ICM premium alone carries the spot until it does.)
+  const urgent = near && rank > seats;
   let coversAll = false;
   if (locked) {
     coversAll = true;
@@ -2372,7 +2374,10 @@ export class HorseLogic {
      * seven-way flop against four sampled hands overstates every equity.
      */
     const bomb36 = gs.bombPot === true;
-    const mcOpps = Math.min(oppCount, bomb36 ? 6 : 4);
+    // (five for the 5/6-card Omaha games: their per-iteration evaluation is
+    // the most expensive on the platform and a triple-board PLO6 bomb pot
+    // runs three of them per decision.)
+    const mcOpps = Math.min(oppCount, bomb36 ? (vi.holeCount >= 5 ? 5 : 6) : 4);
     const boardEq36: number[] = [];
     if (extraBoards.length === 0) {
       equity = simulateEquity(

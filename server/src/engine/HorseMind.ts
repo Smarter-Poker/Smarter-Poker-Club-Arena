@@ -782,6 +782,7 @@ export class HorseMind {
     // the turn and bombed the river of a bomb pot was still sampled from all
     // 1,326 combos. sawPreflop tells the two cases apart.
     let sawPreflop = false;
+    let actedPostflop = false;
     // V5 (2026-07-24): dynamic hand reading — postflop actions keep narrowing
     // the band. V7: the narrowing is BET-SIZE AWARE via an exact pot replay —
     // a pot-sized turn barrel narrows far more than a min-bet. Per-street the
@@ -811,6 +812,7 @@ export class HorseMind {
       if (a.stage !== 'preflop') {
         if (a.userId === userId) {
           if (a.action === 'fold') return null;
+          actedPostflop = true;
           // V28 AUDIT FIX: this used to add on ANY action, including CALL —
           // and readOut.checked below counts "acted with no aggression
           // weight" as a checked street. A player who CALLED two barrels —
@@ -885,7 +887,7 @@ export class HorseMind {
 
     // V36: no preflop street (a bomb pot) and this player has acted postflop
     // — a random starting hand, narrowed by what they did with it.
-    const anteOnly = !sawPreflop && (streetWeight.size > 0 || postStagesActed.size > 0);
+    const anteOnly = !sawPreflop && actedPostflop;
     if (line === 'none' && !anteOnly) return null;
 
     let lo: number;

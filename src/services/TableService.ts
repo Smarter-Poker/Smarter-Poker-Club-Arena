@@ -845,6 +845,17 @@ class TableService {
   }
 
   async getSeatedPlayers(tableId: string) {
+    /* is_horse / horse_profile are NOT in this profiles read (Dan 2026-09-03).
+       `authenticated` has no column grant on either - deliberately, per the
+       platform lockdown and the "a horse is named only to those entitled" law
+       - so a profiles embed that named them made PostgREST refuse the WHOLE
+       request with 42501/403, and supabase-js RESOLVES on that with
+       { data: null }. The felt then rebuilt every seat as "Player" with the
+       monogram avatar until the engine snapshot arrived: exactly the "generic
+       block letters" Dan reported. horse_id off table_seats is the flag the
+       felt actually needs (it drives styling), and the engine snapshot - built
+       server-side with service_role, which CAN read is_horse - remains the
+       authority for the resolved name. */
     const { data, error } = await supabase
       .from('table_seats')
       .select(
@@ -853,10 +864,10 @@ class TableService {
                 seat_number,
                 stack,
                 joined_at,
+                horse_id,
                 profiles(
                     ${PLAYER_NAME_COLUMNS},
-                    avatar_url:arena_avatar_url,
-                    is_horse
+                    avatar_url:arena_avatar_url
                 )
             `
       )

@@ -144,9 +144,18 @@ try {
 
   console.log(`PASS Custom And Placeholder Club Creation Certified For ${clubIds.join(', ')}.`);
 } finally {
-  // Append-only financial records can intentionally prevent a hard delete.
-  // Retire fixtures first so a failed delete can never leak certification
-  // clubs into the public Club Arena.
+  // Append-only financial records intentionally prevent a plain hard delete:
+  // clubs -> chip_transactions is ON DELETE SET NULL, which is an UPDATE on an
+  // append-only journal (and chip_transactions.club_id is NOT NULL, so it could
+  // never have worked), and removing the last member emits an append-only
+  // management event. Every run between 2026-08-31 and 2026-09-03 therefore
+  // warned "Fixture Hard Delete Skipped" and left a club behind holding its
+  // 100,000-chip opening grant: 15 clubs, 1,300,000 chips.
+  //
+  // fn_ca_retire_certification_club is the sanctioned door. It proves the club
+  // is a fixture, retires its chips to the Mint with a declared journal row,
+  // and removes it through the maintenance path that archives every journal row
+  // it touches. A failure here is now loud: a leaked fixture is a real defect.
   if (clubIds.length) {
     const { error: retireError } = await admin
       .from('clubs')
@@ -154,8 +163,30 @@ try {
       .in('id', clubIds);
     if (retireError) console.error(`Fixture Retirement Failed: ${retireError.message}`);
 
-    const { error: deleteError } = await admin.from('clubs').delete().in('id', clubIds);
-    if (deleteError) console.warn(`Fixture Hard Delete Skipped: ${deleteError.message}`);
+    for (const clubId of clubIds) {
+      const { data, error } = await admin.rpc('fn_ca_retire_certification_club', {
+        p_club_id: clubId,
+        p_reason: 'cert-cleanup',
+      });
+      if (error) {
+        console.error(`Fixture Cleanup Failed For ${clubId}: ${error.message}`);
+      } else if (data && data.success === false) {
+        console.error(`Fixture Cleanup Refused For ${clubId}: ${data.error}`);
+      } else {
+        console.log(
+          `Fixture ${clubId} retired: ${data?.chips_retired ?? 0} chips returned to the Mint.`,
+        );
+      }
+    }
+
+    const { data: leaked } = await admin.from('clubs').select('id').in('id', clubIds);
+    if (leaked?.length) {
+      throw new Error(
+        `Certification leaked ${leaked.length} fixture club(s) into Club Arena: ${leaked
+          .map((c) => c.id)
+          .join(', ')}`,
+      );
+    }
   }
   if (logoPath) {
     const { error: storageError } = await admin.storage.from('club-assets').remove([logoPath]);

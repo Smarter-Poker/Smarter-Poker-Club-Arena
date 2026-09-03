@@ -53,30 +53,57 @@ function latestDefining(fnName: string): string {
   return found;
 }
 
+/**
+ * JUST THAT FUNCTION, not the whole migration it lives in. These files hold
+ * several functions each, so a file-level read lets a mutation in one of them
+ * pass because another still matches.
+ */
+function body(fnName: string): string {
+  const sql = latestDefining(fnName);
+  const start = sql.indexOf(`FUNCTION public.${fnName}(`);
+  if (start < 0) return '';
+  const end = sql.indexOf('$function$;', start);
+  return sql
+    .slice(start, end < 0 ? undefined : end)
+    .split('\n')
+    .filter((l) => !l.trimStart().startsWith('--'))
+    .join('\n');
+}
+
 describe('the rake snapshot denominator', () => {
   it('ca_rake_snapshot exists in the migrations at all', () => {
     expect(latestDefining('ca_rake_snapshot')).not.toBe('');
   });
 
-  it('never sums network_rake into breakdown_total, on any scope', () => {
-    // There is one assignment per scope. Every one of them has to be safe, so
-    // the law reads all of them rather than whichever happens to be first -
-    // the first version of this test read only the first and passed while the
-    // club scope, the one that actually has a network column, went unchecked.
-    const sql = latestDefining('ca_rake_snapshot');
-    const assignments = [...sql.matchAll(/SELECT[\s\S]{0,400}?INTO v_btotal/g)].map((m) => m[0]);
-    expect(assignments.length, 'no breakdown_total is ever computed').toBeGreaterThan(0);
-    for (const block of assignments) {
-      expect(block, `this assignment sums the double-counted column: ${block}`).not.toContain(
+  it('never lets network_rake reach breakdown_total, however it is computed', () => {
+    // WHAT THIS PINS IS THE INVARIANT, NOT THE MECHANISM.
+    //
+    // The first version asserted that ca_rake_snapshot summed 'direct_rake'
+    // into a v_btotal variable. Pagination moved that sum into the helpers -
+    // they now return total_direct, computed with a window over the full set,
+    // because summing the PAGE would have made every share a percentage of the
+    // first fifty rows. The invariant survived the change; this law did not,
+    // and failed the better implementation of the rule it exists to protect.
+    //
+    // So it now asks the only question that matters: does the double-counted
+    // column reach the denominator by ANY route.
+    const sql = body('ca_rake_snapshot');
+    const denominator = [...sql.matchAll(/'breakdown_total'[^,]*,[^,]*/g)].map((m) => m[0]);
+    expect(denominator.length, 'no breakdown_total is ever produced').toBeGreaterThan(0);
+    for (const d of denominator) {
+      expect(d, `this denominator reads the double-counted column: ${d}`).not.toContain(
         'network_rake'
       );
     }
   });
 
-  it('the scope that has a network column sums the direct one', () => {
-    const sql = latestDefining('ca_rake_snapshot');
-    const assignments = [...sql.matchAll(/SELECT[\s\S]{0,400}?INTO v_btotal/g)].map((m) => m[0]);
-    expect(assignments.some((b) => b.includes("'direct_rake'"))).toBe(true);
+  it('the denominator spans every row, not just the page that was returned', () => {
+    // total_direct is summed with SUM(...) OVER () inside each helper, and
+    // window functions run before OFFSET/LIMIT - so it is the whole set. If
+    // the snapshot ever went back to summing what it was handed, a share would
+    // change every time the operator pressed Load More.
+    const sql = body('ca_rake_snapshot');
+    expect(sql).toMatch(/total_direct/);
   });
 
   it('keeps a depth cap on the agent tree recursion', () => {

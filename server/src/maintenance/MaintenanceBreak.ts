@@ -723,14 +723,37 @@ export class MaintenanceBreak {
 
   private resumeEveryEngine(): number {
     // Collect the tables this break is responsible for resuming, in order.
+    // EVERY table gets resumeFromMaintenance(), including one another
+    // authority is still holding. This used to `continue` past those, and
+    // that stranded them PERMANENTLY (2026-09-03):
+    //
+    //   - resumeFromMaintenance() is the ONLY thing that clears
+    //     maintenancePaused, and skipping the table meant it was never called;
+    //   - the tournament's own resumeDealing() early-returns while
+    //     maintenancePaused is set, precisely so hand-for-hand cannot deal
+    //     inside a break.
+    //
+    // So both authorities deferred to each other and nobody ever released the
+    // table. It sat dark until reviveDeadTableEngines noticed it had been
+    // paused past MAX_HEALTHY_PAUSE_MS (10 min) and TORE THE ENGINE DOWN to
+    // rebuild it - a tournament dark for five to ten extra minutes, recovered
+    // by demolition rather than by resuming.
+    //
+    // Calling it here is safe and always was: resumeFromMaintenance() clears
+    // only its OWN flag and returns without releasing the gate whenever
+    // handForHandPaused is set, and every tournament break holds its tables
+    // through pauseAfterHand(), which sets exactly that flag. The break
+    // releases what the break took; the other authority keeps what it took.
     const resumable: Array<[string, PausableTableEngine]> = [];
     for (const [tableId, engine] of this.deps.engines()) {
       try {
         if (this.deps.shouldStayPaused?.(tableId)) {
+          // Informational only now. The table still will not deal - its own
+          // authority holds the gate - but its maintenance flag gets cleared
+          // so that authority can actually release it when it is done.
           console.log(
-            `[MaintenanceBreak] Leaving ${tableId} paused - its tournament is still on a break of its own.`
+            `[MaintenanceBreak] ${tableId} stays held by its tournament's own break; clearing only the maintenance flag.`
           );
-          continue;
         }
         resumable.push([tableId, engine]);
       } catch (err) {

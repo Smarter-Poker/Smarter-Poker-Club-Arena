@@ -152,7 +152,17 @@ interface Crumb {
 }
 
 export interface RakeSnapshotPanelProps {
+  /**
+   * The club this panel reports on, or null on the union page - a union owner
+   * has a union and need not have a club at all.
+   */
   clubId: string | null;
+  /**
+   * The union this panel reports on. Given without a clubId, the union scope
+   * asks the database for the union DIRECTLY rather than deriving it from
+   * whichever member club the operator happened to walk in through.
+   */
+  unionId?: string | null;
   /** Cache is keyed per viewer; without it one operator could paint another's. */
   userId?: string | null;
   /** Scopes the viewer holds, in the order they should be offered. */
@@ -165,6 +175,7 @@ export interface RakeSnapshotPanelProps {
 
 export default function RakeSnapshotPanel({
   clubId,
+  unionId = null,
   userId = null,
   scopes,
   agentUserId = null,
@@ -196,6 +207,11 @@ export default function RakeSnapshotPanel({
    * and never the one they were reading.
    */
   const [drillOrigin, setDrillOrigin] = useState<RakeScope | null>(null);
+  /**
+   * The member club opened FROM the union list, if any. The union page has no
+   * club of its own, so the club scope has to be told which one to read.
+   */
+  const [clubCrumb, setClubCrumb] = useState<{ clubId: string; name: string } | null>(null);
   /** What is typed, and what has actually been asked for. */
   const [search, setSearch] = useState('');
   const [query, setQuery] = useState('');
@@ -236,14 +252,24 @@ export default function RakeSnapshotPanel({
     // them in it legitimately. Without this the fallback fires on the next
     // render and bounces them straight back out of the row they just opened.
     if (scope === 'agent' && crumbs.length > 0) return;
+    // Same reasoning for a club opened from the union list: a union lead who
+    // holds no club role is not offered the Club chip, but opening a member
+    // club from their own union list is legitimate.
+    if (scope === 'club' && clubCrumb) return;
     if (!available.includes(scope)) setScope(available[0]);
-  }, [available, scope, crumbs.length]);
+  }, [available, scope, crumbs.length, clubCrumb]);
 
   // Leaving the downline scope must drop the trail with it, or coming back
   // lands you inside somebody else's book with no visible reason why.
   useEffect(() => {
-    if (scope !== 'agent') {
-      setCrumbs([]);
+    // The drill is a CHAIN - union, then a club inside it, then an agent
+    // inside that - so the club being read has to survive descending PAST it
+    // into an agent. Clearing it on any scope but 'club' lost which club the
+    // agent belonged to the moment you opened one, and backing out then asked
+    // for club scope with no club, which the database rejects outright.
+    if (scope !== 'agent') setCrumbs([]);
+    if (scope === 'union') {
+      setClubCrumb(null);
       setDrillOrigin(null);
     }
   }, [scope]);
@@ -254,6 +280,13 @@ export default function RakeSnapshotPanel({
   );
 
   const focusUserId = crumbs.length ? crumbs[crumbs.length - 1].userId : agentUserId;
+  const focusClubId = clubCrumb?.clubId ?? clubId;
+  /**
+   * Something to hang a cache and a bus filter on. The union page has no club,
+   * so without this every union read would be uncacheable and every club event
+   * would be discarded as belonging to somebody else.
+   */
+  const contextId = focusClubId ?? unionId;
 
   /**
    * One key per distinct question. Scope, period and the agent being drilled
@@ -268,13 +301,17 @@ export default function RakeSnapshotPanel({
         start: range.start,
         end: range.end,
         agent: scope === 'agent' ? (focusUserId ?? 'me') : null,
+        // A union read and a club read are different questions even at the
+        // same moment, and drilling changes which club is being asked about.
+        club: focusClubId,
+        union: unionId ?? null,
         // A different sort is a different page of the same question, so it has
         // to be in the key or Load More would append rows ordered by something
         // else. The SEARCH is in it for the same reason.
         sort,
         q: query || null,
       }),
-    [scope, range.start, range.end, focusUserId, sort, query]
+    [scope, range.start, range.end, focusUserId, focusClubId, unionId, sort, query]
   );
 
   // A new question is a new list. Anything carried over from the last one -
@@ -286,23 +323,24 @@ export default function RakeSnapshotPanel({
 
   /** Paint the last verified answer immediately, then read live over it. */
   useEffect(() => {
-    if (!userId || !clubId) return;
+    if (!userId || !contextId) return;
     // A search is a transient question. Caching one would fill the store with
     // an entry per prefix an operator ever typed, to be served back later as
     // though it were the list.
     if (query) return;
-    const cached = readClubDataCache<RakeSnapshot>(userId, clubId, cacheKey);
+    const cached = readClubDataCache<RakeSnapshot>(userId, contextId, cacheKey);
     if (!cached) return;
     const cachedRows = Array.isArray(cached.breakdown) ? cached.breakdown : [];
     setSnapshot(cached);
     setRows(cachedRows);
     cursor.current = cachedRows.length;
     setLoading(false);
-  }, [userId, clubId, cacheKey, query]);
+  }, [userId, contextId, cacheKey, query]);
 
   const load = useCallback(
     async (quiet = false) => {
-      if (!clubId) return;
+      // A union page has no club, and that is not a reason not to read.
+      if (!clubId && !unionId) return;
       const mine = ++version.current;
       if (!quiet) setLoading(true);
       setError(null);
@@ -310,7 +348,8 @@ export default function RakeSnapshotPanel({
       try {
         const next = await ClubRakeSnapshotService.get({
           scope,
-          clubId,
+          clubId: focusClubId,
+          unionId: unionId ?? null,
           start: range.start,
           end: range.end,
           agentUserId: scope === 'agent' ? focusUserId : null,
@@ -335,7 +374,8 @@ export default function RakeSnapshotPanel({
           setRows(next.breakdown);
           cursor.current = next.breakdown.length;
         }
-        if (userId && !query) writeClubDataCache<RakeSnapshot>(userId, clubId, cacheKey, next);
+        if (userId && contextId && !query)
+          writeClubDataCache<RakeSnapshot>(userId, contextId, cacheKey, next);
       } catch (e) {
         if (cancelled.current || mine !== version.current) return;
         // The previous snapshot stays on screen. A refusal for one scope must not
@@ -346,7 +386,20 @@ export default function RakeSnapshotPanel({
         if (!cancelled.current && mine === version.current) setLoading(false);
       }
     },
-    [clubId, scope, range.start, range.end, focusUserId, userId, cacheKey, query, sort]
+    [
+      clubId,
+      unionId,
+      focusClubId,
+      contextId,
+      scope,
+      range.start,
+      range.end,
+      focusUserId,
+      userId,
+      cacheKey,
+      query,
+      sort,
+    ]
   );
 
   /**
@@ -355,14 +408,15 @@ export default function RakeSnapshotPanel({
    * would do.
    */
   const loadMore = useCallback(async () => {
-    if (!clubId || loadingMore) return;
+    if ((!clubId && !unionId) || loadingMore) return;
     const mine = version.current;
     setLoadingMore(true);
     setPageError(null);
     try {
       const next = await ClubRakeSnapshotService.get({
         scope,
-        clubId,
+        clubId: focusClubId,
+        unionId: unionId ?? null,
         start: range.start,
         end: range.end,
         agentUserId: scope === 'agent' ? focusUserId : null,
@@ -396,7 +450,18 @@ export default function RakeSnapshotPanel({
     } finally {
       if (!cancelled.current) setLoadingMore(false);
     }
-  }, [clubId, scope, range.start, range.end, focusUserId, loadingMore, query, sort]);
+  }, [
+    clubId,
+    unionId,
+    focusClubId,
+    scope,
+    range.start,
+    range.end,
+    focusUserId,
+    loadingMore,
+    query,
+    sort,
+  ]);
 
   useEffect(() => {
     void load();
@@ -422,7 +487,10 @@ export default function RakeSnapshotPanel({
         payload && typeof payload === 'object' && 'clubId' in payload
           ? String((payload as { clubId?: unknown }).clubId || '')
           : '';
-      if (eventClubId && eventClubId !== clubId) return;
+      // On the union page there is no club to compare against, and a union
+      // moves when ANY of its clubs does - so the filter only applies when
+      // this panel is actually pinned to one club.
+      if (focusClubId && eventClubId && eventClubId !== focusClubId) return;
       void load(true);
     },
     { debounce: 750 }
@@ -507,14 +575,54 @@ export default function RakeSnapshotPanel({
     [scope]
   );
 
+  /**
+   * Open a member club from the UNION list. The union breakdown says SHARK
+   * CLUB produced 3,023,403.87 and, until now, gave no way to ask which agents
+   * produced it.
+   *
+   * The search is dropped on the way in for the same reason it is dropped
+   * entering a downline: it was matching CLUB names and would arrive filtering
+   * AGENT names, hiding most of the list the operator just asked to see.
+   */
+  const openClub = useCallback(
+    (id: string, name: string) => {
+      setDrillOrigin(scope);
+      setSearch('');
+      setQuery('');
+      setClubCrumb({ clubId: id, name });
+      setScope('club');
+    },
+    [scope]
+  );
+
   /** Back out of a drill, to wherever it started. */
+  /**
+   * Step back ONE level of the chain, not all of it.
+   *
+   * An agent opened from a club that was itself opened from a union has two
+   * levels above it. Collapsing straight to the top was wrong in both
+   * directions: it threw away a club the operator was still reading, and it
+   * left the club scope with no club to read.
+   */
   const leaveDrill = useCallback(() => {
-    if (drillOrigin && drillOrigin !== 'agent') {
-      setScope(drillOrigin);
+    if (scope === 'agent') {
+      // Back to wherever this agent was opened FROM - the club it belongs to,
+      // when that club was itself opened from a union. drillOrigin already
+      // records that; an extra branch on clubCrumb was a second way of saying
+      // the same thing, and a mutation deleting it changed nothing.
+      setCrumbs([]);
+      if (drillOrigin && drillOrigin !== 'agent') {
+        setScope(drillOrigin);
+        setDrillOrigin(null);
+      }
+      return;
+    }
+    if (scope === 'club' && clubCrumb) {
+      setClubCrumb(null);
+      setScope('union');
       setDrillOrigin(null);
     }
-    setCrumbs([]);
-  }, [drillOrigin]);
+  }, [scope, clubCrumb, drillOrigin]);
 
   const deltaNote = (pct: number | null | undefined, abs: number | null | undefined) => {
     const hasPct = pct !== null && pct !== undefined && Number.isFinite(Number(pct));
@@ -979,7 +1087,21 @@ export default function RakeSnapshotPanel({
               return (
                 <li key={r.club_id}>
                   <span className={styles.rowName} title={r.name}>
-                    {r.name}
+                    {/* Only rows the server says will open are offered as
+                        buttons - can_drill is the same gate the club scope
+                        enforces, so this is not a guess. */}
+                    {r.can_drill && r.club_id ? (
+                      <button
+                        type="button"
+                        className={styles.drillIn}
+                        onClick={() => openClub(r.club_id, r.name)}
+                        title={`Open ${r.name}`}
+                      >
+                        {r.name}
+                      </button>
+                    ) : (
+                      r.name
+                    )}
                     {r.code ? <em>#{r.code}</em> : null}
                   </span>
                   <span className={styles.rowBar} aria-hidden="true">
@@ -997,7 +1119,17 @@ export default function RakeSnapshotPanel({
       {/* ----------------------------------------------------- by agent --- */}
       {kind === 'agent' && rows.length > 0 && (
         <div className={styles.breakdown}>
-          <h3>Rake By Agent</h3>
+          <h3>{clubCrumb ? `${clubCrumb.name} - Rake By Agent` : 'Rake By Agent'}</h3>
+          {clubCrumb && (
+            <nav className={styles.crumbs} aria-label="Union Trail">
+              <button type="button" onClick={leaveDrill}>
+                Back To {SCOPE_COPY.union.label}
+              </button>
+              <button type="button" aria-current="true" disabled>
+                {clubCrumb.name}
+              </button>
+            </nav>
+          )}
           <div className={styles.legend} aria-hidden="true">
             <span>Direct</span>
             <span>Network</span>
@@ -1092,9 +1224,11 @@ export default function RakeSnapshotPanel({
                   their own, so "My Downline" would be both wrong and a dead
                   end. */}
               <button type="button" onClick={leaveDrill}>
-                {drillOrigin && drillOrigin !== 'agent'
-                  ? `Back To ${SCOPE_COPY[drillOrigin].label}`
-                  : 'My Downline'}
+                {clubCrumb
+                  ? `Back To ${clubCrumb.name}`
+                  : drillOrigin && drillOrigin !== 'agent'
+                    ? `Back To ${SCOPE_COPY[drillOrigin].label}`
+                    : 'My Downline'}
               </button>
               {crumbs.map((c, i) => (
                 <button

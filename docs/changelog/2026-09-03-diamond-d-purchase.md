@@ -5,6 +5,12 @@ Diamond Accounting Standard (`docs/DIAMOND-ACCOUNTING-STANDARD.md` 3.2
 `docs/audits/2026-09-02-diamond-economy/lane2-ramps-bridge-and-standard.md`
 parts A and E, gaps G1, G2, G4, G5, G9.
 
+**Pull requests:** club-arena **#2751**
+(`fix/diamond-d-purchase`, the two migrations, the law test and this file) and
+Smarter-Poker-World-Hub **#1257** (`fix/diamond-d-disputes`, the Stripe dispute
+webhook cases, the three event names in the subscription script, and the
+checkout route reading `diamond_packages`).
+
 Everything below is what was OBSERVED. Every number came from a query run
 against production on 2026-09-03; every probe transcript is from a transaction
 that was rolled back and then verified to have left nothing behind.

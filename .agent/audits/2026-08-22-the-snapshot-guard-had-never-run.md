@@ -86,8 +86,8 @@ git rev-parse --git-common-dir            .git             fatal: Unable to read
 That last row is why nothing looked wrong: the existence test the runner used
 passes under launchd. Only the read fails.
 
-**One repo in the list did work** — `mlb-analytics-engine`, whose realpath is
-`/Users/smarter.poker/mlb-analytics-engine`. It is a symlink out of the
+**One repo in the list did work** — a since-retired repo whose realpath was a
+symlink out of the
 protected folder. The folder is the boundary, not the path. That single
 success is also what made the first version of my own verification check pass
 falsely; see §5.
@@ -137,7 +137,7 @@ if grep -q 'captured\|nothing to capture' "$LOG"; then PROBE_OK=1; fi
 ```
 
 and printed **`verified: the agent can read the repos`** — because
-`mlb-analytics-engine`, the one symlinked repo, produced "nothing to capture"
+the one symlinked repo produced "nothing to capture"
 while the other 25 were blocked. A check that passes when *any* subject
 succeeds is the same false green this entire audit is about, reintroduced by
 the fix for it.

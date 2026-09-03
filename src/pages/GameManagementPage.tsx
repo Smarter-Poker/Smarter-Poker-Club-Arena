@@ -575,7 +575,14 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const [hosts, setHosts] = useState<HostClub[]>([]);
   const [hostClubId, setHostClubId] = useState('');
   const [games, setGames] = useState<ManagedGame[]>([]);
-  const [counts, setCounts] = useState({ total: 0, live: 0, scheduled: 0 });
+  const [counts, setCounts] = useState({
+    total: 0,
+    live: 0,
+    scheduled: 0,
+    closed: 0,
+    closedWithinHorizon: 0,
+    closedHorizonDays: 7,
+  });
   const [nextCursor, setNextCursor] = useState<ManagedGameListCursor | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -672,7 +679,14 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         setHosts([]);
         setHostClubId('');
         setGames([]);
-        setCounts({ total: 0, live: 0, scheduled: 0 });
+        setCounts({
+          total: 0,
+          live: 0,
+          scheduled: 0,
+          closed: 0,
+          closedWithinHorizon: 0,
+          closedHorizonDays: 7,
+        });
         setNextCursor(null);
         setHealth(null);
         setSurfaceDirty(false);
@@ -820,7 +834,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
           })),
         ];
         setGames(rows);
-        setCounts(page.counts);
+        if (page.counts) setCounts(page.counts);
         setNextCursor(page.nextCursor);
         setHealth(healthResult);
       } catch (error) {
@@ -881,7 +895,8 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         const seen = new Set(current.map((game) => `${game.kind}:${game.id}`));
         return [...current, ...rows.filter((game) => !seen.has(`${game.kind}:${game.id}`))];
       });
-      setCounts(page.counts);
+      // Null on a paged read means unchanged, not zero.
+      if (page.counts) setCounts(page.counts);
       setNextCursor(page.nextCursor);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Could not load more games.');

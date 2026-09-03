@@ -95,7 +95,22 @@ export interface ManagedGameListCursor {
 
 export interface ManagedGameListResult {
   items: any[];
-  counts: { total: number; live: number; scheduled: number; closed: number };
+  /**
+   * Null means UNCHANGED, never zero.
+   *
+   * The counters describe the whole scope, so fn_list_managed_games computes
+   * them on the first page only - on Midway Union that scan is most of the
+   * page's time budget and paging cannot alter a whole-scope total. A caller
+   * that reads null as 0 will wipe the header on Load More.
+   */
+  counts: {
+    total: number;
+    live: number;
+    scheduled: number;
+    closed: number;
+    closedWithinHorizon: number;
+    closedHorizonDays: number;
+  } | null;
   nextCursor: ManagedGameListCursor | null;
 }
 
@@ -355,12 +370,16 @@ export const gameManagementService = {
         contract: row.contract ? mapContractSummary(row.contract) : null,
         lastCommand: row.last_command ? mapCommandReceipt(row.last_command) : null,
       })),
-      counts: {
-        total: numberValue(result.counts?.total),
-        live: numberValue(result.counts?.live),
-        scheduled: numberValue(result.counts?.scheduled),
-        closed: numberValue(result.counts?.closed),
-      },
+      counts: result.counts
+        ? {
+            total: numberValue(result.counts.total),
+            live: numberValue(result.counts.live),
+            scheduled: numberValue(result.counts.scheduled),
+            closed: numberValue(result.counts.closed),
+            closedWithinHorizon: numberValue(result.counts.closed_within_horizon),
+            closedHorizonDays: numberValue(result.counts.closed_horizon_days),
+          }
+        : null,
       nextCursor: result.next_cursor
         ? {
             sortAt: String(result.next_cursor.sort_at),
@@ -466,7 +485,8 @@ export const gameManagementService = {
     });
     if (error) throw new Error(error.message || 'Could not refresh the game.');
     const result = data as any;
-    if (!result?.ok) throw new Error(managementError(result?.reason || null) || 'Could not refresh the game.');
+    if (!result?.ok)
+      throw new Error(managementError(result?.reason || null) || 'Could not refresh the game.');
     const row = Array.isArray(result.items) ? result.items[0] : null;
     if (!row) return null;
     return {

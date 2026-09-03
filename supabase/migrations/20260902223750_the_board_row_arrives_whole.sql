@@ -1,50 +1,53 @@
--- BACKFILLED 2026-09-02 from supabase_migrations.schema_migrations.statements.
--- Applied to production 20260902211809; the .sql file was never committed at the
--- time (Table Management: the keyset cursor gained a bucket, see this file).
--- Content is byte-exact to what ran. Do NOT re-apply; it is already live.
-
--- A cursor that omits its bucket is still a cursor.
+-- The board row arrives whole.
 --
--- the_board_opens_on_the_live_floor made the priority bucket the first key of
--- both the ordering and the keyset cursor, and added p_cursor_bucket to carry
--- it. The argument is defaulted so the deployed frontend keeps working while
--- the matching client ships - but "keeps working" was asserted rather than
--- measured, and it was wrong.
+-- Loading Table Management was five sequential round trips, measured at about
+-- eleven seconds against production:
 --
--- A caller that omits the bucket had it coalesced to 0. The comparison is
---   (bucket, sort_at, kind, id) > (0, cursor_sort_at, cursor_kind, cursor_id)
--- so once the cursor row itself sits in bucket 1 or 2, EVERY row in buckets 1
--- and 2 compares greater regardless of its sort_at - including every row the
--- caller has already been given. Paging stops converging.
+--   1  resolveClubUUID
+--   2  fn_game_creation_access  +  clubs read        (parallel)
+--   3  fn_list_managed_games
+--   4  fn_get_managed_game_contracts        x2       (parallel, needs 3's ids)
+--      fn_get_managed_game_command_receipts x2
+--   5  fn_get_game_management_scale_health
 --
--- Measured against Deep Stack Society by paging exactly as the deployed client
--- does: 26 pages, 2,600 rows returned for a 1,514 row club, 2,200 of them
--- duplicates, and the walk never terminated - it hit the loop guard. The board
--- opens on the live floor either way, so an operator only reaches this by
--- pressing Load More about four times, but "only after four clicks" is not a
--- defence.
+-- Wave 4 exists only because the list returned an incomplete row. Every game
+-- the board draws needs its published contract and its last command receipt,
+-- so those belong to the row, exactly as pending_schedule already does. This
+-- folds them in and wave 4 disappears.
 --
--- The bucket is not really optional information: it is a property of the
--- cursor ROW, so it can be recovered from the row. When a caller supplies a
--- cursor without a bucket, look the row up and compute the same expression the
--- ordering uses. An explicit p_cursor_bucket still wins - it costs nothing and
--- saves the lookup - so the new client is unaffected.
+-- It also removes work that was pure duplication. fn_get_managed_game_contracts
+-- loops game by game and calls fn_can_create_games for EACH one; the receipts
+-- query re-authorizes per row through a join. fn_list_managed_games has already
+-- authorized the whole scope before it selects a single game - that is its
+-- first act - so those were up to 200 redundant authorization checks per load.
+-- Dropping them cannot widen access: a row only reaches this projection if the
+-- caller was already allowed the scope it belongs to.
 --
--- This makes the argument a genuine optimisation rather than a requirement the
--- signature quietly depends on, which is what it should have been.
+-- The standalone functions are NOT removed. ContractHistoryDialog and any other
+-- caller still use them, and they remain the definition of the shape; what is
+-- inlined here is the same projection over the same tables, so the two agree.
+-- Verified by diffing this function's contract and receipt output against those
+-- helpers for the same games before shipping.
+--
+-- Readiness is not reimplemented: tournaments call
+-- fn_tournament_management_readiness, the same function the helper calls, and
+-- tables get the same literal the helper builds.
 
 BEGIN;
 
 SET LOCAL lock_timeout = '30s';
 
-CREATE OR REPLACE FUNCTION public.fn_list_managed_games(
+DROP FUNCTION IF EXISTS public.fn_list_managed_games(text, uuid, timestamptz, text, uuid, integer, integer, integer);
+
+CREATE FUNCTION public.fn_list_managed_games(
   p_scope         text,
   p_scope_id      uuid,
   p_cursor        timestamptz DEFAULT NULL,
   p_cursor_kind   text        DEFAULT NULL,
   p_cursor_id     uuid        DEFAULT NULL,
   p_limit         integer     DEFAULT 100,
-  p_cursor_bucket integer     DEFAULT NULL
+  p_cursor_bucket integer     DEFAULT NULL,
+  p_bucket        integer     DEFAULT NULL
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -56,6 +59,7 @@ DECLARE
   v_limit integer := LEAST(100, GREATEST(1, COALESCE(p_limit, 100)));
   v_items jsonb; v_counts jsonb; v_next jsonb; v_access jsonb; v_scope_clubs uuid[];
   v_cur_bucket integer;
+  v_bucket integer := CASE WHEN p_bucket IN (0,1,2) THEN p_bucket ELSE NULL END;
 BEGIN
   IF p_scope NOT IN ('club','union') OR p_scope_id IS NULL THEN
     RETURN jsonb_build_object('ok',false,'reason','not_authorized');
@@ -93,10 +97,7 @@ BEGIN
         INTO v_cur_bucket FROM public.tournaments t WHERE t.id = p_cursor_id;
     END IF;
   END IF;
-  -- The cursor row is gone (closed and pruned between pages). Bucket 0 is the
-  -- old behaviour and is the safe direction: it can only re-show rows, never
-  -- skip them, and the caller stops when a page comes back short.
-  v_cur_bucket := COALESCE(v_cur_bucket, 0);
+  v_cur_bucket := COALESCE(v_cur_bucket, COALESCE(v_bucket, 0));
 
   WITH all_games AS (
     SELECT t.id,'table'::text kind,t.club_id,t.name,t.status,COALESCE(t.game_variant,'NLH') variant,
@@ -122,18 +123,66 @@ BEGIN
       OR (p_scope='union' AND (t.union_id=p_scope_id OR t.club_id=ANY(v_scope_clubs)))
   ), page AS (
     SELECT g.* FROM all_games g
-    WHERE p_cursor IS NULL
-       OR (g.bucket,g.sort_at,g.kind,g.id)>(v_cur_bucket,p_cursor,p_cursor_kind,p_cursor_id)
+    WHERE (v_bucket IS NULL OR g.bucket = v_bucket)
+      AND (p_cursor IS NULL
+           OR (g.bucket,g.sort_at,g.kind,g.id)>(v_cur_bucket,p_cursor,p_cursor_kind,p_cursor_id))
     ORDER BY g.bucket,g.sort_at,g.kind,g.id LIMIT v_limit
   ), enriched AS (
-    SELECT p.*,(SELECT to_jsonb(s) FROM (
-      SELECT ms.schedule_id,ms.execute_at,ms.status FROM public.managed_game_schedules ms
-      WHERE ms.game_kind=p.kind AND ms.game_id=p.id AND ms.status='scheduled'
-      ORDER BY ms.created_at DESC LIMIT 1) s) pending_schedule
+    SELECT p.*,
+      (SELECT to_jsonb(s) FROM (
+        SELECT ms.schedule_id,ms.execute_at,ms.status FROM public.managed_game_schedules ms
+        WHERE ms.game_kind=p.kind AND ms.game_id=p.id AND ms.status='scheduled'
+        ORDER BY ms.created_at DESC LIMIT 1) s) pending_schedule,
+      -- The published contract, same projection as fn_get_managed_game_contracts.
+      (SELECT jsonb_build_object(
+                'game_id', p.id,
+                'version', v.version,
+                'contract_hash', v.contract_hash,
+                'published_at', v.published_at,
+                'published_by', v.published_by,
+                'change_reason', v.change_reason,
+                'contract_locked', r.locked,
+                'readiness', r.readiness)
+         FROM public.managed_game_contract_versions v
+         CROSS JOIN LATERAL (
+           SELECT CASE WHEN p.kind='tournament'
+                       THEN public.fn_tournament_management_readiness(p.id)
+                       ELSE jsonb_build_object('state','ready','can_start',true,
+                              'contract_locked', EXISTS (
+                                SELECT 1 FROM public.table_seats ts
+                                 WHERE ts.table_id=p.id AND ts.left_at IS NULL))
+                  END AS readiness
+         ) rr
+         CROSS JOIN LATERAL (
+           SELECT rr.readiness AS readiness,
+                  COALESCE((rr.readiness ->> 'contract_locked')::boolean,false) AS locked
+         ) r
+        WHERE v.game_kind=p.kind AND v.game_id=p.id
+        ORDER BY v.version DESC LIMIT 1) contract,
+      -- The latest command receipt, same projection and reconciliation rule as
+      -- fn_get_managed_game_command_receipts.
+      (SELECT to_jsonb(x) FROM (
+         SELECT rc.game_id, rc.command_id, rc.command_action, rc.status,
+                rc.contract_version_before, rc.contract_version_after,
+                CASE WHEN rc.status='processing' THEN 'processing'
+                     WHEN av.version IS NULL THEN 'version_drift'
+                     ELSE 'confirmed' END AS reconciliation_state,
+                rc.created_at, rc.completed_at
+           FROM public.managed_game_command_receipts rc
+           JOIN public.managed_game_contract_versions bv
+             ON bv.game_kind=rc.game_kind AND bv.game_id=rc.game_id
+            AND bv.version=rc.contract_version_before
+           LEFT JOIN public.managed_game_contract_versions av
+             ON av.game_kind=rc.game_kind AND av.game_id=rc.game_id
+            AND av.version=rc.contract_version_after
+          WHERE rc.game_kind=p.kind AND rc.game_id=p.id
+          ORDER BY rc.created_at DESC LIMIT 1) x) last_command
     FROM page p ORDER BY p.bucket,p.sort_at,p.kind,p.id
   ) SELECT COALESCE(jsonb_agg(to_jsonb(enriched) ORDER BY bucket,sort_at,kind,id),'[]'::jsonb)
     INTO v_items FROM enriched;
 
+  -- Counts summarise the WHOLE scope regardless of the open tab. Filtering
+  -- these by p_bucket is what would let the counter and the tab disagree again.
   WITH scoped AS (
     SELECT status,'table'::text kind,NULL::timestamptz start_time FROM public.tables t
     WHERE t.tournament_id IS NULL AND NOT COALESCE(t.is_deleted,false)
@@ -169,14 +218,15 @@ BEGIN
            ELSE 0 END
     FROM public.tournaments t WHERE (p_scope='club' AND t.club_id=p_scope_id AND t.union_id IS NULL)
       OR (p_scope='union' AND (t.union_id=p_scope_id OR t.club_id=ANY(v_scope_clubs)))
+  ), eligible AS (
+    SELECT * FROM all_games
+    WHERE (v_bucket IS NULL OR bucket = v_bucket)
+      AND (p_cursor IS NULL
+           OR (bucket,sort_at,kind,id)>(v_cur_bucket,p_cursor,p_cursor_kind,p_cursor_id))
   ), remaining AS (
-    SELECT * FROM all_games
-    WHERE p_cursor IS NULL OR (bucket,sort_at,kind,id)>(v_cur_bucket,p_cursor,p_cursor_kind,p_cursor_id)
-    ORDER BY bucket,sort_at,kind,id OFFSET v_limit LIMIT 1
+    SELECT * FROM eligible ORDER BY bucket,sort_at,kind,id OFFSET v_limit LIMIT 1
   ), last_item AS (
-    SELECT * FROM all_games
-    WHERE p_cursor IS NULL OR (bucket,sort_at,kind,id)>(v_cur_bucket,p_cursor,p_cursor_kind,p_cursor_id)
-    ORDER BY bucket,sort_at,kind,id OFFSET GREATEST(v_limit-1,0) LIMIT 1
+    SELECT * FROM eligible ORDER BY bucket,sort_at,kind,id OFFSET GREATEST(v_limit-1,0) LIMIT 1
   ) SELECT CASE WHEN EXISTS(SELECT 1 FROM remaining) THEN
     (SELECT jsonb_build_object('sort_at',sort_at,'kind',kind,'id',id,'bucket',bucket) FROM last_item)
     ELSE NULL END INTO v_next;
@@ -184,6 +234,9 @@ BEGIN
   RETURN jsonb_build_object('ok',true,'items',v_items,'counts',v_counts,'next_cursor',v_next);
 END;
 $fn$;
+
+REVOKE ALL ON FUNCTION public.fn_list_managed_games(text,uuid,timestamptz,text,uuid,integer,integer,integer) FROM public, anon;
+GRANT EXECUTE ON FUNCTION public.fn_list_managed_games(text,uuid,timestamptz,text,uuid,integer,integer,integer) TO authenticated, service_role;
 
 DO $assert$
 DECLARE v_n integer;
@@ -196,12 +249,22 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
     WHERE n.nspname='public' AND p.proname='fn_list_managed_games'
-      AND p.prosecdef AND p.provolatile='s' AND p.prosrc LIKE '%Recover the cursor%'
+      AND p.prosecdef AND p.provolatile='s'
+      AND p.prosrc LIKE '%Recover the cursor%'
+      AND p.prosrc LIKE '%Counts summarise the WHOLE scope%'
+      AND p.prosrc LIKE '%fn_tournament_management_readiness%'
   ) THEN
-    RAISE EXCEPTION 'fn_list_managed_games lost the cursor-bucket recovery, SECURITY DEFINER or STABLE';
+    RAISE EXCEPTION 'fn_list_managed_games lost the cursor recovery, the unfiltered counts, the folded contract, SECURITY DEFINER or STABLE';
+  END IF;
+  -- The helpers stay: the dialogs use them and they remain the shape's home.
+  IF NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+                  WHERE n.nspname='public' AND p.proname='fn_get_managed_game_contracts')
+     OR NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+                  WHERE n.nspname='public' AND p.proname='fn_get_managed_game_command_receipts') THEN
+    RAISE EXCEPTION 'the standalone contract/receipt helpers must remain for the dialogs';
   END IF;
   IF has_function_privilege('anon',
-      'public.fn_list_managed_games(text,uuid,timestamptz,text,uuid,integer,integer)','EXECUTE') THEN
+      'public.fn_list_managed_games(text,uuid,timestamptz,text,uuid,integer,integer,integer)','EXECUTE') THEN
     RAISE EXCEPTION 'fn_list_managed_games is reachable by anon';
   END IF;
 END;

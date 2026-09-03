@@ -12,6 +12,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../../lib/supabase';
 import { identityDNA } from '../../core/IdentityDNA';
 import { useAuthUser } from '../../hooks/useAuthUser';
+import { unionService } from '../../services/UnionService';
 import { useToast } from '../common/Toast';
 import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
@@ -167,6 +168,18 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const [rewardContexts, setRewardContexts] = useState<LeaderboardRewardContext[]>([]);
   const [rewardContextClubId, setRewardContextClubId] = useState<string>('');
   const [canManageGames, setCanManageGames] = useState(false);
+  /**
+   * The union this club is operated from, when the signed-in user is one of its
+   * operators - its owner OR one of its union_admins.
+   *
+   * A member club's games are run from the union console, which is why
+   * canManageGames goes false as soon as access.unionId is set. That correctly
+   * hid the CLUB entry and then offered nothing in its place, so a union
+   * operator had no Table Management door anywhere in the navigation. Owners
+   * could still reach it through the union page; admins are bounced off that
+   * page entirely, so for them the feature was unreachable from their account.
+   */
+  const [unionManageId, setUnionManageId] = useState<string | null>(null);
   const [gameAccessRevision, setGameAccessRevision] = useState(0);
 
   // Stripe returns to the route where the player opened Table Studio. The
@@ -260,16 +273,26 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   useEffect(() => {
     if (!isOpen || !workspace.clubUUID) {
       setCanManageGames(false);
+      setUnionManageId(null);
       return;
     }
     let cancelled = false;
-    void fetchGameCreationAccess(workspace.clubUUID).then((access) => {
-      if (!cancelled) setCanManageGames(access.allowed && !access.unionId);
+    void fetchGameCreationAccess(workspace.clubUUID).then(async (access) => {
+      if (cancelled) return;
+      setCanManageGames(access.allowed && !access.unionId);
+      if (!access.unionId || !user?.id) {
+        setUnionManageId(null);
+        return;
+      }
+      // Owner or union_admin - the same test the union board itself applies,
+      // so the menu never offers a door the page would refuse.
+      const operator = await unionService.isUnionAdmin(access.unionId, user.id);
+      if (!cancelled) setUnionManageId(operator ? access.unionId : null);
     });
     return () => {
       cancelled = true;
     };
-  }, [gameAccessRevision, isOpen, workspace.clubUUID]);
+  }, [gameAccessRevision, isOpen, user?.id, workspace.clubUUID]);
 
   useMasterBusSubscription('GAME_MANAGEMENT_ACCESS_CHANGED', (payload) => {
     if (!payload.clubId || payload.clubId === workspace.clubUUID) {
@@ -1024,6 +1047,14 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
               type="button"
               className={styles.quickAction}
               onClick={() => handleNavigate(`/clubs/${clubId}/table-management`)}
+            >
+              Table Management
+            </button>
+          ) : unionManageId ? (
+            <button
+              type="button"
+              className={styles.quickAction}
+              onClick={() => handleNavigate(`/unions/${unionManageId}/table-management`)}
             >
               Table Management
             </button>

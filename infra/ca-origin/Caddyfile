@@ -65,4 +65,23 @@ ca-static.smarter.poker {
 		rewrite @route /index.html
 		file_server
 	}
+
+	# A 404 IS NOT IMMUTABLE.
+	# Caddy applies the Cache-Control above BY PATH, not by status, so a miss
+	# under /assets/* was answered "404, and cache me for a year". A browser
+	# that asks for a chunk in the seconds between the new index.html going
+	# live and that chunk reaching the pool would then cache the miss until
+	# 2027 and render a broken page for that viewer, with no recovery but a
+	# hard reload. The window is small; the blast radius for whoever lands in
+	# it is not.
+	#
+	# This sits at SITE level deliberately. `handle_errors` is not an ordered
+	# HTTP handler and Caddy REFUSES it inside a `handle` block:
+	#   "directive 'handle_errors' is not an ordered HTTP handler, so it
+	#    cannot be used here". Caught by `caddy validate` before this ever
+	#    reached the box.
+	handle_errors {
+		header Cache-Control "no-store"
+		respond "{err.status_code} {err.status_text}" {err.status_code}
+	}
 }

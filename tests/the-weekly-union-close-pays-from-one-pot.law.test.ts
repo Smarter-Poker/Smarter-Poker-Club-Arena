@@ -106,3 +106,75 @@ describe('the weekly union close pays from one pot', () => {
     }
   });
 });
+
+/* Part two and three (Dan, 2026-09-03): the basis is the rake the CLUB'S
+   PLAYERS generated at the union's games, not the rake from the club's own
+   tables. Cash from ca_union_rake_attribution (the seat the player sat
+   through, captured hourly), tournaments from tournament_players. */
+const ATTR_FILE = readdirSync(DIR)
+  .filter((f) => f.includes('every_chip_of_union_rake_knows_which_clubs_player_paid_it'))
+  .sort()
+  .pop();
+const CLOSE_V3_FILE = readdirSync(DIR)
+  .filter((f) => f.includes('the_weekly_union_close_shares_the_rake_a_clubs_players_generated'))
+  .sort()
+  .pop();
+const ATTR = ATTR_FILE ? readFileSync(resolve(DIR, ATTR_FILE), 'utf8') : '';
+const CLOSE_V3 = CLOSE_V3_FILE ? readFileSync(resolve(DIR, CLOSE_V3_FILE), 'utf8') : '';
+
+function closeBody(sql: string): string {
+  const open = sql.indexOf('CREATE OR REPLACE FUNCTION public.fn_union_weekly_rakeback_close');
+  expect(
+    open,
+    'fn_union_weekly_rakeback_close missing from the part-three migration'
+  ).toBeGreaterThan(-1);
+  const start = sql.indexOf('$function$', open);
+  const end = sql.indexOf('$function$', start + 10);
+  return sql.slice(start, end);
+}
+
+describe("the close shares the rake a club's players generated", () => {
+  it('ships the attribution table, its hourly job and the part-three close', () => {
+    expect(ATTR_FILE, 'the attribution migration is missing').toBeTruthy();
+    expect(CLOSE_V3_FILE, 'the part-three close migration is missing').toBeTruthy();
+    expect(ATTR).toContain('CREATE TABLE IF NOT EXISTS public.ca_union_rake_attribution');
+    expect(ATTR).toMatch(/cron\.schedule\('ca-union-rake-attribution-hourly'/);
+    expect(ATTR).toMatch(
+      /REVOKE ALL ON FUNCTION public\.fn_ca_attribute_union_rake\(integer\) FROM PUBLIC, anon, authenticated;/
+    );
+  });
+
+  it('attributes cash by the seat the player sat through and shares rake by pot contribution', () => {
+    expect(ATTR).toContain('jsonb_each_text(h.player_contributions)');
+    expect(ATTR).toContain('round(c.rake_amount * c.contrib / NULLIF(c.total, 0), 4)');
+    expect(ATTR).toMatch(
+      /FROM public\.table_seats s\s+WHERE s\.table_id = c\.table_id AND s\.user_id = c\.user_id/
+    );
+    expect(CLOSE_V3).toContain("s.joined_at >= c.played_at - interval '7 days'");
+  });
+
+  it("bases each club's share on its players, cash and tournaments, never on the table's club", () => {
+    const b = closeBody(CLOSE_V3);
+    expect(b).toContain('FROM ca_union_rake_attribution a');
+    expect(b).toContain('FROM tournament_players tp');
+    expect(b).toContain('sum(1 + COALESCE(tp.rebuys, 0) + CASE WHEN tp.add_on THEN 1 ELSE 0 END)');
+    expect(b).not.toContain('GROUP BY t.club_id, uc.club_commission_rate');
+    expect(b).toContain("'basis', 'players_of_the_club_at_union_tables'");
+  });
+
+  it('keeps the period total as everything the treasury received and refuses a basis above it', () => {
+    const b = closeBody(CLOSE_V3);
+    expect(b).toContain(
+      'SELECT round(COALESCE(SUM(amount), 0), 2) INTO v_period_total FROM _uwrb_credits'
+    );
+    expect(b).toContain("'attribution_exceeds_treasury'");
+  });
+
+  it('carries part one forward unchanged: separate pots, op keys, the conservation assert', () => {
+    const b = closeBody(CLOSE_V3);
+    expect(b).toMatch(/rake_wallet\s*=\s*rake_wallet\s*-\s*v_period_total/);
+    expect(b).toMatch(/chip_balance\s*=\s*chip_balance\s*\+\s*v_retained/);
+    expect(b).toContain('conservation violation in the weekly union close');
+    expect(b).toMatch(/'union_close:' \|\| v_sid::text \|\| ':' \|\| v_club\.club_id::text/);
+  });
+});

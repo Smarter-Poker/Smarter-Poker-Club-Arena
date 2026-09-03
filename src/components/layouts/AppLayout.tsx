@@ -11,7 +11,7 @@
 
 import { Outlet, useLocation } from 'react-router-dom';
 import RouteErrorBoundary from '../common/RouteErrorBoundary';
-import { useEffect, useRef } from 'react';
+import { Suspense, lazy, useEffect, useRef } from 'react';
 import styles from './AppLayout.module.css';
 import ClubArenaWelcomeModal, { useClubArenaWelcome } from '../modals/ClubArenaWelcomeModal';
 import ClubAnnouncementBanner from '../club/ClubAnnouncementBanner';
@@ -22,6 +22,24 @@ import { useAuthUser } from '../../hooks/useAuthUser';
 import CompleteProfileModal, { useCompleteProfile } from '../modals/CompleteProfileModal';
 import { ClubWorkspaceProvider } from '../../contexts/ClubWorkspaceContext';
 import NavigationTelemetry from '../navigation/NavigationTelemetry';
+
+/**
+ * The notifications popup (Dan, 2026-09-02: "IT SHOULD CREATE A 'FULL SCREEN
+ * POP UP' SO YOU STAY ON THE PAGE YOU WERE ON"). Mounted HERE, once, rather
+ * than inside GlobalHeader, for two reasons:
+ *
+ *   1. The header is hidden on table and tournament play pages, and a player
+ *      sitting at a table is exactly who needs to check a seat call without
+ *      leaving the hand. An overlay owned by the header would be unopenable
+ *      on the pages where staying put matters most.
+ *   2. There is more than one door — the bell, the hamburger, the account
+ *      rail. One mounted overlay reading one store is what stops those doors
+ *      drifting into different behaviours.
+ *
+ * Lazy, and preloaded by ChunkPreloader's CRITICAL_CHUNKS so the first tap of
+ * a session does not pay for the chunk.
+ */
+const NotificationsOverlay = lazy(() => import('../notifications/NotificationsOverlay'));
 
 /*
  * THE ROUTE ART IS GONE (2026-08-30).
@@ -127,6 +145,14 @@ function AppLayoutContent() {
           <Outlet />
         </RouteErrorBoundary>
       </main>
+
+      {/* Notifications popup. Renders null until something opens it, and is
+          deliberately OUTSIDE <main>: it portals to document.body, and being a
+          sibling of the header keeps it out of the focus order of the page it
+          is covering. */}
+      <Suspense fallback={null}>
+        <NotificationsOverlay />
+      </Suspense>
     </div>
   );
 }

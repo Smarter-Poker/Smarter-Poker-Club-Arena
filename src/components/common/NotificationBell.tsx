@@ -2,24 +2,34 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *  NOTIFICATION BELL — Header Badge with Unread Count (v4.0 — Persistent Store)
  * ═══════════════════════════════════════════════════════════════════════════════
- * Displays a bell icon with unread count badge. Tapping navigates to /notifications.
+ * Displays a bell icon with unread count badge. Tapping opens the full-screen
+ * notifications popup over whatever page the player is on.
  *
  * v4.0: Now a PURE RENDERER of useHeaderDataStore — no local state, no realtime
  *       channel, no Supabase fetches. All data comes from the persistent store.
  *       This eliminates the duplicate realtime channel that previously existed
  *       alongside the GlobalHeader's channel.
+ *
+ * v5.0 (2026-09-02): stopped navigating. Dan: "WHEN YOU CLICK ON NOTIFICATIONS,
+ *       IT SHOULDN'T OPEN TO ITS OWN PAGE, IT SHOULD CREATE A 'FULL SCREEN POP
+ *       UP' SO YOU STAY ON THE PAGE YOU WERE ON." Nothing renders this bell
+ *       today — GlobalHeader draws its own from the approved artwork — but it
+ *       is exported from components/common, so it is one import away from being
+ *       mounted. Left navigating, it would have quietly reintroduced the exact
+ *       behaviour this change removed, on whichever surface picked it up.
  */
 
-import { useNavigate } from 'react-router-dom';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
+import { useNotificationsOverlayStore } from '../../stores/useNotificationsOverlayStore';
 
 export default function NotificationBell() {
-  const navigate = useNavigate();
+  const openNotifications = useNotificationsOverlayStore((s) => s.openNotifications);
   const notificationCount = useHeaderDataStore((s) => s.notificationCount);
 
   return (
     <button
-      onClick={() => navigate('/notifications')}
+      type="button"
+      onClick={() => openNotifications('notification-bell')}
       style={{
         position: 'relative',
         background: 'none',

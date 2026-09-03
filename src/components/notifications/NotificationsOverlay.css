@@ -1,0 +1,139 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   NOTIFICATIONS OVERLAY — full-screen popup chrome
+   ═══════════════════════════════════════════════════════════════════════
+
+   Dan, 2026-09-02: "IT SHOULD CREATE A 'FULL SCREEN POP UP' SO YOU STAY ON THE
+   PAGE YOU WERE ON."
+
+   Only the frame lives here. Everything inside is `.ca-notif`, styled by
+   pages/NotificationsPage.css, which the surface brings with it — so the popup
+   and the /notifications route are the same pixels by construction rather than
+   by two stylesheets agreeing to match.
+
+   NO :hover RULES. `no-hover-effects.law.test.ts` (Dan, 2026-08-29: "Remove
+   hover entirely, everywhere") — Club Arena is mobile-first and a hover state
+   is a state most players can never reach. Press feedback is :active, keyboard
+   reachability is :focus-visible.
+
+   Z-INDEX 10040 sits above the global header and the ordinary 9999/10000
+   modals — this covers the header on purpose, because the header's Back button
+   would otherwise leave the page the popup is protecting. It stays BELOW the
+   toast layer (100000), so a "Mark All Read" confirmation is still readable
+   over the popup that triggered it.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.ca-notif-overlay {
+  position: fixed;
+  z-index: 10040;
+  inset: 0;
+  display: flex;
+  overflow: hidden;
+  background: rgba(2, 5, 8, 0.82);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: ca-notif-overlay-in 160ms ease-out both;
+}
+
+.ca-notif-overlay__panel {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  background: #030609;
+  animation: ca-notif-overlay-rise 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* The scroller, not the panel, owns overflow: the close button is pinned to
+   the panel so it never scrolls away from a player halfway down a long feed. */
+.ca-notif-overlay__scroll {
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* THE "X" DAN ASKED FOR. Floated over the surface's own hero rather than given
+   a title bar of its own: the hero already reads NOTIFICATIONS in full, and a
+   second title stacked above it would be the popup announcing itself twice.
+   44px is the minimum comfortable touch target (mobile-first, CLAUDE.md 10.6). */
+.ca-notif-overlay__close {
+  position: absolute;
+  z-index: 2;
+  top: max(0.75rem, env(safe-area-inset-top));
+  right: max(0.75rem, env(safe-area-inset-right));
+  display: flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid #26333d;
+  border-radius: 4px;
+  background: linear-gradient(145deg, #101922, #070c11);
+  color: #f4f8fb;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+}
+
+.ca-notif-overlay__close:active {
+  border-color: #3aa8ff;
+  background: linear-gradient(145deg, #0a1119, #05090d);
+}
+
+.ca-notif-overlay__close:focus-visible {
+  border-color: #3aa8ff;
+  outline: 2px solid #3aa8ff;
+  outline-offset: 2px;
+}
+
+/* In the popup the surface fills the frame instead of sitting in the page
+   shell's gutter, and it does not need to clear a bottom nav that the popup is
+   already covering. The hero keeps clear of the close button. */
+.ca-notif--overlay {
+  min-height: 100%;
+  padding: 0 0.75rem 1.5rem;
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+}
+
+.ca-notif--overlay .ca-notif__bar {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+}
+
+@keyframes ca-notif-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes ca-notif-overlay-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Reduced motion collapses the movement but never the meaning: the popup still
+   appears, in full, immediately. `animations-always-play.law.test.ts` forbids
+   an animation being cancelled outright — this one carries no duration and no
+   information, so arriving instantly IS the whole animation. */
+@media (prefers-reduced-motion: reduce) {
+  .ca-notif-overlay,
+  .ca-notif-overlay__panel {
+    animation-duration: 1ms;
+  }
+
+  .ca-notif-overlay__panel {
+    transform: none;
+  }
+}

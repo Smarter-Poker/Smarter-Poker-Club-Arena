@@ -35,6 +35,14 @@ const CRITICAL_CHUNKS: Array<() => Promise<any>> = [
   () => import('../pages/HandHistoryPage'),
   () => import('../pages/CashierPage'),
   () => import('../pages/NotificationsPage'),
+  // The bell no longer navigates — it opens NotificationsOverlay in place
+  // (Dan, 2026-09-02: "IT SHOULD CREATE A 'FULL SCREEN POP UP' SO YOU STAY ON
+  // THE PAGE YOU WERE ON"). AppLayout lazy-loads that overlay, so without this
+  // entry the first bell tap of a session would pay a chunk fetch, which is
+  // the exact stall Dan objected to in 2026-08-27's "IT SHOULD INSTANTLY OPEN
+  // AND DISPLAY WHEN CLICKED". It is cheap to warm: the surface itself is
+  // already in the NotificationsPage chunk above, and both share it.
+  () => import('../components/notifications/NotificationsOverlay'),
   () => import('../pages/NavigateToMessenger'),
   // PERF PASS 2026-08-24 (boot cost): TablePage (~438KB JS + ~389KB CSS) and
   // MultiTablePage were preloaded here. Together they were the bulk of a

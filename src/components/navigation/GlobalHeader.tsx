@@ -12,6 +12,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
+import { useNotificationsOverlayStore } from '../../stores/useNotificationsOverlayStore';
 import { useAuthUser } from '../../hooks/useAuthUser';
 
 import styles from './GlobalHeader.module.css';
@@ -51,6 +52,7 @@ export default function GlobalHeader() {
     clearUnreadNotifications,
     clearUnreadMessages,
   } = useHeaderDataStore();
+  const openNotifications = useNotificationsOverlayStore((s) => s.openNotifications);
   const [menuOpen, setMenuOpen] = useState(false);
   const [isNavigatingAway, setIsNavigatingAway] = useState(false);
 
@@ -232,10 +234,21 @@ export default function GlobalHeader() {
     navigate('/messages');
   }, [authUser?.id, clearUnreadMessages, navigate]);
 
+  /**
+   * THE BELL OPENS A POPUP, IT DOES NOT NAVIGATE (Dan, 2026-09-02, verbatim):
+   * "WHEN YOU CLICK ON NOTIFICATIONS, IT SHOULDN'T OPEN TO ITS OWN PAGE, IT
+   * SHOULD CREATE A 'FULL SCREEN POP UP' SO YOU STAY ON THE PAGE YOU WERE ON,
+   * AND NOT REDIRECT TO A WHOLE PAGE FOR NOTIFICATIONS."
+   *
+   * The badge is still cleared first, exactly as before — the popup is a
+   * different presentation of the same act of reading them, not a different
+   * act. `openNotifications` is synchronous, so the surface is on screen on
+   * the same frame as the tap while the clear settles behind it.
+   */
   const handleNotificationsClick = useCallback(async () => {
+    openNotifications('global-header-bell');
     if (authUser?.id) await clearUnreadNotifications(authUser.id);
-    navigate('/notifications');
-  }, [authUser?.id, clearUnreadNotifications, navigate]);
+  }, [authUser?.id, clearUnreadNotifications, openNotifications]);
 
   const headerStyle = isNavigatingAway
     ? { opacity: 0.5, transition: 'opacity 0.15s ease', pointerEvents: 'none' as const }
@@ -357,10 +370,26 @@ export default function GlobalHeader() {
               )}
             </button>
 
+            {/* STILL AN ANCHOR, DELIBERATELY. The popup has no address, and
+                three things need one: cmd/middle-click to open notifications
+                in a new tab, the browser's own "copy link", and assistive tech
+                that announces a destination. A plain left click is intercepted
+                and opens the popup instead; a modified click is left alone so
+                the browser does what the player asked and loads the route. */}
             <Link
               to="/notifications"
               className={`${styles.artButton} ${styles.notificationsBtn}`}
               onClick={(event) => {
+                if (
+                  event.defaultPrevented ||
+                  event.button !== 0 ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey
+                ) {
+                  return;
+                }
                 event.preventDefault();
                 void handleNotificationsClick();
               }}

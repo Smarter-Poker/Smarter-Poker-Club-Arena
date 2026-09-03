@@ -1,7 +1,13 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import GlobalHeader from '@/components/navigation/GlobalHeader';
+import { useNotificationsOverlayStore } from '@/stores/useNotificationsOverlayStore';
+
+/** Reports the router's current path, so "did the bell move the player" is observable. */
+function LocationProbe() {
+  return <span data-testid="pathname">{useLocation().pathname}</span>;
+}
 
 // Mock dependencies
 vi.mock('@/stores/useWalletStore', () => ({
@@ -52,6 +58,7 @@ describe('GlobalHeader Component', () => {
     headerData.isVipActive = false;
     headerData.clearUnreadNotifications.mockClear();
     headerData.clearUnreadMessages.mockClear();
+    useNotificationsOverlayStore.getState().closeNotifications();
   });
 
   it('keeps the approved Smarter.Poker wordmark unobstructed', () => {
@@ -218,5 +225,42 @@ describe('GlobalHeader Component', () => {
     await waitFor(() => {
       expect(headerData.clearUnreadNotifications).toHaveBeenCalledWith('test-user-123');
     });
+  });
+
+  /**
+   * Dan, 2026-09-02: "WHEN YOU CLICK ON NOTIFICATIONS, IT SHOULDN'T OPEN TO ITS
+   * OWN PAGE, IT SHOULD CREATE A 'FULL SCREEN POP UP' SO YOU STAY ON THE PAGE
+   * YOU WERE ON."
+   */
+  it('opens the popup instead of leaving the page, but stays a real link', () => {
+    render(
+      <MemoryRouter initialEntries={['/clubs/abc']}>
+        <GlobalHeader />
+        <LocationProbe />
+      </MemoryRouter>
+    );
+
+    const bell = screen.getByRole('link', { name: /^Notifications$/i });
+    // The anchor is what makes cmd-click / "open in new tab" / "copy link"
+    // work, and the popup has no address of its own.
+    expect(bell).toHaveAttribute('href', '/notifications');
+
+    fireEvent.click(bell);
+
+    expect(useNotificationsOverlayStore.getState().isOpen).toBe(true);
+    expect(useNotificationsOverlayStore.getState().openedFrom).toBe('global-header-bell');
+    // The whole point: the player did not move.
+    expect(screen.getByTestId('pathname')).toHaveTextContent('/clubs/abc');
+  });
+
+  it('leaves a cmd-click alone so the browser can open the route in a new tab', () => {
+    render(
+      <MemoryRouter initialEntries={['/clubs/abc']}>
+        <GlobalHeader />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: /^Notifications$/i }), { metaKey: true });
+    expect(useNotificationsOverlayStore.getState().isOpen).toBe(false);
   });
 });

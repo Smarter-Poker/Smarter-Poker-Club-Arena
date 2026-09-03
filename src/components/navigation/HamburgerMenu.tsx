@@ -17,6 +17,7 @@ import { masterBus } from '../../core/MasterBus';
 import { useMasterBusSubscription } from '../../hooks/useMasterBusSubscription';
 import { useWalletStore } from '../../stores/useWalletStore';
 import { useHeaderDataStore } from '../../stores/useHeaderDataStore';
+import { useNotificationsOverlayStore } from '../../stores/useNotificationsOverlayStore';
 import { STORAGE_KEYS } from '../../lib/storage';
 import { persistIdentity } from '../../lib/cachedIdentity';
 import { generateDefaultAvatar } from '../../utils/avatarGenerator';
@@ -78,6 +79,7 @@ const colors = {
 
 export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
   const navigate = useNavigate();
+  const openNotifications = useNotificationsOverlayStore((s) => s.openNotifications);
   const { user } = useAuthUser();
   const toast = useToast();
   const touchStartRef = useRef<number | null>(null);
@@ -571,6 +573,20 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
 
   // Navigate and close
   const handleNavigate = (path: string) => {
+    /**
+     * NOTIFICATIONS IS A POPUP, NOT A DESTINATION (Dan, 2026-09-02): "IT
+     * SHOULD CREATE A 'FULL SCREEN POP UP' SO YOU STAY ON THE PAGE YOU WERE ON,
+     * AND NOT REDIRECT TO A WHOLE PAGE FOR NOTIFICATIONS."
+     *
+     * Intercepted HERE, in the shared handler, rather than on the one menu
+     * item that happens to point at it today. Any present or future entry
+     * whose path is /notifications gets the popup, so the menu cannot drift
+     * back into navigating while the bell opens a popup — which is exactly the
+     * split this change exists to remove.
+     *
+     * The menu still closes, and the route is still recorded in recents and
+     * telemetry, because from the player's side they did open notifications.
+     */
     const nextRecentPaths = [path, ...recentPaths.filter((item) => item !== path)].slice(0, 5);
     setRecentPaths(nextRecentPaths);
     try {
@@ -584,6 +600,13 @@ export default function HamburgerMenu({ isOpen, onClose }: HamburgerMenuProps) {
       club_id: workspace.clubUUID,
       source: 'hamburger',
     });
+
+    if (path === '/notifications') {
+      openNotifications('hamburger-menu');
+      onClose();
+      return;
+    }
+
     navigatingRef.current = true;
     navigate(path);
     onClose();

@@ -55,8 +55,16 @@ interface TournLike {
 }
 
 interface Props {
+  /** The ALL-TIME overall block. Never the range-windowed one. */
   overall?: OverallLike | null;
   tournaments?: TournLike | null;
+  /**
+   * Lifetime hand count from the player -> hand index. `overall.total_hands`
+   * is capped at the 750-hand analysis window, so a hand-count milestone that
+   * read it could never pass 750. This is the number "Play 10,000 hands" is
+   * judged against.
+   */
+  lifetimeHands?: number;
 }
 
 type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
@@ -104,36 +112,21 @@ function countMilestone(
   };
 }
 
-function buildMilestones(o: OverallLike, t: TournLike | null): Milestone[] {
+function buildMilestones(o: OverallLike, t: TournLike | null, lifetimeHands: number): Milestone[] {
+  const hands = Math.max(lifetimeHands, o.total_hands);
   const out: Milestone[] = [
     countMilestone(
       'first_hand',
       'First Hand',
       'Play your first hand.',
       'common',
-      o.total_hands,
+      hands,
       1,
       'hands'
     ),
-    countMilestone(
-      'hundred',
-      'Getting Started',
-      'Play 100 hands.',
-      'common',
-      o.total_hands,
-      100,
-      'hands'
-    ),
-    countMilestone('grinder', 'Grinder', 'Play 1,000 hands.', 'rare', o.total_hands, 1000, 'hands'),
-    countMilestone(
-      'ironman',
-      'Ironman',
-      'Play 10,000 hands.',
-      'epic',
-      o.total_hands,
-      10000,
-      'hands'
-    ),
+    countMilestone('hundred', 'Getting Started', 'Play 100 hands.', 'common', hands, 100, 'hands'),
+    countMilestone('grinder', 'Grinder', 'Play 1,000 hands.', 'rare', hands, 1000, 'hands'),
+    countMilestone('ironman', 'Ironman', 'Play 10,000 hands.', 'epic', hands, 10000, 'hands'),
     countMilestone(
       'marathon',
       'Marathon',
@@ -169,45 +162,53 @@ function buildMilestones(o: OverallLike, t: TournLike | null): Milestone[] {
         : `Down ${Math.round(Math.abs(o.total_profit)).toLocaleString()}`,
   });
 
-  const crusherQualified = o.cash_hands >= 5000;
+  /**
+   * The three "hold X over N hands" trophies gate on the LIFETIME count. They
+   * used to gate on `o.total_hands` / `o.cash_hands`, which the analysis window
+   * caps at 750 - so "over 1,000 hands" and "over 5,000 cash hands" could
+   * never be satisfied by anyone, and every player saw them locked forever
+   * with a bar frozen at 75%. The rate itself is still read from the analysed
+   * window; the qualification is the career.
+   */
+  const crusherQualified = hands >= 5000 && o.cash_hands > 0;
   out.push({
     id: 'crusher',
     name: 'Crusher',
-    description: 'Hold A Positive Win Rate Over 5,000 Or More Cash Hands.',
+    description: 'Hold A Positive Cash Win Rate With 5,000 Or More Hands Played.',
     rarity: 'legendary',
-    progress: crusherQualified ? (o.bb_per_100 > 0 ? 1 : 0) : clamp01(o.cash_hands / 5000),
+    progress: crusherQualified ? (o.bb_per_100 > 0 ? 1 : 0) : clamp01(hands / 5000),
     unlocked: crusherQualified && o.bb_per_100 > 0,
     detail: crusherQualified
-      ? `${o.bb_per_100.toFixed(1)} bb/100 over ${o.cash_hands.toLocaleString()} hands`
-      : `${o.cash_hands.toLocaleString()} / 5,000 qualifying hands`,
+      ? `${o.bb_per_100.toFixed(1)} bb/100 over your last ${o.cash_hands.toLocaleString()} cash hands`
+      : `${hands.toLocaleString()} / 5,000 qualifying hands`,
   });
 
-  const disciplineQualified = o.total_hands >= 1000;
+  const disciplineQualified = hands >= 1000;
   const vpipPct = o.vpip * 100;
   const inBand = vpipPct >= 18 && vpipPct <= 28;
   out.push({
     id: 'disciplined',
     name: 'Disciplined',
-    description: 'Hold VPIP Inside The 18-28% Range Over 1,000 Or More Hands.',
+    description: 'Hold VPIP Inside The 18-28% Range With 1,000 Or More Hands Played.',
     rarity: 'epic',
-    progress: disciplineQualified ? (inBand ? 1 : 0) : clamp01(o.total_hands / 1000),
+    progress: disciplineQualified ? (inBand ? 1 : 0) : clamp01(hands / 1000),
     unlocked: disciplineQualified && inBand,
     detail: disciplineQualified
       ? `VPIP ${vpipPct.toFixed(1)}%`
-      : `${o.total_hands.toLocaleString()} / 1,000 qualifying hands`,
+      : `${hands.toLocaleString()} / 1,000 qualifying hands`,
   });
 
-  const aggroQualified = o.total_hands >= 1000;
+  const aggroQualified = hands >= 1000;
   out.push({
     id: 'aggressor',
     name: 'Aggressor',
-    description: 'Hold An Aggression Factor Of 2.0 Or Better Over 1,000 Hands.',
+    description: 'Hold An Aggression Factor Of 2.0 Or Better With 1,000 Or More Hands Played.',
     rarity: 'epic',
-    progress: aggroQualified ? clamp01(o.aggression_factor / 2) : clamp01(o.total_hands / 1000),
+    progress: aggroQualified ? clamp01(o.aggression_factor / 2) : clamp01(hands / 1000),
     unlocked: aggroQualified && o.aggression_factor >= 2,
     detail: aggroQualified
       ? `AF ${o.aggression_factor.toFixed(2)}`
-      : `${o.total_hands.toLocaleString()} / 1,000 qualifying hands`,
+      : `${hands.toLocaleString()} / 1,000 qualifying hands`,
   });
 
   if (t) {
@@ -245,7 +246,7 @@ function buildMilestones(o: OverallLike, t: TournLike | null): Milestone[] {
   return out;
 }
 
-export default function TrophyRoom({ overall, tournaments }: Props) {
+export default function TrophyRoom({ overall, tournaments, lifetimeHands = 0 }: Props) {
   const reduceMotion = useReducedMotion();
 
   // Shared with the share card on PlayerStatsPage, so the two surfaces can
@@ -253,8 +254,8 @@ export default function TrophyRoom({ overall, tournaments }: Props) {
   const style = useMemo(() => playerStyleFromStats(overall), [overall]);
 
   const milestones = useMemo(
-    () => (overall ? buildMilestones(overall, tournaments ?? null) : []),
-    [overall, tournaments]
+    () => (overall ? buildMilestones(overall, tournaments ?? null, lifetimeHands) : []),
+    [overall, tournaments, lifetimeHands]
   );
 
   const unlocked = milestones.filter((m) => m.unlocked);
@@ -263,7 +264,7 @@ export default function TrophyRoom({ overall, tournaments }: Props) {
     .sort((a, b) => b.progress - a.progress)
     .slice(0, 3);
 
-  if (!overall || overall.total_hands === 0) {
+  if (!overall || (overall.total_hands === 0 && lifetimeHands === 0)) {
     return (
       <div className="trophy-card trophy-empty">
         <h3 className="trophy-title">Trophy Room</h3>
@@ -404,8 +405,9 @@ export default function TrophyRoom({ overall, tournaments }: Props) {
         </motion.div>
 
         <p className="trophy-note">
-          Trophies Are Worked Out From Your Live Stats Each Time This Page Loads, So They Are Always
-          Current And Never Need To Be Claimed.
+          Trophies Are Worked Out From Your All-Time Record Each Time This Page Loads - The Analysis
+          Window Above Does Not Change Them - So They Are Always Current And Never Need To Be
+          Claimed.
         </p>
       </div>
     </div>

@@ -40,6 +40,7 @@ import { selectRevealedShowdownResults } from './revealedShowdown.js';
 import { ServerTableEngineDealing } from './ServerTableEngineDealing.js';
 import { atRebuyStopLoss, horseRebuyAmount } from '../services/HorseRebuyPolicy.js';
 import { buildDailyMissionHandEvents } from './dailyMissionEvents.js';
+import { checkTournamentChipConservation } from './tournamentChipConservation.js';
 
 /**
  * How long a finished hand stays purchasable. A rabbit hunt is an impulse, and
@@ -1154,6 +1155,7 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       returnedUncalled: new Map(this.currentHandReturnedUncalled),
       bbjHit: this.currentHandBBJHit,
       bbjPayoutConfig: this.currentHandBBJPayoutConfig,
+      dealtStacks: new Map(this.currentHandDealtStacks),
     };
     // ═══════════════════════════════════════════════════════════════════════
     // Bible V8 §1.9: SETTLEMENT PIPELINE (continued) — Steps 8-15
@@ -1196,8 +1198,52 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
       }
     };
 
+    /* ═══ TOURNAMENT CHIPS ARE CONSERVED HAND BY HAND (chip-std Lane F, 2026-09-02)
+       A tournament hand has no rake and no BBJ drop, so the players who were
+       dealt in must hold, after settlement, exactly what they were dealt
+       with. The database only checks conservation when rake is declared,
+       and the engine declares none for tournaments, so until now a hand
+       whose stacks did not add up was written as if they did. Tournament
+       chips decide the winner; a total the engine cannot account for must
+       not reach the record. On a violation: CRITICAL alert with the hand id
+       and both totals, and NEITHER stack write below runs - the pre-hand
+       stacks stay persisted, which is the only total anyone can vouch for.
+       Pure decision: tournamentChipConservation.ts. */
+    let tournamentHandConserved = true;
+    if (this.isTournamentTable() && snap.dealtStacks.size > 0) {
+      const verdict = checkTournamentChipConservation({
+        dealt: snap.dealtStacks,
+        settled: players.map((p) => ({ user_id: p.user_id, stack: p.stack })),
+        rake: 0,
+      });
+      if (!verdict.ok) {
+        tournamentHandConserved = false;
+        const detail =
+          `tournament hand #${snap.handNumber} at table ${this.tableId} does not conserve: ` +
+          `dealt ${verdict.dealtTotal}, settled ${verdict.settledTotal}, delta ${verdict.delta}` +
+          (verdict.missing.length > 0
+            ? `, ${verdict.missing.length} dealt player(s) with no settled stack`
+            : '') +
+          ' - stacks NOT persisted, pre-hand stacks stand';
+        reportError(
+          new Error(`[ServerTableEngine] ${detail}`),
+          'Tournament.chip_conservation_broken'
+        );
+        await raiseFinancialAlert('critical', 'Tournament.chip_conservation_broken', detail, {
+          table_id: this.tableId,
+          tournament_id: this.tableInfo?.tournament_id ?? null,
+          hand_number: snap.handNumber,
+          dealt_total: verdict.dealtTotal,
+          settled_total: verdict.settledTotal,
+          delta: verdict.delta,
+          missing: verdict.missing,
+        });
+      }
+    }
+
     await runStep('sync_stacks', true, async () => {
       // SETTLEMENT STEP 8: Persist results to database (atomic transaction)
+      if (!tournamentHandConserved) return;
       await syncStacks(
         this.tableId,
         players.map((p) => ({
@@ -1860,6 +1906,10 @@ export abstract class ServerTableEngineSettlement extends ServerTableEngineDeali
 
     // SETTLEMENT STEP 8d: Tournament chip sync
     await runStep('tournament_chip_sync', true, async () => {
+      // Lane F: a hand that did not conserve persisted nothing above, and
+      // mirroring table_seats into tournament_players is a no-op then. Kept
+      // explicit so the refusal cannot be undone by a later step.
+      if (!tournamentHandConserved) return;
       if (this.isTournamentTable() && this.tableInfo?.tournament_id) {
         await syncTournamentChips(this.tableId, this.tableInfo.tournament_id);
       }

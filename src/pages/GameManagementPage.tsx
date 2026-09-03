@@ -1130,6 +1130,31 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const liveCount = counts.live;
   const scheduledCount = counts.scheduled;
 
+  /*
+    What paging can actually reach.
+
+    `counts.total` summarises the whole scope; the ROWS honour the closed
+    horizon. On Midway Union that was 79,142 against 35,745 - the header
+    promised forty-three thousand games the board would never hand over, and
+    "Load More - 50 Of 79142" counted towards a number no amount of clicking
+    could arrive at. A total nobody can reconcile is worse than no total.
+
+    Live and scheduled are never withheld by age, so only the closed leg is
+    horizon-bound.
+  */
+  const reachableTotal = counts.live + counts.scheduled + counts.closedWithinHorizon;
+  const archivedBeyondHorizon = Math.max(0, counts.closed - counts.closedWithinHorizon);
+  /* The tab decides what "of" means: paging the Closed tab reaches the closed
+     games within the horizon, not the whole board. */
+  const viewTotal =
+    view === 'running'
+      ? counts.live
+      : view === 'scheduled'
+        ? counts.scheduled
+        : view === 'closed'
+          ? counts.closedWithinHorizon
+          : reachableTotal;
+
   const tournamentFormat =
     requestedCreate === 'spin' ? 'spin' : requestedCreate === 'sng' ? 'sng' : 'mtt_freezeout';
   const tournamentModalOpen =
@@ -1265,8 +1290,14 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
             <span>
               <strong>{scheduledCount}</strong> Scheduled
             </span>
-            <span>
-              <strong>{counts.total}</strong> Total
+            <span
+              title={
+                archivedBeyondHorizon
+                  ? `${archivedBeyondHorizon} More Closed Games Are Older Than The ${counts.closedHorizonDays}-Day Board Horizon And Are Not Listed`
+                  : 'Every Game In This Scope Is On The Board'
+              }
+            >
+              <strong>{reachableTotal}</strong> Total
             </span>
           </div>
           <div className={styles.healthRail} aria-label="Management Health">
@@ -1626,7 +1657,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
                 onClick={() => void loadMore()}
                 disabled={loadingMore}
               >
-                {loadingMore ? 'Loading More…' : `Load More · ${games.length} Of ${counts.total}`}
+                {loadingMore ? 'Loading More…' : `Load More · ${games.length} Of ${viewTotal}`}
               </button>
             )}
           </section>

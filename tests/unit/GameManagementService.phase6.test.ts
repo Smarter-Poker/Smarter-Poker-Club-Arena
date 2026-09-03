@@ -45,8 +45,8 @@ describe('GameManagementService Phase 6 RPC contracts', () => {
       data: {
         ok: true,
         items: [{ id: 'game-1', kind: 'table' }],
-        counts: { total: 140, live: 7, scheduled: 12 },
-        next_cursor: { sort_at: '2026-09-01T12:00:00Z', kind: 'table', id: 'game-1' },
+        counts: { total: 140, live: 7, scheduled: 12, closed: 121 },
+        next_cursor: { sort_at: '2026-09-01T12:00:00Z', kind: 'table', id: 'game-1', bucket: 0 },
       },
     });
 
@@ -59,12 +59,50 @@ describe('GameManagementService Phase 6 RPC contracts', () => {
       p_cursor_kind: null,
       p_cursor_id: null,
       p_limit: 100,
+      p_cursor_bucket: null,
     });
-    expect(result.counts).toEqual({ total: 140, live: 7, scheduled: 12 });
+    expect(result.counts).toEqual({ total: 140, live: 7, scheduled: 12, closed: 121 });
     expect(result.nextCursor).toEqual({
       sortAt: '2026-09-01T12:00:00Z',
       kind: 'table',
       id: 'game-1',
+      bucket: 0,
+    });
+  });
+
+  /**
+   * The bucket is the FIRST key the board orders by, so it is the first key of
+   * the keyset cursor too. Drop it on the way back to the database and paging
+   * silently restarts at the top of the next bucket instead of continuing -
+   * rows repeat, rows vanish, and nothing errors. That is worth a pin of its
+   * own rather than trusting the round trip.
+   */
+  it('sends the cursor bucket back when paging past the live games', async () => {
+    rpc.mockResolvedValueOnce({
+      error: null,
+      data: {
+        ok: true,
+        items: [],
+        counts: { total: 140, live: 7, scheduled: 12, closed: 121 },
+        next_cursor: null,
+      },
+    });
+
+    await gameManagementService.list('club', 'club-1', {
+      sortAt: '2026-09-01T12:00:00Z',
+      kind: 'tournament',
+      id: 'game-9',
+      bucket: 1,
+    });
+
+    expect(rpc).toHaveBeenCalledWith('fn_list_managed_games', {
+      p_scope: 'club',
+      p_scope_id: 'club-1',
+      p_cursor: '2026-09-01T12:00:00Z',
+      p_cursor_kind: 'tournament',
+      p_cursor_id: 'game-9',
+      p_limit: 100,
+      p_cursor_bucket: 1,
     });
   });
 

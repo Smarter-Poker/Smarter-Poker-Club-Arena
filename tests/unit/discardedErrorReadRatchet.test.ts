@@ -116,7 +116,10 @@ const BASELINE = new Map<string, number>([
   ['src/services/NotificationService.ts', 2],
   ['src/services/MembershipService.ts', 2],
   ['src/services/LeaderboardService.ts', 2],
-  ['src/services/HydraService.ts', 2],
+  // 2 -> 0 in chip-std cash (2026-09-02, C2): both discarded reads lived in
+  // seatHorse, the browser-side seat creator that minted a stack; it is gone
+  // with its reads, and the server fleet is the one seat creator for horses.
+  ['src/services/HydraService.ts', 0],
   ['src/services/FinancialExportService.ts', 2],
   ['src/services/BonusService.ts', 2],
   ['src/services/AchievementTriggerService.ts', 1],

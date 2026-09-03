@@ -83,6 +83,16 @@ describe('no money path writes a ledger row it did not earn', () => {
    * row only when the credit actually landed.
    */
   const MIGRATIONS = path.join(process.cwd(), '..', 'supabase', 'migrations');
+  /**
+   * A migration REDEFINES the reconciler only when it carries a CREATE OR
+   * REPLACE for it. A GRANT or REVOKE names the function too
+   * (20260902203500_db_payers_state_their_grants.sql states who may call it
+   * and defines nothing), and a grants-only file sorted last made this guard
+   * read an empty body and report that exact-cent pricing had been dropped.
+   * The question is "what does production RUN", so only definitions count.
+   */
+  const REDEFINES =
+    /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+public\.fn_tournament_payout_reconcile\s*\(/i;
 
   it('the reconciler credits through fn_credit_and_log', () => {
     const files = fs
@@ -91,9 +101,7 @@ describe('no money path writes a ledger row it did not earn', () => {
       .sort();
     // The LAST migration that redefines the reconciler is what production runs.
     const owning = files.filter((f) =>
-      fs
-        .readFileSync(path.join(MIGRATIONS, f), 'utf8')
-        .includes('FUNCTION public.fn_tournament_payout_reconcile')
+      REDEFINES.test(sql(fs.readFileSync(path.join(MIGRATIONS, f), 'utf8')))
     );
     expect(owning.length, 'no migration defines the reconciler').toBeGreaterThan(0);
 
@@ -120,9 +128,7 @@ describe('no money path writes a ledger row it did not earn', () => {
       .filter((f) => f.endsWith('.sql'))
       .sort();
     const owning = files.filter((f) =>
-      fs
-        .readFileSync(path.join(MIGRATIONS, f), 'utf8')
-        .includes('FUNCTION public.fn_tournament_payout_reconcile')
+      REDEFINES.test(sql(fs.readFileSync(path.join(MIGRATIONS, f), 'utf8')))
     );
     const latest = sql(fs.readFileSync(path.join(MIGRATIONS, owning[owning.length - 1]), 'utf8'));
 

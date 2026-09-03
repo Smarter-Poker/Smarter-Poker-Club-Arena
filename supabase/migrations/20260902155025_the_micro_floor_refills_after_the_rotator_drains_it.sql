@@ -1,0 +1,141 @@
+-- BACKFILLED 2026-09-02 from supabase_migrations.schema_migrations.statements.
+-- Applied to production 20260902155025; the .sql file was never committed at the
+-- time (chip-std phase 1.5 mirror, docs/changelog/2026-09-02-chip-std-p1-mirror.md).
+-- Content is byte-exact to what ran. Do NOT re-apply; it is already live.
+
+-- The 2026-09-02 pack (v2) filled all 45 Midway micro tables to 4+ handed.
+-- Forty-five minutes later the floor was 218 -> 185 seats, with 3 tables down
+-- to a single seat (which cannot deal at all) and 12 more at 2-3. That is the
+-- session rotator doing its job; the floor simply has no automatic refill
+-- aimed at it, so it decays monotonically between manual packs.
+--
+-- Same body as v2, which is proven, with two corrections learned from re-running it:
+--
+--  1. THE IDEMPOTENCY KEY WAS PERMANENT. v2 keyed on md5(table || horse), so a
+--     horse who sat at a table, busted and left could NEVER be re-seated there
+--     by a later pack: the key had already been spent and the buy-in returned
+--     as a silent no-op. On a floor that drains and refills, that retires a
+--     (horse, table) pair forever after one visit. The key now carries the run
+--     minute, so it still de-duplicates within a run and no longer poisons the
+--     pair across runs. Double-seating is not a risk this key was carrying
+--     anyway: atomic_table_buyin already refuses a player who is seated at the
+--     table, under its own advisory lock.
+--
+--  2. THE ZERO GUARD FIRED ON A HEALTHY FLOOR. v2 raised whenever it seated
+--     nothing, which is correct on a drained floor and wrong on a full one -
+--     "nothing to do" and "everything failed" are not the same result. It now
+--     raises only when seats were actually wanted and none were taken, so a
+--     silent zero is still impossible but a no-op pack is not an error.
+--
+-- Unchanged and deliberate: the pool resolves through union_clubs (Club JAQK
+-- and SHARK CLUB), Deep Stack Society is untouched, horses registered in a
+-- live tournament are untouched, and band matching stays dropped because at
+-- bb <= 0.50 no band carries bankroll risk.
+DO $$
+DECLARE
+  v_club   uuid := 'fade0000-0000-0000-0000-000000000001';
+  v_union  uuid := 'fade0000-0000-0000-0000-000000000001';
+  v_run    text := to_char(now(), 'YYYYMMDDHH24MI');
+  v_pass   int; v_target int;
+  v_t record; v_h record;
+  v_seat int; v_buyin numeric; v_seated int; v_want int;
+  v_ok int := 0; v_fail int := 0; v_wanted int := 0; v_err text;
+  v_before int; v_after int;
+BEGIN
+  SET LOCAL statement_timeout = '540s';
+
+  SELECT count(*) INTO v_before
+    FROM tables t JOIN table_seats ts ON ts.table_id = t.id AND ts.left_at IS NULL
+   WHERE t.club_id = v_club AND t.tournament_id IS NULL AND t.big_blind <= 0.5;
+
+  FOR v_pass IN 1..2 LOOP
+    v_target := CASE v_pass WHEN 1 THEN 4 ELSE 6 END;
+
+    FOR v_t IN
+      SELECT t.id, t.max_players, t.big_blind, t.min_buy_in, t.max_buy_in,
+             (SELECT count(*) FROM table_seats ts
+               WHERE ts.table_id = t.id AND ts.left_at IS NULL) AS seated
+        FROM tables t
+       WHERE t.club_id = v_club AND t.tournament_id IS NULL
+         AND COALESCE(t.is_deleted, false) = false
+         AND t.status IN ('waiting','running')
+         AND t.big_blind <= 0.5
+       ORDER BY t.big_blind ASC, t.game_variant ASC
+    LOOP
+      v_seated := v_t.seated;
+      v_want   := LEAST(v_t.max_players, v_target) - v_seated;
+      CONTINUE WHEN v_want <= 0;
+      v_wanted := v_wanted + v_want;
+
+      v_buyin := GREATEST(COALESCE(NULLIF(v_t.min_buy_in,0), v_t.big_blind*40),
+                          v_t.big_blind*100);
+      IF COALESCE(NULLIF(v_t.max_buy_in,0), 0) > 0 AND v_buyin > v_t.max_buy_in THEN
+        v_buyin := v_t.max_buy_in;
+      END IF;
+      v_buyin := round(v_buyin, 2);
+
+      FOR v_h IN
+        SELECT cand.id FROM (
+          SELECT p.id
+            FROM profiles p
+           WHERE p.is_horse
+             AND p.horse_status = 'available'
+             AND COALESCE(p.horse_profile->>'lane','both') <> 'events'
+             AND EXISTS (SELECT 1 FROM club_members m
+                           JOIN union_clubs uc ON uc.club_id = m.club_id
+                          WHERE m.user_id = p.id
+                            AND m.status IN ('active','approved')
+                            AND uc.union_id = v_union
+                            AND m.chip_balance >= v_buyin * 2)
+             AND NOT EXISTS (SELECT 1 FROM table_seats ts JOIN tables tb ON tb.id = ts.table_id
+                              WHERE ts.user_id = p.id AND ts.left_at IS NULL
+                                AND tb.status IN ('waiting','running'))
+             AND NOT EXISTS (SELECT 1 FROM tournament_players tp
+                               JOIN tournaments t2 ON t2.id = tp.tournament_id
+                              WHERE tp.user_id = p.id
+                                AND tp.status IN ('registered','playing')
+                                AND t2.status IN ('ANNOUNCED','REGISTERING','RUNNING'))
+           GROUP BY p.id
+        ) cand
+        ORDER BY random()
+        LIMIT v_want
+      LOOP
+        SELECT s.n INTO v_seat
+          FROM generate_series(1, v_t.max_players) AS s(n)
+         WHERE NOT EXISTS (SELECT 1 FROM table_seats ts
+                            WHERE ts.table_id = v_t.id AND ts.seat_number = s.n
+                              AND ts.left_at IS NULL)
+         ORDER BY s.n LIMIT 1;
+        EXIT WHEN v_seat IS NULL;
+
+        BEGIN
+          PERFORM public.atomic_table_buyin(
+            p_user_id         => v_h.id,
+            p_table_id        => v_t.id,
+            p_seat_number     => v_seat,
+            p_amount          => v_buyin,
+            p_auto_rebuy      => true,
+            p_club_id         => NULL,
+            p_idempotency_key => md5(v_t.id::text || v_h.id::text || v_run)::uuid
+          );
+          v_seated := v_seated + 1;
+          v_ok := v_ok + 1;
+        EXCEPTION WHEN OTHERS THEN
+          v_fail := v_fail + 1;
+          IF v_err IS NULL THEN v_err := SQLERRM; END IF;
+        END;
+      END LOOP;
+    END LOOP;
+  END LOOP;
+
+  SELECT count(*) INTO v_after
+    FROM tables t JOIN table_seats ts ON ts.table_id = t.id AND ts.left_at IS NULL
+   WHERE t.club_id = v_club AND t.tournament_id IS NULL AND t.big_blind <= 0.5;
+
+  IF v_wanted > 0 AND v_ok = 0 THEN
+    RAISE EXCEPTION 'wanted % seats and took none: % failures, first error: %',
+      v_wanted, v_fail, COALESCE(v_err,'(none)');
+  END IF;
+  RAISE NOTICE 'micro floor % -> % seats; wanted %, % ok, % failed, first error: %',
+    v_before, v_after, v_wanted, v_ok, v_fail, COALESCE(v_err,'(none)');
+END $$;

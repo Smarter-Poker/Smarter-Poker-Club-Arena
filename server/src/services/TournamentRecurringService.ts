@@ -2006,6 +2006,11 @@ export class TournamentRecurringService {
 
   private async checkAndLaunchTournaments(): Promise<void> {
     try {
+      // THE FREEZE IS TOTAL (Dan 2026-09-03): launching registers and seats
+      // horses - buy-ins. Gated here, not only at the interval, because
+      // start() runs each check once immediately and a boot inside the
+      // break used to launch straight through it.
+      if (isMaintenanceFrozen()) return;
       const now = new Date();
       // TOURNEY-AUDIT 2026-07-24: schedule hours are UTC (was server-local time,
       // which shifts every named event when the host timezone differs).
@@ -2141,6 +2146,8 @@ export class TournamentRecurringService {
 
   private async checkAndLaunchSNGs(): Promise<void> {
     await this.withBoardTick('sng', async () => {
+      // THE FREEZE IS TOTAL (Dan 2026-09-03) - see checkAndLaunchTournaments.
+      if (isMaintenanceFrozen()) return;
       await this.repairSeatFirstGames();
 
       const budget = { left: BURST };
@@ -2283,6 +2290,8 @@ export class TournamentRecurringService {
 
   private async checkAndLaunchSpins(): Promise<void> {
     await this.withBoardTick('spin', async () => {
+      // THE FREEZE IS TOTAL (Dan 2026-09-03) - see checkAndLaunchTournaments.
+      if (isMaintenanceFrozen()) return;
       // Heal before opening. A husk still counts as "this price point is
       // covered" below, so skipping this would leave the board wedged.
       await this.repairSeatFirstGames();
@@ -2494,6 +2503,11 @@ export class TournamentRecurringService {
 
   private async checkAndLaunchXMTTs(): Promise<void> {
     try {
+      // THE FREEZE IS TOTAL (Dan 2026-09-03): launching registers and seats
+      // horses - buy-ins. Gated here, not only at the interval, because
+      // start() runs each check once immediately and a boot inside the
+      // break used to launch straight through it.
+      if (isMaintenanceFrozen()) return;
       // Query all unions that have cross-club tournaments enabled
       const { data: unions } = await supabase.from('unions').select('id, name, settings');
 
@@ -3189,6 +3203,11 @@ export class TournamentRecurringService {
       const candidates = await this.pickFreeHorses(opening, false, tournament.id);
       let seated = 0;
       for (const horse of candidates) {
+        // THE FREEZE IS TOTAL (Dan 2026-09-03): a ramp that began before :53
+        // seats nobody after it. `continue`, not `break`: the "one refusal
+        // must not halt the fill" pin forbids a break in this loop, and a
+        // continue costs nothing - no RPC is made for the rest of the list.
+        if (isMaintenanceFrozen()) continue;
         const { data: res, error: seatRpcErr } = await supabase.rpc(
           'fn_seat_horse_in_seat_first_game',
           { p_tournament_id: tournament.id, p_user_id: horse }
@@ -4071,6 +4090,8 @@ export class TournamentRecurringService {
     targetPlayers: number,
     opts: { allLanes?: boolean } = {}
   ): Promise<number> {
+    // THE FREEZE IS TOTAL (Dan 2026-09-03): every horse this seats is a buy-in.
+    if (isMaintenanceFrozen()) return 0;
     try {
       /**
        * A seat-first game needs BODIES IN SEATS, not names on a list.
@@ -4267,6 +4288,10 @@ export class TournamentRecurringService {
         const candidates = seatFirstFillOrder(shortfall, own, pool);
 
         for (const horse of candidates) {
+          // THE FREEZE IS TOTAL (Dan 2026-09-03). continue, not break - see the
+          // opening-seat loop above and the one-refusal pin in
+          // seatFirstFillOrder.test.ts.
+          if (isMaintenanceFrozen()) continue;
           const { data: res, error: seatRpcErr } = await supabase.rpc(
             'fn_seat_horse_in_seat_first_game',
             { p_tournament_id: tournamentId, p_user_id: horse }
@@ -4697,6 +4722,9 @@ export class TournamentRecurringService {
       let registered = 0;
       const failures = new Map<string, number>();
       for (const horse of horses) {
+        // THE FREEZE IS TOTAL (Dan 2026-09-03): a registration is a buy-in. A ramp
+        // that crosses :53 stops here and the next tick finishes it.
+        if (isMaintenanceFrozen()) break;
         const { data: res, error: regError } = await supabase.rpc(
           'fn_register_horse_for_tournament',
           { p_tournament_id: tournamentId, p_user_id: horse.id }

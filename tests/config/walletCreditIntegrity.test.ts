@@ -221,26 +221,40 @@ describe('the dead horse-winnings path stays dead', () => {
   });
 });
 
-describe('the startup cash-out is accounted for', () => {
+describe('a restart cashes nobody out', () => {
   const gs = stripComments(readFileSync(join(ROOT, 'server/src/GameServer.ts'), 'utf8'));
 
-  /* ── REPLACED 2026-08-31, and the replacement is stricter ────────────────
-     This used to pin `startup-cashout:{userId}:{sorted seat ids}` next to an
-     `atomic_credit_wallet_and_log` call, because the rule it was defending was
-     "the boot cash-out writes a ledger row at all" - it used to call
-     credit_player_wallet and log nothing.
+  /* ── MOVED A THIRD TIME, 2026-09-02, and this time the mechanism is GONE ──
+     History of this pin, because each move was a real bug:
 
-     That rule is now satisfied by a stronger mechanism, so the pin moves to it
-     rather than being deleted. The aggregate key was itself the next bug: the
-     credit and the seat DELETE were two round trips, so a boot that died
-     between them paid the chips and left the seat occupied, and the next boot
-     rebuilt the IDENTICAL key, deduped, wrote NO fresh row - and deleted the
-     seats anyway. 1,033 exits a day reached fn_unaccounted_seat_exits with no
-     credit to match. `atomic_seat_cashout_locked` credits and vacates in ONE
-     transaction and derives its key from the row it locked, so every seat
-     produces its own matchable ledger row and there is no window to die in. */
-  it('boot-time cash-outs go through the one locked cash-out RPC', () => {
-    expect(gs).toMatch(/rpc\(\s*'atomic_seat_cashout_locked'/);
+     1. 2026-08-18: "the boot cash-out writes a ledger row at all" - it used to
+        call credit_player_wallet and log nothing.
+     2. 2026-08-31: "the boot cash-out is atomic" - the credit and the seat
+        DELETE were two round trips; a boot dying between them paid the chips,
+        left the seat, and the next boot deduped on the identical key and
+        deleted the seats anyway (1,033 unmatched exits a day). Pinned to
+        `atomic_seat_cashout_locked`.
+     3. 2026-09-02 (#2713): there is NO boot cash-out. Dan, verbatim: "ALL
+        HORSES WERE REMOVED FROM THE TABLE DURING THE 5 MINUTE BREAK AND SNAP
+        REPLACED WITH NEW HORSES AFTER THE BREAK, THAT CAN'T HAPPEN, THEY ARE
+        SUPPOSED TO BE FROZEN NOT REMOVED AND RESEEDED." The 20:55 restart
+        cashed out and vacated 383 horse seats at boot; the sweep that did it
+        predated the horses-are-players law (CLAUDE.md 10.5) by nine days. It
+        is deleted. A seat row IS the persisted state; the engine rebuilds
+        every table from table_seats on boot, a seat mid-hand is resumed by
+        crash recovery, and orphans fall to HorseLifecycleManager's guarded
+        4-hour sweep.
+
+     So the pin that said "boot cash-outs go through the locked RPC" was
+     outdated by the fix it guarded against, and this file went red on main
+     while the server-side pins (seatExitMoneyPaths.test.ts) were updated.
+     The stricter law is now: the boot path calls no cash-out at all. The two
+     pins below it (no aggregate key, no seat delete) remain, and are now
+     implied twice over. */
+  it('the boot path has no cash-out call at all - horses and humans keep their seats', () => {
+    expect(gs).not.toMatch(/rpc\(\s*'atomic_seat_cashout_locked'/);
+    expect(gs).not.toMatch(/rpc\(\s*'atomic_credit_wallet_and_log'/);
+    expect(gs).not.toMatch(/Cashed out and vacated/);
   });
 
   it('the aggregate key that made a retry look like destruction is gone', () => {

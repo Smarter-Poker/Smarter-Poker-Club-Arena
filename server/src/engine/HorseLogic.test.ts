@@ -2211,7 +2211,9 @@ describe('HorseLogic V10 - strategy layer', () => {
   it('widens the isolation-raise vs a limper in position (V10 iso)', () => {
     const iso = (isoWiden: number) =>
       decidePreflopV7({
-        strength: 0.42,
+        // V34: the cutoff bar moved 0.42 -> 0.40 (one limper +0.03, 200bb
+        // depth -0.02 = 0.41), so the boundary hand is 0.40 now.
+        strength: 0.4,
         position: 'late',
         raiserPosition: null,
         raises: 0,
@@ -2405,7 +2407,9 @@ describe('HorseLogic V11 - game modes + leak fixes', () => {
 
   it('antes widen tournament opens', () => {
     const open = v7ctx({
-      strength: 0.51,
+      // V34: the hijack bar moved 0.54 -> 0.48; 0.46 sits just under it and
+      // the 0.05 ante widen carries it over.
+      strength: 0.46,
       position: 'middle',
       mode: 'tournament',
       toCall: 2,
@@ -2422,7 +2426,8 @@ describe('HorseLogic V11 - game modes + leak fixes', () => {
   it('heads-up is a different game: the SB opens far wider and the BB defends far wider', () => {
     // SB/BTN with a hand well below the ring-game open floor.
     const sbOpen = v7ctx({
-      strength: 0.3,
+      // V34: ring blind-vs-blind opens at 0.30, true heads-up at 0.24.
+      strength: 0.28,
       position: 'sb',
       oppsLeft: 1,
       toCall: 1,

@@ -1,0 +1,5 @@
+{
+  "_owner": "fix/chip-accounting-standard",
+  "tables": ["tournament_obligations"],
+  "functions": ["fn_settle_tournament_obligation", "fn_tournament_double_paid_obligations"]
+}

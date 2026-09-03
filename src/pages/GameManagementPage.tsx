@@ -614,6 +614,14 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const [contractVersions, setContractVersions] = useState<ManagedGameContractVersion[]>([]);
   const [contractLoading, setContractLoading] = useState(false);
   const [health, setHealth] = useState<GameManagementHealth | null>(null);
+  /*
+    Health has THREE states, not two, and collapsing them is how the last two
+    bugs here happened. `health === null` means "no answer yet" - which is true
+    while the first read is still in flight AND true when the read failed.
+    Reading null as zero invented an all-clear; reading it as failure raised a
+    false alarm on every page open. This flag is the difference.
+  */
+  const [healthFailed, setHealthFailed] = useState(false);
   const loadEpochRef = useRef(0);
   const loadedRouteRef = useRef('');
   const loadedViewRef = useRef<View>('all');
@@ -706,6 +714,7 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         });
         setNextCursor(null);
         setHealth(null);
+        setHealthFailed(false);
         setSurfaceDirty(false);
       }
       if (!silent || routeChanged || viewChanged) setLoading(true);
@@ -861,7 +870,13 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
         // the scope, and reading null as 0 would blank the header.
         if (page.counts) setCounts(page.counts);
         setNextCursor(page.nextCursor);
+        /*
+          A refused read must not silently replace the numbers already on
+          screen with an alarm, and must not leave stale numbers looking live
+          either. It keeps nothing and says so.
+        */
         setHealth(healthResult);
+        setHealthFailed(healthResult === null);
       } catch (error) {
         if (!isCurrent()) return;
         reportError(error, 'GameManagementPage.load');
@@ -1262,8 +1277,11 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
               apart. Health is telemetry, so a failed read still never blocks the
               board; it just says so instead of impersonating an all-clear.
             */}
-            {health === null ? (
+            {healthFailed ? (
               <span className={styles.healthAlert}>Management Health Unavailable</span>
+            ) : health === null ? (
+              /* Still in flight. Not an alarm, and not a row of zeros either. */
+              <span>Reading Management Health</span>
             ) : (
               <>
                 <span>{health.commandsLast24h} Commands / 24h</span>

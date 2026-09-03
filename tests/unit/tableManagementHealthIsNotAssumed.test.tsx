@@ -32,6 +32,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   health: null as any,
   healthThrows: false,
+  healthCalls: 0,
+  releaseHealth: null as null | (() => void),
 }));
 
 vi.mock('../../src/hooks/useAuthUser', () => ({
@@ -91,6 +93,12 @@ vi.mock('../../src/services/GameManagementService', () => ({
     getContracts: async () => [],
     getCommandReceipts: async () => [],
     getHealth: async () => {
+      mocks.healthCalls += 1;
+      if (mocks.releaseHealth) {
+        await new Promise<void>((resolve) => {
+          mocks.releaseHealth = resolve;
+        });
+      }
       if (mocks.healthThrows) throw new Error('401');
       return mocks.health;
     },
@@ -132,6 +140,8 @@ describe('a failed health read is reported, not rounded down to zero', () => {
   beforeEach(() => {
     mocks.health = HEALTHY;
     mocks.healthThrows = false;
+    mocks.healthCalls = 0;
+    mocks.releaseHealth = null;
   });
 
   /**
@@ -183,5 +193,37 @@ describe('a failed health read is reported, not rounded down to zero', () => {
     await renderBoard();
     expect(healthRail().textContent).toContain('935');
     expect(healthRail().textContent).toContain('259681');
+  });
+
+  /**
+   * The regression the FIRST version of this fix shipped, caught the same day.
+   *
+   * `health` is null in two completely different situations: the read has not
+   * come back yet, and the read failed. The original fix keyed the alarm off
+   * `health === null`, so every ordinary page open displayed "Management
+   * Health Unavailable" for the length of the first load before flipping to
+   * numbers. Trading a false all-clear for a false alarm is not a fix; it just
+   * moves which state lies.
+   *
+   * Three states, three renderings. This pins the middle one, which is the one
+   * with no natural home and therefore the one that keeps getting collapsed
+   * into a neighbour.
+   */
+  it('does not cry unavailable while the read is still in flight', async () => {
+    mocks.releaseHealth = () => {};
+    render(
+      <MemoryRouter initialEntries={['/clubs/deep-stack-society-11192/table-management']}>
+        <Routes>
+          <Route
+            path="/clubs/:clubId/table-management"
+            element={<GameManagementPage scope="club" />}
+          />
+        </Routes>
+      </MemoryRouter>
+    );
+    await waitFor(() => expect(screen.queryByLabelText('Management Health')).toBeInTheDocument());
+    // Health has been asked and has not answered. Neither a number nor an alarm.
+    expect(healthRail().textContent).not.toMatch(/unavailable/i);
+    expect(healthRail().textContent).not.toMatch(/0 Integrity Alerts/i);
   });
 });

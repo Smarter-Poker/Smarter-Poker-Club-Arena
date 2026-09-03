@@ -42,7 +42,8 @@ export interface RakeSeriesPoint {
   winnings: number;
 }
 
-export interface RakeBreakdownRow {
+/** Union scope: one row per member club. */
+export interface RakeClubRow {
   club_id: string;
   name: string;
   code: string | null;
@@ -54,6 +55,48 @@ export interface RakeBreakdownRow {
   hands: number;
   games: number;
 }
+
+/**
+ * Club scope: one row per agent. DIRECT is the rake of the players assigned
+ * straight to them; NETWORK adds everyone beneath. Network deliberately
+ * double-counts up the chain - a super agent's network contains their
+ * sub-agents' - so it is a ranking figure, never a summable one. Only the
+ * direct column sums to the club's attributed total.
+ */
+export interface RakeAgentRow {
+  agent_user_id: string | null;
+  name: string;
+  avatar_url: string | null;
+  role: string;
+  commission_rate: number | null;
+  direct_players: number;
+  direct_active: number;
+  direct_rake: number;
+  direct_hands: number;
+  network_players: number;
+  network_rake: number;
+  sub_agents: number;
+  /** Players in the club with no agent. Real rake; it just has no owner. */
+  is_unassigned: boolean;
+}
+
+/** Agent scope: one row per member beneath the viewer. */
+export interface RakeDownlineRow {
+  player_id: string;
+  name: string;
+  role: string;
+  depth: number;
+  upline_user_id: string | null;
+  upline_name: string | null;
+  rake: number;
+  hands: number;
+  last_hand_at: string | null;
+  /** Non-zero means this member is an agent too, so their row opens. */
+  downline_players: number;
+  downline_rake: number;
+}
+
+export type RakeBreakdownRow = RakeClubRow | RakeAgentRow | RakeDownlineRow;
 
 export interface RakeSnapshot {
   scope: RakeScope;
@@ -74,7 +117,19 @@ export interface RakeSnapshot {
   series: RakeSeriesPoint[];
   series_bucket: 'day' | 'week' | 'month';
   breakdown: RakeBreakdownRow[];
-  breakdown_kind: 'club' | 'downline' | 'none';
+  breakdown_kind: 'club' | 'agent' | 'downline' | 'none';
+  /**
+   * The sum of the breakdown's own non-overlapping column. Shares are computed
+   * against this, never against the headline: the headline includes tournament
+   * fee and today, and the per-player rollup includes neither, so a share
+   * against it would be quietly and consistently too small.
+   */
+  breakdown_total: number | null;
+  /**
+   * The last COMPLETE UTC day the per-player rollup holds inside this window.
+   * Null on scopes that read live. Surfaced rather than quietly short.
+   */
+  rake_complete_through: string | null;
   top_earner?: { username: string | null; rake: number } | null;
   data_updated_at?: string | null;
   generated_at: string;

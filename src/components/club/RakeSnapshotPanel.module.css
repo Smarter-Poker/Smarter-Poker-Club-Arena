@@ -557,3 +557,157 @@
     transition: none;
   }
 }
+
+/* ------------------------------------------------ breakdown, extended --- */
+
+/* Four columns became six once agent and downline rows arrived: name, count,
+   bar, direct figure, network figure. The club list keeps the original four. */
+.breakdown li {
+  grid-template-columns: minmax(0, 1.3fr) 108px minmax(60px, 0.8fr) 100px 92px;
+}
+
+.legend {
+  display: grid;
+  grid-template-columns: 1fr 100px 92px;
+  gap: 0.6rem;
+  padding: 0 0.7rem 0.3rem;
+  color: #66737f;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.legend > span:first-child {
+  grid-column: 2;
+  text-align: right;
+}
+
+.legend > span:last-child {
+  text-align: right;
+}
+
+.rowCount {
+  overflow: hidden;
+  color: #6f7e8c;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.64rem;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowNetwork {
+  color: #9fb3c4;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Players with no agent. Real rake, no owner - present but not competing for
+   attention with the agents who are being ranked. */
+.rowMuted {
+  background: #080d12;
+}
+
+.rowMuted .rowName,
+.rowMuted .rowFee {
+  color: #8492a0;
+}
+
+.drill {
+  padding: 0;
+  color: #7fc8ff;
+  background: none;
+  border: 0;
+  border-bottom: 1px dotted rgba(127, 200, 255, 0.45);
+  font: inherit;
+  cursor: pointer;
+}
+
+/* NO HOVER EFFECTS (Dan 2026-08-29, binding). The dotted underline is the
+   affordance, present at rest, so a phone can see the row opens without
+   needing a state it can never enter. */
+.drill:active {
+  color: #cfe8ff;
+  border-bottom-color: #cfe8ff;
+}
+
+.drill:focus-visible {
+  outline: 2px solid var(--energy);
+  outline-offset: 2px;
+}
+
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin-bottom: 0.45rem;
+}
+
+.crumbs button {
+  min-height: 30px;
+  padding: 0 0.5rem;
+  color: #7fc8ff;
+  background: #0b1117;
+  border: 1px solid rgba(174, 189, 203, 0.18);
+  border-radius: 2px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.crumbs button:disabled {
+  color: #e7f4fe;
+  background: #101b24;
+  border-color: rgba(117, 190, 255, 0.4);
+  cursor: default;
+}
+
+.crumbs button:not(:disabled):active {
+  background: #101922;
+}
+
+.crumbs button:focus-visible {
+  outline: 2px solid var(--energy);
+  outline-offset: -2px;
+}
+
+.rowNote,
+.notice {
+  margin: 0.5rem 0 0;
+  color: #6f7e8c;
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+/* Not an error. A boundary the operator has to know about to read the table
+   correctly, which is a different thing and must not look like a failure. */
+.notice {
+  padding: 0.5rem 0.65rem;
+  color: #d8c79a;
+  background: rgba(211, 164, 73, 0.07);
+  border-left: 2px solid var(--gold);
+  border-radius: 2px;
+}
+
+@media (max-width: 860px) {
+  .breakdown li {
+    grid-template-columns: minmax(0, 1fr) 92px 84px;
+  }
+
+  .legend,
+  .rowCount {
+    display: none;
+  }
+
+  .rowNetwork {
+    font-size: 0.66rem;
+  }
+}

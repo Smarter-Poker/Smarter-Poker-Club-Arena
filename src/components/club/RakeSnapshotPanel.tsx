@@ -1,5 +1,5 @@
 /**
- * RAKE SNAPSHOT — one strip that answers "how are we doing".
+ * RAKE SNAPSHOT — one strip that answers "how are we doing", then "who did it".
  *
  * The ledger below this panel lists games. This panel does not: it reads the
  * daily rollups only, which is why it can be asked for a year when the ledger
@@ -8,8 +8,16 @@
  *
  * Scope chips are built from what the viewer actually holds. A club owner with
  * no union sees Club alone; a union owner sees Union and Club; an agent sees
- * Downline. The database refuses anything else on its own — the chips exist so
+ * Downline. The database refuses anything else on its own - the chips exist so
  * nobody is offered a button that will only tell them no.
+ *
+ * Each scope has a second question under the headline, and it is a different
+ * question each time:
+ *
+ *   Union     which club is carrying the union
+ *   Club      which agent is carrying the club
+ *   Downline  which player is carrying you, and the agents among them open
+ *             into their own downline, as deep as the chain goes
  *
  * Zeros are a lie on this page (Dan 2026-08-25): a failed read shows dashes,
  * never a confident 0.00.
@@ -22,6 +30,9 @@ import {
   describeRakeSnapshotError,
   periodToRange,
   type PeriodKey,
+  type RakeAgentRow,
+  type RakeClubRow,
+  type RakeDownlineRow,
   type RakeScope,
   type RakeSnapshot,
 } from '../../services/ClubRakeSnapshotService';
@@ -31,12 +42,29 @@ import styles from './RakeSnapshotPanel.module.css';
 
 const NO_VALUE = '-';
 const REFRESH_MS = 60_000;
+/** Deeper than any real agent chain, and a hard stop if one ever loops. */
+const MAX_DRILL = 8;
 
 const SCOPE_COPY: Record<RakeScope, { label: string; note: string }> = {
   union: { label: 'Union', note: 'Every Club Beneath The Union' },
   club: { label: 'Club', note: 'This Club Only' },
   agent: { label: 'Downline', note: 'Players Beneath You' },
 };
+
+const ROLE_LABEL: Record<string, string> = {
+  super_agent: 'Super Agent',
+  agent: 'Agent',
+  sub_agent: 'Sub Agent',
+  owner: 'Owner',
+  admin: 'Admin',
+  member: 'Player',
+  none: 'Direct',
+};
+
+function roleLabel(role: string | null | undefined): string {
+  if (!role) return 'Player';
+  return ROLE_LABEL[role] ?? role.replace(/_/g, ' ');
+}
 
 function money(n: number | null | undefined): string {
   if (n === null || n === undefined || !Number.isFinite(Number(n))) return NO_VALUE;
@@ -58,6 +86,18 @@ function bucketLabel(iso: string, unit: 'day' | 'week' | 'month'): string {
     return d.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', year: '2-digit' });
   }
   return d.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' });
+}
+
+/** A share is only meaningful against a total the row is actually part of. */
+function share(part: number, total: number | null | undefined): number {
+  const t = Number(total);
+  if (!Number.isFinite(t) || t <= 0) return 0;
+  return Math.max(0, Math.min(100, (Number(part) / t) * 100));
+}
+
+interface Crumb {
+  userId: string;
+  name: string;
 }
 
 export interface RakeSnapshotPanelProps {
@@ -85,6 +125,8 @@ export default function RakeSnapshotPanel({
   const [snapshot, setSnapshot] = useState<RakeSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** The chain walked into, deepest last. Empty means "my own book". */
+  const [crumbs, setCrumbs] = useState<Crumb[]>([]);
 
   const version = useRef(0);
   const cancelled = useRef(false);
@@ -101,10 +143,18 @@ export default function RakeSnapshotPanel({
     if (!available.includes(scope)) setScope(available[0]);
   }, [available, scope]);
 
+  // Leaving the downline scope must drop the trail with it, or coming back
+  // lands you inside somebody else's book with no visible reason why.
+  useEffect(() => {
+    if (scope !== 'agent') setCrumbs([]);
+  }, [scope]);
+
   const range = useMemo(
     () => (period === 'custom' ? periodToRange('custom', custom) : periodToRange(period)),
     [period, custom]
   );
+
+  const focusUserId = crumbs.length ? crumbs[crumbs.length - 1].userId : agentUserId;
 
   const load = useCallback(async () => {
     if (!clubId) return;
@@ -117,7 +167,7 @@ export default function RakeSnapshotPanel({
         clubId,
         start: range.start,
         end: range.end,
-        agentUserId: scope === 'agent' ? agentUserId : null,
+        agentUserId: scope === 'agent' ? focusUserId : null,
       });
       if (cancelled.current || mine !== version.current) return;
       setSnapshot(next);
@@ -130,7 +180,7 @@ export default function RakeSnapshotPanel({
     } finally {
       if (!cancelled.current && mine === version.current) setLoading(false);
     }
-  }, [clubId, scope, range.start, range.end, agentUserId]);
+  }, [clubId, scope, range.start, range.end, focusUserId]);
 
   useEffect(() => {
     void load();
@@ -147,12 +197,30 @@ export default function RakeSnapshotPanel({
   const summary = snapshot?.summary ?? null;
   const delta = snapshot?.delta ?? null;
   const isAgent = snapshot?.scope === 'agent';
+  const kind = snapshot?.breakdown_kind ?? 'none';
+  const total = snapshot?.breakdown_total ?? null;
 
   const series = useMemo(() => snapshot?.series ?? [], [snapshot]);
   const peak = useMemo(
     () => series.reduce((m, p) => Math.max(m, Math.abs(Number(p.fee) || 0)), 0),
     [series]
   );
+
+  /**
+   * The per-player rollup finalises complete UTC days only, so today is not in
+   * it - while the headline above comes from a live table and is. Saying so is
+   * the difference between "my agents did nothing today" and the truth.
+   */
+  const shortBy = useMemo(() => {
+    const through = snapshot?.rake_complete_through;
+    if (!through || !snapshot) return null;
+    if (through >= snapshot.range.end) return null;
+    return through;
+  }, [snapshot]);
+
+  const drillInto = useCallback((userId: string, name: string) => {
+    setCrumbs((c) => (c.length >= MAX_DRILL ? c : [...c, { userId, name }]));
+  }, []);
 
   const deltaNote = (pct: number | null | undefined, abs: number | null | undefined) => {
     const hasPct = pct !== null && pct !== undefined && Number.isFinite(Number(pct));
@@ -179,58 +247,134 @@ export default function RakeSnapshotPanel({
 
   const exportSnapshot = useCallback(() => {
     if (!snapshot) return;
-    const head = [
-      'scope',
-      'label',
-      'start',
-      'end',
-      'days',
-      'fee',
-      'cash_fee',
-      'mtt_fee',
-      'games',
-      'hands',
-      'total_winnings',
-      'mtt_winnings',
-    ];
-    const top = [
-      snapshot.scope,
-      snapshot.scope_label,
-      snapshot.range.start,
-      snapshot.range.end,
-      snapshot.range.days,
-      snapshot.summary.fee,
-      snapshot.summary.cash_fee,
-      snapshot.summary.mtt_fee,
-      snapshot.summary.games,
-      snapshot.summary.hands,
-      snapshot.summary.total_winnings,
-      snapshot.summary.mtt_winnings,
-    ];
-    const lines = [head.join(','), top.map(csvEscape).join(',')];
+    const lines: string[] = [];
+    lines.push(
+      [
+        'scope',
+        'label',
+        'start',
+        'end',
+        'days',
+        'fee',
+        'cash_fee',
+        'mtt_fee',
+        'games',
+        'hands',
+        'total_winnings',
+        'mtt_winnings',
+      ].join(',')
+    );
+    lines.push(
+      [
+        snapshot.scope,
+        snapshot.scope_label,
+        snapshot.range.start,
+        snapshot.range.end,
+        snapshot.range.days,
+        snapshot.summary.fee,
+        snapshot.summary.cash_fee,
+        snapshot.summary.mtt_fee,
+        snapshot.summary.games,
+        snapshot.summary.hands,
+        snapshot.summary.total_winnings,
+        snapshot.summary.mtt_winnings,
+      ]
+        .map(csvEscape)
+        .join(',')
+    );
+
     if (snapshot.breakdown.length) {
       lines.push('');
-      lines.push(
-        [
-          'club_id',
-          'name',
-          'code',
-          'games',
-          'hands',
-          'fee',
-          'cash_fee',
-          'mtt_fee',
-          'winnings',
-        ].join(',')
-      );
-      for (const r of snapshot.breakdown) {
+      if (snapshot.breakdown_kind === 'club') {
         lines.push(
-          [r.club_id, r.name, r.code, r.games, r.hands, r.fee, r.cash_fee, r.mtt_fee, r.winnings]
-            .map(csvEscape)
-            .join(',')
+          [
+            'club_id',
+            'name',
+            'code',
+            'games',
+            'hands',
+            'fee',
+            'cash_fee',
+            'mtt_fee',
+            'winnings',
+          ].join(',')
         );
+        for (const r of snapshot.breakdown as RakeClubRow[]) {
+          lines.push(
+            [r.club_id, r.name, r.code, r.games, r.hands, r.fee, r.cash_fee, r.mtt_fee, r.winnings]
+              .map(csvEscape)
+              .join(',')
+          );
+        }
+      } else if (snapshot.breakdown_kind === 'agent') {
+        lines.push(
+          [
+            'agent_user_id',
+            'name',
+            'role',
+            'commission_rate',
+            'direct_players',
+            'direct_active',
+            'direct_hands',
+            'direct_rake',
+            'sub_agents',
+            'network_players',
+            'network_rake',
+          ].join(',')
+        );
+        for (const r of snapshot.breakdown as RakeAgentRow[]) {
+          lines.push(
+            [
+              r.agent_user_id,
+              r.name,
+              r.role,
+              r.commission_rate,
+              r.direct_players,
+              r.direct_active,
+              r.direct_hands,
+              r.direct_rake,
+              r.sub_agents,
+              r.network_players,
+              r.network_rake,
+            ]
+              .map(csvEscape)
+              .join(',')
+          );
+        }
+      } else {
+        lines.push(
+          [
+            'player_id',
+            'name',
+            'role',
+            'depth',
+            'upline',
+            'hands',
+            'rake',
+            'downline_players',
+            'downline_rake',
+          ].join(',')
+        );
+        for (const r of snapshot.breakdown as RakeDownlineRow[]) {
+          lines.push(
+            [
+              r.player_id,
+              r.name,
+              r.role,
+              r.depth,
+              r.upline_name,
+              r.hands,
+              r.rake,
+              r.downline_players,
+              r.downline_rake,
+            ]
+              .map(csvEscape)
+              .join(',')
+          );
+        }
       }
     }
+
     downloadCsv(
       `rake-snapshot-${snapshot.scope}-${snapshot.range.start}-to-${snapshot.range.end}.csv`,
       lines.join('\n')
@@ -465,13 +609,13 @@ export default function RakeSnapshotPanel({
         </figure>
       )}
 
-      {snapshot?.breakdown_kind === 'club' && snapshot.breakdown.length > 0 && (
+      {/* ------------------------------------------------------ by club --- */}
+      {kind === 'club' && snapshot!.breakdown.length > 0 && (
         <div className={styles.breakdown}>
           <h3>Rake By Club</h3>
           <ul>
-            {snapshot.breakdown.map((r) => {
-              const share =
-                summary && Number(summary.fee) > 0 ? (r.fee / Number(summary.fee)) * 100 : 0;
+            {(snapshot!.breakdown as RakeClubRow[]).map((r) => {
+              const pct = share(r.fee, total ?? summary?.fee);
               return (
                 <li key={r.club_id}>
                   <span className={styles.rowName} title={r.name}>
@@ -479,15 +623,140 @@ export default function RakeSnapshotPanel({
                     {r.code ? <em>#{r.code}</em> : null}
                   </span>
                   <span className={styles.rowBar} aria-hidden="true">
-                    <span style={{ width: `${Math.max(1, Math.min(100, share))}%` }} />
+                    <span style={{ width: `${Math.max(1, pct)}%` }} />
                   </span>
                   <span className={styles.rowFee}>{money(r.fee)}</span>
-                  <span className={styles.rowShare}>{share.toFixed(1)}%</span>
+                  <span className={styles.rowShare}>{pct.toFixed(1)}%</span>
                 </li>
               );
             })}
           </ul>
         </div>
+      )}
+
+      {/* ----------------------------------------------------- by agent --- */}
+      {kind === 'agent' && snapshot!.breakdown.length > 0 && (
+        <div className={styles.breakdown}>
+          <h3>Rake By Agent</h3>
+          <div className={styles.legend} aria-hidden="true">
+            <span>Direct</span>
+            <span>Network</span>
+          </div>
+          <ul>
+            {(snapshot!.breakdown as RakeAgentRow[]).map((r) => {
+              const pct = share(r.direct_rake, total);
+              return (
+                <li
+                  key={r.agent_user_id ?? 'unassigned'}
+                  className={r.is_unassigned ? styles.rowMuted : undefined}
+                >
+                  <span className={styles.rowName} title={r.name}>
+                    {r.name}
+                    <em>{roleLabel(r.role)}</em>
+                  </span>
+                  <span className={styles.rowCount}>
+                    {count(r.direct_active)}/{count(r.direct_players)}
+                    {r.sub_agents > 0 ? ` - ${count(r.sub_agents)} Sub` : ''}
+                  </span>
+                  <span className={styles.rowBar} aria-hidden="true">
+                    <span style={{ width: `${Math.max(1, pct)}%` }} />
+                  </span>
+                  <span className={styles.rowFee}>{money(r.direct_rake)}</span>
+                  <span
+                    className={styles.rowNetwork}
+                    title={
+                      r.sub_agents > 0
+                        ? 'This Agent Plus Everyone Beneath Them. Overlaps With The Rows Below It, So It Does Not Sum.'
+                        : undefined
+                    }
+                  >
+                    {r.sub_agents > 0 ? money(r.network_rake) : NO_VALUE}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          <p className={styles.rowNote}>
+            Direct Is The Rake Of Players Assigned To That Agent, And Sums To {money(total)}.
+            Network Adds Everyone Beneath Them, So It Overlaps And Does Not Sum.
+          </p>
+        </div>
+      )}
+
+      {/* -------------------------------------------------- by downline --- */}
+      {kind === 'downline' && (
+        <div className={styles.breakdown}>
+          <h3>{crumbs.length ? `${crumbs[crumbs.length - 1].name}'s Downline` : 'My Downline'}</h3>
+
+          {crumbs.length > 0 && (
+            <nav className={styles.crumbs} aria-label="Downline Trail">
+              <button type="button" onClick={() => setCrumbs([])}>
+                My Downline
+              </button>
+              {crumbs.map((c, i) => (
+                <button
+                  key={c.userId}
+                  type="button"
+                  onClick={() => setCrumbs((cur) => cur.slice(0, i + 1))}
+                  aria-current={i === crumbs.length - 1 ? 'true' : undefined}
+                  disabled={i === crumbs.length - 1}
+                >
+                  {c.name}
+                </button>
+              ))}
+            </nav>
+          )}
+
+          {snapshot!.breakdown.length === 0 ? (
+            <p className={styles.rowNote}>
+              {loading ? 'Reading The Chain' : 'Nobody Beneath You Has Played In This Period.'}
+            </p>
+          ) : (
+            <ul>
+              {(snapshot!.breakdown as RakeDownlineRow[]).map((r) => {
+                const pct = share(r.rake, total);
+                const opens = r.downline_players > 0 && crumbs.length < MAX_DRILL;
+                return (
+                  <li key={r.player_id}>
+                    <span className={styles.rowName} title={r.name}>
+                      {opens ? (
+                        <button
+                          type="button"
+                          className={styles.drill}
+                          onClick={() => drillInto(r.player_id, r.name)}
+                          title={`Open ${r.name}'s Downline`}
+                        >
+                          {r.name}
+                        </button>
+                      ) : (
+                        r.name
+                      )}
+                      <em>{roleLabel(r.role)}</em>
+                    </span>
+                    <span className={styles.rowCount}>
+                      {count(r.hands)} Hands
+                      {r.downline_players > 0 ? ` - ${count(r.downline_players)} Below` : ''}
+                    </span>
+                    <span className={styles.rowBar} aria-hidden="true">
+                      <span style={{ width: `${Math.max(1, pct)}%` }} />
+                    </span>
+                    <span className={styles.rowFee}>{money(r.rake)}</span>
+                    <span className={styles.rowNetwork}>
+                      {r.downline_players > 0 ? money(r.downline_rake) : NO_VALUE}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {shortBy && (
+        <p className={styles.notice} role="status">
+          Per-Agent Rake Is Complete Through {shortBy} UTC. The Headline Above Includes Today; This
+          Table Does Not Until The Nightly Rollup Runs.
+        </p>
       )}
 
       <p className={styles.foot}>

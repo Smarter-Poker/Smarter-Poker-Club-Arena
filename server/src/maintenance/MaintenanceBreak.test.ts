@@ -37,11 +37,19 @@ class FakeEngine {
     this.holdBeforeNextHand = true;
     if (typeof maxWaitMs === 'number') this.budgets.push(maxWaitMs);
   }
+  /** Set when another authority (a tournament break) is holding the table. */
+  handForHandPaused = false;
+
   resumeFromMaintenance(): void {
+    // MODELS THE REAL CONTRACT (ServerTableEngineBase.resumeFromMaintenance):
+    // the maintenance flag is always cleared, but the GATE is only released
+    // when no other authority holds the table. The old fake cleared `paused`
+    // unconditionally, which is what made skipping such a table look correct.
+    this.resumeCount++;
+    if (this.handForHandPaused) return;
     this.paused = false;
     this.holdBeforeNextHand = false;
     this.atGate = false;
-    this.resumeCount++;
   }
   isParkedBetweenHands(): boolean {
     return this.atGate;
@@ -461,14 +469,26 @@ describe('the end of the break', () => {
     expect(thawSeconds).toBeLessThanOrEqual(305);
   });
 
-  it('leaves a table another authority is still holding', async () => {
-    // A tournament add-on break runs up to ten minutes. One starting near :55
-    // outlives this five-minute break, and resuming its tables here would deal
-    // that event back into play while its own clock still has it away.
+  it('releases its OWN flag on a table another authority is holding, without dealing it', async () => {
+    // A tournament add-on break runs up to ten minutes, so one starting near
+    // :55 outlives this five-minute break. That table must not deal.
+    //
+    // It must still be RESUMED though, and this pin moved on 2026-09-03
+    // because the old one ("resumeCount === 0") pinned a deadlock. Skipping
+    // the table meant maintenancePaused was never cleared - and the
+    // tournament's own resumeDealing() early-returns while that flag is set,
+    // so neither authority could ever release the table. It sat dark until
+    // reviveDeadTableEngines tore the engine down after ten minutes.
+    //
+    // The correct split: the break clears the flag the break set, and the
+    // other authority keeps holding the gate until IT is done.
     const engines = new Map<string, FakeEngine>([
       ['cash', new FakeEngine()],
       ['mtt', new FakeEngine()],
     ]);
+    // The tournament break holds `mtt` through pauseAfterHand(), which sets
+    // handForHandPaused - the same flag the real engine checks.
+    engines.get('mtt')!.handForHandPaused = true;
     const mb = new MaintenanceBreak({
       engines: () => engines.entries() as any,
       isRunning: () => true,
@@ -482,8 +502,10 @@ describe('the end of the break', () => {
     await mb.end();
 
     expect(engines.get('cash')!.paused).toBe(false);
+    // Still held - it must not deal while its own break runs.
     expect(engines.get('mtt')!.paused).toBe(true);
-    expect(engines.get('mtt')!.resumeCount).toBe(0);
+    // But the break DID release its own flag, so the tournament can resume it.
+    expect(engines.get('mtt')!.resumeCount).toBe(1);
   });
 
   it('still clears the row when a table refuses to resume', async () => {

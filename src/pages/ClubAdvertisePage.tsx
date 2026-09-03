@@ -309,7 +309,7 @@ export default function ClubAdvertisePage() {
                 {fmt(r.diamondsPerDay)} Per Day
               </span>
               <span className="club-advertise__surface-size">
-                {`${r.creativeWidth} x ${r.creativeHeight}`}
+                {`${r.creativeWidth} By ${r.creativeHeight}`}
               </span>
             </button>
           ))}
@@ -322,7 +322,7 @@ export default function ClubAdvertisePage() {
         <h2 className="club-advertise__h2">Your Picture</h2>
         {rate ? (
           <p className="club-advertise__hint">
-            Exactly {`${rate.creativeWidth} x ${rate.creativeHeight}`} Pixels, WebP, PNG Or JPEG,
+            Exactly {`${rate.creativeWidth} By ${rate.creativeHeight}`} Pixels, WebP, PNG Or JPEG,
             Under {Math.round(rate.maxBytes / 1024)} KB. It Scales With The Page And Is Never
             Cropped.
           </p>

@@ -71,7 +71,19 @@ describe('an alarm a player can switch off is not an alarm', () => {
       const grants = code(sql).match(/GRANT[\s\S]{0,400}?;/gi) ?? [];
       for (const grant of grants) {
         if (!/\bEXECUTE\b/i.test(grant)) continue;
-        if (!/\b(anon|authenticated)\b/.test(grant)) continue;
+
+        // Read the roles from AFTER the TO keyword, not from the whole
+        // statement. Matching the statement meant \bPUBLIC\b had to be
+        // case-sensitive to avoid hitting the `public.` schema qualifier that
+        // every one of these grants carries - and a lowercase `to public` then
+        // walked straight through. Postgres does not care about the case.
+        const to = grant.split(/\bTO\b/i)[1];
+        if (!to) continue;
+        // PUBLIC is listed first because it is the WORST of the three: it
+        // includes anon, so it hands the routine to a caller with no account
+        // at all. The first version of this law omitted it and passed a
+        // mutation that granted the routine to PUBLIC.
+        if (!/\b(PUBLIC|anon|authenticated)\b/i.test(to)) continue;
 
         const named = grant.match(/fn_[a-z0-9_]+/gi) ?? [];
         for (const fn of named) {

@@ -1365,11 +1365,23 @@ export default function ClubDataPage() {
   }, [clubUuid, isHydrating, user, load, loadPlayers]);
 
   /**
-   * Resolve the snapshot scopes once per club. Two cheap reads, neither of
-   * which returns money: ca_can_oversee_union answers a boolean, and
-   * fn_my_agent_roles answers which clubs the viewer is an agent in. Either
-   * failing is not an error the operator needs to see - it just means that
-   * chip is not offered, and the rake snapshot falls back to Club.
+   * Resolve the snapshot scopes once per club. Neither read returns money:
+   * ca_can_oversee_union answers a boolean and fn_my_agent_roles answers which
+   * clubs the viewer is an agent in.
+   *
+   * EVERY ERROR IS BOUND AND ACTED ON. The first version of this destructured
+   * only `data` and swallowed the rest in a bare catch, which the
+   * discarded-error ratchet caught and was right to: a refusal and a timeout
+   * produced the same outcome - the chip silently absent - so an operator who
+   * genuinely oversees a union would be told, by omission, that they do not,
+   * and nothing anywhere would record why.
+   *
+   * The two cases are not the same and are no longer treated the same. A
+   * REFUSAL is an answer: this viewer does not hold that scope, the chip stays
+   * off, and there is nothing to report. Any OTHER failure is a failure: the
+   * chip still stays off, because offering a scope we could not confirm would
+   * hand the operator a button that only refuses, but it is reported so the
+   * absence is visible somewhere other than the screen.
    */
   useEffect(() => {
     if (!clubUuid || isHydrating || !user) return;
@@ -1377,29 +1389,54 @@ export default function ClubDataPage() {
     void (async () => {
       const next: RakeScope[] = [];
       try {
-        const { data: unionId } = await supabase
+        const { data: unionRow, error: unionErr } = await supabase
           .from('union_clubs')
           .select('union_id')
           .eq('club_id', clubUuid)
           .maybeSingle();
-        const uid = (unionId as { union_id?: string } | null)?.union_id;
-        if (uid) {
-          const { data: canOversee } = await supabase.rpc('ca_can_oversee_union', {
-            p_union_id: uid,
-          });
-          if (canOversee === true) next.push('union');
+        if (unionErr) {
+          if (!isAuthzError(unionErr)) reportError(unionErr, 'ClubDataPage.scope_union_lookup');
+        } else {
+          const uid = (unionRow as { union_id?: string } | null)?.union_id;
+          if (uid) {
+            const { data: canOversee, error: overseeErr } = await supabase.rpc(
+              'ca_can_oversee_union',
+              { p_union_id: uid }
+            );
+            if (overseeErr) {
+              if (!isAuthzError(overseeErr)) {
+                reportError(overseeErr, 'ClubDataPage.scope_union_oversight');
+              }
+            } else if (canOversee === true) {
+              next.push('union');
+            }
+          }
         }
-      } catch {
-        /* no union chip; the club figure is still the whole answer for them */
+      } catch (err) {
+        // A thrown request - offline, aborted, a client-side failure before the
+        // response existed - never reaches the error field above.
+        reportError(err, 'ClubDataPage.scope_union_lookup');
       }
+
+      // Club is unconditional: this page is already gated on
+      // ca_can_view_club_finances, so reaching here IS the club answer.
       next.push('club');
+
       try {
-        const { data: roles } = await supabase.rpc('fn_my_agent_roles');
-        const mine = (roles as Array<{ club_id?: string }> | null) || [];
-        if (mine.some((r) => r?.club_id === clubUuid)) next.push('agent');
-      } catch {
-        /* not an agent, or the read failed; no downline chip either way */
+        const { data: roles, error: rolesErr } = await supabase.rpc('fn_my_agent_roles');
+        if (rolesErr) {
+          // not_an_agent is the ordinary answer for most viewers, not a fault.
+          if (!isAuthzError(rolesErr) && !/not_an_agent/i.test(String(rolesErr.message ?? ''))) {
+            reportError(rolesErr, 'ClubDataPage.scope_agent_roles');
+          }
+        } else {
+          const mine = (roles as Array<{ club_id?: string }> | null) || [];
+          if (mine.some((r) => r?.club_id === clubUuid)) next.push('agent');
+        }
+      } catch (err) {
+        reportError(err, 'ClubDataPage.scope_agent_roles');
       }
+
       if (!dead) setRakeScopes(next);
     })();
     return () => {

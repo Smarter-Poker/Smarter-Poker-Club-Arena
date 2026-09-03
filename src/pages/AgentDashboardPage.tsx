@@ -33,6 +33,7 @@ import AgentBackOffice from '../components/agent/AgentBackOffice';
 
 import { safeErrorMessage } from '../utils/safeErrorMessage';
 import { EmptyState } from '../components/common/EmptyState';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 type AgentTab =
   | 'overview'
   | 'players'
@@ -209,7 +210,7 @@ export default function AgentDashboardPage() {
             () =>
               supabase
                 .from('profiles')
-                .select('id, display_name, username, avatar_url:arena_avatar_url, last_seen')
+                .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, last_seen`)
                 .in('id', allUserIds)
                 .then((r) => r),
             { maxRetries: 2, isMountedRef: mountedRef }
@@ -535,12 +536,7 @@ export default function AgentDashboardPage() {
     if (!playerSearch) return players;
     const q = playerSearch.toLowerCase();
     return players.filter((p) => {
-      const name = (
-        p.profile?.display_name ||
-        p.profile?.username ||
-        p.user_id ||
-        ''
-      ).toLowerCase();
+      const name = (p.profile ? playerDisplayName(p.profile) : p.user_id || '').toLowerCase();
       return name.includes(q);
     });
   }, [players, playerSearch]);
@@ -708,7 +704,7 @@ export default function AgentDashboardPage() {
                   if (tab === 'players' && players.length > 0) {
                     exportToCSV(
                       players.map((p) => ({
-                        username: p.profile?.display_name || p.profile?.username || p.user_id,
+                        username: p.profile ? playerDisplayName(p.profile) : p.user_id,
                         role: p.role,
                         chip_balance: p.chip_balance,
                         status: p.status,
@@ -971,8 +967,9 @@ export default function AgentDashboardPage() {
                 }}
               >
                 {filteredPlayers.map((p) => {
-                  const name =
-                    p.profile?.display_name || p.profile?.username || p.user_id?.substring(0, 8);
+                  const name = p.profile
+                    ? playerDisplayName(p.profile)
+                    : p.user_id?.substring(0, 8);
                   const isOnline =
                     p.profile?.last_seen &&
                     Date.now() - new Date(p.profile.last_seen).getTime() < 300000;
@@ -1261,9 +1258,7 @@ export default function AgentDashboardPage() {
                             {daysSince <= 5 ? 'Active' : daysSince <= 14 ? 'At Risk' : 'Churned'}
                           </td>
                           <td style={{ fontWeight: 600 }}>
-                            {p.profile?.display_name ||
-                              p.profile?.username ||
-                              p.user_id?.substring(0, 8)}
+                            {p.profile ? playerDisplayName(p.profile) : p.user_id?.substring(0, 8)}
                           </td>
                           <td>{p.chip_balance !== undefined ? fmtChips(p.chip_balance) : '...'}</td>
                           <td style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
@@ -1302,7 +1297,7 @@ export default function AgentDashboardPage() {
                   <option value="">Select Agent...</option>
                   {agents.map((a: DownlineMember) => (
                     <option key={a.user_id} value={a.user_id}>
-                      {a.profile?.display_name || a.profile?.username || a.user_id?.slice(0, 8)} (
+                      {a.profile ? playerDisplayName(a.profile) : a.user_id?.slice(0, 8)} (
                       {a.chip_balance !== undefined ? fmtChips(a.chip_balance) : '...'} Chips)
                     </option>
                   ))}
@@ -1380,9 +1375,7 @@ export default function AgentDashboardPage() {
                       {agents.map((a: DownlineMember) => (
                         <tr key={a.user_id}>
                           <td style={{ fontWeight: 600 }}>
-                            {a.profile?.display_name ||
-                              a.profile?.username ||
-                              a.user_id?.substring(0, 8)}
+                            {a.profile ? playerDisplayName(a.profile) : a.user_id?.substring(0, 8)}
                           </td>
                           <td>
                             <span className="admin-badge">{a.role}</span>
@@ -1431,7 +1424,7 @@ export default function AgentDashboardPage() {
                     <option value="">Select Agent...</option>
                     {agents.map((a: DownlineMember) => (
                       <option key={a.user_id} value={a.user_id}>
-                        {a.profile?.display_name || a.profile?.username || a.user_id?.slice(0, 8)} -{' '}
+                        {a.profile ? playerDisplayName(a.profile) : a.user_id?.slice(0, 8)} -{' '}
                         {a.role}
                       </option>
                     ))}

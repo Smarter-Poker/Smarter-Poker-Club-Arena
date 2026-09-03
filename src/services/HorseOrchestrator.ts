@@ -29,6 +29,7 @@ import { HydraService } from './HydraService';
 import { masterBus } from '../core/MasterBus';
 import { buyInFor, rakeRateFor } from '../utils/buyIn';
 import { clampSeatsForVariant } from '../config/tableSeating';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 
 /**
  * Derive the two buy-in columns from ONE whole-dollar total.
@@ -2357,7 +2358,7 @@ class HorseOrchestrator {
       // Load available player profiles
       const { data: availableHorses } = await supabase
         .from('profiles')
-        .select('id, display_name, avatar_url:arena_avatar_url')
+        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url`)
         .eq('is_horse', true)
         .eq('horse_status', 'available')
         .limit(staleHorses.length);
@@ -2395,7 +2396,7 @@ class HorseOrchestrator {
           masterBus.emit('HORSE_SEATED', {
             tableId: stale.table_id,
             horseId: fresh.id,
-            horseName: fresh.display_name || 'Horse',
+            horseName: playerDisplayName(fresh),
           });
         } catch (err) {
           console.error('[HorseOrchestrator] Error:', err);

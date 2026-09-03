@@ -50,51 +50,39 @@ COUNT=0
 
 # ── 1. Branches ahead of main with no open pull request ─────────────────────
 # Paginated: this repo runs hundreds of agent branches.
-BRANCHES=$(gh api --paginate "repos/$REPO/branches?per_page=100" \
-  --jq '.[].name' 2>/dev/null || true)
+# THE BRANCH WALK IS LOCAL (2026-09-03). This used to call
+# `gh api compare/main...$BR` once per branch, plus two python processes per
+# branch, for every branch in the repository. With ~400 branches (July and
+# August `patch/*` and `rescue/*` included) that is over six minutes, which is
+# the job's timeout: every scheduled watchdog run since 2026-09-02 19:17 died
+# of SIGTERM in this loop, was recorded as "cancelled", and never reached the
+# stuck-PR pass below. The workflow checks main out with full history, so
+# every question here is answerable by git in a few seconds with no API at all.
+git fetch -q origin '+refs/heads/*:refs/remotes/origin/*' 2>/dev/null || true
 OPEN_PR_HEADS=$(gh pr list --repo "$REPO" --state open --limit 200 \
   --json headRefName --jq '.[].headRefName' 2>/dev/null || true)
-
-# Content that already shipped is not stranded, whatever the shas say. This
-# estate routinely re-creates the same content under a DIFFERENT sha (squash
-# merges, and the GitHub-MCP push path - CLAUDE.md section 12), so a merged
-# branch left undeleted stays "ahead of main" forever by commit count. The
-# tree hash sees through that: a squash merge writes the branch's RESULT tree
-# onto main, so a branch head whose tree matches any recent main commit's
-# tree has shipped in full. First live run in World Hub found 249 "stranded"
-# branches; this filter is what separates the truly lost ones from history.
-MAIN_TREES=$(gh api "repos/$REPO/commits?per_page=100" \
-  --jq '.[].commit.tree.sha' 2>/dev/null; \
-  gh api "repos/$REPO/commits?per_page=100&page=2" \
-  --jq '.[].commit.tree.sha' 2>/dev/null || true)
-
-for BR in $BRANCHES; do
-  case "$BR" in main|master) continue ;; esac
+MAIN_TREES=$(git log -200 --format=%T origin/main 2>/dev/null || true)
+while read -r BR LAST_EPOCH LAST; do
+  [ -z "${BR:-}" ] && continue
+  case "$BR" in main|master|HEAD) continue ;; esac
   printf '%s' "$BR" | grep -qE "$EXEMPT_RE" && continue
-  # Already has an open PR? Autopilot's problem, checked in pass 2.
   printf '%s\n' "$OPEN_PR_HEADS" | grep -qxF "$BR" && continue
-
-  CMP=$(gh api "repos/$REPO/compare/main...$BR" \
-    --jq '{ahead: .ahead_by, at: .commits[-1].commit.committer.date, tree: .commits[-1].commit.tree.sha}' 2>/dev/null || echo "")
-  [ -z "$CMP" ] && continue
-  AHEAD=$(printf '%s' "$CMP" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("ahead") or 0)' 2>/dev/null || echo 0)
+  AHEAD=$(git rev-list --count "origin/main..origin/$BR" 2>/dev/null || echo 0)
   [ "$AHEAD" -eq 0 ] && continue
-  TREE=$(printf '%s' "$CMP" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("tree") or "")' 2>/dev/null || echo "")
+  TREE=$(git rev-parse "origin/$BR^{tree}" 2>/dev/null || echo "")
   if [ -n "$TREE" ] && printf '%s\n' "$MAIN_TREES" | grep -qxF "$TREE"; then
     continue  # this exact tree is on main: the content shipped under another sha
   fi
-  LAST=$(printf '%s' "$CMP" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("at") or "")' 2>/dev/null || echo "")
-  LAST_EPOCH=$(date -d "$LAST" +%s 2>/dev/null || date -jf '%Y-%m-%dT%H:%M:%SZ' "$LAST" +%s 2>/dev/null || echo 0)
-  [ "$LAST_EPOCH" -eq 0 ] && continue
+  [ "${LAST_EPOCH:-0}" -eq 0 ] && continue
   [ "$LAST_EPOCH" -gt "$CUTOFF" ] && continue   # author may still be working
-
   COUNT=$((COUNT+1))
   say "stranded: branch $BR ($AHEAD ahead, last touched $LAST, no PR)"
   ORPHANS="$ORPHANS
 - **Branch \`$BR\`** is $AHEAD commit(s) ahead of main with **no pull request**, last touched $LAST. Nothing will ever merge it. Open a PR (\`gh pr create --head $BR\`) or state that it is abandoned."
-done
+done <<EOF_BRANCHES
+$(git for-each-ref refs/remotes/origin --format='%(refname:lstrip=3) %(committerdate:unix) %(committerdate:iso-strict)' 2>/dev/null)
+EOF_BRANCHES
 
-# ── 2. Open pull requests that autopilot cannot land ────────────────────────
 PRS=$(gh pr list --repo "$REPO" --state open --limit 200 \
   --json number,title,mergeable,isDraft,updatedAt \
   --jq '.[] | [.number, .mergeable, .isDraft, .updatedAt, .title] | @tsv' 2>/dev/null || true)

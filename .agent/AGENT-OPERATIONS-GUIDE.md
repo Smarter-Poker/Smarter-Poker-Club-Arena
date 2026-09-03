@@ -132,8 +132,14 @@ origin/main..HEAD` first (untracked files survive resets).
   they have caught real regressions: WH `scripts/*-check.js` +
   `engine-correctness-harness.js`; CA `scripts/multi-table-check.js` +
   `server/src/*.test.ts`. Never loosen an assertion to make it pass.
-- Protected zone: `public/hub/club-arena/` in WH is build output -- never
-  hand-edit; commit messages touching it must contain "club-arena".
+- `public/hub/club-arena/` in WH was build output. It is **DELETED** (2026-09-02)
+  and must never come back: Club Arena publishes to its own origin
+  (`ca-static.smarter.poker`) and the World Hub reaches it with a single
+  rewrite. Next serves `public/` BEFORE that rewrite, so a file re-vendored
+  there does not duplicate the bundle, it SHADOWS it - production would keep
+  serving whatever was last committed while the origin published into the void.
+  `tests/club-arena-is-a-rewrite.test.mjs` in the World Hub fails CI if it
+  returns.
 
 ## 8. REAL-BROWSER E2E — run before claiming UI work done
 

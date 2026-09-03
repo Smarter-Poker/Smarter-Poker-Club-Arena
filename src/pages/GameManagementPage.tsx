@@ -82,6 +82,51 @@ const BUCKET_CLOSED = 2;
  * list became bucket-ordered, because then page 1 is entirely live games and
  * the Scheduled and Closed tabs had nothing local to find. A tab is a query.
  */
+/**
+ * One place that turns a server row into a board row.
+ *
+ * There were two copies of this object literal and a targeted refresh would
+ * have made a third. A board row that means slightly different things
+ * depending on which code path produced it is the bug this whole page has been
+ * paying for all day.
+ */
+function toManagedGame(row: any, hostNames: Record<string, string>, fallbackName: string) {
+  return {
+    id: row.id,
+    kind: row.kind,
+    bucket: Number(row.bucket ?? 0),
+    name: row.name,
+    status: row.status,
+    clubId: row.club_id,
+    hostName: hostNames[row.club_id] || fallbackName,
+    variant: row.variant || (row.kind === 'table' ? 'NLH' : 'MTT'),
+    players: row.players || 0,
+    maxPlayers: row.max_players || 0,
+    startTime: row.start_time ?? null,
+    smallBlind: Number(row.small_blind || 0),
+    bigBlind: Number(row.big_blind || 0),
+    minBuyIn: Number(row.min_buy_in || 0),
+    maxBuyIn: Number(row.max_buy_in || 0),
+    buyIn: Number(row.buy_in || 0),
+    contract: row.contract || null,
+    lastCommand: row.lastCommand || null,
+    pendingSchedule: row.pending_schedule
+      ? {
+          scheduleId: row.pending_schedule.schedule_id,
+          executeAt: row.pending_schedule.execute_at,
+          status: row.pending_schedule.status,
+        }
+      : null,
+  };
+}
+
+/**
+ * Above this many distinct games changed at once, one full board read is
+ * cheaper than N targeted ones. The feed reaches 421 table updates in a
+ * minute, so the busy case must NOT turn into a request storm of its own.
+ */
+const TARGETED_REFRESH_MAX = 8;
+
 const VIEW_BUCKET: Record<View, number | null> = {
   all: null,
   running: BUCKET_LIVE,
@@ -548,6 +593,17 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
   const loadEpochRef = useRef(0);
   const loadedRouteRef = useRef('');
   const loadedViewRef = useRef<View>('all');
+  /** Latest rows, so the refresh below never closes over a stale board. */
+  const gamesRef = useRef<ManagedGame[]>([]);
+  /** Games named by events since the last flush, deduplicated. */
+  const changedRef = useRef<Set<string>>(new Set());
+  /**
+   * An event arrived that did NOT name a game. Not every refresh event is
+   * obliged to carry an id, and a targeted refresh cannot act on one that
+   * does not - so it forces the full reload rather than quietly doing nothing,
+   * which would drop a real change on the floor.
+   */
+  const sawUnnamedRef = useRef(false);
   // One load at a time, with at most one queued behind it, and a stable handle
   // so the queued one can be started from inside load's own `finally`.
   const loadInFlightRef = useRef(false);
@@ -818,33 +874,9 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
       // Same as the first page: the rows already carry their contract and
       // their last command, so Load More is one request, not five.
       const hostNames = Object.fromEntries(hosts.map((host) => [host.id, host.name]));
-      const rows: ManagedGame[] = page.items.map((row: any) => ({
-        id: row.id,
-        kind: row.kind,
-        bucket: Number(row.bucket ?? 0),
-        name: row.name,
-        status: row.status,
-        clubId: row.club_id,
-        hostName: hostNames[row.club_id] || scopeName,
-        variant: row.variant || (row.kind === 'table' ? 'NLH' : 'MTT'),
-        players: row.players || 0,
-        maxPlayers: row.max_players || 0,
-        startTime: row.start_time,
-        smallBlind: Number(row.small_blind || 0),
-        bigBlind: Number(row.big_blind || 0),
-        minBuyIn: Number(row.min_buy_in || 0),
-        maxBuyIn: Number(row.max_buy_in || 0),
-        buyIn: Number(row.buy_in || 0),
-        contract: row.contract || null,
-        lastCommand: row.lastCommand || null,
-        pendingSchedule: row.pending_schedule
-          ? {
-              scheduleId: row.pending_schedule.schedule_id,
-              executeAt: row.pending_schedule.execute_at,
-              status: row.pending_schedule.status,
-            }
-          : null,
-      }));
+      const rows: ManagedGame[] = page.items.map((row: any) =>
+        toManagedGame(row, hostNames, scopeName)
+      );
       setGames((current) => {
         const seen = new Set(current.map((game) => `${game.kind}:${game.id}`));
         return [...current, ...rows.filter((game) => !seen.has(`${game.kind}:${game.id}`))];
@@ -903,10 +935,80 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
     return () => document.removeEventListener('click', onClickCapture, true);
   }, [surfaceDirty]);
 
+  /**
+   * Read back the games that changed, not the whole board.
+   *
+   * Every management event used to become a full reload. The feed is not
+   * gentle - 421 table updates in one measured minute - and what actually
+   * moved was usually one row's player count. fn_list_managed_games can now
+   * return a single enriched row, skipping both whole-scope scans: 2 ms
+   * against production versus 21 ms for the full page, and one row on the
+   * wire instead of a hundred.
+   *
+   * It falls back to a full reload whenever a splice would be a lie:
+   *   - a changed game is not on the board (created, or on another page)
+   *   - the row is gone from this scope (null)
+   *   - the row changed BUCKET, so it belongs under a different tab now
+   *   - more games changed at once than a full read is worth
+   * The bucket case matters twice over: the counters are per-bucket totals, so
+   * a row that stays in its bucket cannot move any of them, and one that
+   * leaves it moves two. That is precisely why the counters can be left alone
+   * on the fast path and must be recomputed on the slow one.
+   */
+  const refreshChangedGames = useCallback(async () => {
+    const ids = Array.from(changedRef.current);
+    const unnamed = sawUnnamedRef.current;
+    changedRef.current.clear();
+    sawUnnamedRef.current = false;
+    if (!scopeId || unnamed) {
+      void load(true);
+      return;
+    }
+    // Nothing was named and nothing was unnamed: there is nothing to refresh.
+    // Reloading here would turn a spurious wake into a full board read.
+    if (ids.length === 0) return;
+    const known = ids
+      .map((id) => gamesRef.current.find((game) => game.id === id))
+      .filter((game): game is ManagedGame => Boolean(game));
+    if (known.length !== ids.length || known.length > TARGETED_REFRESH_MAX) {
+      void load(true);
+      return;
+    }
+    try {
+      const hostNames = Object.fromEntries(hosts.map((host) => [host.id, host.name]));
+      const fresh = await Promise.all(
+        known.map((game) => gameManagementService.getGame(scope, scopeId, game.kind, game.id))
+      );
+      const mapped = fresh.map((row) => (row ? toManagedGame(row, hostNames, scopeName) : null));
+      const splicable = mapped.every((row, index) => row && row.bucket === known[index].bucket);
+      if (!splicable) {
+        void load(true);
+        return;
+      }
+      const byId = new Map(mapped.map((row) => [row!.id, row as ManagedGame]));
+      setGames((current) => current.map((game) => byId.get(game.id) ?? game));
+    } catch (error) {
+      // A targeted read that fails is not a reason to show stale rows.
+      reportError(error, 'GameManagementPage.refreshChangedGames');
+      void load(true);
+    }
+  }, [hosts, load, scope, scopeId, scopeName]);
+
+  // Accumulate every event. The decider below is debounced, and a debounced
+  // subscription only ever sees the LAST payload of a burst - which would
+  // refresh one game and silently miss the other four hundred.
+  useMasterBusSubscriptions([...GAME_REFRESH_EVENTS], (payload: unknown) => {
+    const id =
+      (payload as { tableId?: string; tournamentId?: string } | null)?.tableId ??
+      (payload as { tableId?: string; tournamentId?: string } | null)?.tournamentId;
+    if (id) changedRef.current.add(String(id));
+    else sawUnnamedRef.current = true;
+  });
+
   useMasterBusSubscriptions(
     [...GAME_REFRESH_EVENTS],
     () => {
-      void load(true);
+      void refreshChangedGames();
     },
     { debounce: 350 }
   );
@@ -928,6 +1030,10 @@ export default function GameManagementPage({ scope }: { scope: Scope }) {
 
   // The server returned exactly this tab's bucket, so there is nothing left to
   // filter. Kept as a named value because the render reads it in several places.
+  useEffect(() => {
+    gamesRef.current = games;
+  }, [games]);
+
   const filteredGames = games;
 
   const liveCount = counts.live;

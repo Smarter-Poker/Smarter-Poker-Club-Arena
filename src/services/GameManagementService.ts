@@ -435,6 +435,47 @@ export const gameManagementService = {
     };
   },
 
+  /**
+   * Re-read ONE game, enriched exactly as it arrives in the list - same
+   * function, same projection, so a row cannot mean two things.
+   *
+   * Returns null when the game is no longer visible in this scope (closed and
+   * filtered out, moved, deleted). The caller must treat null as "I do not
+   * know any more" and fall back to a full load rather than dropping the row.
+   *
+   * counts and next_cursor come back null from a single-game read, by design:
+   * it skips both whole-scope scans, which is the entire saving.
+   */
+  async getGame(
+    scope: 'club' | 'union',
+    scopeId: string,
+    kind: ManagedGameKind,
+    gameId: string
+  ): Promise<any | null> {
+    const { data, error } = await supabase.rpc('fn_list_managed_games', {
+      p_scope: scope,
+      p_scope_id: scopeId,
+      p_cursor: null,
+      p_cursor_kind: null,
+      p_cursor_id: null,
+      p_limit: 1,
+      p_cursor_bucket: null,
+      p_bucket: null,
+      p_game_kind: kind,
+      p_game_id: gameId,
+    });
+    if (error) throw new Error(error.message || 'Could not refresh the game.');
+    const result = data as any;
+    if (!result?.ok) throw new Error(managementError(result?.reason || null) || 'Could not refresh the game.');
+    const row = Array.isArray(result.items) ? result.items[0] : null;
+    if (!row) return null;
+    return {
+      ...row,
+      contract: row.contract ? mapContractSummary(row.contract) : null,
+      lastCommand: row.last_command ? mapCommandReceipt(row.last_command) : null,
+    };
+  },
+
   async getContracts(
     kind: ManagedGameKind,
     gameIds: string[]

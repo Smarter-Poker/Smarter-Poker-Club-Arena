@@ -1,5 +1,14 @@
 # Club Arena — Canonical Architecture (2026-04-28)
 
+> **AMENDED 2026-09-03 — Tier 2 no longer publishes through the World Hub.**
+> Club Arena's bundle is published by `publish-club-arena.yml` to its own
+> static origin (`ca-static.smarter.poker`, Caddy on `estate-ci-1`), and the
+> World Hub carries ONE rewrite to it. `public/hub/club-arena/` no longer
+> exists in the World Hub repo, and `sync-club-arena.sh`, `build-club-arena.sh`
+> and the `check-ca-*` gates are deleted. Everywhere below that says the build
+> is copied into the World Hub describes the path as it was until that date;
+> `.agent/architecture/deploy-paths.md` Tier 2 and `CLAUDE.md` 1.1 are current.
+
 **Read this first. Do not push code without confirming the layer + table you're targeting matches this doc.**
 
 This document is the single source of truth for Club Arena's structure. Built like ClubGG / PokerBros / WPT Poker — one game-engine tier, one frontend tier, one operations API tier, one workers tier, one Postgres database. Every duplicate that could cause "you fixed it in the wrong place" was hunted down on 2026-04-28; this doc records the canonical pick for each.
@@ -304,16 +313,16 @@ If a push gets blocked, READ THE ERROR — never `--no-verify`.
 
 ## §8 — Canonical addresses + secrets (where to find them)
 
-| Thing                                           | Where                                                                    |
-| ----------------------------------------------- | ------------------------------------------------------------------------ |
-| Supabase project ID                             | `kuklfnapbkmacvwxktbh` (in `.env` files, MCP project_id parameter)       |
-| Hetzner engine deploy SSH                       | `~/Documents/club-arena/.ssh/hetzner_deploy`                             |
-| Workers VM SSH                                  | `~/.ssh/workers_ed25519` (Mac Keychain only)                             |
-| Open Claw SSH                                   | `~/.ssh/openclaw*` (Mac Keychain only)                                   |
-| GitHub PAT (read+write all 4 repos)             | embedded in `~/Documents/club-arena/.git/config` remote URL              |
-| GHCR PAT (read packages for workers image pull) | Mac Keychain `smarter-poker/github-pat-ghcr-read`                        |
+| Thing                                           | Where                                                                               |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Supabase project ID                             | `kuklfnapbkmacvwxktbh` (in `.env` files, MCP project_id parameter)                  |
+| Hetzner engine deploy SSH                       | `~/Documents/club-arena/.ssh/hetzner_deploy`                                        |
+| Workers VM SSH                                  | `~/.ssh/workers_ed25519` (Mac Keychain only)                                        |
+| Open Claw SSH                                   | `~/.ssh/openclaw*` (Mac Keychain only)                                              |
+| GitHub PAT (read+write all 4 repos)             | embedded in `~/Documents/club-arena/.git/config` remote URL                         |
+| GHCR PAT (read packages for workers image pull) | Mac Keychain `smarter-poker/github-pat-ghcr-read`                                   |
 | Vercel token                                    | `<REDACTED:VERCEL_TOKEN — read from .env.local, never commit>` (rotate when needed) |
-| CRON_SECRET (workers Bearer)                    | `/opt/workers/.env` on workers VM                                        |
+| CRON_SECRET (workers Bearer)                    | `/opt/workers/.env` on workers VM                                                   |
 
 Never commit any of these to git. Never echo them to chat in plaintext.
 

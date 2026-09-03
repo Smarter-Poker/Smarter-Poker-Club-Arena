@@ -711,3 +711,69 @@
     font-size: 0.66rem;
   }
 }
+
+/* ---------------------------------------------------------------- pager --- */
+
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.7rem;
+  background: #05090d;
+  border: 1px solid rgba(174, 189, 203, 0.14);
+  border-radius: 2px;
+}
+
+.pagerCount {
+  color: #78889a;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+}
+
+.pagerBtn {
+  min-height: 38px;
+  padding: 0 0.9rem;
+  color: var(--energy-soft);
+  background: #0c131a;
+  border: 1px solid rgba(174, 189, 203, 0.22);
+  border-radius: 2px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* NO HOVER EFFECTS (Dan 2026-08-29, binding): :active fires on touch, which is
+   where this is pressed. */
+.pagerBtn:active {
+  color: #e7f4fe;
+  background: #101b24;
+}
+
+.pagerBtn:focus-visible {
+  outline: 2px solid var(--energy);
+  outline-offset: -2px;
+}
+
+.pagerBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+@media (max-width: 520px) {
+  .pager {
+    justify-content: center;
+  }
+
+  .pagerBtn {
+    flex: 1 1 100%;
+  }
+}

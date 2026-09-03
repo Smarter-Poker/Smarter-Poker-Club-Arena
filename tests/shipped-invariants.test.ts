@@ -273,9 +273,12 @@ describe('shipped functionality is still here', () => {
          cleanly, with every check green. origin/main is the only honest
          answer to "what is deployed". */
       const wf = publisher();
+      // 2026-09-03: the deployed provenance is the origin's
+      // current/build-info.json, read over ssh BEFORE anything is written -
+      // the same "read the deployed file, not the one you brought" rule.
       expect(
-        wf.includes('git show origin/main:public/hub/club-arena/build-info.json'),
-        'the guard no longer reads the deployed provenance from git'
+        /cat \$ORIGIN_ROOT\/current\/build-info\.json/.test(wf),
+        'the guard no longer reads the deployed provenance from the origin'
       ).toBe(true);
       expect(
         /THEIRS_SHA=\$\(printf '%s' "\$THEIRS_JSON"/.test(wf),

@@ -34,14 +34,25 @@
       is the only thing allowed to carry a pixel size, because it paints
       nothing and therefore cannot move anything.
 
-   ARTWORK ANCHORS - measured from club-identity-template-no-level-v3.png
+   ARTWORK ANCHORS - measured from club-identity-template-no-level-v5.png
    (1653x951), as a percentage of the card box. The shell fills the box, so
-   these map 1:1 onto element percentages:
+   these map 1:1 onto element percentages.
 
-     club icon      y 48.69-56.16  (centre 52.42)   x 43.68-47.61
-     profile icon   y 59.63-66.67  (centre 63.15)   x 44.10-47.19
-     copy frame     y 65.19-81.07  (centre 73.13)   x 75.92-85.60
-     logo frame     y 21.45-62.57                   x 16.39-38.54
+   MEASURE THE STROKE, NOT THE GLOW (corrected 2026-09-03). The copy frame used
+   to be listed as "y 65.19-81.07, x 75.92-85.60", which is the frame plus its
+   blue outer glow. The glow is not symmetric about the stroke, so a button
+   fitted to that box could not centre on the frame - it sat 1.33 points left
+   and 1.22 points high, and Dan reported it twice. These numbers come from
+   thresholding the silver itself at luminance > 150:
+
+     club icon      y 48.69-56.16  (centre 52.37)   x 43.68-47.67
+     profile icon   y 59.63-66.77  (centre 63.36)   x 43.68-47.67
+     copy frame     y 68.35-80.34  (centre 74.34)   x 78.58-85.60  (centre 82.09)
+     top rail       y  8.10-10.30  (inner edge 10.30, measured at x=800)
+     bottom rail    y 90.64-92.64  (inner edge 90.64)
+
+   The logo frame is NOT listed: v5 does not have one. See the note where
+   `.club-identity__logo-mask` used to be.
 
    The two icons were moved DOWN 32px in v3 of the artwork so they sit level
    with the ID lines they label - Dan, verbatim: "INSIDE THE CLUB CARD, THE CLUB
@@ -81,31 +92,118 @@
   object-fit: contain;
 }
 
-/* Dan 2026-09-02: "REMOVE THE SILVER BOX THAT IS BEHIND THE LOGO'S ON ALL THE CLUB CARDS.
-   IT SHOULD JUST BE A LOGO, NO FRAME OR BOX BEHIND IT."
-   The silver box is painted into the shell PNG (club-identity-template-no-level-v3.png).
-   This mask div sits above the shell (z-index: 0) but below the logo (z-index: 1)
-   and exactly covers the painted silver frame area, hiding it with the card's
-   dark background. Coordinates from ARTWORK ANCHORS in the file header. */
-.club-identity__logo-mask {
+/* THE MASK IS GONE, AND SO IS THE BOX IT WAS HIDING (Dan 2026-09-03:
+   "THERE IS A BLACK BARCKGROUND BENIND THE SHARK CLUB LOGO THAT NEEDS TO BE
+   REMOVED").
+
+   `.club-identity__logo-mask` used to sit here: a `background: #000` rectangle
+   covering the silver frame painted into the shell PNG. It answered the letter
+   of the 2026-09-02 order ("REMOVE THE SILVER BOX THAT IS BEHIND THE LOGO'S")
+   and missed the point of it, because the card's ground is a textured quilt,
+   not black. Painting flat black over a silver box leaves a BLACK box, which
+   is the thing Dan photographed. A mask can only swap one visible rectangle
+   for another.
+
+   The frame is now absent from the ARTWORK itself (v5), healed over with quilt
+   lifted from the clean stretch of the same image, so the logo sits on the real
+   texture with nothing behind it. Do not reintroduce a mask here: if a future
+   shell paints something that has to go, take it out of the pixels. */
+
+/* ─────────────────────────────────────────────────────────────────────────
+   THE STACK (Dan 2026-09-02)
+
+   "the club name should be across the very top of the card, all the way left
+   to right, with the logo under it. So DEEP STACK SOCIETY IS ONE LINE ACROSS
+   THE TOP. UNDER THAT SHOULD BE DAN BEKAVAC, NEXT LINE CLUB ID, NEXT LINE
+   PLAYER ID LAST LIKE 192 PLAYING AND THE COPY LINK."
+
+              13.5% +----------------------------------+
+                    |         C L U B   N A M E        |  full width, 1 line
+              24.5% +----------+-----------------------+
+                    |          |  Dan Bekavac      31% |
+                    |   LOGO   +-----------------------+
+                    |          |  [icon] ID: club  52% |  painted icon
+                    |          |  [icon] ID: player 63%|  painted icon
+              65.5% +----------+-----------------------+
+                    | LEVEL 26 |  174 Playing   [copy] |  73%, one line
+              81%   +----------+-----------------------+
+
+   WHAT MOVED, AND WHAT DID NOT. The two ID rows are unchanged, deliberately:
+   the club and profile icons that label them are PAINTED INTO THE SHELL at
+   y 52.42% and 63.15% (see ARTWORK ANCHORS above), so moving the rows would
+   leave the icons labelling empty space. Dan's order keeps Club ID and Player
+   ID adjacent and in that sequence, so his layout and the artwork agree and
+   nothing has to be re-cut.
+
+   The name left the two-row grid it shared with the alias - which is why a
+   long name used to wrap into the alias and sit on top of it - and the logo
+   and the level came up to meet the new band. ─────────────────────────────── */
+
+/* Row 1. Spans the card between the painted side chrome: the blue accent
+   panels end near x 7%, so 7.5% is the first column of usable black. */
+.club-identity__name {
   position: absolute;
-  z-index: 0;
-  /* Generous bounds that cover the full silver frame including its outer bevel.
-     The artwork silver frame spans x:13%-41%, y:14%-68% of the card. */
-  left: 12%;
-  top: 13%;
-  width: 30%;
-  height: 56%;
-  background: #000;
-  pointer-events: none;
-  user-select: none;
+  z-index: 1;
+  left: 7.5%;
+  right: 7.5%;
+  /* ── THE BAND HOLDS THE TEXT, AND SITS HIGHER (Dan 2026-09-03: "SHARK CLUB
+     NEEDS TO BE UP HIGHER") ────────────────────────────────────────────────
+
+     It was `top: 13.5%; height: 11%`, and 11% of a 2.4/1 card is 17.6px while
+     the type at the 7cqw ceiling has a 26.8px line box. The text did not fit
+     the band, so grid centring fell back to start alignment and the name hung
+     BELOW its own box - measured at 383px: band 13.49-24.49%, rendered text
+     13.49-30.29%. Every attempt to move the name by nudging `top` was really
+     moving an overflow, which is why it kept reading low.
+
+     The band is 18% tall now, taller than the line box at the ceiling, so the
+     text is genuinely centred in it and `top` means what it says. Centre 18.2%,
+     text 9.8-26.6%, caps roughly 13-23%. The painted top rail's inner edge is
+     at 10.30% (measured off the shell, x=800), so the caps clear it by about
+     three points at the largest size the ceiling allows. */
+  top: 9.2%;
+  height: 18%;
+  display: grid;
+  align-items: center;
+  margin: 0;
+  color: #f5f6f8;
+  font-family: Inter, Arial, sans-serif;
+  /* Set by the component: a length estimate for the first paint, then the
+     measured exact fit. CSS cannot do this itself - `clamp()` sizes from the
+     CARD's width and never from how much text there is. The fallback is the
+     ceiling, so a card rendered without the property looks right rather than
+     collapsing to something tiny. */
+  font-size: var(--club-name-size, 7cqw);
+  font-weight: 850;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  text-align: center;
+  text-shadow: 0 2px 2px #000;
+  text-transform: uppercase;
+  /* ONE line, and never an ellipsis. If an unusually wide name ever beats the
+     estimate the text runs on rather than being cut: a name that is too big is
+     a sizing bug to fix, a name that is cut is the thing Dan banned outright. */
+  white-space: nowrap;
+  text-overflow: clip;
+}
+
+/* The measurable half of the name. The band's width comes from its left/right
+   percentages; this span is exactly as wide as the glyphs, so the component
+   can compare the two and scale the type to the precise fit. Inline-block so
+   it reports a width of its own rather than the grid area's. */
+.club-identity__name > span {
+  display: inline-block;
+  white-space: nowrap;
 }
 
 .club-identity__logo {
   position: absolute;
   z-index: 1;
   left: 17.05%;
-  top: 52%;
+  /* Was 52%, from when the name sat beside the logo. The name is a band across
+     the whole card now, so the logo rises to sit directly under it, and the
+     level box below follows it up by the same amount. */
+  top: 45%;
   width: 21.7%;
   aspect-ratio: 1 / 1;
   display: grid;
@@ -126,25 +224,31 @@
   object-position: center;
 }
 
-/* Club name and alias. Two rows, sized so their centres land where they landed
-   before this pass on the desktop card: 27.26% and 41.00%. The alias used to
-   reach its place with `translateY(1.1cqw)`, which is a WIDTH-derived nudge
-   applied to a VERTICAL position - it moved the alias by a different amount on
-   the 2.4/1 lobby card than on the native card. The offset is in the row
-   heights now, so it is the same everywhere. */
-.club-identity__details {
+/* Row 2 of the right column: the player's own name, leading the four-line
+   stack that runs beside the logo.
+
+   It used to be the second row of a `.club-identity__details` grid it shared
+   with the club name, which is what made a long name wrap down onto it. Its
+   own band cannot be pushed by anything above it. Aligned to the same left
+   edge as the two ID lines below (43.6% + their 7.2cqw icon gutter) so the
+   four lines read as one column rather than a ragged edge. */
+.club-identity__alias {
   position: absolute;
   z-index: 1;
   left: 43.6%;
   right: 11.5%;
-  top: 21.2%;
-  /* Dan 2026-09-02: was fixed height: 27.48% which clipped a 2-line club name.
-     Now min-height so the box expands downward if the name wraps. */
-  min-height: 27.48%;
+  /* Was 31%. Dan 2026-09-03: "DAN BEKAVAC NEEDS TO BE UP HIGHER". It rises 5
+     points, into the room the club name freed by moving up itself. Nothing
+     below it moves: the two ID lines are pinned to icons painted into the
+     shell at 52.37% and 63.36%, so they cannot follow. The gap this leaves
+     between the alias and the club ID line is deliberate - those two lines
+     belong to different things, and the artwork decides where the second pair
+     sits. */
+  top: 26%;
+  height: 11%;
   display: grid;
-  grid-template-rows: auto auto;
   align-items: center;
-  gap: 0.3cqw;
+  padding-left: 7.2cqw;
   min-width: 0;
 }
 
@@ -165,48 +269,26 @@
   min-width: 0;
 }
 
-.club-identity__details h2,
-.club-identity__alias {
-  overflow: hidden;
-}
-
-/* Dan 2026-09-02: "CLUB NAME SHOULD ALWAYS BE FULLY DISPLAYED NEVER A 'MIDWAY UN...'
-   FONT NEEDS TO BE DYNAMIC IT ALWAYS DISPLAYS THE FULL NAME."
-   Remove white-space:nowrap + text-overflow:ellipsis from the name h2 so it wraps
-   to a second line if needed. Use a slightly smaller base font so long names still fit. */
-
 .club-identity__line {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.club-identity__details h2 {
-  margin: 0;
-  color: #f5f6f8;
-  font-family: Inter, Arial, sans-serif;
-  font-size: clamp(4cqw, 5.8cqw, 6.1cqw);
-  font-weight: 850;
-  letter-spacing: 0.01em;
-  line-height: 1.1;
-  text-transform: uppercase;
-  text-shadow: 0 2px 2px #000;
-  /* Dan 2026-09-02: Club name must never be cut off. Allow wrapping to a second
-     line instead of truncating with "MIDWAY UN...". The grid row grows to fit. */
-  white-space: normal;
-  word-break: break-word;
-  overflow-wrap: break-word;
-  align-self: center;
-}
-
+/* The alias is one line and may ellipsize: unlike the club name, a player's
+   own display name is theirs to recognise from its first characters, and it
+   sits in a column with a fixed right edge. */
 .club-identity__alias {
   margin: 0;
+  overflow: hidden;
   color: #e7e9ed;
   font-size: 3.65cqw;
   font-weight: 700;
   letter-spacing: 0.01em;
   line-height: 1.18;
+  text-overflow: ellipsis;
   text-shadow: 0 2px 2px #000;
+  white-space: nowrap;
 }
 
 .club-identity__line {
@@ -261,7 +343,10 @@ button.club-identity__line {
   position: absolute;
   z-index: 2;
   left: 17.05%;
-  top: 72.8%;
+  /* Was 72.8%. It follows the logo up by the same 7% the logo rose when the
+     club name became a band of its own, so it still sits directly beneath the
+     logo square rather than drifting away from it. */
+  top: 65.5%;
   width: 21.7%;
   height: 9%;
   display: grid;
@@ -309,20 +394,68 @@ button.club-identity__line {
    percentage of its container box for true centering at every card size. */
 .club-identity__playing {
   position: absolute;
-  left: 44%;
-  right: 25%;
-  bottom: 15%;
+  /* ONE LINE WITH THE COPY LINK (Dan 2026-09-02): "LAST LIKE 192 PLAYING AND
+     THE COPY LINK." It was anchored `bottom: 15%`, which put it well below the
+     share button - the two were the last two things on the card but they were
+     not on the same line. It now occupies the share's exact band (top 65.19%,
+     height 15.88%) and centres inside it, so both sit on the painted copy
+     frame's centre line at 73.13%.
+
+     NO 7.2cqw GUTTER HERE, unlike the alias and the two ID lines. It was
+     tried, for a straight left edge down the whole column, and it cut the
+     copy off: this line carries the longest string on the card ("1,204
+     PLAYING NOW") in the narrowest bay, between 43.6% and the share button at
+     75.92%, and the gutter took a quarter of that width. Dan has already
+     reported this exact symptom once - "NEVER CUTTING OFF THE 446 PLAYING NOW
+     FONT" (2026-09-02) - and a tidier left edge is not worth re-shipping it.
+     The two lines that DO carry the gutter are the ones whose icons are
+     painted beside them.
+
+     AND THE BAY IS WIDER THAN IT WAS. Measured in a rendered card at three
+     widths rather than guessed: at left 43.6% / right 25% the string "1,204
+     PLAYING NOW" overflowed its box by a consistent 1.3% of its own width -
+     1px at 375, 3px at 768, 4px at 1024. Proportional, so it was a real
+     shortfall and not rounding.
+
+     The extra 2.8 points all come off the LEFT. The right edge cannot move:
+     24.4% puts this box's edge at 75.6% and the share button starts at 75.92%,
+     so any further and the count would run under the copy icon - which is the
+     other half of the complaint this is fixing. The left has room, because the
+     level box below the logo ends at 38.75%, and the two painted icons this
+     passes under sit ten points higher up.
+
+     AND IT IS MEASURED NOW, NOT GUESSED (Dan 2026-09-03: "THE W IN PLAYING NOW
+     IS CUT OFF"). Widening the bay is what was tried the last two times this
+     was reported, and it is no longer available: the right edge stops at the
+     painted copy frame, which starts at 78.58%. A fixed `cqw` cannot fit a
+     string that changes - a wider count, or a slightly wider font than the one
+     the number was picked against, clips it again. `--playing-size` is set by
+     the component from the text it actually laid out; see
+     fittedPlayingSizeCqw. The literal below is only the first paint and the
+     fallback for a card rendered without layout. */
+  left: 40.8%;
+  right: 24.4%;
+  top: 65.19%;
+  height: 15.88%;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   min-width: 0;
-  gap: 0.35em;
   overflow: hidden;
   color: #e5e8ec;
-  font-size: 3.15cqw;
+  font-size: var(--playing-size, 3.15cqw);
   font-weight: 650;
   line-height: 1;
   text-shadow: 0 2px 2px #000;
   text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* The measurable half, exactly as wide as the count plus the label. The gap
+   lives here rather than on the band so it scales with the fitted size. */
+.club-identity__playing-fit {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
   white-space: nowrap;
 }
 
@@ -334,16 +467,32 @@ button.club-identity__line {
   flex-shrink: 0;
 }
 
-/* Pinned to the copy frame painted in the artwork, in percentages, so the icon
-   sits inside its frame at every card size instead of walking out of it.
-   Dan 2026-09-02: "COPY BUTTON ICON NEEDS TO BE CENTERED IN THE FRAME." */
+/* THE BUTTON IS THE FRAME (Dan 2026-09-03: "THE COPY LINK NEEDS TO BE INSIDE
+   THE FRAME AND CENTERED").
+
+   The old box was 75.92-85.59% x 65.19-81.07%, centred at (80.76, 73.13). The
+   painted frame's silver stroke, measured off the shell at luminance > 150, is
+   x 1299-1414 and y 650-763 of 1653x951 - that is 78.58-85.60% and
+   68.35-80.34%, centred at (82.09, 74.34). So the button's centre sat 1.33
+   points left and 1.22 points high of the frame it was meant to fill: about
+   5px left and 2px up on a 383px card, which is exactly what the screenshot
+   shows.
+
+   Those old numbers came from the file header's ARTWORK ANCHORS, which list
+   the frame as "y 65.19-81.07, x 75.92-85.60" - a bounding box of the frame
+   PLUS its blue outer glow, not of the frame. The glow is not symmetric about
+   the stroke, so a box fitted to it cannot centre on it. The anchors are
+   corrected in the header too.
+
+   The button is now the frame's own rectangle, so `place-items: center` puts
+   the icon on the painted centre at every card width. */
 .club-identity__share {
   position: absolute;
   z-index: 2;
-  left: 75.92%;
-  top: 65.19%;
-  width: 9.68%;
-  height: 15.88%;
+  left: 78.58%;
+  top: 68.35%;
+  width: 7.02%;
+  height: 11.99%;
   display: grid;
   place-items: center;
   padding: 0;
@@ -356,11 +505,13 @@ button.club-identity__line {
   pointer-events: auto;
 }
 
-/* SVG is sized as a fraction of the button's own box (via cqw) so it stays
-   centred at every card width, matching the painted icon inside the frame. */
+/* Sized as a fraction of the CARD (cqw), like everything else here, so it
+   scales with the frame rather than against it. 3.7cqw inside a frame 7.02%
+   wide and 11.99% tall (19.1px at 383px) leaves a margin on every side; 4cqw
+   was 15.3px against a 19.1px opening and read as filling it. */
 .club-identity__share svg {
-  width: 4cqw;
-  height: 4cqw;
+  width: 3.7cqw;
+  height: 3.7cqw;
   display: block;
 }
 
@@ -370,14 +521,31 @@ button.club-identity__line {
    card. It replaces the old `@media (pointer: coarse)` rule that resized the
    BUTTON to 44x44px — on a 72px-tall card that was 61% of the card's height,
    and it is what pushed the copy icon out of its frame. */
+/* THE BAND REACHES UPWARD, BECAUSE DOWNWARD IS OUTSIDE THE CARD (2026-09-03).
+
+   It used to be centred on the button. Measured in the real fixture at a 375px
+   viewport: the card is 180.5 x 75.2 and the copy frame's centre is 74.34% down
+   it, so there are 19.3px of card beneath that centre - and the card is
+   `overflow: hidden`. A 44px band centred there hangs 22px below the centre,
+   and the bottom of it was being CLIPPED AWAY. The thumb target was never
+   really 44px; the spec that checks it probes centre+20px and was passing by
+   0.2px, which is not a passing test, it is a coin landing on its edge. Moving
+   the button onto the painted frame's true centre, 1.2 points lower, tipped
+   that coin and turned the spec red. That is how this was found.
+
+   Anchoring the band to the button's BOTTOM spends all 44px where there is card
+   to spend it: 16.4px to 60.4px in that fixture, entirely inside, rather than an
+   intended 33.9-77.9 of which the last 2.7px never existed. The reachable
+   target gets bigger, not smaller. Horizontally it stays centred, because there
+   is room on both sides. */
 .club-identity__share::after {
   content: '';
   position: absolute;
   left: 50%;
-  top: 50%;
+  bottom: 0;
   width: max(100%, 44px);
   height: max(100%, 44px);
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
 }
 
 .club-identity__share:active {

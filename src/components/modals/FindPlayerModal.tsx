@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import haptic from '../../services/HapticService';
 import {
+  EMPTY_AFFILIATIONS,
+  FUZZY_MIN_CHARS,
   PlayerSearchService,
+  type PlayerClubAffiliation,
   type PlayerPresenceFilter,
   type PlayerSearchResult,
   type PlayerSearchScope,
@@ -20,10 +23,19 @@ import styles from './FindPlayerModal.module.css';
 interface FindPlayerModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onMembershipRequired: (intent: { code: string; watchTableId: string }) => void;
+  /**
+   * watchTableId is null when the viewer asked to join a club from the affiliations
+   * panel rather than from a live game — there is no table to land on afterwards.
+   */
+  onMembershipRequired: (intent: { code: string; watchTableId: string | null }) => void;
 }
 
 const PAGE_SIZE = 20;
+/**
+ * Short enough to feel live, long enough that the trigram query is not re-issued
+ * on every keystroke of a fast typist.
+ */
+const SUGGEST_DEBOUNCE_MS = 180;
 
 export default function FindPlayerModal({
   isOpen,
@@ -149,12 +161,34 @@ export default function FindPlayerModal({
     setError(null);
     if (suggestionTimerRef.current) window.clearTimeout(suggestionTimerRef.current);
     suggestionAbortRef.current?.abort();
-    if (value.trim().length < 2) {
+    // Live fuzzy matching starts at the third character: that is the point where
+    // the server widens from substring to trigram similarity, so suggesting
+    // earlier would show a narrower result set than the one the user is about to
+    // get and make the list appear to shrink as they type.
+    if (value.trim().length < FUZZY_MIN_CHARS) {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
     }
-    suggestionTimerRef.current = window.setTimeout(() => fetchSuggestions(value.trim()), 300);
+    suggestionTimerRef.current = window.setTimeout(
+      () => fetchSuggestions(value.trim()),
+      SUGGEST_DEBOUNCE_MS
+    );
+  };
+
+  /** Join / apply to a club straight from the affiliations panel, with no table to return to. */
+  const handleClubJoin = (club: PlayerClubAffiliation) => {
+    if (club.viewer_action !== 'join' && club.viewer_action !== 'request_join') return;
+    haptic.selection();
+    ClubEntryTrustService.track('find', 'watch_membership_required', {
+      outcome: 'viewed',
+      metadata: { club_id: club.club_uuid, action: club.viewer_action, source: 'affiliations' },
+    });
+    onClose();
+    onMembershipRequired({
+      code: club.club_slug || String(club.club_id || '') || club.club_uuid,
+      watchTableId: null,
+    });
   };
 
   const chooseSuggestion = (player: PlayerSearchResult) => {
@@ -230,19 +264,38 @@ export default function FindPlayerModal({
     onClose();
   };
 
-  useDialogEscape(isOpen, () => (showAccessRules ? setShowAccessRules(false) : handleClose()));
+  /**
+   * Escape unwinds one layer at a time — access rules, then the suggestion list,
+   * then the locator itself. With the backdrop inert and no corner X, Escape is the
+   * only keyboard way out, so it must not slam the whole page shut on the keypress
+   * a user meant for the autocomplete.
+   */
+  useDialogEscape(isOpen, () => {
+    if (showAccessRules) {
+      setShowAccessRules(false);
+      return;
+    }
+    if (showSuggestions) {
+      setShowSuggestions(false);
+      return;
+    }
+    handleClose();
+  });
 
   if (!isOpen) return null;
 
   return (
-    <div className={styles.overlay} onClick={handleClose}>
+    // The backdrop is deliberately inert: the locator is a full-surface page and
+    // a stray click outside the panel must not dismiss a search in progress. The
+    // quiet exit at the bottom of the page is the mouse route out; Escape stays
+    // wired so keyboard and screen-reader users are never trapped in the dialog.
+    <div className={styles.overlay}>
       <div
         ref={trapRef}
         className={styles.modalContainer}
         role="dialog"
         aria-modal="true"
         aria-labelledby="find-player-title"
-        onClick={(event) => event.stopPropagation()}
       >
         <div className={styles.modalContent}>
           <div className={styles.scrollBody}>
@@ -303,7 +356,9 @@ export default function FindPlayerModal({
                       if (showSuggestions && highlightedIndex >= 0)
                         chooseSuggestion(suggestions[highlightedIndex]);
                       else runSearch(searchQuery);
-                    } else if (event.key === 'Escape') setShowSuggestions(false);
+                    }
+                    // Escape is handled once, by useDialogEscape, so the dropdown
+                    // and the dialog cannot both react to the same keypress.
                   }}
                   onFocus={() => suggestions.length && setShowSuggestions(true)}
                   aria-label="Player Name, Poker Alias, Or Number"
@@ -424,6 +479,9 @@ export default function FindPlayerModal({
                         </span>
                         <span className={styles.relationshipBadge}>{player.relationship}</span>
                       </button>
+
+                      <PlayerAffiliations player={player} onJoinClub={handleClubJoin} />
+
                       {player.sensitive_accounts.length > 0 && (
                         <section className={styles.accountAccess}>
                           <button
@@ -484,21 +542,35 @@ export default function FindPlayerModal({
                       )}
                       {player.tables.length > 0 && (
                         <div className={styles.tablesList}>
+                          <span className={styles.tablesHeading}>
+                            Playing Now - {player.tables.length} Live Game
+                            {player.tables.length === 1 ? '' : 's'}
+                          </span>
                           {player.tables.map((table) => (
                             <button
                               key={table.id}
                               className={styles.tableCard}
+                              data-locked={!table.can_watch || undefined}
                               onClick={() => void handleTableClick(table)}
                               disabled={verifyingTableId !== null}
                             >
                               <span className={styles.tableInfo}>
+                                <span className={styles.tableKind} data-kind={gameKind(table)}>
+                                  {table.is_tournament ? 'Tournament' : 'Cash Game'}
+                                </span>
                                 <span className={styles.tableName}>{table.name}</span>
                                 <span className={styles.tableDetails}>
                                   {table.game_variant} • {table.stakes}
                                   {table.club_name && ` • ${table.club_name}`}
                                 </span>
+                                {!table.can_watch && (
+                                  <span className={styles.tableGateNote}>{gateCopy(table)}</span>
+                                )}
                               </span>
-                              <span className={styles.watchButton}>
+                              <span
+                                className={styles.watchButton}
+                                data-action={table.can_watch ? 'open' : table.access_action}
+                              >
                                 {verifyingTableId === table.table_id
                                   ? 'Verifying Access…'
                                   : watchLabel(table)}
@@ -522,15 +594,22 @@ export default function FindPlayerModal({
               )}
               {!error && !isSearching && !lastCompletedQueryRef.current && (
                 <div className={styles.hintMessage}>
-                  <p>Search By Alias, Display Name, Or Player Number.</p>
+                  <p>
+                    Search By Alias, Display Name, Or Player Number. Close Matches Appear After{' '}
+                    {FUZZY_MIN_CHARS} Letters - Spelling Does Not Have To Be Exact.
+                  </p>
                 </div>
               )}
             </div>
           </div>
 
           <footer className={styles.pageFooter}>
-            <button className={styles.closeButton} onClick={handleClose}>
-              Close Locator
+            <button
+              className={styles.closeButton}
+              onClick={handleClose}
+              aria-label="Close The Player Locator"
+            >
+              Exit Locator
             </button>
           </footer>
         </div>
@@ -540,20 +619,153 @@ export default function FindPlayerModal({
 }
 
 function presenceCopy(player: PlayerSearchResult): string {
-  if (player.tables.length)
-    return `Playing At ${player.tables.length} Table${player.tables.length === 1 ? '' : 's'}`;
+  const tournaments = player.tables.filter((table) => table.is_tournament).length;
+  const cash = player.tables.length - tournaments;
+  if (player.tables.length) {
+    const parts: string[] = [];
+    if (cash) parts.push(`${cash} Cash Game${cash === 1 ? '' : 's'}`);
+    if (tournaments) parts.push(`${tournaments} Tournament${tournaments === 1 ? '' : 's'}`);
+    return `Playing Now - ${parts.join(' And ')}`;
+  }
+  // Seated somewhere the viewer is not allowed to see (anonymous or hidden table).
   if (player.presence_status === 'playing') return 'Playing Now';
   if (player.presence_status === 'online') return 'Online';
   return 'Offline';
 }
 
+function gameKind(table: PlayerSearchTable): 'tournament' | 'cash' {
+  return table.is_tournament ? 'tournament' : 'cash';
+}
+
 function watchLabel(table: PlayerSearchTable): string {
-  if (table.can_watch) return table.access_action === 'play' ? 'Return' : 'Watch';
-  if (table.access_action === 'request_join') return 'Request To Join';
-  if (table.access_action === 'join') return 'Join To Watch';
+  if (table.can_watch) return table.access_action === 'play' ? 'Return To Seat' : 'Observe Table';
+  if (table.access_action === 'request_join') return 'Apply To Join';
+  if (table.access_action === 'join') return 'Join Club';
   if (table.access_action === 'pending') return 'Request Pending';
   if (table.access_action === 'observers_restricted') return 'Observers Off';
   return 'Unavailable';
+}
+
+/**
+ * Why this game cannot be opened yet, in the viewer's own terms. The point is that
+ * a locked card still tells you exactly what to do next rather than dead-ending.
+ */
+function gateCopy(table: PlayerSearchTable): string {
+  const club = table.club_name || 'This Club';
+  switch (table.access_action) {
+    case 'join':
+      return `Members Only - Join ${club} To Observe This Table.`;
+    case 'request_join':
+      return `Members Only - ${club} Is Gated. Apply To Join And Wait For Approval Before You Can Observe.`;
+    case 'pending':
+      return `Your Request To Join ${club} Is Awaiting Approval.`;
+    case 'observers_restricted':
+      return 'This Table Has Turned Observers Off.';
+    default:
+      return `You Cannot Enter ${club} Right Now.`;
+  }
+}
+
+function clubActionLabel(action: PlayerClubAffiliation['viewer_action']): string {
+  switch (action) {
+    case 'member':
+      return 'Your Club';
+    case 'pending':
+      return 'Approval Pending';
+    case 'request_join':
+      return 'Apply To Join';
+    case 'join':
+      return 'Join';
+    default:
+      return 'Closed';
+  }
+}
+
+/** Clubs and unions the searched player belongs to, with the viewer's own way in. */
+function PlayerAffiliations({
+  player,
+  onJoinClub,
+}: {
+  player: PlayerSearchResult;
+  onJoinClub: (club: PlayerClubAffiliation) => void;
+}) {
+  // A player row can arrive without affiliations from an older cached bundle or a
+  // half-rolled-out RPC. Falling back keeps the whole result list rendering instead
+  // of blanking the modal on a destructure.
+  const { clubs, unions, hidden_count: hiddenCount } = player.affiliations || EMPTY_AFFILIATIONS;
+  if (!clubs.length && !unions.length && !hiddenCount) return null;
+
+  return (
+    <section
+      className={styles.affiliations}
+      aria-label={`Clubs And Unions For ${player.display_name || player.username}`}
+    >
+      {clubs.length > 0 && (
+        <div className={styles.affiliationGroup}>
+          <span className={styles.affiliationLabel}>Clubs</span>
+          <ul className={styles.affiliationList}>
+            {clubs.map((club) => {
+              const joinable =
+                club.viewer_action === 'join' || club.viewer_action === 'request_join';
+              return (
+                <li key={club.club_uuid}>
+                  {joinable ? (
+                    <button
+                      type="button"
+                      className={styles.affiliationChip}
+                      data-action={club.viewer_action}
+                      onClick={() => onJoinClub(club)}
+                      title={
+                        club.viewer_action === 'request_join'
+                          ? `${club.club_name} Is Gated - Apply And Wait For Approval`
+                          : `Join ${club.club_name}`
+                      }
+                    >
+                      <span className={styles.affiliationName}>{club.club_name}</span>
+                      <span className={styles.affiliationAction}>
+                        {clubActionLabel(club.viewer_action)}
+                      </span>
+                    </button>
+                  ) : (
+                    <span className={styles.affiliationChip} data-action={club.viewer_action}>
+                      <span className={styles.affiliationName}>{club.club_name}</span>
+                      <span className={styles.affiliationAction}>
+                        {clubActionLabel(club.viewer_action)}
+                      </span>
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {unions.length > 0 && (
+        <div className={styles.affiliationGroup}>
+          <span className={styles.affiliationLabel}>Unions</span>
+          <ul className={styles.affiliationList}>
+            {unions.map((union) => (
+              <li key={union.union_id}>
+                <span className={styles.affiliationChip} data-action="union">
+                  <span className={styles.affiliationName}>{union.union_name}</span>
+                  {union.union_code && (
+                    <span className={styles.affiliationAction}>#{union.union_code}</span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {hiddenCount > 0 && (
+        <p className={styles.affiliationHidden}>
+          {hiddenCount} Private Club{hiddenCount === 1 ? '' : 's'} Not Shown.
+        </p>
+      )}
+    </section>
+  );
 }
 
 function chips(value: number): string {

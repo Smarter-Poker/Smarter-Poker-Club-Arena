@@ -16,6 +16,7 @@
 import { supabase } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { fetchAllRows } from './supabase/pagination.js';
+import { IN_LIST_CHUNK, selectInChunks } from './supabase/chunkedIn.js';
 import { reportError } from './errorReporter.js';
 import nodeCrypto from 'node:crypto';
 import {
@@ -3757,12 +3758,37 @@ export class TournamentRecurringService {
       if (tErr || !cashTables || cashTables.length === 0) return 0;
 
       const ids = cashTables.map((t) => (t as { id: string }).id);
-      const { count: seated, error: sErr } = await supabase
-        .from('table_seats')
-        .select('user_id', { count: 'exact', head: true })
-        .is('left_at', null)
-        .in('table_id', ids);
-      if (sErr || typeof seated !== 'number') return 0;
+      /* CHUNKED, AND A FAILED READ IS REPORTED (2026-09-03). `ids` is up to
+         2,000 live cash tables by the limit above, and the floor measured
+         1,131 the day this was written - one `.in()` that long is past the
+         ~675-id ceiling PostgREST accepts in a URL, so this answered HTTP 400
+         and returned 0. Zero here means "reserve nobody for the cash room",
+         which lets tournaments claim every free horse: exactly the drain the
+         surrounding comments blame for emptying the cash floor on 2026-08-31.
+         It still fails OPEN by design, but it no longer fails SILENTLY. */
+      let seated = 0;
+      let sErr: { message: string } | null = null;
+      for (let i = 0; i < ids.length; i += IN_LIST_CHUNK) {
+        const { count: c, error: e } = await supabase
+          .from('table_seats')
+          .select('user_id', { count: 'exact', head: true })
+          .is('left_at', null)
+          .in('table_id', ids.slice(i, i + IN_LIST_CHUNK));
+        if (e || typeof c !== 'number') {
+          sErr = e ?? { message: 'no count returned' };
+          break;
+        }
+        seated += c;
+      }
+      if (sErr) {
+        reportError(
+          new Error(
+            `[TournamentRecurring] cash-floor reserve could not count seats across ${ids.length} table(s): ${sErr.message} - reserving nobody this pass`
+          ),
+          'TournamentRecurring.cash_floor_reserve_read_failed'
+        );
+        return 0;
+      }
 
       const wanted = ids.length * CASH_FLOOR_PER_TABLE;
       return Math.max(0, wanted - seated);

@@ -17,6 +17,7 @@ import { supabase, atomicCashout } from './supabase.js';
 import { isMaintenanceFrozen } from '../maintenance/freezeState.js';
 import { fetchAllRows } from './supabase/pagination.js';
 import { reportError } from './errorReporter.js';
+import { IN_LIST_CHUNK, selectInChunks } from './supabase/chunkedIn.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -128,14 +129,24 @@ export class HorseLifecycleManager {
 
           if (!players || players.length === 0) continue;
 
-          const playerIds = players.map((p) => p.user_id);
-          const { data: profiles } = await supabase
-            .from('profiles')
-            .select('id')
-            .in('id', playerIds)
-            .eq('is_horse', true);
+          /* CHUNKED, AND AN UNREADABLE FIELD IS NOT AN EMPTY ONE (2026-09-03).
+             `playerIds` is every registration in a finished event and this
+             platform runs 500- and 1,000-seat fields (a 497-entrant freeroll
+             is on record), so one `.in()` here goes past the ~675-id ceiling
+             PostgREST accepts in a URL and answers HTTP 400. The error was
+             discarded and an empty result `continue`d - which is exactly what
+             "no horses in this field" looks like, so the lifecycle reset and
+             the cleanup below simply stopped happening after big events, and
+             tournament_players rows accumulated for good. */
+          const profileRead = await selectInChunks<{ id: string }>(
+            players.map((p) => p.user_id),
+            (batch) => supabase.from('profiles').select('id').in('id', batch).eq('is_horse', true),
+            `HorseLifecycle.horsesInField(${String(tournament.id).slice(0, 8)})`
+          );
+          if (!profileRead.complete) continue; // try again next pass, do not half-clean
+          const profiles = profileRead.rows;
 
-          if (!profiles || profiles.length === 0) continue;
+          if (profiles.length === 0) continue;
 
           for (const profile of profiles) {
             const reset = await this.evaluateHorseStatus(profile.id);
@@ -148,15 +159,26 @@ export class HorseLifecycleManager {
             }
           }
 
-          // Clean up tournament_players for horses
-          await supabase
-            .from('tournament_players')
-            .delete()
-            .eq('tournament_id', tournament.id)
-            .in(
-              'user_id',
-              profiles.map((p) => p.id)
-            );
+          // Clean up tournament_players for horses - chunked for the same
+          // reason as the read above, and this one had no error handling at
+          // all (not even a discarded destructure).
+          const horseIdsInField = profiles.map((p) => p.id);
+          for (let i = 0; i < horseIdsInField.length; i += IN_LIST_CHUNK) {
+            const { error: delErr } = await supabase
+              .from('tournament_players')
+              .delete()
+              .eq('tournament_id', tournament.id)
+              .in('user_id', horseIdsInField.slice(i, i + IN_LIST_CHUNK));
+            if (delErr) {
+              reportError(
+                new Error(
+                  `[HorseLifecycle] cleanup delete failed for ${String(tournament.id).slice(0, 8)} at chunk ${i}: ${delErr.message}`
+                ),
+                'HorseLifecycle.cleanup_delete_failed'
+              );
+              break;
+            }
+          }
         } catch (err) {
           reportError(err, 'Lifecycle.Error_processing_tournament_to');
         }

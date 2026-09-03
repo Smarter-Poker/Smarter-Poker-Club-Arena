@@ -12,6 +12,7 @@ import nodeCrypto from 'node:crypto';
 import { supabase } from '../services/supabase.js';
 import { raiseFinancialAlert } from '../services/financialAlerts.js';
 import { reportError } from '../services/errorReporter.js';
+import { IN_LIST_CHUNK } from '../services/supabase/chunkedIn.js';
 import {
   mysteryChestHoldMs,
   mysteryChestPostRevealMs,
@@ -1401,16 +1402,35 @@ export abstract class TournamentManagerEliminations extends TournamentManagerBas
         return;
       }
 
-      const { error: seatErr } = await supabase
-        .from('table_seats')
-        .update({ left_at: new Date().toISOString() })
-        .eq('user_id', userId)
-        .in('table_id', tournamentTableIds)
-        .is('left_at', null);
+      /* CHUNKED, like the sweep 1,000 lines above in this same class - which
+         defines its own chunk for exactly this reason and is pinned by
+         eliminationSweepReadsAreIndexed.law.test.ts ("bounds the IN list so a
+         1,076-table field cannot build an unbounded query"). This write was
+         not, so on the biggest fields the busted player's seat was never
+         stamped left_at: a ghost holding the felt, and a seat-first counter
+         that reads left_at IS NULL counting it forever. Reported through
+         reportError now as well - console.error alone never reaches the
+         reporter. */
+      let seatErr: { message: string } | null = null;
+      for (let i = 0; i < tournamentTableIds.length; i += IN_LIST_CHUNK) {
+        const { error: e } = await supabase
+          .from('table_seats')
+          .update({ left_at: new Date().toISOString() })
+          .eq('user_id', userId)
+          .in('table_id', tournamentTableIds.slice(i, i + IN_LIST_CHUNK))
+          .is('left_at', null);
+        if (e) {
+          seatErr = e;
+          break;
+        }
+      }
 
       if (seatErr) {
-        console.error(
-          `[Tournament:${this.tournamentId.slice(0, 8)}] seat release FAILED for ${userId.slice(0, 8)} - ${seatErr.message}`
+        reportError(
+          new Error(
+            `[Tournament:${this.tournamentId.slice(0, 8)}] seat release FAILED for ${userId.slice(0, 8)} - ${seatErr.message}`
+          ),
+          'Tournament.seat_release_failed'
         );
       }
 

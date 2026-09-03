@@ -12,6 +12,11 @@ import { supabase } from '../lib/supabase';
 import { readLocalSession } from '../lib/authUtils';
 import { blockService } from './BlockService';
 import { QUERY_LIMITS } from '../lib/constants';
+import {
+  playerDisplayName,
+  PLAYER_NAME_COLUMNS,
+  type NameableProfile,
+} from '../utils/playerDisplayName';
 import { reportError } from '../utils/errorReporter';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -23,10 +28,9 @@ interface FriendshipRow {
   friend_id?: string;
 }
 
-interface ProfileRow {
+interface ProfileRow extends NameableProfile {
   id: string;
   username: string;
-  display_name?: string | null;
   avatar_url?: string | null;
   is_online?: boolean;
 }
@@ -205,7 +209,7 @@ class FriendSuggestionServiceClass {
         try {
           const { data: profiles } = await supabase
             .from('profiles')
-            .select('id, username, display_name, avatar_url, is_online')
+            .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url, is_online`)
             .in('id', [...new Set(userIds)]);
           if (profiles) {
             for (const p of profiles) profileMap[p.id] = p as ProfileRow;
@@ -220,8 +224,8 @@ class FriendSuggestionServiceClass {
         const userId = m.user_id as string;
         return {
           userId,
-          username: profileMap[userId]?.username || 'Unknown',
-          displayName: profileMap[userId]?.display_name ?? undefined,
+          username: playerDisplayName(profileMap[userId]),
+          displayName: playerDisplayName(profileMap[userId]),
           avatarUrl: profileMap[userId]?.avatar_url ?? undefined,
           isOnline: profileMap[userId]?.is_online || false,
           score: 0,
@@ -271,7 +275,7 @@ class FriendSuggestionServiceClass {
         .select(
           `
           user_id,
-          profiles:user_id!inner(username, display_name, avatar_url, is_online, is_horse)
+          profiles:user_id!inner(${PLAYER_NAME_COLUMNS}, avatar_url, is_online, is_horse)
         `
         )
         .in('table_id', tableIds)
@@ -291,8 +295,8 @@ class FriendSuggestionServiceClass {
         })
         .map((o: any) => ({
           userId: o.user_id as string,
-          username: o.profiles?.username || 'Unknown',
-          displayName: o.profiles?.display_name ?? undefined,
+          username: playerDisplayName(o.profiles),
+          displayName: playerDisplayName(o.profiles),
           avatarUrl: o.profiles?.avatar_url ?? undefined,
           isOnline: o.profiles?.is_online || false,
           score: 0,

@@ -14,6 +14,7 @@ import { supabase } from '../lib/supabase';
 import { FinancialAlertService } from './FinancialAlertService';
 import { masterBus } from '../core/MasterBus';
 import { resolveClubUUID } from '../utils/clubIdResolver';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 import { QUERY_LIMITS } from '../lib/constants';
 import { reportError } from '../utils/errorReporter';
 
@@ -88,11 +89,11 @@ export const DisputeService = {
     // Get submitter name
     const { data: profile } = await supabase
       .from('profiles')
-      .select('display_name, username')
+      .select(PLAYER_NAME_COLUMNS)
       .eq('id', userId)
       .maybeSingle();
 
-    const submitterName = profile?.display_name || profile?.username || 'Unknown';
+    const submitterName = playerDisplayName(profile);
 
     const { data, error } = await supabase
       .from('disputes')

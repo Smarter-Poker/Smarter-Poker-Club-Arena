@@ -36,6 +36,7 @@ import { sanitizeInput } from '../utils/sanitizeInput';
 import { reportError } from '../utils/errorReporter';
 import { fetchAllRows } from '../utils/fetchAllRows';
 import { gameManagementService } from '../services/GameManagementService';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../utils/playerDisplayName';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -570,6 +571,8 @@ export default function ClubDetailPage() {
           setPendingMembers(
             (data || []).map((m: any) => ({
               userId: m.user_id,
+              /* fn_list_pending_members resolves the arena name server-side
+                 now, so display_name here is already the alias. */
               username: m.display_name || m.username || 'Unknown',
               role: m.role || 'member',
               joinedAt: m.created_at,
@@ -816,7 +819,7 @@ export default function ClubDetailPage() {
         if (mUserIds.length > 0) {
           const { data: mProfiles } = await supabase
             .from('profiles')
-            .select('id, username, display_name')
+            .select(`id, ${PLAYER_NAME_COLUMNS}`)
             .in('id', mUserIds);
           if (mProfiles) {
             for (const p of mProfiles) memberProfileMap[p.id] = p;
@@ -824,10 +827,7 @@ export default function ClubDetailPage() {
         }
         const mappedMembersResult: ClubMember[] = memberData.map((m: any) => ({
           id: m.user_id,
-          username:
-            memberProfileMap[m.user_id]?.display_name ||
-            memberProfileMap[m.user_id]?.username ||
-            'Unknown',
+          username: playerDisplayName(memberProfileMap[m.user_id]),
           role: m.role || 'member',
           chipBalance: m.chip_balance || 0,
           status: m.status || 'active',

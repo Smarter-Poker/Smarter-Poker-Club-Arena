@@ -12,6 +12,7 @@ import { resolveClubUUID } from '../../utils/clubIdResolver';
 import { AgentService } from '../../services/AgentService';
 import styles from './PlayerInviteModal.module.css';
 import { reportError } from '../../utils/errorReporter';
+import { playerDisplayName, PLAYER_NAME_COLUMNS } from '../../utils/playerDisplayName';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -94,8 +95,13 @@ export default function PlayerInviteModal({
       // Search profiles by username or display name
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, username, display_name, avatar_url:arena_avatar_url, email')
-        .or(`username.ilike.%${searchQuery}%,display_name.ilike.%${searchQuery}%`)
+        .select(`id, ${PLAYER_NAME_COLUMNS}, avatar_url:arena_avatar_url, email`)
+        /* Searching by real name stays: a lookup is not a disclosure, and an
+           owner inviting someone they know by name needs it. What comes BACK
+           is the arena name. */
+        .or(
+          `username.ilike.%${searchQuery}%,display_name.ilike.%${searchQuery}%,alias.ilike.%${searchQuery}%`
+        )
         .limit(10);
 
       if (error) throw error;
@@ -114,7 +120,7 @@ export default function PlayerInviteModal({
           .map((p) => ({
             id: p.id,
             username: p.username,
-            displayName: p.display_name || p.username,
+            displayName: playerDisplayName(p),
             avatarUrl: p.avatar_url,
             email: p.email,
           }))

@@ -9,8 +9,17 @@
  * The rake schedule is declared in two places that cannot import each other,
  * because the client and the engine are separate builds:
  *
- *   server/src/config/RakeConfig.ts   RAKE_SCHEDULE  <- AUTHORITATIVE. What is
+ *   server/src/config/rakeSpec.ts     SCHEDULE       <- AUTHORITATIVE. What is
  *                                                       actually taken from pots.
+ *                                                       (Until 2026-09-02 this
+ *                                                       literal lived in
+ *                                                       server/src/config/RakeConfig.ts
+ *                                                       as RAKE_SCHEDULE; that file
+ *                                                       now re-exports RAKE_SPEC.schedule
+ *                                                       and holds no literal, so an
+ *                                                       anchor on RAKE_SCHEDULE there
+ *                                                       reads the type annotation's
+ *                                                       `[]` and parses garbage.)
  *   src/config/RakeConfig.ts          RAKE_SCHEDULE  <- what players are SHOWN
  *                                                       in the Game Rules modal.
  *
@@ -40,7 +49,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '../..');
 
 const CLIENT = resolve(REPO, 'src/config/RakeConfig.ts');
-const SERVER = resolve(REPO, 'server/src/config/RakeConfig.ts');
+const SERVER = resolve(REPO, 'server/src/config/rakeSpec.ts');
 
 /**
  * Pull the RAKE_SCHEDULE array literal out of a TS source file and parse each
@@ -48,11 +57,12 @@ const SERVER = resolve(REPO, 'server/src/config/RakeConfig.ts');
  * Deliberately regex-based: this must run in CI with no build step and no
  * TypeScript loader, against both the client and the server config.
  */
-function extractSchedule(file) {
+function extractSchedule(file, anchor) {
   const src = readFileSync(file, 'utf8');
-  const start = src.indexOf('RAKE_SCHEDULE');
-  if (start === -1) throw new Error(`RAKE_SCHEDULE not found in ${file}`);
-  const open = src.indexOf('[', start);
+  const start = src.indexOf(anchor);
+  if (start === -1) throw new Error(`${anchor} not found in ${file}`);
+  // The literal's own `= [`, never the `[]` of a type annotation.
+  const open = src.indexOf('= [', start);
   const close = src.indexOf('];', open);
   if (open === -1 || close === -1) throw new Error(`Could not bound RAKE_SCHEDULE in ${file}`);
   const body = src.slice(open, close);
@@ -75,8 +85,8 @@ const fmt = (e) => FIELDS.map((f) => `${f}=${e[f]}`).join(' ');
 
 let client, server;
 try {
-  client = extractSchedule(CLIENT);
-  server = extractSchedule(SERVER);
+  client = extractSchedule(CLIENT, 'RAKE_SCHEDULE');
+  server = extractSchedule(SERVER, 'const SCHEDULE');
 } catch (err) {
   console.error(`\nRAKE SCHEDULE PARITY: could not read a schedule.\n  ${err.message}\n`);
   process.exit(1);

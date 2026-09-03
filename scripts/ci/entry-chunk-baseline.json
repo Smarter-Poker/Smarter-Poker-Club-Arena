@@ -1,5 +1,5 @@
 {
-  "entry_gz_kb": 151,
+  "entry_gz_kb": 152,
   "modules": [
     "src/App.tsx",
     "src/components/ConnectionStatusBar.tsx",
@@ -187,6 +187,7 @@
     "src/utils/colorContrast.ts",
     "src/utils/errorReporter.ts",
     "src/utils/formatGameTitle.ts",
+    "src/utils/freeBuy.ts",
     "src/utils/lazyWithRetry.ts",
     "src/utils/mediaBase.ts",
     "src/utils/overlayAnnouncements.ts",

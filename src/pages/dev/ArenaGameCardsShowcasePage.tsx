@@ -126,7 +126,12 @@ function MobileLobbyReview({
               className="lobby-top__identity"
               clubName="Shark Club"
               logoUrl={`${MOBILE_REVIEW_ROOT}images/shark-club-logo.jpg`}
-              pokerAlias="Dan Bekavac"
+              /* A HANDLE, not a real name. The prop is called `pokerAlias`, and
+                 this showcase is what the next person copies from - seeding it
+                 with "Dan Bekavac" is the habit that put a legal name on the
+                 club card. Dan 2026-09-02: "THE REAL NAME SHOULD NEVER BE
+                 DISPLAYED, IT SHOULD ALWAYS BE USING THE POKER ALIAS." */
+              pokerAlias="KingFish"
               clubId="25450"
               playerId="1"
               playersPlaying={223}

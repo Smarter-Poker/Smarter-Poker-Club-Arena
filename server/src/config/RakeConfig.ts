@@ -4,7 +4,14 @@
  * ═══════════════════════════════════════════════════════════════════════════════
  *
  * Ported from client `src/config/RakeConfig.ts` — the AUTHORITATIVE rake schedule.
- * This is the SINGLE SOURCE OF TRUTH for all rake and BBJ calculations on the server.
+ *
+ * 2026-09-02 (Chip Accounting Standard, R7): every NUMBER in this file now
+ * comes from `rakeSpec.ts`, the one rake specification the engine and the
+ * database both read. The schedule, the tiers, the player-count cap factors,
+ * the heads-up percent, the BBJ collection gates and the override ceilings
+ * are re-exported from RAKE_SPEC so a change lands in exactly one place and
+ * the boot checksum (`fn_rake_spec_checksum()`) can see it. This file keeps
+ * the LOOKUP and BBJ-DETECTION logic; the data lives next door.
  *
  * OFFICIAL RAKE SCHEDULE (all cash games):
  *   - All stakes: 10% rake
@@ -28,31 +35,20 @@
 
 // BBJ AUDIT FIX 2026-08-18: enforce Dan's 'both cards from hand must play'.
 import { evaluateHand, compareHands } from '../engine/PokerEngine.js';
+import {
+  RAKE_SPEC,
+  capsByPlayersDealt,
+  scheduleMatch,
+  tierForBB,
+  unscheduledCapFor as specUnscheduledCapFor,
+} from './rakeSpec.js';
+import type { RakeScheduleEntry, StakesTier } from './rakeSpec.js';
+
+export type { RakeScheduleEntry, StakesTier } from './rakeSpec.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════════════════
-
-export interface RakeScheduleEntry {
-  sb: number;
-  bb: number;
-  rakePercent: number;
-  rakeCap: number;
-  bbjFeeBB: number;
-}
-
-export interface StakesTier {
-  label: string;
-  blindRange: string;
-  minBB: number;
-  maxBB: number;
-  rakePercent: number;
-  rakeCap: number;
-  rakeCapBB: number;
-  bbjFeeBB: number;
-  /** % of BBJ pool paid out when jackpot hits at this stakes level */
-  bbjPayoutTotalPercent: number;
-}
 
 export interface BBJQualifyingHand {
   label: string;
@@ -90,89 +86,22 @@ export interface ServerRakeConfigResult {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// OFFICIAL RAKE SCHEDULE — Per-stakes lookup table
+// OFFICIAL RAKE SCHEDULE — lives in rakeSpec.ts (with its history and Dan's
+// rulings). Re-exported here so every existing import keeps working.
 // rakeCap is an ABSOLUTE DOLLAR AMOUNT (not BB-based).
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const RAKE_SCHEDULE: RakeScheduleEntry[] = [
-  { sb: 0.1, bb: 0.2, rakePercent: 10, rakeCap: 3, bbjFeeBB: 0.6 },
-  { sb: 0.2, bb: 0.4, rakePercent: 10, rakeCap: 3, bbjFeeBB: 0.6 },
-  { sb: 0.25, bb: 0.5, rakePercent: 10, rakeCap: 3, bbjFeeBB: 0.6 },
-  { sb: 0.3, bb: 0.6, rakePercent: 10, rakeCap: 5, bbjFeeBB: 0.6 },
-  { sb: 0.5, bb: 1.0, rakePercent: 10, rakeCap: 5, bbjFeeBB: 0.25 },
-  { sb: 1, bb: 2, rakePercent: 10, rakeCap: 5, bbjFeeBB: 0.25 },
-  { sb: 2, bb: 4, rakePercent: 10, rakeCap: 7.5, bbjFeeBB: 0.12 },
-  { sb: 2, bb: 5, rakePercent: 10, rakeCap: 7.5, bbjFeeBB: 0.12 },
-  // A 5/5 row sat here until 2026-09-01 (sb 5, bb 5). Nothing could ever
-  // match it: fn_tables_creation_guard refuses a cash table whose big blind
-  // does not exceed its small blind, so no 5/5 table has ever existed and no
-  // hand was ever priced by it. It also sorted out of order, between 2/5 and
-  // 3/6, which is the tell that it was a typo placed by big blind. Dan ruled
-  // it a typo; deleted, not legalised. Do not re-add it - if a 5-small-blind
-  // stake is wanted, 5/10 already exists and 2.5/5 would fit the ladder.
-  // Removed from the DB mirror by
-  // supabase/migrations/20260901050000_the_rake_row_no_table_can_match.sql.
-  { sb: 3, bb: 6, rakePercent: 10, rakeCap: 8, bbjFeeBB: 0.12 },
-  { sb: 4, bb: 8, rakePercent: 10, rakeCap: 10, bbjFeeBB: 0.12 },
-  { sb: 5, bb: 10, rakePercent: 10, rakeCap: 12.5, bbjFeeBB: 0.06 },
-  { sb: 10, bb: 20, rakePercent: 10, rakeCap: 15, bbjFeeBB: 0.06 },
-  { sb: 10, bb: 25, rakePercent: 10, rakeCap: 15, bbjFeeBB: 0.06 },
-  // ── ADDED 2026-08-31 (Dan, binding) ──────────────────────────────────────
-  // Dan: "WE HAVE A SCALE THAT WE USE FOR THE CASH GAME FOR RAKE AND BBJ, USE
-  // THE SAME PERCENTAGES WE USE FOR THE OTHER GAMES, IF YOU DON'T HAVE A RAKE
-  // OR BBJ SCHEDULE FOR A SPECIFIC GAME."
-  //
-  // Six of the twelve blind presets the create-table form offers had no row
-  // here, so findScheduleMatch returned null and the price fell through to
-  // getTierForBB - a tier whose cap is an ABSOLUTE DOLLAR AMOUNT applied
-  // regardless of stake. At the bottom of the ladder that is not a small
-  // discrepancy, it is an order of magnitude:
-  //
-  //     0.01/0.02   $3 flat  =  150 BB
-  //     0.02/0.05   $3 flat  =   60 BB
-  //     0.05/0.10   $3 flat  =   30 BB   <- THE DEFAULT PRESET
-  //     0.10/0.25   $3 flat  =   12 BB
-  //
-  // against a published ladder whose most generous row (0.1/0.2) is 15 BB and
-  // whose typical row is 1-6 BB. The DB creation guard had declined to police
-  // this in as many words: "NOT enforced here and left for Dan: the official
-  // stakes schedule."
-  //
-  // HOW THESE NUMBERS WERE DERIVED - no rate is invented:
-  //   rakePercent  10 at every stake, as every existing row already is.
-  //   rakeCap      the same BB proportion the schedule's own cheapest
-  //                published row charges (0.1/0.2 at $3 = 15 BB), so the
-  //                three sub-0.2 stakes are 15 BB in dollars. 0.10/0.25 sits
-  //                inside the schedule's existing flat-$3 band (0.2, 0.4 and
-  //                0.5 are all $3) and takes $3. The two nosebleed rows take
-  //                the Nosebleeds tier's own $20, which is what they are
-  //                charged today - adding the row changes no price, it just
-  //                makes the price published rather than inherited.
-  //   bbjFeeBB     the tier's fee for that stake, unchanged: Nano/Micro 0.6,
-  //                Nosebleeds 0.03.
-  //
-  // LIVE EFFECT, measured against production before committing: of 972 cash
-  // tables, exactly TWO sit on a stake whose price moves - the two at
-  // 0.05/0.10, whose cap falls $3 -> $1.50. Both are closed. Every other live
-  // stake was already on the schedule and is untouched. No player pays more.
-  { sb: 0.01, bb: 0.02, rakePercent: 10, rakeCap: 0.3, bbjFeeBB: 0.6 },
-  { sb: 0.02, bb: 0.05, rakePercent: 10, rakeCap: 0.75, bbjFeeBB: 0.6 },
-  { sb: 0.05, bb: 0.1, rakePercent: 10, rakeCap: 1.5, bbjFeeBB: 0.6 },
-  { sb: 0.1, bb: 0.25, rakePercent: 10, rakeCap: 3, bbjFeeBB: 0.6 },
-  { sb: 25, bb: 50, rakePercent: 10, rakeCap: 20, bbjFeeBB: 0.03 },
-  { sb: 50, bb: 100, rakePercent: 10, rakeCap: 20, bbjFeeBB: 0.03 },
-];
+export const RAKE_SCHEDULE: readonly RakeScheduleEntry[] = RAKE_SPEC.schedule;
 
 // FIX 166: Bible V8 §7.19 / §2.9 — Player-count-based rake caps.
 // Standard poker rule: heads-up and short-handed games get lower rake caps.
 // Each entry defines a player threshold and its corresponding cap MULTIPLIER.
 // The engine finds the highest tier where playerCount >= players, then applies: cap × multiplier.
+// Factors (0.5 heads-up, 0.67 three-handed, full at 4+) are RAKE_SPEC.rules;
+// the derivation is capsByPlayersDealt so `ca_rake_schedule_caps` and this
+// list are one computation.
 export function getPlayerCountCaps(fullCap: number): { players: number; cap: number }[] {
-  return [
-    { players: 2, cap: Math.round(fullCap * 0.5 * 100) / 100 }, // Heads-up: 50% of cap
-    { players: 3, cap: Math.round(fullCap * 0.67 * 100) / 100 }, // 3-handed: 67% of cap
-    { players: 4, cap: fullCap }, // 4+ players: full cap
-  ];
+  return capsByPlayersDealt(fullCap);
 }
 
 // BBJ POOL ALLOCATION (Dan, 2026-08-18 — authoritative)
@@ -199,77 +128,10 @@ export const BBJ_POOL_ALLOCATION_PIVOT = {
 export const BBJ_PIVOT_THRESHOLD = 100000;
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// STAKES TIERS — Fallback for custom/non-standard stakes
+// STAKES TIERS — Fallback for custom/non-standard stakes (data in rakeSpec.ts)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export const STAKES_TIERS: Record<string, StakesTier> = {
-  nano: {
-    label: 'Nano',
-    blindRange: '0.05/0.10 - 0.1/0.2',
-    minBB: 0.1,
-    maxBB: 0.2,
-    rakePercent: 10,
-    rakeCap: 3,
-    rakeCapBB: 3,
-    bbjFeeBB: 0.6,
-    bbjPayoutTotalPercent: 15, // 7.5% loser / 3.75% winner / 3.75% table
-  },
-  micro: {
-    label: 'Micro',
-    blindRange: '0.2/0.4 - 0.4/0.8',
-    minBB: 0.3,
-    maxBB: 0.8,
-    rakePercent: 10,
-    rakeCap: 3,
-    rakeCapBB: 3,
-    bbjFeeBB: 0.6, // Per PDF rake schedule: .20/.40 and .30/.60 are both 0.6bb
-    bbjPayoutTotalPercent: 25, // 12.5% loser / 6.25% winner / 6.25% table
-  },
-  small: {
-    label: 'Small',
-    blindRange: '0.5/1 - 1.5/3',
-    minBB: 1,
-    maxBB: 3,
-    rakePercent: 10,
-    rakeCap: 5,
-    rakeCapBB: 5,
-    bbjFeeBB: 0.25,
-    bbjPayoutTotalPercent: 40, // 20% loser / 10% winner / 10% table
-  },
-  mid: {
-    label: 'Mid',
-    blindRange: '2/4 - 4/8',
-    minBB: 3.5,
-    maxBB: 8,
-    rakePercent: 10,
-    rakeCap: 8,
-    rakeCapBB: 8,
-    bbjFeeBB: 0.12,
-    bbjPayoutTotalPercent: 55, // 27.5% loser / 13.75% winner / 13.75% table
-  },
-  high: {
-    label: 'High',
-    blindRange: '5/10 - 20/40',
-    minBB: 9,
-    maxBB: 40,
-    rakePercent: 10,
-    rakeCap: 15,
-    rakeCapBB: 15,
-    bbjFeeBB: 0.06,
-    bbjPayoutTotalPercent: 70, // 35% loser / 17.5% winner / 17.5% table
-  },
-  nosebleeds: {
-    label: 'Nosebleeds',
-    blindRange: '25/50+',
-    minBB: 41,
-    maxBB: Infinity,
-    rakePercent: 10,
-    rakeCap: 20,
-    rakeCapBB: 20,
-    bbjFeeBB: 0.03,
-    bbjPayoutTotalPercent: 85, // 42.5% loser / 21.25% winner / 21.25% table
-  },
-};
+export const STAKES_TIERS: Readonly<Record<string, StakesTier>> = RAKE_SPEC.tiers;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BBJ QUALIFYING HANDS — Minimum losing hand per game variant
@@ -400,8 +262,9 @@ export const BBJ_RULES = {
    * held more than this many big blinds. The FEE is collected on every flop
    * with 3+ dealt regardless of pot size — do not re-add this to a fee gate.
    */
-  minPotBB: 10,
-  minPlayersDealt: 3, // FIX 145: BBJ requires 3+ players dealt in (not 4) per Dan's rule
+  minPotBB: RAKE_SPEC.rules.bbjMinPotBB,
+  // FIX 145: BBJ requires 3+ players dealt in (not 4) per Dan's rule
+  minPlayersDealt: RAKE_SPEC.rules.bbjMinPlayersDealt,
   excludeDoubleBoard: true,
   onlyFirstRunout: true,
   splitIfMultipleQualify: true,
@@ -417,11 +280,7 @@ export const BBJ_RULES = {
  * Falls back to null for non-standard stakes.
  */
 export function findScheduleMatch(smallBlind: number, bigBlind: number): RakeScheduleEntry | null {
-  return (
-    RAKE_SCHEDULE.find(
-      (row) => Math.abs(row.sb - smallBlind) < 0.001 && Math.abs(row.bb - bigBlind) < 0.001
-    ) || null
-  );
+  return scheduleMatch(smallBlind, bigBlind);
 }
 
 /**
@@ -435,12 +294,7 @@ export function getTierForBB(bigBlind: number): StakesTier {
   // Mid:   4.00 - 8.00   (fee 0.12bb, payout 55%)
   // High:  10.0 - 40.0   (fee 0.06bb, payout 70%)
   // Nose:  50+            (fee 0.03bb, payout 85%)
-  if (bigBlind <= 0.2) return STAKES_TIERS.nano;
-  if (bigBlind <= 0.8) return STAKES_TIERS.micro;
-  if (bigBlind <= 3) return STAKES_TIERS.small;
-  if (bigBlind <= 8) return STAKES_TIERS.mid;
-  if (bigBlind <= 40) return STAKES_TIERS.high;
-  return STAKES_TIERS.nosebleeds;
+  return tierForBB(bigBlind);
 }
 
 /**
@@ -462,9 +316,9 @@ export interface RakeOverride {
 /** Sentinel stored in the database meaning "inherit". */
 export const RAKE_INHERIT = -1;
 /** An owner may never rake above the published schedule rate. */
-export const MAX_RAKE_PERCENT = 10;
+export const MAX_RAKE_PERCENT = RAKE_SPEC.rules.maxRakePercent;
 /** …nor set a cap above 10 big blinds. Matches the create-table slider. */
-export const MAX_RAKE_CAP_BB = 10;
+export const MAX_RAKE_CAP_BB = RAKE_SPEC.rules.maxRakeCapBB;
 
 /**
  * THE MOST GENEROUS SHARE OF A BIG BLIND ANY PUBLISHED ROW TAKES.
@@ -485,15 +339,11 @@ export const MAX_RAKE_CAP_BB = 10;
  * that row, and MAX_RAKE_CAP_BB continues to bind operator OVERRIDES - a
  * separate ceiling for a separate thing.
  */
-export const UNSCHEDULED_CAP_BB = RAKE_SCHEDULE.reduce(
-  (worst, row) => (row.bb > 0 ? Math.max(worst, row.rakeCap / row.bb) : worst),
-  0
-);
+export const UNSCHEDULED_CAP_BB = RAKE_SPEC.unscheduledCapBB;
 
 /** The cap for a stake with no published row: the tier's, held to the ladder. */
 export function unscheduledCapFor(bigBlind: number, tierCap: number): number {
-  if (!(bigBlind > 0)) return tierCap;
-  return Math.min(tierCap, Math.round(bigBlind * UNSCHEDULED_CAP_BB * 100) / 100);
+  return specUnscheduledCapFor(bigBlind, tierCap);
 }
 
 /** true only for a real, in-range number; -1 / null / NaN / '' all mean inherit. */

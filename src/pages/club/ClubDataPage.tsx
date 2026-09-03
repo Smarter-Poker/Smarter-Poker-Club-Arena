@@ -416,9 +416,20 @@ function rowsToCsv(rows: SnapshotRow[]): string {
 
 function playersToCsv(rows: PlayerRow[]): string {
   const esc = csvEscape;
-  const head = ['user_id', 'username', 'hands', 'rake', 'net', 'cash_net', 'tournament_net'];
+  const head = [
+    'user_id',
+    'username',
+    'is_horse',
+    'hands',
+    'rake',
+    'net',
+    'cash_net',
+    'tournament_net',
+  ];
   const lines = rows.map((r) =>
-    [r.user_id, r.username, r.hands, r.rake, r.net, r.cash_net, r.tournament_net].map(esc).join(',')
+    [r.user_id, r.username, r.is_horse, r.hands, r.rake, r.net, r.cash_net, r.tournament_net]
+      .map(esc)
+      .join(',')
   );
   return [head.join(','), ...lines].join('\n');
 }
@@ -468,6 +479,18 @@ export default function ClubDataPage() {
   const [playersLoading, setPlayersLoading] = useState(false);
   const [playersError, setPlayersError] = useState<string | null>(null);
   const [playerSort, setPlayerSort] = useState<PlayerSort>('winners');
+  /**
+   * Horses are house players. ca_club_player_breakdown has always returned
+   * is_horse and this page has never painted it, so on a club seeded with them
+   * the Biggest Winners list is house players ranked as people and an owner has
+   * no way to tell which of their top players is a person.
+   *
+   * The flag is masked in the database for anyone who is not an owner, co-owner
+   * or admin of the club, so a super agent reading this page sees every row
+   * come back false and this control does nothing for them. That is the
+   * intended behaviour, not a bug: they are not told.
+   */
+  const [hideHorses, setHideHorses] = useState(false);
   const [playerCursor, setPlayerCursor] = useState<PageCursor | null>(null);
   const [playersHasMore, setPlayersHasMore] = useState(false);
   const [playersLoadingMore, setPlayersLoadingMore] = useState(false);
@@ -1297,9 +1320,33 @@ export default function ClubDataPage() {
   // ca_club_player_page owns ordering before it applies the keyset cursor. A
   // client sort here would corrupt page boundaries (and was why "losers"
   // previously meant the least-positive row from the top-winners slice).
-  const sortedPlayers = useMemo(() => {
-    return players?.players || [];
-  }, [players]);
+  const allPlayers = useMemo(() => players?.players || [], [players]);
+  const horsesLoaded = useMemo(() => allPlayers.filter((p) => p.is_horse).length, [allPlayers]);
+
+  const sortedPlayers = useMemo(
+    () => (hideHorses ? allPlayers.filter((p) => !p.is_horse) : allPlayers),
+    [allPlayers, hideHorses]
+  );
+
+  /**
+   * The header strip normally shows the server's totals, which cover every
+   * player in the window - including rows not yet paged in. The moment a filter
+   * is applied those totals stop describing the list beneath them, so they are
+   * recomputed from the rows actually shown and the strip says what it is
+   * counting. Leaving the server figure above a filtered list is the same class
+   * of lie as a page-sized denominator.
+   */
+  const playerTotals = useMemo(() => {
+    if (!players) return null;
+    if (!hideHorses) return { ...players.totals, scoped: false as const };
+    return {
+      players: sortedPlayers.length,
+      net: sortedPlayers.reduce((t, p) => t + (Number(p.net) || 0), 0),
+      rake: sortedPlayers.reduce((t, p) => t + (Number(p.rake) || 0), 0),
+      hands: sortedPlayers.reduce((t, p) => t + (Number(p.hands) || 0), 0),
+      scoped: true as const,
+    };
+  }, [players, sortedPlayers, hideHorses]);
 
   const gameRows = snapshot?.rows || [];
   const gameVirtual = useVirtualScroll(gameRows, {
@@ -1318,19 +1365,33 @@ export default function ClubDataPage() {
   useEffect(() => {
     resetGameVirtual();
   }, [startDate, endDate, game, stakes, search, gameSort, resetGameVirtual]);
+  // hideHorses belongs in here with the sort and the dates: it changes the
+  // LENGTH of the list, and the virtual window keeps its scroll position across
+  // a re-render. Filtering 577 rows down to one while the window is scrolled
+  // past row 400 leaves the operator looking at nothing, with no indication
+  // that anything is wrong.
   useEffect(() => {
     resetPlayerVirtual();
-  }, [startDate, endDate, playerSort, resetPlayerVirtual]);
+  }, [startDate, endDate, playerSort, hideHorses, resetPlayerVirtual]);
   useEffect(() => {
     if (tab === 'games' && gamesHasMore && gameVirtual.endIndex >= gameRows.length - 8) {
       void loadMoreGames();
     }
   }, [tab, gamesHasMore, gameVirtual.endIndex, gameRows.length, loadMoreGames]);
+  // THE TRIGGER READS THE UNFILTERED LENGTH, and it has to.
+  //
+  // Whether more rows exist on the SERVER is a fact about what has been
+  // fetched, not about what is currently displayed. Keying this on the
+  // filtered list turns the filter into a fetch loop: hide horses on a club
+  // that is 577 horses and one person and sortedPlayers.length becomes 1, so
+  // endIndex >= 1 - 8 is true before the operator has scrolled anywhere, every
+  // page that arrives is filtered straight back out, the length never grows,
+  // and the condition never stops being true.
   useEffect(() => {
-    if (tab === 'players' && playersHasMore && playerVirtual.endIndex >= sortedPlayers.length - 8) {
+    if (tab === 'players' && playersHasMore && playerVirtual.endIndex >= allPlayers.length - 8) {
       void loadMorePlayers();
     }
-  }, [tab, playersHasMore, playerVirtual.endIndex, sortedPlayers.length, loadMorePlayers]);
+  }, [tab, playersHasMore, playerVirtual.endIndex, allPlayers.length, loadMorePlayers]);
 
   // near-real-time: re-poll on an interval and whenever the tab regains focus
   useEffect(() => {
@@ -2590,15 +2651,37 @@ export default function ClubDataPage() {
                 {o.label}
               </button>
             ))}
+            {/* Only offered when there is something to hide. A viewer whose
+                flag is masked sees every row come back false, so the control
+                would be a switch that does nothing and invites the question it
+                is not allowed to answer. */}
+            {horsesLoaded > 0 && (
+              <button
+                type="button"
+                aria-pressed={hideHorses}
+                className={`${styles.chip} ${hideHorses ? styles.active : ''}`}
+                onClick={() => setHideHorses((v) => !v)}
+                title={`${compactInt(horsesLoaded)} Of The Loaded Rows Are House Horses`}
+              >
+                {hideHorses ? 'People Only' : 'Hide Horses'}
+              </button>
+            )}
           </div>
 
-          {players && (
+          {playerTotals && (
             <div className={styles.playerTotals}>
-              <span>{compactInt(players.totals.players)} Players</span>
-              <span className={Number(players.totals.net) < 0 ? styles.neg : styles.pos}>
-                {money(players.totals.net)} Net
+              <span>
+                {compactInt(playerTotals.players)} {playerTotals.scoped ? 'People' : 'Players'}
               </span>
-              <span>{money(players.totals.rake)} Rake</span>
+              <span className={Number(playerTotals.net) < 0 ? styles.neg : styles.pos}>
+                {money(playerTotals.net)} Net
+              </span>
+              <span>{money(playerTotals.rake)} Rake</span>
+              {/* Says what it is counting the moment it stops counting
+                  everything: these are the rows on screen, not the window. */}
+              {playerTotals.scoped && (
+                <span className={styles.playerTotalsScope}>Of The Rows Loaded</span>
+              )}
             </div>
           )}
 
@@ -2675,6 +2758,10 @@ export default function ClubDataPage() {
                   <div className={styles.rowMain}>
                     <div className={styles.rowName} title={pl.username}>
                       {pl.username}
+                      {/* A house player, named as one. The flag arrives false
+                          for any viewer not entitled to it, so this simply
+                          never renders for them. */}
+                      {pl.is_horse && <span className={styles.horseTag}>Horse</span>}
                     </div>
                     <div className={styles.rowBlinds}>
                       {compactInt(pl.hands)} Hands &middot; {money(pl.rake)} Rake

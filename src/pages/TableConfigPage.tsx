@@ -53,6 +53,13 @@ import WeeklyScheduleEditor, {
   validateWeeklySchedule,
 } from '../components/tournament/WeeklyScheduleEditor';
 import { HelpPopover } from '../components/common/HelpPopover';
+import {
+  FREE_BUY_ADDON_COST,
+  FREE_BUY_HELPER,
+  FREE_BUY_LABEL,
+  FREE_BUY_REBUY_COST,
+  isFreeBuyEvent,
+} from '../utils/freeBuy';
 import { getTableState } from '../services/GameServerAPI';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -495,13 +502,16 @@ const Toggle = ({
   value,
   onChange,
   tooltip,
+  disabled = false,
 }: {
   label: string;
   value: boolean;
   onChange: (v: boolean) => void;
   tooltip?: string;
+  /** Locked by a rule (Free Buy): rendered, readable, not changeable. */
+  disabled?: boolean;
 }) => (
-  <div className="config-toggle">
+  <div className={`config-toggle${disabled ? ' is-locked' : ''}`}>
     <span className="toggle-label">
       {label}
       {tooltip && <HelpPopover label={label}>{tooltip}</HelpPopover>}
@@ -513,6 +523,7 @@ const Toggle = ({
         role="switch"
         aria-label={label}
         checked={value}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
       />
       <span className="table-config-switch__track" aria-hidden="true">
@@ -583,6 +594,7 @@ const NumberField = ({
   min = 0,
   max,
   tooltip,
+  disabled = false,
 }: {
   label: string;
   value: number;
@@ -590,8 +602,10 @@ const NumberField = ({
   min?: number;
   max?: number;
   tooltip?: string;
+  /** Locked by a rule (Free Buy): rendered, readable, not changeable. */
+  disabled?: boolean;
 }) => (
-  <div className="config-toggle">
+  <div className={`config-toggle${disabled ? ' is-locked' : ''}`}>
     <span className="toggle-label">
       {label}
       {tooltip && <HelpPopover label={label}>{tooltip}</HelpPopover>}
@@ -604,6 +618,8 @@ const NumberField = ({
       max={max}
       step={1}
       value={value}
+      disabled={disabled}
+      aria-label={label}
       onChange={(e) => {
         let v = Math.round(Number(e.target.value) || 0);
         if (v < min) v = min;
@@ -624,6 +640,13 @@ export default function TableConfigPage() {
   const toast = useToast();
 
   const [config, setConfig] = useState<TableConfig>({ ...DEFAULT_CONFIG });
+  /* FREEROLLS ARE FREE BUY (Dan 2026-09-02): a 0 buy-in MTT. Spins and SNGs
+     never qualify, whatever the buy-in field says. */
+  const isFreeBuy = isFreeBuyEvent({
+    buyIn: config.buyIn,
+    type: config.gameMode === 'mtt' ? 'mtt' : config.gameMode === 'sng' ? 'sng' : 'cash',
+    tournamentType: config.gameMode === 'mtt' ? 'MTT' : config.gameMode === 'sng' ? 'SNG' : 'CASH',
+  });
   const [blindsIndex, setBlindsIndex] = useState(DEFAULT_BLINDS_INDEX); // 0.05/0.10
   /* What WE last auto-generated for the name. Anything else in the field was
      typed by the owner and is never overwritten. */
@@ -2503,6 +2526,12 @@ export default function TableConfigPage() {
                 step={10}
               />
             )}
+            {isFreeBuy && (
+              <div className="config-free-buy" role="status" data-testid="free-buy-badge">
+                <span className="config-free-buy__badge">{FREE_BUY_LABEL}</span>
+                <span className="config-free-buy__text">{FREE_BUY_HELPER}</span>
+              </div>
+            )}
 
             {/* Blind Structure Radio */}
             <div className="config-radio-group">
@@ -2616,61 +2645,28 @@ export default function TableConfigPage() {
               tooltip="Faster Level Progression Once The Field Shrinks"
             />
 
-            <Slider
-              label="Number Of Rebuys/Re-Entries"
-              value={config.numberOfRebuysReentries}
-              onChange={(v) => updateConfig('numberOfRebuysReentries', v)}
-              min={0}
-              max={10}
-            />
-            {config.numberOfRebuysReentries > 0 && (
-              <>
-                <Toggle
-                  label="Custom Rebuy/Re-Entry Cost"
-                  value={config.customRebuyReentryCost}
-                  onChange={(v) => updateConfig('customRebuyReentryCost', v)}
-                  tooltip="Charge A Different Price Than The Buy-In"
+            {/* FREEROLLS ARE FREE BUY (Dan 2026-09-02). A 0 buy-in MTT is a
+                freeroll: rebuys and add-ons are ON at 1 chip each and the
+                controls are locked, not hidden, so the owner can read what the
+                rule set. buildTournamentConfig applies the same values on the
+                write whatever these sliders held. */}
+            {isFreeBuy ? (
+              <div className="config-free-buy-lock" data-testid="free-buy-lock">
+                <Toggle label="Rebuys" value={true} onChange={() => {}} disabled />
+                <NumberField
+                  label="Rebuy Cost"
+                  value={FREE_BUY_REBUY_COST}
+                  onChange={() => {}}
+                  disabled
                 />
-                {config.customRebuyReentryCost && (
-                  <NumberField
-                    label="Rebuy/Re-Entry Cost"
-                    value={config.rebuyReentryCost}
-                    onChange={(v) => updateConfig('rebuyReentryCost', v)}
-                    min={0}
-                    tooltip="Whole Chips Only. 0 = Same As The Buy-In."
-                  />
-                )}
-              </>
-            )}
-
-            {/* Add-on Options */}
-            <Slider
-              label="Add-On"
-              value={config.addOnMultiplier}
-              onChange={(v) => updateConfig('addOnMultiplier', v)}
-              min={0}
-              max={3}
-              step={0.5}
-              suffix="x"
-              tooltip="Add-On Chips As A Multiple Of The Starting Stack. 0 = No Add-On."
-            />
-            {config.addOnMultiplier > 0 && (
-              <>
-                <Toggle
-                  label="Custom Add-On"
-                  value={config.customAddOn}
-                  onChange={(v) => updateConfig('customAddOn', v)}
-                  tooltip="Charge A Different Add-On Price Than The Buy-In"
+                <Toggle label="Add-On" value={true} onChange={() => {}} disabled />
+                <NumberField
+                  label="Add-On Cost"
+                  value={FREE_BUY_ADDON_COST}
+                  onChange={() => {}}
+                  disabled
                 />
-                {config.customAddOn && (
-                  <NumberField
-                    label="Add-On Cost"
-                    value={config.customAddOnCost}
-                    onChange={(v) => updateConfig('customAddOnCost', v)}
-                    min={0}
-                    tooltip="Whole Chips Only. 0 = Same As The Buy-In."
-                  />
-                )}
+                <p className="config-free-buy__text">{FREE_BUY_HELPER}</p>
                 <Slider
                   label="Add-On Break Length"
                   value={config.addOnBreakLengthMinutes}
@@ -2679,6 +2675,74 @@ export default function TableConfigPage() {
                   max={10}
                   suffix=" min"
                 />
+              </div>
+            ) : (
+              <>
+                <Slider
+                  label="Number Of Rebuys/Re-Entries"
+                  value={config.numberOfRebuysReentries}
+                  onChange={(v) => updateConfig('numberOfRebuysReentries', v)}
+                  min={0}
+                  max={10}
+                />
+                {config.numberOfRebuysReentries > 0 && (
+                  <>
+                    <Toggle
+                      label="Custom Rebuy/Re-Entry Cost"
+                      value={config.customRebuyReentryCost}
+                      onChange={(v) => updateConfig('customRebuyReentryCost', v)}
+                      tooltip="Charge A Different Price Than The Buy-In"
+                    />
+                    {config.customRebuyReentryCost && (
+                      <NumberField
+                        label="Rebuy/Re-Entry Cost"
+                        value={config.rebuyReentryCost}
+                        onChange={(v) => updateConfig('rebuyReentryCost', v)}
+                        min={0}
+                        tooltip="Whole Chips Only. 0 = Same As The Buy-In."
+                      />
+                    )}
+                  </>
+                )}
+
+                {/* Add-on Options */}
+                <Slider
+                  label="Add-On"
+                  value={config.addOnMultiplier}
+                  onChange={(v) => updateConfig('addOnMultiplier', v)}
+                  min={0}
+                  max={3}
+                  step={0.5}
+                  suffix="x"
+                  tooltip="Add-On Chips As A Multiple Of The Starting Stack. 0 = No Add-On."
+                />
+                {config.addOnMultiplier > 0 && (
+                  <>
+                    <Toggle
+                      label="Custom Add-On"
+                      value={config.customAddOn}
+                      onChange={(v) => updateConfig('customAddOn', v)}
+                      tooltip="Charge A Different Add-On Price Than The Buy-In"
+                    />
+                    {config.customAddOn && (
+                      <NumberField
+                        label="Add-On Cost"
+                        value={config.customAddOnCost}
+                        onChange={(v) => updateConfig('customAddOnCost', v)}
+                        min={0}
+                        tooltip="Whole Chips Only. 0 = Same As The Buy-In."
+                      />
+                    )}
+                    <Slider
+                      label="Add-On Break Length"
+                      value={config.addOnBreakLengthMinutes}
+                      onChange={(v) => updateConfig('addOnBreakLengthMinutes', v)}
+                      min={1}
+                      max={10}
+                      suffix=" min"
+                    />
+                  </>
+                )}
               </>
             )}
 

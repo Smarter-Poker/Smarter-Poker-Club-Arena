@@ -31,7 +31,17 @@
 import { readFileSync } from 'node:fs';
 
 const CLIENT = 'src/config/RakeConfig.ts';
-const SERVER = 'server/src/config/RakeConfig.ts';
+/**
+ * 2026-09-02 (chip-std rake spec): the server's tier table moved out of
+ * RakeConfig.ts into rakeSpec.ts, the one specification the engine and the
+ * database both read. RakeConfig.ts now re-exports `RAKE_SPEC.tiers` and holds
+ * no literal, and its getTierForBB delegates to rakeSpec's `tierForBB`, which
+ * walks TIER_ORDER and returns the first tier whose maxBB the big blind does
+ * not exceed. So the server side of this gate reads the literal where it
+ * lives and derives the cascade from the same two things the function does.
+ */
+const SERVER = 'server/src/config/rakeSpec.ts';
+const SERVER_TIERS_ANCHOR = 'const TIERS';
 
 const TIERS = ['nano', 'micro', 'small', 'mid', 'high', 'nosebleeds'];
 /** Only fields that decide money. `label` and `blindRange` are prose. */
@@ -46,10 +56,10 @@ const FIELDS = [
 ];
 
 /** Pull `STAKES_TIERS` out of a file by brace-matching, then read each tier. */
-function parseTiers(path) {
+function parseTiers(path, anchorText = 'STAKES_TIERS') {
   const src = readFileSync(path, 'utf8');
-  const anchor = src.indexOf('STAKES_TIERS');
-  if (anchor < 0) throw new Error(`${path}: no STAKES_TIERS`);
+  const anchor = src.indexOf(anchorText);
+  if (anchor < 0) throw new Error(`${path}: no ${anchorText}`);
   const open = src.indexOf('{', anchor);
   let depth = 0;
   let end = -1;
@@ -114,8 +124,37 @@ function parseCascade(path) {
   return steps;
 }
 
+/**
+ * The server's cascade is not a literal any more: `tierForBB` walks
+ * TIER_ORDER and returns the first tier whose `maxBB` the big blind does not
+ * exceed. Rebuild the `<= X` ladder from exactly those two inputs so a change
+ * to either the order or a boundary still shows up here. The last tier has no
+ * step, the same way the client's cascade ends in a bare `return`.
+ */
+function deriveCascade(path, tiers) {
+  const src = readFileSync(path, 'utf8');
+  const m = src.match(/const TIER_ORDER[^=]*=\s*\[([^\]]*)\]/);
+  if (!m) throw new Error(`${path}: no TIER_ORDER`);
+  const order = [...m[1].matchAll(/'([a-z]+)'/g)].map((x) => x[1]);
+  if (order.length === 0) throw new Error(`${path}: TIER_ORDER is empty`);
+  const fn = src.indexOf('function tierForBB');
+  if (fn < 0) throw new Error(`${path}: no tierForBB`);
+  if (!/bigBlind\s*<=\s*tier\.maxBB/.test(src.slice(fn, fn + 600))) {
+    throw new Error(`${path}: tierForBB no longer selects by maxBB; teach this gate its new rule`);
+  }
+  const steps = [];
+  for (const tier of order.slice(0, -1)) {
+    const maxBB = tiers[tier]?.maxBB;
+    if (maxBB === undefined || !Number.isFinite(maxBB)) {
+      throw new Error(`${path}: ${tier} has no finite maxBB to derive a cascade step from`);
+    }
+    steps.push(`${tier}<=${maxBB}`);
+  }
+  return steps;
+}
+
 const client = parseTiers(CLIENT);
-const server = parseTiers(SERVER);
+const server = parseTiers(SERVER, SERVER_TIERS_ANCHOR);
 
 const problems = [];
 for (const tier of TIERS) {
@@ -145,7 +184,7 @@ for (const tier of TIERS) {
 }
 
 const cCascade = parseCascade(CLIENT);
-const sCascade = parseCascade(SERVER);
+const sCascade = deriveCascade(SERVER, server);
 if (cCascade.join(' ') !== sCascade.join(' ')) {
   problems.push(
     `tier cascade differs:\n    client: ${cCascade.join(' ')}\n    server: ${sCascade.join(' ')}`

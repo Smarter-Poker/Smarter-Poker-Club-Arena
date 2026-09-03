@@ -63,6 +63,17 @@ describe('cleanupStaleData normal-mode reset', () => {
 
   it('the fleet can still reopen the table it owns', () => {
     const fleet = readFileSync(join(process.cwd(), 'src/services/HorseFleetManager.ts'), 'utf8');
-    expect(fleet).toContain("if (existing.status === 'closed') updates.status = 'waiting';");
+    /* Two qualifications joined this line on 2026-09-03 and neither weakens it:
+       the lookup above it is now scoped to the fleet's own union (it matched on
+       NAME alone, platform-wide, and would reopen and annex another club's
+       table), and a table the club RETIRED is not reopened - "close any tables
+       over 2/5" would otherwise be undone on the next boot. What the fleet
+       owns, the fleet still reopens. */
+    expect(fleet).toMatch(
+      /if \(existing\.status === 'closed' && !isRetiringTable\(existing as \{ settings\?: unknown \}\)\)\s*updates\.status = 'waiting';/
+    );
+    expect(fleet).toMatch(
+      /\.eq\('name', config\.name\)[\s\S]{0,1400}?\.eq\('union_id', MIDWAY_UNION_ID\)/
+    );
   });
 });

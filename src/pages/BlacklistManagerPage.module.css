@@ -324,3 +324,115 @@
     overflow-wrap: anywhere;
   }
 }
+
+/* ── Phase 2: a person, not a uuid ──────────────────────────────────────────
+   The form took a raw uuid typed by hand and the ledger printed one back. An
+   exclusion is a decision about a person, so both ends now name them. */
+.fieldHelp {
+  margin: 6px 0 0;
+  color: #8495a2;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+
+.memberOptions {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.memberOptions button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  color: #dbe7ef;
+  font: inherit;
+  text-align: left;
+  background: #101821;
+  border: 1px solid #26313d;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* No :hover anywhere in Club Arena (tests/no-hover-effects.law.test.ts): a
+   hover state on a touch surface either never fires or sticks after a tap. */
+.memberOptions button:focus-visible {
+  border-color: #4a86b8;
+  outline: 2px solid #75beff;
+  outline-offset: -2px;
+}
+
+.horseTag {
+  padding: 2px 6px;
+  color: #9fd0ff;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: rgba(74, 134, 184, 0.16);
+  border: 1px solid rgba(74, 134, 184, 0.32);
+  border-radius: 3px;
+}
+
+.selectedMember {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 12px;
+  color: #dbe7ef;
+  background: #101821;
+  border: 1px solid #2f5f85;
+  border-radius: 4px;
+}
+
+.playerCell {
+  display: grid;
+  gap: 2px;
+}
+
+.playerCell code {
+  color: #7d8d9a;
+  font-size: 0.72rem;
+}
+
+.ledgerTools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* An exclusion stops every future entry and empties no seat. When the excluded
+   player is still sitting, the operator is told, and offered the engine's own
+   removal rather than a direct seat write. */
+.seatedPanel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+  padding: 14px 16px;
+  color: #f0d7ae;
+  background: rgba(78, 51, 20, 0.24);
+  border: 1px solid rgba(214, 158, 92, 0.4);
+  border-radius: 5px;
+}
+
+.seatedPanel strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #f7e6c8;
+}
+
+.seatedPanel p {
+  max-width: 62ch;
+  margin: 0;
+  color: #cdb896;
+  font-size: 0.86rem;
+}

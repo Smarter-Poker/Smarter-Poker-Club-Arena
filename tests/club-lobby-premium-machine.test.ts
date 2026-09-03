@@ -111,12 +111,16 @@ describe('responsive premium Club Arena', () => {
     expect(PAGE).toContain('launchTasks.some((task) => !task.complete && !task.skipped)');
   });
 
-  it('builds the approved mobile welcome, owner message, identity/jackpot pair, and wallet accordion', () => {
+  it('builds the approved mobile welcome, identity/jackpot pair, and wallet accordion', () => {
     expect(PAGE).toContain('className="club-mobile-welcome"');
-    expect(PAGE).toContain('className={`club-mobile-owner-message');
-    expect(PAGE).toContain('const CLUB_LOBBY_MESSAGE_MAX_LENGTH = 72');
-    expect(PAGE).toContain('maxLength={CLUB_LOBBY_MESSAGE_MAX_LENGTH}');
-    expect(PAGE).toContain('.slice(0, CLUB_LOBBY_MESSAGE_MAX_LENGTH)');
+    /* The owner-message strip and its 72-character cap were pinned here until
+       2026-09-03. Both are gone: the message is a full-screen greeting on
+       entry, and the page-local cap went with the editor it belonged to. That
+       cap was also a bug worth remembering - the page enforced 72 while the
+       server accepts 240 and the desktop editor offered 240, so a message
+       written on a desktop and touched on a phone was silently cut. One
+       surface now, one cap, and the drift has nowhere to live. */
+    expect(PAGE).not.toContain('CLUB_LOBBY_MESSAGE_MAX_LENGTH');
     expect(PAGE).toContain('className="lobby-wallets-trigger"');
     expect(PAGE).toContain('aria-expanded={walletsExpanded}');
     expect(PAGE).toContain('data-expanded={walletsExpanded}');
@@ -187,18 +191,18 @@ describe('responsive premium Club Arena', () => {
   it('shows every role-authorized wallet on both desktop and mobile', () => {
     expect(PAGE).toContain('showAllLobbyWallets');
     expect(PAGE).toContain('onVisibleWalletCountChange={setVisibleWalletCount}');
-    /* The club message strip used to be the LAST child of the wallet stack and
-       this line pinned it there. Dan moved it on 2026-09-01 - "the 'welcome to
-       club jaqk' thats on the bottom of the wallets should be at the top above
-       the club card" - so the assertion is inverted rather than deleted: it now
-       pins that <ClubOwnerMessage> leads the rail, ahead of both the club card
-       and the wallets. The strip itself lives in
-       components/club/ClubOwnerMessage.tsx and keeps the same class name. */
-    expect(PAGE).toContain('<ClubOwnerMessage');
-    expect(PAGE.indexOf('<ClubOwnerMessage')).toBeLessThan(PAGE.indexOf('<ClubIdentityCard'));
-    expect(PAGE.indexOf('<ClubOwnerMessage')).toBeLessThan(
-      PAGE.indexOf('onVisibleWalletCountChange={setVisibleWalletCount}')
-    );
+    /* This line has moved twice and is now gone, which is the point.
+       2026-09-01 it pinned the message strip as the LAST child of the wallet
+       stack; Dan moved it to the top and the assertion was inverted to pin it
+       AHEAD of the club card. On 2026-09-03 he removed it from the layout
+       altogether - "not anywhere baked into the screen" - so the rail carries
+       no message surface at all and the greeting is a full-screen popup on
+       entry. Pinned as an ABSENCE: re-adding a message element to the rail is
+       exactly the regression, and no assertion about what the rail DOES render
+       would catch it. */
+    expect(PAGE).not.toContain('<ClubOwnerMessage');
+    expect(PAGE).not.toContain('club-mobile-owner-message');
+    expect(PAGE).toContain('<ClubEntryMessage');
     expect(WALLET).toContain('showAllLobbyWallets?: boolean');
     expect(WALLET).toContain('data-wallet-key="diamonds"');
     expect(WALLET).toContain('data-wallet-key={row.key}');
@@ -392,6 +396,8 @@ describe('responsive premium Club Arena', () => {
   });
 
   it('renders the NLH approval sheet and populated full mobile lobby review', () => {
+    expect(CARD_SHOWCASE).not.toContain('club-mobile-owner-message');
+
     for (const requiredValue of [
       'NLH 25/50',
       'Insurance Test',
@@ -401,7 +407,10 @@ describe('responsive premium Club Arena', () => {
       'Approved Reference',
       'Actual Live 430px Render',
       'Static Premium Asset Set',
-      'Welcome To The Shark Club, All Fish Of All Shapes And Sizes Are Welcome!',
+      /* The Shark Club owner-message line was pinned here as proof the
+         showcase mirrored the mobile lobby. The lobby has no message strip as
+         of 2026-09-03, so a showcase that still drew one would be mirroring a
+         page that no longer exists. Its absence is now the fidelity check. */
       '93,293.98',
       '3 Balances',
       '135',

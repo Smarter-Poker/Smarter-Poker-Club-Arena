@@ -479,6 +479,9 @@ export class ScheduledTournamentService {
   // ─────────────────────────────────────────────────────────────────────────
 
   private async poll(): Promise<void> {
+    // THE FREEZE IS TOTAL (Dan 2026-09-03): start() polls once immediately; gate
+    // the poll itself, not only the interval that schedules it.
+    if (isMaintenanceFrozen()) return;
     if (this.polling) return;
     this.polling = true;
     try {

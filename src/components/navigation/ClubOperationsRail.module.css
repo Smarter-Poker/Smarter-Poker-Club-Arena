@@ -193,3 +193,25 @@
     transition: none;
   }
 }
+
+/* Queue badge (2026-09-03). A number here always means the same thing: this
+   many things are waiting for a person behind that tool. */
+.badge {
+  display: inline-flex;
+  min-width: 20px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 7px;
+  padding: 0 5px;
+  color: #fff6e8;
+  font:
+    700 11px/1 'Rajdhani',
+    'Roboto Condensed',
+    system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  background: rgba(120, 74, 24, 0.62);
+  border: 1px solid rgba(240, 179, 87, 0.62);
+  border-radius: 2px;
+}

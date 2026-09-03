@@ -443,7 +443,7 @@
   }
 
   .hero {
-    min-height: 460px;
+    min-height: 300px;
   }
 
   .heroCopy {
@@ -451,7 +451,7 @@
   }
 
   .signalRow {
-    margin-bottom: 42px;
+    margin-bottom: 22px;
   }
 
   .hero h1 {
@@ -501,4 +501,285 @@
   .tool {
     scroll-behavior: auto;
   }
+}
+
+/* ── Live readings, alerts and badges (mobile first) ───────────────────────
+   Added 2026-09-03 with ca_club_operations_overview. Base rules are the 375px
+   layout; the min-width queries widen it. */
+
+.freshness {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.refresh {
+  min-height: 34px;
+  padding: 0 14px;
+  color: #d8ecff;
+  font:
+    700 11px/1 'Rajdhani',
+    'Roboto Condensed',
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  background: rgba(10, 18, 25, 0.9);
+  border: 1px solid rgba(117, 190, 255, 0.4);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.refresh:focus-visible {
+  outline: 2px solid #75beff;
+  outline-offset: 3px;
+}
+
+.freshnessNote {
+  color: #8ba0b1;
+  font:
+    600 11px/1.2 'Rajdhani',
+    'Roboto Condensed',
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.pulse {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.pulseTile {
+  min-width: 0;
+  padding: 14px 15px;
+  background: linear-gradient(180deg, rgba(16, 25, 33, 0.96), rgba(6, 10, 14, 0.97));
+  border: 1px solid rgba(146, 173, 194, 0.3);
+  border-radius: 2px;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.pulseLabel {
+  margin: 0;
+  color: #8ba0b1;
+  font:
+    700 10px/1.1 'Rajdhani',
+    'Roboto Condensed',
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+.pulseValue {
+  margin: 6px 0 0;
+  color: #f1f7fb;
+  font:
+    700 clamp(24px, 6vw, 32px) / 1 'Rajdhani',
+    'Roboto Condensed',
+    system-ui,
+    sans-serif;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.pulseSub {
+  margin: 6px 0 0;
+  color: #7e91a1;
+  font:
+    500 12px/1.35 'Roboto Condensed',
+    'Arial Narrow',
+    system-ui,
+    sans-serif;
+}
+
+.alerts {
+  margin-top: 14px;
+  padding: 14px 15px 16px;
+  background: linear-gradient(180deg, rgba(28, 20, 14, 0.9), rgba(8, 11, 14, 0.97));
+  border: 1px solid rgba(214, 158, 92, 0.36);
+  border-radius: 3px;
+}
+
+.alertsTitle {
+  margin: 0 0 10px;
+  color: #f0c58a;
+  font:
+    700 11px/1 'Rajdhani',
+    'Roboto Condensed',
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.alertList {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.alertRow {
+  display: grid;
+  min-height: 46px;
+  grid-template-columns: 10px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  color: inherit;
+  text-decoration: none;
+  background: rgba(9, 15, 20, 0.86);
+  border: 1px solid rgba(146, 173, 194, 0.24);
+  border-radius: 2px;
+}
+
+.alertRow:focus-visible {
+  outline: 2px solid #75beff;
+  outline-offset: 3px;
+}
+
+.alertPip {
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+}
+
+.critical {
+  background: #ff6b6b;
+  box-shadow: 0 0 12px rgba(255, 107, 107, 0.7);
+}
+
+.warning {
+  background: #f0b357;
+  box-shadow: 0 0 12px rgba(240, 179, 87, 0.6);
+}
+
+.info {
+  background: #75beff;
+  box-shadow: 0 0 12px rgba(117, 190, 255, 0.6);
+}
+
+.alertTitle {
+  min-width: 0;
+  color: #eaf3f9;
+  font:
+    700 14px/1.2 'Rajdhani',
+    'Roboto Condensed',
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.alertCount {
+  padding: 3px 8px 2px;
+  color: #f6fbff;
+  font:
+    700 13px/1 'Rajdhani',
+    'Roboto Condensed',
+    system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  background: rgba(37, 102, 151, 0.38);
+  border: 1px solid rgba(117, 190, 255, 0.42);
+  border-radius: 2px;
+}
+
+.alertArrow {
+  color: #75beff;
+  font:
+    700 20px/1 'Rajdhani',
+    sans-serif;
+}
+
+.groupSignal {
+  position: relative;
+  z-index: 2;
+  display: inline-block;
+  margin: 12px 0 0;
+  padding: 4px 9px 3px;
+  color: #f0c58a;
+  font:
+    700 11px/1 'Rajdhani',
+    'Roboto Condensed',
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  background: rgba(78, 51, 20, 0.42);
+  border: 1px solid rgba(214, 158, 92, 0.44);
+  border-radius: 2px;
+}
+
+.toolBadge {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+  min-width: 30px;
+  padding: 4px 8px 3px;
+  color: #fff6e8;
+  font:
+    700 15px/1 'Rajdhani',
+    'Roboto Condensed',
+    system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  background: rgba(120, 74, 24, 0.5);
+  border: 1px solid rgba(240, 179, 87, 0.6);
+  border-radius: 2px;
+}
+
+@media (min-width: 620px) {
+  .pulse {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 18px;
+  }
+
+  .alerts {
+    margin-top: 18px;
+    padding: 16px 18px 18px;
+  }
+}
+
+@media (min-width: 1080px) {
+  /* auto-fit, not a fixed eight: a staff member without finance access gets
+     six tiles and must not be given two empty columns. */
+  .pulse {
+    grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+  }
+}
+
+/* The first read takes a moment. Reserving the strip's height stops the whole
+   page jumping down when the numbers land. */
+.pulseSkeleton {
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  min-height: 84px;
+}
+
+.skeletonLabel,
+.skeletonValue {
+  display: block;
+  height: 9px;
+  background: rgba(146, 173, 194, 0.16);
+  border-radius: 2px;
+}
+
+.skeletonLabel {
+  width: 56%;
+}
+
+.skeletonValue {
+  width: 78%;
+  height: 22px;
 }

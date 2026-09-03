@@ -29,6 +29,17 @@ import { reportError } from '../services/errorReporter.js';
 import { HAND_COMPLETION } from '../config/handCompletionSpec.js';
 import { ServerTableEngineTurns } from './ServerTableEngineTurns.js';
 
+/**
+ * How long the hub should hold a runout event for a subscriber that was not
+ * reachable when it fired. Sized to cover the whole visible sequence a
+ * reconnecting player would otherwise lose - the paced runout is about 11 s
+ * (2000 first pause + 3 x 1400 street pauses + 1200 pre-showdown) and the
+ * end-of-hand hold up to another 9.9 s - plus room for one reconnect ladder
+ * step on top. The hub clamps anything longer to HUB_MAX_EVENT_REPLAY_MS
+ * (60 s), so this is a request, not a grant.
+ */
+const RUNOUT_REPLAY_WINDOW_MS = 30_000;
+
 export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
   /**
    * All-in run-out pacing (Dan 2026-08-19, item 16). Chosen so a player can
@@ -994,9 +1005,10 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
 
     if (horseIds.has(chooserPlayerId)) {
       // A chooser who never picks 1 is a chooser who never runs it once.
-      const runs = this.horseRitVerdict(chooserPlayerId) === 'once'
-        ? (1 as const)
-        : ((this.handCount % 3 === 0 ? 3 : 2) as 2 | 3);
+      const runs =
+        this.horseRitVerdict(chooserPlayerId) === 'once'
+          ? (1 as const)
+          : ((this.handCount % 3 === 0 ? 3 : 2) as 2 | 3);
       respond(1200 + (this.handCount % 5) * 240, () => {
         this.respondToRIT(chooserPlayerId, undefined, runs);
       });
@@ -1605,6 +1617,25 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     this.hub?.emitEvent(this.tableId, {
       type: 'showdown',
       table_id: this.tableId,
+      /* RETAINED (2026-09-03). This event and the rit_result below carry the
+         ONLY copy of an all-in runout that exists on the wire: the RIT boards
+         are dealt outside HandController.state, so no snapshot contains them
+         and a RESYNC re-sends a snapshot that never had them. EVENTs are
+         droppable under backpressure and a reconnect misses them outright,
+         while the money lands in stacks and IS carried by the snapshot - so a
+         lost frame leaves exactly what players reported: chips in the winner's
+         account, no board, no cards, no animation. Verified against
+         production: all 260 run-it-twice hands in a three-hour window recorded
+         a full board in hand_history, so the server always dealt them and the
+         loss was in transit every time.
+         Declaring an expiry opts these into the hub's existing retention, so a
+         subscriber that was reconnecting - or soft-dropped under backpressure -
+         replays them on its next subscribe. The hub bounds this by
+         HUB_MAX_EVENT_REPLAY_MS and HUB_MAX_RETAINED_TABLES and marks a replay
+         so the client can tell. Deliberately NOT making EVENTs undroppable:
+         that would restore the unbounded send buffer backpressure exists to
+         prevent. */
+      replay_until: Date.now() + RUNOUT_REPLAY_WINDOW_MS,
       hand_number: this.handCount,
       results: this.currentHandShowdownResults.map((r) => ({
         user_id: r.userId,
@@ -1621,6 +1652,9 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     this.hub?.emitEvent(this.tableId, {
       type: 'rit_result',
       table_id: this.tableId,
+      // Retained for the same reason as the showdown emit above: these boards
+      // exist nowhere else on the wire.
+      replay_until: Date.now() + RUNOUT_REPLAY_WINDOW_MS,
       hand_number: this.handCount,
       runs,
       boards: boards.map((b) => b.map((c) => `${c.rank}${c.suit}`)),
@@ -1958,6 +1992,10 @@ export abstract class ServerTableEngineRunout extends ServerTableEngineTurns {
     this.hub?.emitEvent(this.tableId, {
       type: 'all_in_equity',
       table_id: this.tableId,
+      // Retained too: this is the sole trigger for the ALL IN banner and for
+      // the reveal state the runout renders into. Losing it means the boards
+      // arrive with nothing on screen expecting them.
+      replay_until: Date.now() + RUNOUT_REPLAY_WINDOW_MS,
       hand_number: this.handCount,
       board: board.map((c) => `${c.rank}${c.suit}`),
       // MULTI-BOARD 2026-08-28: how many boards the percentages average over

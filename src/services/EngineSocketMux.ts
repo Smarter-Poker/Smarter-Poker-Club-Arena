@@ -191,8 +191,19 @@ class EngineSocketMuxImpl {
       facade._subTimer = null;
       if (facade.readyState !== 0) return;
       if (this.facades.get(tableId) === facade) this.facades.delete(tableId);
-      const silent =
-        this.lastInboundAt === 0 || Date.now() - this.lastInboundAt > SUBSCRIBE_TIMEOUT_MS;
+      /* SILENCE IS MEASURED AGAINST THE SERVER'S PING, NOT THE SUBSCRIBE
+         DEADLINE (2026-09-03). This compared against SUBSCRIBE_TIMEOUT_MS
+         (15 s) while the server's only unconditional traffic is a heartbeat
+         every 25 s - so on a perfectly healthy but quiet socket there was a
+         ten-second window in which one slow subscribe also declared the
+         PHYSICAL socket dead and tore down every other table the player had
+         open. Those tables then all reconnected at once, and every reconnect
+         re-ran the subscribe gates that were slow to begin with: load caused
+         the failure and the failure recreated the load.
+         A subscribe timeout now fails its own facade only, unless the socket
+         has genuinely been silent past the heartbeat window (STALE_HARD_MS) -
+         the same threshold the watchdog already uses to call a socket dead. */
+      const silent = this.lastInboundAt === 0 || Date.now() - this.lastInboundAt > STALE_HARD_MS;
       facade._close(4500, 'subscribe timeout');
       if (silent) this.teardownPhysical(4001, 'no inbound traffic across subscribe window');
     }, SUBSCRIBE_TIMEOUT_MS);
@@ -366,6 +377,21 @@ class EngineSocketMuxImpl {
         // (Each replies PONG; duplicates are harmless and far under the
         // server's inbound rate limit.)
         for (const f of this.facades.values()) f._message(raw);
+        /* ANSWER EVEN WITH NO FACADES (2026-09-03). Only facades reply PONG,
+           so a socket with none - a lobby pre-warm, or one inside its 60 s
+           linger after the last table closed - stayed mute and the server
+           reaped it at its own 60 s heartbeat timeout. The linger and the
+           reaper being the same 60 s made the pre-warm a coin flip: the
+           optimisation meant to remove a handshake was instead handing the
+           next join a dead socket to discover. */
+        if (this.facades.size === 0) {
+          try {
+            this.ws?.send(JSON.stringify({ type: 'PONG' }));
+          } catch {
+            /* a send failure here is the socket dying anyway; the watchdog
+               will notice on its own schedule. */
+          }
+        }
         return;
       }
       if (msg.type === 'SUBSCRIBED' && msg.tableId) {

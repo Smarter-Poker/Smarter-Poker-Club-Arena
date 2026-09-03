@@ -1002,6 +1002,29 @@
     spTimerRingShrink var(--sp-timer-duration, 15s) linear var(--sp-timer-delay, 0s) forwards,
     spTimerColorShift var(--sp-timer-yellow-duration, 15s) linear var(--sp-timer-delay, 0s) forwards;
   animation-timing-function: linear(0, 0.75 66.6%, 1), linear;
+  /* THE FALLBACK DRAINS SMOOTHLY TOO (2026-09-03). When the engine has
+     published a deadline the keyframes above own --timer-progress and this
+     transition is inert, because a running animation outranks both inline
+     styles and transitions. When it has NOT - the legacy JS-driven path - the
+     component writes --timer-progress as an inline percentage, and since the
+     2026-08-25 clock rewrite it publishes once a SECOND rather than every
+     frame. That is invisible on a numeral that ceils to whole seconds, but on
+     a continuously draining border it is a visible step: the bar empties in
+     chunks, which is exactly what players reported.
+     --timer-progress is a registered @property with a <percentage> syntax, so
+     it interpolates. One second of linear transition turns each publication
+     into a smooth slide to the next, at no re-render cost - the page still
+     renders zero times for the countdown. Seats remount per turn via React
+     `key`, so the reset back to 100% paints fresh instead of animating the
+     ring refilling. */
+  transition: --timer-progress 1s linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* The ring still empties - it carries the remaining time, which is meaning,
+     not decoration. Only the interpolation between publications is dropped. */
+  .seat--active .seat__info {
+    transition: none;
+  }
 }
 
 /* Outer glow container */

@@ -866,7 +866,31 @@ export class EngineWebSocketServer {
     }
     conn.subs.set(tableId, 'pending');
     try {
-      const viewerAccess = await this.authorizeViewer(tableId, conn.userId);
+      /* THE FOUR GATES RUN TOGETHER HERE TOO (2026-09-03). The identical fix
+         landed on the single-table upgrade path above on 2026-09-02, but this
+         is the path production actually uses: isMuxEnabled() defaults ON, so
+         every table a player opens is a SUBSCRIBE frame and that upgrade path
+         is dead code for normal players. This handler was still awaiting the
+         gates one after another - four to six sequential round trips to the
+         database, per table, per open. That is the whole of the "Connecting To
+         The Table" window players are seeing, and it is what pushes a slow
+         subscribe past the client's 15 s deadline into a reconnect, which then
+         re-runs these same gates. Load causes the failure and the failure
+         recreates the load.
+         None of the four depends on another's answer, so they are asked at
+         once and judged in the original order: every combination of answers
+         still produces the same error code, which matters because the client
+         picks a different retry policy per code. Only ensureTable, which can
+         START an engine, still waits for the verdicts. */
+      const [viewerAccess, banned, observerRestricted, ipConflict] = await Promise.all([
+        this.authorizeViewer(tableId, conn.userId),
+        // A failure to CHECK must never become a refusal - the same rule the
+        // try/catch blocks this replaces were enforcing, and the same rule
+        // stated on the single-table path.
+        this.isBannedFromTable(tableId, conn.userId).catch(() => false),
+        this.isRestrictedObserver(tableId, conn.userId).catch(() => false),
+        this.isIpConflict(tableId, conn.userId, conn.clientIp).catch(() => false),
+      ]);
       if (!viewerAccess.allowed) {
         conn.subs.delete(tableId);
         this.sendMuxError(
@@ -897,41 +921,33 @@ export class EngineWebSocketServer {
         this.sendMuxError(conn, tableId, 'TABLE_NOT_FOUND', 'Table not found in engine');
         return;
       }
-      try {
-        if (await this.isBannedFromTable(tableId, conn.userId)) {
-          conn.subs.delete(tableId);
-          this.sendMuxError(conn, tableId, 'BANNED', 'Not permitted at this table');
-          return;
-        }
-        /* The multi-table client never touches the upgrade gate above, so the
-           same rule has to exist here or one surface enforces it and the other
-           does not. */
-        if (await this.isRestrictedObserver(tableId, conn.userId)) {
-          conn.subs.delete(tableId);
-          this.sendMuxError(
-            conn,
-            tableId,
-            'OBSERVERS_RESTRICTED',
-            'This Table Is Open To Seated Players Only'
-          );
-          return;
-        }
-      } catch {
-        /* same rule as the single-table path: a failed CHECK never refuses */
+      if (banned) {
+        conn.subs.delete(tableId);
+        this.sendMuxError(conn, tableId, 'BANNED', 'Not permitted at this table');
+        return;
       }
-      try {
-        if (await this.isIpConflict(tableId, conn.userId, conn.clientIp)) {
-          conn.subs.delete(tableId);
-          this.sendMuxError(
-            conn,
-            tableId,
-            'IP_RESTRICTED',
-            'Another account is already connected from this address'
-          );
-          return;
-        }
-      } catch {
-        /* failed check never refuses */
+      /* The multi-table client never touches the upgrade gate above, so the
+         same rule has to exist here or one surface enforces it and the other
+         does not. */
+      if (observerRestricted) {
+        conn.subs.delete(tableId);
+        this.sendMuxError(
+          conn,
+          tableId,
+          'OBSERVERS_RESTRICTED',
+          'This Table Is Open To Seated Players Only'
+        );
+        return;
+      }
+      if (ipConflict) {
+        conn.subs.delete(tableId);
+        this.sendMuxError(
+          conn,
+          tableId,
+          'IP_RESTRICTED',
+          'Another account is already connected from this address'
+        );
+        return;
       }
       // The socket may have closed while the async gates ran.
       if (!this.connections.has(conn.ws) || conn.subs.get(tableId) !== 'pending') return;
@@ -956,6 +972,16 @@ export class EngineWebSocketServer {
         // per-table facade sees the close and reconnects that table alone.
         evict() {
           conn.subs?.delete(tableId);
+          /* LEAVE THE ROOM, NOT JUST THE MAP (2026-09-03). This dropped the
+             entry from conn.subs but never told the hub, so the evicted
+             subscriber stayed in the table's room and kept being handed every
+             broadcast - on a socket the hub had just decided was too far
+             behind to keep up with. The UNSUBSCRIBE handler below has always
+             done both; this path did half. The resubscribe the client is being
+             asked to perform then added a SECOND subscriber for the same
+             table, so a table that evicted repeatedly accumulated dead
+             subscribers and the backpressure it was evicting for got worse. */
+          self.hub.unsubscribe(tableId, subscriber);
           self.sendMuxError(conn, tableId, 'EVICTED', 'backpressure evict - resubscribe');
         },
       };

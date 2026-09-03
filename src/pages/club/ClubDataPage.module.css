@@ -390,7 +390,10 @@
 
 .presets {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* Was repeat(3, 1fr) for 1/7/14. The 30 and 90 day windows made a fourth and
+     fifth column, and a fixed three-column grid wrapped them into a second row
+     that overflowed the control deck on narrow screens. */
+  grid-template-columns: repeat(auto-fit, minmax(52px, 1fr));
   gap: 2px;
   padding: 3px;
   border: 1px solid rgba(174, 189, 203, 0.18);
@@ -400,6 +403,7 @@
 
 .preset {
   min-height: 44px;
+  padding: 0 0.3rem;
   border: 0;
   border-bottom: 1px solid transparent;
   border-radius: 1px;

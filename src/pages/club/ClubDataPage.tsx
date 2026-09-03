@@ -61,9 +61,18 @@ import { useMasterBusSubscriptions } from '../../hooks/useMasterBusSubscription'
 import type { BusEventType } from '../../core/MasterBus';
 import { useVirtualScroll } from '../../hooks/useVirtualScroll';
 import { EmptyState, LoadingState, PermissionState } from '../../components/common/EmptyState';
+import RakeSnapshotPanel from '../../components/club/RakeSnapshotPanel';
+import type { RakeScope } from '../../services/ClubRakeSnapshotService';
 import styles from './ClubDataPage.module.css';
 
-type PresetId = 1 | 7 | 14;
+/**
+ * The ledger presets. 90 is the ceiling because ca_club_data_snapshot clamps
+ * its own window at 93 days - it materialises one row per game, and a year of
+ * those does not finish inside the statement timeout. Longer periods are the
+ * rake snapshot's job: it reads the daily rollups only and answers for a year.
+ */
+type PresetId = 1 | 7 | 14 | 30 | 90;
+const PRESETS: PresetId[] = [1, 7, 14, 30, 90];
 type GameFilter = 'ALL' | 'HOLDEM' | 'OMAHA' | 'MIXED' | 'MTT' | 'SNG';
 type StakesFilter = 'ALL' | 'MICRO' | 'SMALL' | 'MID' | 'HIGH';
 type GameSort = 'recent' | 'fee' | 'winnings' | 'hands';
@@ -468,6 +477,13 @@ export default function ClubDataPage() {
   const [telemetryClock, setTelemetryClock] = useState(() => Date.now());
   const [realtimeFeeds, setRealtimeFeeds] =
     useState<Record<RealtimeFeed, RealtimeFeedState>>(INITIAL_REALTIME_FEEDS);
+  /**
+   * Which snapshot scopes this viewer actually holds. Club is a given - the
+   * page itself is gated on ca_can_view_club_finances. Union and Downline are
+   * asked for, because offering a chip that can only answer "no" is worse than
+   * not offering it. The database re-checks all three regardless.
+   */
+  const [rakeScopes, setRakeScopes] = useState<RakeScope[]>(['club']);
 
   // cancelledRef guards UNMOUNT. It cannot tell a stale response from a fresh
   // one, and this page reloads on six different inputs plus a 60s poll plus
@@ -1348,6 +1364,86 @@ export default function ClubDataPage() {
     };
   }, [clubUuid, isHydrating, user, load, loadPlayers]);
 
+  /**
+   * Resolve the snapshot scopes once per club. Neither read returns money:
+   * ca_can_oversee_union answers a boolean and fn_my_agent_roles answers which
+   * clubs the viewer is an agent in.
+   *
+   * EVERY ERROR IS BOUND AND ACTED ON. The first version of this destructured
+   * only `data` and swallowed the rest in a bare catch, which the
+   * discarded-error ratchet caught and was right to: a refusal and a timeout
+   * produced the same outcome - the chip silently absent - so an operator who
+   * genuinely oversees a union would be told, by omission, that they do not,
+   * and nothing anywhere would record why.
+   *
+   * The two cases are not the same and are no longer treated the same. A
+   * REFUSAL is an answer: this viewer does not hold that scope, the chip stays
+   * off, and there is nothing to report. Any OTHER failure is a failure: the
+   * chip still stays off, because offering a scope we could not confirm would
+   * hand the operator a button that only refuses, but it is reported so the
+   * absence is visible somewhere other than the screen.
+   */
+  useEffect(() => {
+    if (!clubUuid || isHydrating || !user) return;
+    let dead = false;
+    void (async () => {
+      const next: RakeScope[] = [];
+      try {
+        const { data: unionRow, error: unionErr } = await supabase
+          .from('union_clubs')
+          .select('union_id')
+          .eq('club_id', clubUuid)
+          .maybeSingle();
+        if (unionErr) {
+          if (!isAuthzError(unionErr)) reportError(unionErr, 'ClubDataPage.scope_union_lookup');
+        } else {
+          const uid = (unionRow as { union_id?: string } | null)?.union_id;
+          if (uid) {
+            const { data: canOversee, error: overseeErr } = await supabase.rpc(
+              'ca_can_oversee_union',
+              { p_union_id: uid }
+            );
+            if (overseeErr) {
+              if (!isAuthzError(overseeErr)) {
+                reportError(overseeErr, 'ClubDataPage.scope_union_oversight');
+              }
+            } else if (canOversee === true) {
+              next.push('union');
+            }
+          }
+        }
+      } catch (err) {
+        // A thrown request - offline, aborted, a client-side failure before the
+        // response existed - never reaches the error field above.
+        reportError(err, 'ClubDataPage.scope_union_lookup');
+      }
+
+      // Club is unconditional: this page is already gated on
+      // ca_can_view_club_finances, so reaching here IS the club answer.
+      next.push('club');
+
+      try {
+        const { data: roles, error: rolesErr } = await supabase.rpc('fn_my_agent_roles');
+        if (rolesErr) {
+          // not_an_agent is the ordinary answer for most viewers, not a fault.
+          if (!isAuthzError(rolesErr) && !/not_an_agent/i.test(String(rolesErr.message ?? ''))) {
+            reportError(rolesErr, 'ClubDataPage.scope_agent_roles');
+          }
+        } else {
+          const mine = (roles as Array<{ club_id?: string }> | null) || [];
+          if (mine.some((r) => r?.club_id === clubUuid)) next.push('agent');
+        }
+      } catch (err) {
+        reportError(err, 'ClubDataPage.scope_agent_roles');
+      }
+
+      if (!dead) setRakeScopes(next);
+    })();
+    return () => {
+      dead = true;
+    };
+  }, [clubUuid, isHydrating, user]);
+
   const loadInvoices = useCallback(async (): Promise<boolean> => {
     if (!clubUuid || isHydrating || !user) return false;
     const myVersion = ++invoicesVersion.current;
@@ -1874,6 +1970,14 @@ export default function ClubDataPage() {
         </div>
       )}
 
+      {clubUuid && (
+        <RakeSnapshotPanel
+          clubId={clubUuid}
+          scopes={rakeScopes}
+          refreshToken={lastVerifiedAt ?? 0}
+        />
+      )}
+
       <section
         className={`${styles.integrityPanel} ${integrityNeedsAttention ? styles.integrityAttention : ''}`}
         aria-labelledby="club-data-integrity-title"
@@ -1956,7 +2060,7 @@ export default function ClubDataPage() {
           which is impossible for a tab and leaves a tablist with nothing
           selected. A screen reader was told "tab 3 of 6" for a filter. */}
         <div className={styles.presets} role="group" aria-label="Date Range">
-          {([1, 7, 14] as PresetId[]).map((p) => (
+          {PRESETS.map((p) => (
             <button
               key={p}
               type="button"

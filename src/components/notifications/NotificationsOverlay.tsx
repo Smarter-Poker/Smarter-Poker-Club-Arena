@@ -38,7 +38,7 @@
  * "unify" the two by bringing the iframe here.
  */
 
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import { useNotificationsOverlayStore } from '../../stores/useNotificationsOverlayStore';
@@ -104,6 +104,63 @@ export default function NotificationsOverlay() {
     [close]
   );
 
+  /* ── Swipe down to dismiss ───────────────────────────────────────────
+   * The X is pinned top-right, which on a large phone held one-handed is the
+   * single hardest pixel on the screen to reach — and this popup is full
+   * screen, so there is no edge of a card to tap past either. A downward drag
+   * is the gesture every phone user already has for "put this away".
+   *
+   * It is NOT a substitute for the X. Dan asked for an X and the X stays; this
+   * is the thumb-reachable second way, alongside Escape and the backdrop.
+   *
+   * There is deliberately no visible drag handle. A horizontal bar at the top
+   * of a Club Arena surface is exactly the artwork that has twice been mistaken
+   * for the banned "em bars" and stripped out (CLAUDE.md 10.7, PRs #2321 and
+   * #2429, both of which took the hamburger off every page). The gesture is
+   * discoverable enough without inviting that fight.
+   *
+   * Only starts when the list is scrolled to the very top; anywhere else a
+   * downward drag means scroll, and stealing it would make a long feed
+   * unreadable. */
+  const dragStartY = useRef<number | null>(null);
+  const [dragOffset, setDragOffset] = useState(0);
+  const DISMISS_AFTER_PX = 110;
+
+  const handlePointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'mouse') return; // A mouse has the X and Escape.
+    if (event.currentTarget.scrollTop > 0) return;
+    dragStartY.current = event.clientY;
+  }, []);
+
+  const handlePointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragStartY.current === null) return;
+    const delta = event.clientY - dragStartY.current;
+    // Upward movement is a scroll the player wants; hand it back.
+    if (delta <= 0) {
+      dragStartY.current = null;
+      setDragOffset(0);
+      return;
+    }
+    // Resistance, so a long feed does not feel like it is falling off screen.
+    setDragOffset(delta > 0 ? delta * 0.6 : 0);
+  }, []);
+
+  const endDrag = useCallback(() => {
+    if (dragStartY.current === null) return;
+    const travelled = dragOffset;
+    dragStartY.current = null;
+    setDragOffset(0);
+    if (travelled > DISMISS_AFTER_PX) close();
+  }, [close, dragOffset]);
+
+  // A fresh open must never inherit the previous drag's offset.
+  useEffect(() => {
+    if (!isOpen) {
+      dragStartY.current = null;
+      setDragOffset(0);
+    }
+  }, [isOpen]);
+
   // Unmounted while closed, not merely hidden: the surface holds a realtime
   // subscription and a feed poll, and neither should run for a popup nobody
   // opened. It also keeps the channel name free for the `/notifications`
@@ -123,6 +180,11 @@ export default function NotificationsOverlay() {
         role="dialog"
         aria-modal="true"
         aria-label="Notifications"
+        style={
+          dragOffset
+            ? { transform: `translate3d(0, ${dragOffset}px, 0)`, transition: 'none' }
+            : undefined
+        }
       >
         <button
           type="button"
@@ -145,7 +207,13 @@ export default function NotificationsOverlay() {
           </svg>
         </button>
 
-        <div className="ca-notif-overlay__scroll">
+        <div
+          className="ca-notif-overlay__scroll"
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+        >
           <NotificationsSurface variant="overlay" onRequestClose={close} />
         </div>
       </div>

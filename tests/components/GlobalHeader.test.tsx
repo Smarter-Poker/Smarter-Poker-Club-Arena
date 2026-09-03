@@ -22,6 +22,7 @@ const headerData = vi.hoisted(() => ({
   isVipActive: false,
   notificationCount: 0,
   unreadMessages: 0,
+  _userId: 'test-user-123',
   loadOnce: vi.fn(),
   setAvatarUrl: vi.fn(),
   setUnreadMessages: vi.fn(),
@@ -29,8 +30,11 @@ const headerData = vi.hoisted(() => ({
   clearUnreadMessages: vi.fn().mockResolvedValue(true),
 }));
 
+// `getState` as well as the hook: the notifications overlay store reaches the
+// header store imperatively (it has no component to hook from), which is how
+// the badge now clears from the hamburger and the rail and not only the bell.
 vi.mock('@/stores/useHeaderDataStore', () => ({
-  useHeaderDataStore: () => headerData,
+  useHeaderDataStore: Object.assign(() => headerData, { getState: () => headerData }),
 }));
 
 vi.mock('@/hooks/useAuthUser', () => ({

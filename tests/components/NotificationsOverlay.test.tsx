@@ -23,6 +23,15 @@ import { MemoryRouter } from 'react-router-dom';
 import NotificationsOverlay from '@/components/notifications/NotificationsOverlay';
 import { useNotificationsOverlayStore } from '@/stores/useNotificationsOverlayStore';
 
+const headerData = vi.hoisted(() => ({
+  _userId: 'player-1',
+  clearUnreadNotifications: vi.fn().mockResolvedValue(true),
+}));
+
+vi.mock('@/stores/useHeaderDataStore', () => ({
+  useHeaderDataStore: Object.assign(() => headerData, { getState: () => headerData }),
+}));
+
 vi.mock('@/components/notifications/NotificationsSurface', () => ({
   default: ({ onRequestClose }: { onRequestClose?: () => void }) => (
     <div data-testid="surface">
@@ -130,6 +139,83 @@ describe('NotificationsOverlay', () => {
 
     fireEvent.click(screen.getByText('Follow A Notification'));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  /* ── Swipe down to dismiss ──────────────────────────────────────────
+   * The X is pinned top-right, which is the hardest pixel to reach on a phone
+   * held one-handed, and this popup is full screen so there is no card edge to
+   * tap past either. These pin the three rules that keep the gesture from
+   * eating the scroll it shares a direction with. */
+
+  const scroller = () => document.querySelector('.ca-notif-overlay__scroll') as HTMLElement;
+  const panel = () => document.querySelector('.ca-notif-overlay__panel') as HTMLElement;
+
+  const swipe = (from: number, to: number, opts: { pointerType?: string } = {}) => {
+    const el = scroller();
+    const pointerType = opts.pointerType ?? 'touch';
+    fireEvent.pointerDown(el, { clientY: from, pointerType });
+    fireEvent.pointerMove(el, { clientY: to, pointerType });
+  };
+
+  it('dismisses on a long downward swipe from the top of the list', () => {
+    render(
+      <MemoryRouter>
+        <NotificationsOverlay />
+      </MemoryRouter>
+    );
+    open();
+
+    swipe(100, 400);
+    // Tracks the finger before release.
+    expect(panel().style.transform).not.toBe('');
+
+    fireEvent.pointerUp(scroller(), { clientY: 400, pointerType: 'touch' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('springs back instead of dismissing when the swipe is short', () => {
+    render(
+      <MemoryRouter>
+        <NotificationsOverlay />
+      </MemoryRouter>
+    );
+    open();
+
+    swipe(100, 140);
+    fireEvent.pointerUp(scroller(), { clientY: 140, pointerType: 'touch' });
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(panel().style.transform).toBe('');
+  });
+
+  it('leaves the gesture alone when the list is scrolled down, because that is a scroll', () => {
+    render(
+      <MemoryRouter>
+        <NotificationsOverlay />
+      </MemoryRouter>
+    );
+    open();
+
+    // A player reading halfway down a long feed drags down to scroll up.
+    Object.defineProperty(scroller(), 'scrollTop', { value: 240, configurable: true });
+    swipe(100, 400);
+    fireEvent.pointerUp(scroller(), { clientY: 400, pointerType: 'touch' });
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('ignores a mouse drag, which has the X and Escape instead', () => {
+    render(
+      <MemoryRouter>
+        <NotificationsOverlay />
+      </MemoryRouter>
+    );
+    open();
+
+    swipe(100, 400, { pointerType: 'mouse' });
+    fireEvent.pointerUp(scroller(), { clientY: 400, pointerType: 'mouse' });
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
   it('hands the scroll lock back exactly as it found it', () => {

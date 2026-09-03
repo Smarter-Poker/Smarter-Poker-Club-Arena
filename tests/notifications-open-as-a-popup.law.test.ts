@@ -153,4 +153,23 @@ describe('notifications open as a popup, not as a page', () => {
     expect(store).toContain('closeNotifications');
     expect(store).toContain('openNotificationsOverlay');
   });
+
+  it('the badge is acknowledged by the store, not by one control', () => {
+    // This regressed once already, inside the popup work itself. The clear was
+    // written out on the bell's handler, so opening the identical popup from
+    // the hamburger or the rail left the bell behind it still claiming unread
+    // notifications the player had just read. Invisible while those doors
+    // navigated away; obvious the moment they stopped.
+    expect(code(read(OVERLAY_STORE))).toContain('clearUnreadNotifications');
+    for (const file of [
+      'src/components/navigation/GlobalHeader.tsx',
+      'src/components/navigation/HamburgerMenu.tsx',
+      'src/components/navigation/ArenaSectionRail.tsx',
+    ]) {
+      expect(
+        code(read(file)),
+        `${file} must not clear the badge itself - the store does it for every door`
+      ).not.toMatch(/clearUnreadNotifications\s*\(/);
+    }
+  });
 });

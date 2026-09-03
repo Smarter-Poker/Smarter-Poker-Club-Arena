@@ -30,6 +30,7 @@
  */
 
 import { create } from 'zustand';
+import { useHeaderDataStore } from './useHeaderDataStore';
 
 interface NotificationsOverlayState {
   isOpen: boolean;
@@ -43,10 +44,38 @@ interface NotificationsOverlayState {
   closeNotifications: () => void;
 }
 
+/**
+ * OPENING NOTIFICATIONS IS READING THEM, FROM EVERY DOOR.
+ *
+ * `clearUnreadNotifications` used to be called by GlobalHeader's bell handler
+ * and by nothing else. That was survivable while the other doors NAVIGATED —
+ * the header left with the page. It stopped being survivable the moment they
+ * started opening a popup instead: open notifications from the hamburger or the
+ * account rail, read all of them, dismiss the popup, and the bell is still
+ * sitting there behind it claiming five unread until a realtime event or a
+ * reload happens to correct it.
+ *
+ * So the acknowledgement belongs to the ACT of opening, not to one control that
+ * happens to open. The header store zeroes the badge synchronously and makes
+ * the database authoritative behind it, restoring the previous count if the
+ * write fails rather than lying.
+ */
+function acknowledgeBadge(): void {
+  const { _userId, clearUnreadNotifications } = useHeaderDataStore.getState() as unknown as {
+    _userId: string | null;
+    clearUnreadNotifications: (userId: string) => Promise<boolean>;
+  };
+  if (!_userId) return;
+  void clearUnreadNotifications(_userId);
+}
+
 export const useNotificationsOverlayStore = create<NotificationsOverlayState>((set) => ({
   isOpen: false,
   openedFrom: null,
-  openNotifications: (source = 'unknown') => set({ isOpen: true, openedFrom: source }),
+  openNotifications: (source = 'unknown') => {
+    set({ isOpen: true, openedFrom: source });
+    acknowledgeBadge();
+  },
   closeNotifications: () => set({ isOpen: false, openedFrom: null }),
 }));
 

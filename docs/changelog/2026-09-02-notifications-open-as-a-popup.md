@@ -112,6 +112,43 @@ directly, and neither the overlay nor the surface may contain an `<iframe>`.
   the new-tab behaviour.
 - `tests/law-registry.law.test.ts` passing with the new row.
 
+## Second pass, same day: two things the first pass got wrong
+
+**The badge only cleared from the bell.** `clearUnreadNotifications` was called
+by `GlobalHeader`'s handler and by nothing else, so opening the identical popup
+from the hamburger or the account rail marked nothing read. Invisible while
+those doors navigated away and took the header with them — obvious the moment
+they stopped: read everything, dismiss the popup, and the bell is still sitting
+there behind it claiming five unread.
+
+Moved into the store's `openNotifications`. Acknowledging belongs to the ACT of
+opening notifications, not to one control that happens to open them. Pinned in
+the law now, because this exact shape is what caused the original bug and it
+reappeared inside the fix for it.
+
+**There was no thumb-reachable way out.** The X is pinned top-right, the single
+hardest pixel to reach on a phone held one-handed, and a full-screen popup has
+no card edge to tap past either. Added swipe-down-to-dismiss: starts only when
+the list is at the top (anywhere else a downward drag means scroll, and stealing
+it would make a long feed unreadable), applies resistance, dismisses past 110px,
+springs back below it, and ignores a mouse — which has the X and Escape.
+
+There is deliberately **no visible drag handle**. A horizontal bar at the top of
+a Club Arena surface is precisely the artwork that has twice been mistaken for
+the banned "em bars" and stripped out (CLAUDE.md 10.7, PRs #2321 and #2429, both
+of which took the hamburger off every page). The gesture is discoverable enough
+without inviting that fight again.
+
+## Considered and NOT done: back-gesture dismissal
+
+Android hardware back is the instinctive dismiss on a phone, and today it
+navigates away from the page the popup is protecting. Doing it requires
+injecting a history entry, and react-router owns history here (Next's Pages
+Router owns it in the Hub) — a raw `pushState` desyncs them, and section 12 of
+CLAUDE.md is a standing record of what happens when this repo gets clever near
+history. Real gap, real cost, Dan's call. Swipe-to-dismiss covers the same need
+without going near navigation.
+
 ## Follow-up raised, not silently fixed
 
 `pages/hub/commander/notifications/index.js` in the World Hub reads

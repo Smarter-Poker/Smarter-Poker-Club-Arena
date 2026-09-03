@@ -42,6 +42,10 @@
   flex-direction: column;
   background: #030609;
   animation: ca-notif-overlay-rise 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  /* The spring back when a swipe does not travel far enough to dismiss. The
+     inline style used during the drag itself sets `transition: none`, so the
+     panel tracks the finger exactly and only eases on release. */
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* The scroller, not the panel, owns overflow: the close button is pinned to

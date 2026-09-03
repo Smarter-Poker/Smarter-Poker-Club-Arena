@@ -49,7 +49,6 @@ export default function GlobalHeader() {
     notificationCount,
     unreadMessages,
     loadOnce,
-    clearUnreadNotifications,
     clearUnreadMessages,
   } = useHeaderDataStore();
   const openNotifications = useNotificationsOverlayStore((s) => s.openNotifications);
@@ -245,10 +244,12 @@ export default function GlobalHeader() {
    * act. `openNotifications` is synchronous, so the surface is on screen on
    * the same frame as the tap while the clear settles behind it.
    */
-  const handleNotificationsClick = useCallback(async () => {
+  const handleNotificationsClick = useCallback(() => {
+    // The badge clear lives in the store's openNotifications now, so the
+    // hamburger and the account rail acknowledge it exactly as this bell does.
+    // It used to be written out here, which is why they did not.
     openNotifications('global-header-bell');
-    if (authUser?.id) await clearUnreadNotifications(authUser.id);
-  }, [authUser?.id, clearUnreadNotifications, openNotifications]);
+  }, [openNotifications]);
 
   const headerStyle = isNavigatingAway
     ? { opacity: 0.5, transition: 'opacity 0.15s ease', pointerEvents: 'none' as const }
@@ -391,7 +392,7 @@ export default function GlobalHeader() {
                   return;
                 }
                 event.preventDefault();
-                void handleNotificationsClick();
+                handleNotificationsClick();
               }}
               title="Notifications"
               aria-label="Notifications"
